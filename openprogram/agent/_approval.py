@@ -1,29 +1,29 @@
-"""Tool-approval gate — process-wide registry + wrapping.
+"""Tool-approval gate — runs over the unified QuestionRegistry.
 
-Lifted out of ``dispatcher.py`` to keep that file from drowning. Three
-moving parts:
+Lifted out of ``dispatcher.py`` to keep that file from drowning. 审批已
+合流到 user-input 的 QuestionRegistry（kind="approval"），所以批准和
+runtime.ask 走同一条链路、同一个前端承接点（composer approval mode）。
+两个 moving parts：
 
-* ``ApprovalRegistry`` — process-wide table of pending tool-approval
-  requests keyed by ``request_id``. The dispatcher's ``_await_user_approval``
-  registers a slot, posts an ``approval_request`` envelope, then blocks
-  off the asyncio loop until the WS handler resolves the slot via
-  ``approval_response``.
-* ``_wrap_with_approval`` — returns a copy of the agent tool whose
-  ``execute`` first awaits approval (unless permission_mode bypasses
-  it). The wrapping happens inside the tool's coroutine because
-  agent_loop schedules tool.execute eagerly — gating from outside is
-  racey.
-* ``_await_user_approval`` — the one-shot helper used by the wrapper.
+* ``await_user_approval`` — registers a ``kind="approval"`` question on the
+  shared QuestionRegistry, emits ``question.asked`` through the event layer,
+  and awaits the answer off the asyncio loop (``asyncio.to_thread`` on the
+  registry's Event). answered「允许」→ True；declined / timeout → False.
+* ``wrap_with_approval`` — returns a copy of the agent tool whose
+  ``execute`` first awaits approval (unless permission_mode bypasses it).
+  The wrapping happens inside the tool's coroutine because agent_loop
+  schedules tool.execute eagerly — gating from outside is racey.
 
-Tests reach in via ``dispatcher.approval_registry()`` — that accessor
-re-exports the singleton from this module, see dispatcher.py.
+``approval_registry()`` returns the shared QuestionRegistry (no separate
+ApprovalRegistry class anymore); tests resolve via
+``resolve(qid, "answered"|"declined", value)``.
+See docs/design/runtime/user-input-requests.md (point 6) +
+docs/design/ui/composer-interaction-modes.md.
 """
 from __future__ import annotations
 
 import asyncio
-import threading
-import uuid
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from openprogram.agent.dispatcher import TurnRequest
@@ -31,47 +31,15 @@ if TYPE_CHECKING:
 EventCallback = Callable[[dict], None]
 
 
-class ApprovalRegistry:
-    """Process-wide registry of pending tool-approval requests.
+# 审批合流到 QuestionRegistry（kind="approval"）——不再有独立的 ApprovalRegistry。
+# ``approval_registry()`` 现在返回统一的 QuestionRegistry，调用方（测试 / WS）用
+# 它的 resolve(qid, "answered"|"declined", value) 应答；批准的等待/唤醒走
+# await_user_approval。保留这个访问器名是为了不破坏现有 import 点。
 
-    Dispatcher posts an ``approval_request`` event with a request_id;
-    the WS handler resolves the matching future when an
-    ``approval_response`` action arrives. Times out at 5min so a
-    forgotten approval doesn't pin a worker thread forever.
-    """
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._pending: dict[str, threading.Event] = {}
-        self._answer: dict[str, bool] = {}
-
-    def register(self, request_id: str) -> threading.Event:
-        ev = threading.Event()
-        with self._lock:
-            self._pending[request_id] = ev
-        return ev
-
-    def resolve(self, request_id: str, approved: bool) -> bool:
-        """Return True if the request_id was waiting; False otherwise."""
-        with self._lock:
-            ev = self._pending.pop(request_id, None)
-            if ev is None:
-                return False
-            self._answer[request_id] = approved
-        ev.set()
-        return True
-
-    def consume(self, request_id: str) -> Optional[bool]:
-        """Read the resolution after the wait completes. Pops the slot."""
-        with self._lock:
-            return self._answer.pop(request_id, None)
-
-
-_approvals = ApprovalRegistry()
-
-
-def approval_registry() -> ApprovalRegistry:
-    return _approvals
+def approval_registry():
+    """已合流：返回统一的 QuestionRegistry（审批是 kind="approval" 的问题）。"""
+    from openprogram.agent.questions import get_question_registry
+    return get_question_registry()
 
 
 def wrap_with_approval(
@@ -146,6 +114,19 @@ def wrap_with_approval(
     return wrapped
 
 
+def _approval_detail(tool_name: str, args: dict) -> str:
+    """批准卡片的危险摘要：工具名 + 参数全文（超长截断，首尾保留）。
+    第一版不做危险 token 高亮（docs/design/ui/composer-interaction-modes.md 决策）。"""
+    try:
+        import json
+        body = json.dumps(args, ensure_ascii=False, indent=2) if args else ""
+    except Exception:
+        body = str(args)
+    if len(body) > 2000:
+        body = body[:1200] + "\n…（已截断）…\n" + body[-600:]
+    return f"{tool_name}\n{body}".rstrip()
+
+
 async def await_user_approval(
     *,
     req: "TurnRequest",
@@ -154,24 +135,42 @@ async def await_user_approval(
     on_event: EventCallback,
     timeout: float = 300.0,
 ) -> bool:
-    """Post an approval_request envelope, await the user's response.
+    """注册一个 kind="approval" 的问题、经事件层发 question.asked、await 用户答。
 
-    Uses ``asyncio.to_thread`` to wait on the threading.Event so the
-    asyncio loop stays free to process other events (e.g. tool
-    progress updates from concurrent tools).
+    审批合流到 QuestionRegistry（docs/design/runtime/user-input-requests.md 点6
+    + docs/design/ui/composer-interaction-modes.md）：不再用独立的 ApprovalRegistry
+    / approval_request 信封，而是走 runtime.ask 同一条链路——前端 composer 把它
+    呈现成 approval mode（允许 / 拒绝）。布尔从问题三态映射：answered「允许」=True，
+    declined / timeout = False。
+
+    用 ``asyncio.to_thread`` 等 threading.Event，asyncio loop 不被阻塞（工具
+    execute 是协程，并发工具的进度事件照常处理）。
     """
-    request_id = uuid.uuid4().hex[:12]
-    waiter = _approvals.register(request_id)
-    on_event({
-        "type": "approval_request",
-        "data": {
-            "request_id": request_id,
-            "session_id": req.session_id,
-            "tool": tool_name,
-            "args": args,
-        },
-    })
-    fired = await asyncio.to_thread(waiter.wait, timeout)
-    if not fired:
-        return False
-    return bool(_approvals.consume(request_id))
+    from openprogram.agent.questions import (
+        open_question, consume_or_timeout, emit_question_asked,
+    )
+
+    def _on_asked(q) -> None:
+        emit_question_asked({
+            "id": q.id, "session_id": q.session_id, "kind": q.kind,
+            "prompt": q.prompt, "options": q.options, "multi": q.multi,
+            "allow_custom": q.allow_custom, "detail": q.detail,
+            "expires_at": q.expires_at,
+            # approval 专属：工具名 + 参数，给 approval mode 画危险摘要。
+            "tool": tool_name, "args": args,
+        })
+
+    q, ev = open_question(
+        session_id=req.session_id, kind="approval",
+        prompt=f"允许执行 {tool_name}？",
+        options=["允许", "拒绝"], multi=False, allow_custom=False,
+        detail=_approval_detail(tool_name, args), timeout=timeout,
+        on_asked=_on_asked,
+    )
+    await asyncio.to_thread(ev.wait, timeout)
+    outcome, value = consume_or_timeout(q.id)
+    if outcome != "answered":
+        return False  # declined / timeout
+    if isinstance(value, str):
+        return value.strip() in ("允许", "approve", "yes", "y", "true", "ok", "是")
+    return bool(value)

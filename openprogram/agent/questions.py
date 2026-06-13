@@ -184,7 +184,7 @@ def emit_question_asked(data: dict, transport: "QuestionTransport | None" = None
     (transport or _default_transport).publish(data)
 
 
-def ask_blocking(
+def open_question(
     *,
     session_id: str,
     kind: str,
@@ -195,15 +195,13 @@ def ask_blocking(
     detail: str = "",
     timeout: float = 300.0,
     on_asked,
-) -> _Resolution:
-    """注册问题、emit、阻塞等答案。返回 (outcome, value)。
+) -> tuple[PendingQuestion, threading.Event]:
+    """注册一个问题 + emit（不等）。返回 (PendingQuestion, 唤醒 Event)。
 
-    outcome:
-      * "answered" — value 是答案（str 或 list[str]）
-      * "declined" — value 是 None
-      * "timeout"  — value 是 None
-    on_asked(PendingQuestion) 由调用方提供，负责把问题广播到前端（emit 事件）。
-    超时不抛——把 outcome="timeout" 交给上层（runtime.ask/confirm）按各自语义处理。
+    把"注册 + 发问"从"怎么等答案"里拆出来：同步调用方（runtime.ask）拿 Event
+    阻塞，async 调用方（工具批准，跑在 asyncio loop 上）用 asyncio.to_thread
+    等同一个 Event，互不阻塞各自的执行模型。on_asked(PendingQuestion) 负责把
+    问题送出去（经 transport / 事件层）。
     """
     reg = get_question_registry()
     now = time.time()
@@ -218,10 +216,40 @@ def ask_blocking(
         on_asked(q)
     except Exception:
         pass
-    fired = ev.wait(timeout=timeout)
-    if not fired:
-        # 超时：尽量清理 registry（若期间被答则以答案为准）
-        res = reg.consume(q.id)
-        return res if res is not None else ("timeout", None)
-    res = reg.consume(q.id)
+    return q, ev
+
+
+def consume_or_timeout(qid: str) -> _Resolution:
+    """等待结束后取结果：被答了返回 (outcome, value)，否则 ("timeout", None)。"""
+    res = get_question_registry().consume(qid)
     return res if res is not None else ("timeout", None)
+
+
+def ask_blocking(
+    *,
+    session_id: str,
+    kind: str,
+    prompt: str,
+    options: list[str] | None = None,
+    multi: bool = False,
+    allow_custom: bool = True,
+    detail: str = "",
+    timeout: float = 300.0,
+    on_asked,
+) -> _Resolution:
+    """注册问题、emit、**同步**阻塞等答案。返回 (outcome, value)。
+
+    outcome:
+      * "answered" — value 是答案（str 或 list[str]）
+      * "declined" — value 是 None
+      * "timeout"  — value 是 None
+    on_asked(PendingQuestion) 由调用方提供，负责把问题广播到前端（emit 事件）。
+    超时不抛——把 outcome="timeout" 交给上层（runtime.ask/confirm）按各自语义处理。
+    """
+    q, ev = open_question(
+        session_id=session_id, kind=kind, prompt=prompt, options=options,
+        multi=multi, allow_custom=allow_custom, detail=detail,
+        timeout=timeout, on_asked=on_asked,
+    )
+    ev.wait(timeout=timeout)
+    return consume_or_timeout(q.id)

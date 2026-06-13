@@ -215,72 +215,98 @@ def test_loop_exception_persisted_as_system_message(tmp_db, captured, collector)
 # Approval flow
 # ---------------------------------------------------------------------------
 
+def _grab_approval_frames() -> tuple[list[dict], "callable"]:
+    """订阅事件总线抓审批的 question.asked 帧（审批合流后经事件层 emit）。
+    返回 (frames, unsubscribe)。"""
+    from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
+    frames: list[dict] = []
+
+    def _grab(ev) -> None:
+        fr = ev.payload.get("frame", {})
+        if fr.get("type") == "question.asked" and fr["data"].get("kind") == "approval":
+            frames.append(fr["data"])
+    return frames, get_event_bus().subscribe(_grab, types={WS_FRAME_EVENT})
+
+
 def test_approval_bypass_skips_check(tmp_db, captured, collector) -> None:
-    """permission_mode=bypass should never emit approval_request."""
-    with patch.object(D, "_run_loop_blocking",
-                      _stub_loop_returning("ok")):
-        D.process_user_turn(
-            D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
-                          source="wechat", permission_mode="bypass"),
-            on_event=collector,
-        )
-    assert not any(e["type"] == "approval_request" for e in captured)
+    """permission_mode=bypass should never emit an approval question."""
+    frames, unsub = _grab_approval_frames()
+    try:
+        with patch.object(D, "_run_loop_blocking",
+                          _stub_loop_returning("ok")):
+            D.process_user_turn(
+                D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
+                              source="wechat", permission_mode="bypass"),
+                on_event=collector,
+            )
+    finally:
+        unsub()
+    assert not frames
 
 
 def test_approval_registry_resolves(tmp_db) -> None:
-    reg = D.approval_registry()
-    rid = "test_req_1"
-    waiter = reg.register(rid)
-    # Resolve in another thread
+    """审批合流：统一 QuestionRegistry 的 register/resolve/consume（kind=approval）。"""
+    from openprogram.agent.questions import PendingQuestion
+    reg = D.approval_registry()  # 现在是 QuestionRegistry
+    q = PendingQuestion(id="test_req_1", session_id="c1", kind="approval",
+                        prompt="允许执行 bash？", options=["允许", "拒绝"])
+    waiter = reg.register(q)
+
     def _resolve():
         time.sleep(0.05)
-        reg.resolve(rid, approved=True)
+        reg.resolve("test_req_1", "answered", "允许")
     threading.Thread(target=_resolve).start()
     assert waiter.wait(timeout=1.0) is True
-    assert reg.consume(rid) is True
+    assert reg.consume("test_req_1") == ("answered", "允许")
 
 
 def test_approval_registry_unknown_id(tmp_db) -> None:
     reg = D.approval_registry()
     # Resolve before register: returns False
-    assert reg.resolve("missing", approved=True) is False
+    assert reg.resolve("missing", "answered", "允许") is False
 
 
 # ---------------------------------------------------------------------------
 # Approval flow integrated with dispatcher
 # ---------------------------------------------------------------------------
 
-def test_await_user_approval_emits_envelope_and_resolves(captured, collector) -> None:
-    """``_await_user_approval`` must (a) post an approval_request envelope
-    with the right shape and (b) unblock when the registry resolves the
-    matching request_id. This is the low-level primitive the dispatcher's
-    per-tool wrapper calls into when permission_mode is "ask"."""
+def test_await_user_approval_emits_question_and_resolves() -> None:
+    """``await_user_approval`` 必须 (a) 经事件层发一个 kind="approval" 的
+    question.asked 帧（带 tool/args/session_id）、(b) 用户在统一 registry 答
+    「允许」后解除。这是 permission_mode="ask" 时 per-tool wrapper 调的底层原语。"""
     import asyncio
+    from openprogram.agent.questions import QuestionRegistry
+    import openprogram.agent.questions as Q
+
+    Q._registry = QuestionRegistry()  # 干净 registry
+    frames, unsub = _grab_approval_frames()
 
     req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                         source="tui", permission_mode="ask")
 
     def _resolver():
-        reg = D.approval_registry()
-        for _ in range(50):
+        reg = Q.get_question_registry()
+        for _ in range(100):
             time.sleep(0.02)
-            with reg._lock:
-                pending = list(reg._pending.keys())
-            if pending:
-                reg.resolve(pending[0], approved=True)
+            pend = reg.list_pending()
+            if pend:
+                reg.resolve(pend[0].id, "answered", "允许")
                 return
     threading.Thread(target=_resolver, daemon=True).start()
 
     async def _drive() -> bool:
         return await D._await_user_approval(
             req=req, tool_name="bash", args={"command": "ls"},
-            on_event=collector, timeout=5.0,
+            on_event=lambda e: None, timeout=5.0,
         )
-    approved = asyncio.run(_drive())
+    try:
+        approved = asyncio.run(_drive())
+    finally:
+        unsub()
 
     assert approved is True
-    requests = [e for e in captured if e["type"] == "approval_request"]
-    assert len(requests) == 1
-    assert requests[0]["data"]["tool"] == "bash"
-    assert requests[0]["data"]["args"] == {"command": "ls"}
-    assert requests[0]["data"]["session_id"] == "c1"
+    assert len(frames) == 1
+    assert frames[0]["tool"] == "bash"
+    assert frames[0]["args"] == {"command": "ls"}
+    assert frames[0]["session_id"] == "c1"
+    assert frames[0]["kind"] == "approval"

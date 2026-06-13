@@ -404,13 +404,16 @@ def test_approval_required_blocks_until_approved(
                         _stub_profile_with_tools(["dangerprobe"]))
     stream = make_two_phase_stream("c-d", "dangerprobe", {"target": "x"})
 
+    # 审批合流后走 question.asked（kind="approval"），经事件层 emit_ws_frame →
+    # ws.frame 总线事件（不再用 on_event 的 approval_request 信封）。订阅总线抓它。
+    from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
     request_id_holder: list[str] = []
-    original_collector = collector
 
-    def relay(env: dict) -> None:
-        original_collector(env)
-        if env.get("type") == "approval_request":
-            request_id_holder.append(env["data"]["request_id"])
+    def _grab(ev) -> None:
+        fr = ev.payload.get("frame", {})
+        if fr.get("type") == "question.asked" and fr["data"].get("kind") == "approval":
+            request_id_holder.append(fr["data"]["id"])
+    unsub = get_event_bus().subscribe(_grab, types={WS_FRAME_EVENT})
 
     # Start the turn in a worker thread so the main thread can resolve
     # the approval. permission_mode="ask" forces _check_approval.
@@ -421,21 +424,24 @@ def test_approval_required_blocks_until_approved(
             result_holder["r"] = D.process_user_turn(
                 D.TurnRequest(session_id="c1", user_text="run", agent_id="main",
                               source="tui", permission_mode="ask"),
-                on_event=relay,
+                on_event=collector,
             )
 
     th = threading.Thread(target=_run)
     th.start()
 
-    # Wait for the approval request to arrive (max 2s)
-    deadline = time.time() + 2.0
-    while not request_id_holder and time.time() < deadline:
-        time.sleep(0.02)
-    assert request_id_holder, "dispatcher never emitted approval_request"
-    assert not fired.is_set(), "tool ran before approval was granted"
+    try:
+        # Wait for the approval question to arrive (max 2s)
+        deadline = time.time() + 2.0
+        while not request_id_holder and time.time() < deadline:
+            time.sleep(0.02)
+        assert request_id_holder, "dispatcher never emitted approval question"
+        assert not fired.is_set(), "tool ran before approval was granted"
 
-    # Approve and let the worker continue
-    D.approval_registry().resolve(request_id_holder[0], True)
+        # Approve and let the worker continue（统一 registry：answered「允许」）
+        D.approval_registry().resolve(request_id_holder[0], "answered", "允许")
+    finally:
+        unsub()
     th.join(timeout=5)
     assert not th.is_alive(), "dispatcher thread did not finish after approval"
     assert fired.is_set(), "tool was not executed after approval"
@@ -458,36 +464,40 @@ def test_approval_denied_aborts_run(
                         _stub_profile_with_tools(["risky"]))
     stream = make_two_phase_stream("c-r", "risky", {})
 
+    from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
     request_id_holder: list[str] = []
-    original_collector = collector
 
-    def relay(env: dict) -> None:
-        original_collector(env)
-        if env.get("type") == "approval_request":
-            request_id_holder.append(env["data"]["request_id"])
+    def _grab(ev) -> None:
+        fr = ev.payload.get("frame", {})
+        if fr.get("type") == "question.asked" and fr["data"].get("kind") == "approval":
+            request_id_holder.append(fr["data"]["id"])
+    unsub = get_event_bus().subscribe(_grab, types={WS_FRAME_EVENT})
 
     def _run():
         with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
             D.process_user_turn(
                 D.TurnRequest(session_id="c1", user_text="run", agent_id="main",
                               source="tui", permission_mode="ask"),
-                on_event=relay,
+                on_event=collector,
             )
 
     th = threading.Thread(target=_run)
     th.start()
 
-    deadline = time.time() + 2.0
-    while not request_id_holder and time.time() < deadline:
-        time.sleep(0.02)
-    assert request_id_holder
-    # Note: even if the user denies, agent_loop still attempts the
-    # tool call after _check_approval returns False — we only set the
-    # cancel flag. The tool itself does fire because dispatcher's
-    # cancel is best-effort (agent_loop schedules tool_call BEFORE
-    # checking cancel between iterations). What matters is that the
-    # turn doesn't hang and finishes with an aborted/done state.
-    D.approval_registry().resolve(request_id_holder[0], False)
+    try:
+        deadline = time.time() + 2.0
+        while not request_id_holder and time.time() < deadline:
+            time.sleep(0.02)
+        assert request_id_holder
+        # Note: even if the user denies, agent_loop still attempts the
+        # tool call after _check_approval returns False — we only set the
+        # cancel flag. The tool itself does fire because dispatcher's
+        # cancel is best-effort (agent_loop schedules tool_call BEFORE
+        # checking cancel between iterations). What matters is that the
+        # turn doesn't hang and finishes with an aborted/done state.
+        D.approval_registry().resolve(request_id_holder[0], "declined", None)
+    finally:
+        unsub()
     th.join(timeout=5)
     assert not th.is_alive(), "dispatcher hung after denial"
 
