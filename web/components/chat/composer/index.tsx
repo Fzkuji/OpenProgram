@@ -31,7 +31,7 @@ import { showToast } from "@/lib/toast";
 import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
-import { FunctionForm, visibleParams } from "./fn-form/fn-form";
+import { FunctionForm, visibleParams } from "./modes/fn-form/fn-form";
 import { QuestionMode } from "./modes/question/question-mode";
 import { ApprovalMode } from "./modes/approval/approval-mode";
 import {
@@ -63,8 +63,8 @@ import { useComposerAttachments } from "./attach/use-composer-attachments";
 import { useFileMention } from "./attach/use-file-mention";
 import { ImageAttachStrip } from "./attach/image-attach-strip";
 import { ThinkingEffortPill } from "./controls/thinking-effort-pill";
-import { useFnFormState } from "./fn-form/use-fn-form-state";
-import { useFnFormWrapper } from "./fn-form/use-fn-form-wrapper";
+import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
+import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
 import { useSlashMenu } from "./slash/use-slash-menu";
 import { useThinkingEffort } from "./controls/use-thinking-effort";
 import { useToolsToggles } from "./controls/use-tools-toggles";
