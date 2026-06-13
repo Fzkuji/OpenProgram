@@ -48,6 +48,22 @@ export interface ChatToolCall {
   status: "running" | "done" | "error";
 }
 
+/** A "system needs a decision" request surfaced in the composer — the
+ *  `data` payload of a question.asked frame (runtime.ask / confirm /
+ *  tool approval). See composer modes (docs/design/ui/composer-interaction-modes.md). */
+export interface PendingDecision {
+  id: string;
+  kind: "ask" | "confirm" | "approval";
+  prompt: string;
+  options: string[];
+  multi: boolean;
+  allow_custom: boolean;
+  detail?: string;
+  /** approval-only: the tool being gated + its args, for the danger summary. */
+  tool?: string;
+  args?: Record<string, unknown>;
+}
+
 export interface ChatMsg {
   id: string;                  // msg_id from server, or local generated for user msgs
   role: "user" | "assistant" | "system";
@@ -369,6 +385,17 @@ interface ConvState {
    *  with the form shrinking, not a beat later when it unmounts. */
   fnFormClosing: boolean;
   setFnFormClosing: (v: boolean) => void;
+
+  /** Pending "system needs a decision" requests — runtime.ask / confirm /
+   *  (later) tool approval. A FIFO queue: the head occupies the composer as
+   *  a question/approval mode; answering it pops the head and the next one
+   *  surfaces. Each item is the question.asked envelope's `data`. Driven by
+   *  use-ws (enqueue on question.asked, dequeue on question.replied/rejected).
+   *  Design: docs/design/ui/composer-interaction-modes.md. */
+  pendingDecisions: PendingDecision[];
+  enqueueDecision: (d: PendingDecision) => void;
+  /** Remove a resolved/closed decision by id (answered elsewhere / stop). */
+  dequeueDecision: (id: string) => void;
 
   /** Right sidebar dock state. `open` = expanded (icons + content
    *  visible); when false, only the icon rail shows (collapsed).
@@ -694,6 +721,19 @@ export const useSessionStore = create<ConvState>((set) => ({
   closeFnForm: () => set({ fnFormFunction: null, fnFormClosing: false }),
   fnFormClosing: false,
   setFnFormClosing: (v) => set({ fnFormClosing: v }),
+
+  pendingDecisions: [],
+  enqueueDecision: (d) =>
+    set((state) =>
+      // Dedupe by id — reconnect replay re-sends the same question.asked.
+      state.pendingDecisions.some((p) => p.id === d.id)
+        ? {}
+        : { pendingDecisions: [...state.pendingDecisions, d] },
+    ),
+  dequeueDecision: (id) =>
+    set((state) => ({
+      pendingDecisions: state.pendingDecisions.filter((p) => p.id !== id),
+    })),
 
   rightDock: readRightDock(),
   setRightDockOpen: (open) =>

@@ -32,6 +32,7 @@ import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
 import { FunctionForm, visibleParams } from "./fn-form/fn-form";
+import { QuestionMode } from "./modes/question/question-mode";
 import {
   FastIcon,
   OptionsIcon,
@@ -262,6 +263,11 @@ export function Composer() {
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
+  // 系统等用户决定（runtime.ask / confirm / approval）的 FIFO 队列；队首占据
+  // 输入区呈现为 question/approval mode（docs/design/ui/composer-interaction-modes.md）。
+  const pendingDecisions = useSessionStore((s) => s.pendingDecisions);
+  const dequeueDecision = useSessionStore((s) => s.dequeueDecision);
+  const activeDecision = pendingDecisions[0] ?? null;
   const router = useRouter();
   const send = wsSend;
 
@@ -1007,7 +1013,15 @@ export function Composer() {
         />
         <FileTiles docs={pendingDocs} onRemove={removeDoc} />
 
-        {fnFormFunction ? (
+        {activeDecision ? (
+          // 系统等用户决定占据输入区（runtime.ask / confirm / approval）。
+          // 优先于 fn-form / 打字（步 5 再做"撞上时取消 fn-form"的排队规则）。
+          <QuestionMode
+            key={activeDecision.id}
+            decision={activeDecision}
+            onResolve={dequeueDecision}
+          />
+        ) : fnFormFunction ? (
           <FunctionForm
             // `key` ties to fn name so React re-mounts on every
             // switch — the freshly mounted header/body run their own
@@ -1217,24 +1231,28 @@ export function Composer() {
             position (top: 16) and the fn-form position
             (top: wrapper.height − 48) over the same 0.3s curve as the
             wrapper itself — one continuous motion instead of a row-to
-            -row teleport. */}
-        <button
-          ref={sendBtnRef}
-          className={`${styles.actionBtn} ${isRunning ? styles.stopBtn : styles.sendBtn}`}
-          onClick={isRunning ? stop : onSendButtonClick}
-          disabled={!isRunning && sendDisabled}
-          data-fn-missing={
-            !isRunning && fnFormActive && missingFnParams.length > 0
-              ? "true"
-              : undefined
-          }
-          onMouseEnter={() => sendIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => sendIconRef.current?.stopAnimation?.()}
-          title={isRunning ? text("Stop", "停止") : sendTitle}
-          type="button"
-        >
-          {isRunning ? <StopIcon /> : <SendIcon ref={sendIconRef} />}
-        </button>
+            -row teleport.
+            Hidden while a decision (question/approval) occupies the input
+            area — that mode renders its own answer/reject actions. */}
+        {!activeDecision && (
+          <button
+            ref={sendBtnRef}
+            className={`${styles.actionBtn} ${isRunning ? styles.stopBtn : styles.sendBtn}`}
+            onClick={isRunning ? stop : onSendButtonClick}
+            disabled={!isRunning && sendDisabled}
+            data-fn-missing={
+              !isRunning && fnFormActive && missingFnParams.length > 0
+                ? "true"
+                : undefined
+            }
+            onMouseEnter={() => sendIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => sendIconRef.current?.stopAnimation?.()}
+            title={isRunning ? text("Stop", "停止") : sendTitle}
+            type="button"
+          >
+            {isRunning ? <StopIcon /> : <SendIcon ref={sendIconRef} />}
+          </button>
+        )}
 
         {/* Close button — wrapper-level so it stays mounted across
             fn-form switches (no blink on the icon when the header

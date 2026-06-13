@@ -1,36 +1,12 @@
-.host {
-  position: fixed;
-  left: 50%;
-  bottom: 96px; /* 浮在 composer 上方 */
-  z-index: 320;
-  transform: translateX(-50%);
-  width: min(560px, 90vw);
-  pointer-events: none;
-}
+/* QuestionMode —— 输入框里的问题形态。视觉沿用旧浮窗卡片的选项/按钮风格，
+   但去掉浮层定位，作为输入区内的内容流（composer 的 inputWrapper 已提供边框/
+   背景，这里只排内容）。 */
 
-.card {
-  pointer-events: auto;
+.host {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 16px 18px;
-  border-radius: 14px;
-  color: var(--text-bright, #f5f5f5);
-  background: var(--bg-secondary, #1c1c20);
-  border: 1px solid var(--accent, #56d9e9);
-  box-shadow: var(--shadow-popover, 0 12px 40px rgba(0, 0, 0, 0.5));
-  animation: qIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes qIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+  padding: 14px 16px 8px;
 }
 
 .badge {
@@ -86,12 +62,8 @@
   background: color-mix(in srgb, var(--accent, #56d9e9) 14%, transparent);
 }
 
-.customRow {
-  display: flex;
-}
-
 .input {
-  flex: 1;
+  width: 100%;
   padding: 8px 12px;
   border-radius: 9px;
   font-size: 13px;

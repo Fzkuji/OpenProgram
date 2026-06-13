@@ -261,25 +261,32 @@ export function useWS(): void {
           return true;
         case "event":
           return true;
-        // runtime.ask/confirm —— 函数中途停下来等用户（user-input-requests Phase 1）
+        // runtime.ask/confirm/approval —— 系统停下来等用户决定。入 composer
+        // 的 pendingDecisions 队列，由输入框 question/approval mode 承接呈现
+        // （docs/design/ui/composer-interaction-modes.md）。不再走独立浮窗。
         case "question.asked":
-          try {
-            window.dispatchEvent(
-              new CustomEvent("op:question-asked", { detail: d }),
-            );
-          } catch {
-            /* defensive */
-          }
+          import("@/lib/session-store").then(({ useSessionStore }) => {
+            const dd = (d || {}) as Record<string, unknown>;
+            if (!dd.id) return;
+            useSessionStore.getState().enqueueDecision({
+              id: String(dd.id),
+              kind: (dd.kind as "ask" | "confirm" | "approval") || "ask",
+              prompt: String(dd.prompt || ""),
+              options: Array.isArray(dd.options) ? (dd.options as string[]) : [],
+              multi: Boolean(dd.multi),
+              allow_custom: dd.allow_custom !== false,
+              detail: dd.detail ? String(dd.detail) : undefined,
+              tool: dd.tool ? String(dd.tool) : undefined,
+              args: (dd.args as Record<string, unknown>) || undefined,
+            });
+          });
           return true;
         case "question.replied":
         case "question.rejected":
-          try {
-            window.dispatchEvent(
-              new CustomEvent("op:question-closed", { detail: d }),
-            );
-          } catch {
-            /* defensive */
-          }
+          import("@/lib/session-store").then(({ useSessionStore }) => {
+            const id = (d as Record<string, unknown>)?.id;
+            if (id) useSessionStore.getState().dequeueDecision(String(id));
+          });
           return true;
         case "functions_list":
           w.availableFunctions = d || [];
