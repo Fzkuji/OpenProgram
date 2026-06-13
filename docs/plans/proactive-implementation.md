@@ -63,7 +63,7 @@ Event 模型 = 核心三样 + metadata 开放口袋（见设计 `event-layer.md`
 | **1** | 总线启用 + A 类源接入 | 纯加法 | ✅ 2026-06-13 落地（commits e06b2db6 / 2915849b / 9b15ccac / dd8cb843），真实 turn 验收过完整序列 |
 | **2** | `file.changed` + `tool.before` 同步问询点 | 纯加法 | ✅ 2026-06-13 落地（commit 89e16a10），file.changed live 验证、gate 端到端测试 |
 | **3** | B 类源桥接：auth 真桥 + context/channels/memory/webui 源头 tap | 纯加法 | ✅ 2026-06-13 落地（commit 5cc967df），skills.changed live 验证，auth 桥 5 单测。注意 worker cwd=home，project skills 目录是 ~/skills |
-| **4** | webui 切换为订阅者：先影子比对，再逐源切断旧直连 | 动旧路 | ⏳ 验收：影子比对零差异，前端行为不变 |
+| **4** | webui 切换为订阅者：外部源 emit `ws.frame`、webui 订阅原样广播 | 动旧路 | ✅ 2026-06-13 落地（commits 99678165 + 4c5a5ede），WS 探针验证 task_status 四态经新链路到前端 |
 | **5** | 新消费者进场：`openprogram/proactive/` 规则层（Policy/挡路/旁观） | 纯加法 | ⏳ 验收：proactive 不碰子系统内部，仅靠订阅工作 |
 
 ## 已落地的实现（步 1–2 as-built）
@@ -78,6 +78,8 @@ Event 模型 = 核心三样 + metadata 开放口袋（见设计 `event-layer.md`
 | file.changed（写成功后，懒 import） | write / edit / apply_patch 三工具五处 |
 | B 类桥（auth 订阅翻译，幂等安装于 worker 启动） | `openprogram/agent/event_bridges.py` + `worker/runner.py` |
 | B 类源头 taps | `context/engine.py`(compaction ×2)、`channels/_conversation.py`、`memory/session_watcher.py`(×2)、`webui/server.py`(skills/plugins) |
+| 步4 透传信封 emit_ws_frame + webui `_subscribe_event_bus` 订阅转发 | `agent/event_bus.py`、`webui/server.py` |
+| 步4 外部源解耦（不再 import webui） | `task/runner.py`、`sub_agent_run.py`、`worktree/manager.py`、`functions/watcher.py`、`channels/_broadcast.py` |
 | 单测（30 个） | `tests/agent/test_event_bus.py`、`test_tool_gate.py`、`test_event_bridges.py` |
 
 ## 验证
