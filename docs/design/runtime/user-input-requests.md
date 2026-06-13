@@ -1,7 +1,9 @@
 # User input requests: pausing a run to ask the user
 
-Status: proposed (2026-06) — framework-level; awaiting approval before
-implementation.
+Status: **Phase 1 已落地并验证**（2026-06-13）。runtime.ask/confirm/can_ask、
+QuestionRegistry、WS question_reply/reject、前端 QuestionPrompt 卡片全部就位，
+端到端（emit→阻塞→答→resume）+ 前端（卡片→点选项→发 reply→收回）双向验证通过。
+Phase 2（@agentic_function 子进程桥）、3（TUI）、4（审批合流+channels+form）待做。
 Companion: [../cli/tui-upgrade.md](../cli/tui-upgrade.md) (TUI surface).
 Research notes:
 [user-input-requests-references.md](user-input-requests-references.md)
@@ -125,11 +127,14 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
 
 ## Phases
 
-- **Phase 1 — minimal live path**: registry + `runtime.ask`/`confirm` +
-  WS/REST protocol + web question card. In-process `@function` tools work;
-  `clarify` revives. Acceptance: a function in a web chat asks, the user
-  answers in the browser, the function resumes with the answer; stop while
-  pending unblocks cleanly.
+- **Phase 1 — minimal live path** ✅（2026-06-13 落地）: registry +
+  `runtime.ask`/`confirm`/`can_ask` + WS question_reply/reject 协议 + web
+  question card。三态显式（answered / UserDeclined / AskTimeout）替代旧的
+  300s 静默 None；stop 时 cancel_session 解除待答。as-built：
+  `agent/questions.py`（registry）、`agentic_programming/runtime.py`
+  （ask/confirm）、`webui/ws_actions/session.py`（reply/reject handler）、
+  `webui/ws_actions/runtime.py`（stop 解除）、`web/components/ui/question-prompt.tsx`
+  （卡片）。REST list/reply 端点（reconnect 恢复）延到后续单元。
 - **Phase 2 — subprocess bridge**: `@agentic_function` bodies can ask
   (the actual headline use case).
 - **Phase 3 — TUI surface**: question/approval prompt in the input slot
