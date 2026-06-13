@@ -107,6 +107,23 @@ def emit_safe(
         pass
 
 
+# 透传信封：外部源（task runner / channels / worktree / functions watcher /
+# sub_agent）原本直接 import webui 的 _broadcast 把现成 WS 帧推给前端——这是
+# "外部源直连中枢"的耦合。改成 emit 一个 `ws.frame` 事件、payload 里放原始帧；
+# webui 订阅它原样广播。前端零改动（收到的帧一字不差），但外部源不再认识 webui。
+# 设计：docs/design/proactive/framework-evolution.md 步 4。
+WS_FRAME_EVENT = "ws.frame"
+
+
+def emit_ws_frame(frame: dict) -> None:
+    """外部源用：把一个现成的 WS 帧（{"type":..., "data":...}）经总线送往前端。
+    全失败吞掉——事件层绝不影响调用方。"""
+    try:
+        get_event_bus().emit(make_event(WS_FRAME_EVENT, "system", {"frame": frame}))
+    except Exception:
+        pass
+
+
 # ─── Bus ─────────────────────────────────────────────────────────────────────
 
 class EventBus:

@@ -1164,6 +1164,33 @@ def create_app():
         _loop = asyncio.get_running_loop()
 
     @app.on_event("startup")
+    async def _subscribe_event_bus():
+        """webui 降级为总线订阅者（framework-evolution.md 步 4）。
+
+        外部源（task runner / channels / worktree / functions watcher /
+        sub_agent）不再 import 本模块的 _broadcast；它们 emit `ws.frame`
+        事件，本订阅者把原始帧原样广播给前端——前端零改动。
+
+        订阅在 _capture_loop 之后挂，确保 _broadcast 依赖的 _loop 已就位。
+        emit 发生在源所在线程（可能是 worker），_broadcast 内部用
+        run_coroutine_threadsafe 跨线程投递，安全。
+        """
+        try:
+            from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
+
+            def _forward(event):
+                try:
+                    frame = event.payload.get("frame")
+                    if frame is not None:
+                        _broadcast(json.dumps(frame, default=str))
+                except Exception:
+                    pass
+
+            get_event_bus().subscribe(_forward, types={WS_FRAME_EVENT})
+        except Exception as e:  # noqa: BLE001
+            _log(f"[startup] event-bus WS forwarder failed: {e}")
+
+    @app.on_event("startup")
     async def _reconcile_interrupted_runs():
         """Flip DAG nodes frozen at status='running' (a previous worker
         was killed mid-run) to 'error'. See webui/_exec_dag.py."""
