@@ -1,7 +1,11 @@
 # Composer interaction modes — 输入框作为"用户决定"的统一承接点
 
-Status: **已定方向，待实现**（2026-06-13）。冲突规则与开放问题已拍板（见
-"决策"节）。按"落地顺序"分 5 步实现，每步浏览器自验 + 独立提交。
+Status: **已落地**（2026-06-14）。五步全部实现并浏览器自验，逐步提交。
+as-built：modes 框架骨架（26685949）→ question mode + 删浮窗（bc144b8c）→
+后端审批合流（73a094be）→ approval mode + 拒绝附理由（27c05faa）→ 冲突排队 +
+超时收回（c0c8956e）。唯一与原设计的偏差：fn-form 第一版仍由 composer 内联
+渲染（它本就是"输入框变形"的范本），未正式塞进 modes 注册表——question /
+approval 走注册表式的 mode 组件；fn-form 纳入注册表作为后续收尾（非阻塞）。
 
 ## 一句话
 
@@ -146,24 +150,27 @@ web/components/chat/composer/
 合流后：一个 registry、一种事件（question.asked）、一个前端承接点。审批顺带
 **复活**（之前没 UI）。
 
-## 退役
+## 退役（已完成）
 
-* `web/components/ui/question-prompt.tsx` 浮窗 + 它在 app-shell 的挂载 → 删。
-* `_approval.py` 的 `ApprovalRegistry` / `approval_request` 信封 → 删/迁。
+* `web/components/ui/question-prompt.tsx` 浮窗 + app-shell 挂载 → 已删。
+* `_approval.py` 的 `ApprovalRegistry` / `approval_request` 信封 → 已删；
+  `approval_registry()` 返回统一 QuestionRegistry。
 
-## 落地顺序（每步独立可验证）
+## 落地顺序（每步独立验证，全部完成）
 
-1. **抽容器接口**：定义 `ComposerMode` + `modes/` 注册表；把现有 fn-form
-   原样迁成第一种 mode（行为不变）。验证：fn-form 跑函数照旧正常。
-2. **question mode**：把 question-prompt 的逻辑搬进 `modes/question/`，呈现成
-   输入区变形；删浮窗。验证：runtime.ask 在输入框里出现、答得了、resume。
-3. **后端审批合流**：`await_user_approval` 走 QuestionRegistry（kind=approval）。
-   验证：permission=ask 跑个 bash，输入框出现批准变形，允许/拒绝都对；
-   两个 dispatcher 批准测试改写后通过。
-4. **approval mode**：approval 作为 question 的衍生（危险摘要 + 固定两选项）。
-   验证：批准变形显示工具名+参数，不串到普通 question。
-5. **排队/抢占**：实现上面"已定"的冲突规则（FIFO 队列 + 用户主动 mode 被
-   系统决定取消）。
+1. ✅ **框架骨架**（26685949）：`modes/types.ts`（ComposerMode 接口）+
+   `modes/index.ts`（注册表）。fn-form 第一版仍内联（见 Status 偏差说明）。
+2. ✅ **question mode**（bc144b8c）：`modes/question/`，runtime.ask 在输入框
+   就地呈现；删浮窗；use-ws → store 的 pendingDecisions 队列。真子进程端到端验证。
+3. ✅ **后端审批合流**（73a094be）：`await_user_approval` 走 QuestionRegistry
+   （kind=approval），经事件层发 question.asked；ApprovalRegistry 退役；两个
+   dispatcher 批准测试迁到统一 registry + 事件总线契约。
+4. ✅ **approval mode**（27c05faa）：`modes/approval/`，question 的衍生——
+   危险摘要（工具名+参数）+ 允许/拒绝 + 拒绝附理由（理由变工具错误文本）。
+   真子进程端到端验证（含子进程审批桥）。
+5. ✅ **冲突排队 + 超时收回**（c0c8956e）：FIFO 队列一次一个；用户主动 fn-form
+   撞系统决定则取消；超时经 transport 广播 question.rejected 收回卡片
+   （修了"超时卡片挂死"的真 bug）。浏览器验证抢占。
 
 每步都能在浏览器自验、独立提交。
 
