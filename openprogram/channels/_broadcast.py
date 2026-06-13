@@ -7,17 +7,18 @@
 * ``agent_session_updated``: 一份精简的 session-touched 通知, webui
   sidebar 收到后把这个 conversation 顶到列表上方.
 
-webui server 不在当前进程时全部 no-op — 持久化已经在 SessionDB 完成,
-WS push 只是 nice-to-have.
+步 4：不再 import webui — 改成把现成的 WS 帧 emit 到总线（``ws.frame`` 事件），
+webui 作为订阅者原样广播。帧 type/data 字段一字不变；WS push 仍只是 nice-to-have
+（持久化已在 SessionDB 完成），emit_ws_frame 内部吞掉一切失败.
 
 从 ``_conversation.py`` 拆分出来 — 该文件原本 588 行混了 5 个职责.
-这里只承担 webui broadcast 这一块.
+这里只承担 broadcast 这一块.
 """
 from __future__ import annotations
 
-import json
-import sys
 from typing import Any
+
+from openprogram.agent.event_bus import emit_ws_frame
 
 
 def broadcast_channel_turn(
@@ -33,31 +34,24 @@ def broadcast_channel_turn(
     需要 /resume 刷新. session_key 在两边是同一个标识 (channel +
     webui 共用同套), 不需要翻译.
     """
-    srv = sys.modules.get("openprogram.webui.server")
-    if srv is None:
-        return
-    try:
-        payload = {
-            "type": "channel_turn",
-            "data": {
-                "session_id": session_key,
-                "agent_id": agent_id,
-                "user": {
-                    "id": user_msg.get("id"),
-                    "text": user_msg.get("content"),
-                    "peer_display": user_msg.get("peer_display"),
-                    "source": user_msg.get("source"),
-                },
-                "assistant": {
-                    "id": reply_msg.get("id"),
-                    "text": reply_msg.get("content"),
-                    "source": reply_msg.get("source"),
-                },
+    emit_ws_frame({
+        "type": "channel_turn",
+        "data": {
+            "session_id": session_key,
+            "agent_id": agent_id,
+            "user": {
+                "id": user_msg.get("id"),
+                "text": user_msg.get("content"),
+                "peer_display": user_msg.get("peer_display"),
+                "source": user_msg.get("source"),
             },
-        }
-        srv._broadcast(json.dumps(payload, default=str))
-    except Exception:
-        pass
+            "assistant": {
+                "id": reply_msg.get("id"),
+                "text": reply_msg.get("content"),
+                "source": reply_msg.get("source"),
+            },
+        },
+    })
 
 
 def poke_live_webui(
@@ -67,25 +61,16 @@ def poke_live_webui(
 ) -> None:
     """通知所有 WS 客户端某 channel session 有更新.
 
-    只有 ``openprogram.webui.server`` 在当前进程加载时才做事 (Web UI
-    server 路径必然加载, worker 可能也加载). 任何失败都安静吞掉 —
-    持久化已经走完, live push 只是 nicety.
+    任何失败都安静吞掉 — 持久化已经走完, live push 只是 nicety.
     """
-    srv = sys.modules.get("openprogram.webui.server")
-    if srv is None:
-        return
-    try:
-        payload = {
-            "type": "agent_session_updated",
-            "data": {
-                "agent_id": agent_id,
-                "session_id": session_key,
-                "title": meta.get("title"),
-                "head_id": meta.get("head_id"),
-                "updated_at": meta.get("_last_touched"),
-                "source": meta.get("channel"),
-            },
-        }
-        srv._broadcast(json.dumps(payload, default=str))
-    except Exception:
-        pass
+    emit_ws_frame({
+        "type": "agent_session_updated",
+        "data": {
+            "agent_id": agent_id,
+            "session_id": session_key,
+            "title": meta.get("title"),
+            "head_id": meta.get("head_id"),
+            "updated_at": meta.get("_last_touched"),
+            "source": meta.get("channel"),
+        },
+    })

@@ -55,16 +55,12 @@ def _fingerprint(agentics_dir: str) -> tuple:
 
 
 def _emit_changed(added: list[str]) -> None:
-    """Broadcast ``programs:changed`` to connected UIs (no-op if the
-    server/WS layer isn't up)."""
-    try:
-        import json
-        from openprogram.webui import server as _server
-        _server._broadcast(json.dumps(
-            {"type": "programs:changed", "added": added}, default=str
-        ))
-    except Exception:
-        pass
+    """Broadcast ``programs:changed`` to connected UIs.
+
+    步 4：走总线（ws.frame 事件），不再 import webui；帧内容不变。
+    """
+    from openprogram.agent.event_bus import emit_ws_frame
+    emit_ws_frame({"type": "programs:changed", "added": added})
 
 
 def start_in_worker(

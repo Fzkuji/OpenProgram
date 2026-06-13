@@ -202,15 +202,12 @@ def write_attach_pointer_for_spawn(
             pass
         # Broadcast session_reload so the UI re-renders the DAG with
         # the new attach pointer + reference edge.
-        try:
-            import json as __json
-            from openprogram.webui import server as _s
-            _s._broadcast(__json.dumps({
-                "type": "session_reload",
-                "data": {"session_id": session_id, "reason": "task_tool_spawn"},
-            }, default=str))
-        except Exception:
-            pass
+        # 步 4：走总线（ws.frame 事件），不再 import webui；帧内容不变。
+        from openprogram.agent.event_bus import emit_ws_frame
+        emit_ws_frame({
+            "type": "session_reload",
+            "data": {"session_id": session_id, "reason": "task_tool_spawn"},
+        })
         return attach_node_id
     except Exception:
         return None

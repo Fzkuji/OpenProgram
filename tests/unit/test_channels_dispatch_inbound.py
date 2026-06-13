@@ -163,9 +163,18 @@ def test_dispatch_inbound_broadcasts_channel_turn(
     attached TUI updates without a /resume. Verify dispatch_inbound
     still emits it after the dispatcher refactor."""
     import sys, types
+    # chat_response 仍走 channel 进程内回调直连 webui._broadcast（未在步4解耦范围）。
     broadcasts: list[str] = []
     fake_srv = types.SimpleNamespace(_broadcast=lambda payload: broadcasts.append(payload))
     monkeypatch.setitem(sys.modules, "openprogram.webui.server", fake_srv)
+
+    # channel_turn 步4 改走总线（emit_ws_frame → ws.frame 事件）。订阅总线抓它。
+    from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
+    frames: list[dict] = []
+    unsub = get_event_bus().subscribe(
+        lambda ev: frames.append(ev.payload.get("frame", {})),
+        types={WS_FRAME_EVENT},
+    )
 
     fake_stream = make_text_stream("ok")
     orig_run = D._run_loop_blocking
@@ -174,16 +183,18 @@ def test_dispatch_inbound_broadcasts_channel_turn(
         return orig_run(req=req, history=history, on_event=on_event,
                         cancel_event=cancel_event, stream_fn=fake_stream)
 
-    with patch.object(D, "_run_loop_blocking", _wrapped):
-        C.dispatch_inbound(
-            channel="wechat", account_id="acct1",
-            peer_kind="direct", peer_id="alice",
-            user_text="ping", user_display="Alice",
-        )
+    try:
+        with patch.object(D, "_run_loop_blocking", _wrapped):
+            C.dispatch_inbound(
+                channel="wechat", account_id="acct1",
+                peer_kind="direct", peer_id="alice",
+                user_text="ping", user_display="Alice",
+            )
+    finally:
+        unsub()
 
-    # At least one channel_turn envelope and one chat_response stream
-    # event must have been broadcast through the webui.
-    has_channel_turn = any('"channel_turn"' in p for p in broadcasts)
+    # channel_turn 经总线、chat_response 经 webui 直连，二者都要在。
+    has_channel_turn = any(f.get("type") == "channel_turn" for f in frames)
     has_chat_response = any('"chat_response"' in p for p in broadcasts)
     assert has_channel_turn, "channel_turn envelope missing — TUI live update will break"
     assert has_chat_response, "chat_response stream events missing"

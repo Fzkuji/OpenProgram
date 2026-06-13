@@ -74,17 +74,13 @@ _CANCEL_TIMEOUT_SECS = 30.0
 
 
 def _broadcast(payload: dict) -> None:
-    """Send a WS broadcast — best-effort, swallow import errors so
-    the runner works in environments without the webui (tests, CLI).
+    """Send a WS frame to the frontend — best-effort.
 
-    Each call goes through ``server._broadcast`` which already
-    serialises to JSON and writes to every connected socket.
+    步 4：不再 import webui。把现成的帧 emit 到总线（``ws.frame`` 事件），
+    webui 作为订阅者原样广播。帧内容（type / data 字段）一字不变，前端无感。
     """
-    try:
-        from openprogram.webui import server as _s
-        _s._broadcast(json.dumps(payload, default=str))
-    except Exception:
-        pass
+    from openprogram.agent.event_bus import emit_ws_frame
+    emit_ws_frame(payload)
 
 
 def _broadcast_session_reload(session_id: str, *, reason: str = "task") -> None:

@@ -15,7 +15,6 @@ the worktree alive (Part 5 #3); the entity transitions ``committing``
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -44,43 +43,27 @@ from openprogram.worktree.types import (
 def _broadcast_worktree_status(wt: Worktree) -> None:
     """Push a ``worktree_status`` envelope through the WS server.
 
-    Mirrors :func:`openprogram.agent.task.runner._broadcast_task_status`
-    — best-effort, silently swallows the case where webui isn't
-    imported (CLI / tests / library use). The full row is included
-    inline so the right-rail panel can patch its local cache without
-    a second round-trip.
+    Mirrors :func:`openprogram.agent.task.runner._broadcast`
+    — best-effort. The full row is included inline so the right-rail
+    panel can patch its local cache without a second round-trip.
+
+    步 4：走总线（ws.frame 事件），不再 import webui；帧 type/data 字段不变。
     """
-    try:
-        from openprogram.webui import server as _s
-    except ImportError:
-        # webui is optional (CLI / tests / library use). Skip silently
-        # — this is the documented expected path when no UI is running.
-        return
-    try:
-        _s._broadcast(json.dumps({
-            "type": "worktree_status",
-            "data": {
-                "worktree_id": wt.id,
-                "status": wt.status.value,
-                "parent_session": wt.parent_session,
-                "parent_task": wt.parent_task,
-                "branch_name": wt.branch_name,
-                "source_repo": wt.source_repo,
-                "merge_sha": wt.merge_sha,
-                "error": wt.error,
-                "worktree": wt.to_dict(),
-            },
-        }, default=str))
-    except Exception as e:
-        # Broadcast itself failed despite webui being importable —
-        # connection corruption, serialization error, etc. The state
-        # transition has already been persisted, so we don't raise,
-        # but log to stderr so the issue isn't completely silent.
-        import sys
-        print(
-            f"[worktree-broadcast] {type(e).__name__}: {e}",
-            file=sys.stderr,
-        )
+    from openprogram.agent.event_bus import emit_ws_frame
+    emit_ws_frame({
+        "type": "worktree_status",
+        "data": {
+            "worktree_id": wt.id,
+            "status": wt.status.value,
+            "parent_session": wt.parent_session,
+            "parent_task": wt.parent_task,
+            "branch_name": wt.branch_name,
+            "source_repo": wt.source_repo,
+            "merge_sha": wt.merge_sha,
+            "error": wt.error,
+            "worktree": wt.to_dict(),
+        },
+    })
 
 
 # Subprocess timeout cap. Git operations on user repos should be fast;
