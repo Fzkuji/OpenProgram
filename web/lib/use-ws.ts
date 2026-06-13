@@ -261,6 +261,26 @@ export function useWS(): void {
           return true;
         case "event":
           return true;
+        // runtime.ask/confirm —— 函数中途停下来等用户（user-input-requests Phase 1）
+        case "question.asked":
+          try {
+            window.dispatchEvent(
+              new CustomEvent("op:question-asked", { detail: d }),
+            );
+          } catch {
+            /* defensive */
+          }
+          return true;
+        case "question.replied":
+        case "question.rejected":
+          try {
+            window.dispatchEvent(
+              new CustomEvent("op:question-closed", { detail: d }),
+            );
+          } catch {
+            /* defensive */
+          }
+          return true;
         case "functions_list":
           w.availableFunctions = d || [];
           w.loadProgramsMeta?.().then(() => w.renderFunctions?.());

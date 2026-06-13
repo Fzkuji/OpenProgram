@@ -7,6 +7,7 @@ import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { ToastHost } from "./ui/toast-host";
+import { QuestionPrompt } from "./ui/question-prompt";
 import { Composer } from "./chat/composer";
 import { TopBar } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
@@ -437,6 +438,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* App-wide transient toasts — mounted at the shell so they show on
          every route (chat AND settings), not just where the TopBar is. */}
       <ToastHost />
+      {/* 函数中途停下来问用户（runtime.ask/confirm）的浮层卡片 */}
+      <QuestionPrompt />
     </div>
   );
 }
