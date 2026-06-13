@@ -106,7 +106,29 @@ web/components/chat/composer/
 后续衍生：`approval/` 直接 import `question/` 的 Body 再包一层（加危险摘要），
 就是"在已有变换上做衍生"。
 
+## 三种通信形态：直接 store / 请求 / 广播（别混）
+
+每种 mode 是"怎么触发进来、用户操作后又怎么回传"。看代码会发现它们走**三条
+不同的通道**，按一句话准则区分：**跨进程/网络边界才考虑总线；同一处的状态变化
+直接改 store；要后端做一件事并给个明确答复，用请求（HTTP/RPC），不是广播。**
+
+| 形态 | 通道 | 例子 | 为什么 |
+|---|---|---|---|
+| **直接 store** | Zustand action，同一处前端状态 | 点侧边栏函数 → `openFnForm(fn)` 进 fn-form | 没跨任何边界，就是前端自己换个形态；上总线是多此一举 |
+| **请求（command）** | HTTP POST / RPC，一来一回 | fn-form 点"运行" → `POST /api/function/{name}`；mode 答复 → `question_reply` WS action | "我要你做件事 + 给我答复"（运行后回 `session_id`、resolve 哪个问题）。请求/响应模型最贴，总线是 fire-and-forget 拿不到回话 |
+| **广播（event）** | 事件总线 → WS | 函数运行的进度/产出/`question.asked`/`file.changed` | 后端单向吐出"发生了什么"，谁关心谁接、不等回话 |
+
+**fn-form 一条线看全**：点函数（直接 store，开表单）→ 填参数（前端本地 state）→
+点运行（**请求**：POST 发起，回 session_id）→ 函数在子进程跑、动态回流（**广播**：
+运行事件 / 中途 `runtime.ask` 都经事件层 → WS）。三段三种通道，各取最贴的工具。
+
+反例（防以后踩）：别把"发起运行"做成 fire-and-forget 的总线事件——那就拿不到
+`session_id`，前端无从跳转/绑定会话。发起用请求、过程用广播。
+
 ## 事件如何路由进来
+
+> 这一节只讲上表第三类——**广播**：后端经事件层吐出的"要用户决定"事件
+> 怎么落到 composer。用户操作后的**答复**是第二类（请求/WS action），见上表。
 
 后端不变地经事件层发"要用户决定"的帧（`question.asked`，审批合流后也走它，
 见下）。前端：
