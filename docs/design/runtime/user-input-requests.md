@@ -1,9 +1,10 @@
 # User input requests: pausing a run to ask the user
 
-Status: **Phase 1 已落地并验证**（2026-06-13）。runtime.ask/confirm/can_ask、
-QuestionRegistry、WS question_reply/reject、前端 QuestionPrompt 卡片全部就位，
-端到端（emit→阻塞→答→resume）+ 前端（卡片→点选项→发 reply→收回）双向验证通过。
-Phase 2（@agentic_function 子进程桥）、3（TUI）、4（审批合流+channels+form）待做。
+Status: **Phase 1 + Phase 2 已落地并验证**（2026-06-13）。Phase 1：
+runtime.ask/confirm/can_ask、QuestionRegistry、WS question_reply/reject、前端
+QuestionPrompt 卡片，端到端 + 前端双向验证通过。Phase 2：@agentic_function
+子进程桥——子进程里的 runtime.ask 经 mp.Queue 把问题送回父进程、答案回流
+resume，真 spawn 子进程 e2e 通过。Phase 3（TUI）、4（审批合流+channels+form）待做。
 Companion: [../cli/tui-upgrade.md](../cli/tui-upgrade.md) (TUI surface).
 Research notes:
 [user-input-requests-references.md](user-input-requests-references.md)
@@ -103,11 +104,19 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
    and `GET /api/questions?session_id=` for reconnect recovery. Reuses the
    existing `_broadcast_chat_response` plumbing (its post-stop gag is the
    behavior we want).
-3. **Subprocess bridge**: second mp.Queue (parent→child) in
-   `process_runner.run_agentic_in_subprocess`; `_child_entry` registers a
-   handler that emits the question envelope through the existing event
-   queue and blocks on the answer queue. Parent drain thread registers the
-   pending entry and routes answers back by request id.
+3. **Subprocess bridge** ✅（Phase 2，commit 1c634b5f）: "提问往哪条通道送"
+   做成 `QuestionTransport`，对齐 Python logging 的 Handler（`publish` 即
+   `Handler.emit`）：`EventLayerTransport`（默认，事件层→前端卡片+总线，worker
+   用）/ `QueueTransport`（经 mp.Queue 送回父进程，子进程用）。通道由 runtime
+   显式持有（`runtime._question_transport`），不是模块级全局开关。
+   `run_agentic_in_subprocess` 加 parent→child `answer_queue`；`_child_entry`
+   给子进程 runtime 装 `QueueTransport`（问题经 event_queue 上行、带
+   `__op_question__` 标记）并起 answer-pump 线程（从 answer_queue 取答案
+   resolve 子进程本地 registry）。父进程 `_drain` 拦截该 envelope →
+   `_bridge_question_to_parent` 在父 registry 注册同一 qid + 发前端卡片 +
+   起 waiter，WS reply 经既有 `_resolve_question` resolve 父 registry → waiter
+   把答案推回 answer_queue。子进程退出/被 stop 时父侧把残留待答按 declined
+   收尾、撤回卡片（claim-once，重复 resolve 无害）。
 4. **Persistence**: persist the request snapshot, not the execution stack.
    The DAG already writes `status="awaiting"` user-role nodes; on worker
    restart, leftover pendings are marked expired and DAG nodes
@@ -137,8 +146,17 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
   （ask/confirm）、`webui/ws_actions/session.py`（reply/reject handler）、
   `webui/ws_actions/runtime.py`（stop 解除）、`web/components/ui/question-prompt.tsx`
   （卡片）。REST list/reply 端点（reconnect 恢复）延到后续单元。
-- **Phase 2 — subprocess bridge**: `@agentic_function` bodies can ask
-  (the actual headline use case).
+- **Phase 2 — subprocess bridge** ✅（2026-06-13 落地，commit 1c634b5f）:
+  `@agentic_function` bodies can ask (the actual headline use case)。
+  `QuestionTransport`（EventLayerTransport / QueueTransport，对齐 logging
+  Handler）+ `process_runner` 的 parent↔child 桥（event_queue 上行问题、
+  answer_queue 回流答案）。as-built：`agent/questions.py`（transport 三类
+  + emit_question_asked）、`agentic_programming/runtime.py`
+  （set_question_transport / _ask_raw 走 self._question_transport）、
+  `agent/process_runner.py`（answer_queue + answer-pump +
+  _bridge_question_to_parent + _decline_bridged_question）。验证：
+  `tests/agent/test_questions_subprocess_bridge.py`（8 单测）+ 真 spawn
+  子进程 e2e（探针验证后删）。
 - **Phase 3 — TUI surface**: question/approval prompt in the input slot
   (tracked in tui-upgrade.md).
 - **Phase 4 — approval merge + channels + `runtime.form`**.
