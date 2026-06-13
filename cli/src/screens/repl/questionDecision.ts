@@ -16,7 +16,7 @@ export function decisionFromFrame(
   if (!data?.id) return null;
   return {
     id: String(data.id),
-    kind: (data.kind as 'ask' | 'confirm' | 'approval') || 'ask',
+    kind: (data.kind as 'ask' | 'confirm' | 'approval' | 'form') || 'ask',
     prompt: String(data.prompt ?? ''),
     options: Array.isArray(data.options) ? data.options.map(String) : [],
     multi: Boolean(data.multi),
@@ -24,6 +24,10 @@ export function decisionFromFrame(
     detail: data.detail ? String(data.detail) : undefined,
     tool: data.tool ? String(data.tool) : undefined,
     args: (data.args as Record<string, unknown>) || undefined,
+    schema:
+      data.schema && typeof data.schema === 'object' && Object.keys(data.schema).length
+        ? (data.schema as PendingDecision['schema'])
+        : undefined,
   };
 }
 

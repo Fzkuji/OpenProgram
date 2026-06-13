@@ -16,6 +16,7 @@
  */
 import { useEffect } from "react";
 
+import type { PendingDecision } from "@/lib/session-store";
 import {
   handleAttemptSwitched,
   loadSessionData,
@@ -270,7 +271,7 @@ export function useWS(): void {
             if (!dd.id) return;
             useSessionStore.getState().enqueueDecision({
               id: String(dd.id),
-              kind: (dd.kind as "ask" | "confirm" | "approval") || "ask",
+              kind: (dd.kind as "ask" | "confirm" | "approval" | "form") || "ask",
               prompt: String(dd.prompt || ""),
               options: Array.isArray(dd.options) ? (dd.options as string[]) : [],
               multi: Boolean(dd.multi),
@@ -278,6 +279,10 @@ export function useWS(): void {
               detail: dd.detail ? String(dd.detail) : undefined,
               tool: dd.tool ? String(dd.tool) : undefined,
               args: (dd.args as Record<string, unknown>) || undefined,
+              schema:
+                dd.schema && typeof dd.schema === "object"
+                  ? (dd.schema as PendingDecision["schema"])
+                  : undefined,
             });
           });
           return true;

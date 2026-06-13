@@ -27,6 +27,10 @@ def register(app):
                 "id": q.id, "session_id": q.session_id, "kind": q.kind,
                 "prompt": q.prompt, "options": q.options, "multi": q.multi,
                 "allow_custom": q.allow_custom, "detail": q.detail,
+                # kind="form" carries its field schema; it must survive a
+                # reconnect / REST recovery, not just the live WS frame.
+                # (approval's danger summary rides in `detail`, already above.)
+                "schema": q.schema,
                 "created_at": q.created_at, "expires_at": q.expires_at,
             }
             for q in pend

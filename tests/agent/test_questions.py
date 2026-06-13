@@ -91,10 +91,11 @@ def test_ask_blocking_timeout_retracts_card(monkeypatch):
 # ─── runtime.ask / confirm（用 fake runtime 不依赖 webui/LLM）─────────────────
 
 class _FakeRuntime:
-    """只复用 Runtime 的 ask/confirm 实现，跳过 __init__ 的 provider 解析。"""
+    """只复用 Runtime 的 ask/confirm/form 实现，跳过 __init__ 的 provider 解析。"""
     from openprogram.agentic_programming.runtime import Runtime
     ask = Runtime.ask
     confirm = Runtime.confirm
+    form = Runtime.form
     can_ask = Runtime.can_ask
     _ask_raw = Runtime._ask_raw
     _ui_session_id = lambda self: "s"   # 假装有前端
@@ -152,6 +153,61 @@ def test_runtime_confirm_declined_false():
 def test_runtime_confirm_timeout_default():
     rt = _FakeRuntime()
     assert rt.confirm("go?", timeout=0.05, default=False) is False
+
+
+# ─── runtime.form 三态（Phase 4a：多字段表单，答案是 dict）─────────────────────
+
+def test_runtime_form_returns_dict():
+    rt = _FakeRuntime()
+    _answer_with(None, "answered", {"name": "Ada", "count": 3})
+    assert rt.form("配置", {"name": {"type": "string"}}, timeout=5) == {
+        "name": "Ada", "count": 3,
+    }
+
+
+def test_runtime_form_declined_raises():
+    rt = _FakeRuntime()
+    _answer_with(None, "declined", None)
+    with pytest.raises(UserDeclined):
+        rt.form("配置", {"name": {"type": "string"}}, timeout=5)
+
+
+def test_runtime_form_timeout_default():
+    rt = _FakeRuntime()
+    assert rt.form("配置", {}, timeout=0.05, default={"name": "x"}) == {"name": "x"}
+
+
+def test_runtime_form_timeout_no_default_raises():
+    rt = _FakeRuntime()
+    with pytest.raises(AskTimeout):
+        rt.form("配置", {}, timeout=0.05)
+
+
+def test_runtime_form_non_dict_answer_coerced_to_empty():
+    """form 收到非 dict 答案（异常前端）时返回 {}，不把脏数据塞给调用方。"""
+    rt = _FakeRuntime()
+    _answer_with(None, "answered", "oops-not-a-dict")
+    assert rt.form("配置", {"x": {"type": "string"}}, timeout=5) == {}
+
+
+def test_form_schema_reaches_pending_question():
+    """form 的字段 schema 进了 PendingQuestion（前端据此渲染多字段表单）。"""
+    fields = {"name": {"type": "string", "title": "名字"},
+              "mode": {"type": "string", "enum": ["fast", "slow"]}}
+    captured = {}
+    def worker():
+        time.sleep(0.05)
+        reg = get_question_registry()
+        ps = reg.list_pending()
+        if ps:
+            captured["kind"] = ps[0].kind
+            captured["schema"] = ps[0].schema
+            reg.resolve(ps[0].id, "answered", {"name": "x", "mode": "fast"})
+    threading.Thread(target=worker, daemon=True).start()
+    rt = _FakeRuntime()
+    rt.form("配置", fields, timeout=5)
+    assert captured["kind"] == "form"
+    assert captured["schema"] == fields
 
 
 # ─── ask_user 内置原语接到 runtime.ask（复活老接口 + clarify 工具）──────────────

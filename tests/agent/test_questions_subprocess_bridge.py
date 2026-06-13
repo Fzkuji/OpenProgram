@@ -129,6 +129,32 @@ def test_bridge_answered_routes_back():
     assert "qX" not in pending
 
 
+def test_bridge_form_carries_schema_and_dict_answer():
+    """runtime.form 桥过来时字段 schema 不能丢（前端据此渲染表单），
+    答案是 dict 也要原样回流。"""
+    from openprogram.agent.process_runner import _bridge_question_to_parent
+    from openprogram.webui.ws_actions.session import _resolve_question
+
+    answer_q: mp.Queue = mp.get_context("spawn").Queue()
+    pending, lock = set(), threading.Lock()
+    fields = {"name": {"type": "string", "title": "名字"},
+              "mode": {"type": "string", "enum": ["fast", "slow"]}}
+    data = {"id": "qF", "session_id": "s", "kind": "form",
+            "prompt": "配置", "allow_custom": False, "schema": fields}
+
+    _bridge_question_to_parent(data, answer_q, pending, lock)
+    # 父 registry 的 PendingQuestion 带上了 schema（不是空 {}）
+    pq = next(p for p in Q.get_question_registry().list_pending("s") if p.id == "qF")
+    assert pq.kind == "form"
+    assert pq.schema == fields
+
+    # dict 答案原样回流
+    _resolve_question("qF", "answered", {"name": "Ada", "mode": "fast"})
+    msg = _drain_one(answer_q)
+    assert msg == {"id": "qF", "outcome": "answered",
+                   "value": {"name": "Ada", "mode": "fast"}}
+
+
 def test_bridge_declined_routes_back():
     from openprogram.agent.process_runner import _bridge_question_to_parent
     from openprogram.webui.ws_actions.session import _resolve_question

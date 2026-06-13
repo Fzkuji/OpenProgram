@@ -15,6 +15,7 @@ import { useState } from "react";
 
 import type { PendingDecision } from "@/lib/session-store";
 
+import { FormMode } from "./form-mode";
 import styles from "./question-mode.module.css";
 
 function wsSend(payload: unknown): void {
@@ -31,6 +32,15 @@ interface QuestionModeProps {
 }
 
 export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
+  // runtime.form (kind="form") is a multi-field form — delegate to its
+  // own renderer. Single-prompt ask/confirm stay below.
+  if (q.kind === "form") {
+    return <FormMode decision={q} onResolve={onResolve} />;
+  }
+  return <SinglePromptQuestion decision={q} onResolve={onResolve} />;
+}
+
+function SinglePromptQuestion({ decision: q, onResolve }: QuestionModeProps) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [custom, setCustom] = useState("");
 

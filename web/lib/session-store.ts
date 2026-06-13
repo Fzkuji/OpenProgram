@@ -53,7 +53,7 @@ export interface ChatToolCall {
  *  tool approval). See composer modes (docs/design/ui/composer-interaction-modes.md). */
 export interface PendingDecision {
   id: string;
-  kind: "ask" | "confirm" | "approval";
+  kind: "ask" | "confirm" | "approval" | "form";
   prompt: string;
   options: string[];
   multi: boolean;
@@ -62,6 +62,21 @@ export interface PendingDecision {
   /** approval-only: the tool being gated + its args, for the danger summary. */
   tool?: string;
   args?: Record<string, unknown>;
+  /** form-only: flat-object field schema (field name → {type, title,
+   *  description, enum, default, …}). The answer is an object (field → value).
+   *  See runtime.form / docs/design/runtime/user-input-requests.md Phase 4a. */
+  schema?: Record<string, FormFieldSchema>;
+}
+
+/** One field in a runtime.form schema (MCP-elicitation flat object). */
+export interface FormFieldSchema {
+  type?: "string" | "integer" | "number" | "boolean";
+  title?: string;
+  description?: string;
+  enum?: string[];
+  default?: string | number | boolean;
+  minimum?: number;
+  maximum?: number;
 }
 
 export interface ChatMsg {

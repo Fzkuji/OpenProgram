@@ -591,7 +591,7 @@ class Runtime:
         self._question_transport = transport
 
     def _ask_raw(self, *, kind, prompt, options=None, multi=False,
-                 allow_custom=True, detail="", timeout=300.0):
+                 allow_custom=True, detail="", schema=None, timeout=300.0):
         from openprogram.agent.questions import ask_blocking, emit_question_asked
 
         transport = getattr(self, "_question_transport", None)  # None → 默认事件层通道
@@ -604,13 +604,14 @@ class Runtime:
                 "id": q.id, "session_id": q.session_id, "kind": q.kind,
                 "prompt": q.prompt, "options": q.options, "multi": q.multi,
                 "allow_custom": q.allow_custom, "detail": q.detail,
+                "schema": q.schema,  # kind="form" 时非空，其它 kind 为 {}
                 "expires_at": q.expires_at,
             }, transport)
 
         return ask_blocking(
             session_id=self._ui_session_id(), kind=kind, prompt=prompt,
             options=options, multi=multi, allow_custom=allow_custom,
-            detail=detail, timeout=timeout, on_asked=_on_asked,
+            detail=detail, schema=schema, timeout=timeout, on_asked=_on_asked,
             transport=transport,  # 超时收回前端卡片走同一条通道
         )
 
@@ -647,6 +648,33 @@ class Runtime:
         if outcome == "declined":
             return False
         return default  # timeout
+
+    def form(self, prompt: str, fields: dict, *,
+             detail: str = "", timeout: float = 300.0, default: dict | None = None):
+        """问用户一个多字段表单（MCP-elicitation 风格），阻塞到提交。
+
+        ``fields`` 是 flat-object 字段 schema：字段名 → 字段定义，例如
+        ``{"name": {"type": "string", "title": "名字"},
+           "count": {"type": "integer", "default": 1},
+           "mode": {"type": "string", "enum": ["fast", "slow"]}}``。
+        只支持一层（无嵌套 object/array）；字段类型限 string（可带 enum）/
+        integer / number / boolean。
+
+        三态（与 ask 一致）：提交 → 返回 dict（字段名 → 值）；用户拒绝 →
+        抛 UserDeclined；超时 → 有 default 返回 default，否则抛 AskTimeout。
+        """
+        from openprogram.agent.questions import UserDeclined, AskTimeout
+        outcome, value = self._ask_raw(
+            kind="form", prompt=prompt, schema=dict(fields or {}),
+            allow_custom=False, detail=detail, timeout=timeout,
+        )
+        if outcome == "answered":
+            return value if isinstance(value, dict) else {}
+        if outcome == "declined":
+            raise UserDeclined(prompt)
+        if default is not None:
+            return default
+        raise AskTimeout(prompt)
 
     # --- Working directory ---
 

@@ -498,6 +498,7 @@ async def handle_load_session(ws, cmd: dict):
                         "id": q.id, "session_id": q.session_id, "kind": q.kind,
                         "prompt": q.prompt, "options": q.options, "multi": q.multi,
                         "allow_custom": q.allow_custom, "detail": q.detail,
+                        "schema": q.schema,  # kind="form": replay fields too
                         "expires_at": q.expires_at,
                     },
                 }, default=str))

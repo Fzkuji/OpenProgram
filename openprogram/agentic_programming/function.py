@@ -230,7 +230,14 @@ def _inject_runtime(sig, args, kwargs):
         - runtime_token: ContextVar token to reset later (or None)
         - owns_runtime: True if we created the runtime (need to close it)
     """
-    bound = sig.bind(*args, **kwargs)
+    # bind_partial, NOT bind: a runtime parameter with no default (e.g.
+    # `def f(pdf_path, runtime, …)`) is REQUIRED, so a full `sig.bind`
+    # raises "missing a required argument: 'runtime'" here — before we
+    # ever get a chance to inject it. bind_partial tolerates the gap so
+    # the injection below (the positional-missing branch) can fill it;
+    # the caller's own `sig.bind` (in the wrapper, after injection) still
+    # enforces that every other required argument was supplied.
+    bound = sig.bind_partial(*args, **kwargs)
     bound.apply_defaults()
 
     runtime_token = None

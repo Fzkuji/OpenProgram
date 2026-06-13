@@ -47,6 +47,18 @@ def test_list_filtered_by_session(client):
     assert qs[0]["prompt"] == "lib?"
 
 
+def test_form_schema_survives_rest_recovery(client):
+    """A kind="form" question must expose its field schema over REST so a
+    reconnecting client can redraw the multi-field form, not an empty box."""
+    fields = {"name": {"type": "string"}, "mode": {"type": "string", "enum": ["a", "b"]}}
+    Q.get_question_registry().register(PendingQuestion(
+        id="f1", session_id="s", kind="form", prompt="配置", schema=fields))
+    r = client.get("/api/questions", params={"session_id": "s"})
+    q = next(x for x in r.json()["questions"] if x["id"] == "f1")
+    assert q["kind"] == "form"
+    assert q["schema"] == fields
+
+
 def test_reply_resolves_registry(client):
     _seed("a", options=["x", "y"])
     ev = Q.get_question_registry()._events["a"]

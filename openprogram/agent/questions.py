@@ -35,12 +35,16 @@ class AskTimeout(Exception):
 class PendingQuestion:
     id: str
     session_id: str           # webui session（前端路由用），可空
-    kind: str                 # "ask" | "confirm"
+    kind: str                 # "ask" | "confirm" | "approval" | "form"
     prompt: str
     options: list[str] = field(default_factory=list)
     multi: bool = False
     allow_custom: bool = True
     detail: str = ""
+    # kind="form" 专用：MCP-elicitation 风格的 flat-object 字段 schema
+    # （字段名 → {type, title, description, enum, default, …}）。答案是一个
+    # dict（字段名 → 值），而非 ask 的 str / list[str]。其它 kind 留空。
+    schema: dict = field(default_factory=dict)
     created_at: float = 0.0
     expires_at: float = 0.0
 
@@ -216,6 +220,7 @@ def open_question(
     multi: bool = False,
     allow_custom: bool = True,
     detail: str = "",
+    schema: dict | None = None,
     timeout: float = 300.0,
     on_asked,
 ) -> tuple[PendingQuestion, threading.Event]:
@@ -231,7 +236,7 @@ def open_question(
     q = PendingQuestion(
         id=new_question_id(), session_id=session_id or "", kind=kind,
         prompt=prompt, options=list(options or []), multi=multi,
-        allow_custom=allow_custom, detail=detail,
+        allow_custom=allow_custom, detail=detail, schema=dict(schema or {}),
         created_at=now, expires_at=now + timeout,
     )
     ev = reg.register(q)
@@ -257,6 +262,7 @@ def ask_blocking(
     multi: bool = False,
     allow_custom: bool = True,
     detail: str = "",
+    schema: dict | None = None,
     timeout: float = 300.0,
     on_asked,
     transport: "QuestionTransport | None" = None,
@@ -273,7 +279,7 @@ def ask_blocking(
     """
     q, ev = open_question(
         session_id=session_id, kind=kind, prompt=prompt, options=options,
-        multi=multi, allow_custom=allow_custom, detail=detail,
+        multi=multi, allow_custom=allow_custom, detail=detail, schema=schema,
         timeout=timeout, on_asked=on_asked,
     )
     ev.wait(timeout=timeout)

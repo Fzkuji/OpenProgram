@@ -286,6 +286,7 @@ def _bridge_question_to_parent(data, answer_queue, pending_qids, lock) -> None:
         multi=bool(data.get("multi")),
         allow_custom=bool(data.get("allow_custom", True)),
         detail=data.get("detail") or "",
+        schema=dict(data.get("schema") or {}),  # kind="form": carry fields over
         created_at=data.get("created_at") or 0.0,
         expires_at=data.get("expires_at") or 0.0,
     )
