@@ -1333,6 +1333,11 @@ def create_app():
     from openprogram.webui.routes import lifecycle as _routes_lifecycle
     _routes_lifecycle.register(app)
 
+    # Pending user-input questions list/reply/reject — routes.questions
+    # (REST parity for runtime.ask; WS is the live path). Reconnect recovery.
+    from openprogram.webui.routes import questions as _routes_questions
+    _routes_questions.register(app)
+
     # /api/providers, /api/provider/{name}, /api/models — routes.runtime
     from openprogram.webui.routes import runtime as _routes_runtime
     _routes_runtime.register(app)

@@ -483,6 +483,26 @@ async def handle_load_session(ws, cmd: dict):
                     "stream_events": task_info.get("stream_events", []),
                 },
             }, default=str))
+        # Reconnect recovery (user-input-requests.md): a function may be
+        # blocked in runtime.ask right now. The live ``question.asked`` frame
+        # already fired before this client (re)connected, so its card was
+        # never drawn / was lost on refresh — replay any still-pending
+        # questions for this session as the SAME frame the live path sends,
+        # so the frontend's existing card logic redraws with no extra round trip.
+        try:
+            from openprogram.agent.questions import get_question_registry
+            for q in get_question_registry().list_pending(session_id):
+                await ws.send_text(json.dumps({
+                    "type": "question.asked",
+                    "data": {
+                        "id": q.id, "session_id": q.session_id, "kind": q.kind,
+                        "prompt": q.prompt, "options": q.options, "multi": q.multi,
+                        "allow_custom": q.allow_custom, "detail": q.detail,
+                        "expires_at": q.expires_at,
+                    },
+                }, default=str))
+        except Exception as e:
+            _s._log(f"[load_session] question replay {session_id}: {e}")
     else:
         await ws.send_text(json.dumps({
             "type": "session_loaded",
