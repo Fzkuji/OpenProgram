@@ -294,17 +294,18 @@ def test_await_user_approval_emits_question_and_resolves() -> None:
                 return
     threading.Thread(target=_resolver, daemon=True).start()
 
-    async def _drive() -> bool:
+    async def _drive():
         return await D._await_user_approval(
             req=req, tool_name="bash", args={"command": "ls"},
             on_event=lambda e: None, timeout=5.0,
         )
     try:
-        approved = asyncio.run(_drive())
+        approved, reason = asyncio.run(_drive())
     finally:
         unsub()
 
     assert approved is True
+    assert reason is None
     assert len(frames) == 1
     assert frames[0]["tool"] == "bash"
     assert frames[0]["args"] == {"command": "ls"}

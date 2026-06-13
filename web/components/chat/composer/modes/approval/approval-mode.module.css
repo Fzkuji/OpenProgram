@@ -1,0 +1,89 @@
+/* ApprovalMode —— 输入框里的工具批准形态。question mode 的衍生，但用警示色
+   调（批准是危险动作的闸门）。 */
+
+.host {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 8px;
+}
+
+.badge {
+  align-self: flex-start;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--warning, #e0a458);
+  font-weight: 600;
+}
+
+.prompt {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-bright, #f5f5f5);
+}
+
+/* 危险摘要：工具名 + 参数全文（后端 _approval_detail 已截断）。等宽，可滚。 */
+.summary {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted, #9aa0aa);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-tertiary, #2a2a2e);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+}
+
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--text-bright, #f5f5f5);
+  background: var(--bg-tertiary, #2a2a2e);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--warning, #e0a458);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.reject,
+.approve {
+  padding: 7px 16px;
+  border-radius: 9px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+}
+
+.reject {
+  color: var(--text-muted, #9aa0aa);
+  background: transparent;
+}
+
+.reject:hover {
+  color: var(--text-bright, #f5f5f5);
+  border-color: var(--text-muted, #9aa0aa);
+}
+
+.approve {
+  color: var(--bg-primary, #141417);
+  background: var(--warning, #e0a458);
+  border-color: var(--warning, #e0a458);
+  font-weight: 600;
+}

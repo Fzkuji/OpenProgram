@@ -33,6 +33,7 @@ import { useTranslation } from "@/lib/i18n";
 import { ContextBadge } from "../context-badge";
 import { FunctionForm, visibleParams } from "./fn-form/fn-form";
 import { QuestionMode } from "./modes/question/question-mode";
+import { ApprovalMode } from "./modes/approval/approval-mode";
 import {
   FastIcon,
   OptionsIcon,
@@ -1016,11 +1017,20 @@ export function Composer() {
         {activeDecision ? (
           // 系统等用户决定占据输入区（runtime.ask / confirm / approval）。
           // 优先于 fn-form / 打字（步 5 再做"撞上时取消 fn-form"的排队规则）。
-          <QuestionMode
-            key={activeDecision.id}
-            decision={activeDecision}
-            onResolve={dequeueDecision}
-          />
+          // approval 用专属危险摘要形态，其余走通用问题形态。
+          activeDecision.kind === "approval" ? (
+            <ApprovalMode
+              key={activeDecision.id}
+              decision={activeDecision}
+              onResolve={dequeueDecision}
+            />
+          ) : (
+            <QuestionMode
+              key={activeDecision.id}
+              decision={activeDecision}
+              onResolve={dequeueDecision}
+            />
+          )
         ) : fnFormFunction ? (
           <FunctionForm
             // `key` ties to fn name so React re-mounts on every

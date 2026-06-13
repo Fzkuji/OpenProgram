@@ -83,15 +83,20 @@ def wrap_with_approval(
             if not per_tool_required and not risky_default:
                 return await orig_execute(call_id, args, cancel, on_update)
 
-        approved = await await_user_approval(
+        approved, reason = await await_user_approval(
             req=req,
             tool_name=agent_tool.name,
             args=args,
             on_event=on_event,
         )
         if not approved:
+            # 拒绝理由（用户在 approval mode 填的）作为错误文本回给模型，
+            # 否则只说"未批准"（opencode 做法）。
+            msg = (f"[denied] {reason.strip()}" if isinstance(reason, str)
+                   and reason.strip()
+                   else f"[denied] user did not approve {agent_tool.name}")
             return AgentToolResult(
-                content=[TextContent(text=f"[denied] user did not approve {agent_tool.name}")],
+                content=[TextContent(text=msg)],
                 details={"is_error": True, "denied": True},
             )
         return await orig_execute(call_id, args, cancel, on_update)
@@ -134,14 +139,16 @@ async def await_user_approval(
     args: dict,
     on_event: EventCallback,
     timeout: float = 300.0,
-) -> bool:
+) -> tuple[bool, "str | None"]:
     """注册一个 kind="approval" 的问题、经事件层发 question.asked、await 用户答。
+    返回 (approved, reason)：approved=是否放行；reason=拒绝理由（用户在 approval
+    mode 填的，可为 None），由调用方变成回给模型的错误文本。
 
     审批合流到 QuestionRegistry（docs/design/runtime/user-input-requests.md 点6
     + docs/design/ui/composer-interaction-modes.md）：不再用独立的 ApprovalRegistry
     / approval_request 信封，而是走 runtime.ask 同一条链路——前端 composer 把它
-    呈现成 approval mode（允许 / 拒绝）。布尔从问题三态映射：answered「允许」=True，
-    declined / timeout = False。
+    呈现成 approval mode（允许 / 拒绝）。answered「允许」=放行；declined / timeout
+    = 不放行。
 
     用 ``asyncio.to_thread`` 等 threading.Event，asyncio loop 不被阻塞（工具
     execute 是协程，并发工具的进度事件照常处理）。
@@ -149,6 +156,18 @@ async def await_user_approval(
     from openprogram.agent.questions import (
         open_question, consume_or_timeout, emit_question_asked,
     )
+
+    # 跟 runtime.ask 一致：如果当前执行上下文有 runtime（@agentic_function 跑在
+    # 子进程，runtime 上装了 QueueTransport），用它的 transport 把问题送回父进程；
+    # 否则（主 agent loop 里 gate LLM 工具调用）走默认事件层。
+    transport = None
+    try:
+        from openprogram.agentic_programming.function import _current_runtime
+        rt = _current_runtime.get(None)
+        if rt is not None:
+            transport = getattr(rt, "_question_transport", None)
+    except Exception:
+        pass
 
     def _on_asked(q) -> None:
         emit_question_asked({
@@ -158,7 +177,7 @@ async def await_user_approval(
             "expires_at": q.expires_at,
             # approval 专属：工具名 + 参数，给 approval mode 画危险摘要。
             "tool": tool_name, "args": args,
-        })
+        }, transport)
 
     q, ev = open_question(
         session_id=req.session_id, kind="approval",
@@ -169,8 +188,10 @@ async def await_user_approval(
     )
     await asyncio.to_thread(ev.wait, timeout)
     outcome, value = consume_or_timeout(q.id)
-    if outcome != "answered":
-        return False  # declined / timeout
-    if isinstance(value, str):
-        return value.strip() in ("允许", "approve", "yes", "y", "true", "ok", "是")
-    return bool(value)
+    if outcome == "answered":
+        ok = (value.strip() in ("允许", "approve", "yes", "y", "true", "ok", "是")
+              if isinstance(value, str) else bool(value))
+        return ok, None
+    # declined：value 可能是用户填的拒绝理由（reason）；timeout：value=None。
+    reason = value if (outcome == "declined" and isinstance(value, str)) else None
+    return False, reason

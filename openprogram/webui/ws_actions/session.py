@@ -548,10 +548,13 @@ async def handle_question_reply(ws, cmd: dict):
 
 
 async def handle_question_reject(ws, cmd: dict):
-    """用户拒绝回答（runtime.ask 抛 UserDeclined / confirm 返回 False）。"""
+    """用户拒绝回答（runtime.ask 抛 UserDeclined / confirm 返回 False）。
+    approval 的拒绝可带 reason —— 作为 declined 值，让工具批准把它变成回给
+    模型的错误文本（opencode 做法）。"""
     qid = cmd.get("id") or ""
+    reason = cmd.get("reason")
     if qid:
-        _resolve_question(qid, "declined", None)
+        _resolve_question(qid, "declined", reason)
 
 
 async def handle_search_messages(ws, cmd: dict):
