@@ -10,7 +10,9 @@ import pytest
 from openprogram.agent.event_bus import (
     Event,
     EventBus,
+    WS_FRAME_EVENT,
     create_event_bus,
+    emit_ws_frame,
     get_event_bus,
     make_event,
 )
@@ -130,3 +132,33 @@ def test_get_event_bus_is_one_instance_across_threads():
     for t in threads:
         t.join()
     assert len({id(b) for b in seen + [get_event_bus()]}) == 1
+
+
+# ─── ws.frame 透传链（webui 订阅者的核心契约，防回归）─────────────────────────
+
+def test_emit_ws_frame_reaches_subscriber_verbatim(monkeypatch):
+    """外部源 emit_ws_frame(帧) → 订阅 WS_FRAME_EVENT 的 handler（webui 的
+    _forward 就是这个角色）拿到原始帧、一字不变。这是事件层贯穿到前端的关键
+    一环——webui 删了订阅就会断，这个测试守住它。"""
+    bus = create_event_bus()
+    monkeypatch.setattr("openprogram.agent.event_bus._event_bus", bus)
+
+    got = []
+    bus.subscribe(lambda ev: got.append(ev.payload.get("frame")),
+                  types={WS_FRAME_EVENT})
+
+    frame = {"type": "task_status", "data": {"task_id": "t1", "status": "running"}}
+    emit_ws_frame(frame)
+
+    assert got == [frame]   # 帧逐字到达，前端契约不变
+
+
+def test_ws_frame_subscriber_only_gets_ws_frames(monkeypatch):
+    """订阅 WS_FRAME_EVENT 的 handler 不会被别的事件类型打扰。"""
+    bus = create_event_bus()
+    monkeypatch.setattr("openprogram.agent.event_bus._event_bus", bus)
+    got = []
+    bus.subscribe(lambda ev: got.append(ev), types={WS_FRAME_EVENT})
+    bus.emit(make_event("tool.before", "agent", {"tool": "bash"}))
+    emit_ws_frame({"type": "x"})
+    assert len(got) == 1 and got[0].type == WS_FRAME_EVENT

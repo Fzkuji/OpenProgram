@@ -583,19 +583,20 @@ class Runtime:
     def _ask_raw(self, *, kind, prompt, options=None, multi=False,
                  allow_custom=True, detail="", timeout=300.0):
         from openprogram.agent.questions import ask_blocking
-        from openprogram.agent.event_bus import emit_ws_frame
+        from openprogram.agent.event_bus import emit_ws_frame, emit_safe
 
         def _on_asked(q):
-            # 经事件层把问题广播成前端可见卡片（webui 订阅 ws.frame 转发）。
-            emit_ws_frame({
-                "type": "question.asked",
-                "data": {
-                    "id": q.id, "session_id": q.session_id, "kind": q.kind,
-                    "prompt": q.prompt, "options": q.options, "multi": q.multi,
-                    "allow_custom": q.allow_custom, "detail": q.detail,
-                    "expires_at": q.expires_at,
-                },
-            })
+            data = {
+                "id": q.id, "session_id": q.session_id, "kind": q.kind,
+                "prompt": q.prompt, "options": q.options, "multi": q.multi,
+                "allow_custom": q.allow_custom, "detail": q.detail,
+                "expires_at": q.expires_at,
+            }
+            # 1) 给前端：经 ws.frame 透传成可见卡片（webui 订阅转发）。
+            emit_ws_frame({"type": "question.asked", "data": data})
+            # 2) 进事件层：发一份纯 question.asked 事件，让"发生了一次提问"
+            #    像其他活动一样出现在统一事件流里（可观测/可订阅），不只到前端。
+            emit_safe("question.asked", "agent", data, {"session": q.session_id})
 
         return ask_blocking(
             session_id=self._ui_session_id(), kind=kind, prompt=prompt,
