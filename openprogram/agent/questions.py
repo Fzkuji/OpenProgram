@@ -132,9 +132,13 @@ def new_question_id() -> str:
 
 
 class QuestionTransport:
-    """把一次提问送到能应答的一侧。子类实现 publish。"""
+    """把一次提问送到能应答的一侧。子类实现 publish / retract。"""
 
     def publish(self, data: dict) -> None:  # pragma: no cover - 抽象
+        raise NotImplementedError
+
+    def retract(self, qid: str) -> None:  # pragma: no cover - 抽象
+        """收回一个未答的问题（超时）——让前端卡片消失。子类实现。"""
         raise NotImplementedError
 
 
@@ -154,6 +158,14 @@ class EventLayerTransport(QuestionTransport):
         except Exception:
             pass
 
+    def retract(self, qid: str) -> None:
+        # 超时：广播 question.rejected，前端按"收回"处理（dequeue 卡片）。
+        try:
+            from openprogram.agent.event_bus import emit_ws_frame
+            emit_ws_frame({"type": "question.rejected", "data": {"id": qid}})
+        except Exception:
+            pass
+
 
 class QueueTransport(QuestionTransport):
     """子进程通道：把提问 envelope 推进父子之间的 mp.Queue，由父进程的 drain
@@ -170,6 +182,12 @@ class QueueTransport(QuestionTransport):
         except Exception:
             pass
 
+    def retract(self, qid: str) -> None:
+        # 子进程超时无需自己收回前端卡片：父进程在子进程退出时（finally 的
+        # leftover-decline）会把残留待答按 declined 收尾、广播 question.rejected
+        # 撤回卡片。这里 no-op。
+        pass
+
 
 _default_transport = EventLayerTransport()
 
@@ -182,6 +200,11 @@ def default_question_transport() -> QuestionTransport:
 def emit_question_asked(data: dict, transport: "QuestionTransport | None" = None) -> None:
     """发出一次提问，经给定 transport（不给则用默认事件层通道）送出去。"""
     (transport or _default_transport).publish(data)
+
+
+def retract_question(qid: str, transport: "QuestionTransport | None" = None) -> None:
+    """收回一个未答的问题（超时）——经 transport 让前端卡片消失。"""
+    (transport or _default_transport).retract(qid)
 
 
 def open_question(
@@ -236,6 +259,7 @@ def ask_blocking(
     detail: str = "",
     timeout: float = 300.0,
     on_asked,
+    transport: "QuestionTransport | None" = None,
 ) -> _Resolution:
     """注册问题、emit、**同步**阻塞等答案。返回 (outcome, value)。
 
@@ -244,7 +268,8 @@ def ask_blocking(
       * "declined" — value 是 None
       * "timeout"  — value 是 None
     on_asked(PendingQuestion) 由调用方提供，负责把问题广播到前端（emit 事件）。
-    超时不抛——把 outcome="timeout" 交给上层（runtime.ask/confirm）按各自语义处理。
+    超时不抛——把 outcome="timeout" 交给上层（runtime.ask/confirm）按各自语义处理；
+    同时经 transport 收回前端卡片（否则超时后卡片会一直挂着）。
     """
     q, ev = open_question(
         session_id=session_id, kind=kind, prompt=prompt, options=options,
@@ -252,4 +277,7 @@ def ask_blocking(
         timeout=timeout, on_asked=on_asked,
     )
     ev.wait(timeout=timeout)
-    return consume_or_timeout(q.id)
+    outcome, value = consume_or_timeout(q.id)
+    if outcome == "timeout":
+        retract_question(q.id, transport)
+    return outcome, value

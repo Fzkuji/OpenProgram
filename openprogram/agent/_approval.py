@@ -155,6 +155,7 @@ async def await_user_approval(
     """
     from openprogram.agent.questions import (
         open_question, consume_or_timeout, emit_question_asked,
+        retract_question,
     )
 
     # 跟 runtime.ask 一致：如果当前执行上下文有 runtime（@agentic_function 跑在
@@ -188,6 +189,8 @@ async def await_user_approval(
     )
     await asyncio.to_thread(ev.wait, timeout)
     outcome, value = consume_or_timeout(q.id)
+    if outcome == "timeout":
+        retract_question(q.id, transport)  # 超时收回前端批准卡片
     if outcome == "answered":
         ok = (value.strip() in ("允许", "approve", "yes", "y", "true", "ok", "是")
               if isinstance(value, str) else bool(value))

@@ -275,6 +275,16 @@ export function Composer() {
   const isRunning = runningTask !== null;
   const fnFormActive = fnFormFunction !== null;
 
+  // 冲突规则（docs/design/ui/composer-interaction-modes.md）：系统决定
+  // （runtime.ask / approval）撞上用户主动开的 fn-form → 取消 fn-form，让
+  // 系统决定占住输入区。用户主动开的东西丢弃无所谓；系统决定之间则由
+  // pendingDecisions 的 FIFO 队列天然排队（队首占据，答完出下一个）。
+  useEffect(() => {
+    if (activeDecision && fnFormFunction) {
+      closeFnFormStore();
+    }
+  }, [activeDecision, fnFormFunction, closeFnFormStore]);
+
   // @file mention — state + debounced /api/file-search + popover
   // positioning + picker all live in ./use-file-mention now. The hook
   // owns the 6 useStates + 2 effects + pickFile callback that used to

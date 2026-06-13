@@ -75,6 +75,19 @@ def test_ask_blocking_timeout():
     assert outcome == "timeout" and value is None
 
 
+def test_ask_blocking_timeout_retracts_card(monkeypatch):
+    """超时要经 transport 收回前端卡片（广播 question.rejected），否则卡片挂死。"""
+    import openprogram.agent.event_bus as EB
+    frames = []
+    monkeypatch.setattr(EB, "emit_ws_frame", lambda f: frames.append(f))
+    monkeypatch.setattr(EB, "emit_safe", lambda *a, **k: None)
+    outcome, _ = ask_blocking(
+        session_id="s", kind="ask", prompt="?", timeout=0.05,
+        on_asked=lambda q: None)
+    assert outcome == "timeout"
+    assert any(f.get("type") == "question.rejected" for f in frames)
+
+
 # ─── runtime.ask / confirm（用 fake runtime 不依赖 webui/LLM）─────────────────
 
 class _FakeRuntime:

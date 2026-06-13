@@ -611,6 +611,7 @@ class Runtime:
             session_id=self._ui_session_id(), kind=kind, prompt=prompt,
             options=options, multi=multi, allow_custom=allow_custom,
             detail=detail, timeout=timeout, on_asked=_on_asked,
+            transport=transport,  # 超时收回前端卡片走同一条通道
         )
 
     def ask(self, prompt: str, *, options=None, multi: bool = False,
