@@ -367,21 +367,14 @@ export function Composer() {
     toggleTools,
     toggleWebSearch,
   } = useToolsToggles();
-  // Per-turn "Fast" speed tier → sent as service_tier:"priority". A
-  // plain on/off toggle (like Web Search), persisted in localStorage
-  // so a refresh keeps the choice — mirrors the thinking pill. The
-  // backend forwards it to the provider request body and no-ops for
-  // providers that don't read service_tier, so it's safe to offer
-  // regardless of the selected model.
-  const [fastEnabled, setFastEnabled] = useState(false);
-  useEffect(() => {
-    try { setFastEnabled(localStorage.getItem("serviceTierFast") === "1"); } catch { /* ignore */ }
-  }, []);
-  const toggleFast = () => setFastEnabled((v) => {
-    const next = !v;
-    try { localStorage.setItem("serviceTierFast", next ? "1" : "0"); } catch { /* ignore */ }
-    return next;
-  });
+  // Per-turn "Fast" speed tier → sent as service_tier:"priority". Now
+  // per-session (store's composerSettings.fast, persisted + isolated per
+  // chat like the other toggles). The backend forwards it to the provider
+  // request body and no-ops for providers that don't read service_tier.
+  const fastEnabled = useSessionStore((s) => s.composerSettings.fast);
+  const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
+  const toggleFast = () =>
+    setComposerSettings({ fast: !useSessionStore.getState().composerSettings.fast });
   // Slash-menu state lives in its own hook (./use-slash-menu).
   // fn-form field state (values, workdir, error highlight, closing
   // flag) is owned by `./use-fn-form-state`; it also runs the

@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useSessionStore } from "@/lib/session-store";
 import {
   type PendingImage,
   readDroppedTextFile,
@@ -24,6 +25,11 @@ import {
   ACCEPTED_IMAGE_MIME,
 } from "./image-attach";
 import type { PendingDoc } from "./file-tiles";
+import {
+  loadAttachments,
+  saveAttachments,
+  type StoredAttachments,
+} from "./attach-idb";
 
 export interface UseComposerAttachmentsResult {
   pendingImages: PendingImage[];
@@ -60,6 +66,61 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
   // the window (lots of dragenter/leave events fire as the cursor
   // crosses child elements — a counter is the documented workaround).
   const dragCounter = useRef(0);
+
+  // Per-session persistence (IndexedDB). Attachments are bound to the
+  // session they were staged in: switching chats loads that chat's
+  // pending attachments; refresh restores them. A not-yet-created chat
+  // (no sessionId) is NOT persisted — those are the one exception the
+  // user asked for (New chat draft attachments may vanish on refresh).
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  // The session whose attachments are currently held in state. Used to
+  // know which session to SAVE under before switching to a new one.
+  const heldSessionRef = useRef<string | null>(null);
+  // Guards the first save-effect run per session-load so loading a
+  // session's attachments doesn't immediately re-save them.
+  const loadedRef = useRef<string | null>(null);
+
+  // Load this session's attachments on switch; stash the outgoing one.
+  useEffect(() => {
+    const sid = currentSessionId;
+    let cancelled = false;
+    if (!sid) {
+      // New-chat / no session: don't persist, just start clean. (Don't
+      // wipe the previous held session — it was already saved by its
+      // own change-effect below.)
+      heldSessionRef.current = null;
+      loadedRef.current = null;
+      setPendingImages([]);
+      setPendingDocs([]);
+      return;
+    }
+    void loadAttachments(sid).then((data) => {
+      if (cancelled) return;
+      heldSessionRef.current = sid;
+      loadedRef.current = sid;
+      setPendingImages(data.images);
+      setPendingDocs(data.docs);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSessionId]);
+
+  // Persist the current session's attachments whenever they change.
+  // Skip the run triggered by the load-effect itself (loadedRef guard),
+  // and skip when there's no session (New chat draft isn't persisted).
+  useEffect(() => {
+    const sid = currentSessionId;
+    if (!sid) return;
+    // The load-effect set loadedRef to sid right before populating
+    // state. Let that initial populate through without re-saving it.
+    if (loadedRef.current === sid) {
+      loadedRef.current = "__saved__";
+      return;
+    }
+    const payload: StoredAttachments = { images: pendingImages, docs: pendingDocs };
+    void saveAttachments(sid, payload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingImages, pendingDocs, currentSessionId]);
 
   const addImages = useCallback((imgs: PendingImage[]) => {
     if (imgs.length === 0) return;

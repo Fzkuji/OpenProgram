@@ -3,34 +3,15 @@
 /**
  * Tools / Web-Search toggle state for the composer's plus menu.
  *
- * Persisted to localStorage so the user's per-turn picks survive page
- * reloads. The chat send envelope reads these via the `toggle…`
- * setters' returned bool — Composer passes the current values to
- * `wsSend`.
+ * Per-session now: backed by the store's ``composerSettings`` (keyed by
+ * sessionId, persisted to localStorage), so each chat keeps its own
+ * tool picks and they survive refresh + session switch. (Used to be two
+ * global localStorage keys shared by every session.)
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
-const TOOLS_KEY = "agentic_tools_enabled";
-const WEB_KEY = "agentic_web_search_enabled";
-
-function readPersistedBool(key: string, fallback = false): boolean {
-  try {
-    const v = localStorage.getItem(key);
-    if (v === null) return fallback;
-    return v === "1";
-  } catch {
-    return fallback;
-  }
-}
-
-function persistBool(key: string, value: boolean): void {
-  try {
-    localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
-}
+import { useSessionStore } from "@/lib/session-store";
 
 export interface ToolsTogglesHook {
   tools: boolean;
@@ -40,32 +21,18 @@ export interface ToolsTogglesHook {
 }
 
 export function useToolsToggles(): ToolsTogglesHook {
-  // Tools default ON: a fresh install that never touched the wrench
-  // toggle used to send `tools: false` on every turn, so new users got
-  // a model with an empty tools array ("I can't access your files").
-  const [tools, setTools] = useState(true);
-  const [webSearch, setWebSearch] = useState(false);
+  const tools = useSessionStore((s) => s.composerSettings.tools);
+  const webSearch = useSessionStore((s) => s.composerSettings.webSearch);
+  const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
 
-  useEffect(() => {
-    setTools(readPersistedBool(TOOLS_KEY, true));
-    setWebSearch(readPersistedBool(WEB_KEY));
-  }, []);
-
-  const toggleTools = useCallback(() => {
-    setTools((prev) => {
-      const next = !prev;
-      persistBool(TOOLS_KEY, next);
-      return next;
-    });
-  }, []);
-
-  const toggleWebSearch = useCallback(() => {
-    setWebSearch((prev) => {
-      const next = !prev;
-      persistBool(WEB_KEY, next);
-      return next;
-    });
-  }, []);
+  const toggleTools = useCallback(
+    () => setComposerSettings({ tools: !useSessionStore.getState().composerSettings.tools }),
+    [setComposerSettings],
+  );
+  const toggleWebSearch = useCallback(
+    () => setComposerSettings({ webSearch: !useSessionStore.getState().composerSettings.webSearch }),
+    [setComposerSettings],
+  );
 
   return { tools, webSearch, toggleTools, toggleWebSearch };
 }

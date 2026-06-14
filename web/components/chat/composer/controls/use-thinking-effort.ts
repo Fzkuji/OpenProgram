@@ -12,27 +12,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { useSessionStore } from "@/lib/session-store";
+
 const DEFAULT_THINKING: ThinkingEffort = "medium";
 const FALLBACK_LEVELS = ["low", "medium", "high", "xhigh"] as const;
-const STORAGE_KEY = "thinkingEffort";
-
-/** Last picked effort, persisted so a page refresh keeps the choice. */
-function readPersistedEffort(): ThinkingEffort | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writePersistedEffort(level: ThinkingEffort): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, level);
-  } catch {
-    /* ignore */
-  }
-}
 
 export type ThinkingEffort = string;
 
@@ -78,12 +61,14 @@ export interface ThinkingEffortHook {
 }
 
 export function useThinkingEffort(): ThinkingEffortHook {
-  // `stored` is the user's raw last pick (seeded from localStorage so
-  // a refresh keeps it). It is NOT sent as-is — the exposed `thinking`
-  // below is always re-derived against the CURRENT model's options.
-  const [stored, setStored] = useState<ThinkingEffort>(
-    () => readPersistedEffort() ?? DEFAULT_THINKING,
-  );
+  // `stored` is the user's raw last pick — now per-session (store's
+  // composerSettings.thinking, persisted + isolated per chat). "" means
+  // "no explicit pick" → fall through to DEFAULT/backend default below.
+  // It is NOT sent as-is — the exposed `thinking` is always re-derived
+  // against the CURRENT model's options (clamp).
+  const storedRaw = useSessionStore((s) => s.composerSettings.thinking);
+  const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
+  const stored: ThinkingEffort = storedRaw || DEFAULT_THINKING;
   const [menuOpen, setMenuOpen] = useState(false);
   // `_thinkingConfig` is mutated in place by legacy providers.js when
   // the agent/model changes. A 500ms poll just bumps a counter to
@@ -111,9 +96,8 @@ export function useThinkingEffort(): ThinkingEffortHook {
     : readBackendDefault() ?? options[0]?.value ?? stored;
 
   const set = useCallback((level: ThinkingEffort) => {
-    setStored(level);
-    writePersistedEffort(level);
-  }, []);
+    setComposerSettings({ thinking: level });
+  }, [setComposerSettings]);
 
   return { thinking, options, menuOpen, setMenuOpen, set };
 }

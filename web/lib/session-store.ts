@@ -83,6 +83,16 @@ export interface AskOne {
   allow_custom: boolean;
 }
 
+/** Per-session composer settings — tool toggles + thinking effort.
+ *  Persisted per session (see composerSettingsBySession) so each chat
+ *  keeps its own; "" thinking means "model default". */
+export interface ComposerSettings {
+  thinking: string;
+  tools: boolean;
+  webSearch: boolean;
+  fast: boolean;
+}
+
 /** One field in a runtime.form schema (MCP-elicitation flat object). */
 export interface FormFieldSchema {
   type?: "string" | "integer" | "number" | "boolean";
@@ -396,6 +406,17 @@ interface ConvState {
    *  live draft for the *current* session and stays mirrored here. */
   composerDrafts: Record<string, string>;
   setComposerInput: (s: string) => void;
+  /** Per-session composer settings (tool toggles + thinking effort).
+   *  Like composerDrafts: keyed by sessionId (or "__new__" for the
+   *  not-yet-created next chat), persisted to localStorage so they
+   *  survive refresh AND stay isolated per session on switch.
+   *  ``composerSettings`` is the LIVE value for the current session;
+   *  ``composerSettingsBySession`` is the per-session cache it mirrors. */
+  composerSettings: ComposerSettings;
+  composerSettingsBySession: Record<string, ComposerSettings>;
+  /** Patch the current session's composer settings (live + cache +
+   *  persist). */
+  setComposerSettings: (patch: Partial<ComposerSettings>) => void;
   /** Bump to ask the Composer to call .focus() on its textarea. The
    *  Composer reacts to changes in this counter via useEffect. */
   composerFocusTick: number;
@@ -522,6 +543,63 @@ function persistComposerDrafts(drafts: Record<string, string>) {
   }
 }
 
+// Per-session composer settings (tool toggles + thinking effort) — same
+// persistence shape as composerDrafts: one versioned blob in localStorage,
+// keyed by sessionId (or "__new__"). These used to be GLOBAL localStorage
+// keys shared by every session; now each session keeps its own.
+const COMPOSER_SETTINGS_KEY = "composerSettings";
+const COMPOSER_SETTINGS_VERSION = 1;
+
+// Tools default ON: a fresh chat that never touched the wrench toggle
+// must still send tools (else the model gets an empty tools array —
+// "I can't access your files"). Matches the old global-default behaviour.
+const DEFAULT_COMPOSER_SETTINGS: ComposerSettings = {
+  thinking: "",
+  tools: true,
+  webSearch: false,
+  fast: false,
+};
+
+function readComposerSettingsMap(): Record<string, ComposerSettings> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(COMPOSER_SETTINGS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.v === COMPOSER_SETTINGS_VERSION
+        && parsed.map && typeof parsed.map === "object") {
+      return parsed.map as Record<string, ComposerSettings>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function persistComposerSettingsMap(map: Record<string, ComposerSettings>) {
+  if (typeof window === "undefined") return;
+  try {
+    // Drop entries that match the default exactly so the blob stays
+    // small. (Can't test "any truthy" — tools defaults to true, so a
+    // session that turned tools OFF would wrongly be dropped.)
+    const d = DEFAULT_COMPOSER_SETTINGS;
+    const compact: Record<string, ComposerSettings> = {};
+    for (const k in map) {
+      const s = map[k];
+      if (s.thinking !== d.thinking || s.tools !== d.tools
+          || s.webSearch !== d.webSearch || s.fast !== d.fast) {
+        compact[k] = s;
+      }
+    }
+    localStorage.setItem(
+      COMPOSER_SETTINGS_KEY,
+      JSON.stringify({ v: COMPOSER_SETTINGS_VERSION, map: compact }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 export const useSessionStore = create<ConvState>((set) => ({
   wsStatus: "connecting",
   agentSettings: {},
@@ -637,6 +715,16 @@ export const useSessionStore = create<ConvState>((set) => ({
       const nextSid = id ?? COMPOSER_NEW_KEY;
       const nextInput = drafts[nextSid] ?? "";
       persistComposerDrafts(drafts);
+      // Same stash/load for composer settings (tool toggles + thinking):
+      // park the current session's live settings under its id, load the
+      // incoming session's (default if it has none).
+      const settingsMap = {
+        ...s.composerSettingsBySession,
+        [oldSid]: s.composerSettings,
+      };
+      const nextSettings =
+        settingsMap[nextSid] ?? { ...DEFAULT_COMPOSER_SETTINGS };
+      persistComposerSettingsMap(settingsMap);
       return {
         currentSessionId: id,
         // Keep the legacy single-task mirror pointed at whatever the
@@ -645,6 +733,15 @@ export const useSessionStore = create<ConvState>((set) => ({
         runningTask: id ? (s.runningTasks[id] ?? null) : null,
         composerInput: nextInput,
         composerDrafts: drafts,
+        composerSettings: nextSettings,
+        composerSettingsBySession: settingsMap,
+        // fn-form is a transient "I'm about to run this function" state
+        // the user opened in a specific chat. Switching chats closes it
+        // so it never lingers showing another session's half-filled
+        // values. (Like New-chat attachments, half-filled fn-forms are
+        // not carried across the switch — they're throwaway.)
+        fnFormFunction: null,
+        fnFormClosing: false,
         // Reset the welcome screen visibility on session switch:
         //   - null id  → New chat clicked, show the welcome panel.
         //   - non-null → entering an existing session, hide it (the
@@ -741,6 +838,17 @@ export const useSessionStore = create<ConvState>((set) => ({
       // session-count) and matches the "right dock" pattern above.
       persistComposerDrafts(drafts);
       return { composerInput: s, composerDrafts: drafts };
+    }),
+  composerSettingsBySession: readComposerSettingsMap(),
+  composerSettings:
+    readComposerSettingsMap()[COMPOSER_NEW_KEY] ?? { ...DEFAULT_COMPOSER_SETTINGS },
+  setComposerSettings: (patch) =>
+    set((state) => {
+      const sid = state.currentSessionId ?? COMPOSER_NEW_KEY;
+      const next = { ...state.composerSettings, ...patch };
+      const map = { ...state.composerSettingsBySession, [sid]: next };
+      persistComposerSettingsMap(map);
+      return { composerSettings: next, composerSettingsBySession: map };
     }),
   composerFocusTick: 0,
   focusComposer: () =>
