@@ -91,13 +91,27 @@ def interaction_demo(runtime: Runtime) -> dict:
     results.append(_step(
         "表单",
         lambda: runtime.form(
-            "6/6 表单：填一下这个示例配置。",
+            "6/7 表单：填一下这个示例配置。",
             {
                 "name": {"type": "string", "title": "名字", "default": "demo"},
                 "count": {"type": "integer", "title": "次数", "default": 3},
                 "mode": {"type": "string", "title": "模式", "enum": ["fast", "slow"]},
                 "verbose": {"type": "boolean", "title": "详细日志", "default": False},
             },
+            timeout=300,
+        ),
+    ))
+
+    # 7) 一次打包问一组问题（runtime.ask_many）—— 一屏切换着答
+    results.append(_step(
+        "多问题",
+        lambda: runtime.ask_many(
+            [
+                {"prompt": "你的角色？", "options": ["前端", "后端", "全栈"]},
+                {"prompt": "常用编辑器？", "options": ["VS Code", "Vim", "JetBrains"], "allow_custom": True},
+                {"prompt": "用过哪些云？", "options": ["AWS", "GCP", "Azure"], "multi": True},
+            ],
+            prompt="7/7 多问题：一次问一组，可在题间切换。",
             timeout=300,
         ),
     ))

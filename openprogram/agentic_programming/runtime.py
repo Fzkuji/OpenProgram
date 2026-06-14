@@ -591,7 +591,8 @@ class Runtime:
         self._question_transport = transport
 
     def _ask_raw(self, *, kind, prompt, options=None, multi=False,
-                 allow_custom=True, detail="", schema=None, timeout=300.0):
+                 allow_custom=True, detail="", schema=None, questions=None,
+                 timeout=300.0):
         from openprogram.agent.questions import ask_blocking, emit_question_asked
 
         transport = getattr(self, "_question_transport", None)  # None → 默认事件层通道
@@ -604,14 +605,16 @@ class Runtime:
                 "id": q.id, "session_id": q.session_id, "kind": q.kind,
                 "prompt": q.prompt, "options": q.options, "multi": q.multi,
                 "allow_custom": q.allow_custom, "detail": q.detail,
-                "schema": q.schema,  # kind="form" 时非空，其它 kind 为 {}
+                "schema": q.schema,        # kind="form" 时非空
+                "questions": q.questions,  # kind="ask_many" 时非空
                 "expires_at": q.expires_at,
             }, transport)
 
         return ask_blocking(
             session_id=self._ui_session_id(), kind=kind, prompt=prompt,
             options=options, multi=multi, allow_custom=allow_custom,
-            detail=detail, schema=schema, timeout=timeout, on_asked=_on_asked,
+            detail=detail, schema=schema, questions=questions,
+            timeout=timeout, on_asked=_on_asked,
             transport=transport,  # 超时收回前端卡片走同一条通道
         )
 
@@ -675,6 +678,43 @@ class Runtime:
         if default is not None:
             return default
         raise AskTimeout(prompt)
+
+    def ask_many(self, questions: list, *, prompt: str = "",
+                 timeout: float = 300.0, default: list | None = None):
+        """一次打包问一组问题，前端一屏内可在它们之间切换着答、全答完一起
+        提交，阻塞到提交。
+
+        ``questions`` 每项是一个 dict：
+          ``{"prompt": "...", "options": [...], "multi": False,
+             "allow_custom": True}``
+        （options 可空 = 纯自由文本；multi=True 该题返回 list[str]）。
+        ``prompt`` 是整组的总标题（可空）。
+
+        返回一个 list（与 questions 等长，每项一个 str / list[str]，对应该题
+        的答案）。用户拒绝 → 抛 UserDeclined；超时 → 有 default 返回 default，
+        否则抛 AskTimeout。
+        """
+        from openprogram.agent.questions import UserDeclined, AskTimeout
+        qs = [
+            {
+                "prompt": str(q.get("prompt", "")),
+                "options": list(q.get("options") or []),
+                "multi": bool(q.get("multi")),
+                "allow_custom": q.get("allow_custom", True) is not False,
+            }
+            for q in (questions or [])
+        ]
+        outcome, value = self._ask_raw(
+            kind="ask_many", prompt=prompt, questions=qs,
+            allow_custom=False, timeout=timeout,
+        )
+        if outcome == "answered":
+            return value if isinstance(value, list) else []
+        if outcome == "declined":
+            raise UserDeclined(prompt or "ask_many")
+        if default is not None:
+            return default
+        raise AskTimeout(prompt or "ask_many")
 
     # --- Working directory ---
 

@@ -1,0 +1,80 @@
+/* MultiAskMode —— ask_many 一组问题切换。复用 question-mode 的 header/body/
+   prompt/options/input；这里只加进度点 + 上一题/下一题导航 + 组标题。
+   颜色全走真实主题变量。 */
+
+/* 进度点 —— 在 header 右侧，可点切题。 */
+.progress {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  border: 1px solid var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.dot:hover {
+  border-color: var(--accent-orange);
+}
+
+.dotDone {
+  background: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  border-color: var(--accent-orange);
+}
+
+.dotActive {
+  background: var(--accent-orange);
+  border-color: var(--accent-orange);
+}
+
+.count {
+  margin-left: 4px;
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* 整组总标题（runtime.ask_many 的 prompt），在各题之上。 */
+.groupTitle {
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+}
+
+/* 上一题 / 下一题 导航。 */
+.nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.navBtn {
+  padding: 0 14px;
+  height: 30px;
+  line-height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.navBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+  color: var(--text-primary);
+}
+
+.navBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

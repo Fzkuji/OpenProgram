@@ -35,7 +35,7 @@ class AskTimeout(Exception):
 class PendingQuestion:
     id: str
     session_id: str           # webui session（前端路由用），可空
-    kind: str                 # "ask" | "confirm" | "approval" | "form"
+    kind: str                 # "ask" | "confirm" | "approval" | "form" | "ask_many"
     prompt: str
     options: list[str] = field(default_factory=list)
     multi: bool = False
@@ -45,6 +45,10 @@ class PendingQuestion:
     # （字段名 → {type, title, description, enum, default, …}）。答案是一个
     # dict（字段名 → 值），而非 ask 的 str / list[str]。其它 kind 留空。
     schema: dict = field(default_factory=dict)
+    # kind="ask_many" 专用：一次打包问的一组问题，前端一屏内可切换着答、
+    # 全答完一起提交。每项 = {prompt, options, multi, allow_custom}。答案是
+    # 一个 list（与 questions 等长，每项一个 str / list[str]）。其它 kind 留空。
+    questions: list = field(default_factory=list)
     created_at: float = 0.0
     expires_at: float = 0.0
 
@@ -221,6 +225,7 @@ def open_question(
     allow_custom: bool = True,
     detail: str = "",
     schema: dict | None = None,
+    questions: list | None = None,
     timeout: float = 300.0,
     on_asked,
 ) -> tuple[PendingQuestion, threading.Event]:
@@ -237,6 +242,7 @@ def open_question(
         id=new_question_id(), session_id=session_id or "", kind=kind,
         prompt=prompt, options=list(options or []), multi=multi,
         allow_custom=allow_custom, detail=detail, schema=dict(schema or {}),
+        questions=list(questions or []),
         created_at=now, expires_at=now + timeout,
     )
     ev = reg.register(q)
@@ -285,6 +291,7 @@ def ask_blocking(
     allow_custom: bool = True,
     detail: str = "",
     schema: dict | None = None,
+    questions: list | None = None,
     timeout: float = 300.0,
     on_asked,
     transport: "QuestionTransport | None" = None,
@@ -302,7 +309,7 @@ def ask_blocking(
     q, ev = open_question(
         session_id=session_id, kind=kind, prompt=prompt, options=options,
         multi=multi, allow_custom=allow_custom, detail=detail, schema=schema,
-        timeout=timeout, on_asked=on_asked,
+        questions=questions, timeout=timeout, on_asked=on_asked,
     )
     ev.wait(timeout=timeout)
     outcome, value = consume_or_timeout(q.id)

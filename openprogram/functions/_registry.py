@@ -44,7 +44,7 @@ AGENTIC_MODULES: list[tuple[str, Optional[str]]] = [
     # Domain functions
     ("extract_pdf_figures", None),
     ("extract_pdf_tables", None),
-    # 交互自测：串行走一遍 ask/confirm/form 各形态（手动点 Run 体验）。
+    # 交互自测：串行走一遍 ask/confirm/form/ask_many 各形态（手动点 Run 体验）。
     ("interaction_demo", None),
 ]
 

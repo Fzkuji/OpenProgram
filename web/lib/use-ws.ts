@@ -271,7 +271,7 @@ export function useWS(): void {
             if (!dd.id) return;
             useSessionStore.getState().enqueueDecision({
               id: String(dd.id),
-              kind: (dd.kind as "ask" | "confirm" | "approval" | "form") || "ask",
+              kind: (dd.kind as "ask" | "confirm" | "approval" | "form" | "ask_many") || "ask",
               prompt: String(dd.prompt || ""),
               options: Array.isArray(dd.options) ? (dd.options as string[]) : [],
               multi: Boolean(dd.multi),
@@ -283,6 +283,9 @@ export function useWS(): void {
                 dd.schema && typeof dd.schema === "object"
                   ? (dd.schema as PendingDecision["schema"])
                   : undefined,
+              questions: Array.isArray(dd.questions)
+                ? (dd.questions as PendingDecision["questions"])
+                : undefined,
             });
           });
           return true;

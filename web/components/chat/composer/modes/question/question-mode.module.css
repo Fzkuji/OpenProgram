@@ -8,8 +8,10 @@
   position: relative;
   display: flex;
   align-items: center;
+  /* 右内边距给 wrapper 级的 ✕ 关闭键留位（16 offset + 32 size + 8 间隙
+     = 56），与 fn-form 的 .header 同处理，避免进度点/标题压到 ✕ 下面。 */
   padding: var(--composer-bottom-row-pad)
-    var(--composer-bottom-row-pad)
+    calc(var(--composer-bottom-row-pad) + var(--composer-button-size) + 8px)
     calc(var(--composer-bottom-row-pad) - 1px)
     var(--composer-bottom-row-pad);
   min-height: var(--composer-bottom-row-h);

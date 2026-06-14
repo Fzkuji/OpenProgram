@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import type { PendingDecision } from "@/lib/session-store";
 
 import { FormMode } from "./form-mode";
+import { MultiAskMode } from "./multi-ask-mode";
 import styles from "./question-mode.module.css";
 
 function wsSend(payload: unknown): void {
@@ -44,10 +45,14 @@ interface QuestionModeProps {
 }
 
 export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeProps) {
-  // runtime.form (kind="form") is a multi-field form — delegate to its
-  // own renderer. Single-prompt ask/confirm stay below.
+  // runtime.form (kind="form") = multi-field form;
+  // runtime.ask_many (kind="ask_many") = a switchable group of questions.
+  // Single-prompt ask/confirm fall through to SinglePromptQuestion.
   if (q.kind === "form") {
     return <FormMode decision={q} onResolve={onResolve} onAction={onAction} />;
+  }
+  if (q.kind === "ask_many") {
+    return <MultiAskMode decision={q} onResolve={onResolve} onAction={onAction} />;
   }
   return <SinglePromptQuestion decision={q} onResolve={onResolve} onAction={onAction} />;
 }

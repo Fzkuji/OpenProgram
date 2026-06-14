@@ -53,7 +53,7 @@ export interface ChatToolCall {
  *  tool approval). See composer modes (docs/design/ui/composer-interaction-modes.md). */
 export interface PendingDecision {
   id: string;
-  kind: "ask" | "confirm" | "approval" | "form";
+  kind: "ask" | "confirm" | "approval" | "form" | "ask_many";
   prompt: string;
   options: string[];
   multi: boolean;
@@ -66,6 +66,18 @@ export interface PendingDecision {
    *  description, enum, default, …}). The answer is an object (field → value).
    *  See runtime.form / docs/design/runtime/user-input-requests.md Phase 4a. */
   schema?: Record<string, FormFieldSchema>;
+  /** ask_many-only: a packed group of questions answered one screen with
+   *  prev/next switching, submitted together. The answer is a list (one
+   *  per question). See runtime.ask_many. */
+  questions?: AskOne[];
+}
+
+/** One question inside an ask_many group. */
+export interface AskOne {
+  prompt: string;
+  options: string[];
+  multi: boolean;
+  allow_custom: boolean;
 }
 
 /** One field in a runtime.form schema (MCP-elicitation flat object). */
