@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import styles from "../plugins.module.css";
-import { usePluginsStore, type PluginRow } from "@/lib/plugins-store";
+import { usePluginsStore, type PluginRow } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { PluginTrustWarning } from "../dialogs/plugin-trust-warning";
 import { PluginOptionsDialog } from "../dialogs/plugin-options-dialog";

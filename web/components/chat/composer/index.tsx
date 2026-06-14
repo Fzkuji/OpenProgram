@@ -26,8 +26,8 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
-import { api } from "@/lib/api";
-import { showToast } from "@/lib/toast";
+import { api } from "@/lib/net/api";
+import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";

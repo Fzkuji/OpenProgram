@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 
-import { useSkills, type Skill } from "@/lib/skills-store";
+import { useSkills, type Skill } from "@/lib/state/skills-store";
 import { useTranslation } from "@/lib/i18n";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";

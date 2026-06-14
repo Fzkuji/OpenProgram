@@ -10,7 +10,7 @@
  */
 
 import { useFunctions } from "./functions-store";
-import type { AgenticFunction } from "./session-store";
+import type { AgenticFunction } from "@/lib/session-store";
 
 interface LegacyMirror {
   availableFunctions?: AgenticFunction[];

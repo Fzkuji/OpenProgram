@@ -1,7 +1,7 @@
 /**
  * Stateless formatting helpers for the Skills Discovery panel.
  */
-import type { CatalogEntry } from "@/lib/skills-store";
+import type { CatalogEntry } from "@/lib/state/skills-store";
 
 export function slugFromUrl(url: string): string {
   // Mirror backend _default_namespace logic so the "installed" badge in the

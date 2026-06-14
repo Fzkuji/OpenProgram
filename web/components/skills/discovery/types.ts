@@ -1,7 +1,7 @@
 /**
  * Shared types for the Skills Discovery panel.
  */
-import type { CatalogEntry } from "@/lib/skills-store";
+import type { CatalogEntry } from "@/lib/state/skills-store";
 
 export type CatalogState = {
   loading: boolean;

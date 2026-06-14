@@ -4,12 +4,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useTranslation, type Locale } from "@/lib/i18n";
-import { useFontPref, FONT_LABELS, fontStack, type FontKey } from "@/lib/font-pref";
+import { useFontPref, FONT_LABELS, fontStack, type FontKey } from "@/lib/prefs/font-pref";
 import {
   setAgentProfile,
   useAgentProfile,
-} from "@/lib/agent-style";
-import { setUserProfile, useUserProfile } from "@/lib/user-profile";
+} from "@/lib/format-utils/agent-style";
+import { setUserProfile, useUserProfile } from "@/lib/prefs/user-profile";
 import {
   Avatar,
   AvatarPicker,

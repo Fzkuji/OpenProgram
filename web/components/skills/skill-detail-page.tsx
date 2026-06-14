@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Markdown } from "@/lib/markdown";
+import { Markdown } from "@/lib/format-utils/markdown";
 import { Button } from "@/components/ui/button";
-import type { SkillDetail } from "@/lib/skills-store";
+import type { SkillDetail } from "@/lib/state/skills-store";
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import styles from "./skills-page.module.css";

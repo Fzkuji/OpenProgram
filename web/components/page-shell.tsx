@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { usePendingRunFunction } from "@/lib/use-pending-run-function";
-import { useWS } from "@/lib/use-ws";
+import { useWS } from "@/lib/net/use-ws";
 
 type Page = "chat" | "settings" | "chats";
 

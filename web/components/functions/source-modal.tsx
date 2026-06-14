@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { X, Save, Loader2, FileCode } from "lucide-react";
 import type { AgenticFunction } from "@/lib/types";
-import { api } from "@/lib/api";
+import { api } from "@/lib/net/api";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
 

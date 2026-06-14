@@ -23,7 +23,7 @@ import {
   onBranchCheckedOut,
   onBranchesListMessage,
   onChannelAccountsMessage,
-} from "./runtime-bridge/conversations";
+} from "@/lib/runtime-bridge/conversations";
 import {
   handleRunningTask,
   handleRunningTaskClear,
@@ -33,7 +33,7 @@ import {
   wsHandleChatAck,
   wsHandleChatResponse,
   wsHandleStatus,
-} from "./runtime-bridge/chat-handlers";
+} from "@/lib/runtime-bridge/chat-handlers";
 
 interface WsWindow {
   ws?: WebSocket | null;
@@ -134,13 +134,13 @@ export function useWS(): void {
           // File-system watcher fired — refresh the skills list so the
           // /skills page, Discovery counts, and slash menu reflect the
           // change without any user action.
-          import("@/lib/skills-store").then(({ useSkills }) => {
+          import("@/lib/state/skills-store").then(({ useSkills }) => {
             useSkills.getState().fetchSkills();
           });
           return true;
         }
         case "plugins:changed":
-          import("@/lib/plugins-store").then(({ usePluginsStore }) => {
+          import("@/lib/state/plugins-store").then(({ usePluginsStore }) => {
             usePluginsStore.getState().refresh();
           });
           return true;
@@ -149,7 +149,7 @@ export function useWS(): void {
           // `programs install`) and the backend re-scanned — refresh the
           // function catalogue so its new functions show up live, no
           // reload needed. Same shape as skills/plugins above.
-          import("@/lib/functions-actions").then(({ refreshFunctionsList }) => {
+          import("@/lib/state/functions-actions").then(({ refreshFunctionsList }) => {
             refreshFunctionsList();
           });
           return true;

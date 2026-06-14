@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { FunctionsMeta } from "./types";
-import type { AgenticFunction } from "./session-store";
+import type { FunctionsMeta } from "@/lib/types";
+import type { AgenticFunction } from "@/lib/session-store";
 
 type ViewMode = "grid" | "list";
 type FilterMode = "all" | "favorites" | "app" | "generated" | "user" | "meta" | "builtin";

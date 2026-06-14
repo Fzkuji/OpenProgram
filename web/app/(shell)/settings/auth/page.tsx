@@ -16,9 +16,9 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
-import { api } from "@/lib/api";
+import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
-import { subscribeProviderAuthEvents as subscribeAuthEvents } from "@/lib/provider-auth-events";
+import { subscribeProviderAuthEvents as subscribeAuthEvents } from "@/lib/net/provider-auth-events";
 import type {
   AuthProfile,
   CredentialView,

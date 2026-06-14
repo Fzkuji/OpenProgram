@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
-import { api } from "@/lib/api";
+import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 
 export function ModelBadge() {

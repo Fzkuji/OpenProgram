@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { jsonFetch } from "./fetch-client";
+import { jsonFetch } from "@/lib/net/fetch-client";
 
 export interface PluginRow {
   name: string;

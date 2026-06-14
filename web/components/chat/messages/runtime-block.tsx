@@ -14,7 +14,7 @@
  */
 import { useEffect, useRef } from "react";
 
-import { formatUsageFooterLabel } from "@/lib/format";
+import { formatUsageFooterLabel } from "@/lib/format-utils/format";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 

@@ -42,7 +42,7 @@ import {
   type RecentsGroupBy,
   type RecentsSort,
   type RecentsActivity,
-} from "@/lib/recents-view";
+} from "@/lib/prefs/recents-view";
 
 // Panel chrome = the canonical MENU_PANEL (the exact same frame as the
 // topbar dropdowns and the Recents ⋮ context menu — one shared style so

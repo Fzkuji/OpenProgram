@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import shellStyles from "../settings-page.module.css";
 import styles from "./channels.module.css";
-import { cachedFetch, invalidate } from "@/lib/settings-cache";
+import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 import { AccountsList } from "./accounts-list";
 import { BindingsList } from "./bindings-list";

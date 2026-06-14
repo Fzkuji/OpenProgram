@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { jsonFetch as jsonReq } from "./fetch-client";
+import { jsonFetch as jsonReq } from "@/lib/net/fetch-client";
 
 export interface Skill {
   name: string;

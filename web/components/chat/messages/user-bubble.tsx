@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
-import { useUserProfile } from "@/lib/user-profile";
+import { useUserProfile } from "@/lib/prefs/user-profile";
 
 import { MessageActions } from "./message-actions";
 import { UserAttachments, parseUserAttachments } from "./user-attachments";

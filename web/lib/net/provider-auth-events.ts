@@ -9,7 +9,7 @@
  *
  *   useEffect(() => subscribeProviderAuthEvents(e => toast(e.type)), []);
  */
-import type { AuthEventPayload } from "./types";
+import type { AuthEventPayload } from "@/lib/types";
 
 type Handler = (event: AuthEventPayload) => void;
 

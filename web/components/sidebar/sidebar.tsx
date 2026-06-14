@@ -60,7 +60,7 @@ import {
   MonitorCheckIcon,
 } from "../animated-icons";
 import { useSessionStore } from "@/lib/session-store";
-import { refreshFunctionsList } from "@/lib/functions-actions";
+import { refreshFunctionsList } from "@/lib/state/functions-actions";
 import { useTranslation } from "@/lib/i18n";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";

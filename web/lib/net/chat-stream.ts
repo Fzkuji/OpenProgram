@@ -28,7 +28,7 @@
  *   and are left to their own handlers.
  */
 
-import { useSessionStore, type ChatMsg, type ChatToolCall } from "./session-store";
+import { useSessionStore, type ChatMsg, type ChatToolCall } from "@/lib/session-store";
 
 interface StreamEvent {
   type: "text" | "thinking" | "tool_use" | "tool_result";

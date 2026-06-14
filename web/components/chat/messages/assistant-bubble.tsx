@@ -14,7 +14,7 @@ import {
   agentDisplayName,
   agentInitial,
   useAgentProfile,
-} from "@/lib/agent-style";
+} from "@/lib/format-utils/agent-style";
 import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 

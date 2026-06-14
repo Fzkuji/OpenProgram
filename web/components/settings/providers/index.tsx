@@ -22,7 +22,7 @@ import { Detail } from "./detail";
 import { ProviderItem } from "./provider-item";
 import type { Provider } from "./types";
 import styles from "../settings-page.module.css";
-import { cachedFetch, invalidate } from "@/lib/settings-cache";
+import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 
 // Re-export ApiKey for search-providers-section.tsx (the only other

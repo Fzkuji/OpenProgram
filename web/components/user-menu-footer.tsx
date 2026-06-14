@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { useUserProfile } from "@/lib/user-profile";
+import { useUserProfile } from "@/lib/prefs/user-profile";
 import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 import {

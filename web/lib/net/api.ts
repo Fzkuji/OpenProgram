@@ -13,7 +13,7 @@ import type {
   CredentialView,
   DiscoveredCredential,
   PoolView,
-} from "./types";
+} from "@/lib/types";
 
 interface RawModel {
   id: string;

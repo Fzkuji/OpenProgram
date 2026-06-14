@@ -22,7 +22,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useWindowGlobals, useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import { useRecentsView } from "@/lib/recents-view";
+import { useRecentsView } from "@/lib/prefs/recents-view";
 import {
   Dialog,
   DialogContent,

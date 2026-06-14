@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSkills, type Skill } from "@/lib/skills-store";
+import { useSkills, type Skill } from "@/lib/state/skills-store";
 import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
 import {

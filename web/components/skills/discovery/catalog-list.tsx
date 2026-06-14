@@ -2,8 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 
-import type { CatalogEntry } from "@/lib/skills-store";
-import { useSkills } from "@/lib/skills-store";
+import type { CatalogEntry } from "@/lib/state/skills-store";
+import { useSkills } from "@/lib/state/skills-store";
 import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,

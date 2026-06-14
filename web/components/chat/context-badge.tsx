@@ -18,7 +18,7 @@
  * whenever the active session has no usage yet, matching the legacy
  * `:empty { display:none }` behavior with one fewer reflow.
  */
-import { buildUsageText } from "@/lib/format";
+import { buildUsageText } from "@/lib/format-utils/format";
 import { useSessionStore } from "@/lib/session-store";
 
 interface ContextBadgeProps {

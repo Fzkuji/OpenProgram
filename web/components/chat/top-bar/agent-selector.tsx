@@ -17,7 +17,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
-import { api } from "@/lib/api";
+import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
 import { Check } from "lucide-react";

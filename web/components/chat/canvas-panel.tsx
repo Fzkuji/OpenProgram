@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { FileText, X, RefreshCw } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@/lib/net/api";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useTranslation } from "@/lib/i18n";

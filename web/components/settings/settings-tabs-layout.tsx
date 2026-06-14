@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import styles from "./settings-page.module.css";
-import { prefetchSettings } from "@/lib/settings-cache";
+import { prefetchSettings } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 
 export type SettingsTab = "providers" | "search" | "channels" | "general" | "system";

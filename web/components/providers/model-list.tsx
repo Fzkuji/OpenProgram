@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { Search, Eye, Video, Wrench, Brain, FileText, Trash2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@/lib/net/api";
 import type { Provider, Capability } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";

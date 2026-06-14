@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import styles from "../settings-page.module.css";
-import { cachedFetch, invalidate } from "@/lib/settings-cache";
+import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 import { SearchProviderDetail } from "./detail";
 import { SearchProviderItem } from "./item";

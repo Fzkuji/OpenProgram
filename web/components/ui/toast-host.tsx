@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { TOAST_EVENT, type ToastDetail, type ToastLink, type ToastTone } from "@/lib/toast";
+import { TOAST_EVENT, type ToastDetail, type ToastLink, type ToastTone } from "@/lib/format-utils/toast";
 import styles from "./toast-host.module.css";
 
 interface Item {

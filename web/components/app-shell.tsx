@@ -12,7 +12,7 @@ import { TopBar } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
 import { MessageList } from "./chat/messages/message-list";
 import { useSessionStore } from "@/lib/session-store";
-import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/chat-stream";
+import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/net/chat-stream";
 import { convToChatMsgs } from "@/lib/conv-mapper";
 import { useColResize } from "@/lib/use-col-resize";
 import { useTranslation } from "@/lib/i18n";

@@ -1,7 +1,7 @@
 "use client";
 
 import styles from "../plugins.module.css";
-import type { PluginRow } from "@/lib/plugins-store";
+import type { PluginRow } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 
 interface Props {

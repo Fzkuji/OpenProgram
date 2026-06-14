@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import styles from "../plugins.module.css";
-import { usePluginsStore } from "@/lib/plugins-store";
+import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 
 interface Props {
