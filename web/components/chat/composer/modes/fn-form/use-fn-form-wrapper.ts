@@ -49,7 +49,7 @@ interface UseFnFormWrapperArgs {
   fnFormClosing: boolean;
   onCloseComplete: () => void;
   wrapperRef: RefObject<HTMLDivElement>;
-  sendBtnRef: RefObject<HTMLButtonElement>;
+  sendBtnRef: RefObject<HTMLElement>;
   /** A system decision (question/approval/form) occupies the input. It
    *  uses the same header/body two-段 structure as fn-form, so the
    *  wrapper-grow + button-glide-to-bottom must run for it too. Identity
@@ -172,7 +172,7 @@ export function useFnFormWrapper({
  */
 function runCloseTransition(
   el: HTMLDivElement,
-  btn: HTMLButtonElement | null,
+  btn: HTMLElement | null,
   chatHeight: number,
   onComplete: () => void,
   setTransitioning: (v: boolean) => void,
@@ -204,7 +204,7 @@ function runCloseTransition(
  */
 function runOpenTransition(
   el: HTMLDivElement,
-  btn: HTMLButtonElement | null,
+  btn: HTMLElement | null,
   chatHeight: number,
   setTransitioning: (v: boolean) => void,
 ): () => void {

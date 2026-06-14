@@ -378,15 +378,15 @@ def _default_agent_id() -> str:
 
 
 def _delete_session_files(session_id: str):
-    """Look up which agent owns this conv then delete its dir."""
+    """Destroy a session by id via the source of truth (SessionStore).
+
+    No agent_id lookup: SessionStore deletes by session_id alone. The
+    old "find the owning agent, then delete its dir" path could not see
+    sessions whose meta had no agent_id (forced-tool-call shells), which
+    is what left orphans that reappeared on refresh."""
     try:
-        with _sessions_lock:
-            conv = _sessions.get(session_id)
-            agent_id = (conv or {}).get("agent_id") if conv else None
-        if not agent_id:
-            agent_id = _persist.resolve_agent_for_conv(session_id)
-        if agent_id:
-            _persist.delete_session(agent_id, session_id)
+        from openprogram.agent.session_db import default_db
+        default_db().delete_session(session_id)
     except Exception as e:
         _log(f"[delete_session_files] {session_id} error: {e}")
 

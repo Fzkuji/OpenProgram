@@ -32,8 +32,7 @@ import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
 import { FunctionForm, visibleParams } from "./modes/fn-form/fn-form";
-import { QuestionMode } from "./modes/question/question-mode";
-import { ApprovalMode } from "./modes/approval/approval-mode";
+import { QuestionMode, type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
 import {
   FastIcon,
@@ -266,15 +265,22 @@ export function Composer() {
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   // 系统等用户决定（runtime.ask / confirm / approval）的 FIFO 队列；队首占据
-  // 输入区呈现为 question/approval mode（docs/design/ui/composer-interaction-modes.md）。
+  // 输入区呈现为 question mode（docs/design/ui/composer-interaction-modes.md）。
+  // 输入框状态跟会话走：只认「属于当前会话」的提问，切到别的会话就不显示
+  // （也就不会误把答案发到别的会话上）。
   const pendingDecisions = useSessionStore((s) => s.pendingDecisions);
   const dequeueDecision = useSessionStore((s) => s.dequeueDecision);
-  const activeDecision = pendingDecisions[0] ?? null;
+  const activeDecision =
+    pendingDecisions.find((d) => d.sessionId === currentSessionId) ?? null;
   const router = useRouter();
   const send = wsSend;
 
   const isRunning = runningTask !== null;
   const fnFormActive = fnFormFunction !== null;
+  // 右下角圆按钮是否该显示红色停止 ■：仅当任务真在跑、且当前没有 decision
+  // 占据输入区。decision 在场时函数虽“运行”着，但它在等用户答题——此刻这个
+  // 按钮要当“提交”用，不能变停止键（否则点了是中断函数，不是交答案）。
+  const showStop = isRunning && activeDecision === null;
 
   // 输入框当前处于哪个 mode —— 一个显式的派生值（含优先级），渲染时按它
   // switch，不再散在 JSX 里嵌套三元。idle / fn-form / question / approval。
@@ -385,14 +391,11 @@ export function Composer() {
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
-  // question / approval / form mode 把它们的"提交"动作 + 可否提交报给这个
-  // state，让右下角那个发送按钮（wrapper 级、位置不动）直接当它们的提交
-  // 按钮——跟 fn-form 用同一个按钮位，只是换功能。次操作（取消/拒绝）用
-  // 左上角的 ✕ 关闭键。state（非 ref）才能让按钮的 disabled 随选择实时更新。
-  const [decisionAction, setDecisionAction] = useState<{
-    run: () => void;
-    canSubmit: boolean;
-  } | null>(null);
+  // question / approval / form / ask_many 各 mode 把右下角该渲染的按钮组
+  // （统一文字 pill：单题 [发送]，ask_many [上一题, 下一题/发送]）报给这个
+  // state，由 composer 在发送按钮位呈现，取代圆形箭头。state（非 ref）才能
+  // 让按钮的 disabled / 文案随选择 + 翻页实时更新。
+  const [decisionAction, setDecisionAction] = useState<DecisionAction | null>(null);
   // Drives the animated send arrow from the whole button's hover.
   const sendIconRef = useRef<AnimatedNavIconHandle>(null);
   // Refs:
@@ -946,11 +949,9 @@ export function Composer() {
     setCurrentConv,
   ]);
 
-  const onSendButtonClick = activeDecision
-    ? () => decisionAction?.run()
-    : fnFormActive
-      ? submitFnForm
-      : submit;
+  // decision 在场时右下角是 mode 自己的 navButtons 按钮组（见 JSX），不走
+  // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
+  const onSendButtonClick = fnFormActive ? submitFnForm : submit;
 
   // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
   // （后端 _resolve_question 收口 + 广播）。
@@ -992,11 +993,9 @@ export function Composer() {
   // let submitFnForm's setError path light up the missing field's red
   // border instead. The button still LOOKS dim (data-fn-missing) and
   // its title spells out which field is blocking.
-  const sendDisabled = activeDecision
-    ? !(decisionAction?.canSubmit ?? false)
-    : fnFormActive
-      ? false
-      : !input.trim() || pasteMissing.size > 0;
+  const sendDisabled = fnFormActive
+    ? false
+    : !input.trim() || pasteMissing.size > 0;
   const sendTitle = fnFormActive
     ? missingFnParams.length > 0
       ? text(
@@ -1063,16 +1062,9 @@ export function Composer() {
         />
         <FileTiles docs={pendingDocs} onRemove={removeDoc} />
 
-        {/* 按当前 mode 渲染输入区主体。mode 是上面解析出的显式派生值，
-            优先级见 resolve-mode.ts。每个分支只管自己那一种形态。 */}
-        {composerMode === "approval" && activeDecision ? (
-          <ApprovalMode
-            key={activeDecision.id}
-            decision={activeDecision}
-            onResolve={dequeueDecision}
-            onAction={setDecisionAction}
-          />
-        ) : composerMode === "question" && activeDecision ? (
+        {/* 按当前 mode 渲染输入区主体。所有「问用户」的形态（ask/confirm/
+            approval/form/ask_many）都由唯一的 QuestionMode 承接，不再分组件。 */}
+        {activeDecision ? (
           <QuestionMode
             key={activeDecision.id}
             decision={activeDecision}
@@ -1290,43 +1282,70 @@ export function Composer() {
             (top: wrapper.height − 48) over the same 0.3s curve as the
             wrapper itself — one continuous motion instead of a row-to
             -row teleport.
-            In question/approval/form mode it becomes that mode's submit
-            button (same position, function swapped via decisionAction). */}
-        {(
+            统一：任何 decision（单选/多选/确认/批准/表单/ask_many）在场时，
+            这个位置都换成该 mode 报来的 navButtons 文字按钮组——单题是一颗
+            「发送」，ask_many 是「上一题 / 下一题（末题→发送）」。绝不出现
+            圆形箭头或红色停止 ■。圆形按钮只在普通聊天 / fn-form 时出现。 */}
+        {activeDecision ? (
+          <div ref={sendBtnRef as unknown as React.RefObject<HTMLDivElement>} className={styles.decisionNav}>
+            {(decisionAction?.navButtons ?? []).map((b, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`${styles.decisionNavBtn} ${b.primary ? styles.decisionNavBtnPrimary : ""}`}
+                onClick={b.onClick}
+                disabled={b.disabled}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          /* decision 在场时（即便函数正“运行”——它其实在等用户答题），这个
+             按钮必须是“提交”语义，绝不能显示成红色停止 ■：用户此刻要的是
+             交答案，不是中断函数。所以 showStop 把 decision 排除在外。 */
           <button
             ref={sendBtnRef}
-            className={`${styles.actionBtn} ${isRunning ? styles.stopBtn : styles.sendBtn}`}
-            onClick={isRunning ? stop : onSendButtonClick}
-            disabled={!isRunning && sendDisabled}
+            className={`${styles.actionBtn} ${showStop ? styles.stopBtn : styles.sendBtn}`}
+            onClick={showStop ? stop : onSendButtonClick}
+            disabled={!showStop && sendDisabled}
             data-fn-missing={
-              !isRunning && fnFormActive && missingFnParams.length > 0
+              !showStop && fnFormActive && missingFnParams.length > 0
                 ? "true"
                 : undefined
             }
             onMouseEnter={() => sendIconRef.current?.startAnimation?.()}
             onMouseLeave={() => sendIconRef.current?.stopAnimation?.()}
-            title={isRunning ? text("Stop", "停止") : sendTitle}
+            title={showStop ? text("Stop", "停止") : sendTitle}
             type="button"
           >
-            {isRunning ? <StopIcon /> : <SendIcon ref={sendIconRef} />}
+            {showStop ? <StopIcon /> : <SendIcon ref={sendIconRef} />}
           </button>
         )}
 
-        {/* Close button — wrapper-level so it stays mounted across
-            fn-form switches (no blink on the icon when the header
-            unmounts/remounts with a new key). Visible while fn-form is
-            open, OR while a system decision occupies the input — where it
-            doubles as the decision's 取消/拒绝 (the primary action lives on
-            the bottom-right send button via decisionAction). */}
-        {((fnFormActive && !fnForm.closing) || activeDecision) && (
+        {/* 右上角 —— wrapper 级，跨 fn-form 切换不闪。decision 在场时是
+            「聊聊这个」文字 pill（放弃按它问的来、直接就这话题聊 = reject 当前
+            decision 回到普通输入）；fn-form 时是 ✕ 关闭键。 */}
+        {activeDecision ? (
+          <button
+            className={styles.chatAboutBtn}
+            type="button"
+            onClick={rejectDecision}
+            onMouseDown={(e) => e.preventDefault()}
+            tabIndex={-1}
+            title={text("Chat about this instead", "直接聊这个")}
+          >
+            {text("Chat about this", "Chat about this")}
+          </button>
+        ) : (fnFormActive && !fnForm.closing) && (
           <button
             className={styles.closeBtn}
             type="button"
-            onClick={activeDecision ? rejectDecision : handleFnFormClose}
+            onClick={handleFnFormClose}
             onMouseDown={(e) => e.preventDefault()}
             tabIndex={-1}
-            title={activeDecision ? text("Reject", "拒绝") : text("Close", "关闭")}
-            aria-label={activeDecision ? text("Reject", "拒绝") : text("Close", "关闭")}
+            title={text("Close", "关闭")}
+            aria-label={text("Close", "关闭")}
           >
             <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
               <path

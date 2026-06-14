@@ -418,6 +418,55 @@
   height: 14px;
   fill: currentColor;
 }
+
+/* ask_many 的「上一题 / 下一题（末题→确认）」按钮组 —— 占住发送按钮位
+   （取代圆形箭头）。和 .actionBtn 一样绝对锚在右下，top 由 sendBtnRef 的
+   inline style 驱动，跟 wrapper 高度同步滑动；只是这里是横排两颗 pill。 */
+.decisionNav {
+  position: absolute;
+  /* 和原来的圆形发送按钮 .actionBtn 同一个右锚（right: offset），左右对齐。
+     右上角的「聊聊这个」在 top:offset，导航组在底行，不在同一水平，不重叠。 */
+  right: var(--composer-button-offset);
+  top: var(--composer-button-offset);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: top var(--composer-height-transition);
+  z-index: 2;
+}
+.decisionNavBtn {
+  height: var(--composer-button-size);
+  line-height: var(--composer-button-size);
+  padding: 0 16px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary);
+  transition: background 180ms ease, color 180ms ease, opacity 180ms ease;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.decisionNavBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-secondary) 20%, transparent);
+  color: var(--text-primary);
+}
+.decisionNavBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* 主按钮（下一题 / 确认）：淡橙色 tint，跟发送按钮一个调子，不要实心亮橙。 */
+.decisionNavBtnPrimary {
+  background: color-mix(in srgb, var(--accent-orange) 16%, transparent);
+  color: var(--accent-orange);
+  font-weight: 600;
+}
+.decisionNavBtnPrimary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-orange) 24%, transparent);
+  color: var(--accent-orange);
+}
 /* Send glyph is a LINE icon (pqoqubbw arrow-up) — keep it stroked, not
    filled, overriding .actionBtn's fill. (The Stop square stays filled.) */
 .sendBtn svg {
@@ -481,6 +530,31 @@
 }
 .closeBtn svg {
   display: block;
+}
+
+/* 右上角「Chat about this」—— decision 在场时取代 ✕：放弃按它问的来，直接
+   就这话题聊。文字 pill（非圆形），锚在同一右上角 offset，高度对齐别的圆控件。 */
+.chatAboutBtn {
+  position: absolute;
+  top: var(--composer-button-offset);
+  right: var(--composer-button-offset);
+  height: var(--composer-button-size);
+  line-height: var(--composer-button-size);
+  padding: 0 14px;
+  border-radius: 999px;
+  border: none;
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  z-index: 2;
+}
+.chatAboutBtn:hover {
+  background: color-mix(in srgb, var(--text-secondary) 20%, transparent);
+  color: var(--text-bright);
 }
 
 /* Right-aligned group in the bottom row (context badge + optional

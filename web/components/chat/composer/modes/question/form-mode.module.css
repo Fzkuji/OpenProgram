@@ -22,6 +22,14 @@
   gap: 6px;
 }
 
+/* boolean 字段：标签 + 勾选框紧挨同一行，靠左（勾选框就贴在文字右边）。 */
+.fieldRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
 /* = fn-form .label：sans、fs-base、text-secondary。 */
 .label {
   font-family: var(--font-sans);

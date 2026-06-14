@@ -53,6 +53,9 @@ export interface ChatToolCall {
  *  tool approval). See composer modes (docs/design/ui/composer-interaction-modes.md). */
 export interface PendingDecision {
   id: string;
+  /** 这条提问属于哪个会话 —— 卡片只在该会话的输入框里显示（输入框状态跟
+   *  会话走，切到别的会话不该看到、更不该误答到别的会话上）。 */
+  sessionId: string;
   kind: "ask" | "confirm" | "approval" | "form" | "ask_many";
   prompt: string;
   options: string[];

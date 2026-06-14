@@ -271,6 +271,7 @@ export function useWS(): void {
             if (!dd.id) return;
             useSessionStore.getState().enqueueDecision({
               id: String(dd.id),
+              sessionId: String(dd.session_id || ""),
               kind: (dd.kind as "ask" | "confirm" | "approval" | "form" | "ask_many") || "ask",
               prompt: String(dd.prompt || ""),
               options: Array.isArray(dd.options) ? (dd.options as string[]) : [],
@@ -327,6 +328,46 @@ export function useWS(): void {
           return true;
         case "session_loaded":
           loadSessionData(d as never);
+          // 刷新恢复：函数可能正阻塞在 runtime.ask 等用户答题。live 的
+          // question.asked 帧在本次（重）连之前就发过了，刷新后丢了卡片 →
+          // 函数卡在 Running。这里确定性地按 session 主动拉一次还在 pending
+          // 的提问重建卡片（不靠 WS replay 时序）。
+          {
+            const sid = (d as Record<string, unknown>)?.id;
+            if (typeof sid === "string" && sid) {
+              void fetch(`/api/questions?session_id=${encodeURIComponent(sid)}`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((j) => {
+                  const qs = j && Array.isArray(j.questions) ? j.questions : [];
+                  import("@/lib/session-store").then(({ useSessionStore }) => {
+                    const store = useSessionStore.getState();
+                    for (const dd of qs as Record<string, unknown>[]) {
+                      if (!dd.id) continue;
+                      store.enqueueDecision({
+                        id: String(dd.id),
+                        sessionId: String(dd.session_id || sid),
+                        kind: (dd.kind as PendingDecision["kind"]) || "ask",
+                        prompt: String(dd.prompt || ""),
+                        options: Array.isArray(dd.options) ? (dd.options as string[]) : [],
+                        multi: Boolean(dd.multi),
+                        allow_custom: dd.allow_custom !== false,
+                        detail: dd.detail ? String(dd.detail) : undefined,
+                        tool: dd.tool ? String(dd.tool) : undefined,
+                        args: (dd.args as Record<string, unknown>) || undefined,
+                        schema:
+                          dd.schema && typeof dd.schema === "object"
+                            ? (dd.schema as PendingDecision["schema"])
+                            : undefined,
+                        questions: Array.isArray(dd.questions)
+                          ? (dd.questions as PendingDecision["questions"])
+                          : undefined,
+                      });
+                    }
+                  });
+                })
+                .catch(() => { /* 网络抖动忽略；WS replay 仍是兜底 */ });
+            }
+          }
           return true;
         case "sessions_list":
           handleSessionsList((d ?? []) as never);

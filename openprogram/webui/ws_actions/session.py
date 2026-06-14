@@ -61,31 +61,26 @@ def _annotate_spawn_origin(graph: list[dict]) -> None:
 
 async def handle_delete_session(ws, cmd: dict):
     from openprogram.webui import server as _s
-    from openprogram.webui import persistence as _persist
+    from openprogram.agent.session_db import default_db
 
     session_id = cmd.get("session_id")
     if not session_id:
         return
-    # Capture agent_id BEFORE popping. `_delete_session_files`
-    # otherwise looks up the conv in `_sessions` to find the
-    # agent_id and falls back to a filesystem scan — which silently
-    # misses sessions whose conv_dir is gone or never existed,
-    # leaving the DB row behind and resurrecting the conversation
-    # on the next page load.
+    # 真相来源是 SessionStore（git repo，按 session_id 直接定位，见
+    # session_db.py 顶注）。delete_session(session_id) 一步 destroy 该 repo，
+    # 不需要 agent_id —— 旧的「先查 agent_id 再删 / 查不到就扫文件系统」是
+    # SQLite 时代的遗留，会漏掉没有 agent_id 的会话（forced-tool-call 建的
+    # 空壳），导致删了刷新又出现。直接走真相来源，彻底删干净。
     with _s._sessions_lock:
         conv = _s._sessions.pop(session_id, None)
-    agent_id = (conv or {}).get("agent_id") if conv else None
     if conv:
         if conv.get("runtime") and hasattr(conv["runtime"], "close"):
             conv["runtime"].close()
         _s._cleanup_session_resources(session_id, conv)
-    if agent_id:
-        try:
-            _persist.delete_session(agent_id, session_id)
-        except Exception as e:
-            _s._log(f"[delete_session] {session_id}: {e}")
-    else:
-        _s._delete_session_files(session_id)
+    try:
+        default_db().delete_session(session_id)
+    except Exception as e:
+        _s._log(f"[delete_session] {session_id}: {e}")
 
 
 async def handle_rename_session(ws, cmd: dict):
@@ -163,47 +158,47 @@ async def handle_update_session_flags(ws, cmd: dict):
 
 async def handle_clear_sessions(ws, cmd: dict):
     from openprogram.webui import server as _s
-    from openprogram.webui import persistence as _persist
+    from openprogram.agent.session_db import default_db
 
-    # Capture the full (session_id, agent_id) pairs BEFORE wiping
-    # `_sessions`. `_s._delete_session_files` resolves `agent_id` from
-    # `_sessions.get(...)` first; if we cleared the dict first that
-    # lookup returns None and the function falls through to a
-    # best-effort filesystem scan — which silently misses every
-    # session that wasn't backed by a conv_dir, so the DB row sticks
-    # around and the conversation reappears on refresh.
-    with _s._sessions_lock:
-        agent_id_by_session: dict[str, str | None] = {
-            sid: conv.get("agent_id")
-            for sid, conv in _s._sessions.items()
-        }
-        for conv in _s._sessions.values():
-            if conv.get("runtime") and hasattr(conv["runtime"], "close"):
-                conv["runtime"].close()
-        _s._sessions.clear()
-    # Also collect any session IDs that exist only in the DB (never
-    # hydrated into `_sessions` this run) so a "clear all" really
-    # nukes everything the sidebar shows on next page load.
+    db = default_db()
+
+    # 真相来源是 SessionStore（git repos）。"清空全部" = 把 SessionStore 里
+    # 枚举到的每个 session 都 delete_session(sid) 掉，外加任何还在内存但已
+    # 不在磁盘的。一律按 session_id 直接 destroy git repo，不碰 agent_id ——
+    # 旧逻辑「按 agent_id 删 / 查不到就扫文件系统」会漏掉没有 agent_id 的
+    # 空壳会话（forced-tool-call 建的），删了刷新又出现。这里收口到真相来源，
+    # 一次删干净。
+    ids: set[str] = set()
     try:
-        for agent_id, sid in _persist.list_sessions():
-            agent_id_by_session.setdefault(sid, agent_id)
-    except Exception:
-        pass
+        for row in db.list_sessions(limit=10**9):
+            sid = row.get("id")
+            if sid:
+                ids.add(sid)
+    except Exception as e:
+        _s._log(f"[clear_sessions] list: {e}")
 
-    for cid, agent_id in agent_id_by_session.items():
+    # 内存里活着的会话：先关 runtime，再纳入待删集合（覆盖磁盘没枚举到的）。
+    with _s._sessions_lock:
+        for sid, conv in _s._sessions.items():
+            ids.add(sid)
+            if conv.get("runtime") and hasattr(conv["runtime"], "close"):
+                try:
+                    conv["runtime"].close()
+                except Exception:
+                    pass
+        _s._sessions.clear()
+
+    for cid in ids:
         _s._follow_up_queues.pop(cid, None)
         with _s._running_tasks_lock:
             _s._running_tasks.pop(cid, None)
-        # Prefer the captured agent_id so the DB row + on-disk
-        # conv_dir both get nuked atomically. If we don't have one,
-        # fall back to the legacy resolve-by-scan path.
-        if agent_id:
-            try:
-                _persist.delete_session(agent_id, cid)
-            except Exception as e:
-                _s._log(f"[clear_sessions] delete {cid}: {e}")
-        else:
-            _s._delete_session_files(cid)
+        try:
+            db.delete_session(cid)
+        except Exception as e:
+            _s._log(f"[clear_sessions] delete {cid}: {e}")
+
+    # 删完回发一次真实列表（应为空），让发起方立刻看到清空结果，不靠刷新。
+    await handle_list_sessions(ws, {})
 
 
 async def handle_load_session(ws, cmd: dict):

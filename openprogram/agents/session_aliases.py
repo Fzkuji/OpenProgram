@@ -246,21 +246,23 @@ def detach_session(session_id: str) -> int:
 
 def _stamp_session_meta(agent_id: str, session_id: str,
                         row: dict[str, Any]) -> None:
-    """Best-effort: poke the session's meta.json so UI queries that
-    read the session directly (without going through this module)
-    still see the attached channel/peer."""
+    """Best-effort: write the attached channel/account/peer onto the
+    session so UI queries that read it directly see the binding.
+
+    Writes through SessionStore (the source of truth). The old version
+    pointed at a per-agent ghost dir's meta.json that SessionStore never
+    created, so it silently no-op'd on every call — the binding never
+    actually landed on the session."""
     try:
-        from openprogram.webui import persistence as _persist
-        meta_p = _persist.conv_dir(agent_id, session_id) / "meta.json"
-        if not meta_p.exists():
+        from openprogram.agent.session_db import default_db
+        db = default_db()
+        if db.get_session(session_id) is None:
             return
-        meta = json.loads(meta_p.read_text(encoding="utf-8"))
-        meta["channel"] = row["channel"]
-        meta["account_id"] = row["account_id"]
-        meta["peer"] = dict(row["peer"])
-        meta_p.write_text(
-            json.dumps(meta, indent=2, default=str),
-            encoding="utf-8",
+        db.update_session(
+            session_id,
+            channel=row["channel"],
+            account_id=row["account_id"],
+            peer=dict(row["peer"]),
         )
     except Exception:
         pass

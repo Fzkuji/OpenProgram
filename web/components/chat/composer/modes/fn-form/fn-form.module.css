@@ -45,7 +45,7 @@
   padding: var(--composer-bottom-row-pad)
     calc(var(--composer-bottom-row-pad) + var(--composer-button-size) + 8px)
     calc(var(--composer-bottom-row-pad) - 1px)
-    var(--composer-bottom-row-pad);
+    24px;
   /* Lock the header height to `--composer-bottom-row-h` (= 64), so it
      matches the bottom row and centres the absolute-positioned close
      button (top: 16, size: 32 → centre 32 = header centre when h=64).
@@ -126,7 +126,7 @@
    switches. */
 
 .body {
-  padding: 12px 18px;
+  padding: 12px 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;

@@ -337,11 +337,9 @@ export function ExecutionDag({
         onClick={() => setCollapsed((c) => !c)}
       >
         <span>
-          {running ? (
-            <span className="indicator-dot pulse-opacity" />
-          ) : (
-            <span className="inline-tree-script" title="function">{"𝓕"}</span>
-          )}
+          {/* 头部图标始终是 𝓕 艺术字（运行中也是），不再用晃动的橙点。
+              「运行中」另有 body 里的 Running… 行表达。 */}
+          <span className="inline-tree-script" title="function">{"𝓕"}</span>
           {"\u00a0\u00a0"}
           {headerLabel ?? text("Execution DAG", "执行 DAG")}
         </span>
