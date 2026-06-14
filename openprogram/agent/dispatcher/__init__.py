@@ -65,7 +65,7 @@ from openprogram.agent.dispatcher.persistence import persist_assistant_message
 # see openprogram/agent/_turn_lifecycle.py for the per-turn DB
 # protocol. Kept in a sibling module so this file doesn't grow past
 # its already-1500-line mark.
-from openprogram.agent._turn_lifecycle import (
+from openprogram.agent.internals._turn_lifecycle import (
     insert_placeholder as _insert_placeholder,
     mark_terminal_status as _mark_terminal_status,
     fold_error_into_placeholder as _fold_error_into_placeholder,
@@ -82,7 +82,7 @@ from openprogram.agent._turn_lifecycle import (
 # ``dispatcher.approval_registry()``. 审批已合流到 QuestionRegistry，
 # ``approval_registry()`` 返回统一的 QuestionRegistry（不再有 ApprovalRegistry 类）。
 from openprogram.agent import plan_mode as _plan_mode
-from openprogram.agent._approval import (
+from openprogram.agent.internals._approval import (
     approval_registry,
     wrap_with_approval as _wrap_with_approval,
     await_user_approval as _await_user_approval,
@@ -1009,7 +1009,7 @@ def _run_loop_blocking(
 
 
 # Event/usage parsing helpers live in _event_parsing.py.
-from openprogram.agent._event_parsing import (
+from openprogram.agent.internals._event_parsing import (
     agent_event_to_envelope as _agent_event_to_envelope,
     aiter_event_stream as _aiter_event_stream,
     extract_text as _extract_text,
@@ -1023,7 +1023,7 @@ from openprogram.agent._event_parsing import (
 # Agent profile + tools — live in _model_tools.py; re-exported here so
 # the dispatcher body keeps reading as before.
 # ---------------------------------------------------------------------------
-from openprogram.agent._model_tools import (
+from openprogram.agent.internals._model_tools import (
     load_agent_profile as _load_agent_profile,
     is_anthropic_family as _is_anthropic_family,
     resolve_model as _resolve_model,

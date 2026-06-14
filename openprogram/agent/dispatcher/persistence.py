@@ -24,8 +24,8 @@ from __future__ import annotations
 import json
 import time
 
-from openprogram.agent._model_tools import is_anthropic_family as _is_anthropic_family
-from openprogram.agent._turn_lifecycle import mark_terminal_status as _mark_terminal_status
+from openprogram.agent.internals._model_tools import is_anthropic_family as _is_anthropic_family
+from openprogram.agent.internals._turn_lifecycle import mark_terminal_status as _mark_terminal_status
 
 
 def persist_assistant_message(

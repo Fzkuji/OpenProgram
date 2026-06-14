@@ -21,7 +21,7 @@ import asyncio
 from typing import Optional
 
 from openprogram.agent.dispatcher.types import EventCallback, TurnRequest, _noop
-from openprogram.agent._model_tools import (
+from openprogram.agent.internals._model_tools import (
     load_agent_profile as _load_agent_profile,
     resolve_model as _resolve_model,
 )
