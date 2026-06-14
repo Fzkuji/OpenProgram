@@ -100,25 +100,32 @@ class SlackChannel(Channel):
 
             from openprogram.channels._conversation import dispatch_inbound
             scoped_id = f"{ch_msg.chat_id}_{ch_msg.user_id}"
-            reply_text = dispatch_inbound(
-                channel="slack",
-                account_id=self.account_id,
-                peer_kind=ch_msg.chat_type,
-                peer_id=scoped_id,
-                user_text=ch_msg.text,
-                user_display=ch_msg.user_display or scoped_id,
-                progress_stream=True,
-            )
-            # progress_stream=True 走通时 dispatch_inbound 内部已经把
-            # reply edit 进占位消息, 返回 None. 降级路径返回字符串, 走
-            # 旧 SDK chat_postMessage 路径.
-            if reply_text is not None:
-                for chunk in _chunk(reply_text, MAX_MSG_CHARS):
-                    try:
-                        web.chat_postMessage(channel=channel_id, text=chunk)
-                    except Exception as e:  # noqa: BLE001
-                        print(f"[{tag}] send failed: {e}")
-                        return
+
+            def _run_turn() -> None:
+                reply_text = dispatch_inbound(
+                    channel="slack",
+                    account_id=self.account_id,
+                    peer_kind=ch_msg.chat_type,
+                    peer_id=scoped_id,
+                    user_text=ch_msg.text,
+                    user_display=ch_msg.user_display or scoped_id,
+                    progress_stream=True,
+                )
+                # progress_stream=True 走通时 dispatch_inbound 内部已经把
+                # reply edit 进占位消息, 返回 None. 降级路径返回字符串, 走
+                # 旧 SDK chat_postMessage 路径.
+                if reply_text is not None:
+                    for chunk in _chunk(reply_text, MAX_MSG_CHARS):
+                        try:
+                            web.chat_postMessage(channel=channel_id, text=chunk)
+                        except Exception as e:  # noqa: BLE001
+                            print(f"[{tag}] send failed: {e}")
+                            return
+
+            # Per-message thread (mirrors discord/telegram/wechat): a
+            # function pausing on runtime.ask must not block the socket-mode
+            # listener, or the user's /answer reply never gets handled.
+            threading.Thread(target=_run_turn, daemon=True).start()
 
         client.socket_mode_request_listeners.append(_handle)
         client.connect()

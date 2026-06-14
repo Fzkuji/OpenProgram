@@ -529,15 +529,10 @@ async def handle_follow_up_answer(ws, cmd: dict):
 
 
 def _resolve_question(qid: str, outcome: str, value=None) -> None:
-    """收口：resolve registry + 广播 question.replied/rejected 收回别处 UI。"""
-    from openprogram.agent.questions import get_question_registry
-    from openprogram.agent.event_bus import emit_ws_frame
-    ok = get_question_registry().resolve(qid, outcome, value)
-    if ok:
-        emit_ws_frame({
-            "type": "question.replied" if outcome == "answered" else "question.rejected",
-            "data": {"id": qid},
-        })
+    """收口：resolve registry + 广播收回别处 UI。共享实现在 questions.py
+    （channel 的 /answer 也走它），这里保留薄封装供 WS handler 调用。"""
+    from openprogram.agent.questions import resolve_question_and_broadcast
+    resolve_question_and_broadcast(qid, outcome, value)
 
 
 async def handle_question_reply(ws, cmd: dict):

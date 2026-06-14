@@ -114,6 +114,16 @@ def dispatch_inbound(
         )
         session_key = _apply_reset_policy(agent, base_key)
 
+    # ---- /answer · /decline 文本命令拦截 -------------------------------
+    # 函数 runtime.ask 在本 channel 会话里挂了个待答问题，用户用一条
+    # /answer <qid> <choice> 文本消息回答（聊天软件没有网页那种问题卡片）。
+    # 命中且该 qid 属于本 session 才 resolve 并回执，不走 agent dispatch；
+    # 否则（不是命令 / qid 不属于本 session）返回 None，照常进 agent。
+    from openprogram.channels._question_commands import try_handle_question_command
+    _receipt = try_handle_question_command(user_text, session_key)
+    if _receipt is not None:
+        return _receipt
+
     # ---- session 创建 / 加载 -------------------------------------------
     meta, _ = _load_or_init_session(
         agent_id=agent_id,
@@ -228,6 +238,18 @@ def dispatch_inbound(
         tools_override=tools_override_from_config(run_cfg),
         thinking_effort=run_cfg.thinking_effort,
     )
+    # 让本 turn 期间的 runtime.ask 知道"有前端能答"（can_ask=True）且
+    # question.asked 带上正确的 channel session_id —— 否则裸 runtime.ask
+    # （不在 agentic 子进程里那条路径）会因没设会话而走 headless 分支。
+    # agentic function 走子进程时 _child_entry 另设同一个 session id。
+    try:
+        from openprogram.webui._pause_stop import (
+            set_current_session_id as _set_cid,
+            reset_current_session_id as _reset_cid,
+        )
+        _cid_tok = _set_cid(session_key)
+    except Exception:
+        _cid_tok = None
     try:
         result = process_user_turn(req, on_event=_on_event)
     except Exception as e:  # noqa: BLE001
@@ -238,6 +260,12 @@ def dispatch_inbound(
             _maybe_edit(err_text, force=True)
             return None
         return err_text
+    finally:
+        if _cid_tok is not None:
+            try:
+                _reset_cid(_cid_tok)
+            except Exception:
+                pass
 
     reply_text = (result.final_text or "").strip() or "(empty reply)"
     user_msg_id = result.user_msg_id

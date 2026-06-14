@@ -266,6 +266,15 @@ def run_foreground() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] event bridges failed to install: {exc}")
 
+    # Channel question bridge — push runtime.ask/form questions from a
+    # channel session into that chat so the user can /answer them.
+    try:
+        from openprogram.channels._question_bridge import install_question_bridge
+        install_question_bridge()
+        print("[worker] channel question bridge installed")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] channel question bridge failed to install: {exc}")
+
     # Programs watcher — auto-detect agentic harnesses installed at
     # runtime (clone into agentics/ or `programs install`) so their
     # functions go live + the UI refreshes without a restart.

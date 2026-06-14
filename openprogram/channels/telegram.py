@@ -65,7 +65,14 @@ class TelegramChannel(Channel):
                     continue
                 for upd in data.get("result", []):
                     self.offset = upd["update_id"] + 1
-                    self._handle_update(upd)
+                    # Per-message thread (mirrors discord's to_thread): a
+                    # function pausing on runtime.ask inside _handle_update
+                    # must NOT block this poll loop — else the user's own
+                    # /answer reply (fetched by this same loop) never
+                    # arrives and the wait self-deadlocks.
+                    threading.Thread(
+                        target=self._handle_update, args=(upd,), daemon=True,
+                    ).start()
             except KeyboardInterrupt:
                 raise
             except Exception as e:  # noqa: BLE001

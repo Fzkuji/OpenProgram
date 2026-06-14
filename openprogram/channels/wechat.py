@@ -127,7 +127,13 @@ class WechatChannel(Channel):
                 _save_cursor_for_account(self.account_id, cursor)
 
             for msg in data.get("msgs", []) or []:
-                self._handle_message(msg)
+                # Per-message thread (mirrors discord/telegram): a function
+                # pausing on runtime.ask inside _handle_message must not
+                # block this poll loop, or the user's /answer reply never
+                # gets fetched and the wait self-deadlocks.
+                threading.Thread(
+                    target=self._handle_message, args=(msg,), daemon=True,
+                ).start()
 
     # -------------------------------------------------------------------
 

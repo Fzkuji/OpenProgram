@@ -253,6 +253,28 @@ def consume_or_timeout(qid: str) -> _Resolution:
     return res if res is not None else ("timeout", None)
 
 
+def resolve_question_and_broadcast(qid: str, outcome: str, value=None) -> bool:
+    """收口：resolve registry + 广播 question.replied/rejected 收回别处 UI。
+
+    跨前端的统一收口——webui WS handler、REST、channel 的 /answer 都走这一个，
+    保证 claim-once（第一个答的赢）且赢的一侧广播一帧让别处 UI（webui 卡片 /
+    其它 channel 消息）收回。放在 questions.py（不在 webui）让 channel 不必反向
+    依赖 webui。返回是否成功 resolve（False = 已被答过 / 不存在）。
+    """
+    ok = get_question_registry().resolve(qid, outcome, value)
+    if ok:
+        try:
+            from openprogram.agent.event_bus import emit_ws_frame
+            emit_ws_frame({
+                "type": "question.replied" if outcome == "answered"
+                        else "question.rejected",
+                "data": {"id": qid},
+            })
+        except Exception:
+            pass
+    return ok
+
+
 def ask_blocking(
     *,
     session_id: str,
