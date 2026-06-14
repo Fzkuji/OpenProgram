@@ -33,8 +33,10 @@
 .body {
   display: flex;
   flex-direction: column;
+  /* 与 fn-form 的 .body 完全统一：问题/选项/输入框 是三个并列组件，
+     对应 fn-form 的「字段之间」节奏 → gap 12px；上下分割线各 12px。 */
   gap: 12px;
-  padding: 12px 24px;
+  padding: 14px 24px;
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
 }
@@ -65,7 +67,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 2px;
 }
 
 .opt {
@@ -130,7 +131,6 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 2px;
 }
 
 /* 次按钮（取消/拒绝）= fn-form .toggleBtn 的中性 pill。 */
