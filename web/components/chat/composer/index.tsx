@@ -279,6 +279,10 @@ export function Composer() {
   // 输入框当前处于哪个 mode —— 一个显式的派生值（含优先级），渲染时按它
   // switch，不再散在 JSX 里嵌套三元。idle / fn-form / question / approval。
   const composerMode = resolveComposerMode(activeDecision, fnFormFunction);
+  // 任何"输入框变形"态（fn-form / question / approval / form）都用 fn-form
+  // 那套容器样式（header/body 两段式 + 分割线定位），所以 wrapper 的 mode
+  // 类不只在 fn-form 时加。
+  const morphed = composerMode !== "idle";
 
   // 冲突规则（docs/design/ui/composer-interaction-modes.md）：系统决定
   // （runtime.ask / approval）撞上用户主动开的 fn-form → 取消 fn-form，让
@@ -381,6 +385,14 @@ export function Composer() {
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const sendBtnRef = useRef<HTMLButtonElement>(null);
+  // question / approval / form mode 把它们的"提交"动作 + 可否提交报给这个
+  // state，让右下角那个发送按钮（wrapper 级、位置不动）直接当它们的提交
+  // 按钮——跟 fn-form 用同一个按钮位，只是换功能。次操作（取消/拒绝）用
+  // 左上角的 ✕ 关闭键。state（非 ref）才能让按钮的 disabled 随选择实时更新。
+  const [decisionAction, setDecisionAction] = useState<{
+    run: () => void;
+    canSubmit: boolean;
+  } | null>(null);
   // Drives the animated send arrow from the whole button's hover.
   const sendIconRef = useRef<AnimatedNavIconHandle>(null);
   // Refs:
@@ -418,6 +430,10 @@ export function Composer() {
     }, [closeFnFormStore, setFnFormClosingLocal]),
     wrapperRef,
     sendBtnRef,
+    // A system decision uses the same morphed container — drive the same
+    // wrapper-grow + button-glide-to-bottom for it. Its id keys the
+    // open-transition so each new decision re-pins the button.
+    decisionKey: activeDecision?.id ?? null,
   });
 
   // Auto-resize the textarea as content changes.
@@ -930,7 +946,23 @@ export function Composer() {
     setCurrentConv,
   ]);
 
-  const onSendButtonClick = fnFormActive ? submitFnForm : submit;
+  const onSendButtonClick = activeDecision
+    ? () => decisionAction?.run()
+    : fnFormActive
+      ? submitFnForm
+      : submit;
+
+  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
+  // （后端 _resolve_question 收口 + 广播）。
+  const rejectDecision = useCallback(() => {
+    const d = activeDecision;
+    if (!d) return;
+    const w = window as unknown as { ws?: WebSocket };
+    if (w.ws && w.ws.readyState === WebSocket.OPEN) {
+      w.ws.send(JSON.stringify({ action: "question_reject", id: d.id }));
+    }
+    dequeueDecision(d.id);
+  }, [activeDecision, dequeueDecision]);
   // In chat mode: disabled when textarea is empty OR when a paste
   //   token references content that was lost (chip is red). Submitting
   //   in the "lost" state would silently strip the token — see the
@@ -960,9 +992,11 @@ export function Composer() {
   // let submitFnForm's setError path light up the missing field's red
   // border instead. The button still LOOKS dim (data-fn-missing) and
   // its title spells out which field is blocking.
-  const sendDisabled = fnFormActive
-    ? false
-    : !input.trim() || pasteMissing.size > 0;
+  const sendDisabled = activeDecision
+    ? !(decisionAction?.canSubmit ?? false)
+    : fnFormActive
+      ? false
+      : !input.trim() || pasteMissing.size > 0;
   const sendTitle = fnFormActive
     ? missingFnParams.length > 0
       ? text(
@@ -1017,7 +1051,7 @@ export function Composer() {
           wrapperRef.current = el;
           composerRootRef.current = el;
         }}
-        className={`${styles.inputWrapper} ${fnFormActive ? styles.fnFormMode : ""}`}
+        className={`${styles.inputWrapper} ${morphed ? styles.fnFormMode : ""}`}
       >
         <ImageAttachStrip
           pendingImages={pendingImages}
@@ -1036,12 +1070,14 @@ export function Composer() {
             key={activeDecision.id}
             decision={activeDecision}
             onResolve={dequeueDecision}
+            onAction={setDecisionAction}
           />
         ) : composerMode === "question" && activeDecision ? (
           <QuestionMode
             key={activeDecision.id}
             decision={activeDecision}
             onResolve={dequeueDecision}
+            onAction={setDecisionAction}
           />
         ) : composerMode === "fn-form" && fnFormFunction ? (
           <FunctionForm
@@ -1254,9 +1290,9 @@ export function Composer() {
             (top: wrapper.height − 48) over the same 0.3s curve as the
             wrapper itself — one continuous motion instead of a row-to
             -row teleport.
-            Hidden while a decision (question/approval) occupies the input
-            area — that mode renders its own answer/reject actions. */}
-        {!activeDecision && (
+            In question/approval/form mode it becomes that mode's submit
+            button (same position, function swapped via decisionAction). */}
+        {(
           <button
             ref={sendBtnRef}
             className={`${styles.actionBtn} ${isRunning ? styles.stopBtn : styles.sendBtn}`}
@@ -1278,17 +1314,19 @@ export function Composer() {
 
         {/* Close button — wrapper-level so it stays mounted across
             fn-form switches (no blink on the icon when the header
-            unmounts/remounts with a new key). Only visible while
-            fn-form is open and not in the middle of closing. */}
-        {fnFormActive && !fnForm.closing && (
+            unmounts/remounts with a new key). Visible while fn-form is
+            open, OR while a system decision occupies the input — where it
+            doubles as the decision's 取消/拒绝 (the primary action lives on
+            the bottom-right send button via decisionAction). */}
+        {((fnFormActive && !fnForm.closing) || activeDecision) && (
           <button
             className={styles.closeBtn}
             type="button"
-            onClick={handleFnFormClose}
+            onClick={activeDecision ? rejectDecision : handleFnFormClose}
             onMouseDown={(e) => e.preventDefault()}
             tabIndex={-1}
-            title={text("Close", "关闭")}
-            aria-label={text("Close", "关闭")}
+            title={activeDecision ? text("Reject", "拒绝") : text("Close", "关闭")}
+            aria-label={activeDecision ? text("Reject", "拒绝") : text("Close", "关闭")}
           >
             <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true">
               <path

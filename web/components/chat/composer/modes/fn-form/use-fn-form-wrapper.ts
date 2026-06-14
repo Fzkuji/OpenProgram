@@ -50,6 +50,12 @@ interface UseFnFormWrapperArgs {
   onCloseComplete: () => void;
   wrapperRef: RefObject<HTMLDivElement>;
   sendBtnRef: RefObject<HTMLButtonElement>;
+  /** A system decision (question/approval/form) occupies the input. It
+   *  uses the same header/body two-段 structure as fn-form, so the
+   *  wrapper-grow + button-glide-to-bottom must run for it too. Identity
+   *  changes (one decision → next) re-run the open transition so the
+   *  button re-pins to the new content height. */
+  decisionKey: string | null;
 }
 
 export interface FnFormWrapperHook {
@@ -62,7 +68,12 @@ export function useFnFormWrapper({
   onCloseComplete,
   wrapperRef,
   sendBtnRef,
+  decisionKey,
 }: UseFnFormWrapperArgs): FnFormWrapperHook {
+  // Any morphed state (fn-form OR a system decision) needs the grow +
+  // button-glide. fn-form keeps its closing/outgoing machinery; the
+  // decision path only needs open-transition + height cleanup.
+  const morphed = fnFormFunction !== null || decisionKey !== null;
   const [outgoingFn, setOutgoingFn] = useState<AgenticFunction | null>(null);
   const prevFnRef = useRef<AgenticFunction | null>(null);
   const chatHeightRef = useRef<number>(98);
@@ -98,14 +109,14 @@ export function useFnFormWrapper({
     const el = wrapperRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      if (fnFormFunction || transitioning) return;
+      if (morphed || transitioning) return;
       const w = wrapperRef.current;
       if (!w || w.style.height) return;
       chatHeightRef.current = w.offsetHeight;
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [fnFormFunction, transitioning, wrapperRef]);
+  }, [morphed, transitioning, wrapperRef]);
 
   // Open / close height transition. See in-line comments for the
   // open vs close branches; the actual measurement trick lives in
@@ -120,20 +131,26 @@ export function useFnFormWrapper({
         onCloseComplete();
       }, setTransitioning);
     }
-    if (fnFormFunction) {
+    // fn-form OR a system decision: grow the wrapper to content height and
+    // glide the action button to the bottom-right. decisionKey in deps so
+    // switching one decision → the next re-pins the button to new height.
+    if (fnFormFunction || decisionKey) {
       return runOpenTransition(el, sendBtnRef.current, chatHeightRef.current, setTransitioning);
     }
-  }, [fnFormFunction, fnFormClosing, onCloseComplete, sendBtnRef, wrapperRef]);
+  }, [fnFormFunction, decisionKey, fnFormClosing, onCloseComplete, sendBtnRef, wrapperRef]);
 
   // After the form unmounts, drop the inline `height` we left behind
   // during the close transition so the wrapper can size itself
   // naturally for chat-mode content (textarea auto-resize, etc.).
   useEffect(() => {
-    if (fnFormFunction) return;
+    if (morphed) return;
     const el = wrapperRef.current;
     if (!el || !el.style.height) return;
     el.style.height = "";
-  }, [fnFormFunction, wrapperRef]);
+    // Decision dismissed with no fn-form close transition to reset it —
+    // glide the action button back to chat-mode top.
+    if (sendBtnRef.current) sendBtnRef.current.style.top = "16px";
+  }, [morphed, wrapperRef, sendBtnRef]);
 
   return { outgoingFn };
 }

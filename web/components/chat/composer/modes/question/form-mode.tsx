@@ -15,10 +15,11 @@
  * 设计：docs/design/runtime/user-input-requests.md（Phase 4a）。
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { PendingDecision, FormFieldSchema } from "@/lib/session-store";
 
+import type { DecisionAction } from "./question-mode";
 import styles from "./question-mode.module.css";
 import formStyles from "./form-mode.module.css";
 
@@ -32,6 +33,8 @@ function wsSend(payload: unknown): void {
 interface FormModeProps {
   decision: PendingDecision;
   onResolve: (id: string) => void;
+  /** 把提交动作报给 composer 的右下角发送按钮（见 question-mode）。 */
+  onAction: (a: DecisionAction | null) => void;
 }
 
 type FieldValue = string | number | boolean;
@@ -45,7 +48,7 @@ function seedValue(f: FormFieldSchema): FieldValue {
   return "";
 }
 
-export function FormMode({ decision: q, onResolve }: FormModeProps) {
+export function FormMode({ decision: q, onResolve, onAction }: FormModeProps) {
   const fields = q.schema ?? {};
   const names = Object.keys(fields); // insertion order = display order
   const [values, setValues] = useState<Record<string, FieldValue>>(() => {
@@ -56,6 +59,13 @@ export function FormMode({ decision: q, onResolve }: FormModeProps) {
 
   const set = (name: string, v: FieldValue) =>
     setValues((cur) => ({ ...cur, [name]: v }));
+
+  // 表单总是经右下角发送按钮提交（canSubmit 恒 true：字段都有默认/可空）。
+  useEffect(() => {
+    onAction({ run: submit, canSubmit: true });
+    return () => onAction(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.id]);
 
   function submit() {
     // Coerce number-typed fields from their string inputs.
@@ -73,18 +83,14 @@ export function FormMode({ decision: q, onResolve }: FormModeProps) {
     onResolve(q.id);
   }
 
-  function reject() {
-    wsSend({ action: "question_reject", id: q.id });
-    onResolve(q.id);
-  }
-
   return (
-    <div className={styles.host} data-fn-form-body>
-      <div className={styles.badge} data-fn-form-header>
-        需要你填写
+    <>
+      <div className={styles.header} data-fn-form-header>
+        <div className={styles.badge}>需要你填写</div>
       </div>
-      <div className={styles.prompt}>{q.prompt}</div>
-      {q.detail ? <div className={styles.detail}>{q.detail}</div> : null}
+      <div className={styles.body} data-fn-form-body>
+        <div className={styles.prompt}>{q.prompt}</div>
+        {q.detail ? <div className={styles.detail}>{q.detail}</div> : null}
 
       <div className={formStyles.fields}>
         {names.map((name) => {
@@ -131,15 +137,7 @@ export function FormMode({ decision: q, onResolve }: FormModeProps) {
           );
         })}
       </div>
-
-      <div className={styles.actions}>
-        <button className={styles.reject} type="button" onClick={reject}>
-          取消
-        </button>
-        <button className={styles.submit} type="button" onClick={submit}>
-          提交
-        </button>
       </div>
-    </div>
+    </>
   );
 }

@@ -166,6 +166,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "gui_agent",
             "research_agent",
             "wiki_agent",
+            "interaction_demo",
         ],
         "includes": [],
     },

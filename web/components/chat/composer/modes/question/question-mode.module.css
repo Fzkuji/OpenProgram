@@ -1,82 +1,128 @@
-/* QuestionMode —— 输入框里的问题形态。视觉沿用旧浮窗卡片的选项/按钮风格，
-   但去掉浮层定位，作为输入区内的内容流（composer 的 inputWrapper 已提供边框/
-   背景，这里只排内容）。 */
+/* QuestionMode / FormMode —— 输入框里的"问用户"形态。视觉与 fn-form
+   （函数参数表单）完全对齐：同一套主题变量、同一套字段/选项/按钮几何，
+   这样三种输入框变形（fn-form / question / form）读起来是一个家族。
+   参考 ../fn-form/fn-form.module.css。 */
 
-.host {
+/* 顶部条 = fn-form 的 .header：锁定与底部发送行同高、带下分割线。 */
+.header {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px 8px;
+  align-items: center;
+  padding: var(--composer-bottom-row-pad)
+    var(--composer-bottom-row-pad)
+    calc(var(--composer-bottom-row-pad) - 1px)
+    var(--composer-bottom-row-pad);
+  min-height: var(--composer-bottom-row-h);
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
+/* 顶部小标签：橙色主色、mono、轻量（fn-form header 的语气）。 */
 .badge {
-  align-self: flex-start;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent, #56d9e9);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
   font-weight: 600;
+  color: var(--accent-orange);
+}
+
+/* 主体 = fn-form 的 .body：12/18 padding、纵向 gap、与发送行间的下分割线。 */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
 }
 
 .prompt {
-  font-size: 15px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   line-height: 1.5;
-  color: var(--text-bright, #f5f5f5);
+  color: var(--text-primary);
 }
 
 .detail {
-  font-size: 12.5px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   line-height: 1.5;
-  color: var(--text-muted, #9aa0aa);
+  color: var(--text-muted);
   white-space: pre-wrap;
   max-height: 160px;
   overflow: auto;
   padding: 8px 10px;
   border-radius: 8px;
-  background: var(--bg-tertiary, #2a2a2e);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
 }
 
+/* 选项 = fn-form 的 .chip / .options（pill、tinted-fill、无边框）。 */
 .options {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
+  margin-top: 2px;
 }
 
 .opt {
-  padding: 7px 14px;
-  border-radius: 9px;
-  font-size: 13px;
-  color: var(--text-bright, #f5f5f5);
-  background: var(--bg-tertiary, #2a2a2e);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  padding: 0 14px;
+  height: 30px;
+  line-height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   cursor: pointer;
-  transition: all 0.12s;
+  transition: background 180ms ease, color 180ms ease;
+  user-select: none;
+  box-sizing: border-box;
 }
 
 .opt:hover {
-  border-color: var(--accent, #56d9e9);
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+  color: var(--text-primary);
 }
 
 .optPicked {
-  border-color: var(--accent, #56d9e9);
-  background: color-mix(in srgb, var(--accent, #56d9e9) 14%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  color: var(--accent-blue);
 }
 
+.optPicked:hover {
+  background: color-mix(in srgb, var(--accent-blue) 26%, transparent);
+}
+
+/* 单行输入 = fn-form 的 .input（bg-primary + border + 32px + 8 radius）。 */
 .input {
   width: 100%;
-  padding: 8px 12px;
-  border-radius: 9px;
-  font-size: 13px;
-  color: var(--text-bright, #f5f5f5);
-  background: var(--bg-tertiary, #2a2a2e);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  box-sizing: border-box;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  height: 32px;
+  line-height: 30px;
+  color: var(--text-bright);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   outline: none;
+  transition: border-color 180ms ease;
 }
 
 .input:focus {
-  border-color: var(--accent, #56d9e9);
+  border-color: var(--accent-blue);
 }
 
+.input::placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+/* 操作行 —— 取消 / 提交，靠右。 */
 .actions {
   display: flex;
   justify-content: flex-end;
@@ -84,30 +130,44 @@
   margin-top: 2px;
 }
 
-.reject,
-.submit {
-  padding: 7px 16px;
-  border-radius: 9px;
-  font-size: 13px;
-  cursor: pointer;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-}
-
+/* 次按钮（取消/拒绝）= fn-form .toggleBtn 的中性 pill。 */
 .reject {
-  color: var(--text-muted, #9aa0aa);
-  background: transparent;
+  padding: 0 16px;
+  height: 30px;
+  line-height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
 }
 
 .reject:hover {
-  color: var(--text-bright, #f5f5f5);
-  border-color: var(--text-muted, #9aa0aa);
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+  color: var(--text-primary);
 }
 
+/* 主按钮（提交）= 用主色实心 pill，呼应 composer 的发送按钮。 */
 .submit {
-  color: var(--bg-primary, #141417);
-  background: var(--accent, #56d9e9);
-  border-color: var(--accent, #56d9e9);
+  padding: 0 16px;
+  height: 30px;
+  line-height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent-orange);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   font-weight: 600;
+  cursor: pointer;
+  transition: filter 180ms ease, opacity 180ms ease;
+}
+
+.submit:hover {
+  filter: brightness(1.08);
 }
 
 .submit:disabled {
