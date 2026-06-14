@@ -82,3 +82,21 @@ def test_other_required_args_still_enforced(ctx_runtime):
     a, k, _tok, _own = _inject_runtime(sig, (), {})
     with pytest.raises(TypeError, match="required_arg"):
         sig.bind(*a, **k)
+
+
+def test_multiple_runtime_params_all_injected(ctx_runtime):
+    """research_agent's shape: `runtime` AND `review_runtime`. BOTH must be
+    filled with the same runtime — the old code `break`ed after one, so
+    (with _RUNTIME_PARAMS an unordered set) it intermittently left
+    review_runtime or runtime as None, and research_agent raised
+    'requires a runtime argument'."""
+    def research_agent(task, runtime=None, review_runtime=None):
+        return task, runtime, review_runtime
+    sig = inspect.signature(research_agent)
+    a, k, _tok, _own = _inject_runtime(sig, (), {"task": "x"})
+    bound = sig.bind(*a, **k)
+    bound.apply_defaults()
+    assert isinstance(bound.arguments["runtime"], Runtime)
+    assert isinstance(bound.arguments["review_runtime"], Runtime)
+    # Same shared instance, not two separate runtimes.
+    assert bound.arguments["runtime"] is bound.arguments["review_runtime"]

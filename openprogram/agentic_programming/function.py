@@ -243,39 +243,44 @@ def _inject_runtime(sig, args, kwargs):
     runtime_token = None
     owns_runtime = False
 
-    for param_name in _RUNTIME_PARAMS:
-        if param_name in bound.arguments and bound.arguments[param_name] is None:
-            # Check call chain first
-            rt = _current_runtime.get(None)
-            if rt is None:
-                # Entry point — create runtime
-                from openprogram.providers.registry import create_runtime
-                rt = create_runtime()
-                runtime_token = _current_runtime.set(rt)
-                owns_runtime = True
-            bound.arguments[param_name] = rt
-            break
+    # Which runtime params this function declares, and which still need a
+    # value (either bound to None via default, or missing entirely). A
+    # function can declare MORE THAN ONE (e.g. research_agent's `runtime`
+    # + `review_runtime`) — every one of them must be filled, not just the
+    # first. The old code `break`ed after one, so with _RUNTIME_PARAMS
+    # being an unordered set, which param got filled was nondeterministic
+    # → research_agent intermittently saw `runtime=None` and raised.
+    declared = [p for p in sig.parameters if p in _RUNTIME_PARAMS]
+    needs = [
+        p for p in declared
+        if (p in bound.arguments and bound.arguments[p] is None)
+        or (p not in bound.arguments)
+    ]
 
-    # Also inject for params that exist but weren't provided (positional missing)
-    if not owns_runtime and runtime_token is None:
-        for param_name in _RUNTIME_PARAMS:
-            if param_name in sig.parameters and param_name not in bound.arguments:
-                rt = _current_runtime.get(None)
-                if rt is None:
-                    from openprogram.providers.registry import create_runtime
-                    rt = create_runtime()
-                    runtime_token = _current_runtime.set(rt)
-                    owns_runtime = True
-                bound.arguments[param_name] = rt
-                break
+    # Lazily resolve ONE runtime (from the call chain, else create one)
+    # and share it across all the params that need it.
+    def _resolve_rt():
+        nonlocal runtime_token, owns_runtime
+        rt = _current_runtime.get(None)
+        if rt is None:
+            from openprogram.providers.registry import create_runtime
+            rt = create_runtime()
+            runtime_token = _current_runtime.set(rt)
+            owns_runtime = True
+        return rt
 
-    # If runtime was provided explicitly and no ContextVar set yet, share it
+    if needs:
+        rt = _resolve_rt()
+        for p in needs:
+            bound.arguments[p] = rt
+
+    # A runtime was passed in explicitly (not None) and nothing is in the
+    # call chain yet → publish it so nested calls inherit the same one.
     if runtime_token is None:
-        for param_name in _RUNTIME_PARAMS:
-            if param_name in bound.arguments and bound.arguments[param_name] is not None:
-                existing = _current_runtime.get(None)
-                if existing is None:
-                    runtime_token = _current_runtime.set(bound.arguments[param_name])
+        for p in declared:
+            if bound.arguments.get(p) is not None:
+                if _current_runtime.get(None) is None:
+                    runtime_token = _current_runtime.set(bound.arguments[p])
                 break
 
     return bound.args, bound.kwargs, runtime_token, owns_runtime
