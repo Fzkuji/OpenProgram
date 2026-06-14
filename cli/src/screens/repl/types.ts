@@ -77,7 +77,7 @@ export type PickerKind =
  */
 export interface PendingDecision {
   id: string;
-  kind: 'ask' | 'confirm' | 'approval' | 'form';
+  kind: 'ask' | 'confirm' | 'approval' | 'form' | 'ask_many';
   prompt: string;
   options: string[];
   multi: boolean;
@@ -89,6 +89,17 @@ export interface PendingDecision {
   /** form-only: flat-object field schema (field name → field def). The
    *  answer is an object (field → value). runtime.form / Phase 4a. */
   schema?: Record<string, FormFieldSchema>;
+  /** ask_many-only: a packed group of questions answered one screen with
+   *  prev/next switching, submitted together as a list. runtime.ask_many. */
+  questions?: AskOne[];
+}
+
+/** One question inside an ask_many group. */
+export interface AskOne {
+  prompt: string;
+  options: string[];
+  multi: boolean;
+  allow_custom: boolean;
 }
 
 /** One field in a runtime.form schema (MCP-elicitation flat object). */

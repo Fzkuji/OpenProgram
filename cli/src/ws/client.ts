@@ -302,6 +302,8 @@ export interface QuestionAskedEnvelope {
     args?: Record<string, unknown>;
     /** form-only: flat-object field schema (field name → field def). */
     schema?: Record<string, unknown>;
+    /** ask_many-only: a packed group of questions. */
+    questions?: unknown[];
     session_id?: string;
     [k: string]: unknown;
   };
