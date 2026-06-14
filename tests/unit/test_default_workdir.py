@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent._workdir import apply_default_workdir, session_workdir_for
+from openprogram.agent.internals._workdir import apply_default_workdir, session_workdir_for
 
 
 class _FakeRuntime:

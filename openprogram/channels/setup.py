@@ -150,7 +150,7 @@ def _run_login(channel: str, account_id: str) -> bool:
     each have their own enrollment. WeChat is the only one currently
     wired into the wizard — others surface a helpful message."""
     if channel == "wechat":
-        from openprogram.channels.wechat import login_account
+        from openprogram.channels.implementations.wechat import login_account
         creds = login_account(account_id)
         return creds is not None
     if channel == "telegram":

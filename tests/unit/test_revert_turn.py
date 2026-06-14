@@ -1,4 +1,4 @@
-"""Unit tests for openprogram.agent._revert.revert_turn.
+"""Unit tests for openprogram.agent.internals._revert.revert_turn.
 
 Drives the BackupStore directly (no real dispatcher needed) — the
 unit under test is the wiring between SessionStore + BackupStore +
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent._revert import revert_turn
+from openprogram.agent.internals._revert import revert_turn
 from openprogram.store.session.session_store import SessionStore
 from openprogram.store.snapshot.file_backup import BackupStore
 

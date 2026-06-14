@@ -67,7 +67,7 @@ def test_qr_login_streams_phases_to_ws(
                                                       "ilink_bot_id": "y"}})
 
     monkeypatch.setattr(
-        "openprogram.channels.wechat.login_account_event_driven",
+        "openprogram.channels.implementations.wechat.login_account_event_driven",
         _fake_login,
     )
 
@@ -119,7 +119,7 @@ def test_qr_login_expired_propagates(
         on_event({"phase": "expired"})
 
     monkeypatch.setattr(
-        "openprogram.channels.wechat.login_account_event_driven",
+        "openprogram.channels.implementations.wechat.login_account_event_driven",
         _fake_login,
     )
 

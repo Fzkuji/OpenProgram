@@ -121,7 +121,7 @@ def test_setup_wechat_full_flow(state_dir, stub_agents,
             "ilink_user_id": "user-1234",
         })
         return {"bot_token": "fake-token", "ilink_bot_id": "bot-1234"}
-    monkeypatch.setattr("openprogram.channels.wechat.login_account",
+    monkeypatch.setattr("openprogram.channels.implementations.wechat.login_account",
                         _fake_login)
 
     rc = ch_setup.run()
@@ -156,7 +156,7 @@ def test_setup_skips_login_when_already_configured(
 
     login_calls = []
     monkeypatch.setattr(
-        "openprogram.channels.wechat.login_account",
+        "openprogram.channels.implementations.wechat.login_account",
         lambda account_id: login_calls.append(account_id) or {"bot_token": "x"},
     )
 
@@ -202,7 +202,7 @@ def test_setup_aborts_when_no_agents(state_dir,
                    agent=None)
 
     monkeypatch.setattr(
-        "openprogram.channels.wechat.login_account",
+        "openprogram.channels.implementations.wechat.login_account",
         lambda account_id: {"bot_token": "fake", "ilink_bot_id": "bot"},
     )
 
@@ -221,7 +221,7 @@ def test_setup_skip_binding_keeps_clean_state(
                    start_worker=False)
 
     monkeypatch.setattr(
-        "openprogram.channels.wechat.login_account",
+        "openprogram.channels.implementations.wechat.login_account",
         lambda account_id: {"bot_token": "fake", "ilink_bot_id": "bot"},
     )
 

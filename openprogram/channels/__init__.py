@@ -30,10 +30,10 @@ from __future__ import annotations
 from typing import Any
 
 from openprogram.channels.base import Channel
-from openprogram.channels.telegram import TelegramChannel
-from openprogram.channels.discord import DiscordChannel
-from openprogram.channels.slack import SlackChannel
-from openprogram.channels.wechat import WechatChannel
+from openprogram.channels.implementations.telegram import TelegramChannel
+from openprogram.channels.implementations.discord import DiscordChannel
+from openprogram.channels.implementations.slack import SlackChannel
+from openprogram.channels.implementations.wechat import WechatChannel
 
 
 # 内置 platform — 永远存在, plugin 无法 override 这些名字 (重名 plugin

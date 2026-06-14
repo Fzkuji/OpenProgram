@@ -94,7 +94,7 @@ def fake_dispatcher(monkeypatch):
 
 
 def test_merges_two_peer_sessions(store, fake_dispatcher):
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
 
     out = process_merge_turn(
         target_session_id="p1",
@@ -144,7 +144,7 @@ def test_merges_two_peer_sessions(store, fake_dispatcher):
 
 
 def test_unknown_peers_drop_to_error(store, fake_dispatcher):
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
         peers=[{"session_id": "never_existed"}],
@@ -156,7 +156,7 @@ def test_unknown_peers_drop_to_error(store, fake_dispatcher):
 
 
 def test_unknown_target_errors(store, fake_dispatcher):
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="nope",
         peers=[{"session_id": "peer_a"}],
@@ -169,7 +169,7 @@ def test_unknown_target_errors(store, fake_dispatcher):
 def test_same_session_two_branches_merge(store, fake_dispatcher):
     """Pass two peers with the same session_id but different head_ids
     — should merge them as if they were independent branches."""
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
 
     # peer_a has assistant id 'a_peer_a' (fixture). Add a sibling
     # head on peer_a to play "the other branch".
@@ -211,7 +211,7 @@ def test_same_session_two_branches_merge(store, fake_dispatcher):
 def test_legacy_sub_sessions_field_still_works(store, fake_dispatcher):
     """Backward-compat: callers passing ``sub_sessions=[sid, ...]``
     should still get the merge done."""
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
         sub_sessions=["peer_a", "peer_b"],
@@ -228,7 +228,7 @@ def test_base_peer_marks_one_branch_as_base(store, fake_dispatcher):
     attribute on that branch's tag + a different lead-in line, and
     the peer_b attach pointer carries is_base=True so the generator
     locks its expanded items."""
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
         peers=[
@@ -261,7 +261,7 @@ def test_base_peer_marks_one_branch_as_base(store, fake_dispatcher):
 def test_base_peer_out_of_range_treated_as_none(store, fake_dispatcher):
     """An out-of-range index (e.g. caller passed 5 but only 2 peers
     resolved) silently degrades to symmetric merge."""
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id="p1",
         peers=[
