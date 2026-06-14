@@ -598,7 +598,7 @@ def refactor(topic: str) -> dict[str, Any]:
 
 def _build_runtime() -> Any | None:
     try:
-        from openprogram.agents.runtime_registry import _build_autodetect
+        from openprogram.agent.management.runtime_registry import _build_autodetect
     except Exception:
         return None
     try:

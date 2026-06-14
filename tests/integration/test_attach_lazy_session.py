@@ -87,7 +87,7 @@ def test_attach_creates_missing_session(env) -> None:
     assert sess["source"] == "tui"
 
     # session_aliases got the row too
-    from openprogram.agents import session_aliases as _sa
+    from openprogram.agent.management import session_aliases as _sa
     aliases = _sa.list_for_session(NEW_ID)
     assert len(aliases) == 1
     assert aliases[0]["channel"] == "wechat"

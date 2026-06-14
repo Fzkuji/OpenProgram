@@ -26,7 +26,7 @@ def _get_chat_runtime():
     agent_provider = None
     agent_model = None
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         spec = _A.get_default()
         if spec is not None and spec.model:
             agent_provider = (spec.model.provider or "").strip() or None

@@ -247,7 +247,7 @@ def route(channel: str, account_id: str, peer: dict[str, Any]) -> str:
                 continue
         return r["agent_id"]
     # No match — fall back to the default agent.
-    from openprogram.agents import manager as _agents
+    from openprogram.agent.management import manager as _agents
     default = _agents.get_default()
     if default is None:
         # No agents configured yet.

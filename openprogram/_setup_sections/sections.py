@@ -14,7 +14,7 @@ from typing import Any
 
 def _ensure_default_agent():
     """Return the default agent, creating an empty ``main`` if none exists."""
-    from openprogram.agents import manager as _agents
+    from openprogram.agent.management import manager as _agents
     spec = _agents.get_default()
     if spec is not None:
         return spec
@@ -33,8 +33,8 @@ def run_model_section() -> int:
     """Pick the default agent's chat model across enabled providers."""
     from openprogram.setup import _choose_one
     from openprogram.webui import _model_catalog as mc
-    from openprogram.agents import manager as _agents
-    from openprogram.agents import runtime_registry as _runtimes
+    from openprogram.agent.management import manager as _agents
+    from openprogram.agent.management import runtime_registry as _runtimes
     enabled = mc.list_enabled_models()
     if not enabled:
         print("No enabled models yet. Enable a provider in "
@@ -74,7 +74,7 @@ def run_tools_section() -> int:
     """Pick which tools the default agent can use."""
     from openprogram.setup import _checkbox
     from openprogram.functions import list_registered_agent_tools
-    from openprogram.agents import manager as _agents
+    from openprogram.agent.management import manager as _agents
     agent = _ensure_default_agent()
     disabled = set((agent.tools or {}).get("disabled") or [])
     names = sorted(list_registered_agent_tools())
@@ -95,8 +95,8 @@ def run_tools_section() -> int:
 def run_agent_section() -> int:
     """Default reasoning effort for the default agent."""
     from openprogram.setup import _choose_one
-    from openprogram.agents import manager as _agents
-    from openprogram.agents import runtime_registry as _runtimes
+    from openprogram.agent.management import manager as _agents
+    from openprogram.agent.management import runtime_registry as _runtimes
     agent = _ensure_default_agent()
     current = agent.thinking_effort or "medium"
 
@@ -128,7 +128,7 @@ def run_skills_section() -> int:
         print("Skills: no skills discovered.")
         return 0
 
-    from openprogram.agents import manager as _agents
+    from openprogram.agent.management import manager as _agents
     agent = _ensure_default_agent()
     disabled = set((agent.skills or {}).get("disabled") or [])
     names = sorted(s.name for s in skills)

@@ -77,7 +77,7 @@ def _any_agent_has_pinned_provider() -> bool:
     so a genuinely-broken install still gets the warning.
     """
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         for spec in _A.list_all():
             if spec.model and (spec.model.provider or "").strip():
                 return True
@@ -546,7 +546,7 @@ def _resolve_session_provider_model(conv: dict | None) -> tuple[str | None, str 
         agent_id = conv.get("agent_id")
         if agent_id:
             try:
-                from openprogram.agents.manager import get as _get_agent
+                from openprogram.agent.management.manager import get as _get_agent
                 spec = _get_agent(agent_id)
             except Exception:
                 spec = None

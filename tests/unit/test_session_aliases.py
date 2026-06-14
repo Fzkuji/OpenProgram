@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from openprogram.agents import session_aliases as A
+from openprogram.agent.management import session_aliases as A
 
 
 def test_lookup_uses_catch_all_after_exact_miss(

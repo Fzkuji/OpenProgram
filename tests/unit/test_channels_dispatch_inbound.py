@@ -104,10 +104,10 @@ def stub_routing(monkeypatch: pytest.MonkeyPatch):
         session_daily_reset = ""
         session_idle_minutes = 0
 
-    monkeypatch.setattr("openprogram.agents.manager.get",
+    monkeypatch.setattr("openprogram.agent.management.manager.get",
                         lambda agent_id: _StubAgent())
     monkeypatch.setattr(
-        "openprogram.agents.session_aliases.lookup",
+        "openprogram.agent.management.session_aliases.lookup",
         lambda channel, account_id, peer: None,
     )
 
@@ -115,7 +115,7 @@ def stub_routing(monkeypatch: pytest.MonkeyPatch):
     # sessions dir; redirect that to tmp so we don't pollute ~/.
     import tempfile
     tmp = Path(tempfile.mkdtemp())
-    monkeypatch.setattr("openprogram.agents.manager.sessions_dir",
+    monkeypatch.setattr("openprogram.agent.management.manager.sessions_dir",
                         lambda agent_id: tmp / agent_id)
 
 
@@ -245,7 +245,7 @@ def test_dispatch_inbound_uses_bound_session_run_config(
         permission_mode="bypass",
     )
     monkeypatch.setattr(
-        "openprogram.agents.session_aliases.lookup",
+        "openprogram.agent.management.session_aliases.lookup",
         lambda channel, account_id, peer: ("main", "local_bound"),
     )
 

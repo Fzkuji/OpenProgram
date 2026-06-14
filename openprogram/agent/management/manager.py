@@ -359,7 +359,7 @@ def create(
         # persona pipeline has something to load on the first turn.
         _write_agent(spec)
         try:
-            from openprogram.agents.workspace import bootstrap as _ws_bootstrap
+            from openprogram.agent.management.workspace import bootstrap as _ws_bootstrap
             _ws_bootstrap(agent_id)
         except Exception:
             pass

@@ -288,8 +288,8 @@ def _handle_login(args: list[str], console, agent) -> bool:
 def _handle_model(args: list[str], console, agent) -> bool:
     """``/model`` lists every enabled model; ``/model <id>`` switches."""
     from openprogram.webui import _model_catalog as mc
-    from openprogram.agents import manager as _A
-    from openprogram.agents import runtime_registry as _R
+    from openprogram.agent.management import manager as _A
+    from openprogram.agent.management import runtime_registry as _R
     enabled = mc.list_enabled_models()
     if not args:
         if not enabled:
@@ -344,7 +344,7 @@ def _handle_model(args: list[str], console, agent) -> bool:
 
 def _handle_agent_switch(args: list[str], console, agent) -> bool:
     """``/agent`` lists agents; ``/agent <id>`` sets the default."""
-    from openprogram.agents import manager as _A
+    from openprogram.agent.management import manager as _A
     if not args:
         rows = _A.list_all()
         if not rows:
@@ -443,7 +443,7 @@ def _handle_attach(args: list[str], console, agent, session_id: str) -> bool:
     peer_kind = flags.get("kind", "direct")
 
     try:
-        from openprogram.agents import session_aliases as _sa
+        from openprogram.agent.management import session_aliases as _sa
         from openprogram.worker import current_worker_pid, spawn_detached
         _row, replaced = _sa.attach(
             channel=channel, account_id=account_id,
@@ -486,7 +486,7 @@ def _handle_detach(args: list[str], console) -> bool:
         return False
     account_id = flags.get("account", "default")
     peer_kind = flags.get("kind", "direct")
-    from openprogram.agents import session_aliases as _sa
+    from openprogram.agent.management import session_aliases as _sa
     removed = _sa.detach(
         channel=channel, account_id=account_id,
         peer_kind=peer_kind, peer_id=peer,
@@ -542,7 +542,7 @@ def _handle_connections(console, session_id: str) -> bool:
     if not session_id:
         console.print("[yellow]No active session.[/]")
         return False
-    from openprogram.agents import session_aliases as _sa
+    from openprogram.agent.management import session_aliases as _sa
     rows = _sa.list_for_session(session_id)
     if not rows:
         console.print(

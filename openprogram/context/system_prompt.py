@@ -34,7 +34,7 @@ def build_system_prompt(agent: Any) -> str:
 
 
 def _compose(agent: Any) -> str:
-    from openprogram.agents import workspace as _workspace
+    from openprogram.agent.management import workspace as _workspace
 
     parts: list[str] = []
 

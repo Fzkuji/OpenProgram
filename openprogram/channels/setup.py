@@ -208,7 +208,7 @@ def _pick_agent() -> Optional[str]:
     """List existing agents; let the user pick one. Bail with a helpful
     message if there are none configured."""
     try:
-        from openprogram.agents import manager as _agents
+        from openprogram.agent.management import manager as _agents
         listed = _agents.list_all() if hasattr(_agents, "list_all") else []
     except Exception:
         listed = []

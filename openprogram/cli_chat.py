@@ -66,7 +66,7 @@ def run_cli_chat(oneshot: str | None = None,
     """
     import uuid as _uuid
     from rich.console import Console
-    from openprogram.agents import manager as _A
+    from openprogram.agent.management import manager as _A
     console = Console()
 
     # Provider detection probes 5+ providers (CLI binaries + API hosts)

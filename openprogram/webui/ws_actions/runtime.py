@@ -234,7 +234,7 @@ async def handle_stats(ws, cmd: dict):
     """Welcome-banner data: agent, programs, skills, tools, providers, channels."""
     from openprogram.webui import server as _s
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         agents = _A.list_all()
         default_agent = next((a for a in agents if getattr(a, "default", False)), None)
         if default_agent is None and agents:

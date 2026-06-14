@@ -26,7 +26,7 @@ import sys
 import time
 from typing import Optional
 
-from openprogram.agents import manager as _agents
+from openprogram.agent.management import manager as _agents
 from openprogram.channels import bindings as _bindings
 from openprogram.channels._broadcast import (
     broadcast_channel_turn as _broadcast_channel_turn,
@@ -87,7 +87,7 @@ def dispatch_inbound(
         pass
 
     # ---- 路由: alias > binding -----------------------------------------
-    from openprogram.agents import session_aliases as _aliases
+    from openprogram.agent.management import session_aliases as _aliases
     alias = _aliases.lookup(channel, account_id, peer)
     if alias is not None:
         agent_id, session_key = alias

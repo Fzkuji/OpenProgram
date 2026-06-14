@@ -36,7 +36,7 @@ def _read_default_model() -> tuple[str, str] | None:
     authoritative resolver instead of duplicating a buggy subset.
     """
     try:
-        from openprogram.agents import manager as _agents
+        from openprogram.agent.management import manager as _agents
         spec = _agents.get_default()
     except Exception:
         return None

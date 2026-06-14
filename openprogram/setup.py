@@ -137,7 +137,7 @@ def read_disabled_skills() -> set[str]:
     that still think in global terms (the CLI chat banner, for
     example) read the default agent's list here.
     """
-    from openprogram.agents import manager as _agents
+    from openprogram.agent.management import manager as _agents
     agent = _agents.get_default()
     if agent is None:
         return set()
@@ -216,7 +216,7 @@ def set_ui_ports(
 def read_agent_prefs() -> dict[str, Any]:
     """Back-compat shim for callers that want a loose "what are the
     agent defaults?" dict. Pulls from the default agent record."""
-    from openprogram.agents import manager as _agents
+    from openprogram.agent.management import manager as _agents
     agent = _agents.get_default()
     effort = (agent.thinking_effort if agent else None) or "medium"
     return {"thinking_effort": effort}

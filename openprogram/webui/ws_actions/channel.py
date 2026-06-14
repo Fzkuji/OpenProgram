@@ -186,7 +186,7 @@ async def handle_remove_binding(ws, cmd: dict):
 
 async def handle_list_session_aliases(ws, cmd: dict):
     try:
-        from openprogram.agents import session_aliases as _sa
+        from openprogram.agent.management import session_aliases as _sa
         rows = _sa.list_all()
     except Exception:
         rows = []
@@ -198,7 +198,7 @@ async def handle_list_session_aliases(ws, cmd: dict):
 async def handle_attach_session(ws, cmd: dict):
     from openprogram.webui import server as _s
     try:
-        from openprogram.agents import session_aliases as _sa
+        from openprogram.agent.management import session_aliases as _sa
         from openprogram.webui import persistence as _p
         from openprogram.worker import current_worker_pid, spawn_detached
         session_id = cmd.get("session_id") or ""
@@ -250,7 +250,7 @@ async def handle_attach_session(ws, cmd: dict):
 async def handle_detach_session(ws, cmd: dict):
     from openprogram.webui import server as _s
     try:
-        from openprogram.agents import session_aliases as _sa
+        from openprogram.agent.management import session_aliases as _sa
         removed = _sa.detach(
             channel=cmd.get("channel") or "",
             account_id=cmd.get("account_id") or "default",

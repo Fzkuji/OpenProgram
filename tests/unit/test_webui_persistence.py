@@ -11,7 +11,7 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions.sqlite")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
     monkeypatch.setattr(
-        "openprogram.agents.manager.sessions_dir",
+        "openprogram.agent.management.manager.sessions_dir",
         lambda agent_id: tmp_path / "agents" / agent_id / "sessions",
     )
     return db

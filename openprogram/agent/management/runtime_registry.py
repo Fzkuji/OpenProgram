@@ -19,7 +19,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Optional, Tuple
 
-from openprogram.agents.manager import AgentSpec
+from openprogram.agent.management.manager import AgentSpec
 
 
 # ---------------------------------------------------------------------------

@@ -272,7 +272,7 @@ def register(app):
                 # the "I switched to the free model but it answered as
                 # GPT" bug.
                 try:
-                    from openprogram.agents import manager as _agents
+                    from openprogram.agent.management import manager as _agents
                     # Strip a "provider:" prefix only when it IS the
                     # provider — model ids may contain ':' themselves
                     # (openrouter's "...:free").

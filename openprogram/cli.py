@@ -985,7 +985,7 @@ def main():
         elif verb == "resume":
             _cmd_resume(args.session_id, args.answer)
         elif verb == "attach":
-            from openprogram.agents import session_aliases as _a
+            from openprogram.agent.management import session_aliases as _a
             from openprogram.webui import persistence as _persist
             owner = _persist.resolve_agent_for_conv(args.session_id)
             if owner is None:
@@ -1010,7 +1010,7 @@ def main():
                 print("Starting openprogram worker in the background...")
                 spawn_detached()
         elif verb == "detach":
-            from openprogram.agents import session_aliases as _a
+            from openprogram.agent.management import session_aliases as _a
             removed = _a.detach(
                 channel=args.channel, account_id=args.account,
                 peer_kind=args.peer_kind, peer_id=args.peer,
@@ -1021,7 +1021,7 @@ def main():
             else:
                 print("No matching alias.")
         elif verb == "aliases":
-            from openprogram.agents import session_aliases as _a
+            from openprogram.agent.management import session_aliases as _a
             rows = _a.list_all()
             if not rows:
                 print("No session aliases. "

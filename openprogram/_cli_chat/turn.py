@@ -35,7 +35,7 @@ def _run_turn_with_history(
     """
     import time as _time
     import uuid as _uuid
-    from openprogram.agents import runtime_registry as _runtimes
+    from openprogram.agent.management import runtime_registry as _runtimes
     from openprogram.context.system_prompt import build_system_prompt
     from openprogram.webui import persistence as _persist
 

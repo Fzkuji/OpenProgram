@@ -378,8 +378,8 @@ async def handle_chat(ws, cmd: dict):
                 gate_error: str | None = None
                 if resolved is not None:
                     try:
-                        from openprogram.agents import manager as _A
-                        from openprogram.agents.gating import gate as _gate
+                        from openprogram.agent.management import manager as _A
+                        from openprogram.agent.management.gating import gate as _gate
                         ag = _A.get(agent_id) if hasattr(_A, "get") else None
                         prof = ag.to_dict().get("skills", {}) if ag else {}
                         gate_error = _gate(

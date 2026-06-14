@@ -267,7 +267,7 @@ def _read_or_default(path: Path, default: str) -> str:
 
 def _build_runtime() -> Any | None:
     try:
-        from openprogram.agents.runtime_registry import _build_autodetect
+        from openprogram.agent.management.runtime_registry import _build_autodetect
     except Exception:
         return None
     try:

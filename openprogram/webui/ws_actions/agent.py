@@ -6,7 +6,7 @@ import json
 
 async def handle_list_agents(ws, cmd: dict):
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         rows = [a.to_dict() for a in _A.list_all()]
     except Exception:
         rows = []
@@ -16,7 +16,7 @@ async def handle_list_agents(ws, cmd: dict):
 async def handle_add_agent(ws, cmd: dict):
     from openprogram.webui import server as _s
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         a = _A.create(
             cmd.get("id") or "",
             name=cmd.get("name") or "",
@@ -38,7 +38,7 @@ async def handle_add_agent(ws, cmd: dict):
 async def handle_delete_agent(ws, cmd: dict):
     from openprogram.webui import server as _s
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         _A.delete(cmd.get("id") or "")
         _s._broadcast(json.dumps({
             "type": "agent_changed",
@@ -51,7 +51,7 @@ async def handle_delete_agent(ws, cmd: dict):
 async def handle_set_default_agent(ws, cmd: dict):
     from openprogram.webui import server as _s
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         a = _A.set_default(cmd.get("id") or "")
         _s._broadcast(json.dumps({
             "type": "agent_changed",

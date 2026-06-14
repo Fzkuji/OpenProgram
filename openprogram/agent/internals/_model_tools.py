@@ -44,7 +44,7 @@ def load_agent_profile(agent_id: str) -> dict:
     default model. Subsequent loads return the persisted profile.
     """
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         agent = _A.get(agent_id) if hasattr(_A, "get") else None
         if agent and hasattr(agent, "to_dict"):
             return agent.to_dict()
@@ -83,7 +83,7 @@ def _seed_default_agent(_A, agent_id: str) -> dict | None:
     path run.
     """
     try:
-        from openprogram.agents.manager import (
+        from openprogram.agent.management.manager import (
             AgentSpec, AgentModelRef, _write_agent,
         )
         from openprogram.webui._model_catalog import _read_providers_cfg
@@ -349,7 +349,7 @@ def resolve_tools(
     # allowed`` patterns. Required-server check returns None to abort
     # the turn cleanly.
     def _apply_mcp_gate(tool_list):
-        from openprogram.agents.gating import match_any, check_required
+        from openprogram.agent.management.gating import match_any, check_required
         mcp_cfg = (profile or {}).get("mcp") or {}
         disabled = list(mcp_cfg.get("disabled") or [])
         allowed = list(mcp_cfg.get("allowed") or [])
@@ -393,7 +393,7 @@ def resolve_tools(
         return []
     try:
         from openprogram.functions import DEFAULT_TOOLS, agent_tools
-        from openprogram.agents.gating import match_any
+        from openprogram.agent.management.gating import match_any
         if isinstance(wanted, dict):
             enabled = wanted.get("enabled")
             disabled_patterns = list(wanted.get("disabled") or [])

@@ -6,7 +6,7 @@ import sys
 
 
 def _dispatch_agents_verb(args, parser) -> None:
-    from openprogram.agents import manager as _A
+    from openprogram.agent.management import manager as _A
     verb = getattr(args, "agents_verb", None)
     if verb == "list":
         rows = _A.list_all()

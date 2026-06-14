@@ -148,7 +148,7 @@ def _probe_providers() -> Finding:
 def _probe_default_agent() -> Finding:
     """Does a default agent exist with a pinned model?"""
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         agent = _A.get_default()
     except Exception as e:  # noqa: BLE001
         return Finding("FAIL", "Default agent",

@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from openprogram.agents import manager as _agents
+from openprogram.agent.management import manager as _agents
 
 
 # ---------------------------------------------------------------------------

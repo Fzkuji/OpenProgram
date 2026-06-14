@@ -368,7 +368,7 @@ def _default_agent_id() -> str:
     """Which agent does a new conversation land in when the client
     didn't specify one? Falls back to the registry default."""
     try:
-        from openprogram.agents import manager as _A
+        from openprogram.agent.management import manager as _A
         spec = _A.get_default()
         if spec is not None:
             return spec.id
@@ -587,8 +587,8 @@ def _load_agent_session_meta(session_key: str) -> Optional[dict]:
     """
     try:
         import json as _json
-        from openprogram.agents import manager as _A
-        from openprogram.agents.manager import sessions_dir
+        from openprogram.agent.management import manager as _A
+        from openprogram.agent.management.manager import sessions_dir
         for agent in _A.list_all():
             meta_p = sessions_dir(agent.id) / session_key / "meta.json"
             if meta_p.exists():

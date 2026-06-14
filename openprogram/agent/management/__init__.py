@@ -9,7 +9,7 @@ bindings.
 
 Public API (module-level convenience):
 
-    from openprogram.agents import agents as A
+    from openprogram.agent.management import agents as A
 
     A.list_all()                # -> [AgentSpec]
     A.get(agent_id)             # -> AgentSpec | None
@@ -28,7 +28,7 @@ Layout on disk:
 """
 from __future__ import annotations
 
-from openprogram.agents.manager import (
+from openprogram.agent.management.manager import (
     AgentSpec,
     AgentNotFound,
     list_all,
@@ -43,7 +43,7 @@ from openprogram.agents.manager import (
     workspace_dir,
 )
 
-from openprogram.agents.runtime_registry import (
+from openprogram.agent.management.runtime_registry import (
     get_runtime_for,
     invalidate,
     invalidate_all,

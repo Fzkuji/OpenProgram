@@ -33,7 +33,7 @@ def stub_agents(monkeypatch: pytest.MonkeyPatch):
             self.id = _id
 
     monkeypatch.setattr(
-        "openprogram.agents.manager.list_all",
+        "openprogram.agent.management.manager.list_all",
         lambda: [_Spec("main"), _Spec("research")],
         raising=False,
     )
@@ -196,7 +196,7 @@ def test_setup_aborts_when_no_agents(state_dir,
     """If the user has no agents configured, the wizard should print
     a helpful message and exit non-zero rather than attempt to bind
     to a phantom agent."""
-    monkeypatch.setattr("openprogram.agents.manager.list_all",
+    monkeypatch.setattr("openprogram.agent.management.manager.list_all",
                         lambda: [], raising=False)
     _stub_prompts(monkeypatch, channel="wechat", account="default",
                    agent=None)
