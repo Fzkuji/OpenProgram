@@ -135,7 +135,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "apply_patch", "process", "execute_code",
             "task",
             "todo_read", "todo_write",
-            "clarify", "cron", "canvas",
+            "ask_user_question", "cron", "canvas",
             "spawn_program", "mixture_of_agents",
             "agent_browser", "playwright_browser",
             "web_search", "web_fetch", "pdf",

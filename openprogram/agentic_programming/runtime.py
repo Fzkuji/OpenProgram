@@ -618,24 +618,61 @@ class Runtime:
             transport=transport,  # 超时收回前端卡片走同一条通道
         )
 
-    def ask(self, prompt: str, *, options=None, multi: bool = False,
-            allow_custom: bool = True, timeout: float = 300.0, default=None):
-        """问用户一个问题，阻塞到有答案。三态：答了→返回答案
-        （multi=True 返回 list[str]）；用户拒绝→抛 UserDeclined；超时→有
-        default 返回 default，否则抛 AskTimeout。"""
+    def ask(self, prompt: str | None = None, *, options=None, multi: bool = False,
+            allow_custom: bool = True, questions: list | None = None,
+            timeout: float = 300.0, default=None):
+        """问用户，阻塞到有答案。统一入口——可一次问 1 题或多题。
+
+        两种用法（对齐 Claude Code 的 AskUserQuestion：不区分问几个）：
+
+        1) 单题：``ask("你喜欢哪个?", options=["A","B"], multi=False)``
+           返回该题答案（multi=True 返回 list[str]，纯文本无 options 返回 str）。
+
+        2) 多题：``ask(questions=[{"prompt": "...", "options": [...],
+           "multi": False, "allow_custom": True}, ...], prompt="组标题")``
+           前端一屏内在各题间切换着答、全答完一起提交。返回 list（与
+           questions 等长，每项是该题答案）。
+
+        三态：答了→返回答案；用户拒绝→抛 UserDeclined；超时→有 default
+        返回 default，否则抛 AskTimeout。
+        """
         from openprogram.agent.questions import UserDeclined, AskTimeout
+
+        # 多题分支 —— 一屏切换、一起提交（原 ask_many）。
+        if questions is not None:
+            qs = [
+                {
+                    "prompt": str(q.get("prompt", "")),
+                    "options": list(q.get("options") or []),
+                    "multi": bool(q.get("multi")),
+                    "allow_custom": q.get("allow_custom", True) is not False,
+                }
+                for q in (questions or [])
+            ]
+            outcome, value = self._ask_raw(
+                kind="ask_many", prompt=prompt or "", questions=qs,
+                allow_custom=False, timeout=timeout,
+            )
+            if outcome == "answered":
+                return value if isinstance(value, list) else []
+            if outcome == "declined":
+                raise UserDeclined(prompt or "ask")
+            if default is not None:
+                return default
+            raise AskTimeout(prompt or "ask")
+
+        # 单题分支。
         outcome, value = self._ask_raw(
-            kind="ask", prompt=prompt, options=options, multi=multi,
+            kind="ask", prompt=prompt or "", options=options, multi=multi,
             allow_custom=allow_custom, timeout=timeout,
         )
         if outcome == "answered":
             return value
         if outcome == "declined":
-            raise UserDeclined(prompt)
-        # timeout
+            raise UserDeclined(prompt or "ask")
         if default is not None:
             return default
-        raise AskTimeout(prompt)
+        raise AskTimeout(prompt or "ask")
 
     def confirm(self, prompt: str, *, detail: str = "",
                 timeout: float = 300.0, default: bool = False) -> bool:
@@ -681,40 +718,11 @@ class Runtime:
 
     def ask_many(self, questions: list, *, prompt: str = "",
                  timeout: float = 300.0, default: list | None = None):
-        """一次打包问一组问题，前端一屏内可在它们之间切换着答、全答完一起
-        提交，阻塞到提交。
-
-        ``questions`` 每项是一个 dict：
-          ``{"prompt": "...", "options": [...], "multi": False,
-             "allow_custom": True}``
-        （options 可空 = 纯自由文本；multi=True 该题返回 list[str]）。
-        ``prompt`` 是整组的总标题（可空）。
-
-        返回一个 list（与 questions 等长，每项一个 str / list[str]，对应该题
-        的答案）。用户拒绝 → 抛 UserDeclined；超时 → 有 default 返回 default，
-        否则抛 AskTimeout。
-        """
-        from openprogram.agent.questions import UserDeclined, AskTimeout
-        qs = [
-            {
-                "prompt": str(q.get("prompt", "")),
-                "options": list(q.get("options") or []),
-                "multi": bool(q.get("multi")),
-                "allow_custom": q.get("allow_custom", True) is not False,
-            }
-            for q in (questions or [])
-        ]
-        outcome, value = self._ask_raw(
-            kind="ask_many", prompt=prompt, questions=qs,
-            allow_custom=False, timeout=timeout,
-        )
-        if outcome == "answered":
-            return value if isinstance(value, list) else []
-        if outcome == "declined":
-            raise UserDeclined(prompt or "ask_many")
-        if default is not None:
-            return default
-        raise AskTimeout(prompt or "ask_many")
+        """已并入 ``ask``。保留为薄别名（向后兼容现有调用）：等价于
+        ``ask(questions=questions, prompt=prompt, ...)``。新代码直接用
+        ``runtime.ask(questions=[...])``。"""
+        return self.ask(questions=questions, prompt=prompt,
+                        timeout=timeout, default=default)
 
     # --- Working directory ---
 
