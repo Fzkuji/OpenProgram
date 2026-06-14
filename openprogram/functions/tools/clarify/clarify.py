@@ -27,12 +27,19 @@ from ..._runtime import function
 NAME = "ask_user_question"
 
 DESCRIPTION = (
-    "Ask the user one or more questions and pause until they answer. "
-    "Use when you need a decision or clarification you can't infer: "
-    "disambiguation, picking between approaches, confirming a risky "
-    "action. Each question shows 2–4 options (the user can also type a "
-    "custom answer). Returns the user's choices. Returns an error if no "
-    "interactive frontend is available (e.g. a non-interactive batch job)."
+    "Ask the user question(s) and pause until they answer. "
+    "USE SPARINGLY — prefer to infer intent and proceed with a sensible "
+    "default rather than interrupting the user. Most of the time you "
+    "should just act; mention your assumption in your reply instead of "
+    "asking. Only ask when proceeding wrong would be costly or "
+    "irreversible and you genuinely cannot decide from the request, the "
+    "code, or context. "
+    "When you must ask, keep it minimal and avoid forcing a pick from "
+    "your options: the options you list are often not what the user "
+    "wants, so phrase the question so a free-text answer is natural — "
+    "the user can always type their own answer instead of choosing. "
+    "Returns the user's response. Returns an error if no interactive "
+    "frontend is available (e.g. a non-interactive batch job)."
 )
 
 
