@@ -1,25 +1,22 @@
 "use client";
 
 /**
- * `/functions → /chat` hand-off drain.
+ * `→ /chat` hand-off drain: open a function's fn-form after navigating
+ * to a chat route. Two entry points, both consumed by ``takePending``:
  *
- * Two entry points (both kept for parity with the legacy
- * `__triggerPendingRunFunction` in init.js that this replaces):
+ *   * `/chat?run=NAME&cat=CAT` — the primary path. ``FunctionsPage``'s
+ *     Use button navigates here; the chat page reads its OWN url and
+ *     opens the form (sequential, no global state / event / timing
+ *     race). The query is stripped back to `/chat` once consumed so a
+ *     refresh doesn't re-fire.
  *
- *   * `window.__pendingRunFunction = { name, cat }` — set by
- *     `<FavoritesList />` / `<FunctionsPage />` just before
- *     `router.push("/chat")`. Survives the SPA hop because
- *     `router.push` doesn't re-run any `<script>` top-level.
+ *   * `window.__pendingRunFunction = { name, cat, fn? }` — the global
+ *     stash, kept for ``FavoritesList`` (sidebar) and the inline
+ *     ``editProgram`` hop, which set it just before `router.push`.
  *
- *   * `/chat?run=NAME&cat=CAT` — hard-refresh / direct link into
- *     the chat route. We strip the query string back to `/chat`
- *     once consumed so a subsequent reload doesn't re-trigger.
- *
- * Either entry point gets passed to `openFnForm(fn)` once the
- * matching function exists in `window.availableFunctions`. The
- * functions list is still populated by the legacy WS handler in
- * init.js; we poll for it up to 30s — typical fast path is
- * ~50ms after the `functions_list` envelope.
+ * Either way the request is passed to `openFnForm(fn)` once the matching
+ * function exists in `window.availableFunctions` — polled up to 30s
+ * (fast path ~50ms after the `functions_list` WS envelope).
  */
 
 import { useEffect } from "react";
@@ -104,26 +101,13 @@ export function usePendingRunFunction(pathname: string): void {
     return () => { stopped = true; clearTimeout(t); };
   }
 
-  // (1) Drain on route change (the /functions → /chat hop).
+  // Drain on route change. Use → router.push("/chat?run=…") always
+  // changes pathname (callers are on /functions), so this fires once the
+  // chat PageShell mounts; takePending reads the ?run= param. The 30s
+  // poll inside drain() covers availableFunctions not being loaded yet.
   useEffect(() => {
     if (!isChatRoute(pathname)) return;
     return drain();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
-
-  // (2) Drain on an explicit event. ``runProgram`` dispatches
-  // ``op:run-function`` right after stashing __pendingRunFunction, so a
-  // Use click works even when the target route equals the current one
-  // (router.push to the same path doesn't change ``pathname`` → the
-  // effect above wouldn't re-fire). This is the robust path.
-  useEffect(() => {
-    let cleanup: (() => void) | void;
-    const onRun = () => { cleanup = drain(); };
-    window.addEventListener("op:run-function", onRun);
-    return () => {
-      window.removeEventListener("op:run-function", onRun);
-      if (cleanup) cleanup();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 }

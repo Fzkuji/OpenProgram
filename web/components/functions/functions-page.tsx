@@ -222,18 +222,14 @@ export function FunctionsPage() {
   }
 
   function runProgram(name: string, category?: string) {
-    // SPA soft-nav. Stash the request on window; the page-shell
-    // hand-off hook drains __pendingRunFunction to open the fn-form.
-    (window as unknown as {
-      __pendingRunFunction?: { name: string; cat: string };
-    }).__pendingRunFunction = { name, cat: category || "" };
-    router.push(chatTarget());
-    // Explicit drain signal: covers the "target route == current route"
-    // case (already on a chat page → push doesn't change pathname, so the
-    // route-keyed drain in usePendingRunFunction wouldn't re-fire). The
-    // listener (PageShell) is always mounted on chat routes, so dispatch
-    // immediately; the cross-route case is covered by the pathname drain.
-    try { window.dispatchEvent(new CustomEvent("op:run-function")); } catch { /* noop */ }
+    // Carry the request in the URL (?run=NAME&cat=CAT) and navigate to
+    // /chat. Sequential by construction: the chat page mounts, reads its
+    // OWN url, and opens the fn-form — no global stash, no event, no
+    // timing race. (usePendingRunFunction.takePending reads ?run= and
+    // strips it back to /chat so a refresh doesn't re-fire.)
+    const qs = new URLSearchParams({ run: name });
+    if (category) qs.set("cat", category);
+    router.push(`/chat?${qs.toString()}`);
   }
 
   /** Toggle a built-in tool on/off for the LLM. ``enabled`` = the new
