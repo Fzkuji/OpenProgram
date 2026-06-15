@@ -264,7 +264,29 @@ def _inject_runtime(sig, args, kwargs):
         rt = _current_runtime.get(None)
         if rt is None:
             from openprogram.providers.registry import create_runtime
-            rt = create_runtime()
+            try:
+                rt = create_runtime()
+            except RuntimeError:
+                # No LLM provider configured. In production we re-raise the
+                # helpful "set up a provider" guidance. Under pytest with no
+                # credentials (CI), fall back to a placeholder runtime whose
+                # .exec raises only IF the body actually calls the model —
+                # so the many tests whose bodies never touch the LLM (cache /
+                # timeout wrappers, dispatcher plumbing) stop crashing on a
+                # provider lookup they don't need. See tests/conftest.py.
+                import os as _os
+                if not _os.environ.get("PYTEST_CURRENT_TEST"):
+                    raise
+                from openprogram.agentic_programming.runtime import Runtime
+
+                def _no_provider_call(content, model="test", response_format=None):
+                    raise RuntimeError(
+                        "No LLM provider configured (test placeholder runtime). "
+                        "This test body called the model without providing a "
+                        "runtime; pass one explicitly or mock the LLM."
+                    )
+
+                rt = Runtime(call=_no_provider_call, model="test")
             runtime_token = _current_runtime.set(rt)
             owns_runtime = True
         return rt
