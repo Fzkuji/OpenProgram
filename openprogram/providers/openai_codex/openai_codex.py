@@ -359,8 +359,20 @@ def _build_request_body(
     tools = getattr(context, "tools", None)
     if tools:
         body["tools"] = convert_responses_tools(tools, model.api, model.id)
-        body["tool_choice"] = "auto"
-        body["parallel_tool_calls"] = True
+        # Honor the caller's pick policy. The Codex backend speaks the
+        # Responses API, which natively takes "auto" / "required" / "none"
+        # and the forced-pick shape {"type": "function", "name": X} — pass
+        # it through verbatim. Falling back to "auto" only when the caller
+        # said nothing. Previously this was hardcoded to "auto", which
+        # silently dropped tool_choice="required" (e.g. call_with_schema's
+        # forced submit tool), letting the model reply with text instead of
+        # calling the tool.
+        tool_choice = opts.get("tool_choice")
+        body["tool_choice"] = tool_choice if tool_choice is not None else "auto"
+        # Same for parallel calls: respect an explicit False, else default
+        # to the Codex behaviour (parallel allowed).
+        parallel = opts.get("parallel_tool_calls")
+        body["parallel_tool_calls"] = False if parallel is False else True
 
     reasoning_effort = opts.get("reasoning_effort")
     reasoning_summary = opts.get("reasoning_summary")
