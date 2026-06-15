@@ -39,6 +39,45 @@ def noop_call(content, model="test", response_format=None):
 
 
 # ---------------------------------------------------------------------------
+# Environment probes for conditional skips (keep CI green without masking
+# real failures — see docs/design or the providers/integration tests).
+# ---------------------------------------------------------------------------
+
+def _has_default_provider() -> bool:
+    """True if a usable default LLM provider resolves (CLI or AuthStore key).
+
+    False in a bare CI checkout (no codex/gemini CLI, no API key). Tests that
+    genuinely need a configured model use ``no_provider`` to skip there
+    instead of failing with "No LLM provider / model configured".
+    """
+    try:
+        from openprogram.providers.registry import resolve_default_provider
+        resolve_default_provider()
+        return True
+    except Exception:
+        return False
+
+
+# A reusable skip marker: applied to tests that can only run with a real
+# provider / model configured.
+no_provider = pytest.mark.skipif(
+    not _has_default_provider(),
+    reason="no LLM provider/model configured (bare CI) — test needs one",
+)
+
+
+# Integration tests that need a LIVE external service (a working MCP
+# subprocess, the Claude QR-login backend, …) — these fail in a bare CI
+# checkout and even locally without the service. Opt in by setting
+# OPENPROGRAM_LIVE_TESTS=1; otherwise they skip instead of failing.
+import os as _os
+requires_live_service = pytest.mark.skipif(
+    _os.environ.get("OPENPROGRAM_LIVE_TESTS") != "1",
+    reason="needs a live external service (set OPENPROGRAM_LIVE_TESTS=1 to run)",
+)
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 

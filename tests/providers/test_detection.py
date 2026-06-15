@@ -50,6 +50,13 @@ class TestProviderDetection:
 
         assert providers.detect_provider() == ("anthropic", "claude-sonnet-4-6")
 
+    @pytest.mark.xfail(
+        reason="env-var key auto-detection is retired — provider keys resolve "
+        "only from the AuthStore now (project_authstore_only_keys). This "
+        "asserts detection from GOOGLE_GENERATIVE_AI_API_KEY env; rewrite "
+        "against the AuthStore.",
+        strict=False,
+    )
     def test_detect_provider_accepts_google_generative_ai_api_key(self, monkeypatch):
         """Gemini API auto-detection accepts Google's alternate env var name."""
         monkeypatch.setattr("shutil.which", lambda name: None)

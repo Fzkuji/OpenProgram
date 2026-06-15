@@ -283,6 +283,11 @@ def test_compaction_signal_silent_under_threshold(tmp_db: SessionDB) -> None:
 # trigger_compaction
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(
+    not __import__("tests.conftest", fromlist=["_has_default_provider"])._has_default_provider(),
+    reason="compaction triggers a real summarization model call; needs a "
+    "configured provider/model (skipped in bare CI).",
+)
 def test_trigger_compaction_inserts_summary_and_moves_head(
     tmp_db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

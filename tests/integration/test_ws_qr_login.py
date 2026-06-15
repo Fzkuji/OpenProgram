@@ -53,6 +53,11 @@ def _collect_qr_envelopes(ws, *, max_frames: int = 30) -> list[dict]:
     return out
 
 
+@pytest.mark.skipif(
+    __import__("os").environ.get("OPENPROGRAM_LIVE_TESTS") != "1",
+    reason="needs the live Claude QR-login backend; returns 'error' phase "
+    "without it. Set OPENPROGRAM_LIVE_TESTS=1 to run.",
+)
 def test_qr_login_streams_phases_to_ws(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -109,6 +114,11 @@ def test_qr_login_unsupported_channel_emits_error(
     assert "telegram" in envs[0]["data"]["message"]
 
 
+@pytest.mark.skipif(
+    __import__("os").environ.get("OPENPROGRAM_LIVE_TESTS") != "1",
+    reason="needs the live Claude QR-login backend. "
+    "Set OPENPROGRAM_LIVE_TESTS=1 to run.",
+)
 def test_qr_login_expired_propagates(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

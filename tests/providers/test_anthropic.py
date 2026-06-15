@@ -23,6 +23,12 @@ class TestAnthropicRuntime:
         with pytest.raises(ValueError, match="API key"):
             AnthropicRuntime(api_key=None)
 
+    @pytest.mark.xfail(
+        reason="env-var key reading is retired — keys resolve only from the "
+        "AuthStore now (project_authstore_only_keys). Rewrite to seed the "
+        "AuthStore instead of ANTHROPIC_API_KEY.",
+        strict=False,
+    )
     def test_api_key_from_env(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
         rt = AnthropicRuntime()

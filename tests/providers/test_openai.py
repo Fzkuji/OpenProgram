@@ -22,6 +22,13 @@ class TestOpenAIRuntime:
         with pytest.raises(ValueError, match="API key"):
             OpenAIRuntime(api_key=None)
 
+    @pytest.mark.xfail(
+        reason="env-var key reading is retired — provider keys resolve only "
+        "from the AuthStore now (see project_authstore_only_keys / "
+        "env_api_keys.py). This test asserts the old OPENAI_API_KEY-from-env "
+        "behaviour; rewrite to seed the AuthStore instead.",
+        strict=False,
+    )
     def test_api_key_from_env(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "env-key")
         rt = OpenAIRuntime()

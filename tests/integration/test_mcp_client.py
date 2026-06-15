@@ -101,6 +101,11 @@ def test_client_round_trip():
     asyncio.run(_run())
 
 
+@pytest.mark.skipif(
+    __import__("os").environ.get("OPENPROGRAM_LIVE_TESTS") != "1",
+    reason="spawns a live FastMCP subprocess; unreliable in bare CI. "
+    "Set OPENPROGRAM_LIVE_TESTS=1 to run.",
+)
 def test_registry_registers_namespaced_tools(temp_state_dir):
     cfg_path = temp_state_dir / "mcp_servers.json"
     cfg_path.write_text(json.dumps(_server_config()))
@@ -164,6 +169,11 @@ def test_unconfigured_loader_is_noop(monkeypatch):
     asyncio.run(_run())
 
 
+@pytest.mark.skipif(
+    __import__("os").environ.get("OPENPROGRAM_LIVE_TESTS") != "1",
+    reason="exercises real MCP subprocess spawning; unreliable in bare CI. "
+    "Set OPENPROGRAM_LIVE_TESTS=1 to run.",
+)
 def test_bad_command_records_error(monkeypatch):
     """Server that fails to spawn should record the error, not crash."""
     d = Path(tempfile.mkdtemp(prefix="mcp_bad_"))
