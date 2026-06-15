@@ -425,6 +425,7 @@ async def _stream_assistant_response(
         service_tier=config.service_tier,
         tool_choice=config.tool_choice,
         parallel_tool_calls=config.parallel_tool_calls,
+        web_search=config.web_search,
     )
 
     partial_message: AssistantMessage | None = None

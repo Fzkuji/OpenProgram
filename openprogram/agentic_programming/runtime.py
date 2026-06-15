@@ -781,6 +781,7 @@ class Runtime:
         choices: Any = None,
         timeout_s: Optional[float] = None,
         on_retry: Optional["Callable[[RetryInfo], None]"] = None,
+        web_search: bool = False,
     ) -> Any:
         """
         Call the LLM. Appends a ModelCall node to the DAG.
@@ -940,6 +941,8 @@ class Runtime:
             _loop_opts["parallel_tool_calls"] = False
         if max_iterations is not None:
             _loop_opts["max_iterations"] = max_iterations
+        if web_search:
+            _loop_opts["web_search"] = True
         loop_opts_token = (
             _current_loop_opts.set(_loop_opts) if _loop_opts else None
         )
@@ -1347,6 +1350,7 @@ class Runtime:
             tool_choice=loop_opts.get("tool_choice"),
             parallel_tool_calls=loop_opts.get("parallel_tool_calls"),
             max_iterations=loop_opts.get("max_iterations"),
+            web_search=loop_opts.get("web_search"),
         )
 
         # Forward agent stream events to self.on_stream so callers (the webui

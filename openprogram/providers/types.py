@@ -127,6 +127,11 @@ class StreamOptions(BaseModel):
     # False forbids several tool calls in one round where the provider
     # supports the knob. ``None`` = provider default.
     parallel_tool_calls: bool | None = None
+    # Enable the provider's built-in server-side web search for this request
+    # (OpenAI Responses API / codex backend ``{"type": "web_search"}``). The
+    # model runs the search server-side and folds results into its output.
+    # ``None`` / False = no web search. Read via ``opts.get("web_search")``.
+    web_search: bool | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 

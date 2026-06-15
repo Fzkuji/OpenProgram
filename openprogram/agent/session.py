@@ -71,6 +71,7 @@ class AgentSession:
         tool_choice: Any | None = None,
         parallel_tool_calls: bool | None = None,
         max_iterations: int | None = None,
+        web_search: bool | None = None,
     ) -> None:
         self._retry = retry or DEFAULT_RETRY_SETTINGS
         self._event_bus = event_bus
@@ -98,6 +99,7 @@ class AgentSession:
             tool_choice=tool_choice,
             parallel_tool_calls=parallel_tool_calls,
             max_iterations=max_iterations,
+            web_search=web_search,
         ))
 
         if event_bus is not None:

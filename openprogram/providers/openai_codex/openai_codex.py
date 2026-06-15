@@ -356,9 +356,24 @@ def _build_request_body(
     # `max_output_tokens` and `temperature` are rejected by the Codex backend;
     # they're only valid on the public OpenAI Responses API.
 
+    tool_list: list[dict[str, Any]] = []
     tools = getattr(context, "tools", None)
     if tools:
-        body["tools"] = convert_responses_tools(tools, model.api, model.id)
+        tool_list.extend(convert_responses_tools(tools, model.api, model.id))
+    # Built-in server-side web search. The Codex backend (chatgpt.com
+    # /backend-api/codex/responses) natively supports the Responses API
+    # ``{"type": "web_search"}`` tool — the model runs the search on the
+    # server and the results are folded back into its output (the stream
+    # emits response.web_search_call.* events, which our processor
+    # ignores harmlessly). Without this, a codex run has NO way to reach
+    # the internet, so prompts that say "search arXiv" just get refused
+    # (the dry-retrieval spin we saw in research_harness). Opt-in via
+    # opts["web_search"] so non-search calls don't pay for the tool.
+    if opts.get("web_search"):
+        tool_list.append({"type": "web_search"})
+
+    if tool_list:
+        body["tools"] = tool_list
         # Honor the caller's pick policy. The Codex backend speaks the
         # Responses API, which natively takes "auto" / "required" / "none"
         # and the forced-pick shape {"type": "function", "name": X} — pass
