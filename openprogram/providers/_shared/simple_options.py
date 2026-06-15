@@ -42,6 +42,15 @@ def build_base_options(
         on_payload=options.on_payload if options else None,
         max_retry_delay_ms=options.max_retry_delay_ms if options else None,
         metadata=options.metadata if options else None,
+        # Tool-pick policy and the built-in web_search switch must survive
+        # this rebuild — they ride on SimpleStreamOptions and the codex /
+        # responses request builder reads them via opts.get(...). Omitting
+        # them silently dropped tool_choice="required" and web_search=True
+        # (the latter left codex with no way to reach the internet, so
+        # "search arXiv" prompts got refused).
+        tool_choice=options.tool_choice if options else None,
+        parallel_tool_calls=options.parallel_tool_calls if options else None,
+        web_search=options.web_search if options else None,
     )
 
 
