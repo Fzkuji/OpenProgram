@@ -1,4 +1,4 @@
-"""layout — faithful positioned-text rendering of PDF pages.
+"""pdf_layout — faithful positioned-text rendering of PDF pages.
 
 This module deliberately contains *no* table-detection heuristics.
 Earlier attempts to algorithmically reconstruct tables (caption

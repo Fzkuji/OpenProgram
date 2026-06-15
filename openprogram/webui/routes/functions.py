@@ -201,7 +201,7 @@ def register(app):
         else:
             return JSONResponse(content={"error": "not found"}, status_code=404)
         builtin_names = ["ask_user", "extract_pdf_figures",
-                         "extract_pdf_tables", "_layout"]
+                         "extract_pdf_tables", "pdf_layout"]
         if name in builtin_names:
             return JSONResponse(content={"error": "cannot delete built-in function"}, status_code=403)
         os.remove(filepath)

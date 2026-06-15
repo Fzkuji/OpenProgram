@@ -52,7 +52,7 @@ AGENTIC_MODULES: list[tuple[str, Optional[str]]] = [
 # Names that should never be treated as external harnesses even if their
 # directory looks like one (e.g. internal package private dirs).
 _NOT_A_HARNESS = {
-    "__pycache__", "_layout",
+    "__pycache__", "pdf_layout",
 }
 
 

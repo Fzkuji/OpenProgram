@@ -7,7 +7,7 @@ detection wins some and loses the next — every new template is a new
 edge case.
 
 So the geometry stays algorithmic only where it is *reliable* (the
-``_layout`` helper lays a page's words out at their real x/y positions
+``pdf_layout`` helper lays a page's words out at their real x/y positions
 into fixed-width text) and the *judgement* — which rows are a table,
 where it starts and ends, separating it from prose — is handed to the
 LLM, page by page. The LLM reasons about whatever layout it sees
@@ -22,7 +22,7 @@ from pathlib import Path
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 
-from .._layout import pdf_pages, render_page_png
+from ..pdf_layout import pdf_pages, render_page_png
 
 _PROMPT = (
     "You are given ONE page of a PDF. Extract EVERY table on this page "
