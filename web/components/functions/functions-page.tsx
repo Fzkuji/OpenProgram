@@ -58,7 +58,7 @@ export function FunctionsPage() {
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
-  const [tools, setTools] = useState<{ name: string; description: string }[]>([]);
+  const [tools, setTools] = useState<{ name: string; description: string; disabled?: boolean }[]>([]);
   const draggedRef = useRef<string | null>(null);
 
   // Initial data load (functions list + saved meta). ``signal`` is
@@ -223,11 +223,37 @@ export function FunctionsPage() {
 
   function runProgram(name: string, category?: string) {
     // SPA soft-nav. Stash the request on window; the page-shell
-    // hand-off effect drains __pendingRunFunction to open the fn-form.
+    // hand-off hook drains __pendingRunFunction to open the fn-form.
     (window as unknown as {
       __pendingRunFunction?: { name: string; cat: string };
     }).__pendingRunFunction = { name, cat: category || "" };
     router.push(chatTarget());
+    // Explicit drain signal: covers the "target route == current route"
+    // case (already on a chat page → push doesn't change pathname, so the
+    // route-keyed drain in usePendingRunFunction wouldn't re-fire). The
+    // listener (PageShell) is always mounted on chat routes, so dispatch
+    // immediately; the cross-route case is covered by the pathname drain.
+    try { window.dispatchEvent(new CustomEvent("op:run-function")); } catch { /* noop */ }
+  }
+
+  /** Toggle a built-in tool on/off for the LLM. ``enabled`` = the new
+   *  desired state. Writes ``tools.disabled.<name>`` via /api/settings
+   *  (agent_tools() hides disabled tools from every LLM toolset), and
+   *  optimistically patches local state so the switch flips instantly. */
+  function toggleTool(name: string, enabled: boolean) {
+    setTools((prev) =>
+      prev.map((t) => (t.name === name ? { ...t, disabled: !enabled } : t)),
+    );
+    void fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: `tools.disabled.${name}`, value: enabled }),
+    }).catch(() => {
+      // revert on failure
+      setTools((prev) =>
+        prev.map((t) => (t.name === name ? { ...t, disabled: enabled } : t)),
+      );
+    });
   }
 
   function editProgram(name: string) {
@@ -579,14 +605,20 @@ export function FunctionsPage() {
                   {text("Built-in tools", "内置工具")}
                   <span className={styles.toolsHint}>
                     {text(
-                      "Always available to the agent — fixed, not configurable here.",
-                      "Agent 始终可用——固定内置，此处不可配置。",
+                      "Toggle a tool off to hide it from the agent.",
+                      "关掉某个工具即不再给 Agent 使用。",
                     )}
                   </span>
                 </div>
                 <div className={view === "grid" ? cardGridClass : cardListClass}>
                   {tools.map((tl) => (
-                    <ToolCard key={tl.name} name={tl.name} description={tl.description} />
+                    <ToolCard
+                      key={tl.name}
+                      name={tl.name}
+                      description={tl.description}
+                      enabled={!tl.disabled}
+                      onToggle={(on) => toggleTool(tl.name, on)}
+                    />
                   ))}
                 </div>
               </div>

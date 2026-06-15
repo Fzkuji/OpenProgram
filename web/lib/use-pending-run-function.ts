@@ -74,26 +74,56 @@ function isChatRoute(p: string): boolean {
  * `__pendingRunFunction` needs draining.
  */
 export function usePendingRunFunction(pathname: string): void {
-  useEffect(() => {
-    if (!isChatRoute(pathname)) return;
+  // Shared drain: take the stashed request and open its form, polling
+  // briefly for availableFunctions if needed. Returns a cleanup fn.
+  function drain(): (() => void) | void {
     const pending = takePending();
     if (!pending) return;
-    if (tryOpen(pending.name)) return;
-
     let stopped = false;
-    const deadline = Date.now() + 30_000;
-    const poll = setInterval(() => {
+    // Defer the open: when landing on a fresh /chat, PageShell's
+    // pathname effect calls newSession() to reset state — and that runs
+    // AFTER this drain effect (effect order = declaration order). If we
+    // opened the form synchronously here, newSession() would wipe it a
+    // tick later. A 0ms timeout pushes the open past newSession() so the
+    // form survives. Then poll for availableFunctions if not ready yet.
+    const open = () => {
       if (stopped) return;
-      if (Date.now() > deadline) {
-        clearInterval(poll);
-        console.warn(`[?run] timeout waiting for ${pending.name}`);
-        return;
-      }
-      if (tryOpen(pending.name)) clearInterval(poll);
-    }, 50);
-    return () => {
-      stopped = true;
-      clearInterval(poll);
+      if (tryOpen(pending.name)) return;
+      const deadline = Date.now() + 30_000;
+      const poll = setInterval(() => {
+        if (stopped) { clearInterval(poll); return; }
+        if (Date.now() > deadline) {
+          clearInterval(poll);
+          console.warn(`[run-fn] timeout waiting for ${pending.name}`);
+          return;
+        }
+        if (tryOpen(pending.name)) clearInterval(poll);
+      }, 50);
     };
+    const t = setTimeout(open, 0);
+    return () => { stopped = true; clearTimeout(t); };
+  }
+
+  // (1) Drain on route change (the /functions → /chat hop).
+  useEffect(() => {
+    if (!isChatRoute(pathname)) return;
+    return drain();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
+
+  // (2) Drain on an explicit event. ``runProgram`` dispatches
+  // ``op:run-function`` right after stashing __pendingRunFunction, so a
+  // Use click works even when the target route equals the current one
+  // (router.push to the same path doesn't change ``pathname`` → the
+  // effect above wouldn't re-fire). This is the robust path.
+  useEffect(() => {
+    let cleanup: (() => void) | void;
+    const onRun = () => { cleanup = drain(); };
+    window.addEventListener("op:run-function", onRun);
+    return () => {
+      window.removeEventListener("op:run-function", onRun);
+      if (cleanup) cleanup();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 }

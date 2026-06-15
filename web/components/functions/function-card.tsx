@@ -53,7 +53,6 @@ export function FunctionCard({
       className={styles.card}
       draggable
       onDragStart={onDragStart}
-      onClick={onClick}
       onContextMenu={onContextMenu}
       onMouseEnter={() => cardIconRef.current?.startAnimation?.()}
       onMouseLeave={() => cardIconRef.current?.stopAnimation?.()}
@@ -73,7 +72,15 @@ export function FunctionCard({
         </button>
       </div>
       <div className={styles.cardInfo}>
-        <div className={styles.cardName}>{p.name}</div>
+        <div className={styles.cardNameRow}>
+          <span className={styles.cardName}>{p.name}</span>
+          <button
+            className={fav ? `${styles.favBtn} ${styles.favorited}` : styles.favBtn}
+            onClick={onToggleFav}
+          >
+            {fav ? "★" : "☆"}
+          </button>
+        </div>
         <div className={styles.cardDesc}>{desc}</div>
         <div className={styles.cardMeta}>
           {folderName ? (
@@ -85,25 +92,42 @@ export function FunctionCard({
           {formatDate(p.mtime)}
         </div>
       </div>
+      {/* Use button — bottom-right. Running the function is an explicit
+          click here, not anywhere on the card, so dragging / context-menu
+          / fav don't accidentally launch the form. */}
       <button
-        className={fav ? `${styles.favBtn} ${styles.favorited}` : styles.favBtn}
-        onClick={onToggleFav}
+        type="button"
+        className={styles.useBtn}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
       >
-        {fav ? "★" : "☆"}
+        {text("Use", "使用")}
       </button>
     </div>
   );
 }
 
-/** A built-in (regular) tool — same card anatomy and styling as
- *  FunctionCard, minus every interactive affordance: tools are fixed
- *  framework plumbing (no run, no favourite, no icon edit, no drag). */
-export function ToolCard({ name, description }: { name: string; description: string }) {
+/** A built-in (regular) tool. Same card anatomy as FunctionCard, but
+ *  its only control is an on/off switch (bottom-right): off hides the
+ *  tool from every LLM toolset. No run / favourite / icon edit / drag. */
+export function ToolCard({
+  name,
+  description,
+  enabled,
+  onToggle,
+}: {
+  name: string;
+  description: string;
+  enabled: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  const { text } = useTranslation();
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
-      className={styles.card}
-      style={{ cursor: "default" }}
+      className={enabled ? styles.card : `${styles.card} ${styles.cardOff}`}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
@@ -114,6 +138,17 @@ export function ToolCard({ name, description }: { name: string; description: str
         <div className={styles.cardName}>{name}</div>
         <div className={styles.cardDesc}>{description}</div>
       </div>
+      {/* On/off switch — bottom-right. */}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        className={enabled ? `${styles.toolSwitch} ${styles.toolSwitchOn}` : styles.toolSwitch}
+        onClick={() => onToggle(!enabled)}
+        title={enabled ? text("Enabled — click to disable", "已启用，点击关闭") : text("Disabled — click to enable", "已关闭，点击启用")}
+      >
+        <span className={styles.toolSwitchKnob} />
+      </button>
     </div>
   );
 }

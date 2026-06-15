@@ -20,16 +20,27 @@ def register(app):
     @app.get("/api/tools")
     async def get_tools():
         """The regular (non-agentic) built-in tools — bash, file edits,
-        web search, … These are fixed framework plumbing: always
-        installed, not user-editable, so the payload is display-only
-        (name + first description line)."""
+        web search, … Each carries a ``disabled`` flag so the Functions
+        page can render a per-tool on/off switch: a disabled tool is
+        filtered out of every LLM toolset (agent_tools() honours
+        ``tools.disabled``), so the model never sees it. Toggle via
+        ``POST /api/settings {key:"tools.disabled.<name>", value:<on>}``."""
         from openprogram.functions import agent_tools
+        from openprogram.setup import read_disabled_tools
+        disabled = read_disabled_tools()
         out = []
-        for t in agent_tools():
+        # include_disabled=True so DISABLED tools still appear in the list
+        # (otherwise agent_tools() filters them out and the user could
+        # never switch them back on). full toolset = the whole universe.
+        for t in agent_tools(toolset="full", include_disabled=True):
             if getattr(t, "_is_agentic", False):
                 continue
             desc = (t.description or "").strip().split("\n")[0]
-            out.append({"name": t.name, "description": desc})
+            out.append({
+                "name": t.name,
+                "description": desc,
+                "disabled": t.name in disabled,
+            })
         out.sort(key=lambda r: r["name"])
         return JSONResponse(content=out)
 

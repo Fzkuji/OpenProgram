@@ -167,18 +167,6 @@ def ask_user_question(questions: list | None = None, **kw: Any) -> str:
     return "\n".join(lines) if lines else "(no answer)"
 
 
-# Backward-compat alias: old single-question ``clarify`` callers.
-def clarify(question: str | None = None, **kw: Any) -> str:
-    """Legacy single-question entry. Forwards to ask_user_question."""
-    q = question or kw.get("question") or kw.get("prompt") or kw.get("text")
-    if not q:
-        return "Error: `question` is required."
-    return ask_user_question(questions=[{
-        "question": str(q),
-        "options": [{"label": "OK"}],
-    }])
-
-
 SPEC: dict[str, Any] = {
     "name": NAME,
     "description": DESCRIPTION,
@@ -186,4 +174,4 @@ SPEC: dict[str, Any] = {
 }
 
 
-__all__ = ["NAME", "SPEC", "DESCRIPTION", "ask_user_question", "clarify"]
+__all__ = ["NAME", "SPEC", "DESCRIPTION", "ask_user_question"]

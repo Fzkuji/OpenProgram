@@ -296,6 +296,7 @@ def agent_tools(
     allow: list[str] | None = None,
     deny: list[str] | None = None,
     only_available: bool = False,
+    include_disabled: bool = False,
 ) -> list[AgentTool]:
     """Return AgentTool instances. Hermes-style preset resolution plus
     an OpenClaw-style allow/deny/source policy chain.
@@ -343,6 +344,19 @@ def agent_tools(
     if allow is not None:
         allowset = set(allow)
         picked = [t for t in picked if t.name in allowset]
+    # User-disabled tools (``tools.disabled`` in config, toggled from the
+    # Functions page) are hidden from the LLM by default — this is what
+    # makes the per-tool on/off switch actually take effect. Pass
+    # ``include_disabled=True`` only to *list* them (e.g. /api/tools, so
+    # the user can switch them back on).
+    if not include_disabled:
+        try:
+            from openprogram.setup import read_disabled_tools
+            disabled = read_disabled_tools()
+            if disabled:
+                picked = [t for t in picked if t.name not in disabled]
+        except Exception:
+            pass
     if only_available:
         picked = [t for t in picked if _is_available_agent_tool(t)]
     return picked

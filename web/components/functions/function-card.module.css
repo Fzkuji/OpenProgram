@@ -19,9 +19,21 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  /* The card body isn't clickable any more — running is the explicit
+     Use button / tool switch. (Still draggable + right-click menu.) */
+  cursor: default;
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
   position: relative;
+  /* Fixed card height (grid mode) so a short description doesn't make
+     a card shorter than its neighbours — the row stays even. Tall
+     enough for name + 2 description lines + the bottom Use/switch strip. */
+  height: 118px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+/* A disabled tool reads as dimmed but still legible + toggleable. */
+.cardOff {
+  opacity: 0.5;
 }
 .card:hover {
   border-color: var(--accent-blue);
@@ -75,22 +87,42 @@
 .cardInfo {
   flex: 1;
   min-width: 0;
+  /* Reserve the bottom strip for the absolutely-positioned Use button /
+     tool switch so the description never runs under them (it clamps with
+     an ellipsis before reaching that strip). */
+  padding-bottom: 26px;
+}
+.list .cardInfo {
+  /* List rows put Use/switch inline (static), no reserved strip needed. */
+  padding-bottom: 0;
+}
+/* Name + star on one row. Grid mode pulls the star out to the card's
+   top-right corner (absolute); list mode leaves it inline right after
+   the name (so it doesn't crowd the Use button on the far right). */
+.cardNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
 }
 .cardName {
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
   color: var(--accent-blue);
-  margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 .cardDesc {
   font-size: 14px;
   color: var(--text-secondary);
   line-height: 1.4;
   display: -webkit-box;
+  /* Two lines then ellipsis (grid). The reserved bottom strip
+     (cardInfo padding-bottom) keeps these clear of the Use button /
+     switch — no overlap. */
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -101,6 +133,7 @@
   margin-top: 4px;
 }
 .favBtn {
+  /* Grid: pull the star to the card's top-right corner. */
   position: absolute;
   top: 8px;
   right: 8px;
@@ -112,6 +145,12 @@
   transition: color 0.15s;
   padding: 2px;
   line-height: 1;
+  flex-shrink: 0;
+}
+/* List: keep the star inline right after the name (the Use button owns
+   the far right, so a top-right star would collide with it). */
+.list .favBtn {
+  position: static;
 }
 .favBtn:hover {
   color: var(--accent-yellow);
@@ -125,6 +164,9 @@
   border-radius: var(--radius);
   padding: 8px 14px;
   align-items: center;
+  /* List rows are single-line; let them size to content (the grid's
+     fixed 96px would leave huge gaps in a list). */
+  height: auto;
 }
 .list .cardIcon {
   font-size: 14px;
@@ -136,4 +178,70 @@
 }
 .list .cardMeta {
   display: none;
+}
+
+/* Use button — bottom-right of an agentic FunctionCard. Explicit run
+   affordance (clicking the card body no longer runs it). */
+.useBtn {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  height: 26px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  color: var(--accent-blue);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.useBtn:hover {
+  background: color-mix(in srgb, var(--accent-blue) 26%, transparent);
+}
+.list .useBtn {
+  position: static;
+  flex-shrink: 0;
+}
+
+/* Tool on/off switch — bottom-right of a built-in ToolCard. */
+.toolSwitch {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-secondary) 22%, transparent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toolSwitchOn {
+  background: var(--accent-blue);
+}
+.toolSwitchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.toolSwitchOn .toolSwitchKnob {
+  transform: translateX(14px);
+}
+.list .toolSwitch {
+  /* relative (not static) so the absolutely-positioned knob anchors to
+     the switch itself, not the card — otherwise the white knob flies to
+     the card's top-left corner in list mode. */
+  position: relative;
+  right: auto;
+  bottom: auto;
+  flex-shrink: 0;
 }
