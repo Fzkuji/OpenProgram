@@ -219,9 +219,11 @@ export function SessionsList() {
     });
   }
 
-  if (Object.keys(conversations).length === 0) {
-    return <div className={styles.empty}>{t("sidebar.no_conversations")}</div>;
-  }
+  // No empty-state early return here: an empty list is rendered as a
+  // plain (non-collapsible) section header reading "No conversations
+  // yet" — same font / size / indent as the Recents bucket headers, so
+  // it reads as a peer of Favorite Functions / Recents rather than a
+  // stray hint. (Handled below where `visible.length === 0`.)
 
   const renderRow = (c: LegacyConv) => (
     <ConvItem
@@ -274,10 +276,24 @@ export function SessionsList() {
   // small right-side ⌄ toggle. (A flat title-sort run has no header,
   // so nothing to collapse there.)
   const collapsible = true;
+  const isEmpty = visible.length === 0;
   const firstHasHeader = sections.length > 0 && sections[0].label !== "";
   const body = (
     <>
-      {!firstHasHeader ? (
+      {isEmpty ? (
+        // Empty list: render the "Recents" slot as a plain section header
+        // that reads "No conversations yet" — identical font / size /
+        // indent to the real Recents bucket headers, with the filter
+        // button on its right just like a populated Recents header. Not
+        // collapsible (nothing to collapse), so no chevron.
+        <SectionHeader
+          name={t("sidebar.no_conversations")}
+          collapsible={false}
+          collapsed={false}
+          onToggle={() => {}}
+          actions={<RecentsFilter />}
+        />
+      ) : !firstHasHeader ? (
         <div className="flex h-[24px] items-center justify-end px-[8px]">
           <RecentsFilter />
         </div>
@@ -308,12 +324,13 @@ export function SessionsList() {
   return (
     <>
       {body}
-      {visible.length === 0 ? (
-        <div className={styles.empty}>{t("sidebar.no_conversations")}</div>
+      {/* "Clear all" only when there are conversations to clear — an
+          empty list shows just the "No conversations yet" header. */}
+      {!isEmpty ? (
+        <div className={styles.clearAll} onClick={clearAll}>
+          {t("sidebar.clear_all")}
+        </div>
       ) : null}
-      <div className={styles.clearAll} onClick={clearAll}>
-        {t("sidebar.clear_all")}
-      </div>
       {toast ? (
         <div
           className="pointer-events-none fixed bottom-[80px] left-1/2 z-[200] -translate-x-1/2
