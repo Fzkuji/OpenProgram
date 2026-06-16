@@ -1032,7 +1032,7 @@ export function Composer() {
 
   /* ---- Render -------------------------------------------------------- */
 
-  const anyToolActive = toolsEnabled || webSearchEnabled || fastEnabled;
+  const anyToolActive = toolsEnabled || webSearchEnabled || fastEnabled || unattended;
 
   return (
     <div className={styles.inputArea}>
@@ -1224,6 +1224,16 @@ export function Composer() {
                   />
                 </HoverTip>
               )}
+              {unattended && (
+                <HoverTip label={text("Unattended", "无人值守")}>
+                  <ToolChip
+                    icon={<UnattendedIcon size={16} />}
+                    label={text("Unattended", "无人值守")}
+                    on
+                    onToggle={toggleUnattended}
+                  />
+                </HoverTip>
+              )}
             </div>
 
             {plusMenuOpen && plusMenuPos && typeof document !== "undefined"
@@ -1273,7 +1283,7 @@ export function Composer() {
                       active={unattended}
                       onClick={toggleUnattended}
                       icon={<UnattendedIcon />}
-                      label={text("Unattended (no questions)", "无人值守(不提问)")}
+                      label={text("Unattended", "无人值守")}
                     />
                   </div>,
                   document.body,
