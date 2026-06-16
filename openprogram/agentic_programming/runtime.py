@@ -520,7 +520,16 @@ class Runtime:
                 frame_entry_seq=frame_entry_seq,
                 render_range=render_range,
             )
-            history = render_dag_messages(graph, read_ids)
+            # Resolve the session's history/ dir so an over-cap node's
+            # truncation marker can cite the exact node file the agent can
+            # ``read`` back. Best-effort: any failure → generic marker.
+            history_dir = None
+            try:
+                _sess_dir = store.store._session_dir(store.session_id)
+                history_dir = str(_sess_dir / "history")
+            except Exception:
+                history_dir = None
+            history = render_dag_messages(graph, read_ids, history_dir)
 
             # Synthesize the current turn from ``content`` blocks via
             # the same helper the no-store fallback uses, so image /
