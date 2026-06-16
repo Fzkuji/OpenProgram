@@ -135,7 +135,20 @@ _PERMANENT_ERROR_MARKERS = (
 
 
 def _is_permanent_error(exc: Exception) -> bool:
-    """True if retrying ``exc`` is pointless (malformed request / bad auth)."""
+    """True if retrying ``exc`` is pointless (malformed request / bad auth).
+
+    Honors a provider's explicit verdict first: a ``ProviderStreamError``
+    (or any exception) that already set ``retryable=False`` has been judged
+    non-retryable by the provider's own stream-retry layer — exec must NOT
+    re-retry it with a fresh budget. Without this, exec only string-matched
+    the message and so re-tried provider-declared-permanent failures (e.g.
+    codex's empty ``{"type":"error"}`` event surfaced as
+    "Error Code None: None", retryable=False) the full max_retries times,
+    multiplying one transient backend hiccup into a long, doomed retry storm
+    that still crashed the run.
+    """
+    if getattr(exc, "retryable", None) is False:
+        return True
     msg = f"{type(exc).__name__}: {exc}".lower()
     return any(marker in msg for marker in _PERMANENT_ERROR_MARKERS)
 
