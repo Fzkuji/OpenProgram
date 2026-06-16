@@ -446,6 +446,11 @@ async def process_responses_stream(
                 raise ProviderStreamError(
                     "empty error event (transient backend hiccup)",
                     retryable=not bool(getattr(output, "content", None)),
+                    # This failure is time-windowed — give the backend a
+                    # longer floor before retrying (retry_after_s is honored
+                    # as a lower bound by stream_backoff_seconds) so we probe
+                    # a recovered window instead of hammering the bad one.
+                    retry_after_s=3.0,
                 )
             raise RuntimeError(f"Error Code {code}: {msg_text}")
 

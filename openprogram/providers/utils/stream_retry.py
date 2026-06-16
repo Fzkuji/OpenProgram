@@ -51,11 +51,18 @@ from openprogram.providers.utils.deadline import expired as _dl_expired, remaini
 
 # Env-tunable so heavy-reasoning deployments can extend the per-stream
 # retry budget without code changes.
+# Default 5 (was 3): backends like the codex stream have time-windowed
+# flakiness (intermittent empty {"type":"error"} events) where the SAME
+# request succeeds moments later. A few extra attempts ride over most of
+# those windows. Env-overridable for tuning.
 PROVIDER_STREAM_MAX_ATTEMPTS: int = int(
-    os.environ.get("OPENPROGRAM_PROVIDER_STREAM_RETRIES", "3"),
+    os.environ.get("OPENPROGRAM_PROVIDER_STREAM_RETRIES", "5"),
 )
+# Base 2.0s (was 1.0): with exponential backoff this spaces the retries
+# (2/4/8/16s, capped) so they probe the backend across a wider time span
+# rather than hammering inside one bad window.
 _BACKOFF_BASE_S: float = float(
-    os.environ.get("OPENPROGRAM_PROVIDER_STREAM_BACKOFF_S", "1.0"),
+    os.environ.get("OPENPROGRAM_PROVIDER_STREAM_BACKOFF_S", "2.0"),
 )
 # Cap on the *exponential* component so a large attempt budget can't
 # produce a multi-minute sleep. Mirrors OpenClaw (maxDelayMs 30s) and
