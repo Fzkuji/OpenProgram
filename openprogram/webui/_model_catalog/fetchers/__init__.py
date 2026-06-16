@@ -161,10 +161,15 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
                 entry["thinking_variant"] = variant
         models.append(entry)
 
-    # Fetch is authoritative: replace the previous fetched set rather
-    # than merge into it. ``replace_fetched_models`` preserves any
-    # rows the user added by hand (no ``_source: "fetched"`` marker)
-    # so a power user can still pin a row that upstream doesn't list.
+    # Fetch is authoritative: overwrite this provider's models.json
+    # (providers/<provider>/models.json, gitignored) with the fresh list.
+    # Read-time merge in provider_models.combined_models fills price /
+    # capability fields from models.dev.
+    from ..provider_models import save_fetched
+    save_fetched(provider_id, models)
+    # Keep config custom_models in sync too (legacy read paths still read
+    # it: listing / runtime_management / model_tools). Belt-and-suspenders
+    # until those switch to provider_models.combined_models.
     result = replace_fetched_models(provider_id, models)
     return {
         "provider": provider_id,

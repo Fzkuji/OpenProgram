@@ -77,3 +77,6 @@ openprogram/webui/programs_meta.json
 .cron-test.log
 .cron-test/
 .claude/worktrees/
+
+# fetched per-provider model lists (runtime, user-specific — not source)
+openprogram/providers/_catalog/fetched/
