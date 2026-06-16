@@ -270,7 +270,10 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             for provider in order:
                 m = get_model(provider, model_id_only)
                 if m:
-                    return m
+                    # Same normalisation as the prefixed paths: if this bare
+                    # id only existed under claude-code, relabel to anthropic
+                    # so token resolution + Claude Code identity headers work.
+                    return _as_anthropic_if_claude_code(m)
             _raise_model_unavailable(requested)
 
     # No model configured at all (fresh install whose agent.json is
