@@ -433,6 +433,20 @@ async def process_responses_stream(
         elif event_type == "error":
             code = event.get("code") if isinstance(event, dict) else getattr(event, "code", "")
             msg_text = event.get("message") if isinstance(event, dict) else getattr(event, "message", "Unknown error")
+            # Empty error event (both code and message null) is a transient
+            # backend hiccup — codex intermittently emits these mid-stream on
+            # large / tool-bearing requests while small requests succeed.
+            # Surface it as a RETRYABLE stream error so retry_stream backs off
+            # and tries again (which usually succeeds), instead of either a
+            # bare RuntimeError (treated non-retryable -> killed the run) or a
+            # doomed no-backoff storm. A real error (with a code/message) stays
+            # a hard failure.
+            if not code and not msg_text:
+                from openprogram.providers.utils.stream_retry import ProviderStreamError
+                raise ProviderStreamError(
+                    "empty error event (transient backend hiccup)",
+                    retryable=not bool(getattr(output, "content", None)),
+                )
             raise RuntimeError(f"Error Code {code}: {msg_text}")
 
         elif event_type == "response.failed":
