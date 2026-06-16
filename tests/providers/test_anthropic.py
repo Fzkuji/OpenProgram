@@ -19,8 +19,16 @@ from openprogram.providers.anthropic.runtime import AnthropicRuntime
 
 class TestAnthropicRuntime:
     def test_no_api_key_raises(self, monkeypatch):
+        # Keys now resolve only through the AuthStore (env reading retired,
+        # project_authstore_only_keys). Force the resolver to find nothing so
+        # this tests the genuine "no credential anywhere" path, regardless of
+        # what's stored on the dev machine running the suite.
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        with pytest.raises(ValueError, match="API key"):
+        monkeypatch.setattr(
+            "openprogram.auth.resolver.resolve_api_key_sync",
+            lambda *a, **k: None,
+        )
+        with pytest.raises(ValueError, match="(?i)credential"):
             AnthropicRuntime(api_key=None)
 
     @pytest.mark.xfail(

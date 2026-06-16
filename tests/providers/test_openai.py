@@ -18,7 +18,14 @@ from openprogram.providers.openai_responses.runtime import OpenAIRuntime
 
 class TestOpenAIRuntime:
     def test_no_api_key_raises(self, monkeypatch):
+        # Keys resolve through the AuthStore now (env reading retired); force
+        # the resolver to find nothing so this tests the genuine
+        # "no credential anywhere" path on any dev machine.
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr(
+            "openprogram.providers.env_api_keys.resolve_provider_key",
+            lambda *a, **k: None,
+        )
         with pytest.raises(ValueError, match="API key"):
             OpenAIRuntime(api_key=None)
 
