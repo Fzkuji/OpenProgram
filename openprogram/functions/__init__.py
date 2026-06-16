@@ -369,6 +369,7 @@ def apply_tool_policy(
     allow: list[str] | None = None,
     deny: list[str] | None = None,
     only_available: bool = False,
+    exposure_filter: bool = True,
 ) -> list[AgentTool]:
     """Run the policy cascade on an existing AgentTool list.
 
@@ -379,18 +380,26 @@ def apply_tool_policy(
     or channel policy on top — mirrors how OpenClaw runs its tool
     builder once and then layers ``wrapTool*`` filters over the
     result.
+
+    ``exposure_filter`` (default True) applies the Layer 2 exposure
+    whitelist. Set it False for tools the CALLER supplied ad-hoc via
+    ``runtime.exec(tools=[...])``: those are self-authorized (the caller
+    decided to expose them) and are typically NOT in the framework's
+    registered-tool whitelist, so applying the whitelist would silently
+    drop every such tool — which broke ``call_with_schema`` /
+    forced-submit flows entirely.
     """
     # ``list`` builtin is shadowed by the ``.list`` subpackage import
     # above; use slice copy instead of ``list(...)``.
     out = [t for t in tools]
     # Layer 2 — same exposure whitelist that :func:`agent_tools`
-    # applies. Anything not on the list never reaches the LLM,
-    # regardless of how it got into ``tools`` (explicit construction,
-    # ``runtime.exec(tools=[...])`` user override, etc.). ``None``
-    # disables this layer (test harness only).
-    exposed = _exposed_set()
-    if exposed is not None:
-        out = [t for t in out if t.name in exposed]
+    # applies. Anything not on the list never reaches the LLM.
+    # Skipped for caller-supplied ad-hoc tools (exposure_filter=False).
+    # ``None`` (test fixtures) also disables this layer.
+    if exposure_filter:
+        exposed = _exposed_set()
+        if exposed is not None:
+            out = [t for t in out if t.name in exposed]
     if source:
         out = [t for t in out if source not in _unsafe_in_for(t.name)]
     if deny:

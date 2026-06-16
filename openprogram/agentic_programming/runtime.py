@@ -1333,11 +1333,17 @@ class Runtime:
         elif raw_tools:
             from openprogram.functions import apply_tool_policy as _apply_policy
             adapted = _adapt_tools(raw_tools) or []
+            # Caller-supplied tools (exec(tools=[...])) are self-authorized:
+            # skip the exposure whitelist (it lists only registry tools, so it
+            # would drop every ad-hoc tool — the bug that made
+            # call_with_schema / forced-submit calls reach codex with tools=[]).
+            # Channel-source / allow / deny still apply.
             adapted = _apply_policy(
                 adapted,
                 source=policy.get("source") if policy else None,
                 allow=policy.get("allow") if policy else None,
                 deny=policy.get("deny") if policy else None,
+                exposure_filter=False,
             )
             agent_tools = adapted or None
         else:
