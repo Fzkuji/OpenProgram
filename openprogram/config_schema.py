@@ -71,16 +71,17 @@ def _search_choices() -> list[str]:
 
 
 def _claude_account_choices() -> list[str]:
-    """``''`` (follow terminal login) + each saved Claude account, so the
-    TUI/settings constrain the active account to real ones (same as the web
-    panel) instead of accepting a free-text name that may not exist."""
+    """``''`` (no pin) + each saved Claude account (profile) in the anthropic
+    AuthStore pool, so the TUI/settings constrain the active account to real
+    ones. claude-code now stores its subscription logins in the `anthropic`
+    pool (direct OAuth), not a Meridian daemon."""
     try:
-        from openprogram.providers.anthropic._meridian_cli import (
-            _parse_accounts, _proxy_bin,
-        )
-        if not _proxy_bin():
-            return [""]
-        return [""] + [a["name"] for a in _parse_accounts()]
+        from openprogram.auth.store import get_store
+        names = [
+            p.profile_id for p in get_store().list_pools()
+            if p.provider_id == "anthropic" and p.credentials
+        ]
+        return [""] + sorted(names)
     except Exception:
         return [""]
 

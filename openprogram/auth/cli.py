@@ -207,30 +207,11 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     pd.add_argument("name", help="Profile name to delete")
     pd.add_argument("--yes", action="store_true", help="Skip confirmation")
 
-    # claude-code provider config. Today this is Claude-account management
-    # (`providers claude-code accounts <verb>`). Nested nouns per
-    # docs/design/cli/cli-naming.md. The underlying proxy (Meridian) is an
-    # internal detail and is never named in the user-facing surface here.
-    p_cc = auth_sub.add_parser(
-        "claude-code",
-        help="claude-code provider config (manage its Claude accounts)",
-    )
-    cc_sub = p_cc.add_subparsers(dest="claude_code_cmd", metavar="noun")
-    p_accounts = cc_sub.add_parser(
-        "accounts",
-        help="Add / remove / list / activate the Claude accounts claude-code uses",
-        description=(
-            "Manage the Claude accounts OpenProgram's claude-code provider can "
-            "use, and pick which one is active: add an account (browser "
-            "login), remove one, list them, or activate one. Independent of "
-            "the terminal `claude auth login` you chat on."
-        ),
-    )
-    accounts_sub = p_accounts.add_subparsers(dest="accounts_cmd", metavar="verb")
-    from openprogram.providers.anthropic._meridian_cli import (
-        build_parser as _accounts_build_parser,
-    )
-    _accounts_build_parser(accounts_sub)
+    # (Removed: `providers claude-code accounts <verb>` — that was the
+    # Meridian-daemon account CLI. claude-code now uses the unified account
+    # flow: `openprogram providers login claude-code` (browser OAuth /
+    # setup-token) + `providers list` / `providers use`, same as every other
+    # provider. Its credentials live in the anthropic AuthStore pool.)
 
 
 def dispatch(args: argparse.Namespace) -> int:
@@ -280,21 +261,11 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_aliases(args.json)
     if cmd == "profiles":
         return _dispatch_profiles(args)
-    if cmd == "claude-code":
-        if getattr(args, "claude_code_cmd", None) == "accounts":
-            from openprogram.providers.anthropic._meridian_cli import (
-                dispatch as _accounts_dispatch,
-            )
-            return _accounts_dispatch(args)
-        print("Usage: openprogram providers claude-code accounts <verb>\n"
-              "Verbs: add <name>, remove <name>, list, use <name>, status",
-              file=sys.stderr)
-        return 2
     # No subcommand — print the help hint.
     print("Usage: openprogram providers <verb>\n"
           "Verbs: available (list/search the catalogue), login, logout, "
           "list (configured pools), status, discover, adopt, doctor, "
-          "setup, aliases, profiles, claude-code (account management)",
+          "setup, aliases, profiles",
           file=sys.stderr)
     return 2
 

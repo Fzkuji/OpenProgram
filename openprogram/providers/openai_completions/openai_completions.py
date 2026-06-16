@@ -210,16 +210,9 @@ async def stream_simple(
 
     base_url = model.base_url if model.base_url != "https://api.openai.com/v1" else None
     extra_headers = opts.headers or {}
-    # claude-code: pin a fixed Meridian account (profile) so OpenProgram's
-    # Claude subscription is decoupled from whatever the terminal
-    # `claude auth login` last logged in. This is the single chokepoint
-    # every claude-code request passes through (the providers/stream.py
-    # wrapper is bypassed by some callers, e.g. memory summarization), so
-    # the injection lives here, not there. No-op for every other provider.
-    # See docs/design/claude-code-meridian-profile.md.
-    if model.provider == "claude-code":
-        from ..anthropic._claude_max_proxy_registry import inject_profile_header
-        extra_headers = inject_profile_header(model, extra_headers)
+    # (Removed: Meridian profile-header injection for claude-code. claude-code
+    # now connects DIRECT via the anthropic-messages wire, so it never reaches
+    # openai_completions — this branch was dead.)
 
     # Match other HTTP providers' stream retry budget (default 3) so
     # transient 429/5xx/connect failures are absorbed without

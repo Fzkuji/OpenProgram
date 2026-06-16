@@ -314,8 +314,8 @@ def __getattr__(name):
     if name == "GeminiRuntime":
         from openprogram.providers.google.runtime import GeminiRuntime
         return GeminiRuntime
-    if name in ("ClaudeCodeRuntime", "ClaudeCodeRuntime"):
-        from openprogram.providers.anthropic._max_proxy_runtime import (
+    if name == "ClaudeCodeRuntime":
+        from openprogram.providers.anthropic._claude_code_direct_runtime import (
             ClaudeCodeRuntime,
         )
         return ClaudeCodeRuntime
