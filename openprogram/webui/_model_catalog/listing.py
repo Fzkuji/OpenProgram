@@ -206,50 +206,31 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
     fetched-or-manual set are hidden. That's what makes a Fetch click
     feel like "replace" instead of "append".
     """
-    from openprogram.providers import get_models
     from openprogram.providers.thinking_catalog import derive_thinking_fields
 
     from .providers import _default_api_for
     from .storage import _read_providers_cfg
+    from .provider_models import combined_models
 
     cfg = _read_providers_cfg()
     pcfg = cfg.get(provider_id, {})
     enabled_ids = set(pcfg.get("enabled_models") or [])
-    fetched_only = bool(pcfg.get("models_fetched"))
-    custom_ids: set[str] = {
-        m.get("id") for m in (pcfg.get("custom_models") or []) if m.get("id")
-    }
-
-    seen: set[str] = set()
-    out: list[dict[str, Any]] = []
-
-    for m in get_models(provider_id):
-        if fetched_only and m.id not in custom_ids:
-            continue
-        seen.add(m.id)
-        out.append(_model_to_dict(m, m.id in enabled_ids))
-
-    # Default API to dispatch through for this provider — derived from
-    # the provider's static models (see ``providers._default_api_for``).
-    # Falls back to ``openai-completions`` (the common wire) rather than
-    # the legacy unrouteable ``"custom"`` sentinel, so an unmapped
-    # provider's fetched rows still run.
     default_api = _default_api_for(provider_id) or "openai-completions"
-    for raw in pcfg.get("custom_models", []):
+
+    # Single source: combined_models() = fetched (authoritative which+context)
+    # merged with models.dev (price + capabilities), or models.dev's full
+    # list when never fetched. No more static-registry + custom_models split.
+    out: list[dict[str, Any]] = []
+    for raw in combined_models(provider_id):
         mid = raw.get("id") or ""
-        if not mid or mid in seen:
+        if not mid:
             continue
         reasoning = bool(raw.get("reasoning", False))
         levels, default_lv, variant = derive_thinking_fields(
             provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
         )
-        # Start with everything the fetcher / enricher recorded (so
-        # ``input_modalities``, ``input_cost``, ``family``, etc. all
-        # surface in the UI's expanded-row panel), then overwrite the
-        # few fields where we have authoritative values.
         entry: dict[str, Any] = {
-            k: v for k, v in raw.items()
-            if not k.startswith("_")  # _source marker etc. stay internal
+            k: v for k, v in raw.items() if not k.startswith("_")
         }
         entry.update({
             "id": mid,
@@ -264,7 +245,6 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
             "thinking_variant": variant,
             "tools": bool(raw.get("tools", True)),
             "enabled": mid in enabled_ids,
-            "custom": True,
         })
         out.append(entry)
 
