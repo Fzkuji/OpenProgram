@@ -14,7 +14,7 @@ export type WsRequest =
   | ChatRequest
   | { action: 'sync' }
   | { action: 'stats' }
-  | { action: 'stop'; conv_id: string }
+  | { action: 'stop'; conv_id: string; mode?: 'graceful' | 'force' }
   | { action: 'browser'; verb: string; args?: Record<string, unknown> }
   | { action: 'list_models' }
   | { action: 'switch_model'; model: string; provider?: string; conv_id?: string }

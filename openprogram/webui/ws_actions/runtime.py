@@ -176,7 +176,8 @@ async def handle_stop(ws, cmd: dict):
     ``status=running`` rows are patched to ``cancelled``.
     """
     from openprogram.webui import server as _s
-    session_id = cmd.get("session_id")
+    # TUI sends conv_id, web composer sends session_id — accept both.
+    session_id = cmd.get("session_id") or cmd.get("conv_id")
     if not session_id:
         return
 

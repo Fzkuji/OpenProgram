@@ -180,7 +180,10 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const startTurn = (verb: string) =>
     setActivity({ verb, startedAt: Date.now() });
 
-  const finishTurn = () => setActivity(null);
+  const finishTurn = () => {
+    setActivity(null);
+    stopStageRef.current = 0;  // reset three-stage stop for the next turn
+  };
 
 
   useWsEvents({
@@ -209,6 +212,10 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [exitPending, setExitPending] = useState(false);
   const exitTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastCtrlCRef = useRef<number>(0);
+  // Three-stage stop while a turn is streaming (Claude-Code style):
+  // 0 = idle, 1 = hinted ("press again to stop"), 2 = graceful sent
+  // (next press forces). Reset when the turn ends.
+  const stopStageRef = useRef<0 | 1 | 2>(0);
 
   useEffect(() => () => {
     if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
@@ -216,6 +223,44 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
+      // While a turn is streaming, Ctrl-C means STOP the turn (three-stage,
+      // Claude-Code style), not exit the app:
+      //   1st  → hint "Press Ctrl-C again to stop" (avoid mistouch)
+      //   2nd  → graceful stop (finish current unit, save, conclusion)
+      //   3rd  → force stop (instant SIGKILL — the model is wedged)
+      if (streaming && conversationId) {
+        const stage = stopStageRef.current;
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+        if (stage === 0) {
+          stopStageRef.current = 1;
+          setExitPending(true);  // BottomBar shows the hint
+          exitTimerRef.current = setTimeout(() => {
+            exitTimerRef.current = null;
+            stopStageRef.current = 0;
+            setExitPending(false);
+          }, 1500);
+        } else if (stage === 1) {
+          stopStageRef.current = 2;
+          client.send({ action: 'stop', conv_id: conversationId });
+          pushSystem('Stopping gracefully — finishing the current step. '
+            + 'Press Ctrl-C again to force-stop.');
+          // Keep exitPending so the hint stays; reset stage after a window.
+          exitTimerRef.current = setTimeout(() => {
+            exitTimerRef.current = null;
+            stopStageRef.current = 0;
+            setExitPending(false);
+          }, 5000);
+        } else {
+          stopStageRef.current = 0;
+          setExitPending(false);
+          client.send({ action: 'stop', conv_id: conversationId, mode: 'force' });
+          setStreaming(null);
+          finishTurn();
+          pushSystem('Force-stopped.');
+        }
+        return;
+      }
+      // Idle: double Ctrl-C exits the app (unchanged).
       const now = Date.now();
       const recent = now - lastCtrlCRef.current <= 800
         && exitTimerRef.current !== null;
