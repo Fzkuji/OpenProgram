@@ -1531,9 +1531,16 @@ def _run_async(coro):
     - Running event loop (Jupyter, FastAPI, pytest-asyncio) → run in a worker
       thread so we don't clash with the live loop.
     """
+    # Detect a running loop, then run OUTSIDE the try/except. If we called
+    # asyncio.run() inside the `except RuntimeError` and the coroutine later
+    # raised, Python would chain the caught ``RuntimeError('no running event
+    # loop')`` as that error's ``__context__`` — a misleading "During handling
+    # of the above exception" traceback stacked over the real provider error.
     try:
-        asyncio.get_running_loop()
+        running = asyncio.get_running_loop()
     except RuntimeError:
+        running = None
+    if running is None:
         return asyncio.run(coro)
     import concurrent.futures
     # Carry the caller's ContextVars (the published exec deadline, the
