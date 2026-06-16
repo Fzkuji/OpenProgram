@@ -189,4 +189,10 @@ def _augment_registry_with_max_proxy_models() -> None:
         )
 
 
-_augment_registry_with_max_proxy_models()
+# DISABLED: claude-code now connects DIRECT to api.anthropic.com (anthropic
+# subscription OAuth) and its model list comes from a live Fetch against
+# Anthropic's /v1/models. This Meridian-proxy seed (openai-completions wire,
+# localhost:3456, hardcoded 200K aliases like claude-opus-4) only duplicated
+# and shadowed the real fetched models in the UI. The function is kept for
+# reference / a possible Meridian fallback, but is no longer auto-run.
+# _augment_registry_with_max_proxy_models()

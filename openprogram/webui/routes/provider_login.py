@@ -80,6 +80,31 @@ class _RemoteLoginUi:
             self._s.pending = None
 
 
+def _free_profile(provider: str) -> str:
+    """Pick a profile id for a NEW account that no existing credential occupies.
+
+    First account → "default"; thereafter "account-2", "account-3", … The pool
+    is the credential pool id (claude-code's credentials live under
+    `anthropic`), so we check occupancy in the right place.
+    """
+    try:
+        from openprogram.webui.routes.accounts import _pool_id
+        from openprogram.auth.store import get_store
+        pool = _pool_id(provider)
+        taken = {
+            p.profile_id for p in get_store().list_pools()
+            if p.provider_id == pool and p.credentials
+        }
+    except Exception:
+        return "default"
+    if "default" not in taken:
+        return "default"
+    i = 2
+    while f"account-{i}" in taken:
+        i += 1
+    return f"account-{i}"
+
+
 def _reap() -> None:
     """Drop finished sessions after a grace window and abandoned ones after the
     TTL (cancelling their still-running task). Idempotent; called on every
@@ -121,12 +146,20 @@ def register(app):
         except Exception:
             pass
         b = body or {}
-        profile = (b.get("profile") or "default").strip() or "default"
+        explicit_profile = (b.get("profile") or "").strip()
         api_key = b.get("api_key")
         method = (b.get("method") or "").strip()
         if not method:
             from openprogram.auth.login_methods import default_method
             method = default_method(name)
+
+        # An account == a profile == one credential. If the user named the
+        # account, honour it; otherwise pick a profile that ISN'T already
+        # occupied, so a new sign-in never lands in a profile that already
+        # holds a credential (which would hide it behind the existing one in
+        # the UI and make the runtime resolve the wrong credential). The pool
+        # is keyed by the credential pool id (claude-code shares `anthropic`).
+        profile = explicit_profile or _free_profile(name)
 
         sess = _LoginSession()
         sid = secrets.token_hex(8)

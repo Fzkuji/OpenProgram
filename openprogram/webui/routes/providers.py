@@ -205,96 +205,12 @@ def register(app):
         from openprogram.webui import _model_catalog as _mc
         return JSONResponse(content=_mc.fetch_models_remote(name))
 
-    # ---- claude-code Claude-account management ----------------------------
-    # Lets the web/TUI add / remove / list / activate the Claude accounts the
-    # claude-code provider can run on. The underlying proxy (Meridian) is an
-    # internal detail — these endpoints speak "Claude account" only. Sync
-    # `def` so the blocking subprocess calls run in FastAPI's threadpool.
-    @app.get("/api/providers/claude-code/accounts")
-    def api_cc_accounts():
-        # Normalize the Meridian summary ({name,email}) into the SAME unified
-        # account shape every other provider uses ({id,name,identity,is_active,
-        # kind,can_reveal}), so the one <AccountManager> renders claude-code
-        # identically — Activate/Deactivate work, the active one is marked.
-        from openprogram.providers.anthropic import _meridian_cli as _acc
-        s = _acc.accounts_summary()
-        active = s.get("active")
-        accounts = [{
-            "id": a.get("name", ""),
-            # Meridian renames the account to the email after login, so name IS
-            # the email; no separate identity column (matches OAuth rows).
-            "name": a.get("email", "") or a.get("name", ""),
-            "identity": "",
-            "email": a.get("email", "") or a.get("name", ""),
-            "kind": "oauth",
-            "status": "valid",
-            "is_active": a.get("name") == active,
-            "can_reveal": False,
-        } for a in s.get("accounts", [])]
-        return JSONResponse(content={
-            **s, "accounts": accounts, "active": active or "",
-            "pinned": active or "",  # Meridian's active IS the explicit pin
-            "add_mode": "code_paste", "rotation": False,
-            # claude-code has no rotation; send empty so the shape matches the
-            # unified State the frontend expects.
-            "strategy": "", "strategies": [],
-        })
-
-    @app.post("/api/providers/claude-code/accounts/add")
-    def api_cc_accounts_add(body: dict = None):
-        # Starts the OAuth login and returns {session, url}. The proxy's login
-        # is interactive (prints a URL, waits for the code the user pastes
-        # back), so the UI opens `url`, then posts the code to .../add/code.
-        from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content=_acc.start_add((body or {}).get("name", "")))
-
-    @app.post("/api/providers/claude-code/accounts/add/code")
-    def api_cc_accounts_add_code(body: dict = None):
-        from openprogram.providers.anthropic import _meridian_cli as _acc
-        b = body or {}
-        return JSONResponse(
-            content=_acc.submit_login_code(b.get("session", ""), b.get("code", ""))
-        )
-
-    @app.get("/api/providers/claude-code/accounts/add/poll")
-    def api_cc_accounts_add_poll(session: str = ""):
-        # The Claude CLI often completes the OAuth itself via a localhost
-        # loopback redirect (no code to paste) — the UI polls this to detect
-        # that and finalize, falling back to the paste-code box otherwise.
-        from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content=_acc.poll_add(session))
-
-    @app.post("/api/providers/claude-code/accounts/add/token")
-    def api_cc_accounts_add_token(body: dict = None):
-        # Headless / cross-platform add: register a `claude setup-token` the
-        # user pasted. Works anywhere (no pseudo-terminal needed).
-        from openprogram.providers.anthropic import _meridian_cli as _acc
-        b = body or {}
-        return JSONResponse(
-            content=_acc.add_with_token(b.get("name", ""), b.get("token", ""))
-        )
-
-    @app.post("/api/providers/claude-code/accounts/remove")
-    def api_cc_accounts_remove(body: dict = None):
-        # The unified UI sends {id}; accept {name} too for back-compat.
-        b = body or {}
-        from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content=_acc.remove_account(b.get("id", b.get("name", ""))))
-
-    @app.post("/api/providers/claude-code/accounts/use")
-    def api_cc_accounts_use(body: dict = None):
-        # Activate the named account; empty id/name deactivates (clears the pin).
-        # The unified UI sends {id}; accept {name} too for back-compat.
-        b = body or {}
-        from openprogram.providers.anthropic import _meridian_cli as _acc
-        return JSONResponse(content=_acc.activate_account(b.get("id", b.get("name", ""))))
-
-    @app.post("/api/providers/claude-code/accounts/rename")
-    def api_cc_accounts_rename(body: dict = None):
-        # Unified UI sends {id, name}; accept {old, new} for back-compat.
-        from openprogram.providers.anthropic import _meridian_cli as _acc
-        b = body or {}
-        return JSONResponse(content=_acc.rename_account(b.get("id", b.get("old", "")), b.get("name", b.get("new", ""))))
+    # claude-code account management is now served by the UNIFIED
+    # /api/providers/{provider}/accounts/* routes (routes/accounts.py),
+    # which treat claude-code as the `anthropic` credential pool and drive
+    # the subscription browser-OAuth / setup-token logins. The old
+    # Meridian-backed literal routes were removed; _meridian_cli stays on
+    # disk but is no longer wired into the web surface.
 
     # Single-provider probes are sync (one blocking network call). Declared
     # `def` (not `async def`) so FastAPI runs them in its threadpool instead of

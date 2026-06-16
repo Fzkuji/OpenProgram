@@ -36,12 +36,17 @@ class AnthropicRuntime(Runtime):
         max_retries: int = 2,
     ):
         if not api_key:
-            from openprogram.providers.env_api_keys import resolve_provider_key
-            api_key = resolve_provider_key("anthropic")
+            # Unified resolution: plain api-key OR subscription OAuth token
+            # (sk-ant-oat, from a Claude Code login adopted into the
+            # AuthStore). The wire (anthropic.stream_simple) switches to
+            # Bearer + Claude Code beta headers for OAuth tokens.
+            from openprogram.auth.resolver import resolve_api_key_sync
+            api_key = resolve_api_key_sync("anthropic")
         if not api_key:
             raise ValueError(
-                "Anthropic API key is required. Add one in Settings → "
-                "Providers, pass api_key=, or set ANTHROPIC_API_KEY."
+                "No Anthropic credential. Add an API key in Settings → "
+                "Providers, pass api_key=, or log in with a Claude "
+                "subscription (claude login) so the OAuth token is adopted."
             )
         super().__init__(
             model=f"anthropic:{model}",

@@ -308,25 +308,10 @@ def _is_configured(provider_id: str) -> bool:
     if provider_id == "openai-codex":
         from pathlib import Path
         return (Path.home() / ".codex" / "auth.json").exists()
-    # claude-code: there's no env-key path; the daemon is "ready" when
-    # its HTTP endpoint answers. Quick 0.5s probe — failure means the
-    # user hasn't started ``meridian`` (or claude-max-api) yet.
+    # claude-code runs direct on the anthropic subscription — configured
+    # when the anthropic credential pool holds a token (no daemon probe).
     if provider_id == "claude-code":
-        import os
-        import urllib.error
-        import urllib.request
-        # Both meridian and claude-max-api-proxy default to port 3456.
-        # Strip a trailing /v1 because /health lives at root.
-        url = (
-            os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:3456"
-        ).rstrip("/")
-        if url.endswith("/v1"):
-            url = url[:-3]
-        try:
-            with urllib.request.urlopen(url + "/health", timeout=0.5):
-                return True
-        except (urllib.error.URLError, ConnectionError, OSError):
-            return False
+        return _auth_store_has_credential("anthropic")
     # Key-based providers (incl. the Bedrock/Vertex cloud-credential chains):
     # the canonical is_configured — env-var key, or a satisfied cloud
     # chain. See docs/design/providers/api-key-resolution-unification.md.

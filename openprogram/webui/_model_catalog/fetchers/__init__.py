@@ -42,7 +42,10 @@ from .google import _fetch_google
 # default; explicit entries here override that default.
 _FETCHERS: dict[str, Any] = {
     "anthropic": _fetch_anthropic,
-    "claude-code": _fetch_claude_code,  # local proxy, no API key
+    # claude-code runs DIRECT on the anthropic subscription — fetch the live
+    # model list from Anthropic's own /v1/models (Bearer OAuth), same as the
+    # anthropic provider. (Was a Meridian-daemon proxy probe.)
+    "claude-code": _fetch_anthropic,
     "openai-codex": _fetch_codex_live,
     "google": _fetch_google,
     "amazon-bedrock": _fetch_bedrock,

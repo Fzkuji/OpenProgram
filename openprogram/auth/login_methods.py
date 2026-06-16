@@ -24,10 +24,23 @@ LoginMethod = tuple[str, str]
 
 _API_KEY: LoginMethod = ("api_key", "Paste a static API key")
 
+# Claude subscription logins, shared by the `anthropic` provider and the
+# `claude-code` alias (same AuthStore pool: provider_id="anthropic"). Exactly
+# two routes: browser PKCE sign-in (default) or paste a `claude setup-token`.
+# No CLI-import and no API-key — claude-code runs on a subscription, and the
+# import-from-~/.claude route is retired.
+_CLAUDE_SUB_METHODS: list[LoginMethod] = [
+    ("pkce_oauth",  "Sign in with Claude subscription (opens browser)"),
+    ("setup_token", "Paste a `claude setup-token`"),
+]
+
 _METHODS: dict[str, list[LoginMethod]] = {
     "openai-codex":        [("pkce_oauth",  "Sign in with ChatGPT (opens browser)")],
     "github-copilot":      [("device_code", "Sign in with GitHub (opens browser)")],
-    "anthropic":           [("import_from_cli", "Import from Claude Code's ~/.claude/.credentials.json"), _API_KEY],
+    "anthropic":           list(_CLAUDE_SUB_METHODS),
+    # claude-code provider routes to the same anthropic credential pool, so
+    # it offers the identical subscription logins.
+    "claude-code":         list(_CLAUDE_SUB_METHODS),
     # gemini-subscription has no api_key_env, so the web ApiKey field never
     # renders and an api_key method would have no entry point there. Offer
     # import only, so CLI and web agree (use the Google provider for a key).

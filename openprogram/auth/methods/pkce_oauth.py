@@ -90,6 +90,19 @@ class PkceConfig:
     # Longer than you'd think — the user might get distracted, log in,
     # complete MFA, etc.
     timeout_seconds: float = 300.0
+    # Some OAuth apps (Anthropic's Claude login) register a FIXED hosted
+    # redirect that shows the user an authorization code to copy, rather
+    # than redirecting to a loopback URL. There's no localhost callback to
+    # bind — the user pastes the displayed ``code#state`` back. When set,
+    # ``run()`` skips the callback server and the advertised redirect_uri
+    # is ``redirect_uri_override`` verbatim (must match the app's
+    # registered redirect exactly).
+    manual_paste_only: bool = False
+    redirect_uri_override: str = ""
+    # Anthropic's token endpoint wants the body as JSON, not form-urlencoded.
+    # When set, ``_exchange_code_for_tokens`` posts JSON directly instead of
+    # trying form first.
+    token_use_json: bool = False
 
 
 @dataclass
@@ -146,7 +159,15 @@ class PkceLoginMethod(LoginMethod):
     async def run(self, ui: LoginUi) -> Credential:
         verifier, challenge = _generate_pkce()
         state = secrets.token_hex(self._cfg.state_length_bytes)
-        redirect_uri = f"http://{self._cfg.callback_host}:{self._cfg.callback_port}{self._cfg.callback_path}"
+        if self._cfg.manual_paste_only:
+            # Hosted-redirect flow (Anthropic): no loopback to bind; the
+            # advertised redirect_uri must be the app's registered hosted
+            # callback verbatim, and state is the PKCE verifier so the
+            # exchange can echo it back.
+            redirect_uri = self._cfg.redirect_uri_override
+            state = verifier
+        else:
+            redirect_uri = f"http://{self._cfg.callback_host}:{self._cfg.callback_port}{self._cfg.callback_path}"
 
         params = {
             "client_id": self._cfg.client_id,
@@ -163,6 +184,22 @@ class PkceLoginMethod(LoginMethod):
 
         await ui.show_progress("Opening browser for authentication…")
         await ui.open_url(auth_url)
+
+        if self._cfg.manual_paste_only:
+            # The hosted page shows a ``code#state`` string. Ask for it,
+            # split on '#', and exchange. (No callback server to race.)
+            raw = (await ui.prompt(
+                "After authorizing, paste the code shown on the page "
+                "(looks like 'xxxxx#yyyyy')",
+            )).strip()
+            code = raw.split("#", 1)[0].strip()
+            if not code:
+                raise ValueError("no authorization code pasted")
+            tokens = await _exchange_code_for_tokens(
+                cfg=self._cfg, code=code, verifier=verifier,
+                redirect_uri=redirect_uri, state=state,
+            )
+            return self._credential_from_tokens(tokens)
 
         # Wait for the browser to hit our localhost callback. We used
         # to race this against a manual-paste prompt, but the prompt
@@ -188,8 +225,20 @@ class PkceLoginMethod(LoginMethod):
         tokens = await _exchange_code_for_tokens(
             cfg=self._cfg, code=code, verifier=verifier, redirect_uri=redirect_uri,
         )
+        return self._credential_from_tokens(tokens)
 
+    def _credential_from_tokens(self, tokens: "PkceTokens") -> Credential:
         expires_at_ms = int(time.time() * 1000) + tokens.expires_in * 1000
+        # Surface the account email into metadata so every surface can label
+        # the account without re-decoding the token response. Anthropic nests
+        # it under account.email_address; others may put it at top level.
+        metadata = dict(self._metadata)
+        acct = tokens.extra.get("account") if isinstance(tokens.extra, dict) else None
+        email = ""
+        if isinstance(acct, dict):
+            email = acct.get("email_address") or acct.get("email") or ""
+        if email and "email" not in metadata:
+            metadata["email"] = email
         return Credential(
             provider_id=self.provider_id,
             profile_id=self._profile_id,
@@ -205,7 +254,7 @@ class PkceLoginMethod(LoginMethod):
                 extra=tokens.extra,
             ),
             source=f"{self.method_id}:{self.provider_id}",
-            metadata=self._metadata,
+            metadata=metadata,
         )
 
 
@@ -359,12 +408,16 @@ async def _ask_manual_paste(ui: LoginUi, expected_state: str) -> str:
 
 async def _exchange_code_for_tokens(
     *, cfg: PkceConfig, code: str, verifier: str, redirect_uri: str,
+    state: str = "",
 ) -> PkceTokens:
     """POST the auth code + PKCE verifier to the token endpoint.
 
     Most providers accept form-urlencoded; a few (Anthropic) accept JSON.
     We try form first — it's the RFC default — and fall back to JSON if
     we see a 400 that complains about content type.
+
+    ``state`` is included when given — Anthropic's token endpoint requires
+    it echoed back alongside the code.
     """
     import httpx
     params = {
@@ -375,14 +428,19 @@ async def _exchange_code_for_tokens(
         "redirect_uri": redirect_uri,
         **cfg.extra_token_params,
     }
+    if state:
+        params["state"] = state
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            cfg.token_url,
-            data=params,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        if resp.status_code == 400 and "content-type" in resp.text.lower():
+        if cfg.token_use_json:
             resp = await client.post(cfg.token_url, json=params)
+        else:
+            resp = await client.post(
+                cfg.token_url,
+                data=params,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            if resp.status_code == 400 and "content-type" in resp.text.lower():
+                resp = await client.post(cfg.token_url, json=params)
         if resp.status_code != 200:
             raise RuntimeError(
                 f"token exchange failed: {resp.status_code} {resp.text[:200]}"

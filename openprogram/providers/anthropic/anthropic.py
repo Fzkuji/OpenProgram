@@ -66,6 +66,31 @@ _BETA_FINE_GRAINED = "fine-grained-tool-streaming-2025-05-14"
 _BETA_INTERLEAVED = "interleaved-thinking-2025-05-14"
 _BETA_OAUTH = "oauth-2025-04-20"
 _BETA_CLAUDE_CODE = "claude-code-20250219"
+# 1M context window — opt-in via the model id's ``[1m]`` suffix.
+#
+# CRITICAL: use ``context-management-2025-06-27``, NOT the older
+# ``context-1m-2025-08-07``. They route the SAME 1M window through
+# DIFFERENT billing paths:
+#   * context-1m-2025-08-07  → the API pay-as-you-go path. On a Claude
+#     SUBSCRIPTION this bills against usage credits (real money) and 429s
+#     "Usage credits are required for long context requests" once the
+#     credit limit is hit.
+#   * context-management-2025-06-27 → the path the official Claude Code
+#     CLI sends (verified by capturing its requests). On a subscription
+#     the 1M window is included — it runs even with usage credits
+#     exhausted, no per-token surcharge.
+# Sending the wrong one is what billed $1.98 for a single 1M probe.
+_BETA_CONTEXT_1M = "context-management-2025-06-27"
+
+
+def _wants_1m(model_id: str) -> bool:
+    """True when the model id carries the ``[1m]`` opt-in suffix."""
+    return "[1m]" in (model_id or "")
+
+
+def _strip_1m(model_id: str) -> str:
+    """The bare model id the Anthropic API expects — without ``[1m]``."""
+    return (model_id or "").replace("[1m]", "")
 # Strict tool use (grammar-constrained tool inputs). Requires this beta
 # header + a recent model (Sonnet 4.5+ / Opus 4.1+ / Haiku 4.5+);
 # enables the SAME schema subset as OpenAI strict mode.
@@ -233,6 +258,11 @@ def _build_client(
     # API-key path (not Claude Code OAuth) and recent models qualify.
     if _anthropic_strict_on(model, is_oauth):
         beta_features.append(_BETA_STRUCTURED_OUTPUTS)
+    # 1M context — opt-in via the model id's [1m] suffix. The bare id is
+    # sent in the request body (see _build_params); here we just flip the
+    # beta header on.
+    if _wants_1m(model.id):
+        beta_features.append(_BETA_CONTEXT_1M)
 
     # SDK-level retry budget: Anthropic SDK retries 429/5xx/transport
     # errors with its own exponential backoff. Default is 2; we raise
@@ -503,8 +533,13 @@ async def stream_simple(
 
     api_key = opts.api_key or ""
     if not api_key:
-        from ..env_api_keys import resolve_provider_key
-        api_key = resolve_provider_key(model.provider) or ""
+        # Unified resolution: covers a plain api-key AND a subscription OAuth
+        # token (sk-ant-oat, kind=oauth/cli_delegated) from the AuthStore.
+        # _build_client below sniffs the sk-ant-oat prefix and switches to
+        # Bearer + Claude Code beta headers, so claude-code subscriptions
+        # connect direct to api.anthropic.com (no Meridian daemon).
+        from openprogram.auth.resolver import resolve_api_key_sync
+        api_key = resolve_api_key_sync(model.provider) or ""
     if not api_key:
         # No credential anywhere — fail precisely instead of sending an
         # empty x-api-key header (a misleading upstream 401).
@@ -549,7 +584,9 @@ async def stream_simple(
     max_tokens = opts.max_tokens or (model.max_tokens // 3 if model.max_tokens else 4096)
 
     params: dict[str, Any] = {
-        "model": model.id,
+        # Strip the [1m] opt-in suffix — it's our marker, not a real id; the
+        # 1M upgrade rides on the context-1m beta header set in _build_client.
+        "model": _strip_1m(model.id),
         "messages": messages,
         "max_tokens": max_tokens,
         # Note: "stream": True is NOT passed to client.messages.stream() — the method itself streams

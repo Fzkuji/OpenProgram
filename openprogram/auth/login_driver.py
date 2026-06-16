@@ -46,9 +46,25 @@ async def run_login(
     if method == "pkce_oauth":
         from .methods.pkce_oauth import PkceLoginMethod
         cfg = _pkce_config(provider)
+        # Claude subscription credentials live in the `anthropic` pool even
+        # when the user logged in via the `claude-code` provider entry, so
+        # the direct runtime (which resolves from `anthropic`) finds them.
+        store_provider = _credential_provider_id(provider)
         return await PkceLoginMethod(
-            provider_id=provider, config=cfg, profile_id=profile
+            provider_id=store_provider, config=cfg, profile_id=profile
         ).run(ui)
+
+    if method == "setup_token":
+        token = (api_key or "").strip() or (
+            await ui.prompt(
+                "Paste your `claude setup-token` (run `claude setup-token` to mint one)",
+                secret=True,
+            )
+        ).strip()
+        if not token:
+            raise AuthConfigError("no setup-token provided")
+        from openprogram.providers.anthropic import auth_adapter as _anth
+        return _anth.import_setup_token(token, profile_id=profile)
 
     if method == "device_code":
         return await _run_device_code(provider, profile, ui)
@@ -56,10 +72,22 @@ async def run_login(
     raise AuthConfigError(f"unsupported login method: {method!r}")
 
 
+def _credential_provider_id(provider: str) -> str:
+    """The AuthStore pool a provider's credential belongs to.
+
+    `claude-code` is an alias resolving from the `anthropic` pool, so a login
+    through either entry stores under `anthropic`.
+    """
+    return "anthropic" if provider == "claude-code" else provider
+
+
 def _pkce_config(provider: str):
-    """Build the provider's PKCE config (only Codex has one registered today)."""
+    """Build the provider's PKCE config (Codex + Claude subscription today)."""
     if provider == "openai-codex":
         from openprogram.providers.openai_codex import auth_adapter
+        return auth_adapter.build_pkce_config()
+    if provider in ("anthropic", "claude-code"):
+        from openprogram.providers.anthropic import auth_adapter
         return auth_adapter.build_pkce_config()
     raise AuthConfigError(f"no PKCE config registered for {provider!r}")
 

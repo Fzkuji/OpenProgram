@@ -82,8 +82,13 @@ def _result(
 # ── provider KIND classification (doc §6) ─────────────────────────────────────
 _OAUTH_PROVIDERS = frozenset({
     "openai-codex", "gemini-subscription", "github-copilot",
-    "claude-code", "opencode", "opencode-go",
+    "opencode", "opencode-go",
 })
+# claude-code speaks the anthropic-messages wire but uses OAuth subscription
+# tokens (stored in the AuthManager under the "anthropic" pool) instead of
+# a raw x-api-key. Kind is "anthropic_native" so wire-invariant tests pass;
+# validate_credential handles it via _oauth_check (see below).
+_ANTHROPIC_OAUTH_PROVIDERS = frozenset({"claude-code"})
 _CLOUD_PROVIDERS = frozenset({
     "amazon-bedrock", "google-vertex", "azure-openai-responses",
 })
@@ -108,6 +113,10 @@ def _kind_for(provider_id: str) -> str:
     if provider_id == "openrouter":
         return "openrouter_key"
     if provider_id == "anthropic":
+        return "anthropic_native"
+    if provider_id in _ANTHROPIC_OAUTH_PROVIDERS:
+        # Speaks the anthropic-messages wire; uses OAuth tokens, not x-api-key.
+        # validate_credential routes these through _oauth_check.
         return "anthropic_native"
     if provider_id == "google":
         return "google_query"
@@ -335,7 +344,7 @@ def validate_credential(
     is given, which additionally checks that one model's reachability)."""
     kind = _kind_for(provider_id)
 
-    if kind == "oauth":
+    if kind == "oauth" or provider_id in _ANTHROPIC_OAUTH_PROVIDERS:
         return _oauth_check(provider_id, kind)
     if kind == "cloud":
         return _result(provider_id, NOT_APPLICABLE, kind=kind,

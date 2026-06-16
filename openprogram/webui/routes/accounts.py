@@ -113,6 +113,13 @@ def _oauth_email(cred) -> str:
     email = meta.get("email") or meta.get("account") or ""
     if email:
         return email
+    # Anthropic's token response nests the email under
+    # extra.account.email_address (org name carries it too). Codex/Gemini
+    # instead ship an id_token with an `email` claim — try both.
+    extra = getattr(getattr(cred, "payload", None), "extra", None) or {}
+    acct = extra.get("account") if isinstance(extra, dict) else None
+    if isinstance(acct, dict) and acct.get("email_address"):
+        return acct["email_address"]
     idt = getattr(getattr(cred, "payload", None), "id_token", "") or ""
     if idt:
         try:
@@ -174,12 +181,27 @@ def _api_key_env(provider: str) -> str:
     reading the static dict returned '' and misclassified it as a sign-in
     provider — which hid the key-paste box in the web form. The fallback
     restores the key field for every models.dev api-key provider."""
+    # claude-code runs on a Claude SUBSCRIPTION — it carries ANTHROPIC_API_KEY
+    # only as an internal detail and never asks the user for a key. Report no
+    # key env so the UI uses the sign-in (login) add-mode, not key-paste.
+    if provider == "claude-code":
+        return ""
     try:
         from openprogram.providers.env_api_keys import env_vars_for
         names = env_vars_for(provider)
         return names[0] if names else ""
     except Exception:
         return ""
+
+
+def _pool_id(provider: str) -> str:
+    """The AuthStore pool a provider's credentials live in.
+
+    `claude-code` is an alias that resolves from the `anthropic` pool (its
+    direct runtime reads `anthropic`), so all account ops on claude-code
+    read/write the anthropic pool. Every other provider uses its own id.
+    """
+    return "anthropic" if provider == "claude-code" else provider
 
 
 def _generic_summary(provider: str) -> dict:
@@ -193,15 +215,16 @@ def _generic_summary(provider: str) -> dict:
     from openprogram.auth.enabled import get_disabled
     from openprogram.auth.login_methods import login_methods, default_method
 
+    pool = _pool_id(provider)
     store = get_store()
-    active = get_active_profile(provider)  # effective: pin, else "default"
-    pinned = get_active_pin(provider)      # explicit pin only ("" ⇒ none active)
-    disabled = get_disabled(provider)      # accounts turned OFF for rotation
-    pools = [p for p in store.list_pools() if p.provider_id == provider]
-    _k = sort_key(provider)                # honour the user's drag order
+    active = get_active_profile(pool)  # effective: pin, else "default"
+    pinned = get_active_pin(pool)      # explicit pin only ("" ⇒ none active)
+    disabled = get_disabled(pool)      # accounts turned OFF for rotation
+    pools = [p for p in store.list_pools() if p.provider_id == pool]
+    _k = sort_key(pool)                # honour the user's drag order
     pools.sort(key=lambda p: _k(p.profile_id))
     accounts = [_account_record(p, pinned, disabled) for p in pools]
-    rot = get_rotation(provider)
+    rot = get_rotation(pool)
     has_key = bool(_api_key_env(provider))
     methods = [{"id": mid, "label": label} for mid, label in login_methods(provider)]
     return {
@@ -223,11 +246,6 @@ def _generic_summary(provider: str) -> dict:
 def register(app):
     @app.get("/api/providers/{provider}/accounts")
     def api_accounts(provider: str):
-        # claude-code is served by the literal route in routes/providers.py;
-        # guard anyway so a registration-order change can't silently 404 it.
-        if provider == "claude-code":
-            from openprogram.providers.anthropic import _meridian_cli as _acc
-            return JSONResponse(content={**_acc.accounts_summary(), "add_mode": "code_paste"})
         return JSONResponse(content=_generic_summary(provider))
 
     @app.post("/api/providers/{provider}/accounts/use")
@@ -235,28 +253,24 @@ def register(app):
         """Make an account active (the one requests run on). Empty ⇒ default."""
         b = body or {}
         name = b.get("id", b.get("name", ""))
-        if provider == "claude-code":
-            from openprogram.providers.anthropic import _meridian_cli as _acc
-            return JSONResponse(content=_acc.activate_account(name))
         from openprogram.auth.active import set_active_profile, get_active_profile
-        set_active_profile(provider, name)
-        return JSONResponse(content={"active": get_active_profile(provider)})
+        pool = _pool_id(provider)
+        set_active_profile(pool, name)
+        return JSONResponse(content={"active": get_active_profile(pool)})
 
     @app.post("/api/providers/{provider}/accounts/remove")
     def api_accounts_remove(provider: str, body: dict = None):
         b = body or {}
         name = b.get("id", b.get("name", ""))
-        if provider == "claude-code":
-            from openprogram.providers.anthropic import _meridian_cli as _acc
-            return JSONResponse(content=_acc.remove_account(name))
         from openprogram.auth.store import get_store
         from openprogram.auth.active import get_active_pin, set_active_profile
+        pool = _pool_id(provider)
         name = (name or "").strip()
         cleared = False
         if name:
-            get_store().delete_pool(provider, name)
-            if get_active_pin(provider) == name:
-                set_active_profile(provider, "")
+            get_store().delete_pool(pool, name)
+            if get_active_pin(pool) == name:
+                set_active_profile(pool, "")
                 cleared = True
         return JSONResponse(content={"removed": bool(name), "name": name,
                                      "cleared_active": cleared})
@@ -264,13 +278,11 @@ def register(app):
     @app.post("/api/providers/{provider}/accounts/rename")
     def api_accounts_rename(provider: str, body: dict = None):
         b = body or {}
-        if provider == "claude-code":
-            from openprogram.providers.anthropic import _meridian_cli as _acc
-            return JSONResponse(content=_acc.rename_account(b.get("id", b.get("old", "")), b.get("name", b.get("new", ""))))
         from openprogram.auth.store import get_store
         from openprogram.auth.active import get_active_pin, set_active_profile
         from openprogram.auth.types import CredentialPool
 
+        pid = _pool_id(provider)
         old = (b.get("id", b.get("old", "")) or "").strip()
         new = (b.get("name", b.get("new", "")) or "").strip()
         if not old or not new:
@@ -278,9 +290,9 @@ def register(app):
         if new == old:
             return JSONResponse(content={"ok": True, "name": new})
         store = get_store()
-        if store.find_pool(provider, new) is not None:
+        if store.find_pool(pid, new) is not None:
             return JSONResponse(content={"ok": False, "error": f"account '{new}' already exists"})
-        pool = store.find_pool(provider, old)
+        pool = store.find_pool(pid, old)
         if pool is None:
             return JSONResponse(content={"ok": False, "error": f"account '{old}' not found"})
         # Re-key every credential onto the new profile, write the new pool, then
@@ -288,23 +300,20 @@ def register(app):
         for c in pool.credentials:
             c.profile_id = new
         moved = CredentialPool(
-            provider_id=provider, profile_id=new, strategy=pool.strategy,
+            provider_id=pid, profile_id=new, strategy=pool.strategy,
             credentials=pool.credentials, fallback_chain=pool.fallback_chain,
         )
         store.put_pool(moved)
-        store.delete_pool(provider, old)
-        if get_active_pin(provider) == old:
-            set_active_profile(provider, new)
+        store.delete_pool(pid, old)
+        if get_active_pin(pid) == old:
+            set_active_profile(pid, new)
         return JSONResponse(content={"ok": True, "name": new})
 
     @app.post("/api/providers/{provider}/accounts/add")
     def api_accounts_add(provider: str, body: dict = None):
         """Generic add hands the UI the login methods + target account name; the
         actual credential capture runs through the unified ``/login/*`` flow with
-        ``profile=<name>``. (claude-code's literal route does the OAuth itself.)"""
-        if provider == "claude-code":
-            from openprogram.providers.anthropic import _meridian_cli as _acc
-            return JSONResponse(content=_acc.start_add((body or {}).get("name", "")))
+        ``profile=<name>``."""
         from openprogram.auth.login_methods import login_methods, default_method
         name = (body or {}).get("name", "").strip()
         methods = [{"id": mid, "label": label} for mid, label in login_methods(provider)]

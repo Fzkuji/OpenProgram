@@ -593,6 +593,16 @@ class _TerminalLoginUi:
         print(f"\nGo to {verification_uri} and enter code: {user_code}\n", flush=True)
 
 
+_CLAUDE_SUB_NOTE = (
+    "Sign in with Claude subscription",
+    [
+        "Browser will open for Claude (claude.ai) authentication.",
+        "After authorizing, the page shows a code like 'xxxxx#yyyyy'.",
+        "Copy that whole string and paste it back here.",
+        "Requires a Claude Pro / Max subscription.",
+    ],
+)
+
 _LOGIN_NOTES: dict[str, tuple[str, list[str]]] = {
     "openai-codex": (
         "Sign in with ChatGPT",
@@ -604,6 +614,8 @@ _LOGIN_NOTES: dict[str, tuple[str, list[str]]] = {
             "codex / pi process holding that port.",
         ],
     ),
+    "anthropic": _CLAUDE_SUB_NOTE,
+    "claude-code": _CLAUDE_SUB_NOTE,
 }
 
 
@@ -619,8 +631,11 @@ def _login_paste_api_key(provider: str, profile: str, *,
         f"Paste API key for {provider} (hidden): ").strip()
     if not key:
         raise AuthConfigError("empty API key — nothing to save")
+    # claude-code is an alias for the anthropic credential pool; store the
+    # key there so the direct runtime (resolving from `anthropic`) finds it.
+    store_provider = "anthropic" if provider == "claude-code" else provider
     return Credential(
-        provider_id=provider,
+        provider_id=store_provider,
         profile_id=profile,
         kind="api_key",
         payload=ApiKeyPayload(api_key=key),
@@ -644,7 +659,9 @@ def _login_import_from_cli(provider: str, profile: str) -> Credential:
                 f"Run `codex login --device-auth` first, then re-run this command."
             )
         return cred
-    if provider == "anthropic":
+    if provider in ("anthropic", "claude-code"):
+        # claude-code is an alias for the anthropic credential pool; the
+        # adapter always registers under provider_id="anthropic".
         from openprogram.providers.anthropic import auth_adapter
         cred = auth_adapter.import_from_claude_code(profile_id=profile)
         if cred is None:

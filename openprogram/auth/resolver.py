@@ -40,6 +40,7 @@ from .types import (
     ApiKeyPayload,
     AuthConfigError,
     AuthError,
+    CliDelegatedPayload,
     Credential,
     OAuthPayload,
     DeviceCodePayload,
@@ -129,12 +130,41 @@ def _extract_token(cred: Credential) -> Optional[str]:
         return payload.api_key or None
     if isinstance(payload, (OAuthPayload, DeviceCodePayload)):
         return payload.access_token or None
-    # Other payload kinds (cli_delegated, external_process, sso) need
-    # specialized resolution that the caller-side code must perform (e.g.
-    # re-read the delegated file). Returning None here tells the resolver
-    # to fall through to the next layer rather than blindly returning a
-    # stale token from metadata.
+    if isinstance(payload, CliDelegatedPayload):
+        # Delegated mode: re-read the external CLI's store file every call
+        # so its own rotations propagate for free (the codex/claude-code
+        # pattern). Returns the freshest access_token at access_key_path.
+        return _read_delegated_token(payload)
+    # Other payload kinds (external_process, sso) need specialized
+    # resolution that the caller-side code must perform. Returning None
+    # here tells the resolver to fall through to the next layer rather
+    # than blindly returning a stale token from metadata.
     return None
+
+
+def _read_delegated_token(payload: "CliDelegatedPayload") -> Optional[str]:
+    """Read the access token out of a delegated CLI's on-disk store.
+
+    ``store_path`` points at the external CLI's auth file (e.g. codex's
+    ``~/.codex/auth.json`` or Claude Code's ``~/.claude/.credentials.json``);
+    ``access_key_path`` is the JSON key path to the access token inside it.
+    Any read/parse failure yields None so the resolver falls through rather
+    than raising — the caller then surfaces the actionable "no credential"
+    error or re-login prompt.
+    """
+    import json
+    from pathlib import Path
+
+    try:
+        data = json.loads(Path(payload.store_path).expanduser().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    node: object = data
+    for key in payload.access_key_path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(key)
+    return node if isinstance(node, str) and node else None
 
 
 __all__ = ["resolve_api_key_sync", "resolve_store_api_key_sync"]

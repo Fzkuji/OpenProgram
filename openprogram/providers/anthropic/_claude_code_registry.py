@@ -1,54 +1,50 @@
-"""Register Claude Code CLI models into the global MODELS registry.
+"""Seed the claude-code provider into the global MODELS registry.
 
-ClaudeCodeRuntime is a CLI-backed runtime — it doesn't ship with
-catalog entries the way HTTP providers do. But the webui's model
-picker reads from MODELS (via get_providers / get_models), and
-list_enabled_models() only iterates HTTP-registered providers. Without
-this registration the CLI provider is invisible in the dropdown even
-though the runtime itself works fine.
+claude-code connects DIRECT to api.anthropic.com on a Claude subscription
+(OAuth). It has no list-models call baked in like HTTP providers, but the
+provider must still appear in the registry — ``get_providers()`` derives the
+provider list from MODELS, so with zero entries the provider would vanish
+from the settings UI entirely.
 
-Mirrors the pattern in openai_codex/runtime.py: inject provider-scoped
-Model objects into the registry at import time. The authoritative
-model list comes from claude_models.json (via the legacy seed in
-openprogram.legacy_providers.claude_models).
+So we register a small, CURRENT seed (the live model list comes from a Fetch
+against Anthropic's /v1/models, which replaces these in ``custom_models``).
+The seed uses the SAME wire as the anthropic provider — ``anthropic-messages``
++ ``https://api.anthropic.com`` — NOT the retired Meridian proxy
+(openai-completions / localhost:3456); the runtime maps a claude-code model
+onto ``anthropic:<id>`` and the wire handles OAuth + 1M via beta headers.
 """
 from __future__ import annotations
 
 
-def _augment_registry_with_claude_code_models() -> None:
+# (id, display, context_window, max_output, reasoning). Current主力 models;
+# a Fetch refreshes/extends this from the live API.
+_SEED = [
+    ("claude-opus-4-8", "Claude Opus 4.8", 1_000_000, 128_000, True),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6", 1_000_000, 128_000, True),
+    ("claude-haiku-4-5", "Claude Haiku 4.5", 200_000, 64_000, False),
+]
+
+
+def _seed_claude_code_models() -> None:
     from openprogram.providers.models_generated import MODELS
     from openprogram.providers.types import Model, ModelCost
-    from openprogram.legacy_providers.claude_models import load_claude_models
 
-    try:
-        data = load_claude_models()
-    except Exception:
-        return
-
-    for m in data.get("models", []):
-        mid = m.get("id")
-        if not mid:
-            continue
+    for mid, display, ctx, max_out, reasoning in _SEED:
         key = f"claude-code/{mid}"
         if key in MODELS:
             continue
-        # Opus / Sonnet support extended thinking via the CLI; Haiku
-        # does not. The CLI translates thinking_effort -> the right
-        # flags, so we mark the capability here for the UI picker.
-        family = (m.get("family") or "").lower()
-        reasoning = family in ("opus", "sonnet")
         MODELS[key] = Model(
             id=mid,
-            name=m.get("display") or mid,
-            api="claude-code-cli",
+            name=display,
+            api="anthropic-messages",
             provider="claude-code",
-            base_url="",
-            context_window=int(m.get("context_window") or 200000),
-            max_tokens=int(m.get("max_output") or 32000),
+            base_url="https://api.anthropic.com",
+            context_window=ctx,
+            max_tokens=max_out,
             input=["text", "image"],
             reasoning=reasoning,
             cost=ModelCost(),
         )
 
 
-_augment_registry_with_claude_code_models()
+_seed_claude_code_models()

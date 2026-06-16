@@ -1,22 +1,21 @@
-"""Anthropic provider — Messages API + Claude Max HTTP proxy.
+"""Anthropic provider — Messages API, direct for both anthropic & claude-code.
 
-The legacy Claude Code CLI provider (``ClaudeCodeRuntime``) and its
-plugin scaffolding (``CLAUDE_CODE_PLUGIN`` / ``CLAUDE_CODE_CONFIG``)
-have been removed. Anthropic access now goes exclusively through
-HTTP — either ``api.anthropic.com`` directly (:class:`AnthropicRuntime`)
-or a local ``meridian`` daemon for Max-plan users
-(:class:`ClaudeCodeRuntime`; the older ``claude-max-api-proxy`` also
-works on the same port for text-only traffic). Both share OpenProgram's
-tool registry, so the long-standing asymmetry where the CLI provider
-silently shipped its own Read/Write/Edit tools is gone.
+Two providers share this wire:
+  * ``anthropic`` (:class:`AnthropicRuntime`) — api.anthropic.com with an
+    API key.
+  * ``claude-code`` (:class:`ClaudeCodeRuntime`) — api.anthropic.com with a
+    Claude SUBSCRIPTION OAuth token (Bearer + Claude Code beta headers),
+    the same shape as openai-codex. No Meridian daemon. The model list comes
+    from a live Fetch against /v1/models; a small seed keeps it visible in
+    the UI before the first Fetch.
 """
 from .anthropic import stream_simple
 from .runtime import AnthropicRuntime
-from ._max_proxy_runtime import ClaudeCodeRuntime
-# Side-effect import: registers Claude models under provider
-# `claude-code` in the global MODELS registry so the UI picker
-# surfaces them.
-from . import _claude_max_proxy_registry  # noqa: F401
+from ._claude_code_direct_runtime import ClaudeCodeRuntime
+# Side-effect import: seeds the claude-code provider (DIRECT, anthropic-messages
+# wire) into MODELS so it appears in the UI picker even before a Fetch.
+# (Replaces the retired Meridian-proxy seed in _claude_max_proxy_registry.)
+from . import _claude_code_registry  # noqa: F401
 
 __all__ = [
     "stream_simple",

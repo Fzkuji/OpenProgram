@@ -13,16 +13,21 @@ Three credential routes the adapter exposes:
      expiry, AuthManager surfaces :class:`AuthReadOnlyError` — the user
      must rerun ``claude login`` in their terminal (we tell them how).
 
-  3. **OAuth via our own PKCE flow** — reserved. When Anthropic publishes
-     a stable public OAuth client for third-party apps, a
-     :class:`PkceLoginMethod` configured against
-     ``auth.anthropic.com`` slots in here. Not wired today because the
-     endpoint isn't published.
+  3. **OAuth via our own PKCE flow** — the Claude subscription browser
+     login, same shape as openai-codex. ``build_pkce_config`` configures
+     :class:`PkceLoginMethod` against ``claude.ai/oauth/authorize`` +
+     ``console.anthropic.com/v1/oauth/token`` with the Claude Code OAuth
+     client. The minted ``sk-ant-oat`` token carries a refresh_token, so
+     we DO own rotation here — :func:`_anthropic_refresh` is registered.
 
-The provider config registers no refresh function: we either hold an
-``api_key`` (never expires) or a delegated OAuth token (we don't own
-rotation). That's exactly what AuthManager needs to treat both routes
-correctly without conflating them.
+  4. **setup-token paste** — headless fallback. The user mints a token
+     out-of-band with ``claude setup-token`` and pastes it; we store it
+     as an ``oauth`` credential WITHOUT a refresh_token (setup-tokens
+     don't carry one, ~1y lifetime). Via :func:`import_setup_token`.
+
+The provider config registers :func:`_anthropic_refresh`. It's a no-op
+for credentials without a refresh_token (api_key / delegated / setup-token),
+and rotates the PKCE-minted OAuth token when it nears expiry.
 """
 from __future__ import annotations
 
@@ -45,6 +50,39 @@ from openprogram.auth.types import (
 
 
 PROVIDER_ID = "anthropic"
+
+# Claude subscription OAuth — the same client the official Claude Code login
+# uses (publicly used by opencode / claude-code-login). Verified live: the
+# authorize→token exchange returns an ``sk-ant-oat`` access_token WITH a
+# refresh_token (8h access lifetime, rotated via refresh_token).
+OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+OAUTH_AUTHORIZE_URL = "https://claude.ai/oauth/authorize"
+OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+# Anthropic registers a FIXED hosted redirect that shows the user a
+# ``code#state`` string to copy — there's no loopback callback.
+OAUTH_REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback"
+OAUTH_SCOPES = ["org:create_api_key", "user:profile", "user:inference"]
+
+
+def build_pkce_config():
+    """PKCE config for the Claude subscription browser login.
+
+    Manual-paste flow: open ``claude.ai/oauth/authorize`` (with
+    ``code=true`` so the page shows a copyable code), the user pastes the
+    ``code#state`` back, we exchange it as JSON at the console token
+    endpoint. Mirrors openai-codex's ``build_pkce_config`` shape.
+    """
+    from openprogram.auth.methods.pkce_oauth import PkceConfig
+    return PkceConfig(
+        authorize_url=OAUTH_AUTHORIZE_URL,
+        token_url=OAUTH_TOKEN_URL,
+        client_id=OAUTH_CLIENT_ID,
+        scopes=OAUTH_SCOPES,
+        manual_paste_only=True,
+        redirect_uri_override=OAUTH_REDIRECT_URI,
+        token_use_json=True,
+        extra_authorize_params={"code": "true"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +181,111 @@ def import_api_key(
     )
 
 
+def import_setup_token(
+    token: str,
+    *,
+    profile_id: str = "default",
+    metadata: Optional[dict[str, Any]] = None,
+) -> Credential:
+    """Wrap a pasted ``claude setup-token`` (sk-ant-oat…) as an OAuth credential.
+
+    Setup-tokens carry NO refresh_token (≈1-year lifetime, no rotation),
+    so we store an OAuthPayload with an empty refresh_token and a far-out
+    expiry — _anthropic_refresh no-ops on it (it guards on refresh_token).
+    The anthropic wire still routes it as a Bearer/Claude-Code request via
+    the sk-ant-oat prefix sniff. Caller persists via AuthStore.
+    """
+    tok = token.strip()
+    md = {"imported_from": "setup_token"} | (metadata or {})
+    # ~1y out so the manager doesn't flag it stale before the token really
+    # dies; if it expires early the request just 401s and the user re-pastes.
+    far_future_ms = int(time.time() * 1000) + 365 * 24 * 3600 * 1000
+    return Credential(
+        provider_id=PROVIDER_ID,
+        profile_id=profile_id,
+        kind="oauth",
+        payload=OAuthPayload(
+            access_token=tok,
+            refresh_token="",
+            expires_at_ms=far_future_ms,
+            scope=list(OAUTH_SCOPES),
+            client_id=OAUTH_CLIENT_ID,
+            token_endpoint=OAUTH_TOKEN_URL,
+        ),
+        source="anthropic_setup_token",
+        metadata=md,
+        read_only=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Refresh (PKCE-minted OAuth tokens carry a refresh_token; rotate them)
+# ---------------------------------------------------------------------------
+
+def _anthropic_refresh(cred: Credential) -> Credential:
+    """Synchronous refresh — called by AuthManager via executor.
+
+    No-op for credentials without a refresh_token (api_key won't reach
+    here; setup-token / delegated have none). For a PKCE-minted OAuth
+    token, POST the refresh_token to the console token endpoint and
+    return a fresh credential with the same credential_id.
+    """
+    payload = cred.payload
+    if not isinstance(payload, OAuthPayload) or not payload.refresh_token:
+        # Nothing to rotate — hand the credential back unchanged.
+        return cred
+
+    import httpx
+    resp = httpx.post(
+        payload.token_endpoint or OAUTH_TOKEN_URL,
+        json={
+            "grant_type": "refresh_token",
+            "refresh_token": payload.refresh_token,
+            "client_id": payload.client_id or OAUTH_CLIENT_ID,
+        },
+        timeout=30.0,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Anthropic OAuth refresh failed {resp.status_code}: {resp.text[:200]}"
+        )
+    data = resp.json()
+    for k in ("access_token", "expires_in"):
+        if k not in data:
+            raise RuntimeError(f"Anthropic OAuth refresh response missing {k!r}")
+
+    expires_at_ms = int(time.time() * 1000) + int(data["expires_in"]) * 1000
+    new_payload = OAuthPayload(
+        access_token=data["access_token"],
+        # Anthropic rotates the refresh_token; keep the old one if the
+        # response omits it (some token endpoints reuse it).
+        refresh_token=data.get("refresh_token") or payload.refresh_token,
+        expires_at_ms=expires_at_ms,
+        scope=payload.scope,
+        client_id=payload.client_id or OAUTH_CLIENT_ID,
+        token_endpoint=payload.token_endpoint or OAUTH_TOKEN_URL,
+        id_token=data.get("id_token", payload.id_token),
+        extra=dict(payload.extra),
+    )
+    return Credential(
+        provider_id=cred.provider_id,
+        profile_id=cred.profile_id,
+        kind="oauth",
+        payload=new_payload,
+        status="valid",
+        created_at_ms=cred.created_at_ms,
+        updated_at_ms=int(time.time() * 1000),
+        source=cred.source,
+        metadata=dict(cred.metadata),
+        cooldown_until_ms=0,
+        last_used_at_ms=cred.last_used_at_ms,
+        use_count=cred.use_count,
+        last_error=None,
+        read_only=False,
+        credential_id=cred.credential_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -158,9 +301,9 @@ def register_anthropic_auth() -> None:
         ProviderAuthConfig(
             provider_id=PROVIDER_ID,
             refresh_skew_seconds=60,
-            # No refresh function: either we hold a static api_key (never
-            # expires) or a delegated OAuth (external CLI owns refresh).
-            refresh=None,
+            # Rotates PKCE-minted OAuth tokens (refresh_token present);
+            # no-ops for api_key / setup-token / delegated (no refresh_token).
+            refresh=_anthropic_refresh,
             async_refresh=None,
         )
     )
@@ -171,8 +314,16 @@ register_anthropic_auth()
 
 __all__ = [
     "PROVIDER_ID",
+    "OAUTH_CLIENT_ID",
+    "OAUTH_AUTHORIZE_URL",
+    "OAUTH_TOKEN_URL",
+    "OAUTH_REDIRECT_URI",
+    "OAUTH_SCOPES",
+    "build_pkce_config",
     "claude_code_credentials_path",
     "import_from_claude_code",
     "import_api_key",
+    "import_setup_token",
+    "_anthropic_refresh",
     "register_anthropic_auth",
 ]

@@ -31,9 +31,17 @@ def _no_env(monkeypatch):
 
 
 def _store_returns(monkeypatch, value):
+    # Two resolution entry points: ``resolve_store_api_key_sync`` (api-key
+    # only — OpenAI/Gemini runtimes) and ``resolve_api_key_sync`` (unified,
+    # includes subscription OAuth — AnthropicRuntime, so a Claude plan login
+    # constructs the runtime too). Stub both so every parametrized runtime
+    # sees the same "store has / hasn't a credential" outcome.
     import openprogram.auth.resolver as _resolver
     monkeypatch.setattr(
         _resolver, "resolve_store_api_key_sync", lambda *a, **k: value
+    )
+    monkeypatch.setattr(
+        _resolver, "resolve_api_key_sync", lambda *a, **k: value
     )
 
 

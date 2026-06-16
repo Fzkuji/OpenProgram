@@ -8,11 +8,10 @@ Available providers:
     AnthropicRuntime       — Anthropic Claude API (text + image, prompt caching)
     OpenAIRuntime          — OpenAI GPT API (text + image, response_format)
     GeminiRuntime          — Google Gemini API (text + image)
-    ClaudeCodeRuntime       — Claude via local ``meridian`` daemon (HTTP),
-                             for Max-plan users who don't have a paid API key.
-                             (Drop-in replacement for the older
-                             ``claude-max-api-proxy`` — same port 3456, but
-                             properly handles multimodal content arrays.)
+    ClaudeCodeRuntime       — Claude subscription, direct to api.anthropic.com
+                             (Bearer OAuth + Claude Code beta headers), for
+                             users who log in with a Claude plan instead of a
+                             paid API key. No Meridian proxy.
     OpenAICodexRuntime — OpenAI Codex HTTP API (ChatGPT subscription OAuth, reads ~/.codex/auth.json)
     GeminiCLIRuntime  — Google Gemini HTTP API (Google account OAuth, reads ~/.gemini/oauth_creds.json)
 
@@ -45,13 +44,14 @@ import shutil
 
 # Maps provider name -> (class_name, module_path, default_model)
 PROVIDERS = {
-    # Claude via a local `meridian` daemon (HTTP, OpenAI-compatible).
-    # Replaces the previous CLI-spawning `claude-code` provider; tools
-    # come from OpenProgram's own registry instead of the CLI's built-ins.
-    # The older `claude-max-api-proxy` works as a fallback on the same
-    # port, but mangles multimodal content arrays to ``[object Object]``
-    # (so gui_agent and other screenshot-using tasks need Meridian).
-    "claude-code":        ("ClaudeCodeRuntime",             "openprogram.providers.anthropic._max_proxy_runtime",  "claude-sonnet-4"),
+    # Claude via a Claude subscription, connected DIRECT to
+    # api.anthropic.com (Bearer OAuth + Claude Code beta headers) — same
+    # shape as openai-codex direct-connecting to chatgpt.com. No Meridian
+    # daemon: the wire is the standard anthropic Messages API, which
+    # natively handles image blocks (gui_agent multimodal preserved). The
+    # subscription token resolves from the anthropic AuthStore pool.
+    # (The old Meridian-backed runtime lives in _max_proxy_runtime.)
+    "claude-code":        ("ClaudeCodeRuntime",             "openprogram.providers.anthropic._claude_code_direct_runtime",  "claude-sonnet-4"),
     "openai-codex": ("OpenAICodexRuntime", "openprogram.providers.openai_codex.runtime",           "gpt-5.5"),
     "gemini-cli":        ("GeminiCLIRuntime",    "openprogram.providers.google_gemini_cli.runtime",     "gemini-2.5-flash"),
     "anthropic":        ("AnthropicRuntime",       "openprogram.providers.anthropic.runtime",             "claude-sonnet-4-6"),

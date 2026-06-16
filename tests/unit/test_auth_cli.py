@@ -416,19 +416,19 @@ def test_aliases_json_is_parseable(isolated):
 
 
 def test_login_resolves_alias(isolated, monkeypatch):
-    # Use a provider whose api_key path is still exposed (openai-codex
-    # only offers pkce_oauth now). 'anthropic' accepts api_key via the
-    # universal fallback method.
+    # anthropic now offers only pkce_oauth + setup_token. setup_token reads a
+    # secret prompt and stores into the anthropic pool, so it's the载体 here
+    # for verifying the `claude` → `anthropic` alias resolution.
     store, _, _, cap = isolated
-    monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-from-alias-login")
+    monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-ant-oat-from-alias")
     # Use an alias rather than the canonical id.
-    rc = dispatch(_parse(["login", "claude", "--method", "api_key"]))
+    rc = dispatch(_parse(["login", "claude", "--method", "setup_token"]))
     assert rc == 0
     # The pool must be stored under the canonical id, not the alias.
     assert store.find_pool("claude", "default") is None
     pool = store.find_pool("anthropic", "default")
     assert pool is not None
-    assert pool.credentials[0].payload.api_key == "sk-from-alias-login"
+    assert pool.credentials[0].payload.access_token == "sk-ant-oat-from-alias"
 
 
 def test_status_resolves_alias(isolated):
