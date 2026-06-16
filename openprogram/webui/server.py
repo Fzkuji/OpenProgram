@@ -1346,6 +1346,9 @@ def create_app():
     from openprogram.webui.routes import providers as _routes_providers
     _routes_providers.register(app)
 
+    from openprogram.webui.routes import usage as _routes_usage
+    _routes_usage.register(app)
+
     from openprogram.webui.routes import provider_login as _routes_provider_login
     _routes_provider_login.register(app)
 

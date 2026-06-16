@@ -80,10 +80,37 @@ const DICT = {
   // Settings shell + tab labels
   "settings.title": { en: "Settings", zh: "设置" },
   "settings.tab.providers": { en: "LLM Providers", zh: "大模型 Provider" },
+  "settings.tab.usage": { en: "Token Usage", zh: "Token 用量" },
   "settings.tab.search": { en: "Web Search", zh: "网页搜索" },
   "settings.tab.channels": { en: "Channels", zh: "消息渠道" },
   "settings.tab.general": { en: "General", zh: "通用" },
   "settings.tab.system": { en: "System", zh: "系统" },
+
+  // Token usage page
+  "usage.desc": {
+    en: "Token consumption aggregated across all sessions, from already-recorded provider usage. Cost is estimated from the model catalog's pricing where the model is known.",
+    zh: "汇总所有会话已记录的 Token 用量。成本按模型目录中的定价估算（仅对已知定价的模型）。",
+  },
+  "usage.loading": { en: "Loading…", zh: "加载中…" },
+  "usage.error": { en: "Failed to load usage data.", zh: "加载用量数据失败。" },
+  "usage.empty": {
+    en: "No per-model usage recorded yet. Models that don't report usage (some OpenAI-compatible backends) won't appear here.",
+    zh: "暂无按模型记录的用量。不回报 usage 的模型（部分 OpenAI 兼容后端）不会出现在这里。",
+  },
+  "usage.byModel": { en: "By model", zh: "按模型" },
+  "usage.card.input": { en: "Input tokens", zh: "输入 Token" },
+  "usage.card.output": { en: "Output tokens", zh: "输出 Token" },
+  "usage.card.total": { en: "Total tokens", zh: "总 Token" },
+  "usage.card.cost": { en: "Est. cost", zh: "预估成本" },
+  "usage.card.sessions": { en: "Sessions", zh: "会话数" },
+  "usage.card.turns": { en: "Turns", zh: "对话轮数" },
+  "usage.col.model": { en: "Model", zh: "模型" },
+  "usage.col.provider": { en: "Provider", zh: "Provider" },
+  "usage.col.input": { en: "Input", zh: "输入" },
+  "usage.col.output": { en: "Output", zh: "输出" },
+  "usage.col.cacheRead": { en: "Cache read", zh: "缓存读取" },
+  "usage.col.messages": { en: "Messages", zh: "消息数" },
+  "usage.col.cost": { en: "Est. cost", zh: "预估成本" },
 
   // Left sidebar nav (AppShell)
   "nav.new_chat": { en: "New chat", zh: "新会话" },
