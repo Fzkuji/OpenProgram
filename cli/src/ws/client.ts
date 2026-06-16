@@ -15,6 +15,8 @@ export type WsRequest =
   | { action: 'sync' }
   | { action: 'stats' }
   | { action: 'stop'; conv_id: string; mode?: 'graceful' | 'force' }
+  | { action: 'steer'; session_id: string; message: string }
+  | { action: 'set_attended'; session_id: string; attended: boolean }
   | { action: 'browser'; verb: string; args?: Record<string, unknown> }
   | { action: 'list_models' }
   | { action: 'switch_model'; model: string; provider?: string; conv_id?: string }
@@ -342,6 +344,10 @@ export type WsEnvelope =
       type: 'setting_result';
       data: { key: string; applied?: string; value?: unknown; note?: string; error?: string };
     }
+  | { type: 'attended_changed'; data: { session_id: string; attended: boolean } }
+  | { type: 'steer_ack'; data: { session_id: string; queued: boolean; message?: string } }
+  | { type: 'running_task'; data: { session_id: string; msg_id?: string; func_name?: string } }
+  | { type: 'running_task_clear'; data: { session_id: string } }
   | { type: 'pong' };
 
 export type WsListener = (ev: WsEnvelope) => void;

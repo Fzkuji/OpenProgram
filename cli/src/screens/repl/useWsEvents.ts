@@ -140,6 +140,17 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           const when = d.applied === 'next_start' ? ' — takes effect next start' : '';
           c.pushSystem(`[settings] ${d.key} saved${when}${d.note ? ` (${d.note})` : ''}`);
         }
+      } else if (ev.type === 'attended_changed') {
+        // Three-surface sync: another surface (or this one) toggled whether
+        // the agent may ask questions. Reflect it so the user sees the mode.
+        const d = (ev as { data: { attended?: boolean } }).data;
+        c.pushSystem(`[mode] ${d.attended ? 'attended — the agent may ask you questions'
+          : 'unattended — questions are withheld'}`);
+      } else if (ev.type === 'steer_ack') {
+        const d = (ev as { data: { queued?: boolean; message?: string } }).data;
+        c.pushSystem(d.queued
+          ? `[steer] queued: ${d.message ?? ''} — the run will pick it up at its next step.`
+          : `[steer] could not queue (no live run for this session?).`);
       } else if (ev.type === 'browser_result') {
         const data = (ev as { data: { verb: string; result: string } }).data;
         c.pushSystem(`[browser ${data.verb}] ${data.result}`);

@@ -135,6 +135,29 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'steer': {
+      // Mid-run course-correction: inject a new instruction into the live run
+      // for this session. The running loop picks it up at its next step.
+      const conv = ctx.currentConversation;
+      const message = args.join(' ').trim();
+      if (!conv) { ctx.pushSystem('No active session to steer.'); return true; }
+      if (!message) { ctx.pushSystem('Usage: /steer <new instruction>'); return true; }
+      ctx.client.send({ action: 'steer', session_id: conv, message });
+      return true;
+    }
+
+    case 'attended':
+    case 'unattended': {
+      // Toggle whether the agent may ask you questions on this session.
+      const conv = ctx.currentConversation;
+      if (!conv) { ctx.pushSystem('No active session.'); return true; }
+      const on = cmd === 'attended'
+        ? (args[0] !== 'off')   // /attended [on|off], default on
+        : false;                // /unattended
+      ctx.client.send({ action: 'set_attended', session_id: conv, attended: on });
+      return true;
+    }
+
     case 'session': {
       const lines = [
         `agent          : ${ctx.currentAgent ?? '—'}`,
