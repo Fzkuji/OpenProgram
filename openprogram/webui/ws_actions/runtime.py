@@ -155,22 +155,74 @@ async def handle_browser(ws, cmd: dict):
     }, default=str))
 
 
-async def handle_stop(ws, cmd: dict):
-    """Mirror /api/stop — cancel in-flight turn for a conv.
+# Sessions for which a graceful stop has already been requested. A second
+# stop click (or mode="force") on a still-running session escalates to a
+# hard SIGKILL. Cleared when the turn ends.
+_graceful_pending: set[str] = set()
+_GRACEFUL_GRACE_S = 4.0  # how long a graceful stop has before auto-escalation
 
-    User-facing contract: clicking stop is *instant*. All subsequent
-    chat-response broadcasts for this session are gagged by
-    ``_broadcast_chat_response`` (it checks ``is_cancelled``).
-    The in-flight worker thread keeps running for up to ~1.2s while
-    cooperative cancel reaches a hook point — but its output never
-    reaches the UI. Any ``status=running`` placeholder rows are
-    also patched to ``cancelled`` here so a refresh after stop
-    doesn't show a stuck spinner.
+
+async def handle_stop(ws, cmd: dict):
+    """Mirror /api/stop — stop the in-flight turn for a conv, two-stage.
+
+    First stop = GRACEFUL: ask the @agentic_function subprocess to finish its
+    current unit, save, and exit (so a long research/gui run keeps its
+    partial artifacts + conclusion). Second stop on the same still-running
+    session — or ``mode="force"`` — = HARD: SIGKILL the process group
+    instantly (the escape hatch when the model hangs). A graceful stop that
+    doesn't exit within the grace window auto-escalates to hard.
+
+    Either way, subsequent chat-response broadcasts are gagged and any
+    ``status=running`` rows are patched to ``cancelled``.
     """
     from openprogram.webui import server as _s
     session_id = cmd.get("session_id")
     if not session_id:
         return
+
+    force = (cmd.get("mode") == "force") or (session_id in _graceful_pending)
+
+    if not force:
+        # ---- Stage 1: graceful ----
+        from openprogram.agent.process_runner import (
+            request_graceful_stop, kill_active_subprocess,
+            is_subprocess_alive,
+        )
+        asked = False
+        try:
+            asked = request_graceful_stop(session_id)
+        except Exception:
+            asked = False
+        if asked:
+            _graceful_pending.add(session_id)
+            _s._broadcast(json.dumps({
+                "type": "status", "paused": False, "stopping": True,
+                "session_id": session_id,
+            }))
+
+            # Auto-escalate: if the child hasn't exited within the grace
+            # window, hard-kill it (covers a wedged model that ignores the
+            # cooperative checkpoints).
+            async def _escalate():
+                await asyncio.sleep(_GRACEFUL_GRACE_S)
+                try:
+                    if is_subprocess_alive(session_id):
+                        kill_active_subprocess(session_id)
+                        _s._kill_active_runtime(session_id)
+                except Exception:
+                    pass
+                finally:
+                    _graceful_pending.discard(session_id)
+            try:
+                asyncio.ensure_future(_escalate())
+            except Exception:
+                _graceful_pending.discard(session_id)
+            return
+        # No live subprocess to ask gracefully → fall through to hard stop
+        # (e.g. a non-subprocess turn, or it already exited).
+
+    # ---- Stage 2: hard ----
+    _graceful_pending.discard(session_id)
     _s._mark_cancelled(session_id)
     _s.resume_execution()
     # SIGKILL the @agentic_function subprocess (if any) for this session

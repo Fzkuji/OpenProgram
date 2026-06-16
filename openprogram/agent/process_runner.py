@@ -42,6 +42,9 @@ from typing import Any, Callable, Optional
 # agentic subprocess per session at a time (matches the existing
 # single-turn-per-session contract).
 _active: dict[str, mp.Process] = {}
+# session_id → the parent→child stop_queue for the in-flight subprocess,
+# so a graceful-stop request can reach the child before we SIGKILL it.
+_active_stop_q: dict[str, "mp.Queue"] = {}
 _active_lock = threading.Lock()
 
 
@@ -59,6 +62,7 @@ def _child_entry(
     event_queue: "mp.Queue",
     parent_call_id: Optional[str] = None,
     answer_queue: "Optional[mp.Queue]" = None,
+    stop_queue: "Optional[mp.Queue]" = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
@@ -66,6 +70,48 @@ def _child_entry(
         os.setpgrp()
     except Exception:
         pass
+
+    # --- graceful-stop bridge (child side) ---
+    # The parent's FIRST stop click sends a sentinel down ``stop_queue``.
+    # We flip a process-local Event that long-running harness loops poll
+    # (research_harness.stop) so they finish the in-flight unit and return
+    # cleanly — instead of being SIGKILLed mid-step. The parent escalates to
+    # SIGKILL if the child doesn't exit within a grace window (2nd click /
+    # timeout). spawn means this child is a fresh interpreter, so we install
+    # a brand-new Event here.
+    if stop_queue is not None:
+        try:
+            import threading as _threading
+
+            _stop_ev = _threading.Event()
+
+            def _install_into_harness() -> None:
+                # Best-effort: research_harness may not be importable in every
+                # subprocess (e.g. a non-research tool). Harmless if absent.
+                try:
+                    from research_harness import stop as _hstop
+                    _hstop.install_stop_event(_stop_ev)
+                except Exception:
+                    pass
+
+            _install_into_harness()
+
+            def _stop_pump() -> None:
+                while True:
+                    try:
+                        msg = stop_queue.get()
+                    except Exception:
+                        return
+                    if msg is None:
+                        return
+                    # Any message = graceful stop requested.
+                    _stop_ev.set()
+                    _install_into_harness()  # in case import happened after start
+                    return
+
+            _threading.Thread(target=_stop_pump, daemon=True).start()
+        except Exception:
+            pass
 
     # --- user-input subprocess bridge: answer side (user-input-requests.md Phase 2) ---
     # The child blocks in runtime.ask on its LOCAL QuestionRegistry. The parent
@@ -365,11 +411,15 @@ def run_agentic_in_subprocess(
     # child blocks in runtime.ask; the parent routes the user's reply back
     # through this queue so the child's local registry can wake the call.
     answer_queue: mp.Queue = ctx.Queue()
+    # parent→child graceful-stop channel: first stop click sends a sentinel
+    # here; the child flips its harness stop flag and finishes the in-flight
+    # unit. The parent escalates to SIGKILL only if the child doesn't exit.
+    stop_queue: mp.Queue = ctx.Queue()
     p = ctx.Process(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
               work_dir, result_path, event_queue, parent_call_id,
-              answer_queue),
+              answer_queue, stop_queue),
         daemon=False,
     )
     p.start()
@@ -377,6 +427,7 @@ def run_agentic_in_subprocess(
     with _active_lock:
         # If a prior subprocess is somehow still tracked, replace it.
         _active[session_id] = p
+        _active_stop_q[session_id] = stop_queue
 
     # Drain events from the queue and forward to parent's on_event
     # while the child runs. Stops when the child exits + the queue
@@ -441,6 +492,7 @@ def run_agentic_in_subprocess(
         with _active_lock:
             if _active.get(session_id) is p:
                 _active.pop(session_id, None)
+            _active_stop_q.pop(session_id, None)
 
     # Pick up the result, if any.
     out: dict
@@ -461,12 +513,38 @@ def run_agentic_in_subprocess(
     return out
 
 
+def is_subprocess_alive(session_id: str) -> bool:
+    """True if there's a live in-flight subprocess for this session."""
+    with _active_lock:
+        p = _active.get(session_id)
+    return p is not None and p.is_alive()
+
+
+def request_graceful_stop(session_id: str) -> bool:
+    """Ask the in-flight subprocess to stop GRACEFULLY (finish the current
+    unit, save, return) by sending a sentinel down its stop_queue. Returns
+    True if a live subprocess was found and signaled. Does NOT kill — the
+    caller escalates to ``kill_active_subprocess`` if the child doesn't exit
+    within a grace window (the second stop click / a timeout)."""
+    with _active_lock:
+        q = _active_stop_q.get(session_id)
+        p = _active.get(session_id)
+    if q is None or p is None or not p.is_alive():
+        return False
+    try:
+        q.put("stop", block=False)
+        return True
+    except Exception:
+        return False
+
+
 def kill_active_subprocess(session_id: str) -> bool:
     """SIGKILL the entire process group of the in-flight subprocess for
     ``session_id``. Returns True if a subprocess was found and signaled.
     """
     with _active_lock:
         p = _active.pop(session_id, None)
+        _active_stop_q.pop(session_id, None)
     if p is None:
         return False
     if not p.is_alive():
