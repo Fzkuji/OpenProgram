@@ -179,6 +179,25 @@ def _resolve_custom_model(provider: str, model_id: str, get_model):
     return None
 
 
+def _as_anthropic_if_claude_code(m):
+    """claude-code / claude-max are runtime-prefix aliases for the anthropic
+    subscription. Their model rows may carry provider="claude-code", but the
+    stream layer keys token resolution + Claude Code identity headers off
+    model.provider — and the credential lives in the "anthropic" pool. If
+    such a row resolves with provider="claude-code", the request is sent
+    without the subscription's OAuth/identity headers and Anthropic 400s with
+    "credit balance too low" (treating it as a plain pay-as-you-go call).
+
+    So: keep the model id/api/base_url, just relabel provider→"anthropic".
+    """
+    if getattr(m, "provider", None) in ("claude-code", "claude-max"):
+        try:
+            return m.model_copy(update={"provider": "anthropic"})
+        except Exception:
+            m.provider = "anthropic"
+    return m
+
+
 def resolve_model(profile: dict, override: Optional[str] = None):
     """Resolve a Model instance from the agent profile or per-turn override.
 
@@ -218,7 +237,7 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             provider, model_id_only = requested.split("/", 1)
             m = get_model(provider, model_id_only)
             if m:
-                return m
+                return _as_anthropic_if_claude_code(m)
             # Community / fetched custom model (no static models_generated
             # row, e.g. minimax-cn-coding-plan/MiniMax-M3): resolve it from
             # the provider's config custom_models — derived api + the
@@ -228,7 +247,7 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             # or a worker restart resuming a conv wouldn't have run that.
             m = _resolve_custom_model(provider, model_id_only, get_model)
             if m:
-                return m
+                return _as_anthropic_if_claude_code(m)
             # claude-code / claude-max are RUNTIME prefixes whose model
             # rows live under anthropic/ — the one legitimate
             # cross-provider alias. Anything else: the user picked

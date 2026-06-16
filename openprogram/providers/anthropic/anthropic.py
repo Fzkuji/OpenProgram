@@ -288,7 +288,17 @@ def _build_client(
             base_url=base_url,
             default_headers=default_headers,
             max_retries=sdk_max_retries,
+            http_client=_shared_http_client(),
         )
+        # CRITICAL: even with api_key=None the SDK falls back to the
+        # ANTHROPIC_API_KEY env var and sends it as x-api-key ALONGSIDE our
+        # Bearer auth_token. If that env key is pay-as-you-go (sk-ant-api…),
+        # Anthropic prefers x-api-key and bills it — the subscription OAuth is
+        # ignored → 400 "credit balance too low". The worker process inherits
+        # that env var; CLI test processes don't, which is why this only
+        # reproduced under the worker. Force x-api-key OFF so ONLY the OAuth
+        # Bearer authenticates.
+        client.api_key = None
     else:
         # Regular API key auth
         default_headers = {
@@ -302,9 +312,31 @@ def _build_client(
             base_url=base_url,
             default_headers=default_headers,
             max_retries=sdk_max_retries,
+            http_client=_shared_http_client(),
         )
 
     return client, is_oauth
+
+
+def _shared_http_client():
+    """A per-event-loop shared httpx client for the Anthropic SDK.
+
+    Without this, ``AsyncAnthropic`` builds its OWN httpx client bound to
+    whatever loop is current. The worker runs each turn in a SHORT-LIVED
+    event loop (dispatcher creates one, runs the turn, then ``loop.close()``);
+    a freshly-built SDK client's connection gets torn down when that loop
+    closes — mid-stream — surfacing as "Task was destroyed but it is
+    pending" + RuntimeError('Event loop is closed'), a half-sent request,
+    and Anthropic 400ing it. ``get_shared_async_client`` caches per
+    (name, loop), so the client's lifecycle matches the turn's loop exactly
+    — the same fix that keeps openai-codex working under the worker.
+    Returns None on any failure so the SDK falls back to its own client.
+    """
+    try:
+        from openprogram.providers.utils.http_client import get_shared_async_client
+        return get_shared_async_client("anthropic")
+    except Exception:
+        return None
 
 
 def _convert_tool_result_block(tr_msg: ToolResultMessage, is_oauth: bool = False) -> dict[str, Any]:

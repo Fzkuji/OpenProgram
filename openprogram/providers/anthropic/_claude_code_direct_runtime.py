@@ -134,24 +134,29 @@ class ClaudeCodeRuntime(Runtime):
         base_url: Optional[str] = None,  # noqa: ARG002 — kept for API parity
         **_unused,
     ) -> None:
+        # Validate a credential EXISTS, but do NOT pin the token onto the
+        # runtime. The subscription OAuth token expires (~8h); pinning it at
+        # construction means a long-lived runtime (worker reuses one across
+        # turns) keeps sending a stale token — the wire then skips re-resolve
+        # (opts.api_key is set) so it never refreshes, and Anthropic 400s
+        # "credit balance too low" (treating the expired token as a plain
+        # pay-as-you-go call). Leaving api_key unpinned makes the anthropic
+        # wire re-resolve (and AuthManager-refresh) on EVERY turn.
         if not api_key:
-            # Subscription OAuth (sk-ant-oat) or api-key, from the anthropic
-            # pool. cli_delegated points at Claude Code's credential file.
             from openprogram.auth.resolver import resolve_api_key_sync
-            api_key = resolve_api_key_sync("anthropic")
-        if not api_key:
-            raise ValueError(
-                "No Claude credential. Log in with a Claude subscription "
-                "(claude login) so its OAuth token is adopted, or add an "
-                "Anthropic API key in Settings → Providers."
-            )
+            if not resolve_api_key_sync("anthropic"):
+                raise ValueError(
+                    "No Claude credential. Log in with a Claude subscription "
+                    "so its OAuth token is adopted, or add an Anthropic API "
+                    "key in Settings → Providers."
+                )
         resolved = _normalize_model(model)
         # Register the id if the local catalog doesn't have it yet (new
         # releases the direct subscription serves but models_generated lags).
         ensure_anthropic_model_registered(resolved)
         super().__init__(
             model=f"anthropic:{resolved}",
-            api_key=api_key,
+            api_key=api_key,  # None unless caller passed one — wire re-resolves
             max_retries=max_retries,
         )
 
