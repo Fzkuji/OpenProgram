@@ -22,6 +22,7 @@ import { motion, useAnimation, type Variants } from "framer-motion";
 import {
   type AnimatedNavIconHandle,
   ChromeIcon,
+  EyeIcon,
   SlidersHorizontalIcon,
   WrenchIcon,
   ZapIcon,
@@ -50,6 +51,14 @@ export const WebSearchIcon = forwardRef<AnimatedNavIconHandle, { size?: number }
 export const FastIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
   function FastIcon({ size = 20 }, ref) {
     return <ZapIcon ref={ref} size={size} />;
+  },
+);
+
+// Unattended (no-one watching → agent won't ask questions). Eye glyph reads
+// as "watching"; the menu label/active state convey the off sense.
+export const UnattendedIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
+  function UnattendedIcon({ size = 20 }, ref) {
+    return <EyeIcon ref={ref} size={size} />;
   },
 );
 

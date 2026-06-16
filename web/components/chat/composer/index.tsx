@@ -40,6 +40,7 @@ import {
   SendIcon,
   StopIcon,
   ToolsIcon,
+  UnattendedIcon,
   WebSearchIcon,
 } from "./icons";
 import type { AnimatedNavIconHandle } from "@/components/animated-icons";
@@ -375,6 +376,25 @@ export function Composer() {
   const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
   const toggleFast = () =>
     setComposerSettings({ fast: !useSessionStore.getState().composerSettings.fast });
+  // Unattended toggle: nobody watching → withhold the agent's user-question
+  // tool. Mirror the per-session UI flag to the backend via set_attended so
+  // the tool-resolution gate matches (attended = !unattended).
+  const unattended = useSessionStore((s) => s.composerSettings.unattended);
+  const toggleUnattended = () => {
+    const next = !useSessionStore.getState().composerSettings.unattended;
+    setComposerSettings({ unattended: next });
+    if (currentSessionId) {
+      send({ action: "set_attended", session_id: currentSessionId, attended: !next });
+    }
+  };
+  // Sync the persisted per-session unattended flag to the backend whenever the
+  // session changes (a fresh worker defaults to attended; this restores the
+  // user's choice for this chat so the ask-tool gate matches the UI).
+  useEffect(() => {
+    if (currentSessionId) {
+      send({ action: "set_attended", session_id: currentSessionId, attended: !unattended });
+    }
+  }, [currentSessionId, unattended, send]);
   // Slash-menu state lives in its own hook (./use-slash-menu).
   // fn-form field state (values, workdir, error highlight, closing
   // flag) is owned by `./use-fn-form-state`; it also runs the
@@ -1247,6 +1267,13 @@ export function Composer() {
                       onClick={toggleFast}
                       icon={<FastIcon />}
                       label={text("Fast", "高速")}
+                    />
+                    <div className={styles.plusMenuDivider} />
+                    <PlusMenuItem
+                      active={unattended}
+                      onClick={toggleUnattended}
+                      icon={<UnattendedIcon />}
+                      label={text("Unattended (no questions)", "无人值守(不提问)")}
                     />
                   </div>,
                   document.body,

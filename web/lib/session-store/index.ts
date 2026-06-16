@@ -295,6 +295,7 @@ const DEFAULT_COMPOSER_SETTINGS: ComposerSettings = {
   tools: true,
   webSearch: false,
   fast: false,
+  unattended: false,  // web default: attended (a human is watching, may be asked)
 };
 
 function readComposerSettingsMap(): Record<string, ComposerSettings> {

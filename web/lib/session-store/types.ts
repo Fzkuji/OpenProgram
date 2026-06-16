@@ -93,6 +93,11 @@ export interface ComposerSettings {
   tools: boolean;
   webSearch: boolean;
   fast: boolean;
+  /** Unattended: nobody watching → the agent's user-question tool is
+   *  withheld so it never blocks on a prompt no one can answer. Web default
+   *  is attended (false); toggled from the composer "+" menu, mirrored to
+   *  the backend via the set_attended WS action. */
+  unattended: boolean;
 }
 
 /** One field in a runtime.form schema (MCP-elicitation flat object). */
