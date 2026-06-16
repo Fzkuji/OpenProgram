@@ -1308,6 +1308,13 @@ class Runtime:
 
         raw_tools = _current_tools.get(None)
         policy = _current_tool_policy.get(None) or {}
+        # Unattended mode: subtract the user-question tool no matter which
+        # toolset a function requested, so a background run can't block asking
+        # a question nobody is there to answer. Merged into the policy deny so
+        # both resolution paths below honour it.
+        from openprogram.agent.attended import denied_ask_tools as _denied_ask
+        _deny = list(policy.get("deny") or []) + _denied_ask()
+        _deny = _deny or None
         # Tools are OPT-IN. A bare `runtime.exec(content=...)` with no
         # `tools=` and no `toolset=` is a pure reasoning call — the model
         # gets NO tools. This matches the Agentic Programming paradigm:
@@ -1327,7 +1334,7 @@ class Runtime:
                     toolset=preset,
                     source=policy.get("source") if policy else None,
                     allow=policy.get("allow") if policy else None,
-                    deny=policy.get("deny") if policy else None,
+                    deny=_deny,
                 )
                 agent_tools = tools_for_session or None
         elif raw_tools:
@@ -1342,7 +1349,7 @@ class Runtime:
                 adapted,
                 source=policy.get("source") if policy else None,
                 allow=policy.get("allow") if policy else None,
-                deny=policy.get("deny") if policy else None,
+                deny=_deny,
                 exposure_filter=False,
             )
             agent_tools = adapted or None
