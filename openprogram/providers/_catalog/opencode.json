@@ -1,0 +1,885 @@
+{
+ "opencode/big-pickle": {
+  "id": "big-pickle",
+  "name": "Big Pickle",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.0,
+   "output": 0.0,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 200000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/claude-3-5-haiku": {
+  "id": "claude-3-5-haiku",
+  "name": "Claude Haiku 3.5",
+  "api": "anthropic-messages",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen",
+  "reasoning": false,
+  "thinking_levels": [],
+  "default_thinking_level": null,
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.8,
+   "output": 4.0,
+   "cache_read": 0.08,
+   "cache_write": 1.0
+  },
+  "context_window": 200000,
+  "max_tokens": 8192,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/claude-haiku-4-5": {
+  "id": "claude-haiku-4-5",
+  "name": "Claude Haiku 4.5",
+  "api": "anthropic-messages",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.0,
+   "output": 5.0,
+   "cache_read": 0.1,
+   "cache_write": 1.25
+  },
+  "context_window": 200000,
+  "max_tokens": 64000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/claude-opus-4-1": {
+  "id": "claude-opus-4-1",
+  "name": "Claude Opus 4.1",
+  "api": "anthropic-messages",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 15.0,
+   "output": 75.0,
+   "cache_read": 1.5,
+   "cache_write": 18.75
+  },
+  "context_window": 200000,
+  "max_tokens": 32000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/claude-opus-4-5": {
+  "id": "claude-opus-4-5",
+  "name": "Claude Opus 4.5",
+  "api": "anthropic-messages",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 5.0,
+   "output": 25.0,
+   "cache_read": 0.5,
+   "cache_write": 6.25
+  },
+  "context_window": 200000,
+  "max_tokens": 64000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/claude-opus-4-6": {
+  "id": "claude-opus-4-6",
+  "name": "Claude Opus 4.6",
+  "api": "anthropic-messages",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 5.0,
+   "output": 25.0,
+   "cache_read": 0.5,
+   "cache_write": 6.25
+  },
+  "context_window": 200000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/claude-sonnet-4": {
+  "id": "claude-sonnet-4",
+  "name": "Claude Sonnet 4",
+  "api": "anthropic-messages",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 3.0,
+   "output": 15.0,
+   "cache_read": 0.3,
+   "cache_write": 3.75
+  },
+  "context_window": 200000,
+  "max_tokens": 64000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/claude-sonnet-4-5": {
+  "id": "claude-sonnet-4-5",
+  "name": "Claude Sonnet 4.5",
+  "api": "anthropic-messages",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 3.0,
+   "output": 15.0,
+   "cache_read": 0.3,
+   "cache_write": 3.75
+  },
+  "context_window": 200000,
+  "max_tokens": 64000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gemini-3-flash": {
+  "id": "gemini-3-flash",
+  "name": "Gemini 3 Flash",
+  "api": "google-generative-ai",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.5,
+   "output": 3.0,
+   "cache_read": 0.05,
+   "cache_write": 0.0
+  },
+  "context_window": 1048576,
+  "max_tokens": 65536,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gemini-3-pro": {
+  "id": "gemini-3-pro",
+  "name": "Gemini 3 Pro",
+  "api": "google-generative-ai",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 2.0,
+   "output": 12.0,
+   "cache_read": 0.2,
+   "cache_write": 0.0
+  },
+  "context_window": 1048576,
+  "max_tokens": 65536,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/glm-4.6": {
+  "id": "glm-4.6",
+  "name": "GLM-4.6",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.6,
+   "output": 2.2,
+   "cache_read": 0.1,
+   "cache_write": 0.0
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/glm-4.7": {
+  "id": "glm-4.7",
+  "name": "GLM-4.7",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.6,
+   "output": 2.2,
+   "cache_read": 0.1,
+   "cache_write": 0.0
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/glm-5": {
+  "id": "glm-5",
+  "name": "GLM-5",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 1.0,
+   "output": 3.2,
+   "cache_read": 0.2,
+   "cache_write": 0.0
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/glm-5-free": {
+  "id": "glm-5-free",
+  "name": "GLM-5 Free",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.0,
+   "output": 0.0,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5": {
+  "id": "gpt-5",
+  "name": "GPT-5",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.07,
+   "output": 8.5,
+   "cache_read": 0.107,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5-codex": {
+  "id": "gpt-5-codex",
+  "name": "GPT-5 Codex",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.07,
+   "output": 8.5,
+   "cache_read": 0.107,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5-nano": {
+  "id": "gpt-5-nano",
+  "name": "GPT-5 Nano",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.0,
+   "output": 0.0,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5.1": {
+  "id": "gpt-5.1",
+  "name": "GPT-5.1",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.07,
+   "output": 8.5,
+   "cache_read": 0.107,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5.1-codex": {
+  "id": "gpt-5.1-codex",
+  "name": "GPT-5.1 Codex",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.07,
+   "output": 8.5,
+   "cache_read": 0.107,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5.1-codex-max": {
+  "id": "gpt-5.1-codex-max",
+  "name": "GPT-5.1 Codex Max",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5.1-codex-mini": {
+  "id": "gpt-5.1-codex-mini",
+  "name": "GPT-5.1 Codex Mini",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.25,
+   "output": 2.0,
+   "cache_read": 0.025,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5.2": {
+  "id": "gpt-5.2",
+  "name": "GPT-5.2",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.75,
+   "output": 14.0,
+   "cache_read": 0.175,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/gpt-5.2-codex": {
+  "id": "gpt-5.2-codex",
+  "name": "GPT-5.2 Codex",
+  "api": "openai-responses",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.75,
+   "output": 14.0,
+   "cache_read": 0.175,
+   "cache_write": 0.0
+  },
+  "context_window": 400000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/kimi-k2": {
+  "id": "kimi-k2",
+  "name": "Kimi K2",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": false,
+  "thinking_levels": [],
+  "default_thinking_level": null,
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.4,
+   "output": 2.5,
+   "cache_read": 0.4,
+   "cache_write": 0.0
+  },
+  "context_window": 262144,
+  "max_tokens": 262144,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/kimi-k2-thinking": {
+  "id": "kimi-k2-thinking",
+  "name": "Kimi K2 Thinking",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.4,
+   "output": 2.5,
+   "cache_read": 0.4,
+   "cache_write": 0.0
+  },
+  "context_window": 262144,
+  "max_tokens": 262144,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/kimi-k2.5": {
+  "id": "kimi-k2.5",
+  "name": "Kimi K2.5",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.6,
+   "output": 3.0,
+   "cache_read": 0.08,
+   "cache_write": 0.0
+  },
+  "context_window": 262144,
+  "max_tokens": 262144,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/kimi-k2.5-free": {
+  "id": "kimi-k2.5-free",
+  "name": "Kimi K2.5 Free",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.0,
+   "output": 0.0,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 262144,
+  "max_tokens": 262144,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/minimax-m2.1": {
+  "id": "minimax-m2.1",
+  "name": "MiniMax M2.1",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1.2,
+   "cache_read": 0.1,
+   "cache_write": 0.0
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/minimax-m2.5": {
+  "id": "minimax-m2.5",
+  "name": "MiniMax M2.5",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1.2,
+   "cache_read": 0.06,
+   "cache_write": 0.0
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ },
+ "opencode/minimax-m2.5-free": {
+  "id": "minimax-m2.5-free",
+  "name": "MiniMax M2.5 Free",
+  "api": "openai-completions",
+  "provider": "opencode",
+  "base_url": "https://opencode.ai/zen/v1",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.0,
+   "output": 0.0,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ }
+}

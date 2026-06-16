@@ -1,0 +1,520 @@
+{
+ "openai-codex/gpt-5.1": {
+  "id": "gpt-5.1",
+  "name": "GPT-5.1",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.1-codex-max": {
+  "id": "gpt-5.1-codex-max",
+  "name": "GPT-5.1 Codex Max",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.1-codex-mini": {
+  "id": "gpt-5.1-codex-mini",
+  "name": "GPT-5.1 Codex Mini",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.25,
+   "output": 2.0,
+   "cache_read": 0.025,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.2": {
+  "id": "gpt-5.2",
+  "name": "GPT-5.2",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.75,
+   "output": 14.0,
+   "cache_read": 0.175,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.2-codex": {
+  "id": "gpt-5.2-codex",
+  "name": "GPT-5.2 Codex",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.75,
+   "output": 14.0,
+   "cache_read": 0.175,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.3-codex": {
+  "id": "gpt-5.3-codex",
+  "name": "GPT-5.3 Codex",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.75,
+   "output": 14.0,
+   "cache_read": 0.175,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.3-codex-spark": {
+  "id": "gpt-5.3-codex-spark",
+  "name": "GPT-5.3 Codex Spark",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.0,
+   "output": 0.0,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 128000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.4": {
+  "id": "gpt-5.4",
+  "name": "GPT-5.4",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.4-codex": {
+  "id": "gpt-5.4-codex",
+  "name": "GPT-5.4 Codex",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.4-mini": {
+  "id": "gpt-5.4-mini",
+  "name": "GPT-5.4 Mini",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.25,
+   "output": 2.0,
+   "cache_read": 0.025,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.4-pro": {
+  "id": "gpt-5.4-pro",
+  "name": "GPT-5.4 Pro",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 5.0,
+   "output": 30.0,
+   "cache_read": 0.5,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.5": {
+  "id": "gpt-5.5",
+  "name": "GPT-5.5",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.5-pro": {
+  "id": "gpt-5.5-pro",
+  "name": "GPT-5.5 Pro",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 5.0,
+   "output": 30.0,
+   "cache_read": 0.5,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.1-codex": {
+  "id": "gpt-5.1-codex",
+  "name": "GPT-5.1 Codex",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.3": {
+  "id": "gpt-5.3",
+  "name": "GPT-5.3",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.5-mini": {
+  "id": "gpt-5.5-mini",
+  "name": "GPT-5.5 Mini",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "openai-codex/gpt-5.5-codex": {
+  "id": "gpt-5.5-codex",
+  "name": "GPT-5.5 Codex",
+  "api": "openai-codex",
+  "provider": "openai-codex",
+  "base_url": "https://chatgpt.com/backend-api",
+  "reasoning": true,
+  "thinking_levels": [
+   "low",
+   "medium",
+   "high",
+   "xhigh"
+  ],
+  "default_thinking_level": "xhigh",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 1.25,
+   "output": 10.0,
+   "cache_read": 0.125,
+   "cache_write": 0.0
+  },
+  "context_window": 272000,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ }
+}

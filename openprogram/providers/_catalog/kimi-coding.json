@@ -1,0 +1,61 @@
+{
+ "kimi-coding/k2p5": {
+  "id": "k2p5",
+  "name": "Kimi K2.5",
+  "api": "anthropic-messages",
+  "provider": "kimi-coding",
+  "base_url": "https://api.kimi.com/coding",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.0,
+   "output": 0.0,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 262144,
+  "max_tokens": 32768,
+  "headers": null,
+  "compat": null
+ },
+ "kimi-coding/kimi-k2-thinking": {
+  "id": "kimi-k2-thinking",
+  "name": "Kimi K2 Thinking",
+  "api": "anthropic-messages",
+  "provider": "kimi-coding",
+  "base_url": "https://api.kimi.com/coding",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.0,
+   "output": 0.0,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 262144,
+  "max_tokens": 32768,
+  "headers": null,
+  "compat": null
+ }
+}

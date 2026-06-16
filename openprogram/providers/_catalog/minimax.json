@@ -1,0 +1,118 @@
+{
+ "minimax/MiniMax-M2": {
+  "id": "MiniMax-M2",
+  "name": "MiniMax-M2",
+  "api": "anthropic-messages",
+  "provider": "minimax",
+  "base_url": "https://api.minimax.io/anthropic",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1.2,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 196608,
+  "max_tokens": 128000,
+  "headers": null,
+  "compat": null
+ },
+ "minimax/MiniMax-M2.1": {
+  "id": "MiniMax-M2.1",
+  "name": "MiniMax-M2.1",
+  "api": "anthropic-messages",
+  "provider": "minimax",
+  "base_url": "https://api.minimax.io/anthropic",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1.2,
+   "cache_read": 0.0,
+   "cache_write": 0.0
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ },
+ "minimax/MiniMax-M2.5": {
+  "id": "MiniMax-M2.5",
+  "name": "MiniMax-M2.5",
+  "api": "anthropic-messages",
+  "provider": "minimax",
+  "base_url": "https://api.minimax.io/anthropic",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.3,
+   "output": 1.2,
+   "cache_read": 0.03,
+   "cache_write": 0.375
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ },
+ "minimax/MiniMax-M2.5-highspeed": {
+  "id": "MiniMax-M2.5-highspeed",
+  "name": "MiniMax-M2.5-highspeed",
+  "api": "anthropic-messages",
+  "provider": "minimax",
+  "base_url": "https://api.minimax.io/anthropic",
+  "reasoning": true,
+  "thinking_levels": [
+   "minimal",
+   "low",
+   "medium",
+   "high"
+  ],
+  "default_thinking_level": "medium",
+  "thinking_variant": null,
+  "input": [
+   "text"
+  ],
+  "cost": {
+   "input": 0.6,
+   "output": 2.4,
+   "cache_read": 0.06,
+   "cache_write": 0.375
+  },
+  "context_window": 204800,
+  "max_tokens": 131072,
+  "headers": null,
+  "compat": null
+ }
+}
