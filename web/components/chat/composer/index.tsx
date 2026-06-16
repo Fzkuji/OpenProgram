@@ -503,8 +503,18 @@ export function Composer() {
   /* ---- Submit -------------------------------------------------------- */
 
   const submit = useCallback(async () => {
-    if (isRunning) return;
     const trimmed = input.trim();
+    // While a task is running, a sent message is a MID-RUN STEER, not a new
+    // turn: route it to the live run so the user can course-correct just by
+    // typing into the same box. The running loop picks it up at its next step
+    // boundary. (Plain text only — attachments / slash go through the normal
+    // path, which is disabled while running.)
+    if (isRunning) {
+      if (!trimmed || !currentSessionId) return;
+      send({ action: "steer", session_id: currentSessionId, message: trimmed });
+      setInput("");
+      return;
+    }
     // Allow image-only submits — the LLM can answer "describe this
     // screenshot" without text. Otherwise require at least one of
     // text or attached image.
@@ -1086,6 +1096,9 @@ export function Composer() {
             textareaRef={textareaRef}
             input={input}
             setInput={setInput}
+            placeholder={isRunning
+              ? text("type to steer the running task…", "输入以干预正在运行的任务…")
+              : undefined}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             onFocus={() => slash.setFocused(true)}

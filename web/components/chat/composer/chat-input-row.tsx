@@ -29,6 +29,8 @@ interface ChatInputRowProps {
   onFocus: () => void;
   onBlur: () => void;
   setCaretPos: (n: number) => void;
+  /** Placeholder hint (e.g. "type to steer the running task…" while busy). */
+  placeholder?: string;
 
   /* ---- paste chips ------------------------------------------------- */
   pastedEntries: PastedEntry[];
@@ -54,6 +56,7 @@ export function ChatInputRow({
   onFocus,
   onBlur,
   setCaretPos,
+  placeholder,
   pastedEntries,
   pasteMissing,
   removePaste,
@@ -85,6 +88,7 @@ export function ChatInputRow({
             name="chat_input"
             autoComplete="off"
             aria-label="create / run / edit or ask anything... (type / for commands)"
+            placeholder={placeholder}
             className={styles.chatInput}
             rows={1}
             value={input}
