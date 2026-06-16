@@ -73,7 +73,18 @@ async def stream_simple(
     if provider is None:
         raise ValueError(f"No stream function registered for API: {model.api!r}")
 
+    recorded = False
     async for event in provider.stream_simple(model, context, opts):
+        # Record AT the terminal event, not after the loop: the consumer
+        # (agent_loop) returns the moment it sees the done/error event,
+        # leaving this generator suspended at ``yield`` — a post-loop line
+        # would never run. The terminal event carries the final message, so
+        # we have everything we need to record before yielding it onward.
+        if not recorded:
+            final = _extract_final(event)
+            if final is not None:
+                recorded = True
+                _record_usage(model, final, opts)
         yield event
 
 
@@ -116,7 +127,13 @@ async def stream(
     if provider is None:
         raise ValueError(f"No stream function registered for API: {model.api!r}")
 
+    recorded = False
     async for event in provider.stream(model, context, opts):
+        if not recorded:
+            final = _extract_final(event)
+            if final is not None:
+                recorded = True
+                _record_usage(model, final, opts)
         yield event
 
 
@@ -138,6 +155,23 @@ async def complete(
         raise RuntimeError("Stream completed without a final message")
 
     return final_message
+
+
+def _record_usage(model: Model, final, options) -> None:
+    """Single metering chokepoint: every stream()/stream_simple() ends here,
+    so every LLM call this module serves gets recorded. Best-effort — a
+    metering failure must never surface to the caller. The call source
+    (chat / compaction / memory / …) is read from the contextvar set by
+    the caller's ``usage_scope(...)``; session_id comes off the options.
+    """
+    if final is None:
+        return
+    try:
+        from openprogram.metering import record_message
+        session_id = getattr(options, "session_id", None) if options else None
+        record_message(model, final, session_id=session_id)
+    except Exception:
+        pass
 
 
 def _extract_final(event) -> AssistantMessage | None:

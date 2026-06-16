@@ -122,6 +122,25 @@ def process_user_turn(
     on_event = on_event or _noop
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
 
+    # Usage metering: label every LLM call in this turn with its source.
+    # Default to "chat", but DON'T clobber a source an outer scope already
+    # set (an @agentic_function runtime / subagent wraps the turn in
+    # ``usage_scope(call_kind="exec"|"subagent")`` before calling us). Set
+    # the contextvar directly (not a ``with``) so it spans the whole sync
+    # turn, mirroring the plan-mode contextvar set just below.
+    try:
+        from openprogram.metering.context import (
+            UsageContext, current_usage_context, _current as _usage_cur,
+        )
+        _cur = current_usage_context()
+        if _cur.call_kind == "unknown":
+            _usage_cur.set(UsageContext(call_kind="chat", agent_id=req.agent_id))
+        elif _cur.agent_id is None:
+            from dataclasses import replace as _replace
+            _usage_cur.set(_replace(_cur, agent_id=req.agent_id))
+    except Exception:
+        pass
+
     # Plan-mode session context: expose ``req.session_id`` so the
     # enter_plan_mode / exit_plan_mode tool bodies can flip the
     # per-session flag without args plumbing. ContextVars propagate
