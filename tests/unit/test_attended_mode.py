@@ -50,3 +50,15 @@ def test_attended_keeps_ask_in_full_toolset():
     deny = (attended.denied_ask_tools() or None)
     names = _names("full", deny)
     assert "ask_user_question" in names
+
+
+def test_per_session_isolation():
+    # One session attended must not flip another (single worker, many sessions).
+    attended.set_attended(False)               # default unattended
+    attended.set_attended(True, "sessA")
+    assert attended.is_attended("sessA") is True
+    assert attended.is_attended("sessB") is False  # falls back to default
+    assert attended.denied_ask_tools("sessA") == []
+    assert "ask_user_question" in attended.denied_ask_tools("sessB")
+    attended.clear_session("sessA")
+    assert attended.is_attended("sessA") is False  # back to default

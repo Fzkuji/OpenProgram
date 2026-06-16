@@ -1313,7 +1313,7 @@ class Runtime:
         # a question nobody is there to answer. Merged into the policy deny so
         # both resolution paths below honour it.
         from openprogram.agent.attended import denied_ask_tools as _denied_ask
-        _deny = list(policy.get("deny") or []) + _denied_ask()
+        _deny = list(policy.get("deny") or []) + _denied_ask(getattr(self, "session_id", None))
         _deny = _deny or None
         # Tools are OPT-IN. A bare `runtime.exec(content=...)` with no
         # `tools=` and no `toolset=` is a pure reasoning call — the model

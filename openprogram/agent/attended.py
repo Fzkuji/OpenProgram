@@ -2,21 +2,24 @@
 
 A long run is either *attended* (a human is watching and can answer questions)
 or *unattended* (the user stepped away — "I'm asleep, don't ask me"). The
-control the user asked for is deliberately blunt: in unattended mode the agent
-simply is not given the user-question tool, so it cannot ask. It then does its
-best with what it has (and any genuine uncertainty is left for a later
-model-driven pass to resolve), rather than blocking on an unanswerable prompt.
+control is deliberately blunt: in unattended mode the agent is not given the
+user-question tool, so it cannot ask. It then does its best with what it has
+(genuine uncertainty is left for a later model-driven pass), rather than
+blocking on an unanswerable prompt.
 
 Why a tool-deny rather than a runtime fallback: a function can request ANY
-toolset (default, full, an explicit tools= list). Gating at the policy layer —
-adding the ask tool to the ``deny`` set during tool resolution — means it does
-not matter which toolset a function picks; unattended always strips the ask
-tool. One choke point, no per-function audit.
+toolset (default, full, explicit tools=). Gating at the policy layer — adding
+the ask tool to the ``deny`` set during tool resolution — means it doesn't
+matter which toolset a function picks. One choke point, no per-function audit.
 
-Scope: process-wide, per session. Set by the session's attended flag (CLI
-flag, TUI toggle, web toggle — all write the same session state via the
-worker). DEFAULT IS UNATTENDED: a bare CLI run has nobody watching, so the
-safe default is "don't ask". Call ``set_attended(True)`` to allow questions.
+PER-SESSION: a single worker process hosts many sessions (web/TUI), so the
+mode is keyed by session_id; a global toggle would let one session's
+"unattended" silence another's questions. A process-wide default covers
+callers with no session in scope (and is what a bare CLI run uses).
+
+DEFAULT IS UNATTENDED: a bare run / background run has nobody watching, so the
+safe default is "don't ask". Call ``set_attended(True)`` (optionally with a
+session) to allow questions.
 """
 from __future__ import annotations
 
@@ -27,24 +30,39 @@ import threading
 # through this tool, so this one name covers the ask path.)
 ASK_TOOLS = ("ask_user_question",)
 
-_attended = False  # default: unattended (CLI / background runs have no watcher)
+_default = False           # process-wide default when no session is in scope
+_by_session: dict[str, bool] = {}
 _lock = threading.Lock()
 
 
-def set_attended(value: bool) -> None:
-    """Set whether the agent may ask the user (True = attended/may ask)."""
-    global _attended
+def set_attended(value: bool, session_id: "str | None" = None) -> None:
+    """Set whether the agent may ask the user. With a session_id, sets it for
+    that session only; without, sets the process-wide default."""
+    global _default
     with _lock:
-        _attended = bool(value)
+        if session_id:
+            _by_session[session_id] = bool(value)
+        else:
+            _default = bool(value)
 
 
-def is_attended() -> bool:
-    """True when a human is watching and the agent may ask questions."""
-    return _attended
+def is_attended(session_id: "str | None" = None) -> bool:
+    """True when the agent may ask. Falls back to the process default when the
+    session has no explicit setting."""
+    with _lock:
+        if session_id and session_id in _by_session:
+            return _by_session[session_id]
+        return _default
 
 
-def denied_ask_tools() -> list[str]:
+def clear_session(session_id: str) -> None:
+    """Drop a session's override (it falls back to the default)."""
+    with _lock:
+        _by_session.pop(session_id, None)
+
+
+def denied_ask_tools(session_id: "str | None" = None) -> list[str]:
     """Tool names to subtract during resolution when unattended (empty when
     attended). Folded into the tool-policy ``deny`` set so it applies no
     matter which toolset a function requested."""
-    return [] if _attended else list(ASK_TOOLS)
+    return [] if is_attended(session_id) else list(ASK_TOOLS)

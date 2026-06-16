@@ -448,6 +448,70 @@ async def handle_sync(ws, cmd: dict):
             await ws.send_text(json.dumps(envelope, default=str))
         except Exception:
             break
+    # G1: a client joining mid-run needs the CURRENT running-task indicator
+    # (sync replays messages, not the live "is this session busy" state). Only
+    # emit when there's actually a running task — for an idle/unknown session
+    # sync stays a no-op (a client defaults to idle anyway).
+    try:
+        with _s._running_tasks_lock:
+            task = dict(_s._running_tasks.get(session_id) or {})
+        if task:
+            await ws.send_text(json.dumps(
+                {"type": "running_task",
+                 "data": {"session_id": session_id, **task}},
+                default=str))
+    except Exception:
+        pass
+
+
+async def handle_steer(ws, cmd: dict):
+    """Mid-run steering from TUI/web: drop a course-correction into a live run.
+
+    Writes to the per-session steering inbox (a file dir under the session),
+    which the running research_agent loop drains at its next step boundary —
+    the same inbox the CLI ``steer`` subcommand uses, so it works whether the
+    run is in-process or in a worker subprocess (files cross processes)."""
+    session_id = cmd.get("session_id") or cmd.get("conv_id")
+    message = cmd.get("message") or ""
+    if not session_id or not message.strip():
+        return
+    ok = False
+    try:
+        from research_harness import steering
+        ok = steering.push(session_id, message)
+    except Exception:
+        ok = False
+    from openprogram.webui import server as _s
+    try:
+        _s._broadcast(json.dumps({
+            "type": "steer_ack",
+            "data": {"session_id": session_id, "queued": ok,
+                     "message": message.strip()[:200]},
+        }, default=str))
+    except Exception:
+        pass
+
+
+async def handle_set_attended(ws, cmd: dict):
+    """Set whether the agent may ask the user, for this session (TUI/web
+    toggle). Broadcasts the new mode so all surfaces show it in sync."""
+    session_id = cmd.get("session_id") or cmd.get("conv_id")
+    if not session_id:
+        return
+    attended = bool(cmd.get("attended"))
+    try:
+        from openprogram.agent.attended import set_attended
+        set_attended(attended, session_id)
+    except Exception:
+        return
+    from openprogram.webui import server as _s
+    try:
+        _s._broadcast(json.dumps({
+            "type": "attended_changed",
+            "data": {"session_id": session_id, "attended": attended},
+        }, default=str))
+    except Exception:
+        pass
 
 
 ACTIONS = {
@@ -457,4 +521,6 @@ ACTIONS = {
     "stop": handle_stop,
     "stats": handle_stats,
     "sync": handle_sync,
+    "steer": handle_steer,
+    "set_attended": handle_set_attended,
 }
