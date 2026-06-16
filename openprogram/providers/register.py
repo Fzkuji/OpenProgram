@@ -56,6 +56,11 @@ def register_builtins() -> None:
             _StreamFnProvider(anthropic.stream_simple, anthropic.stream_simple),
             source_id="builtin",
         )
+        # Side-effect import: registers the anthropic OAuth refresh fn with
+        # AuthManager (register_anthropic_auth). Without it the subscription
+        # token expires (8h) and never refreshes → "No API key configured for
+        # provider 'claude-code'" mid-chat. Same pattern as codex below.
+        from openprogram.providers.anthropic import auth_adapter as _anth_auth  # noqa: F401
     except ImportError:
         pass
 

@@ -539,7 +539,12 @@ async def stream_simple(
         # Bearer + Claude Code beta headers, so claude-code subscriptions
         # connect direct to api.anthropic.com (no Meridian daemon).
         from openprogram.auth.resolver import resolve_api_key_sync
-        api_key = resolve_api_key_sync(model.provider) or ""
+        # claude-code is an alias for the anthropic credential pool — its
+        # subscription OAuth token lives under provider_id="anthropic", so
+        # resolve there (a claude-code/<id> model otherwise hits an empty
+        # claude-code pool and 401s with "no API key").
+        _pool = "anthropic" if model.provider == "claude-code" else model.provider
+        api_key = resolve_api_key_sync(_pool) or ""
     if not api_key:
         # No credential anywhere — fail precisely instead of sending an
         # empty x-api-key header (a misleading upstream 401).
