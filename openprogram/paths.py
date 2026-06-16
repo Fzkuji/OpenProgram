@@ -155,6 +155,16 @@ def get_memory_dir() -> Path:
     return get_state_dir() / "memory"
 
 
+def get_usage_db_path() -> Path:
+    """SQLite ledger of LLM token usage (see metering/ledger.py).
+
+    Profile-aware like every other state path, so ``--profile`` keeps a
+    separate usage history. Lives at the state-dir root rather than under
+    a subdir — it's a single global file, not a per-entity tree.
+    """
+    return get_state_dir() / "usage.db"
+
+
 def ensure_state_dir() -> Path:
     d = get_state_dir()
     d.mkdir(parents=True, exist_ok=True)
