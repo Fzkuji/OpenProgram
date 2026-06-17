@@ -44,49 +44,138 @@ def register(app):
         out.sort(key=lambda r: r["name"])
         return JSONResponse(content=out)
 
-    # ── Functions meta (folders-as-categories) ────────────────────────
-    # Same {favorites, folders} shape as programs_meta.json.
-    # New folder → defaults to ALL exposed tools (per design: default-on).
+    # ── Tool profiles ──────────────────────────────────────────────────
+    # A profile = a named tool set the user configures on the Functions
+    # page and selects in the chat composer. "default" = all exposed
+    # tools (immutable). New profile = copy of default; user removes
+    # tools they don't need for that scenario.
 
     def _functions_meta_path():
         from openprogram.webui import server as _s
         return os.path.join(os.path.dirname(_s.__file__), "functions_meta.json")
 
-    def _load_functions_meta() -> dict:
+    def _all_tool_names() -> list[str]:
+        """Every exposed tool name — leaf tools AND agentic programs.
+        Profiles cover everything the model can use."""
+        from openprogram.functions._runtime import exposed_names
+        return sorted(exposed_names())
+
+    def _load_profiles() -> dict:
         p = _functions_meta_path()
         if os.path.isfile(p):
             with open(p, encoding="utf-8") as f:
-                return json.load(f)
-        return {"favorites": [], "folders": {}}
+                data = json.load(f)
+            # migrate old {folders:} shape if present
+            if "folders" in data and "profiles" not in data:
+                data["profiles"] = data.pop("folders")
+            return data
+        return {"profiles": {"default": _all_tool_names()}, "active": "default"}
 
-    def _save_functions_meta(data: dict):
+    def _save_profiles(data: dict):
+        # ensure "default" always exists with all tools
+        data.setdefault("profiles", {})["default"] = _all_tool_names()
+        data.setdefault("active", "default")
         p = _functions_meta_path()
         with open(p, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
+    @app.get("/api/tool-profiles")
+    async def get_tool_profiles():
+        """All profiles + which is active. default profile is always
+        regenerated from the live registry so new tools appear."""
+        data = _load_profiles()
+        data["profiles"]["default"] = _all_tool_names()
+        return JSONResponse(content=data)
+
+    @app.post("/api/tool-profiles")
+    async def save_tool_profiles(body: dict = None):
+        _save_profiles(body or {})
+        return JSONResponse(content={"ok": True})
+
+    @app.post("/api/tool-profiles/create")
+    async def create_tool_profile(body: dict = None):
+        """Create a new profile = copy of default (all tools).
+        body: {"name": "profile name"}"""
+        name = (body or {}).get("name", "new")
+        data = _load_profiles()
+        if name == "default":
+            return JSONResponse(content={"ok": False, "error": "cannot overwrite default"}, status_code=400)
+        data["profiles"][name] = list(_all_tool_names())
+        _save_profiles(data)
+        return JSONResponse(content={"ok": True, "profile": name,
+                                     "tools": data["profiles"][name]})
+
+    @app.post("/api/tool-profiles/delete")
+    async def delete_tool_profile(body: dict = None):
+        name = (body or {}).get("name", "")
+        if name == "default":
+            return JSONResponse(content={"ok": False, "error": "cannot delete default"}, status_code=400)
+        data = _load_profiles()
+        data["profiles"].pop(name, None)
+        if data.get("active") == name:
+            data["active"] = "default"
+        _save_profiles(data)
+        return JSONResponse(content={"ok": True})
+
+    @app.post("/api/tool-profiles/add-tool")
+    async def profile_add_tool(body: dict = None):
+        """Add a tool to a profile. body: {"profile":"X","tool":"bash"}"""
+        b = body or {}
+        name, tool = b.get("profile", ""), b.get("tool", "")
+        data = _load_profiles()
+        tools = data["profiles"].get(name)
+        if tools is None:
+            return JSONResponse(content={"ok": False, "error": "profile not found"}, status_code=404)
+        if tool not in tools:
+            tools.append(tool)
+            tools.sort()
+        _save_profiles(data)
+        return JSONResponse(content={"ok": True})
+
+    @app.post("/api/tool-profiles/remove-tool")
+    async def profile_remove_tool(body: dict = None):
+        """Remove a tool from a profile. body: {"profile":"X","tool":"bash"}"""
+        b = body or {}
+        name, tool = b.get("profile", ""), b.get("tool", "")
+        if name == "default":
+            return JSONResponse(content={"ok": False, "error": "cannot modify default"}, status_code=400)
+        data = _load_profiles()
+        tools = data["profiles"].get(name)
+        if tools is None:
+            return JSONResponse(content={"ok": False, "error": "profile not found"}, status_code=404)
+        if tool in tools:
+            tools.remove(tool)
+        _save_profiles(data)
+        return JSONResponse(content={"ok": True})
+
+    @app.post("/api/tool-profiles/activate")
+    async def activate_tool_profile(body: dict = None):
+        """Set the active profile. body: {"name":"research"}"""
+        name = (body or {}).get("name", "default")
+        data = _load_profiles()
+        if name not in data["profiles"]:
+            return JSONResponse(content={"ok": False, "error": "profile not found"}, status_code=404)
+        data["active"] = name
+        _save_profiles(data)
+        return JSONResponse(content={"ok": True, "active": name})
+
+    # Keep the old /api/functions/meta endpoints for compatibility
+    # (the folder-as-toolset resolver in __init__.py reads "folders").
     @app.get("/api/functions/meta")
     async def get_functions_meta():
-        return JSONResponse(content=_load_functions_meta())
+        data = _load_profiles()
+        # Backward compat: expose profiles as "folders" too so the
+        # _resolve_folder_toolset helper (agent_tools) finds them.
+        return JSONResponse(content={
+            "profiles": data.get("profiles", {}),
+            "active": data.get("active", "default"),
+            "folders": data.get("profiles", {}),  # compat
+        })
 
     @app.post("/api/functions/meta")
     async def save_functions_meta(body: dict = None):
-        _save_functions_meta(body or {})
+        _save_profiles(body or {})
         return JSONResponse(content={"ok": True})
-
-    @app.post("/api/functions/meta/create-folder")
-    async def create_functions_folder(body: dict = None):
-        """Create a new folder with ALL exposed tools (design: default-on).
-        body: {"name": "folder name"}"""
-        from openprogram.functions import agent_tools
-        name = (body or {}).get("name", "New folder")
-        meta = _load_functions_meta()
-        # default = every exposed tool's name
-        all_names = sorted(t.name for t in agent_tools(include_disabled=True)
-                           if not getattr(t, "_is_agentic", False))
-        meta["folders"][name] = all_names
-        _save_functions_meta(meta)
-        return JSONResponse(content={"ok": True, "folder": name,
-                                     "tools": all_names})
 
     @app.get("/api/sessions/{session_id}/branches/tokens")
     async def get_branches_tokens(session_id: str):
