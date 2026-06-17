@@ -106,37 +106,216 @@ API 请求
 - `use-thinking-effort.ts`:从 `window._thinkingConfig` 读选项,存选中值;模型切换时 clamp 到有效范围
 - 颜色渐变:off=灰,minimal→max 从黄到红
 
-## 6. 各 Provider 的 wire 格式
+## 6. 各 Provider 的 wire 格式——完整映射表
 
-不同 provider 用不同的 API 参数,`SimpleStreamOptions.reasoning` 是统一入口,各 provider 在 `stream_simple()` 里翻译。
+`SimpleStreamOptions.reasoning` 是统一入口（一个字符串如 `"high"`）。各 provider 在 `stream_simple()` 里把它翻译成各自 API 的请求体参数。以下是每个 provider 的**完整翻译逻辑**，包括判断条件、映射表、代码位置。
 
-### 6.1 Anthropic(Messages API)
+### 6.1 Anthropic（`providers/anthropic/anthropic.py`）
 
-| 模型 | 参数格式 |
+**分支判断**（第 663-679 行）：
+
+```
+if opts.reasoning:
+    if _supports_adaptive_thinking(model.id) or is_oauth:
+        → adaptive 路径
+    else:
+        → budget 路径
+```
+
+`_supports_adaptive_thinking()`（第 197 行）：模型 id 包含 `opus-4-6` 或 `sonnet-4-6` 返回 True。OAuth token（`sk-ant-oat` 开头）也走 adaptive。
+
+#### Adaptive 路径（Opus 4.6+, Sonnet 4.6, 或 OAuth 认证）
+
+框架级别 → API 请求体：
+
+```json
+{
+  "thinking": {"type": "adaptive"},
+  "output_config": {"effort": "<映射后的值>"}
+}
+```
+
+映射表（`_map_thinking_level_to_effort`，第 205 行 + `_EFFORT_MAP`，第 168 行）：
+
+| 框架 ThinkingLevel | Anthropic effort 值 | 备注 |
+|---|---|---|
+| `"minimal"` | `"low"` | Anthropic 没有 minimal，降到 low |
+| `"low"` | `"low"` | 直传 |
+| `"medium"` | `"medium"` | 直传 |
+| `"high"` | `"high"` | 直传 |
+| `"xhigh"` | `"max"` | 仅 Opus 4.6 支持 max；Sonnet 4.6 降到 `"high"` |
+| `"max"` | — | **当前未映射**（不在 _EFFORT_MAP 里，fallback 到 `"high"`）⚠️ |
+
+#### Budget 路径（旧模型，Opus 4.5 及以前）
+
+框架级别 → API 请求体：
+
+```json
+{
+  "thinking": {"type": "enabled", "budget_tokens": N}
+}
+```
+
+映射表（`_THINKING_BUDGETS`，第 159 行）：
+
+| 框架 ThinkingLevel | budget_tokens |
 |---|---|
-| Opus 4.7+(`thinking_variant="opus47"`) | `thinking: {type: "adaptive"}` + `output_config: {effort: "<level>"}` |
-| Opus 4.6 / Sonnet 4.6(adaptive) | `thinking: {type: "adaptive"}` + `output_config: {effort: "<level>"}` |
-| 旧模型(deprecated budget 模式) | `thinking: {type: "enabled", budget_tokens: N}` |
-| Fable 5 | thinking 始终开启,不能 disabled;`output_config: {effort: "<level>"}` |
+| `"minimal"` | 1024 |
+| `"low"` | 4096 |
+| `"medium"` | 8192 |
+| `"high"` | 16000 |
+| `"xhigh"` | 32000 |
+| `"max"` | **未定义**（fallback 到 8192）⚠️ |
 
-level 映射:`minimal/low/medium/high` 直传;`xhigh/max` 也直传(Opus 4.7+ 和 Sonnet 4.6 支持)。
+如果 `budget_tokens >= max_tokens`，自动调整 `max_tokens = budget + max_tokens`。
 
-### 6.2 OpenAI Codex(Responses API)
+`ThinkingBudgets`（`SimpleStreamOptions.thinking_budgets`）可以自定义覆盖上表。
+
+### 6.2 OpenAI Codex（`providers/openai_codex/openai_codex.py`）
+
+**Responses API 格式**。
+
+预处理（第 333-334 行）：
+
+```python
+reasoning = opts.reasoning  # 框架传入的字符串
+reasoning_effort = reasoning if supports_xhigh(model) else clamp_reasoning(reasoning)
+```
+
+- `supports_xhigh()`（`models.py:83`）：gpt-5.2/5.3/5.4/5.5 返回 True
+- `clamp_reasoning()`（`_shared/simple_options.py:57`）：`"xhigh"` → `"high"`，其他原样
+
+请求体（`_build_request_body`，第 392 行）：
 
 ```json
 {
   "reasoning": {
-    "effort": "<level>",
+    "effort": "<reasoning_effort 值>",
     "summary": "auto"
-  }
+  },
+  "include": ["reasoning.encrypted_content"]
 }
 ```
 
-`reasoning_effort` 接受完整的 level 集合。Codex 返回加密的 reasoning 内容,需要 `include: ["reasoning.encrypted_content"]`。
+| 框架 ThinkingLevel | 支持 xhigh 的模型 | 不支持 xhigh 的模型 |
+|---|---|---|
+| `"minimal"` | `"minimal"` | `"minimal"` |
+| `"low"` | `"low"` | `"low"` |
+| `"medium"` | `"medium"` | `"medium"` |
+| `"high"` | `"high"` | `"high"` |
+| `"xhigh"` | `"xhigh"` | `"high"`（clamp） |
+| `"max"` | `"max"` | `"max"` |
 
-### 6.3 claude-code(直连 api.anthropic.com)
+仅当 `model.reasoning == True` 且 `reasoning_effort` 非空时才加 reasoning 字段（第 394 行判断）。
 
-内部改写为 `anthropic:<model_id>`,走 Anthropic Messages API 的 wire 格式。和 anthropic provider 完全一样,只是认证用 subscription OAuth token。
+### 6.3 OpenAI Completions（`providers/openai_completions/openai_completions.py`）
+
+**Chat Completions API 格式**（用于标准 OpenAI 模型）。
+
+请求体（第 313-315 行）：
+
+```json
+{
+  "reasoning_effort": "<映射后的值>"
+}
+```
+
+映射表（hardcoded，第 314 行）：
+
+| 框架 ThinkingLevel | OpenAI reasoning_effort |
+|---|---|
+| `"minimal"` | `"low"` |
+| `"low"` | `"low"` |
+| `"medium"` | `"medium"` |
+| `"high"` | `"high"` |
+| `"xhigh"` | `"high"` |
+| `"max"` | **未定义**（fallback 到 `"medium"`）⚠️ |
+
+### 6.4 OpenAI Responses（`providers/openai_responses/openai_responses.py`）
+
+**和 Codex 基本相同**，但走标准 OpenAI Responses 端点。
+
+预处理（第 126-127 行）：
+
+```python
+reasoning_effort = supports_xhigh(model) and reasoning or clamp_reasoning(reasoning)
+```
+
+请求体（第 220-228 行）：和 Codex 相同的 `reasoning.effort` + `reasoning.summary` 格式。
+
+### 6.5 Google Gemini（`providers/google/google.py`）
+
+**Gemini API 用 `thinking_budget` 数字**，不是字符串。
+
+请求体（第 143-147 行）：
+
+```python
+gtypes.ThinkingConfig(thinking_budget=<数字>)
+```
+
+映射表（hardcoded，第 144 行）：
+
+| 框架 ThinkingLevel | thinking_budget |
+|---|---|
+| `"minimal"` | 512 |
+| `"low"` | 2048 |
+| `"medium"` | 8192 |
+| `"high"` | 24576 |
+| `"xhigh"` | 32768 |
+| `"max"` | **未定义**（fallback 到 8192）⚠️ |
+
+不传 reasoning 时设 `thinking_budget=0`（显式关闭）。
+
+Gemini 还有一个框架里独有的 `"auto"` 级别（`THINKING_CONFIGS` 里定义，`_thinking.py:86`），让模型自行决定。但 `"auto"` 不在 `ThinkingLevel` 类型里，仅 Gemini picker 显示。
+
+### 6.6 Amazon Bedrock（`providers/amazon_bedrock/amazon_bedrock.py`）
+
+走 Anthropic Messages API 的 Bedrock 变体。分两条路径，逻辑和 6.1 类似。
+
+预处理（第 242-264 行）：
+
+```python
+if _supports_adaptive_thinking(model_id):
+    # 直传 reasoning 字符串
+else:
+    # adjust_max_tokens_for_thinking + budget
+```
+
+Adaptive 路径的 effort 映射（`_map_thinking_level_to_effort`，第 81 行）：
+
+| 框架 ThinkingLevel | Bedrock effort |
+|---|---|
+| `"minimal"` / `"low"` | `"low"` |
+| `"medium"` | `"medium"` |
+| `"high"` | `"high"` |
+| `"xhigh"` | `"max"` |
+| `"max"` | **未定义**（fallback 到 `"high"`）⚠️ |
+
+Budget 路径用 `adjust_max_tokens_for_thinking()`（`_shared/simple_options.py`），budget 表和 6.1 的 `_THINKING_BUDGETS` 一致。
+
+### 6.7 claude-code（`providers/anthropic/_claude_code_direct_runtime.py`）
+
+**不是独立的 wire 格式**。claude-code Runtime 在构造时把 model 改写为 `anthropic:<model_id>`（第 158 行），之后走标准 Anthropic provider（6.1）。认证用 subscription OAuth token，所以一定走 adaptive 路径。映射表同 6.1。
+
+### 6.8 Azure OpenAI Responses
+
+走 OpenAI Responses API 格式（同 6.4），但端点是 Azure 的。映射逻辑完全复用 6.4。
+
+---
+
+## 6.9 映射缺口汇总
+
+以下是 `"max"` 级别在各 provider 的映射缺口（新增 `"max"` 后尚未全部补到位）：
+
+| Provider | `"max"` 的映射 | 状态 |
+|---|---|---|
+| Anthropic adaptive | fallback 到 `"high"` | ⚠️ 应映射到 `"max"` |
+| Anthropic budget | fallback 到 8192 | ⚠️ 应有独立 budget |
+| OpenAI Completions | fallback 到 `"medium"` | ⚠️ 应映射到 `"high"` 或直传 |
+| Gemini | fallback 到 8192 | ⚠️ 应有独立 budget（如 65536） |
+| Bedrock | fallback 到 `"high"` | ⚠️ 应映射到 `"max"` |
+| OpenAI Codex/Responses | 直传 `"max"` | ✅ |
+| claude-code | 走 Anthropic，同上 | ⚠️ 同 Anthropic |
 
 ## 7. Session 持久化
 
