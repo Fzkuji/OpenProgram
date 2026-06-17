@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 
-VALID_THINKING = {"off", "minimal", "low", "medium", "high", "xhigh"}
+VALID_THINKING = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 VALID_PERMISSION = {"ask", "auto", "bypass"}
 
 
@@ -147,8 +147,6 @@ def _normalize_thinking(value: Any) -> Optional[str]:
     effort = str(value).strip().lower()
     if effort == "none":
         effort = "off"
-    if effort == "max":
-        effort = "xhigh"
     return effort if effort in VALID_THINKING else None
 
 

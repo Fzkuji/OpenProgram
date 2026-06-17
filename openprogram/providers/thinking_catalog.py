@@ -66,9 +66,9 @@ def derive_thinking_fields(
     if levels is None and reasoning:
         minimal = ["minimal"] if supports_minimal_effort(model_id) else []
         if supports_xhigh:
-            levels = minimal + ["low", "medium", "high", "xhigh"]
+            levels = minimal + ["low", "medium", "high", "xhigh", "max"]
         else:
-            levels = minimal + ["low", "medium", "high"]
+            levels = minimal + ["low", "medium", "high", "max"]
     if levels is None:
         levels = []
     if default is None and levels:

@@ -49,7 +49,7 @@ KnownProvider = Literal[
 ]
 Provider = str  # KnownProvider or arbitrary string
 
-ThinkingLevel = Literal["minimal", "low", "medium", "high", "xhigh"]
+ThinkingLevel = Literal["minimal", "low", "medium", "high", "xhigh", "max"]
 CacheRetention = Literal["none", "short", "long"]
 Transport = Literal["sse", "websocket", "auto"]
 StopReason = Literal["stop", "length", "toolUse", "error", "aborted"]
