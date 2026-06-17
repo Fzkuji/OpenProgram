@@ -53,11 +53,10 @@
 .chartWrap {
   position: relative;
   width: 100%;
-  height: 160px;
+  height: 168px;
   border: 1px solid var(--border);
   border-radius: var(--ui-list-radius, 8px);
   background: var(--bg-primary);
-  overflow: hidden;
 }
 
 .chartWrap svg {
@@ -72,6 +71,28 @@
   justify-content: center;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.chartTip {
+  position: absolute;
+  top: 6px;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-tertiary, #2a2a2a);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 2;
+}
+
+.chartTip strong {
+  color: var(--text-bright);
+  font-weight: 600;
+  margin-right: 2px;
 }
 
 /* ── bar chart (by_kind) ─────────────────────────────────────────────────── */
@@ -128,6 +149,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: fixed; /* even, predictable column widths */
 }
 
 .table th {
@@ -143,21 +165,38 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table tr:hover td {
   background: var(--bg-hover);
 }
 
+/* fixed layout: model/provider take the slack, numeric cols are uniform */
+.table th:nth-child(1),
+.table td:nth-child(1) {
+  width: 26%;
+}
+.table th:nth-child(2),
+.table td:nth-child(2) {
+  width: 18%;
+}
+.table th:nth-child(n + 3),
+.table td:nth-child(n + 3) {
+  width: 11.2%;
+}
+
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .modelCell {
   font-family: var(--font-mono, monospace);
   color: var(--text-bright);
-  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -86,33 +86,64 @@ def test_summary_by_kind(client):
 
 # ── trend ──
 
-def test_trend_day_buckets(client):
-    d = client.get("/api/usage/trend?bucket=day").json()
+def test_trend_day_buckets_contiguous_with_zero_fill(client):
+    """The seed spans 3 days; querying an explicit window aligned to day
+    boundaries returns those 3 contiguous buckets with the right totals."""
+    base = client._seed_base  # type: ignore[attr-defined]
+    day0 = (int(base) // DAY) * DAY  # align since to the seed's first day boundary
+    d = client.get(
+        f"/api/usage/trend?bucket=day&since={day0}&until={day0 + 3 * DAY}"
+    ).json()
     assert d["bucket"] == "day"
     trend = d["trend"]
-    assert len(trend) == 3  # 3 distinct days
-    # ascending by ts
+    assert len(trend) == 3  # contiguous window
     assert trend[0]["ts"] < trend[1]["ts"] < trend[2]["ts"]
-    # day 0: chat(120) + exec(490) = 610
-    assert trend[0]["total_tokens"] == 610
-    # day 1: chat(250) + tool(100) = 350
-    assert trend[1]["total_tokens"] == 350
-    # day 2: chat(118)
-    assert trend[2]["total_tokens"] == 118
+    assert trend[0]["total_tokens"] == 610   # day 0: chat(120)+exec(490)
+    assert trend[1]["total_tokens"] == 350   # day 1: chat(250)+tool(100)
+    assert trend[2]["total_tokens"] == 118   # day 2: chat(118)
+
+
+def test_trend_zero_fills_gap_days(client):
+    """A window WIDER than the data must fill empty days with zeros — this is
+    the calendar behaviour: days with no usage are 0, never skipped."""
+    base = client._seed_base  # type: ignore[attr-defined]
+    day0 = (int(base) // DAY) * DAY
+    # 5-day window: 2 leading empty days, then the 3 data days
+    d = client.get(
+        f"/api/usage/trend?bucket=day&since={day0 - 2 * DAY}&until={day0 + 3 * DAY}"
+    ).json()
+    trend = d["trend"]
+    assert len(trend) == 5
+    assert [p["total_tokens"] for p in trend] == [0, 0, 610, 350, 118]
+
+
+def test_trend_default_window_is_30_days(client):
+    """No since/until → contiguous last-30-days window ending today. The 1970
+    seed data falls outside it, so all 30 buckets are zero — but there are
+    still exactly 30 of them (not collapsed to 'days with data')."""
+    d = client.get("/api/usage/trend?bucket=day&days=30").json()
+    assert d["days"] == 30
+    assert len(d["trend"]) == 30
+    assert all(p["total_tokens"] == 0 for p in d["trend"])  # seed is in 1970
 
 
 def test_trend_bucket_falls_back_to_day(client):
-    # unknown bucket value -> day
     d = client.get("/api/usage/trend?bucket=bogus").json()
     assert d["bucket"] == "day"
 
 
 def test_trend_hour_bucket(client):
-    d = client.get("/api/usage/trend?bucket=hour").json()
+    base = client._seed_base  # type: ignore[attr-defined]
+    HOUR = 3600
+    h0 = (int(base) // HOUR) * HOUR  # align to hour boundary
+    # 3-day span = 72 contiguous hourly slots (mostly zero, 3 non-zero).
+    d = client.get(
+        f"/api/usage/trend?bucket=hour&since={h0}&until={h0 + 3 * DAY}"
+    ).json()
     assert d["bucket"] == "hour"
-    # events on 3 different days = 3 different hour buckets too (>=3 here since
-    # all share the same intra-day offset, the day spacing makes 3 buckets)
-    assert len(d["trend"]) == 3
+    assert len(d["trend"]) == 72
+    nonzero = [p for p in d["trend"] if p["total_tokens"] > 0]
+    assert len(nonzero) == 3
 
 
 # ── time filtering ──

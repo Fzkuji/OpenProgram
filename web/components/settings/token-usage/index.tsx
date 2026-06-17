@@ -78,16 +78,17 @@ function fmtDate(ts: number): string {
   });
 }
 
-// ── TrendChart: area chart drawn in real pixels (no viewBox stretch) ─────────
+// ── TrendChart: calendar-style daily bar chart ──────────────────────────────
 //
-// We measure the container width with a ResizeObserver and draw the SVG in
-// 1:1 pixel coordinates. Stretching a fixed viewBox with
-// preserveAspectRatio="none" would warp the stroke, the dots and the axis
-// text horizontally; pixel-space drawing keeps everything crisp at any width.
+// The backend returns a CONTIGUOUS window (last N days, zeros filled), so the
+// chart always shows a full date axis — days with no usage are just empty
+// slots, never collapsed away. Drawn in real pixels (ResizeObserver width) so
+// nothing warps. Hovering a bar shows its date + total.
 
 function TrendChart({ trend }: { trend: TrendPoint[] }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [w, setW] = useState(0);
+  const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -100,37 +101,35 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
     return () => ro.disconnect();
   }, []);
 
-  const H = 160;
-  const PAD = { t: 14, r: 14, b: 26, l: 14 };
+  const H = 168;
+  const PAD = { t: 14, r: 12, b: 26, l: 12 };
 
-  const { area, line, dots, ticks } = useMemo(() => {
-    if (trend.length === 0 || w === 0)
-      return { area: "", line: "", dots: [], ticks: [] };
-    const max = Math.max(...trend.map((p) => p.total_tokens), 1);
+  const { bars, ticks } = useMemo(() => {
+    if (trend.length === 0 || w === 0) return { bars: [], ticks: [] };
+    const mx = Math.max(...trend.map((p) => p.total_tokens), 1);
     const innerW = Math.max(w - PAD.l - PAD.r, 1);
     const innerH = H - PAD.t - PAD.b;
-    const xy = trend.map((p, i) => {
-      const x = PAD.l + (i / Math.max(trend.length - 1, 1)) * innerW;
-      const y = PAD.t + (1 - p.total_tokens / max) * innerH;
-      return [x, y] as const;
+    const n = trend.length;
+    const slot = innerW / n;
+    const gap = Math.min(slot * 0.25, 4);
+    const barW = Math.max(slot - gap, 1);
+    const barList = trend.map((p, i) => {
+      const h = (p.total_tokens / mx) * innerH;
+      return {
+        x: PAD.l + i * slot + gap / 2,
+        y: PAD.t + (innerH - h),
+        w: barW,
+        h: Math.max(h, p.total_tokens > 0 ? 2 : 0), // min 2px so non-zero days show
+        point: p,
+      };
     });
-    const lineD = `M${xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" L")}`;
-    const areaD =
-      xy.length > 1
-        ? `${lineD} L${xy[xy.length - 1][0].toFixed(1)},${H - PAD.b} L${xy[0][0].toFixed(1)},${H - PAD.b} Z`
-        : "";
-    // at most 5 evenly-spaced x-axis labels
-    const tickCount = Math.min(trend.length, 5);
+    // up to 6 evenly-spaced date labels along the axis
+    const tickCount = Math.min(n, 6);
     const tickList = Array.from({ length: tickCount }, (_, i) => {
-      const idx = Math.round((i / Math.max(tickCount - 1, 1)) * (trend.length - 1));
-      return { x: xy[idx][0], label: fmtDate(trend[idx].ts) };
+      const idx = Math.round((i / Math.max(tickCount - 1, 1)) * (n - 1));
+      return { x: PAD.l + idx * slot + slot / 2, label: fmtDate(trend[idx].ts) };
     });
-    return {
-      area: areaD,
-      line: xy.length > 1 ? lineD : "",
-      dots: xy,
-      ticks: tickList,
-    };
+    return { bars: barList, ticks: tickList };
   }, [trend, w]);
 
   if (trend.length === 0) {
@@ -142,21 +141,26 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
   }
 
   return (
-    <div className={local.chartWrap} ref={wrapRef}>
+    <div className={local.chartWrap} ref={wrapRef} style={{ height: H }}>
       {w > 0 && (
         <svg width={w} height={H}>
-          <defs>
-            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent-blue, #b8651f)" stopOpacity="0.30" />
-              <stop offset="100%" stopColor="var(--accent-blue, #b8651f)" stopOpacity="0.04" />
-            </linearGradient>
-          </defs>
-          {area && <path d={area} fill="url(#areaGrad)" />}
-          {line && (
-            <path d={line} fill="none" stroke="var(--accent-blue, #b8651f)" strokeWidth="2" />
-          )}
-          {dots.map(([x, y], i) => (
-            <circle key={i} cx={x} cy={y} r="3" fill="var(--accent-blue, #b8651f)" />
+          {bars.map((b, i) => (
+            <rect
+              key={i}
+              x={b.x}
+              y={b.h > 0 ? b.y : H - PAD.b - 1}
+              width={b.w}
+              height={b.h > 0 ? b.h : 1}
+              rx={Math.min(b.w / 2, 2)}
+              fill={
+                b.h > 0
+                  ? "var(--accent-blue, #b8651f)"
+                  : "var(--border, #e5e0d8)"
+              }
+              opacity={hover === null || hover === i ? 1 : 0.5}
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+            />
           ))}
           {ticks.map((t, i) => (
             <text
@@ -171,6 +175,17 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
             </text>
           ))}
         </svg>
+      )}
+      {hover !== null && bars[hover] && (
+        <div
+          className={local.chartTip}
+          style={{
+            left: Math.min(Math.max(bars[hover].x + bars[hover].w / 2, 60), w - 60),
+          }}
+        >
+          <strong>{fmtDate(bars[hover].point.ts)}</strong>{" "}
+          {fmtNum(bars[hover].point.total_tokens)} tok · {fmtCost(bars[hover].point.cost)}
+        </div>
       )}
     </div>
   );
@@ -213,7 +228,7 @@ export function TokenUsageSection() {
       try {
         const [s, tr] = await Promise.all([
           cachedFetch<Summary>("/api/usage/summary"),
-          cachedFetch<TrendResp>("/api/usage/trend?bucket=day"),
+          cachedFetch<TrendResp>("/api/usage/trend?bucket=day&days=30"),
         ]);
         if (!alive) return;
         setSummary(s);
