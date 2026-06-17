@@ -37,7 +37,7 @@ import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
 import { IconPicker, normalizeIcon } from "./icon-picker";
 import { FunctionCard, ToolCard, cardGridClass, cardListClass } from "./function-card";
-import { useProfileMeta } from "./use-folder-meta";
+import { useProfileMeta } from "./use-profile-meta";
 import type { FunctionInfo, FunctionsMeta } from "./types";
 
 export function FunctionsPage() {
@@ -268,7 +268,7 @@ export function FunctionsPage() {
     router.push(chatTarget());
   }
 
-  // Folder + favorites + icons mutations live in ./use-folder-meta.
+  // Profile + favorites + icons mutations live in ./use-profile-meta.
   // The hook needs the live meta + saveMeta and the current ``folder``
   // selection (so delete/create/rename can move the user off a folder
   // they just removed or renamed).
@@ -366,7 +366,7 @@ export function FunctionsPage() {
   }
 
   function sidebarCtx(e: React.MouseEvent) {
-    if ((e.target as HTMLElement).closest(`.${styles.folderItem}`)) return;
+    if ((e.target as HTMLElement).closest(`.${styles.profileItem}`)) return;
     e.preventDefault();
     setCtx({
       x: e.clientX,
@@ -477,7 +477,7 @@ export function FunctionsPage() {
 
         <div className={styles.body}>
           <div
-            className={styles.foldersNav}
+            className={styles.profilesNav}
             onContextMenu={sidebarCtx}
           >
             {builtinFolders.map((f) => (
@@ -494,18 +494,18 @@ export function FunctionsPage() {
                 onDrop={(e) => onFolderDrop(e, f.id)}
               />
             ))}
-            <div className={styles.folderSep} />
+            <div className={styles.profileSep} />
             {userProfiles.map((name) => {
               if (renamingProfile === name) {
                 return (
                   <div
                     key={name}
                     className={cls(
-                      styles.folderItem,
+                      styles.profileItem,
                       profile === name && styles.active,
                     )}
                   >
-                    <span className={styles.folderIcon}><FoldersIcon size={16} /></span>
+                    <span className={styles.profileIcon}><FoldersIcon size={16} /></span>
                     <RenameInput
                       initial={name}
                       onCommit={(n) => {
@@ -535,8 +535,8 @@ export function FunctionsPage() {
               );
             })}
             {creatingProfile && (
-              <div className={cls(styles.folderItem, styles.active)}>
-                <span className={styles.folderIcon}><FoldersIcon size={16} /></span>
+              <div className={cls(styles.profileItem, styles.active)}>
+                <span className={styles.profileIcon}><FoldersIcon size={16} /></span>
                 <RenameInput
                   initial=""
                   placeholder={text("New Profile", "新建配置")}
@@ -554,11 +554,11 @@ export function FunctionsPage() {
               </div>
             )}
             <div
-              className={cls(styles.folderItem, styles.folderNew)}
+              className={cls(styles.profileItem, styles.profileNew)}
               onClick={() => setCreatingFolder(true)}
               title={text("Create a new profile", "新建配置")}
             >
-              <span className={styles.folderIcon}><FolderPlusIcon size={16} /></span>
+              <span className={styles.profileIcon}><FolderPlusIcon size={16} /></span>
               <span className={styles.profileName}>{text("New Profile", "新建配置")}</span>
             </div>
           </div>

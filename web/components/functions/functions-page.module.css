@@ -34,7 +34,7 @@
   /* sidebar inner content = 288 − 1px border = 287; match here. */
   grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
   /* No padding — nav and content extend the full body height.
-     Inner breathing room is owned by .content / .foldersNav themselves. */
+     Inner breathing room is owned by .content / .profilesNav themselves. */
   padding: 0;
   min-height: 0;
   overflow: hidden;
@@ -80,12 +80,12 @@
 
 /* `.toolbarBtn` — the grid/list toggle is the shadcn <Button> now. */
 
-/* Folders nav. The folder rows match the left sidebar's nav rows
+/* Profiles nav. The profile rows match the left sidebar's nav rows
    (`components/sidebar/nav-classes.ts::sidebarNavItemClass`) — same
    32px height, 6px corner, `--nav-color` text + `--nav-color-hover`
    on hover/active, 150ms transition. `gap: 1px` between rows so
    they read as a stacked group with subtle separation. */
-.foldersNav {
+.profilesNav {
   width: 100%;
   flex-shrink: 0;
   display: flex;
@@ -99,12 +99,12 @@
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
 }
-.folderSep {
+.profileSep {
   height: 1px;
   background: var(--border);
   margin: 6px 0;
 }
-.folderItem {
+.profileItem {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -119,33 +119,33 @@
   transition: background 150ms ease-out, color 150ms ease-out;
   white-space: nowrap;
 }
-.folderItem:hover {
+.profileItem:hover {
   background: var(--bg-hover);
   color: var(--nav-color-hover);
 }
-.folderItem.active {
+.profileItem.active {
   background: var(--bg-hover);
   color: var(--nav-color-hover);
 }
-.folderItem.dragOver {
+.profileItem.dragOver {
   background: rgba(24, 169, 107, 0.08);
   color: var(--accent-green);
 }
-.folderNew {
+.profileNew {
   color: var(--text-muted);
   font-style: italic;
   margin-top: 4px;
 }
-.folderNew:hover {
+.profileNew:hover {
   color: var(--text-primary);
   font-style: normal;
 }
-.folderNew .folderIcon {
+.profileNew .profileIcon {
   font-weight: 600;
   font-size: 16px;
   line-height: 1;
 }
-.folderIcon {
+.profileIcon {
   font-size: 14px;
   line-height: 1;
   width: 18px;
@@ -155,13 +155,13 @@
   justify-content: center;
   flex-shrink: 0;
 }
-.folderName {
+.profileName {
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.folderCount {
+.profileCount {
   font-size: 12px;
   color: var(--text-muted);
   background: var(--bg-tertiary);

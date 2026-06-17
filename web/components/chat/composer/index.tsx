@@ -409,13 +409,13 @@ export function Composer() {
   // a profile picker. The active profile determines which tools the
   // model gets for this conversation.
   const [toolProfiles, setToolProfiles] = useState<Record<string, string[]>>({});
-  const [activeProfile, setActiveProfile] = useState("default");
+  const [activeProfile, setActiveProfile] = useState("full");
   useEffect(() => {
     fetch("/api/tool-profiles")
       .then((r) => r.json())
       .then((d) => {
         setToolProfiles(d.profiles ?? {});
-        setActiveProfile(d.active ?? "default");
+        setActiveProfile(d.active ?? "full");
       })
       .catch(() => {});
   }, []);
@@ -1363,7 +1363,7 @@ export function Composer() {
                               active={activeProfile === pName}
                               onClick={() => switchProfile(pName)}
                               icon={<ToolsIcon />}
-                              label={pName === "default"
+                              label={pName === "full"
                                 ? text("All Tools", "全部工具")
                                 : pName}
                             />

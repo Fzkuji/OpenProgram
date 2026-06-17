@@ -55,7 +55,7 @@ export function cls(...parts: Array<string | false | null | undefined>): string 
   return parts.filter(Boolean).join(" ");
 }
 
-/** One folder-nav row. The animated icon is driven from the whole row's
+/** One profile-nav row. The animated icon is driven from the whole row's
  *  hover (controlled mode) via a cloned ref, like the sidebar / chats nav. */
 export function ProfileNavRow({
   icon,
@@ -84,7 +84,7 @@ export function ProfileNavRow({
   return (
     <div
       className={cls(
-        styles.folderItem,
+        styles.profileItem,
         active && styles.active,
         dragOver && styles.dragOver,
       )}
@@ -96,13 +96,13 @@ export function ProfileNavRow({
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
-      <span className={styles.folderIcon}>
+      <span className={styles.profileIcon}>
         {isValidElement(icon)
           ? cloneElement(icon as ReactElement, { ref: iconRef } as Record<string, unknown>)
           : icon}
       </span>
       <span className={styles.profileName}>{name}</span>
-      <span className={styles.folderCount}>{count}</span>
+      <span className={styles.profileCount}>{count}</span>
     </div>
   );
 }

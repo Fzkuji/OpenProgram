@@ -980,29 +980,6 @@ class Runtime:
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
         _deadline_token = _dl.set_deadline(_deadline)
-        # Usage attribution fallback: tag this exec as an "exec" call so the
-        # recorded UsageEvent isn't "unknown". Only fills call_kind when
-        # nothing upstream set one (process_runner's child entry already
-        # stamps exec + call_label=<harness>; don't clobber that). Covers the
-        # in-process path — a harness run directly, not via the subprocess.
-        _usage_token = None
-        try:
-            from openprogram.metering.context import (
-                _current as _usage_cur,
-                current_usage_context as _cur_uctx,
-                UsageContext as _UsageCtx,
-            )
-            _uc = _cur_uctx()
-            if _uc.call_kind == "unknown":
-                _usage_token = _usage_cur.set(
-                    _UsageCtx(call_kind="exec",
-                              call_label=_uc.call_label,
-                              session_id=_uc.session_id or self.session_id,
-                              parent_session_id=_uc.parent_session_id,
-                              agent_id=_uc.agent_id)
-                )
-        except Exception:
-            _usage_token = None
         try:
             errors: list[str] = []
             for attempt in range(self.max_retries):

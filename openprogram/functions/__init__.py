@@ -300,7 +300,7 @@ def _resolve_folder_toolset(folder_name: str) -> list[str] | None:
         import json as _json
         with open(meta_path, encoding="utf-8") as f:
             meta = _json.load(f)
-        tools = meta.get("folders", {}).get(folder_name)
+        tools = meta.get("profiles", meta.get("folders", {})).get(folder_name)
         return list(tools) if isinstance(tools, list) else None
     except Exception:
         return None

@@ -46,7 +46,7 @@ def register(app):
 
     # ── Tool profiles ──────────────────────────────────────────────────
     # A profile = a named tool set the user configures on the Functions
-    # page and selects in the chat composer. "default" = all exposed
+    # page and selects in the chat composer. "full" = all exposed
     # tools (immutable). New profile = copy of default; user removes
     # tools they don't need for that scenario.
 
@@ -69,12 +69,12 @@ def register(app):
             if "folders" in data and "profiles" not in data:
                 data["profiles"] = data.pop("folders")
             return data
-        return {"profiles": {"default": _all_tool_names()}, "active": "default"}
+        return {"profiles": {"full": _all_tool_names()}, "active": "full"}
 
     def _save_profiles(data: dict):
-        # ensure "default" always exists with all tools
-        data.setdefault("profiles", {})["default"] = _all_tool_names()
-        data.setdefault("active", "default")
+        # ensure "full" always exists with all tools
+        data.setdefault("profiles", {})["full"] = _all_tool_names()
+        data.setdefault("active", "full")
         p = _functions_meta_path()
         with open(p, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
@@ -84,7 +84,7 @@ def register(app):
         """All profiles + which is active. default profile is always
         regenerated from the live registry so new tools appear."""
         data = _load_profiles()
-        data["profiles"]["default"] = _all_tool_names()
+        data["profiles"]["full"] = _all_tool_names()
         return JSONResponse(content=data)
 
     @app.post("/api/tool-profiles")
@@ -98,7 +98,7 @@ def register(app):
         body: {"name": "profile name"}"""
         name = (body or {}).get("name", "new")
         data = _load_profiles()
-        if name == "default":
+        if name == "full":
             return JSONResponse(content={"ok": False, "error": "cannot overwrite default"}, status_code=400)
         data["profiles"][name] = list(_all_tool_names())
         _save_profiles(data)
@@ -108,12 +108,12 @@ def register(app):
     @app.post("/api/tool-profiles/delete")
     async def delete_tool_profile(body: dict = None):
         name = (body or {}).get("name", "")
-        if name == "default":
+        if name == "full":
             return JSONResponse(content={"ok": False, "error": "cannot delete default"}, status_code=400)
         data = _load_profiles()
         data["profiles"].pop(name, None)
         if data.get("active") == name:
-            data["active"] = "default"
+            data["active"] = "full"
         _save_profiles(data)
         return JSONResponse(content={"ok": True})
 
@@ -137,7 +137,7 @@ def register(app):
         """Remove a tool from a profile. body: {"profile":"X","tool":"bash"}"""
         b = body or {}
         name, tool = b.get("profile", ""), b.get("tool", "")
-        if name == "default":
+        if name == "full":
             return JSONResponse(content={"ok": False, "error": "cannot modify default"}, status_code=400)
         data = _load_profiles()
         tools = data["profiles"].get(name)
@@ -151,7 +151,7 @@ def register(app):
     @app.post("/api/tool-profiles/activate")
     async def activate_tool_profile(body: dict = None):
         """Set the active profile. body: {"name":"research"}"""
-        name = (body or {}).get("name", "default")
+        name = (body or {}).get("name", "full")
         data = _load_profiles()
         if name not in data["profiles"]:
             return JSONResponse(content={"ok": False, "error": "profile not found"}, status_code=404)
@@ -159,17 +159,13 @@ def register(app):
         _save_profiles(data)
         return JSONResponse(content={"ok": True, "active": name})
 
-    # Keep the old /api/functions/meta endpoints for compatibility
-    # (the folder-as-toolset resolver in __init__.py reads "folders").
+    # Keep the old /api/functions/meta endpoints for compatibility.
     @app.get("/api/functions/meta")
     async def get_functions_meta():
         data = _load_profiles()
-        # Backward compat: expose profiles as "folders" too so the
-        # _resolve_folder_toolset helper (agent_tools) finds them.
         return JSONResponse(content={
             "profiles": data.get("profiles", {}),
-            "active": data.get("active", "default"),
-            "folders": data.get("profiles", {}),  # compat
+            "active": data.get("active", "full"),
         })
 
     @app.post("/api/functions/meta")
