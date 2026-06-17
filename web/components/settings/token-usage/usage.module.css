@@ -105,18 +105,19 @@
 
 .barRow {
   display: grid;
-  grid-template-columns: 90px 1fr 70px;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 13px;
 }
 
 .barLabel {
   color: var(--text-secondary);
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 50px;
 }
 
 .barTrack {
@@ -188,7 +189,9 @@
   width: 11.2%;
 }
 
-.num {
+.num,
+.table th.num,
+.table td.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
