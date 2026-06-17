@@ -155,23 +155,6 @@ def _sanitize_surrogates(text: str) -> str:
     return re.sub(r"[\ud800-\udfff]", "\ufffd", text)
 
 
-# Thinking token budgets per level (budget-based models)
-_THINKING_BUDGETS = {
-    "minimal": 1024,
-    "low": 4096,
-    "medium": 8192,
-    "high": 16000,
-    "xhigh": 32000,
-}
-
-# Effort levels for adaptive thinking (Opus 4.6+)
-_EFFORT_MAP = {
-    "minimal": "low",
-    "low": "low",
-    "medium": "medium",
-    "high": "high",
-    "xhigh": "max",
-}
 
 # Stop reason mapping from Anthropic to pi_ai (matches TS exactly)
 _STOP_REASON_MAP = {
@@ -201,13 +184,6 @@ def _supports_adaptive_thinking(model_id: str) -> bool:
         or "sonnet-4-6" in model_id or "sonnet-4.6" in model_id
     )
 
-
-def _map_thinking_level_to_effort(level: str, model_id: str) -> str:
-    """Map thinking level to Anthropic effort string, model-aware."""
-    if level == "xhigh":
-        # Only Opus 4.6 supports "max"; Sonnet 4.6 tops out at "high"
-        return "max" if ("opus-4-6" in model_id or "opus-4.6" in model_id) else "high"
-    return {"minimal": "low", "low": "low", "medium": "medium", "high": "high"}.get(level, "high")
 
 
 def _get_cache_control(base_url: str | None, cache_retention: str | None = None) -> dict | None:

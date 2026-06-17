@@ -1,47 +1,21 @@
-"""
-Thinking-capability overrides.
+"""Thinking-capability derivation for Model objects.
 
-`models_generated.py` is a mirror of pi-ai's catalog and stays verbatim. The
-overrides here layer our own thinking UX metadata on top:
+Reads thinking.json via ``thinking_spec`` to determine each model's
+thinking_levels / default_thinking_level / thinking_variant. Called at
+module load by ``models.py`` and by dynamic fetchers.
 
-  - thinking_levels        — which levels this model's picker should show
-  - default_thinking_level — what "/think" resets to on model switch
-  - thinking_variant       — LobeChat-style tag for models whose UX or
-                             request body diverges from the default path
-
-Only list models whose capability deviates from the defaults applied by
-`apply_thinking_catalog()`:
-
-  * reasoning=False         → no thinking menu
-  * reasoning=True, xhigh   → ["minimal","low","medium","high","xhigh"], default "xhigh"
-  * reasoning=True, other   → ["minimal","low","medium","high"], default "medium"
-
-Key format matches `MODELS` keys: "{provider}/{model_id}".
+Legacy: ``THINKING_OVERRIDES`` is kept empty for backward compatibility
+with callers that import it. All override data now lives in each
+provider's ``thinking.json`` under ``model_overrides``.
 """
 from __future__ import annotations
 
-THINKING_OVERRIDES: dict[str, dict] = {
-    # Anthropic Opus 4.7 — uses output_config.effort on the wire instead of
-    # the usual thinking.budget_tokens path (Claude 4.6 guidance).
-    "anthropic/claude-opus-4-7": {
-        "thinking_levels": ["low", "medium", "high"],
-        "default_thinking_level": "medium",
-        "thinking_variant": "opus47",
-    },
-}
+# Empty — all data now in providers/<name>/thinking.json
+THINKING_OVERRIDES: dict[str, dict] = {}
 
 
 def supports_minimal_effort(model_id: str) -> bool:
-    """Whether a model accepts the ``minimal`` reasoning-effort level.
-
-    OpenAI's gpt-5 / o-series accept it, but the gpt-5.5 family dropped
-    it — the API 400s ("Supported values: none, low, medium, high,
-    xhigh"). A model-id capability probe, in the same string-match
-    style as ``models.supports_xhigh`` /
-    ``openai_codex.runtime._codex_supports_xhigh``. Single source of
-    truth for the ``minimal`` level so the picker, the catalog, and
-    any per-model derivation all agree.
-    """
+    """Whether a model accepts the ``minimal`` reasoning-effort level."""
     return "gpt-5.5" not in model_id
 
 
@@ -51,37 +25,37 @@ def derive_thinking_fields(
     reasoning: bool,
     supports_xhigh: bool = False,
 ) -> tuple[list[str], str | None, str | None]:
-    """Compute (thinking_levels, default_thinking_level, thinking_variant) for
-    an arbitrary (provider, model_id) pair. Used for dynamically fetched
-    models (/api/providers/<name>/fetch-models) that don't sit in the static
-    `MODELS` registry. Applies the same overrides + defaults as
-    `apply_thinking_catalog`.
-    """
-    key = f"{provider_id}/{model_id}"
-    override = THINKING_OVERRIDES.get(key, {})
-    levels = override.get("thinking_levels")
-    default = override.get("default_thinking_level")
-    variant = override.get("thinking_variant")
+    """Compute (thinking_levels, default_thinking_level, thinking_variant).
 
-    if levels is None and reasoning:
-        minimal = ["minimal"] if supports_minimal_effort(model_id) else []
-        if supports_xhigh:
-            levels = minimal + ["low", "medium", "high", "xhigh", "max"]
-        else:
-            levels = minimal + ["low", "medium", "high", "max"]
-    if levels is None:
-        levels = []
-    if default is None and levels:
-        default = "xhigh" if "xhigh" in levels else (
-            "medium" if "medium" in levels else levels[len(levels) // 2]
-        )
-    return levels, default, variant
+    Primary source: thinking.json via thinking_spec. Falls back to the
+    old hardcoded logic only if thinking.json yields nothing.
+    """
+    from .thinking_spec import derive_thinking_levels, get_default_effort, get_model_variant
+
+    levels = derive_thinking_levels(provider_id, model_id, reasoning)
+    if levels:
+        return levels, get_default_effort(provider_id), get_model_variant(provider_id, model_id)
+
+    # Fallback: old logic for providers without thinking.json
+    if not reasoning:
+        return [], None, None
+
+    minimal = ["minimal"] if supports_minimal_effort(model_id) else []
+    if supports_xhigh:
+        levels = minimal + ["low", "medium", "high", "xhigh", "max"]
+    else:
+        levels = minimal + ["low", "medium", "high", "max"]
+
+    default = "xhigh" if "xhigh" in levels else (
+        "medium" if "medium" in levels else levels[len(levels) // 2]
+    )
+    return levels, default, None
 
 
 def apply_thinking_catalog(models: dict) -> None:
     """Fill thinking_levels / default_thinking_level / thinking_variant on each
     Model in `models`. Called once at module load (see models.py)."""
-    from .models import supports_xhigh  # local import to avoid cycle
+    from .models import supports_xhigh
 
     for key, model in list(models.items()):
         levels, default, variant = derive_thinking_fields(

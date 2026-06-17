@@ -8,5 +8,16 @@
     "xhigh": "xhigh",
     "max": "max"
   },
-  "default_effort": "xhigh"
+  "default_effort": "xhigh",
+  "model_overrides": {
+    "gpt-5.5": {
+      "effort_map": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      }
+    }
+  }
 }

@@ -17,76 +17,18 @@ Codex CLI) or the unified API-level `runtime.thinking_level` knob.
 from __future__ import annotations
 
 
-# Per-user defaults (explicit; do not revert without asking):
-#   - Claude (claude-max, anthropic): auto / max available — adaptive thinking
-#   - GPT (codex, openai): maximum effort — the user wants the strongest setting
+# UI label per provider — what the thinking picker is called in the UI.
+# Everything else (options, default, mapping) comes from thinking.json.
 THINKING_CONFIGS = {
-    # claude-code now goes direct to api.anthropic.com (no Meridian proxy),
-    # so reasoning_effort is honoured. Same levels as the anthropic provider.
-    "claude-code": {
-        "label": "thinking",
-        "options": [
-            {"value": "off", "desc": "No reasoning"},
-            {"value": "minimal", "desc": "Brief reasoning"},
-            {"value": "low", "desc": "Light reasoning"},
-            {"value": "medium", "desc": "Standard reasoning"},
-            {"value": "high", "desc": "Deep reasoning"},
-            {"value": "xhigh", "desc": "Extended effort"},
-            {"value": "max", "desc": "Maximum effort"},
-        ],
-        "default": "high",
-    },
-    "openai-codex": {
-        "label": "reasoning effort",
-        "options": [
-            {"value": "off", "desc": "No reasoning"},
-            {"value": "minimal", "desc": "Minimal reasoning"},
-            {"value": "low", "desc": "Quick reasoning"},
-            {"value": "medium", "desc": "Balanced"},
-            {"value": "high", "desc": "Deep reasoning"},
-            {"value": "xhigh", "desc": "Extended effort"},
-            {"value": "max", "desc": "Maximum effort"},
-        ],
-        "default": "xhigh",
-    },
-    "anthropic": {
-        "label": "thinking",
-        "options": [
-            {"value": "off", "desc": "No extended thinking"},
-            {"value": "minimal", "desc": "Minimal thinking"},
-            {"value": "low", "desc": "Brief thinking"},
-            {"value": "medium", "desc": "Balanced"},
-            {"value": "high", "desc": "Extended thinking"},
-            {"value": "xhigh", "desc": "Extended effort"},
-            {"value": "max", "desc": "Maximum effort"},
-        ],
-        "default": "high",
-    },
-    "openai": {
-        "label": "reasoning effort",
-        "options": [
-            {"value": "off", "desc": "No reasoning"},
-            {"value": "minimal", "desc": "Minimal reasoning"},
-            {"value": "low", "desc": "Quick reasoning"},
-            {"value": "medium", "desc": "Balanced"},
-            {"value": "high", "desc": "Deep reasoning"},
-            {"value": "xhigh", "desc": "Extended effort"},
-            {"value": "max", "desc": "Maximum effort"},
-        ],
-        "default": "xhigh",
-    },
-    "gemini": {
-        "label": "thinking",
-        "options": [
-            {"value": "off", "desc": "No thinking"},
-            {"value": "minimal", "desc": "Minimal thinking"},
-            {"value": "low", "desc": "Brief thinking"},
-            {"value": "medium", "desc": "Balanced"},
-            {"value": "high", "desc": "Extended thinking"},
-            {"value": "auto", "desc": "Dynamic"},
-        ],
-        "default": "auto",
-    },
+    "claude-code": {"label": "thinking"},
+    "openai-codex": {"label": "reasoning effort"},
+    "anthropic": {"label": "thinking"},
+    "openai": {"label": "reasoning effort"},
+    "gemini": {"label": "thinking"},
+    "google": {"label": "thinking"},
+    "amazon-bedrock": {"label": "thinking"},
+    "azure-openai-responses": {"label": "reasoning effort"},
+    "github-copilot": {"label": "thinking"},
 }
 
 
@@ -174,7 +116,17 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
         if model is not None and not reasoning:
             return {"label": label, "options": [], "default": None, "variant": None}
 
-    return get_thinking_config(provider)
+    # No model_id or model not in catalog — build from thinking.json
+    from openprogram.providers.thinking_spec import get_thinking_spec
+    spec = get_thinking_spec(provider)
+    emap = spec.get("effort_map") or spec.get("budget_map")
+    if emap:
+        return _build(
+            list(emap.keys()),
+            get_default_effort(provider),
+            None,
+        )
+    return {"label": label, "options": [], "default": None, "variant": None}
 
 
 def default_effort_for(runtime) -> str:
