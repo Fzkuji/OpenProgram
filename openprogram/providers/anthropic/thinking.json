@@ -19,7 +19,55 @@
   },
   "model_overrides": {
     "claude-opus-4-7": {
-      "variant": "opus47"
+      "effort_map": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      }
+    },
+    "claude-fable-5": {
+      "effort_map": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      }
+    },
+    "claude-opus-4-8": {
+      "effort_map": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      }
+    },
+    "claude-sonnet-4-6": {
+      "effort_map": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      }
+    },
+    "claude-opus-4-6": {
+      "effort_map": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      }
+    },
+    "claude-opus-4-5-20251101": {
+      "effort_map": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "variant": "budget"
     }
   }
 }
