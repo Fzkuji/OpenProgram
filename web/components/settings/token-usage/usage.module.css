@@ -3,9 +3,11 @@
   font-size: 13px;
 }
 
+/* ── stat cards ─────────────────────────────────────────────────────────── */
+
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
 }
 
@@ -31,17 +33,98 @@
   color: var(--text-secondary);
 }
 
-.tableWrap {
+/* ── section wrapper ─────────────────────────────────────────────────────── */
+
+.section {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.tableTitle {
+.sectionTitle {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-bright);
   margin: 0;
+}
+
+/* ── trend chart ─────────────────────────────────────────────────────────── */
+
+.chartWrap {
+  position: relative;
+  width: 100%;
+  height: 160px;
+  border: 1px solid var(--border);
+  border-radius: var(--ui-list-radius, 8px);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.chartWrap svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.chartEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ── bar chart (by_kind) ─────────────────────────────────────────────────── */
+
+.barsWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 90px 1fr 70px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.barLabel {
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.barTrack {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent, #6c8ebf);
+  transition: width 0.3s ease;
+}
+
+.barValue {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+/* ── model table ─────────────────────────────────────────────────────────── */
+
+.tableWrap {
+  overflow-x: auto;
 }
 
 .table {
@@ -77,4 +160,8 @@
 .modelCell {
   font-family: var(--font-mono, monospace);
   color: var(--text-bright);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

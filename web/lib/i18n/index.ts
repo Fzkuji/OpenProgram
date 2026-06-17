@@ -88,8 +88,8 @@ const DICT = {
 
   // Token usage page
   "usage.desc": {
-    en: "Token consumption aggregated across all sessions, from already-recorded provider usage. Cost is estimated from the model catalog's pricing where the model is known.",
-    zh: "汇总所有会话已记录的 Token 用量。成本按模型目录中的定价估算（仅对已知定价的模型）。",
+    en: "Every LLM call's tokens and cost, recorded at the provider chokepoint across chat, exec, tools, memory and compaction. Cost is estimated from the model catalog's pricing where the model is known.",
+    zh: "在 provider 收口处记录的每一次大模型调用的 Token 与成本，覆盖 chat、exec、工具、记忆与压缩。成本按模型目录中的定价估算（仅对已知定价的模型）。",
   },
   "usage.loading": { en: "Loading…", zh: "加载中…" },
   "usage.error": { en: "Failed to load usage data.", zh: "加载用量数据失败。" },
@@ -97,19 +97,21 @@ const DICT = {
     en: "No per-model usage recorded yet. Models that don't report usage (some OpenAI-compatible backends) won't appear here.",
     zh: "暂无按模型记录的用量。不回报 usage 的模型（部分 OpenAI 兼容后端）不会出现在这里。",
   },
+  "usage.trend": { en: "Daily trend", zh: "每日趋势" },
+  "usage.byKind": { en: "By source", zh: "按来源" },
   "usage.byModel": { en: "By model", zh: "按模型" },
   "usage.card.input": { en: "Input tokens", zh: "输入 Token" },
   "usage.card.output": { en: "Output tokens", zh: "输出 Token" },
+  "usage.card.cache": { en: "Cache read", zh: "缓存读取" },
   "usage.card.total": { en: "Total tokens", zh: "总 Token" },
   "usage.card.cost": { en: "Est. cost", zh: "预估成本" },
-  "usage.card.sessions": { en: "Sessions", zh: "会话数" },
-  "usage.card.turns": { en: "Turns", zh: "对话轮数" },
+  "usage.card.calls": { en: "LLM calls", zh: "调用次数" },
   "usage.col.model": { en: "Model", zh: "模型" },
   "usage.col.provider": { en: "Provider", zh: "Provider" },
   "usage.col.input": { en: "Input", zh: "输入" },
   "usage.col.output": { en: "Output", zh: "输出" },
   "usage.col.cacheRead": { en: "Cache read", zh: "缓存读取" },
-  "usage.col.messages": { en: "Messages", zh: "消息数" },
+  "usage.col.calls": { en: "Calls", zh: "调用次数" },
   "usage.col.cost": { en: "Est. cost", zh: "预估成本" },
 
   // Left sidebar nav (AppShell)
