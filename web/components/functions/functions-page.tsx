@@ -21,7 +21,8 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./functions-page.module.css";
-import { cls, RenameInput, FolderNavRow } from "./functions-page-parts";
+import { cls, RenameInput, ProfileNavRow } from "./functions-page-parts";
+import { ConfirmDialog } from "@/components/sidebar/sessions-list/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -36,7 +37,7 @@ import { CustomSelect } from "./custom-select";
 import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
 import { IconPicker, normalizeIcon } from "./icon-picker";
 import { FunctionCard, ToolCard, cardGridClass, cardListClass } from "./function-card";
-import { useFolderMeta } from "./use-folder-meta";
+import { useProfileMeta } from "./use-folder-meta";
 import type { FunctionInfo, FunctionsMeta } from "./types";
 
 export function FunctionsPage() {
@@ -45,17 +46,17 @@ export function FunctionsPage() {
   const [functions, setFunctions] = useState<FunctionInfo[]>([]);
   const [meta, setMeta] = useState<FunctionsMeta>({
     favorites: [],
-    folders: {},
+    profiles: {},
     icons: {},
   });
-  const [folder, setFolder] = useState<string>("__all__");
+  const [profile, setProfile] = useState<string>("__all__");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"name" | "recent">("name");
   const [filter, setFilter] = useState<"all" | "favorites">("all");
   const [ctx, setCtx] = useState<CtxMenuState | null>(null);
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [creatingProfile, setCreatingFolder] = useState(false);
+  const [renamingProfile, setRenamingFolder] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
   const [tools, setTools] = useState<{ name: string; description: string; disabled?: boolean }[]>([]);
@@ -68,24 +69,24 @@ export function FunctionsPage() {
   // destroyed component.
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [a, b, c] = await Promise.all([
+      const [a, progMeta, c, profilesData] = await Promise.all([
         fetch("/api/functions", { signal }).then((r) => r.json()),
         fetch("/api/programs/meta", { signal }).then((r) => r.json()),
         fetch("/api/tools", { signal }).then((r) => r.json()).catch(() => []),
+        fetch("/api/tool-profiles", { signal }).then((r) => r.json()).catch(() => ({})),
       ]);
       if (signal?.aborted) return;
       setFunctions(a as FunctionInfo[]);
       setTools(Array.isArray(c) ? c : []);
-      const m = b as Partial<FunctionsMeta>;
       setMeta({
-        favorites: m.favorites ?? [],
-        folders: m.folders ?? {},
-        icons: m.icons ?? {},
+        favorites: progMeta?.favorites ?? [],
+        profiles: profilesData?.profiles ?? {},
+        icons: progMeta?.icons ?? {},
       });
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
       setFunctions([]);
-      setMeta({ favorites: [], folders: {}, icons: {} });
+      setMeta({ favorites: [], profiles: {}, icons: {} });
     }
   }, []);
 
@@ -114,11 +115,19 @@ export function FunctionsPage() {
   const saveMeta = useCallback(async (next: FunctionsMeta) => {
     setMeta(next);
     try {
-      await fetch("/api/programs/meta", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
-      });
+      // Profiles go to the tool-profiles API; favorites+icons to programs/meta.
+      await Promise.all([
+        fetch("/api/tool-profiles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profiles: next.profiles }),
+        }),
+        fetch("/api/programs/meta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ favorites: next.favorites, icons: next.icons }),
+        }),
+      ]);
     } catch {
       /* ignore */
     }
@@ -129,8 +138,8 @@ export function FunctionsPage() {
     const w = window as unknown as Record<string, unknown>;
     w.programsMeta = {
       favorites: [...next.favorites],
-      folders: Object.fromEntries(
-        Object.entries(next.folders).map(([k, v]) => [k, [...v]]),
+      profiles: Object.fromEntries(
+        Object.entries(next.profiles).map(([k, v]) => [k, [...v]]),
       ),
       icons: { ...next.icons },
     };
@@ -151,26 +160,26 @@ export function FunctionsPage() {
   const isFavorite = (name: string) =>
     (meta.favorites || []).includes(name);
 
-  function getFolderForProgram(name: string): string | null {
-    for (const key of Object.keys(meta.folders)) {
-      if ((meta.folders[key] || []).includes(name)) return key;
+  function getProfileForProgram(name: string): string | null {
+    for (const key of Object.keys(meta.profiles)) {
+      if ((meta.profiles[key] || []).includes(name)) return key;
     }
     return null;
   }
 
-  function getFunctionsInFolder(id: string): FunctionInfo[] {
+  function getFunctionsInProfile(id: string): FunctionInfo[] {
     if (id === "__all__") return functions;
     if (id === "__uncategorized__") {
       const assigned = new Set<string>();
-      for (const k of Object.keys(meta.folders))
-        for (const n of meta.folders[k] || []) assigned.add(n);
+      for (const k of Object.keys(meta.profiles))
+        for (const n of meta.profiles[k] || []) assigned.add(n);
       return functions.filter((p) => !assigned.has(p.name));
     }
     if (id === "__favorites__") {
       const fav = new Set(meta.favorites);
       return functions.filter((p) => fav.has(p.name));
     }
-    const arr = new Set(meta.folders[id] || []);
+    const arr = new Set(meta.profiles[id] || []);
     return functions.filter((p) => arr.has(p.name));
   }
 
@@ -191,7 +200,7 @@ export function FunctionsPage() {
 
   // ---- derived list ---------------------------------------------------
   const visibleFunctions = useMemo(() => {
-    let arr = getFunctionsInFolder(folder);
+    let arr = getFunctionsInProfile(profile);
     const q = search.toLowerCase();
     if (q) {
       arr = arr.filter(
@@ -209,7 +218,7 @@ export function FunctionsPage() {
     else arr = [...arr].sort((a, b) => a.name.localeCompare(b.name));
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [functions, meta, folder, search, filter, sort]);
+  }, [functions, meta, profile, search, filter, sort]);
 
   // ---- actions --------------------------------------------------------
   // Return to the conversation the user came from (not a blank /chat),
@@ -265,12 +274,15 @@ export function FunctionsPage() {
   // they just removed or renamed).
   const {
     toggleFav,
-    moveToFolder,
-    deleteFolder,
-    createFolder,
-    renameFolder,
+    moveToProfile,
+    requestDeleteProfile,
+    confirmDeleteProfile,
+    cancelDeleteProfile,
+    pendingDelete,
+    createProfile,
+    renameProfile,
     applyIcon,
-  } = useFolderMeta(meta, saveMeta, folder, setFolder);
+  } = useProfileMeta(meta, saveMeta, profile, setProfile);
 
   // ---- DnD ------------------------------------------------------------
   function onProgramDragStart(e: React.DragEvent, name: string) {
@@ -297,9 +309,9 @@ export function FunctionsPage() {
       target === "__uncategorized__" ||
       target === "__favorites__"
     ) {
-      moveToFolder(name, null);
+      moveToProfile(name, null);
     } else {
-      moveToFolder(name, target);
+      moveToProfile(name, target);
     }
   }
 
@@ -320,22 +332,22 @@ export function FunctionsPage() {
       { label: `✎ ${text("Edit...", "编辑...")}`, action: () => editProgram(name) },
       { type: "sep" },
     ];
-    for (const f of Object.keys(meta.folders).sort()) {
+    for (const f of Object.keys(meta.profiles).sort()) {
       items.push({
         label: text(`Move to ${f}`, `移动到 ${f}`),
-        action: () => moveToFolder(name, f),
+        action: () => moveToProfile(name, f),
       });
     }
-    if (getFolderForProgram(name)) {
+    if (getProfileForProgram(name)) {
       items.push({
-        label: text("Remove from folder", "从文件夹中移除"),
-        action: () => moveToFolder(name, null),
+        label: text("Remove from profile", "从配置中移除"),
+        action: () => moveToProfile(name, null),
       });
     }
     setCtx({ x: e.clientX, y: e.clientY, items });
   }
 
-  function folderCtx(e: React.MouseEvent, name: string) {
+  function profileCtx(e: React.MouseEvent, name: string) {
     e.preventDefault();
     e.stopPropagation();
     setCtx({
@@ -343,10 +355,10 @@ export function FunctionsPage() {
       y: e.clientY,
       items: [
         { label: text("Rename", "重命名"), action: () => setRenamingFolder(name) },
-        { label: t("sidebar.delete"), action: () => deleteFolder(name) },
+        { label: t("sidebar.delete"), action: () => requestDeleteProfile(name) },
         { type: "sep" },
         {
-          label: text("New folder", "新建文件夹"),
+          label: text("New Profile", "新建配置"),
           action: () => setCreatingFolder(true),
         },
       ],
@@ -361,7 +373,7 @@ export function FunctionsPage() {
       y: e.clientY,
       items: [
         {
-          label: text("New folder", "新建文件夹"),
+          label: text("New Profile", "新建配置"),
           action: () => setCreatingFolder(true),
         },
       ],
@@ -376,7 +388,7 @@ export function FunctionsPage() {
       y: e.clientY,
       items: [
         {
-          label: text("New folder", "新建文件夹"),
+          label: text("New Profile", "新建配置"),
           action: () => setCreatingFolder(true),
         },
       ],
@@ -407,10 +419,10 @@ export function FunctionsPage() {
       id: "__uncategorized__",
       name: text("Uncategorized", "未分类"),
       icon: <FolderOpenIcon size={16} />,
-      count: getFunctionsInFolder("__uncategorized__").length,
+      count: getFunctionsInProfile("__uncategorized__").length,
     },
   ];
-  const userFolders = Object.keys(meta.folders).sort();
+  const userProfiles = Object.keys(meta.profiles).sort();
 
   return (
     <div className="main">
@@ -469,28 +481,28 @@ export function FunctionsPage() {
             onContextMenu={sidebarCtx}
           >
             {builtinFolders.map((f) => (
-              <FolderNavRow
+              <ProfileNavRow
                 key={f.id}
                 icon={f.icon}
                 name={f.name}
                 count={f.count}
-                active={folder === f.id}
+                active={profile === f.id}
                 dragOver={dragOver === f.id}
-                onClick={() => setFolder(f.id)}
+                onClick={() => setProfile(f.id)}
                 onDragOver={(e) => onFolderDragOver(e, f.id)}
                 onDragLeave={onFolderDragLeave}
                 onDrop={(e) => onFolderDrop(e, f.id)}
               />
             ))}
             <div className={styles.folderSep} />
-            {userFolders.map((name) => {
-              if (renamingFolder === name) {
+            {userProfiles.map((name) => {
+              if (renamingProfile === name) {
                 return (
                   <div
                     key={name}
                     className={cls(
                       styles.folderItem,
-                      folder === name && styles.active,
+                      profile === name && styles.active,
                     )}
                   >
                     <span className={styles.folderIcon}><FoldersIcon size={16} /></span>
@@ -498,36 +510,36 @@ export function FunctionsPage() {
                       initial={name}
                       onCommit={(n) => {
                         setRenamingFolder(null);
-                        renameFolder(name, n);
+                        renameProfile(name, n);
                       }}
                       onCancel={() => setRenamingFolder(null)}
                     />
                   </div>
                 );
               }
-              const count = liveCount(meta.folders[name]);
+              const count = liveCount(meta.profiles[name]);
               return (
-                <FolderNavRow
+                <ProfileNavRow
                   key={name}
                   icon={<FoldersIcon size={16} />}
                   name={name}
                   count={count}
-                  active={folder === name}
+                  active={profile === name}
                   dragOver={dragOver === name}
-                  onClick={() => setFolder(name)}
+                  onClick={() => setProfile(name)}
                   onDragOver={(e) => onFolderDragOver(e, name)}
                   onDragLeave={onFolderDragLeave}
                   onDrop={(e) => onFolderDrop(e, name)}
-                  onContextMenu={(e) => folderCtx(e, name)}
+                  onContextMenu={(e) => profileCtx(e, name)}
                 />
               );
             })}
-            {creatingFolder && (
+            {creatingProfile && (
               <div className={cls(styles.folderItem, styles.active)}>
                 <span className={styles.folderIcon}><FoldersIcon size={16} /></span>
                 <RenameInput
                   initial=""
-                  placeholder={text("New folder", "新建文件夹")}
+                  placeholder={text("New Profile", "新建配置")}
                   onCommit={(n) => {
                     setCreatingFolder(false);
                     // Default-on: new folder starts with ALL function + tool names.
@@ -535,7 +547,7 @@ export function FunctionsPage() {
                       ...functions.map((f) => f.name),
                       ...tools.map((t) => t.name),
                     ];
-                    createFolder(n, allNames);
+                    createProfile(n, allNames);
                   }}
                   onCancel={() => setCreatingFolder(false)}
                 />
@@ -544,10 +556,10 @@ export function FunctionsPage() {
             <div
               className={cls(styles.folderItem, styles.folderNew)}
               onClick={() => setCreatingFolder(true)}
-              title={text("Create a new folder", "新建文件夹")}
+              title={text("Create a new profile", "新建配置")}
             >
               <span className={styles.folderIcon}><FolderPlusIcon size={16} /></span>
-              <span className={styles.folderName}>{text("New folder", "新建文件夹")}</span>
+              <span className={styles.profileName}>{text("New Profile", "新建配置")}</span>
             </div>
           </div>
 
@@ -559,7 +571,7 @@ export function FunctionsPage() {
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}><FolderOpenIcon size={40} /></div>
                 <div className={styles.emptyText}>
-                  {search ? text("No matching functions", "没有匹配的函数") : text("This folder is empty", "这个文件夹是空的")}
+                  {search ? text("No matching functions", "没有匹配的函数") : text("This profile is empty", "配置为空")}
                 </div>
                 <div className={styles.emptyHint}>
                   {text("Drag functions here to organize", "拖动函数到这里进行整理")}
@@ -567,7 +579,7 @@ export function FunctionsPage() {
               </div>
             ) : (
               <>
-                {folder === "__all__" && !search && (
+                {profile === "__all__" && !search && (
                   <div className={styles.toolsHeader}>
                     {text("Agentic functions", "Agentic 函数")}
                     <span className={styles.toolsHint}>
@@ -585,7 +597,7 @@ export function FunctionsPage() {
                     p={p}
                     icon={normalizeIcon(meta.icons[p.name])}
                     fav={isFavorite(p.name)}
-                    folderName={getFolderForProgram(p.name)}
+                    profileName={getProfileForProgram(p.name)}
                     formatDate={formatDate}
                     onClick={() => runProgram(p.name, p.category)}
                     onContextMenu={(e) => programCtx(e, p.name)}
@@ -603,11 +615,11 @@ export function FunctionsPage() {
             {tools.length > 0 && !search && (() => {
               // Tools show in "all" (full list) and inside user-folders that
               // include them. When a folder is selected, only its tools render.
-              const folderTools = folder === "__all__"
+              const folderTools = profile === "__all__"
                 ? tools
-                : folder === "__favorites__" || folder === "__uncat__"
+                : profile === "__favorites__" || profile === "__uncat__"
                   ? []  // built-in virtual folders: no tools (tools have their own toggle, not fav/uncat)
-                  : tools.filter((tl) => (meta.folders[folder] || []).includes(tl.name));
+                  : tools.filter((tl) => (meta.profiles[profile] || []).includes(tl.name));
               if (folderTools.length === 0) return null;
               return (
               <div className={styles.toolsSection}>
@@ -644,6 +656,18 @@ export function FunctionsPage() {
           current={normalizeIcon(meta.icons[iconPickerFor])}
           onPick={(icon) => applyIcon(iconPickerFor, icon)}
           onClose={() => setIconPickerFor(null)}
+        />
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          title={text(`Delete profile "${pendingDelete}"?`,
+                       `删除配置"${pendingDelete}"？`)}
+          message={text(
+            "Functions in this profile will not be deleted.",
+            "配置中的工具不会被删除。",
+          )}
+          onConfirm={confirmDeleteProfile}
+          onCancel={cancelDeleteProfile}
         />
       )}
     </div>

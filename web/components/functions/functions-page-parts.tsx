@@ -1,7 +1,7 @@
 "use client";
 
 // Small presentational parts split out of functions-page.tsx (was 700+
-// lines). cls() class joiner, RenameInput inline editor, FolderNavRow.
+// lines). cls() class joiner, RenameInput inline editor, ProfileNavRow.
 
 import { cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
@@ -57,7 +57,7 @@ export function cls(...parts: Array<string | false | null | undefined>): string 
 
 /** One folder-nav row. The animated icon is driven from the whole row's
  *  hover (controlled mode) via a cloned ref, like the sidebar / chats nav. */
-export function FolderNavRow({
+export function ProfileNavRow({
   icon,
   name,
   count,
@@ -101,7 +101,7 @@ export function FolderNavRow({
           ? cloneElement(icon as ReactElement, { ref: iconRef } as Record<string, unknown>)
           : icon}
       </span>
-      <span className={styles.folderName}>{name}</span>
+      <span className={styles.profileName}>{name}</span>
       <span className={styles.folderCount}>{count}</span>
     </div>
   );

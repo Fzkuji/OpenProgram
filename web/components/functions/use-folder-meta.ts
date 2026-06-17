@@ -1,45 +1,41 @@
 "use client";
 
 /**
- * Folder + favorites + icons mutation hook for the /functions page.
+ * Profile + favorites + icons mutation hook for the /functions page.
  *
- * Owns no state itself — wraps the 8 small functions that mutate
- * ``FunctionsMeta`` (favorites array, folders map, icons map) and
- * persist via the caller-supplied ``saveMeta``. Three of them
- * (deleteFolder / createFolder / renameFolder) also need to update
- * the currently-selected folder; that's the only reason the hook
- * takes ``folder`` + ``setFolder`` instead of being a pure helper.
- *
- * Extracted from functions-page.tsx so the main file stays focused on
- * the catalog grid + DnD + context menus.
+ * Owns no state itself — wraps the functions that mutate
+ * ``FunctionsMeta`` (favorites array, profiles map, icons map) and
+ * persist via the caller-supplied ``saveMeta``. Delete/create/rename
+ * need the current profile selection, so the hook takes ``profile``
+ * + ``setProfile``.
  */
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import type { FunctionsMeta } from "./types";
 
-export interface UseFolderMetaResult {
+export interface UseProfileMetaResult {
   cloneMeta: () => FunctionsMeta;
   toggleFav: (name: string, e: React.MouseEvent) => Promise<void>;
-  moveToFolder: (name: string, target: string | null) => Promise<void>;
-  deleteFolder: (name: string) => Promise<void>;
-  createFolder: (name: string, defaultContents?: string[]) => Promise<void>;
-  renameFolder: (oldName: string, newName: string) => Promise<void>;
+  moveToProfile: (name: string, target: string | null) => Promise<void>;
+  requestDeleteProfile: (name: string) => void;
+  confirmDeleteProfile: () => Promise<void>;
+  cancelDeleteProfile: () => void;
+  pendingDelete: string | null;
+  createProfile: (name: string, defaultContents?: string[]) => Promise<void>;
+  renameProfile: (oldName: string, newName: string) => Promise<void>;
   applyIcon: (name: string, icon: string | null) => Promise<void>;
 }
 
-export function useFolderMeta(
+export function useProfileMeta(
   meta: FunctionsMeta,
   saveMeta: (next: FunctionsMeta) => Promise<void>,
-  folder: string,
-  setFolder: (id: string) => void,
-): UseFolderMetaResult {
-  // Deep-ish copy — every mutator builds a fresh object so React
-  // sees a new reference and so concurrent mutations don't share
-  // the same array references.
+  profile: string,
+  setProfile: (id: string) => void,
+): UseProfileMetaResult {
   const cloneMeta = useCallback((): FunctionsMeta => ({
     favorites: [...meta.favorites],
-    folders: Object.fromEntries(
-      Object.entries(meta.folders).map(([k, v]) => [k, [...v]]),
+    profiles: Object.fromEntries(
+      Object.entries(meta.profiles || {}).map(([k, v]) => [k, [...v]]),
     ),
     icons: { ...meta.icons },
   }), [meta]);
@@ -53,56 +49,60 @@ export function useFolderMeta(
     await saveMeta(next);
   }, [cloneMeta, saveMeta]);
 
-  const moveToFolder = useCallback(
+  const moveToProfile = useCallback(
     async (name: string, target: string | null) => {
       const next = cloneMeta();
-      for (const k of Object.keys(next.folders)) {
-        next.folders[k] = next.folders[k].filter((x) => x !== name);
+      for (const k of Object.keys(next.profiles)) {
+        next.profiles[k] = next.profiles[k].filter((x: string) => x !== name);
       }
       if (target) {
-        next.folders[target] = [...(next.folders[target] || []), name];
+        next.profiles[target] = [...(next.profiles[target] || []), name];
       }
       await saveMeta(next);
     },
     [cloneMeta, saveMeta],
   );
 
-  const deleteFolder = useCallback(async (name: string) => {
-    if (
-      !confirm(
-        `Delete folder "${name}"? Functions will be moved to Uncategorized.`,
-      )
-    ) {
-      return;
-    }
-    const next = cloneMeta();
-    delete next.folders[name];
-    if (folder === name) setFolder("__all__");
-    await saveMeta(next);
-  }, [cloneMeta, folder, saveMeta, setFolder]);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
-  const createFolder = useCallback(async (name: string, defaultContents?: string[]) => {
+  const requestDeleteProfile = useCallback((name: string) => {
+    setPendingDelete(name);
+  }, []);
+
+  const cancelDeleteProfile = useCallback(() => {
+    setPendingDelete(null);
+  }, []);
+
+  const confirmDeleteProfile = useCallback(async () => {
+    const name = pendingDelete;
+    if (!name) return;
+    setPendingDelete(null);
+    const next = cloneMeta();
+    delete next.profiles[name];
+    if (profile === name) setProfile("__all__");
+    await saveMeta(next);
+  }, [cloneMeta, pendingDelete, profile, saveMeta, setProfile]);
+
+  const createProfile = useCallback(async (name: string, defaultContents?: string[]) => {
     const trimmed = name.trim();
-    if (!trimmed || meta.folders[trimmed]) return;
+    if (!trimmed || (meta.profiles || {})[trimmed]) return;
     const next = cloneMeta();
-    // Default-on: new folder includes ALL passed tool names (the caller
-    // passes every function + tool name so a fresh folder = full set).
-    next.folders[trimmed] = defaultContents ? [...defaultContents] : [];
+    next.profiles[trimmed] = defaultContents ? [...defaultContents] : [];
     await saveMeta(next);
-    setFolder(trimmed);
-  }, [cloneMeta, meta.folders, saveMeta, setFolder]);
+    setProfile(trimmed);
+  }, [cloneMeta, meta.profiles, saveMeta, setProfile]);
 
-  const renameFolder = useCallback(
+  const renameProfile = useCallback(
     async (oldName: string, newName: string) => {
       const trimmed = newName.trim();
-      if (!trimmed || trimmed === oldName || meta.folders[trimmed]) return;
+      if (!trimmed || trimmed === oldName || (meta.profiles || {})[trimmed]) return;
       const next = cloneMeta();
-      next.folders[trimmed] = next.folders[oldName] || [];
-      delete next.folders[oldName];
-      if (folder === oldName) setFolder(trimmed);
+      next.profiles[trimmed] = next.profiles[oldName] || [];
+      delete next.profiles[oldName];
+      if (profile === oldName) setProfile(trimmed);
       await saveMeta(next);
     },
-    [cloneMeta, folder, meta.folders, saveMeta, setFolder],
+    [cloneMeta, profile, meta.profiles, saveMeta, setProfile],
   );
 
   const applyIcon = useCallback(
@@ -118,10 +118,13 @@ export function useFolderMeta(
   return {
     cloneMeta,
     toggleFav,
-    moveToFolder,
-    deleteFolder,
-    createFolder,
-    renameFolder,
+    moveToProfile,
+    requestDeleteProfile,
+    confirmDeleteProfile,
+    cancelDeleteProfile,
+    pendingDelete,
+    createProfile,
+    renameProfile,
     applyIcon,
   };
 }

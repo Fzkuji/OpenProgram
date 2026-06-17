@@ -23,7 +23,7 @@ export function FunctionCard({
   p,
   icon,
   fav,
-  folderName,
+  profileName,
   formatDate,
   onClick,
   onContextMenu,
@@ -34,7 +34,7 @@ export function FunctionCard({
   p: ProgramSummary;
   icon: string;
   fav: boolean;
-  folderName: string | null;
+  profileName: string | null;
   formatDate: (ts?: number) => string;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -83,10 +83,10 @@ export function FunctionCard({
         </div>
         <div className={styles.cardDesc}>{desc}</div>
         <div className={styles.cardMeta}>
-          {folderName ? (
+          {profileName ? (
             <>
               <FoldersIcon size={11} className={styles.cardMetaIcon} aria-hidden="true" />
-              {` ${folderName} · `}
+              {` ${profileName} · `}
             </>
           ) : null}
           {formatDate(p.mtime)}

@@ -11,6 +11,6 @@ export type FunctionInfo = {
 
 export interface FunctionsMeta {
   favorites: string[];
-  folders: Record<string, string[]>;
+  profiles: Record<string, string[]>;
   icons: Record<string, string>;
 }
