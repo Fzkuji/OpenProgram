@@ -73,19 +73,16 @@ supporting notes / investigations that should not override it.
 | Doc | Topic |
 |---|---|
 | [`providers/thinking-effort.md`](providers/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
-| [`providers/credential-validation-unification.md`](providers/credential-validation-unification.md) | Unified credential validation (current) |
+| [`providers/model-catalog-final.md`](providers/model-catalog-final.md) | 模型目录最终设计 |
+| [`providers/claude-code-direct-oauth.md`](providers/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
+| [`providers/credential-validation-unification.md`](providers/credential-validation-unification.md) | Unified credential validation |
 | [`providers/unified-auth-storage.md`](providers/unified-auth-storage.md) | 统一认证存储 |
 | [`providers/unified-account-management.md`](providers/unified-account-management.md) | 统一账号管理 + 轮换 |
 | [`providers/credential-status-redesign.md`](providers/credential-status-redesign.md) | 凭证状态重设计 |
-| [`providers/claude-code-direct-oauth.md`](providers/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
-| [`providers/claude-code-meridian-profile.md`](providers/claude-code-meridian-profile.md) | claude-code Meridian profile（历史） |
-| [`providers/model-catalog-final.md`](providers/model-catalog-final.md) | 模型目录最终设计 |
-| [`providers/model-catalog-dynamic.md`](providers/model-catalog-dynamic.md) | 动态模型目录 |
-| [`providers/model-catalog-per-provider.md`](providers/model-catalog-per-provider.md) | 按 provider 拆分的模型目录 |
-| [`providers/llm-fault-tolerance.md`](providers/llm-fault-tolerance.md) | LLM fault tolerance |
+| [`providers/api-key-resolution-unification.md`](providers/api-key-resolution-unification.md) | API key resolution unification |
 | [`providers/error-retry.md`](providers/error-retry.md) | Error + retry handling |
 | [`providers/error-taxonomy-propagation.md`](providers/error-taxonomy-propagation.md) | Error taxonomy + propagation |
-| [`providers/api-key-resolution-unification.md`](providers/api-key-resolution-unification.md) | API key resolution unification |
+| [`providers/llm-fault-tolerance.md`](providers/llm-fault-tolerance.md) | LLM fault tolerance（调研） |
 | [`providers/error-and-timeout-mechanism.html`](providers/error-and-timeout-mechanism.html) | Error + timeout mechanism (rendered) |
 
 ## function/ — function & tool calling
@@ -149,6 +146,15 @@ Extension gating design + reference comparison — see
 
 Historical audits, demos, and superseded docs live in
 [`archive/`](archive/) for traceability, not as implementation guidance.
+
+Recently archived:
+- `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — 迭代草稿，被 `model-catalog-final.md` 取代
+- `claude-code-meridian-profile.md` — Meridian proxy 已砍，纯历史
+- `*-references.md` — 调研快照/原始研究笔记（slash-commands / tui-upgrade / user-input-requests）
+
+## TODO-doc-code-gaps.md
+
+[`TODO-doc-code-gaps.md`](TODO-doc-code-gaps.md) — 审计发现的文档与代码不对齐待修项，按优先级排列。修完一条删一条。
 
 ## Conventions
 

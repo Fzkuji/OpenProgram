@@ -5,7 +5,7 @@
 > function execution trees, tool outputs, intermediate state). Git is the
 > storage model; context is what's stored.
 
-**Status**: proposal, not implemented.
+**Status**: partially implemented — DAG node model (`openprogram/contextgit/dag.py`) is in place; upper-layer operations (branch/merge/retry UI) are not yet built.
 **Goal**: unify "retry", "edit", "branch into new conversation" and "manually
 fork at an agentic function's intermediate step" under one data model with
 one set of storage primitives.

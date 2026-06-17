@@ -5,7 +5,7 @@ Where the gating model lives in the code. Use this when touching the implementat
 ## File map
 
 ```
-openprogram/agents/
+openprogram/agent/management/
   ├─ gating.py              ← shared helper module (NEW)
   └─ manager.py             ← AgentSpec schema (the canonical struct)
 
@@ -21,7 +21,7 @@ openprogram/functions/
 
 ## Shared helper module
 
-**`openprogram/agents/gating.py`** — three exports, no other dependencies.
+**`openprogram/agent/management/gating.py`** — three exports, no other dependencies.
 
 ```python
 def match_any(name: str, patterns: Iterable[str]) -> bool
@@ -41,7 +41,7 @@ These are pure functions — no side effects, no globals — and importable from
 
 ## Canonical schema
 
-**`openprogram/agents/manager.py:63-86`** — `AgentSpec` dataclass:
+**`openprogram/agent/management/manager.py:63-86`** — `AgentSpec` dataclass:
 
 ```python
 @dataclass
