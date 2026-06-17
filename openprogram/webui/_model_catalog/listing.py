@@ -226,9 +226,17 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
         if not mid:
             continue
         reasoning = bool(raw.get("reasoning", False))
-        levels, default_lv, variant = derive_thinking_fields(
-            provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
-        )
+        # If the fetcher already extracted thinking_levels from the API's
+        # capabilities (e.g. Anthropic /v1/models), use those as
+        # authoritative. Otherwise derive from thinking.json / catalog.
+        if raw.get("thinking_levels"):
+            levels = list(raw["thinking_levels"])
+            default_lv = raw.get("default_thinking_level")
+            variant = raw.get("thinking_variant")
+        else:
+            levels, default_lv, variant = derive_thinking_fields(
+                provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
+            )
         entry: dict[str, Any] = {
             k: v for k, v in raw.items() if not k.startswith("_")
         }
@@ -333,9 +341,14 @@ def list_enabled_models() -> list[dict[str, Any]]:
             if not mid or mid not in enabled_ids or mid in emitted_ids:
                 continue
             reasoning = bool(raw.get("reasoning", False))
-            levels, default_lv, variant = derive_thinking_fields(
-                pid, mid, reasoning, bool(raw.get("supports_xhigh", False))
-            )
+            if raw.get("thinking_levels"):
+                levels = list(raw["thinking_levels"])
+                default_lv = raw.get("default_thinking_level")
+                variant = raw.get("thinking_variant")
+            else:
+                levels, default_lv, variant = derive_thinking_fields(
+                    pid, mid, reasoning, bool(raw.get("supports_xhigh", False))
+                )
             entry = {
                 "id": mid,
                 "name": raw.get("name", mid),

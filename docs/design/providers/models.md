@@ -142,22 +142,25 @@ Fetch Models 生成，存在 provider 文件夹里，不进 git：
     "claude-opus-4-8": {
       "name": "Claude Opus 4.8",
       "reasoning": true,
+      "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
+      "default_thinking_level": "xhigh",
+      "supports_adaptive": true,
       "context_window": 1000000,
       "max_tokens": 128000,
       "input_cost": 5.0,
       "output_cost": 25.0,
-      "cache_read_cost": 0.5,
-      "cache_write_cost": 6.25,
       "vision": true,
       "tools": true
     },
-    "claude-sonnet-4-6": {
-      "name": "Claude Sonnet 4.6",
+    "claude-haiku-4-5-20251001": {
+      "name": "Claude Haiku 4.5",
       "reasoning": true,
-      "context_window": 1000000,
+      "thinking_levels": [],
+      "supports_adaptive": false,
+      "context_window": 200000,
       "max_tokens": 64000,
-      "input_cost": 3.0,
-      "output_cost": 15.0
+      "input_cost": 1.0,
+      "output_cost": 5.0
     }
   }
 }
@@ -236,13 +239,65 @@ provider 只管把 `api_value` 塞进自己 API 请求体的正确位置。
 
 每步独立 commit，可验证可回滚。
 
-## 8. Fetch 流程
+## 8. Fetch 流程——自动获取 thinking capabilities
 
 1. 用户点"Fetch Models"
 2. 调 provider 的 fetcher 从 API 拉模型列表
-3. 写入 `openprogram/providers/<provider>/models.json`（覆盖式）
-4. 触发 `build_MODELS()` 热重建
-5. 前端重新请求 `/api/agent_settings`，拿到更新后的数据
+3. **支持 capabilities 的 provider**（当前: Anthropic 系）：对每个模型额外调 `GET /v1/models/{id}`，从 `capabilities.effort` 提取每个级别的 `supported` 状态，存入 `thinking_levels`
+4. 写入 `openprogram/providers/<provider>/models.json`（覆盖式）
+5. 触发 `build_MODELS()` 热重建
+6. 前端重新请求 `/api/agent_settings`，拿到更新后的数据
+
+### 8.1 capabilities 提取逻辑（`fetchers/anthropic.py:_extract_thinking_caps`）
+
+Anthropic `/v1/models/{id}` 返回：
+
+```json
+{
+  "capabilities": {
+    "effort": {
+      "supported": true,
+      "low": {"supported": true},
+      "medium": {"supported": true},
+      "high": {"supported": true},
+      "xhigh": {"supported": true},
+      "max": {"supported": true}
+    },
+    "thinking": {
+      "supported": true,
+      "types": {
+        "adaptive": {"supported": true},
+        "enabled": {"supported": false}
+      }
+    }
+  }
+}
+```
+
+提取后存入 `models.json` 的模型条目：
+
+```json
+{
+  "reasoning": true,
+  "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
+  "default_thinking_level": "xhigh",
+  "supports_adaptive": true
+}
+```
+
+### 8.2 优先级链
+
+thinking_levels 的数据来源优先级（从高到低）：
+
+1. **API capabilities**（Fetch 时拉的）→ 最权威，每个模型独立声明
+2. **thinking.json 的 model_overrides** → 手动覆盖特殊模型
+3. **thinking.json 的 provider 级别映射** → 没有 API 数据时的 fallback
+4. **catalog JSON 里硬写的 thinking_levels** → 兜底
+5. **derive_thinking_fields 自动生成** → 最终 fallback
+
+### 8.3 不支持 capabilities 的 provider
+
+DeepSeek、OpenAI 等的 models API 不返回 capabilities。这些 provider 走优先级 2-5。新模型来了靠 thinking.json 的 provider 级别配置兜底。
 
 ## 9. models.dev 的角色
 

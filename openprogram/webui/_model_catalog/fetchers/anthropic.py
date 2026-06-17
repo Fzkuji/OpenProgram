@@ -88,8 +88,64 @@ def _fetch_anthropic(provider_id: str, timeout: float) -> Any:
                         entry["context_window"] = int(dj["max_input_tokens"])
                     if dj.get("max_tokens"):
                         entry["max_tokens"] = int(dj["max_tokens"])
+                    # Extract thinking/effort capabilities from the API
+                    caps = dj.get("capabilities") or {}
+                    _extract_thinking_caps(entry, caps)
             except Exception:
-                # Detail fetch is best-effort; community enrichment backfills.
                 pass
         out.append(entry)
     return out
+
+
+def _extract_thinking_caps(entry: dict, caps: dict) -> None:
+    """Extract thinking/effort capabilities from Anthropic /v1/models response.
+
+    Sets ``reasoning``, ``thinking_levels``, and ``default_thinking_level``
+    on ``entry`` based on the API's authoritative capability data.
+    """
+    # Effort capabilities
+    effort = caps.get("effort") or {}
+    # effort can be a dict or an object with attributes — normalize
+    if hasattr(effort, "supported"):
+        effort_supported = getattr(effort, "supported", False)
+    elif isinstance(effort, dict):
+        effort_supported = effort.get("supported", False)
+    else:
+        effort_supported = False
+
+    if effort_supported:
+        levels = []
+        for lvl in ("minimal", "low", "medium", "high", "xhigh", "max"):
+            val = getattr(effort, lvl, None) if hasattr(effort, lvl) else (
+                effort.get(lvl) if isinstance(effort, dict) else None
+            )
+            if val is None:
+                continue
+            sup = getattr(val, "supported", None) if hasattr(val, "supported") else (
+                val.get("supported") if isinstance(val, dict) else False
+            )
+            if sup:
+                levels.append(lvl)
+        if levels:
+            entry["reasoning"] = True
+            entry["thinking_levels"] = levels
+            # Default: xhigh if available, else medium, else first
+            if "xhigh" in levels:
+                entry["default_thinking_level"] = "xhigh"
+            elif "medium" in levels:
+                entry["default_thinking_level"] = "medium"
+            else:
+                entry["default_thinking_level"] = levels[0]
+
+    # Thinking type (adaptive vs budget)
+    thinking = caps.get("thinking") or {}
+    if hasattr(thinking, "types"):
+        types = thinking.types
+        adaptive = getattr(types, "adaptive", None)
+        if adaptive and getattr(adaptive, "supported", False):
+            entry["supports_adaptive"] = True
+    elif isinstance(thinking, dict):
+        types = thinking.get("types") or {}
+        adaptive = types.get("adaptive") or {}
+        if isinstance(adaptive, dict) and adaptive.get("supported"):
+            entry["supports_adaptive"] = True

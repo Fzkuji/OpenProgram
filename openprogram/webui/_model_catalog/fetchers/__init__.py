@@ -146,19 +146,19 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
         for k, v in _enrich_from_community(provider_id, mid).items():
             entry.setdefault(k, v)
         reasoning_hint = bool(entry.get("reasoning") or reasoning_hint)
-        # Derive thinking capability so newly-discovered models come
-        # through with a working picker. Static data only — still
-        # re-derived at read time in ``listing.list_models_for_provider``
-        # to pick up override-table edits.
-        levels, default_lv, variant = derive_thinking_fields(
-            provider_id, mid, reasoning_hint
-        )
-        if levels:
-            entry["thinking_levels"] = levels
-            if default_lv:
-                entry["default_thinking_level"] = default_lv
-            if variant:
-                entry["thinking_variant"] = variant
+        # Thinking capability: if the fetcher already extracted levels
+        # from the API (e.g. Anthropic capabilities), keep them as
+        # authoritative. Otherwise derive from thinking.json / catalog.
+        if not entry.get("thinking_levels"):
+            levels, default_lv, variant = derive_thinking_fields(
+                provider_id, mid, reasoning_hint
+            )
+            if levels:
+                entry["thinking_levels"] = levels
+                if default_lv:
+                    entry["default_thinking_level"] = default_lv
+                if variant:
+                    entry["thinking_variant"] = variant
         models.append(entry)
 
     # Fetch is authoritative: overwrite this provider's models.json
