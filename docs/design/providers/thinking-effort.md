@@ -100,11 +100,11 @@ ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
 
 ## 6. Provider 翻译层
 
-详见 [`model-catalog-final.md`](model-catalog-final.md) §3-4。
+详见 [`models.md`](models.md) §3-4。
 
 **核心机制**：每个 provider 的 `models.json` 里声明 `provider.thinking`，包含 `wire_format`（用字符串还是数字）、`effort_map`（框架级别→API 值）或 `budget_map`（框架级别→token 数）。provider 的 `stream_simple()` 读这个配置做翻译，不 hardcode 映射 dict。
 
-**当前状态**：映射还 hardcode 在各 provider 的代码里（`_EFFORT_MAP`、`_THINKING_BUDGETS`、`budget_map` 等），`models.json` 机制尚未落地。`"max"` 级别在 5 个 provider 的映射表里缺失。迁移步骤见 model-catalog-final.md §6。
+**当前状态**：映射还 hardcode 在各 provider 的代码里（`_EFFORT_MAP`、`_THINKING_BUDGETS`、`budget_map` 等），`models.json` 机制尚未落地。`"max"` 级别在 5 个 provider 的映射表里缺失。迁移步骤见 models.md §6。
 
 ## 7. Model 能力声明
 
@@ -140,7 +140,7 @@ Model.thinking_levels / default_thinking_level / thinking_variant
 
 ### 7.3 per-model 覆盖
 
-少数模型的 wire 格式和同 provider 其他模型不同时（如 Anthropic Opus 4.7），在模型条目里加 `thinking_override`。详见 model-catalog-final.md §3.2。
+少数模型的 wire 格式和同 provider 其他模型不同时（如 Anthropic Opus 4.7），在模型条目里加 `thinking_override`。详见 models.md §3.2。
 
 ## 8. UI Picker 配置
 

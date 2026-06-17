@@ -73,7 +73,7 @@ supporting notes / investigations that should not override it.
 | Doc | Topic |
 |---|---|
 | [`providers/thinking-effort.md`](providers/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
-| [`providers/model-catalog-final.md`](providers/model-catalog-final.md) | 模型目录最终设计 |
+| [`providers/models.md`](providers/models.md) | 模型目录最终设计 |
 | [`providers/claude-code-direct-oauth.md`](providers/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
 | [`providers/credential-validation-unification.md`](providers/credential-validation-unification.md) | Unified credential validation |
 | [`providers/unified-auth-storage.md`](providers/unified-auth-storage.md) | 统一认证存储 |
@@ -148,7 +148,7 @@ Historical audits, demos, and superseded docs live in
 [`archive/`](archive/) for traceability, not as implementation guidance.
 
 Recently archived:
-- `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — 迭代草稿，被 `model-catalog-final.md` 取代
+- `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — 迭代草稿，被 `models.md` 取代
 - `claude-code-meridian-profile.md` — Meridian proxy 已砍，纯历史
 - `*-references.md` — 调研快照/原始研究笔记（slash-commands / tui-upgrade / user-input-requests）
 
