@@ -284,6 +284,28 @@ def list_available() -> list[str]:
 
 # ---------------------------------------------------------------------------
 # Resolution API
+def _resolve_folder_toolset(folder_name: str) -> list[str] | None:
+    """Look up a user-defined folder in functions_meta.json. Returns the
+    tool-name list for the folder, or None if it doesn't exist (so the
+    caller falls through to DEFAULT_TOOLS). New folders default to all
+    exposed tools, so a fresh folder = full set."""
+    import os as _os
+    try:
+        import openprogram.webui as _webui_mod
+        meta_path = _os.path.join(
+            _os.path.dirname(_webui_mod.__file__), "functions_meta.json",
+        )
+        if not _os.path.isfile(meta_path):
+            return None
+        import json as _json
+        with open(meta_path, encoding="utf-8") as f:
+            meta = _json.load(f)
+        tools = meta.get("folders", {}).get(folder_name)
+        return list(tools) if isinstance(tools, list) else None
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 
 def agent_tools(
@@ -324,6 +346,11 @@ def agent_tools(
         raise ValueError("Pass either `names` or `toolset`, not both.")
     if toolset is not None and toolset in TOOLSETS:
         names = _expand_preset(toolset)
+        toolset = None
+    elif toolset is not None and toolset not in TOOLSETS:
+        # User-defined folder from Functions page (functions_meta.json).
+        # Falls back to all exposed if the folder doesn't exist.
+        names = _resolve_folder_toolset(toolset)
         toolset = None
     if names is None and toolset is None:
         names = DEFAULT_TOOLS

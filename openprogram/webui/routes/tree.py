@@ -44,6 +44,50 @@ def register(app):
         out.sort(key=lambda r: r["name"])
         return JSONResponse(content=out)
 
+    # ── Functions meta (folders-as-categories) ────────────────────────
+    # Same {favorites, folders} shape as programs_meta.json.
+    # New folder → defaults to ALL exposed tools (per design: default-on).
+
+    def _functions_meta_path():
+        from openprogram.webui import server as _s
+        return os.path.join(os.path.dirname(_s.__file__), "functions_meta.json")
+
+    def _load_functions_meta() -> dict:
+        p = _functions_meta_path()
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+        return {"favorites": [], "folders": {}}
+
+    def _save_functions_meta(data: dict):
+        p = _functions_meta_path()
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+    @app.get("/api/functions/meta")
+    async def get_functions_meta():
+        return JSONResponse(content=_load_functions_meta())
+
+    @app.post("/api/functions/meta")
+    async def save_functions_meta(body: dict = None):
+        _save_functions_meta(body or {})
+        return JSONResponse(content={"ok": True})
+
+    @app.post("/api/functions/meta/create-folder")
+    async def create_functions_folder(body: dict = None):
+        """Create a new folder with ALL exposed tools (design: default-on).
+        body: {"name": "folder name"}"""
+        from openprogram.functions import agent_tools
+        name = (body or {}).get("name", "New folder")
+        meta = _load_functions_meta()
+        # default = every exposed tool's name
+        all_names = sorted(t.name for t in agent_tools(include_disabled=True)
+                           if not getattr(t, "_is_agentic", False))
+        meta["folders"][name] = all_names
+        _save_functions_meta(meta)
+        return JSONResponse(content={"ok": True, "folder": name,
+                                     "tools": all_names})
+
     @app.get("/api/sessions/{session_id}/branches/tokens")
     async def get_branches_tokens(session_id: str):
         """Lightweight token summary for every branch tip in this session."""
