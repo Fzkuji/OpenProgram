@@ -157,9 +157,10 @@
 .barsWrap {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 8px 10px;
+  gap: 8px 12px;
   align-items: center;
   font-size: 13px;
+  padding: 0 8px;
 }
 
 .barRow {

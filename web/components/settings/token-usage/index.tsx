@@ -62,8 +62,8 @@ type GroupedTrendResp = {
 // ── palette ─────────────────────────────────────────────────────────────────
 
 const PALETTE = [
-  "#c76a25", "#3a8a5c", "#5b7ec2", "#b84d8a", "#8b6ec0",
-  "#c9923e", "#4a9e9e", "#d05555", "#6b8e3a", "#7a6b5d",
+  "#e8537a", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7",
+  "#06b6d4", "#ef4444", "#84cc16", "#ec4899", "#14b8a6",
 ];
 
 function catColor(idx: number): string {
@@ -125,14 +125,14 @@ function StackedBarChart({
     return () => ro.disconnect();
   }, []);
 
-  const H = 180;
-  const PAD = { t: 14, r: 28, b: 26, l: 28 };
+  const H = 200;
+  const PAD = { t: 14, r: 16, b: 26, l: 52 };
 
   const nDays = Object.values(series)[0]?.length ?? 0;
 
-  const { stacks, ticks, maxTotal } = useMemo(() => {
+  const { stacks, ticks, yTicks, maxTotal } = useMemo(() => {
     if (nDays === 0 || w === 0 || categories.length === 0)
-      return { stacks: [], ticks: [], maxTotal: 1 };
+      return { stacks: [], ticks: [], yTicks: [], maxTotal: 1 };
 
     const innerW = Math.max(w - PAD.l - PAD.r, 1);
     const innerH = H - PAD.t - PAD.b;
@@ -177,7 +177,15 @@ function StackedBarChart({
       };
     });
 
-    return { stacks: stackList, ticks: tickList, maxTotal: mx };
+    // Y-axis ticks: 3-4 evenly spaced
+    const yTickCount = 4;
+    const yTickList = Array.from({ length: yTickCount }, (_, i) => {
+      const val = (mx / (yTickCount - 1)) * i;
+      const y = PAD.t + innerH - (val / mx) * innerH;
+      return { y, val, label: fmtNum(Math.round(val)) };
+    });
+
+    return { stacks: stackList, ticks: tickList, yTicks: yTickList, maxTotal: mx };
   }, [series, categories, w, nDays]);
 
   if (nDays === 0) {
@@ -192,6 +200,31 @@ function StackedBarChart({
     <div className={local.chartWrap} ref={wrapRef} style={{ height: H }}>
       {w > 0 && (
         <svg width={w} height={H}>
+          {/* Y-axis grid lines + labels */}
+          {yTicks.map((yt, i) => (
+            <g key={`y-${i}`}>
+              {i > 0 && (
+                <line
+                  x1={PAD.l}
+                  x2={w - PAD.r}
+                  y1={yt.y}
+                  y2={yt.y}
+                  stroke="var(--border, #e5e0d8)"
+                  strokeDasharray="3,3"
+                  strokeWidth="1"
+                />
+              )}
+              <text
+                x={PAD.l - 8}
+                y={yt.y + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill="var(--text-secondary)"
+              >
+                {yt.label}
+              </text>
+            </g>
+          ))}
           {stacks.map((st) =>
             st.segments.map((seg, si) =>
               seg.h > 0 ? (
