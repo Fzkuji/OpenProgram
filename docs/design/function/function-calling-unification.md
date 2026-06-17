@@ -285,68 +285,121 @@ allowlist. Concretely:
   `expose=False`; a user can still turn any of them off on the Functions
   page (Layer 5). The default, though, is "registered = usable".
 
-## User-managed tool categories (Functions folders)
+## Tool profiles (Functions page)
 
-Default is **all exposed tools on**. The user curates from the
-Functions page (`/functions`) instead of authors curating in code:
+A **tool profile** is a named configuration that says "which tools are
+enabled for this conversation". The Functions page (`/functions`)
+manages profiles; the chat composer lets the user pick which profile to
+use.
 
-- The page supports **folders as categories** — the same
-  `{favorites, folders}` shape already used by the Programs page
-  (`programs_meta.json`), persisted here as `functions_meta.json`.
-  A user creates a folder ("writing", "search", "shell-only"), drags
-  tools into it, and toggles individual tools on/off.
-- A folder name resolves as a **named subset** wherever a `toolset=`
-  is accepted (Layer 3): selecting folder "search" for a session is
-  equivalent to `agent_tools(toolset="search")`. Folders are
-  user-defined presets that sit beside the code-defined TOOLSETS.
-- Per-tool off-toggles write `tools.disabled` (Layer 5), already read by
-  `read_disabled_tools()`, so a disabled tool is filtered out of every
-  resolution regardless of folder.
+### Concepts
 
-Net model: the framework ships everything on; the user, if they care,
-organizes tools into folders and switches things off — they never have
-to switch things *on* to make a registered tool work.
+```
+tool catalog          all registered, exposed tools — a flat read-only
+(the shelf)           list on the Functions page. Shows every tool with
+                      its name + description. The catalog itself has no
+                      enable/disable controls; it just shows what exists.
+
+tool profile          a named set of tools to use — like a shopping cart
+(the cart)            built from the catalog. Each profile starts with
+                      ALL tools (default-on); the user removes what they
+                      don't want for this scenario.
+
+                      Operations on a profile:
+                        • remove a tool (take it out of this config)
+                        • add a tool (put it back — pick from "not yet
+                          in this profile" list)
+                        • rename / delete the profile
+
+default profile       the built-in "all tools on" profile. Always
+                      exists, cannot be deleted, contains every exposed
+                      tool. Used when no other profile is selected.
+```
+
+### User flow
+
+1. **Functions page** shows the catalog (all tools) and a sidebar of
+   profiles. Clicking a profile shows which tools it includes; the
+   user adds/removes tools from that profile.
+2. **Chat composer** has a profile picker (e.g. a dropdown next to the
+   model selector). Selecting a profile = this conversation uses that
+   tool set. Default = "all tools".
+3. A profile name resolves wherever ``toolset=`` is accepted (Layer
+   2b). ``agent_tools(toolset="research")`` returns the tools in the
+   "research" profile. Agent profiles (``agent.json``) can reference
+   a tool profile by name in their ``tools.toolset`` field.
+
+### Storage
+
+Profiles are persisted in ``functions_meta.json`` (same location as
+``programs_meta.json``), shape:
+
+```json
+{
+  "profiles": {
+    "default": ["bash", "read", "write", ...],   // immutable = all exposed
+    "research": ["web_search", "web_fetch", "read", "write", "bash"],
+    "safe": ["read", "glob", "grep", "web_search"]
+  },
+  "active": "default"   // which profile the chat composer is using
+}
+```
+
+Creating a new profile = copy of "default" (all tools). The user then
+removes tools they don't need for that scenario.
+
+### Relationship to Layer 5 (global disable)
+
+A profile says "this conversation uses these tools" (L2b, active
+selection). The per-tool global disable (L5, ``tools.disabled``)
+remains as a separate, rarely-used backstop: if a tool is globally
+disabled it is removed from EVERY profile automatically (the
+resolution pipeline applies L5 after L2b). But the primary user
+action is profile management, not per-tool global toggles.
 
 ## User-editable entry points
-
-The complete set of places a user (or author) controls which tools an
-LLM gets, what each maps to, and where the state lives. ✅ = built,
-⬜ = designed here, not yet built.
 
 ```
 Entry point                     Controls                     Layer  State  Persisted in
 ────────────────────────────────────────────────────────────────────────────────────────
-Functions page —                global per-tool on/off       L5     ✅     config.json:
-  single-tool toggle            (blacklist a tool)                          tools.disabled
-                                POST /api/settings
-                                {tools.disabled.<name>}
+Functions page —                create / edit / delete tool  L2b    ⬜     functions_meta.json
+  tool profiles                 profiles (named tool sets).                 → profiles: {name:[...]}
+                                Add/remove tools to/from a
+                                profile. Default profile =
+                                all tools on.
 
-Functions page —                build folders = categories,  L2b    ⬜     functions_meta.json
-  folders / categories          drag tools in, pick a               (mirror   {favorites, folders}
-                                folder as the active set            programs_meta.json)
+Chat composer —                 pick which tool profile to   L2b    ⬜     session state
+  profile picker                use for this conversation.                  (sent per-turn with
+  (Tools toggle → expand        Expand the "Tools" chip to                  tools_override)
+   → profile list)              see available profiles +
+                                select one. Default = all.
+
+Chat composer —                 per-turn toggles: Tools      L2b    ✅     per-message
+  "+" menu toggles              on/off + Web Search on/off   /L5           (tools_override)
 
 Agent profile                   per-agent toolset / enabled  L2b    ✅     ~/.openprogram/
-  (tools field)                 / disabled / allowed         + L5          agents/<id>.json
-                                resolve_tools() reads it                    → tools: {...}
-
-Chat composer —                 this-turn-only: Tools on/off L2b    ✅     not persisted
-  "+" menu toggles              + Web Search on/off          /L5           (per-message
-                                (tools_override)                            tools_override)
+  (tools field)                 / disabled / allowed.        + L5          agents/<id>.json
+                                Can reference a tool profile                → tools: {...}
+                                by name (toolset="research")
 
 Attended / unattended           withhold ask_user_question   L5     ✅     session state
   switch (CLI/TUI/web)          when no human is watching          (system  (attended.py)
                                                                     auto)
 
+Global tool disable             blacklist a single tool      L5     ✅     config.json:
+  (Functions page / config)     everywhere — rarely used.                   tools.disabled
+                                Overrides any profile.
+
 Author decorator kwargs         expose / available_if /      L1/2/  ✅     in-code
-  @function(...)                defer / toolset / unsafe_in  3/6           (expose= kwarg
-                                / check_fn                                  to be added)
+  @function(...)                defer / toolset / unsafe_in  3/6
+                                / check_fn
 ```
 
-Daily use = Functions-page folders (L2b, the main action — to build).
-Exception = Functions-page single-tool off (L5, ✅). Per-agent =
-profile tools field (✅, edit json). This-turn = composer "+" menu (✅).
-System safety = attended deny (✅, invisible). Author-level visibility =
-decorator kwargs (✅; `expose=` kwarg pending).
+Daily use = **tool profiles** on the Functions page (create profiles,
+add/remove tools) + **profile picker** in the chat composer (choose
+which profile this conversation uses). Global disable = rarely-used
+backstop. Agent profile = per-agent override for advanced multi-agent
+setups. Author kwargs = framework internals.
 
 ## Four knobs none of the reference frameworks have
 
