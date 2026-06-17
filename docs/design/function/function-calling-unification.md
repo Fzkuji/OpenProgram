@@ -231,6 +231,79 @@ LLM sees the name in a catalog but must opt-in to load the schema" — the
 only layer that lets the LLM itself choose what to pull in (used to keep
 large MCP/plugin tool sets out of the prompt until needed).
 
+## Per-layer default policy [REVISED]
+
+The guiding principle is **default-on, user-curated**: a freshly
+registered tool is usable with zero configuration; every layer's
+default is "don't restrict". Layers split into two kinds —
+
+- **Active (selection) layers** decide *what to use*. Default =
+  "everything exposed". The user/caller opts IN to a narrower set.
+  These are the normal path.
+- **Passive (veto) layers** decide *what must not be used*. Default =
+  "veto nothing". They only ever subtract, as a safety/maintenance
+  backstop, and stay dormant unless a condition fires.
+
+```
+Layer  Kind      Default (no config)                Who overrides & when
+──────────────────────────────────────────────────────────────────────────────
+1      —         tool registers (available_if       author: only to gate a
+       gate      absent/True)                        tool behind a feature/env
+                                                     that makes it meaningless
+                                                     otherwise
+
+2      active    EXPOSED. Registered ⇒ visible to    author: expose=False for
+       (expose)  the LLM, including plugin/MCP.      an internal helper the LLM
+                 Bare runtime.exec ⇒ full exposed    must never see. That's the
+                 set. Nothing hidden by default.     ONLY reason to touch L2.
+
+2b     active    no preset forced. Caller gets the   caller/user: pass
+       (preset)  full exposed set unless it names    toolset="research" / a
+                 a subset.                           Functions-page folder to
+                                                     work with fewer tools.
+                                                     toolset="none" = no tools
+                                                     (pure-choice steps).
+
+3      passive   no channel/mode restriction.        framework: a tool's
+       (channel) source=None ⇒ nothing filtered.    unsafe_in fires only on
+                                                     that channel (telegram/
+                                                     wechat/plan). profile
+                                                     toolset narrows a session.
+
+4      passive   tool assumed runnable. Only         framework: drops a tool
+       (avail)   checked when                        whose key/env/can_use is
+                 only_available=True (dispatcher     missing — so the LLM never
+                 path).                              sees a tool that would
+                                                     error on call.
+
+5      passive   veto nothing. allow=None,           user: Functions-page
+       (veto)    deny=None, no disabled, attended    off-toggle (persistent,
+                 unless set.                         tools.disabled). system:
+                                                     attended-mode denies
+                                                     ask_user_question;
+                                                     subagent/role caps via
+                                                     allow/deny. Pure subtraction.
+
+6      active*   not deferred. Schema ships in the   author / MCP wiring:
+       (defer)   request by default.                 defer=True for large MCP
+                                                     surfaces → name in catalog,
+                                                     LLM tool_search to load.
+                                                     *active by the LLM, not the
+                                                     user.
+```
+
+**L2b (active) vs L5 (passive) — why both exist, why not merged.** They
+look like "user touches tools" twice but are opposite operations: L2b is
+the user/caller *choosing a set to use* (additive, a folder = "today's
+toolbox"); L5 is *blacklisting / capping* (subtractive, "this tool is
+broken / this session may not use it"). A veto must be independent of
+selection — e.g. attended-mode must withhold `ask_user_question` no
+matter which folder is active; you can't rely on the user remembering to
+leave it out of every folder. So the **Functions page surfaces L2b as
+the primary action (organize & pick folders) and L5 as the exception
+(a per-tool off switch)**; the system's own L5 vetoes (attended,
+subagent caps) are code-only and invisible to the user.
+
 ## Plugins and MCP servers [REVISED]
 
 Because exposure is registration-driven (Layer 2), a plugin or MCP
