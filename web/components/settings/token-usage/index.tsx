@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import styles from "../settings-page.module.css";
 import local from "./usage.module.css";
@@ -78,95 +78,100 @@ function fmtDate(ts: number): string {
   });
 }
 
-// ── TrendChart: minimal SVG sparkline ───────────────────────────────────────
+// ── TrendChart: area chart drawn in real pixels (no viewBox stretch) ─────────
+//
+// We measure the container width with a ResizeObserver and draw the SVG in
+// 1:1 pixel coordinates. Stretching a fixed viewBox with
+// preserveAspectRatio="none" would warp the stroke, the dots and the axis
+// text horizontally; pixel-space drawing keeps everything crisp at any width.
 
 function TrendChart({ trend }: { trend: TrendPoint[] }) {
-  const PAD = { t: 12, r: 8, b: 24, l: 8 };
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [w, setW] = useState(0);
 
-  const max = Math.max(...trend.map((p) => p.total_tokens), 1);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      setW(entries[0].contentRect.width);
+    });
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
 
-  // normalise to [0, 1] and build SVG polyline points
-  const W = 600; // viewBox width
-  const H = 148;
+  const H = 160;
+  const PAD = { t: 14, r: 14, b: 26, l: 14 };
 
-  const pts = trend.map((p, i) => {
-    const x = PAD.l + (i / Math.max(trend.length - 1, 1)) * (W - PAD.l - PAD.r);
-    const y = PAD.t + (1 - p.total_tokens / max) * (H - PAD.t - PAD.b);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  const area =
-    pts.length > 1
-      ? `M${pts[0]} L${pts.slice(1).join(" L")} L${W - PAD.r},${H - PAD.b} L${PAD.l},${H - PAD.b} Z`
-      : "";
-  const line = pts.length > 1 ? `M${pts[0]} L${pts.slice(1).join(" L")}` : "";
-
-  // x-axis labels: at most 5 evenly-spaced ticks
-  const tickCount = Math.min(trend.length, 5);
-  const tickIdxs = Array.from({ length: tickCount }, (_, i) =>
-    Math.round((i / Math.max(tickCount - 1, 1)) * (trend.length - 1))
-  );
+  const { area, line, dots, ticks } = useMemo(() => {
+    if (trend.length === 0 || w === 0)
+      return { area: "", line: "", dots: [], ticks: [] };
+    const max = Math.max(...trend.map((p) => p.total_tokens), 1);
+    const innerW = Math.max(w - PAD.l - PAD.r, 1);
+    const innerH = H - PAD.t - PAD.b;
+    const xy = trend.map((p, i) => {
+      const x = PAD.l + (i / Math.max(trend.length - 1, 1)) * innerW;
+      const y = PAD.t + (1 - p.total_tokens / max) * innerH;
+      return [x, y] as const;
+    });
+    const lineD = `M${xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" L")}`;
+    const areaD =
+      xy.length > 1
+        ? `${lineD} L${xy[xy.length - 1][0].toFixed(1)},${H - PAD.b} L${xy[0][0].toFixed(1)},${H - PAD.b} Z`
+        : "";
+    // at most 5 evenly-spaced x-axis labels
+    const tickCount = Math.min(trend.length, 5);
+    const tickList = Array.from({ length: tickCount }, (_, i) => {
+      const idx = Math.round((i / Math.max(tickCount - 1, 1)) * (trend.length - 1));
+      return { x: xy[idx][0], label: fmtDate(trend[idx].ts) };
+    });
+    return {
+      area: areaD,
+      line: xy.length > 1 ? lineD : "",
+      dots: xy,
+      ticks: tickList,
+    };
+  }, [trend, w]);
 
   if (trend.length === 0) {
     return (
-      <div className={local.chartWrap}>
+      <div className={local.chartWrap} ref={wrapRef}>
         <div className={local.chartEmpty}>暂无数据</div>
       </div>
     );
   }
 
   return (
-    <div className={local.chartWrap}>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent, #6c8ebf)" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="var(--accent, #6c8ebf)" stopOpacity="0.03" />
-          </linearGradient>
-        </defs>
-        {area && (
-          <path d={area} fill="url(#areaGrad)" />
-        )}
-        {line && (
-          <path
-            d={line}
-            fill="none"
-            stroke="var(--accent, #6c8ebf)"
-            strokeWidth="1.5"
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
-        {/* dots at data points */}
-        {trend.map((p, i) => {
-          const [x, y] = pts[i].split(",").map(Number);
-          return (
-            <circle
-              key={i}
-              cx={x}
-              cy={y}
-              r="2.5"
-              fill="var(--accent, #6c8ebf)"
-              vectorEffect="non-scaling-stroke"
-            />
-          );
-        })}
-        {/* x-axis labels */}
-        {tickIdxs.map((idx) => {
-          const [x] = pts[idx].split(",").map(Number);
-          return (
+    <div className={local.chartWrap} ref={wrapRef}>
+      {w > 0 && (
+        <svg width={w} height={H}>
+          <defs>
+            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent-blue, #b8651f)" stopOpacity="0.30" />
+              <stop offset="100%" stopColor="var(--accent-blue, #b8651f)" stopOpacity="0.04" />
+            </linearGradient>
+          </defs>
+          {area && <path d={area} fill="url(#areaGrad)" />}
+          {line && (
+            <path d={line} fill="none" stroke="var(--accent-blue, #b8651f)" strokeWidth="2" />
+          )}
+          {dots.map(([x, y], i) => (
+            <circle key={i} cx={x} cy={y} r="3" fill="var(--accent-blue, #b8651f)" />
+          ))}
+          {ticks.map((t, i) => (
             <text
-              key={idx}
-              x={x}
-              y={H - 4}
+              key={i}
+              x={t.x}
+              y={H - 6}
               textAnchor="middle"
-              fontSize="10"
+              fontSize="11"
               fill="var(--text-secondary)"
             >
-              {fmtDate(trend[idx].ts)}
+              {t.label}
             </text>
-          );
-        })}
-      </svg>
+          ))}
+        </svg>
+      )}
     </div>
   );
 }
