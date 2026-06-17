@@ -54,10 +54,17 @@ def derive_thinking_fields(
 
 def apply_thinking_catalog(models: dict) -> None:
     """Fill thinking_levels / default_thinking_level / thinking_variant on each
-    Model in `models`. Called once at module load (see models.py)."""
+    Model in `models`. Called once at module load (see models.py).
+
+    Respects existing thinking_levels: if the catalog JSON already
+    declared exact levels for a model (e.g. DeepSeek only 4), don't
+    overwrite them with auto-generated defaults.
+    """
     from .models import supports_xhigh
 
     for key, model in list(models.items()):
+        if getattr(model, "thinking_levels", None):
+            continue  # catalog already declared exact levels
         levels, default, variant = derive_thinking_fields(
             model.provider, model.id, model.reasoning, supports_xhigh(model)
         )

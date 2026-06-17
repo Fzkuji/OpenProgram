@@ -90,11 +90,10 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
         }
 
     if model_id:
-        # Check if model exists and whether it supports reasoning
         model = get_model(provider, model_id)
         reasoning = getattr(model, "reasoning", False) if model else False
 
-        # Derive levels from thinking.json
+        # 1. Derive from thinking.json (provider has a thinking.json)
         levels = derive_thinking_levels(provider, model_id, reasoning)
         if levels:
             return _build(
@@ -103,8 +102,8 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
                 get_model_variant(provider, model_id),
             )
 
-        # Model exists with reasoning=True but thinking.json yielded
-        # nothing (provider has no thinking.json). Try Model object.
+        # 2. Model object has explicit thinking_levels (e.g. DeepSeek
+        #    catalog declares exact 4 levels, no thinking.json)
         if model is not None and getattr(model, "thinking_levels", None):
             return _build(
                 list(model.thinking_levels),
@@ -112,7 +111,15 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
                 model.thinking_variant,
             )
 
-        # Model found, reasoning=False → hide menu
+        # 3. reasoning=True but no levels anywhere → use fallback
+        #    derive from thinking_catalog (generates defaults)
+        if reasoning:
+            from openprogram.providers.thinking_catalog import derive_thinking_fields as _derive_legacy
+            lvs, dflt, var = _derive_legacy(provider, model_id, True, True)
+            if lvs:
+                return _build(lvs, dflt, var)
+
+        # 4. Model found, reasoning=False → hide menu
         if model is not None and not reasoning:
             return {"label": label, "options": [], "default": None, "variant": None}
 
