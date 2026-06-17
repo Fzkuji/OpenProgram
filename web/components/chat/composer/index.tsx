@@ -1298,18 +1298,21 @@ export function Composer() {
                         label={text("Tools", "工具")}
                       />
                       {toolProfileSubOpen && Object.keys(toolProfiles).length > 1 && (
-                        <div className={styles.plusMenu} style={{
+                        <div style={{
                           position: "absolute",
                           left: "100%",
                           top: 0,
                           marginLeft: 4,
                           minWidth: 160,
                           zIndex: 10,
-                          background: "var(--bg-tertiary)",
-                          border: "1px solid var(--border)",
+                          background: "#252524",
+                          border: "1px solid rgba(255,255,255,0.08)",
                           borderRadius: 12,
-                          boxShadow: "var(--shadow-popover)",
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
                           padding: 6,
+                          display: "flex",
+                          flexDirection: "column" as const,
+                          gap: 1,
                         }}>
                           <div style={{ padding: "4px 12px", fontSize: "11px",
                             color: "var(--text-muted)", textTransform: "uppercase",
