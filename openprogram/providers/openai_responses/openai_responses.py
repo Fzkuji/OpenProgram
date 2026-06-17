@@ -124,7 +124,11 @@ def stream_simple_openai_responses(
     base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
 
     reasoning = getattr(options, "reasoning", None) if options else None
-    reasoning_effort = supports_xhigh(model) and reasoning or clamp_reasoning(reasoning)
+    if reasoning:
+        from openprogram.providers.thinking_spec import translate_reasoning
+        reasoning_effort = translate_reasoning(model.provider or "openai", model.id, reasoning)
+    else:
+        reasoning_effort = None
 
     return stream_openai_responses(model, context, {
         **base_dict,

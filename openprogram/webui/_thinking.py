@@ -121,17 +121,24 @@ def get_thinking_config(provider: str) -> dict:
 
 
 def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
-    """Prefer the model's own ``thinking_levels`` if declared, else fall
-    back to the provider's static config. Lets different models under
-    the same provider expose different pickers (gpt-4o hides the menu,
-    gpt-5 shows minimal/low/medium/high, Codex Max adds xhigh).
+    """Build the thinking picker config for a specific model.
+
+    Primary source: thinking.json via thinking_spec. Falls back to the
+    static THINKING_CONFIGS for providers not yet migrated.
     """
     from openprogram.providers import get_model
+    from openprogram.providers.thinking_spec import (
+        derive_thinking_levels,
+        get_default_effort,
+        get_model_variant,
+    )
+
+    label = get_thinking_config(provider).get("label", "thinking")
 
     def _build(levels: list[str], default: str | None, variant: str | None) -> dict:
         values = ["off", *levels]
         return {
-            "label": get_thinking_config(provider).get("label", "thinking"),
+            "label": label,
             "options": [
                 {"value": v, "desc": _LEVEL_DESC.get(v, "No reasoning" if v == "off" else v)}
                 for v in values
@@ -141,57 +148,46 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
         }
 
     if model_id:
+        # Check if model exists and whether it supports reasoning
         model = get_model(provider, model_id)
+        reasoning = getattr(model, "reasoning", False) if model else False
+
+        # Derive levels from thinking.json
+        levels = derive_thinking_levels(provider, model_id, reasoning)
+        if levels:
+            return _build(
+                levels,
+                get_default_effort(provider),
+                get_model_variant(provider, model_id),
+            )
+
+        # Model exists with reasoning=True but thinking.json yielded
+        # nothing (provider has no thinking.json). Try Model object.
         if model is not None and getattr(model, "thinking_levels", None):
             return _build(
                 list(model.thinking_levels),
                 model.default_thinking_level,
                 model.thinking_variant,
             )
-        # Model exists, reasoning=True, but thinking_levels empty (e.g.
-        # claude-code models registered without levels). Derive them
-        # dynamically rather than hiding the menu.
-        if model is not None and getattr(model, "reasoning", False):
-            from openprogram.providers.thinking_catalog import derive_thinking_fields
-            levels, default_lv, variant = derive_thinking_fields(
-                provider, model_id, True, True,
-            )
-            if levels:
-                return _build(levels, default_lv, variant)
-        # Model found, reasoning=False, no thinking_levels → hide menu.
-        if model is not None:
-            return {
-                "label": get_thinking_config(provider).get("label", "thinking"),
-                "options": [],
-                "default": None,
-                "variant": None,
-            }
-        # Model NOT in the catalog (proxy / custom models like
-        # `anthropic/claude-opus-4-7`, which only ever live in
-        # `THINKING_OVERRIDES`). The static provider fallback would
-        # drop the override's level set, default AND `thinking_variant`
-        # — and a lost variant means the runtime picks the wrong wire
-        # format. Consult THINKING_OVERRIDES directly so those models
-        # still get their declared picker.
-        from openprogram.providers.thinking_catalog import THINKING_OVERRIDES
-        override = THINKING_OVERRIDES.get(f"{provider}/{model_id}")
-        if override and override.get("thinking_levels"):
-            return _build(
-                list(override["thinking_levels"]),
-                override.get("default_thinking_level"),
-                override.get("thinking_variant"),
-            )
+
+        # Model found, reasoning=False → hide menu
+        if model is not None and not reasoning:
+            return {"label": label, "options": [], "default": None, "variant": None}
+
     return get_thinking_config(provider)
 
 
 def default_effort_for(runtime) -> str:
     """Provider default thinking effort for a runtime class.
 
-    Used everywhere the legacy code used to hardcode "medium" as a
-    fallback. Matches class name rather than duck-typing the provider
-    because runtime instances don't uniformly expose it.
+    Reads from thinking.json via thinking_spec. Falls back to the static
+    THINKING_CONFIGS for providers not yet migrated to thinking.json.
     """
     provider = _RUNTIME_PROVIDER.get(type(runtime).__name__, "openai-codex")
+    from openprogram.providers.thinking_spec import get_default_effort
+    result = get_default_effort(provider)
+    if result:
+        return result
     return THINKING_CONFIGS.get(provider, {}).get("default")
 
 

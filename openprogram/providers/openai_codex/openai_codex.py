@@ -331,7 +331,11 @@ def stream_simple_openai_codex_responses(
     base = build_base_options(model, options, api_key)
     base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
     reasoning = getattr(options, "reasoning", None) if options else None
-    reasoning_effort = reasoning if supports_xhigh(model) else clamp_reasoning(reasoning)
+    if reasoning:
+        from openprogram.providers.thinking_spec import translate_reasoning
+        reasoning_effort = translate_reasoning(model.provider or "openai-codex", model.id, reasoning)
+    else:
+        reasoning_effort = None
 
     return stream_openai_codex_responses(model, context, {**base_dict, "reasoning_effort": reasoning_effort})
 

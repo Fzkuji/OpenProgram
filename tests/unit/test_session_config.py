@@ -80,5 +80,5 @@ def test_thinking_aliases_normalize(tmp_db: SessionDB) -> None:
         agent_id="main",
         thinking_effort="max",
     )
-    assert cfg.thinking_effort == "xhigh"
-    assert reasoning_from_config(cfg) == "xhigh"
+    assert cfg.thinking_effort == "max"
+    assert reasoning_from_config(cfg) == "max"

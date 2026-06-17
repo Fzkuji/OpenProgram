@@ -659,22 +659,21 @@ async def stream_simple(
     if opts.temperature is not None and not opts.reasoning:
         params["temperature"] = opts.temperature
 
-    # Thinking configuration
+    # Thinking configuration — reads from thinking.json via thinking_spec
     if opts.reasoning:
+        from openprogram.providers.thinking_spec import translate_reasoning, get_thinking_spec
         if _supports_adaptive_thinking(model.id) or is_oauth:
-            # Adaptive thinking: effort levels (model-aware)
-            effort = _map_thinking_level_to_effort(opts.reasoning, model.id)
+            effort = translate_reasoning(model.provider or "anthropic", model.id, opts.reasoning)
             params["thinking"] = {"type": "adaptive"}
             params["output_config"] = {"effort": effort}
         else:
-            # Budget-based thinking for older models
-            budget = _THINKING_BUDGETS.get(opts.reasoning, 8192)
+            spec = get_thinking_spec(model.provider or "anthropic")
+            budget = (spec.get("budget_map") or {}).get(opts.reasoning, 8192)
             if hasattr(opts, "thinking_budgets") and opts.thinking_budgets:
                 custom = getattr(opts.thinking_budgets, opts.reasoning, None)
                 if custom is not None:
                     budget = custom
             params["thinking"] = {"type": "enabled", "budget_tokens": budget}
-            # Adjust max_tokens to account for thinking budget
             if budget and max_tokens <= budget:
                 params["max_tokens"] = budget + max_tokens
 

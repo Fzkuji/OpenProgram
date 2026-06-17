@@ -79,15 +79,9 @@ def _normalize_tool_call_id(id_: str, _model=None, _msg=None) -> str:
 
 
 def _map_thinking_level_to_effort(level: "ThinkingLevel | None") -> str:
-    if level in ("minimal", "low"):
-        return "low"
-    if level == "medium":
-        return "medium"
-    if level == "high":
-        return "high"
-    if level == "xhigh":
-        return "max"
-    return "high"
+    from openprogram.providers.thinking_spec import translate_reasoning
+    result = translate_reasoning("amazon-bedrock", "", level or "high")
+    return result if isinstance(result, str) else "high"
 
 
 def stream_bedrock(

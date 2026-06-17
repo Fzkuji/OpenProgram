@@ -141,9 +141,10 @@ def _build_config(
     # caller has not explicitly requested reasoning we disable thinking so that
     # the full max_output_tokens budget is available for the text response.
     if opts.reasoning:
-        budget_map = {"minimal": 512, "low": 2048, "medium": 8192, "high": 24576, "xhigh": 32768}
+        from openprogram.providers.thinking_spec import translate_reasoning
+        budget = translate_reasoning(model.provider or "google", model.id, opts.reasoning)
         thinking_config: Any = gtypes.ThinkingConfig(
-            thinking_budget=budget_map.get(opts.reasoning, 8192)
+            thinking_budget=budget if isinstance(budget, int) else 8192
         )
     else:
         # thinking_budget=0 disables thinking on models that support it;
