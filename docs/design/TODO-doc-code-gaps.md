@@ -77,10 +77,50 @@
 
 ---
 
-## 与代码修改相关的上下文（2026-06-18 本轮修改）
+## 工具调用体系待解决问题
 
-本轮代码变更影响以下设计文档的覆盖范围：
-- CLI 现已支持 attended mode + TTYTransport（`user-input-requests.md` Phase 3 的 CLI 部分可视为已解决）
-- graceful stop 覆盖新增：session.py wait_for_answer、runtime.py retry loop、research_harness literature orchestrator
-- Functions 页 "folders" → "profiles" CSS/文件名重命名完成
-- `_resolve_folder_toolset` 现读 `meta.get("profiles", meta.get("folders", {}))` 兼容双键
+### 1. wiki_agent 自递归原因待查
+- 现象：wiki_agent 在内部 exec 里看到自己在工具列表中,模型直接调自己,7 层嵌套 `running → null`。
+- 临时修复：agentic_function wrapper 已加 self-deny(函数体执行期间自动把自己加进 tool-policy deny)。
+- **待查**：为什么模型会选择调自己?正常不应该出现。需要查那次递归的会话记录(session `local_d125e9a9c3`),看模型每一层收到的 prompt/工具列表/上下文,定位是 prompt 引导不当、上下文缺失、还是工具描述有误导。
+- 位置：`~/.openprogram/sessions/local_d125e9a9c3/history/`
+
+### 2. Harness 内部工具集是否需要限制
+- 问题：wiki_agent/research_agent/gui_agent 这些 harness 在自己的内部 exec 里,是否应该只看到"做本职工作需要的工具",而不是 full 全集?
+- 现状：默认全开(full),self-deny 只挡了自己调自己;一个 harness 仍可调另一个(wiki 调 research、research 调 gui)——可能导致"跑偏"。
+- 决策待定：(a) 框架不管,各 harness 自己在 exec 里传 toolset 限制;(b) 框架自动 deny 所有 harness entry points(wiki/research/gui)当一个 harness 在跑时;(c) 保持现状只防自递归。
+- 参考：Claude Code 的 subagent 用 allowlist 限工具,正是防这种跑偏。
+
+### 3. Tool Profile 选择尚未影响实际工具解析
+- 问题：聊天框 profile picker 可选 profile、后端持久化 active profile,但**选了某 profile 后这次对话实际用的工具仍由 Tools toggle(on/off)决定**,没有把 profile 的工具列表作为 tools_override 发给 dispatcher。
+- 修法：WS chat action 传 active profile name → dispatcher 用 `agent_tools(toolset=<profile>)` 解析 → 只给那组工具。
+- 位置：`webui/ws_actions/chat.py:313-316` (tools_override 逻辑) + `composer/index.tsx` submit 函数。
+
+### 4. Functions 页 Agentic/Built-in tab 分离(进行中)
+- 设计：顶部 tab 栏(类似 Memory 页的 Wiki/Journal/Core),分 Agentic(函数管理+文件夹)和 Built-in Tools(profile 管理)。
+- 现状：tab 栏已加、tab 状态已加、sidebar 在 builtin tab 隐藏、agentic 内容在 builtin tab 隐藏、tools 只在 builtin tab 显示。CSS 已加。
+- 待做：typecheck + build + 浏览器验证,确认分 tab 渲染正确。
+
+### 5. Functions 页删除操作仍用原生 confirm()
+- 截图显示：删除文件夹时弹出浏览器原生 `confirm()` 对话框(`127.0.0.1:18100 says`)。
+- 修法：hook 里已改成 ConfirmDialog(shadcn in-app dialog),但可能有其它地方仍用 `confirm()`。
+- 待查：全局搜索 `confirm(` 确认无残留原生弹窗。
+
+### 6. Functions 页工具右键菜单不合理
+- 截图显示：右键 Built-in tool 卡片弹出"New folder"等操作——tool 卡片不应有创建文件夹/profile 的右键菜单。
+- 修法：contentCtx 只在 agentic tab 生效(已部分改);tool 卡片本身不传 onContextMenu(ToolCard 组件无 onContextMenu prop,但父容器的 contentCtx 覆盖了)。
+- 待做：在 builtin tab 禁用 contentCtx,或 tool 卡片的事件阻止冒泡。
+
+---
+
+## 其它待解决
+
+### research_agent 的假预设 `toolset=("harness",)`
+- `research_harness/main.py:394` 声明了 `toolset=("harness",)`,但 TOOLSETS 里不存在 "harness"。
+- 这不影响运行(回退到默认),但声明是错的。
+- 修法：删掉或改成一个真实存在的预设名。
+
+### 设计文档 "full" 静态列表注释过时
+- `functions/__init__.py:125-170` 的 `TOOLSETS["full"]` 仍有一段"Static exposure whitelist"注释和手维护的工具名列表。
+- 暴露层已改成动态注册(P1),这段注释和静态列表现在只用于预设解析(不再是暴露闸),但注释还说"Adding a tool without adding its name here keeps it invisible"——这已经不准确了。
+- 修法：更新注释,说明 full 现在只是一个预设(命名子集),不是暴露白名单;暴露由 `exposed_names()` 动态收集。
