@@ -106,9 +106,23 @@ API 请求
 - `use-thinking-effort.ts`:从 `window._thinkingConfig` 读选项,存选中值;模型切换时 clamp 到有效范围
 - 颜色渐变:off=灰,minimal→max 从黄到红
 
-## 6. 各 Provider 的 wire 格式——完整映射表
+## 6. 各 Provider 的 wire 格式
 
-`SimpleStreamOptions.reasoning` 是统一入口（一个字符串如 `"high"`）。各 provider 在 `stream_simple()` 里把它翻译成各自 API 的请求体参数。以下是每个 provider 的**完整翻译逻辑**，包括判断条件、映射表、代码位置。
+`SimpleStreamOptions.reasoning` 是统一入口（一个字符串如 `"high"`）。各 provider 在 `stream_simple()` 里翻译成各自 API 的请求体参数。
+
+### 当前实现方式及其缺陷
+
+**当前：各 provider 内部 hardcode 映射 dict。** 比如 Anthropic 的 `_EFFORT_MAP`、Gemini 的 `budget_map`，都是直接写在 provider 代码里的固定字典。新增一个框架级别（如 `"max"`）必须逐个 provider 手动更新这些 dict，漏一个就 fallback 到错误值且不报错。新增模型如果它支持的 API 级别和现有模型不同（比如某个模型只接受 `low/high`），也没有办法声明——只能改 provider 代码加分支。
+
+**应有的设计：映射挂在 Model 或 catalog 数据上。** 每个模型注册时声明两件事：(1) 它接受哪些 API 级别值，(2) 框架 ThinkingLevel 到 API 值的映射。provider 只管从 Model 上读映射，不硬编码。这样新增级别或新增模型时改 catalog 数据就行，不用动 provider 代码。
+
+**改进路径：**
+1. 在 `Model` 类型上加一个 `effort_map: dict[str, str]` 字段（框架级别 → API 值）
+2. `thinking_catalog.py` 的 `derive_thinking_fields` 同时生成 `effort_map`
+3. 各 provider 读 `model.effort_map.get(level, fallback)` 代替内部 dict
+4. provider 只保留 API 请求体的组装逻辑（参数名、JSON 结构），不再管级别映射
+
+这是后续优化，当前按 hardcoded 实现。以下记录的是**当前实际的**映射逻辑。
 
 ### 6.1 Anthropic（`providers/anthropic/anthropic.py`）
 
