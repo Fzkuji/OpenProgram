@@ -448,9 +448,41 @@ export function TokenUsageSection() {
               </div>
             )}
 
-            {/* detail table — switches with dimension tab */}
-            <div className={local.section}>
-              {dim === "model_id" && (summary?.by_model ?? []).length > 0 && (
+            {/* By source table */}
+            {(summary?.by_kind ?? []).length > 0 && (
+              <div className={local.section}>
+                <h3 className={local.sectionTitle}>{t("usage.byKind")}</h3>
+                <div className={local.tableWrap}>
+                  <table className={local.table}>
+                    <thead>
+                      <tr>
+                        <th>{t("usage.col.source")}</th>
+                        <th className={local.num}>{t("usage.col.input")}</th>
+                        <th className={local.num}>{t("usage.col.output")}</th>
+                        <th className={local.num}>{t("usage.col.calls")}</th>
+                        <th className={local.num}>{t("usage.col.cost")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary!.by_kind.map((r) => (
+                        <tr key={r.kind}>
+                          <td className={local.modelCell}>{r.kind}</td>
+                          <td className={local.num}>{fmtNum(r.input_tokens)}</td>
+                          <td className={local.num}>{fmtNum(r.output_tokens)}</td>
+                          <td className={local.num}>{fmtNum(r.events)}</td>
+                          <td className={local.num}>{fmtCost(r.cost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* By model table */}
+            {(summary?.by_model ?? []).length > 0 && (
+              <div className={local.section}>
+                <h3 className={local.sectionTitle}>{t("usage.byModel")}</h3>
                 <div className={local.tableWrap}>
                   <table className={local.table}>
                     <thead>
@@ -479,37 +511,8 @@ export function TokenUsageSection() {
                     </tbody>
                   </table>
                 </div>
-              )}
-              {dim !== "model_id" && barRows.length > 0 && (
-                <div className={local.tableWrap}>
-                  <table className={local.table}>
-                    <thead>
-                      <tr>
-                        <th>{dim === "call_kind" ? t("usage.col.source") : t("usage.col.function")}</th>
-                        <th className={local.num}>{t("usage.col.input")}</th>
-                        <th className={local.num}>{t("usage.col.output")}</th>
-                        <th className={local.num}>{t("usage.col.calls")}</th>
-                        <th className={local.num}>{t("usage.col.cost")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {barRows.map((r) => (
-                        <tr key={r.name}>
-                          <td className={local.modelCell}>{r.name || "—"}</td>
-                          <td className={local.num}>{fmtNum(r.input_tokens)}</td>
-                          <td className={local.num}>{fmtNum(r.output_tokens)}</td>
-                          <td className={local.num}>{fmtNum(r.events)}</td>
-                          <td className={local.num}>{fmtCost(r.cost)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {barRows.length === 0 && dim !== "model_id" && (
-                <div className={local.muted}>{t("usage.empty")}</div>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </div>
