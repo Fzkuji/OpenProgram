@@ -1,61 +1,24 @@
-# Function calling — design as built
+# Function calling
 
-Status: **implemented, revised**. This document describes the
-function-calling framework. The exposure / default-tools design was
-revised after the original "unification" build; the revision is marked
-**[REVISED]** in each affected section and summarized here. For the
-moment-by-moment loop mechanics (how the LLM picks the next tool to run
-inside one ``runtime.exec`` call), see
-``docs/agentic-programming/tool-calling.md`` — that companion doc is
-still accurate.
+How an LLM picks a function from a list, the framework runs it, and the
+result feeds back as the model's next-turn input. For the moment-by-moment
+loop mechanics (how the LLM picks the next tool inside one
+``runtime.exec`` call), see ``docs/agentic-programming/tool-calling.md``.
 
-## What changed in the revision (read this first)
+The governing principle is **default-on, user-curated**: a registered
+tool is usable with zero configuration; the user narrows from there.
+Exposure is registration-driven (a registered tool is visible unless it
+opts out with `expose=False`), and a bare `runtime.exec` gets the full
+exposed set. Tool-call results live only in run history and never enter
+later prompt context, so broad exposure carries no context cost.
 
-The original build had two properties that turned out wrong, both
-fixed here:
+## On the wire
 
-1. **Exposure was a STATIC hand-written whitelist.** `_exposed_set()`
-   returned `set(TOOLSETS["full"]["tools"])` — a list someone had to
-   edit by hand. Tools registered at runtime (plugins, MCP servers)
-   were **invisible to the model** unless their names were added to
-   that list. None of the frameworks we cite as parents do this:
-   Claude Code, Hermes, and OpenClaw all expose tools **on
-   registration** (Claude Code: MCP/plugin tools auto-discovered +
-   `list_changed`; Hermes: `registry.register()` / `ctx.register_tool()`
-   makes a tool first-class immediately). So the static whitelist was a
-   silent divergence from the "Claude Code parity" the doc claimed.
-   → **Now: exposure is registration-driven.** Any registered
-   `@function` / `@agentic_function` / plugin / MCP tool is visible by
-   default. `TOOLSETS["full"]` is derived from the registry, not
-   hand-maintained. Tools opt OUT of exposure with `expose=False`
-   (internal helpers like `_pick_stage`); they don't opt in.
-
-2. **Tools were OFF by default.** A bare `runtime.exec(content=...)`
-   got NO tools; every function had to opt in per call. This caused a
-   recurring class of bug — a function needed a tool, forgot to ask for
-   it, and silently produced nothing (literature search returned no
-   papers, experiment steps wrote no files). → **Now: tools are ON by
-   default.** A bare `runtime.exec` gets the full registered set.
-   Tool-call results live only in the run history and never leak into
-   later prompt context, so broad exposure has no context cost. A
-   call that genuinely wants none (a pure-choice / pure-reasoning step)
-   opts out with `toolset="none"`.
-
-User-facing management of *which* tools are on lives on the Functions
-page (`/functions`) as folders-as-categories — see "User-managed tool
-categories" below. The principle is **default-on, user-curated**, not
-**default-off, author-opted-in**.
-
-## What "function calling" means here
-
-The mechanism by which an LLM picks a function from a list, the
-framework runs that function, and the result is fed back as the
-model's next-turn input. Same concept the industry calls "tool use"
-on the wire (``tools=[]`` / ``tool_calls=[]`` in the OpenAI /
-Anthropic / Gemini APIs). Our code calls the *act* "function
-calling" because that's what authors do ("write a function, expose
-it to the LLM"), but the *thing in the API request* stays ``tool``
-to match SDK terminology.
+Same concept the industry calls "tool use" (``tools=[]`` /
+``tool_calls=[]`` in the OpenAI / Anthropic / Gemini APIs). We call the
+*act* "function calling" (authors write a function, expose it to the
+LLM), but the *thing in the API request* stays ``tool`` to match SDK
+terminology.
 
 ```
 我们(编写姿势)                       LLM API wire / providers/types.py
@@ -138,21 +101,19 @@ requires_env                Layer 4 — env vars that must be set
 can_use                     Layer 4 — session-level gate
 requires_approval           dispatcher consults before invoking
 
-expose                      [REVISED] Layer 2 — exposure opt-OUT.
-                            Default True: a registered tool is
-                            visible to the model. Set False for
-                            internal helpers that Python calls but
-                            the LLM must never see (e.g. _pick_stage,
-                            write_section, the _merge_* leaves).
-                            Replaces the old hand-edited
-                            TOOLSETS["full"] whitelist.
+expose                      Layer 2 — exposure opt-OUT. Default
+                            True: a registered tool is visible to
+                            the model. Set False for internal helpers
+                            that Python calls but the LLM must never
+                            see (e.g. _pick_stage, write_section, the
+                            _merge_* leaves).
 
 toolset                     Layer 2b — preset membership (Hermes-
                             style: tool also goes into the "research"
                             preset, etc.). A preset is a NAMED SUBSET
                             for callers that want fewer than all
-                            exposed tools; it is no longer the gate
-                            for visibility (expose is).
+                            exposed tools; it is not the visibility
+                            gate (expose is).
 unsafe_in                   Layer 3 — channel blacklist
                             (OpenClaw-style: hide on Telegram)
 
@@ -169,11 +130,11 @@ register_globally           If False, build AgentTool + attach
                             Useful for in-test isolation.
 ```
 
-## The gating layers [REVISED]
+## The gating layers
 
-Tool selection per turn passes through these filters. The skeleton is
-still Claude Code's `tools.ts`, but Layer 2 is now **registration-driven
-exposure** (matching Claude Code / Hermes), not a static whitelist.
+Tool selection per turn passes through these filters (skeleton from
+Claude Code's `tools.ts`). Layer 2 is registration-driven exposure
+(matching Claude Code / Hermes).
 
 ```
 Layer  When                  How configured                Effect when rejected
@@ -186,10 +147,10 @@ Layer  When                  How configured                Effect when rejected
                                                             require() : []`)
 
 2   exposure (DEFAULT ON)   @function(expose=False)        expose=False → Python-
-    [REVISED]               for internal helpers           callable but never in
+                  for internal helpers           callable but never in
                             — everything else exposed       any LLM tools array.
-                            simply by being registered      DEFAULT is exposed.
-                            (plugins / MCP included).        No hand-edited list.
+                            simply by being registered      DEFAULT is exposed;
+                            (plugins / MCP included).        no allowlist needed.
 
 2b  preset membership       @function(toolset=[...])       a named SUBSET for
     (optional narrowing)    TOOLSETS / DEFAULT_TOOLS        callers who want fewer
@@ -231,7 +192,7 @@ LLM sees the name in a catalog but must opt-in to load the schema" — the
 only layer that lets the LLM itself choose what to pull in (used to keep
 large MCP/plugin tool sets out of the prompt until needed).
 
-## Per-layer default policy [REVISED]
+## Per-layer default policy
 
 The guiding principle is **default-on, user-curated**: a freshly
 registered tool is usable with zero configuration; every layer's
@@ -304,7 +265,7 @@ the primary action (organize & pick folders) and L5 as the exception
 (a per-tool off switch)**; the system's own L5 vetoes (attended,
 subagent caps) are code-only and invisible to the user.
 
-## Plugins and MCP servers [REVISED]
+## Plugins and MCP servers
 
 Because exposure is registration-driven (Layer 2), a plugin or MCP
 server makes its tools available **just by registering them** — same as
@@ -323,11 +284,7 @@ allowlist. Concretely:
   `expose=False`; a user can still turn any of them off on the Functions
   page (Layer 5). The default, though, is "registered = usable".
 
-This is the property the old static whitelist broke: previously a
-plugin tool was registered but unreachable until someone hand-added its
-name to `TOOLSETS["full"]`. That manual step is gone.
-
-## User-managed tool categories (Functions folders) [REVISED]
+## User-managed tool categories (Functions folders)
 
 Default is **all exposed tools on**. The user curates from the
 Functions page (`/functions`) instead of authors curating in code:
@@ -553,7 +510,7 @@ openprogram/functions/_runtime.py
   _registry                                            exposure source
                                                        (Layer 2: exposed =
                                                        registered & not
-                                                       expose=False) [REVISED]
+                                                       expose=False)
   _toolset_membership, _unsafe_in_channel               Layer 2b/3 data
   register / get / all_tools / filter_for / reset_registry
   _build_and_register_tool                              shared helper
@@ -651,17 +608,10 @@ The unit suite (``tests/unit/test_tools_runtime.py``,
   but still attaches `_agent_tool`
 - @agentic_function(available_if=lambda: False) returns raw fn
 
-666 tests passing as of the last refactor.
+## Stable boundary
 
-## What "we won't touch this anymore" means [REVISED]
-
-The original doc froze the registry/decorator/dispatcher boundary. The
-revision **deliberately reopened ONE part of it** — Layer 2 exposure —
-because the static whitelist diverged from the cited frameworks and
-broke plugins. That change is now part of the frozen baseline. The rest
-of the boundary stays frozen.
-
-Future work that **doesn't** require touching the boundary:
+The registry/decorator/dispatcher boundary is stable. Work that
+**doesn't** touch it:
 
 - Adding new @function tools (write the function + decorate; it is
   exposed by default — no whitelist edit)
@@ -682,20 +632,3 @@ necessary):
 - Splitting / merging the shared registry
 - Replacing the deferred-loading mechanism with something other than
   ToolSearch
-
-### Open implementation deltas (doc ahead of code)
-
-The doc now describes the target; these code points still need to catch
-up (tracked for the P1–P4 work):
-
-- `_exposed_set()` (`functions/__init__.py`) still returns the static
-  `set(TOOLSETS["full"]["tools"])` → change to collect exposed tools
-  from the registry (everything not `expose=False`).
-- `expose=` kwarg not yet on the decorators → add; default True; the
-  internal helpers (`_pick_stage`, `write_section`, `_merge_*`, …) set
-  `expose=False`.
-- Functions page: per-tool off-toggle exists; **folders-as-categories
-  (`functions_meta.json`) not built yet** — mirror the Programs page.
-- `runtime.exec` default is already `"full"` (done); the pure-choice
-  callers (`_pick_stage`/`_stage_step`/`ask_user`/`_conclusion`) should
-  pass `toolset="none"`.
