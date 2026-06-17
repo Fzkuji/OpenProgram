@@ -306,6 +306,47 @@ Net model: the framework ships everything on; the user, if they care,
 organizes tools into folders and switches things off — they never have
 to switch things *on* to make a registered tool work.
 
+## User-editable entry points
+
+The complete set of places a user (or author) controls which tools an
+LLM gets, what each maps to, and where the state lives. ✅ = built,
+⬜ = designed here, not yet built.
+
+```
+Entry point                     Controls                     Layer  State  Persisted in
+────────────────────────────────────────────────────────────────────────────────────────
+Functions page —                global per-tool on/off       L5     ✅     config.json:
+  single-tool toggle            (blacklist a tool)                          tools.disabled
+                                POST /api/settings
+                                {tools.disabled.<name>}
+
+Functions page —                build folders = categories,  L2b    ⬜     functions_meta.json
+  folders / categories          drag tools in, pick a               (mirror   {favorites, folders}
+                                folder as the active set            programs_meta.json)
+
+Agent profile                   per-agent toolset / enabled  L2b    ✅     ~/.openprogram/
+  (tools field)                 / disabled / allowed         + L5          agents/<id>.json
+                                resolve_tools() reads it                    → tools: {...}
+
+Chat composer —                 this-turn-only: Tools on/off L2b    ✅     not persisted
+  "+" menu toggles              + Web Search on/off          /L5           (per-message
+                                (tools_override)                            tools_override)
+
+Attended / unattended           withhold ask_user_question   L5     ✅     session state
+  switch (CLI/TUI/web)          when no human is watching          (system  (attended.py)
+                                                                    auto)
+
+Author decorator kwargs         expose / available_if /      L1/2/  ✅     in-code
+  @function(...)                defer / toolset / unsafe_in  3/6           (expose= kwarg
+                                / check_fn                                  to be added)
+```
+
+Daily use = Functions-page folders (L2b, the main action — to build).
+Exception = Functions-page single-tool off (L5, ✅). Per-agent =
+profile tools field (✅, edit json). This-turn = composer "+" menu (✅).
+System safety = attended deny (✅, invisible). Author-level visibility =
+decorator kwargs (✅; `expose=` kwarg pending).
+
 ## Four knobs none of the reference frameworks have
 
 Beyond the 6-layer cascade, the framework adds four runtime knobs
