@@ -79,11 +79,19 @@
 
 ## 工具调用体系待解决问题
 
-### 1. wiki_agent 自递归原因待查
-- 现象：wiki_agent 在内部 exec 里看到自己在工具列表中,模型直接调自己,7 层嵌套 `running → null`。
-- 临时修复：agentic_function wrapper 已加 self-deny(函数体执行期间自动把自己加进 tool-policy deny)。
-- **待查**：为什么模型会选择调自己?正常不应该出现。需要查那次递归的会话记录(session `local_d125e9a9c3`),看模型每一层收到的 prompt/工具列表/上下文,定位是 prompt 引导不当、上下文缺失、还是工具描述有误导。
-- 位置：`~/.openprogram/sessions/local_d125e9a9c3/history/`
+### 1. wiki_agent 自递归原因（✅ 已查明）
+- **根因**：`research_harness/wiki/wiki_agent.py:122` 裸调 `runtime.exec(content=[task])`——
+  不传 toolset/tools,默认拿 `DEFAULT_TOOLSET="full"`(98 个工具,含 wiki_agent 自身)。
+  模型看到 wiki_agent 的 tool description("Maintain a wiki vault — route to ingest...")
+  正好匹配当前任务("调研 long horizon agent") → 认为需要调 wiki_agent → 调自己 →
+  进去又是裸 exec 又看到自己 → 无限递归。每层返回
+  `{'error': "'info|warning|success|error'"}`(wiki 内部 enum validation 失败),
+  上层模型收到错误 → 重试又调自己。
+- **临时修复**：agentic_function wrapper self-deny（✅ 已落地,`function.py`），模型在
+  内部看不到自己了。
+- **根本修法**（待做）：各 harness 的 exec 应该限定工具集。见 #2。
+- 会话记录：`~/.openprogram/sessions/local_d125e9a9c3/history/`
+  context_tree 展示 7 层嵌套(4d76→0c07→0964→c6f9→f1c9→4379→8746→100c)。
 
 ### 2. Harness 内部工具集是否需要限制
 - 问题：wiki_agent/research_agent/gui_agent 这些 harness 在自己的内部 exec 里,是否应该只看到"做本职工作需要的工具",而不是 full 全集?
@@ -101,26 +109,18 @@
 - 现状：tab 栏已加、tab 状态已加、sidebar 在 builtin tab 隐藏、agentic 内容在 builtin tab 隐藏、tools 只在 builtin tab 显示。CSS 已加。
 - 待做：typecheck + build + 浏览器验证,确认分 tab 渲染正确。
 
-### 5. Functions 页删除操作仍用原生 confirm()
-- 截图显示：删除文件夹时弹出浏览器原生 `confirm()` 对话框(`127.0.0.1:18100 says`)。
-- 修法：hook 里已改成 ConfirmDialog(shadcn in-app dialog),但可能有其它地方仍用 `confirm()`。
-- 待查：全局搜索 `confirm(` 确认无残留原生弹窗。
+### 5. ~~Functions 页删除操作仍用原生 confirm()~~
+- ✅ 已修复：搜索确认无残留原生 `confirm()` 调用，已全部替换为 ConfirmDialog。
 
-### 6. Functions 页工具右键菜单不合理
-- 截图显示：右键 Built-in tool 卡片弹出"New folder"等操作——tool 卡片不应有创建文件夹/profile 的右键菜单。
-- 修法：contentCtx 只在 agentic tab 生效(已部分改);tool 卡片本身不传 onContextMenu(ToolCard 组件无 onContextMenu prop,但父容器的 contentCtx 覆盖了)。
-- 待做：在 builtin tab 禁用 contentCtx,或 tool 卡片的事件阻止冒泡。
+### 6. ~~Functions 页工具右键菜单不合理~~
+- ✅ 已修复：`functions-page.tsx:579` 已改为 `tab === "agentic" ? contentCtx : undefined`，builtin tab 不触发 contentCtx。
 
 ---
 
-## 其它待解决
+## ~~其它待解决~~（已修复）
 
-### research_agent 的假预设 `toolset=("harness",)`
-- `research_harness/main.py:394` 声明了 `toolset=("harness",)`,但 TOOLSETS 里不存在 "harness"。
-- 这不影响运行(回退到默认),但声明是错的。
-- 修法：删掉或改成一个真实存在的预设名。
+### ~~research_agent 的假预设 `toolset=("harness",)`~~
+- ✅ 已修复：改为 `toolset=("research",)`（2026-06-18）
 
-### 设计文档 "full" 静态列表注释过时
-- `functions/__init__.py:125-170` 的 `TOOLSETS["full"]` 仍有一段"Static exposure whitelist"注释和手维护的工具名列表。
-- 暴露层已改成动态注册(P1),这段注释和静态列表现在只用于预设解析(不再是暴露闸),但注释还说"Adding a tool without adding its name here keeps it invisible"——这已经不准确了。
-- 修法：更新注释,说明 full 现在只是一个预设(命名子集),不是暴露白名单;暴露由 `exposed_names()` 动态收集。
+### ~~设计文档 "full" 静态列表注释过时~~
+- ✅ 已修复：`functions/__init__.py` TOOLSETS["full"] 注释已更新，说明 full 现在只是命名预设，暴露由 `exposed_names()` 动态收集。
