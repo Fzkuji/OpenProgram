@@ -19,8 +19,22 @@ from openprogram.providers.types import (
     Usage,
 )
 from openprogram.metering import usage_scope
+from openprogram.metering.context import UsageContext
+from openprogram.metering import context as _ctx_mod
 from openprogram.metering.ledger import UsageLedger
 from openprogram.metering import recorder as _recorder
+
+
+@pytest.fixture(autouse=True)
+def reset_usage_context():
+    """Pin a clean default usage context per test — the dispatcher leaks a
+    bare-set contextvar across turns, which would otherwise let an earlier
+    test's session_id win over this test's options.session_id."""
+    token = _ctx_mod._current.set(UsageContext())
+    try:
+        yield
+    finally:
+        _ctx_mod._current.reset(token)
 
 
 @pytest.fixture

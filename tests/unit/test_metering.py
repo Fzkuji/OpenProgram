@@ -7,14 +7,29 @@ import asyncio
 import pytest
 
 from openprogram.metering.context import (
+    UsageContext,
     apply_snapshot,
     current_usage_context,
     snapshot,
     usage_scope,
 )
+from openprogram.metering import context as _ctx_mod
 from openprogram.metering.event import UsageEvent
 from openprogram.metering.ledger import UsageLedger
 from openprogram.metering import recorder as _recorder
+
+
+@pytest.fixture(autouse=True)
+def reset_usage_context():
+    """The usage contextvar is process-global and the dispatcher sets it
+    bare (no reset — it intends to span a whole sync turn), so an earlier
+    test can leak a non-default context into these tests. Pin a clean
+    default per test and restore after."""
+    token = _ctx_mod._current.set(UsageContext())
+    try:
+        yield
+    finally:
+        _ctx_mod._current.reset(token)
 
 
 @pytest.fixture
