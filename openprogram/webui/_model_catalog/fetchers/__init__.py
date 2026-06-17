@@ -53,6 +53,27 @@ _FETCHERS: dict[str, Any] = {
     "deepseek": _fetch_deepseek,  # /v1/models is id-only, enrich locally
 }
 
+# Cache probed reasoning results per Fetch (avoid calling probe() per model)
+_probe_cache: dict[str, dict] = {}
+
+
+def _load_probe(provider_id: str) -> Any:
+    """Load and cache the probe_thinking.probe() for a provider."""
+    if provider_id in _probe_cache:
+        return lambda: _probe_cache[provider_id]
+    try:
+        dir_name = provider_id.replace("-", "_")
+        mod = __import__(
+            f"openprogram.providers.{dir_name}.probe_thinking",
+            fromlist=["probe"],
+        )
+        results = mod.probe()
+        _probe_cache[provider_id] = results
+        return lambda: results
+    except (ImportError, AttributeError):
+        _probe_cache[provider_id] = {}
+        return None
+
 
 def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
     """Dispatch to a provider-specific fetcher, normalise the result,
@@ -145,6 +166,18 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
         # didn't already populate.
         for k, v in _enrich_from_community(provider_id, mid).items():
             entry.setdefault(k, v)
+        # Auto-detect reasoning capability from provider's probe module
+        # if not already set by the fetcher or enrichment.
+        if "reasoning" not in entry:
+            try:
+                _probe = _load_probe(provider_id)
+                if _probe:
+                    _probe_results = _probe()
+                    _probe_info = _probe_results.get(mid, {})
+                    if _probe_info.get("reasoning"):
+                        entry["reasoning"] = True
+            except Exception:
+                pass
         reasoning_hint = bool(entry.get("reasoning") or reasoning_hint)
         # Thinking capability: if the fetcher already extracted levels
         # from the API (e.g. Anthropic capabilities), keep them as

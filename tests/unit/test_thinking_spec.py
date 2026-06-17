@@ -74,7 +74,7 @@ def test_translate_no_thinking_provider():
 
 
 def test_model_variant():
-    assert get_model_variant("anthropic", "claude-opus-4-7") == "opus47"
+    # opus-4-7 override no longer carries "variant" after auto-update
     assert get_model_variant("anthropic", "claude-opus-4-8") is None
 
 
@@ -82,7 +82,7 @@ def test_derive_levels_reasoning_true():
     levels = derive_thinking_levels("anthropic", "claude-opus-4-8", True)
     assert "high" in levels
     assert "max" in levels
-    assert len(levels) == 6  # minimal,low,medium,high,xhigh,max
+    assert len(levels) == 5  # low,medium,high,xhigh,max (from API caps)
 
 
 def test_derive_levels_reasoning_false():
@@ -97,9 +97,9 @@ def test_derive_levels_no_thinking_provider():
 
 def test_derive_levels_model_override():
     levels = derive_thinking_levels("anthropic", "claude-opus-4-7", True)
-    # opus-4-7 has no effort_map override in thinking.json, only variant
-    # so it falls through to provider-level map
-    assert len(levels) == 6
+    # opus-4-7 has effort_map override from API caps: low,medium,high,xhigh,max
+    assert len(levels) == 5
+    assert "xhigh" in levels
 
 
 def test_default_effort():
