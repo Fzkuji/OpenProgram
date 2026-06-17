@@ -63,11 +63,21 @@ def _child_entry(
     parent_call_id: Optional[str] = None,
     answer_queue: "Optional[mp.Queue]" = None,
     stop_queue: "Optional[mp.Queue]" = None,
+    usage_ctx_snapshot: Optional[dict] = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
     try:
         os.setpgrp()
+    except Exception:
+        pass
+
+    # Restore the parent's UsageContext so LLM calls made inside this
+    # subprocess are attributed to the same session/agent/call_kind.
+    # spawn doesn't copy contextvars, so we must do it explicitly.
+    try:
+        from openprogram.metering.context import apply_snapshot as _apply_uctx
+        _apply_uctx(usage_ctx_snapshot)
     except Exception:
         pass
 
@@ -415,11 +425,21 @@ def run_agentic_in_subprocess(
     # here; the child flips its harness stop flag and finishes the in-flight
     # unit. The parent escalates to SIGKILL only if the child doesn't exit.
     stop_queue: mp.Queue = ctx.Queue()
+
+    # Snapshot the parent's UsageContext so the child can restore it after
+    # spawn (spawn doesn't copy contextvars). Best-effort — the child
+    # operates unattributed if the metering module is unavailable.
+    try:
+        from openprogram.metering.context import snapshot as _uctx_snapshot
+        usage_ctx_snapshot: Optional[dict] = _uctx_snapshot()
+    except Exception:
+        usage_ctx_snapshot = None
+
     p = ctx.Process(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
               work_dir, result_path, event_queue, parent_call_id,
-              answer_queue, stop_queue),
+              answer_queue, stop_queue, usage_ctx_snapshot),
         daemon=False,
     )
     p.start()
