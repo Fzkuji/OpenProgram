@@ -205,7 +205,6 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  table-layout: fixed; /* even, predictable column widths */
 }
 
 .table th {
@@ -228,20 +227,6 @@
 
 .table tr:hover td {
   background: var(--bg-hover);
-}
-
-/* fixed layout: model/provider take the slack, numeric cols are uniform */
-.table th:nth-child(1),
-.table td:nth-child(1) {
-  width: 26%;
-}
-.table th:nth-child(2),
-.table td:nth-child(2) {
-  width: 18%;
-}
-.table th:nth-child(n + 3),
-.table td:nth-child(n + 3) {
-  width: 11.2%;
 }
 
 .num,

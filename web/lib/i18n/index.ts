@@ -116,6 +116,8 @@ const DICT = {
   "usage.col.cacheRead": { en: "Cache read", zh: "缓存读取" },
   "usage.col.calls": { en: "Calls", zh: "调用次数" },
   "usage.col.cost": { en: "Est. cost", zh: "预估成本" },
+  "usage.col.source": { en: "Source", zh: "来源" },
+  "usage.col.function": { en: "Function", zh: "函数" },
 
   // Left sidebar nav (AppShell)
   "nav.new_chat": { en: "New chat", zh: "新会话" },
