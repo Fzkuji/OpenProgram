@@ -32,9 +32,6 @@ type KindRow = {
 
 type TrendPoint = {
   ts: number;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
   total_tokens: number;
   cost: number;
   events: number;
@@ -54,7 +51,24 @@ type Summary = {
   by_kind: KindRow[];
 };
 
-type TrendResp = { bucket: string; trend: TrendPoint[] };
+type GroupedTrendResp = {
+  bucket: string;
+  days: number;
+  group: string;
+  series?: Record<string, TrendPoint[]>;
+  trend?: TrendPoint[];
+};
+
+// ── palette ─────────────────────────────────────────────────────────────────
+
+const PALETTE = [
+  "#c76a25", "#3a8a5c", "#5b7ec2", "#b84d8a", "#8b6ec0",
+  "#c9923e", "#4a9e9e", "#d05555", "#6b8e3a", "#7a6b5d",
+];
+
+function catColor(idx: number): string {
+  return PALETTE[idx % PALETTE.length];
+}
 
 // ── formatters ──────────────────────────────────────────────────────────────
 
@@ -78,14 +92,24 @@ function fmtDate(ts: number): string {
   });
 }
 
-// ── TrendChart: calendar-style daily bar chart ──────────────────────────────
-//
-// The backend returns a CONTIGUOUS window (last N days, zeros filled), so the
-// chart always shows a full date axis — days with no usage are just empty
-// slots, never collapsed away. Drawn in real pixels (ResizeObserver width) so
-// nothing warps. Hovering a bar shows its date + total.
+// ── dimension tabs ──────────────────────────────────────────────────────────
 
-function TrendChart({ trend }: { trend: TrendPoint[] }) {
+type Dimension = "call_kind" | "model_id" | "call_label";
+const DIMENSIONS: { key: Dimension; labelKey: string }[] = [
+  { key: "call_kind", labelKey: "usage.dim.kind" },
+  { key: "model_id", labelKey: "usage.dim.model" },
+  { key: "call_label", labelKey: "usage.dim.label" },
+];
+
+// ── StackedBarChart ─────────────────────────────────────────────────────────
+
+function StackedBarChart({
+  series,
+  categories,
+}: {
+  series: Record<string, TrendPoint[]>;
+  categories: string[];
+}) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [w, setW] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
@@ -101,40 +125,64 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
     return () => ro.disconnect();
   }, []);
 
-  const H = 168;
+  const H = 180;
   const PAD = { t: 14, r: 28, b: 26, l: 28 };
 
-  const { bars, ticks } = useMemo(() => {
-    if (trend.length === 0 || w === 0) return { bars: [], ticks: [] };
-    const mx = Math.max(...trend.map((p) => p.total_tokens), 1);
+  const nDays = Object.values(series)[0]?.length ?? 0;
+
+  const { stacks, ticks, maxTotal } = useMemo(() => {
+    if (nDays === 0 || w === 0 || categories.length === 0)
+      return { stacks: [], ticks: [], maxTotal: 1 };
+
     const innerW = Math.max(w - PAD.l - PAD.r, 1);
     const innerH = H - PAD.t - PAD.b;
-    const n = trend.length;
-    const slot = innerW / n;
+    const slot = innerW / nDays;
     const gap = Math.min(slot * 0.25, 4);
     const barW = Math.max(slot - gap, 1);
-    const barList = trend.map((p, i) => {
-      const h = (p.total_tokens / mx) * innerH;
+
+    // compute per-day total for y-scale
+    const dayTotals = Array.from({ length: nDays }, (_, d) =>
+      categories.reduce((s, cat) => s + (series[cat]?.[d]?.total_tokens ?? 0), 0)
+    );
+    const mx = Math.max(...dayTotals, 1);
+
+    const stackList = Array.from({ length: nDays }, (_, d) => {
+      const x = PAD.l + d * slot + gap / 2;
+      const ts = series[categories[0]]?.[d]?.ts ?? 0;
+      let accH = 0;
+      const segments = categories.map((cat, ci) => {
+        const val = series[cat]?.[d]?.total_tokens ?? 0;
+        const h = (val / mx) * innerH;
+        const seg = {
+          cat,
+          color: catColor(ci),
+          x,
+          y: PAD.t + innerH - accH - h,
+          w: barW,
+          h: Math.max(h, val > 0 ? 1.5 : 0),
+          val,
+        };
+        accH += h;
+        return seg;
+      });
+      return { d, x, ts, segments, total: dayTotals[d] };
+    });
+
+    const tickCount = Math.min(nDays, 6);
+    const tickList = Array.from({ length: tickCount }, (_, i) => {
+      const idx = Math.round((i / Math.max(tickCount - 1, 1)) * (nDays - 1));
       return {
-        x: PAD.l + i * slot + gap / 2,
-        y: PAD.t + (innerH - h),
-        w: barW,
-        h: Math.max(h, p.total_tokens > 0 ? 2 : 0), // min 2px so non-zero days show
-        point: p,
+        x: PAD.l + idx * slot + slot / 2,
+        label: fmtDate(stackList[idx]?.ts ?? 0),
       };
     });
-    // up to 6 evenly-spaced date labels along the axis
-    const tickCount = Math.min(n, 6);
-    const tickList = Array.from({ length: tickCount }, (_, i) => {
-      const idx = Math.round((i / Math.max(tickCount - 1, 1)) * (n - 1));
-      return { x: PAD.l + idx * slot + slot / 2, label: fmtDate(trend[idx].ts) };
-    });
-    return { bars: barList, ticks: tickList };
-  }, [trend, w]);
 
-  if (trend.length === 0) {
+    return { stacks: stackList, ticks: tickList, maxTotal: mx };
+  }, [series, categories, w, nDays]);
+
+  if (nDays === 0) {
     return (
-      <div className={local.chartWrap} ref={wrapRef}>
+      <div className={local.chartWrap} ref={wrapRef} style={{ height: H }}>
         <div className={local.chartEmpty}>暂无数据</div>
       </div>
     );
@@ -144,30 +192,45 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
     <div className={local.chartWrap} ref={wrapRef} style={{ height: H }}>
       {w > 0 && (
         <svg width={w} height={H}>
-          {bars.map((b, i) => (
-            <rect
-              key={i}
-              x={b.x}
-              y={b.h > 0 ? b.y : H - PAD.b - 1}
-              width={b.w}
-              height={b.h > 0 ? b.h : 1}
-              rx={Math.min(b.w / 2, 2)}
-              fill={
-                b.h > 0
-                  ? "var(--accent-blue, #b8651f)"
-                  : "var(--border, #e5e0d8)"
-              }
-              opacity={hover === null || hover === i ? 1 : 0.5}
-              onMouseEnter={() => setHover(i)}
-              onMouseLeave={() => setHover(null)}
-            />
-          ))}
+          {stacks.map((st) =>
+            st.segments.map((seg, si) =>
+              seg.h > 0 ? (
+                <rect
+                  key={`${st.d}-${si}`}
+                  x={seg.x}
+                  y={seg.y}
+                  width={seg.w}
+                  height={seg.h}
+                  rx={Math.min(seg.w / 2, 2)}
+                  fill={seg.color}
+                  opacity={hover === null || hover === st.d ? 1 : 0.4}
+                  onMouseEnter={() => setHover(st.d)}
+                  onMouseLeave={() => setHover(null)}
+                />
+              ) : null
+            )
+          )}
+          {/* baseline for empty days */}
+          {stacks
+            .filter((st) => st.total === 0)
+            .map((st) => (
+              <rect
+                key={`empty-${st.d}`}
+                x={st.x}
+                y={H - PAD.b - 1}
+                width={st.segments[0]?.w ?? 2}
+                height={1}
+                fill="var(--border, #e5e0d8)"
+              />
+            ))}
           {ticks.map((t, i) => (
             <text
               key={i}
               x={t.x}
               y={H - 6}
-              textAnchor={i === 0 ? "start" : i === ticks.length - 1 ? "end" : "middle"}
+              textAnchor={
+                i === 0 ? "start" : i === ticks.length - 1 ? "end" : "middle"
+              }
               fontSize="11"
               fill="var(--text-secondary)"
             >
@@ -176,39 +239,72 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
           ))}
         </svg>
       )}
-      {hover !== null && bars[hover] && (
+      {hover !== null && stacks[hover] && (
         <div
           className={local.chartTip}
           style={{
-            left: Math.min(Math.max(bars[hover].x + bars[hover].w / 2, 60), w - 60),
+            left: Math.min(
+              Math.max(stacks[hover].x + (stacks[hover].segments[0]?.w ?? 0) / 2, 80),
+              w - 80
+            ),
           }}
         >
-          <strong>{fmtDate(bars[hover].point.ts)}</strong>{" "}
-          {fmtNum(bars[hover].point.total_tokens)} tok · {fmtCost(bars[hover].point.cost)}
+          <strong>{fmtDate(stacks[hover].ts)}</strong>{" "}
+          {fmtNum(stacks[hover].total)} tok
         </div>
       )}
     </div>
   );
 }
 
-// ── KindBars: horizontal bar chart ──────────────────────────────────────────
+// ── Legend ───────────────────────────────────────────────────────────────────
 
-function KindBars({ rows }: { rows: KindRow[] }) {
+function Legend({ categories }: { categories: string[] }) {
+  return (
+    <div className={local.legend}>
+      {categories.map((cat, i) => (
+        <span key={cat} className={local.legendItem}>
+          <span
+            className={local.legendDot}
+            style={{ background: catColor(i) }}
+          />
+          {cat || "—"}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── CategoryBars (horizontal) with per-category colors ──────────────────────
+
+function CategoryBars({
+  rows,
+  categories,
+}: {
+  rows: { name: string; total_tokens: number; cost: number; events: number }[];
+  categories: string[];
+}) {
   const max = Math.max(...rows.map((r) => r.total_tokens), 1);
   return (
     <div className={local.barsWrap}>
-      {rows.map((r) => (
-        <div key={r.kind} className={local.barRow}>
-          <span className={local.barLabel}>{r.kind}</span>
-          <div className={local.barTrack}>
-            <div
-              className={local.barFill}
-              style={{ width: `${(r.total_tokens / max) * 100}%` }}
-            />
+      {rows.map((r) => {
+        const ci = categories.indexOf(r.name);
+        return (
+          <div key={r.name} className={local.barRow}>
+            <span className={local.barLabel}>{r.name || "—"}</span>
+            <div className={local.barTrack}>
+              <div
+                className={local.barFill}
+                style={{
+                  width: `${(r.total_tokens / max) * 100}%`,
+                  background: ci >= 0 ? catColor(ci) : undefined,
+                }}
+              />
+            </div>
+            <span className={local.barValue}>{fmtNum(r.total_tokens)}</span>
           </div>
-          <span className={local.barValue}>{fmtNum(r.total_tokens)}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -218,21 +314,37 @@ function KindBars({ rows }: { rows: KindRow[] }) {
 export function TokenUsageSection() {
   const { t } = useTranslation();
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [dim, setDim] = useState<Dimension>("call_kind");
+  const [trendData, setTrendData] = useState<Record<string, GroupedTrendResp>>(
+    {}
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  // initial load: summary + all 3 grouped trends
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [s, tr] = await Promise.all([
+        const [s, tKind, tModel, tLabel] = await Promise.all([
           cachedFetch<Summary>("/api/usage/summary"),
-          cachedFetch<TrendResp>("/api/usage/trend?bucket=day&days=30"),
+          cachedFetch<GroupedTrendResp>(
+            "/api/usage/trend?bucket=day&days=30&group=call_kind"
+          ),
+          cachedFetch<GroupedTrendResp>(
+            "/api/usage/trend?bucket=day&days=30&group=model_id"
+          ),
+          cachedFetch<GroupedTrendResp>(
+            "/api/usage/trend?bucket=day&days=30&group=call_label"
+          ),
         ]);
         if (!alive) return;
         setSummary(s);
-        setTrend(tr.trend ?? []);
+        setTrendData({
+          call_kind: tKind,
+          model_id: tModel,
+          call_label: tLabel,
+        });
       } catch {
         if (alive) setError(true);
       } finally {
@@ -261,6 +373,31 @@ export function TokenUsageSection() {
     [totals, t]
   );
 
+  // current dimension's data
+  const curTrend = trendData[dim];
+  const series = curTrend?.series ?? {};
+  const categories = useMemo(() => Object.keys(series), [series]);
+
+  // bar rows for current dimension from summary
+  const barRows = useMemo(() => {
+    if (!summary) return [];
+    if (dim === "model_id") {
+      return summary.by_model.map((r) => ({
+        name: r.model,
+        total_tokens: r.total_tokens,
+        cost: r.cost,
+        events: r.events,
+      }));
+    }
+    // call_kind and call_label both come from by_kind (which is grouped by kind+label)
+    return summary.by_kind.map((r) => ({
+      name: r.kind,
+      total_tokens: r.total_tokens,
+      cost: r.cost,
+      events: r.events,
+    }));
+  }, [summary, dim]);
+
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
@@ -282,21 +419,33 @@ export function TokenUsageSection() {
               ))}
             </div>
 
-            {/* daily trend sparkline */}
-            <div className={local.section}>
-              <h3 className={local.sectionTitle}>{t("usage.trend")}</h3>
-              <TrendChart trend={trend} />
+            {/* dimension tabs */}
+            <div className={local.dimTabs}>
+              {DIMENSIONS.map((d) => (
+                <button
+                  key={d.key}
+                  className={`${local.dimTab} ${dim === d.key ? local.dimTabActive : ""}`}
+                  onClick={() => setDim(d.key)}
+                >
+                  {t(d.labelKey as any)}
+                </button>
+              ))}
             </div>
 
-            {/* by call_kind bars */}
-            {(summary?.by_kind ?? []).length > 0 && (
+            {/* stacked bar chart + legend */}
+            <div className={local.section}>
+              <StackedBarChart series={series} categories={categories} />
+              <Legend categories={categories} />
+            </div>
+
+            {/* horizontal breakdown bars */}
+            {barRows.length > 0 && (
               <div className={local.section}>
-                <h3 className={local.sectionTitle}>{t("usage.byKind")}</h3>
-                <KindBars rows={summary!.by_kind} />
+                <CategoryBars rows={barRows} categories={categories} />
               </div>
             )}
 
-            {/* per-model table */}
+            {/* per-model table (always shown) */}
             <div className={local.section}>
               <h3 className={local.sectionTitle}>{t("usage.byModel")}</h3>
               {(summary?.by_model ?? []).length > 0 ? (

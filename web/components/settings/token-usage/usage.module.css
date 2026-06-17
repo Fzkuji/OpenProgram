@@ -48,6 +48,63 @@
   margin: 0;
 }
 
+/* ── dimension tabs ──────────────────────────────────────────────────────── */
+
+.dimTabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--bg-secondary, #f0ede8);
+  width: fit-content;
+}
+
+.dimTab {
+  all: unset;
+  cursor: pointer;
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.dimTab:hover {
+  color: var(--text-primary);
+}
+
+.dimTabActive {
+  background: var(--bg-primary, #fff);
+  color: var(--text-bright);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* ── legend ──────────────────────────────────────────────────────────────── */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legendDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
 /* ── trend chart ─────────────────────────────────────────────────────────── */
 
 .chartWrap {
