@@ -367,9 +367,16 @@ export function Composer() {
   const {
     tools: toolsEnabled,
     webSearch: webSearchEnabled,
-    toggleTools,
+    toggleTools: _rawToggleTools,
     toggleWebSearch,
   } = useToolsToggles();
+  // Sync sub-panel: enable → open, disable → close.
+  const toggleTools = () => {
+    _rawToggleTools();
+    // After toggle, toolsEnabled is the OLD value (pre-toggle).
+    // So !toolsEnabled = the NEW state after toggle.
+    setToolProfileSubOpen(!toolsEnabled && Object.keys(toolProfiles).length > 1);
+  };
   // Per-turn "Fast" speed tier → sent as service_tier:"priority". Now
   // per-session (store's composerSettings.fast, persisted + isolated per
   // chat like the other toggles). The backend forwards it to the provider
