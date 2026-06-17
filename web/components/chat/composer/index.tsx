@@ -395,6 +395,32 @@ export function Composer() {
       send({ action: "set_attended", session_id: currentSessionId, attended: !unattended });
     }
   }, [currentSessionId, unattended, send]);
+
+  // Tool profiles — fetch the list on mount so the "+" menu can show
+  // a profile picker. The active profile determines which tools the
+  // model gets for this conversation.
+  const [toolProfiles, setToolProfiles] = useState<Record<string, string[]>>({});
+  const [activeProfile, setActiveProfile] = useState("default");
+  useEffect(() => {
+    fetch("/api/tool-profiles")
+      .then((r) => r.json())
+      .then((d) => {
+        setToolProfiles(d.profiles ?? {});
+        setActiveProfile(d.active ?? "default");
+      })
+      .catch(() => {});
+  }, []);
+
+  const switchProfile = (name: string) => {
+    setActiveProfile(name);
+    // Persist the choice to the backend
+    fetch("/api/tool-profiles/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).catch(() => {});
+  };
+
   // Slash-menu state lives in its own hook (./use-slash-menu).
   // fn-form field state (values, workdir, error highlight, closing
   // flag) is owned by `./use-fn-form-state`; it also runs the
@@ -1285,6 +1311,27 @@ export function Composer() {
                       icon={<UnattendedIcon />}
                       label={text("Unattended", "无人值守")}
                     />
+                    {Object.keys(toolProfiles).length > 1 && (
+                      <>
+                        <div className={styles.plusMenuDivider} />
+                        <div style={{ padding: "4px 12px", fontSize: "11px",
+                          color: "var(--text-muted)", textTransform: "uppercase",
+                          letterSpacing: "0.05em" }}>
+                          {text("Tool Profile", "工具配置")}
+                        </div>
+                        {Object.keys(toolProfiles).sort().map((pName) => (
+                          <PlusMenuItem
+                            key={pName}
+                            active={activeProfile === pName}
+                            onClick={() => { switchProfile(pName); setPlusMenuOpen(false); }}
+                            icon={<ToolsIcon />}
+                            label={pName === "default"
+                              ? text("All Tools", "全部工具")
+                              : pName}
+                          />
+                        ))}
+                      </>
+                    )}
                   </div>,
                   document.body,
                 )
