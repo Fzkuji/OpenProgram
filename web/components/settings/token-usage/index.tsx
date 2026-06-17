@@ -102,7 +102,7 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
   }, []);
 
   const H = 168;
-  const PAD = { t: 14, r: 12, b: 26, l: 12 };
+  const PAD = { t: 14, r: 28, b: 26, l: 28 };
 
   const { bars, ticks } = useMemo(() => {
     if (trend.length === 0 || w === 0) return { bars: [], ticks: [] };
@@ -167,7 +167,7 @@ function TrendChart({ trend }: { trend: TrendPoint[] }) {
               key={i}
               x={t.x}
               y={H - 6}
-              textAnchor="middle"
+              textAnchor={i === 0 ? "start" : i === ticks.length - 1 ? "end" : "middle"}
               fontSize="11"
               fill="var(--text-secondary)"
             >
