@@ -76,10 +76,14 @@ def record_message(model, message, *, session_id: Optional[str] = None,
 
         ctx = current_usage_context()
         cost, cost_source = _cost_from_model(model, usage)
+        # contextvar session wins (set by the turn's usage_scope) so a
+        # compaction/summary call inside the turn attributes to the same
+        # session even when its own options carried no session_id.
+        eff_session = ctx.session_id or session_id
 
         event = UsageEvent(
             ts=time.time(),
-            session_id=session_id,
+            session_id=eff_session,
             parent_session_id=ctx.parent_session_id,
             agent_id=ctx.agent_id,
             call_kind=ctx.call_kind,

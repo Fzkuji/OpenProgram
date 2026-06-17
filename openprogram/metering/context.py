@@ -25,6 +25,7 @@ from .event import CALL_KIND_UNKNOWN
 class UsageContext:
     call_kind: str = CALL_KIND_UNKNOWN
     call_label: Optional[str] = None
+    session_id: Optional[str] = None
     parent_session_id: Optional[str] = None
     agent_id: Optional[str] = None
 
@@ -43,19 +44,23 @@ def usage_scope(
     *,
     call_kind: Optional[str] = None,
     call_label: Optional[str] = None,
+    session_id: Optional[str] = None,
     parent_session_id: Optional[str] = None,
     agent_id: Optional[str] = None,
 ) -> Iterator[UsageContext]:
     """Set the call-source context for the duration of the block.
 
     Nests: fields left as ``None`` inherit from the enclosing scope, so an
-    inner ``usage_scope(call_label=...)`` keeps the outer ``call_kind``.
+    inner ``usage_scope(call_kind="summarize")`` keeps the outer
+    ``session_id`` / ``agent_id`` — that's how a compaction call made inside
+    a chat turn still attributes to the right session.
     """
     base = _current.get()
     merged = replace(
         base,
         call_kind=call_kind if call_kind is not None else base.call_kind,
         call_label=call_label if call_label is not None else base.call_label,
+        session_id=session_id if session_id is not None else base.session_id,
         parent_session_id=parent_session_id if parent_session_id is not None
         else base.parent_session_id,
         agent_id=agent_id if agent_id is not None else base.agent_id,
@@ -74,6 +79,7 @@ def snapshot() -> dict:
     return {
         "call_kind": c.call_kind,
         "call_label": c.call_label,
+        "session_id": c.session_id,
         "parent_session_id": c.parent_session_id,
         "agent_id": c.agent_id,
     }
@@ -87,6 +93,7 @@ def apply_snapshot(data: Optional[dict]) -> None:
     _current.set(UsageContext(
         call_kind=data.get("call_kind") or CALL_KIND_UNKNOWN,
         call_label=data.get("call_label"),
+        session_id=data.get("session_id"),
         parent_session_id=data.get("parent_session_id"),
         agent_id=data.get("agent_id"),
     ))
