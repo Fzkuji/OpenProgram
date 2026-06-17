@@ -100,209 +100,47 @@ ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
 
 ## 6. Provider 翻译层
 
-### 6.1 当前实现（hardcoded 映射）
+详见 [`model-catalog-final.md`](model-catalog-final.md) §3-4。
 
-各 provider 内部写死映射 dict。这是当前的实际状态。
+**核心机制**：每个 provider 的 `models.json` 里声明 `provider.thinking`，包含 `wire_format`（用字符串还是数字）、`effort_map`（框架级别→API 值）或 `budget_map`（框架级别→token 数）。provider 的 `stream_simple()` 读这个配置做翻译，不 hardcode 映射 dict。
 
-#### Anthropic（`anthropic.py`）
-
-两条路径，按模型版本判断：
-
-**Adaptive 路径**（Opus 4.6+, Sonnet 4.6, 或 OAuth 认证）：
-
-API 参数：`thinking: {type: "adaptive"}` + `output_config: {effort: "<值>"}`
-
-判断条件：`_supports_adaptive_thinking(model.id)` — 模型 id 含 `opus-4-6` 或 `sonnet-4-6` 返回 True。OAuth token 也走此路径。
-
-映射表（`_EFFORT_MAP`，`anthropic.py:168`）：
-
-| 框架级别 | API effort | 备注 |
-|---|---|---|
-| minimal | low | Anthropic 没有 minimal |
-| low | low | |
-| medium | medium | |
-| high | high | |
-| xhigh | max | Sonnet 4.6 降到 high |
-| max | ⚠️ 未映射 | fallback 到 high |
-
-**Budget 路径**（Opus 4.5 及以前，已废弃）：
-
-API 参数：`thinking: {type: "enabled", budget_tokens: N}`
-
-映射表（`_THINKING_BUDGETS`，`anthropic.py:159`）：
-
-| 框架级别 | budget_tokens |
-|---|---|
-| minimal | 1024 |
-| low | 4096 |
-| medium | 8192 |
-| high | 16000 |
-| xhigh | 32000 |
-| max | ⚠️ 未定义，fallback 8192 |
-
-`budget_tokens >= max_tokens` 时自动调整 `max_tokens = budget + max_tokens`。
-
-#### OpenAI Codex / OpenAI Responses（`openai_codex.py` / `openai_responses.py`）
-
-API 参数：`reasoning: {effort: "<值>", summary: "auto"}` + `include: ["reasoning.encrypted_content"]`
-
-预处理：`supports_xhigh(model)` 为 True 则直传，否则 `clamp_reasoning()` 把 xhigh 降到 high。
-
-| 框架级别 | 支持 xhigh 的模型 | 不支持的 |
-|---|---|---|
-| minimal~high | 直传 | 直传 |
-| xhigh | xhigh | high（clamp） |
-| max | max | max |
-
-#### OpenAI Completions（`openai_completions.py`）
-
-API 参数：`reasoning_effort: "<值>"`
-
-映射表（`openai_completions.py:314`）：
-
-| 框架级别 | API 值 |
-|---|---|
-| minimal / low | low |
-| medium | medium |
-| high | high |
-| xhigh | high |
-| max | ⚠️ 未定义，fallback medium |
-
-#### Google Gemini（`google.py`）
-
-API 参数：`ThinkingConfig(thinking_budget=N)`
-
-不传 reasoning 时设 `thinking_budget=0`（显式关闭）。
-
-映射表（`google.py:144`）：
-
-| 框架级别 | thinking_budget |
-|---|---|
-| minimal | 512 |
-| low | 2048 |
-| medium | 8192 |
-| high | 24576 |
-| xhigh | 32768 |
-| max | ⚠️ 未定义，fallback 8192 |
-
-Gemini 还有一个 `"auto"` 级别（让模型自决），仅 Gemini picker 显示，不在 ThinkingLevel 类型里。
-
-#### Amazon Bedrock（`amazon_bedrock.py`）
-
-走 Anthropic Messages API 的 Bedrock 变体。Adaptive 路径映射（`amazon_bedrock.py:81`）：
-
-| 框架级别 | API effort |
-|---|---|
-| minimal / low | low |
-| medium | medium |
-| high | high |
-| xhigh | max |
-| max | ⚠️ 未定义，fallback high |
-
-Budget 路径同 Anthropic。
-
-#### claude-code
-
-不是独立 wire 格式。Runtime 构造时改写为 `anthropic:<model_id>`，走 Anthropic provider。认证用 OAuth，一定走 adaptive 路径。
-
-### 6.2 当前实现的问题
-
-1. **新增级别要逐个 provider 手动改 dict**——加了 `"max"` 后 5 个 provider 漏了，无任何报错
-2. **没有 provider 级别的能力声明**——无法知道某个 provider 支持哪些 API 级别
-3. **映射散在各 provider 的 stream_simple 里**——改一个容易漏另一个
-
-### 6.3 目标设计（学 OpenCode 的 protocol adapter 模式）
-
-每个 provider 注册时声明三件事：
-
-```python
-@dataclass
-class ProviderThinkingSpec:
-    # 这个 provider 的 API 接受哪些 effort 值
-    supported_api_levels: list[str]  # 如 ["low","medium","high","max"]
-
-    # 框架 ThinkingLevel → API 值的映射
-    effort_map: dict[str, str]  # 如 {"minimal":"low", "xhigh":"max", ...}
-
-    # API 请求体怎么组装（字符串 effort 还是数字 budget）
-    wire_format: Literal["effort_string", "budget_tokens"]
-
-    # wire_format="budget_tokens" 时的映射
-    budget_map: dict[str, int] | None  # 如 {"low":4096, "high":16000}
-```
-
-provider 注册（`register.py`）时和 stream function 一起注册 `ProviderThinkingSpec`。翻译逻辑统一：
-
-```python
-def translate_reasoning(model, level, spec):
-    if spec.wire_format == "effort_string":
-        api_level = spec.effort_map.get(level)
-        if api_level not in spec.supported_api_levels:
-            api_level = clamp_down(api_level, spec.supported_api_levels)
-        return {"effort": api_level}
-    else:
-        budget = spec.budget_map.get(level, 8192)
-        return {"budget_tokens": budget}
-```
-
-provider 的 `stream_simple` 只管把返回的 dict 塞进自己 API 的正确位置（Anthropic 放 `output_config`，OpenAI 放 `reasoning`，Gemini 放 `ThinkingConfig`）。
-
-**好处**：
-- 新增级别 → 改 `ThinkingLevel` 类型 + 各 provider 的 `effort_map` → 没改到的 provider，`translate_reasoning` 走 clamp_down 自动降级，不会 fallback 到错误值
-- 新增 provider → 注册时声明 `ProviderThinkingSpec`，不改已有 provider
-- 映射集中在注册处，不散在 stream_simple 里
+**当前状态**：映射还 hardcode 在各 provider 的代码里（`_EFFORT_MAP`、`_THINKING_BUDGETS`、`budget_map` 等），`models.json` 机制尚未落地。`"max"` 级别在 5 个 provider 的映射表里缺失。迁移步骤见 model-catalog-final.md §6。
 
 ## 7. Model 能力声明
 
 每个 Model 对象上的 thinking 字段（`providers/types.py`）：
 
-| 字段 | 类型 | 来源 |
+| 字段 | 类型 | 来源（目标） |
 |---|---|---|
-| `reasoning` | `bool` | catalog JSON / fetched JSON |
-| `thinking_levels` | `list[ThinkingLevel]` | `derive_thinking_fields()` 根据 `reasoning` + `supports_xhigh` 自动生成 |
-| `default_thinking_level` | `ThinkingLevel \| None` | 同上 |
-| `thinking_variant` | `str \| None` | `THINKING_OVERRIDES` 手动指定（仅特殊 wire 格式的模型需要） |
+| `reasoning` | `bool` | `models.json` 里每个模型的 `reasoning` 字段 |
+| `thinking_levels` | `list[ThinkingLevel]` | 从 `provider.thinking.effort_map`（或 `budget_map`）的 key 自动推导 |
+| `default_thinking_level` | `ThinkingLevel \| None` | `provider.thinking.default_effort` |
+| `thinking_variant` | `str \| None` | 模型条目的 `thinking_override.variant`（仅少数模型需要） |
 
-### 7.1 filling 链
+### 7.1 目标 filling 链
 
 ```
-catalog JSON (reasoning: true/false)
-  ↓
-apply_thinking_catalog() — 模块加载时遍历所有 Model
-  ↓
-derive_thinking_fields(provider, model_id, reasoning, supports_xhigh)
-  ↓ 查 THINKING_OVERRIDES → 有则用 → 没有则自动生成
+models.json (每个 provider 文件夹里)
+  ↓ provider.thinking.effort_map 的 keys
+  ↓ + model.reasoning: true/false
+  ↓ + model.thinking_override（如果有）
 Model.thinking_levels / default_thinking_level / thinking_variant
 ```
 
-自动生成规则：
-- `reasoning=False` → `thinking_levels=[]`（UI 隐藏菜单）
-- `reasoning=True, supports_xhigh=True` → `[minimal, low, medium, high, xhigh, max]`，default `xhigh`
-- `reasoning=True, supports_xhigh=False` → `[minimal, low, medium, high, max]`，default `medium`
-- gpt-5.5 不支持 minimal（`supports_minimal_effort()` 判断），会从列表中去掉
+规则简化为：`reasoning=False` → 空列表（UI 隐藏）；`reasoning=True` → 用映射表的 key 作为级别列表；有 `thinking_override` 的模型用 override 的 key。
+
+不再需要 `derive_thinking_fields()`、`THINKING_OVERRIDES`、`supports_xhigh()` 等推导逻辑——映射表有哪些 key，就支持哪些级别。
 
 ### 7.2 新模型怎么生效
 
-1. catalog JSON 里加一条 `"reasoning": true`（或 Fetch Models 从 API 拉到）
-2. `apply_thinking_catalog()` 自动调 `derive_thinking_fields()` 填充 thinking_levels
+1. `models.json` 里加一条 `"reasoning": true`（或 Fetch Models 从 API 拉到）
+2. 框架从 `provider.thinking.effort_map` 的 key 推导出 `thinking_levels`
 3. UI 从 `/api/agent_settings` 拿到级别列表，渲染滑块
 4. 不需要改任何代码
 
-### 7.3 THINKING_OVERRIDES
+### 7.3 per-model 覆盖
 
-`thinking_catalog.py` 里的静态 dict，用于需要特殊处理的模型：
-
-```python
-THINKING_OVERRIDES = {
-    "anthropic/claude-opus-4-7": {
-        "thinking_levels": ["low", "medium", "high"],
-        "default_thinking_level": "medium",
-        "thinking_variant": "opus47",
-    },
-}
-```
-
-`thinking_variant` 是给 provider 的标记——Opus 4.7 的 wire 格式和其他 Anthropic 模型不同（用 `output_config.effort` 而不是 `thinking.budget_tokens`），provider 代码看到这个标记走不同分支。
+少数模型的 wire 格式和同 provider 其他模型不同时（如 Anthropic Opus 4.7），在模型条目里加 `thinking_override`。详见 model-catalog-final.md §3.2。
 
 ## 8. UI Picker 配置
 

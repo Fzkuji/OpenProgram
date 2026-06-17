@@ -1,105 +1,279 @@
-# 模型目录 — 最终版
+# 模型目录 + Provider 配置
 
-## 用户定的四条职责
+## 1. 核心原则
 
-1. **models.dev 定期自动更新** —— 当通用模型目录(价格/能力/通用上下文),
-   隔段时间(TTL)自动刷新。
-2. **fetch = 拉 provider 官方模型列表**(如 Anthropic /v1/models),**不是**
-   刷 models.dev。两件独立的事。
-3. **fetch 结果覆盖式保存,每 provider 单独存** —— fetch anthropic 就覆盖
-   anthropic 那一份。
-4. models.dev + fetch 结果怎么结合 → 见下;其余死代码删除。
+**每个 provider 的所有配置自包含在自己的文件夹里。** 模型列表、thinking 映射、pricing——全在 `openprogram/providers/<provider>/` 下，不集中存也不散到别的地方。加一个新 provider = 加一个文件夹。
 
-## 两个源的天然分工(已实测字段)
+## 2. 数据布局
 
-| | 官方 /v1/models(fetch) | models.dev |
-| --- | --- | --- |
-| 有哪些模型(这号能用啥) | ✅ 权威 | 通用,不分订阅 |
-| 上下文/输出上限 | ✅ | ✅ |
-| 价格 cost | ❌ 无 | ✅ |
-| modalities/reasoning_options 细节 | 粗(capabilities) | ✅ 细 |
+### 2.1 代码仓库（静态基线）
 
-**分工**:fetch 定"有哪些 + 上下文"(权威),models.dev 补"价格 + 能力细节"。
+每个 provider 文件夹里放一个 `models.json`，跟代码一起发布：
 
-## 数据布局
+```
+openprogram/providers/
+├── anthropic/
+│   ├── __init__.py
+│   ├── anthropic.py           ← stream 实现
+│   ├── auth_adapter.py
+│   ├── models.json            ← 静态基线：模型列表 + thinking 配置
+│   └── ...
+├── google/
+│   ├── google.py
+│   ├── models.json
+│   └── ...
+├── openai_codex/
+│   ├── openai_codex.py
+│   ├── models.json
+│   └── ...
+├── openai_completions/
+│   ├── openai_completions.py
+│   ├── models.json
+│   └── ...
+├── openai_responses/
+│   ├── openai_responses.py
+│   ├── models.json
+│   └── ...
+├── amazon_bedrock/
+│   ├── amazon_bedrock.py
+│   ├── models.json
+│   └── ...
+└── _shared/                   ← 公共工具函数，不是 provider
+```
+
+### 2.2 用户目录（运行时动态数据）
+
+Fetch Models 从 API 拉到的数据存用户目录，覆盖式：
 
 ```
 ~/.openprogram/models/
-├── models_dev.json              ← models.dev 全量缓存(定期自动刷, 通用底料)
-├── fetched/
-│   ├── anthropic.json           ← fetch anthropic 官方列表(覆盖式)
-│   ├── openai.json
-│   └── <provider>.json          ← 每 provider 一份, fetch 即覆盖
-└── (无别的)
+├── models_dev.json              ← models.dev 全量缓存（定期自动刷）
+└── fetched/
+    ├── anthropic.json           ← Fetch anthropic 官方列表（覆盖式）
+    ├── openai.json
+    └── <provider>.json
 ```
 
-全部在 `~/.openprogram/`,**不进 git**。仓库里关于模型数据 0 文件。
+### 2.3 两者的关系
 
-## 结合逻辑(构建 MODELS)
+| | 代码仓库 `models.json` | 用户目录 `fetched/<p>.json` |
+|---|---|---|
+| 用途 | 开箱即用的静态基线 | 用户账号下的真实模型列表 |
+| 更新方式 | 随代码发布 | 用户点"Fetch Models" |
+| 包含 thinking 配置 | ✅ | ❌（只有模型列表） |
+| 优先级 | 低（兜底） | 高（有则覆盖模型列表） |
 
+thinking 配置只在代码仓库的 `models.json` 里——它是 provider 的 API 行为，不随用户账号变化。模型列表可以被 Fetch 覆盖（用户账号能用哪些模型因订阅不同），但"这个 provider 的 effort 怎么映射"是固定的。
+
+## 3. models.json 结构
+
+```json
+{
+  "provider": {
+    "id": "anthropic",
+    "thinking": {
+      "wire_format": "effort_string",
+      "effort_map": {
+        "minimal": "low",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "default_effort": "high"
+    }
+  },
+  "models": {
+    "claude-opus-4-8": {
+      "name": "Claude Opus 4.8",
+      "reasoning": true,
+      "context_window": 1000000,
+      "max_tokens": 128000,
+      "input_cost": 5.0,
+      "output_cost": 25.0,
+      "cache_read_cost": 0.5,
+      "cache_write_cost": 6.25,
+      "vision": true,
+      "tools": true
+    },
+    "claude-sonnet-4-6": {
+      "name": "Claude Sonnet 4.6",
+      "reasoning": true,
+      "context_window": 1000000,
+      "max_tokens": 64000,
+      "input_cost": 3.0,
+      "output_cost": 15.0
+    }
+  }
+}
 ```
+
+Gemini 的 `models.json`（用 budget_tokens 而不是字符串）：
+
+```json
+{
+  "provider": {
+    "id": "google",
+    "thinking": {
+      "wire_format": "budget_tokens",
+      "budget_map": {
+        "minimal": 512,
+        "low": 2048,
+        "medium": 8192,
+        "high": 24576,
+        "xhigh": 32768,
+        "max": 65536
+      },
+      "default_effort": "medium"
+    }
+  },
+  "models": { ... }
+}
+```
+
+### 3.1 provider.thinking 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `wire_format` | `"effort_string" \| "budget_tokens"` | API 用字符串还是数字 |
+| `effort_map` | `dict[str, str]` | 框架 ThinkingLevel → API 字符串值。`wire_format="effort_string"` 时必填 |
+| `budget_map` | `dict[str, int]` | 框架 ThinkingLevel → token 数。`wire_format="budget_tokens"` 时必填 |
+| `default_effort` | `str` | 该 provider 的默认级别 |
+
+### 3.2 per-model 覆盖（少数模型需要）
+
+大多数模型走 provider 级别的 thinking 配置。少数模型需要特殊处理时，在模型条目里加 `thinking_override`：
+
+```json
+{
+  "models": {
+    "claude-opus-4-7": {
+      "reasoning": true,
+      "thinking_override": {
+        "variant": "opus47",
+        "effort_map": {
+          "low": "low",
+          "medium": "medium",
+          "high": "high"
+        }
+      }
+    }
+  }
+}
+```
+
+`thinking_override` 有的字段覆盖 provider 级别的对应字段，没有的继承 provider 的。`variant` 标记给 provider 代码，让它知道这个模型的请求体组装方式不同。
+
+## 4. 加载逻辑
+
+### 4.1 构建 MODELS
+
+```python
 def build_MODELS():
-    md = read(models_dev.json)            # 通用底料(价格/能力/上下文)
     merged = {}
-    for provider in 所有已知 provider:
-        fetched = read(fetched/<provider>.json)   # 该号官方真列表(可能没有)
-        if fetched 存在:
-            # fetch 决定"有哪些 + 上下文",models.dev 补"价格/能力"
-            for m in fetched:
-                base = md_lookup(provider, m.id)   # 从 models.dev 找同 id 补字段
-                merged[f"{provider}/{m.id}"] = 合并(权威=fetched, 补充=base)
-        else:
-            # 没 fetch 过 → 直接用 models.dev 的该 provider 全部模型
-            for m in md[provider]:
-                merged[f"{provider}/{m.id}"] = from_models_dev(m)
-        # 本地补 api/base_url(models.dev 没这俩),订阅 provider 借用兄弟
+    for provider_dir in providers目录下所有子目录:
+        # 1. 读代码仓库的 models.json（静态基线）
+        static = read(provider_dir / "models.json")
+        provider_id = static["provider"]["id"]
+        thinking_spec = static["provider"]["thinking"]
+
+        # 2. 读用户目录的 fetched（如果有）
+        fetched = read(~/.openprogram/models/fetched/{provider_id}.json)
+
+        # 3. 读 models.dev 缓存补 pricing
+        models_dev = read(~/.openprogram/models/models_dev.json)
+
+        # 4. 合并：fetched > static > models_dev
+        model_list = fetched 的模型列表 if fetched else static["models"]
+        for model_id, model_data in model_list:
+            # 补 pricing（从 models.dev）
+            pricing = models_dev_lookup(provider_id, model_id)
+            # 补 thinking_levels（从 provider.thinking + model.thinking_override）
+            levels = derive_thinking_levels(model_data, thinking_spec)
+
+            merged[f"{provider_id}/{model_id}"] = Model(
+                id=model_id,
+                provider=provider_id,
+                thinking_levels=levels,
+                ...合并所有字段
+            )
+
     return merged
 ```
 
-要点:
-- **fetch 过的 provider** → 以官方列表为准(有哪些/上下文),models.dev 补价格能力。
-  完美对应"fetch 覆盖" + "结合"。
-- **没 fetch 的 provider** → 退回 models.dev 全量(开箱即用,不用每个都 fetch)。
-- **订阅 provider**(claude-code/openai-codex):models.dev 无 → 借兄弟
-  (claude-code←anthropic) 的 models.dev 数据 + 改 api/base_url;fetch 时
-  存 fetched/claude-code.json(它有自己的官方列表)。
+### 4.2 thinking_levels 推导
 
-## 刷新时机
+不再需要 `thinking_catalog.py` 里的 `derive_thinking_fields()` 和 `THINKING_OVERRIDES`——逻辑简化为：
 
-- **models_dev.json**:TTL 24h。启动时若过期→后台/惰性刷一次。无网→用旧缓存,
-  再无→报错(本工具离线本就不可用,无需写死兜底)。
-- **fetched/<provider>.json**:仅用户点"Fetch models"时刷该 provider,覆盖写。
+```python
+def derive_thinking_levels(model_data, provider_thinking_spec):
+    if not model_data.get("reasoning"):
+        return []  # 不支持 thinking，UI 隐藏
 
-## MODELS 加载(保持同步, 14 依赖零改)
+    # 模型有 override → 用 override 的 key 作为 levels
+    override = model_data.get("thinking_override")
+    if override and override.get("effort_map"):
+        return list(override["effort_map"].keys())
 
-`models_generated.py:_load()` → 调 build_MODELS()。import 时同步填满,
-接口不变,14 依赖无感。Fetch 后热重建 MODELS(重新 build)。
+    # 否则用 provider 的 effort_map/budget_map 的 key
+    if provider_thinking_spec.get("effort_map"):
+        return list(provider_thinking_spec["effort_map"].keys())
+    if provider_thinking_spec.get("budget_map"):
+        return list(provider_thinking_spec["budget_map"].keys())
 
-## 退役 / 删除(死代码)
+    return []
+```
 
-确认删:
-- 静态快照:`providers/_catalog/*.json`(被 models.dev 缓存取代)
-- 代码种子:`_claude_code_registry._SEED`(被"订阅借用"取代)
-- config 的 `custom_models`/`models_fetched`(被 fetched/<p>.json 取代)
-- Meridian 死代码堆:`_max_proxy_runtime.py`、`_meridian_cli.py`、
-  `_claude_max_proxy_registry.py`、`cli_runtime.py`、`cli_backend.py`、
-  `claude_models.py`、`claude_models.json`
-  (先确认 webui/auth 无活跃引用——_meridian_cli 还被 accounts/login 引用?
-   实现时逐个 grep 确认再删)
+`thinking_levels` 不再是手动维护的字段，而是从映射表的 key 自动推导——映射表有哪些 key，就支持哪些级别。
 
-## 迁移步骤(每步独立 commit, 可验证可回滚)
+### 4.3 provider 翻译
 
-1. **清死代码**:删 Meridian 堆 + claude_models.* + cli_runtime/backend。
-   逐个 grep 确认无活跃引用。全量回归绿。(低风险, 先做)
-2. **models.dev 缓存落盘**:models_dev.json 拉取+落盘+TTL+读取。单测。不接 MODELS。
-3. **build_MODELS 结合逻辑**:fetched + models.dev 合并 + 订阅借用 + 补 api/base_url。
-   验证产出与现状逐 provider 比对(只该多最新模型, 不该丢)。
-4. **切加载器 + fetch 改向**:_load 用 build_MODELS;fetch 写 fetched/<p>.json
-   覆盖式。验证 UI 列表正确、claude-code 模型对、断网用缓存。
-5. **删 _catalog + 种子 + custom_models**:退役旧源。全量回归 + 浏览器自查。
+provider 的 `stream_simple()` 不再写 hardcoded dict，而是读 `ProviderThinkingSpec`：
 
-## 风险与回滚
+```python
+def translate_reasoning(model, level):
+    spec = get_provider_thinking_spec(model.provider)
 
-- 每步独立 commit;切加载器(步4)若坏 revert 回 _catalog 方案(commit 还在)。
-- models.dev 字段变 → _normalise 已隔离。
-- 不动 api_registry/wire/14 依赖代码。
+    # 如果模型有 override，优先用 override 的映射
+    override = model.thinking_override
+    if override and level in override.get("effort_map", {}):
+        api_value = override["effort_map"][level]
+    elif spec["wire_format"] == "effort_string":
+        api_value = spec["effort_map"].get(level, spec["default_effort"])
+    else:  # budget_tokens
+        api_value = spec["budget_map"].get(level, 8192)
+
+    return api_value
+```
+
+## 5. 退役清单
+
+以下模块被 `models.json` 机制取代：
+
+| 旧模块 | 状态 | 替代 |
+|---|---|---|
+| `_catalog/*.json` | 删除 | 各 provider 文件夹的 `models.json` |
+| `_catalog/fetched/*.json` | 移到 `~/.openprogram/models/fetched/` | 位置变，格式不变 |
+| `thinking_catalog.py` 的 `THINKING_OVERRIDES` | 删除 | `models.json` 里的 `thinking_override` |
+| `thinking_catalog.py` 的 `derive_thinking_fields()` | 简化 | 从映射表 key 自动推导 |
+| `_thinking.py` 的 `THINKING_CONFIGS` | 删除 | `models.json` 里的 `provider.thinking` |
+| 各 provider 内部的 `_EFFORT_MAP` / `_THINKING_BUDGETS` / `budget_map` | 删除 | `models.json` 里的 `effort_map` / `budget_map` |
+
+## 6. 迁移步骤
+
+1. **写 models.json**：为每个 provider 创建 `models.json`，从现有 `_catalog/<provider>.json` + provider 代码里的 hardcoded dict 提取数据
+2. **加载器**：`models_generated.py` 的 `_load()` 改为遍历 provider 文件夹读 `models.json`
+3. **翻译器**：各 provider 的 `stream_simple()` 改为读 `ProviderThinkingSpec` 而不是内部 dict
+4. **清旧**：删 `_catalog/`、`THINKING_OVERRIDES`、`THINKING_CONFIGS`、各 provider 的 hardcoded dict
+5. **验证**：全量测试 + 浏览器自检（UI 模型列表正确、thinking 滑块正确、实际 API 调用参数正确）
+
+每步独立 commit，可验证可回滚。
+
+## 7. Fetch 流程
+
+用户点"Fetch Models"时：
+1. 调 provider 的 fetcher（各 provider 实现）从 API 拉模型列表
+2. 写入 `~/.openprogram/models/fetched/<provider>.json`（覆盖式）
+3. 触发 `build_MODELS()` 热重建（fetched 覆盖静态基线的模型列表，但 thinking 配置不变）
+4. 前端重新请求 `/api/agent_settings`，拿到更新后的模型列表和 thinking 配置
