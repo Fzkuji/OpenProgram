@@ -37,6 +37,15 @@ type TrendPoint = {
   events: number;
 };
 
+type LabelRow = {
+  label: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost: number;
+  events: number;
+};
+
 type Summary = {
   totals: {
     input_tokens: number;
@@ -49,6 +58,7 @@ type Summary = {
   };
   by_model: ModelRow[];
   by_kind: KindRow[];
+  by_label: LabelRow[];
 };
 
 type GroupedTrendResp = {
@@ -537,6 +547,37 @@ export function TokenUsageSection() {
                           <td className={local.num}>{fmtNum(r.input_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.output_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.cache_read_tokens)}</td>
+                          <td className={local.num}>{fmtNum(r.events)}</td>
+                          <td className={local.num}>{fmtCost(r.cost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* By function table */}
+            {(summary?.by_label ?? []).length > 0 && (
+              <div className={local.section}>
+                <h3 className={local.sectionTitle}>{t("usage.dim.label")}</h3>
+                <div className={local.tableWrap}>
+                  <table className={local.table}>
+                    <thead>
+                      <tr>
+                        <th>{t("usage.col.function")}</th>
+                        <th className={local.num}>{t("usage.col.input")}</th>
+                        <th className={local.num}>{t("usage.col.output")}</th>
+                        <th className={local.num}>{t("usage.col.calls")}</th>
+                        <th className={local.num}>{t("usage.col.cost")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary!.by_label.map((r) => (
+                        <tr key={r.label || "—"}>
+                          <td className={local.modelCell}>{r.label || "—"}</td>
+                          <td className={local.num}>{fmtNum(r.input_tokens)}</td>
+                          <td className={local.num}>{fmtNum(r.output_tokens)}</td>
                           <td className={local.num}>{fmtNum(r.events)}</td>
                           <td className={local.num}>{fmtCost(r.cost)}</td>
                         </tr>

@@ -30,6 +30,7 @@ def register(app):
         by_model = lg.query(group_by=["model_id", "provider"], **kw)
         totals = lg.query(**kw)
         by_kind = lg.query(group_by=["call_kind", "call_label"], **kw)
+        by_label = lg.query(group_by=["call_label"], **kw)
 
         tot = totals[0] if totals else None
         rows = []
@@ -62,6 +63,18 @@ def register(app):
             })
         kind_rows.sort(key=lambda r: r["total_tokens"], reverse=True)
 
+        label_rows = []
+        for r in by_label:
+            label_rows.append({
+                "label": r.keys.get("call_label") or "",
+                "input_tokens": r.input_tokens,
+                "output_tokens": r.output_tokens,
+                "total_tokens": r.total_tokens,
+                "cost": r.cost_total,
+                "events": r.events,
+            })
+        label_rows.sort(key=lambda r: r["total_tokens"], reverse=True)
+
         return JSONResponse(content={
             "totals": {
                 "input_tokens": tot.input_tokens if tot else 0,
@@ -74,6 +87,7 @@ def register(app):
             },
             "by_model": rows,
             "by_kind": kind_rows,
+            "by_label": label_rows,
         })
 
     @app.get("/api/usage/trend")
