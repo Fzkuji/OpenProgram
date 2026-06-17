@@ -279,7 +279,9 @@ class Summarizer:
                 timestamp=0,
             )],
         )
-        response = await complete_simple(model, ctx, opts)
+        from openprogram.metering import usage_scope
+        with usage_scope(call_kind="summarize"):
+            response = await complete_simple(model, ctx, opts)
         if getattr(response, "stop_reason", None) == "error":
             raise RuntimeError(
                 f"Summariser provider error: "

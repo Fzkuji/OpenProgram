@@ -64,7 +64,6 @@ def build_default_llm() -> Callable[[str, str], str] | None:
     try:
         from openprogram.providers.register import register_builtins
         register_builtins()
-        from openprogram.providers.api_registry import get_api_provider
         from openprogram.providers.models import get_model
     except Exception as e:  # noqa: BLE001
         logger.debug("provider stack unavailable: %s", e)
@@ -73,11 +72,6 @@ def build_default_llm() -> Callable[[str, str], str] | None:
     model = get_model(provider_name, model_id)
     if model is None:
         logger.debug("model %r/%r not found", provider_name, model_id)
-        return None
-
-    api_provider = get_api_provider(model.api)
-    if api_provider is None:
-        logger.debug("API provider %r not registered", model.api)
         return None
 
     # The claude-code provider (meridian / claude-max-api-proxy) routes
@@ -89,9 +83,11 @@ def build_default_llm() -> Callable[[str, str], str] | None:
     _inline_system = provider_name in _proxy_providers
 
     def _call(system_prompt: str, user_text: str) -> str:
+        from openprogram.providers import stream_simple as _stream_simple
         from openprogram.providers.types import (
             Context, SimpleStreamOptions, UserMessage,
         )
+        from openprogram.metering import usage_scope
         import time
         if _inline_system and system_prompt:
             merged = system_prompt.rstrip() + "\n\n---\n\n" + user_text
@@ -110,18 +106,18 @@ def build_default_llm() -> Callable[[str, str], str] | None:
         opts = SimpleStreamOptions(temperature=0.2, max_tokens=2000)
 
         async def _drive() -> str:
-            stream = api_provider.stream_simple(model, ctx, opts)
             chunks: list[str] = []
-            async for ev in stream:
-                t = getattr(ev, "type", None)
-                if t == "text_delta":
-                    chunks.append(getattr(ev, "delta", "") or "")
-                elif t == "done":
-                    break
-                elif t == "error":
-                    raise RuntimeError(
-                        getattr(getattr(ev, "error", None), "error_message", "llm error")
-                    )
+            with usage_scope(call_kind="memory"):
+                async for ev in _stream_simple(model, ctx, opts):
+                    t = getattr(ev, "type", None)
+                    if t == "text_delta":
+                        chunks.append(getattr(ev, "delta", "") or "")
+                    elif t == "done":
+                        break
+                    elif t == "error":
+                        raise RuntimeError(
+                            getattr(getattr(ev, "error", None), "error_message", "llm error")
+                        )
             return "".join(chunks)
 
         try:
