@@ -363,6 +363,7 @@ export function Composer() {
   }, [text]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [toolProfileSubOpen, setToolProfileSubOpen] = useState(false);
+  const toolProfileHideTimer = useRef<NodeJS.Timeout | null>(null);
   const {
     tools: toolsEnabled,
     webSearch: webSearchEnabled,
@@ -1288,8 +1289,24 @@ export function Composer() {
                     />
                     <div className={styles.plusMenuDivider} />
                     <div style={{ position: "relative" }}
-                      onMouseEnter={() => setToolProfileSubOpen(true)}
-                      onMouseLeave={() => setToolProfileSubOpen(false)}
+                      onMouseEnter={() => {
+                        // Only show sub-panel when tools are enabled AND
+                        // there are multiple profiles to pick from.
+                        if (toolsEnabled && Object.keys(toolProfiles).length > 1) {
+                          if (toolProfileHideTimer.current) {
+                            clearTimeout(toolProfileHideTimer.current);
+                            toolProfileHideTimer.current = null;
+                          }
+                          setToolProfileSubOpen(true);
+                        }
+                      }}
+                      onMouseLeave={() => {
+                        // Delay hide so the user can move the mouse to the
+                        // sub-panel without it vanishing instantly.
+                        toolProfileHideTimer.current = setTimeout(
+                          () => setToolProfileSubOpen(false), 300,
+                        );
+                      }}
                     >
                       <PlusMenuItem
                         active={toolsEnabled}
@@ -1297,23 +1314,37 @@ export function Composer() {
                         icon={<ToolsIcon />}
                         label={text("Tools", "工具")}
                       />
-                      {toolProfileSubOpen && Object.keys(toolProfiles).length > 1 && (
-                        <div style={{
-                          position: "absolute",
-                          left: "100%",
-                          top: 0,
-                          marginLeft: 4,
-                          minWidth: 160,
-                          zIndex: 10,
-                          background: "#252524",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          borderRadius: 12,
-                          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-                          padding: 6,
-                          display: "flex",
-                          flexDirection: "column" as const,
-                          gap: 1,
-                        }}>
+                      {toolProfileSubOpen && (
+                        <div
+                          onMouseEnter={() => {
+                            // Keep sub-panel alive while the mouse is inside it.
+                            if (toolProfileHideTimer.current) {
+                              clearTimeout(toolProfileHideTimer.current);
+                              toolProfileHideTimer.current = null;
+                            }
+                          }}
+                          onMouseLeave={() => {
+                            toolProfileHideTimer.current = setTimeout(
+                              () => setToolProfileSubOpen(false), 300,
+                            );
+                          }}
+                          style={{
+                            position: "absolute",
+                            left: "100%",
+                            bottom: 0,
+                            marginLeft: 4,
+                            minWidth: 160,
+                            zIndex: 10,
+                            background: "#252524",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            borderRadius: 12,
+                            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                            padding: 6,
+                            display: "flex",
+                            flexDirection: "column" as const,
+                            gap: 1,
+                          }}
+                        >
                           <div style={{ padding: "4px 12px", fontSize: "11px",
                             color: "var(--text-muted)", textTransform: "uppercase",
                             letterSpacing: "0.05em" }}>
@@ -1323,7 +1354,7 @@ export function Composer() {
                             <PlusMenuItem
                               key={pName}
                               active={activeProfile === pName}
-                              onClick={() => { switchProfile(pName); setPlusMenuOpen(false); setToolProfileSubOpen(false); }}
+                              onClick={() => switchProfile(pName)}
                               icon={<ToolsIcon />}
                               label={pName === "default"
                                 ? text("All Tools", "全部工具")
