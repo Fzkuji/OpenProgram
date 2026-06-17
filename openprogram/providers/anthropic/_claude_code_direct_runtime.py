@@ -114,7 +114,19 @@ def ensure_anthropic_model_registered(mid: str) -> str:
         ctx = 1_000_000
     else:
         ctx = template.context_window
-    MODELS[key] = template.model_copy(update={"id": mid, "name": mid, "context_window": ctx})
+    from openprogram.providers.thinking_catalog import derive_thinking_fields
+    levels, default, variant = derive_thinking_fields(
+        "anthropic", mid, True, True,
+    )
+    MODELS[key] = template.model_copy(update={
+        "id": mid,
+        "name": mid,
+        "context_window": ctx,
+        "reasoning": True,
+        "thinking_levels": levels,
+        "default_thinking_level": default,
+        "thinking_variant": variant,
+    })
     return mid
 
 

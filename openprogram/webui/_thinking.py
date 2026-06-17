@@ -21,15 +21,18 @@ from __future__ import annotations
 #   - Claude (claude-max, anthropic): auto / max available — adaptive thinking
 #   - GPT (codex, openai): maximum effort — the user wants the strongest setting
 THINKING_CONFIGS = {
-    # claude-max-api-proxy exposes no thinking knob — it drops
-    # reasoning_effort and the underlying Claude Code CLI decides
-    # thinking on its own. A single fixed "Auto" entry, not a picker.
+    # claude-code now goes direct to api.anthropic.com (no Meridian proxy),
+    # so reasoning_effort is honoured. Same levels as the anthropic provider.
     "claude-code": {
         "label": "thinking",
         "options": [
-            {"value": "auto", "desc": "Claude Code decides"},
+            {"value": "off", "desc": "No reasoning"},
+            {"value": "minimal", "desc": "Brief reasoning"},
+            {"value": "low", "desc": "Light reasoning"},
+            {"value": "medium", "desc": "Standard reasoning"},
+            {"value": "high", "desc": "Deep reasoning"},
         ],
-        "default": "auto",
+        "default": "medium",
     },
     "openai-codex": {
         "label": "reasoning effort",
@@ -118,11 +121,17 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
     """
     from openprogram.providers import get_model
 
-    # claude-code (claude-max-api-proxy) has no per-model thinking knob:
-    # the proxy ignores reasoning_effort and Claude Code CLI picks its
-    # own thinking. Always the fixed "Auto" config, regardless of model.
-    if provider == "claude-code":
-        return get_thinking_config("claude-code")
+    # claude-code hits api.anthropic.com directly (no proxy); its models
+    # are anthropic models under a different provider key. Look up the
+    # anthropic twin so thinking_levels from the anthropic catalog apply.
+    if provider == "claude-code" and model_id:
+        twin = get_model("anthropic", model_id)
+        if twin and getattr(twin, "thinking_levels", None):
+            return _build(
+                list(twin.thinking_levels),
+                twin.default_thinking_level,
+                twin.thinking_variant,
+            )
 
     def _build(levels: list[str], default: str | None, variant: str | None) -> dict:
         values = ["off", *levels]
