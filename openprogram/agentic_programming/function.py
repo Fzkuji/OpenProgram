@@ -830,6 +830,15 @@ class agentic_function:
                 ))
             except Exception:
                 pass
+            # Prevent self-recursion (async variant) — same as sync above.
+            from openprogram.agentic_programming.runtime import (
+                _current_tool_policy as _ctp_async,
+            )
+            _self_name_async = getattr(self, "tool_name", None) or fn.__name__
+            _prev_policy_async = _ctp_async.get(None) or {}
+            _prev_deny_async = list(_prev_policy_async.get("deny") or [])
+            _self_deny_policy_async = {**_prev_policy_async, "deny": _prev_deny_async + [_self_name_async]}
+            _self_deny_token_async = _ctp_async.set(_self_deny_policy_async)
             try:
                 output = await fn(*new_args, **new_kwargs)
                 return output
@@ -842,6 +851,7 @@ class agentic_function:
                 status = "error"
                 raise
             finally:
+                _ctp_async.reset(_self_deny_token_async)
                 _restore_system(_system_saved)
                 _update_function_call_exit(
                     pending_id=_pending_call_id,
@@ -920,6 +930,19 @@ class agentic_function:
                 ))
             except Exception:
                 pass
+            # Prevent self-recursion: an agentic function's inner
+            # runtime.exec must not see the function itself in the tool
+            # list (otherwise the model can call wiki_agent inside
+            # wiki_agent → infinite nesting). Push the function's own
+            # name into the tool-policy deny for the duration of this call.
+            from openprogram.agentic_programming.runtime import (
+                _current_tool_policy as _ctp,
+            )
+            _self_name = getattr(self, "tool_name", None) or fn.__name__
+            _prev_policy = _ctp.get(None) or {}
+            _prev_deny = list(_prev_policy.get("deny") or [])
+            _self_deny_policy = {**_prev_policy, "deny": _prev_deny + [_self_name]}
+            _self_deny_token = _ctp.set(_self_deny_policy)
             try:
                 output = fn(*new_args, **new_kwargs)
                 return output
@@ -932,6 +955,7 @@ class agentic_function:
                 status = "error"
                 raise
             finally:
+                _ctp.reset(_self_deny_token)
                 _restore_system(_system_saved)
                 _update_function_call_exit(
                     pending_id=_pending_call_id,
