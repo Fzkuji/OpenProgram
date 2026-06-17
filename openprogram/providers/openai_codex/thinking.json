@@ -1,0 +1,12 @@
+{
+  "wire_format": "effort_string",
+  "effort_map": {
+    "minimal": "minimal",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh",
+    "max": "max"
+  },
+  "default_effort": "xhigh"
+}
