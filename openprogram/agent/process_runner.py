@@ -72,12 +72,30 @@ def _child_entry(
     except Exception:
         pass
 
-    # Restore the parent's UsageContext so LLM calls made inside this
-    # subprocess are attributed to the same session/agent/call_kind.
-    # spawn doesn't copy contextvars, so we must do it explicitly.
+    # Restore the parent's UsageContext, then override call_kind/call_label
+    # with this subprocess's actual identity. The snapshot carries the
+    # parent's session_id (valuable — keeps attribution to the session that
+    # triggered this tool), but the parent's call_kind is typically "chat"
+    # which is wrong for an @agentic_function subprocess. Set it to "exec"
+    # with the tool's name as call_label so metering can distinguish
+    # research_agent / gui_agent / wiki_agent etc.
     try:
-        from openprogram.metering.context import apply_snapshot as _apply_uctx
+        from openprogram.metering.context import (
+            apply_snapshot as _apply_uctx,
+            usage_scope as _usage_scope,
+            _current as _usage_cur,
+            UsageContext,
+        )
         _apply_uctx(usage_ctx_snapshot)
+        from openprogram.metering.context import current_usage_context
+        _parent = current_usage_context()
+        _usage_cur.set(UsageContext(
+            call_kind="exec",
+            call_label=tool_name,
+            session_id=_parent.session_id or session_id,
+            parent_session_id=_parent.parent_session_id,
+            agent_id=_parent.agent_id,
+        ))
     except Exception:
         pass
 

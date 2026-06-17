@@ -68,6 +68,7 @@ _GROUP_EXPR = {
     "model_id": "model_id",
     "provider": "provider",
     "call_kind": "call_kind",
+    "call_label": "call_label",
     "session_id": "session_id",
     "agent_id": "agent_id",
     "day": "CAST(ts / 86400 AS INTEGER)",

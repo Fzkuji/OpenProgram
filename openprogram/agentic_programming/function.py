@@ -814,6 +814,22 @@ class agentic_function:
             output = None
             error = None
             status = "success"
+            _usage_token = None
+            try:
+                from openprogram.metering.context import (
+                    _current as _usage_cur, UsageContext,
+                    current_usage_context as _cur_uctx,
+                )
+                _prev = _cur_uctx()
+                _usage_token = _usage_cur.set(UsageContext(
+                    call_kind="exec",
+                    call_label=fn.__name__,
+                    session_id=_prev.session_id,
+                    parent_session_id=_prev.parent_session_id,
+                    agent_id=_prev.agent_id,
+                ))
+            except Exception:
+                pass
             try:
                 output = await fn(*new_args, **new_kwargs)
                 return output
@@ -837,6 +853,8 @@ class agentic_function:
                     ended_at=time.time(),
                 )
                 _call_id.reset(_call_token)
+                if _usage_token is not None:
+                    _usage_cur.reset(_usage_token)
                 if runtime_token is not None:
                     _current_runtime.reset(runtime_token)
                 if owns_runtime:
@@ -886,6 +904,22 @@ class agentic_function:
             output = None
             error = None
             status = "success"
+            _usage_token = None
+            try:
+                from openprogram.metering.context import (
+                    _current as _usage_cur, UsageContext,
+                    current_usage_context as _cur_uctx,
+                )
+                _prev = _cur_uctx()
+                _usage_token = _usage_cur.set(UsageContext(
+                    call_kind="exec",
+                    call_label=fn.__name__,
+                    session_id=_prev.session_id,
+                    parent_session_id=_prev.parent_session_id,
+                    agent_id=_prev.agent_id,
+                ))
+            except Exception:
+                pass
             try:
                 output = fn(*new_args, **new_kwargs)
                 return output
@@ -909,6 +943,8 @@ class agentic_function:
                     ended_at=time.time(),
                 )
                 _call_id.reset(_call_token)
+                if _usage_token is not None:
+                    _usage_cur.reset(_usage_token)
                 if runtime_token is not None:
                     _current_runtime.reset(runtime_token)
                 if owns_runtime:

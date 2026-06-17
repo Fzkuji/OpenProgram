@@ -29,7 +29,7 @@ def register(app):
 
         by_model = lg.query(group_by=["model_id", "provider"], **kw)
         totals = lg.query(**kw)
-        by_kind = lg.query(group_by=["call_kind"], **kw)
+        by_kind = lg.query(group_by=["call_kind", "call_label"], **kw)
 
         tot = totals[0] if totals else None
         rows = []
@@ -49,8 +49,11 @@ def register(app):
 
         kind_rows = []
         for r in by_kind:
+            kind = r.keys.get("call_kind") or "unknown"
+            label = r.keys.get("call_label") or ""
+            display = f"{kind}:{label}" if label else kind
             kind_rows.append({
-                "kind": r.keys.get("call_kind") or "unknown",
+                "kind": display,
                 "input_tokens": r.input_tokens,
                 "output_tokens": r.output_tokens,
                 "total_tokens": r.total_tokens,
