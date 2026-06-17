@@ -22,7 +22,7 @@ export interface UseFolderMetaResult {
   toggleFav: (name: string, e: React.MouseEvent) => Promise<void>;
   moveToFolder: (name: string, target: string | null) => Promise<void>;
   deleteFolder: (name: string) => Promise<void>;
-  createFolder: (name: string) => Promise<void>;
+  createFolder: (name: string, defaultContents?: string[]) => Promise<void>;
   renameFolder: (oldName: string, newName: string) => Promise<void>;
   applyIcon: (name: string, icon: string | null) => Promise<void>;
 }
@@ -81,11 +81,13 @@ export function useFolderMeta(
     await saveMeta(next);
   }, [cloneMeta, folder, saveMeta, setFolder]);
 
-  const createFolder = useCallback(async (name: string) => {
+  const createFolder = useCallback(async (name: string, defaultContents?: string[]) => {
     const trimmed = name.trim();
     if (!trimmed || meta.folders[trimmed]) return;
     const next = cloneMeta();
-    next.folders[trimmed] = [];
+    // Default-on: new folder includes ALL passed tool names (the caller
+    // passes every function + tool name so a fresh folder = full set).
+    next.folders[trimmed] = defaultContents ? [...defaultContents] : [];
     await saveMeta(next);
     setFolder(trimmed);
   }, [cloneMeta, meta.folders, saveMeta, setFolder]);

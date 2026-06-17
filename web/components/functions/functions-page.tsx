@@ -530,7 +530,12 @@ export function FunctionsPage() {
                   placeholder={text("New folder", "新建文件夹")}
                   onCommit={(n) => {
                     setCreatingFolder(false);
-                    createFolder(n);
+                    // Default-on: new folder starts with ALL function + tool names.
+                    const allNames = [
+                      ...functions.map((f) => f.name),
+                      ...tools.map((t) => t.name),
+                    ];
+                    createFolder(n, allNames);
                   }}
                   onCancel={() => setCreatingFolder(false)}
                 />
@@ -595,7 +600,16 @@ export function FunctionsPage() {
               </div>
               </>
             )}
-            {tools.length > 0 && folder === "__all__" && !search && (
+            {tools.length > 0 && !search && (() => {
+              // Tools show in "all" (full list) and inside user-folders that
+              // include them. When a folder is selected, only its tools render.
+              const folderTools = folder === "__all__"
+                ? tools
+                : folder === "__favorites__" || folder === "__uncat__"
+                  ? []  // built-in virtual folders: no tools (tools have their own toggle, not fav/uncat)
+                  : tools.filter((tl) => (meta.folders[folder] || []).includes(tl.name));
+              if (folderTools.length === 0) return null;
+              return (
               <div className={styles.toolsSection}>
                 <div className={styles.toolsHeader}>
                   {text("Built-in tools", "内置工具")}
@@ -607,7 +621,7 @@ export function FunctionsPage() {
                   </span>
                 </div>
                 <div className={view === "grid" ? cardGridClass : cardListClass}>
-                  {tools.map((tl) => (
+                  {folderTools.map((tl) => (
                     <ToolCard
                       key={tl.name}
                       name={tl.name}
@@ -618,7 +632,8 @@ export function FunctionsPage() {
                   ))}
                 </div>
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       </div>
