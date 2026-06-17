@@ -126,12 +126,19 @@ def test_usage_scope_nesting_inherits():
 
 
 def test_snapshot_roundtrip():
+    from openprogram.metering.context import UsageContext, _current
     with usage_scope(call_kind="memory", parent_session_id="p1"):
         snap = snapshot()
-    apply_snapshot(snap)
-    c = current_usage_context()
-    assert c.call_kind == "memory"
-    assert c.parent_session_id == "p1"
+    # apply_snapshot sets the process-global contextvar; restore the default
+    # afterwards so the value doesn't leak into later tests.
+    token = _current.set(UsageContext())
+    try:
+        apply_snapshot(snap)
+        c = current_usage_context()
+        assert c.call_kind == "memory"
+        assert c.parent_session_id == "p1"
+    finally:
+        _current.reset(token)
 
 
 def test_scope_propagates_into_async_task():
