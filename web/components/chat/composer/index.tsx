@@ -1305,6 +1305,11 @@ export function Composer() {
                           marginLeft: 4,
                           minWidth: 160,
                           zIndex: 10,
+                          background: "var(--bg-tertiary)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 12,
+                          boxShadow: "var(--shadow-popover)",
+                          padding: 6,
                         }}>
                           <div style={{ padding: "4px 12px", fontSize: "11px",
                             color: "var(--text-muted)", textTransform: "uppercase",
