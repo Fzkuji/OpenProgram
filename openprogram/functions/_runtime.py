@@ -125,21 +125,32 @@ def _tool_results_dir() -> Path:
 _registry: dict[str, AgentTool] = {}
 _toolset_membership: dict[str, set[str]] = {}      # tool_name → set of toolsets
 _unsafe_in_channel: dict[str, set[str]] = {}       # tool_name → set of unsafe-in channels
+# Layer 2 (exposure): names registered with expose=False — Python-callable
+# helpers that must never appear in any LLM tools array. Default is exposed,
+# so this is an opt-OUT set, not a whitelist.
+_unexposed: set[str] = set()
 
 
 def register(tool: AgentTool, *, toolsets: list[str] = (),
-             unsafe_in: list[str] = ()) -> AgentTool:
+             unsafe_in: list[str] = (), expose: bool = True) -> AgentTool:
     """Register a tool. Same name → overwrite (last import wins).
 
     `toolsets` lists the named groups this tool belongs to (e.g.
     ["core", "research"]). `unsafe_in` lists channel sources where
-    the tool should be hidden by default (e.g. ["wechat"]).
+    the tool should be hidden by default (e.g. ["wechat"]). `expose`
+    (default True) is Layer-2 visibility: False keeps the tool out of
+    every LLM tools array (internal helper), but it stays
+    Python-callable and in the registry.
     """
     _registry[tool.name] = tool
     if toolsets:
         _toolset_membership.setdefault(tool.name, set()).update(toolsets)
     if unsafe_in:
         _unsafe_in_channel.setdefault(tool.name, set()).update(unsafe_in)
+    if expose:
+        _unexposed.discard(tool.name)   # re-register as exposed clears prior opt-out
+    else:
+        _unexposed.add(tool.name)
     return tool
 
 
@@ -149,6 +160,14 @@ def get(name: str) -> Optional[AgentTool]:
 
 def all_tools() -> list[AgentTool]:
     return list(_registry.values())
+
+
+def exposed_names() -> set[str]:
+    """Layer 2: every registered tool name EXCEPT those registered with
+    expose=False. This is the exposure universe — replaces the old
+    hand-maintained static whitelist, so plugin / MCP tools are visible
+    on registration."""
+    return set(_registry.keys()) - _unexposed
 
 
 def filter_for(*, names: Optional[list[str]] = None,
@@ -174,6 +193,7 @@ def reset_registry() -> None:
     """Test-only — wipe registered tools so test imports are repeatable."""
     _registry.clear()
     _toolset_membership.clear()
+    _unexposed.clear()
     _unsafe_in_channel.clear()
 
 
@@ -621,6 +641,7 @@ def function(
     # Selection metadata
     toolset: list[str] = (),               # Hermes — TOOLSETS membership
     unsafe_in: list[str] = (),              # OpenClaw — channel blacklist
+    expose: bool = True,                    # Layer 2 — False hides from LLM
     # Layer 1 (Claude Code "conditional import") + Layer 6 ("deferred")
     available_if: Optional[Callable[[], bool]] = None,
     defer: bool = False,
@@ -719,7 +740,7 @@ def function(
                 check_fn=check_fn, requires_env=requires_env,
                 can_use=can_use,
                 requires_approval=requires_approval,
-                toolset=toolset, unsafe_in=unsafe_in,
+                toolset=toolset, unsafe_in=unsafe_in, expose=expose,
                 available_if=available_if, defer=defer,
                 register_globally=register_globally,
             )
@@ -865,6 +886,7 @@ def function(
         defer=defer,
         toolsets=toolset,
         unsafe_in=unsafe_in,
+        expose=expose,
         register_globally=register_globally,
     )
 
@@ -883,6 +905,7 @@ def _build_and_register_tool(
     defer: bool = False,
     toolsets: Any = (),
     unsafe_in: Any = (),
+    expose: bool = True,
     register_globally: bool = True,
 ) -> AgentTool:
     """Single source of truth for "build AgentTool + attach sidecars +
@@ -916,7 +939,8 @@ def _build_and_register_tool(
     setattr(agent_tool, "_defer", bool(defer))
 
     if register_globally:
-        register(agent_tool, toolsets=list(toolsets), unsafe_in=list(unsafe_in))
+        register(agent_tool, toolsets=list(toolsets), unsafe_in=list(unsafe_in),
+                 expose=expose)
 
     return agent_tool
 

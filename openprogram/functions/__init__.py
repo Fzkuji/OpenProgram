@@ -242,20 +242,18 @@ def _expand_preset(name: str, _seen: set[str] | None = None) -> list[str]:
 
 
 def _exposed_set() -> set[str] | None:
-    """The Layer 2 exposure whitelist as a set, read fresh each call.
+    """Layer 2 exposure universe, read fresh each call.
 
-    Source of truth is ``TOOLSETS["full"]["tools"]`` — the ``full``
-    preset *is* the exposure universe. Read lazily so tests / plugins
-    that mutate the list see the change without restart.
+    Registration-driven: every registered tool is exposed EXCEPT those
+    registered with ``expose=False`` (internal helpers). Computed from the
+    live registry, so plugin / MCP tools that register at runtime are
+    visible immediately — no hand-maintained whitelist.
 
-    Returning ``None`` (only via monkey-patch in test fixtures) means
-    "no whitelist enforced for this call" — ad-hoc probe tools that
-    tests register via ``@function`` then flow through the dispatcher
-    without each test having to also mutate
-    ``TOOLSETS["full"]["tools"]``. Production code always returns a
-    set; the None branch is purely a test ergonomic.
+    Returning ``None`` (only via monkey-patch in test fixtures) means "no
+    exposure filter for this call".
     """
-    return set(TOOLSETS["full"]["tools"])
+    from openprogram.functions._runtime import exposed_names
+    return exposed_names()
 
 
 def list_available() -> list[str]:

@@ -641,52 +641,43 @@ def test_agentic_function_available_if_false_returns_raw_fn() -> None:
 # Layer 2 — exposure whitelist (TOOLSETS["full"]["tools"])
 # ---------------------------------------------------------------------------
 
-def test_exposure_whitelist_filters_agent_tools() -> None:
-    """The Layer 2 filter intersects every LLM-facing query with
-    ``TOOLSETS["full"]["tools"]``. A registered tool whose name is not
-    on the list never appears in ``agent_tools(names=...)``,
-    ``get_agent_tool``, ``list_registered_agent_tools``."""
+def test_exposure_is_registration_driven() -> None:
+    """Layer 2 is registration-driven: a normally-registered tool is
+    exposed without any whitelist edit; ``expose=False`` hides it from
+    every LLM-facing query (agent_tools / get_agent_tool /
+    list_registered_agent_tools) while keeping it in the registry."""
     import openprogram.functions as F
 
     @function(name="exposed_probe")
     def p1() -> str:
         return "x"
 
-    @function(name="hidden_probe")
+    @function(name="hidden_probe", expose=False)
     def p2() -> str:
         return "x"
 
-    saved_full = list(F.TOOLSETS["full"]["tools"])
-    try:
-        F.TOOLSETS["full"]["tools"][:] = ["exposed_probe"]
-        # agent_tools honors the whitelist
-        names = [t.name for t in F.agent_tools(names=["exposed_probe", "hidden_probe"])]
-        assert names == ["exposed_probe"]
-        # get_agent_tool honors it
-        assert F.get_agent_tool("exposed_probe") is not None
-        assert F.get_agent_tool("hidden_probe") is None
-        # list_registered_agent_tools honors it
-        listed = F.list_registered_agent_tools()
-        assert "exposed_probe" in listed
-        assert "hidden_probe" not in listed
-    finally:
-        F.TOOLSETS["full"]["tools"][:] = saved_full
+    # Exposed by registration; hidden by expose=False — no TOOLSETS edit.
+    names = [t.name for t in F.agent_tools(names=["exposed_probe", "hidden_probe"])]
+    assert names == ["exposed_probe"]
+    assert F.get_agent_tool("exposed_probe") is not None
+    assert F.get_agent_tool("hidden_probe") is None
+    listed = F.list_registered_agent_tools()
+    assert "exposed_probe" in listed
+    assert "hidden_probe" not in listed
 
 
-def test_exposure_whitelist_disabled_via_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Setting ``_exposed_set`` to return ``None`` disables the filter —
-    test harness uses this in the ``fresh_registry`` fixture so ad-hoc
-    probe tools don't need to be added to the global whitelist."""
+def test_exposure_disabled_via_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Setting ``_exposed_set`` to return ``None`` disables the exposure
+    filter entirely (a test-harness escape hatch)."""
     import openprogram.functions as F
 
-    @function(name="probe_unfiltered")
+    @function(name="probe_hidden_expose_false", expose=False)
     def p() -> str:
         return "x"
 
-    # Default state: probe_unfiltered not in TOOLSETS["full"]["tools"],
-    # so it's filtered out
-    assert F.get_agent_tool("probe_unfiltered") is None
+    # expose=False → hidden by default.
+    assert F.get_agent_tool("probe_hidden_expose_false") is None
 
     monkeypatch.setattr(F, "_exposed_set", lambda: None)
-    # Now the filter is disabled, so the probe is visible
-    assert F.get_agent_tool("probe_unfiltered") is not None
+    # Filter disabled → even an expose=False tool resolves.
+    assert F.get_agent_tool("probe_hidden_expose_false") is not None
