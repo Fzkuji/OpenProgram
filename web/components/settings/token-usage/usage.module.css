@@ -155,17 +155,15 @@
 /* ── bar chart (by_kind) ─────────────────────────────────────────────────── */
 
 .barsWrap {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px 10px;
+  align-items: center;
+  font-size: 13px;
 }
 
 .barRow {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
+  display: contents;
 }
 
 .barLabel {
