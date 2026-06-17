@@ -73,7 +73,7 @@ export default function RootLayout({
                   serif:  "'Source Serif Pro', 'Iowan Old Style', Georgia, 'Times New Roman', 'Songti SC', SimSun, 'Noto Serif CJK SC', serif",
                   mono:   "'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace"
                 };
-                var f = localStorage.getItem('agentic_font') || 'system';
+                var f = localStorage.getItem('agentic_font') || 'inter';
                 if (FONTS[f]) document.documentElement.style.setProperty('--font-sans', FONTS[f]);
 
                 var lang = localStorage.getItem('agentic_locale') || 'en';

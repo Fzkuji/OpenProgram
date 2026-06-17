@@ -86,9 +86,9 @@ export function fontStack(key: FontKey): string {
 const subscribers = new Set<(f: FontKey) => void>();
 
 function readStored(): FontKey {
-  if (typeof window === "undefined") return "system";
+  if (typeof window === "undefined") return "inter";
   const v = localStorage.getItem(STORAGE_KEY);
-  return (v as FontKey) in FONT_STACKS ? (v as FontKey) : "system";
+  return (v as FontKey) in FONT_STACKS ? (v as FontKey) : "inter";
 }
 
 function applyFont(font: FontKey): void {
@@ -96,7 +96,7 @@ function applyFont(font: FontKey): void {
   document.documentElement.style.setProperty("--font-sans", FONT_STACKS[font]);
 }
 
-let current: FontKey = "system";
+let current: FontKey = "inter";
 
 export function setFont(next: FontKey): void {
   if (!(next in FONT_STACKS)) return;
