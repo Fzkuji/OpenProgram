@@ -362,6 +362,7 @@ export function Composer() {
     );
   }, [text]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [toolProfileSubOpen, setToolProfileSubOpen] = useState(false);
   const {
     tools: toolsEnabled,
     webSearch: webSearchEnabled,
@@ -1286,12 +1287,44 @@ export function Composer() {
                       label={text("Attach file", "添加照片和文件")}
                     />
                     <div className={styles.plusMenuDivider} />
-                    <PlusMenuItem
-                      active={toolsEnabled}
-                      onClick={toggleTools}
-                      icon={<ToolsIcon />}
-                      label={text("Tools", "工具")}
-                    />
+                    <div style={{ position: "relative" }}
+                      onMouseEnter={() => setToolProfileSubOpen(true)}
+                      onMouseLeave={() => setToolProfileSubOpen(false)}
+                    >
+                      <PlusMenuItem
+                        active={toolsEnabled}
+                        onClick={toggleTools}
+                        icon={<ToolsIcon />}
+                        label={text("Tools", "工具")}
+                      />
+                      {toolProfileSubOpen && Object.keys(toolProfiles).length > 1 && (
+                        <div className={styles.plusMenu} style={{
+                          position: "absolute",
+                          left: "100%",
+                          top: 0,
+                          marginLeft: 4,
+                          minWidth: 160,
+                          zIndex: 10,
+                        }}>
+                          <div style={{ padding: "4px 12px", fontSize: "11px",
+                            color: "var(--text-muted)", textTransform: "uppercase",
+                            letterSpacing: "0.05em" }}>
+                            {text("Tool Profile", "工具配置")}
+                          </div>
+                          {Object.keys(toolProfiles).sort().map((pName) => (
+                            <PlusMenuItem
+                              key={pName}
+                              active={activeProfile === pName}
+                              onClick={() => { switchProfile(pName); setPlusMenuOpen(false); setToolProfileSubOpen(false); }}
+                              icon={<ToolsIcon />}
+                              label={pName === "default"
+                                ? text("All Tools", "全部工具")
+                                : pName}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <PlusMenuItem
                       active={webSearchEnabled}
                       onClick={toggleWebSearch}
@@ -1311,27 +1344,6 @@ export function Composer() {
                       icon={<UnattendedIcon />}
                       label={text("Unattended", "无人值守")}
                     />
-                    {Object.keys(toolProfiles).length > 1 && (
-                      <>
-                        <div className={styles.plusMenuDivider} />
-                        <div style={{ padding: "4px 12px", fontSize: "11px",
-                          color: "var(--text-muted)", textTransform: "uppercase",
-                          letterSpacing: "0.05em" }}>
-                          {text("Tool Profile", "工具配置")}
-                        </div>
-                        {Object.keys(toolProfiles).sort().map((pName) => (
-                          <PlusMenuItem
-                            key={pName}
-                            active={activeProfile === pName}
-                            onClick={() => { switchProfile(pName); setPlusMenuOpen(false); }}
-                            icon={<ToolsIcon />}
-                            label={pName === "default"
-                              ? text("All Tools", "全部工具")
-                              : pName}
-                          />
-                        ))}
-                      </>
-                    )}
                   </div>,
                   document.body,
                 )
