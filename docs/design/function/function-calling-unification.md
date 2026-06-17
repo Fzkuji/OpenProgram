@@ -182,10 +182,11 @@ Layer  When                  How configured                Effect when rejected
 
 Default behaviour, end to end: a registered tool is **on** (Layer 2
 exposed) unless its author set `expose=False`; a bare `runtime.exec`
-gets the **full exposed set**; the user narrows from there via agent
-profile (Layer 3), per-call allow/deny or the Functions-page off-toggle
-(Layer 5). `toolset="none"` is the explicit "give this call no tools"
-opt-out for pure-choice steps.
+gets the **full exposed set**. The framework does not restrict per call —
+narrowing is the **caller's** choice: an agent profile (Layer 3),
+per-call allow/deny, the Functions-page off-toggle (Layer 5), or
+`toolset="none"` when a specific call wants no tools at all. The default
+is always "give tools"; a caller that knows it needs none opts out.
 
 Layers 1–5 mean "the LLM cannot see/use this tool". Layer 6 means "the
 LLM sees the name in a catalog but must opt-in to load the schema" — the
@@ -221,9 +222,9 @@ Layer  Kind      Default (no config)                Who overrides & when
 2b     active    no preset forced. Caller gets the   caller/user: pass
        (preset)  full exposed set unless it names    toolset="research" / a
                  a subset.                           Functions-page folder to
-                                                     work with fewer tools.
-                                                     toolset="none" = no tools
-                                                     (pure-choice steps).
+                                                     work with fewer tools, or
+                                                     toolset="none" when this
+                                                     call wants no tools.
 
 3      passive   no channel/mode restriction.        framework: a tool's
        (channel) source=None ⇒ nothing filtered.    unsafe_in fires only on
