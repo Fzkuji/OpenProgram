@@ -50,11 +50,15 @@ supporting notes / investigations that should not override it.
 > 论文/生产级内容（离线回放验证、对抗安全、评估骨架）已归档在
 > `proactive/_research_archive/`，以后做加固再取回。
 
-## runtime/ — agent execution, DAG, async, revert
+## runtime/ — agent execution, DAG, async, revert, controllability
 
 | Doc | Topic |
 |---|---|
 | [`runtime/runtime.md`](runtime/runtime.md) | Runtime API behaviour (see also [`../api/runtime.md`](../api/runtime.md)) |
+| [`runtime/user-input-requests.md`](runtime/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
+| [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
+| [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
+| [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
 | [`runtime/agent-worktree.md`](runtime/agent-worktree.md) | Agent worktree behaviour |
 | [`runtime/async-task-lifecycle.md`](runtime/async-task-lifecycle.md) | Async task lifecycle |
 | [`runtime/streaming-resume.md`](runtime/streaming-resume.md) | Streaming + resume |
@@ -62,14 +66,26 @@ supporting notes / investigations that should not override it.
 | [`runtime/multi-agent-revert-todo.md`](runtime/multi-agent-revert-todo.md) | Multi-agent revert TODO |
 | [`runtime/dag-node-model.md`](runtime/dag-node-model.md) | DAG node model investigation |
 | [`runtime/dag-edge-split.md`](runtime/dag-edge-split.md) | DAG edge-split investigation |
+| [`runtime/dispatcher-split.md`](runtime/dispatcher-split.md) | Dispatcher split design |
 
-## providers/ — LLM providers, credentials, fault tolerance
+## providers/ — LLM providers, credentials, model catalog, thinking/effort
 
 | Doc | Topic |
 |---|---|
+| [`providers/thinking-effort.md`](providers/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
 | [`providers/credential-validation-unification.md`](providers/credential-validation-unification.md) | Unified credential validation (current) |
+| [`providers/unified-auth-storage.md`](providers/unified-auth-storage.md) | 统一认证存储 |
+| [`providers/unified-account-management.md`](providers/unified-account-management.md) | 统一账号管理 + 轮换 |
+| [`providers/credential-status-redesign.md`](providers/credential-status-redesign.md) | 凭证状态重设计 |
+| [`providers/claude-code-direct-oauth.md`](providers/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
+| [`providers/claude-code-meridian-profile.md`](providers/claude-code-meridian-profile.md) | claude-code Meridian profile（历史） |
+| [`providers/model-catalog-final.md`](providers/model-catalog-final.md) | 模型目录最终设计 |
+| [`providers/model-catalog-dynamic.md`](providers/model-catalog-dynamic.md) | 动态模型目录 |
+| [`providers/model-catalog-per-provider.md`](providers/model-catalog-per-provider.md) | 按 provider 拆分的模型目录 |
 | [`providers/llm-fault-tolerance.md`](providers/llm-fault-tolerance.md) | LLM fault tolerance |
 | [`providers/error-retry.md`](providers/error-retry.md) | Error + retry handling |
+| [`providers/error-taxonomy-propagation.md`](providers/error-taxonomy-propagation.md) | Error taxonomy + propagation |
+| [`providers/api-key-resolution-unification.md`](providers/api-key-resolution-unification.md) | API key resolution unification |
 | [`providers/error-and-timeout-mechanism.html`](providers/error-and-timeout-mechanism.html) | Error + timeout mechanism (rendered) |
 
 ## function/ — function & tool calling
@@ -107,6 +123,7 @@ supporting notes / investigations that should not override it.
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface system |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | Indicator dots |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | Attachment handling ([rendered](ui/attachment-handling.html)) |
+| [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer 交互模式 |
 | [`ui/gui-agent-context.md`](ui/gui-agent-context.md) | GUI agent context flow |
 
 ## integrations/ — MCP, skills/plugins, harness standard
@@ -121,6 +138,12 @@ supporting notes / investigations that should not override it.
 
 Extension gating design + reference comparison — see
 [`extension-gating/README.md`](extension-gating/README.md).
+
+## Cross-cutting
+
+| Doc | Topic |
+|---|---|
+| [`usage-metering.md`](usage-metering.md) | Usage metering 子系统（token/cost 记账、ledger、收口点、子进程、消费层） |
 
 ## archive/
 
