@@ -121,18 +121,6 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
     """
     from openprogram.providers import get_model
 
-    # claude-code hits api.anthropic.com directly (no proxy); its models
-    # are anthropic models under a different provider key. Look up the
-    # anthropic twin so thinking_levels from the anthropic catalog apply.
-    if provider == "claude-code" and model_id:
-        twin = get_model("anthropic", model_id)
-        if twin and getattr(twin, "thinking_levels", None):
-            return _build(
-                list(twin.thinking_levels),
-                twin.default_thinking_level,
-                twin.thinking_variant,
-            )
-
     def _build(levels: list[str], default: str | None, variant: str | None) -> dict:
         values = ["off", *levels]
         return {
@@ -153,7 +141,17 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
                 model.default_thinking_level,
                 model.thinking_variant,
             )
-        # Model found but declares no thinking_levels → hide menu.
+        # Model exists, reasoning=True, but thinking_levels empty (e.g.
+        # claude-code models registered without levels). Derive them
+        # dynamically rather than hiding the menu.
+        if model is not None and getattr(model, "reasoning", False):
+            from openprogram.providers.thinking_catalog import derive_thinking_fields
+            levels, default_lv, variant = derive_thinking_fields(
+                provider, model_id, True, True,
+            )
+            if levels:
+                return _build(levels, default_lv, variant)
+        # Model found, reasoning=False, no thinking_levels → hide menu.
         if model is not None:
             return {
                 "label": get_thinking_config(provider).get("label", "thinking"),
