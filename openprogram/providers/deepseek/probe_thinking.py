@@ -1,8 +1,7 @@
-"""Probe OpenAI Codex (ChatGPT backend) models for reasoning capability.
+"""Probe DeepSeek models for reasoning capability.
 
-OpenAI's models API returns id-only rows. Reasoning inferred from model name:
-  - o1/o3/o4* → reasoning
-  - gpt-5* → reasoning
+DeepSeek API returns id-only rows. Reasoning inferred from model name:
+  - *reasoner* / *r1* → reasoning
   - everything else → no reasoning
 """
 from __future__ import annotations
@@ -12,12 +11,12 @@ def probe() -> dict[str, dict]:
     import httpx
     from openprogram.providers.env_api_keys import resolve_provider_key
 
-    key = resolve_provider_key("openai-codex")
+    key = resolve_provider_key("deepseek")
     if not key:
         return {}
     try:
         r = httpx.get(
-            "https://api.openai.com/v1/models",
+            "https://api.deepseek.com/v1/models",
             headers={"Authorization": f"Bearer {key}"},
             timeout=15,
         )
@@ -26,7 +25,7 @@ def probe() -> dict[str, dict]:
         results = {}
         for m in r.json().get("data", []):
             mid = m.get("id", "")
-            reasoning = any(mid.startswith(p) for p in ("o1", "o3", "o4", "gpt-5"))
+            reasoning = "reasoner" in mid or "r1" in mid
             results[mid] = {"reasoning": reasoning, "source": "inferred"}
         return results
     except Exception:

@@ -1,0 +1,5 @@
+{
+  "wire_format": "none",
+  "default_effort": null,
+  "note": "DeepSeek R1 has no effort control — reasoning is always full when enabled. deepseek-reasoner = reasoning on, deepseek-chat = reasoning off."
+}
