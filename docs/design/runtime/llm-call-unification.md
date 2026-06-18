@@ -6,41 +6,47 @@ Status: design · Created: 2026-06-18
 
 ## 总览图
 
-完整流程见 [`agent-call-flow.svg`](agent-call-flow.svg)(三层嵌套 + 每步顺序 + 已有/未来插入点)。
+完整拓扑见 [`agent-call-flow.svg`](agent-call-flow.svg)(收敛分叉 + 每步顺序 + 已有/未来插入点)。
 
-骨架一句话:**入口 → ① dispatcher 层(turn 管理）→ ② runtime.exec 层(一次 LLM 调用 = 一个 llm 节点）→ ③ agent_loop 层(tool loop 引擎)→ 回复**。
+骨架一句话:**两个平级入口(dispatcher · runtime.exec)各管各的外围、各写各的 DAG 记录,只在共享的 agent_loop 汇合;exec 在 loop 之下 → 工具体内可再调 LLM 形成嵌套**。
 
-## 三层架构
+## 真实拓扑:收敛分叉,不是三层嵌套
 
-外到里嵌套,每层一个职责:
-
-| 层 | 职责 | 实现 | 其他框架有吗 |
-|---|---|---|---|
-| **① dispatcher** | turn 生命周期:建 session、写 user 节点、attach Runtime、resolve model、解析工具、跑 loop、持久化善后 | `agent/dispatcher/__init__.py` process_user_turn / _run_loop_blocking | OpenClaw 有(多租户网关),OpenCode/Hermes 没有(单入口) |
-| **② runtime.exec** | "调一次 LLM"的统一入口:开/关 llm 节点、构建上下文、DAG 记录 | `agentic_programming/runtime.py` exec → _call → _call_via_providers | 其他框架没有独立这层(OpenCode 记在 Step 里,Hermes 无 DAG) |
-| **③ agent_loop** | tool loop 引擎:调模型 → 执行工具 → 喂回 → 循环到纯文本 | `agent/agent_loop.py` agent_loop | 所有框架都有等价物 |
-
-多 dispatcher 是因为有多 session/多 channel。多 runtime.exec 是因为有 `@agentic_function`——工具内部能嵌套调 LLM 并记录 DAG。
-
-### 调用层级(纵向嵌套,不是并列)
+代码实证(`agent_loop` 全仓只有两个调用点:`dispatcher/__init__.py:902` 和 `agent/agent.py:418`):dispatcher **不经过** exec,exec **不经过** dispatcher。它们是平级的两个入口,只共享 agent_loop。
 
 ```
-用户消息 ──→ ① dispatcher ──→ ② runtime.exec ──→ ③ agent_loop
-                                    ↑
-@agentic_function 体内 / decision.make ──┘  (跳过 dispatcher,直接进 ②)
+入口 A: 用户消息 → dispatcher ──直接─────────────┐
+                                                  ├─→ agent_loop(共享引擎)
+入口 B: @agentic_function 体内 → runtime.exec ──经 AgentSession─┘
 ```
 
-dispatcher 在最外(只有用户消息经过),exec 在中间(所有 LLM 调用的唯一入口),agent_loop 在最里(不关心 DAG)。
+| 入口 | 职责 | 到 agent_loop 的路径 | 写什么 DAG 记录 | 实现 |
+|---|---|---|---|---|
+| **A · dispatcher** | turn 生命周期:session、user 节点、attach Runtime、resolve model、解析工具、持久化、前端广播 | **直接** `agent_loop(...)`(`__init__.py:902`) | 顶层回复 → **assistant 会话消息**(SessionDB, `persistence.py:207`) | `agent/dispatcher/__init__.py` |
+| **B · runtime.exec** | 一次 LLM 调用:开/关 llm 节点、构建上下文 | 经 **AgentSession** → `session.run`(`runtime.py:1576`)→ `agent.py:418` | 这次调用 → **role=llm DAG 节点** | `agentic_programming/runtime.py` |
+| **共享 · agent_loop** | tool loop 引擎:调模型 → 执行工具 → 喂回 → 循环到纯文本 | — | 工具的 code 节点 called_by → 当前 llm 节点 | `agent/agent_loop.py:114` |
+
+### 为什么是两个入口,不是一个
+
+dispatcher 和 exec 服务两种不同场景,外围插件不重叠:dispatcher 要 session 管理 + 前端 WebSocket 广播 + 标题/压缩;exec 要 DAG llm 节点 + AgentSession retry-rollback。硬合并会让一方背上另一方不需要的逻辑(实测试着折叠时撞到模型分叉、节点重复——见下文步 4)。共享 agent_loop,因为"调模型→执行工具→循环"这个引擎对两者一样。
+
+### 关键:exec 在 agent_loop **之下**,所以能嵌套
+
+当 dispatcher 跑 turn,模型调了 `@agentic_function` 工具(如 wiki_agent)→ 工具体内 `runtime.exec` → 又起一个 agent_loop。所以 exec 既是"入口 B",又被 agent_loop 里的工具反向调用:
+
+```
+dispatcher → agent_loop → 模型调工具 → @agentic_function 体 → runtime.exec → agent_loop(嵌套)→ ...
+```
+
+这是 agentic programming 的根本能力(函数体内可嵌套调 LLM),也是 wiki_agent 递归的来源。如果 exec 在 loop 之上,工具就无法自己再调 LLM。
 
 ### 每个节点内部的有序步骤
 
-不是一坨,有先后:
+**A · dispatcher**:1 建/载 session(沿 active branch 取历史)→ 2 写 user 节点 → 3 attach Runtime(_store + _current_runtime)→ 4 resolve model(agent profile + override)→ 5 解析工具(channel/plan/审批 包装)→ 6 **直接调 agent_loop** → 7 持久化 + finalize(assistant 节点、标题、auto-compact)。
 
-**① dispatcher**:1 建/载 session(沿 active branch 取历史)→ 2 写 user 节点 → 3 attach Runtime(_store + _current_runtime)→ 4 resolve model(agent profile + override)→ 5 解析工具(channel/plan/审批 包装)→ 6 跑 agent_loop → 7 持久化 + finalize(assistant 节点、标题、auto-compact)。
+**B · runtime.exec**:1 开 llm 节点(running,_call_id 指向它,外含 timeout/retry 循环)→ 2 构建上下文【a 选历史节点 compute_reads → b render 成消息 + 当前 turn → c 解析工具集 toolset/policy/unattended-deny → d 拼 system + skills → e 建 AgentSession(选 stream_fn)】→ 3 **经 AgentSession 调 agent_loop** → 4 关 llm 节点(回填 output,success)。
 
-**② runtime.exec**:1 开 llm 节点(running,_call_id 指向它,外含 timeout/retry 循环)→ 2 构建上下文【a 选历史节点 compute_reads → b render 成消息 + 当前 turn → c 解析工具集 toolset/policy/unattended-deny → d 拼 system + skills → e 建 AgentSession(选 stream_fn)】→ 3 跑 agent_loop → 4 关 llm 节点(回填 output,success)。
-
-**③ agent_loop**:每轮调模型前【a convert_to_llm → b memory prefetch → c deferred-tool re-split】→ 调模型/流式 → 判断 tool_use? → 是:执行工具 → 结果喂回 → 再调模型;否(纯文本):退出循环。
+**共享 · agent_loop**:每轮调模型前【a convert_to_llm → b memory prefetch → c deferred-tool re-split】→ 调模型/流式 → 判断 tool_use? → 是:执行工具 → 结果喂回 → 再调模型;否(纯文本):退出循环。
 
 ## 横向对比
 
