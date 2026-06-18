@@ -150,9 +150,6 @@ class _ProbeRuntime(Runtime):
         self._captured["opts"] = _current_loop_opts.get(None)
         return "ok"
 
-    def _uses_legacy_call(self) -> bool:
-        return True
-
 
 def test_exec_publishes_only_non_default_loop_opts():
     captured: dict = {}

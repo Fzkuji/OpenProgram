@@ -72,6 +72,7 @@ class AgentSession:
         parallel_tool_calls: bool | None = None,
         max_iterations: int | None = None,
         web_search: bool | None = None,
+        stream_fn: Any | None = None,
     ) -> None:
         self._retry = retry or DEFAULT_RETRY_SETTINGS
         self._event_bus = event_bus
@@ -91,6 +92,10 @@ class AgentSession:
             _k = api_key
             get_api_key = lambda _provider: _k  # noqa: E731
 
+        # ``stream_fn`` lets the caller inject the function that talks to the
+        # model: a CallableModel adapter (Runtime(call=fn)), the dispatcher's
+        # test fake, or None → the real provider via stream_simple. This is
+        # the single seam that unifies all three LLM-call entry points.
         self._agent = Agent(AgentOptions(
             initial_state=initial_state,
             convert_to_llm=wrap_convert_to_llm(block_images),
@@ -100,6 +105,7 @@ class AgentSession:
             parallel_tool_calls=parallel_tool_calls,
             max_iterations=max_iterations,
             web_search=web_search,
+            stream_fn=stream_fn,
         ))
 
         if event_bus is not None:

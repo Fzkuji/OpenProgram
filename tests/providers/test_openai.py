@@ -58,7 +58,7 @@ class TestOpenAIRuntime:
 
     def test_uses_default_path_not_legacy(self):
         rt = OpenAIRuntime(api_key="k", model="gpt-4o-mini")
-        assert rt._uses_legacy_call() is False
+        # Single path now (_uses_legacy_call removed in unification).
         assert type(rt)._call is Runtime._call
 
     def test_list_models_filters_by_provider(self):

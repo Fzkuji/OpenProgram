@@ -84,9 +84,10 @@ def _stub_loop(text: str):
             "_current_runtime must be active — installed by the dispatcher "
             "(provider configured) or by the tmp_db fixture (no provider)"
         )
-        # Override _call so the LLM "call" returns deterministic text
+        # Override _call so the LLM "call" returns deterministic text.
+        # (Single exec path now — overriding _call is enough; the old
+        # _uses_legacy_call override was removed.)
         rt._call = lambda content, model="default", response_format=None: "outline"
-        rt._uses_legacy_call = lambda: True  # type: ignore[method-assign]
 
         result = planner("ship the feature", runtime=rt)
         assert result == "outline"

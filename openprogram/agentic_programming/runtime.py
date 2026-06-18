@@ -309,6 +309,14 @@ _current_loop_opts: contextvars.ContextVar[Optional[dict]] = contextvars.Context
     "_current_loop_opts", default=None,
 )
 
+# Per-exec stream-fn override. exec(stream_fn=...) sets it so the dispatcher
+# (and integration tests) can inject a fake / pre-built stream into the same
+# _call_via_providers → AgentSession path real provider calls use. None →
+# fall back to the runtime's own _stream_fn (CallableModel) or the provider.
+_current_stream_fn: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
+    "_current_stream_fn", default=None,
+)
+
 
 class Runtime:
     """
@@ -367,6 +375,7 @@ class Runtime:
         """
         import uuid as _uuid
         self._closed = False  # Set early so __del__ is safe even if __init__ raises.
+        self._active_llm_node_id = None  # llm node of the in-flight exec (for tool-loop attribution)
         self._prompted_functions: set[str] = set()  # Functions whose docstrings have been sent
         # 提问通道（runtime.ask 的出口）。默认 None → 走事件层（前端卡片 + 总线）。
         # @agentic_function 跑的子进程里，process_runner 会换成 QueueTransport
@@ -379,6 +388,13 @@ class Runtime:
             raise ValueError("max_retries must be >= 1")
 
         self._call_fn = call
+        # When ``call=fn`` is supplied, the user's function is wrapped into the
+        # single provider/AgentSession path: ``api_model`` becomes a
+        # CallableModel stand-in and ``_stream_fn`` the adapter that calls
+        # ``fn``. This collapses the old "legacy call" branch — every exec now
+        # flows through _call_via_providers, writing one llm DAG node and
+        # honouring tool-loop attribution uniformly.
+        self._stream_fn = None
         self.model = model
         self.max_retries = max_retries
         self.has_session = False  # Subclasses set True if they manage their own context
@@ -404,7 +420,16 @@ class Runtime:
 
         # Resolve "provider:model_id" form against the pi-ai model registry.
         self.api_model = None
-        if call is None and isinstance(model, str) and ":" in model:
+        if call is not None:
+            # Wrap the user callable into the provider path: a stand-in model
+            # + a stream_fn that calls ``fn``. The model is never used for a
+            # real network call — the stream_fn intercepts it.
+            from openprogram.providers.callable_model import (
+                make_callable_model, make_callable_stream_fn,
+            )
+            self.api_model = make_callable_model(call)
+            self._stream_fn = make_callable_stream_fn(call)
+        elif isinstance(model, str) and ":" in model:
             provider, model_id = model.split(":", 1)
             from openprogram.providers import get_model
             resolved = get_model(provider, model_id)
@@ -454,21 +479,14 @@ class Runtime:
         return self._skills_prompt_block
 
     # --- Path dispatch ---
-
-    def _uses_legacy_call(self) -> bool:
-        """True if this runtime sends responses through the text-prompt
-        pathway of ``_call()`` rather than the AgentSession + render_messages
-        pathway.
-
-        Legacy providers (OpenAICodexRuntime, ...) and
-        user-supplied ``call=`` functions expect a text-merged
-        ``full_content`` list. The default Runtime (``model="provider:id"``)
-        builds messages directly from the execution tree and ignores
-        ``full_content``.
-        """
-        if self._call_fn is not None:
-            return True
-        return type(self)._call is not Runtime._call
+    #
+    # There is now a single path: exec → _call → _call_via_providers →
+    # AgentSession → agent_loop. ``Runtime(call=fn)`` is wrapped into this
+    # path via a CallableModel (see __init__), and provider CLI subclasses
+    # override _call to reach _call_via_providers too. The old
+    # ``_uses_legacy_call`` fork (legacy text-merge vs provider render) is
+    # gone; some tests still define a ``_uses_legacy_call`` override on their
+    # fake-runtime subclasses — harmless dead overrides, nothing reads them.
 
     def _render_history_messages(self, content) -> Optional[list]:
         """Build the provider message list for an in-progress exec()
@@ -531,6 +549,22 @@ class Runtime:
                 history_dir = None
             history = render_dag_messages(graph, read_ids, history_dir)
 
+            # Inject current-frame identity so the inner model knows
+            # which function it is executing (prevents self-recursion
+            # and gives the model its role context).
+            frame_prefix_blocks: list[dict] = []
+            if frame_node_id and frame_node_id in graph.nodes:
+                fn_name = frame_node.name
+                fn_doc = (frame_node.metadata or {}).get("doc") or ""
+                if fn_name:
+                    parts = [f"[Current function: {fn_name}]"]
+                    if fn_doc:
+                        parts.append(fn_doc.strip())
+                    frame_prefix_blocks.append({
+                        "type": "text",
+                        "text": "\n\n".join(parts),
+                    })
+
             # Synthesize the current turn from ``content`` blocks via
             # the same helper the no-store fallback uses, so image /
             # video / audio blocks survive the DAG render path. The old
@@ -539,30 +573,39 @@ class Runtime:
             # locate sub-calls all do this) was silently dropped, so
             # the LLM ended up reasoning over the OCR/component text
             # alone and missed the current frame.
-            ctx, _sp = _build_pi_context(content or [])
+            ctx, _sp = _build_pi_context(frame_prefix_blocks + (content or []))
             return history + [ctx.messages[0]]
         except Exception:
             # If anything goes wrong building DAG messages, fall back
             # to the legacy render_messages path. Never break exec().
             return None
 
-    def _append_model_call_node(
+    def _open_model_call_node(
         self,
         *,
-        reply: str,
         model: str,
         system_prompt: Optional[str] = None,
         content_text: str = "",
-    ) -> None:
-        """Append an llm-role Call after a successful provider call.
+    ) -> Optional[str]:
+        """Write a *running* llm-role Call node at the start of one exec()
+        LLM call. Returns its node id (or None when no store is installed).
 
-        Writes to the GraphStore the dispatcher installed in ``_store``;
-        ``called_by`` comes from the enclosing ``@agentic_function``
-        invocation via ``_call_id``. No-op when no store is installed
-        (standalone scripts).
+        One ``runtime.exec`` == one llm node (the same way one
+        ``@agentic_function`` == one code node). The node is written with
+        ``output=None`` / ``status=running`` here; :meth:`_close_model_call_node`
+        fills in the reply and flips the status on return.
 
-        ``reads`` is intentionally left empty for now — wiring the
-        exact read-id set the prompt consumed is a future refinement.
+        Note: this does NOT repoint ``_call_id``. The history renderer
+        (``_render_history_messages``) reads ``_call_id`` to locate the
+        enclosing *function* frame, and that read happens inside ``_call``
+        AFTER this node is opened — so flipping ``_call_id`` here would
+        corrupt history rendering. The repoint to this llm node (so the
+        tool loop attributes its tool calls here) is done later, inside
+        ``_call_via_providers`` once the prompt is already built. See
+        :meth:`_enter_model_frame`.
+
+        ``reads`` is intentionally left empty for now — wiring the exact
+        read-id set the prompt consumed is a future refinement.
         """
         try:
             from openprogram.store import _store
@@ -571,21 +614,46 @@ class Runtime:
 
             store = _store.get()
             if store is None:
-                return
+                return None
 
             node = Call(
                 role=ROLE_LLM,
                 name=model or self.model or "",
                 input=({"system": system_prompt} if system_prompt else None),
-                output=reply,
+                output=None,
                 reads=[],
                 called_by=_call_id.get() or "",
-                metadata=(
-                    {"prompt_text": content_text[:8000]}
-                    if content_text else {}
-                ),
+                metadata={
+                    "status": "running",
+                    **({"prompt_text": content_text[:8000]} if content_text else {}),
+                },
             )
             store.append(node)
+            return node.id
+        except Exception:
+            # DAG bookkeeping failure must not break the LLM call.
+            return None
+
+    def _close_model_call_node(
+        self,
+        node_id: Optional[str],
+        *,
+        reply: str,
+        status: str = "success",
+    ) -> None:
+        """Fill in the reply + terminal status on the running llm node
+        opened by :meth:`_open_model_call_node`.
+
+        No-op when ``node_id`` is None (no store was installed at open time).
+        """
+        if node_id is None:
+            return
+        try:
+            from openprogram.store import _store
+            store = _store.get()
+            if store is None:
+                return
+            store.update(node_id, output=reply, metadata={"status": status})
         except Exception:
             # DAG bookkeeping failure must not break the LLM call.
             pass
@@ -804,6 +872,7 @@ class Runtime:
         timeout_s: Optional[float] = None,
         on_retry: Optional["Callable[[RetryInfo], None]"] = None,
         web_search: bool = False,
+        stream_fn: Any = None,
     ) -> Any:
         """
         Call the LLM. Appends a ModelCall node to the DAG.
@@ -921,28 +990,17 @@ class Runtime:
         content_text = "\n".join(b["text"] for b in content if b.get("type") == "text")
 
         # --- Build call input ---
-        # AgentSession path: _call_via_providers builds its own message
-        # history from the DAG (via _render_history_messages). Pass
-        # ``content`` through as-is.
-        # Legacy path (_call_fn or subclass-overridden _call): prepend
-        # the caller-supplied ``context`` string + any system prompt
-        # the runtime is carrying. The caller is responsible for
-        # composing history themselves; we don't auto-walk a tree.
-        if self._uses_legacy_call():
-            call_input = list(content)
-            if context:
-                call_input.insert(0, {"type": "text", "text": context})
-            system_text = getattr(self, "system", "") or ""
-            skills_block = self._skills_block()
-            if skills_block:
-                system_text = (system_text + skills_block) if system_text else skills_block.lstrip("\n")
-            if system_text:
-                call_input.insert(0, {"type": "text", "text": system_text, "role": "system"})
-        else:
-            call_input = content
+        # Single path: _call → _call_via_providers builds its own message
+        # history from the DAG (via _render_history_messages) and prepends
+        # the system prompt + skills block there. ``content`` is the current
+        # turn; pass it through as-is. (The old legacy-call branch that
+        # text-merged system_text + context here is gone — Runtime(call=fn)
+        # now flows through the same provider path via a CallableModel.)
+        call_input = content
 
         # --- Call the LLM (with retry) ---
         tools_token = _current_tools.set(tools) if tools else None
+        stream_fn_token = _current_stream_fn.set(stream_fn) if stream_fn is not None else None
         _policy_kwargs = {
             "toolset": toolset,
             "source":  tools_source,
@@ -980,6 +1038,15 @@ class Runtime:
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
         _deadline_token = _dl.set_deadline(_deadline)
+        # One exec == one llm node. Open it now (status=running); the
+        # tool loop inside _call_via_providers repoints _call_id to this
+        # node (after the prompt is built) so the model's tool calls
+        # attribute here. Closed on success/failure below.
+        _llm_node_id = self._open_model_call_node(
+            model=use_model, content_text=content_text,
+        )
+        self._active_llm_node_id = _llm_node_id
+        _llm_closed = False
         try:
             errors: list[str] = []
             for attempt in range(self.max_retries):
@@ -1002,13 +1069,17 @@ class Runtime:
                         override_reason=_ER.TIMEOUT,
                     ) from cause
 
+                from openprogram.webui._pause_stop import check_cancelled
+                from openprogram.agentic_programming.function import CancelledError as _CE
+                try:
+                    check_cancelled()
+                except _CE:
+                    raise ExecInterrupt("cancelled") from None
+
                 try:
                     reply = self._call(call_input, model=use_model, response_format=response_format)
-                    self._append_model_call_node(
-                        reply=reply,
-                        model=use_model,
-                        content_text=content_text,
-                    )
+                    self._close_model_call_node(_llm_node_id, reply=reply)
+                    _llm_closed = True
                     break
                 except ExecInterrupt:
                     raise  # caller hard-stop — bypass the retry layer
@@ -1064,9 +1135,21 @@ class Runtime:
                     )
                     time.sleep(sleep_s)
         finally:
+            # Close the llm node on any exit path that didn't already
+            # (errors, ExecInterrupt, programming errors). Marks it failed.
+            # Idempotent guard via _llm_closed.
+            if not _llm_closed:
+                self._close_model_call_node(
+                    _llm_node_id,
+                    reply=reply if reply is not None else "",
+                    status="error",
+                )
+            self._active_llm_node_id = None
             _dl.reset_deadline(_deadline_token)
             if tools_token is not None:
                 _current_tools.reset(tools_token)
+            if stream_fn_token is not None:
+                _current_stream_fn.reset(stream_fn_token)
             if policy_token is not None:
                 _current_tool_policy.reset(policy_token)
             if loop_opts_token is not None:
@@ -1147,22 +1230,14 @@ class Runtime:
         use_model = model or self.model
         content_text = "\n".join(b["text"] for b in content if b.get("type") == "text")
 
-        # --- Build call input (legacy text-merge only if needed) ---
-        if self._uses_legacy_call():
-            call_input = list(content)
-            if context:
-                call_input.insert(0, {"type": "text", "text": context})
-            system_text = getattr(self, "system", "") or ""
-            skills_block = self._skills_block()
-            if skills_block:
-                system_text = (system_text + skills_block) if system_text else skills_block.lstrip("\n")
-            if system_text:
-                call_input.insert(0, {"type": "text", "text": system_text, "role": "system"})
-        else:
-            call_input = content
+        # --- Build call input ---
+        # Single path (see sync exec): _call_via_providers handles system
+        # prompt + history; ``content`` is the current turn, passed as-is.
+        call_input = content
 
         # --- Call the LLM (with retry) ---
         errors: list[str] = []
+        reply = None
         _exec_start = time.monotonic()
         if not (timeout_s and timeout_s > 0):
             timeout_s = _default_exec_timeout_s()
@@ -1172,6 +1247,12 @@ class Runtime:
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
         _deadline_token = _dl.set_deadline(_deadline)
+        # One exec == one llm node (see exec() for the rationale).
+        _llm_node_id = self._open_model_call_node(
+            model=use_model, content_text=content_text,
+        )
+        self._active_llm_node_id = _llm_node_id
+        _llm_closed = False
         try:
           for attempt in range(self.max_retries):
             # Pre-attempt deadline check (see exec() for the rationale).
@@ -1193,11 +1274,8 @@ class Runtime:
 
             try:
                 reply = await self._async_call(call_input, model=use_model, response_format=response_format)
-                self._append_model_call_node(
-                    reply=reply,
-                    model=use_model,
-                    content_text=content_text,
-                )
+                self._close_model_call_node(_llm_node_id, reply=reply)
+                _llm_closed = True
                 return reply
             except ExecInterrupt:
                 raise  # caller hard-stop — bypass the retry layer
@@ -1244,11 +1322,23 @@ class Runtime:
                 )
                 await asyncio.sleep(sleep_s)
         finally:
+            if not _llm_closed:
+                self._close_model_call_node(
+                    _llm_node_id,
+                    reply=reply if reply is not None else "",
+                    status="error",
+                )
+            self._active_llm_node_id = None
             _dl.reset_deadline(_deadline_token)
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """
         Call the LLM. Override this in subclasses.
+
+        Single path: everything goes through ``_call_via_providers`` (the
+        AgentSession + agent_loop path). ``Runtime(call=fn)`` is handled by a
+        CallableModel set on ``api_model`` at construction, so there is no
+        separate ``_call_fn`` branch anymore.
 
         Args:
             content:          List of content blocks (text, image, audio, file).
@@ -1258,19 +1348,6 @@ class Runtime:
         Returns:
             str — the LLM's reply text.
         """
-        if self._call_fn is not None:
-            if inspect.iscoroutinefunction(self._call_fn):
-                raise TypeError(
-                    "exec() received an async call function. "
-                    "Use async_exec() for async providers, or pass a sync function."
-                )
-            result = self._call_fn(content, model=model, response_format=response_format)
-            if asyncio.iscoroutine(result):
-                raise TypeError(
-                    "call function returned a coroutine. "
-                    "Use async_exec() for async providers, or pass a sync function."
-                )
-            return result
         if self.api_model is not None:
             return self._call_via_providers(content, response_format=response_format)
         raise NotImplementedError(
@@ -1378,6 +1455,11 @@ class Runtime:
             system_prompt = (system_prompt + skills_block) if system_prompt else skills_block.lstrip("\n")
 
         loop_opts = _current_loop_opts.get(None) or {}
+        # stream_fn injection: a per-call override (set by exec via the
+        # _current_stream_fn contextvar, used by the dispatcher / tests) wins;
+        # otherwise the runtime's own _stream_fn (set when Runtime(call=fn)
+        # wraps a callable into a CallableModel). None → real provider.
+        _stream_fn = _current_stream_fn.get(None) or getattr(self, "_stream_fn", None)
         session = AgentSession(
             model=self.api_model,
             tools=agent_tools,
@@ -1389,6 +1471,7 @@ class Runtime:
             parallel_tool_calls=loop_opts.get("parallel_tool_calls"),
             max_iterations=loop_opts.get("max_iterations"),
             web_search=loop_opts.get("web_search"),
+            stream_fn=_stream_fn,
         )
 
         # Forward agent stream events to self.on_stream so callers (the webui
@@ -1473,10 +1556,31 @@ class Runtime:
 
             _unsub = session.agent.subscribe(_forward)
 
+        # Repoint _call_id to this exec's llm node for the tool loop, NOW
+        # that the prompt history is already built (history rendering above
+        # needed _call_id pointing at the enclosing function frame). Any
+        # tool the model calls during session.run records called_by = this
+        # llm node, giving the DAG a correct code → llm → code chain
+        # instead of code → code. Reset in finally.
+        _frame_token = None
+        _llm_id = getattr(self, "_active_llm_node_id", None)
+        if _llm_id is not None:
+            try:
+                from openprogram.agentic_programming.function import _call_id
+                _frame_token = _call_id.set(_llm_id)
+            except Exception:
+                _frame_token = None
+
         try:
             session.replace_messages(history)
             final = _run_async(session.run(current))
         finally:
+            if _frame_token is not None:
+                try:
+                    from openprogram.agentic_programming.function import _call_id
+                    _call_id.reset(_frame_token)
+                except Exception:
+                    pass
             if _unsub is not None:
                 try:
                     _unsub()

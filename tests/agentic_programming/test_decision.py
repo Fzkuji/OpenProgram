@@ -21,9 +21,6 @@ class _CannedRuntime(Runtime):
     def _call(self, content, model="default", response_format=None):
         return self._reply
 
-    def _uses_legacy_call(self) -> bool:
-        return True
-
 
 def _greet(name: str) -> str:
     """Greet someone by name."""

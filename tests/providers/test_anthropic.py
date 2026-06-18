@@ -60,7 +60,9 @@ class TestAnthropicRuntime:
     def test_uses_default_path_not_legacy(self):
         """No ``_call`` override — runs through ``_call_via_providers``."""
         rt = AnthropicRuntime(api_key="k", model="claude-sonnet-4-6")
-        assert rt._uses_legacy_call() is False
+        # Single path now: not overriding _call means it reaches
+        # _call_via_providers. (_uses_legacy_call was removed in the
+        # LLM-call-path unification.)
         assert type(rt)._call is Runtime._call
 
     def test_list_models_filters_by_provider(self):

@@ -24,15 +24,11 @@ class _FakeRuntime(Runtime):
         super().__init__(call=lambda *a, **kw: reply, model="dummy")
         self._fake_reply = reply
 
-    # Override the actual LLM call.
+    # Override the actual LLM call — returns the canned reply without
+    # touching a provider. (The old _uses_legacy_call override is gone:
+    # there is a single exec path now; overriding _call is enough.)
     def _call(self, content, model="default", response_format=None):
         return self._fake_reply
-
-    # Pretend we're not on the "legacy call" path. The default exec()
-    # has a legacy-text-merge branch that uses parent_ctx; bypass it
-    # by claiming we use a non-legacy call.
-    def _uses_legacy_call(self) -> bool:
-        return True
 
 
 @pytest.fixture
@@ -130,3 +126,133 @@ def test_exec_without_store_writes_nothing():
 
     result = f(runtime=rt)
     assert result == "x"
+
+
+# ── llm node lifecycle: opened running, closed success ────────────
+
+
+def test_exec_llm_node_lifecycle_running_then_success(store):
+    """One exec writes one llm node that ends up status=success with the
+    reply as output (opened running, closed on return)."""
+    rt = _FakeRuntime(reply="done")
+
+    @agentic_function
+    def plan(task, runtime=None):
+        return runtime.exec(f"plan: {task}")
+
+    plan("x", runtime=rt)
+
+    g = store.load()
+    llm_nodes = [n for n in g if n.is_llm()]
+    assert len(llm_nodes) == 1
+    assert llm_nodes[0].output == "done"
+    assert (llm_nodes[0].metadata or {}).get("status") == "success"
+
+
+def test_tool_loop_subcall_attributes_to_llm_node(store):
+    """A function the model calls during an exec's tool loop records
+    ``called_by`` = the llm node (code → llm → code chain), not the
+    enclosing function frame.
+
+    Simulates the tool-loop attribution that ``_call_via_providers`` does:
+    while the model 'runs', _call_id is pointed at the in-flight llm node
+    (exposed via runtime._active_llm_node_id), so any @agentic_function the
+    model invokes lands under the llm node.
+    """
+    from openprogram.agentic_programming.function import _call_id
+
+    @agentic_function
+    def child(x, runtime=None):
+        return f"child:{x}"
+
+    class _ToolLoopRuntime(Runtime):
+        """_call mimics a provider tool loop: it points _call_id at the
+        open llm node (as _call_via_providers does) and invokes a tool."""
+        def __init__(self):
+            super().__init__(call=lambda *a, **kw: "final", model="dummy")
+
+        def _call(self, content, model="default", response_format=None):
+            node_id = getattr(self, "_active_llm_node_id", None)
+            if node_id is not None:
+                tok = _call_id.set(node_id)
+                try:
+                    child("v", runtime=self)
+                finally:
+                    _call_id.reset(tok)
+            return "final"
+
+    rt = _ToolLoopRuntime()
+
+    @agentic_function
+    def parent(task, runtime=None):
+        return runtime.exec(f"parent: {task}")
+
+    parent("go", runtime=rt)
+
+    g = store.load()
+    parent_node = next(n for n in g if n.is_code() and n.name == "parent")
+    child_node = next(n for n in g if n.is_code() and n.name == "child")
+    llm_node = next(n for n in g if n.is_llm())
+
+    # The llm node is a child of parent's code node.
+    assert llm_node.called_by == parent_node.id
+    # The child the model called during the tool loop is a child of the
+    # llm node — NOT a direct sibling under parent. This is the code → llm
+    # → code chain the unification fixes.
+    assert child_node.called_by == llm_node.id
+
+
+# ── stream_fn injection: exec(stream_fn=fake) reaches the provider path ──
+
+
+def test_exec_stream_fn_injection(store):
+    """exec(stream_fn=fake) threads a caller-supplied stream through the
+    provider path (exec → _call_via_providers → AgentSession → agent_loop),
+    so the dispatcher / integration tests can inject a fake model without a
+    network call. Verifies the fake's text comes back and a llm node lands."""
+    import time as _time
+    from openprogram.providers.types import (
+        AssistantMessage, TextContent, Model,
+        EventStart, EventTextStart, EventTextEnd, EventDone,
+    )
+
+    captured = {}
+
+    async def fake_stream(model, context, options=None):
+        # Record what the loop handed the "model" so we can assert the
+        # prompt was built (system + current turn).
+        captured["system"] = getattr(context, "system_prompt", None)
+        captured["n_messages"] = len(getattr(context, "messages", []) or [])
+
+        def _msg(text):
+            return AssistantMessage(
+                content=[TextContent(text=text)],
+                api="completion", provider="callable", model="fake",
+                stop_reason="stop", timestamp=int(_time.time() * 1000),
+            )
+
+        yield EventStart(partial=_msg(""))
+        yield EventTextStart(content_index=0, partial=_msg(""))
+        yield EventTextEnd(content_index=0, content="from fake stream", partial=_msg("from fake stream"))
+        yield EventDone(reason="stop", message=_msg("from fake stream"))
+
+    # A runtime with a provider model (so it takes the _call_via_providers
+    # path) but no real network — the injected stream_fn intercepts.
+    rt = Runtime(model="default")
+    rt.api_model = Model(
+        id="fake", name="fake", api="completion",
+        provider="callable", base_url="",
+    )
+
+    @agentic_function
+    def ask(q, runtime=None):
+        return runtime.exec(f"q: {q}", stream_fn=fake_stream)
+
+    result = ask("hello", runtime=rt)
+
+    assert result == "from fake stream"
+    assert captured["n_messages"] >= 1  # at least the current turn
+    g = store.load()
+    llm_nodes = [n for n in g if n.is_llm()]
+    assert len(llm_nodes) == 1
+    assert llm_nodes[0].output == "from fake stream"

@@ -139,8 +139,12 @@ def test_dag_prompt_inside_io_function_frame(rt, store):
     # because output=None) + current turn
     assert "user" in roles
     assert "assistant" in roles
-    # Current turn is the last message
-    assert msgs[-1].content[0].text == "step 1"
+    # Current turn is the last message. It carries a "[Current function: plan]"
+    # identity prefix block (so the inner model knows which function it is)
+    # followed by the exec content "step 1".
+    last_texts = [c.text for c in msgs[-1].content]
+    assert any("step 1" == t for t in last_texts)
+    assert any("[Current function: plan]" in t for t in last_texts)
 
 
 def test_render_range_callers_zero_hides_history(rt, store):
@@ -167,11 +171,14 @@ def test_render_range_callers_zero_hides_history(rt, store):
         _call_id.reset(token)
 
     assert msgs is not None
-    texts = [
-        m.content[0].text for m in msgs
-        if m.content and hasattr(m.content[0], "text")
+    # Flatten every text block of every message (the current turn now
+    # carries a "[Current function: ...]" prefix block before the content).
+    all_texts = [
+        c.text for m in msgs for c in (m.content or [])
+        if hasattr(c, "text")
     ]
     # Prior chat messages must NOT appear
-    assert not any("prior chat" in t for t in texts)
+    assert not any("prior chat" in t for t in all_texts)
     # Current turn synthesized at the tail
-    assert texts[-1] == "isolated turn"
+    last_texts = [c.text for c in msgs[-1].content if hasattr(c, "text")]
+    assert any("isolated turn" == t for t in last_texts)

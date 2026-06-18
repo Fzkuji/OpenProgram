@@ -65,7 +65,7 @@ class TestGeminiRuntime:
 
     def test_uses_default_path_not_legacy(self):
         rt = GeminiRuntime(api_key="k", model="gemini-2.5-pro")
-        assert rt._uses_legacy_call() is False
+        # Single path now (_uses_legacy_call removed in unification).
         assert type(rt)._call is Runtime._call
 
     def test_list_models_filters_by_provider(self):
