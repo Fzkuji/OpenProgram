@@ -1,27 +1,46 @@
-# LLM 调用路径统一
+# Agent 调用流程（权威设计）
 
 Status: design · Created: 2026-06-18
 
-## 架构定位
+> 这是 agent 调用的**核心框架**——所有 turn / LLM 调用都按这个流程走。后续加功能在此基础上往对应节点插入,不改骨架。本文档曾名"LLM 调用路径统一",现升级为整个调用流程的权威设计。
 
-OpenProgram 相比其他 agentic 框架多了两层:
+## 总览图
 
-| 层 | 职责 | 其他框架有吗 |
-|---|---|---|
-| **dispatcher** | 多 session/channel 路由、turn 生命周期管理(写 user 节点、设 session 上下文、善后) | OpenClaw 有(多租户网关),OpenCode/Hermes 没有(单入口,session 直接管) |
-| **runtime.exec** | "调一次 LLM"的统一入口,负责 DAG 记录(llm 节点的写入和回填) | 其他框架没有独立的这一层。OpenCode 的 DAG 记录在 Step 里,Hermes 没有 DAG |
-| **agent_loop** | LLM 调用 + tool loop 引擎(发请求、执行工具、循环直到纯文本) | 所有框架都有等价物 |
+完整流程见 [`agent-call-flow.svg`](agent-call-flow.svg)(三层嵌套 + 每步顺序 + 已有/未来插入点)。
 
-多 dispatcher 是因为我们有多 session/多 channel。多 runtime.exec 是因为我们有 `@agentic_function`——工具内部可以嵌套调 LLM 并记录到 DAG,其他框架的工具只是简单函数执行,不会在内部再调 LLM。
+骨架一句话:**入口 → ① dispatcher 层(turn 管理）→ ② runtime.exec 层(一次 LLM 调用 = 一个 llm 节点）→ ③ agent_loop 层(tool loop 引擎)→ 回复**。
 
-### 三层的调用关系(统一后)
+## 三层架构
+
+外到里嵌套,每层一个职责:
+
+| 层 | 职责 | 实现 | 其他框架有吗 |
+|---|---|---|---|
+| **① dispatcher** | turn 生命周期:建 session、写 user 节点、attach Runtime、resolve model、解析工具、跑 loop、持久化善后 | `agent/dispatcher/__init__.py` process_user_turn / _run_loop_blocking | OpenClaw 有(多租户网关),OpenCode/Hermes 没有(单入口) |
+| **② runtime.exec** | "调一次 LLM"的统一入口:开/关 llm 节点、构建上下文、DAG 记录 | `agentic_programming/runtime.py` exec → _call → _call_via_providers | 其他框架没有独立这层(OpenCode 记在 Step 里,Hermes 无 DAG) |
+| **③ agent_loop** | tool loop 引擎:调模型 → 执行工具 → 喂回 → 循环到纯文本 | `agent/agent_loop.py` agent_loop | 所有框架都有等价物 |
+
+多 dispatcher 是因为有多 session/多 channel。多 runtime.exec 是因为有 `@agentic_function`——工具内部能嵌套调 LLM 并记录 DAG。
+
+### 调用层级(纵向嵌套,不是并列)
 
 ```
-用户发消息 → dispatcher → runtime.exec → agent_loop
-函数体调 LLM           → runtime.exec → agent_loop
+用户消息 ──→ ① dispatcher ──→ ② runtime.exec ──→ ③ agent_loop
+                                    ↑
+@agentic_function 体内 / decision.make ──┘  (跳过 dispatcher,直接进 ②)
 ```
 
-dispatcher 是外层入口(只有用户消息进来时经过),runtime.exec 是 LLM 调用的唯一入口(所有 LLM 调用都经过),agent_loop 是底层引擎(不关心 DAG)。
+dispatcher 在最外(只有用户消息经过),exec 在中间(所有 LLM 调用的唯一入口),agent_loop 在最里(不关心 DAG)。
+
+### 每个节点内部的有序步骤
+
+不是一坨,有先后:
+
+**① dispatcher**:1 建/载 session(沿 active branch 取历史)→ 2 写 user 节点 → 3 attach Runtime(_store + _current_runtime)→ 4 resolve model(agent profile + override)→ 5 解析工具(channel/plan/审批 包装)→ 6 跑 agent_loop → 7 持久化 + finalize(assistant 节点、标题、auto-compact)。
+
+**② runtime.exec**:1 开 llm 节点(running,_call_id 指向它,外含 timeout/retry 循环)→ 2 构建上下文【a 选历史节点 compute_reads → b render 成消息 + 当前 turn → c 解析工具集 toolset/policy/unattended-deny → d 拼 system + skills → e 建 AgentSession(选 stream_fn)】→ 3 跑 agent_loop → 4 关 llm 节点(回填 output,success)。
+
+**③ agent_loop**:每轮调模型前【a convert_to_llm → b memory prefetch → c deferred-tool re-split】→ 调模型/流式 → 判断 tool_use? → 是:执行工具 → 结果喂回 → 再调模型;否(纯文本):退出循环。
 
 ## 横向对比
 

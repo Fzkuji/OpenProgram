@@ -1,0 +1,251 @@
+<svg width="1280" height="860" viewBox="0 0 1280 860" fill="none" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="860" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="var(--canvas)"/>
+      <stop offset="1" stop-color="var(--canvas2)"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="var(--shadow)" flood-opacity="0.38"/>
+    </filter>
+    <marker id="aGrey" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+    </marker>
+    <marker id="aGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/>
+    </marker>
+    <marker id="aPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#bc8cf2"/>
+    </marker>
+    <marker id="aAmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d9a73a"/>
+    </marker>
+    <style>
+      svg {
+        --canvas:#0d1117; --canvas2:#0f1722; --card:#161b22; --border:#30363d;
+        --ink:#e6edf3; --muted:#8b949e; --shadow:#000000;
+        --blue-fill:#0f2030; --blue-border:#1f3354;
+        --purple-fill:#1d1530; --purple-ring:#3d2e52;
+        --green-fill:#10231a; --green-border:#1f4030;
+        --amber-fill:#241a0f; --amber-border:#4a3414;
+        --grey-fill:#15191f; --grey-border:#2a2f37;
+        --layer1:#0c1a14; --layer2:#0c1320; --layer3:#160f22;
+      }
+      @media (prefers-color-scheme: light) {
+        svg {
+          --canvas:#ffffff; --canvas2:#f6f8fa; --card:#f6f8fa; --border:#d0d7de;
+          --ink:#1f2328; --muted:#636c76; --shadow:#57606a;
+          --blue-fill:#ddf4ff; --blue-border:#b6e3ff;
+          --purple-fill:#faf3ff; --purple-ring:#e7d8fb;
+          --green-fill:#e9f8ee; --green-border:#bef0cb;
+          --amber-fill:#fff8e6; --amber-border:#f5d98a;
+          --grey-fill:#eef1f4; --grey-border:#d8dde2;
+          --layer1:#effaf2; --layer2:#eef6ff; --layer3:#f8f1ff;
+        }
+      }
+      .flow { stroke-dasharray: 6 7; animation: dash 1.6s linear infinite; }
+      @keyframes dash { to { stroke-dashoffset: -13; } }
+      .flowback { stroke-dasharray: 5 6; animation: dashback 1.8s linear infinite; }
+      @keyframes dashback { to { stroke-dashoffset: 11; } }
+      .t { fill: var(--ink); } .s { fill: var(--muted); }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="1278" height="858" rx="16" fill="url(#bg)" stroke="var(--border)"/>
+
+  <text x="640" y="38" text-anchor="middle" font-size="20" font-weight="700" class="t">Agent 调用流程 — 三层嵌套 + 一次 turn 的有序骨架</text>
+  <text x="640" y="60" text-anchor="middle" font-size="12" class="s">外到里：dispatcher（turn 管理）⊃ runtime.exec（一次 LLM 调用 = 一个 llm 节点）⊃ agent_loop（tool loop 引擎）。每步标了真实顺序。</text>
+
+  <!-- ============ entries ============ -->
+  <g filter="url(#soft)">
+    <rect x="40" y="96" width="150" height="38" rx="9" fill="var(--blue-fill)" stroke="#58a6ff" stroke-width="1.1"/>
+    <text x="115" y="113" text-anchor="middle" font-size="11" font-weight="600" fill="#58a6ff">用户消息</text>
+    <text x="115" y="127" text-anchor="middle" font-size="9" class="s">webui / CLI / channel</text>
+  </g>
+  <g filter="url(#soft)">
+    <rect x="40" y="146" width="150" height="38" rx="9" fill="var(--purple-fill)" stroke="#bc8cf2" stroke-width="1.1"/>
+    <text x="115" y="163" text-anchor="middle" font-size="11" font-weight="600" fill="#bc8cf2">@agentic_function 体内</text>
+    <text x="115" y="177" text-anchor="middle" font-size="9" class="s">runtime.exec / decision.make</text>
+  </g>
+
+  <!-- ============ LAYER 1: dispatcher ============ -->
+  <rect x="220" y="84" width="1024" height="150" rx="14" fill="var(--layer2)" stroke="#58a6ff" stroke-width="1.3" stroke-dasharray="2 0" opacity="0.95"/>
+  <text x="240" y="108" font-size="13.5" font-weight="700" fill="#58a6ff">① dispatcher 层 — turn 管理（process_user_turn）</text>
+  <text x="240" y="125" font-size="9.5" class="s">只有"用户消息"入口经过这层；@agentic_function 体内调用直接进 ② 层</text>
+
+  <!-- dispatcher ordered steps -->
+  <g filter="url(#soft)"><rect x="240" y="138" width="120" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="300" y="156" text-anchor="middle" font-size="10.5" font-weight="600" class="t">1 建/载 session</text>
+    <text x="300" y="170" text-anchor="middle" font-size="8.5" class="s">沿 active branch 取历史</text></g>
+  <g filter="url(#soft)"><rect x="372" y="138" width="120" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="432" y="156" text-anchor="middle" font-size="10.5" font-weight="600" class="t">2 写 user 节点</text>
+    <text x="432" y="170" text-anchor="middle" font-size="8.5" class="s">+ 附件 manifest</text></g>
+  <g filter="url(#soft)"><rect x="504" y="138" width="130" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="569" y="156" text-anchor="middle" font-size="10.5" font-weight="600" class="t">3 attach Runtime</text>
+    <text x="569" y="170" text-anchor="middle" font-size="8.5" class="s">_store + _current_runtime</text></g>
+  <g filter="url(#soft)"><rect x="646" y="138" width="130" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="711" y="156" text-anchor="middle" font-size="10.5" font-weight="600" class="t">4 resolve model</text>
+    <text x="711" y="170" text-anchor="middle" font-size="8.5" class="s">agent profile + override</text></g>
+  <g filter="url(#soft)"><rect x="788" y="138" width="130" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="853" y="156" text-anchor="middle" font-size="10.5" font-weight="600" class="t">5 解析工具</text>
+    <text x="853" y="170" text-anchor="middle" font-size="8.5" class="s">channel/plan/审批 包装</text></g>
+  <g filter="url(#soft)"><rect x="930" y="138" width="150" height="40" rx="8" fill="var(--green-fill)" stroke="#3fb950" stroke-width="1.1"/>
+    <text x="1005" y="156" text-anchor="middle" font-size="10.5" font-weight="600" fill="#3fb950">6 跑 agent_loop ↓</text>
+    <text x="1005" y="170" text-anchor="middle" font-size="8.5" class="s">_run_loop_blocking</text></g>
+  <g filter="url(#soft)"><rect x="1092" y="138" width="138" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="1161" y="156" text-anchor="middle" font-size="10.5" font-weight="600" class="t">7 持久化 + finalize</text>
+    <text x="1161" y="170" text-anchor="middle" font-size="8.5" class="s">assistant 节点 · 标题 · compact</text></g>
+
+  <!-- dispatcher step arrows -->
+  <line x1="360" y1="158" x2="372" y2="158" stroke="var(--muted)" stroke-width="1.3" marker-end="url(#aGrey)"/>
+  <line x1="492" y1="158" x2="504" y2="158" stroke="var(--muted)" stroke-width="1.3" marker-end="url(#aGrey)"/>
+  <line x1="634" y1="158" x2="646" y2="158" stroke="var(--muted)" stroke-width="1.3" marker-end="url(#aGrey)"/>
+  <line x1="776" y1="158" x2="788" y2="158" stroke="var(--muted)" stroke-width="1.3" marker-end="url(#aGrey)"/>
+  <line x1="918" y1="158" x2="930" y2="158" stroke="var(--muted)" stroke-width="1.3" marker-end="url(#aGrey)"/>
+  <path d="M 1080 168 C 1086 176 1086 168 1092 162" stroke="var(--muted)" stroke-width="1.3" fill="none"/>
+  <line x1="1080" y1="158" x2="1092" y2="158" stroke="var(--muted)" stroke-width="1.3" marker-end="url(#aGrey)"/>
+
+  <!-- entry arrows into layer -->
+  <line x1="190" y1="115" x2="232" y2="150" stroke="#58a6ff" stroke-width="1.4" marker-end="url(#aGrey)" class="flow"/>
+
+  <!-- ============ LAYER 2: runtime.exec ============ -->
+  <rect x="220" y="250" width="1024" height="118" rx="14" fill="var(--layer2)" stroke="#bc8cf2" stroke-width="1.3" opacity="0.95"/>
+  <text x="240" y="274" font-size="13.5" font-weight="700" fill="#bc8cf2">② runtime.exec 层 — 一次 LLM 调用 = 一个 llm 节点（exec → _call → _call_via_providers）</text>
+
+  <g filter="url(#soft)"><rect x="240" y="288" width="128" height="64" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="304" y="306" text-anchor="middle" font-size="10.5" font-weight="600" class="t">1 开 llm 节点</text>
+    <text x="304" y="320" text-anchor="middle" font-size="8.5" class="s">status=running</text>
+    <text x="304" y="333" text-anchor="middle" font-size="8.5" class="s">_call_id → 此节点</text>
+    <text x="304" y="346" text-anchor="middle" font-size="8" fill="#bc8cf2">（含 timeout/retry 外循环）</text></g>
+
+  <!-- build context as an ORDERED sub-chain -->
+  <rect x="384" y="282" width="560" height="78" rx="10" fill="var(--purple-fill)" stroke="var(--purple-ring)" stroke-width="1.1"/>
+  <text x="394" y="298" font-size="10.5" font-weight="700" fill="#bc8cf2">2 构建上下文（按顺序）</text>
+  <g filter="url(#soft)"><rect x="394" y="306" width="96" height="44" rx="7" fill="var(--card)" stroke="var(--border)"/>
+    <text x="442" y="322" text-anchor="middle" font-size="9.5" font-weight="600" class="t">a 选历史节点</text>
+    <text x="442" y="334" text-anchor="middle" font-size="8" class="s">compute_reads</text>
+    <text x="442" y="345" text-anchor="middle" font-size="8" class="s">(frame/expose)</text></g>
+  <g filter="url(#soft)"><rect x="498" y="306" width="96" height="44" rx="7" fill="var(--card)" stroke="var(--border)"/>
+    <text x="546" y="322" text-anchor="middle" font-size="9.5" font-weight="600" class="t">b render 消息</text>
+    <text x="546" y="334" text-anchor="middle" font-size="8" class="s">节点→user/asst</text>
+    <text x="546" y="345" text-anchor="middle" font-size="8" class="s">+ 当前 turn</text></g>
+  <g filter="url(#soft)"><rect x="602" y="306" width="96" height="44" rx="7" fill="var(--card)" stroke="var(--border)"/>
+    <text x="650" y="322" text-anchor="middle" font-size="9.5" font-weight="600" class="t">c 解析工具集</text>
+    <text x="650" y="334" text-anchor="middle" font-size="8" class="s">toolset/policy</text>
+    <text x="650" y="345" text-anchor="middle" font-size="8" class="s">unattended-deny</text></g>
+  <g filter="url(#soft)"><rect x="706" y="306" width="110" height="44" rx="7" fill="var(--card)" stroke="var(--border)"/>
+    <text x="761" y="322" text-anchor="middle" font-size="9.5" font-weight="600" class="t">d system + skills</text>
+    <text x="761" y="334" text-anchor="middle" font-size="8" class="s">runtime.system</text>
+    <text x="761" y="345" text-anchor="middle" font-size="8" class="s">+ skills_block</text></g>
+  <g filter="url(#soft)"><rect x="824" y="306" width="110" height="44" rx="7" fill="var(--card)" stroke="var(--border)"/>
+    <text x="879" y="322" text-anchor="middle" font-size="9.5" font-weight="600" class="t">e 建 AgentSession</text>
+    <text x="879" y="334" text-anchor="middle" font-size="8" class="s">stream_fn 选择</text>
+    <text x="879" y="345" text-anchor="middle" font-size="8" class="s">（retry-rollback）</text></g>
+  <!-- sub-chain arrows -->
+  <line x1="490" y1="328" x2="498" y2="328" stroke="#bc8cf2" stroke-width="1.2" marker-end="url(#aPurple)"/>
+  <line x1="594" y1="328" x2="602" y2="328" stroke="#bc8cf2" stroke-width="1.2" marker-end="url(#aPurple)"/>
+  <line x1="698" y1="328" x2="706" y2="328" stroke="#bc8cf2" stroke-width="1.2" marker-end="url(#aPurple)"/>
+  <line x1="816" y1="328" x2="824" y2="328" stroke="#bc8cf2" stroke-width="1.2" marker-end="url(#aPurple)"/>
+
+  <g filter="url(#soft)"><rect x="960" y="288" width="120" height="64" rx="8" fill="var(--green-fill)" stroke="#3fb950" stroke-width="1.1"/>
+    <text x="1020" y="312" text-anchor="middle" font-size="10.5" font-weight="600" fill="#3fb950">3 跑 agent_loop ↓</text>
+    <text x="1020" y="328" text-anchor="middle" font-size="8.5" class="s">session.run</text></g>
+  <g filter="url(#soft)"><rect x="1100" y="288" width="124" height="64" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="1162" y="312" text-anchor="middle" font-size="10.5" font-weight="600" class="t">4 关 llm 节点</text>
+    <text x="1162" y="328" text-anchor="middle" font-size="8.5" class="s">回填 output</text>
+    <text x="1162" y="341" text-anchor="middle" font-size="8.5" class="s">status=success</text></g>
+
+  <line x1="368" y1="320" x2="384" y2="320" stroke="#bc8cf2" stroke-width="1.4" marker-end="url(#aPurple)"/>
+  <line x1="944" y1="320" x2="960" y2="320" stroke="#bc8cf2" stroke-width="1.4" marker-end="url(#aPurple)"/>
+  <line x1="1080" y1="320" x2="1100" y2="320" stroke="#bc8cf2" stroke-width="1.4" marker-end="url(#aPurple)"/>
+
+  <!-- layer1 step6 → layer2 -->
+  <line x1="1005" y1="178" x2="1005" y2="250" stroke="#3fb950" stroke-width="1.5" marker-end="url(#aGreen)" class="flow"/>
+  <text x="1018" y="220" font-size="9" fill="#3fb950">dispatcher 调进 exec 层</text>
+  <!-- @agentic_function entry straight into layer2 -->
+  <path d="M 190 165 C 200 230 210 300 232 312" stroke="#bc8cf2" stroke-width="1.4" fill="none" marker-end="url(#aPurple)" class="flow"/>
+  <text x="120" y="210" font-size="9" fill="#bc8cf2">体内调用直接进 ②</text>
+
+  <!-- ============ LAYER 3: agent_loop ============ -->
+  <rect x="220" y="384" width="1024" height="350" rx="14" fill="var(--layer3)" stroke="#3fb950" stroke-width="1.3" opacity="0.95"/>
+  <text x="240" y="408" font-size="13.5" font-weight="700" fill="#3fb950">③ agent_loop 层 — tool loop 引擎（while 还有 tool_call）</text>
+  <text x="240" y="425" font-size="9.5" class="s">每轮调模型前按顺序：transform → convert_to_llm → memory prefetch → deferred-tool re-split → 调 stream_fn</text>
+
+  <!-- per-call pre-steps -->
+  <g filter="url(#soft)"><rect x="240" y="438" width="120" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="300" y="455" text-anchor="middle" font-size="10" font-weight="600" class="t">a convert_to_llm</text>
+    <text x="300" y="469" text-anchor="middle" font-size="8.5" class="s">消息→provider 格式</text></g>
+  <g filter="url(#soft)"><rect x="372" y="438" width="120" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="432" y="455" text-anchor="middle" font-size="10" font-weight="600" class="t">b memory prefetch</text>
+    <text x="432" y="469" text-anchor="middle" font-size="8.5" class="s">注入&lt;memory-context&gt;</text></g>
+  <g filter="url(#soft)"><rect x="504" y="438" width="130" height="40" rx="8" fill="var(--card)" stroke="var(--border)"/>
+    <text x="569" y="455" text-anchor="middle" font-size="10" font-weight="600" class="t">c deferred re-split</text>
+    <text x="569" y="469" text-anchor="middle" font-size="8.5" class="s">每轮重切工具 schema</text></g>
+  <line x1="360" y1="458" x2="372" y2="458" stroke="var(--muted)" stroke-width="1.3" marker-end="url(#aGrey)"/>
+  <line x1="492" y1="458" x2="504" y2="458" stroke="var(--muted)" stroke-width="1.3" marker-end="url(#aGrey)"/>
+
+  <!-- the cycle -->
+  <g filter="url(#soft)"><rect x="500" y="500" width="240" height="46" rx="10" fill="var(--purple-fill)" stroke="#bc8cf2" stroke-width="1.2"/>
+    <text x="620" y="520" text-anchor="middle" font-size="12" font-weight="600" fill="#bc8cf2">调模型 / 流式</text>
+    <text x="620" y="536" text-anchor="middle" font-size="9" class="s">_stream_assistant_response → stream_fn</text></g>
+
+  <g filter="url(#soft)"><path d="M 620 558 L 694 592 L 620 626 L 546 592 Z" fill="var(--amber-fill)" stroke="#d9a73a" stroke-width="1.3"/>
+    <text x="620" y="588" text-anchor="middle" font-size="11" font-weight="600" fill="#d9a73a">回复是</text>
+    <text x="620" y="602" text-anchor="middle" font-size="11" font-weight="600" fill="#d9a73a">tool_use？</text></g>
+
+  <g filter="url(#soft)"><rect x="500" y="644" width="240" height="48" rx="10" fill="var(--green-fill)" stroke="#3fb950" stroke-width="1.2"/>
+    <text x="620" y="663" text-anchor="middle" font-size="12" font-weight="600" fill="#3fb950">执行工具</text>
+    <text x="620" y="679" text-anchor="middle" font-size="8.5" class="s">_execute_tool_calls · code 节点 called_by→llm</text></g>
+
+  <line x1="634" y1="458" x2="660" y2="458" stroke="var(--muted)" stroke-width="1.3"/>
+  <path d="M 634 458 C 700 458 620 480 620 500" stroke="var(--muted)" stroke-width="1.4" fill="none" marker-end="url(#aGrey)" class="flow"/>
+  <line x1="620" y1="546" x2="620" y2="558" stroke="#bc8cf2" stroke-width="1.5" marker-end="url(#aPurple)" class="flow"/>
+  <line x1="620" y1="626" x2="620" y2="644" stroke="#d9a73a" stroke-width="1.5" marker-end="url(#aGreen)" class="flow"/>
+  <text x="636" y="640" font-size="10" font-weight="600" fill="#3fb950">是</text>
+  <!-- feed back -->
+  <path d="M 500 668 C 430 668 430 523 500 523" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#aGreen)" class="flowback"/>
+  <text x="420" y="592" font-size="9.5" fill="#3fb950">结果喂回</text>
+  <text x="420" y="604" font-size="9.5" fill="#3fb950">→ 再调模型</text>
+
+  <!-- exit: text -->
+  <line x1="694" y1="592" x2="900" y2="592" stroke="#3fb950" stroke-width="1.6" marker-end="url(#aGreen)" class="flow"/>
+  <text x="800" y="584" text-anchor="middle" font-size="10.5" font-weight="600" fill="#3fb950">否 · 纯文本 → 退出循环</text>
+
+  <g filter="url(#soft)"><rect x="904" y="566" width="180" height="52" rx="11" fill="var(--green-fill)" stroke="#3fb950" stroke-width="1.3"/>
+    <text x="994" y="588" text-anchor="middle" font-size="11.5" font-weight="600" fill="#3fb950">循环结束</text>
+    <text x="994" y="604" text-anchor="middle" font-size="9" class="s">回到 ② 关 llm 节点</text></g>
+  <path d="M 1084 580 C 1140 580 1162 420 1162 352" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#aGreen)" class="flowback"/>
+
+  <!-- insertion chips (right side of loop) -->
+  <text x="772" y="648" font-size="9.5" font-weight="700" class="s">挂在 tool loop 上的插入点（已有）</text>
+  <rect x="772" y="654" width="150" height="15" rx="4" fill="var(--grey-fill)" stroke="var(--grey-border)"/>
+  <text x="778" y="665" font-size="7.5" class="s">调模型周围：timeout · 重试 · 取消 · usage</text>
+  <rect x="772" y="672" width="150" height="15" rx="4" fill="var(--grey-fill)" stroke="var(--grey-border)"/>
+  <text x="778" y="683" font-size="7.5" class="s">执行工具前：tool.before · 审批 · 参数校验</text>
+  <rect x="772" y="690" width="150" height="15" rx="4" fill="var(--grey-fill)" stroke="var(--grey-border)"/>
+  <text x="778" y="701" font-size="7.5" class="s">循环内：steering 注入 · iteration_cap</text>
+
+  <!-- future insertions -->
+  <rect x="930" y="644" width="300" height="78" rx="10" fill="var(--card)" stroke="var(--amber-border)" stroke-width="1.1" stroke-dasharray="4 4"/>
+  <text x="944" y="660" font-size="10" font-weight="700" fill="#d9a73a">未来可插入（别框架有，按需加）</text>
+  <text x="944" y="675" font-size="8.5" class="s">· 错误分类→恢复路由（挂"重试"，Hermes）</text>
+  <text x="944" y="688" font-size="8.5" class="s">· 工具结果按预算裁剪（挂"执行工具后"，OpenClaw）</text>
+  <text x="944" y="701" font-size="8.5" class="s">· 工具参数修复（挂"tool_use 解析"，OpenClaw）</text>
+  <text x="944" y="714" font-size="8.5" class="s">· 结构化输出强制（挂 ②"关节点"前，OpenCode）</text>
+
+  <!-- legend -->
+  <g>
+    <rect x="240" y="752" width="13" height="13" rx="3" fill="var(--card)" stroke="var(--border)"/>
+    <text x="260" y="762" font-size="9.5" class="s">有序步骤</text>
+    <rect x="345" y="752" width="13" height="13" rx="3" fill="var(--grey-fill)" stroke="var(--grey-border)"/>
+    <text x="365" y="762" font-size="9.5" class="s">已有插入点</text>
+    <rect x="460" y="752" width="13" height="13" rx="3" fill="var(--amber-fill)" stroke="var(--amber-border)" stroke-dasharray="3 3"/>
+    <text x="480" y="762" font-size="9.5" class="s">未来可插入</text>
+    <line x1="585" y1="759" x2="615" y2="759" stroke="#3fb950" stroke-width="1.5" marker-end="url(#aGreen)" class="flow"/>
+    <text x="623" y="762" font-size="9.5" class="s">进入下层 / 主流</text>
+    <line x1="730" y1="759" x2="760" y2="759" stroke="#3fb950" stroke-width="1.5" marker-end="url(#aGreen)" class="flowback"/>
+    <text x="768" y="762" font-size="9.5" class="s">返回上层 / 喂回</text>
+  </g>
+
+  <text x="240" y="792" font-size="10" class="s">层次：dispatcher（外，turn 管理）调 → runtime.exec（中，一次 LLM 调用 + DAG 节点）调 → agent_loop（里，tool loop）。@agentic_function 体内调用跳过 dispatcher，直接进 exec 层。</text>
+  <text x="240" y="812" font-size="10" class="s">一次 exec = 一个 llm 节点：进 ② 时开（running），tool loop 跑完回到 ② 关（success）；loop 内模型调的工具，code 节点 called_by 指向这个 llm 节点 → code→llm→code 链。</text>
+</svg>
