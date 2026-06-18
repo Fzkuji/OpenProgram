@@ -1,8 +1,9 @@
 """Probe DeepSeek models for reasoning capability.
 
 DeepSeek API returns id-only rows. Reasoning inferred from model name:
-  - *reasoner* / *r1* → reasoning
-  - everything else → no reasoning
+  - deepseek-v4-* → reasoning (5 levels: minimal/low/medium/high/max)
+  - *reasoner* / *r1* → reasoning (no effort control)
+  - deepseek-chat (V3) → no reasoning
 """
 from __future__ import annotations
 
@@ -25,7 +26,12 @@ def probe() -> dict[str, dict]:
         results = {}
         for m in r.json().get("data", []):
             mid = m.get("id", "")
-            reasoning = "reasoner" in mid or "r1" in mid
+            reasoning = (
+                "v4" in mid
+                or "reasoner" in mid
+                or "r1" in mid
+                or "thinking" in mid
+            )
             results[mid] = {"reasoning": reasoning, "source": "inferred"}
         return results
     except Exception:
