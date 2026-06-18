@@ -18,14 +18,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-# Fetched lists: one file per provider under providers/_catalog/fetched/.
-# Kept in its own subdir (not _catalog/ root, which holds the static
-# split data that IS in git) so fetched output is cleanly gitignored and
-# never collides with static files. Provider IDs (claude-code/openai-codex)
-# don't map 1:1 to code dirs, so we key by provider id here.
-_CATALOG_DIR = (
-    Path(__file__).resolve().parent.parent.parent
-    / "providers" / "_catalog" / "fetched"
+_PROVIDERS_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "providers"
 )
 
 # claude-code / openai-codex etc. have no models.dev entry — borrow the
@@ -37,29 +31,25 @@ _SUBSCRIPTION_BORROW = {
 }
 
 
-def _fallback_dir() -> Path:
-    """Where to write when _catalog isn't writable (read-only install)."""
-    return Path.home() / ".openprogram" / "models"
+def _provider_dir(provider_id: str) -> Path:
+    """Resolve provider id to its directory under providers/."""
+    for name in (provider_id, provider_id.replace("-", "_")):
+        d = _PROVIDERS_DIR / name
+        if d.is_dir():
+            return d
+    # Directory doesn't exist yet — create it (new community provider)
+    d = _PROVIDERS_DIR / provider_id.replace("-", "_")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _resolve_write_path(provider_id: str) -> Path:
-    """_catalog/fetched/<provider>.json if writable, else home fallback."""
-    parent = _CATALOG_DIR.parent  # providers/_catalog
-    if parent.is_dir() and os.access(parent, os.W_OK):
-        _CATALOG_DIR.mkdir(parents=True, exist_ok=True)
-        return _CATALOG_DIR / f"{provider_id}.json"
-    fb = _fallback_dir()
-    fb.mkdir(parents=True, exist_ok=True)
-    return fb / f"{provider_id}.json"
+    return _provider_dir(provider_id) / "models.json"
 
 
 def _resolve_read_path(provider_id: str) -> Path | None:
-    """Where this provider's fetched models live, or None if never fetched."""
-    p = _CATALOG_DIR / f"{provider_id}.json"
-    if p.is_file():
-        return p
-    fb = _fallback_dir() / f"{provider_id}.json"
-    return fb if fb.is_file() else None
+    p = _provider_dir(provider_id) / "models.json"
+    return p if p.is_file() else None
 
 
 def save_fetched(provider_id: str, models: list[dict[str, Any]]) -> Path:

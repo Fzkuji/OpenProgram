@@ -30,12 +30,8 @@ openprogram/providers/
 │   ├── openai_codex.py
 │   ├── thinking.json
 │   ├── probe_thinking.py
+│   ├── models.json            ← .gitignore：Fetch 生成的模型列表
 │   └── ...
-├── _catalog/
-│   └── fetched/
-│       ├── claude-code.json   ← Fetch 生成，.gitignore
-│       ├── deepseek.json
-│       └── ...
 ├── thinking_spec.py           ← 公共加载器：读 thinking.json + 翻译 + 推导
 ├── thinking_catalog.py        ← 启动时给 Model 对象填 thinking 字段
 └── _shared/                   ← 公共工具函数，不是 provider
@@ -133,7 +129,7 @@ openprogram/providers/
 
 ## 4. Fetch 数据结构
 
-Fetch Models 后存入 `_catalog/fetched/<provider>.json`，不进 git：
+Fetch Models 后存入 `providers/<provider_dir>/models.json`，不进 git：
 
 ```json
 {
