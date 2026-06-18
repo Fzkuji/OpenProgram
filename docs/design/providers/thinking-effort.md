@@ -164,9 +164,9 @@ thinking_levels 的推导优先级（从高到低）：
 
 详见 [models.md](models.md) §3。
 
-### models.json（.gitignore，Fetch 生成）
+### Fetch 数据（`_catalog/fetched/<provider>.json`，.gitignore）
 
-Fetch 时写入，包含 API 返回的精确 thinking_levels。详见 [models.md](models.md) §4。
+Fetch 时写入，包含 API 返回的精确 thinking_levels。按 provider id 命名。详见 [models.md](models.md) §4。
 
 ## 8. 调用时试探（第 3 层）的实现
 

@@ -15,26 +15,29 @@ openprogram/providers/
 ├── anthropic/
 │   ├── anthropic.py           ← stream 实现
 │   ├── thinking.json          ← 进 git：thinking 映射配置
-│   ├── probe_thinking.py      ← Fetch 时自动运行的探测脚本
-│   └── ...
+│   └── probe_thinking.py      ← Fetch 时自动运行的探测脚本
 ├── deepseek/
 │   ├── thinking.json          ← V4 五档 + R1 空 override
-│   ├── probe_thinking.py
-│   └── __init__.py
+│   └── probe_thinking.py
 ├── google/
 │   ├── google.py
 │   ├── thinking.json
-│   ├── probe_thinking.py
-│   └── ...
+│   └── probe_thinking.py
 ├── openai_codex/
 │   ├── openai_codex.py
 │   ├── thinking.json
-│   ├── probe_thinking.py
-│   └── ...
+│   └── probe_thinking.py
+├── _catalog/
+│   └── fetched/               ← Fetch 生成，.gitignore 忽略
+│       ├── claude-code.json
+│       ├── deepseek.json
+│       └── ...
 ├── thinking_spec.py           ← 公共加载器：读 thinking.json + 翻译 + 推导
 ├── thinking_catalog.py        ← 启动时给 Model 对象填 thinking 字段
 └── _shared/                   ← 公共工具函数，不是 provider
 ```
+
+Fetch 数据当前存在 `_catalog/fetched/<provider>.json`，按 provider id 命名（带连字符，如 `claude-code.json`）。`.gitignore` 规则：`openprogram/providers/_catalog/fetched/`。
 
 ### 2.1 开箱即用
 
