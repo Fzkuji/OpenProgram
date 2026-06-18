@@ -157,7 +157,9 @@ thinking_levels 的来源（从高到低）：
 - `wire_format`：API 用字符串还是数字
 - `effort_map` / `budget_map`：框架级别 → API 值的映射
 - `default_effort`：provider 默认级别
-- `model_overrides`：特殊模型的覆盖
+- `model_overrides`：特殊模型的覆盖（空 `effort_map` = 该模型无 effort 控制）
+
+**没有 thinking.json 的 provider 自动用 OpenAI 兼容 fallback**：`effort_string` + `low/medium/high` 三档。不需要手动创建——任何新加的社区 provider 直接可用。
 
 详见 [models.md](models.md) §3。
 

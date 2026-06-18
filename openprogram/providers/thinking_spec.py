@@ -17,12 +17,28 @@ from typing import Any, Optional
 
 _PROVIDERS_DIR = Path(__file__).parent
 
+# Fallback for providers without thinking.json — most OpenAI-compatible
+# providers accept reasoning_effort as a pass-through string.
+_OPENAI_COMPAT_FALLBACK: dict[str, Any] = {
+    "wire_format": "effort_string",
+    "effort_map": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+    },
+    "default_effort": "medium",
+    "_fallback": True,
+}
+
 
 @lru_cache(maxsize=None)
 def get_thinking_spec(provider_id: str) -> dict[str, Any]:
-    """Load thinking.json for a provider. Returns empty dict if missing."""
-    # provider_id uses hyphens (e.g. "openai-codex") but directory names
-    # use underscores (e.g. "openai_codex"). Try both.
+    """Load thinking.json for a provider.
+
+    If no thinking.json exists, returns a generic OpenAI-compatible
+    fallback (low/medium/high effort_string) so that community providers
+    (groq, mistral, openrouter, etc.) work without hand-written configs.
+    """
     for dir_name in (provider_id, provider_id.replace("-", "_")):
         path = _PROVIDERS_DIR / dir_name / "thinking.json"
         if path.is_file():
@@ -30,8 +46,8 @@ def get_thinking_spec(provider_id: str) -> dict[str, Any]:
                 with path.open(encoding="utf-8") as f:
                     return json.load(f)
             except (OSError, json.JSONDecodeError):
-                return {}
-    return {}
+                return _OPENAI_COMPAT_FALLBACK
+    return _OPENAI_COMPAT_FALLBACK
 
 
 def translate_reasoning(

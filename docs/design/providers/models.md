@@ -37,7 +37,9 @@ openprogram/providers/*/models.json
 
 ### 2.1 开箱即用
 
-用户第一次启动时还没 Fetch 过，`models.json` 不存在。兜底数据从 `models.dev` 缓存获取（启动时自动拉，TTL 24h）。`thinking.json` 跟代码一起发布，始终可用。
+用户第一次启动时还没 Fetch 过，`models.json` 不存在。兜底数据从 `models.dev` 缓存获取（启动时自动拉，TTL 24h）。
+
+`thinking.json` 跟代码一起发布。**没有 thinking.json 的 provider 自动用 OpenAI 兼容 fallback**（`effort_string` + `low/medium/high` 三档），不需要手动创建——社区 provider（groq、mistral、openrouter 等）加进来就能用。
 
 ## 3. thinking.json 结构
 

@@ -36,9 +36,13 @@ def test_load_github_copilot_no_thinking():
     assert spec["wire_format"] == "none"
 
 
-def test_load_nonexistent_provider():
+def test_load_nonexistent_provider_uses_fallback():
     spec = get_thinking_spec("nonexistent-provider")
-    assert spec == {}
+    assert spec.get("_fallback") is True
+    assert spec["wire_format"] == "effort_string"
+    assert "low" in spec["effort_map"]
+    assert "medium" in spec["effort_map"]
+    assert "high" in spec["effort_map"]
 
 
 def test_hyphen_to_underscore():
