@@ -68,7 +68,7 @@ def translate_reasoning(
     # Check model-level override first
     override = spec.get("model_overrides", {}).get(model_id)
     if override:
-        emap = override.get("effort_map") or override.get("budget_map")
+        emap = override.get("effort_map", override.get("budget_map"))
         if emap is not None:
             if not emap:
                 return None
@@ -114,7 +114,7 @@ def derive_thinking_levels(
     # Model override narrows the levels (empty map = no effort control)
     override = spec.get("model_overrides", {}).get(model_id)
     if override:
-        emap = override.get("effort_map") or override.get("budget_map")
+        emap = override.get("effort_map", override.get("budget_map"))
         if emap is not None:
             return list(emap.keys())
 
