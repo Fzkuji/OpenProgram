@@ -1,64 +1,88 @@
-# 模型目录 + Provider 配置
+# 模型目录与 Provider 配置
+
+> Thinking effort 的控制逻辑见 [thinking-effort.md](thinking-effort.md)。本文讲模型目录的数据布局、配置结构、Fetch 流程和数据合并。
 
 ## 1. 核心原则
 
-**每个 provider 的配置自包含在自己的文件夹里。** 加一个新 provider = 加一个文件夹（或什么都不加，走 fallback）。
+**每个 provider 自包含。** 所有配置（thinking 映射、探测脚本、Fetch 数据）都在 `providers/<provider>/` 下。加一个新 provider = 加一个文件夹；什么都不加也行，走 OpenAI 兼容 fallback。
 
-两类数据分开存、分开更新：
-- **thinking.json**：进 git，很少变（API 参数格式几个月才改一次）
-- **Fetch 数据**：`.gitignore` 忽略，运行时 Fetch 生成（模型列表随时在变）
+两类数据分开存：
 
-## 2. 数据布局
+| | thinking.json | models.json |
+|---|---|---|
+| 内容 | API 参数格式、effort 映射、per-model override | Fetch 拉到的模型列表（id、context、reasoning 等） |
+| 变化频率 | 几个月一次（API 格式改了才变） | 每次 Fetch 覆写 |
+| 版本控制 | 进 git | .gitignore |
+
+## 2. 文件布局
 
 ```
 openprogram/providers/
 ├── anthropic/
-│   ├── anthropic.py           ← stream 实现
-│   ├── thinking.json          ← 进 git：thinking 映射配置
-│   ├── probe_thinking.py      ← Fetch 时自动运行的探测脚本
-│   └── ...
+│   ├── anthropic.py             ← stream 实现
+│   ├── thinking.json            ← 进 git：thinking effort 映射
+│   ├── probe_thinking.py        ← Fetch 时自动运行的探测脚本
+│   └── models.json              ← .gitignore：Fetch 生成的模型列表
 ├── deepseek/
-│   ├── thinking.json          ← V4 五档 + R1 空 override
+│   ├── thinking.json
 │   ├── probe_thinking.py
-│   └── __init__.py
+│   └── models.json
 ├── google/
 │   ├── google.py
 │   ├── thinking.json
 │   ├── probe_thinking.py
-│   └── ...
+│   └── models.json
 ├── openai_codex/
 │   ├── openai_codex.py
 │   ├── thinking.json
 │   ├── probe_thinking.py
-│   ├── models.json            ← .gitignore：Fetch 生成的模型列表
+│   └── models.json
+├── github_copilot/
+│   ├── thinking.json            ← wire_format: "none"（不支持 thinking）
 │   └── ...
-├── thinking_spec.py           ← 公共加载器：读 thinking.json + 翻译 + 推导
-├── thinking_catalog.py        ← 启动时给 Model 对象填 thinking 字段
-└── _shared/                   ← 公共工具函数，不是 provider
+├── thinking_spec.py             ← 公共：加载 thinking.json + 翻译 + 推导
+├── thinking_catalog.py          ← 公共：启动时填 Model 对象的 thinking 字段
+└── _shared/                     ← 公共工具函数
 ```
 
-### 2.1 开箱即用
+`.gitignore` 里有一行 `openprogram/providers/*/models.json`，所有 provider 的 models.json 都不进 git。
 
-用户第一次启动时还没 Fetch 过。兜底数据从 `models.dev` 缓存获取（启动时自动拉，TTL 24h）。
+### 2.1 没有文件夹的 provider
 
-`thinking.json` 跟代码一起发布。**没有 thinking.json 的 provider 自动用 OpenAI 兼容 fallback**（`effort_string` + `low/medium/high` 三档）——社区 provider（groq、mistral、openrouter 等）加进来不需要任何配置。
+社区 provider（groq、mistral 等）可以没有文件夹。此时：
+- **thinking.json**：`thinking_spec.get_thinking_spec()` 返回 OpenAI 兼容 fallback（`effort_string` + `low/medium/high`）
+- **probe_thinking.py**：Fetch 时 `_load_probe()` catch ImportError，静默跳过
+- **models.json**：Fetch 时 `_provider_dir()` 自动创建文件夹并写入
 
 ### 2.2 Provider alias
 
-`claude-code` 共用 `anthropic` 的 thinking.json（同 API、同模型、同 capabilities）。由 `thinking_spec._THINKING_ALIASES` 映射，不需要复制文件。
+`claude-code` 和 `anthropic` 用同一套 API 和模型。`thinking_spec._THINKING_ALIASES = {"claude-code": "anthropic"}` 让 claude-code 共用 anthropic 的 thinking.json，不复制文件。
 
 ## 3. thinking.json 结构
 
-每个 provider 一份，声明该 provider 的 API 怎么接收 thinking/effort 参数。
+声明该 provider 的 API 怎么接收 thinking/effort 参数。
 
-**Anthropic**（effort 字符串 + 从 API 自动获取的 model_overrides）：
+### 3.1 字段定义
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `wire_format` | `"effort_string"` / `"budget_tokens"` / `"none"` | API 接受字符串、token 数、还是不支持 thinking |
+| `effort_map` | `{框架级别: API字符串}` | `wire_format="effort_string"` 时的映射表 |
+| `budget_map` | `{框架级别: token数}` | `wire_format="budget_tokens"` 时的映射表 |
+| `default_effort` | `string` / `null` | 用户不选时的默认级别 |
+| `model_overrides` | `{model_id: {...}}` | 特定模型的覆盖配置 |
+| `model_overrides.<id>.effort_map` | `{}` 空 dict | 表示该模型不支持 effort 调节 |
+
+### 3.2 示例
+
+**Anthropic**——effort 字符串，model_overrides 由 API capabilities 自动写入：
+
 ```json
 {
   "wire_format": "effort_string",
   "effort_map": {
-    "minimal": "low", "low": "low",
-    "medium": "medium", "high": "high",
-    "xhigh": "xhigh", "max": "max"
+    "minimal": "low", "low": "low", "medium": "medium",
+    "high": "high", "xhigh": "xhigh", "max": "max"
   },
   "default_effort": "high",
   "model_overrides": {
@@ -72,13 +96,16 @@ openprogram/providers/
 }
 ```
 
-**DeepSeek**（V4 五档 + R1 无 effort 控制）：
+Opus 4.8 的 override 只有 5 个 key（没有 minimal），所以 UI 显示 5 档。Opus 4.5 只有 3 个 key，UI 显示 3 档。Provider 级别的 `effort_map` 有 6 个 key，作为没有 override 的模型的 fallback。
+
+**DeepSeek**——V4 五档，R1 无 effort 控制：
+
 ```json
 {
   "wire_format": "effort_string",
   "effort_map": {
-    "minimal": "minimal", "low": "low",
-    "medium": "medium", "high": "high", "max": "max"
+    "minimal": "minimal", "low": "low", "medium": "medium",
+    "high": "high", "max": "max"
   },
   "default_effort": "medium",
   "model_overrides": {
@@ -88,7 +115,10 @@ openprogram/providers/
 }
 ```
 
-**Google Gemini**（token 数）：
+`deepseek-reasoner` 的 `effort_map` 是空 dict `{}`——表示这个模型有 reasoning 能力但不支持 effort 调节（R1 永远全力推理）。`deepseek-chat` 的空 dict 表示 V3 不支持 reasoning。
+
+**Google Gemini**——用 token 数而非字符串：
+
 ```json
 {
   "wire_format": "budget_tokens",
@@ -100,7 +130,8 @@ openprogram/providers/
 }
 ```
 
-**GitHub Copilot**（不支持 thinking）：
+**GitHub Copilot**——不支持 thinking：
+
 ```json
 {
   "wire_format": "none",
@@ -108,28 +139,18 @@ openprogram/providers/
 }
 ```
 
-### 3.1 字段说明
+### 3.3 thinking_levels 的推导规则
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `wire_format` | `"effort_string" \| "budget_tokens" \| "none"` | API 用字符串、数字、还是不支持 |
-| `effort_map` | `dict[str, str]` | 框架 ThinkingLevel → API 字符串 |
-| `budget_map` | `dict[str, int]` | 框架 ThinkingLevel → token 数 |
-| `default_effort` | `str \| null` | 该 provider 的默认级别 |
-| `model_overrides` | `dict[str, {...}]` | 特殊模型的覆盖 |
-| `model_overrides.<id>.effort_map` | `dict` | 空 `{}` = 该模型无 effort 控制 |
+UI 显示几档不是手动维护的，而是从映射表的 key 自动推导：
 
-### 3.2 thinking_levels 从映射表推导
+1. `reasoning=false` → 空列表，UI 不显示滑块
+2. 有 `model_overrides` 且 `effort_map` 不是 null → 用 override 的 key（空 `{}` → 空列表 → UI 不显示）
+3. 无 override → 用 provider 级别的 `effort_map`/`budget_map` 的 key
+4. 无 thinking.json → fallback 的 key（low/medium/high）
 
-不需要手动维护 `thinking_levels` 列表。规则：
-- `reasoning=false` → 空列表（UI 隐藏滑块）
-- 有 `model_overrides` → 用 override 的映射表 key（空 `{}` → 空列表）
-- 无 override → 用 provider 的映射表 key
-- 映射表有哪些 key，UI 就显示哪些档位
+## 4. models.json 结构
 
-## 4. Fetch 数据结构
-
-Fetch Models 后存入 `providers/<provider_dir>/models.json`，不进 git：
+Fetch Models 生成，存在 provider 文件夹里，不进 git：
 
 ```json
 {
@@ -137,75 +158,100 @@ Fetch Models 后存入 `providers/<provider_dir>/models.json`，不进 git：
   "models": [
     {
       "id": "deepseek-v4-flash",
+      "name": "deepseek-v4-flash",
       "reasoning": true,
       "thinking_levels": ["minimal", "low", "medium", "high", "max"],
       "default_thinking_level": "medium",
       "context_window": 1000000,
-      "max_tokens": 384000
+      "max_tokens": 384000,
+      "input_cost": 0.14,
+      "output_cost": 0.28
     }
   ]
 }
 ```
 
-## 5. 数据合并逻辑
+Anthropic 的 models.json 还包含 `supports_adaptive` 字段（从 capabilities API 获取）。
 
-```python
-# listing.py: list_models_for_provider()
+## 5. Fetch 流程
 
-for raw in combined_models(provider_id):    # Fetch 数据 + models.dev
-    # 优先级 1-2: thinking.json 的 model_overrides / provider 级别
-    levels = derive_thinking_fields(provider_id, model_id, reasoning)
+用户在 Settings 里点"Fetch Models"触发：
 
-    # 优先级 3: Fetch 数据里的 thinking_levels
-    if not levels and raw.get("thinking_levels"):
-        levels = raw["thinking_levels"]
-
-    # 优先级 4: 无 thinking.json → fallback (low/medium/high)
-    # (已包含在 derive_thinking_fields 里)
+```
+1. fetchers/__init__.py: fetch_models_remote(provider_id)
+       │
+       ▼
+2. 选 fetcher（_FETCHERS 表 或 通用 _fetch_openai_compat）
+       │
+       ▼
+3. 调 provider 的 API（如 /v1/models）拿模型列表
+       │
+       ├── Anthropic: 对每个模型额外调 GET /v1/models/{id}
+       │   → _extract_thinking_caps() 提取 effort/adaptive capabilities
+       │
+       ├── 其他: _load_probe(provider_id) 调 probe_thinking.probe()
+       │   → 从 model id 推断 reasoning 能力
+       │
+       ▼
+4. enrichment: 合并 models.dev 数据（pricing、reasoning 标记）
+       │
+       ▼
+5. 写入 providers/<provider_dir>/models.json
+       │
+       ▼
+6. 前端重新请求 /api/agent_settings → UI 刷新
 ```
 
-`list_enabled_models` 委托给 `list_models_for_provider`，保证两者输出一致。`_thinking.py` 的 `get_thinking_config_for_model` 也从 `list_models_for_provider` 取数据。**三个消费方走同一条路径。**
+## 6. 数据合并：三层叠加
 
-### 5.1 provider 翻译
+`listing.py` 的 `list_models_for_provider()` 是模型数据的唯一出口。它把三层数据合并成最终结果：
 
-provider 的 `stream_simple()` 调 `thinking_spec.translate_reasoning()`：
+```
+第 1 层: combined_models(provider_id)
+         = models.json (Fetch 数据) + models.dev (pricing/caps)
+         → 得到每个模型的基础信息 (id, reasoning, context_window, ...)
 
-```python
-def translate_reasoning(provider_id, model_id, level):
-    spec = get_thinking_spec(provider_id)  # 读 thinking.json（或 fallback）
+第 2 层: thinking_spec.derive_thinking_fields()
+         = 读 thinking.json → model_overrides → provider 级别映射 → fallback
+         → 得到 thinking_levels / default / variant
 
-    # 1. model_overrides
-    override = spec["model_overrides"].get(model_id)
-    if override:
-        emap = override.get("effort_map")
-        if emap is not None:
-            return emap.get(level) if emap else None  # 空 = 不支持
-
-    # 2. provider 级别
-    if spec["wire_format"] == "effort_string":
-        return spec["effort_map"].get(level)
-    elif spec["wire_format"] == "budget_tokens":
-        return spec["budget_map"].get(level)
-
-    return None  # wire_format == "none"
+第 3 层: Fetch 数据里的 thinking_levels（当第 2 层无结果时用）
+         → models.dev 或 API capabilities 提供的 thinking_levels
 ```
 
-provider 只管把返回值塞进自己 API 请求体的正确位置。
+合并后的结果被三个消费方使用：
 
-## 6. Fetch 流程
+| 消费方 | 用途 |
+|---|---|
+| `list_models_for_provider()` | Settings 页面的模型表格 |
+| `list_enabled_models()` | Chat 页面的模型选择器（委托给上面） |
+| `get_thinking_config_for_model()` | UI thinking picker 的选项列表（委托给上面） |
 
-1. 用户点"Fetch Models"
-2. 调 provider 的 fetcher 从 API 拉模型列表
-3. **Anthropic 系**：对每个模型额外调 `GET /v1/models/{id}`，从 `capabilities.effort` 提取每个级别的 supported 状态
-4. **其他 provider**：自动调 `probe_thinking.probe()` 从 model id 推断 reasoning
-5. enrichment 步骤合并 models.dev 数据（pricing、capabilities）
-6. 写入 `_catalog/fetched/<provider>.json`
-7. 前端重新请求 `/api/agent_settings`，拿到更新后的数据
+三个消费方走同一条路径，保证前端显示和后端数据完全一致。
 
 ## 7. models.dev 的角色
 
-`models.dev` 是通用底料（pricing、reasoning 标记、能力细节），用于：
-- 没 Fetch 过的 provider 的兜底数据
-- 补充 Fetch 结果里没有的字段（如 pricing——官方 API 通常不返回价格）
+`models.dev` 是跨 provider 的通用数据源，提供：
+- 没 Fetch 过的 provider 的模型列表（兜底）
+- pricing（官方 API 通常不返回价格）
+- reasoning 标记、能力细节
 
-缓存在内存或临时文件，TTL 24h，启动时惰性刷新。
+缓存在内存，TTL 24h，启动时惰性刷新。不存在 provider 文件夹里（它是跨 provider 的，不属于任何一个）。
+
+## 8. 加新 provider 的步骤
+
+### 8.1 有专属 API 的 provider（如 DeepSeek）
+
+1. 创建 `providers/<name>/` 目录
+2. 写 `thinking.json`（声明 wire_format、effort_map、必要的 model_overrides）
+3. 写 `probe_thinking.py`（暴露 `probe()` 函数，从 API 或 model id 推断 reasoning）
+4. 在 `fetchers/` 里加一个专属 fetcher（或走通用 `_fetch_openai_compat`）
+5. 用户点 Fetch → models.json 自动生成 → UI 自动显示
+
+### 8.2 社区 provider（如 groq、mistral）
+
+什么都不用做。用户在 Settings 里填 API key + 点 Fetch：
+- Fetch 走通用 `_fetch_openai_compat`
+- thinking.json 缺失 → 自动用 fallback（low/medium/high）
+- probe_thinking.py 缺失 → 静默跳过
+- models.json 写入时自动创建文件夹
