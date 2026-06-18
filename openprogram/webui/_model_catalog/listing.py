@@ -217,26 +217,32 @@ def list_models_for_provider(provider_id: str) -> list[dict[str, Any]]:
     enabled_ids = set(pcfg.get("enabled_models") or [])
     default_api = _default_api_for(provider_id) or "openai-completions"
 
-    # Single source: combined_models() = fetched (authoritative which+context)
-    # merged with models.dev (price + capabilities), or models.dev's full
-    # list when never fetched. No more static-registry + custom_models split.
+    # Merge combined_models (fetched + models.dev) with custom_models from
+    # config (community providers store everything in custom_models).
     out: list[dict[str, Any]] = []
-    for raw in combined_models(provider_id):
+    seen_ids: set[str] = set()
+    all_rows = list(combined_models(provider_id))
+    # custom_models may contain entries not in combined_models (e.g. community
+    # providers that only exist in config, never fetched to _catalog/fetched/).
+    for cm in (pcfg.get("custom_models") or []):
+        cmid = cm.get("id") or ""
+        if cmid and cmid not in {r.get("id") for r in all_rows}:
+            all_rows.append(cm)
+    for raw in all_rows:
         mid = raw.get("id") or ""
         if not mid:
             continue
         reasoning = bool(raw.get("reasoning", False))
-        # If the fetcher already extracted thinking_levels from the API's
-        # capabilities (e.g. Anthropic /v1/models), use those as
-        # authoritative. Otherwise derive from thinking.json / catalog.
-        if raw.get("thinking_levels"):
+        # Priority: thinking.json model_overrides (freshest, from probe)
+        # > Fetch data thinking_levels > thinking.json provider level
+        # > catalog fallback.
+        levels, default_lv, variant = derive_thinking_fields(
+            provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
+        )
+        if not levels and raw.get("thinking_levels"):
             levels = list(raw["thinking_levels"])
             default_lv = raw.get("default_thinking_level")
             variant = raw.get("thinking_variant")
-        else:
-            levels, default_lv, variant = derive_thinking_fields(
-                provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
-            )
         entry: dict[str, Any] = {
             k: v for k, v in raw.items() if not k.startswith("_")
         }
@@ -263,31 +269,17 @@ def list_enabled_models() -> list[dict[str, Any]]:
     """Flat list of all enabled models across enabled providers — used
     by the chat page model picker.
 
-    Walks two sources to find enabled models:
-
-    1. The static registry (``get_models(pid)``) — the canonical
-       builtin catalogue from ``providers/models_generated.py``.
-    2. The ``custom_models`` list under each provider's config entry —
-       rows the user pulled via Fetch Models or added by hand. Without
-       this second pass, a freshly-fetched id like
-       ``claude-sonnet-4-6`` (which doesn't exist in the static
-       registry) gets toggled enabled, persists to config, but
-       silently never appears in the chat picker.
+    Delegates to ``list_models_for_provider`` so thinking_levels and all
+    other fields are computed through the same path — no divergence.
     """
-    from openprogram.providers import get_providers, get_models
-    from openprogram.providers.thinking_catalog import derive_thinking_fields
+    from openprogram.providers import get_providers
 
-    from .providers import _default_api_for, _is_configured, _label
+    from .providers import _is_configured, _label
     from .storage import _read_providers_cfg
 
     cfg = _read_providers_cfg()
     out: list[dict[str, Any]] = []
-    # Iterate static-registry providers PLUS any community-only provider
-    # (no models_generated row, e.g. minimax-cn-coding-plan) the user has
-    # enabled with enabled_models. Those live entirely in custom_models;
-    # walking only get_providers() silently dropped their enabled models
-    # from the chat picker — the second (custom_models) pass below emits
-    # them once the pid is in the loop.
+
     from openprogram.auth.aliases import resolve as _canonical_provider
     static_pids = list(get_providers())
     static_set = set(static_pids)
@@ -296,12 +288,6 @@ def list_enabled_models() -> list[dict[str, Any]]:
         if pid not in static_set
         and pc.get("enabled")
         and (pc.get("enabled_models"))
-        # Skip a legacy ALIAS of a real provider (e.g. a stale
-        # ``chatgpt-subscription`` config entry that resolves to
-        # ``openai-codex``). Its canonical id already represents it, and
-        # the settings provider list only shows the canonical one — so
-        # surfacing the alias here put a phantom duplicate in the chat
-        # picker that the user couldn't find or manage in settings.
         and _canonical_provider(pid) == pid
     ]
     for pid in [*static_pids, *community_pids]:
@@ -313,60 +299,11 @@ def list_enabled_models() -> list[dict[str, Any]]:
             continue
         if not _is_configured(pid):
             continue
-        emitted_ids: set[str] = set()
-        fetched_only = bool(pcfg.get("models_fetched"))
-        custom_ids = {
-            m.get("id") for m in (pcfg.get("custom_models") or []) if m.get("id")
-        }
-        for m in get_models(pid):
-            if m.id not in enabled_ids:
+        for m in list_models_for_provider(pid):
+            if m.get("id") not in enabled_ids:
                 continue
-            # After a Fetch, the user's upstream answer takes precedence
-            # over the static catalogue — hide builtin rows that the
-            # fetch didn't reaffirm (matches list_models_for_provider).
-            if fetched_only and m.id not in custom_ids:
-                continue
-            entry = _model_to_dict(m, True)
-            entry["provider"] = pid
-            entry["provider_label"] = _label(pid)
-            out.append(entry)
-            emitted_ids.add(m.id)
-
-        # Now the second pass: custom_models that the registry doesn't
-        # know about. Build a minimal ``Model``-shaped dict that the
-        # chat dispatcher accepts via ``api: <default_api>``.
-        default_api = _default_api_for(pid) or "openai-completions"
-        for raw in (pcfg.get("custom_models") or []):
-            mid = raw.get("id") or ""
-            if not mid or mid not in enabled_ids or mid in emitted_ids:
-                continue
-            reasoning = bool(raw.get("reasoning", False))
-            if raw.get("thinking_levels"):
-                levels = list(raw["thinking_levels"])
-                default_lv = raw.get("default_thinking_level")
-                variant = raw.get("thinking_variant")
-            else:
-                levels, default_lv, variant = derive_thinking_fields(
-                    pid, mid, reasoning, bool(raw.get("supports_xhigh", False))
-                )
-            entry = {
-                "id": mid,
-                "name": raw.get("name", mid),
-                "api": raw.get("api") or default_api,
-                "context_window": int(raw.get("context_window", 0)) or 0,
-                "max_tokens": int(raw.get("max_tokens", 0)) or 0,
-                "vision": bool(raw.get("vision", False)),
-                "video": False,
-                "audio": False,
-                "reasoning": reasoning,
-                "thinking_levels": levels,
-                "default_thinking_level": default_lv,
-                "thinking_variant": variant,
-                "tools": bool(raw.get("tools", True)),
-                "enabled": True,
-                "provider": pid,
-                "provider_label": _label(pid),
-                "custom": True,
-            }
-            out.append(entry)
+            m["enabled"] = True
+            m["provider"] = pid
+            m["provider_label"] = _label(pid)
+            out.append(m)
     return out

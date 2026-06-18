@@ -19,6 +19,11 @@ _PROVIDERS_DIR = Path(__file__).parent
 
 # Fallback for providers without thinking.json — most OpenAI-compatible
 # providers accept reasoning_effort as a pass-through string.
+# Providers that share another provider's thinking config (same API).
+_THINKING_ALIASES: dict[str, str] = {
+    "claude-code": "anthropic",
+}
+
 _OPENAI_COMPAT_FALLBACK: dict[str, Any] = {
     "wire_format": "effort_string",
     "effort_map": {
@@ -39,7 +44,8 @@ def get_thinking_spec(provider_id: str) -> dict[str, Any]:
     fallback (low/medium/high effort_string) so that community providers
     (groq, mistral, openrouter, etc.) work without hand-written configs.
     """
-    for dir_name in (provider_id, provider_id.replace("-", "_")):
+    resolved = _THINKING_ALIASES.get(provider_id, provider_id)
+    for dir_name in (resolved, resolved.replace("-", "_")):
         path = _PROVIDERS_DIR / dir_name / "thinking.json"
         if path.is_file():
             try:

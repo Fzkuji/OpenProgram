@@ -65,16 +65,11 @@ def get_thinking_config(provider: str) -> dict:
 def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
     """Build the thinking picker config for a specific model.
 
-    Primary source: thinking.json via thinking_spec. Falls back to the
-    static THINKING_CONFIGS for providers not yet migrated.
+    Single source of truth: listing.list_models_for_provider, which
+    already merges Fetch data, models.dev, thinking.json, and catalog
+    into one consistent result. This function just reformats it for
+    the UI picker.
     """
-    from openprogram.providers import get_model
-    from openprogram.providers.thinking_spec import (
-        derive_thinking_levels,
-        get_default_effort,
-        get_model_variant,
-    )
-
     label = get_thinking_config(provider).get("label", "thinking")
 
     def _build(levels: list[str], default: str | None, variant: str | None) -> dict:
@@ -90,49 +85,24 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
         }
 
     if model_id:
-        model = get_model(provider, model_id)
-        reasoning = getattr(model, "reasoning", False) if model else False
+        from openprogram.webui._model_catalog.listing import list_models_for_provider
+        for m in list_models_for_provider(provider):
+            if m.get("id") == model_id:
+                levels = m.get("thinking_levels") or []
+                if levels:
+                    return _build(
+                        levels,
+                        m.get("default_thinking_level"),
+                        m.get("thinking_variant"),
+                    )
+                return {"label": label, "options": [], "default": None, "variant": None}
 
-        # 1. Derive from thinking.json (provider has a thinking.json)
-        levels = derive_thinking_levels(provider, model_id, reasoning)
-        if levels:
-            return _build(
-                levels,
-                get_default_effort(provider),
-                get_model_variant(provider, model_id),
-            )
-
-        # 2. Model object has explicit thinking_levels (e.g. DeepSeek
-        #    catalog declares exact 4 levels, no thinking.json)
-        if model is not None and getattr(model, "thinking_levels", None):
-            return _build(
-                list(model.thinking_levels),
-                model.default_thinking_level,
-                model.thinking_variant,
-            )
-
-        # 3. reasoning=True but no levels anywhere → use fallback
-        #    derive from thinking_catalog (generates defaults)
-        if reasoning:
-            from openprogram.providers.thinking_catalog import derive_thinking_fields as _derive_legacy
-            lvs, dflt, var = _derive_legacy(provider, model_id, True, True)
-            if lvs:
-                return _build(lvs, dflt, var)
-
-        # 4. Model found, reasoning=False → hide menu
-        if model is not None and not reasoning:
-            return {"label": label, "options": [], "default": None, "variant": None}
-
-    # No model_id or model not in catalog — build from thinking.json
-    from openprogram.providers.thinking_spec import get_thinking_spec
+    # model_id not given or not found — provider-level fallback
+    from openprogram.providers.thinking_spec import get_thinking_spec, get_default_effort
     spec = get_thinking_spec(provider)
     emap = spec.get("effort_map") or spec.get("budget_map")
     if emap:
-        return _build(
-            list(emap.keys()),
-            get_default_effort(provider),
-            None,
-        )
+        return _build(list(emap.keys()), get_default_effort(provider), None)
     return {"label": label, "options": [], "default": None, "variant": None}
 
 
