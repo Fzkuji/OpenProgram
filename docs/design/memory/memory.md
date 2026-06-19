@@ -1,8 +1,4 @@
-# Memory subsystem (v1 — superseded)
-
-> **This document describes the v1 architecture.** It has been superseded by
-> [`memory-v2.md`](memory-v2.md) (entity layer + virtual layer). Kept for
-> historical context only — do not use as implementation guidance.
+# Memory subsystem
 
 How OpenProgram makes the agent "remember" things across conversations.
 

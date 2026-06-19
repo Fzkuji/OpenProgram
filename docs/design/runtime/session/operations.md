@@ -94,7 +94,7 @@ def _truncate(text: str | None, max_len: int = 80) -> str | None:
   → 注册表原子写磁盘
 ```
 
-广播目前由 WebSocket handler 层在调用 `update_session` 之后发起：
+广播由 WebSocket handler 层在调用 `update_session` 之后通过 `_broadcast` 发起（已实现，rename + flags 均走广播）：
 
 ```
 → 广播 session_updated：
@@ -122,26 +122,35 @@ dispatcher 在 turn 生命周期中写 status：
 
 标题有三个写入来源，都通过 `update_session(session_id, title=...)` 写入，走上面"更新字段"的完整流程。
 
-### 首轮自动命名
+### 自动命名（渐进式）
+
+自动命名在对话演进过程中多次触发，随着上下文增多生成更精确的标题。
+触发阈值：第 1、6、16、40 轮 assistant 回复时（`_RETITLE_AT_TURNS`）。
 
 ```
-用户发送第一条消息
-  → dispatcher 处理 turn → assistant 回复
-  → finalize_turn（检查 _auto_titled 是否为 True，是则跳过）：
-      1. 立即截取：title = 用户消息前 50 字符
-         → update_session(session_id, title=截取值)
-         → 注册表更新 + 广播 → 侧边栏即刻显示
-      2. 启动后台 daemon 线程：调 _generate_llm_title()
-         → 成功：检查竞态（当前 title 是否仍是截取值）→ 是则 update_session(session_id, title=LLM结果, _auto_titled=True)
-         → 失败：记日志，截取标题留存
+finalize_turn 末尾 → _maybe_auto_title：
+  1. 检查 _user_titled → 用户手动改过名则永不自动重命名
+  2. 统计当前 assistant 消息数 → 未命中阈值则跳过
+  3. 首次（turn 1）：
+     a. 立即截取 title = 用户消息前 50 字符
+        → update_session(session_id, title=截取值, _title_gen_count=1)
+     b. 启动后台 daemon 线程调 LLM
+  4. 后续阈值（turn 6/16/40）：
+     a. 直接启动后台 daemon 线程
+     b. LLM 输入取最近 20 条消息（而非仅首轮）
+  5. 后台线程：
+     → 竞态检查：_user_titled 则放弃
+     → 首次还检查 title 是否仍为截取值
+     → 写入 update_session(session_id, title=LLM结果, _title_gen_count=N+1)
+     → 广播 session_updated
 ```
 
 ### 用户主动重命名
 
-- 手动输入新名字 → `update_session(session_id, title=新名字)`
-- 让 LLM 重新生成 → `_generate_llm_title()` → `update_session(session_id, title=LLM结果)`
-
-不检查任何 flag，直接覆盖。
+- 手动输入新名字 → `update_session(session_id, title=新名字, _user_titled=True)`
+  设 `_user_titled` 后自动命名永久停止。
+- 让 LLM 重新生成（点按钮，title 为空）→ `_llm_rename()` → `update_session(session_id, title=LLM结果)`
+  不设 `_user_titled`，自动命名继续。
 
 LLM 标题生成的细节（prompt、参数、后处理）见 [name.md](name.md)。
 
@@ -182,7 +191,7 @@ LLM 标题生成的细节（prompt、参数、后处理）见 [name.md](name.md)
   → 前端收到后从列表中移除
 ```
 
-注册表操作已内化到 `delete_session`。广播目前仍由 WebSocket handler 层发起。
+注册表操作已内化到 `delete_session`。广播由 WebSocket handler 层通过 `_broadcast` 发起。
 
 ---
 

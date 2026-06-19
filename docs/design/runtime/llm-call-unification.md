@@ -250,20 +250,62 @@ dispatcher 和 exec 的关系不是"dispatcher 走 exec",而是**两个并列的
 
 **Behavioral(需重验)**:`test_runtime_exec_dag.py:34`、`test_functions.py` 的 `_mock_call`(按 content shape 分支,adapter 必须原样传 content)、`conftest.py` 的 `echo_call`/`noop_call`。
 
+## 统一"记一次模型回复"的写入（保留新原语，删旧机制）
+
+### 现状:同一件事两套写法
+
+"记录模型回复"现在有两套**配对写节点**(开占位 running → 回填结果)的实现,按入口分:
+
+| 入口 | 开占位 | 回填 | 实现 |
+|---|---|---|---|
+| dispatcher(聊天) | `insert_placeholder`(_turn_lifecycle.py:65) | `persist_assistant_message`(persistence.py) | 旧机制 |
+| exec(代码) | `_open_model_call_node`(runtime.py:631) | `_close_model_call_node`(runtime.py:656) | 新原语 |
+
+两套结构一模一样(open→close 配对),但旧的那套散在 dispatcher,新的在 runtime。这是"头尾都写两份"的根源。
+
+### 关键事实(让统一变简单)
+
+存储层**没有 `ROLE_ASSISTANT`**——只有 user/llm/code(`context/nodes.py:36-40`)。聊天回复**早就存成 `ROLE_LLM`**:`_msg_to_node` 把 `role="assistant"` 映射成 `ROLE_LLM`,`_node_to_msg` 读回来默认还原成 `"assistant"`(`_msg_adapter.py`)。exec 的 `_open_model_call_node` 写的也是 `ROLE_LLM`,读回来同样默认 "assistant"。
+
+**两个原语在节点层早就用同一个 role。** 唯一差异是 dispatcher 多写了 4 样元数据,exec 的裸原语没写。序列化只有一个收口点 `_node_to_msg` → 前端读到的还是 "assistant"。
+
+### 方案:升级新原语 → dispatcher 改调它 → 删旧机制
+
+把 exec 的配对原语升级成**通用配对原语**(能装下 dispatcher 需要的字段),两个入口都用它,删掉旧的 placeholder/persist 重复机制。
+
+统一原语必须保留这 4 样(否则前端/分支/计量会断):
+
+| 字段 | 谁要 | 风险 |
+|---|---|---|
+| `extra.blocks`(thinking/text/tool 卡片顺序) | 前端气泡主体(conv-mapper.ts) | 最高 |
+| token 列 + token_model | 计量 UI | 高 |
+| `metadata.parent_id=user_msg_id` | 分支/fork/rewind 的 active-branch 重建 | 高 |
+| `cancelled/completed` 终态(exec 当前写 success) | 用户停止时的部分输出 | 中 |
+
+原语签名升级(可选参数,exec 不传、dispatcher 传):
+
+```python
+open_model_call_node(*, role="llm", parent_id=None, content_text="", model=None) -> node_id
+close_model_call_node(node_id, *, reply, status="success", blocks=None, usage=None)
+```
+
+落地顺序:
+1. 升级 `_open/_close_model_call_node`,加 `parent_id` / `blocks` / `usage` / `status` 可选参数(exec 调用不变,默认行为不变)
+2. dispatcher 的 `insert_placeholder` 改成调 `open_model_call_node(role="assistant", parent_id=user_msg_id)`
+3. dispatcher 的 `persist_assistant_message` 改成调 `close_model_call_node(blocks=..., usage=..., status="completed"/"cancelled")`——只保留字段组装,删掉自己的 append/update
+4. 删 `_turn_lifecycle.py` 的 placeholder/error-fold 里重复的写节点逻辑
+5. 验证:webui 端到端聊天(气泡、thinking/tool 卡片、token、停止、fork)全部正常 + 全量 pytest
+
+零前端改动——因为 `_node_to_msg` 仍输出 "assistant",前端读的字段(blocks/token/parent_id)都还在,只是改由统一原语写。
+
 ## 相关文件
 
-- `openprogram/agentic_programming/runtime.py` — exec / _call_via_providers / _open|_close_model_call_node
-- `openprogram/providers/callable_model.py` — CallableModel adapter(新建)
+- `openprogram/agentic_programming/runtime.py` — exec / _call_via_providers / _open|_close_model_call_node(统一原语所在)
+- `openprogram/providers/callable_model.py` — CallableModel adapter
 - `openprogram/agent/agent_loop.py` — agent_loop / _execute_tool_calls
 - `openprogram/agent/session.py` — AgentSession
 - `openprogram/agent/dispatcher/__init__.py` — process_user_turn / _run_loop_blocking
-- `openprogram/agent/dispatcher/persistence.py` — persist_assistant_message
+- `openprogram/agent/dispatcher/persistence.py` — persist_assistant_message(改调统一原语)
+- `openprogram/agent/internals/_turn_lifecycle.py` — insert_placeholder / fold_error(删重复写入)
+- `openprogram/store/session/_msg_adapter.py` — _node_to_msg(序列化收口点,role 还原)
 - `openprogram/agentic_programming/function.py` — @agentic_function wrapper
-
-## 相关文件
-
-- `openprogram/agentic_programming/runtime.py` — exec / _call_via_providers / _append_model_call_node
-- `openprogram/agent/agent_loop.py` — agent_loop / _execute_tool_calls
-- `openprogram/agent/dispatcher/__init__.py` — process_user_turn / _run_loop_blocking
-- `openprogram/agent/dispatcher/persistence.py` — persist_assistant_message
-- `openprogram/agentic_programming/function.py` — @agentic_function wrapper / _append_function_call_entry

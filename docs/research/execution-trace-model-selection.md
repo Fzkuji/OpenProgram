@@ -119,5 +119,5 @@ span = { id, parent_id, name/kind, start, end, status, attributes, events[] }
 
 ## 跟设计文档的关系
 
-本文是**选型调研**(为什么走 span)。具体怎么改节点/边/原语,在
-`docs/design/runtime/unified-turn-recording.md` 和 `llm-call-unification.md`(实现设计)。
+本文是**选型调研**(为什么走 span)。具体的数据模型 + 上下文检索 + 两套调用路径合并的实现设计,
+在 `docs/design/runtime/history-node-model.md`(权威);调用流程骨架在 `llm-call-unification.md`。

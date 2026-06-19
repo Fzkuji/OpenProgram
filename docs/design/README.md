@@ -17,13 +17,13 @@ supporting notes / investigations that should not override it.
 | [`context/cross-turn-tool-context.md`](context/cross-turn-tool-context.md) | Tool-result aging across turns |
 | [`context/contextgit.md`](context/contextgit.md) | contextgit backing store |
 
-## memory/ — entity / project memory
+## memory/ — 记忆系统（实体 + 抽象）
 
 | Doc | Topic |
 |---|---|
-| [`memory/memory-v2.md`](memory/memory-v2.md) | Entity memory v2 (session/project git) — current |
-| [`memory/memory.md`](memory/memory.md) | Memory subsystem (v1 background) |
-| [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | Git-as-entity-memory rationale |
+| [`memory/README.md`](memory/README.md) | 记忆系统总览：架构、设计原则、实施状态 |
+| [`memory/entity-memory.md`](memory/entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
+| [`memory/virtual-memory.md`](memory/virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
 
 ## proactive/ — 事件层 + 主动性（事件驱动）
 
@@ -64,8 +64,8 @@ supporting notes / investigations that should not override it.
 | [`runtime/streaming-resume.md`](runtime/streaming-resume.md) | Streaming + resume |
 | [`runtime/revert-layers.md`](runtime/revert-layers.md) | Revert layers (commit / worktree) |
 | [`runtime/multi-agent-revert-todo.md`](runtime/multi-agent-revert-todo.md) | Multi-agent revert TODO |
-| [`runtime/dag-node-model.md`](runtime/dag-node-model.md) | DAG node model investigation |
-| [`runtime/dag-edge-split.md`](runtime/dag-edge-split.md) | DAG edge-split investigation |
+| [`runtime/history-node-model.md`](runtime/history-node-model.md) | **权威** history-record data model (one graph / 3 node roles / called_by / compute_reads) + merge impl design |
+| [`runtime/dag-node-model.md`](runtime/dag-node-model.md) | old node model — data semantics superseded by history-node-model.md; kept for graph_layout reference |
 | [`runtime/dispatcher-split.md`](runtime/dispatcher-split.md) | Dispatcher split design |
 
 ## providers/ — LLM providers, credentials, model catalog, thinking/effort

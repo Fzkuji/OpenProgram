@@ -1,9 +1,13 @@
-# DAG 节点 / 边模型
+# DAG 节点 / 边模型(旧 — 数据语义已被取代)
 
-写给"这条 history record 应该画成什么 / 接到哪里"这个问题。
-是 `dag-edge-split.md`（边拆分）和 `graph_layout/README.md`（layout pipeline）
-背后的语义层文档 —— 那两份讲"怎么算 lane / depth"，这份讲**节点和边应该
-表达什么**。
+> **重定向**:节点 / 边 / 上下文检索的**权威数据模型**已迁到
+> [`history-node-model.md`](history-node-model.md)(一整张图 / 三种节点 / 单一
+> called_by 边 / compute_reads)。本文的早期模型(含 3 类边、reference edge、
+> conv 边拆分等)**已被推翻**,不要据此实现。
+> 保留本文仅因 `graph_layout/`(lane/depth 布局)代码注释仍引用它做布局语义参考。
+
+写给"这条 history record 应该画成什么 / 接到哪里"这个问题(layout 语义层)。
+配合 `graph_layout/README.md`（layout pipeline）—— 那份讲"怎么算 lane / depth"。
 
 ## 节点 (3 类)
 

@@ -64,7 +64,9 @@ agent runtime、WebSocket 连接等无法序列化的对象存在进程内存的
 | `ws` | WebSocket? | 当前连接的 WebSocket |
 | `agent` | Agent? | agent 实例 |
 
-持久字段全部通过 SessionStore 读写，不在 `_sessions` 中冗余。
+目标：持久字段全部通过 SessionStore 读写，不在 `_sessions` 中冗余。
+
+> **当前状态**：`_sessions` 仍冗余了 title、agent_id、created_at、channel 等持久字段，因为 `_save_session` 从 dict 读取所有字段写 meta.json。`run_active` 已删除（由 status 字段替代）。完全瘦身需要重写 `_save_session` 使其从 SessionStore 读持久字段——留作后续。
 
 ## 接口
 
