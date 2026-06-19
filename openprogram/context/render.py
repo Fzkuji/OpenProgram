@@ -58,6 +58,8 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
         UserMessage,
         AssistantMessage,
         TextContent,
+        ToolCall,
+        ToolResultMessage,
     )
 
     def _assistant(text: str, ts: int, model: str = "") -> AssistantMessage:
@@ -76,6 +78,10 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
     large_dir = _large_dir(history_dir)
 
     messages: list = []
+    # The most recent AssistantMessage emitted — a model-tool_use code
+    # node appends its ToolCall here (the call must live INSIDE the
+    # assistant turn that emitted it, then a ToolResultMessage follows).
+    last_assistant: "AssistantMessage | None" = None
     for nid in read_ids:
         node = graph.nodes.get(nid)
         if node is None:
@@ -84,6 +90,7 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
         _nk = f"{node.seq:04d}-{node.id}"
 
         if node.is_user():
+            last_assistant = None
             messages.append(UserMessage(
                 role="user",
                 content=[TextContent(type="text",
@@ -92,25 +99,50 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
             ))
 
         elif node.is_llm():
-            messages.append(_assistant(
+            am = _assistant(
                 _cap_node_text(_text(node.output), large_dir=large_dir, node_key=_nk), ts_ms,
                 model=node.name or "",
-            ))
+            )
+            last_assistant = am
+            messages.append(am)
 
         elif node.is_code():
-            expose = (node.metadata or {}).get("expose") or "io"
+            md = node.metadata or {}
+            expose = md.get("expose") or "io"
             if expose == "hidden":
                 continue
-            # Render as a user→assistant pair: the call signature
-            # asks the assistant to "respond", and the return value
-            # is that response. Matches the tree-Context
-            # render_messages convention so legacy provider prompts
-            # see the same shape.
+            tool_call_id = md.get("tool_call_id")
+            if tool_call_id:
+                # Model-emitted tool_use: round-trip as a real
+                # ToolCall (inside the owning assistant turn) + a
+                # ToolResultMessage. Providers reject an orphaned
+                # tool_use/tool_result, so the ToolCall must attach to
+                # an AssistantMessage. If none precedes (e.g. reads
+                # started mid-turn), synthesize an empty one.
+                if last_assistant is None:
+                    last_assistant = _assistant("", ts_ms)
+                    messages.append(last_assistant)
+                last_assistant.content.append(ToolCall(
+                    id=tool_call_id,
+                    name=node.name or "",
+                    arguments=node.input if isinstance(node.input, dict) else {},
+                ))
+                result_text = (
+                    _cap_node_text(_format_result(node.output), large_dir=large_dir, node_key=_nk)
+                    if node.output is not None else ""
+                )
+                messages.append(ToolResultMessage(
+                    tool_call_id=tool_call_id,
+                    tool_name=node.name or "",
+                    content=[TextContent(type="text", text=result_text)],
+                    timestamp=ts_ms,
+                ))
+                continue
+            # Direct @agentic_function (no tool_call_id): render as a
+            # user→assistant text pair (the legacy convention).
+            last_assistant = None
             call_text = _format_call_signature(node)
-            # The function's docstring (stored on the node at entry)
-            # travels into the rendered context so the model sees what
-            # the function does, not just its name(args).
-            doc = (node.metadata or {}).get("doc")
+            doc = md.get("doc")
             if doc:
                 call_text = f"{doc}\n\n{call_text}"
             messages.append(UserMessage(

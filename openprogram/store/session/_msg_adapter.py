@@ -71,6 +71,13 @@ def _msg_to_node(msg: dict) -> Call:
             meta["extra"] = leftover_extra
         called_by = tool_use.get("called_by") or predecessor or ""
         meta.pop("parent_id", None)
+        # Discriminator: a model-emitted tool_use code node carries a
+        # tool_call_id (so the renderer can round-trip it as a real
+        # ToolCall/ToolResult pair). Direct @agentic_function code nodes
+        # have none and render as a user/assistant text pair. The id IS
+        # the tool_call_id (base_id == "{assistant}_t_{tid}" or the tid),
+        # surfaced explicitly here so render.py needn't parse the id.
+        meta["tool_call_id"] = tool_use.get("tool_call_id") or base_id
         return Call(
             id=base_id,
             created_at=created_at,
@@ -131,11 +138,18 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
 
     if node.is_code():
         called_by = meta.pop("called_by", None) or ""
-        extra_blob = {"tool_use": {
+        # tool_call_id lives inside the tool_use blob (symmetric with
+        # _msg_to_node, which reads it from there). pop from meta so it
+        # doesn't leak as a stray top-level field via base.update(meta).
+        _tcid = meta.pop("tool_call_id", None)
+        _tu = {
             "name": node.name,
             "arguments": node.input or {},
             "called_by": called_by,
-        }}
+        }
+        if _tcid:
+            _tu["tool_call_id"] = _tcid
+        extra_blob = {"tool_use": _tu}
         if isinstance(meta.get("extra"), dict):
             extra_blob.update(meta.pop("extra"))
         result = node.output

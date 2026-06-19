@@ -93,6 +93,50 @@ def test_code_call_renders_as_user_assistant_pair():
     assert "hits" in assistant_text          # result shows up
 
 
+def test_model_tool_use_code_node_renders_as_toolcall_toolresult():
+    """A code node WITH a tool_call_id (model-emitted tool_use) round-trips
+    as a real ToolCall (inside the preceding assistant turn) + a
+    ToolResultMessage — not the user/assistant text pair."""
+    g = Graph()
+    llm = g.add(Call(role=ROLE_LLM, output="let me search"))
+    tc = g.add(Call(
+        role=ROLE_CODE,
+        name="search",
+        input={"query": "DAG"},
+        output={"hits": 3},
+        called_by=llm.id,
+        metadata={"tool_call_id": "call_abc"},
+    ))
+    msgs = render_dag_messages(g, [llm.id, tc.id])
+    # assistant turn, then a tool-result message
+    assert _roles(msgs) == ["assistant", "toolResult"]
+    # the ToolCall is appended INSIDE the assistant message content
+    asst = msgs[0]
+    tool_calls = [c for c in asst.content if getattr(c, "type", None) == "toolCall"]
+    assert len(tool_calls) == 1
+    assert tool_calls[0].id == "call_abc"
+    assert tool_calls[0].name == "search"
+    assert tool_calls[0].arguments == {"query": "DAG"}
+    # the ToolResultMessage carries the matching id + the result
+    tr = msgs[1]
+    assert tr.tool_call_id == "call_abc"
+    assert "hits" in tr.content[0].text
+
+
+def test_toolcall_synthesizes_assistant_when_none_precedes():
+    """If a model-tool_use code node appears with no preceding assistant
+    (reads started mid-turn), an empty assistant is synthesized to host
+    the ToolCall — providers reject orphaned tool_use."""
+    g = Graph()
+    tc = g.add(Call(
+        role=ROLE_CODE, name="search", input={"q": "x"}, output="ok",
+        metadata={"tool_call_id": "call_xyz"},
+    ))
+    msgs = render_dag_messages(g, [tc.id])
+    assert _roles(msgs) == ["assistant", "toolResult"]
+    assert any(getattr(c, "type", None) == "toolCall" for c in msgs[0].content)
+
+
 def test_code_call_running_skips_assistant():
     """When the function hasn't returned yet (output=None, status=running),
     only the call signature is rendered; no fake assistant message."""
