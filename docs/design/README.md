@@ -64,8 +64,8 @@ supporting notes / investigations that should not override it.
 | [`runtime/streaming-resume.md`](runtime/streaming-resume.md) | Streaming + resume |
 | [`runtime/revert-layers.md`](runtime/revert-layers.md) | Revert layers (commit / worktree) |
 | [`runtime/multi-agent-revert-todo.md`](runtime/multi-agent-revert-todo.md) | Multi-agent revert TODO |
-| [`runtime/history-node-model.md`](runtime/history-node-model.md) | **权威** history-record data model (one graph / 3 node roles / called_by / compute_reads) + merge impl design |
-| [`runtime/dag-node-model.md`](runtime/dag-node-model.md) | old node model — data semantics superseded by history-node-model.md; kept for graph_layout reference |
+| [`runtime/execution-graph.md`](runtime/execution-graph.md) | **权威** history-record data model (one graph / 3 node roles / called_by / compute_reads) + merge impl design |
+| [`runtime/dag-node-model.md`](runtime/dag-node-model.md) | old node model — data semantics superseded by execution-graph.md; kept for graph_layout reference |
 | [`runtime/dispatcher-split.md`](runtime/dispatcher-split.md) | Dispatcher split design |
 
 ## providers/ — LLM providers, credentials, model catalog, thinking/effort

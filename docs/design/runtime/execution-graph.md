@@ -6,46 +6,53 @@ Status: **decided（最终模型，开始实现）** · Created: 2026-06-19 · F
 > 模型选型理由见 `docs/research/execution-trace-model-selection.md`(span 概念 + 创新点)。
 > 实现合并计划见本文第八节。
 >
-> **可视化**:`history-node-model.svg`(① 一整张图真实会话 ② 上下文检索:聊天累加 vs 函数弹出 ③ 两种视图)。
+> **可视化**:`execution-graph.svg`(① 一整张图真实会话 ② 上下文检索:聊天累加 vs 函数弹出 ③ 两种视图)。
 
-![模型可视化](history-node-model.svg)
+![模型可视化](execution-graph.svg)
 
 ## 一、最终结论(一整张图)
 
-整个 session = **一整张 DAG**(不切成多个独立 trace)。
+整个 session = **一整张 DAG,有唯一的根**(不切成多个独立 trace,也不让多轮悬空)。
 
-- **节点(span)**:user / llm / code 三种 role。一种数据结构,大模型调用永远是同一种 llm 节点,不因"被用户触发"还是"被函数触发"分裂。
+- **根节点(session 根)**:每个会话一个根,代表"这个会话 / 这个用户"(它是 main)。**所有顶层 user 节点的 `called_by` 都指向它**——这就是把多轮连成一整张图的汇总点。没有它,多轮各自孤立、就断成多张图了。
+- **节点(span)**:user / llm / code 三种 role。一种数据结构,大模型调用永远是同一种 llm 节点,不因"被用户触发"还是"被函数触发"分裂。(根节点本身可看作一个特殊的 session 节点,无 input/output。)
 - **边**:`called_by`(谁调出谁),有向、无环。唯一的结构边。
 - **共享 seq**:整张图一套单调递增 seq(全局时间序)。
-- **顶层多轮**:平级节点(都 `frame_entry_seq=-1`),**不串成链**(不用 parent_id 首尾相接)。
+- **顶层多轮**:每轮的 user 是**根的子**(`called_by=根`),多轮之间是**兄弟**(同一个根下,靠 seq 排)。**不互相串链**(第2轮不指向第1轮的回复)。
 - **轮内嵌套**:函数调用是 called_by 子树。
 - **上下文**:在这**一整张图**上,按 `seq + frame + expose` 检索(`compute_reads`)。
 
-### 为什么必须是一整张图(不是独立 trace + session)
+### 为什么必须是一整张图、且有根(不是独立 trace + session)
 
-业界(LangSmith/Datadog)把每次请求切成独立 trace、用 session 标签归类——因为它们是**事后观测**,上下文不读回。我们不行:**我们的 `compute_reads` 靠"同一张图、同一套 seq"检索历史**。一旦切成独立图,第 N 轮的 llm 就看不到前面几轮(跨图检索不到),顶层对话连贯性断裂。所以:**一整张图,共享 seq,是硬约束。**
+业界(LangSmith/Datadog)把每次请求切成独立 trace、用 session 标签归类——因为它们是**事后观测**,上下文不读回。我们不行:**我们的 `compute_reads` 靠"同一张图、同一套 seq"检索历史**。一旦切成独立图,第 N 轮的 llm 就看不到前面几轮(跨图检索不到),顶层对话连贯性断裂。
 
-### 关键区分:同一张图 ≠ 串成链
+而要让多轮真正成为"一整张图"、不悬空,就需要一个**根**把每轮挂上去(每轮 user 的 `called_by=根`)。否则多轮 user 各自 `called_by` 为空 = 多个孤立的根 = 多张图,又断了。**根 + 共享 seq,是"一整张图"的硬约束。**
+
+### 关键区分:挂在同一个根 ≠ 串成链
 
 这两件事之前被混淆,其实正交:
 
 | | 含义 | 要不要 |
 |---|---|---|
-| **同一张图** | 所有节点共享一张图、一套 seq | **要**(否则 compute_reads 跨不过去) |
-| **串成链** | 第2轮 parent_id 指第1轮回复(首尾相接) | **不要**(逻辑反:像"大模型调用了下一个用户";脏) |
+| **挂在同一个根** | 每轮 user 的 `called_by=session 根`,多轮是根下兄弟 | **要**(否则多轮悬空 = 多张图) |
+| **串成链** | 第2轮 `called_by` 指第1轮回复(首尾相接) | **不要**(逻辑反:像"大模型调用了下一个用户";脏) |
 
-正确:顶层多轮是**同一张图里的平级节点**(都 frame=-1),靠 seq 排序 + compute_reads 全可见,**不需要串链**。
+正确:顶层多轮是**同一个根下的兄弟**,靠 seq 排序 + compute_reads 全可见,**不需要串链**。
 
 ```
-一张图(共享 seq):
-seq0 user1   顶层(frame=-1)
-seq1 llm1    顶层      called_by=user1(轮内:llm 被这轮触发)
-seq2 user2   顶层      平级,不指向 llm1 ← 不串链
-seq3 llm2    顶层      called_by=user2
-seq4 user3   顶层
-seq5 llm3    顶层      called_by=user3
-   compute_reads(frame=-1) → 取所有 seq<5 顶层节点 → 前两轮全可见 ✓
+一张图(共享 seq,唯一根):
+ROOT          session 根(用户 / main),called_by 空
+├ user1  seq0  called_by=ROOT   ┐
+│  └ llm1 seq1 called_by=user1   │ 每轮 user 挂在 ROOT 下(兄弟)
+├ user2  seq2  called_by=ROOT   │ 多轮之间不互相指(不串链)
+│  └ llm2 seq3 called_by=user2   │
+├ user3  seq4  called_by=ROOT   ┘
+│  └ llm3 seq5 called_by=user3
+   compute_reads(frame=-1) → 取所有 seq<5 的节点 → 前两轮全可见 ✓
 ```
+
+> 注:轮内 llm 的 `called_by` 指向本轮的 user(谁触发了它);user 的 `called_by` 指向 ROOT。
+> 这样从 ROOT 出发沿 called_by 能走到任何节点——**真正一整张连通的树**。
 
 ## 二、节点结构
 
@@ -71,7 +78,8 @@ Node(span):
 
 | role | called_by | input | output |
 |---|---|---|---|
-| user | 空(顶层根) | None | 用户文本 |
+| (root) | 空(唯一真正的根) | None | None(session 容器,无内容) |
+| user | **ROOT**(挂在 session 根下) | None | 用户文本 |
 | llm | 触发它的节点(顶层=本轮 user;函数内=那个 code 节点) | system(可选) | 模型回复 |
 | code | 调它的节点(模型 tool_use → 那个 llm 节点) | 函数参数 | 返回值(返回=填这字段,不画返回边) |
 
