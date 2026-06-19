@@ -813,7 +813,7 @@ class agentic_function:
             _system_saved = _apply_system(system, bound_args)
             output = None
             error = None
-            status = "success"
+            status = "completed"
             _usage_token = None
             try:
                 from openprogram.metering.context import (
@@ -913,7 +913,7 @@ class agentic_function:
             _system_saved = _apply_system(system, bound_args)
             output = None
             error = None
-            status = "success"
+            status = "completed"
             _usage_token = None
             try:
                 from openprogram.metering.context import (
@@ -1157,7 +1157,7 @@ def traced(fn):
             pending_call_id, started_at, call_token = _enter(args, kwargs)
             output = None
             error = None
-            status = "success"
+            status = "completed"
             try:
                 output = await fn(*args, **kwargs)
                 return output
@@ -1177,7 +1177,7 @@ def traced(fn):
         pending_call_id, started_at, call_token = _enter(args, kwargs)
         output = None
         error = None
-        status = "success"
+        status = "completed"
         try:
             output = fn(*args, **kwargs)
             return output

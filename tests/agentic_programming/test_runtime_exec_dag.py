@@ -128,12 +128,14 @@ def test_exec_without_store_writes_nothing():
     assert result == "x"
 
 
-# ── llm node lifecycle: opened running, closed success ────────────
+# ── llm node lifecycle: opened running, closed completed ──────────
 
 
-def test_exec_llm_node_lifecycle_running_then_success(store):
-    """One exec writes one llm node that ends up status=success with the
-    reply as output (opened running, closed on return)."""
+def test_exec_llm_node_lifecycle_running_then_completed(store):
+    """One exec writes one llm node that ends up status=completed with the
+    reply as output (opened running, closed on return). Status vocabulary
+    is unified with the chat path (execution-graph.md decision 2):
+    completed/error/cancelled, not success."""
     rt = _FakeRuntime(reply="done")
 
     @agentic_function
@@ -146,7 +148,7 @@ def test_exec_llm_node_lifecycle_running_then_success(store):
     llm_nodes = [n for n in g if n.is_llm()]
     assert len(llm_nodes) == 1
     assert llm_nodes[0].output == "done"
-    assert (llm_nodes[0].metadata or {}).get("status") == "success"
+    assert (llm_nodes[0].metadata or {}).get("status") == "completed"
 
 
 def test_tool_loop_subcall_attributes_to_llm_node(store):

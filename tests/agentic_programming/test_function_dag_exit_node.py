@@ -181,7 +181,8 @@ def test_entry_appends_running_node_visible_mid_execution(runtime, store):
 
 def test_exit_updates_output_in_place(runtime, store):
     """After the function returns, the same node's output gets filled
-    (no second node) and status flips to 'success'."""
+    (no second node) and status flips to 'completed' (unified vocabulary,
+    execution-graph.md decision 2)."""
     @agentic_function
     def double(x, runtime=None):
         return x * 2
@@ -192,7 +193,7 @@ def test_exit_updates_output_in_place(runtime, store):
     assert len(code_nodes) == 1                        # NOT 2 (entry+exit)
     n = code_nodes[0]
     assert n.output == 14
-    assert n.metadata.get("status") == "success"
+    assert n.metadata.get("status") == "completed"
     assert n.metadata.get("duration_seconds") is not None
 
 

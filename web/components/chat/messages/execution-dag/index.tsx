@@ -95,7 +95,7 @@ function TreeNodeRow({ node, ctx }: { node: TNode; ctx: RowCtx }) {
     ctx.paused && effectiveStatus === "running" ? "paused" : (effectiveStatus ?? "");
 
   const icon =
-    displayStatus === "success" ? (
+    displayStatus === "completed" || displayStatus === "success" ? (
       <span style={{ color: "var(--accent-green)" }}>{"✓"}</span>
     ) : isCancelled ? (
       <span style={{ color: "var(--text-muted)" }} title={ctx.text("Cancelled", "已取消")}>
@@ -370,7 +370,9 @@ export function ExecutionDag({
 }
 
 function statusZh(status: string): string {
-  if (status === "success") return "成功";
+  // "completed" is the unified terminal status (execution-graph.md
+  // decision 2); "success" kept for backward compat with older nodes.
+  if (status === "completed" || status === "success") return "成功";
   if (status === "error") return "错误";
   if (status === "paused") return "已暂停";
   if (status === "running") return "运行中";

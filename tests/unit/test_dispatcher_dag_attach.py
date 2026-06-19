@@ -127,7 +127,7 @@ def test_dispatcher_attaches_store_so_agentic_function_lands_in_dag(tmp_db):
     planner_nodes = [n for n in g if n.is_code() and n.name == "planner"]
     assert len(planner_nodes) == 1
     assert planner_nodes[0].output == "outline"
-    assert planner_nodes[0].metadata.get("status") == "success"
+    assert planner_nodes[0].metadata.get("status") == "completed"
 
     # planner's internal LLM call has called_by = planner.id
     llm_nodes = [n for n in g if n.is_llm() and n.output == "outline"]

@@ -281,7 +281,7 @@ def _wrap_agentic_runtime_block(
             "name": tool_name,
             "params": {k: v for k, v in (args or {}).items() if k != "runtime"},
             "output": text_out,
-            "status": "success",
+            "status": "completed",
         }
         done_at = time.time()
         try:

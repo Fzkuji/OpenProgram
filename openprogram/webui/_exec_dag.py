@@ -66,7 +66,7 @@ def build_exec_dag(session_id: str, func_name: str,
 
     def _to_tnode(n) -> dict:
         meta = n.metadata or {}
-        status = meta.get("status") or "success"
+        status = meta.get("status") or "completed"
         tn: dict = {
             "path": n.id,
             "name": n.name or (n.role or "node"),

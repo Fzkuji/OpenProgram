@@ -639,10 +639,24 @@ class Runtime:
         node_id: Optional[str],
         *,
         reply: str,
-        status: str = "success",
+        status: str = "completed",
+        usage: Optional[dict] = None,
+        blocks: Optional[list] = None,
     ) -> None:
         """Fill in the reply + terminal status on the running llm node
         opened by :meth:`_open_model_call_node`.
+
+        Per execution-graph.md decision 3, an llm node carries the SAME
+        fields regardless of entry point: besides ``output`` + ``status``,
+        an exec-path llm node now also records ``usage`` (token columns —
+        a function call costs tokens just like chat) and ``blocks`` (the
+        reply's thinking/text/tool structure). When ``usage``/``blocks``
+        are None they fall back to the runtime's last-call values, since
+        ``_call`` has populated ``self.last_usage`` / ``self.last_blocks``
+        by the time this runs.
+
+        Status vocabulary is unified with the chat path (decision 2):
+        ``completed`` / ``error`` / ``cancelled`` — not ``success``.
 
         No-op when ``node_id`` is None (no store was installed at open time).
         """
@@ -653,7 +667,14 @@ class Runtime:
             store = _store.get()
             if store is None:
                 return
-            store.update(node_id, output=reply, metadata={"status": status})
+            _usage = usage if usage is not None else getattr(self, "last_usage", None)
+            _blocks = blocks if blocks is not None else getattr(self, "last_blocks", None)
+            meta: dict = {"status": status}
+            if _usage:
+                meta["usage"] = _usage
+            if _blocks:
+                meta["blocks"] = _blocks
+            store.update(node_id, output=reply, metadata=meta)
         except Exception:
             # DAG bookkeeping failure must not break the LLM call.
             pass
