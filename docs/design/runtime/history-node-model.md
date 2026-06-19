@@ -5,6 +5,10 @@ Status: **decided（最终模型，开始实现）** · Created: 2026-06-19 · F
 > 本文定**历史记录存成什么数据结构 + 上下文怎么从中检索 + 怎么画**。
 > 模型选型理由见 `docs/research/execution-trace-model-selection.md`(span 概念 + 创新点)。
 > 实现合并计划见本文第八节。
+>
+> **可视化**:`history-node-model.svg`(① 一整张图真实会话 ② 上下文检索:聊天累加 vs 函数弹出 ③ 两种视图)。
+
+![模型可视化](history-node-model.svg)
 
 ## 一、最终结论(一整张图)
 
