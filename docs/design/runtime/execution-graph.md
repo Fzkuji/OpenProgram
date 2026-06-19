@@ -145,6 +145,15 @@ load-bearing 字段(不能丢):blocks+tool_calls(前端气泡,branch.py:216)、t
 
 **决策 5:自动重试抽成包住 `run_once` 的策略函数。** `_run_with_retry`(session.py:178)依赖 Agent 对象;dispatcher 调的是裸 agent_loop(dispatcher:917)+ asyncio.Event 取消。抽出"重试策略(可重试判定+退避+重跑+丢上次 assistant)"包住一个 `run_once()→final AssistantMessage`,dispatcher 的 `_drain`(dispatcher:870)当 run_once。坑:重跑会重发 prompt → 第二次须 continue-from-context(仿 session.py:230);placeholder/persist 须在重试循环**之后**跑一次,不是每次。
 
+**决策 6:system prompt 全项目统一,是主干的一部分,不是聊天专属。**
+现状两边 system 不一致:聊天用 dispatcher 组装的(身份 + 项目记忆 + 工具目录 + plan 模式),exec 用 `self.system`(runtime.py:1451,常为空)+ skills。**这会:① 前缀不一致 → KV 缓存命不中 → 成本爆;② 函数内的大模型缺项目记忆/指令 → 丢背景。**
+**定论:整个项目一个统一的 system prompt(身份 + 项目记忆 + 统一工具列表 + skills),所有大模型调用(聊天 / 函数体内)共用,默认从头到尾不变。** 前缀恒定 → 缓存最大化命中;函数内大模型也有完整背景。
+- **不分开**(不是聊天一个、函数一个)。
+- **不拆"可变尾段"**(工具列表也统一,不按调用点变——一变前缀就变,长上下文后全不命中)。
+- **例外靠自定义**:个别 agent 调用只做极简活、不需要完整上下文,可在该调用点显式声明用精简 system。这是用户主动选择并自担"不命中缓存"的代价,属**使用层**,本数据模型/调用流程层不展开。
+- **"函数内别调错工具"(如 wiki_agent 递归)与本决策解耦**——用调用点的工具过滤 / 递归保护解,**不靠改 system 的工具列表**(那会破坏统一前缀)。
+- 含义修正:此前把 system prompt 画成"聊天专属钩子"是**错的**;它属于主干。压缩(预算把关)同理是**共享**外层步骤,非聊天专属。只有"附件/图片注入"看当前调用是否带附件(函数内通常不带),勉强算按调用而定。
+
 ### 落地顺序(依赖排序,每步独立验证)
 
 | 步 | 做什么 | 独立性 | 验证 |
