@@ -93,6 +93,36 @@ def test_code_call_renders_as_user_assistant_pair():
     assert "hits" in assistant_text          # result shows up
 
 
+def test_old_code_nodes_age_to_stub_beyond_tail_window():
+    """Code nodes older than the last TAIL_TURNS (3) llm nodes render as
+    an [aged] stub; recent ones keep full output. Mirrors tool_aging."""
+    g = Graph()
+    # An old tool call, then 3+ llm turns after it (pushing it out of the
+    # tail window), then a recent tool call.
+    old_tc = g.add(Call(role=ROLE_CODE, name="search",
+                        input={"q": "old"}, output="OLD_FULL_RESULT_TEXT"))
+    g.add(Call(role=ROLE_LLM, output="t1"))
+    g.add(Call(role=ROLE_LLM, output="t2"))
+    g.add(Call(role=ROLE_LLM, output="t3"))
+    recent_llm = g.add(Call(role=ROLE_LLM, output="t4"))
+    recent_tc = g.add(Call(role=ROLE_CODE, name="search",
+                          input={"q": "new"}, output="NEW_FULL_RESULT_TEXT"))
+    all_ids = [n.id for n in sorted(g, key=lambda x: x.seq)]
+    msgs = render_dag_messages(g, all_ids)
+    texts = _texts(msgs)
+    blob = "\n".join(texts)
+    # old tool result rendered as a one-line [aged] stub (the stub keeps a
+    # short blurb of the result, so we check the stub PREFIX is present and
+    # the old result occupies a single aged line, not its own full message)
+    assert "[aged]" in blob
+    aged_lines = [t for t in texts if t.startswith("[aged]")]
+    assert len(aged_lines) == 1
+    assert "search" in aged_lines[0]
+    # recent tool result kept at full fidelity (no stub)
+    assert "NEW_FULL_RESULT_TEXT" in blob
+    assert not any("NEW_FULL_RESULT_TEXT" in t and t.startswith("[aged]") for t in texts)
+
+
 def test_model_tool_use_code_node_renders_as_toolcall_toolresult():
     """A code node WITH a tool_call_id (model-emitted tool_use) round-trips
     as a real ToolCall (inside the preceding assistant turn) + a

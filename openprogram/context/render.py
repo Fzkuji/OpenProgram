@@ -32,6 +32,43 @@ from typing import Any
 from openprogram.context.nodes import Call, Graph
 
 
+def _aged_code_ids(graph: Graph, read_ids: list[str]) -> set[str]:
+    """Which code nodes in ``read_ids`` should render as an aged stub.
+
+    Mirrors tool_aging's policy on the DAG: the last ``TAIL_TURNS`` llm
+    nodes keep full fidelity; code nodes that occur before that tail
+    window collapse to a one-line stub to save tokens (protected tools
+    like todo_read are never aged). This is a pre-pass over read_ids —
+    the renderer stays a strict translation; aging policy lives here, not
+    baked into the per-node emit. Keyed only on data DAG nodes already
+    carry (role/seq/name), so no storage change is needed.
+    """
+    try:
+        from openprogram.context.tool_aging.policy import (
+            TAIL_TURNS, PRUNE_PROTECTED_TOOLS,
+        )
+    except Exception:
+        return set()
+    nodes = [graph.nodes.get(nid) for nid in read_ids]
+    nodes = [n for n in nodes if n is not None]
+    llm_seqs = sorted(n.seq for n in nodes if n.is_llm())
+    if len(llm_seqs) <= TAIL_TURNS:
+        return set()  # whole conversation fits in the tail window
+    # Boundary: code nodes with seq < the TAIL_TURNS-th-from-last llm seq
+    # are "old" and get aged.
+    tail_cutoff_seq = llm_seqs[-TAIL_TURNS]
+    aged: set[str] = set()
+    for n in nodes:
+        if not n.is_code():
+            continue
+        if n.seq >= tail_cutoff_seq:
+            continue
+        if (n.name or "") in PRUNE_PROTECTED_TOOLS:
+            continue
+        aged.add(n.id)
+    return aged
+
+
 def render_dag_messages(graph: Graph, read_ids: list[str],
                         history_dir: "str | None" = None) -> list:
     """Translate ``read_ids`` into a pi-ai message list.
@@ -76,6 +113,20 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
         )
 
     large_dir = _large_dir(history_dir)
+
+    aged_ids = _aged_code_ids(graph, read_ids)
+
+    def _result_text_for(node: Call) -> str:
+        """Rendered text of a code node's result, aged to a stub when the
+        node is outside the tail window (saves tokens on long histories)."""
+        if node.id in aged_ids:
+            from openprogram.context.tool_aging.summarize import summarize_tool_call
+            return summarize_tool_call(
+                node.name or "", node.input,
+                node.output, bool((node.metadata or {}).get("is_error")),
+            )
+        return _cap_node_text(_format_result(node.output),
+                              large_dir=large_dir, node_key=f"{node.seq:04d}-{node.id}")
 
     messages: list = []
     # The most recent AssistantMessage emitted — a model-tool_use code
@@ -127,10 +178,7 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
                     name=node.name or "",
                     arguments=node.input if isinstance(node.input, dict) else {},
                 ))
-                result_text = (
-                    _cap_node_text(_format_result(node.output), large_dir=large_dir, node_key=_nk)
-                    if node.output is not None else ""
-                )
+                result_text = _result_text_for(node) if node.output is not None else ""
                 messages.append(ToolResultMessage(
                     tool_call_id=tool_call_id,
                     tool_name=node.name or "",
@@ -151,8 +199,7 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
                 timestamp=ts_ms,
             ))
             if node.output is not None:
-                ret_text = _cap_node_text(_format_result(node.output), large_dir=large_dir, node_key=_nk)
-                messages.append(_assistant(ret_text, ts_ms))
+                messages.append(_assistant(_result_text_for(node), ts_ms))
 
     return messages
 
