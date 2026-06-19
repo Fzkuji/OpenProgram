@@ -20,13 +20,18 @@ called_by routing, ...) stay identical to the SQLite era.
 """
 from __future__ import annotations
 
+import atexit
 import json
+import logging
 import os
+import shutil
 import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional
+
+_log = logging.getLogger(__name__)
 
 from openprogram.context.nodes import Call
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
@@ -160,6 +165,14 @@ class SessionStore:
         # from this index resolve to the home root, exactly as before —
         # so existing installs see zero behaviour change.
         self._locations: dict[str, str] = self._load_locations()
+        # Registry: session_id → summary dict. Loaded from index.json at
+        # startup, kept in sync by create/update/delete/append_message.
+        # list_sessions reads only this — no disk I/O.
+        self._index: dict[str, dict[str, Any]] = {}
+        self._index_dirty = False
+        self._index_timer: Optional[threading.Timer] = None
+        self._load_index()
+        atexit.register(self._flush_index)
 
     # Compatibility shim. Old code does ``db.db_path / "subdir"`` for
     # ancillary files — point that at the root so existing usage doesn't
@@ -197,6 +210,174 @@ class SessionStore:
                 tmp.replace(self._locations_path())
             except OSError:
                 pass
+
+    # ── Registry (index.json) ───────────────────────────────────
+
+    _INDEX_FIELDS = frozenset({
+        "id", "agent_id", "title", "created_at", "updated_at",
+        "source", "channel", "account_id", "peer_display", "peer_id",
+        "pinned", "archived", "group", "status", "unread",
+    })
+
+    def _index_path(self) -> Path:
+        return self.root_path / "index.json"
+
+    def _load_index(self) -> None:
+        p = self._index_path()
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    self._index = data
+                    self._reset_running_status()
+                    self._startup_cleanup()
+                    return
+            except (OSError, json.JSONDecodeError):
+                _log.warning("index.json corrupted, rebuilding from meta.json files")
+        self._rebuild_index()
+        self._startup_cleanup()
+
+    def _rebuild_index(self) -> None:
+        self._index = {}
+        seen: set[str] = set()
+        dirs_to_scan: list[Path] = []
+        if self.root_path.exists():
+            for sdir in self.root_path.iterdir():
+                if sdir.is_dir() and (sdir / "meta.json").exists():
+                    dirs_to_scan.append(sdir)
+                    seen.add(sdir.name)
+        for sid, loc in self._locations.items():
+            if sid not in seen:
+                p = Path(loc)
+                if p.is_dir() and (p / "meta.json").exists():
+                    dirs_to_scan.append(p)
+        for sdir in dirs_to_scan:
+            try:
+                meta = json.loads((sdir / "meta.json").read_text(encoding="utf-8"))
+                sid = meta.get("id") or sdir.name
+                entry = self._meta_to_entry(meta)
+                # Backfill preview from history.
+                try:
+                    text = self.latest_user_text(sid)
+                    if text:
+                        text = text.strip().replace("\n", " ")
+                        entry["preview"] = (text[:77] + "…") if len(text) > 80 else text
+                except Exception:
+                    pass
+                self._index[sid] = entry
+            except (OSError, json.JSONDecodeError):
+                continue
+        self._reset_running_status()
+        self._save_index()
+
+    def _reset_running_status(self) -> None:
+        for entry in self._index.values():
+            if entry.get("status") == "running":
+                entry["status"] = "idle"
+
+    _EMPTY_SHELL_AGE = 3600       # 1 hour
+    _ARCHIVE_EXPIRY = 90 * 86400  # 90 days
+    _CAPACITY_LIMIT = 1000
+
+    def _startup_cleanup(self) -> None:
+        now = time.time()
+        to_delete: list[str] = []
+        for sid, entry in list(self._index.items()):
+            created = entry.get("created_at") or 0
+            updated = entry.get("updated_at") or created
+            sdir = self._session_dir(sid)
+            # Empty shells: no history, older than 1 hour.
+            if (now - created) > self._EMPTY_SHELL_AGE:
+                has_history = (sdir / "history").is_dir() and any(
+                    (sdir / "history").iterdir()
+                ) if (sdir / "history").exists() else False
+                if not has_history:
+                    to_delete.append(sid)
+                    continue
+            # Expired archives.
+            if entry.get("archived") and (now - updated) > self._ARCHIVE_EXPIRY:
+                to_delete.append(sid)
+        for sid in to_delete:
+            self._index.pop(sid, None)
+            try:
+                shutil.rmtree(self._session_dir(sid), ignore_errors=True)
+            except Exception:
+                pass
+        # Capacity: trim oldest archived sessions beyond the limit.
+        dirty = bool(to_delete)
+        if len(self._index) > self._CAPACITY_LIMIT:
+            archived = [(s, e) for s, e in self._index.items() if e.get("archived")]
+            archived.sort(key=lambda x: x[1].get("updated_at") or 0)
+            excess = len(self._index) - self._CAPACITY_LIMIT
+            for sid, _ in archived[:excess]:
+                self._index.pop(sid, None)
+                try:
+                    import shutil
+                    shutil.rmtree(self._session_dir(sid), ignore_errors=True)
+                except Exception:
+                    pass
+                dirty = True
+        if dirty:
+            self._save_index()
+
+    def _meta_to_entry(self, meta: dict) -> dict:
+        entry = {}
+        for k in self._INDEX_FIELDS:
+            if k in meta:
+                entry[k] = meta[k]
+        entry.setdefault("id", meta.get("id", ""))
+        entry.setdefault("status", "idle")
+        entry.setdefault("pinned", False)
+        entry.setdefault("archived", False)
+        entry.setdefault("unread", False)
+        return entry
+
+    def _save_index(self) -> None:
+        p = self._index_path()
+        tmp = p.with_suffix(".json.tmp")
+        try:
+            tmp.write_text(
+                json.dumps(self._index, indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+            tmp.replace(p)
+        except OSError:
+            pass
+        self._index_dirty = False
+
+    def _schedule_index_flush(self) -> None:
+        with self._lock:
+            self._index_dirty = True
+            if self._index_timer is not None:
+                return
+            self._index_timer = threading.Timer(5.0, self._do_deferred_flush)
+            self._index_timer.daemon = True
+            self._index_timer.start()
+
+    def _do_deferred_flush(self) -> None:
+        with self._lock:
+            self._index_timer = None
+            if self._index_dirty:
+                self._save_index()
+
+    def _flush_index(self) -> None:
+        with self._lock:
+            if self._index_timer is not None:
+                self._index_timer.cancel()
+                self._index_timer = None
+            if self._index_dirty:
+                self._save_index()
+
+    def _update_index_entry(self, session_id: str, **fields: Any) -> None:
+        entry = self._index.get(session_id)
+        if entry is None:
+            entry = {"id": session_id, "status": "idle", "pinned": False,
+                     "archived": False, "unread": False}
+            self._index[session_id] = entry
+        for k, v in fields.items():
+            if k in self._INDEX_FIELDS or k == "preview":
+                entry[k] = v
+        entry["updated_at"] = time.time()
 
     # ── Internals ─────────────────────────────────────────────
 
@@ -385,6 +566,25 @@ class SessionStore:
         )
         self._persist_meta(git, idx)
 
+        # Write registry entry.
+        _explicit = {"agent_id", "title", "source", "created_at",
+                     "updated_at", "channel", "peer_display", "peer_id", "status"}
+        self._update_index_entry(
+            session_id,
+            agent_id=agent_id,
+            title=title,
+            source=source or "",
+            created_at=created_at,
+            updated_at=updated_at,
+            channel=channel,
+            peer_display=peer_display,
+            peer_id=peer_id,
+            status="idle",
+            **{k: v for k, v in extra.items()
+               if k in self._INDEX_FIELDS and k not in _explicit},
+        )
+        self._save_index()
+
         # Record the reverse index (project → sessions). Also
         # best-effort.
         if project_id:
@@ -408,6 +608,12 @@ class SessionStore:
         if clean:
             idx.set_meta(**clean)
         self._persist_meta(git, idx)
+        # Sync registry.
+        index_fields = {k: v for k, v in clean.items()
+                        if k in self._INDEX_FIELDS}
+        if index_fields:
+            self._update_index_entry(session_id, **index_fields)
+            self._save_index()
 
     def get_session(self, session_id: str) -> Optional[dict[str, Any]]:
         pair = self._open(session_id)
@@ -440,8 +646,9 @@ class SessionStore:
             if pair:
                 pair[0].destroy()
             else:
-                # Not in cache — destroy by path anyway.
                 GitSession(self._session_dir(session_id)).destroy()
+            self._index.pop(session_id, None)
+        self._save_index()
 
     def list_sessions(
         self,
@@ -450,38 +657,18 @@ class SessionStore:
         limit: int = 100,
         offset: int = 0,
         source: Optional[str] = None,
+        **filters: Any,
     ) -> list[dict[str, Any]]:
-        # Enumerate session ids from two sources, deduped:
-        #   1. the home root (ad-hoc + all pre-existing sessions)
-        #   2. the location index (project-bound sessions living inside
-        #      ``<project>/.openprogram/sessions/``)
-        seen: set[str] = set()
-        ids: list[str] = []
-        if self.root_path.exists():
-            for sdir in sorted(self.root_path.iterdir()):
-                if not sdir.is_dir():
-                    continue
-                if sdir.name not in seen:
-                    seen.add(sdir.name)
-                    ids.append(sdir.name)
-        for sid in self._locations:
-            if sid not in seen:
-                seen.add(sid)
-                ids.append(sid)
-
-        out: list[dict[str, Any]] = []
-        for sid in ids:
-            sess = self.get_session(sid)
-            if not sess:
-                continue  # repo missing (e.g. project dir deleted) — skip
-            if agent_id is not None and sess.get("agent_id") != agent_id:
-                continue
-            if source is not None and sess.get("source") != source:
-                continue
-            out.append(sess)
-        # Sort by updated_at desc to match SQLite path's natural order
-        out.sort(key=lambda s: s.get("updated_at") or 0, reverse=True)
-        return out[offset:offset + limit]
+        rows = list(self._index.values())
+        if agent_id is not None:
+            rows = [r for r in rows if r.get("agent_id") == agent_id]
+        if source is not None:
+            rows = [r for r in rows if r.get("source") == source]
+        for k, v in filters.items():
+            if v is not None:
+                rows = [r for r in rows if r.get(k) == v]
+        rows.sort(key=lambda s: s.get("updated_at") or 0, reverse=True)
+        return rows[offset:offset + limit]
 
     def count_sessions(
         self,
@@ -531,6 +718,12 @@ class SessionStore:
         if not caller:
             idx.set_head(node.id)
         idx.set_meta(updated_at=time.time())
+        # Update registry preview on user messages (debounced to disk).
+        if node.role == "user" and node.output:
+            text = (node.output or "").strip().replace("\n", " ")
+            preview = (text[:77] + "…") if len(text) > 80 else text
+            self._update_index_entry(session_id, preview=preview)
+            self._schedule_index_flush()
 
     def append_messages(self, session_id: str, msgs: list[dict[str, Any]]) -> None:
         for m in msgs:

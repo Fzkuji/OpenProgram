@@ -7,7 +7,7 @@
  * toolbar (search, New chat), 287px nav rail on the left with quick
  * date / channel filters, content column on the right showing chats
  * grouped by recency. Sessions stream in via WebSocket
- * (list_sessions → sessions_list / history_list events).
+ * (list_sessions → sessions_list events).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -27,6 +27,8 @@ interface ConvSummary {
   title: string;
   created_at?: number;
   has_session?: boolean;
+  preview?: string;
+  archived?: boolean;
 }
 
 type FilterId =
@@ -80,13 +82,21 @@ export function ChatsPage() {
         }
       };
       ws.onmessage = (e) => {
-        let msg: { type?: string; data?: ConvSummary[] };
+        let msg: { type?: string; data?: ConvSummary[]; session_id?: string };
         try {
           msg = JSON.parse(e.data);
         } catch {
           return;
         }
-        if (msg.type === "sessions_list" || msg.type === "history_list") {
+        if (msg.type === "session_deleted" && msg.session_id) {
+          setConvs((prev) => {
+            const next = { ...prev };
+            delete next[msg.session_id!];
+            return next;
+          });
+          return;
+        }
+        if (msg.type === "sessions_list") {
           const list = msg.data ?? [];
           setConvs((prev) => {
             const next = { ...prev };
@@ -97,6 +107,7 @@ export function ChatsPage() {
                 title: c.title,
                 created_at: c.created_at,
                 has_session: c.has_session,
+                preview: c.preview,
               };
             }
             return next;
@@ -126,9 +137,9 @@ export function ChatsPage() {
       arr = arr.filter((c) => (c.title || "").toLowerCase().includes(q));
     }
     if (statusFilter === "active") {
-      arr = arr.filter((c) => c.has_session === true);
+      arr = arr.filter((c) => !c.archived);
     } else if (statusFilter === "archived") {
-      arr = arr.filter((c) => c.has_session === false);
+      arr = arr.filter((c) => c.archived);
     }
     arr.sort((a, b) => {
       if (sort === "recent") return (b.created_at ?? 0) - (a.created_at ?? 0);

@@ -66,11 +66,6 @@ async def handle_delete_session(ws, cmd: dict):
     session_id = cmd.get("session_id")
     if not session_id:
         return
-    # 真相来源是 SessionStore（git repo，按 session_id 直接定位，见
-    # session_db.py 顶注）。delete_session(session_id) 一步 destroy 该 repo，
-    # 不需要 agent_id —— 旧的「先查 agent_id 再删 / 查不到就扫文件系统」是
-    # SQLite 时代的遗留，会漏掉没有 agent_id 的会话（forced-tool-call 建的
-    # 空壳），导致删了刷新又出现。直接走真相来源，彻底删干净。
     with _s._sessions_lock:
         conv = _s._sessions.pop(session_id, None)
     if conv:
@@ -81,10 +76,15 @@ async def handle_delete_session(ws, cmd: dict):
         default_db().delete_session(session_id)
     except Exception as e:
         _s._log(f"[delete_session] {session_id}: {e}")
+    _s._broadcast(json.dumps({"type": "session_deleted", "session_id": session_id}))
 
 
 async def handle_rename_session(ws, cmd: dict):
     """Set a conversation's display title.
+
+    When ``title`` is provided: write it directly (manual rename).
+    When ``title`` is absent/empty: call LLM to generate a title from
+    the conversation history (user-requested regeneration).
 
     Persists to ``meta.json`` via ``update_session`` AND patches the
     in-memory ``_sessions`` dict (if the conv is hydrated) so the
@@ -96,12 +96,18 @@ async def handle_rename_session(ws, cmd: dict):
     from openprogram.agent.session_db import default_db
 
     session_id = cmd.get("session_id")
+    if not session_id:
+        return
+
     title = cmd.get("title")
-    if not session_id or not isinstance(title, str):
-        return
-    title = title.strip()
+    if isinstance(title, str):
+        title = title.strip()
+
     if not title:
-        return
+        title = _llm_rename(session_id)
+        if not title:
+            return
+
     with _s._sessions_lock:
         conv = _s._sessions.get(session_id)
         if conv is not None:
@@ -114,6 +120,29 @@ async def handle_rename_session(ws, cmd: dict):
         "type": "session_updated",
         "data": {"id": session_id, "title": title},
     }, default=str))
+
+
+def _llm_rename(session_id: str) -> str | None:
+    """Generate a title via LLM from the session's conversation history."""
+    from openprogram.agent.session_db import default_db
+    from openprogram.agent.dispatcher.titles import _generate_llm_title
+
+    db = default_db()
+    history = db.get_branch(session_id) or []
+    user_text = ""
+    assistant_text = ""
+    for msg in history:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role == "user" and not user_text:
+            user_text = content
+        elif role == "assistant" and not assistant_text:
+            assistant_text = content
+        if user_text and assistant_text:
+            break
+    if not user_text:
+        return None
+    return _generate_llm_title(user_text, assistant_text)
 
 
 async def handle_update_session_flags(ws, cmd: dict):
@@ -614,116 +643,39 @@ def _project_name_map() -> tuple[dict[str, str], str]:
 
 
 async def handle_list_sessions(ws, cmd: dict):
-    """List webui's in-memory sessions + per-agent sessions on disk."""
-    from openprogram.webui import server as _s
-    conv_list: list[dict] = []
+    """List sessions from registry (pure memory, no disk I/O)."""
+    from openprogram.agent.session_db import default_db
     _proj_map, _default_proj = _project_name_map()
-    with _s._sessions_lock:
-        for cid, conv in _s._sessions.items():
-            runtime = conv.get("runtime")
-            session_id = getattr(runtime, "_session_id", None) if runtime else None
-            preview = None
-            msgs = conv.get("messages") or []
-            for m in reversed(msgs):
-                if m.get("role") == "user":
-                    c = m.get("content") or ""
-                    if isinstance(c, str) and c.strip():
-                        preview = c.strip().replace("\n", " ")
-                        if len(preview) > 80:
-                            preview = preview[:77] + "…"
-                        break
-            conv_list.append({
-                "id": cid,
-                "title": conv.get("title", "Untitled"),
-                "created_at": conv.get("created_at"),
-                "has_session": session_id is not None,
-                "agent_id": conv.get("agent_id"),
-                "source": conv.get("source"),
-                "peer_display": conv.get("peer_display"),
-                "channel": conv.get("channel"),
-                "account_id": conv.get("account_id"),
-                "peer": conv.get("peer"),
-                "preview": preview,
-                "pinned": bool(conv.get("pinned")),
-                "archived": bool(conv.get("archived")),
-                "group": conv.get("group") or "",
-                # Status-dot fields (Claude-Code-style). `unread` lights the
-                # blue dot when a background run finished in a conv the user
-                # wasn't viewing; `status` (e.g. "needs_input") is wired for
-                # forward-compat — no live producer yet.
-                "status": conv.get("status") or "",
-                "unread": bool(conv.get("unread")),
-                # Project NAME for sidebar grouping; the home-folder name
-                # is the catch-all so there's never an "Ungrouped" bucket.
-                "project": _proj_map.get(cid, _default_proj),
-            })
-    seen_ids = {row["id"] for row in conv_list if row.get("id")}
-    try:
-        from openprogram.agent.session_db import default_db
-        for srow in default_db().list_sessions(limit=10_000):
-            sid = srow["id"]
-            if sid in seen_ids:
-                for row in conv_list:
-                    if row.get("id") == sid:
-                        if not row.get("source") and srow.get("source"):
-                            row["source"] = srow["source"]
-                        if not row.get("peer_display") and srow.get("peer_display"):
-                            row["peer_display"] = srow["peer_display"]
-                        if not row.get("channel") and srow.get("channel"):
-                            row["channel"] = srow["channel"]
-                        if not row.get("account_id") and srow.get("account_id"):
-                            row["account_id"] = srow["account_id"]
-                        # Flags persist to meta.json; a conv hydrated
-                        # into _sessions may not carry them in its dict,
-                        # so backfill from disk when the in-memory row
-                        # reported falsy/empty.
-                        if not row.get("pinned") and srow.get("pinned"):
-                            row["pinned"] = True
-                        if not row.get("archived") and srow.get("archived"):
-                            row["archived"] = True
-                        if not row.get("group") and srow.get("group"):
-                            row["group"] = srow["group"]
-                        if not row.get("status") and srow.get("status"):
-                            row["status"] = srow["status"]
-                        if not row.get("unread") and srow.get("unread"):
-                            row["unread"] = bool(srow["unread"])
-                        break
-                continue
-            seen_ids.add(sid)
-            preview = default_db().latest_user_text(sid)
-            if preview:
-                preview = preview.strip().replace("\n", " ")
-                if len(preview) > 80:
-                    preview = preview[:77] + "…"
-            conv_list.append({
-                "id": sid,
-                "title": srow.get("title") or sid,
-                "created_at": srow.get("created_at") or 0,
-                "has_session": False,
-                "agent_id": srow.get("agent_id"),
-                "source": srow.get("source"),
-                "peer_display": srow.get("peer_display"),
-                "channel": srow.get("channel"),
-                "account_id": srow.get("account_id"),
-                "peer": srow.get("peer") or srow.get("peer_id"),
-                "preview": preview,
-                "pinned": bool(srow.get("pinned")),
-                "archived": bool(srow.get("archived")),
-                "group": srow.get("group") or "",
-                "status": srow.get("status") or "",
-                "unread": bool(srow.get("unread")),
-                "project": _proj_map.get(sid, _default_proj),
-            })
-    except Exception:
-        pass
 
-    def _is_empty_placeholder(row: dict) -> bool:
-        if row.get("preview"):
-            return False
-        t = (row.get("title") or "").strip()
-        return t in ("", "New conversation", "Untitled")
-
-    conv_list = [r for r in conv_list if not _is_empty_placeholder(r)]
+    rows = default_db().list_sessions(limit=10_000)
+    conv_list: list[dict] = []
+    for row in rows:
+        sid = row.get("id", "")
+        title = (row.get("title") or "").strip()
+        preview = (row.get("preview") or "").strip()
+        if title in ("", "New conversation", "Untitled") and preview:
+            title = preview
+        if not title and not preview:
+            continue
+        conv_list.append({
+            "id": sid,
+            "title": title or sid,
+            "created_at": row.get("created_at") or 0,
+            "has_session": True,
+            "agent_id": row.get("agent_id"),
+            "source": row.get("source"),
+            "peer_display": row.get("peer_display"),
+            "channel": row.get("channel"),
+            "account_id": row.get("account_id"),
+            "peer": row.get("peer_id"),
+            "preview": preview or None,
+            "pinned": bool(row.get("pinned")),
+            "archived": bool(row.get("archived")),
+            "group": row.get("group") or "",
+            "status": row.get("status") or "",
+            "unread": bool(row.get("unread")),
+            "project": _proj_map.get(sid, _default_proj),
+        })
     conv_list.sort(key=lambda c: c.get("created_at") or 0, reverse=True)
     await ws.send_text(json.dumps({
         "type": "sessions_list", "data": conv_list,

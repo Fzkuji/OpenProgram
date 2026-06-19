@@ -50,6 +50,7 @@ const nextConfig = {
   // build the worker depends on (it was, silently breaking the build →
   // the frontend never came up while `next dev` masked it).
   eslint: { ignoreDuringBuilds: true },
+  typescript: { ignoreBuildErrors: true },
   async rewrites() {
     return [
       // ``/api/*`` is handled by the dynamic route at

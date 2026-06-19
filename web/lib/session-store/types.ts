@@ -235,6 +235,20 @@ export interface ConvSummary {
   id: string;
   title: string;
   created_at?: number;
+  has_session?: boolean;
+  agent_id?: string;
+  source?: string;
+  peer_display?: string;
+  channel?: string;
+  account_id?: string;
+  peer?: string;
+  preview?: string | null;
+  pinned?: boolean;
+  archived?: boolean;
+  group?: string;
+  status?: string;
+  unread?: boolean;
+  project?: string;
 }
 
 export interface RunningTask {
