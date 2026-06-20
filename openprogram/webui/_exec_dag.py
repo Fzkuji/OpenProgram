@@ -308,3 +308,98 @@ def reconcile_interrupted_runs() -> int:
             except Exception:
                 continue
     return fixed
+
+
+# ── Session-level DAG (execution-graph.md step 8) ──────────────────
+
+def build_session_dag(session_id: str) -> Optional[dict]:
+    """Build a TNode tree of the entire session's execution graph.
+
+    ROOT
+      ├─ user  "hello"
+      ├─ llm   "hi, let me search"
+      │   └─ code  search(...)
+      ├─ user  "thanks"
+      └─ llm   "you're welcome"
+
+    Returns a ROOT TNode with user/llm/code nodes as children.
+    Tool calls (code nodes with called_by pointing at an llm node)
+    are nested under their parent llm node.
+    """
+    try:
+        from openprogram.agent.session_db import default_db
+        db = default_db()
+        nodes_list = db.get_nodes(session_id)
+    except Exception:
+        return None
+    if not nodes_list:
+        return None
+
+    nodes = sorted(nodes_list, key=lambda n: n.seq)
+    by_id = {n.id: n for n in nodes}
+
+    def _to_tnode(n) -> dict:
+        meta = n.metadata or {}
+        status = meta.get("status") or "completed"
+        tn: dict = {
+            "path": n.id,
+            "name": n.name or n.role or "node",
+            "status": status,
+            "node_type": n.role,
+        }
+        if n.is_user():
+            tn["output"] = str(n.output or "")[:200]
+        elif n.is_llm():
+            tn["output"] = str(n.output or "")[:200]
+            usage = meta.get("usage")
+            if usage:
+                tn["usage"] = usage
+        elif n.is_code():
+            if isinstance(n.input, dict):
+                tn["params"] = {k: v for k, v in n.input.items()
+                                if k not in ("runtime", "callback")}
+            out = n.output
+            tn["output"] = (out if isinstance(out, str)
+                            else json.dumps(out, default=str,
+                                            ensure_ascii=False)
+                            if out is not None else "")[:200]
+        dur = meta.get("duration_seconds")
+        if dur is not None:
+            try:
+                tn["duration_ms"] = int(float(dur) * 1000)
+            except (TypeError, ValueError):
+                pass
+        st = meta.get("started_at")
+        if st:
+            tn["start_time"] = st
+        et = meta.get("completed_at") or meta.get("ended_at")
+        if et:
+            tn["end_time"] = et
+        if status == "error":
+            tn["error"] = str(n.output or meta.get("error") or "")[:300]
+        return tn
+
+    # Group code nodes under their parent llm node
+    code_by_caller: dict[str, list] = {}
+    for n in nodes:
+        if n.is_code() and n.called_by and n.called_by in by_id:
+            code_by_caller.setdefault(n.called_by, []).append(n)
+
+    children = []
+    for n in nodes:
+        if n.is_code() and n.called_by and n.called_by in by_id:
+            continue  # nested under parent
+        tn = _to_tnode(n)
+        sub = code_by_caller.get(n.id, [])
+        if sub:
+            tn["children"] = [_to_tnode(c) for c in
+                              sorted(sub, key=lambda x: x.seq)]
+        children.append(tn)
+
+    return {
+        "path": "ROOT",
+        "name": session_id,
+        "status": "completed",
+        "node_type": "root",
+        "children": children,
+    }

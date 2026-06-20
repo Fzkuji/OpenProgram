@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight, ChevronDown, Activity, X } from "lucide-react";
 import type { TreeNode } from "@/lib/session-store";
+import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 
@@ -14,6 +15,21 @@ interface Props {
 export function ContextTreePanel({ tree, onClose }: Props) {
   const [selected, setSelected] = useState<TreeNode | null>(null);
   const { text } = useTranslation();
+  const sessionId = useSessionStore((s) => s.sessionId);
+
+  const [sessionDag, setSessionDag] = useState<TreeNode | null>(null);
+  useEffect(() => {
+    if (tree || !sessionId) {
+      setSessionDag(null);
+      return;
+    }
+    fetch(`/api/sessions/${encodeURIComponent(sessionId)}/dag`)
+      .then((r) => r.json())
+      .then((d) => setSessionDag(d.tree ?? null))
+      .catch(() => setSessionDag(null));
+  }, [tree, sessionId]);
+
+  const displayTree = tree ?? sessionDag;
 
   return (
     <aside
@@ -36,7 +52,9 @@ export function ContextTreePanel({ tree, onClose }: Props) {
             className="text-[13px] font-semibold"
             style={{ color: "var(--text-bright)" }}
           >
-            {text("Context Tree", "上下文树")}
+            {tree
+              ? text("Context Tree", "上下文树")
+              : text("Session DAG", "会话执行图")}
           </h3>
         </div>
         <button onClick={onClose}>
@@ -45,17 +63,17 @@ export function ContextTreePanel({ tree, onClose }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {!tree ? (
+        {!displayTree ? (
           <div
             className="p-6 text-center text-[12px]"
             style={{ color: "var(--text-muted)" }}
           >
-            {text("No live execution. Run a function to see its Context tree here.", "当前没有执行记录。运行函数后可在这里查看上下文树。")}
+            {text("No execution data for this session.", "当前会话没有执行数据。")}
           </div>
         ) : (
           <div className="p-2">
             <TreeNodeView
-              node={tree}
+              node={displayTree}
               depth={0}
               selected={selected}
               onSelect={setSelected}
@@ -96,14 +114,20 @@ function TreeNodeView({
     "node";
   const isSel = selected === node;
 
+  const nodeType = (node as Record<string, unknown>).node_type as string | undefined;
   const statusColor =
     node.status === "error"
       ? "var(--accent-red)"
-      : node.status === "ok" || node.status === "done"
+      : node.status === "ok" || node.status === "done" || node.status === "completed"
         ? "var(--accent-green)"
-        : node._in_progress
+        : node.status === "running" || node._in_progress
           ? "var(--accent-blue)"
           : "var(--text-muted)";
+  const rolePrefix =
+    nodeType === "user" ? "U"
+    : nodeType === "llm" ? "A"
+    : nodeType === "code" ? "F"
+    : "";
 
   return (
     <div>
@@ -139,6 +163,19 @@ function TreeNodeView({
           className="h-1.5 w-1.5 shrink-0 rounded-full"
           style={{ background: statusColor }}
         />
+        {rolePrefix && (
+          <span
+            className="shrink-0 rounded px-1 text-[9px] font-bold"
+            style={{
+              background: nodeType === "user" ? "var(--accent-blue)"
+                : nodeType === "llm" ? "var(--accent-green)"
+                : "var(--accent-yellow)",
+              color: "var(--bg-primary)",
+            }}
+          >
+            {rolePrefix}
+          </span>
+        )}
         <span className="truncate font-mono">{label}</span>
         {typeof node.elapsed_ms === "number" && (
           <span

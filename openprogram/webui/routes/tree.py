@@ -28,10 +28,31 @@ def register(app):
         from openprogram.functions import agent_tools
         from openprogram.setup import read_disabled_tools
         disabled = read_disabled_tools()
+        _TOOL_GROUPS = {
+            "bash": "file", "read": "file", "write": "file", "edit": "file",
+            "glob": "file", "grep": "file", "list": "file",
+            "apply_patch": "file", "process": "file",
+            "memory_note": "memory", "memory_recall": "memory",
+            "memory_reflect": "memory", "memory_get": "memory",
+            "memory_browse": "memory", "memory_lint": "memory",
+            "memory_ingest": "memory", "memory_backlinks": "memory",
+            "memory_rename": "memory", "memory_relink": "memory",
+            "memory_delete": "memory", "memory_review": "memory",
+            "memory_status": "memory",
+            "web_search": "web", "web_fetch": "web",
+            "agent_browser": "web", "playwright_browser": "web",
+            "pdf": "web", "image_analyze": "web", "image_generate": "web",
+            "enter_plan_mode": "planning", "exit_plan_mode": "planning",
+            "task": "planning", "todo_read": "planning", "todo_write": "planning",
+            "cron": "planning",
+            "list_mcp_prompts": "mcp", "get_mcp_prompt": "mcp",
+            "list_mcp_resources": "mcp", "read_mcp_resource": "mcp",
+            "tool_search": "mcp",
+            "worktree_create": "worktree", "worktree_merge": "worktree",
+            "worktree_discard": "worktree", "worktree_list": "worktree",
+            "worktree_keep": "worktree",
+        }
         out = []
-        # include_disabled=True so DISABLED tools still appear in the list
-        # (otherwise agent_tools() filters them out and the user could
-        # never switch them back on). full toolset = the whole universe.
         for t in agent_tools(toolset="full", include_disabled=True):
             if getattr(t, "_is_agentic", False):
                 continue
@@ -40,6 +61,7 @@ def register(app):
                 "name": t.name,
                 "description": desc,
                 "disabled": t.name in disabled,
+                "group": _TOOL_GROUPS.get(t.name, "other"),
             })
         out.sort(key=lambda r: r["name"])
         return JSONResponse(content=out)
@@ -60,6 +82,31 @@ def register(app):
         from openprogram.functions._runtime import exposed_names
         return sorted(exposed_names())
 
+    def _builtin_tool_names() -> list[str]:
+        """Only non-agentic (built-in) tools."""
+        from openprogram.functions import agent_tools
+        return sorted(
+            t.name for t in agent_tools(toolset="full", include_disabled=True)
+            if not getattr(t, "_is_agentic", False)
+        )
+
+    # These two profiles always exist, cannot be modified or deleted.
+    IMMUTABLE_PROFILES = ("FULL", "BUILT-IN")
+
+    def _ensure_defaults(data: dict) -> dict:
+        """Ensure the two immutable profiles exist with correct content."""
+        profiles = data.setdefault("profiles", {})
+        profiles["FULL"] = _all_tool_names()
+        profiles["BUILT-IN"] = _builtin_tool_names()
+        # Clean up legacy profiles that are now redundant
+        for legacy in ("full", "default"):
+            if legacy in profiles:
+                del profiles[legacy]
+        data.setdefault("active", "FULL")
+        if data["active"] in ("full", "default"):
+            data["active"] = "FULL"
+        return data
+
     def _load_profiles() -> dict:
         p = _functions_meta_path()
         if os.path.isfile(p):
@@ -72,19 +119,16 @@ def register(app):
         return {"profiles": {"full": _all_tool_names()}, "active": "full"}
 
     def _save_profiles(data: dict):
-        # ensure "full" always exists with all tools
-        data.setdefault("profiles", {})["full"] = _all_tool_names()
-        data.setdefault("active", "full")
+        _ensure_defaults(data)
         p = _functions_meta_path()
         with open(p, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
     @app.get("/api/tool-profiles")
     async def get_tool_profiles():
-        """All profiles + which is active. default profile is always
-        regenerated from the live registry so new tools appear."""
+        """All profiles + which is active."""
         data = _load_profiles()
-        data["profiles"]["full"] = _all_tool_names()
+        _ensure_defaults(data)
         return JSONResponse(content=data)
 
     @app.post("/api/tool-profiles")
@@ -94,12 +138,12 @@ def register(app):
 
     @app.post("/api/tool-profiles/create")
     async def create_tool_profile(body: dict = None):
-        """Create a new profile = copy of default (all tools).
+        """Create a new profile = copy of all tools.
         body: {"name": "profile name"}"""
         name = (body or {}).get("name", "new")
         data = _load_profiles()
-        if name == "full":
-            return JSONResponse(content={"ok": False, "error": "cannot overwrite default"}, status_code=400)
+        if name in IMMUTABLE_PROFILES:
+            return JSONResponse(content={"ok": False, "error": "cannot overwrite immutable profile"}, status_code=400)
         data["profiles"][name] = list(_all_tool_names())
         _save_profiles(data)
         return JSONResponse(content={"ok": True, "profile": name,
@@ -108,12 +152,12 @@ def register(app):
     @app.post("/api/tool-profiles/delete")
     async def delete_tool_profile(body: dict = None):
         name = (body or {}).get("name", "")
-        if name == "full":
-            return JSONResponse(content={"ok": False, "error": "cannot delete default"}, status_code=400)
+        if name in IMMUTABLE_PROFILES:
+            return JSONResponse(content={"ok": False, "error": "cannot delete immutable profile"}, status_code=400)
         data = _load_profiles()
         data["profiles"].pop(name, None)
         if data.get("active") == name:
-            data["active"] = "full"
+            data["active"] = "FULL"
         _save_profiles(data)
         return JSONResponse(content={"ok": True})
 
@@ -137,8 +181,8 @@ def register(app):
         """Remove a tool from a profile. body: {"profile":"X","tool":"bash"}"""
         b = body or {}
         name, tool = b.get("profile", ""), b.get("tool", "")
-        if name == "full":
-            return JSONResponse(content={"ok": False, "error": "cannot modify default"}, status_code=400)
+        if name in IMMUTABLE_PROFILES:
+            return JSONResponse(content={"ok": False, "error": "cannot modify immutable profile"}, status_code=400)
         data = _load_profiles()
         tools = data["profiles"].get(name)
         if tools is None:
@@ -150,8 +194,8 @@ def register(app):
 
     @app.post("/api/tool-profiles/activate")
     async def activate_tool_profile(body: dict = None):
-        """Set the active profile. body: {"name":"research"}"""
-        name = (body or {}).get("name", "full")
+        """Set the active profile. body: {"name":"FULL"}"""
+        name = (body or {}).get("name", "FULL")
         data = _load_profiles()
         if name not in data["profiles"]:
             return JSONResponse(content={"ok": False, "error": "profile not found"}, status_code=404)
@@ -268,6 +312,15 @@ def register(app):
             "node_ids": node_ids,
             "count": len(node_ids),
         })
+
+    @app.get("/api/sessions/{session_id}/dag")
+    async def get_session_dag(session_id: str):
+        """Full session execution graph as a TNode tree (step 8)."""
+        from openprogram.webui._exec_dag import build_session_dag
+        tree = build_session_dag(session_id)
+        if tree is None:
+            return JSONResponse(content={"tree": None})
+        return JSONResponse(content={"tree": tree})
 
     @app.get("/api/programs/meta")
     async def get_programs_meta():
