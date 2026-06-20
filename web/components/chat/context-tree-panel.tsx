@@ -53,8 +53,8 @@ export function ContextTreePanel({ tree, onClose }: Props) {
             style={{ color: "var(--text-bright)" }}
           >
             {tree
-              ? text("Context Tree", "上下文树")
-              : text("Session DAG", "会话执行图")}
+              ? text("Execution Graph", "执行图")
+              : text("Execution Graph", "执行图")}
           </h3>
         </div>
         <button onClick={onClose}>
