@@ -416,6 +416,8 @@ def process_user_turn(
     _placeholder_inserted = _insert_placeholder(
         db, req.session_id, assistant_msg_id, user_msg_id, req.source,
     )
+    if _placeholder_inserted:
+        db.set_head(req.session_id, assistant_msg_id)
 
     # Mark session as running before agent loop starts.
     try:

@@ -74,6 +74,7 @@ def insert_placeholder(
             created_at=now,
             role=ROLE_LLM,
             output="",
+            called_by=user_msg_id,
             metadata={
                 "parent_id": user_msg_id,
                 "source": source,
