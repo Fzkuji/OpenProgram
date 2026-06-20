@@ -7,8 +7,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.metering.event import UsageEvent
-from openprogram.metering.ledger import UsageLedger
+from openprogram.usage.event import UsageEvent
+from openprogram.usage.ledger import UsageLedger
 
 
 DAY = 86400
@@ -21,7 +21,7 @@ def client(tmp_path, monkeypatch):
     lg = UsageLedger(db_path=tmp_path / "usage.db")
     # The routes import default_ledger lazily inside _ledger(); patch the name
     # in the ledger module so default_ledger resolves to our temp instance.
-    import openprogram.metering.ledger as _lmod
+    import openprogram.usage.ledger as _lmod
     monkeypatch.setattr(_lmod, "default_ledger", lg)
 
     base = 1_000_000.0  # fixed epoch so day buckets are deterministic

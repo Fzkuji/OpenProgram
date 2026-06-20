@@ -18,11 +18,11 @@ from openprogram.providers.types import (
     Model,
     Usage,
 )
-from openprogram.metering import usage_scope
-from openprogram.metering.context import UsageContext
-from openprogram.metering import context as _ctx_mod
-from openprogram.metering.ledger import UsageLedger
-from openprogram.metering import recorder as _recorder
+from openprogram.usage import usage_scope
+from openprogram.usage.context import UsageContext
+from openprogram.usage import context as _ctx_mod
+from openprogram.usage.ledger import UsageLedger
+from openprogram.usage import recorder as _recorder
 
 
 @pytest.fixture(autouse=True)

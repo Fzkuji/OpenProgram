@@ -130,7 +130,7 @@ def process_user_turn(
     # turn, mirroring the plan-mode contextvar set just below.
     try:
         from dataclasses import replace as _replace
-        from openprogram.metering.context import (
+        from openprogram.usage.context import (
             UsageContext, current_usage_context, _current as _usage_cur,
         )
         _cur = current_usage_context()

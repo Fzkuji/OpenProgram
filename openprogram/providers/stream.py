@@ -167,7 +167,7 @@ def _record_usage(model: Model, final, options) -> None:
     if final is None:
         return
     try:
-        from openprogram.metering import record_message
+        from openprogram.usage import record_message
         session_id = getattr(options, "session_id", None) if options else None
         record_message(model, final, session_id=session_id)
     except Exception:

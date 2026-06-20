@@ -816,7 +816,7 @@ class agentic_function:
             status = "completed"
             _usage_token = None
             try:
-                from openprogram.metering.context import (
+                from openprogram.usage.context import (
                     _current as _usage_cur, UsageContext,
                     current_usage_context as _cur_uctx,
                 )
@@ -916,7 +916,7 @@ class agentic_function:
             status = "completed"
             _usage_token = None
             try:
-                from openprogram.metering.context import (
+                from openprogram.usage.context import (
                     _current as _usage_cur, UsageContext,
                     current_usage_context as _cur_uctx,
                 )

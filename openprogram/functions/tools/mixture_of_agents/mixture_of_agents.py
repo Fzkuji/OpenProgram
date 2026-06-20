@@ -164,7 +164,7 @@ async def _ask_one(spec: str, user_prompt: str) -> tuple[str, str, bool]:
     opts = SimpleStreamOptions(max_tokens=8192)
 
     try:
-        from openprogram.metering import usage_scope
+        from openprogram.usage import usage_scope
         with usage_scope(call_kind="tool", call_label="moa:proposer"):
             resp = await complete_simple(model, ctx, opts)
     except Exception as e:
@@ -223,7 +223,7 @@ async def _aggregate(
     opts = SimpleStreamOptions(max_tokens=8192)
 
     try:
-        from openprogram.metering import usage_scope
+        from openprogram.usage import usage_scope
         with usage_scope(call_kind="tool", call_label="moa:aggregator"):
             resp = await complete_simple(model, ctx, opts)
     except Exception as e:

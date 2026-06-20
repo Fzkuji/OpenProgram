@@ -87,7 +87,7 @@ def build_default_llm() -> Callable[[str, str], str] | None:
         from openprogram.providers.types import (
             Context, SimpleStreamOptions, UserMessage,
         )
-        from openprogram.metering import usage_scope
+        from openprogram.usage import usage_scope
         import time
         if _inline_system and system_prompt:
             merged = system_prompt.rstrip() + "\n\n---\n\n" + user_text

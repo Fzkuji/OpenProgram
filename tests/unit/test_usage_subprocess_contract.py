@@ -11,14 +11,14 @@ import inspect
 
 import pytest
 
-from openprogram.metering.context import (
+from openprogram.usage.context import (
     UsageContext,
     apply_snapshot,
     current_usage_context,
     snapshot,
     usage_scope,
 )
-from openprogram.metering import context as _ctx_mod
+from openprogram.usage import context as _ctx_mod
 
 
 @pytest.fixture(autouse=True)

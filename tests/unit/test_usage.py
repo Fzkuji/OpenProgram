@@ -6,17 +6,17 @@ import asyncio
 
 import pytest
 
-from openprogram.metering.context import (
+from openprogram.usage.context import (
     UsageContext,
     apply_snapshot,
     current_usage_context,
     snapshot,
     usage_scope,
 )
-from openprogram.metering import context as _ctx_mod
-from openprogram.metering.event import UsageEvent
-from openprogram.metering.ledger import UsageLedger
-from openprogram.metering import recorder as _recorder
+from openprogram.usage import context as _ctx_mod
+from openprogram.usage.event import UsageEvent
+from openprogram.usage.ledger import UsageLedger
+from openprogram.usage import recorder as _recorder
 
 
 @pytest.fixture(autouse=True)
@@ -141,7 +141,7 @@ def test_usage_scope_nesting_inherits():
 
 
 def test_snapshot_roundtrip():
-    from openprogram.metering.context import UsageContext, _current
+    from openprogram.usage.context import UsageContext, _current
     with usage_scope(call_kind="memory", parent_session_id="p1"):
         snap = snapshot()
     # apply_snapshot sets the process-global contextvar; restore the default

@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 
 def _ledger():
-    from openprogram.metering.ledger import default_ledger
+    from openprogram.usage.ledger import default_ledger
     return default_ledger
 
 
