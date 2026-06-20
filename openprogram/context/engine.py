@@ -223,14 +223,31 @@ class DefaultContextEngine(ContextEngine):
         tokens_freed = 0
         agent_messages: list = []
         commit_used = False
+        # Flag: context.render="dag" switches chat to the compute_reads +
+        # render_dag_messages pipeline (the runtime.exec path). Default off
+        # → unchanged commit-chain behaviour; the except fallback below
+        # still catches a broken DAG render and degrades to _assemble.
         try:
-            agent_messages = self._build_messages_from_commit(
-                session_id=session_id,
-                history=history,
-                model=model,
-            )
+            from openprogram.setup import _read_config
+            _use_dag = (_read_config().get("context") or {}).get("render") == "dag"
+        except Exception:
+            _use_dag = False
+        try:
+            if _use_dag:
+                agent_messages = self._build_messages_from_dag(
+                    session_id=session_id,
+                    history=history,
+                    model=model,
+                )
+                decision.append("input:dag render")
+            else:
+                agent_messages = self._build_messages_from_commit(
+                    session_id=session_id,
+                    history=history,
+                    model=model,
+                )
+                decision.append("input:context commit")
             commit_used = True
-            decision.append("input:context commit")
         except Exception as e:
             # 这条路径出错就退回老 mutate path. 失败时记日志便于排查,
             # 但不阻断 turn.
@@ -538,6 +555,78 @@ class DefaultContextEngine(ContextEngine):
     def _build_system_prompt(self, agent: Any) -> str:
         from openprogram.context.system_prompt import build_system_prompt
         return build_system_prompt(agent)
+
+    def _build_messages_from_dag(
+        self,
+        *,
+        session_id: str,
+        history: list[dict],
+        model: Any,
+    ) -> list:
+        """Build provider Message[] via compute_reads + render_dag_messages —
+        the SAME context pipeline runtime.exec uses (execution-graph.md
+        step 4). Chat thus reads context from the one DAG, frame=-1
+        (top-level: all in-frame → full accumulation).
+
+        Two parity guards vs the commit path (else the prompt diverges):
+          1. Active-branch only. ``store.load()`` returns ALL nodes incl.
+             fork/retry siblings; restrict read_ids to the active branch
+             (``db.get_branch``) so sibling branches don't leak in.
+          2. No double user message. The just-persisted user msg is in the
+             branch, but agent_loop re-adds it as the live prompt — exclude
+             the trailing user node via head_seq so it isn't rendered twice.
+
+        Raises on failure → prepare() catches and falls back to _assemble.
+        """
+        if not session_id:
+            raise RuntimeError("dag render path requires session_id")
+        from openprogram.context.nodes import compute_reads
+        from openprogram.context.render import render_dag_messages
+        from openprogram.store.session.graphstore_shim import GraphStoreShim
+        from openprogram.agent.session_db import default_db
+
+        db = default_db()
+        shim = GraphStoreShim(db, session_id)
+        graph = shim.load()
+
+        # Active-branch node ids, in branch order (guard #1).
+        branch = db.get_branch(session_id) or history or []
+        branch_ids = [b.get("id") for b in branch if b.get("id")]
+        branch_id_set = set(branch_ids)
+
+        # head_seq excludes the trailing user node (guard #2): find the
+        # last active-branch user node and cap head_seq just below it.
+        head_seq = None
+        for nid in reversed(branch_ids):
+            n = graph.nodes.get(nid)
+            if n is None:
+                continue
+            if n.is_user():
+                head_seq = n.seq - 1
+                break
+            # a non-user trailing node means nothing to exclude
+            break
+
+        read_ids = compute_reads(graph, head_seq=head_seq, frame_entry_seq=-1)
+        # restrict to the active branch (guard #1) — but keep code sub-call
+        # nodes whose called_by is an in-branch llm/user node (tool rows
+        # aren't on the conv branch yet carry the turn's tool calls).
+        def _in_branch(nid: str) -> bool:
+            if nid in branch_id_set:
+                return True
+            n = graph.nodes.get(nid)
+            return bool(n is not None and n.called_by in branch_id_set)
+        read_ids = [nid for nid in read_ids if _in_branch(nid)]
+
+        history_dir = None
+        try:
+            _sdir_fn = getattr(db, "_session_dir", None)
+            if _sdir_fn:
+                history_dir = str(_sdir_fn(session_id) / "history")
+        except Exception:
+            history_dir = None
+
+        return render_dag_messages(graph, read_ids, history_dir)
 
     def _build_messages_from_commit(
         self,
