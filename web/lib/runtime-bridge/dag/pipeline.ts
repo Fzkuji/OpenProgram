@@ -350,7 +350,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const kids = trunkChildren[parentId];
     const p = pos(parent);
     const color = _branchColor(parent, stableLeafOfNode);
-    const nr = NODE_R + 2;
+    const nr = NODE_R + 4;
 
     // Find the last child's y position for the vertical trunk
     let lastY = p.y;
@@ -406,7 +406,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     if (!sibling) continue;
     const sp = pos(sibling);
     const c = pos(node);
-    const nr = NODE_R + 2;
+    const nr = NODE_R + 4;
     const startX = sp.x + nr;
     const endX = c.x - nr;
     const color = _branchColor(node, stableLeafOfNode);
