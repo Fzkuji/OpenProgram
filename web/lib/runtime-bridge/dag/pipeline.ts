@@ -56,7 +56,6 @@ import { _mergeRuns } from "./passes/merge-runs";
 import { _collapseRuntimePlaceholders } from "./passes/collapse-runtime-placeholders";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
 import { _applyCollapse } from "./passes/apply-collapse";
-import { _applyD3TreeLayout } from "./passes/d3-tree-layout";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
 import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
@@ -74,7 +73,6 @@ import {
   _lastGraph,
   _lastHeadId,
   _lastSignature,
-  _layoutMode,
   setCurrentHead,
   setHeadAncestorSet,
   setInternalOwner,
@@ -135,23 +133,6 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const cinfo = _applyCollapse(graph);
   graph = cinfo.visible;
-
-  // d3-tree layout mode: re-position function-call subtrees via
-  // d3-hierarchy's Reingold-Tilford layout so siblings spread to
-  // accommodate their own subtree widths (no overlap on complex
-  // agentic call trees). Trunk (user/reply chain) stays on its
-  // legacy lane=0 column. Mode flip is reactive — toggling at
-  // runtime re-renders with the new positions.
-  if (_layoutMode === "d3") {
-    _applyD3TreeLayout(graph);
-  } else {
-    // Clear any d3 coords from a previous run when switching back
-    // to legacy, so ``pos()`` falls through to the lane/tier formula.
-    graph.forEach((n) => {
-      if ("_x" in n) delete (n as { _x?: number })._x;
-      if ("_y" in n) delete (n as { _y?: number })._y;
-    });
-  }
 
   const sig = _signature(graph, headId);
   if (sig === _lastSignature && _currentHead === headId) return;
@@ -301,18 +282,27 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   svg.appendChild(edgeG);
   svg.appendChild(nodeG);
 
+  // Compact lane mapping: only visible lanes get column space.
+  // Each lane occupies (maxTierInLane + 1) columns width.
+  const _visibleLaneTiers: Record<number, number> = Object.create(null);
+  graph.forEach((n) => {
+    const ln = n._lane || 0;
+    const t = typeof n._tier === "number" ? n._tier : 0;
+    _visibleLaneTiers[ln] = Math.max(_visibleLaneTiers[ln] || 0, t);
+  });
+  const _sortedVisibleLanes = Object.keys(_visibleLaneTiers).map(Number).sort((a, b) => a - b);
+  const _laneToCol: Record<number, number> = Object.create(null);
+  let _col = 0;
+  for (const ln of _sortedVisibleLanes) {
+    _laneToCol[ln] = _col;
+    _col += (_visibleLaneTiers[ln] || 0) + 1;
+  }
+
   function pos(n: GNode): { x: number; y: number } {
-    // d3-tree layout (if active) writes absolute pixel positions to
-    // ``_x`` / ``_y`` for function-call subtree nodes. Trunk nodes
-    // keep the legacy lane/tier/depth formula. Either way the
-    // ``pos()`` API returns one resolved (x, y) per node.
-    if (typeof n._x === "number" && typeof n._y === "number") {
-      return { x: n._x, y: n._y };
-    }
     const tier = typeof n._tier === "number" ? n._tier : 0;
-    const tierOff = tier * COL_W;
+    const laneCol = _laneToCol[n._lane || 0] || 0;
     return {
-      x: PAD_X + (n._lane || 0) * COL_W + tierOff,
+      x: PAD_X + (laneCol + tier) * COL_W,
       y: PAD_Y + (n._depth || 0) * ROW_H,
     };
   }

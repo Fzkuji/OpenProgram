@@ -367,68 +367,10 @@ function HistoryGraphPanel() {
       <WorktreesPanel />
       <HighlightModeToggle />
       <div className="history-body"></div>
-      <LayoutModeToggle />
     </>
   );
 }
 
-/** Toggle: legacy lane/tier layout vs d3-hierarchy tree layout.
- *  Drives ``window.setHistoryLayoutMode``. Persisted to localStorage
- *  by the dag/index.ts setter so the choice survives reload. */
-function LayoutModeToggle() {
-  const [mode, setMode] = useState<"legacy" | "d3">(() => {
-    if (typeof window === "undefined") return "legacy";
-    const w = window as unknown as {
-      getHistoryLayoutMode?: () => "legacy" | "d3";
-    };
-    return w.getHistoryLayoutMode?.() ?? "legacy";
-  });
-  function pick(next: "legacy" | "d3") {
-    setMode(next);
-    const w = window as unknown as {
-      setHistoryLayoutMode?: (m: string) => void;
-    };
-    w.setHistoryLayoutMode?.(next);
-  }
-  const style = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    padding: "4px 8px",
-    fontSize: 11,
-    fontFamily: "inherit",
-    border: "1px solid var(--border)",
-    background: active ? "var(--bg-hover)" : "transparent",
-    color: active ? "var(--text-bright)" : "var(--text-muted)",
-    cursor: "pointer",
-    borderRadius: 6,
-    transition: "background 0.15s, color 0.15s",
-  });
-  return (
-    <div
-      style={{
-        display: "flex",
-        gap: 4,
-        padding: "6px 8px",
-        borderTop: "1px solid var(--border)",
-      }}
-      title="Mini-DAG layout engine"
-    >
-      <button
-        type="button"
-        onClick={() => pick("legacy")}
-        style={style(mode === "legacy")}
-      >
-        Legacy
-      </button>
-      <button
-        type="button"
-        onClick={() => pick("d3")}
-        style={style(mode === "d3")}
-      >
-        d3-tree
-      </button>
-    </div>
-  );
-}
 
 /** Toggle: white-fill on DAG nodes follows the chat scroll
  *  position (viewport) or the next-LLM-call context range
