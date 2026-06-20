@@ -35,7 +35,9 @@ export function _edgePath(x1: number, y1: number, x2: number, y2: number): strin
 }
 
 export function _treeEdgePath(x1: number, y1: number, x2: number, y2: number): string {
-  return "M" + x1 + "," + y1 + " L" + x1 + "," + y2 + " L" + x2 + "," + y2;
+  const nr = NODE_R + 2;
+  const endX = x2 > x1 ? x2 - nr : x2 + nr;
+  return "M" + x1 + "," + y1 + " L" + x1 + "," + y2 + " L" + endX + "," + y2;
 }
 
 export function _branchColor(

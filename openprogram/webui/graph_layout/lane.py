@@ -64,18 +64,28 @@ def compute_lane(
                     continue
             _walk(kid, my_lane)
 
-    # Start from ROOT nodes (no called_by, no caller)
+    # Start from ROOT (display=root) only
+    from ._common import is_root
     roots = sorted(
-        (nid for nid, m in by_id.items()
-         if not called_by_of(by_id, m)),
+        (nid for nid, m in by_id.items() if is_root(m)),
         key=lambda x: ts(by_id, x),
     )
+    if not roots:
+        roots = sorted(
+            (nid for nid, m in by_id.items()
+             if not called_by_of(by_id, m)),
+            key=lambda x: ts(by_id, x),
+        )
     for r in roots:
         _walk(r, alloc.alloc())
 
-    # Catch any unvisited nodes
-    for nid in by_id:
+    # Fork branches without called_by: assign fresh lanes
+    remaining = sorted(
+        (nid for nid in by_id if nid not in lane),
+        key=lambda x: ts(by_id, x),
+    )
+    for nid in remaining:
         if nid not in lane:
-            lane[nid] = 0
+            _walk(nid, alloc.alloc())
 
     return lane, alloc
