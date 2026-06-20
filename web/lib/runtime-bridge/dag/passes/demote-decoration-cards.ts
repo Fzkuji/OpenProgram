@@ -34,8 +34,9 @@ export function _demoteDecorationCards(graph: GNode[]): void {
   const convKidsOf: Record<string, GNode[]> = Object.create(null);
   const callerKidsOf: Record<string, GNode[]> = Object.create(null);
   graph.forEach((m) => {
-    if (m.parent_id && byId[m.parent_id]) {
-      (convKidsOf[m.parent_id] = convKidsOf[m.parent_id] || []).push(m);
+    const _lp = m.called_by || m.parent_id;
+    if (_lp && byId[_lp]) {
+      (convKidsOf[_lp] = convKidsOf[_lp] || []).push(m);
     }
     const ca = (m as { caller?: string }).caller;
     if (ca && byId[ca]) {

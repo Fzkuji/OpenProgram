@@ -195,6 +195,17 @@ def build_branches_payload(session_id: str | None) -> dict:
                 full_msgs = db.get_messages(session_id) or []
             except Exception:
                 full_msgs = []
+            # Build a called_by lookup from the underlying Call nodes
+            # so graph entries carry the invocation edge (session DAG)
+            # alongside the conversation predecessor (parent_id).
+            _called_by_map: dict[str, str] = {}
+            try:
+                _nodes = db.get_nodes(session_id) or []
+                for _n in _nodes:
+                    if _n.called_by:
+                        _called_by_map[_n.id] = _n.called_by
+            except Exception:
+                pass
             for m in full_msgs:
                 content = m.get("content") or ""
                 preview = content.strip().replace("\n", " ")
@@ -204,9 +215,11 @@ def build_branches_payload(session_id: str | None) -> dict:
                 _aembed_n, _aembed_tok = _attach_embed_stats(
                     db, session_id, _asrc_commit,
                 )
+                _mid = m.get("id") or ""
                 graph.append({
-                    "id": m.get("id"),
+                    "id": _mid,
                     "parent_id": m.get("parent_id"),
+                    "called_by": _called_by_map.get(_mid, ""),
                     "caller": m.get("caller") or "",
                     "role": m.get("role"),
                     "function": m.get("function"),

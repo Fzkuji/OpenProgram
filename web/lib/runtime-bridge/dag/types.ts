@@ -12,6 +12,7 @@
 export interface GNode {
   id: string;
   parent_id?: string | null;
+  called_by?: string | null;
   role?: string;
   display?: string;
   created_at?: number;
@@ -72,5 +73,10 @@ export const LANE_COLORS = [
   "#6fae6f", // sage
   "#d05fa0", // rose
 ];
+
+/** Layout parent: called_by (session DAG) with parent_id fallback. */
+export function layoutParent(n: GNode): string | null | undefined {
+  return n.called_by || n.parent_id;
+}
 
 export type HighlightMode = "viewport" | "context";

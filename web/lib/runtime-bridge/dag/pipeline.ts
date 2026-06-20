@@ -88,7 +88,7 @@ function _signature(graph: GNode[], headId: string | null): string {
   if (!graph || !graph.length) return "empty|" + (headId || "");
   const parts = graph.map(
     (m) =>
-      m.id + ":" + (m.parent_id || "") + ":" + (m.role || "") + ":" + (m.display || ""),
+      m.id + ":" + (m.called_by || m.parent_id || "") + ":" + (m.role || "") + ":" + (m.display || ""),
   );
   parts.sort();
   return parts.join(",") + "|" + (headId || "");
@@ -198,7 +198,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const rootNode = tree.byId[rootId];
     const isRunNode = !!rootNode._runNode;
     if (rootNode.role !== "tool" && !isRunNode) return;
-    const owner = isRunNode ? rootId : rootNode.parent_id || null;
+    const owner = isRunNode ? rootId : (rootNode.called_by || rootNode.parent_id || null);
     const stack: string[] = [];
     if (isRunNode) {
       (rootNode.children || []).forEach((c) => {
@@ -232,7 +232,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const parentOf: Record<string, string> = Object.create(null);
   Object.keys(tree.byId).forEach((nid) => {
-    const pid = (tree.byId[nid] as { parent_id?: string }).parent_id;
+    const pid = (tree.byId[nid] as { called_by?: string; parent_id?: string }).called_by
+      || (tree.byId[nid] as { parent_id?: string }).parent_id;
     if (pid) parentOf[nid] = pid;
   });
   setParentOf(parentOf);
@@ -320,7 +321,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const isBranchRef = node.function === "attach" || node.function === "merge";
     const conv_parent_id = isBranchRef
       ? (node.caller || node.called_by || node.parent_id)
-      : node.parent_id;
+      : (node.called_by || node.parent_id);
     if (!conv_parent_id || !tree.byId[conv_parent_id]) return;
     const parent = tree.byId[conv_parent_id];
     const p = pos(parent);
@@ -414,7 +415,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       const n = tree.byId[k];
       if (n.function !== "attach") continue;
       const ac = n.caller || n.called_by || "";
-      const ap = n.parent_id || "";
+      const ap = n.called_by || n.parent_id || "";
       if (ac === callerId || ap === callerId) {
         subTipId = String(n.attach_ref || "");
         break;
@@ -426,7 +427,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     while (cur && !seen[cur]) {
       seen[cur] = true;
       const nn: GNode | undefined = tree.byId[cur];
-      const pp: string | null | undefined = nn && nn.parent_id;
+      const pp: string | null | undefined = nn && (nn.called_by || nn.parent_id);
       if (!pp || !tree.byId[pp]) break;
       cur = pp;
     }

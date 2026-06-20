@@ -12,7 +12,7 @@
  * need a leaf id per node for the checkout target.
  */
 
-import type { GNode } from "../types";
+import { type GNode, layoutParent } from "../types";
 
 export function _headAncestors(
   byId: Record<string, GNode>,
@@ -22,7 +22,7 @@ export function _headAncestors(
   let cur = headId;
   while (cur && byId[cur]) {
     out.push(cur);
-    cur = byId[cur].parent_id || null;
+    cur = layoutParent(byId[cur]) || null;
   }
   return out;
 }
@@ -55,7 +55,8 @@ export function _assignLanes(
     while (cur) {
       if (!backendLanesPreset) cur._lane = 0;
       leafOfNode[cur.id] = trunkTip.id;
-      cur = cur.parent_id ? byId[cur.parent_id] : null;
+      const pp = layoutParent(cur);
+      cur = pp ? byId[pp] : null;
     }
   }
 
@@ -63,7 +64,8 @@ export function _assignLanes(
     let cur: GNode | null = leaf;
     while (cur && !(cur.id in leafOfNode)) {
       leafOfNode[cur.id] = leaf.id;
-      cur = cur.parent_id ? byId[cur.parent_id] : null;
+      const pp = layoutParent(cur);
+      cur = pp ? byId[pp] : null;
     }
   });
 

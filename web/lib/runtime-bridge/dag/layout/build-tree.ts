@@ -9,7 +9,7 @@
  * matches the time the user actually saw each turn.
  */
 
-import type { GNode } from "../types";
+import { type GNode, layoutParent } from "../types";
 
 export function _buildTree(graph: GNode[]): {
   roots: GNode[];
@@ -22,7 +22,8 @@ export function _buildTree(graph: GNode[]): {
   const roots: GNode[] = [];
   graph.forEach((m) => {
     const node = byId[m.id];
-    if (m.parent_id && byId[m.parent_id]) byId[m.parent_id].children!.push(node);
+    const pid = layoutParent(m);
+    if (pid && byId[pid]) byId[pid].children!.push(node);
     else roots.push(node);
   });
   function byTs(a: GNode, b: GNode): number {

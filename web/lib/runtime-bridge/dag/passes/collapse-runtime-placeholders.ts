@@ -52,8 +52,9 @@ export function _collapseRuntimePlaceholders(
   // dot above the lone surviving square. Fold it away.
   const convKidsOf: Record<string, GNode[]> = Object.create(null);
   graph.forEach((m) => {
-    if (m.parent_id && byId[m.parent_id]) {
-      (convKidsOf[m.parent_id] = convKidsOf[m.parent_id] || []).push(m);
+    const _lp = m.called_by || m.parent_id;
+    if (_lp && byId[_lp]) {
+      (convKidsOf[_lp] = convKidsOf[_lp] || []).push(m);
     }
   });
   const removeIds: Record<string, boolean> = Object.create(null);
@@ -88,7 +89,8 @@ export function _collapseRuntimePlaceholders(
     // which lane.py turns into a fork. Fold the anchor here so the
     // new user msg gets reparented onto the surviving code instead,
     // keeping the mini-DAG on a single trunk.
-    const anchor = p.parent_id ? byId[p.parent_id] : null;
+    const _ap = p.called_by || p.parent_id;
+    const anchor = _ap ? byId[_ap] : null;
     if (
       anchor
       && anchor.role === "user"
@@ -129,13 +131,13 @@ export function _collapseRuntimePlaceholders(
     // Walk up the chain of removed ancestors to find the topmost
     // one. That's the slot the surviving code should occupy.
     let topRemoved: GNode = p;
-    let cur: string | null = p.parent_id || null;
+    let cur: string | null = p.called_by || p.parent_id || null;
     let hops = 0;
     while (cur && removeIds[cur] && hops < 32) {
       const n = byId[cur];
       if (!n) break;
       topRemoved = n;
-      cur = n.parent_id || null;
+      cur = n.called_by || n.parent_id || null;
       hops++;
     }
     const tDelta = (topRemoved._tier ?? 0) - (code._tier ?? 0);
@@ -219,7 +221,8 @@ export function _collapseRuntimePlaceholders(
     let cur = pid;
     let hops = 0;
     while (cur && removeIds[cur] && hops < 32) {
-      cur = byId[cur]?.parent_id || null;
+      const _n = byId[cur];
+      cur = (_n?.called_by || _n?.parent_id) || null;
       hops++;
     }
     return cur;
@@ -242,16 +245,17 @@ export function _collapseRuntimePlaceholders(
     // ``code → followup_user → reply`` — that way ``_mergeRuns`` no
     // longer sees code and the user-msg as siblings (which used to
     // make it migrate gui_step / conclusion onto the user dot).
-    const placeholderParent = m.parent_id || "";
+    const placeholderParent = m.called_by || m.parent_id || "";
     if (placeholderParent && replaceWith[placeholderParent]) {
       const codeId = replaceWith[placeholderParent];
       const isSurvivingCode = m.id === codeId;
       if (isSurvivingCode) {
+        const _la = liveAncestor(placeholderParent);
         nm = Object.assign({}, m, {
-          parent_id: liveAncestor(placeholderParent),
+          called_by: _la, parent_id: _la,
         });
       } else {
-        nm = Object.assign({}, m, { parent_id: codeId });
+        nm = Object.assign({}, m, { called_by: codeId, parent_id: codeId });
       }
     }
     const tD = tierDeltaOf[m.id];
@@ -290,13 +294,11 @@ export function _collapseRuntimePlaceholders(
     if (!p.function) return;
     // Skip fn-form (anchor was also removed → topRemoved walked past
     // the placeholder; survivor already sits at anchor's slot).
-    if (p.parent_id && removeIds[p.parent_id]) return;
+    const _pp = p.called_by || p.parent_id;
+    if (_pp && removeIds[_pp]) return;
     const codeId = replaceWith[p.id];
     if (!codeId) return;
-    // Live ancestor of the placeholder = the survivor code's effective
-    // parent. Use the OUTPUT graph's tier for that node so the desired
-    // slot reflects shifts from earlier processing.
-    const liveAnc = liveAncestor(p.parent_id || null);
+    const liveAnc = liveAncestor(_pp || null);
     if (!liveAnc) return;
     const parentNode = outById[liveAnc];
     if (!parentNode || typeof parentNode._tier !== "number") return;

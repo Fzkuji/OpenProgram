@@ -42,8 +42,9 @@ export function _applyCollapse(graph: GNode[]): {
   const internalFlag: Record<string, boolean> = Object.create(null);
   graph.forEach((m) => {
     if (m._internal) internalFlag[m.id] = true;
-    if (m.parent_id) {
-      (childrenOf[m.parent_id] = childrenOf[m.parent_id] || []).push(m.id);
+    const _lp = m.called_by || m.parent_id;
+    if (_lp) {
+      (childrenOf[_lp] = childrenOf[_lp] || []).push(m.id);
     }
     const ca = m.caller;
     if (ca) {
