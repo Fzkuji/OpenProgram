@@ -35,7 +35,15 @@ def compute_tier(by_id: dict[str, dict]) -> dict[str, int]:
             return t
         ca = caller_of(by_id, m)
         if ca:
-            t = _t(ca, depth + 1) + 1
+            ca_node = by_id.get(ca)
+            ca_role = (ca_node or {}).get("role", "")
+            ca_display = (ca_node or {}).get("display", "")
+            # ROOT→child and user→llm are organizational edges (same
+            # tier). Only tool sub-calls (llm→tool, tool→tool) bump +1.
+            if ca_display == "root" or ca_role == "user":
+                t = _t(ca, depth + 1)
+            else:
+                t = _t(ca, depth + 1) + 1
         else:
             cp = conv_parent_of(by_id, m)
             t = _t(cp, depth + 1) if cp else 0
