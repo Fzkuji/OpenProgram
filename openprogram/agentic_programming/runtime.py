@@ -642,6 +642,7 @@ class Runtime:
         status: str = "completed",
         usage: Optional[dict] = None,
         blocks: Optional[list] = None,
+        error: Optional[BaseException] = None,
     ) -> None:
         """Fill in the reply + terminal status on the running llm node
         opened by :meth:`_open_model_call_node`.
@@ -657,6 +658,10 @@ class Runtime:
 
         Status vocabulary is unified with the chat path (decision 2):
         ``completed`` / ``error`` / ``cancelled`` — not ``success``.
+
+        When ``error`` is provided (step 6-C), the same structured error
+        fields the chat path writes (error, error_type, trace) are
+        included in metadata — unified shape across both entry points.
 
         No-op when ``node_id`` is None (no store was installed at open time).
         """
@@ -674,9 +679,15 @@ class Runtime:
                 meta["usage"] = _usage
             if _blocks:
                 meta["blocks"] = _blocks
+            if error is not None:
+                import traceback as _tb
+                meta["error"] = str(error)
+                meta["error_type"] = type(error).__name__
+                meta["trace"] = "".join(
+                    _tb.format_exception(type(error), error,
+                                         error.__traceback__))[:2000]
             store.update(node_id, output=reply, metadata=meta)
         except Exception:
-            # DAG bookkeeping failure must not break the LLM call.
             pass
 
     # --- Asking the user (user-input-requests.md Phase 1) ---
@@ -1156,14 +1167,18 @@ class Runtime:
                     )
                     time.sleep(sleep_s)
         finally:
-            # Close the llm node on any exit path that didn't already
-            # (errors, ExecInterrupt, programming errors). Marks it failed.
-            # Idempotent guard via _llm_closed.
             if not _llm_closed:
+                import sys as _sys
+                _exc = _sys.exc_info()[1]
+                _st = "cancelled" if (
+                    isinstance(_exc, ExecInterrupt)
+                    and "cancel" in str(_exc).lower()
+                ) else "error"
                 self._close_model_call_node(
                     _llm_node_id,
                     reply=reply if reply is not None else "",
-                    status="error",
+                    status=_st,
+                    error=_exc if _st == "error" else None,
                 )
             self._active_llm_node_id = None
             _dl.reset_deadline(_deadline_token)
@@ -1344,10 +1359,17 @@ class Runtime:
                 await asyncio.sleep(sleep_s)
         finally:
             if not _llm_closed:
+                import sys as _sys
+                _exc = _sys.exc_info()[1]
+                _st = "cancelled" if (
+                    isinstance(_exc, ExecInterrupt)
+                    and "cancel" in str(_exc).lower()
+                ) else "error"
                 self._close_model_call_node(
                     _llm_node_id,
                     reply=reply if reply is not None else "",
-                    status="error",
+                    status=_st,
+                    error=_exc if _st == "error" else None,
                 )
             self._active_llm_node_id = None
             _dl.reset_deadline(_deadline_token)
