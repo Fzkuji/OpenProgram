@@ -100,9 +100,30 @@ def _wrap_agentic_runtime_block(
         }
         db = default_db()
         try:
-            db.append_message(req.session_id, placeholder)
+            from openprogram.context.nodes import Call, ROLE_CODE
+            from openprogram.store import GraphStoreShim as _GShim
+
+            _rt_meta = {
+                k: v for k, v in placeholder.items()
+                if k not in {"id", "role", "content", "timestamp",
+                             "function"}
+                and v is not None
+            }
+            _rt_node = Call(
+                id=runtime_id,
+                created_at=now,
+                role=ROLE_CODE,
+                name=tool_name,
+                output=None,
+                called_by=assistant_msg_id,
+                metadata=_rt_meta,
+            )
+            _GShim(db, req.session_id).append(_rt_node)
         except Exception:
-            pass
+            try:
+                db.append_message(req.session_id, placeholder)
+            except Exception:
+                pass
         on_event({
             "type": "chat_response",
             "data": {

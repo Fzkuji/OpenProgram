@@ -255,13 +255,38 @@ def process_user_turn(
         user_msg["extra"] = json.dumps({"attachments": manifest},
                                          default=str)
     if not req.user_already_persisted:
-        db.append_message(req.session_id, user_msg)
-        # Advance head to the user message. Crucial for branching: if
-        # the caller passed parent_id pointing at an older message,
-        # we're now on a NEW leaf and head must reflect that —
-        # otherwise the next get_branch call would still walk down
-        # the old branch.
-        db.set_head(req.session_id, user_msg_id)
+        # Write the user node as a Call directly — same shape the DAG
+        # uses everywhere (execution-graph.md step 5). GraphStoreShim
+        # .append already calls set_head for non-caller nodes, so no
+        # separate set_head needed.
+        try:
+            from openprogram.context.nodes import Call, ROLE_USER
+            from openprogram.store import GraphStoreShim as _GShim
+
+            _user_meta = {
+                k: v for k, v in user_msg.items()
+                if k not in {"id", "role", "content", "timestamp", "extra"}
+                and v is not None
+            }
+            _raw_extra = user_msg.get("extra")
+            if _raw_extra:
+                try:
+                    _decoded = json.loads(_raw_extra) if isinstance(
+                        _raw_extra, str) else _raw_extra
+                    _user_meta.update(_decoded)
+                except (json.JSONDecodeError, TypeError):
+                    _user_meta["extra"] = _raw_extra
+            _user_node = Call(
+                id=user_msg_id,
+                created_at=user_msg.get("timestamp") or time.time(),
+                role=ROLE_USER,
+                output=req.user_text,
+                metadata=_user_meta,
+            )
+            _GShim(db, req.session_id).append(_user_node)
+        except Exception:
+            db.append_message(req.session_id, user_msg)
+            db.set_head(req.session_id, user_msg_id)
         on_event({
             "type": "chat_ack",
             "data": {"session_id": req.session_id, "msg_id": user_msg_id},
@@ -392,6 +417,12 @@ def process_user_turn(
         db, req.session_id, assistant_msg_id, user_msg_id, req.source,
     )
 
+    # Mark session as running before agent loop starts.
+    try:
+        db.update_session(req.session_id, status="running")
+    except Exception:
+        pass
+
     # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck
     #    "agent is thinking…" state.
@@ -453,25 +484,29 @@ def process_user_turn(
                         from openprogram.agent.session_db import (
                             default_db as _db,
                         )
-                        _db().append_message(req.session_id, {
-                            "id": f"{assistant_msg_id}_t_{tid}",
-                            "role": "tool",
-                            "content": str(evt.get("result") or ""),
-                            "function": meta.get("tool") or evt.get("tool") or "",
-                            "parent_id": assistant_msg_id,
-                            "timestamp": time.time(),
-                            "is_error": bool(evt.get("is_error")),
-                            "extra": json.dumps({
-                                "tool_use": {
-                                    "name": meta.get("tool")
-                                            or evt.get("tool") or "",
-                                    "arguments": meta.get("input") or "",
-                                    "called_by": assistant_msg_id,
-                                },
-                            }, default=str),
-                        })
+                        from openprogram.context.nodes import Call, ROLE_CODE
+                        from openprogram.store import GraphStoreShim
+
+                        _tool_name = (meta.get("tool")
+                                      or evt.get("tool") or "")
+                        _node = Call(
+                            id=f"{assistant_msg_id}_t_{tid}",
+                            created_at=time.time(),
+                            role=ROLE_CODE,
+                            name=_tool_name,
+                            input=meta.get("input") or {},
+                            output=str(evt.get("result") or ""),
+                            called_by=assistant_msg_id,
+                            metadata={
+                                "tool_call_id": tid,
+                                "is_error": bool(evt.get("is_error")),
+                            },
+                        )
+                        GraphStoreShim(
+                            _db(), req.session_id,
+                        ).append(_node)
                     except Exception:
-                        pass  # canonical write in step 5 covers it
+                        pass
             except Exception:
                 pass
 
@@ -514,7 +549,7 @@ def process_user_turn(
         # Move head to the failed turn so the next user message
         # chains off it, not off the user message that triggered it.
         try:
-            db.update_session(req.session_id, head_id=head_for_next)
+            db.update_session(req.session_id, head_id=head_for_next, status="failed")
         except Exception:
             pass
         # Classify the failure into the structured taxonomy (an LLMError
@@ -615,6 +650,15 @@ def process_user_turn(
         ctx_win=_fin_ctx_win,
         on_event=on_event,
     )
+
+    # Mark session idle/done now that the turn completed successfully.
+    try:
+        if req.source in {"wechat", "telegram", "discord", "slack"}:
+            db.update_session(req.session_id, status="done", unread=True)
+        else:
+            db.update_session(req.session_id, status="idle")
+    except Exception:
+        pass
 
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.

@@ -189,17 +189,22 @@ def persist_assistant_message(
             default=str,
         )
     if _placeholder_inserted:
-        # Update the placeholder row (step 3b) in place — same id,
-        # now with final content + tool_calls/blocks.
+        # Update the placeholder row in place — same id, now with
+        # final content + tool_calls/blocks. Writes Call fields
+        # directly, skipping the _msg_to_node round-trip
+        # (execution-graph.md step 5).
         try:
-            from openprogram.store.session._msg_adapter import _msg_to_node as _to_node
             from openprogram.store import GraphStoreShim
             _shim = GraphStoreShim(db, req.session_id)
-            _node = _to_node(assistant_msg)
+            _meta = {
+                k: v for k, v in assistant_msg.items()
+                if k not in {"id", "role", "content", "timestamp"}
+                and v is not None
+            }
             _shim.update(
                 assistant_msg["id"],
-                output=_node.output,
-                metadata=_node.metadata,
+                output=assistant_msg.get("content") or "",
+                metadata=_meta,
             )
         except Exception:
             db.append_message(req.session_id, assistant_msg)
