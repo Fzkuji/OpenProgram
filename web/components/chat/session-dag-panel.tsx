@@ -11,7 +11,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function ExecutionGraphPanel({ onClose }: Props) {
+export function SessionDagPanel({ onClose }: Props) {
   const [selected, setSelected] = useState<TreeNode | null>(null);
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.sessionId);
@@ -49,7 +49,7 @@ export function ExecutionGraphPanel({ onClose }: Props) {
             className="text-[13px] font-semibold"
             style={{ color: "var(--text-bright)" }}
           >
-            {text("Execution Graph", "执行图")}
+            {text("Session DAG", "会话 DAG")}
           </h3>
         </div>
         <button onClick={onClose}>
@@ -67,7 +67,7 @@ export function ExecutionGraphPanel({ onClose }: Props) {
           </div>
         ) : (
           <div className="p-2">
-            <GraphNodeView
+            <DagNodeView
               node={dag}
               depth={0}
               selected={selected}
@@ -89,7 +89,7 @@ export function ExecutionGraphPanel({ onClose }: Props) {
   );
 }
 
-function GraphNodeView({
+function DagNodeView({
   node,
   depth,
   selected,
@@ -205,7 +205,7 @@ function GraphNodeView({
       {open && hasChildren && (
         <div>
           {node.children!.map((c, i) => (
-            <GraphNodeView
+            <DagNodeView
               key={i}
               node={c}
               depth={depth + 1}
