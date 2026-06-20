@@ -108,15 +108,15 @@ async def handle_rename_session(ws, cmd: dict):
         if not title:
             return
 
-    with _s._sessions_lock:
-        conv = _s._sessions.get(session_id)
-        if conv is not None:
-            conv["title"] = title
+    is_user_typed = bool(cmd.get("title", "").strip())
     try:
-        default_db().update_session(session_id, title=title)
+        kw = {"title": title}
+        if is_user_typed:
+            kw["_user_titled"] = True
+        default_db().update_session(session_id, **kw)
     except Exception as e:
         _s._log(f"[rename_session] {session_id}: {e}")
-    await ws.send_text(json.dumps({
+    _s._broadcast(json.dumps({
         "type": "session_updated",
         "data": {"id": session_id, "title": title},
     }, default=str))
@@ -179,7 +179,7 @@ async def handle_update_session_flags(ws, cmd: dict):
         default_db().update_session(session_id, **fields)
     except Exception as e:
         _s._log(f"[update_session_flags] {session_id}: {e}")
-    await ws.send_text(json.dumps({
+    _s._broadcast(json.dumps({
         "type": "session_updated",
         "data": {"id": session_id, **fields},
     }, default=str))
@@ -390,6 +390,28 @@ async def handle_load_session(ws, cmd: dict):
             full_msgs = all_msgs
         from openprogram.webui.graph_layout import annotate_graph
         graph = []
+        # Include ROOT node if present (filtered by get_messages).
+        try:
+            _all_nodes = _ddb().get_nodes(conv["id"]) or []
+            _called_by_map_load: dict[str, str] = {}
+            for _n in _all_nodes:
+                if _n.called_by:
+                    _called_by_map_load[_n.id] = _n.called_by
+            _root_node = next(
+                (n for n in _all_nodes
+                 if (n.metadata or {}).get("display") == "root"), None)
+            if _root_node:
+                graph.append({
+                    "id": _root_node.id,
+                    "parent_id": "",
+                    "called_by": "",
+                    "caller": "",
+                    "role": "user",
+                    "display": "root",
+                    "preview": "ROOT",
+                })
+        except Exception:
+            _called_by_map_load = {}
         for m in full_msgs:
             content = m.get("content") or ""
             preview = content.strip().replace("\n", " ")
@@ -405,9 +427,11 @@ async def handle_load_session(ws, cmd: dict):
             input_str = _extract_tool_input(m)
             _aref, _amanual, _asrc_commit = _ainfo(m)
             _aembed_n, _aembed_tok = _astats(_ddb(), conv["id"], _asrc_commit)
+            _mid_load = m.get("id") or ""
             graph.append({
-                "id": m.get("id"),
+                "id": _mid_load,
                 "parent_id": m.get("parent_id"),
+                "called_by": _called_by_map_load.get(_mid_load, ""),
                 "caller": m.get("caller") or "",
                 "role": m.get("role"),
                 "function": m.get("function"),
@@ -450,22 +474,23 @@ async def handle_load_session(ws, cmd: dict):
                 m["spawned_from"] = sf
         from openprogram.agent.session_config import load_session_run_config
         run_cfg = load_session_run_config(conv["id"])
+        _db_sess = _ddb().get_session(session_id) or {}
         await ws.send_text(json.dumps({
             "type": "session_loaded",
             "data": {
                 "id": conv["id"],
-                "title": conv["title"],
+                "title": _db_sess.get("title", ""),
                 "messages": shown,
                 "graph": graph,
                 "head_id": head,
                 "context_tree": tree_data,
                 "provider_info": _s._get_provider_info(session_id),
                 "context_stats": conv.get("_last_context_stats"),
-                "channel": conv.get("channel"),
-                "account_id": conv.get("account_id"),
-                "peer": conv.get("peer"),
-                "peer_display": conv.get("peer_display"),
-                "source": conv.get("source"),
+                "channel": _db_sess.get("channel"),
+                "account_id": _db_sess.get("account_id"),
+                "peer": _db_sess.get("peer"),
+                "peer_display": _db_sess.get("peer_display"),
+                "source": _db_sess.get("source"),
                 "settings": {
                     "tools_enabled": run_cfg.tools_enabled,
                     "tools_override": run_cfg.tools_override,
@@ -473,6 +498,7 @@ async def handle_load_session(ws, cmd: dict):
                     "permission_mode": run_cfg.permission_mode,
                 },
                 "run_active": _s._is_run_active(conv["id"]),
+                "status": (_ddb().get_session(session_id) or {}).get("status", "idle"),
             },
         }, default=str))
         # Zombie-task guards: no active runtime registered OR last event
@@ -661,7 +687,6 @@ async def handle_list_sessions(ws, cmd: dict):
             "id": sid,
             "title": title or sid,
             "created_at": row.get("created_at") or 0,
-            "has_session": True,
             "agent_id": row.get("agent_id"),
             "source": row.get("source"),
             "peer_display": row.get("peer_display"),

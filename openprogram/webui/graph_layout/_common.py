@@ -15,16 +15,17 @@ def ts(by_id: dict[str, dict], nid: str) -> float:
 
 
 def caller_of(by_id: dict[str, dict], m: dict) -> Optional[str]:
-    """The sub-call edge: ``caller`` if it points to an in-graph node."""
-    c = m.get("caller")
+    """The sub-call edge: ``called_by`` (session DAG) with ``caller``
+    fallback, if it points to an in-graph node."""
+    c = m.get("called_by") or m.get("caller")
     if c and c in by_id:
         return c
     return None
 
 
 def conv_parent_of(by_id: dict[str, dict], m: dict) -> Optional[str]:
-    """The conversation edge: ``parent_id`` only when ``caller`` is
-    empty. Mutual exclusion enforced here so downstream stages don't
+    """The conversation edge: ``parent_id`` only when no call edge.
+    Mutual exclusion enforced here so downstream stages don't
     have to guard.
     """
     if caller_of(by_id, m):
