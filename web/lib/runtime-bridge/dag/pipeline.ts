@@ -320,10 +320,43 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     const isBranchRef = node.function === "attach" || node.function === "merge";
-    const conv_parent_id = isBranchRef
-      ? (node.caller || node.called_by || node.parent_id)
-      : (node.called_by || node.parent_id);
-    if (!conv_parent_id || !tree.byId[conv_parent_id]) return;
+    let conv_parent_id = isBranchRef
+      ? (node.caller || node.called_by)
+      : (node.called_by);
+    if (!conv_parent_id || !tree.byId[conv_parent_id]) {
+      // Fork branch: no called_by. Find the first sibling that shares
+      // the same parent_id (the "original" at this fork point) and draw
+      // a horizontal dashed line to it instead of a parent→child edge.
+      const pid = node.parent_id;
+      if (!pid) return;
+      let sibling: GNode | null = null;
+      Object.keys(tree.byId).forEach((sid) => {
+        if (sid === id) return;
+        const sn = tree.byId[sid];
+        if (sn.parent_id === pid && (sn._lane || 0) !== (node._lane || 0)) {
+          if (!sibling) sibling = sn;
+        }
+      });
+      if (!sibling) return;
+      const sp = pos(sibling);
+      const c = pos(node);
+      const color = _branchColor(node, stableLeafOfNode);
+      const group = _svg("g", {
+        class: "history-edge-group",
+        "data-target-id": id,
+      });
+      group.appendChild(_svg("line", {
+        x1: sp.x, y1: sp.y, x2: c.x, y2: c.y,
+        stroke: color,
+        "stroke-width": 1.4,
+        "stroke-dasharray": "4 3",
+        opacity: 0.6,
+        "pointer-events": "none",
+        class: "history-edge",
+      }));
+      edgeG.appendChild(group);
+      return;
+    }
     const parent = tree.byId[conv_parent_id];
     const p = pos(parent);
     const c = pos(node);
