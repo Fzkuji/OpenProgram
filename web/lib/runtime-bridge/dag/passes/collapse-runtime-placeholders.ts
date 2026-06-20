@@ -52,7 +52,7 @@ export function _collapseRuntimePlaceholders(
   // dot above the lone surviving square. Fold it away.
   const convKidsOf: Record<string, GNode[]> = Object.create(null);
   graph.forEach((m) => {
-    const _lp = m.called_by || m.parent_id;
+    const _lp = m.called_by;
     if (_lp && byId[_lp]) {
       (convKidsOf[_lp] = convKidsOf[_lp] || []).push(m);
     }
@@ -89,7 +89,7 @@ export function _collapseRuntimePlaceholders(
     // which lane.py turns into a fork. Fold the anchor here so the
     // new user msg gets reparented onto the surviving code instead,
     // keeping the mini-DAG on a single trunk.
-    const _ap = p.called_by || p.parent_id;
+    const _ap = p.called_by;
     const anchor = _ap ? byId[_ap] : null;
     if (
       anchor
@@ -131,13 +131,13 @@ export function _collapseRuntimePlaceholders(
     // Walk up the chain of removed ancestors to find the topmost
     // one. That's the slot the surviving code should occupy.
     let topRemoved: GNode = p;
-    let cur: string | null = p.called_by || p.parent_id || null;
+    let cur: string | null = p.called_by || null;
     let hops = 0;
     while (cur && removeIds[cur] && hops < 32) {
       const n = byId[cur];
       if (!n) break;
       topRemoved = n;
-      cur = n.called_by || n.parent_id || null;
+      cur = n.called_by || null;
       hops++;
     }
     const tDelta = (topRemoved._tier ?? 0) - (code._tier ?? 0);
@@ -222,7 +222,7 @@ export function _collapseRuntimePlaceholders(
     let hops = 0;
     while (cur && removeIds[cur] && hops < 32) {
       const _n = byId[cur];
-      cur = (_n?.called_by || _n?.parent_id) || null;
+      cur = (_n?.called_by) || null;
       hops++;
     }
     return cur;
@@ -245,7 +245,7 @@ export function _collapseRuntimePlaceholders(
     // ``code → followup_user → reply`` — that way ``_mergeRuns`` no
     // longer sees code and the user-msg as siblings (which used to
     // make it migrate gui_step / conclusion onto the user dot).
-    const placeholderParent = m.called_by || m.parent_id || "";
+    const placeholderParent = m.called_by || "";
     if (placeholderParent && replaceWith[placeholderParent]) {
       const codeId = replaceWith[placeholderParent];
       const isSurvivingCode = m.id === codeId;
@@ -294,7 +294,7 @@ export function _collapseRuntimePlaceholders(
     if (!p.function) return;
     // Skip fn-form (anchor was also removed → topRemoved walked past
     // the placeholder; survivor already sits at anchor's slot).
-    const _pp = p.called_by || p.parent_id;
+    const _pp = p.called_by;
     if (_pp && removeIds[_pp]) return;
     const codeId = replaceWith[p.id];
     if (!codeId) return;

@@ -23,7 +23,7 @@ export function _collapseRuntimePairs(
   if (!graph || !graph.length) return { graph, headId };
   const childrenOf: Record<string, GNode[]> = Object.create(null);
   graph.forEach((m) => {
-    const _lp = m.called_by || m.parent_id;
+    const _lp = m.called_by;
     if (_lp) (childrenOf[_lp] = childrenOf[_lp] || []).push(m);
   });
   const removeIds: Record<string, boolean> = Object.create(null);
@@ -36,7 +36,7 @@ export function _collapseRuntimePairs(
     const c = kids[0];
     if (c.role !== "assistant" || c.display !== "runtime") return;
     removeIds[m.id] = true;
-    reparent[c.id] = m.called_by || m.parent_id || null;
+    reparent[c.id] = m.called_by || null;
     userToAsst[m.id] = c.id;
   });
   if (headId && userToAsst[headId]) headId = userToAsst[headId];

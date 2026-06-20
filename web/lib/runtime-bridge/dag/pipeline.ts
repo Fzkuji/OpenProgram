@@ -88,7 +88,7 @@ function _signature(graph: GNode[], headId: string | null): string {
   if (!graph || !graph.length) return "empty|" + (headId || "");
   const parts = graph.map(
     (m) =>
-      m.id + ":" + (m.called_by || m.parent_id || "") + ":" + (m.role || "") + ":" + (m.display || ""),
+      m.id + ":" + (m.called_by || "") + ":" + (m.role || "") + ":" + (m.display || ""),
   );
   parts.sort();
   return parts.join(",") + "|" + (headId || "");
@@ -198,7 +198,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const rootNode = tree.byId[rootId];
     const isRunNode = !!rootNode._runNode;
     if (rootNode.role !== "tool" && !isRunNode) return;
-    const owner = isRunNode ? rootId : (rootNode.called_by || rootNode.parent_id || null);
+    const owner = isRunNode ? rootId : (rootNode.called_by || null);
     const stack: string[] = [];
     if (isRunNode) {
       (rootNode.children || []).forEach((c) => {
@@ -320,8 +320,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const node = tree.byId[id];
     const isBranchRef = node.function === "attach" || node.function === "merge";
     const conv_parent_id = isBranchRef
-      ? (node.caller || node.called_by || node.parent_id)
-      : (node.called_by || node.parent_id);
+      ? (node.caller || node.called_by)
+      : (node.called_by);
     if (!conv_parent_id || !tree.byId[conv_parent_id]) return;
     const parent = tree.byId[conv_parent_id];
     const p = pos(parent);
@@ -415,7 +415,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       const n = tree.byId[k];
       if (n.function !== "attach") continue;
       const ac = n.caller || n.called_by || "";
-      const ap = n.called_by || n.parent_id || "";
+      const ap = n.called_by || "";
       if (ac === callerId || ap === callerId) {
         subTipId = String(n.attach_ref || "");
         break;
@@ -427,7 +427,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     while (cur && !seen[cur]) {
       seen[cur] = true;
       const nn: GNode | undefined = tree.byId[cur];
-      const pp: string | null | undefined = nn && (nn.called_by || nn.parent_id);
+      const pp: string | null | undefined = nn && (nn.called_by);
       if (!pp || !tree.byId[pp]) break;
       cur = pp;
     }

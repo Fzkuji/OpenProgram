@@ -27,7 +27,7 @@ export function _mergeRuns(
   });
   const kidsOf: Record<string, GNode[]> = Object.create(null);
   graph.forEach((m) => {
-    const pid = m.called_by || m.parent_id;
+    const pid = m.called_by;
     if (pid) (kidsOf[pid] = kidsOf[pid] || []).push(m);
   });
   const removeIds: Record<string, boolean> = Object.create(null);
@@ -76,7 +76,7 @@ export function _mergeRuns(
 
   const reparent: Record<string, string> = Object.create(null);
   graph.forEach((m) => {
-    const pid = m.called_by || m.parent_id;
+    const pid = m.called_by;
     if (!pid) return;
     if (m.id in internalOf) {
       if (removeIds[pid]) reparent[m.id] = internalOf[m.id];

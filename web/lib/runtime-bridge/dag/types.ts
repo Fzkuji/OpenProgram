@@ -74,9 +74,9 @@ export const LANE_COLORS = [
   "#d05fa0", // rose
 ];
 
-/** Layout parent: called_by (session DAG) with parent_id fallback. */
+/** Layout parent: called_by (session DAG). */
 export function layoutParent(n: GNode): string | null | undefined {
-  return n.called_by || n.parent_id;
+  return n.called_by;
 }
 
 export type HighlightMode = "viewport" | "context";
