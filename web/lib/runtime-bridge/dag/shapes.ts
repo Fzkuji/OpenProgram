@@ -69,23 +69,13 @@ export function _shapeFor(node: GNode): string {
 }
 
 export function _applyShapeSize(shape: SVGElement): void {
-  // Uniform node size — viewport visibility now ONLY toggles the
-  // white inner-fill (``.n-inner`` overlay), not the outer shape
-  // dimensions. Out-of-viewport nodes used to shrink, which made
-  // tiny squares like the top fn-form gui_agent hard to spot when
-  // chat had scrolled away from them.
-  const r = NODE_R + 1.8;
+  const R = NODE_R + 1.8;
   if (shape.tagName === "circle") {
-    shape.setAttribute("r", String(r));
+    shape.setAttribute("r", String(R));
   } else if (shape.tagName === "polygon") {
-    const t = r * 1.5;
-    const COS30 = 0.8660254;
-    shape.setAttribute(
-      "points",
-      "0," + -t + " " + t * COS30 + "," + t * 0.5 + " " + -t * COS30 + "," + t * 0.5,
-    );
+    shape.setAttribute("points", _regularPolygon(3, R * TRI_SCALE, -Math.PI / 2));
   } else if (shape.tagName === "rect") {
-    const s = r - 0.2;
+    const s = R * SQR_SCALE;
     shape.setAttribute("x", String(-s));
     shape.setAttribute("y", String(-s));
     shape.setAttribute("width", String(s * 2));
@@ -93,33 +83,37 @@ export function _applyShapeSize(shape: SVGElement): void {
   }
 }
 
+// Shape sizing: all shapes share the same reference circle of radius R.
+//   circle:   radius = R (the baseline)
+//   square:   half-side = R (edges touch the circle, corners poke out to R√2)
+//   triangle: circumradius = R * 1.35 (corners poke out, edges sit inside)
+//   diamond:  same as square, rotated 45°
+// This gives a balanced look: each shape's edges sit near the circle
+// boundary, with corners slightly outside.
+const STROKE_W = 3.0;
+const TRI_SCALE = 1.35;
+const SQR_SCALE = 1.0;
+
 export function _buildShapeEl(
   shape: string,
   color: string,
   r: number,
 ): SVGElement | null {
+  const common = { fill: "transparent", stroke: color, "stroke-width": String(STROKE_W) };
+
   if (shape === "circle") {
-    return _svg("circle", { r, fill: color });
+    return _svg("circle", { r, ...common });
   } else if (shape === "triangle") {
-    const t = r * 1.5;
-    const COS30 = 0.8660254;
-    return _svg("polygon", {
-      points:
-        "0," + -t + " " + t * COS30 + "," + t * 0.5 + " " + -t * COS30 + "," + t * 0.5,
-      fill: color,
-    });
+    const pts = _regularPolygon(3, r * TRI_SCALE, -Math.PI / 2);
+    return _svg("polygon", { points: pts, "stroke-linejoin": "round", ...common });
   } else if (shape === "square") {
-    // Sharp corners (rx=0) so a small function-call square reads as
-    // clearly DIFFERENT from a user-msg circle at the tight scale
-    // mini-DAG renders at — a 13×13 rect with rx=0.8 looked too round
-    // and users mistook collapsed function-call nodes for user dots.
-    const s = r - 0.2;
+    const s = r * SQR_SCALE;
     return _svg("rect", {
       x: -s, y: -s, width: s * 2, height: s * 2,
-      rx: 0, ry: 0, fill: color,
+      rx: 0, ry: 0, ...common,
     });
   } else if (shape === "square_outline") {
-    const s = r - 0.2;
+    const s = r * SQR_SCALE;
     return _svg("rect", {
       x: -s, y: -s, width: s * 2, height: s * 2,
       rx: 1.2, ry: 1.2,
@@ -128,13 +122,25 @@ export function _buildShapeEl(
       "stroke-dasharray": "3 2",
     });
   } else if (shape === "diamond") {
-    const t = r * 1.15;
-    return _svg("polygon", {
-      points: "0," + -t + " " + t + ",0 0," + t + " " + -t + ",0",
-      fill: color,
+    const s = r * SQR_SCALE;
+    return _svg("rect", {
+      x: -s, y: -s, width: s * 2, height: s * 2,
+      rx: 0.6, ry: 0.6,
+      transform: "rotate(45)",
+      "stroke-linejoin": "round",
+      ...common,
     });
   }
   return null;
+}
+
+function _regularPolygon(sides: number, r: number, startAngle: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < sides; i++) {
+    const a = startAngle + (2 * Math.PI * i) / sides;
+    pts.push(+(r * Math.cos(a)).toFixed(2) + "," + +(r * Math.sin(a)).toFixed(2));
+  }
+  return pts.join(" ");
 }
 
 export function _shapeTypeFromTag(tagName: string): string {

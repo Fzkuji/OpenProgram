@@ -16,7 +16,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { _applyShapeSize, _buildShapeEl, _shapeTypeFromTag, CURSOR_R } from "../shapes";
+import { _applyShapeSize } from "../shapes";
 import {
   _chatMutationWired,
   _chatScrollWired,
@@ -40,38 +40,17 @@ export function _applyVisibility(nodeEl: Element, visible: boolean): void {
   let shape: SVGElement | null = null;
   const kids = nodeEl.children;
   for (let i = 0; i < kids.length; i++) {
-    const c = kids[i];
+    const c = kids[i] as SVGElement;
     const tag = c.tagName;
     if (tag !== "circle" && tag !== "polygon" && tag !== "rect") continue;
-    if (c.getAttribute("fill") === "transparent") continue;
-    if (c.classList && c.classList.contains("n-inner")) continue;
-    shape = c as SVGElement;
+    // Skip the invisible hit-area circle (pointer-events=all).
+    if (c.getAttribute("pointer-events") === "all") continue;
+    shape = c;
     break;
   }
-  if (shape) _applyShapeSize(shape);
-  const inner = nodeEl.querySelector(".n-inner");
-  if (visible) {
-    if (!inner && shape) {
-      const shapeType = _shapeTypeFromTag(shape.tagName);
-      const built = _buildShapeEl(shapeType, "#ffffff", CURSOR_R);
-      if (built) {
-        built.setAttribute("class", "n-inner");
-        built.setAttribute(
-          "style",
-          "opacity: 0; transition: opacity 180ms ease; pointer-events: none;",
-        );
-        nodeEl.appendChild(built);
-        const el = built;
-        requestAnimationFrame(() => {
-          el.setAttribute(
-            "style",
-            "opacity: 1; transition: opacity 180ms ease; pointer-events: none;",
-          );
-        });
-      }
-    }
-  } else if (inner) {
-    inner.parentNode!.removeChild(inner);
+  if (shape) {
+    _applyShapeSize(shape);
+    shape.setAttribute("fill", visible ? "#ffffff" : "transparent");
   }
 }
 
