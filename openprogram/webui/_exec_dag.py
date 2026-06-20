@@ -310,10 +310,10 @@ def reconcile_interrupted_runs() -> int:
     return fixed
 
 
-# ── Session-level DAG (execution-graph.md step 8) ──────────────────
+# ── Session-level DAG (session-dag.md step 8) ──────────────────
 
 def build_session_dag(session_id: str) -> Optional[dict]:
-    """Build a TNode tree of the entire session's execution graph.
+    """Build a TNode tree of the entire session's session DAG.
 
     ROOT
       ├─ user  "hello"

@@ -1,5 +1,5 @@
 """ContextEngine._build_messages_from_dag — chat reads context via the
-compute_reads + render_dag_messages pipeline (execution-graph.md step 4).
+compute_reads + render_dag_messages pipeline (session-dag.md step 4).
 
 Verifies the two parity guards: no double-add of the trailing user message,
 and active-branch-only (sibling/fork branches don't leak in).

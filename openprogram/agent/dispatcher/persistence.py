@@ -192,7 +192,7 @@ def persist_assistant_message(
         # Update the placeholder row in place — same id, now with
         # final content + tool_calls/blocks. Writes Call fields
         # directly, skipping the _msg_to_node round-trip
-        # (execution-graph.md step 5).
+        # (session-dag.md step 5).
         try:
             from openprogram.store import GraphStoreShim
             _shim = GraphStoreShim(db, req.session_id)

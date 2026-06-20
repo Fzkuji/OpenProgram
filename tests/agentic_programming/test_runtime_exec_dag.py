@@ -134,7 +134,7 @@ def test_exec_without_store_writes_nothing():
 def test_exec_llm_node_lifecycle_running_then_completed(store):
     """One exec writes one llm node that ends up status=completed with the
     reply as output (opened running, closed on return). Status vocabulary
-    is unified with the chat path (execution-graph.md decision 2):
+    is unified with the chat path (session-dag.md decision 2):
     completed/error/cancelled, not success."""
     rt = _FakeRuntime(reply="done")
 

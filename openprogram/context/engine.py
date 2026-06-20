@@ -564,7 +564,7 @@ class DefaultContextEngine(ContextEngine):
         model: Any,
     ) -> list:
         """Build provider Message[] via compute_reads + render_dag_messages —
-        the SAME context pipeline runtime.exec uses (execution-graph.md
+        the SAME context pipeline runtime.exec uses (session-dag.md
         step 4). Chat thus reads context from the one DAG, frame=-1
         (top-level: all in-frame → full accumulation).
 

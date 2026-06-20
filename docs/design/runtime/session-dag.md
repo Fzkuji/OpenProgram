@@ -1,4 +1,4 @@
-# 执行图模型(execution-graph)—— 数据结构 + 上下文检索 + 两套合并(最终定稿)
+# Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)
 
 Status: **decided（最终模型，开始实现）** · Created: 2026-06-19 · Finalized: 2026-06-20
 
@@ -6,9 +6,9 @@ Status: **decided（最终模型，开始实现）** · Created: 2026-06-19 · F
 > 模型选型理由见 `docs/research/execution-trace-model-selection.md`(span 概念 + 创新点)。
 > 调用流程图见 `agent-call-flow.svg`(统一后的完整运行流程,含重试/审批/嵌套)。
 >
-> **可视化**:`execution-graph.svg`(① 一整张图真实会话 ② 上下文检索:聊天累加 vs 函数弹出 ③ 两种视图)。
+> **可视化**:`session-dag.svg`(① 一整张图真实会话 ② 上下文检索:聊天累加 vs 函数弹出 ③ 两种视图)。
 
-![模型可视化](execution-graph.svg)
+![模型可视化](session-dag.svg)
 
 ## 一、最终结论(一整张图)
 

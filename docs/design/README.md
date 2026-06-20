@@ -64,8 +64,7 @@ supporting notes / investigations that should not override it.
 | [`runtime/streaming-resume.md`](runtime/streaming-resume.md) | Streaming + resume |
 | [`runtime/revert-layers.md`](runtime/revert-layers.md) | Revert layers (commit / worktree) |
 | [`runtime/multi-agent-revert-todo.md`](runtime/multi-agent-revert-todo.md) | Multi-agent revert TODO |
-| [`runtime/execution-graph.md`](runtime/execution-graph.md) | **权威** history-record data model (one graph / 3 node roles / called_by / compute_reads) + merge impl design |
-| [`runtime/dag-node-model.md`](runtime/dag-node-model.md) | old node model — data semantics superseded by execution-graph.md; kept for graph_layout reference |
+| [`runtime/session-dag.md`](runtime/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / compute_reads）+ 两路径合并设计（8 步全完成） |
 | [`runtime/dispatcher-split.md`](runtime/dispatcher-split.md) | Dispatcher split design |
 
 ## providers/ — LLM providers, credentials, model catalog, thinking/effort
@@ -140,7 +139,7 @@ Extension gating design + reference comparison — see
 
 | Doc | Topic |
 |---|---|
-| [`usage-metering.md`](usage-metering.md) | Usage metering 子系统（token/cost 记账、ledger、收口点、子进程、消费层） |
+| [`usage.md`](usage.md) | Usage 子系统（token/cost 记账、ledger、收口点、子进程、消费层） |
 
 ## archive/
 

@@ -647,7 +647,7 @@ class Runtime:
         """Fill in the reply + terminal status on the running llm node
         opened by :meth:`_open_model_call_node`.
 
-        Per execution-graph.md decision 3, an llm node carries the SAME
+        Per session-dag.md decision 3, an llm node carries the SAME
         fields regardless of entry point: besides ``output`` + ``status``,
         an exec-path llm node now also records ``usage`` (token columns —
         a function call costs tokens just like chat) and ``blocks`` (the

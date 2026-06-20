@@ -1101,7 +1101,7 @@ def traced(fn):
 
     Unlike @agentic_function, this does NOT involve any LLM logic — it
     simply appends a placeholder code Call at entry and fills it in at
-    exit, so the function appears in the execution graph. No-op when no
+    exit, so the function appears in the session DAG. No-op when no
     ``_store`` is installed (standalone scripts).
 
     Usage:

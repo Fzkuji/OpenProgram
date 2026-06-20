@@ -256,7 +256,7 @@ def process_user_turn(
                                          default=str)
     if not req.user_already_persisted:
         # Write the user node as a Call directly — same shape the DAG
-        # uses everywhere (execution-graph.md step 5). GraphStoreShim
+        # uses everywhere (session-dag.md step 5). GraphStoreShim
         # .append already calls set_head for non-caller nodes, so no
         # separate set_head needed.
         try:

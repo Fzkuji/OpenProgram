@@ -315,7 +315,7 @@ def register(app):
 
     @app.get("/api/sessions/{session_id}/dag")
     async def get_session_dag(session_id: str):
-        """Full session execution graph as a TNode tree (step 8)."""
+        """Full session session DAG as a TNode tree (step 8)."""
         from openprogram.webui._exec_dag import build_session_dag
         tree = build_session_dag(session_id)
         if tree is None:

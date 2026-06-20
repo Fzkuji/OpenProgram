@@ -8,7 +8,7 @@ Status: design · Created: 2026-06-18
 
 [`agent-call-flow.svg`](agent-call-flow.svg) 画的是**目标(统一后)**:两个入口(用户消息 / 函数体内)汇到**同一条主干**——① compute_reads 读上下文 → ② open_call_node → ③ agent_loop → ④ close_call_node;工具体内再调 exec = 回到主干顶(嵌套)。各入口的特殊处理(聊天的前端流式/标题/压缩、共享的重试/计量)是挂在主干旁的**可选钩子**。底部列出"现状已共享"与"合并要做的 7 步"。
 
-> **现状 vs 目标**:下面正文描述的是**现状**(两个入口各管各的外围、各写各的记录,只在 agent_loop 汇合)——作为合并的起点参照。统一成上面那条主干的具体步骤,见 `execution-graph.md` 第八节。
+> **现状 vs 目标**:下面正文描述的是**现状**(两个入口各管各的外围、各写各的记录,只在 agent_loop 汇合)——作为合并的起点参照。统一成上面那条主干的具体步骤,见 `session-dag.md` 第八节。
 
 骨架一句话(现状):**两个平级入口(dispatcher · runtime.exec)各管各的外围、各写各的 DAG 记录,只在共享的 agent_loop 汇合;exec 在 loop 之下 → 工具体内可再调 LLM 形成嵌套**。
 

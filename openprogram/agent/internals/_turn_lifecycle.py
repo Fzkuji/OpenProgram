@@ -62,7 +62,7 @@ def insert_placeholder(
     falls back to the legacy append-on-finish path).
 
     Writes a Call(role=ROLE_LLM) directly — same shape runtime.exec
-    uses via _open_model_call_node (execution-graph.md step 5).
+    uses via _open_model_call_node (session-dag.md step 5).
     """
     try:
         from openprogram.context.nodes import Call, ROLE_LLM

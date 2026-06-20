@@ -120,4 +120,4 @@ span = { id, parent_id, name/kind, start, end, status, attributes, events[] }
 ## 跟设计文档的关系
 
 本文是**选型调研**(为什么走 span)。具体的数据模型 + 上下文检索 + 两套调用路径合并的实现设计,
-在 `docs/design/runtime/execution-graph.md`(权威);调用流程骨架在 `agent-call-flow.md`。
+在 `docs/design/runtime/session-dag.md`(权威);调用流程骨架在 `agent-call-flow.md`。
