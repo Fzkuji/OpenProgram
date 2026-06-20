@@ -298,12 +298,21 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     _col += (_visibleLaneTiers[ln] || 0) + 1;
   }
 
+  // Compact depth mapping: collapse gaps from folded subtrees.
+  const _visibleDepths = Array.from(new Set(
+    graph.map((n) => typeof n._depth === "number" ? n._depth : 0),
+  )).sort((a, b) => a - b);
+  const _depthToRow: Record<number, number> = Object.create(null);
+  _visibleDepths.forEach((d, i) => { _depthToRow[d] = i; });
+
   function pos(n: GNode): { x: number; y: number } {
     const tier = typeof n._tier === "number" ? n._tier : 0;
     const laneCol = _laneToCol[n._lane || 0] || 0;
+    const d = typeof n._depth === "number" ? n._depth : 0;
+    const row = _depthToRow[d] ?? d;
     return {
       x: PAD_X + (laneCol + tier) * COL_W,
-      y: PAD_Y + (n._depth || 0) * ROW_H,
+      y: PAD_Y + row * ROW_H,
     };
   }
 

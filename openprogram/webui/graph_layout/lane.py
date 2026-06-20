@@ -49,19 +49,11 @@ def compute_lane(
             return
         lane[nid] = my_lane
 
-        # Walk called_by children. Each child inherits our lane
-        # UNLESS it's a fork sibling (shares parent_id with another
-        # node) and not the first — then it gets a new lane.
+        # Walk called_by children. Children with called_by always
+        # inherit the parent's lane (they're part of the trunk).
+        # Fork detection only applies to nodes WITHOUT called_by
+        # (handled in the remaining pass below).
         for kid in call_children.get(nid, []):
-            kid_m = by_id.get(kid, {})
-            kid_pid = parent_id_of(by_id, kid_m)
-
-            # Check if this kid is part of a fork
-            if kid_pid and kid_pid in fork_siblings:
-                siblings = fork_siblings[kid_pid]
-                if len(siblings) > 1 and kid not in first_at_fork:
-                    _walk(kid, alloc.alloc())
-                    continue
             _walk(kid, my_lane)
 
     # Start from ROOT (display=root) only
