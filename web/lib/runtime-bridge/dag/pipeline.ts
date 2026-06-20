@@ -321,8 +321,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const node = tree.byId[id];
     const isBranchRef = node.function === "attach" || node.function === "merge";
     const conv_parent_id = isBranchRef
-      ? (node.caller || node.called_by)
-      : (node.called_by);
+      ? (node.caller || node.called_by || node.parent_id)
+      : (node.called_by || node.parent_id);
     if (!conv_parent_id || !tree.byId[conv_parent_id]) return;
     const parent = tree.byId[conv_parent_id];
     const p = pos(parent);
