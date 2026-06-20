@@ -317,90 +317,109 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     };
   }
 
+  // ── Tree-style edges: vertical trunk lines + horizontal branches ──
+  // For each parent with called_by children on the same lane: draw ONE
+  // continuous vertical line from the parent down to the last child's
+  // row, then a short horizontal line from the trunk to each child.
+  // Fork siblings (different lane, no called_by) get a horizontal
+  // dashed line to their first sibling.
+
+  // Group children by their called_by parent (same lane only)
+  const trunkChildren: Record<string, string[]> = Object.create(null);
+  const forkNodes: string[] = [];
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
-    const isBranchRef = node.function === "attach" || node.function === "merge";
-    let conv_parent_id = isBranchRef
-      ? (node.caller || node.called_by)
-      : (node.called_by);
-    if (!conv_parent_id || !tree.byId[conv_parent_id]) {
-      // Fork branch: no called_by. Find the first sibling that shares
-      // the same parent_id (the "original" at this fork point) and draw
-      // a horizontal dashed line to it instead of a parent→child edge.
-      const pid = node.parent_id;
-      if (!pid) return;
-      let sibling: GNode | null = null;
-      Object.keys(tree.byId).forEach((sid) => {
-        if (sid === id) return;
-        const sn = tree.byId[sid];
-        if (sn.parent_id === pid && (sn._lane || 0) !== (node._lane || 0)) {
-          if (!sibling) sibling = sn;
-        }
-      });
-      if (!sibling) return;
-      const sp = pos(sibling);
-      const c = pos(node);
-      const color = _branchColor(node, stableLeafOfNode);
-      const group = _svg("g", {
-        class: "history-edge-group",
-        "data-target-id": id,
-      });
-      group.appendChild(_svg("line", {
-        x1: sp.x, y1: sp.y, x2: c.x, y2: c.y,
+    const parentId = node.called_by;
+    if (parentId && tree.byId[parentId]) {
+      const parent = tree.byId[parentId];
+      if ((node._lane || 0) === (parent._lane || 0)) {
+        (trunkChildren[parentId] = trunkChildren[parentId] || []).push(id);
+        return;
+      }
+    }
+    // No called_by or different lane = fork branch
+    if (!parentId && node.parent_id) {
+      forkNodes.push(id);
+    }
+  });
+
+  // Draw trunk lines + horizontal branches
+  Object.keys(trunkChildren).forEach((parentId) => {
+    const parent = tree.byId[parentId];
+    if (!parent) return;
+    const kids = trunkChildren[parentId];
+    const p = pos(parent);
+    const color = _branchColor(parent, stableLeafOfNode);
+    const nr = NODE_R + 2;
+
+    // Find the last child's y position for the vertical trunk
+    let lastY = p.y;
+    for (const kid of kids) {
+      const kp = pos(tree.byId[kid]);
+      if (kp.y > lastY) lastY = kp.y;
+    }
+
+    // Vertical trunk line from parent down to last child's row
+    if (lastY > p.y) {
+      edgeG.appendChild(_svg("line", {
+        x1: p.x, y1: p.y, x2: p.x, y2: lastY,
         stroke: color,
-        "stroke-width": 1.4,
-        "stroke-dasharray": "4 3",
-        opacity: 0.6,
+        "stroke-width": 1.6,
+        "stroke-linecap": "round",
         "pointer-events": "none",
         class: "history-edge",
       }));
-      edgeG.appendChild(group);
-      return;
     }
-    const parent = tree.byId[conv_parent_id];
-    const p = pos(parent);
+
+    // Horizontal branch from trunk to each child
+    for (const kid of kids) {
+      const kn = tree.byId[kid];
+      const kp = pos(kn);
+      if (kp.x !== p.x) {
+        const endX = kp.x > p.x ? kp.x - nr : kp.x + nr;
+        edgeG.appendChild(_svg("line", {
+          x1: p.x, y1: kp.y, x2: endX, y2: kp.y,
+          stroke: color,
+          "stroke-width": 1.6,
+          "stroke-linecap": "round",
+          "pointer-events": "none",
+          class: "history-edge",
+        }));
+      }
+    }
+  });
+
+  // Fork sibling dashed lines
+  for (const id of forkNodes) {
+    const node = tree.byId[id];
+    if (!node) continue;
+    const pid = node.parent_id;
+    if (!pid) continue;
+    let sibling: GNode | null = null;
+    Object.keys(tree.byId).forEach((sid) => {
+      if (sid === id) return;
+      const sn = tree.byId[sid];
+      if (sn.parent_id === pid && (sn._lane || 0) !== (node._lane || 0)) {
+        if (!sibling) sibling = sn;
+      }
+    });
+    if (!sibling) continue;
+    const sp = pos(sibling);
     const c = pos(node);
+    const nr = NODE_R + 2;
+    const startX = sp.x + nr;
+    const endX = c.x - nr;
     const color = _branchColor(node, stableLeafOfNode);
-    const onHead = headAncestors[id] && headAncestors[conv_parent_id];
-    const isBranch = (node._lane || 0) !== (parent._lane || 0);
-    const pathFn = isBranch ? _edgePath : _treeEdgePath;
-    const group = _svg("g", {
-      class:
-        "history-edge-group"
-        + (onHead ? " on-head" : "")
-        + (_contextSet && !_contextSet[id] ? " out-of-context" : ""),
-      "data-target-id": id,
-    });
-    const hit = _svg("path", {
-      d: pathFn(p.x, p.y, c.x, c.y),
-      stroke: "transparent",
-      "stroke-width": 14,
-      fill: "none",
-      "pointer-events": "stroke",
-      class: "history-edge-hit",
-    });
-    (hit as SVGGraphicsElement).style.cursor = "pointer";
-    hit.addEventListener("dblclick", (ev) => {
-      ev.stopPropagation();
-      _onEdgeDblclick(id);
-    });
-    group.appendChild(hit);
-    const edgeAttrs: Record<string, string | number> = {
-      d: pathFn(p.x, p.y, c.x, c.y),
+    edgeG.appendChild(_svg("line", {
+      x1: startX, y1: sp.y, x2: endX, y2: c.y,
       stroke: color,
-      "stroke-width": onHead ? 2 : 1.6,
-      fill: "none",
-      "stroke-linecap": "round",
-      opacity: onHead ? 1 : 0.85,
+      "stroke-width": 1.4,
+      "stroke-dasharray": "4 3",
+      opacity: 0.6,
       "pointer-events": "none",
       class: "history-edge",
-    };
-    if (isBranch) {
-      edgeAttrs["stroke-dasharray"] = "4 3";
-    }
-    group.appendChild(_svg("path", edgeAttrs));
-    edgeG.appendChild(group);
-  });
+    }));
+  }
 
   // Attach-reference edges: dashed line from source branch tip to the
   // attach pointer. Marching-ants animation (CSS) carries direction.
