@@ -34,6 +34,21 @@ def annotate_graph(
     depth = compute_depth(by_id, call_children)
     lane, alloc = compute_lane(by_id, call_children, fork_siblings, head_id)
 
+    # Spread lanes so each branch has room for its tier width.
+    # lane=0 with max_tier=1 occupies columns 0-1; lane=1 starts at 2.
+    lane_groups: dict[int, int] = {}  # lane_id → max tier in that lane
+    for nid, ln in lane.items():
+        t = tier.get(nid, 0)
+        lane_groups[ln] = max(lane_groups.get(ln, 0), t)
+    sorted_lanes = sorted(lane_groups.keys())
+    lane_offset: dict[int, int] = {}
+    col = 0
+    for ln in sorted_lanes:
+        lane_offset[ln] = col
+        col += lane_groups[ln] + 1  # +1 for the lane's own column
+    for nid in lane:
+        lane[nid] = lane_offset.get(lane[nid], lane[nid])
+
     for m in visible:
         nid = m["id"]
         m["_depth"] = depth.get(nid, 0)

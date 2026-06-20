@@ -1,9 +1,8 @@
 """Depth (row index) per node.
 
-ROOT (display=root) is the only true root, depth=0.
-DFS pre-order from ROOT over call_children.
-Fork branches (no called_by, found via parent_id) start at the
-same depth as the first sibling at the fork point.
+Main trunk: DFS pre-order with a global counter — each node gets the
+next row. Fork branches start at the same row as their first sibling
+and their subtrees grow downward independently.
 """
 from __future__ import annotations
 
@@ -17,19 +16,30 @@ def compute_depth(
     depth: dict[str, float] = {}
     counter = [0]
 
-    def _walk(nid: str, start_depth: "float | None" = None) -> None:
+    def _walk_dfs(nid: str) -> None:
+        """DFS walk using global counter — for the main trunk."""
         if nid in depth:
             return
-        if start_depth is not None:
-            depth[nid] = start_depth
-            counter[0] = max(counter[0], int(start_depth) + 1)
-        else:
-            depth[nid] = counter[0]
-            counter[0] += 1
+        depth[nid] = counter[0]
+        counter[0] += 1
         for kid in call_children.get(nid, []):
-            _walk(kid)
+            _walk_dfs(kid)
 
-    # Only display=root nodes are true roots
+    def _walk_branch(nid: str, start: float) -> None:
+        """Walk a branch subtree starting at a fixed depth, then
+        incrementing for each called_by child."""
+        if nid in depth:
+            return
+        depth[nid] = start
+        d = start + 1
+        for kid in call_children.get(nid, []):
+            if kid not in depth:
+                depth[kid] = d
+                d += 1
+                for grandkid in call_children.get(kid, []):
+                    _walk_branch(grandkid, depth[kid] + 1)
+
+    # Main trunk: DFS from ROOT
     roots = sorted(
         (nid for nid, m in by_id.items() if is_root(m)),
         key=lambda x: ts(by_id, x),
@@ -41,10 +51,9 @@ def compute_depth(
             key=lambda x: ts(by_id, x),
         )
     for r in roots:
-        _walk(r)
+        _walk_dfs(r)
 
-    # Fork branches: nodes without called_by that have a parent_id.
-    # Position at the same depth as the first sibling at that fork.
+    # Fork branches: align with first sibling, grow independently
     remaining = sorted(
         (nid for nid in by_id if nid not in depth),
         key=lambda x: ts(by_id, x),
@@ -54,19 +63,17 @@ def compute_depth(
             continue
         m = by_id[nid]
         pid = parent_id_of(by_id, m)
+        start = 0
         if pid and pid in depth:
-            first_sibling_depth = None
+            # Find the first sibling's depth
             for other_nid, other_m in by_id.items():
                 if other_nid == nid:
                     continue
                 if parent_id_of(by_id, other_m) == pid and other_nid in depth:
-                    first_sibling_depth = depth[other_nid]
+                    start = depth[other_nid]
                     break
-            if first_sibling_depth is not None:
-                _walk(nid, first_sibling_depth)
             else:
-                _walk(nid, depth[pid] + 1)
-        else:
-            _walk(nid)
+                start = depth[pid] + 1
+        _walk_branch(nid, start)
 
     return depth
