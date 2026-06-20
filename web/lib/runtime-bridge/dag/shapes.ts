@@ -61,15 +61,15 @@ export function _shapeFor(node: GNode): string {
   const role = node.role;
   const fn = node.function;
   if (fn && BRANCH_OP_FUNCTIONS.has(fn)) return "square_outline";
-  if (
-    node.display === "runtime"
-    && fn
-    && !BRANCH_OP_FUNCTIONS.has(fn)
-  ) {
-    return "square";
-  }
+  // display=runtime nodes are function calls (square), not user msgs
+  if (node.display === "runtime") return "square";
+  // tool = function call → square
   if (role === "tool") return "square";
+  // assistant with a function = RuntimeBlock placeholder → square
+  if (role === "assistant" && fn) return "square";
+  // assistant without function = LLM reply → triangle
   if (role === "assistant") return "triangle";
+  // user = real user message → circle
   if (role === "user") return "circle";
   return "circle";
 }
