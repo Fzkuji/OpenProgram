@@ -27,6 +27,13 @@ def build_children(
         ca = caller_of(by_id, m)
         if ca:
             call_children.setdefault(ca, []).append(nid)
+        # ROOT's children (user nodes) also register as conv-children
+        # of their parent_id target — so fork detection (two user nodes
+        # branching from the same llm reply) still works.
+        if ca and (by_id.get(ca, {}).get("display") == "root"):
+            pid = m.get("parent_id")
+            if pid and pid in by_id and pid != nid:
+                conv_children.setdefault(pid, []).append(nid)
     for kids in conv_children.values():
         kids.sort(key=lambda x: ts(by_id, x))
     for kids in call_children.values():
