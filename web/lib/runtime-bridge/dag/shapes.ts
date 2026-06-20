@@ -51,6 +51,7 @@ const BRANCH_OP_FUNCTIONS = new Set([
 ]);
 
 export function _shapeFor(node: GNode): string {
+  if (node.display === "root") return "diamond";
   const role = node.role;
   const fn = node.function;
   if (fn && BRANCH_OP_FUNCTIONS.has(fn)) return "square_outline";

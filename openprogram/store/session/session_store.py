@@ -734,7 +734,10 @@ class SessionStore:
         if pair is None:
             return []
         _git, idx = pair
-        msgs = [_node_to_msg(n, session_id) for n in idx.all_nodes()]
+        msgs = [
+            _node_to_msg(n, session_id) for n in idx.all_nodes()
+            if (n.metadata or {}).get("display") != "root"
+        ]
         if limit is not None:
             msgs = msgs[-limit:]
         return msgs
@@ -758,7 +761,10 @@ class SessionStore:
             return _node_conv_predecessor(node) or _node_caller(node) or None
 
         chain = idx.get_branch(head, _edge)
-        return [_node_to_msg(n, session_id) for n in chain]
+        return [
+            _node_to_msg(n, session_id) for n in chain
+            if (n.metadata or {}).get("display") != "root"
+        ]
 
     # ── Head ──────────────────────────────────────────────────
 

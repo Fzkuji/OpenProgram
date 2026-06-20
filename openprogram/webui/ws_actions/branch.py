@@ -206,6 +206,21 @@ def build_branches_payload(session_id: str | None) -> dict:
                         _called_by_map[_n.id] = _n.called_by
             except Exception:
                 pass
+            # Include ROOT node in graph if it exists.
+            _root_node = next(
+                (n for n in _nodes if (n.metadata or {}).get("display") == "root"),
+                None,
+            ) if _nodes else None
+            if _root_node:
+                graph.append({
+                    "id": _root_node.id,
+                    "parent_id": "",
+                    "called_by": "",
+                    "caller": "",
+                    "role": "user",
+                    "display": "root",
+                    "preview": "ROOT",
+                })
             for m in full_msgs:
                 content = m.get("content") or ""
                 preview = content.strip().replace("\n", " ")
