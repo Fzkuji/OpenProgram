@@ -63,10 +63,21 @@ export function _applyCollapse(graph: GNode[]): {
   const AUTO_COLLAPSE_THRESHOLD = 4;
   graph.forEach((m) => {
     if (!collapsible(m)) return;
+    // Re-evaluate if status changed from running to completed
+    if (_seenCollapsible[m.id] && m.status !== "running") {
+      if (!_collapsed[m.id]) {
+        // Was skipped while running, now evaluate for collapse
+        delete _seenCollapsible[m.id];
+      } else {
+        return;
+      }
+    }
     if (_seenCollapsible[m.id]) return;
     _seenCollapsible[m.id] = true;
     const kidCount = (callerKidsOf[m.id] || []).length;
-    if (m.role === "tool" && kidCount > 0) {
+    if (m.status === "running") {
+      // Don't auto-collapse running nodes — show live progress
+    } else if (m.role === "tool" && kidCount > 0) {
       _collapsed[m.id] = true;
     } else if (kidCount > AUTO_COLLAPSE_THRESHOLD) {
       _collapsed[m.id] = true;

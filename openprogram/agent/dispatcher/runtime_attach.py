@@ -100,7 +100,7 @@ def _wrap_agentic_runtime_block(
         }
         db = default_db()
         try:
-            from openprogram.context.nodes import Call, ROLE_CODE
+            from openprogram.context.nodes import Call, ROLE_LLM
             from openprogram.store import GraphStoreShim as _GShim
 
             _rt_meta = {
@@ -112,7 +112,7 @@ def _wrap_agentic_runtime_block(
             _rt_node = Call(
                 id=runtime_id,
                 created_at=now,
-                role=ROLE_CODE,
+                role=ROLE_LLM,
                 name=tool_name,
                 output=None,
                 called_by=assistant_msg_id,
