@@ -42,6 +42,7 @@ import {
   _branchColor,
   _buildShapeEl,
   _edgePath,
+  _treeEdgePath,
   _shapeFor,
   _svg,
 } from "./shapes";
@@ -328,6 +329,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const c = pos(node);
     const color = _branchColor(node, stableLeafOfNode);
     const onHead = headAncestors[id] && headAncestors[conv_parent_id];
+    const isBranch = (node._lane || 0) !== (parent._lane || 0);
+    const pathFn = isBranch ? _edgePath : _treeEdgePath;
     const group = _svg("g", {
       class:
         "history-edge-group"
@@ -336,7 +339,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       "data-target-id": id,
     });
     const hit = _svg("path", {
-      d: _edgePath(p.x, p.y, c.x, c.y),
+      d: pathFn(p.x, p.y, c.x, c.y),
       stroke: "transparent",
       "stroke-width": 14,
       fill: "none",
@@ -349,8 +352,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       _onEdgeDblclick(id);
     });
     group.appendChild(hit);
-    group.appendChild(_svg("path", {
-      d: _edgePath(p.x, p.y, c.x, c.y),
+    const edgeAttrs: Record<string, string | number> = {
+      d: pathFn(p.x, p.y, c.x, c.y),
       stroke: color,
       "stroke-width": onHead ? 2 : 1.6,
       fill: "none",
@@ -358,7 +361,11 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       opacity: onHead ? 1 : 0.85,
       "pointer-events": "none",
       class: "history-edge",
-    }));
+    };
+    if (isBranch) {
+      edgeAttrs["stroke-dasharray"] = "4 3";
+    }
+    group.appendChild(_svg("path", edgeAttrs));
     edgeG.appendChild(group);
   });
 

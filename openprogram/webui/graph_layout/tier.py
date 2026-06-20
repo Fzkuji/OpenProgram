@@ -35,7 +35,12 @@ def compute_tier(by_id: dict[str, dict]) -> dict[str, int]:
             return t
         ca = caller_of(by_id, m)
         if ca:
-            t = _t(ca, depth + 1) + 1
+            ca_node = by_id.get(ca)
+            # ROOT→child is organizational, not a sub-call: same tier.
+            if ca_node and (ca_node.get("display") == "root"):
+                t = _t(ca, depth + 1)
+            else:
+                t = _t(ca, depth + 1) + 1
         else:
             cp = conv_parent_of(by_id, m)
             t = _t(cp, depth + 1) if cp else 0
