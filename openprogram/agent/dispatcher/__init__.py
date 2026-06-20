@@ -254,6 +254,19 @@ def process_user_turn(
                 })
         user_msg["extra"] = json.dumps({"attachments": manifest},
                                          default=str)
+    # Ensure ROOT node exists (session DAG root). Idempotent.
+    _ROOT_ID = "ROOT"
+    try:
+        from openprogram.context.nodes import Call as _RCall, ROLE_USER as _RU
+        from openprogram.store import GraphStoreShim as _GShim0
+        if not db.message_exists(req.session_id, _ROOT_ID):
+            _GShim0(db, req.session_id).append(_RCall(
+                id=_ROOT_ID, created_at=time.time(), role=_RU,
+                output="", metadata={"display": "root"},
+            ))
+    except Exception:
+        pass
+
     if not req.user_already_persisted:
         # Write the user node as a Call directly — same shape the DAG
         # uses everywhere (session-dag.md step 5). GraphStoreShim
@@ -262,19 +275,6 @@ def process_user_turn(
         try:
             from openprogram.context.nodes import Call, ROLE_USER
             from openprogram.store import GraphStoreShim as _GShim
-
-            _shim = _GShim(db, req.session_id)
-
-            # Ensure ROOT node exists (session DAG root).
-            _ROOT_ID = "ROOT"
-            if not db.message_exists(req.session_id, _ROOT_ID):
-                _shim.append(Call(
-                    id=_ROOT_ID,
-                    created_at=time.time(),
-                    role=ROLE_USER,
-                    output="",
-                    metadata={"display": "root"},
-                ))
 
             _user_meta = {
                 k: v for k, v in user_msg.items()

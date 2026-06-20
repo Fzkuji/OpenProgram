@@ -33,7 +33,7 @@ from typing import Any, Optional
 
 _log = logging.getLogger(__name__)
 
-from openprogram.context.nodes import Call
+from openprogram.context.nodes import Call, ROLE_USER
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
 # tests covering edge cases (sub-call routing, extra_json roundtrip) still hold.
 from ._msg_adapter import (
@@ -802,6 +802,7 @@ class SessionStore:
         roots = [
             n for n in idx.all_nodes()
             if not n.called_by and not _node_conv_predecessor(n)
+            and (n.metadata or {}).get("display") != "root"
         ]
         main_tip_id: Optional[str] = None
         if roots:
@@ -867,6 +868,8 @@ class SessionStore:
             pass
         for node in idx.all_nodes():
             if node.called_by:
+                continue
+            if (node.metadata or {}).get("display") == "root":
                 continue
             # Attach-pointer rows ride the assistant role but are
             # side-calls, not real branch tips. Old writes didn't

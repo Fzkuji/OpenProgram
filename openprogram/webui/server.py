@@ -325,32 +325,24 @@ def _save_session(session_id: str):
                     return
             except Exception:
                 pass
-        root_ctx = conv.get("root_context")
         runtime = conv.get("runtime")
-        agent_id = conv.get("agent_id") or _default_agent_id()
+        from openprogram.agent.session_db import default_db as _save_db
+        _db_sess = _save_db().get_session(session_id)
+        agent_id = (_db_sess or {}).get("agent_id") or _default_agent_id()
         meta = {
             "id": session_id,
             "agent_id": agent_id,
-            "title": conv.get("title", "Untitled"),
             "provider_name": conv.get("provider_name"),
             "provider_override": conv.get("provider_override"),
             "model_override": conv.get("model_override"),
             "session_id": getattr(runtime, "_session_id", None),
             "model": getattr(runtime, "model", None),
-            "created_at": conv.get("created_at"),
             "context_tree": None,
             "_chat_usage": conv.get("_chat_usage"),
             "_last_context_stats": conv.get("_last_context_stats"),
-            "_titled": conv.get("_titled", False),
             "_last_exec_session": conv.get("_last_exec_session"),
             "_last_exec_cumulative_usage": conv.get("_last_exec_cumulative_usage"),
             "head_id": conv.get("head_id"),
-            # Channel-bound sessions carry these from dispatch_inbound;
-            # persist them so outbound routing still works after reload.
-            "channel": conv.get("channel"),
-            "account_id": conv.get("account_id"),
-            "peer": conv.get("peer"),
-            "peer_display": conv.get("peer_display"),
             "tools_enabled": conv.get("tools_enabled"),
             "tools_override": conv.get("tools_override"),
             "thinking_effort": conv.get("thinking_effort"),
@@ -446,26 +438,16 @@ def _restore_sessions():
             with _sessions_lock:
                 _sessions[session_id] = {
                     "id": session_id,
-                    "agent_id": agent_id,
-                    "title": data.get("title", "Untitled"),
-                    "root_context": root_ctx,
                     "runtime": runtime,
                     "provider_name": provider_override or None,
                     "provider_override": provider_override,
                     "model_override": model_override,
                     "messages": msgs,
-                    "created_at": data.get("created_at", time.time()),
-                    "_titled": data.get("_titled", True),
                     "_chat_usage": data.get("_chat_usage"),
                     "_last_context_stats": data.get("_last_context_stats"),
                     "_last_exec_session": data.get("_last_exec_session"),
                     "_last_exec_cumulative_usage": data.get("_last_exec_cumulative_usage"),
                     "head_id": head_id,
-                    "run_active": False,
-                    "channel": data.get("channel"),
-                    "account_id": data.get("account_id"),
-                    "peer": data.get("peer"),
-                    "peer_display": data.get("peer_display"),
                 }
             _log(f"[restore] agent={agent_id} session={session_id}: "
                  f"{data.get('title')} (runtime_session={runtime_session_id})")
@@ -730,31 +712,13 @@ def _get_or_create_session(session_id: str = None,
             )
             _sessions[session_id] = {
                 "id": session_id,
-                "agent_id": resolved_agent,
-                "title": ((_sess or {}).get("title") if isinstance(_sess, dict) else None)
-                         or "New conversation",
-                "root_context": None,  # tree Context retired
                 "runtime": None,          # created lazily on first message
                 "provider_name": ((_sess or {}).get("provider_name") if isinstance(_sess, dict) else None)
                                  or _inherit_prov,
                 "provider_override": _inherit_prov,
                 "model_override": _inherit_model,
                 "messages": _hydrated,
-                "created_at": ((_sess or {}).get("created_at") if isinstance(_sess, dict) else None)
-                              or time.time(),
                 "head_id": _hydrated_head,
-                "run_active": False,
-                "source": ((_sess or {}).get("source") if isinstance(_sess, dict) else None),
-                "channel": channel
-                          if channel is not None
-                          else ((_sess or {}).get("channel") if isinstance(_sess, dict) else None),
-                "account_id": account_id
-                              if account_id is not None
-                              else ((_sess or {}).get("account_id") if isinstance(_sess, dict) else None),
-                "peer": peer
-                        if peer is not None
-                        else ((_sess or {}).get("peer") if isinstance(_sess, dict) else None),
-                "peer_display": ((_sess or {}).get("peer_display") if isinstance(_sess, dict) else None),
                 "tools_enabled": ((_sess or {}).get("tools_enabled") if isinstance(_sess, dict) else None),
                 "tools_override": ((_sess or {}).get("tools_override") if isinstance(_sess, dict) else None),
                 "thinking_effort": ((_sess or {}).get("thinking_effort") if isinstance(_sess, dict) else None),
@@ -853,9 +817,11 @@ def _append_msg(conv: dict, msg: dict) -> None:
         db = default_db()
         if db.get_session(cid) is None:
             create_kwargs = {}
-            # Channel binding + presentational fields.
-            for fld in ("channel", "account_id", "peer", "peer_display", "source", "title"):
-                v = conv.get(fld)
+            # Channel binding + presentational fields — these no longer
+            # live in the _sessions dict, so pull from the message itself
+            # or from run-config fields still on the dict.
+            for fld in ("source", "peer_display"):
+                v = msg.get(fld)
                 if v:
                     create_kwargs[fld] = v
             # Per-session run config — these used to be written via
@@ -867,8 +833,31 @@ def _append_msg(conv: dict, msg: dict) -> None:
                 v = conv.get(fld)
                 if v is not None:
                     create_kwargs[fld] = v
-            db.create_session(cid, conv.get("agent_id") or _default_agent_id(), **create_kwargs)
-        db.append_message(cid, msg)
+            db.create_session(cid, msg.get("agent_id") or _default_agent_id(), **create_kwargs)
+        # Ensure ROOT node + user called_by=ROOT for session DAG.
+        if msg.get("role") == "user":
+            try:
+                from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
+                from openprogram.store import GraphStoreShim as _GS
+                _ROOT_ID = "ROOT"
+                if not db.message_exists(cid, _ROOT_ID):
+                    _GS(db, cid).append(_C(
+                        id=_ROOT_ID, role=_RU, output="",
+                        metadata={"display": "root"},
+                    ))
+                _GS(db, cid).append(_C(
+                    id=msg_id,
+                    role=_RU,
+                    output=msg.get("content") or "",
+                    called_by=_ROOT_ID,
+                    metadata={k: v for k, v in msg.items()
+                              if k not in {"id", "role", "content", "timestamp"}
+                              and v is not None},
+                ))
+            except Exception:
+                db.append_message(cid, msg)
+        else:
+            db.append_message(cid, msg)
         db.set_head(cid, msg_id)
     except Exception as e:
         _log(f"_append_msg: SessionDB write failed for {cid}/{msg_id}: {e}")
@@ -1026,23 +1015,9 @@ async def _websocket_handler(ws):
     with _ws_lock:
         _ws_connections.append(ws)
     try:
-        # Send current state on connect. ``full_tree`` is kept as an
-        # empty payload for protocol compatibility — execution traces
-        # are now DAG nodes stored in SessionDB.
-        await ws.send_text(json.dumps(
-            {"type": "full_tree", "data": []}, default=str
-        ))
         functions = _discover_functions()
         await ws.send_text(json.dumps(
             {"type": "functions_list", "data": functions}, default=str
-        ))
-        with _sessions_lock:
-            history = [
-                {"id": c["id"], "title": c["title"], "created_at": c["created_at"]}
-                for c in _sessions.values()
-            ]
-        await ws.send_text(json.dumps(
-            {"type": "history_list", "data": history}, default=str
         ))
         # Send current provider info
         await ws.send_text(json.dumps(
