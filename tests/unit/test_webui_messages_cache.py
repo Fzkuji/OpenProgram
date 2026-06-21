@@ -262,9 +262,7 @@ def test_agentic_function_result_persists_via_append_msg(server) -> None:
     # New worker process (simulated) sees the messages via SessionDB
     fresh_msgs = db.get_branch("c1")
     fresh_ids = [m["id"] for m in fresh_msgs]
-    # u1 has display=runtime (fn-form anchor) — no longer persisted
-    # to SessionStore. Only the assistant result survives.
-    assert fresh_ids == ["a1"]
+    assert fresh_ids == ["u1", "a1"]
     # The assistant message keeps its function annotation
     a_row = next(m for m in fresh_msgs if m["id"] == "a1")
     assert a_row["role"] == "assistant"
@@ -272,7 +270,7 @@ def test_agentic_function_result_persists_via_append_msg(server) -> None:
 
     # function_trees never leaked into SessionDB (it's not a message)
     by_role = {m["role"] for m in fresh_msgs}
-    assert by_role == {"assistant"}
+    assert by_role == {"user", "assistant"}
 
 
 def test_hydrate_returns_branch_after_set_head_change(server) -> None:

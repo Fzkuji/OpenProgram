@@ -797,26 +797,6 @@ def _append_msg(conv: dict, msg: dict) -> None:
     # dedup — ``SessionStore.append_message`` is idempotent on id
     # and the final reply uses ``GraphStoreShim.update()`` to patch
     # the persisted node.
-    # display=runtime messages (fn-form anchor) are UI scaffolding.
-    # Don't add to conv memory or SessionStore — the real function
-    # call is the code node written by @agentic_function.
-    if msg.get("display") == "runtime":
-        cid = conv.get("id")
-        if cid:
-            try:
-                from openprogram.agent.session_db import default_db
-                db = default_db()
-                from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
-                from openprogram.store import GraphStoreShim as _GS
-                if not db.message_exists(cid, "ROOT"):
-                    _GS(db, cid).append(_C(
-                        id="ROOT", role=_RU, output="",
-                        metadata={"display": "root"},
-                    ))
-            except Exception:
-                pass
-        return
-
     _existing_idx = -1
     if msg.get("id"):
         for _i, _existing in enumerate(conv.get("messages") or []):

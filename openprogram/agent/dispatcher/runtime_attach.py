@@ -99,9 +99,31 @@ def _wrap_agentic_runtime_block(
             "agent_id": req.agent_id,
         }
         db = default_db()
-        # No longer write placeholder to SessionStore — it's UI
-        # scaffolding for the chat area, not a DAG node. The real
-        # function call is the code node written by @agentic_function.
+        try:
+            from openprogram.context.nodes import Call, ROLE_LLM
+            from openprogram.store import GraphStoreShim as _GShim
+
+            _rt_meta = {
+                k: v for k, v in placeholder.items()
+                if k not in {"id", "role", "content", "timestamp",
+                             "function"}
+                and v is not None
+            }
+            _rt_node = Call(
+                id=runtime_id,
+                created_at=now,
+                role=ROLE_LLM,
+                name=tool_name,
+                output=None,
+                called_by=assistant_msg_id,
+                metadata=_rt_meta,
+            )
+            _GShim(db, req.session_id).append(_rt_node)
+        except Exception:
+            try:
+                db.append_message(req.session_id, placeholder)
+            except Exception:
+                pass
         on_event({
             "type": "chat_response",
             "data": {
@@ -117,21 +139,10 @@ def _wrap_agentic_runtime_block(
             },
         })
 
-        # Set _call_id to the real caller so the @agentic_function
-        # decorator's code node has called_by = the actual invoker:
-        #   fn-form (user manual call): called_by = ROOT
-        #   LLM call: called_by = assistant_msg_id (the LLM reply)
-        _real_caller = assistant_msg_id
-        if req.source == "fn-form" or placeholder.get("display") == "runtime":
-            # For fn-form, assistant_msg_id is the anchor's reply id
-            # which is a fake node. Walk up to ROOT.
-            try:
-                _parent_node = db.get_session(req.session_id) or {}
-                # The anchor's called_by is ROOT
-                _real_caller = "ROOT"
-            except Exception:
-                _real_caller = "ROOT"
-        _call_token = _call_id_var.set(_real_caller)
+        # Anchor the @agentic_function decorator's top DAG node under
+        # our runtime-block id so build_exec_dag(..., runtime_id) finds
+        # it. Reset in finally so we don't leak into sibling calls.
+        _call_token = _call_id_var.set(runtime_id)
         # Live Execution DAG streaming: poll build_exec_dag(...,
         # runtime_id) every ~1.2s while the tool runs and broadcast
         # tree_update envelopes (anchored on runtime_id) so the
@@ -150,7 +161,7 @@ def _wrap_agentic_runtime_block(
             # at the dispatcher's default (worker broadcast wrapper)
             # and the same code path keeps working unchanged.
             _live_ctx = _live_progress(
-                req.session_id, _real_caller, tool_name, on_event=on_event,
+                req.session_id, runtime_id, tool_name, on_event=on_event,
             )
         except Exception:
             _live_ctx = None
@@ -286,7 +297,7 @@ def _wrap_agentic_runtime_block(
             except Exception as _e:
                 print(f"[dispatcher.debug] inspect failed: {_e}",
                       file=_sys.stderr, flush=True)
-        tree_dict = build_exec_dag(req.session_id, tool_name, _real_caller) or {
+        tree_dict = build_exec_dag(req.session_id, tool_name, runtime_id) or {
             "path": tool_name,
             "name": tool_name,
             "params": {k: v for k, v in (args or {}).items() if k != "runtime"},
@@ -294,8 +305,21 @@ def _wrap_agentic_runtime_block(
             "status": "completed",
         }
         done_at = time.time()
-        # No placeholder to update — the code node written by
-        # @agentic_function is the canonical record.
+        try:
+            _shim = GraphStoreShim(db, req.session_id)
+            _shim.update(
+                runtime_id,
+                output=text_out,
+                metadata={
+                    "status": "done",
+                    "function": tool_name,
+                    "display": "runtime",
+                    "last_update_at": done_at,
+                    "context_tree": tree_dict,
+                },
+            )
+        except Exception:
+            pass
         on_event({
             "type": "chat_response",
             "data": {
