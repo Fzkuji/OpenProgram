@@ -72,24 +72,7 @@ export function _collapseRuntimePlaceholders(
     const sameNameKid = kids.find(
       (k) => (k.function || (k as { name?: string }).name || "") === fn,
     );
-    if (!sameNameKid) return;
-    removeIds[p.id] = true;
-    replaceWith[p.id] = sameNameKid.id;
-    inheritedFrom[sameNameKid.id] = p;
-    // fn-form anchor fold: the synthetic ``[function call] foo(...)``
-    // user-runtime msg has no semantic content in the visible chat —
-    // chat panel hides it (display=runtime + role=user → return null).
-    // In mini-DAG we likewise want to hide it so the user sees
-    // ``code square → follow-up user msg`` directly, not
-    // ``anchor circle → fork → [code square, user msg]``.
-    //
-    // backend ``linear_history`` filters runtime placeholders out of
-    // the user-visible chain, so the next chat turn's user msg gets
-    // ``parent_id = anchor`` instead of placeholder. That makes anchor
-    // appear to have TWO conv-children (placeholder + new user msg)
-    // which lane.py turns into a fork. Fold the anchor here so the
-    // new user msg gets reparented onto the surviving code instead,
-    // keeping the mini-DAG on a single trunk.
+    // fn-form anchor: always fold the synthetic [function call] user msg
     const _ap = p.called_by;
     const anchor = _ap ? byId[_ap] : null;
     if (
@@ -98,8 +81,12 @@ export function _collapseRuntimePlaceholders(
       && anchor.display === "runtime"
     ) {
       removeIds[anchor.id] = true;
-      replaceWith[anchor.id] = sameNameKid.id;
+      replaceWith[anchor.id] = sameNameKid ? sameNameKid.id : p.id;
     }
+    if (!sameNameKid) return;
+    removeIds[p.id] = true;
+    replaceWith[p.id] = sameNameKid.id;
+    inheritedFrom[sameNameKid.id] = p;
   });
   if (!Object.keys(removeIds).length) return { graph, headId };
   if (headId && replaceWith[headId]) headId = replaceWith[headId];
