@@ -235,7 +235,6 @@ export interface ConvSummary {
   id: string;
   title: string;
   created_at?: number;
-  has_session?: boolean;
   agent_id?: string;
   source?: string;
   peer_display?: string;

@@ -1,11 +1,14 @@
 """REST chat entry points (parallel to the WS chat action).
 
-Three handlers:
-  POST /api/chat — send a chat message
+Two handlers:
   POST /api/chat/branch — fork a conv at a specific message
   POST /api/function/{name} — directly run an @agentic_function via the
       forced-tool-call dispatch path (same code path as an LLM-issued
       tool call; see dispatcher.dispatch_forced_tool_call).
+
+Sending a chat message goes through the WS ``chat`` action
+(ws_actions/chat.py) — that path owns the two-stage session naming via
+finalize_turn → _maybe_auto_title.
 """
 from __future__ import annotations
 
@@ -28,68 +31,6 @@ _FUNCTION_BODY_CONTROL_KEYS = {
 
 
 def register(app):
-    @app.post("/api/chat")
-    async def post_chat(body: dict = None):
-        from openprogram.webui import server as _s
-        if body is None:
-            return JSONResponse(content={"error": "no body"}, status_code=400)
-        text = body.get("text", "").strip()
-        session_id = body.get("session_id")
-        if not text:
-            return JSONResponse(content={"error": "empty message"}, status_code=400)
-
-        conv = _s._get_or_create_session(session_id)
-        session_id = conv["id"]
-        msg_id = str(uuid.uuid4())[:8]
-
-        if not conv["messages"]:
-            from openprogram.agent.session_db import default_db as _rc_db
-            try:
-                _rc_db().update_session(session_id, title=text[:50], _titled=True)
-            except Exception:
-                pass
-
-        parsed = _s._parse_chat_input(text)
-        user_msg = {
-            "role": "user",
-            "id": msg_id,
-            "content": text,
-            "timestamp": time.time(),
-        }
-        _s._append_msg(conv, user_msg)
-
-        if parsed["action"] == "query":
-            threading.Thread(
-                target=_s._execute_in_context,
-                args=(session_id, msg_id, "query"),
-                kwargs={"query": parsed["raw"]},
-                daemon=True,
-            ).start()
-        elif parsed["action"] == "spawn":
-            threading.Thread(
-                target=_s._execute_in_context,
-                args=(session_id, msg_id, "spawn"),
-                kwargs={"kwargs": {
-                    "prompt": parsed.get("prompt") or "",
-                    "label": parsed.get("label") or "",
-                    "context": parsed.get("context") or "inherit",
-                    "wait": parsed.get("wait", True),
-                }},
-                daemon=True,
-            ).start()
-        elif parsed["action"] == "merge":
-            threading.Thread(
-                target=_s._execute_in_context,
-                args=(session_id, msg_id, "merge"),
-                kwargs={"kwargs": {
-                    "sub_sessions": parsed.get("sub_sessions") or [],
-                    "message": parsed.get("message") or "",
-                }},
-                daemon=True,
-            ).start()
-
-        return JSONResponse(content={"session_id": session_id, "msg_id": msg_id})
-
     @app.post("/api/chat/branch")
     async def post_chat_branch(body: dict = None):
         """Fork a conversation at a specific message — in place.
@@ -257,11 +198,17 @@ def register(app):
         from openprogram.agent.session_db import default_db as _rc_db2
         agent_id = (_rc_db2().get_session(session_id) or {}).get("agent_id") or _s._default_agent_id()
 
-        # Give the session a title so it shows in the sidebar and can be
-        # reloaded on refresh. Without an anchor user row there is no
-        # preview, and build_sessions_list drops title-less + preview-less
-        # rows — so a fn-form session would be invisible and a refresh
-        # would 404 back to the welcome screen. Title = the call itself.
+        # Stage-1 title (immediate placeholder): the call signature, so
+        # the sidebar row shows instantly and the session survives a
+        # refresh — without an anchor user row there is no preview, and
+        # build_sessions_list drops title-less + preview-less rows.
+        #
+        # Per docs/design/runtime/session/, fn-form takes the SAME
+        # two-stage naming as a normal chat: this signature is the
+        # stage-1 truncation, and stage-2 is the background LLM rename
+        # (below, after the call produces a result). No lock flag is set
+        # here, so stage-2 is free to rename it — fn-form is not pinned.
+        _fn_title = ""
         try:
             _arg_bits = ", ".join(
                 f"{k}={v!r}" if not isinstance(v, str) or len(v) <= 40
@@ -282,7 +229,7 @@ def register(app):
         def _run():
             from openprogram.agent.dispatcher import dispatch_forced_tool_call
             try:
-                dispatch_forced_tool_call(
+                out = dispatch_forced_tool_call(
                     session_id=session_id,
                     anchor_msg_id="ROOT",
                     tool_name=name,
@@ -301,8 +248,33 @@ def register(app):
                     "function": name,
                     "display": "runtime",
                 })
+                return
+            if (out or {}).get("ok") and _fn_title:
+                # Stage-2 of the doc's two-stage naming: the function has
+                # produced a result, so let the LLM rename the session
+                # over the call + output (race-guarded; never locks).
+                from openprogram.agent.dispatcher.titles import (
+                    fn_form_llm_title,
+                )
+                fn_form_llm_title(_rc_db2(), session_id, _fn_title)
 
         threading.Thread(target=_run, daemon=True).start()
+
+        # Mark the session running so its sidebar row shows the flowing
+        # animation (convRunningFlow) immediately — same signal the chat
+        # path emits at chat_ack. The function-run thread / its finalize
+        # pops _running_tasks at completion, which clears the animation.
+        try:
+            with _s._running_tasks_lock:
+                _s._running_tasks.setdefault(session_id, {
+                    "msg_id": msg_id, "func_name": name,
+                    "started_at": time.time(), "last_event_at": time.time(),
+                    "display_params": "", "loaded_func_ref": None,
+                    "stream_events": [],
+                })
+            _s._emit_running_task_event(session_id)
+        except Exception:
+            pass
 
         # The fn-form path creates the session row directly (no WS
         # action ran), so the sidebar — which only fetches the list on

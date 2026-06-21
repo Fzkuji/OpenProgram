@@ -120,9 +120,19 @@ dispatcher 在 turn 生命周期中写 status：
 
 ## 命名
 
-标题有三个写入来源，都通过 `update_session(session_id, title=...)` 写入，走上面"更新字段"的完整流程。
+命名只有**一套权威实现**：`openprogram/agent/dispatcher/titles.py`。所有入口（WS / fn-form / channel / CLI / spawn）的命名都汇到 `finalize_turn 末尾 → _maybe_auto_title`，没有第二套截断/锁死逻辑。标题写入都通过 `update_session(session_id, title=...)`，走上面"更新字段"的完整流程。
 
-### 自动命名（渐进式）
+### 锁标记（权威，仅两把 + 一个内部计数）
+
+| 标记 | 类型 | 含义 | 谁来设 |
+|------|------|------|--------|
+| `_user_titled` | bool | 用户手动改名 → 永久锁，自动命名永不再跑 | **只有** rename 操作在用户输入了名字时设 |
+| `_auto_titled` | bool | 自动命名已产出过至少一个标题（首轮截断或任意 LLM 写入）→ "别重复截断"去重位 | **只有** `_maybe_auto_title` 设 |
+| `_title_gen_count` | int | 渐进式重命名内部计数（命中到 `_RETITLE_AT_TURNS` 第几个）| `_maybe_auto_title` 内部，非入口锁 |
+
+历史上存在的第三个叫法 `_titled` 已废除——它既做截断又做永久锁，与两阶段流程冲突。各入口**不再**自己做截断 + 设 `_titled`，统一让 `_maybe_auto_title` 完成阶段 1（截断）+ 阶段 2（LLM）。入口唯一可设的锁是 `_user_titled`（rename 操作）。
+
+### 自动命名（渐进式，两阶段）
 
 自动命名在对话演进过程中多次触发，随着上下文增多生成更精确的标题。
 触发阈值：第 1、6、16、40 轮 assistant 回复时（`_RETITLE_AT_TURNS`）。
@@ -131,19 +141,28 @@ dispatcher 在 turn 生命周期中写 status：
 finalize_turn 末尾 → _maybe_auto_title：
   1. 检查 _user_titled → 用户手动改过名则永不自动重命名
   2. 统计当前 assistant 消息数 → 未命中阈值则跳过
-  3. 首次（turn 1）：
-     a. 立即截取 title = 用户消息前 50 字符
-        → update_session(session_id, title=截取值, _title_gen_count=1)
-     b. 启动后台 daemon 线程调 LLM
+  3. 首次（turn 1，阶段 1 立即截断）：
+     a. title = _title_from_text(用户首条消息)
+        （剥 [attachment:]/<attachment-preview>/<file> 标记 → 取首行 → 截 50 字，超出加 …）
+        → update_session(session_id, title=截取值, _auto_titled=True, _title_gen_count=1)
+     b. 启动后台 daemon 线程调 LLM（阶段 2）
   4. 后续阈值（turn 6/16/40）：
      a. 直接启动后台 daemon 线程
      b. LLM 输入取最近 20 条消息（而非仅首轮）
-  5. 后台线程：
+  5. 后台线程（阶段 2）：
      → 竞态检查：_user_titled 则放弃
-     → 首次还检查 title 是否仍为截取值
-     → 写入 update_session(session_id, title=LLM结果, _title_gen_count=N+1)
+     → 首次还检查 title 是否仍为阶段 1 截取值（被改过就放弃写入）
+     → 写入 update_session(session_id, title=LLM结果, _auto_titled=True, _title_gen_count=N+1)
      → 广播 session_updated
 ```
+
+### channel（微信 / Discord 等）
+
+channel 会话命名与普通会话**完全一样**，走同一套两阶段 LLM 命名，channel 端**不**对标题内容做任何额外操作 / 锁定 / 干预（不设 `_user_titled`、不设 `_auto_titled`、不预截断）。来源标识只在前端显示层加方括号品牌前缀（如 `[WeChat] 周末计划讨论`），不进 title 本体。
+
+### 空会话
+
+创建即写第一条消息是原子的，正常不产生空会话；万一产生由启动清理或手动删除处理。命名层不对空会话做特殊过滤。
 
 ### 用户主动重命名
 

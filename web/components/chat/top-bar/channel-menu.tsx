@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
@@ -88,6 +89,9 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
       if (conv) {
         conv.channel = ch || null;
         conv.account_id = ch && acct ? acct : null;
+        // Mirror the optimistic channel binding into the store so the
+        // sidebar row's channel prefix updates instantly too.
+        mirrorUpsertConv({ ...conv, id: sessionId });
       }
     } else {
       w._pendingChannelChoice = {

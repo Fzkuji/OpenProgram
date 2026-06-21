@@ -34,6 +34,7 @@ import {
   wsHandleChatResponse,
   wsHandleStatus,
 } from "@/lib/runtime-bridge/chat-handlers";
+import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 
 interface WsWindow {
   ws?: WebSocket | null;
@@ -256,9 +257,7 @@ export function useWS(): void {
             w.updateAgentBadges?.();
           }
           return true;
-        case "full_tree":
-          // Tree data rides the store via `tree_update` now — the
-          // legacy `trees` global is no longer read by the UI.
+        case "full_tree": // legacy no-op
           return true;
         case "event":
           return true;
@@ -301,19 +300,8 @@ export function useWS(): void {
           w.availableFunctions = d || [];
           w.loadProgramsMeta?.().then(() => w.renderFunctions?.());
           return true;
-        case "history_list": {
-          const list = (d as unknown as { id: string; title?: string }[]) || [];
-          const convs = w.conversations;
-          if (convs) {
-            for (const c of list) {
-              if (!convs[c.id]) {
-                convs[c.id] = { id: c.id, title: c.title, messages: [] };
-              }
-            }
-          }
-          w.renderSessions?.();
+        case "history_list": // legacy no-op
           return true;
-        }
         case "attempt_switched":
           handleAttemptSwitched(d as never);
           return true;
@@ -382,6 +370,7 @@ export function useWS(): void {
             conv.channel = (d.channel as string) || null;
             conv.account_id = (d.account_id as string) || null;
             conv.peer = (d.peer as string) || null;
+            mirrorUpsertConv(conv as Record<string, unknown>);
             w.renderSessions?.();
             if (sid === w.currentSessionId) {
               w.refreshStatusSource?.();

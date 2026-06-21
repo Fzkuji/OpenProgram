@@ -1,6 +1,8 @@
 # LLM 标题生成
 
-命名的完整流程（首轮自动命名、用户主动重命名、竞态保护）见 [operations.md](operations.md) 的"命名"段。本文件只描述 `_generate_llm_title()` 的实现细节。
+命名的完整流程（首轮自动命名、用户主动重命名、竞态保护、锁标记）见 [operations.md](operations.md) 的"命名"段。权威实现在 `openprogram/agent/dispatcher/titles.py`，是所有入口共用的唯一命名实现。本文件只描述 `_generate_llm_title()`（阶段 2）的实现细节。
+
+阶段 1 的截断（`_title_from_text` / `_default_title`）也在 titles.py：剥 `[attachment:]` / `<attachment-preview>` / `<file>` 标记 → 取首行 → 截 50 字（超出加 `…`）。
 
 ## 输入
 

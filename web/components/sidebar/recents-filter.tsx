@@ -29,7 +29,7 @@ import { Check, ChevronRight } from "lucide-react";
 
 import { MENU_PANEL, itemCls } from "@/components/chat/top-bar/menu-styles";
 import { useTranslation } from "@/lib/i18n";
-import { useWindowGlobals } from "./use-window-globals";
+import { useSessionStore } from "@/lib/session-store";
 import {
   type AnimatedNavIconHandle,
   GalleryVerticalEndIcon,
@@ -73,7 +73,7 @@ export function RecentsFilter() {
   // carries a project name (the home-folder name for ad-hoc chats), so
   // the flyout lists "All projects" + each distinct folder the user has
   // chats under, instead of a lone meaningless "All".
-  const { conversations } = useWindowGlobals();
+  const conversations = useSessionStore((s) => s.conversations);
   const projectOptions = useMemo<[string, string][]>(() => {
     const names = new Set<string>();
     for (const c of Object.values(conversations || {})) {

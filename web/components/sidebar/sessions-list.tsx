@@ -3,24 +3,25 @@
 /**
  * Sessions list (the "Recents" panel in the sidebar).
  *
- * Reads conversations from `window.conversations` via `useWindowGlobals`
- * (populated by the runtime-bridge from the `sessions_list` WS event)
- * and layers Claude.ai-style management on top:
+ * Reads conversations from the React store (`store.conversations`), which
+ * the runtime-bridge keeps authoritative from the `sessions_list` WS event
+ * (see conv-store-mirror). Layers Claude.ai-style management on top:
  *   - per-row right-click / ⋯ context menu (rename, pin, move to group,
  *     copy link, archive, delete) — see `conv-menu.tsx`
  *   - Recents-header filter (status / group-by / sort) — see
  *     `recents-filter.tsx`, read here via `useRecentsView`
  *
  * Flags (pinned / archived / group) and renames are persisted server-
- * side (meta.json) through WS actions; we optimistically patch
- * `window.conversations` + bump a local tick for instant feedback,
- * since `useWindowGlobals`'s poll doesn't notice in-entry mutations.
+ * side (meta.json) through WS actions; we optimistically patch the store
+ * (and the legacy `window.conversations` heavy map the top-bar still
+ * reads) for instant feedback before the server's echo lands.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useWindowGlobals, useCurrentSessionId } from "./use-window-globals";
+import { useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
+import type { ConvSummary } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { useRecentsView } from "@/lib/prefs/recents-view";
 import {
@@ -49,26 +50,25 @@ import {
   type SessionWindow,
   wsSend,
   channelBrand,
-  channelPrefix,
   displayTitle,
   labelFor,
-  isEmptyPlaceholder,
 } from "./sessions-list/helpers";
 
 export function SessionsList() {
   const router = useRouter();
   const pathname = usePathname();
   const { t, locale } = useTranslation();
-  const { conversations } = useWindowGlobals();
+  // The sidebar's source of truth is the React store. The runtime-bridge
+  // mirrors every window.conversations summary write into it (see
+  // conv-store-mirror), so subscribing here re-renders the list the moment
+  // a session is added / renamed / pinned / deleted — no polling.
+  const conversations = useSessionStore((s) => s.conversations);
+  const upsertConversation = useSessionStore((s) => s.upsertConversation);
+  const removeConversation = useSessionStore((s) => s.removeConversation);
+  const clearConversations = useSessionStore((s) => s.clearConversations);
   const currentId = useCurrentSessionId();
   const runningTasks = useSessionStore((s) => s.runningTasks);
   const view = useRecentsView();
-
-  // Bumped after every optimistic mutation of `window.conversations`
-  // so the list re-renders immediately (the useWindowGlobals poll
-  // ignores in-entry field changes).
-  const [, setTick] = useState(0);
-  const bump = () => setTick((n) => n + 1);
 
   // Collapsed group names (only relevant when grouping is on).
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -95,11 +95,16 @@ export function SessionsList() {
 
   /* ---- action senders (optimistic patch + WS) ------------------- */
 
-  function patchConv(id: string, fields: Partial<LegacyConv>) {
+  // Optimistically patch BOTH the store (drives this sidebar) and the
+  // legacy window.conversations heavy map (still read by the top-bar
+  // title / status-source badge machinery) so a rename / pin shows
+  // instantly everywhere before the server's session_updated echo lands.
+  function patchConv(id: string, fields: Partial<ConvSummary>) {
     const w = window as unknown as SessionWindow;
     const conv = w.conversations?.[id];
     if (conv) Object.assign(conv, fields);
-    bump();
+    const prev = conversations[id];
+    if (prev) upsertConversation({ ...prev, ...fields, id });
   }
 
   function renameSession(id: string, title: string) {
@@ -131,8 +136,8 @@ export function SessionsList() {
         const w = window as unknown as SessionWindow;
         wsSend({ action: "delete_session", session_id: id });
         if (w.conversations) delete w.conversations[id];
+        removeConversation(id);
         if (w.currentSessionId === id) w.newSession?.();
-        bump();
       },
     });
   }
@@ -151,22 +156,18 @@ export function SessionsList() {
         if (w.conversations) {
           for (const k of Object.keys(w.conversations)) delete w.conversations[k];
         }
+        clearConversations();
         w.newSession?.();
-        bump();
       },
     });
   }
 
   /* ---- filter / sort / group ------------------------------------ */
 
-  // NOTE: deliberately NOT memoised on `conversations`. The legacy
-  // code mutates `window.conversations` IN PLACE (same object ref), so
-  // a `useMemo([conversations])` would return a stale cached result
-  // after the WS populate / a flag change — the list would render
-  // empty even though the map has entries. The list is small, so
-  // recomputing every render is free and always correct. `useTick`
-  // (bumped on every optimistic action) + the useWindowGlobals content
-  // signature both guarantee a render when the data actually changes.
+  // `conversations` is the React store map: every write replaces the
+  // object (immutable updates), so the component re-renders on any change
+  // and there's no in-place-mutation hazard. The list is small, so just
+  // recompute the filtered/sorted view each render.
   const nowTs = Date.now() / 1000;
   const convArr = Object.values(conversations) as LegacyConv[];
 
@@ -178,10 +179,7 @@ export function SessionsList() {
 
   const visible = (() => {
     let arr = convArr;
-    // Hide empty new-chat placeholders ("Untitled" with no messages) so
-    // they don't pile up and clutter the list — they reappear the moment
-    // they have real content.
-    arr = arr.filter((c) => !isEmptyPlaceholder(c));
+    // All sessions are shown — no filtering of empty/placeholder rows.
     if (view.status === "active") arr = arr.filter((c) => !c.archived);
     else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
     // Last-activity window (uses created_at; swap to updated_at when the
@@ -205,7 +203,12 @@ export function SessionsList() {
       }
       // recency + created both order by created_at (newest first) until
       // the backend exposes a separate last-activity timestamp.
-      return (b.created_at || nowTs) - (a.created_at || nowTs);
+      // Missing created_at sorts as 0 (oldest), NOT nowTs: legacy DB rows
+      // with a null created_at would otherwise fall back to "now" and
+      // outrank a genuinely just-created session — sinking every new chat
+      // below them, off the top of the list, so its row reads as "missing"
+      // until the turn finishes and a real timestamp lands.
+      return (b.created_at || 0) - (a.created_at || 0);
     };
     return [...arr].sort(cmp);
   })();

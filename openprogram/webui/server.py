@@ -1286,7 +1286,7 @@ def create_app():
     from openprogram.webui.routes import programs as _routes_programs
     _routes_programs.register(app)
 
-    # /api/chat, /api/chat/branch, /api/run/{name} — routes.chat
+    # /api/chat/branch, /api/function/{name} — routes.chat
     from openprogram.webui.routes import chat as _routes_chat
     _routes_chat.register(app)
 

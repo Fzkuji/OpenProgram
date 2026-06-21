@@ -59,6 +59,9 @@ function _activeHeadId(sessionId: string | null | undefined): string {
   const list = w._branchesByConv?.[sessionId] || [];
   const active = list.find((b) => b.active);
   if (active?.head_msg_id) return active.head_msg_id;
+  // TODO(store-migration): head_id is a legacy heavy field not carried in
+  // ConvSummary, so this still reads window.conversations. Migrate once
+  // head_id is surfaced through the store (or via the branch list alone).
   return w.conversations?.[sessionId]?.head_id || "";
 }
 

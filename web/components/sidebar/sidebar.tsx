@@ -12,10 +12,11 @@
  * clearAll row hover).
  *
  * Data sources (this slice):
- *   - `useWindowGlobals` polls `window.conversations`,
- *     `window.availableFunctions`, `window.programsMeta` written by
- *     legacy `init.js` / WS handlers. When WSProvider gets wired in,
- *     swap to a `useSessionStore` subscription.
+ *   - the conversation list comes from `useSessionStore` (store.conversations,
+ *     fed by the runtime-bridge via conv-store-mirror).
+ *   - `useWindowGlobals` still polls `window.availableFunctions` /
+ *     `window.programsMeta` (written by legacy `init.js` / WS handlers)
+ *     until those migrate to the store too.
  *   - `useSessionStore` is still used for `openFnForm` plumbing
  *     (clickFunction is the global that calls it).
  *

@@ -170,13 +170,9 @@ def finalize_turn(
     except Exception:
         pass
 
-    # 6.5. Auto-title: if the session is still using the placeholder
-    # title (or hasn't been titled by an explicit user action), set a
-    # readable label from the user's first message. Cheap version —
-    # just take the first 50 chars; LLM-summarized titles are a
-    # future upgrade. Fires once per session (idempotent via
-    # extra_meta._titled flag).
-    _maybe_auto_title(db, req.session_id, session, req.user_text)
+    # 6.5. Auto-title: background LLM generation at turn thresholds.
+    _assistant_text = assistant_msg.get("content") or ""
+    _maybe_auto_title(db, req.session_id, session, req.user_text, _assistant_text)
 
     # 6.6. Compaction signal: when context is approaching the model's
     # window, surface a "compaction_recommended" event so the UI can

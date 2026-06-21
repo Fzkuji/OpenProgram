@@ -16,6 +16,10 @@ import {
   fetchBranches,
   renderSessionMessages,
 } from "./conversations";
+import {
+  mirrorSetConvs,
+  mirrorUpsertConv,
+} from "./conv-store-mirror";
 
 interface ChatWindow {
   ws?: WebSocket | null;
@@ -120,6 +124,23 @@ export function wsHandleChatAck(data: ChatAckData): void {
         created_at: Date.now() / 1000,
       };
     }
+    // Mirror the (seeded or pre-existing) conv into the React store so the
+    // sidebar row appears IMMEDIATELY — store.conversations is the
+    // sidebar's source of truth.
+    mirrorUpsertConv(convs[sid]);
+    // Light the row's running animation (convRunningFlow) on THIS tab
+    // immediately — keyed on the real sid the server just assigned, so
+    // it's idempotent with the incoming running_task broadcast (which
+    // overwrites the same key with a richer payload). Without this the
+    // sending tab's row appears but doesn't flow until that round-trip.
+    const _store = (window as unknown as {
+      __sessionStore?: {
+        getState: () => {
+          setRunningTaskFor?: (s: string, t: unknown) => void;
+        };
+      };
+    }).__sessionStore?.getState();
+    _store?.setRunningTaskFor?.(sid, { session_id: sid, msg_id: data.msg_id || "" });
     W.renderSessions?.();
     W.loadAgentSettings?.();
     W.refreshChannelBadge?.();
@@ -268,6 +289,10 @@ export function handleSessionsList(data: SessionRow[]): void {
       }
     }
   }
+  // Replace the React store's summary map from the freshly-synced legacy
+  // map (handles adds / deletes / field updates in one pass). The sidebar
+  // reads store.conversations, so this is what makes the list authoritative.
+  mirrorSetConvs(Object.values(convs));
   const sid = W.currentSessionId;
   if (sid && !convs[sid]) {
     newSessionImport();
@@ -314,6 +339,7 @@ export function handleSessionUpdated(
   if ("group" in data) conv.group = data.group || "";
   if ("status" in data) conv.status = data.status || undefined;
   if ("unread" in data) conv.unread = !!data.unread;
+  mirrorUpsertConv(conv);
   W.renderSessions?.();
 }
 

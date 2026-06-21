@@ -277,6 +277,9 @@ export function PageShell({ page }: { page: Page }) {
 
     // Optimistic render from cache — snaps the UI instantly; the WS
     // reply below still overwrites with the authoritative capture.
+    // TODO(store-migration): reads the legacy heavy conv (messages/graph)
+    // for the legacy renderSessionMessages DOM path — stays on
+    // window.conversations until that renderer moves into the store.
     const cached = w.conversations?.[target];
     if (cached && w.renderSessionMessages) {
       try { w.renderSessionMessages(cached); } catch {}

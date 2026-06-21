@@ -1,9 +1,8 @@
 """Chat WS actions: chat / retry_node / retry_overwrite / switch_attempt /
 set_conversation_channel.
 
-The ``chat`` action is the primary turn entry point — equivalent to the
-REST POST /api/chat. The retry / switch / channel-bind actions are
-ws-only.
+The ``chat`` action is the sole turn entry point from the web UI. The
+retry / switch / channel-bind actions are ws-only.
 """
 from __future__ import annotations
 
@@ -11,6 +10,13 @@ import json
 import threading
 import time
 import uuid
+
+
+def _db_agent_id(session_id: str) -> str:
+    """Read agent_id from SessionStore, falling back to default."""
+    from openprogram.agent.session_db import default_db
+    from openprogram.webui.server import _default_agent_id
+    return (default_db().get_session(session_id) or {}).get("agent_id") or _default_agent_id()
 
 
 def _safe_attach_name(name: str) -> str:
@@ -301,6 +307,7 @@ async def handle_chat(ws, cmd: dict):
     thinking_effort = cmd.get("thinking_effort") or None
     exec_thinking_effort = cmd.get("exec_thinking_effort") or None
     tools_flag = cmd.get("tools")
+    tools_profile = cmd.get("tools_profile") or None
     web_search_flag = bool(cmd.get("web_search"))
     permission_mode = cmd.get("permission_mode") or None
     # Per-turn speed / priority tier from the composer's speed pill
@@ -308,6 +315,17 @@ async def handle_chat(ws, cmd: dict):
     # payload each turn (client remembers via localStorage like the
     # thinking pill) — no server-side persistence / DB column needed.
     service_tier = cmd.get("service_tier") or None
+    # Tool profile override: when the user picked a non-"full" profile in
+    # the composer, resolve it to the profile's tool name list so the
+    # dispatcher only gives the model those tools.
+    if tools_profile and tools_flag is True:
+        try:
+            from openprogram.functions import agent_tools as _at
+            resolved = _at(toolset=tools_profile, only_available=True)
+            if resolved is not None:
+                tools_flag = [t.name for t in resolved]
+        except Exception:
+            pass
     # "Web Search" plus-menu toggle: layer ``web_search`` on top of
     # whatever the Tools toggle resolves to. Three useful states:
     #   * tools=False, web_search=False → tools_override=[]  (no tools)
@@ -463,7 +481,7 @@ async def handle_chat(ws, cmd: dict):
     from openprogram.agent.session_config import save_session_run_config
     run_cfg = save_session_run_config(
         session_id,
-        agent_id=conv.get("agent_id") or _s._default_agent_id(),
+        agent_id=_db_agent_id(session_id),
         tools=tools_flag,
         thinking_effort=thinking_effort,
         permission_mode=permission_mode,
@@ -486,13 +504,25 @@ async def handle_chat(ws, cmd: dict):
             attachments = [a for a in attachments if a.get("type") != "document"] or None
             text = _persist_doc_attachments(session_id, _docs, text)
 
-    if not conv.get("_titled"):
-        # Strip attachment markers BEFORE truncating: a title built from
-        # raw text would cut "[attachment: … @ /long/abs/path]" mid-path
-        # at the 50-char limit, severing the closing bracket the chip
-        # parser needs — so the marker leaks into the sidebar title.
-        conv["title"] = _title_from_text(text)
-        conv["_titled"] = True
+    # Stage 1 (immediate, zero-latency sidebar placeholder): truncate the
+    # user's first line into a title the instant the message is sent, so the
+    # sidebar never shows an empty row while stage 2 (the background LLM
+    # title in finalize→_maybe_auto_title) is still running. We mark
+    # ``_auto_titled`` — the SAME flag _maybe_auto_title uses — so its own
+    # stage-1 backfill is a no-op and its race guard (which compares the
+    # live title against the truncation it expects) keeps the LLM title.
+    # We do NOT set _user_titled: this is an automatic title, not a manual
+    # rename, so the LLM stage and turn-1/6/16/40 re-titling stay live.
+    from openprogram.agent.session_db import default_db as _chat_ddb
+    _chat_sess = _chat_ddb().get_session(session_id) or {}
+    _chat_extra = _chat_sess.get("extra_meta") or {}
+    if not _chat_extra.get("_auto_titled") and not _chat_extra.get("_user_titled"):
+        _truncated = _title_from_text(text)
+        try:
+            _chat_ddb().update_session(session_id, title=_truncated,
+                                       _auto_titled=True)
+        except Exception:
+            pass
 
     parsed = _s._parse_chat_input(text)
 
@@ -534,7 +564,7 @@ async def handle_chat(ws, cmd: dict):
             "session_id": session_id,
             "msg_id": msg_id,
             "text": text,
-            "agent_id": conv.get("agent_id"),
+            "agent_id": _db_agent_id(session_id),
             "attachments": bool(attachments),
         })
     except Exception:
@@ -544,6 +574,28 @@ async def handle_chat(ws, cmd: dict):
         "type": "chat_ack",
         "data": {"session_id": session_id, "msg_id": msg_id},
     }))
+
+    # Mark the session running + push the sidebar list right now, before
+    # the exec thread starts — so every connected tab shows the new
+    # conversation row already flowing (convRunningFlow) the instant the
+    # turn is dispatched, not a round-trip later when the exec thread's
+    # own running_task broadcast lands. setdefault so the thread's later
+    # _running_tasks[...] = {...} overwrite stays the single source of
+    # the task entry (no double running_task with a different started_at).
+    import time as _t
+    with _s._running_tasks_lock:
+        _s._running_tasks.setdefault(session_id, {
+            "msg_id": msg_id, "func_name": "_chat",
+            "started_at": _t.time(), "last_event_at": _t.time(),
+            "display_params": "", "loaded_func_ref": None,
+            "stream_events": [],
+        })
+    _s._emit_running_task_event(session_id)
+    try:
+        from openprogram.webui.ws_actions.session import broadcast_sessions_list
+        broadcast_sessions_list()
+    except Exception:
+        pass
 
     if parsed["action"] == "query":
         threading.Thread(
@@ -802,22 +854,22 @@ async def handle_set_conversation_channel(ws, cmd: dict):
                         _s._log(f"[set_conversation_channel] evict {oid} db: {ex}")
                     evicted_ids.append(oid)
 
-            conv["channel"] = ch
-            conv["account_id"] = acct_id if ch else None
-            conv["peer"] = peer if ch else None
-            if peer_display is not None:
-                conv["peer_display"] = peer_display if ch else None
+            _ch_val = ch
+            _acct_val = acct_id if ch else None
+            _peer_val = peer if ch else None
+            _pd_val = (peer_display if ch else None) if peer_display is not None else None
             try:
                 from openprogram.agent.session_db import default_db
                 db = default_db()
+                _update_kw = {
+                    "channel": _ch_val,
+                    "account_id": _acct_val,
+                    "peer": _peer_val,
+                }
+                if peer_display is not None:
+                    _update_kw["peer_display"] = _pd_val
                 if db.get_session(session_id) is not None:
-                    db.update_session(
-                        session_id,
-                        channel=conv["channel"],
-                        account_id=conv["account_id"],
-                        peer=conv["peer"],
-                        peer_display=conv.get("peer_display"),
-                    )
+                    db.update_session(session_id, **_update_kw)
                 ok = True
             except Exception as e:
                 err = f"persist failed: {type(e).__name__}: {e}"
@@ -871,7 +923,7 @@ async def handle_compact(ws, cmd: dict):
         return
 
     conv = _s._get_or_create_session(session_id)
-    agent_id = conv.get("agent_id") or "main"
+    agent_id = _db_agent_id(session_id)
     keep_recent_tokens = cmd.get("keep_recent_tokens")
     if keep_recent_tokens is not None:
         try:

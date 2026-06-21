@@ -92,7 +92,7 @@ Session title 是用户在列表中识别对话的主要标识。
 
 4. **展示层 Fallback**：如果以上都没有触发（session 通过非 dispatcher 入口创建，如 harness），列举时 title 仍为空/"New conversation"/"Untitled" → 用 preview（第一条 user message 前 80 字符）替代显示。
 
-5. **真空壳**：title 为 placeholder 且 preview 也为空（从未发送过消息）→ 不显示。
+5. **不再过滤空占位**：所有合法 session 都显示在侧边栏，包括刚创建、title/preview 尚未就绪的会话。（历史说明：上一代架构点 New chat 会乐观创建一条空占位 session，需要"title placeholder + preview 空 → 不显示"来藏掉它；现在 New chat 不再建 session，会话只在发第一条消息时由后端延迟创建，那时已有内容，该过滤的前提已不存在，故移除。）
 
 #### 时序
 
@@ -123,8 +123,7 @@ Session title 是用户在列表中识别对话的主要标识。
 两个来源合并去重后，按 `updated_at` 降序排列。
 
 展示规则：
-- 合法性校验通过 + title 有值（原始或 fallback）→ 显示
-- 合法性校验通过 + title 和 preview 都为空 → 隐藏（empty placeholder）
+- 合法性校验通过 → 显示（包括 title/preview 尚未就绪的刚创建会话；不再过滤空占位）
 - 合法性校验不通过 → 跳过
 
 侧边栏和 Chats 页面使用同一套展示规则。

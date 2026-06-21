@@ -12,6 +12,8 @@
  * run before any WS event fires.
  */
 
+import { mirrorUpsertConv } from "./conv-store-mirror";
+
 interface LegacyConv {
   id?: string;
   title?: string;
@@ -22,7 +24,7 @@ interface LegacyConv {
   graph?: unknown;
   head_id?: string | null;
   run_active?: boolean;
-  has_session?: boolean;
+  status?: string;
   [k: string]: unknown;
 }
 
@@ -453,6 +455,9 @@ export function loadSessionData(data: LegacyConv): void {
     if (v !== undefined) cleanedData[k] = v;
   }
   convs[id] = Object.assign({}, convs[id] || {}, cleanedData);
+  // Keep the sidebar's store entry in sync with the freshly-loaded
+  // session's summary fields (title / channel / preview / flags).
+  mirrorUpsertConv(convs[id] as Record<string, unknown>);
   renderSessions();
   W._branchesPanelCollapsed = true;
   if (id === W.currentSessionId) {
@@ -575,7 +580,8 @@ export function renderSessionMessages(conv: LegacyConv): void {
   }
   const chatContainer = document.getElementById("chatMessages");
   if (chatContainer) {
-    chatContainer.setAttribute("data-run-active", conv.run_active ? "true" : "false");
+    const isRunning = conv.status === "running" || conv.run_active;
+    chatContainer.setAttribute("data-run-active", isRunning ? "true" : "false");
   }
 
   try {

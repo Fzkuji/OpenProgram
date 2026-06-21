@@ -534,7 +534,8 @@ def execute_in_context(
         # Resolve the owning agent once so every persist call in this
         # function uses a stable id even if the caller later rebinds
         # the conv dict.
-        _agent_id = conv.get("agent_id") or _s._default_agent_id()
+        from openprogram.agent.session_db import default_db as _exec_db
+        _agent_id = (_exec_db().get_session(session_id) or {}).get("agent_id") or _s._default_agent_id()
         runtime = _s._get_session_runtime(session_id, msg_id=msg_id)
         from openprogram.agent.session_config import (
             load_session_run_config,
@@ -603,12 +604,13 @@ def execute_in_context(
         finally:
             pass
 
-        # Update conversation title from first user message
-        if not conv.get("_titled"):
-            title = (query or func_name or "")[:50]
-            if title:
-                conv["title"] = title + ("..." if len(title) >= 50 else "")
-                conv["_titled"] = True
+        # Titling is owned by the two-stage auto-titler in
+        # openprogram/agent/dispatcher/titles.py. action=="query" is
+        # titled by the dispatcher (finalize_turn → _maybe_auto_title);
+        # fn-form is titled by routes/chat.py. This path must NOT write
+        # its own title (the old block here re-truncated query[:50] and
+        # stamped a legacy _titled lock, clobbering the dispatcher's
+        # title on every turn — incl. retry/edit which also route here).
 
         # Broadcast updated chat session info (session_id may have been set)
         chat_session_id = getattr(runtime, '_session_id', None) if runtime else None

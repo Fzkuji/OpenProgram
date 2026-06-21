@@ -43,13 +43,18 @@ def _run_turn_with_history(
     meta = {k: v for k, v in data.items() if k != "messages"}
     messages: list = list(data.get("messages") or [])
     if not meta:
+        # Brand-new CLI session: start with an EMPTY title. The unified
+        # two-phase naming (docs/design/runtime/session/) is owned by
+        # ``_maybe_auto_title`` below — it stamps the phase-1 truncated
+        # placeholder and kicks off the phase-2 background LLM rename.
+        # We must NOT set ``_titled`` here: that legacy lock made CLI
+        # sessions opt out of LLM naming forever.
         meta = {
             "id": session_id,
             "agent_id": agent.id,
-            "title": message[:50] + ("..." if len(message) > 50 else ""),
+            "title": "",
             "created_at": _time.time(),
             "source": "cli",
-            "_titled": True,
         }
 
     user_id = _uuid.uuid4().hex[:12]
@@ -94,6 +99,23 @@ def _run_turn_with_history(
 
     _persist.save_meta(agent.id, session_id, meta)
     _persist.save_messages(agent.id, session_id, messages)
+
+    # Unified two-phase session naming. The CLI runs each turn as a
+    # bare ``rt.exec`` and never passes through the dispatcher's
+    # ``finalize_turn``, so we call the same titling hook directly:
+    # phase 1 stamps a truncated placeholder, phase 2 spawns a daemon
+    # thread that LLM-renames. Idempotent and self-gating (skips when
+    # ``_user_titled``; only fires at turn thresholds). Best-effort —
+    # a CLI turn must never fail because titling did.
+    try:
+        from openprogram.agent.dispatcher.titles import _maybe_auto_title
+        from openprogram.agent.session_db import default_db as _title_db
+        _tdb = _title_db()
+        _trow = _tdb.get_session(session_id) or {}
+        _maybe_auto_title(_tdb, session_id, _trow, message, reply_text)
+    except Exception:
+        pass
+
     return reply_text
 
 

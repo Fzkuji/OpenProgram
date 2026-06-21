@@ -125,7 +125,7 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
     _srv._save_session(session_id)
 
     # Kick off the run against the new user message. Same dispatch
-    # logic as POST /api/chat.
+    # logic as the WS ``chat`` action.
     parsed = _srv._parse_chat_input(new_user["content"] or "")
     # @agentic_function dispatch left the chat parser — retries always
     # route through the LLM ``query`` path now. Direct function calls

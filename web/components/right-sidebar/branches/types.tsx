@@ -13,18 +13,10 @@ export interface BranchRow {
   active?: boolean;
 }
 
-export interface ConvSummary {
-  id: string;
-  title?: string;
-  channel?: string | null;
-  account_id?: string | null;
-}
-
 export interface BranchWindow {
   ws?: WebSocket;
   _branchesByConv?: Record<string, BranchRow[]>;
   _branchLaneColorMap?: Record<string, string>;
-  conversations?: Record<string, ConvSummary>;
 }
 
 // Fallback palette — kept in sync with history-graph.ts LANE_COLORS.

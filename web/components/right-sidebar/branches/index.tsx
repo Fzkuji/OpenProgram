@@ -30,6 +30,7 @@ import {
 export function BranchesPanel() {
   const { t, locale } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const conversations = useSessionStore((s) => s.conversations);
   const [collapsed, setCollapsed] = useState(false);
   const [, setTick] = useState(0);
   // task_id → {targetHead, finalHead, status, label}. We resolve the
@@ -343,9 +344,8 @@ export function BranchesPanel() {
     ? pickerRows.filter((r) => !selected.includes(r.head_msg_id))
     : pickerRows;
   // Other sessions, for the picker's scope switcher. Sort by title
-  // so the order is predictable.
-  const allConvs = w.conversations || {};
-  const otherSessions = Object.values(allConvs)
+  // so the order is predictable. Source: store.conversations.
+  const otherSessions = Object.values(conversations)
     .filter((c) => c.id && c.id !== sessionId)
     .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
 

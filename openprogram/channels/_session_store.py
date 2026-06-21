@@ -35,20 +35,6 @@ def messages_path(agent_id: str, session_key: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# 默认标题
-# ---------------------------------------------------------------------------
-
-def default_title(channel: str, user_display: str) -> str:
-    pretty = {
-        "wechat": "WeChat",
-        "telegram": "Telegram",
-        "discord": "Discord",
-        "slack": "Slack",
-    }.get(channel, channel)
-    return f"{pretty}: {user_display}"
-
-
-# ---------------------------------------------------------------------------
 # 创建 / 加载
 # ---------------------------------------------------------------------------
 
@@ -75,10 +61,16 @@ def load_or_init_session(
 
     sess = db.get_session(session_key)
     if sess is None:
+        # Title starts empty — channel sessions go through the exact same
+        # two-stage auto-titling (truncated first line → background LLM)
+        # as local/webui sessions, driven by dispatcher finalize →
+        # _maybe_auto_title. The channel/account_id columns survive for the
+        # frontend to render a brand prefix at display time; they are never
+        # baked into the title here.
         meta: dict[str, Any] = {
             "id": session_key,
             "agent_id": agent_id,
-            "title": default_title(channel, user_display),
+            "title": "",
             "created_at": time.time(),
             "channel": channel,
             "source": channel,
@@ -87,7 +79,6 @@ def load_or_init_session(
             "peer_kind": peer.get("kind"),
             "peer_id": peer.get("id"),
             "peer_display": user_display,
-            "_titled": True,
         }
         db.create_session(
             session_key, agent_id,
@@ -100,19 +91,18 @@ def load_or_init_session(
             peer_id=peer.get("id"),
             peer_display=user_display,
             peer=dict(peer),  # full peer dict goes to extra_meta
-            _titled=True,
         )
         return meta, []
 
     meta = dict(sess)
-    # Refresh peer display if the upstream handle changed.
+    # Refresh peer display if the upstream handle changed. Touch only the
+    # peer_display column — never the title (titling is owned by the
+    # two-stage auto-titler).
     if user_display and meta.get("peer_display") != user_display:
         meta["peer_display"] = user_display
-        meta["title"] = default_title(channel, user_display)
         db.update_session(
             session_key,
             peer_display=user_display,
-            title=meta["title"],
         )
     # Backfill peer dict from columns when missing from extra_meta
     # (older rows).
