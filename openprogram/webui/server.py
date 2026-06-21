@@ -797,6 +797,26 @@ def _append_msg(conv: dict, msg: dict) -> None:
     # dedup — ``SessionStore.append_message`` is idempotent on id
     # and the final reply uses ``GraphStoreShim.update()`` to patch
     # the persisted node.
+    # display=runtime messages (fn-form anchor) are UI scaffolding.
+    # Don't add to conv memory or SessionStore — the real function
+    # call is the code node written by @agentic_function.
+    if msg.get("display") == "runtime":
+        cid = conv.get("id")
+        if cid:
+            try:
+                from openprogram.agent.session_db import default_db
+                db = default_db()
+                from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
+                from openprogram.store import GraphStoreShim as _GS
+                if not db.message_exists(cid, "ROOT"):
+                    _GS(db, cid).append(_C(
+                        id="ROOT", role=_RU, output="",
+                        metadata={"display": "root"},
+                    ))
+            except Exception:
+                pass
+        return
+
     _existing_idx = -1
     if msg.get("id"):
         for _i, _existing in enumerate(conv.get("messages") or []):
@@ -834,14 +854,6 @@ def _append_msg(conv: dict, msg: dict) -> None:
                 if v is not None:
                     create_kwargs[fld] = v
             db.create_session(cid, msg.get("agent_id") or _default_agent_id(), **create_kwargs)
-        # display=runtime messages (fn-form anchor) are UI scaffolding
-        # — don't persist them as DAG nodes. The real function call is
-        # the code node written by @agentic_function.
-        if msg.get("display") == "runtime":
-            db.set_head(cid, msg_id)
-            _invalidate_messages(cid)
-            return
-
         # Ensure ROOT node + user called_by=ROOT for session DAG.
         if msg.get("role") == "user":
             try:
