@@ -38,7 +38,8 @@ export function _demoteDecorationCards(graph: GNode[]): void {
     if (_lp && byId[_lp]) {
       (convKidsOf[_lp] = convKidsOf[_lp] || []).push(m);
     }
-    const ca = (m as { caller?: string }).caller;
+    const ca = (m as { called_by?: string; caller?: string }).called_by
+      || (m as { caller?: string }).caller;
     if (ca && byId[ca]) {
       (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m);
     }

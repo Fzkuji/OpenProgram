@@ -39,7 +39,8 @@ export function _collapseRuntimePlaceholders(
   });
   const callerKidsOf: Record<string, GNode[]> = Object.create(null);
   graph.forEach((m) => {
-    const ca = (m as { caller?: string }).caller;
+    const ca = (m as { called_by?: string; caller?: string }).called_by
+      || (m as { caller?: string }).caller;
     if (ca && byId[ca]) {
       (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m);
     }
@@ -283,7 +284,8 @@ export function _collapseRuntimePlaceholders(
   out.forEach((n) => { outById[n.id] = n; });
   const callerKidsOut: Record<string, string[]> = Object.create(null);
   out.forEach((n) => {
-    const ca = (n as { caller?: string }).caller;
+    const ca = (n as { called_by?: string; caller?: string }).called_by
+      || (n as { caller?: string }).caller;
     if (ca && outById[ca]) {
       (callerKidsOut[ca] = callerKidsOut[ca] || []).push(n.id);
     }

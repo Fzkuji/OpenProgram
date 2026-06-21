@@ -88,7 +88,7 @@ export function ChatInputRow({
             name="chat_input"
             autoComplete="off"
             aria-label="create / run / edit or ask anything... (type / for commands)"
-            placeholder={placeholder}
+            placeholder=""
             className={styles.chatInput}
             rows={1}
             value={input}
