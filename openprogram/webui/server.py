@@ -834,6 +834,14 @@ def _append_msg(conv: dict, msg: dict) -> None:
                 if v is not None:
                     create_kwargs[fld] = v
             db.create_session(cid, msg.get("agent_id") or _default_agent_id(), **create_kwargs)
+        # display=runtime messages (fn-form anchor) are UI scaffolding
+        # — don't persist them as DAG nodes. The real function call is
+        # the code node written by @agentic_function.
+        if msg.get("display") == "runtime":
+            db.set_head(cid, msg_id)
+            _invalidate_messages(cid)
+            return
+
         # Ensure ROOT node + user called_by=ROOT for session DAG.
         if msg.get("role") == "user":
             try:

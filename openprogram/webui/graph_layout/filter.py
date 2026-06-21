@@ -83,5 +83,4 @@ def filter_visible(graph_entries: list[dict]) -> list[dict]:
         if m.get("id")
         and not _is_microcompact_synthetic(m["id"])
         and not _is_task_followup_user(m)
-        and m.get("display") != "runtime"
     ]
