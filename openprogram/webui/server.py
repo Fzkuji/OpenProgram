@@ -797,28 +797,6 @@ def _append_msg(conv: dict, msg: dict) -> None:
     # dedup — ``SessionStore.append_message`` is idempotent on id
     # and the final reply uses ``GraphStoreShim.update()`` to patch
     # the persisted node.
-    # display=runtime (fn-form anchor) is UI scaffolding — skip
-    # entirely (don't add to conv memory or SessionStore). Ensure
-    # ROOT exists so the code node can hang off it.
-    if msg.get("display") == "runtime" and msg.get("role") == "user":
-        cid = conv.get("id")
-        if cid:
-            try:
-                from openprogram.agent.session_db import default_db as _rdb
-                _db = _rdb()
-                if _db.get_session(cid) is None:
-                    _db.create_session(cid, msg.get("agent_id") or _default_agent_id())
-                from openprogram.context.nodes import Call as _RC, ROLE_USER as _RRU
-                from openprogram.store import GraphStoreShim as _RGS
-                if not _db.message_exists(cid, "ROOT"):
-                    _RGS(_db, cid).append(_RC(
-                        id="ROOT", role=_RRU, output="",
-                        metadata={"display": "root"},
-                    ))
-            except Exception:
-                pass
-        return
-
     _existing_idx = -1
     if msg.get("id"):
         for _i, _existing in enumerate(conv.get("messages") or []):
@@ -867,6 +845,13 @@ def _append_msg(conv: dict, msg: dict) -> None:
                         id=_ROOT_ID, role=_RU, output="",
                         metadata={"display": "root"},
                     ))
+                # display=runtime anchor stays in conv memory (chat UI
+                # needs it for RuntimeBlock positioning) but does NOT
+                # get persisted to SessionStore (not a DAG node).
+                if msg.get("display") == "runtime":
+                    db.set_head(cid, msg_id)
+                    _invalidate_messages(cid)
+                    return
                 _GS(db, cid).append(_C(
                     id=msg_id,
                     role=_RU,
