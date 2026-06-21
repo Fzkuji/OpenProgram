@@ -30,6 +30,82 @@ from typing import Optional
 
 # ── Tree reconstruction ──────────────────────────────────────────────
 
+def _exec_tnode(n, kids: dict[str, list]) -> dict:
+    """Turn one DAG node into the TNode dict the Execution DAG renders,
+    recursing into its ``kids`` (children grouped by ``called_by``).
+
+    Shared by :func:`build_exec_dag` (locate by ``(name, called_by)``)
+    and :func:`build_exec_dag_by_id` (locate by the node's own id) so
+    both produce byte-identical tree shapes.
+    """
+    meta = n.metadata or {}
+    status = meta.get("status") or "completed"
+    tn: dict = {
+        "path": n.id,
+        "name": n.name or (n.role or "node"),
+        "status": status,
+    }
+    dur = meta.get("duration_seconds")
+    if dur is not None:
+        try:
+            tn["duration_ms"] = int(float(dur) * 1000)
+        except (TypeError, ValueError):
+            pass
+    if status == "error":
+        tn["error"] = str(n.output or meta.get("error") or "")
+    if n.is_llm():
+        # exec rows render params._content (prompt) + raw_reply.
+        tn["node_type"] = "exec"
+        inp = n.input
+        if isinstance(inp, (list, dict)):
+            inp = json.dumps(inp, default=str, ensure_ascii=False)
+        tn["params"] = {"_content": str(inp or "")}
+        tn["raw_reply"] = str(n.output or "")
+    else:
+        if isinstance(n.input, dict):
+            tn["params"] = {k: v for k, v in n.input.items()
+                            if k not in ("runtime", "callback")}
+        out = n.output
+        tn["output"] = (out if isinstance(out, str)
+                        else json.dumps(out, default=str,
+                                        ensure_ascii=False))
+    children = [_exec_tnode(c, kids)
+                for c in sorted(kids.get(n.id, []), key=lambda x: x.seq)]
+    if children:
+        tn["children"] = children
+    return tn
+
+
+def build_exec_dag_by_id(session_id: str,
+                          root_node_id: str) -> Optional[dict]:
+    """Reconstruct a single call's execution DAG, rooted at the node
+    whose id is ``root_node_id`` (not by ``(name, called_by)``).
+
+    Used by the refresh-rebuild path: a manually-invoked
+    @agentic_function persists as a top-level code node with
+    ``called_by="ROOT"``. Calling the same function twice in one session
+    yields two such nodes — both ``ROOT``-anchored, so the name-based
+    :func:`build_exec_dag` ("last match wins") would resolve both cards
+    to the most recent invocation's subtree. Anchoring on the node's own
+    id gives each card its own subtree. Returns None if the id is unknown.
+    """
+    try:
+        from openprogram.agent.session_db import default_db
+        nodes_list = default_db().get_nodes(session_id)
+    except Exception:
+        return None
+    nodes = sorted(nodes_list, key=lambda n: n.seq)
+    by_id = {n.id: n for n in nodes}
+    root = by_id.get(root_node_id)
+    if root is None:
+        return None
+    kids: dict[str, list] = {}
+    for n in nodes:
+        if n.called_by:
+            kids.setdefault(n.called_by, []).append(n)
+    return _exec_tnode(root, kids)
+
+
 def build_exec_dag(session_id: str, func_name: str,
                     user_turn_id: str) -> Optional[dict]:
     """Reconstruct a run's execution DAG from its DAG nodes.
@@ -64,46 +140,8 @@ def build_exec_dag(session_id: str, func_name: str,
         if n.is_code() and n.name == func_name and n.called_by == user_turn_id:
             root = n
 
-    def _to_tnode(n) -> dict:
-        meta = n.metadata or {}
-        status = meta.get("status") or "completed"
-        tn: dict = {
-            "path": n.id,
-            "name": n.name or (n.role or "node"),
-            "status": status,
-        }
-        dur = meta.get("duration_seconds")
-        if dur is not None:
-            try:
-                tn["duration_ms"] = int(float(dur) * 1000)
-            except (TypeError, ValueError):
-                pass
-        if status == "error":
-            tn["error"] = str(n.output or meta.get("error") or "")
-        if n.is_llm():
-            # exec rows render params._content (prompt) + raw_reply.
-            tn["node_type"] = "exec"
-            inp = n.input
-            if isinstance(inp, (list, dict)):
-                inp = json.dumps(inp, default=str, ensure_ascii=False)
-            tn["params"] = {"_content": str(inp or "")}
-            tn["raw_reply"] = str(n.output or "")
-        else:
-            if isinstance(n.input, dict):
-                tn["params"] = {k: v for k, v in n.input.items()
-                                if k not in ("runtime", "callback")}
-            out = n.output
-            tn["output"] = (out if isinstance(out, str)
-                            else json.dumps(out, default=str,
-                                            ensure_ascii=False))
-        children = [_to_tnode(c)
-                    for c in sorted(kids.get(n.id, []), key=lambda x: x.seq)]
-        if children:
-            tn["children"] = children
-        return tn
-
     if root is not None:
-        return _to_tnode(root)
+        return _exec_tnode(root, kids)
 
     # Mid-run: the top func_name node isn't persisted yet. Its direct
     # children already carry its allocated id in ``called_by`` — so they
@@ -120,7 +158,7 @@ def build_exec_dag(session_id: str, func_name: str,
     ]
     if not orphan_children:
         return None
-    children = [_to_tnode(c)
+    children = [_exec_tnode(c, kids)
                 for c in sorted(orphan_children, key=lambda x: x.seq)]
     return {
         "path": user_turn_id + "_run",
@@ -152,34 +190,55 @@ def _poll(session_id: str, msg_id: str, func_name: str,
     from openprogram.webui import server as _s
     from openprogram.webui.ws_actions.branch import build_branches_payload
 
-    last_tree = None
-    last_graph = None
+    state = {"last_tree": None, "last_graph": None, "shim": None}
     # streaming-resume: also patch the persisted placeholder reply with
     # the latest tree so a mid-run page refresh sees the in-progress
     # Execution DAG, not an empty ``gui_agent()`` shell. The reply
     # placeholder lives at ``msg_id + "_reply"`` (see _execute/run.py).
     _placeholder_id = msg_id + "_reply"
-    _shim = None
-    while not stop.wait(1.2):
+
+    def _tick(force: bool) -> None:
+        """One poll: build the DAG + branches and push whatever changed.
+
+        ``force`` bypasses the signature dedup so the final flush always
+        emits — the loop stops the instant the function returns, so the
+        last in-loop tick usually predates the terminal node write that
+        flips the run's root to ``completed``. Without a forced flush at
+        ``__exit__`` the card never receives the completed tree and spins
+        forever (Bug 6). With it, the SAME ``tree_update`` channel that
+        filled the card live delivers the terminal tree, so the card
+        flips to done in place — no second envelope, no duplicate row.
+        """
         try:
+            # On the final flush the terminal code node was just written
+            # by the @agentic_function subprocess straight to git; the
+            # parent worker's cached SessionMemoryIndex hasn't observed
+            # it, so a plain build would re-read the stale running tree.
+            # Drop the cache first so the forced flush reflects the
+            # on-disk completed state.
+            if force:
+                try:
+                    from openprogram.agent.session_db import default_db
+                    default_db().invalidate_cache(session_id)
+                except Exception:
+                    pass
             tree = build_exec_dag(session_id, func_name, msg_id)
             if tree is not None:
                 sig = json.dumps(tree, default=str, sort_keys=True)
-                if sig != last_tree:
-                    last_tree = sig
-                    _envelope = {
-                        "type": "chat_response",
-                        "data": {
-                            "type": "tree_update",
-                            "session_id": session_id,
-                            "msg_id": msg_id,
-                            "tree": tree,
-                            "function": func_name,
-                        },
-                    }
+                if force or sig != state["last_tree"]:
+                    state["last_tree"] = sig
                     if on_event is not None:
                         try:
-                            on_event(_envelope)
+                            on_event({
+                                "type": "chat_response",
+                                "data": {
+                                    "type": "tree_update",
+                                    "session_id": session_id,
+                                    "msg_id": msg_id,
+                                    "tree": tree,
+                                    "function": func_name,
+                                },
+                            })
                         except Exception:
                             pass
                     else:
@@ -192,16 +251,21 @@ def _poll(session_id: str, msg_id: str, func_name: str,
                     # placeholder so a refresh-after-crash also recovers
                     # the partial view. Cheap — the index is in memory,
                     # write touches one JSON file + git add (commit
-                    # happens at turn end).
+                    # happens at turn end). On the forced final flush the
+                    # tree's root already carries ``status=completed``,
+                    # so a refresh after the run also shows it done.
                     try:
-                        if _shim is None:
+                        if state["shim"] is None:
                             from openprogram.store import GraphStoreShim
                             from openprogram.agent.session_db import default_db
-                            _shim = GraphStoreShim(default_db(), session_id)
-                        _shim.update(
+                            state["shim"] = GraphStoreShim(
+                                default_db(), session_id)
+                        _root_status = (tree.get("status")
+                                        if isinstance(tree, dict) else None)
+                        state["shim"].update(
                             _placeholder_id,
                             metadata={
-                                "status": "running",
+                                "status": _root_status or "running",
                                 "context_tree": tree,
                                 "last_update_at": time.time(),
                             },
@@ -213,8 +277,8 @@ def _poll(session_id: str, msg_id: str, func_name: str,
         try:
             payload = build_branches_payload(session_id)
             gsig = json.dumps(payload.get("graph"), default=str, sort_keys=True)
-            if gsig != last_graph:
-                last_graph = gsig
+            if force or gsig != state["last_graph"]:
+                state["last_graph"] = gsig
                 if on_event is not None:
                     try:
                         on_event({"type": "branches_list", "data": payload})
@@ -225,6 +289,12 @@ def _poll(session_id: str, msg_id: str, func_name: str,
                         {"type": "branches_list", "data": payload}, default=str))
         except Exception:
             pass
+
+    while not stop.wait(1.2):
+        _tick(force=False)
+    # Final flush after stop: emit the terminal tree (root flipped to
+    # completed) through the same channel so the card finalizes.
+    _tick(force=True)
 
 
 @contextmanager
@@ -249,6 +319,17 @@ def live_progress(session_id: str, msg_id: str, func_name: str, on_event=None):
         yield
     finally:
         stop.set()
+        # Wait (bounded) for the poller's forced final flush to emit the
+        # terminal tree before we return. In the @agentic_function
+        # subprocess the process exits right after this block; without
+        # the join the daemon poller is killed mid-flush and the
+        # completed tree never reaches the queue, so the card stays
+        # running (Bug 6). The flush is one DAG build + one envelope —
+        # fast — but cap the wait so a wedged build can't hang turn end.
+        try:
+            thread.join(timeout=5.0)
+        except Exception:
+            pass
 
 
 # ── Interrupted-run repair ───────────────────────────────────────────

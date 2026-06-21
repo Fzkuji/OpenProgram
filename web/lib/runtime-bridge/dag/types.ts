@@ -25,7 +25,6 @@ export interface GNode {
   _depth?: number;
   _lane?: number;
   _tier?: number;
-  _anchor?: GNode;
   _internal?: boolean;
   _runNode?: boolean;
   [k: string]: any;

@@ -239,13 +239,10 @@ def test_agentic_function_result_persists_via_append_msg(server) -> None:
     on _save_conversation having flushed."""
     srv, db = server
     conv = srv._get_or_create_session("c1", agent_id="main")
-    # Simulate run action: user runtime command + assistant result
-    srv._append_msg(conv, {
-        "id": "u1", "role": "user",
-        "display": "runtime",         # marks it as a function trigger
-        "content": "create(description='hello world')",
-        "timestamp": 1.0,
-    })
+    # Simulate run action: the assistant result. fn-form no longer
+    # writes a user-side anchor row — the @agentic_function's code node
+    # (called_by=ROOT) is the canonical record, so the only _append_msg
+    # here is the assistant result.
     srv._append_msg(conv, {
         "id": "a1", "role": "assistant",
         "function": "create",          # tagged with function name
@@ -262,7 +259,6 @@ def test_agentic_function_result_persists_via_append_msg(server) -> None:
     # New worker process (simulated) sees the messages via SessionDB
     fresh_msgs = db.get_branch("c1")
     fresh_ids = [m["id"] for m in fresh_msgs]
-    # u1 has display=runtime (fn-form anchor) — no longer persisted.
     assert fresh_ids == ["a1"]
     a_row = next(m for m in fresh_msgs if m["id"] == "a1")
     assert a_row["role"] == "assistant"

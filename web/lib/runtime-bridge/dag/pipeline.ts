@@ -3,15 +3,14 @@
  *
  * Reads a flat ``GNode[]`` + a HEAD id, runs the pass stack to
  * normalise the graph (collapse runtime pairs, merge tool/run-node
- * pairs, collapse runtime placeholders, demote decoration cards),
- * computes a depth + lane layout, applies the user/auto collapse,
- * and emits the SVG into ``#historyPanel .history-body``.
+ * pairs, demote decoration cards), computes a depth + lane layout,
+ * applies the user/auto collapse, and emits the SVG into
+ * ``#historyPanel .history-body``.
  *
  * Pipeline order (mirrors ``passes/`` + ``layout/``):
  *
  *   mergeRuns
  *     → collapseRuntimePairs
- *     → collapseRuntimePlaceholders
  *     → demoteDecorationCards
  *     → (stable leafOfNode snapshot from pre-collapse tree)
  *     → applyCollapse
@@ -53,7 +52,6 @@ import {
 } from "./tooltip";
 import { _collapseRuntimePairs } from "./passes/collapse-runtime-pairs";
 import { _mergeRuns } from "./passes/merge-runs";
-import { _collapseRuntimePlaceholders } from "./passes/collapse-runtime-placeholders";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
 import { _applyCollapse } from "./passes/apply-collapse";
 import { _buildTree } from "./layout/build-tree";
@@ -96,21 +94,6 @@ function _signature(graph: GNode[], headId: string | null): string {
 export function render(graphIn: GNode[], headIdIn: string | null): void {
   let graph = graphIn;
   let headId = headIdIn;
-
-  // collapseRuntimePlaceholders MUST run first. It folds the
-  // ``runtime placeholder + same-named code call`` pair into a single
-  // surviving code node, with the placeholder's old conv-children
-  // (e.g. a follow-up user msg whose parent_id pointed at the
-  // placeholder) reparented onto the surviving code.
-  //
-  // Without this ordering, ``_mergeRuns`` would see the placeholder
-  // still in place with two kids — the code (tool) + the followup
-  // user msg — treat them as ``wrapper + run-output``, and merge the
-  // code's caller-tree onto the user msg. That visually attaches
-  // ``gui_step`` + ``conclusion`` to the user dot in mini-DAG.
-  const collapsedRP = _collapseRuntimePlaceholders(graph, headId);
-  graph = collapsedRP.graph;
-  headId = collapsedRP.headId;
 
   const merged = _mergeRuns(graph, headId);
   graph = merged.graph;

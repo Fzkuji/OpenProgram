@@ -195,6 +195,22 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // Live execution tree for a streaming `/run` — store it on the reply
   // so <RuntimeBlock />'s <ExecutionTree /> renders it as it grows.
   if (d.type === "tree_update" && d.tree) {
+    // The same tree_update channel carries the run's terminal state:
+    // live ticks send a root with status="running"; the final flush
+    // (live_progress.__exit__) sends the root flipped to
+    // "completed"/"error". Derive the card's status from the tree root
+    // so the card finalizes in place — no separate result envelope, no
+    // duplicate row. (Bug 6: the deleted result broadcast left the card
+    // spinning forever.)
+    const rootStatus = (d.tree as { status?: string } | null)?.status;
+    const cardStatus: ChatMsg["status"] | undefined =
+      rootStatus === "completed"
+        ? "done"
+        : rootStatus === "error"
+          ? "error"
+          : rootStatus === "running"
+            ? "running"
+            : undefined;
     // LLM-issued @agentic_function path: the dispatcher anchors
     // live_progress on the runtime-block id (not a `_reply` row), so a
     // tree_update arrives with msg_id == runtime_id. If that row exists
@@ -207,6 +223,7 @@ function handleResponse(d: ChatResponseData | undefined): void {
       store0.updateMessage(sid, d.msg_id!, {
         function: d.function ?? existingRuntime.function,
         contextTree: d.tree as never,
+        ...(cardStatus ? { status: cardStatus } : {}),
       });
       return;
     }
@@ -226,7 +243,12 @@ function handleResponse(d: ChatResponseData | undefined): void {
         const list = parent?.runtimeChildren ?? [];
         const next = list.map((c) =>
           c.id === d.msg_id
-            ? { ...c, function: d.function ?? c.function, contextTree: d.tree as never }
+            ? {
+                ...c,
+                function: d.function ?? c.function,
+                contextTree: d.tree as never,
+                ...(cardStatus ? { status: cardStatus } : {}),
+              }
             : c,
         );
         store0.updateMessage(sid, foundParent, { runtimeChildren: next });
@@ -238,6 +260,7 @@ function handleResponse(d: ChatResponseData | undefined): void {
       display: "runtime",
       function: d.function,
       contextTree: d.tree as never,
+      ...(cardStatus ? { status: cardStatus } : {}),
     });
     return;
   }

@@ -195,7 +195,6 @@ interface SessionRow {
   id: string;
   title?: string;
   created_at?: number;
-  has_session?: boolean;
   channel?: string | null;
   account_id?: string | null;
   peer?: string | null;
@@ -230,7 +229,6 @@ export function handleSessionsList(data: SessionRow[]): void {
           title: c.title,
           messages: [],
           created_at: c.created_at,
-          has_session: c.has_session,
           channel: c.channel || null,
           account_id: c.account_id || null,
           peer: c.peer || null,
@@ -246,7 +244,6 @@ export function handleSessionsList(data: SessionRow[]): void {
           project: c.project || "",
         };
       } else {
-        convs[c.id].has_session = c.has_session;
         if ("channel" in c) convs[c.id].channel = c.channel || null;
         if ("account_id" in c) convs[c.id].account_id = c.account_id || null;
         if ("peer" in c) convs[c.id].peer = c.peer || null;
@@ -276,7 +273,7 @@ export function handleSessionsList(data: SessionRow[]): void {
     newSessionImport();
   }
   W.renderSessions?.();
-  if (sid && convs[sid] && convs[sid].has_session) {
+  if (sid && convs[sid]) {
     W._hasActiveSession = true;
     const provBadge = document.getElementById("providerBadge");
     if (provBadge && provBadge.textContent!.indexOf("\u{1F512}") === -1) {
@@ -498,7 +495,15 @@ export function handleChatResponse(data: ChatResponseData): void {
       ];
       storedMsg.current_attempt = 0;
     }
-    conv.messages.push(storedMsg);
+    // Runtime (function-call) results are owned by the React message
+    // store: the chat-stream reducer writes the single runtime row that
+    // <MessageList /> renders as one Function-call card, and reload
+    // rebuilds it from the persisted execution tree. Pushing a second
+    // assistant row here would re-enter `convToChatMsgs` (on the next
+    // `__feedStoreFromConv`) as a duplicate `display:"runtime"` row,
+    // producing a second card. Only plain chat replies belong in the
+    // legacy `conv.messages` mirror.
+    if (!isRuntimeResult) conv.messages.push(storedMsg);
     (W.updateContextStats as ((m: unknown[]) => void) | undefined)?.(conv.messages);
 
     // Conversation title.

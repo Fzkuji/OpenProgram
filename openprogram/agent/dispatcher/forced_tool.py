@@ -115,12 +115,15 @@ def dispatch_forced_tool_call(
             _ddb().invalidate_cache(session_id)
         except Exception:
             pass
-        # fn-form / direct-run is a standalone call — the user msg +
-        # runtime placeholder ARE the main branch. Without advancing
-        # head_id to the placeholder, HEAD stays pinned to the user
-        # msg and the conv reads as ``detached`` (HEAD ≠ conv tip).
-        # LLM-called path advances head_id in process_user_turn step
-        # 6; the forced path was missing the equivalent step.
+        # fn-form / direct-run is a standalone call — the user msg + the
+        # top-level code node ARE the main branch. Without advancing
+        # head_id to that code node, HEAD stays pinned to the user msg
+        # and the conv reads as ``detached`` (HEAD ≠ conv tip). The
+        # LLM-called path advances head_id in process_user_turn step 6;
+        # the forced path was missing the equivalent step. ``runtime_msg_id``
+        # is the real persisted code-node id (or None if it couldn't be
+        # located — in which case we leave HEAD alone rather than point
+        # it at a dangling id).
         _rt_id = (out or {}).get("runtime_msg_id")
         if _rt_id:
             try:

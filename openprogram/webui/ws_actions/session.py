@@ -59,6 +59,96 @@ def _annotate_spawn_origin(graph: list[dict]) -> None:
         }
 
 
+def _rebuild_runtime_cards(
+    chain: list[dict], all_msgs: list[dict], session_id: str,
+) -> list[dict]:
+    """Turn a manually-invoked @agentic_function's code node into the
+    same Function-call card the live runtime shows.
+
+    A top-level code node (``called_by`` is ROOT / an anchor / anything
+    that is not an LLM reply) is the root of one @agentic_function call.
+    On refresh it arrives as a bare ``role="tool"`` row whose parent is
+    not an assistant, so ``aggregate_tool_messages`` can't fold it — the
+    mapper then renders it as a ``role="system"`` text blob instead of a
+    card. Rebuild it into a ``{role:"assistant", display:"runtime",
+    function, content, context_tree}`` row (the shape conv-mapper.ts
+    already maps to a RuntimeBlock), and drop its nested sub-nodes
+    (gui_step / plan_next_action / internal LLM …) so they collapse into
+    the card's context_tree instead of spilling into the chat stream.
+    """
+    by_id = {m.get("id"): m for m in all_msgs}
+    role_of = {m.get("id"): m.get("role") for m in all_msgs}
+
+    def _is_top_code(m: dict) -> bool:
+        if m.get("role") != "tool":
+            return False
+        parent = m.get("called_by") or m.get("parent_id") or ""
+        # LLM tool-call: parent is the LLM reply → folds into the
+        # assistant bubble, not a standalone card. Everything else
+        # (ROOT, anchor user row, no parent) is a manual/fn-form root.
+        return role_of.get(parent) != "assistant"
+
+    # Collect each top code node's transitive descendants (via parent_id)
+    # so they don't render as separate rows — they live in context_tree.
+    children_of: dict[str, list[str]] = {}
+    for m in all_msgs:
+        p = m.get("parent_id")
+        if p:
+            children_of.setdefault(p, []).append(m.get("id"))
+
+    def _descendants(root_id: str) -> set[str]:
+        seen: set[str] = set()
+        stack = list(children_of.get(root_id, []))
+        while stack:
+            cid = stack.pop()
+            if cid in seen:
+                continue
+            seen.add(cid)
+            stack.extend(children_of.get(cid, []))
+        return seen
+
+    from openprogram.webui._exec_dag import build_exec_dag_by_id
+
+    drop: set[str] = set()
+    out: list[dict] = []
+    for m in chain:
+        mid = m.get("id")
+        if mid in drop:
+            continue
+        if _is_top_code(m):
+            name = m.get("function") or ""
+            # Anchor the context_tree on this code node's own id, not on
+            # (name, called_by=ROOT). The latter is "last match wins", so
+            # calling one function twice in a session would resolve both
+            # cards to the most recent invocation's subtree. By-id gives
+            # each card its own subtree.
+            tree = build_exec_dag_by_id(session_id, mid)
+            # Errored fn-form code nodes persist metadata.status="error",
+            # which _node_to_msg surfaces as m["status"] (no is_error key
+            # exists on the dict). Read the real landed status first; keep
+            # is_error only as a legacy fallback.
+            status = m.get("status") or ("error" if m.get("is_error") else "done")
+            card = {
+                **m,
+                "role": "assistant",
+                "type": "status",
+                "display": "runtime",
+                "function": name,
+                "content": m.get("content") or "",
+                "status": status,
+                "context_tree": tree,
+                # Top-level card: no assistant parent, so conv-mapper
+                # keeps it on the main list instead of folding it into
+                # an LLM bubble's runtimeChildren.
+                "parent_id": "",
+            }
+            out.append(card)
+            drop |= _descendants(mid)
+            continue
+        out.append(m)
+    return out
+
+
 async def handle_delete_session(ws, cmd: dict):
     from openprogram.webui import server as _s
     from openprogram.agent.session_db import default_db
@@ -239,6 +329,21 @@ async def handle_load_session(ws, cmd: dict):
     ws._focused_session_id = session_id
     with _s._sessions_lock:
         conv = _s._sessions.get(session_id)
+    # Cold load (fresh worker, new browser session, or a session created
+    # by the fn-form REST path that never went through a WS chat turn):
+    # the conv isn't in the in-memory map yet. If it exists on disk,
+    # hydrate it from SessionDB so the full aggregation below runs —
+    # otherwise we'd fall to the empty-stub ``else`` and the page would
+    # render the Welcome screen for a session that actually has history
+    # (e.g. a manually-invoked @agentic_function's top-level code node).
+    if conv is None and session_id:
+        from openprogram.agent.session_db import default_db as _db_probe
+        try:
+            _exists = _db_probe().get_session(session_id) is not None
+        except Exception:
+            _exists = False
+        if _exists:
+            conv = _s._get_or_create_session(session_id)
     if conv:
         from openprogram.contextgit import (
             deepest_leaf,
@@ -341,6 +446,12 @@ async def handle_load_session(ws, cmd: dict):
                 extras.sort(key=lambda x: x.get("timestamp") or 0)
                 spliced2.extend(extras)
             chain = spliced2
+        # Rebuild Function-call cards from top-level @agentic_function
+        # code nodes (manual /run, fn-form). Without this a refreshed
+        # manual call renders as a bare system-text blob instead of the
+        # RuntimeBlock card the live runtime shows; its nested sub-nodes
+        # are absorbed into the card's context_tree.
+        chain = _rebuild_runtime_cards(chain, all_msgs, conv["id"])
         conv["messages"] = chain
         conv["head_id"] = head
         from openprogram.agent.session_db import default_db as _ddb
@@ -668,8 +779,13 @@ def _project_name_map() -> tuple[dict[str, str], str]:
         return {}, ""
 
 
-async def handle_list_sessions(ws, cmd: dict):
-    """List sessions from registry (pure memory, no disk I/O)."""
+def build_sessions_list() -> list[dict]:
+    """Build the sidebar session list payload from the registry.
+
+    Shared by ``handle_list_sessions`` (per-client reply) and the
+    fn-form REST path (broadcast on new-session creation), so both
+    produce identical rows.
+    """
     from openprogram.agent.session_db import default_db
     _proj_map, _default_proj = _project_name_map()
 
@@ -702,8 +818,21 @@ async def handle_list_sessions(ws, cmd: dict):
             "project": _proj_map.get(sid, _default_proj),
         })
     conv_list.sort(key=lambda c: c.get("created_at") or 0, reverse=True)
+    return conv_list
+
+
+def broadcast_sessions_list() -> None:
+    """Broadcast the current session list to every connected client."""
+    from openprogram.webui import server as _s
+    _s._broadcast(json.dumps({
+        "type": "sessions_list", "data": build_sessions_list(),
+    }, default=str))
+
+
+async def handle_list_sessions(ws, cmd: dict):
+    """List sessions from registry (pure memory, no disk I/O)."""
     await ws.send_text(json.dumps({
-        "type": "sessions_list", "data": conv_list,
+        "type": "sessions_list", "data": build_sessions_list(),
     }, default=str))
 
 

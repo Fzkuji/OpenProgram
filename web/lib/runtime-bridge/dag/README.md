@@ -26,7 +26,6 @@ dag/
 ├── passes/
 │   ├── collapse-runtime-pairs.ts        legacy user/asst runtime pair fold
 │   ├── merge-runs.ts                    fold tool wrapper into run-node
-│   ├── collapse-runtime-placeholders.ts  fold runtime placeholder + same-named code call
 │   ├── demote-decoration-cards.ts       suppress lane fork from LLM-triggered cards
 │   └── apply-collapse.ts                user/auto subtree collapse
 ├── layout/
@@ -58,17 +57,18 @@ reference:
 
 | node kind                      | role            | function field   | shape          |
 |--------------------------------|-----------------|------------------|----------------|
+| ROOT                           | `user`          | —                | diamond        |
 | `user_msg`                     | `user`          | —                | circle         |
-| `llm_reply` (main)             | `assistant`/`llm` | —              | triangle       |
-| `function_call` (inline tool)  | `tool`          | `bash`, `read`, …| square         |
-| `function_call` (runtime card) | `assistant`     | `gui_agent`, …   | square         |
-| branch-creating                | `tool`          | `task`           | diamond        |
-| branch-referencing             | `tool`          | `attach`, `merge`| square_outline |
-| `runtime_placeholder`          | (dropped in pass) | —              | n/a            |
+| `llm_reply`                    | `assistant`/`llm` | —              | triangle       |
+| `function_call` (code)         | `tool`          | `bash`, `gui_agent`, …| square    |
+| branch-referencing             | `tool`          | `attach`, `merge`/`task`| square_outline |
 
-Sub-agent user messages keep `role=user` + `display=runtime` and
-render as circles. The `display=runtime` flag alone never forces a
-shape — only a non-empty, non-branch-op `function` field does.
+ROOT is special-cased by `display=root` → diamond. Every other node's
+shape comes from its `role`. There are no anchor / placeholder /
+scaffold nodes: a function call is a single `role=tool` node hanging
+off its caller via `called_by`. Backend `graph_layout/filter.py`
+strips all `display=runtime` rows before the frontend sees them, so
+the renderer never has to fold or hide synthetic cards.
 
 ## Edge kinds
 
@@ -85,7 +85,6 @@ shape — only a non-empty, non-branch-op `function` field does.
 flat GNode[]
   → mergeRuns                       passes/merge-runs.ts
   → collapseRuntimePairs            passes/collapse-runtime-pairs.ts
-  → collapseRuntimePlaceholders     passes/collapse-runtime-placeholders.ts
   → demoteDecorationCards           passes/demote-decoration-cards.ts
   → snapshot stable leafOfNode      layout/build-tree + assign-lanes
   → applyCollapse                   passes/apply-collapse.ts
@@ -106,17 +105,15 @@ The pass pipeline above is what handles each of these. If you're
 adding a new pass, check that you don't regress any of these:
 
 * **LLM-called `gui_agent` displays as a reply child square**
-  (issue #137). `collapseRuntimePlaceholders` folds the runtime
-  placeholder into the same-named code call and shifts `_depth` by
-  `-1` so the surviving square sits one row below the reply, not two.
+  (issue #137). The code (`role=tool`) call hangs off the reply via
+  `called_by`, so it renders one tier right of the triangle.
   `demoteDecorationCards` keeps the next user turn on the same lane
   so it doesn't visually fork.
 
-* **Manually-triggered fn-form runs display as a main-lane square.**
-  Their parent is a `[function call]` user pseudo-msg (not an
-  assistant reply), so `demoteDecorationCards` doesn't match — they
-  stay as a peer node on the main lane, just with the runtime-card
-  shape rule firing because `display=runtime` + `function` is set.
+* **Manually-triggered function runs display as a main-lane square.**
+  The code call's `called_by` is ROOT, so it sits directly under the
+  ROOT diamond on the trunk (lane 0, one tier in), same colour as the
+  trunk.
 
 * **Sub-calls don't dim** (issue #129). The "out-of-context"
   override forces `task` / `attach` / `merge` to read as in-context
@@ -136,15 +133,6 @@ adding a new pass, check that you don't regress any of these:
 * **Sub-process disk write + cache invalidate timing** is handled in
   the backend (`webui/_graph_layout.py`); the front-end just trusts
   whatever lane/depth/tier the backend emits.
-
-* **Sub-agent user_msgs** carry `role=user` + `display=runtime` and
-  must render as circles, not squares. Guarded by `_shapeFor`: the
-  square rule fires only when `function` is set + non-branch-op, which
-  is never true for sub-agent user_msgs.
-
-* **Runtime placeholder + same-named code call** fold into a single
-  square (`collapseRuntimePlaceholders`), and the cluster's `_tier` /
-  `_depth` is shifted so it sits where the placeholder used to be.
 
 ## Corner cases pending future work
 

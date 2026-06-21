@@ -27,21 +27,6 @@ _FUNCTION_BODY_CONTROL_KEYS = {
 }
 
 
-def _kwargs_repr(kwargs: dict) -> str:
-    parts = []
-    for k, v in (kwargs or {}).items():
-        if k in ("runtime", "callback"):
-            continue
-        try:
-            r = repr(v)
-        except Exception:
-            r = "<unrepr>"
-        if len(r) > 60:
-            r = r[:57] + "..."
-        parts.append(f"{k}={r}")
-    return ", ".join(parts)
-
-
 def register(app):
     @app.post("/api/chat")
     async def post_chat(body: dict = None):
@@ -58,7 +43,11 @@ def register(app):
         msg_id = str(uuid.uuid4())[:8]
 
         if not conv["messages"]:
-            conv["title"] = text[:50]
+            from openprogram.agent.session_db import default_db as _rc_db
+            try:
+                _rc_db().update_session(session_id, title=text[:50], _titled=True)
+            except Exception:
+                pass
 
         parsed = _s._parse_chat_input(text)
         user_msg = {
@@ -244,31 +233,58 @@ def register(app):
             conv.setdefault("last_workdirs", {})[name] = work_dir
         except Exception:
             pass
+        # msg_id is only a WS-routing handle for the response stream;
+        # it is never written to the DAG. The code node written by the
+        # @agentic_function is the canonical record and its called_by
+        # resolves to ROOT (anchor_msg_id="ROOT" below).
         msg_id = uuid.uuid4().hex[:8]
 
-        # Persist the user-side command marker that anchors the
-        # runtime-block row. Same shape the chat path uses for /run.
-        _s._append_msg(conv, {
-            "role": "user",
-            "id": msg_id,
-            "content": f"[function call] {name}({_kwargs_repr(kwargs)})",
-            "display": "runtime",
-            "source": "fn-form",
-            "timestamp": time.time(),
-        })
+        # Ensure the session ROOT node exists so the code node's
+        # called_by=ROOT resolves to a real node. No anchor row.
         try:
-            _s._save_session(session_id)
+            from openprogram.agent.session_db import default_db
+            from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
+            from openprogram.store import GraphStoreShim as _GS
+            _db = default_db()
+            if not _db.message_exists(session_id, "ROOT"):
+                _GS(_db, session_id).append(_C(
+                    id="ROOT", role=_RU, output="",
+                    metadata={"display": "root"},
+                ))
         except Exception:
             pass
 
-        agent_id = conv.get("agent_id") or _s._default_agent_id()
+        from openprogram.agent.session_db import default_db as _rc_db2
+        agent_id = (_rc_db2().get_session(session_id) or {}).get("agent_id") or _s._default_agent_id()
+
+        # Give the session a title so it shows in the sidebar and can be
+        # reloaded on refresh. Without an anchor user row there is no
+        # preview, and build_sessions_list drops title-less + preview-less
+        # rows — so a fn-form session would be invisible and a refresh
+        # would 404 back to the welcome screen. Title = the call itself.
+        try:
+            _arg_bits = ", ".join(
+                f"{k}={v!r}" if not isinstance(v, str) or len(v) <= 40
+                else f"{k}={v[:37]!r}…"
+                for k, v in (kwargs or {}).items()
+            )
+            _fn_title = f"{name}({_arg_bits})"[:80]
+            _existing = _rc_db2().get_session(session_id) or {}
+            _meta_fields = {"title": _fn_title, "agent_id": agent_id}
+            # Stamp created_at on first use so the row sorts to the top of
+            # the sidebar (build_sessions_list orders by created_at desc).
+            if not _existing.get("created_at"):
+                _meta_fields["created_at"] = time.time()
+            _rc_db2().update_session(session_id, **_meta_fields)
+        except Exception:
+            pass
 
         def _run():
             from openprogram.agent.dispatcher import dispatch_forced_tool_call
             try:
                 dispatch_forced_tool_call(
                     session_id=session_id,
-                    anchor_msg_id=msg_id,
+                    anchor_msg_id="ROOT",
                     tool_name=name,
                     tool_input=kwargs,
                     work_dir=work_dir,
@@ -287,4 +303,16 @@ def register(app):
                 })
 
         threading.Thread(target=_run, daemon=True).start()
+
+        # The fn-form path creates the session row directly (no WS
+        # action ran), so the sidebar — which only fetches the list on
+        # mount/manual refresh — never learns about the new session.
+        # Broadcast the current list once so every connected client's
+        # sidebar shows the new conversation immediately.
+        try:
+            from openprogram.webui.ws_actions.session import broadcast_sessions_list
+            broadcast_sessions_list()
+        except Exception:
+            pass
+
         return JSONResponse(content={"session_id": session_id, "msg_id": msg_id})

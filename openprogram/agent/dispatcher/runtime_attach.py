@@ -37,16 +37,14 @@ def _wrap_agentic_runtime_block(
     a ``display=runtime`` row with the full Execution DAG, duration,
     parameters, and return preview.
 
-    Before exec: persist a ``role=assistant, type=status,
-    display=runtime, status=running`` placeholder and broadcast it.
-    Set ``_call_id`` so the @agentic_function decorator anchors its
-    top DAG node under our placeholder id (build_exec_dag walks from
-    that id to reconstruct the tree).
+    Before exec: set ``_call_id`` to the real caller so the
+    @agentic_function decorator writes its top DAG node with
+    ``called_by`` pointing at that caller (build_exec_dag walks from
+    that id to reconstruct the tree). No placeholder node is created.
 
-    After exec: rebuild the exec DAG, update the placeholder in place
-    with ``status=done`` + ``context_tree`` + final output, broadcast
-    a runtime-block result envelope so live UIs flip without a
-    refresh.
+    During exec: poll build_exec_dag and broadcast tree_update
+    envelopes so live UIs fill the Execution DAG without a refresh.
+    The code node written by @agentic_function is the canonical record.
     """
     from openprogram.agent.types import AgentTool as _AgentTool
 
@@ -62,63 +60,21 @@ def _wrap_agentic_runtime_block(
         from openprogram.store import GraphStoreShim
         from openprogram.webui._exec_dag import build_exec_dag
 
-        # ``call_id`` here is the LLM's tool_call_id — unique per call,
-        # so multiple invocations of the same agentic tool in one turn
-        # each get their own runtime-block row.
-        runtime_id = f"{assistant_msg_id}_rt_{call_id}"
-        now = time.time()
-        # Placeholder is structurally a tool call. Set BOTH parent_id
-        # (so the frontend's ``_collapseRuntimePlaceholders`` anchor-
-        # fold still sees the fn-form user-runtime anchor as the
-        # placeholder's parent and can fold it) AND caller (so
-        # ``conv_parent_of`` returns null because caller wins — the
-        # placeholder doesn't count as a conv-child and lane.py /
-        # branches_list don't treat it as a fork). Net effect:
-        #   * LLM-called: parent=reply (assistant), caller=reply.
-        #     ``_collapseRuntimePlaceholders`` matches LLM-called rule
-        #     (reply.role==assistant) and folds the pair.
-        #   * fn-form:    parent=anchor (user-runtime), caller=anchor.
-        #     The pass's anchor-fold (anchor.role==user,
-        #     anchor.display==runtime) removes the user circle so the
-        #     mini-DAG shows ONE square on main trunk.
-        placeholder = {
-            "id": runtime_id,
-            "role": "assistant",
-            "type": "status",
-            "content": "",
-            "function": tool_name,
-            "display": "runtime",
-            "status": "running",
-            "started_at": now,
-            "last_update_at": now,
-            "timestamp": now,
-            "parent_id": assistant_msg_id,
-            "caller": assistant_msg_id,
-            "called_by": assistant_msg_id,
-            "source": req.source,
-            "agent_id": req.agent_id,
-        }
         db = default_db()
-        # No placeholder persisted or broadcast — the code node
-        # written by @agentic_function is the canonical record.
-        # Live progress comes via tree_update events from
-        # live_progress poller below.
+        # The code node written by @agentic_function is the canonical
+        # record — no placeholder is persisted or broadcast. Live
+        # progress comes via tree_update events from the live_progress
+        # poller below.
 
-        # Set _call_id to the real invoker so the code node's
-        # called_by points at the actual caller, not the placeholder.
-        # fn-form: assistant_msg_id's parent (anchor) was not persisted,
-        # so it doesn't exist in SessionStore → use ROOT.
-        # LLM call: assistant_msg_id is the real LLM reply → use it.
+        # ``assistant_msg_id`` is already the real caller in both paths:
+        #   * fn-form: routes/chat.py passes "ROOT".
+        #   * LLM call: it's the LLM reply id.
+        # Set _call_id so the code node's called_by points at it.
         _real_caller = assistant_msg_id
-        try:
-            if not db.message_exists(req.session_id, assistant_msg_id):
-                _real_caller = "ROOT"
-        except Exception:
-            pass
         _call_token = _call_id_var.set(_real_caller)
         # Live Execution DAG streaming: poll build_exec_dag(...,
-        # runtime_id) every ~1.2s while the tool runs and broadcast
-        # tree_update envelopes (anchored on runtime_id) so the
+        # _real_caller) every ~1.2s while the tool runs and broadcast
+        # tree_update envelopes (anchored on _real_caller) so the
         # RuntimeBlock's <ExecutionTree /> fills in live. Without this
         # the card sits empty until the result envelope lands.
         try:
@@ -258,13 +214,13 @@ def _wrap_agentic_runtime_block(
                 _dbg_nodes = db.get_nodes(req.session_id)
                 _dbg_kids = [n for n in _dbg_nodes
                              if n.is_code() and n.name == tool_name
-                             and n.called_by == runtime_id]
+                             and n.called_by == _real_caller]
                 _dbg_total = len(_dbg_nodes)
                 _dbg_top_id = _dbg_kids[-1].id if _dbg_kids else None
                 _dbg_grand = sum(1 for n in _dbg_nodes
                                  if n.called_by == _dbg_top_id) if _dbg_top_id else 0
-                print(f"[dispatcher.debug] LLM-called finalize tool={tool_name} "
-                      f"runtime_id={runtime_id} total_nodes={_dbg_total} "
+                print(f"[dispatcher.debug] finalize tool={tool_name} "
+                      f"caller={_real_caller} total_nodes={_dbg_total} "
                       f"top_match={bool(_dbg_top_id)} grand_children={_dbg_grand}",
                       file=_sys.stderr, flush=True)
             except Exception as _e:
