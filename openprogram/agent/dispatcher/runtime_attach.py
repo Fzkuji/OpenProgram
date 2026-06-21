@@ -99,24 +99,10 @@ def _wrap_agentic_runtime_block(
             "agent_id": req.agent_id,
         }
         db = default_db()
-        # Placeholder is NOT persisted to SessionStore — it's UI
-        # scaffolding for the chat RuntimeBlock card. The real function
-        # call is the code node written by @agentic_function.
-        # WS broadcast below keeps the live UI working.
-        on_event({
-            "type": "chat_response",
-            "data": {
-                "type": "status",
-                "session_id": req.session_id,
-                "msg_id": runtime_id,
-                "content": "",
-                "function": tool_name,
-                "display": "runtime",
-                "status": "running",
-                "parent_id": assistant_msg_id,
-                "timestamp": now,
-            },
-        })
+        # No placeholder persisted or broadcast — the code node
+        # written by @agentic_function is the canonical record.
+        # Live progress comes via tree_update events from
+        # live_progress poller below.
 
         # Set _call_id to the real invoker so the code node's
         # called_by points at the actual caller, not the placeholder.
