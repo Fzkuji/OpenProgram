@@ -836,6 +836,9 @@ def _append_msg(conv: dict, msg: dict) -> None:
             db.create_session(cid, msg.get("agent_id") or _default_agent_id(), **create_kwargs)
         # Ensure ROOT node + user called_by=ROOT for session DAG.
         if msg.get("role") == "user":
+            # display=runtime anchor: ensure ROOT exists but do NOT
+            # persist anchor itself (it's UI scaffolding, not a DAG node).
+            _is_runtime_anchor = msg.get("display") == "runtime"
             try:
                 from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
                 from openprogram.store import GraphStoreShim as _GS
@@ -845,13 +848,15 @@ def _append_msg(conv: dict, msg: dict) -> None:
                         id=_ROOT_ID, role=_RU, output="",
                         metadata={"display": "root"},
                     ))
-                # display=runtime anchor stays in conv memory (chat UI
-                # needs it for RuntimeBlock positioning) but does NOT
-                # get persisted to SessionStore (not a DAG node).
-                if msg.get("display") == "runtime":
-                    db.set_head(cid, msg_id)
-                    _invalidate_messages(cid)
-                    return
+            except Exception:
+                pass
+            if _is_runtime_anchor:
+                _invalidate_messages(cid)
+                return
+            try:
+                from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
+                from openprogram.store import GraphStoreShim as _GS
+                _ROOT_ID = "ROOT"
                 _GS(db, cid).append(_C(
                     id=msg_id,
                     role=_RU,

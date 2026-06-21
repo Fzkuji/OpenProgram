@@ -278,21 +278,9 @@ def _wrap_agentic_runtime_block(
             "status": "completed",
         }
         done_at = time.time()
-        # No placeholder to update — code node is the canonical record.
-        on_event({
-            "type": "chat_response",
-            "data": {
-                "type": "result",
-                "session_id": req.session_id,
-                "msg_id": runtime_id,
-                "content": text_out,
-                "function": tool_name,
-                "display": "runtime",
-                "context_tree": tree_dict,
-                "parent_id": assistant_msg_id,
-                "timestamp": done_at,
-            },
-        })
+        # No result broadcast — the code node in SessionStore is the
+        # canonical record. The chat UI already has the live progress
+        # tree from tree_update events. Refreshing loads from SessionStore.
         return result
 
     wrapped = _AgentTool(
