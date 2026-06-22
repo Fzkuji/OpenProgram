@@ -318,6 +318,29 @@ _current_stream_fn: contextvars.ContextVar[Optional[Any]] = contextvars.ContextV
 )
 
 
+def _situational_prefix(fn_name: str, fn_doc: str) -> str:
+    """Situational prompt prefixed to the inner model's turn so it knows
+    which agentic function it is running inside and why it must not call
+    that function again (self-recursion guidance, replacing the old
+    tool-policy deny). The function's own tool stays visible; the model
+    is steered away from it rather than having it removed.
+
+    English to match the rest of the model-facing prompt (skills block,
+    [Current function: ...] tag this replaces) which is all English.
+    """
+    text = (
+        f"[Execution context] You are currently running INSIDE the "
+        f"agentic function `{fn_name}`. The tool list may include "
+        f"`{fn_name}` itself — do NOT call it. Calling `{fn_name}` "
+        "re-enters where you are now and causes infinite recursion. "
+        "Use lower-level tools (search / read-write files / run code) "
+        "to do the work directly."
+    )
+    if fn_doc and fn_doc.strip():
+        text += f"\n\nThis function's job: {fn_doc.strip()}"
+    return text
+
+
 class Runtime:
     """
     LLM runtime. Wraps a provider and handles Context integration.
@@ -557,12 +580,10 @@ class Runtime:
                 fn_name = frame_node.name
                 fn_doc = (frame_node.metadata or {}).get("doc") or ""
                 if fn_name:
-                    parts = [f"[Current function: {fn_name}]"]
-                    if fn_doc:
-                        parts.append(fn_doc.strip())
+                    text = _situational_prefix(fn_name, fn_doc)
                     frame_prefix_blocks.append({
                         "type": "text",
-                        "text": "\n\n".join(parts),
+                        "text": text,
                     })
 
             # Synthesize the current turn from ``content`` blocks via
@@ -1488,7 +1509,27 @@ class Runtime:
             history = dag_messages[:-1]
             current = dag_messages[-1]
         else:
-            ctx, _sp_unused = _build_pi_context(content)
+            # Standalone / no-store fallback: there is no DAG to read the
+            # current frame's name+doc from, but exec() is still running
+            # inside some agentic function body. Recover that function's
+            # name from the recursion-depth tracker (innermost = deepest)
+            # so the situational/self-recursion guidance is injected here
+            # too — otherwise standalone calls get no steering.
+            standalone_prefix: list = []
+            try:
+                from openprogram.agentic_programming.function import (
+                    _recursion_depth,
+                )
+                _depths = _recursion_depth.get(None) or {}
+                if _depths:
+                    _cur_fn = max(_depths, key=_depths.get)
+                    standalone_prefix = [{
+                        "type": "text",
+                        "text": _situational_prefix(_cur_fn, ""),
+                    }]
+            except Exception:
+                standalone_prefix = []
+            ctx, _sp_unused = _build_pi_context(standalone_prefix + (content or []))
             history = []
             current = ctx.messages[0]
         system_prompt = getattr(self, "system", "") or ""

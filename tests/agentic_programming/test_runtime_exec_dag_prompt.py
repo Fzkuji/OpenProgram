@@ -139,12 +139,13 @@ def test_dag_prompt_inside_io_function_frame(rt, store):
     # because output=None) + current turn
     assert "user" in roles
     assert "assistant" in roles
-    # Current turn is the last message. It carries a "[Current function: plan]"
-    # identity prefix block (so the inner model knows which function it is)
-    # followed by the exec content "step 1".
+    # Current turn is the last message. It carries an "[Execution context]"
+    # situational prefix block naming the current function `plan` and warning
+    # against self-recursion (so the inner model knows which function it is
+    # running inside), followed by the exec content "step 1".
     last_texts = [c.text for c in msgs[-1].content]
     assert any("step 1" == t for t in last_texts)
-    assert any("[Current function: plan]" in t for t in last_texts)
+    assert any(("[Execution context]" in t and "`plan`" in t) for t in last_texts)
 
 
 def test_render_range_callers_zero_hides_history(rt, store):
@@ -172,7 +173,7 @@ def test_render_range_callers_zero_hides_history(rt, store):
 
     assert msgs is not None
     # Flatten every text block of every message (the current turn now
-    # carries a "[Current function: ...]" prefix block before the content).
+    # carries an "[Execution context]" situational prefix block before the content).
     all_texts = [
         c.text for m in msgs for c in (m.content or [])
         if hasattr(c, "text")

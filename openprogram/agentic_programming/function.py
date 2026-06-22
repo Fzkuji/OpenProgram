@@ -36,6 +36,20 @@ _call_id: ContextVar[Optional[str]] = ContextVar(
     '_call_id', default=None,
 )
 
+# Self-recursion safety net. The primary guard against an agentic
+# function re-entering itself (wiki_agent calling wiki_agent →
+# unbounded nesting) is the situational prompt injected in
+# ``runtime._render_history_messages`` — the model is told it is
+# already running inside the function and should not call it. This
+# depth counter is only a backstop: if a runaway model ignores the
+# guidance and re-enters the SAME function past the limit, we abort
+# instead of burning tokens forever. Per-function-name depth, so
+# distinct functions (wiki_agent → gui_agent → …) never collide.
+_MAX_AGENTIC_RECURSION_DEPTH = 5
+_recursion_depth: ContextVar[Optional[dict]] = ContextVar(
+    '_recursion_depth', default=None,
+)
+
 # Parameter names that receive the runtime injection
 _RUNTIME_PARAMS = {"runtime", "exec_runtime", "review_runtime"}
 
@@ -830,15 +844,24 @@ class agentic_function:
                 ))
             except Exception:
                 pass
-            # Prevent self-recursion (async variant) — same as sync above.
-            from openprogram.agentic_programming.runtime import (
-                _current_tool_policy as _ctp_async,
-            )
+            # Self-recursion backstop (async variant): bump the
+            # per-name depth counter and abort if this function has
+            # re-entered itself past the limit. The model is steered
+            # away from self-calls by the situational prompt; this only
+            # catches a runaway loop. See ``_make_sync_wrapper``.
             _self_name_async = getattr(self, "tool_name", None) or fn.__name__
-            _prev_policy_async = _ctp_async.get(None) or {}
-            _prev_deny_async = list(_prev_policy_async.get("deny") or [])
-            _self_deny_policy_async = {**_prev_policy_async, "deny": _prev_deny_async + [_self_name_async]}
-            _self_deny_token_async = _ctp_async.set(_self_deny_policy_async)
+            _prev_depth_async = _recursion_depth.get(None) or {}
+            _cur_depth_async = _prev_depth_async.get(_self_name_async, 0)
+            if _cur_depth_async >= _MAX_AGENTIC_RECURSION_DEPTH:
+                raise RecursionError(
+                    f"agentic function {_self_name_async} exceeded max "
+                    f"nesting depth {_MAX_AGENTIC_RECURSION_DEPTH} — "
+                    "possible runaway recursion"
+                )
+            _depth_token_async = _recursion_depth.set({
+                **_prev_depth_async,
+                _self_name_async: _cur_depth_async + 1,
+            })
             try:
                 output = await fn(*new_args, **new_kwargs)
                 return output
@@ -851,7 +874,7 @@ class agentic_function:
                 status = "error"
                 raise
             finally:
-                _ctp_async.reset(_self_deny_token_async)
+                _recursion_depth.reset(_depth_token_async)
                 _restore_system(_system_saved)
                 _update_function_call_exit(
                     pending_id=_pending_call_id,
@@ -930,19 +953,27 @@ class agentic_function:
                 ))
             except Exception:
                 pass
-            # Prevent self-recursion: an agentic function's inner
-            # runtime.exec must not see the function itself in the tool
-            # list (otherwise the model can call wiki_agent inside
-            # wiki_agent → infinite nesting). Push the function's own
-            # name into the tool-policy deny for the duration of this call.
-            from openprogram.agentic_programming.runtime import (
-                _current_tool_policy as _ctp,
-            )
+            # Self-recursion backstop: the inner model is told (via the
+            # situational prompt in runtime._render_history_messages)
+            # that it is already running inside this function and must
+            # not call it — the tool stays visible but the model is
+            # steered away. This depth counter is only a safety net: if
+            # a runaway model re-enters the SAME function past the
+            # limit, abort instead of nesting forever. Per-function-name
+            # so wiki_agent → gui_agent → … never collide.
             _self_name = getattr(self, "tool_name", None) or fn.__name__
-            _prev_policy = _ctp.get(None) or {}
-            _prev_deny = list(_prev_policy.get("deny") or [])
-            _self_deny_policy = {**_prev_policy, "deny": _prev_deny + [_self_name]}
-            _self_deny_token = _ctp.set(_self_deny_policy)
+            _prev_depth = _recursion_depth.get(None) or {}
+            _cur_depth = _prev_depth.get(_self_name, 0)
+            if _cur_depth >= _MAX_AGENTIC_RECURSION_DEPTH:
+                raise RecursionError(
+                    f"agentic function {_self_name} exceeded max "
+                    f"nesting depth {_MAX_AGENTIC_RECURSION_DEPTH} — "
+                    "possible runaway recursion"
+                )
+            _depth_token = _recursion_depth.set({
+                **_prev_depth,
+                _self_name: _cur_depth + 1,
+            })
             try:
                 output = fn(*new_args, **new_kwargs)
                 return output
@@ -955,7 +986,7 @@ class agentic_function:
                 status = "error"
                 raise
             finally:
-                _ctp.reset(_self_deny_token)
+                _recursion_depth.reset(_depth_token)
                 _restore_system(_system_saved)
                 _update_function_call_exit(
                     pending_id=_pending_call_id,
