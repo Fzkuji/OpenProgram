@@ -8,6 +8,7 @@
 </p>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2606.15874"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2606.15874-b31b1b?style=flat-square"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.4.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
@@ -31,6 +32,8 @@
 > — **Igor Stravinsky**, *Poetics of Music*
 
 **We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/philosophy/agentic-programming.md))
+
+> 📄 **Paper:** [_LLM-as-Code Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**.
 
 <p align="center">
   <img src="docs/images/why-openprogram.png" alt="Why OpenProgram — deterministic flow, run anywhere, automatic DAG context, any LLM / any provider, self-evolving workflows" width="900">
@@ -251,14 +254,19 @@ AGPL-3.0.
 
 ## Citation
 
-Using OpenProgram in your work, or building on the code? Please cite it — and under the AGPL, any derivative you **distribute or run as a network service** must itself be open-sourced under the AGPL, with attribution preserved (see [License](#license)).
+Using OpenProgram in your work, or building on the code? Please cite our paper — and under the AGPL, any derivative you **distribute or run as a network service** must itself be open-sourced under the AGPL, with attribution preserved (see [License](#license)).
+
+> _LLM-as-Code Agentic Programming for Agent Harness_ — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**. [arXiv:2606.15874](https://arxiv.org/abs/2606.15874)
 
 ```bibtex
-@software{openprogram2026,
-  title  = {OpenProgram: An Open-Source Agentic Workflow Harness},
-  author = {Fzkuji},
-  year   = {2026},
-  url    = {https://github.com/Fzkuji/OpenProgram},
+@inproceedings{qi2026llmascode,
+  title     = {LLM-as-Code Agentic Programming for Agent Harness},
+  author    = {Qi, Junjia and Fu, Zichuan and Gao, Jingtong and Zhang, Wenlin and Yan, Hanyu and Wu, Xian and Zhao, Xiangyu},
+  booktitle = {KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)},
+  year      = {2026},
+  eprint    = {2606.15874},
+  archivePrefix = {arXiv},
+  url       = {https://arxiv.org/abs/2606.15874},
 }
 ```
 
