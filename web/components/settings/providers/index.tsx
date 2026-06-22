@@ -16,6 +16,7 @@
  *     connectivity.tsx, model-list.tsx
  */
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Detail } from "./detail";
@@ -30,11 +31,17 @@ import { useTranslation } from "@/lib/i18n";
 export { ApiKey } from "./api-key";
 export type { Provider, Model } from "./types";
 
-export function ProvidersSection() {
+export function ProvidersSection({ initialProviderId }: { initialProviderId?: string } = {}) {
   const { t, text } = useTranslation();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Selection lives in the URL: /settings/providers/<id> selects <id>,
+  // /settings/providers (no id) falls back to the first enabled provider.
+  // ``initialProviderId`` is the route param so a hard refresh / shared
+  // link lands on the right provider; clicking a row router.push()es the
+  // new URL, which re-renders this with a new initialProviderId.
+  const [selectedId, setSelectedId] = useState<string | null>(initialProviderId ?? null);
   const [search, setSearch] = useState("");
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -58,15 +65,33 @@ export function ProvidersSection() {
       /* empty */
     }
     setProviders(list);
-    if (!preserveSelection && list.length > 0) {
+    // Only auto-pick a default when the URL named no provider. With a
+    // route param the selection is the param (kept in sync below), so a
+    // refresh on /settings/providers/<id> stays on <id>.
+    if (!preserveSelection && !initialProviderId && list.length > 0) {
       const first = list.find((p) => p.enabled) || list[0];
       setSelectedId(first.id);
     }
-  }, []);
+  }, [initialProviderId]);
 
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // Keep selection aligned with the route param (changes on navigation).
+  useEffect(() => {
+    if (initialProviderId) setSelectedId(initialProviderId);
+  }, [initialProviderId]);
+
+  // Navigate to /settings/providers/<id> instead of plain setState so the
+  // URL is shareable and survives a refresh.
+  const selectProvider = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      router.push(`/settings/providers/${encodeURIComponent(id)}`);
+    },
+    [router],
+  );
 
   const enabled = providers.filter((p) => p.enabled);
   const disabled = providers.filter((p) => !p.enabled);
@@ -129,7 +154,7 @@ export function ProvidersSection() {
                   key={p.id}
                   p={p}
                   active={selectedId === p.id}
-                  onSelect={() => setSelectedId(p.id)}
+                  onSelect={() => selectProvider(p.id)}
                 />
               ))}
             </>
@@ -142,7 +167,7 @@ export function ProvidersSection() {
                   key={p.id}
                   p={p}
                   active={selectedId === p.id}
-                  onSelect={() => setSelectedId(p.id)}
+                  onSelect={() => selectProvider(p.id)}
                 />
               ))}
             </>

@@ -444,6 +444,17 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
           <Button size="sm" onClick={addKey} disabled={busy || !newKey.trim()}>{busy ? text("Adding…", "添加中…") : text("Add", "添加")}</Button>
         </div>
       )}
+      {/* Some api-key providers ALSO support a native sign-in (anthropic:
+          OAuth subscription / setup-token; gemini; …). add_mode is a single
+          value (api_key) so it can't carry both paths — surface the login
+          button(s) here whenever the provider advertises login_methods, so
+          the key box and the sign-in button coexist instead of the sign-in
+          entry disappearing. */}
+      {state.add_mode === "api_key" && (provider.login_methods?.length ?? 0) > 0 && (
+        <ProviderLogin provider={provider} profileId={newName.trim() || undefined} bare
+          leadingInput={<Input className="flex-1 font-mono" placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} />}
+          onChanged={() => { setNewName(""); load(); onChanged?.(); }} />
+      )}
       {state.add_mode === "login" && (
         <ProviderLogin provider={provider} profileId={newName.trim() || undefined} bare
           leadingInput={<Input className="flex-1 font-mono" placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} />}
