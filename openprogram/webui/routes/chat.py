@@ -229,41 +229,57 @@ def register(app):
         def _run():
             from openprogram.agent.dispatcher import dispatch_forced_tool_call
             try:
-                out = dispatch_forced_tool_call(
-                    session_id=session_id,
-                    anchor_msg_id="ROOT",
-                    tool_name=name,
-                    tool_input=kwargs,
-                    work_dir=work_dir,
-                    agent_id=agent_id,
-                    source="fn-form",
-                    on_event=lambda env: _s._broadcast_envelope(env)
-                        if hasattr(_s, "_broadcast_envelope")
-                        else _s._broadcast(__import__("json").dumps(env, default=str)),
-                )
-            except Exception as e:  # noqa: BLE001
-                _s._broadcast_chat_response(session_id, msg_id, {
-                    "type": "error",
-                    "content": f"function call failed: {type(e).__name__}: {e}",
-                    "function": name,
-                    "display": "runtime",
-                })
-                return
-            if (out or {}).get("ok") and _fn_title:
-                # Stage-2 of the doc's two-stage naming: the function has
-                # produced a result, so let the LLM rename the session
-                # over the call + output (race-guarded; never locks).
-                from openprogram.agent.dispatcher.titles import (
-                    fn_form_llm_title,
-                )
-                fn_form_llm_title(_rc_db2(), session_id, _fn_title)
+                try:
+                    out = dispatch_forced_tool_call(
+                        session_id=session_id,
+                        anchor_msg_id="ROOT",
+                        tool_name=name,
+                        tool_input=kwargs,
+                        work_dir=work_dir,
+                        agent_id=agent_id,
+                        source="fn-form",
+                        on_event=lambda env: _s._broadcast_envelope(env)
+                            if hasattr(_s, "_broadcast_envelope")
+                            else _s._broadcast(__import__("json").dumps(env, default=str)),
+                    )
+                except Exception as e:  # noqa: BLE001
+                    _s._broadcast_chat_response(session_id, msg_id, {
+                        "type": "error",
+                        "content": f"function call failed: {type(e).__name__}: {e}",
+                        "function": name,
+                        "display": "runtime",
+                    })
+                    return
+                if (out or {}).get("ok") and _fn_title:
+                    # Stage-2 of the doc's two-stage naming: the function has
+                    # produced a result, so let the LLM rename the session
+                    # over the call + output (race-guarded; never locks).
+                    from openprogram.agent.dispatcher.titles import (
+                        fn_form_llm_title,
+                    )
+                    fn_form_llm_title(_rc_db2(), session_id, _fn_title)
+            finally:
+                # The function run is over (success / error / exception) —
+                # clear the running task so the sidebar's flowing animation
+                # stops and the composer's stop button reverts to send.
+                # Without this the session shows "running" forever (the
+                # chat path clears via _execute finalize; the fn-form path
+                # never did — only set it on start). Mirrors
+                # _execute/chat.py:277-278.
+                try:
+                    with _s._running_tasks_lock:
+                        _s._running_tasks.pop(session_id, None)
+                    _s._emit_running_task_event(session_id)
+                except Exception:
+                    pass
 
-        threading.Thread(target=_run, daemon=True).start()
-
-        # Mark the session running so its sidebar row shows the flowing
-        # animation (convRunningFlow) immediately — same signal the chat
-        # path emits at chat_ack. The function-run thread / its finalize
-        # pops _running_tasks at completion, which clears the animation.
+        # Mark the session running BEFORE starting the thread so its
+        # sidebar row shows the flowing animation (convRunningFlow)
+        # immediately — same signal the chat path emits at chat_ack. Must
+        # precede Thread.start(): a very fast function could otherwise hit
+        # its finalize pop before this setdefault runs, re-pinning the
+        # session as "running" forever. The thread's finally pops it +
+        # emits running_task_clear when the run ends.
         try:
             with _s._running_tasks_lock:
                 _s._running_tasks.setdefault(session_id, {
@@ -275,6 +291,8 @@ def register(app):
             _s._emit_running_task_event(session_id)
         except Exception:
             pass
+
+        threading.Thread(target=_run, daemon=True).start()
 
         # The fn-form path creates the session row directly (no WS
         # action ran), so the sidebar — which only fetches the list on
