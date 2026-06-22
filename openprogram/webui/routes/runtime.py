@@ -22,6 +22,47 @@ import json
 from fastapi.responses import JSONResponse
 
 
+def _runtime_build_error_response(exc: Exception, provider: str | None = None):
+    """Turn a runtime-construction failure into a graceful structured 4xx
+    instead of a 500 traceback.
+
+    Building a runtime acquires the provider credential (codex/anthropic
+    refresh OAuth in ``__init__``). When that credential is expired with a
+    dead refresh token, AuthManager raises ``AuthNeedsReauthError`` /
+    ``AuthReadOnlyError`` / ``AuthPoolExhaustedError`` / ``AuthConfigError``;
+    the anthropic runtime instead raises ``ValueError("No Anthropic
+    credential …")`` once resolution comes back empty. A failed/expired
+    login is an expected state — return ``needs_reauth`` with the provider
+    so the UI can prompt re-login, not crash the whole panel.
+
+    Any other build failure (unknown model, no registry entry) is a
+    request-level problem too, so it returns a 400 with the message rather
+    than a 500."""
+    from openprogram.auth.types import (
+        AuthConfigError,
+        AuthError,
+        AuthNeedsReauthError,
+        AuthPoolExhaustedError,
+        AuthReadOnlyError,
+    )
+    needs_reauth = isinstance(
+        exc,
+        (AuthNeedsReauthError, AuthReadOnlyError,
+         AuthPoolExhaustedError, AuthConfigError),
+    )
+    if not needs_reauth and isinstance(exc, ValueError) and "credential" in str(exc).lower():
+        needs_reauth = True
+    prov = (getattr(exc, "provider_id", "") if isinstance(exc, AuthError) else "") or provider or None
+    return JSONResponse(
+        content={
+            "error": str(exc),
+            "needs_reauth": needs_reauth,
+            "provider": prov,
+        },
+        status_code=401 if needs_reauth else 400,
+    )
+
+
 def register(app):
     @app.get("/api/providers")
     async def get_providers():
@@ -119,7 +160,10 @@ def register(app):
                 prov = target_provider or cur_prov
                 need_new_rt = (target_provider and target_provider != cur_prov) or (old_rt is None)
                 if need_new_rt:
-                    new_rt = await _build_rt(prov)
+                    try:
+                        new_rt = await _build_rt(prov)
+                    except Exception as e:
+                        return _runtime_build_error_response(e, prov)
                     if old_rt and hasattr(old_rt, "close"):
                         try: old_rt.close()
                         except Exception: pass
@@ -145,7 +189,10 @@ def register(app):
                 return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
 
         if target_provider and target_provider != _s._runtime_management._default_provider:
-            new_rt = await _build_rt(target_provider)
+            try:
+                new_rt = await _build_rt(target_provider)
+            except Exception as e:
+                return _runtime_build_error_response(e, target_provider)
             if _s._runtime_management._default_runtime and hasattr(
                 _s._runtime_management._default_runtime, "close"
             ):
@@ -245,10 +292,18 @@ def register(app):
                 with _s._sessions_lock:
                     session_ids = list(_s._sessions.keys())
                 new_rts = {}
-                for cid in session_ids:
-                    new_rts[cid] = await asyncio.to_thread(
-                        _s._create_runtime_for_visualizer, new_provider, new_model
-                    )
+                try:
+                    for cid in session_ids:
+                        new_rts[cid] = await asyncio.to_thread(
+                            _s._create_runtime_for_visualizer, new_provider, new_model
+                        )
+                except Exception as e:
+                    # Credential expired / login dead while building the
+                    # new chat runtime — return a graceful needs_reauth
+                    # instead of a 500. Globals are untouched (we only
+                    # write them AFTER all runtimes construct), so the
+                    # previous setting stays live.
+                    return _runtime_build_error_response(e, new_provider)
                 _s._runtime_management._chat_provider = new_provider
                 _s._runtime_management._chat_model = new_model
                 with _s._sessions_lock:

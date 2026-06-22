@@ -135,6 +135,61 @@ def test_missing_refresh_fn_raises_needs_reauth(tmp_path: Path):
         asyncio.run(m.acquire("openai-codex"))
 
 
+# ---- refresh failure marks needs_reauth (no retry spam) -------------------
+
+def test_dead_refresh_token_marks_needs_reauth_and_stops_retrying(tmp_path: Path):
+    m, store = _manager(tmp_path)
+    store.add_credential(_oauth(access="old", expires_at_ms=0))
+    calls = {"n": 0}
+
+    def refresh(c):
+        calls["n"] += 1
+        # Mimic Anthropic's "refresh token dead" 400.
+        raise RuntimeError(
+            "Anthropic OAuth refresh failed 400: invalid_grant, "
+            "Refresh token not found or invalid"
+        )
+
+    register_provider_config(ProviderAuthConfig(
+        provider_id="openai-codex", refresh=refresh,
+    ))
+
+    # First acquire: refresh runs once and fails -> bubble up.
+    with pytest.raises(RuntimeError):
+        asyncio.run(m.acquire("openai-codex"))
+    assert calls["n"] == 1
+
+    # The failure was persisted as needs_reauth (was the bug: stayed valid).
+    stored = store.get_pool("openai-codex", "default").credentials[0]
+    assert stored.status == "needs_reauth"
+    assert stored.last_error
+
+    # Second acquire: the pool skips the dead credential (no second
+    # refresh attempt -> no log spam) and reports the pool exhausted.
+    with pytest.raises(AuthPoolExhaustedError):
+        asyncio.run(m.acquire("openai-codex"))
+    assert calls["n"] == 1  # refresh NOT called again
+
+
+def test_transient_refresh_failure_does_not_mark_needs_reauth(tmp_path: Path):
+    m, store = _manager(tmp_path)
+    store.add_credential(_oauth(access="old", expires_at_ms=0))
+
+    def refresh(c):
+        raise RuntimeError("Anthropic OAuth refresh failed 503: connection timeout")
+
+    register_provider_config(ProviderAuthConfig(
+        provider_id="openai-codex", refresh=refresh,
+    ))
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(m.acquire("openai-codex"))
+
+    # Transport failure says nothing about the token -> credential untouched.
+    stored = store.get_pool("openai-codex", "default").credentials[0]
+    assert stored.status != "needs_reauth"
+
+
 # ---- concurrent refresh dedup ---------------------------------------------
 
 def test_concurrent_refresh_is_deduped(tmp_path: Path):

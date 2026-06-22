@@ -428,6 +428,46 @@ class AuthManager:
             raise
         except Exception as e:
             future.set_exception(e)
+            # Retrieve the exception off the future so a single-caller
+            # refresh (no concurrent waiter ever awaits this future)
+            # doesn't trip asyncio's "Future exception was never
+            # retrieved" warning on GC. Waiters that `await future`
+            # still get the exception re-raised — `.exception()` only
+            # clears the unretrieved flag, it doesn't consume the state.
+            try:
+                future.exception()
+            except Exception:
+                pass
+            # A refresh that fails because the refresh_token itself is
+            # dead (400 invalid_grant / 401 / 403) is NOT transient:
+            # retrying just re-fails and spams the logs. Persist
+            # status=needs_reauth so `pick` skips the credential and the
+            # refresh never runs again until the user re-logs in. A
+            # transient failure (network / 5xx / timeout) leaves the
+            # credential untouched (design: "5xx / network errors do NOT
+            # touch the credential") so it retries on the next call.
+            if _is_permanent_refresh_failure(e):
+                try:
+                    save_pool = self._store.find_pool(
+                        cred.provider_id, cred.profile_id,
+                    ) or pool
+                    target = next(
+                        (c for c in save_pool.credentials
+                         if c.credential_id == cred.credential_id),
+                        None,
+                    )
+                    if target is not None:
+                        ev = _pool.mark_failure(
+                            target, "needs_reauth",
+                            policy=cfg.failure_policy,
+                            detail=str(e)[:200],
+                        )
+                        self._store.put_pool(save_pool)
+                        self._store._emit(ev)   # type: ignore[attr-defined]
+                except Exception:
+                    # Persisting the failure state must never mask the
+                    # original refresh error the caller is about to see.
+                    pass
             self._store._emit(AuthEvent(                         # type: ignore[attr-defined]
                 type=AuthEventType.REFRESH_FAILED,
                 provider_id=cred.provider_id,
@@ -508,6 +548,38 @@ class AuthManager:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _is_permanent_refresh_failure(exc: Exception) -> bool:
+    """Does this refresh exception mean the refresh_token is DEAD (re-auth
+    required), as opposed to a transient hiccup we should retry?
+
+    Permanent: the token endpoint rejected the refresh_token itself —
+    ``invalid_grant`` / 400 / 401 / 403 / "refresh token not found or
+    invalid". Retrying these just re-fails and spams the logs, so we
+    persist ``needs_reauth`` and stop trying.
+
+    Transient (returns False — credential left untouched, retried next
+    call): network errors, timeouts, 5xx, and our own
+    :class:`AuthRotationConsumedError` (which the caller already reloads +
+    retries). This honours the design rule "5xx / network errors do NOT
+    touch the credential"."""
+    if isinstance(exc, AuthNeedsReauthError):
+        return True
+    if isinstance(exc, AuthRotationConsumedError):
+        return False
+    text = str(exc).lower()
+    # Transport-level failures say nothing about token validity.
+    for transient in ("timeout", "timed out", "connection", "network",
+                      "temporarily", "503", "502", "500", "504"):
+        if transient in text:
+            return False
+    for permanent in ("invalid_grant", "invalid grant", "not found or invalid",
+                      "400", "401", "403", "unauthorized", "invalid_token",
+                      "revoked", "expired"):
+        if permanent in text:
+            return True
+    return False
+
 
 def _oauth_stale(cred: Credential, skew_seconds: int) -> bool:
     """Return True iff ``cred``'s access token is past (or close to)
