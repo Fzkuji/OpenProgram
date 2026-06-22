@@ -43,7 +43,14 @@ def get_thinking_spec(provider_id: str) -> dict[str, Any]:
     If no thinking.json exists, returns a generic OpenAI-compatible
     fallback (low/medium/high effort_string) so that community providers
     (groq, mistral, openrouter, etc.) work without hand-written configs.
+
+    A missing / empty provider_id (e.g. the current provider couldn't be
+    resolved because credentials expired) returns the same fallback
+    rather than raising — agent_settings stays a 200 with a usable
+    config instead of 500ing the whole panel.
     """
+    if not provider_id:
+        return _OPENAI_COMPAT_FALLBACK
     resolved = _THINKING_ALIASES.get(provider_id, provider_id)
     for dir_name in (resolved, resolved.replace("-", "_")):
         path = _PROVIDERS_DIR / dir_name / "thinking.json"
