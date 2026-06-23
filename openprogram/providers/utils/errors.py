@@ -288,7 +288,7 @@ def taxonomy_fields(exc: BaseException) -> tuple[str | None, bool | None, float 
     """``(reason_value, retryable, retry_after_s)`` for an exception — exactly
     what ``AssistantMessage.error_reason / error_retryable / error_retry_after_s``
     carry. An :class:`LLMError` already holds them; anything else is classified.
-    See docs/design/providers/error-taxonomy-propagation.md.
+    See docs/design/providers/reliability/error-taxonomy-propagation.md.
     """
     if isinstance(exc, LLMError):
         return exc.reason.value, exc.retryable, exc.retry_after_s

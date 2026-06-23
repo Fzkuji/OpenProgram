@@ -88,7 +88,7 @@ dispatcher/
 attach runtime → run loop → persist assistant → finalize → emit result, each a
 named call into the sibling modules. The error taxonomy classification (phase 4
 / the loop's except) stays co-located with the loop in `loop.py`, matching
-`docs/design/providers/error-taxonomy-propagation.md`.
+`docs/design/providers/reliability/error-taxonomy-propagation.md`.
 
 ## 4. Migration order (smallest blast radius first)
 

@@ -314,7 +314,7 @@ def _is_configured(provider_id: str) -> bool:
         return _auth_store_has_credential("anthropic")
     # Key-based providers (incl. the Bedrock/Vertex cloud-credential chains):
     # the canonical is_configured — env-var key, or a satisfied cloud
-    # chain. See docs/design/providers/api-key-resolution-unification.md.
+    # chain. See docs/design/providers/auth/api-key-resolution-unification.md.
     from openprogram.providers.env_api_keys import env_vars_for, is_configured
     if env_vars_for(provider_id) or provider_id in ("amazon-bedrock", "google-vertex"):
         return is_configured(provider_id)

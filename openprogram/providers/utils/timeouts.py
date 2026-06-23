@@ -2,7 +2,7 @@
 
 One source of truth so every provider loosens / tightens consistently and
 nobody re-introduces a too-tight read timeout. The philosophy mirrors the
-reference frameworks (see ``docs/design/providers/llm-fault-tolerance.md``):
+reference frameworks (see ``docs/design/providers/reliability/llm-fault-tolerance.md``):
 
   * **Bound connection establishment tightly** — a dead proxy/VPN should
     fail fast (connect/write/pool ~30 s), not hang.

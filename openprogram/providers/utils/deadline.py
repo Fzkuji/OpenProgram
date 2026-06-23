@@ -6,7 +6,7 @@ retry loop (``stream_retry.retry_stream``) and the codex SSE parser run
 on their own count/budget, completely blind to the caller's deadline. A
 persistent transport error therefore multiplies the two loops
 (``max_attempts`` × ``max_retries``) with nothing capping the total
-wall-clock. See ``docs/design/providers/error-and-timeout-mechanism.html``.
+wall-clock. See ``docs/design/providers/reliability/error-and-timeout-mechanism.html``.
 
 Rather than thread a ``timeout`` argument through every layer (which
 would break the ``_call(content, model, response_format)`` override
