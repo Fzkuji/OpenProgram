@@ -72,16 +72,6 @@ def set_provider_config(provider_id: str, patch: dict[str, Any]) -> dict[str, An
                 pcfg.pop("base_url", None)
         if "use_responses_api" in patch:
             pcfg["use_responses_api"] = bool(patch.get("use_responses_api"))
-        if "meridian_profile" in patch:
-            # Which Meridian account (profile) the claude-code provider's
-            # traffic is pinned to — decouples it from the terminal
-            # `claude auth login`. Empty string clears the pin.
-            # See docs/design/claude-code-meridian-profile.md.
-            mp = (patch.get("meridian_profile") or "").strip()
-            if mp:
-                pcfg["meridian_profile"] = mp
-            else:
-                pcfg.pop("meridian_profile", None)
         _write_providers_cfg(cfg)
     return get_provider_config(provider_id)
 
@@ -265,7 +255,7 @@ def _resolve_api_key(provider_id: str) -> str | None:
         pass
     # Known providers delegate to the canonical resolver (env vars; all
     # special cases + the historical-name reconciliation live there now —
-    # see docs/design/providers/api-key-resolution-unification.md).
+    # see docs/design/providers/auth/api-key-resolution-unification.md).
     from openprogram.providers.env_api_keys import env_vars_for, resolve_api_key
     if env_vars_for(provider_id):
         key = resolve_api_key(provider_id)

@@ -189,13 +189,23 @@ def _supports_adaptive_thinking(model_id: str) -> bool:
 def _get_cache_control(base_url: str | None, cache_retention: str | None = None) -> dict | None:
     """
     Build cache_control dict for Anthropic API.
-    Uses ephemeral; 1h TTL only for api.anthropic.com and long retention.
-    Mirrors getCacheControl() in TypeScript.
+    Uses ephemeral; 1h TTL only for an endpoint in cache.json's
+    ``long_ttl_endpoints`` (api.anthropic.com) and long retention.
+    TTL value + eligible endpoints come from the provider's cache.json spec
+    (see providers/cache_spec.py) rather than being hardcoded here.
     """
+    from openprogram.providers.cache_spec import get_cache_spec, ttl_for_retention
+
     retention = cache_retention or "short"
     if retention == "none":
         return None
-    ttl = "1h" if retention == "long" and base_url and "api.anthropic.com" in base_url else None
+    spec = get_cache_spec("anthropic")
+    ttl = ttl_for_retention("anthropic", retention)
+    # Long TTL only applies on endpoints the spec marks eligible.
+    if ttl is not None:
+        endpoints = spec.get("long_ttl_endpoints") or []
+        if not (base_url and any(e in base_url for e in endpoints)):
+            ttl = None
     result: dict[str, Any] = {"type": "ephemeral"}
     if ttl:
         result["ttl"] = ttl
@@ -478,6 +488,10 @@ def _build_tools(
         }
         if strict:
             entry["strict"] = True
+        # Pass through a tool-level cache breakpoint (set by cache_policy or the
+        # caller). Anthropic accepts cache_control on a tool definition.
+        if getattr(tool, "cache_control", None):
+            entry["cache_control"] = tool.cache_control
         tools.append(entry)
     return tools
 
@@ -586,6 +600,18 @@ async def stream_simple(
         messages=transformed_msgs,
         tools=context.tools,
     )
+
+    # Auto cache-breakpoint policy (opencode port): mark the last tool + latest
+    # user message, preserving any caller-placed markers, within the 4-breakpoint
+    # budget. cache_control above still covers the system block + last-block
+    # default inside _build_messages/_build_system.
+    if cache_control is not None:
+        from openprogram.providers.cache_policy import apply_cache_policy
+        _retention = getattr(opts, "cache_retention", None)
+        transformed_context = apply_cache_policy(
+            transformed_context, "anthropic",
+            ttl_seconds=3600 if _retention == "long" else None,
+        )
 
     messages = _build_messages(transformed_context, is_oauth=is_oauth, cache_control=cache_control)
     tools = _build_tools(

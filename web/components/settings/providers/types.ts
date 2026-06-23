@@ -24,13 +24,6 @@ export interface Provider {
    */
   setup_hint?: string;
   /**
-   * claude-code only: the Meridian account (profile) this provider's
-   * traffic is pinned to, decoupling it from the terminal
-   * `claude auth login`. Empty = follow Meridian's default / keychain
-   * login. See docs/design/claude-code-meridian-profile.md.
-   */
-  meridian_profile?: string;
-  /**
    * Native login methods (OAuth / device-code / import-from-CLI) the web can
    * drive for this provider, excluding plain api_key (the ApiKey field handles
    * that). Present only for providers with a real native flow; absent/empty for

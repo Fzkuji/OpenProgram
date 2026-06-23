@@ -1,0 +1,7 @@
+{
+  "mode": "explicit",
+  "breakpoint_format": "cache_control",
+  "retention_ttl_map": { "short": null, "long": "1h" },
+  "long_ttl_endpoints": ["api.anthropic.com"],
+  "max_breakpoints": 4
+}

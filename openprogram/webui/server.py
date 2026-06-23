@@ -509,18 +509,6 @@ def _list_providers() -> list[dict]:
     """List available providers and their status."""
     import shutil
     result = []
-    import urllib.request, urllib.error
-    def _proxy_alive() -> bool:
-        # Default is :3456 (where meridian / claude-max-api-proxy listen)
-        # — NOT :18109 which is openprogram's own backend port and would
-        # always answer 200, masking proxy failure as "available".
-        url = os.environ.get("CLAUDE_MAX_PROXY_URL") or "http://localhost:3456"
-        try:
-            with urllib.request.urlopen(url.rstrip("/") + "/health", timeout=0.5):
-                return True
-        except (urllib.error.URLError, ConnectionError, OSError):
-            return False
-
     def _codex_available() -> bool:
         # The Codex provider needs OAuth credentials, NOT the `codex` CLI
         # binary itself. The binary is only used once for `codex login`,
@@ -544,7 +532,10 @@ def _list_providers() -> list[dict]:
         ("anthropic", "Anthropic API", lambda: _llm_is_configured("anthropic"), ["ANTHROPIC_API_KEY"]),
         ("openai", "OpenAI API", lambda: _llm_is_configured("openai"), ["OPENAI_API_KEY"]),
         ("gemini", "Gemini API", lambda: _llm_is_configured("google"), ["GOOGLE_API_KEY"]),
-        ("claude-code", "Claude Code", _proxy_alive, ["CLAUDE_MAX_PROXY_URL"]),
+        # claude-code now connects via direct subscription OAuth on the
+        # anthropic credential pool (no Meridian daemon) — its availability is
+        # "are anthropic credentials configured", same as the Anthropic API row.
+        ("claude-code", "Claude Code", lambda: _llm_is_configured("anthropic"), None),
     ]
     for name, label, check, env_keys in checks:
         available = check()

@@ -282,6 +282,10 @@ class Tool(BaseModel):
     name: str
     description: str
     parameters: dict[str, Any]  # JSON Schema object
+    # Optional prompt-cache breakpoint, passed through to providers that
+    # support explicit tool-level cache markers (Anthropic / Bedrock). Set by
+    # the cache-policy pass (cache_policy.py) or by the caller. None = no marker.
+    cache_control: dict | None = None
 
 
 # ─── Context ──────────────────────────────────────────────────────────────────

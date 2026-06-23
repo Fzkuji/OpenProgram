@@ -1,0 +1,6 @@
+{
+  "mode": "explicit",
+  "breakpoint_format": "cachePoint",
+  "retention_ttl_map": { "short": null, "long": "ONE_HOUR" },
+  "max_breakpoints": 4
+}

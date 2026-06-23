@@ -50,7 +50,7 @@ PROVIDERS = {
     # daemon: the wire is the standard anthropic Messages API, which
     # natively handles image blocks (gui_agent multimodal preserved). The
     # subscription token resolves from the anthropic AuthStore pool.
-    # (The old Meridian-backed runtime lives in _max_proxy_runtime.)
+    # (The old Meridian-proxy runtime has been removed entirely.)
     "claude-code":        ("ClaudeCodeRuntime",             "openprogram.providers.anthropic._claude_code_direct_runtime",  "claude-sonnet-4"),
     "openai-codex": ("OpenAICodexRuntime", "openprogram.providers.openai_codex.runtime",           "gpt-5.5"),
     "gemini-cli":        ("GeminiCLIRuntime",    "openprogram.providers.google_gemini_cli.runtime",     "gemini-2.5-flash"),

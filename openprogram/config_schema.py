@@ -70,22 +70,6 @@ def _search_choices() -> list[str]:
         return ["auto"]
 
 
-def _claude_account_choices() -> list[str]:
-    """``''`` (no pin) + each saved Claude account (profile) in the anthropic
-    AuthStore pool, so the TUI/settings constrain the active account to real
-    ones. claude-code now stores its subscription logins in the `anthropic`
-    pool (direct OAuth), not a Meridian daemon."""
-    try:
-        from openprogram.auth.store import get_store
-        names = [
-            p.profile_id for p in get_store().list_pools()
-            if p.provider_id == "anthropic" and p.credentials
-        ]
-        return [""] + sorted(names)
-    except Exception:
-        return [""]
-
-
 def _coerce(widget: str, value: Any) -> Any:
     if widget == "number":
         return int(value)
@@ -135,17 +119,6 @@ SETTINGS: list[SettingSpec] = [
         label="Memory backend", widget="enum", apply=APPLY_NEXT_START,
         default="local", choices=lambda: ["local", "none"],
         help="`local` = on-disk memory tool; `none` = disabled.",
-    ),
-    SettingSpec(
-        key="claude_code.account",
-        path=("providers", "claude-code", "meridian_profile"),
-        group="Claude Code", label="Active Claude account",
-        widget="enum", apply=APPLY_LIVE, default="",
-        choices=_claude_account_choices,
-        help="Which saved Claude account claude-code runs on, independent of "
-             "the terminal `claude auth login`. Empty = follow the terminal "
-             "login. Add accounts with `openprogram providers claude-code "
-             "accounts add`.",
     ),
 ]
 

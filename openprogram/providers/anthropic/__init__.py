@@ -14,7 +14,7 @@ from .runtime import AnthropicRuntime
 from ._claude_code_direct_runtime import ClaudeCodeRuntime
 # Side-effect import: seeds the claude-code provider (DIRECT, anthropic-messages
 # wire) into MODELS so it appears in the UI picker even before a Fetch.
-# (Replaces the retired Meridian-proxy seed in _claude_max_proxy_registry.)
+# (The retired Meridian-proxy seed has been removed entirely.)
 from . import _claude_code_registry  # noqa: F401
 
 __all__ = [

@@ -104,10 +104,6 @@ def list_providers() -> list[dict[str, Any]]:
             "api_key_env": _env_var_for(pid),
             "default_base_url": default_base,
             "base_url": pcfg.get("base_url") or "",
-            # Which Meridian account (profile) claude-code is pinned to —
-            # surfaced so the settings UI can show/edit it. Empty for every
-            # other provider. See docs/design/claude-code-meridian-profile.md.
-            "meridian_profile": pcfg.get("meridian_profile") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
             "supports_fetch": (pid in _FETCH_MODELS_PROVIDERS) or (pid in _FETCHERS),
             "model_count": len(models) + len(custom),
