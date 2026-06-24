@@ -355,6 +355,49 @@ def _situational_prefix(
     return "<situation>\n" + "\n".join(lines) + "\n</situation>"
 
 
+def _compute_call_path(graph, frame_node_id: str, max_depth: int = 20) -> str:
+    """Walk up the ``called_by`` chain from ``frame_node_id`` to the root,
+    collecting the names of agentic-function (code) nodes, and join them
+    into ``"root → ... → current"``.
+
+    Read-only over ``graph``. Never raises — any failure returns "" so the
+    caller degrades to "fn_name only, no call path" (the prior behaviour).
+
+    - Only nodes that have a ``name`` are collected (skips anonymous /
+      meaningless intermediate nodes).
+    - Cycle-guarded (``seen``) and depth-capped (``max_depth``); when the
+      cap is hit the path is truncated with a leading "…".
+    - Stops when a node's ``called_by`` is empty or points outside the graph.
+    """
+    try:
+        if not graph or frame_node_id not in graph.nodes:
+            return ""
+        names: list[str] = []
+        seen: set[str] = set()
+        cur: Optional[str] = frame_node_id
+        truncated = False
+        while cur and cur in graph.nodes:
+            if cur in seen:
+                break
+            seen.add(cur)
+            if len(seen) > max_depth:
+                truncated = True
+                break
+            node = graph.nodes[cur]
+            name = getattr(node, "name", "") or ""
+            if name:
+                names.append(name)
+            cur = getattr(node, "called_by", "") or None
+        if not names:
+            return ""
+        names.reverse()  # root → ... → current
+        if truncated:
+            names.insert(0, "…")
+        return " → ".join(names)
+    except Exception:
+        return ""
+
+
 class Runtime:
     """
     LLM runtime. Wraps a provider and handles Context integration.
@@ -594,7 +637,10 @@ class Runtime:
                 fn_name = frame_node.name
                 fn_doc = (frame_node.metadata or {}).get("doc") or ""
                 if fn_name:
-                    text = _situational_prefix(fn_name, fn_doc)
+                    call_path = _compute_call_path(graph, frame_node_id)
+                    text = _situational_prefix(
+                        fn_name, fn_doc, call_path=call_path,
+                    )
                     frame_prefix_blocks.append({
                         "type": "text",
                         "text": text,

@@ -183,3 +183,42 @@ def test_render_range_callers_zero_hides_history(rt, store):
     # Current turn synthesized at the tail
     last_texts = [c.text for c in msgs[-1].content if hasattr(c, "text")]
     assert any("isolated turn" == t for t in last_texts)
+
+
+# ── Call path appears in <situation> ────────────────────────────────
+
+
+def test_call_path_appears_in_situation(rt, store):
+    """When a frame node has a called_by chain (parent → child), the
+    <situation> block must include 'Call path: research_agent → idea'."""
+    from openprogram.agentic_programming.function import _call_id
+    from openprogram.context.nodes import Call, ROLE_CODE
+
+    parent = Call(
+        role=ROLE_CODE, name="research_agent", input={}, output=None,
+        metadata={"expose": "io", "status": "running"},
+    )
+    store.append(parent)
+    child = Call(
+        role=ROLE_CODE, name="idea", input={"topic": "test"},
+        output=None, called_by=parent.id,
+        metadata={"expose": "io", "status": "running"},
+    )
+    store.append(child)
+
+    token = _call_id.set(child.id)
+    try:
+        msgs = rt._render_history_messages(
+            content=[{"type": "text", "text": "generate ideas"}],
+        )
+    finally:
+        _call_id.reset(token)
+
+    assert msgs is not None
+    last_texts = [c.text for c in msgs[-1].content if hasattr(c, "text")]
+    situation_texts = [t for t in last_texts if "<situation>" in t]
+    assert situation_texts, "expected a <situation> block in the last message"
+    sit = situation_texts[0]
+    assert "Call path:" in sit
+    assert "research_agent" in sit
+    assert "idea" in sit
