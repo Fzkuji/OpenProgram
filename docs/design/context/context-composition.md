@@ -593,5 +593,6 @@ root→current 路径。每个 @agentic_function 内部的 `runtime.exec` 调用
 ## 相关文档
 - `context.md` —— 现状机制(L1 历史由 DAG + ContextCommit 产出;expose/render_range 在那)
 - `context-comparison.md` —— 与参考项目的成分对比(查漏来源)
+- `context-compaction.md` —— 上下文压缩设计(文本级四层管道 + DAG 级节点 visibility 精简)
 - `../providers/request-build.md` —— 下游:Context 翻译成各家 wire + 缓存落地
 - `agentic-self-recursion.md` —— `_situational_prefix`,L2 处境的雏形
