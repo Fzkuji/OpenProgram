@@ -83,6 +83,47 @@ def test_git_repo_flag_in_l1():
     assert "git_repo_flag" in l1
 
 
+def test_platform_format_absent_without_channel():
+    out = build_system_prompt({"id": "main", "name": "bot"})
+    assert "<platform_format>" not in out
+
+
+def test_platform_format_telegram():
+    out = build_system_prompt({"id": "main", "name": "bot"}, channel="telegram")
+    assert "<platform_format>" in out
+    assert "Telegram" in out
+    assert "4096" in out
+
+
+def test_platform_format_discord():
+    out = build_system_prompt({"id": "main", "name": "bot"}, channel="discord")
+    assert "<platform_format>" in out
+    assert "Discord" in out
+    assert "2000" in out
+
+
+def test_platform_format_slack():
+    out = build_system_prompt({"id": "main", "name": "bot"}, channel="slack")
+    assert "<platform_format>" in out
+    assert "mrkdwn" in out
+
+
+def test_platform_format_wechat():
+    out = build_system_prompt({"id": "main", "name": "bot"}, channel="wechat")
+    assert "<platform_format>" in out
+    assert "WeChat" in out
+
+
+def test_platform_format_unknown_channel():
+    out = build_system_prompt({"id": "main", "name": "bot"}, channel="unknown")
+    assert "<platform_format>" not in out
+
+
+def test_platform_format_in_l0():
+    l0 = {c.name for c in comp._REGISTRY["L0"]}
+    assert "platform_format" in l0
+
+
 def test_model_guidance_conditional_on_provider():
     # google provider → guidance present (absolute paths)
     g = build_system_prompt({"id": "main", "name": "bot",

@@ -17,18 +17,14 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_system_prompt(agent: Any) -> str:
+def build_system_prompt(agent: Any, **kwargs: Any) -> str:
     """Compose the layered system prompt for ``agent``.
 
-    Thin shim: the actual composition now lives in the registry-based
-    ``context.components`` (docs/design/context/context-composition.md). The 5
-    legacy blocks are registered there as L0 components and assembled
-    byte-for-byte identically (verified by test_system_prompt_equivalence).
-    Kept as the stable entry point so existing call sites (engine, CLI) need
-    no change. The legacy ``_compose`` below is retained for reference only.
+    Thin shim: delegates to ``context.components.build_system_prompt``.
+    Accepts keyword arguments (e.g. ``channel="telegram"``) and forwards them.
     """
     from openprogram.context.components import build_system_prompt as _assemble
-    return _assemble(agent)
+    return _assemble(agent, **kwargs)
 
 
 def _compose(agent: Any) -> str:
