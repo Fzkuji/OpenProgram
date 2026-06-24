@@ -55,3 +55,13 @@ def test_build_system_prompt_fence_and_identity_first():
     assert "You are bot (agent_id=main)." in out
     # identity appears before any later block boundary
     assert out.index("You are bot") < out.index("End of agent prompt")
+
+
+def test_environment_and_date_components_present():
+    out = build_system_prompt({"id": "main", "name": "bot"})
+    # environment block + day-granularity date are new L0 components.
+    assert "<environment>" in out and "</environment>" in out
+    assert "OS:" in out
+    assert "Today is " in out
+    # they sit at the L0 tail: after identity, before the closing fence.
+    assert out.index("You are bot") < out.index("<environment>")

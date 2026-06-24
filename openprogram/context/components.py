@@ -199,6 +199,31 @@ def _build_memory(agent: Any) -> str:
     return ""
 
 
+def _build_environment(agent: Any) -> str:
+    """OS / shell — the machine the agent runs on. Constant for the session
+    (cwd is provided separately by the tool-runtime prompt, not duplicated
+    here). New component; nothing rendered this before. See design §四 L0."""
+    import os as _os
+    import platform as _platform
+    try:
+        osname = _platform.system() or _os.name
+    except Exception:
+        osname = _os.name
+    shell = _os.environ.get("SHELL") or _os.environ.get("COMSPEC") or ""
+    line = f"OS: {osname}"
+    if shell:
+        line += f"  ·  Shell: {shell}"
+    return f"<environment>\n{line}\n</environment>"
+
+
+def _build_date(agent: Any) -> str:
+    """Today's date at day granularity (not minute) — stable within a day,
+    cache-friendly. See design §四'·4."""
+    import datetime as _dt
+    today = _dt.date.today()
+    return today.strftime("Today is %A, %B %d, %Y.")
+
+
 # ── Register the 5 legacy blocks ──────────────────────────────────────────
 # Orders preserve the legacy top-to-bottom order. identity(L0) → workspace(L1)
 # → inline(L0 inline)… legacy interleaved them in one list; to stay byte-equal
@@ -217,6 +242,11 @@ register(ContextComponent("identity", "L0", 10, _build_identity))
 register(ContextComponent("inline_prompt", "L0", 30, _build_inline))
 register(ContextComponent("skills_index", "L0", 40, _build_skills))
 register(ContextComponent("memory_global", "L0", 50, _build_memory))
+# Environment / date sit at the L0 tail: still session-constant but "closer to
+# changing" than identity (different machine / next day), so after the stable
+# identity+tools block. New components — nothing rendered these before.
+register(ContextComponent("environment", "L0", 60, _build_environment))
+register(ContextComponent("current_date", "L0", 70, _build_date))
 register(ContextComponent("workspace_files", "L1", 10, _build_workspace_files))
 
 
