@@ -1,10 +1,10 @@
 # 文件修改管理 — 行业分析与 OpenProgram 设计
 
-> 状态: **重设计** (2026-06)。Checkpoint + Shadow git 替代 Project-Git。
+> 状态: **已实现** (2026-06)。Checkpoint + Shadow git 替代 Project-Git。
 > 关联: [`agent-worktree.md`](agent-worktree.md)、[`memory-v2.md`](../memory/memory-v2.md)
 > (实体层)、[`git-as-entity-memory.md`](../memory/git-as-entity-memory.md)。
-> 代码: `store/file_backup/`(→ 待改名 `store/checkpoint/`)、
-> ~~`store/project_commit.py`~~(废弃)、`store/project_store.py`、
+> 代码: `store/snapshot/checkpoint/`（已从 `file_backup/` 改名）、
+> `store/shadow_git/`（新）、~~`store/project/project_commit.py`~~（废弃，默认关闭）、
 > `store/read_tracking.py`、`agent/_revert.py`、`worktree/`。
 
 ---
@@ -69,7 +69,7 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 ---
 
-## 3. OpenProgram 的方案（目标态设计）
+## 3. OpenProgram 的方案
 
 ### 3.1 设计原则
 
@@ -105,7 +105,7 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 | **触发** | 统一入口（所有工具执行前） | turn 结束（自动 commit 本 turn 变更） | agent 显式调 `worktree_create` |
 | **bash 覆盖** | **是**（统一入口触发） | **是**（turn 结束 commit 含 bash 改动） | N/A（隔离环境内） |
 | **默认** | **一直开** | **默认开** | 按需 |
-| **代码** | `store/checkpoint/`（原 `store/file_backup/`） | `store/shadow_git/`（新） | `worktree/` |
+| **代码** | `store/snapshot/checkpoint/`（原 `file_backup/`） | `store/shadow_git/` | `worktree/` |
 | **回退入口** | `undo`（原 `revert_turn`） | `undo` 联动 | `worktree_discard` |
 
 ### 3.3 ① Checkpoint 和 ② Shadow git 的分工
@@ -149,33 +149,30 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 ## 4. 统一入口触发（覆盖 bash 的关键改动）
 
-### 4.1 现状
+### 4.1 ✅ 已实现
 
-write / edit / apply_patch 三个编辑工具**各自内部**调用 `backup_for_current_turn`。bash 工具不调用，所以 bash 改文件完全不追踪。`functions/tools/bash/bash.py:38` 有 TODO 承认此问题。
+write / edit / apply_patch 三个编辑工具**各自内部**调用 `checkpoint_before_edit`（原 `backup_for_current_turn`）做精确的单文件备份——保留不动。
 
-### 4.2 目标
+bash 工具的覆盖在 `_execute_tool_calls`（`agent_loop.py`，所有工具的单一入口）中实现：
 
-在 `_execute_tool_calls`（`agent_loop.py:466`，所有工具的单一入口）中，工具执行前统一触发 checkpoint。不区分工具类型——write、edit、bash 都过这个入口。
-
-### 4.3 bash 的特殊处理
-
-编辑工具（write/edit）执行前知道要改哪个文件，可以精确备份。bash 不知道，需要特殊处理：
-
-```
-bash 执行前:
-  记录工作目录文件状态 hash (mtime + size, 或 git status)
-
-bash 执行后:
-  对比 hash, 找出变更的文件
-  对变更文件补做 checkpoint (backup_before_edit)
+```python
+# agent_loop.py — _execute_tool_calls 内部
+if tool_name == "bash":
+    pre_snapshot = _snapshot_cwd(cwd)       # 记录文件 mtime+size
+    result = tool.execute(...)
+    _checkpoint_changed_files(cwd, pre_snapshot)  # 对比，变更文件补做 checkpoint
+else:
+    result = tool.execute(...)               # write/edit 内部已有精确备份
 ```
 
-在 git 仓库中：shadow git 在 turn 结束时 commit，天然包含 bash 改动。
-不在 git 仓库中：bash 前后 diff 文件列表，对变更文件补做 checkpoint。
+`_snapshot_cwd`：扫描 cwd 下的文件，记录 `{path: (mtime_ns, size)}`，跳过 dotfile 目录。
+`_checkpoint_changed_files`：对比前后快照，对新增/修改的文件调用 `checkpoint_before_edit`。
 
-### 4.4 行业参考
+**已知限制**：当前快照只扫描 cwd 顶层文件，子目录中的变更暂未覆盖（可后续改为递归扫描）。
 
-这是 Hermes 的做法——在所有工具执行前统一 checkpoint，bash 自然覆盖。我们借鉴其触发策略，存储机制保持文件拷贝（Checkpoint）+ 独立 git（Shadow git）。
+### 4.2 行业参考
+
+这是 Hermes 的做法——在所有工具执行前统一 checkpoint，bash 自然覆盖。我们借鉴其触发策略，保持编辑工具内部的精确备份 + bash 前后 diff 补做。
 
 ---
 
@@ -306,19 +303,19 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`（原 `file_backups/`），释
 
 | # | 项 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | 命名重构: BackupStore → Checkpoint | ⏳ | 代码改名 + 目录改名 `file_backup/` → `checkpoint/` |
-| 2 | 统一入口触发: checkpoint 从编辑工具内部移到 `_execute_tool_calls` | ⏳ | 核心改动，覆盖 bash |
-| 3 | bash 覆盖: bash 执行前后文件 diff，变更文件补做 checkpoint | ⏳ | 依赖 #2 |
-| 4 | Shadow git: 实现独立 git store，turn 结束时 commit | ⏳ | 新模块 `store/shadow_git/` |
-| 5 | 废弃 Project-Git: 移除自动 commit 逻辑 | ⏳ | 保留代码但默认关闭，渐进废弃 |
-| 6 | 简化 undo: 不再需要 git reset/revert 判断 | ⏳ | 依赖 #4 #5 |
+| 1 | 命名重构: BackupStore → CheckpointStore | ✅ `c0a73c1c` | 目录 `file_backup/` → `checkpoint/`，类名/函数名/import 全部改名，保留向后兼容 alias |
+| 2 | 统一入口触发: bash 前后 diff 在 `_execute_tool_calls` | ✅ `69432d88` | `_snapshot_cwd` + `_checkpoint_changed_files`，7 个测试 |
+| 3 | bash 覆盖 | ✅ 含在 #2 | 当前限制：只扫顶层目录 |
+| 4 | Shadow git: 独立 git store | ✅ `ad6551c7` | `store/shadow_git/`，支持 commit/diff/restore/log，13 个测试 |
+| 5 | 废弃 Project-Git: 默认关闭 | ✅ `98550cf8` | `project_auto_commit` 默认 False + deprecation warning |
+| 6 | 简化 undo: 不再需要 git reset/revert 判断 | ⏳ | 依赖 shadow git 接入 dispatcher |
 | 7 | 命令改名: `revert_turn` → `undo` | ⏳ | 用户面对的命令名 |
 
 ### 已实现（保留）
 
 | # | 项 | 状态 |
 |---|---|---|
-| ✅ | ① 快照写入 + 回退 | ✅（待改名为 Checkpoint） |
+| ✅ | ① Checkpoint 写入 + 回退 | ✅（已改名，`store/snapshot/checkpoint/`） |
 | ✅ | ③ Worktree create/merge/discard + 工具 | ✅ |
 | ✅ | GC (`gc_evict_old` 每 turn 末调用) | ✅ |
 | ✅ | read-before-edit 并发防护 (前置闸) | ✅ |
