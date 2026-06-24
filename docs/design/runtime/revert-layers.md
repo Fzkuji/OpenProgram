@@ -216,7 +216,7 @@ else:
   │         - 否则 commit 本 turn 所有文件变更到 shadow store
   │     · GC: gc_evict_old(session) ← 删超过上限的旧 checkpoint
   │
-  ├─ 用户点"撤销 turn N" (/undo)
+  ├─ 用户点"撤销 turn N" (/rewind)
   │     → 规则 B: 从 checkpoint 恢复文件, shadow git 保持可查
   │
   └─ ……
