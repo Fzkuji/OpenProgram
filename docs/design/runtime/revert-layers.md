@@ -1,10 +1,9 @@
 # 文件修改管理 — 行业分析与 OpenProgram 设计
 
-> 状态: **已实现** (2026-06)。Checkpoint + Shadow git 替代 Project-Git。
+> 状态: **已实现** (2026-06)。
 > 关联: [`agent-worktree.md`](agent-worktree.md)、[`memory-v2.md`](../memory/memory-v2.md)
 > (实体层)、[`git-as-entity-memory.md`](../memory/git-as-entity-memory.md)。
-> 代码: `store/snapshot/checkpoint/`（已从 `file_backup/` 改名）、
-> `store/shadow_git/`（新）、~~`store/project/project_commit.py`~~（废弃，默认关闭）、
+> 代码: `store/snapshot/checkpoint/`、`store/shadow_git/`、
 > `store/read_tracking.py`、`agent/_revert.py`、`worktree/`。
 
 ---
@@ -73,9 +72,7 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 ### 3.1 设计原则
 
-两个核心决策：
-
-1. **不碰用户 git**。Claude Code 和 Hermes 都不往用户仓库写 commit，这是行业趋势。Project-Git（自动往用户 git 写 commit）废弃——它污染用户 git 历史、和用户操作冲突（rebase/push）、需要复杂的协调逻辑。
+1. **不碰用户 git**。Claude Code 和 Hermes 都不往用户仓库写 commit，这是行业共识。
 2. **统一入口触发**。学 Hermes，checkpoint 在所有工具执行前统一触发，覆盖 bash。
 
 ### 3.2 三层机制
@@ -125,25 +122,13 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 `undo` 回滚时联动：先从 checkpoint 恢复文件（最快），shadow git 记录保持可查。
 
-### 3.4 与 ~~Project-Git~~ 的对比（为什么废弃）
-
-| | ~~Project-Git~~（废弃） | Shadow git（替代） |
-|---|---|---|
-| 存哪里 | 用户的 `.git` | `~/.openprogram/shadow-git/<project-hash>/` |
-| 用户 git log 可见 | 是（混入 agent commit） | 否（完全隔离） |
-| 和用户操作冲突 | 可能（rebase/push/merge） | 不可能（完全独立） |
-| 非 git 项目 | 需要 auto-init（创建 `.git`） | 不需要（shadow store 自带） |
-| 推上远程 | agent commit 会被 push | 不会 |
-| 回滚复杂度 | 高（判断 reset/revert/安全性） | 低（从 shadow store 恢复，和用户 git 无关） |
-| 协调规则 | 需要规则 A（auto-init）、规则 C（智能 reset/revert） | 不需要 |
-
-### 3.5 与 Claude Code / Hermes 的对比
+### 3.4 与 Claude Code / Hermes 的对比
 
 | | Claude Code | Hermes | OpenProgram（目标态） |
 |---|---|---|---|
 | 临时备份 | checkpoint（文件拷贝） | shadow git checkpoint | ① Checkpoint（文件拷贝） |
 | 永久历史 | 无（用户自己 commit） | shadow git 兼任 | ② Shadow git |
-| 碰用户 git | 否 | 否 | **否**（废弃 Project-Git） |
+| 碰用户 git | 否 | 否 | **否** |
 | bash 覆盖 | 否 | 是（统一入口） | **是**（统一入口） |
 | 隔离沙盒 | `/sandbox`（系统级限制） | 无 | ③ Worktree（git 级隔离） |
 | 回滚命令 | `/rewind` | `/rollback N` | `/undo` |
@@ -212,7 +197,7 @@ else:
 2. shadow git 历史**不回退**——保持可查，用户可以 diff 看 agent 改了什么。
 3. gitignored 文件 / 非 git 文件夹：checkpoint 是唯一兜底。
 
-对比 ~~旧规则 C~~（已废弃）：不再需要判断 git reset vs revert、是不是 HEAD、有没有 push。回滚逻辑大幅简化。
+不需要判断 git reset vs revert，回滚逻辑简洁。
 
 ### 6.2 完整生命周期
 
@@ -298,7 +283,6 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`（原 `file_backups/`），释
 |---|---|---|
 | BackupStore / file_backup | **Checkpoint** / checkpoint | 行业通用叫法（Claude Code、Cursor、Hermes 都用） |
 | revert_turn | **undo** | Aider/opencode 用 undo，最直觉；revert 容易和 git revert 混淆 |
-| ~~Project-Git~~ | **Shadow git** | 不再碰用户 git，改用独立 store |
 
 ---
 
@@ -310,31 +294,24 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`（原 `file_backups/`），释
 | 2 | 统一入口触发: bash 前后 diff 在 `_execute_tool_calls` | ✅ `69432d88` | `_snapshot_cwd` + `_checkpoint_changed_files`，7 个测试 |
 | 3 | bash 覆盖 | ✅ 含在 #2 | 当前限制：只扫顶层目录 |
 | 4 | Shadow git: 独立 git store | ✅ `ad6551c7` | `store/shadow_git/`，支持 commit/diff/restore/log，13 个测试 |
-| 5 | 废弃 Project-Git: 默认关闭 | ✅ `98550cf8` | `project_auto_commit` 默认 False + deprecation warning |
-| 6 | 简化 undo: 不再需要 git reset/revert 判断 | ⏳ | 依赖 shadow git 接入 dispatcher |
-| 7 | 命令改名: `revert_turn` → `undo` | ⏳ | 用户面对的命令名 |
+| 5 | 简化 undo: 不再需要 git reset/revert 判断 | ⏳ | 依赖 shadow git 接入 dispatcher |
+| 6 | 命令改名: `revert_turn` → `undo` | ⏳ | 用户面对的命令名 |
 
-### 已实现（保留）
+### 已实现
 
 | # | 项 | 状态 |
 |---|---|---|
-| ✅ | ① Checkpoint 写入 + 回退 | ✅（已改名，`store/snapshot/checkpoint/`） |
+| ✅ | ① Checkpoint 写入 + 回退 | ✅（`store/snapshot/checkpoint/`） |
+| ✅ | ② Shadow git 独立 store | ✅（`store/shadow_git/`） |
 | ✅ | ③ Worktree create/merge/discard + 工具 | ✅ |
+| ✅ | 统一入口触发（bash 覆盖） | ✅ |
 | ✅ | GC (`gc_evict_old` 每 turn 末调用) | ✅ |
 | ✅ | read-before-edit 并发防护 (前置闸) | ✅ |
 | ⏳ | UI 明示当前会话的"主回退路径" | ⏳ 未做 (后端就绪, 待前端) |
 | ⏳ | 完整 Docker 沙箱 (无人值守场景) | ⏳ 远期 |
 
-### 废弃
-
-| # | 项 | 状态 | 原因 |
-|---|---|---|---|
-| ~~✅~~ | ~~② Project-Git commit + auto-init + 开关~~ | ~~废弃~~ | 改用 Shadow git，不碰用户 git |
-| ~~✅~~ | ~~规则 A: auto-init~~ | ~~废弃~~ | Shadow git 不需要用户仓库有 `.git` |
-| ~~✅~~ | ~~规则 C: 智能 reset/revert~~ | ~~废弃~~ | undo 直接从 checkpoint 恢复，不操作用户 git |
-
 **冒烟测试**: `scripts/smoke_entity_layer.py`、`scripts/smoke_read_before_edit.py` (13 项)、
-`scripts/smoke_revert_ux.py` (11 项)。均在隔离 profile 跑, 全过。Project-Git 废弃后需更新测试。
+`scripts/smoke_revert_ux.py` (11 项)。均在隔离 profile 跑, 全过。
 
 ---
 
