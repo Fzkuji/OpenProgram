@@ -17,6 +17,7 @@ import subprocess
 import sys
 
 from openprogram.backend.base import Backend, RunResult, decode_maybe
+from openprogram.sandbox import is_available as _sandbox_available, sandbox_enabled, wrap_command as _sandbox_wrap
 
 
 _WIN_BASH_CACHE: str | None | bool = False  # False = not yet probed
@@ -51,11 +52,17 @@ def _windows_bash() -> str | None:
     return chosen
 
 
-def _invocation(command: str) -> tuple[str | list[str], bool]:
+def _invocation(command: str, cwd: str | None = None) -> tuple[str | list[str], bool]:
     """Return ``(args, shell)`` for the host run. POSIX: the command
     string via the host shell (unchanged). Windows: a real bash via
     ``[bash, "-c", command]`` (shell=False) when available, else the
-    command string via cmd.exe (shell=True) as a last resort."""
+    command string via cmd.exe (shell=True) as a last resort.
+
+    When sandbox mode is enabled and the platform tool is present, the
+    command is wrapped so the child process can only write inside *cwd*.
+    """
+    if sandbox_enabled.get(False) and _sandbox_available():
+        return _sandbox_wrap(command, cwd or os.getcwd())
     if sys.platform == "win32":
         bash = _windows_bash()
         if bash:
@@ -68,7 +75,7 @@ class LocalBackend(Backend):
 
     def run(self, command: str, timeout: float,
             cwd: str | None = None) -> RunResult:
-        args, use_shell = _invocation(command)
+        args, use_shell = _invocation(command, cwd=cwd)
         try:
             proc = subprocess.run(
                 args,
@@ -89,7 +96,7 @@ class LocalBackend(Backend):
 
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:
-        args, use_shell = _invocation(command)
+        args, use_shell = _invocation(command, cwd=cwd)
         return subprocess.Popen(
             args,
             shell=use_shell,
