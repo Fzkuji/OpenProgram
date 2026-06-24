@@ -152,7 +152,7 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 |---|---|---|---|
 | 1 | 项目身份(AGENTS.md) | 有项目文件 | ✅(现状错塞 L0,应 L1) |
 | 2 | Prompt 注入检测(扫 1 再注入) | 加载项目文件时 | ✅ pi_shield + detect_injection_patterns |
-| 3 | 上下文文件截断 | 项目文件超大 | ➕ |
+| 3 | 上下文文件截断 | 项目文件超大 | ✅ workspace_files 内 MAX_WORKSPACE_CHARS=8000 截断 |
 | 4 | 项目级记忆 | 有 | ✅(现状错塞 L0) |
 | 5 | USER.md 用户档案 | 有 | ✅ 已由 workspace_files 加载 read_user_md |
 | 6 | 工作目录 cwd | 恒 | ✅ |
@@ -171,7 +171,7 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 | order | 成分 | condition | 现状 |
 |---|---|---|---|
 | 1 | 本次处境 situation | @agentic_function 内调用 | ✅(step 6a/6b: _situational_prefix + _compute_call_path) |
-| 2 | git 分支 / status | 在 git 仓库 | ➕(中) |
+| 2 | git 分支 / status | 在 git 仓库 | ✅ git_status(L2 order=20) |
 | 3 | todo / 任务计划 / 进度 | 有 todo | ✅ todo_progress(读 _TODOS 列表) |
 | 4 | token 预算提示 | 接近预算 | ➕(低) |
 | 5 | per-turn memory prefetch | 检索到相关记忆 | ✅(现状错塞 system,应 L2) |
@@ -570,18 +570,11 @@ io 已释放** —— 它是历史的安全网,不是删光。整会话上下文
 
 ---
 
-## 七、现状证据（处境完全缺失）
+## 七、处境注入（已解决）
 
-真实 session,research_agent 跑 36 轮,每轮 prompt 开头一律裸任务,**无任何处境**:
-
-| frame | prompt 开头(实际) | 缺的处境 |
-|---|---|---|
-| `_pick_stage` | `User project description: …` | 不知道自己是阶段选择器、有主循环 |
-| `seed_surveys` | `Search query: …` | 不知道在 literature 里、产出给谁 |
-| `extract_framework` | `Research direction: …` | 不知道前一步是 seed_surveys |
-
-模型看到的是去掉处境的孤立填空题。历史那部分现状靠 DAG/ContextCommit 部分有;真正
-零实现的是 **L2 的 situation 处境**(雏形 `_situational_prefix` 只做了防递归)。
+已在 step 6a/6b 落地：`_situational_prefix` 生成 `<situation>` 块（含 Job / Call path /
+Position / Your output / 防递归警告），`_compute_call_path` 沿 `called_by` 链构建
+root→current 路径。每个 @agentic_function 内部的 `runtime.exec` 调用都会注入处境。
 
 ---
 
