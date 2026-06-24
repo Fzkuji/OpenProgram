@@ -24,6 +24,7 @@ import {
 
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { showToast } from "@/lib/format-utils/toast";
 import {
   type AnimatedNavIconHandle,
   CheckIcon,
@@ -199,10 +200,7 @@ export function MessageActions({
       setBusy(false);
       return;
     }
-    const w = window as Window & {
-      ws?: WebSocket;
-      __toast?: (m: string) => void;
-    };
+    const w = window as Window & { ws?: WebSocket };
     const ws = w.ws;
     if (!ws) {
       setBusy(false);
@@ -221,8 +219,10 @@ export function MessageActions({
                 `Rewound ${restored.length} file${restored.length === 1 ? "" : "s"}`,
                 `已回退 ${restored.length} 个文件`,
               );
-          if (w.__toast) w.__toast(text);
-          else console.log("[rewind]", text);
+          showToast(text);
+          if (!err) {
+            wsSend({ action: "load_session", session_id: sessionId });
+          }
           setBusy(false);
         }
       } catch {
