@@ -187,13 +187,13 @@ export function MessageActions({
       });
   }
 
-  function revertTurn() {
+  function rewindToHere() {
     if (!sessionId || !msg.id || busy) return;
     setBusy(true);
     const ok = wsSend({
-      action: "revert_turn",
+      action: "rewind",
       session_id: sessionId,
-      assistant_msg_id: msg.id,
+      msg_id: msg.id,
     });
     if (!ok) {
       setBusy(false);
@@ -211,20 +211,21 @@ export function MessageActions({
     const onMsg = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(ev.data);
-        if (data?.type !== "revert_turn_result") return;
-        if (data?.data?.assistant_msg_id !== msg.id) return;
-        ws.removeEventListener("message", onMsg);
-        const restored = data?.data?.restored_paths ?? [];
-        const err = data?.data?.error;
-        const text = err
-          ? tr(`Revert failed: ${err}`, `撤销失败：${err}`)
-          : tr(
-              `Reverted ${restored.length} file${restored.length === 1 ? "" : "s"}`,
-              `已撤销 ${restored.length} 个文件`,
-            );
-        if (w.__toast) w.__toast(text);
-        else console.log("[revert]", text);
-        setBusy(false);
+        if (data?.type === "rewind_result" || data?.type === "revert_turn_result") {
+          if (data?.data?.assistant_msg_id && data.data.assistant_msg_id !== msg.id) return;
+          ws.removeEventListener("message", onMsg);
+          const restored = data?.data?.restored_paths ?? [];
+          const err = data?.data?.error;
+          const text = err
+            ? tr(`Rewind failed: ${err}`, `回退失败：${err}`)
+            : tr(
+                `Rewound ${restored.length} file${restored.length === 1 ? "" : "s"}`,
+                `已回退 ${restored.length} 个文件`,
+              );
+          if (w.__toast) w.__toast(text);
+          else console.log("[rewind]", text);
+          setBusy(false);
+        }
       } catch {
         /* ignore */
       }
@@ -291,9 +292,9 @@ export function MessageActions({
       {msg.role === "assistant" ? (
         <ActionButton
           icon={SVG.undo}
-          title={tr("Revert file edits from this turn", "撤销这一轮的文件编辑")}
+          title={tr("Rewind to here", "回退到这里")}
           disabled={busy}
-          onClick={revertTurn}
+          onClick={rewindToHere}
         />
       ) : null}
       {total > 1 ? (
