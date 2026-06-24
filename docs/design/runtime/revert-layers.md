@@ -111,7 +111,7 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 | **bash 覆盖** | **是**（统一入口触发） | **是**（turn 结束 commit 含 bash 改动） | N/A（隔离环境内） | **是**（内核级拦截） |
 | **默认** | **一直开** | **默认开** | 按需 | **默认关** |
 | **代码** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` | `sandbox/` |
-| **回退入口** | `undo` | `undo` 联动 | `worktree_discard` | N/A（预防性，不需要回退） |
+| **回退入口** | `/rewind` | `/rewind` 联动 | `worktree_discard` | N/A（预防性，不需要回退） |
 | **状态** | ✅ 已实现 | ✅ 已实现 | ✅ 已实现 | ✅ 已实现 |
 
 ### 3.3 ① Checkpoint 和 ② Shadow git 的分工
@@ -126,7 +126,7 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 | **GC** | 有（上限 100 turn） | 无需 GC（git 天然压缩） |
 | **主要用途** | 快速撤销的第一选择 | 永久历史追溯、diff 对比、单文件精确恢复 |
 
-`undo` 回滚时联动：先从 checkpoint 恢复文件（最快），shadow git 记录保持可查。
+`/rewind` 回滚时联动：先从 checkpoint 恢复文件（最快），shadow git 记录保持可查。
 
 ---
 
@@ -181,9 +181,9 @@ else:
 - 有活跃 worktree → 跳过（agent 改动在 worktree 副本里, 提交原始目录是错的/空的）。
 - 无 → 照常。
 
-#### 规则 B: undo = checkpoint 恢复 + shadow git 保持可查
+#### 规则 B: /rewind = checkpoint 恢复 + shadow git 保持可查
 
-`undo`撤一个 turn 时:
+`/rewind` 撤回时:
 1. 从 checkpoint 恢复文件（最快路径）。
 2. shadow git 历史**不回退**——保持可查，用户可以 diff 看 agent 改了什么。
 3. gitignored 文件 / 非 git 文件夹：checkpoint 是唯一兜底。
@@ -216,7 +216,7 @@ else:
   │         - 否则 commit 本 turn 所有文件变更到 shadow store
   │     · GC: gc_evict_old(session) ← 删超过上限的旧 checkpoint
   │
-  ├─ 用户点"撤销 turn N" (/rewind)
+  ├─ 用户点 ↩ rewind 或输入 /rewind
   │     → 规则 B: 从 checkpoint 恢复文件, shadow git 保持可查
   │
   └─ ……
