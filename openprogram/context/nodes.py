@@ -498,7 +498,7 @@ def fold_history(current_node_id: str, graph: Graph) -> list[str]:
     return out
 
 
-def compute_reads(
+def render_context(
     graph: Graph,
     *,
     head_seq: Optional[int] = None,
@@ -665,5 +665,5 @@ __all__ = [
     "branch_terminals",
     "branch_internal",
     "fold_history",
-    "compute_reads",
+    "render_context",
 ]

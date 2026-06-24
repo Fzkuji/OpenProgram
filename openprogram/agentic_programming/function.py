@@ -113,7 +113,7 @@ def _append_function_call_entry(
     ``metadata.status='running'``. The matching
     :func:`_update_function_call_exit` fills these in at exit.
 
-    ``render_range`` is stamped into metadata so ``compute_reads``
+    ``render_range`` is stamped into metadata so ``render_context``
     (which reads frame settings off the in-DAG code Call) can apply
     callers / subcalls limits without needing a separate in-memory frame.
 
@@ -400,13 +400,13 @@ class agentic_function:
                     "hidden" — no DAG node at all
 
                     ``expose`` is stamped into the code Call's metadata;
-                    ``compute_reads`` uses it to decide whether a later
+                    ``render_context`` uses it to decide whether a later
                     LLM call can see this function's internal nodes.
 
         render_range: What slice of the DAG I bring into my own LLM calls.
 
                     Dict stamped into the code Call's metadata; the
-                    runtime's ``compute_reads`` reads it to bound the
+                    runtime's ``render_context`` reads it to bound the
                     history a nested ``runtime.exec`` sees.
                     Shape: {"callers": N, "subcalls": M}.
 

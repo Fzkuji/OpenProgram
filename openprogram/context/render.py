@@ -1,7 +1,7 @@
 """DAG → provider messages rendering.
 
 Given a Graph and a list of node ids (typically the output of
-:func:`compute_reads`), turn them into a sequence of pi-ai ``Message``
+:func:`render_context`), turn them into a sequence of pi-ai ``Message``
 objects the way providers expect.
 
 This is the bridge that lets ``runtime.exec`` build its LLM prompt
@@ -17,10 +17,10 @@ Mapping rules
                                   AssistantMessage(result)
                           unless metadata.expose == "hidden"
                           (those should already be excluded upstream
-                          by compute_reads / dispatcher, but the
+                          by render_context / dispatcher, but the
                           renderer also defends against them.)
 
-Visibility / hiding semantics live in :func:`compute_reads` — the
+Visibility / hiding semantics live in :func:`render_context` — the
 renderer is a strict translation pass on whatever ids it gets.
 """
 
@@ -76,7 +76,7 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
     Args:
         graph:    the DAG to look up nodes in.
         read_ids: node ids to include, in chronological order (as
-                  produced by :func:`compute_reads`).
+                  produced by :func:`render_context`).
         history_dir: absolute path to the session's ``history/`` dir. When
                   given, an over-cap node's full text is spilled to a sibling
                   ``large_nodes/`` dir as a plain ``.txt`` file, and the

@@ -223,15 +223,14 @@ class DefaultContextEngine(ContextEngine):
         tokens_freed = 0
         agent_messages: list = []
         commit_used = False
-        # Flag: context.render="dag" switches chat to the compute_reads +
-        # render_dag_messages pipeline (the runtime.exec path). Default off
-        # → unchanged commit-chain behaviour; the except fallback below
-        # still catches a broken DAG render and degrades to _assemble.
+        # Chat now uses the same render_context + render_dag_messages
+        # pipeline as runtime.exec (unified rendering). Config override
+        # context.render="legacy" falls back to old commit-chain path.
         try:
             from openprogram.setup import _read_config
-            _use_dag = (_read_config().get("context") or {}).get("render") == "dag"
+            _use_dag = (_read_config().get("context") or {}).get("render") != "legacy"
         except Exception:
-            _use_dag = False
+            _use_dag = True
         try:
             if _use_dag:
                 agent_messages = self._build_messages_from_dag(
@@ -563,7 +562,7 @@ class DefaultContextEngine(ContextEngine):
         history: list[dict],
         model: Any,
     ) -> list:
-        """Build provider Message[] via compute_reads + render_dag_messages —
+        """Build provider Message[] via render_context + render_dag_messages —
         the SAME context pipeline runtime.exec uses (session-dag.md
         step 4). Chat thus reads context from the one DAG, frame=-1
         (top-level: all in-frame → full accumulation).
@@ -580,7 +579,7 @@ class DefaultContextEngine(ContextEngine):
         """
         if not session_id:
             raise RuntimeError("dag render path requires session_id")
-        from openprogram.context.nodes import compute_reads
+        from openprogram.context.nodes import render_context
         from openprogram.context.render import render_dag_messages
         from openprogram.store.session.graphstore_shim import GraphStoreShim
         from openprogram.agent.session_db import default_db
@@ -607,7 +606,7 @@ class DefaultContextEngine(ContextEngine):
             # a non-user trailing node means nothing to exclude
             break
 
-        read_ids = compute_reads(graph, head_seq=head_seq, frame_entry_seq=-1)
+        read_ids = render_context(graph, head_seq=head_seq, frame_entry_seq=-1)
         # restrict to the active branch (guard #1) — but keep code sub-call
         # nodes whose called_by is an in-branch llm/user node (tool rows
         # aren't on the conv branch yet carry the turn's tool calls).

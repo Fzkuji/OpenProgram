@@ -105,7 +105,7 @@ attach pointer (`function="attach"` 节点) 一直由 `_run_spawn` / `_task_impl
 
 - spawn 时立刻写一个 **placeholder attach card** （`function="attach"`，`extra.attach.task_id = <task_id>`，`extra.attach.status = "running"`），content="(running)"。`source_commit_id` 留空。
 - task 完成时 runner update 同一个 attach card 节点：填 `head_id` / `source_commit_id` / 替换 content 为 `final_text`，`status` 改 `completed` / `cancelled` / `errored`。
-- generator 看到 `status="running"` 的 attach 节点：跳过展开（不进 commit items），只在 UI 显示卡片占位。看到 `status="completed"` 走现有 attach 展开路径（见 `context-attach-merge.md` 场景 B）。
+- generator 看到 `status="running"` 的 attach 节点：跳过展开（不进 commit items），只在 UI 显示卡片占位。看到 `status="completed"` 走现有 attach 展开路径（见 `context.md` 场景 B）。
 
 这样 LLM 在 task 跑完前再触发新 turn 不会看到半成品 attach 内容，但用户能看到 spinner。
 
@@ -244,7 +244,7 @@ plan agent 列出 5 个调研任务，spawn 5 个 task，调 `await_tasks(ids, m
 | **D5 cancel** | `cancel_task(id)` 单个；plan 整体撤销时 plan agent 自己遍历 cancel 所有 children（也可以加个 `cancel_tasks(parent_msg_id=...)` 批量 API 当 future） |
 | **D6 session 绑定** | 5 个 task 全部跑在同一个 parent_session；落地后是 5 个并列 branch（branch label = task description）|
 | **D7 sub-agent** | 5 个并发 sub-agent 同时跑，靠 thread pool 隔离；ContextVar (`current_session_id`) 是 thread-local，互不干扰 |
-| **D8 ContextCommit** | 5 个 placeholder attach card 一字排开挂在 plan agent 的 fork point；完成顺序无关，UI 各自 update。后续 LLM turn 看到的 ContextCommit 里这 5 块是 attach 展开，按 `context-attach-merge.md` 场景 C 处理 |
+| **D8 ContextCommit** | 5 个 placeholder attach card 一字排开挂在 plan agent 的 fork point；完成顺序无关，UI 各自 update。后续 LLM turn 看到的 ContextCommit 里这 5 块是 attach 展开，按 `context.md` 场景 C 处理 |
 | **D9 WS API** | spawn 5 次 + 1 次 await_tasks（包一层服务端等聚合，避免 LLM 多次轮询）|
 | **D10 agent tool** | plan agent 用 `spawn_task` ×5 + `await_tasks(mode="all")` ×1 |
 | **D11 UI** | Tasks panel 5 行；其中 1 行 queued 状态有时钟 icon。完成的逐个翻 completed |

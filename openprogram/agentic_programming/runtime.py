@@ -593,7 +593,7 @@ class Runtime:
             return None
 
         try:
-            from openprogram.context.nodes import compute_reads
+            from openprogram.context.nodes import render_context
             from openprogram.context.render import render_dag_messages
             from openprogram.agentic_programming.function import _call_id
 
@@ -612,7 +612,7 @@ class Runtime:
             head_seq = max(
                 (n.seq for n in graph.nodes.values()), default=-1,
             )
-            read_ids = compute_reads(
+            read_ids = render_context(
                 graph,
                 head_seq=head_seq,
                 frame_entry_seq=frame_entry_seq,
