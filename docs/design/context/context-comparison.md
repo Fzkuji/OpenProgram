@@ -56,7 +56,7 @@ Status: **查漏记录** · Created: 2026-06-24
 |:--:|---|:--:|:--:|:--:|---|---|
 | 1 | 项目身份（AGENTS.md / .cursorrules） | ✓ | ✓ | oclaw ✓ | ✓ L1 | — |
 | 2 | **Prompt 注入检测**（在 1 加载进 prompt 前扫） | ✓ | - | - | ✅ L1 已实现 | — (pi_shield + detect_injection_patterns) |
-| 3 | 上下文文件截断策略（约束 1 的大小） | ✓ | - | - | ✗ | 漏·中 |
+| 3 | 上下文文件截断策略（约束 1 的大小） | ✓ | - | - | ✅ L1 已实现 | — (workspace_files 截断, MAX_WORKSPACE_CHARS=8000) |
 | 4 | 项目级记忆 | ✓ | - | - | ✓ L1 | — |
 | 5 | **用户档案 USER.md** | ✓ | - | - | ✅ L1 已实现 | — (user_profile, 由 workspace_files 加载 read_user_md) |
 | 6 | 工作目录 cwd | ✓ | - | pi ✓ | ✓ L1 | — |
@@ -68,7 +68,7 @@ Status: **查漏记录** · Created: 2026-06-24
 > 排序说明：项目固定信息（AGENTS.md / 项目记忆 / USER.md / cwd / 绑定）换项目才变，
 > 放前面；**历史每轮都追加，最不稳，放 L1 最后**——这正是你说的"不断变的历史往后放"。
 > 注入检测/截断策略紧挨它们守护的项目文件（2、3 紧跟 1）。
-> L1 除上下文文件截断策略（中）外全部已实现。
+> L1 全部已实现。
 
 ---
 
@@ -79,7 +79,7 @@ Status: **查漏记录** · Created: 2026-06-24
 | # | 成分 | hermes | claude-code | 其余 | 我们 | 漏？ |
 |:--:|---|:--:|:--:|:--:|---|---|
 | 1 | 本次处境 situation（在哪函数/调用栈/第几步） | ✓(_situational) | - | - | ✅ L2 已实现 | — (situation + call_path, step 6a/6b) |
-| 2 | **Git 分支 / status**（本次环境快照） | △(git root) | - | - | ✗ | 漏·中（待实现） |
+| 2 | **Git 分支 / status**（本次环境快照） | △(git root) | - | - | ✅ L2 已实现 | — (git_status, L2 order=20) |
 | 3 | **todo 列表 / 任务计划 / 进度** | - | ✓(todo 工具) | - | ✅ L2 已实现 | — (todo_progress, 读 _TODOS) |
 | 4 | token 预算提示 | - | - | - | ✗ | 漏·低 |
 | 5 | per-turn memory prefetch（本次检索的料） | ✓ | - | - | ✓ L2（现状错塞 system） | — |
@@ -91,7 +91,7 @@ Status: **查漏记录** · Created: 2026-06-24
 
 > 排序说明：处境/环境/todo 是"本次但相对成型"的，放前；用户输入+输出规格在中段；
 > timestamp 每次必变放最末。
-> L2 剩余未实现：git 分支/status（中）、token 预算提示（低）。
+> L2 剩余未实现：token 预算提示（低）。
 
 ---
 
@@ -113,10 +113,8 @@ Status: **查漏记录** · Created: 2026-06-24
 - L2 本次处境 situation + call_path（_situational_prefix + _compute_call_path）
 - L2 todo 列表/进度（todo_progress, 读 _TODOS）
 - L2 output_contract（在 _situational_prefix 中作为 `Your output:` 行）
-
-**中（看需求，尚未实现）**
-- L1 上下文文件截断策略
-- L2 git 分支/status
+- L1 上下文文件截断策略（workspace_files 截断, MAX_WORKSPACE_CHARS=8000）
+- L2 git 分支/status（git_status, L2 order=20）
 
 **低（vendor 特有 / 专用，多半不补）**
 - computer-use 指导 / Nous 订阅 / Kanban 多agent / Hermes profile / 外部记忆提供者
