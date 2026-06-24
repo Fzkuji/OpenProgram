@@ -64,7 +64,7 @@
 | 项 | 默认 | 效果 |
 |---|---|---|
 | `expose` | `"io"` | 调用方在 DAG 里看到我的 name + input + output。我内部的 `runtime.exec`（`llm` 节点）对调用方不可见 |
-| `render_range` | `None` → `compute_reads` 退到 `callers=None, subcalls=-1` | pre-frame 全保留。in-frame（frame 自己的进度：前几次 `runtime.exec` 结果、已 return 的子函数 io）也全保留。子 `@agentic_function` 的内部之所以看不到，是因为子函数自带 `expose="io"`，不是因为 subcalls 在切。 |
+| `render_range` | `None` → `render_context` 退到 `callers=None, subcalls=-1` | pre-frame 全保留。in-frame（frame 自己的进度：前几次 `runtime.exec` 结果、已 return 的子函数 io）也全保留。子 `@agentic_function` 的内部之所以看不到，是因为子函数自带 `expose="io"`，不是因为 subcalls 在切。 |
 | 顶层 chat turn | `frame_entry_seq=-1`，无 pre-frame | 走和普通 frame 一模一样的路径——所有节点都算 in-frame，全部可见。没有特殊处理。 |
 | `no_tools` | `False` | runtime 自动注入当前 toolset |
 | `system` | `None` | 用 runtime 现有 system prompt |

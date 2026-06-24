@@ -11,11 +11,8 @@ supporting notes / investigations that should not override it.
 
 | Doc | Topic |
 |---|---|
-| [`context/context-commit-chain.md`](context/context-commit-chain.md) | Context + session memory commit chain (current) |
-| [`context/context-attach-merge.md`](context/context-attach-merge.md) | Attach + merge behaviour |
-| [`context/context-engine-spec.md`](context/context-engine-spec.md) | Context engine internals |
-| [`context/cross-turn-tool-context.md`](context/cross-turn-tool-context.md) | Tool-result aging across turns |
-| [`context/contextgit.md`](context/contextgit.md) | contextgit backing store |
+| [`context/context.md`](context/context.md) | Context layer: pipeline + DAG storage + ContextCommit + compaction/render + attach/merge + cross-turn tool + gaps |
+| [`context/context-composition.md`](context/context-composition.md) | Target state: per-call layering (L0/L1/L2) + situational context |
 
 ## memory/ — 记忆系统（实体 + 抽象）
 
@@ -64,7 +61,7 @@ supporting notes / investigations that should not override it.
 | [`runtime/streaming-resume.md`](runtime/streaming-resume.md) | Streaming + resume |
 | [`runtime/revert-layers.md`](runtime/revert-layers.md) | Revert layers (commit / worktree) |
 | [`runtime/multi-agent-revert-todo.md`](runtime/multi-agent-revert-todo.md) | Multi-agent revert TODO |
-| [`runtime/session-dag.md`](runtime/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / compute_reads）+ 两路径合并设计（8 步全完成） |
+| [`runtime/session-dag.md`](runtime/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / render_context）+ 两路径合并设计（8 步全完成） |
 | [`runtime/dispatcher-split.md`](runtime/dispatcher-split.md) | Dispatcher split design |
 
 ## providers/ — LLM providers, credentials, model catalog, thinking/effort

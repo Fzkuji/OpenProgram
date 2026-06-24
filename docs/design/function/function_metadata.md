@@ -62,7 +62,7 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 | Aspect | Default | Resulting behavior |
 |---|---|---|
 | `expose` | `"io"` | Callers see my name + input + output. My internal `runtime.exec` (`llm` Calls) are hidden from them. |
-| `render_range` | `None` → `compute_reads` falls through to `callers=None, subcalls=-1` | Pre-frame history is uncapped. In-frame nodes (the frame's own progress: earlier `runtime.exec` results, returned sub-function io) are also uncapped. Child `@agentic_function` internals stay hidden because the child carries `expose="io"`, not because subcalls trims them. |
+| `render_range` | `None` → `render_context` falls through to `callers=None, subcalls=-1` | Pre-frame history is uncapped. In-frame nodes (the frame's own progress: earlier `runtime.exec` results, returned sub-function io) are also uncapped. Child `@agentic_function` internals stay hidden because the child carries `expose="io"`, not because subcalls trims them. |
 | top-level chat turn | `frame_entry_seq=-1`, no pre-frame | Same code path as any other frame — all nodes are in-frame and visible. No special-casing. |
 | `no_tools` | `False` | The active toolset is injected into `runtime.exec`. |
 | `system` | `None` | Use the runtime's existing system prompt as-is. |

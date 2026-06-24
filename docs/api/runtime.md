@@ -42,7 +42,7 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 调用 LLM,上下文从 session DAG 自动算出。
 
 **在 `@agentic_function` 内部调用时:**
-1. 从当前函数的 DAG 节点出发,`compute_reads` 按 `expose` / `render_range` 算出本次要读哪些历史节点
+1. 从当前函数的 DAG 节点出发,`render_context` 按 `expose` / `render_range` 算出本次要读哪些历史节点
 2. `render_dag_messages` 把这些节点渲染成 messages
 3. 调用 `_call()` 发送请求
 4. 把回复写成一个新的 `llm` 节点 append 到 DAG

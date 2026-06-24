@@ -253,7 +253,7 @@ openprogram/
 │   ├── runtime.py                   #   Runtime（exec + retry + DAG 上下文）
 │   ├── session.py                   #   会话生命周期
 │   └── skills.py                    #   SKILL.md 发现
-├── context/                         # 扁平 DAG 上下文模型 — nodes / storage / render / compute_reads
+├── context/                         # 扁平 DAG 上下文模型 — nodes / storage / render / render_context
 ├── providers/                       # Anthropic、OpenAI、Gemini、Claude Code、Codex、Gemini CLI
 ├── functions/
 │   ├── _registry.py                 #   tools + agentic functions 的统一注册表

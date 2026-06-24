@@ -52,7 +52,7 @@ ContextVar 按线程 + 协程隔离,天然并发安全。
 | | session provider (CLI) | API provider |
 |---|---|---|
 | 对话记忆 | 子进程自己管 | 无,每次 exec 独立 |
-| 上下文注入 | 跳过 DAG render,只发 docstring + 当次 content | 通过 `compute_reads` + `render_dag_messages` 从 DAG 拼历史 |
+| 上下文注入 | 跳过 DAG render,只发 docstring + 当次 content | 通过 `render_context` + `render_dag_messages` 从 DAG 拼历史 |
 | `render_range.subcalls` | 不生效(session 自己记得对话) | 生效(用来限制注入历史的窗口) |
 
 **为什么不分两套独立的 Runtime 类?**
@@ -102,5 +102,5 @@ id,以便函数体内 LLM 调用有 frame 可参照)。
 - `openprogram/agentic_programming/function.py` — 装饰器 / `_inject_runtime` / `_call_id` / `_current_runtime` ContextVar
 - `openprogram/providers/__init__.py` — `detect_provider` / `create_runtime` 自动检测
 - `openprogram/providers/<vendor>/runtime.py` — 各 provider 的 `_call` 实现
-- `openprogram/context/nodes.py` `compute_reads` — DAG → reads 计算(`render_range` 的实际语义)
+- `openprogram/context/nodes.py` `render_context` — DAG → reads 计算(`render_range` 的实际语义)
 - `openprogram/context/render.py` `render_dag_messages` — reads → provider messages 转换

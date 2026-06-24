@@ -6,7 +6,7 @@ Status: design · Created: 2026-06-18
 
 ## 总览图
 
-[`agent-call-flow.svg`](agent-call-flow.svg) 画的是**目标(统一后)**:两个入口(用户消息 / 函数体内)汇到**同一条主干**——① compute_reads 读上下文 → ② open_call_node → ③ agent_loop → ④ close_call_node;工具体内再调 exec = 回到主干顶(嵌套)。各入口的特殊处理(聊天的前端流式/标题/压缩、共享的重试/计量)是挂在主干旁的**可选钩子**。底部列出"现状已共享"与"合并要做的 7 步"。
+[`agent-call-flow.svg`](agent-call-flow.svg) 画的是**目标(统一后)**:两个入口(用户消息 / 函数体内)汇到**同一条主干**——① render_context 读上下文 → ② open_call_node → ③ agent_loop → ④ close_call_node;工具体内再调 exec = 回到主干顶(嵌套)。各入口的特殊处理(聊天的前端流式/标题/压缩、共享的重试/计量)是挂在主干旁的**可选钩子**。底部列出"现状已共享"与"合并要做的 7 步"。
 
 > **现状 vs 目标**:下面正文描述的是**现状**(两个入口各管各的外围、各写各的记录,只在 agent_loop 汇合)——作为合并的起点参照。统一成上面那条主干的具体步骤,见 `session-dag.md` 第八节。
 
@@ -46,7 +46,7 @@ dispatcher → agent_loop → 模型调工具 → @agentic_function 体 → runt
 
 **A · dispatcher**:1 建/载 session(沿 active branch 取历史)→ 2 写 user 节点 → 3 attach Runtime(_store + _current_runtime)→ 4 resolve model(agent profile + override)→ 5 解析工具(channel/plan/审批 包装)→ 6 **直接调 agent_loop** → 7 持久化 + finalize(assistant 节点、标题、auto-compact)。
 
-**B · runtime.exec**:1 开 llm 节点(running,_call_id 指向它,外含 timeout/retry 循环)→ 2 构建上下文【a 选历史节点 compute_reads → b render 成消息 + 当前 turn → c 解析工具集 toolset/policy/unattended-deny → d 拼 system + skills → e 建 AgentSession(选 stream_fn)】→ 3 **经 AgentSession 调 agent_loop** → 4 关 llm 节点(回填 output,success)。
+**B · runtime.exec**:1 开 llm 节点(running,_call_id 指向它,外含 timeout/retry 循环)→ 2 构建上下文【a 选历史节点 render_context → b render 成消息 + 当前 turn → c 解析工具集 toolset/policy/unattended-deny → d 拼 system + skills → e 建 AgentSession(选 stream_fn)】→ 3 **经 AgentSession 调 agent_loop** → 4 关 llm 节点(回填 output,success)。
 
 **共享 · agent_loop**:每轮调模型前【a convert_to_llm → b memory prefetch → c deferred-tool re-split】→ 调模型/流式 → 判断 tool_use? → 是:执行工具 → 结果喂回 → 再调模型;否(纯文本):退出循环。
 
@@ -115,7 +115,7 @@ llm (dispatcher 调 exec,模型决定调 wiki_agent)
 ```
 runtime.exec(content=[...])
   → 写 llm 节点 (status=running, output=None)
-  → 构建上下文 (compute_reads + render_dag_messages + content)
+  → 构建上下文 (render_context + render_dag_messages + content)
   → 调 LLM,跑 tool loop 直到模型返回纯文本
       (tool loop 内部模型调的工具,其 code 节点 called_by 指向此 llm 节点)
   → 回填 llm 节点 (output=最终回复, status=success)
