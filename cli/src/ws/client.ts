@@ -57,7 +57,10 @@ export type WsRequest =
   // composer's question_reply / question_reject (question-mode.tsx) so
   // both surfaces resolve through the same backend _resolve_question.
   | { action: 'question_reply'; id: string; answer: string | string[] }
-  | { action: 'question_reject'; id: string; reason?: string };
+  | { action: 'question_reject'; id: string; reason?: string }
+  | { action: 'sandbox'; session_id?: string }
+  | { action: 'undo'; session_id: string }
+  | { action: 'rewind'; session_id: string };
 
 export interface ChatAck {
   type: 'chat_ack';

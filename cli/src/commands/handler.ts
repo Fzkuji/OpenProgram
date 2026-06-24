@@ -632,13 +632,31 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'sandbox': {
+      const conv = ctx.currentConversation;
+      ctx.client.send({ action: 'sandbox', session_id: conv ?? '' });
+      return true;
+    }
+
+    case 'undo': {
+      const conv = ctx.currentConversation;
+      if (!conv) { ctx.pushSystem('No active session to undo.'); return true; }
+      ctx.client.send({ action: 'undo', session_id: conv });
+      return true;
+    }
+
+    case 'rewind': {
+      const conv = ctx.currentConversation;
+      if (!conv) { ctx.pushSystem('No active session to rewind.'); return true; }
+      ctx.client.send({ action: 'rewind', session_id: conv });
+      return true;
+    }
+
     case 'memory':
     case 'mcp':
     case 'doctor':
     case 'review':
     case 'compact': {
-      // Stubs — real implementations live behind ws actions that aren't
-      // wired yet. Print a hint so the input doesn't fall through to the LLM.
       ctx.pushSystem(`/${cmd} is not implemented in the TUI yet — try \`openprogram ${cmd}\` from the shell.`);
       return true;
     }
