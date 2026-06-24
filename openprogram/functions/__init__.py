@@ -123,11 +123,11 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
         "includes": [],
     },
     "full": {
-        # Named preset containing all known tools. Exposure is now
-        # controlled dynamically by exposed_names() (Layer 2 in
-        # _runtime.py), NOT by presence in this list. This preset is
-        # used by agent_tools(toolset="full") to request the complete
-        # set. Order is for readability only.
+        # Static exposure whitelist. Adding a tool to the registry
+        # without adding its name here keeps it invisible to LLMs.
+        # The order is "leaf @function tools first, then agentics,
+        # then harnesses" purely for readability — _expand_preset
+        # dedupes so order doesn't matter semantically.
         "tools":    [
             # ─── leaf @function tools (tools/) ────────────────────
             "bash", "read", "write", "edit",
@@ -151,9 +151,6 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "list_mcp_prompts", "get_mcp_prompt",
             "worktree_create", "worktree_merge", "worktree_discard",
             "worktree_list", "worktree_keep",
-            "checkpoint_list", "checkpoint_restore",
-            "shadow_git_log", "shadow_git_diff", "shadow_git_restore_file",
-            "sandbox_status", "sandbox_toggle",
 
             # ─── agentic side ──────────────────────────────────────
             # The three harness entry points + the two PDF-extraction
