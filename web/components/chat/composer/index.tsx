@@ -530,7 +530,10 @@ export function Composer() {
       ) {
         setThinkingMenuOpen(false);
       }
-      if (!wrapper.contains(t) && !plusMenuRef.current?.contains(t)) {
+      if (
+        !plusTriggerRef.current?.contains(t) &&
+        !plusMenuRef.current?.contains(t)
+      ) {
         setPlusMenuOpen(false);
       }
     }
