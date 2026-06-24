@@ -24,43 +24,30 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 ## 2. 行业对比
 
-### 2.1 快照派
+### 2.1 全景对比
 
-在用户的真实文件系统上工作，通过某种形式的备份提供回滚能力。
-
-| 框架 | 备份机制 | 回滚方式 | bash 覆盖 | 独立于用户 git |
+| 框架 | 快照机制 | 沙箱机制 | bash 覆盖 | 独立于用户 git |
 |---|---|---|---|---|
-| **Hermes** | shadow git checkpoint（所有工具执行前统一 checkpoint 到 `~/.hermes/checkpoints/`） | `/rollback N` + 单文件恢复 + diff 预览 | **是**（统一入口，含 bash） | **是**（shadow store，不碰用户 `.git`） |
-| **Claude Code** | per-response 文件快照（增量，存 `~/.claude/file-history/`） | `/rewind` 按检查点回退 | **否**（只追踪 Write/Edit/NotebookEdit） | **是** |
-| **Cursor** | per-edit checkpoint（存本地隐藏目录） | "Discard to checkpoint" 按钮 | Agent 操作覆盖，用户终端不覆盖 | **是** |
-| **Aider** | 每次 AI 编辑自动 `git commit`（Conventional Commits 格式） | `/undo` = 回退最近一次 aider commit | **是**（git 天然追踪一切） | **否**（直接用用户 git，会污染 git 历史） |
-| **opencode** | git tree object 快照 | `/undo` + `/redo`（已知 bug：文件变更与对话状态脱节） | 是（git 兜底） | **否** |
-| **OpenClaw** | 无内置快照（本地模式） | 无 | 否 | N/A |
+| **Claude Code** | per-response 快照，`/rewind` 回退 | `/sandbox` 限制 bash 写入范围 | 快照不覆盖；沙箱限制写入范围 | 是 |
+| **Cursor** | per-edit checkpoint | Seatbelt/Landlock/seccomp 系统级沙箱 | Agent 操作覆盖 | 是 |
+| **Hermes** | shadow git checkpoint，所有工具执行前统一 checkpoint | 无 | **是**（统一入口，含 bash） | 是（shadow store） |
+| **Aider** | 每次编辑自动 git commit | 无 | **是**（git 天然覆盖一切） | 否（污染用户 git） |
+| **opencode** | git tree object 快照 | 无 | 是（git 兜底） | 否 |
+| **OpenHands** | event-sourcing 支持回放 | Docker 容器（主要模式） | 沙箱内全覆盖 | N/A |
+| **SWE-agent** | 无 | Docker 沙箱（SWEEnv） | 沙箱内全覆盖 | N/A |
+| **Devin** | 无 | 云端 ephemeral 沙箱 | 沙箱内全覆盖 | N/A |
+| **OpenClaw** | 无内置快照（本地模式） | Docker/Podman 容器 | 沙箱内全覆盖 | N/A |
+| **OpenProgram** | ① BackupStore + ② Project-Git | ③ Worktree（轻量 git 隔离） | 快照不覆盖 bash（见 §7） | 是（BackupStore 独立；Project-Git 可关） |
 
-### 2.2 沙箱派
+> **趋势**：早期框架只选一种（Aider 只有快照，SWE-agent 只有沙箱）。头部框架（Claude Code、Cursor）已经往**两者并存**的方向走——快照解决日常回滚体验（秒级恢复），沙箱解决安全隔离（bash 全覆盖）。我们的三层设计（① 快照 + ② Project-Git + ③ Worktree）同样覆盖两种路线。
 
-在隔离环境（容器/云端）中工作，天然解决文件追踪问题。
-
-| 框架 | 隔离机制 | 回滚方式 | bash 覆盖 | 产出交付 |
-|---|---|---|---|---|
-| **OpenHands** | Docker 容器（支持 Docker/Local/Remote 三种 runtime） | 丢弃容器；完成后提取 `git_patch` | **天然全覆盖** | git patch 选择性 apply |
-| **SWE-agent** | Docker 沙箱（SWEEnv） | 丢弃沙箱 | **天然全覆盖** | git diff 提取 |
-| **Devin** | 云端 ephemeral 沙箱（per-session，含 shell/编辑器/浏览器） | 沙箱临时，不影响本地 | **天然全覆盖** | PR 形式提交 |
-| **OpenClaw** | Docker/Podman 容器（`agents/sandbox/`），有 workspace mount、fs-bridge、网络隔离 | 容器隔离 | **天然全覆盖** | 容器内操作完提取 |
-
-### 2.3 术语解释
+### 2.2 术语解释
 
 | 术语 | 含义 |
 |---|---|
 | **bash 覆盖** | agent 通过 bash 工具改文件（`sed -i`、`> file`、`rm` 等）时，这些变更能否被追踪和回滚。快照派的核心难题——编辑工具（write/edit）能精确知道改了哪个文件，bash 不能。 |
 | **独立于用户 git** | 备份机制是否使用自己的存储，不污染用户的 git 历史。Aider 直接在用户仓库里 git commit，`git log` 会混入大量 AI 自动 commit；Hermes 和我们用独立存储，用户 git 历史保持干净。 |
 | **shadow git** | Hermes 的做法：用 git 的 tree/commit 机制存快照，但存在独立的 shadow store 目录（`~/.hermes/checkpoints/`），不碰用户的 `.git`。兼顾 git 的追踪能力和不污染用户历史。 |
-
-### 2.4 为什么大多数框架只选一种
-
-大多数框架的定位比较窄：Aider/Cursor/Claude Code 只做交互式编码（用户一直盯着，不需要沙箱）；OpenHands/SWE-agent/Devin 只做无人值守批量任务（本来就在容器里跑，不需要快照回滚）。
-
-OpenProgram 既有交互式聊天（CLI/webui），又有 agentic function 无人值守执行（research_agent 等长时间运行），两种场景都要支持。
 
 ---
 
