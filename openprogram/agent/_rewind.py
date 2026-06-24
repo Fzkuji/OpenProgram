@@ -96,27 +96,25 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
     if pair is None:
         return _err(session_id, target_msg_id, f"unknown session {session_id!r}")
 
-    _, idx = pair
+    git, idx = pair
     all_nodes = idx.all_nodes()
 
-    # Find the target user node
     target_node = idx.nodes_by_id.get(target_msg_id)
     if target_node is None:
         return _err(session_id, target_msg_id, f"node {target_msg_id!r} not found")
 
-    # Extract user text for prefilling the composer
     user_text = target_node.output or ""
     if isinstance(user_text, dict):
         user_text = str(user_text)
 
     target_seq = target_node.seq
 
-    # Collect all assistant (llm) nodes at or after the target's seq
-    # These are the turns we need to revert, newest first
     to_revert: list[str] = []
     to_mark: list[str] = []
+    new_head: str | None = None
     for node in reversed(all_nodes):
         if node.seq < target_seq:
+            new_head = node.id
             break
         to_mark.append(node.id)
         if node.role == "llm":
@@ -124,7 +122,6 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
             if not meta.get("reverted"):
                 to_revert.append(node.id)
 
-    # Revert file changes for each assistant turn
     all_restored: list[str] = []
     errors: list[str] = []
     for msg_id in to_revert:
@@ -133,7 +130,6 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
             errors.append(f"{msg_id}: {result['error']}")
         all_restored.extend(result.get("restored_paths", []))
 
-    # Mark all rewound nodes (user + assistant + code)
     import time
     for node_id in to_mark:
         node = idx.nodes_by_id.get(node_id)
@@ -143,6 +139,19 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
                 "rewound": True,
                 "rewound_at": time.time(),
             }
+            try:
+                git.write_history(node.seq, node.role, node.id, node.to_dict())
+            except Exception:
+                pass
+
+    if new_head is not None:
+        idx.set_head(new_head)
+        store._persist_meta(git, idx)
+
+    try:
+        store.commit_turn(session_id, "rewind")
+    except Exception:
+        pass
 
     return {
         "session_id": session_id,

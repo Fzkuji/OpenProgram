@@ -737,6 +737,7 @@ class SessionStore:
         msgs = [
             _node_to_msg(n, session_id) for n in idx.all_nodes()
             if (n.metadata or {}).get("display") != "root"
+            and not (n.metadata or {}).get("rewound")
         ]
         if limit is not None:
             msgs = msgs[-limit:]
@@ -764,6 +765,7 @@ class SessionStore:
         return [
             _node_to_msg(n, session_id) for n in chain
             if (n.metadata or {}).get("display") != "root"
+            and not (n.metadata or {}).get("rewound")
         ]
 
     # ── Head ──────────────────────────────────────────────────
