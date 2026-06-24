@@ -282,7 +282,53 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 ---
 
-## 8. 待做
+## 8. 使用指南
+
+### 8.1 网页端（webui）
+
+**回退操作：**
+- 每条 assistant 消息右上角有 ↩ 按钮（"Rewind to here"）——点击后代码和对话都回退到这条消息之前
+- 在聊天框输入 `/rewind`——列出最近的回退点（最多 10 条），每条显示摘要和时间
+- 在聊天框输入 `/rewind N`——回退到第 N 个回退点（N 从列表中选）
+
+**沙箱：**
+- 在聊天框输入 `/sandbox`——开启系统级沙箱（限制 bash 只能读写当前项目目录）
+- 再次输入 `/sandbox`——关闭沙箱
+
+### 8.2 CLI 命令行
+
+- `/rewind`——列出回退点
+- `/rewind N`——回退到第 N 个点
+- `/sandbox`——开关沙箱
+
+### 8.3 TUI 终端界面
+
+- `/rewind`、`/rewind N`——同 CLI
+- `/sandbox`——同 CLI
+
+### 8.4 自动生效的功能（用户不需要手动操作）
+
+这些功能在后台自动运行，用户不需要做任何操作：
+
+| 功能 | 什么时候触发 | 做什么 |
+|---|---|---|
+| Checkpoint | 每次工具执行前 | 自动备份即将被修改的文件（含 bash） |
+| Shadow git | 每个 turn 结束时 | 自动 commit 本 turn 的文件变更到独立 git store |
+| read-before-edit | 每次写文件前 | 自动检查文件是否被外部修改过，防止覆盖 |
+
+### 8.5 Agent 可用的工具
+
+这些是 agent（LLM）可以调用的工具，用户不直接操作：
+
+| 工具 | 功能 |
+|---|---|
+| `worktree_create` | 创建独立工作目录副本（文件隔离沙箱） |
+| `worktree_merge` | 把副本的改动合并回主目录 |
+| `worktree_discard` | 丢弃副本 |
+
+---
+
+## 9. 待做
 
 ### 已完成
 
@@ -308,7 +354,7 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 ---
 
-## 9. 沙箱隔离 — ③ Worktree + ④ 系统级沙箱
+## 10. 沙箱隔离 — ③ Worktree + ④ 系统级沙箱
 
 沙箱有三种实现方式，隔离级别从低到高：
 
@@ -318,13 +364,13 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 | **系统级沙箱** | 我们 ④、Claude Code `/sandbox`、Cursor | 文件系统 + 网络（进程级限制） | 毫秒级 | Seatbelt / bubblewrap / Landlock | 本地交互，限制 bash 范围 |
 | **容器沙箱** | OpenHands / SWE-agent / Devin | 完整隔离（文件/网络/进程） | 30-60 秒 | Docker / Podman | 无人值守、不信任代码 |
 
-### 9.1 ③ Worktree — 文件隔离（✅ 已实现）
+### 10.1 ③ Worktree — 文件隔离（✅ 已实现）
 
 agent 调 `worktree_create` 创建独立工作目录副本，改好了 `worktree_merge`，改砸了 `worktree_discard`。
 
 **局限**：只隔离文件，不隔离进程和网络——bash 仍能 `rm -rf /`、读 `~/.ssh/`、访问网络。适合"怕改坏代码"，不防"bash 乱来"。
 
-### 9.2 ④ 系统级沙箱 — 权限限制（✅ 已实现）
+### 10.2 ④ 系统级沙箱 — 权限限制（✅ 已实现）
 
 用 OS 内核机制限制 bash 进程能做什么：
 - **文件系统**：只能读写 cwd 及子目录，`rm ~/.ssh/id_rsa` → `Operation not permitted`
@@ -333,13 +379,13 @@ agent 调 `worktree_create` 创建独立工作目录副本，改好了 `worktree
 - **代码**：`openprogram/sandbox/__init__.py`（`sandbox_enabled` contextvar + `wrap_command`）、`backend/local.py`（`_invocation` 集成）
 - **命令**：`/sandbox` 开关（CLI `_cli_chat/handlers.py` + webui `ws_actions/chat.py`）
 
-### 9.3 ③ 和 ④ 的关系
+### 10.3 ③ 和 ④ 的关系
 
 两者解决不同问题，可以组合：
 - **单独用 ③**：在副本里改，但 bash 什么都能做
 - **单独用 ④**：在原目录改，但 bash 被限制范围
 - **组合用**：在副本里改，bash 也被限制。最安全
 
-### 9.4 容器沙箱（远期方向）
+### 10.4 容器沙箱（远期方向）
 
 research_agent 等无人值守 agentic function 的长时间运行场景，需要 Docker 完整隔离。当前不做，等 agentic function 成熟后考虑。
