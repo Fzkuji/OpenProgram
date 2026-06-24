@@ -193,7 +193,7 @@ export function MessageActions({
     const ok = wsSend({
       action: "rewind",
       session_id: sessionId,
-      msg_id: msg.id,
+      target_msg_id: msg.id,
     });
     if (!ok) {
       setBusy(false);
@@ -212,10 +212,9 @@ export function MessageActions({
       try {
         const data = JSON.parse(ev.data);
         if (data?.type === "rewind_result") {
-          if (data?.data?.assistant_msg_id && data.data.assistant_msg_id !== msg.id) return;
           ws.removeEventListener("message", onMsg);
-          const restored = data?.data?.restored_paths ?? [];
-          const err = data?.data?.error;
+          const restored = data?.data?.total_restored_paths ?? data?.data?.restored_paths ?? [];
+          const err = data?.data?.error ?? (data?.data?.errors?.length ? data.data.errors.join("; ") : null);
           const text = err
             ? tr(`Rewind failed: ${err}`, `回退失败：${err}`)
             : tr(

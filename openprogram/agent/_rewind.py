@@ -103,13 +103,35 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
             "errors": ["no rewind points found"],
         }
 
+    resolved_target = target_msg_id
+
+    # If target_msg_id is a user node, resolve to the next assistant node
+    if not any(p["msg_id"] == target_msg_id for p in points):
+        try:
+            from openprogram.store.session.session_store import default_store
+            store = default_store()
+            pair = store._open(session_id)
+            if pair:
+                _, idx = pair
+                all_nodes = list(idx.all_nodes())
+                for i, n in enumerate(all_nodes):
+                    if n.id == target_msg_id and n.role == "user":
+                        # Find next assistant node after this user node
+                        for j in range(i + 1, len(all_nodes)):
+                            if all_nodes[j].role == "llm":
+                                resolved_target = all_nodes[j].id
+                                break
+                        break
+        except Exception:
+            pass
+
     target_found = False
     to_revert: list[str] = []
     for p in points:
         if p.get("reverted"):
             continue
         to_revert.append(p["msg_id"])
-        if p["msg_id"] == target_msg_id:
+        if p["msg_id"] == resolved_target:
             target_found = True
             break
 
