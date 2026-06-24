@@ -1080,9 +1080,21 @@ async def handle_rewind(ws, cmd: dict):
         }))
         return
     try:
-        from openprogram.agent._rewind import rewind_to
+        from openprogram.agent._rewind import list_rewind_points, rewind_to
         import asyncio
         loop = asyncio.get_event_loop()
+        if target_msg_id.startswith("__by_index__"):
+            idx = int(target_msg_id.removeprefix("__by_index__"))
+            points = await loop.run_in_executor(
+                None, lambda: list_rewind_points(session_id),
+            )
+            if idx < 1 or idx > len(points):
+                await ws.send(json.dumps({
+                    "type": "rewind_result",
+                    "data": {"error": f"Invalid index {idx}. Available: 1-{len(points)}"},
+                }))
+                return
+            target_msg_id = points[idx - 1]["msg_id"]
         result = await loop.run_in_executor(
             None, lambda: rewind_to(session_id, target_msg_id),
         )

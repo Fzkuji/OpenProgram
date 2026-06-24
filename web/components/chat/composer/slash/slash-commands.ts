@@ -133,6 +133,43 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     },
   },
   {
+    name: "/sandbox",
+    description: "Toggle system sandbox — restrict bash to cwd writes only",
+    run(_rest, { send }) {
+      send({ action: "sandbox" });
+      return true;
+    },
+  },
+  {
+    name: "/undo",
+    description: "Undo the most recent assistant turn (restore files)",
+    run(_rest, { sessionId, send }) {
+      if (!sessionId) return true;
+      send({ action: "undo", session_id: sessionId });
+      return true;
+    },
+  },
+  {
+    name: "/rewind",
+    args: "[N]",
+    description:
+      "Roll back to a previous point. No arg = list points; N = rewind to the Nth point",
+    run(rest, { sessionId, send }) {
+      if (!sessionId) return true;
+      const n = parseInt(rest.trim(), 10);
+      if (Number.isFinite(n) && n > 0) {
+        send({
+          action: "rewind",
+          session_id: sessionId,
+          target_msg_id: `__by_index__${n}`,
+        });
+      } else {
+        send({ action: "rewind_list", session_id: sessionId });
+      }
+      return true;
+    },
+  },
+  {
     name: "/doctor",
     description:
       "Run health checks: python, node, skills, plugins, providers, mcp, cache",
