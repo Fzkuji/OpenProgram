@@ -60,11 +60,14 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 | 术语 | 含义 |
 |---|---|
-| **Checkpoint** | 行业通用叫法（Claude Code、Cursor、Hermes 都用），指改文件前保存的快照。等同于我们之前叫的 "BackupStore / file_backup"。 |
+| **Checkpoint** | 行业通用叫法（Claude Code、Cursor、Hermes 都用），指改文件前保存的快照。 |
 | **bash 覆盖** | agent 通过 bash 工具改文件（`sed -i`、`> file`、`rm` 等）时，这些变更能否被追踪和回滚。快照派的核心难题——编辑工具（write/edit）能精确知道改了哪个文件，bash 不能。 |
 | **独立于用户 git** | 备份机制是否使用自己的存储，不污染用户的 git 历史。Aider 直接在用户仓库里 git commit，`git log` 会混入大量 AI 自动 commit；Hermes 和 Claude Code 用独立存储，用户 git 历史保持干净。 |
 | **Shadow git** | 用 git 的 tree/commit 机制存快照，但存在独立目录（如 `~/.hermes/checkpoints/`），不碰用户的 `.git`。兼顾 git 的追踪能力（diff、单文件恢复）和不污染用户历史。 |
 | **统一入口触发** | Hermes 的关键设计：不在每个编辑工具内部触发 checkpoint，而在**所有工具的执行入口**统一触发。这样 bash 执行前也会做 checkpoint，自然覆盖 bash 盲点。 |
+| **系统级沙箱** | 用 OS 内核机制（Seatbelt / Landlock / seccomp / bubblewrap）限制进程的文件访问和网络访问范围。进程仍在宿主机上跑，但被限制了能做什么。毫秒级启动。 |
+| **容器沙箱** | 在 Docker/Podman 容器内运行 agent。完整隔离——容器内的操作不影响宿主机。完成后通过 git patch 或文件 mount 提取产出。 |
+| **Git worktree** | 用 `git worktree` 创建独立的工作目录副本。agent 在副本里操作，改好了 merge 回主线，改砸了 discard 丢掉。只隔离文件，不隔离进程和网络。 |
 
 ---
 
@@ -105,8 +108,8 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 | **触发** | 统一入口（所有工具执行前） | turn 结束（自动 commit 本 turn 变更） | agent 显式调 `worktree_create` |
 | **bash 覆盖** | **是**（统一入口触发） | **是**（turn 结束 commit 含 bash 改动） | N/A（隔离环境内） |
 | **默认** | **一直开** | **默认开** | 按需 |
-| **代码** | `store/snapshot/checkpoint/`（原 `file_backup/`） | `store/shadow_git/` | `worktree/` |
-| **回退入口** | `undo`（原 `revert_turn`） | `undo` 联动 | `worktree_discard` |
+| **代码** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` |
+| **回退入口** | `undo` | `undo` 联动 | `worktree_discard` |
 
 ### 3.3 ① Checkpoint 和 ② Shadow git 的分工
 
@@ -122,24 +125,13 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 `undo` 回滚时联动：先从 checkpoint 恢复文件（最快），shadow git 记录保持可查。
 
-### 3.4 与 Claude Code / Hermes 的对比
-
-| | Claude Code | Hermes | OpenProgram（目标态） |
-|---|---|---|---|
-| 临时备份 | checkpoint（文件拷贝） | shadow git checkpoint | ① Checkpoint（文件拷贝） |
-| 永久历史 | 无（用户自己 commit） | shadow git 兼任 | ② Shadow git |
-| 碰用户 git | 否 | 否 | **否** |
-| bash 覆盖 | 否 | 是（统一入口） | **是**（统一入口） |
-| 隔离沙盒 | `/sandbox`（系统级限制） | 无 | ③ Worktree（git 级隔离） |
-| 回滚命令 | `/rewind` | `/rollback N` | `/undo` |
-
 ---
 
 ## 4. 统一入口触发（覆盖 bash 的关键改动）
 
-### 4.1 ✅ 已实现
+### 4.1 实现方式
 
-write / edit / apply_patch 三个编辑工具**各自内部**调用 `checkpoint_before_edit`（原 `backup_for_current_turn`）做精确的单文件备份——保留不动。
+write / edit / apply_patch 三个编辑工具**各自内部**调用 `checkpoint_before_edit`做精确的单文件备份——保留不动。
 
 bash 工具的覆盖在 `_execute_tool_calls`（`agent_loop.py`，所有工具的单一入口）中实现：
 
@@ -157,10 +149,6 @@ else:
 `_checkpoint_changed_files`：对比前后快照，对新增/修改的文件调用 `checkpoint_before_edit`。
 
 **已知限制**：当前快照只扫描 cwd 顶层文件，子目录中的变更暂未覆盖（可后续改为递归扫描）。
-
-### 4.2 行业参考
-
-这是 Hermes 的做法——在所有工具执行前统一 checkpoint，bash 自然覆盖。我们借鉴其触发策略，保持编辑工具内部的精确备份 + bash 前后 diff 补做。
 
 ---
 
@@ -192,7 +180,7 @@ else:
 
 #### 规则 B: undo = checkpoint 恢复 + shadow git 保持可查
 
-`undo`（原 `revert_turn`）撤一个 turn 时:
+`undo`撤一个 turn 时:
 1. 从 checkpoint 恢复文件（最快路径）。
 2. shadow git 历史**不回退**——保持可查，用户可以 diff 看 agent 改了什么。
 3. gitignored 文件 / 非 git 文件夹：checkpoint 是唯一兜底。
@@ -233,7 +221,7 @@ else:
 
 ### 6.3 Checkpoint 的释放
 
-checkpoint 存 `<session>/checkpoints/<turn_id>/`（原 `file_backups/`），释放:
+checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 | 触发 | 实现 |
 |---|---|
@@ -277,47 +265,22 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`（原 `file_backups/`），释
 
 ---
 
-## 8. 命名变更
+## 8. 待做
 
-| 旧名 | 新名 | 原因 |
-|---|---|---|
-| BackupStore / file_backup | **Checkpoint** / checkpoint | 行业通用叫法（Claude Code、Cursor、Hermes 都用） |
-| revert_turn | **undo** | Aider/opencode 用 undo，最直觉；revert 容易和 git revert 混淆 |
-
----
-
-## 9. 实施计划
-
-| # | 项 | 状态 | 说明 |
-|---|---|---|---|
-| 1 | 命名重构: BackupStore → CheckpointStore | ✅ `c0a73c1c` | 目录 `file_backup/` → `checkpoint/`，类名/函数名/import 全部改名，保留向后兼容 alias |
-| 2 | 统一入口触发: bash 前后 diff 在 `_execute_tool_calls` | ✅ `69432d88` | `_snapshot_cwd` + `_checkpoint_changed_files`，7 个测试 |
-| 3 | bash 覆盖 | ✅ 含在 #2 | 当前限制：只扫顶层目录 |
-| 4 | Shadow git: 独立 git store | ✅ `ad6551c7` | `store/shadow_git/`，支持 commit/diff/restore/log，13 个测试 |
-| 5 | 简化 undo: 不再需要 git reset/revert 判断 | ⏳ | 依赖 shadow git 接入 dispatcher |
-| 6 | 命令改名: `revert_turn` → `undo` | ⏳ | 用户面对的命令名 |
-
-### 已实现
-
-| # | 项 | 状态 |
-|---|---|---|
-| ✅ | ① Checkpoint 写入 + 回退 | ✅（`store/snapshot/checkpoint/`） |
-| ✅ | ② Shadow git 独立 store | ✅（`store/shadow_git/`） |
-| ✅ | ③ Worktree create/merge/discard + 工具 | ✅ |
-| ✅ | 统一入口触发（bash 覆盖） | ✅ |
-| ✅ | GC (`gc_evict_old` 每 turn 末调用) | ✅ |
-| ✅ | read-before-edit 并发防护 (前置闸) | ✅ |
-| ⏳ | UI 明示当前会话的"主回退路径" | ⏳ 未做 (后端就绪, 待前端) |
-| ⏳ | 完整 Docker 沙箱 (无人值守场景) | ⏳ 远期 |
-
-**冒烟测试**: `scripts/smoke_entity_layer.py`、`scripts/smoke_read_before_edit.py` (13 项)、
-`scripts/smoke_revert_ux.py` (11 项)。均在隔离 profile 跑, 全过。
+| 项 | 说明 |
+|---|---|
+| 简化 undo: 不再需要 git reset/revert 判断 | 依赖 shadow git 接入 dispatcher |
+| 命令改名: `revert_turn` → `undo` | 用户面对的命令名 |
+| bash checkpoint 递归扫描 | 当前只扫 cwd 顶层，子目录变更未覆盖 |
+| UI 明示当前会话的"主回退路径" | 后端就绪, 待前端 |
+| 系统级沙箱（本地交互） | 参考 Claude Code 的 Seatbelt/bubblewrap |
+| 容器沙箱（无人值守） | research_agent 等长时间跑的场景，需 Docker 集成 |
 
 ---
 
-## 10. 沙箱隔离 — 行业方案与我们的定位
+## 9. 沙箱隔离 — 行业方案与我们的定位
 
-### 10.1 三种沙箱方案
+### 9.1 三种沙箱方案
 
 | 方案 | 代表框架 | 隔离级别 | 启动延迟 | 实现技术 | 适合场景 |
 |---|---|---|---|---|---|
@@ -325,15 +288,7 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`（原 `file_backups/`），释
 | **容器沙箱** | OpenHands / SWE-agent（Docker）、Devin（云端 ephemeral 容器） | 完整隔离（文件系统 / 网络 / 进程全隔离） | 30-60 秒（新容器），2-15 秒（复用） | Docker / Podman / 云端 VM | 无人值守批量任务、不信任的代码执行 |
 | **Git worktree** | OpenProgram（我们现有） | 仅文件系统（独立副本），无进程/网络隔离 | 秒级 | `git worktree add` | 高风险代码改动（实验性重构） |
 
-### 10.2 术语解释
-
-| 术语 | 含义 |
-|---|---|
-| **系统级沙箱** | 用 OS 内核机制（Seatbelt / Landlock / seccomp / bubblewrap）限制进程的文件访问和网络访问范围。进程仍在宿主机上跑，但被限制了能做什么。 |
-| **容器沙箱** | 在 Docker/Podman 容器内运行 agent。完整隔离——容器内的操作不影响宿主机。完成后通过 git patch 或文件 mount 提取产出。 |
-| **Git worktree** | 用 `git worktree` 创建独立的工作目录副本。agent 在副本里操作，改好了 merge 回主线，改砸了 discard 丢掉。只隔离文件，不隔离进程和网络。 |
-
-### 10.3 Worktree 的局限
+### 9.2 Worktree 的局限
 
 Worktree 只隔离文件，不隔离进程和网络：
 - bash 命令仍然能 `rm -rf /`（删除 worktree 之外的文件）
@@ -342,7 +297,7 @@ Worktree 只隔离文件，不隔离进程和网络：
 
 Worktree 适合"怕改坏代码"（实验性重构），不适合"怕恶意行为"（不信任的代码执行）。
 
-### 10.4 我们的沙箱方向
+### 9.3 我们的沙箱方向
 
 当前：③ Worktree（轻量 git 隔离），已实现，按需使用。
 
