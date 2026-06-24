@@ -289,7 +289,7 @@ export function MessageActions({
           onClick={branch}
         />
       ) : null}
-      {msg.role === "assistant" ? (
+      {msg.role === "user" ? (
         <ActionButton
           icon={SVG.undo}
           title={tr("Rewind to here", "回退到这里")}
