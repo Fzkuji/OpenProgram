@@ -287,7 +287,11 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 ### 8.1 网页端（webui）
 
 **回退操作：**
-- 每条 assistant 消息右上角有 ↩ 按钮（"Rewind to here"）——点击后代码和对话都回退到这条消息之前
+- 每条 **user** 消息右上角有 ↩ 按钮（"Rewind to here"）——点击后：
+  1. 该消息的文本回到输入框（可重新编辑）
+  2. 该消息及之后的所有对话从界面上移除
+  3. 文件恢复到该消息之前的状态（通过 checkpoint）
+  4. DAG 中旧对话保留为历史分支，不丢失
 - 在聊天框输入 `/rewind`——列出最近的回退点（最多 10 条），每条显示摘要和时间
 - 在聊天框输入 `/rewind N`——回退到第 N 个回退点（N 从列表中选）
 
@@ -320,11 +324,35 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 这些是 agent（LLM）可以调用的工具，用户不直接操作：
 
+**Worktree（文件隔离沙箱）：**
+
 | 工具 | 功能 |
 |---|---|
-| `worktree_create` | 创建独立工作目录副本（文件隔离沙箱） |
+| `worktree_create` | 创建独立工作目录副本 |
 | `worktree_merge` | 把副本的改动合并回主目录 |
 | `worktree_discard` | 丢弃副本 |
+
+**Checkpoint（快照回滚）：**
+
+| 工具 | 功能 |
+|---|---|
+| `checkpoint_list` | 列出当前会话的 checkpoint 列表（turn ID、时间、备份文件） |
+| `checkpoint_restore` | 恢复指定 turn 的文件到 checkpoint 状态 |
+
+**Shadow git（永久历史）：**
+
+| 工具 | 功能 |
+|---|---|
+| `shadow_git_log` | 查看 shadow git 的 commit 历史 |
+| `shadow_git_diff` | 对比两个 commit 之间的文件差异 |
+| `shadow_git_restore_file` | 从某个 commit 恢复单个文件 |
+
+**沙箱（权限限制）：**
+
+| 工具 | 功能 |
+|---|---|
+| `sandbox_status` | 查看沙箱当前状态（开/关、可用性） |
+| `sandbox_toggle` | 开关系统级沙箱 |
 
 ---
 
