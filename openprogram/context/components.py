@@ -207,11 +207,17 @@ def _build_memory(agent: Any) -> str:
 # and assembling ["L0","L1"] won't reproduce the interleave — so for step 1 we
 # register ALL five in L0 with ascending order to guarantee identical sequence.
 
+# L0 系统级(跨项目稳定):身份、inline、技能、全局记忆。
+# L1 项目级:工作区文件(AGENTS.md/SOUL.md/USER.md 跟 agent/项目走)。
+# 按设计 §三 wire 顺序:system = L0(全部在前)+ L1 项目块(在 L0 之后)。
+# 注:身份/记忆的"整体 vs 项目"两层拆分需底层 workspace/memory 数据模型支持
+# (现状 read_*_md / memory 不区分 scope),待那一层支持后再细拆;此处先按现有
+# 可区分的语义归层——workspace 文件是项目侧,归 L1。
 register(ContextComponent("identity", "L0", 10, _build_identity))
-register(ContextComponent("workspace_files", "L0", 20, _build_workspace_files))
 register(ContextComponent("inline_prompt", "L0", 30, _build_inline))
 register(ContextComponent("skills_index", "L0", 40, _build_skills))
 register(ContextComponent("memory_global", "L0", 50, _build_memory))
+register(ContextComponent("workspace_files", "L1", 10, _build_workspace_files))
 
 
 __all__ = [
