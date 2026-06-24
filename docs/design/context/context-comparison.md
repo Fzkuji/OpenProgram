@@ -78,7 +78,7 @@ Status: **查漏记录** · Created: 2026-06-24
 
 | # | 成分 | hermes | claude-code | 其余 | 我们 | 漏？ |
 |:--:|---|:--:|:--:|:--:|---|---|
-| 1 | 本次处境 situation（在哪函数/调用栈/第几步） | ✓(_situational) | - | - | ✗（待补） | 设计已列 |
+| 1 | 本次处境 situation（在哪函数/调用栈/第几步） | ✓(_situational) | - | - | ✅ L2 已实现 | — (situation + call_path, step 6a/6b) |
 | 2 | **Git 分支 / status**（本次环境快照） | △(git root) | - | - | ✗ | **漏·中** |
 | 3 | **todo 列表 / 任务计划 / 进度** | - | ✓(todo 工具) | - | ✗ | **漏·中** |
 | 4 | token 预算提示 | - | - | - | ✗ | 漏·低 |
@@ -97,11 +97,12 @@ Status: **查漏记录** · Created: 2026-06-24
 
 ## 漏项汇总（按优先级，供决定补哪些）
 
-**✅ 已实现（registry 重构 step 3-4）**
+**✅ 已实现（registry 重构 step 3-6b）**
 - L0 模型特定操作指导（model_guidance）
 - L0 工具强制 act-don't-ask（tool_enforcement）
 - L0 环境信息（environment: OS/shell；cwd 另由 tool-runtime）
 - L0 当前日期（current_date, 日粒度）
+- L2 本次处境 situation + call_path（_situational_prefix + _compute_call_path）
 
 **高（真提质量/安全，建议补）**
 - L0 平台渲染格式（待组装器入参从 agent 扩成 ctx，channel 是 per-turn）

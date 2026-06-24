@@ -170,7 +170,7 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 
 | order | 成分 | condition | 现状 |
 |---|---|---|---|
-| 1 | 本次处境 situation | @agentic_function 内调用 | ➕(论文核心,现状几乎无) |
+| 1 | 本次处境 situation | @agentic_function 内调用 | ✅(step 6a/6b: _situational_prefix + _compute_call_path) |
 | 2 | git 分支 / status | 在 git 仓库 | ➕(中) |
 | 3 | todo / 任务计划 / 进度 | 有 todo | ➕(中,长任务) |
 | 4 | token 预算提示 | 接近预算 | ➕(低) |
