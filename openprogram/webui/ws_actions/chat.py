@@ -915,7 +915,7 @@ async def handle_compact(ws, cmd: dict):
 
     session_id = cmd.get("session_id")
     if not session_id:
-        await ws.send(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "chat_response",
             "data": {"type": "error",
                      "content": "compact: missing session_id"},
@@ -966,7 +966,7 @@ async def handle_sandbox(ws, cmd: dict):
     from openprogram.sandbox import sandbox_enabled, is_available
     available = is_available()
     if not available:
-        await ws.send(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "chat_response",
             "data": {"type": "status",
                      "content": "System sandbox not available "
@@ -979,7 +979,7 @@ async def handle_sandbox(ws, cmd: dict):
     msg = f"Sandbox: {state}"
     if not current:
         msg += " — bash commands restricted to cwd writes only"
-    await ws.send(json.dumps({
+    await ws.send_text(json.dumps({
         "type": "chat_response",
         "data": {"type": "status", "content": msg},
     }))
@@ -989,7 +989,7 @@ async def handle_rewind_list(ws, cmd: dict):
     """List available rewind points for the session."""
     session_id = (cmd.get("session_id") or "").strip()
     if not session_id:
-        await ws.send(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "rewind_points",
             "data": {"points": [], "error": "No session_id provided"},
         }))
@@ -1001,12 +1001,12 @@ async def handle_rewind_list(ws, cmd: dict):
         points = await loop.run_in_executor(
             None, lambda: list_rewind_points(session_id),
         )
-        await ws.send(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "rewind_points",
             "data": {"points": points},
         }, default=str))
     except Exception as e:
-        await ws.send(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "rewind_points",
             "data": {"points": [], "error": f"{type(e).__name__}: {e}"},
         }))
@@ -1017,7 +1017,7 @@ async def handle_rewind(ws, cmd: dict):
     session_id = (cmd.get("session_id") or "").strip()
     target_msg_id = (cmd.get("target_msg_id") or "").strip()
     if not session_id or not target_msg_id:
-        await ws.send(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "rewind_result",
             "data": {"error": "session_id and target_msg_id are required"},
         }))
@@ -1032,7 +1032,7 @@ async def handle_rewind(ws, cmd: dict):
                 None, lambda: list_rewind_points(session_id),
             )
             if idx < 1 or idx > len(points):
-                await ws.send(json.dumps({
+                await ws.send_text(json.dumps({
                     "type": "rewind_result",
                     "data": {"error": f"Invalid index {idx}. Available: 1-{len(points)}"},
                 }))
@@ -1041,12 +1041,12 @@ async def handle_rewind(ws, cmd: dict):
         result = await loop.run_in_executor(
             None, lambda: rewind_to(session_id, target_msg_id),
         )
-        await ws.send(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "rewind_result",
             "data": result,
         }, default=str))
     except Exception as e:
-        await ws.send(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "rewind_result",
             "data": {"error": f"{type(e).__name__}: {e}"},
         }))
