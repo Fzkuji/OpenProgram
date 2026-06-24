@@ -239,22 +239,67 @@ def test_todo_progress_in_l2():
     assert "todo_progress" in l2
 
 
-# ── Context file truncation ────────────────────────────────────────────
+# ── Workspace files truncation ─────────────────────────────────────────
 
+from unittest.mock import patch as _ws_patch
 from openprogram.context.components import MAX_WORKSPACE_CHARS, _build_workspace_files
 
 
-def test_truncate_long_workspace():
-    """Oversized workspace output gets truncated with a note."""
-    from unittest.mock import patch
-    from openprogram.context.components import _truncate_context_file
+def test_workspace_truncation_short_unchanged():
+    """Content under the limit passes through unmodified."""
+    short = "x" * 100
+    with _ws_patch(
+        "openprogram.agent.management.workspace.read_agents_md",
+        return_value=short,
+    ), _ws_patch(
+        "openprogram.agent.management.workspace.read_soul_md",
+        return_value=None,
+    ), _ws_patch(
+        "openprogram.agent.management.workspace.read_user_md",
+        return_value=None,
+    ):
+        result = _build_workspace_files({"id": "test"})
+    assert result == short
+    assert "truncated" not in result
 
-    long_text = "x" * (MAX_WORKSPACE_CHARS + 5000)
-    result = _truncate_context_file(long_text)
 
-    assert len(result) <= MAX_WORKSPACE_CHARS + 100
+def test_workspace_truncation_oversized():
+    """Content exceeding MAX_WORKSPACE_CHARS is truncated with a note."""
+    big = "A" * (MAX_WORKSPACE_CHARS + 5000)
+    with _ws_patch(
+        "openprogram.agent.management.workspace.read_agents_md",
+        return_value=big,
+    ), _ws_patch(
+        "openprogram.agent.management.workspace.read_soul_md",
+        return_value=None,
+    ), _ws_patch(
+        "openprogram.agent.management.workspace.read_user_md",
+        return_value=None,
+    ):
+        result = _build_workspace_files({"id": "test"})
+    assert result.startswith("A" * 100)
     assert "truncated" in result
-    assert f"{len(long_text)} chars total" in result
+    assert f"{MAX_WORKSPACE_CHARS + 5000} chars total" in result
+    body = result.split("\n... (truncated,")[0]
+    assert len(body) == MAX_WORKSPACE_CHARS
+
+
+def test_workspace_truncation_exact_limit():
+    """Content exactly at the limit is NOT truncated."""
+    exact = "B" * MAX_WORKSPACE_CHARS
+    with _ws_patch(
+        "openprogram.agent.management.workspace.read_agents_md",
+        return_value=exact,
+    ), _ws_patch(
+        "openprogram.agent.management.workspace.read_soul_md",
+        return_value=None,
+    ), _ws_patch(
+        "openprogram.agent.management.workspace.read_user_md",
+        return_value=None,
+    ):
+        result = _build_workspace_files({"id": "test"})
+    assert result == exact
+    assert "truncated" not in result
 
 
 # ── L2 git_status ──────────────────────────────────────────────────────
