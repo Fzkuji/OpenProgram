@@ -478,6 +478,65 @@ async def _stream_assistant_response(
     raise RuntimeError("Stream ended without a final message")
 
 
+# ── Bash checkpoint: snapshot cwd state before/after to catch file mutations ──
+
+_BASH_LIKE_TOOLS = frozenset({"bash"})
+
+
+def _snapshot_cwd(tool_name: str) -> dict[str, tuple[float, int]] | None:
+    """For bash-like tools, record mtime+size of files in cwd (shallow).
+
+    Returns None for non-bash tools (they have their own per-file backup).
+    """
+    if tool_name not in _BASH_LIKE_TOOLS:
+        return None
+    try:
+        import os
+        from openprogram.worktree.context import current_worktree_path
+        cwd = current_worktree_path() or os.getcwd()
+        snap: dict[str, tuple[float, int]] = {}
+        for entry in os.scandir(cwd):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_file(follow_symlinks=False):
+                try:
+                    st = entry.stat(follow_symlinks=False)
+                    snap[entry.path] = (st.st_mtime_ns, st.st_size)
+                except OSError:
+                    pass
+        return snap
+    except Exception:
+        return None
+
+
+def _checkpoint_changed_files(
+    tool_name: str,
+    pre: dict[str, tuple[float, int]] | None,
+) -> None:
+    """Compare post-execution file state to *pre* and checkpoint any changes."""
+    if pre is None or tool_name not in _BASH_LIKE_TOOLS:
+        return
+    try:
+        import os
+        from openprogram.worktree.context import current_worktree_path
+        from openprogram.store.snapshot.checkpoint.helpers import backup_for_current_turn
+
+        cwd = current_worktree_path() or os.getcwd()
+        for entry in os.scandir(cwd):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_file(follow_symlinks=False):
+                try:
+                    st = entry.stat(follow_symlinks=False)
+                    prev = pre.get(entry.path)
+                    if prev is None or prev != (st.st_mtime_ns, st.st_size):
+                        backup_for_current_turn(entry.path)
+                except OSError:
+                    pass
+    except Exception:
+        pass
+
+
 async def _execute_tool_calls(
     tools: list[AgentTool] | None,
     assistant_message: AssistantMessage,
@@ -550,7 +609,9 @@ async def _execute_tool_calls(
                     partial_result=partial_result,
                 ))
 
+            pre_snapshot = _snapshot_cwd(tool_call.name)
             result = await tool.execute(tool_call.id, validated_args, cancel_event, on_update)
+            _checkpoint_changed_files(tool_call.name, pre_snapshot)
         except Exception as e:
             result = AgentToolResult(
                 content=[TextContent(type="text", text=str(e))],
