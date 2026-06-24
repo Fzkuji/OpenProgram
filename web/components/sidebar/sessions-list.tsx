@@ -469,7 +469,8 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
   }
   const out: Section[] = [];
   if (pinned.length) out.push({ key: "pinned", label: o.labels.pinned, items: pinned });
-  out.push(...buckets.values());
+  const sorted = Array.from(buckets.values()).sort((a, b) => a.key.localeCompare(b.key));
+  out.push(...sorted);
   return out;
 }
 
