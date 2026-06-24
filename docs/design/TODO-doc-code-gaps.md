@@ -34,9 +34,9 @@
 - Phase 2: 文档标 "❌ 未开始"，但 §0.5 又提到 "前置读层已落地"（Provenance dataclass）
 - 应明确：Phase 2 分拆为子步骤，标注哪些 substep 已 partial、哪些待做
 
-### ~~context/contextgit.md~~
+### ~~context/contextgit.md → 已并入 context/storage-and-engine.md~~
 - ~~文档标记: "Status: proposal, not implemented"~~
-- 状态: ✅ 文档已标 "partially implemented"，与代码一致（DAG 底座在 `contextgit/dag.py`，上层未建）
+- 状态: ✅ 已与 context-commit-chain / context-engine-spec / context-attach-merge / cross-turn 一并合入 `context/context.md`（DAG 底座在 `contextgit/dag.py`，上层未建）
 
 ---
 
@@ -73,7 +73,7 @@
 - `runtime/user-input-requests.md` — Phase 1+2 已落地（QuestionRegistry、三种 Transport 含新增的 TTYTransport）
 - `function/function-calling-unification.md` — 已使用 "profiles" 术语，与代码一致
 - `extension-gating/implementation.md` — 路径已正确
-- `context/contextgit.md` — 状态标记正确
+- `context/context.md`（合并自 contextgit 等五份 + 总图）— 状态标记正确
 
 ---
 
@@ -87,9 +87,12 @@
   进去又是裸 exec 又看到自己 → 无限递归。每层返回
   `{'error': "'info|warning|success|error'"}`(wiki 内部 enum validation 失败),
   上层模型收到错误 → 重试又调自己。
-- **临时修复**：agentic_function wrapper self-deny（✅ 已落地,`function.py`），模型在
-  内部看不到自己了。
-- **根本修法**（待做）：各 harness 的 exec 应该限定工具集。见 #2。
+- **已解决（commit `1f6f5fce`）**：从「self-deny 屏蔽工具」改成「处境引导 + 递归深度上限兜底」。
+  - 处境提示(`runtime._situational_prefix`)注入 user turn 开头,告诉模型「你在 X 体内、调 X = 无限递归、用底层工具」,docstring 降级置后 → 直接否定「该路由给 wiki_agent」的前提。
+  - 兜底:`_MAX_AGENTIC_RECURSION_DEPTH=5`,per-function-name 计数,同名超 5 层抛 `RecursionError`。
+  - self-deny 已删,工具列表含函数自己,靠引导不靠屏蔽。
+  - 设计文档:`docs/design/runtime/agentic-self-recursion.md`;测试:`tests/agentic_programming/test_self_recursion_guard.py`(8 用例)。
+- **遗留**（待做，见 #2）：各 harness 的 exec 限定工具集 + 跨函数环(A→B→A)识别(当前只防直接自递归)。
 - 会话记录：`~/.openprogram/sessions/local_d125e9a9c3/history/`
   context_tree 展示 7 层嵌套(4d76→0c07→0964→c6f9→f1c9→4379→8746→100c)。
 
@@ -114,6 +117,22 @@
 
 ### 6. ~~Functions 页工具右键菜单不合理~~
 - ✅ 已修复：`functions-page.tsx:579` 已改为 `tab === "agentic" ? contentCtx : undefined`，builtin tab 不触发 contentCtx。
+
+---
+
+## Agentic Function 运行时待解决问题
+
+### 7. 断点续跑（checkpoint resume）
+- **问题**：agentic function 内部 `runtime.exec` 连续 6 次重试全失败（provider 不可达）后直接抛错，函数终止，无法恢复。
+- **现状**：DAG 状态完整（frame 节点标 `status="error"`，子节点全保留），`_render_history_messages` 从 DAG 加载历史，基础设施已就位。
+- **方案**：提供 `resume_function(session_id, node_id)` 入口——把 frame 节点 status 改回 `running`，用同一个 frame_node_id 重新调 `runtime.exec`，DAG 历史自动接上。webui 加"重试"按钮触发。
+- **核心改动**：需要一个"重入"入口 + 恢复 contextvar（_call_id 等）+ 重建 runtime/agent 上下文。
+- **位置**：`agentic_programming/function.py`（wrapper 层）、`agentic_programming/runtime.py`（exec 层）
+
+### ~~8. Bash 工具文件修改不追踪~~
+- ✅ 已解决（`69432d88`）：统一入口触发——`_execute_tool_calls` 中 bash 执行前后做文件状态 diff，变更文件自动补做 checkpoint。
+- 已知限制：当前只扫 cwd 顶层文件，子目录变更未覆盖（待后续改为递归扫描）。
+- 另外 ④ 系统级沙箱（`cf2edde5`）也从源头限制了 bash 能碰的文件范围。
 
 ---
 

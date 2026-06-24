@@ -110,9 +110,9 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 | **触发** | 统一入口（所有工具执行前） | turn 结束（自动 commit 本 turn 变更） | agent 显式调 `worktree_create` | 配置开关 |
 | **bash 覆盖** | **是**（统一入口触发） | **是**（turn 结束 commit 含 bash 改动） | N/A（隔离环境内） | **是**（内核级拦截） |
 | **默认** | **一直开** | **默认开** | 按需 | **默认关** |
-| **代码** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` | ⏳ 待实现 |
+| **代码** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` | `sandbox/` |
 | **回退入口** | `undo` | `undo` 联动 | `worktree_discard` | N/A（预防性，不需要回退） |
-| **状态** | ✅ 已实现 | ✅ 已实现 | ✅ 已实现 | ⏳ 待实现 |
+| **状态** | ✅ 已实现 | ✅ 已实现 | ✅ 已实现 | ✅ 已实现 |
 
 ### 3.3 ① Checkpoint 和 ② Shadow git 的分工
 
@@ -284,14 +284,27 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 ## 8. 待做
 
+### 已完成
+
+| 项 | commit |
+|---|---|
+| ① Checkpoint（BackupStore → CheckpointStore 改名） | `c0a73c1c` |
+| ② Shadow git 实现 | `ad6551c7` |
+| 统一入口触发（bash 覆盖） | `69432d88` |
+| Project-Git 默认关闭 | `98550cf8` |
+| ④ 系统级沙箱（Seatbelt/bubblewrap） | `cf2edde5` |
+| `/sandbox` 命令（CLI + webui） | `7097d25e` |
+
+### 待做
+
 | 项 | 说明 |
 |---|---|
-| 简化 undo: 不再需要 git reset/revert 判断 | 依赖 shadow git 接入 dispatcher |
-| 命令改名: `revert_turn` → `undo` | 用户面对的命令名 |
+| `/rewind` 多轮回退 | 学 Claude Code：选择回退到任意历史消息（跨多轮）；多种恢复模式（代码+对话 / 只对话 / 只代码）；显示影响范围（哪些文件、多少行变更）；CLI/TUI/webui 三端都要支持 |
+| 简化 undo: `revert_turn` → `/undo` | 用户面对的命令名，联动 checkpoint + shadow git |
 | bash checkpoint 递归扫描 | 当前只扫 cwd 顶层，子目录变更未覆盖 |
+| TUI 命令注册 | `/sandbox` `/undo` `/rewind` 在 TUI 端注册 |
 | UI 明示当前会话的"主回退路径" | 后端就绪, 待前端 |
-| 系统级沙箱（本地交互） | 参考 Claude Code 的 Seatbelt/bubblewrap |
-| 容器沙箱（无人值守） | research_agent 等长时间跑的场景，需 Docker 集成 |
+| 容器沙箱（远期） | research_agent 等无人值守场景，需 Docker 集成 |
 
 ---
 
@@ -311,14 +324,14 @@ agent 调 `worktree_create` 创建独立工作目录副本，改好了 `worktree
 
 **局限**：只隔离文件，不隔离进程和网络——bash 仍能 `rm -rf /`、读 `~/.ssh/`、访问网络。适合"怕改坏代码"，不防"bash 乱来"。
 
-### 9.2 ④ 系统级沙箱 — 权限限制（⏳ 待实现）
+### 9.2 ④ 系统级沙箱 — 权限限制（✅ 已实现）
 
 用 OS 内核机制限制 bash 进程能做什么：
 - **文件系统**：只能读写 cwd 及子目录，`rm ~/.ssh/id_rsa` → `Operation not permitted`
 - **网络**：不能直连，通过代理 allowlist 控制
 - **实现**：macOS 用 Seatbelt（sandbox-exec），Linux 用 bubblewrap
-
-参考 Claude Code 的 `/sandbox`：所有工具（含 bash）在沙箱内执行，内核级拦截，绕不过去。
+- **代码**：`openprogram/sandbox/__init__.py`（`sandbox_enabled` contextvar + `wrap_command`）、`backend/local.py`（`_invocation` 集成）
+- **命令**：`/sandbox` 开关（CLI `_cli_chat/handlers.py` + webui `ws_actions/chat.py`）
 
 ### 9.3 ③ 和 ④ 的关系
 
