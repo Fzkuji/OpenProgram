@@ -313,6 +313,27 @@ register(ContextComponent("current_date", "L0", 70, _build_date))
 register(ContextComponent("workspace_files", "L1", 10, _build_workspace_files))
 
 
+def _build_git_repo_flag(agent: Any) -> str:
+    """Whether cwd is inside a git repo. Helps the model decide whether
+    git-related tools/advice apply. See design §四 L1 #7."""
+    import os
+    import subprocess
+    cwd = os.getcwd()
+    try:
+        rc = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=cwd, capture_output=True, timeout=3,
+        ).returncode
+    except Exception:
+        return ""
+    if rc == 0:
+        return "<git_repo>true</git_repo>"
+    return ""
+
+
+register(ContextComponent("git_repo_flag", "L1", 15, _build_git_repo_flag))
+
+
 __all__ = [
     "ContextComponent",
     "register",

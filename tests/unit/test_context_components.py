@@ -72,6 +72,17 @@ def test_tool_enforcement_always_present():
     assert "<tool_use>" in out
 
 
+def test_git_repo_flag_present_in_git_repo():
+    """We're running inside a git repo, so the flag should appear."""
+    out = build_system_prompt({"id": "main", "name": "bot"})
+    assert "<git_repo>true</git_repo>" in out
+
+
+def test_git_repo_flag_in_l1():
+    l1 = {c.name for c in comp._REGISTRY["L1"]}
+    assert "git_repo_flag" in l1
+
+
 def test_model_guidance_conditional_on_provider():
     # google provider → guidance present (absolute paths)
     g = build_system_prompt({"id": "main", "name": "bot",
