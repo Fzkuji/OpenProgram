@@ -136,7 +136,7 @@ write / edit / apply_patch 三个编辑工具**各自内部**调用 `checkpoint_
 bash 工具的覆盖在 `_execute_tool_calls`（`agent_loop.py`，所有工具的单一入口）中实现：
 
 ```python
-# agent_loop.py — _execute_tool_calls 内部
+#### agent_loop.py — _execute_tool_calls 内部
 if tool_name == "bash":
     pre_snapshot = _snapshot_cwd(cwd)       # 记录文件 mtime+size
     result = tool.execute(...)
