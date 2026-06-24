@@ -224,6 +224,65 @@ def _build_date(agent: Any) -> str:
     return today.strftime("Today is %A, %B %d, %Y.")
 
 
+_TOOL_ENFORCEMENT = (
+    "<tool_use>\n"
+    "Use your tools to take action — don't just describe what you would do. "
+    "When you say you'll do something (run tests, read a file, create a "
+    "project), make the tool call in the same turn. Don't end a turn with a "
+    "promise of future action; do it now. Keep working until the task is "
+    "actually complete, not until you've described a plan.\n"
+    "</tool_use>"
+)
+
+
+def _build_tool_enforcement(agent: Any) -> str:
+    """Act-don't-ask guidance — steer models that describe plans instead of
+    executing. Constant (model-agnostic). See design §四 L0 + Hermes
+    TOOL_USE_ENFORCEMENT_GUIDANCE."""
+    return _TOOL_ENFORCEMENT
+
+
+def _agent_provider(agent: Any) -> str:
+    """Best-effort current provider from the agent (AgentSpec.model.provider
+    or dict equivalents). '' when unknown (dict/webui paths)."""
+    model = _attr(agent, "model", None)
+    prov = _attr(model, "provider", "") or ""
+    if not prov:
+        # dict path: model may be a string id, or provider at top level
+        prov = _attr(agent, "provider", "") or ""
+    return str(prov).lower()
+
+
+# Per-provider operational guidance. Keyed by provider-id substring. Concise
+# (cf. Hermes GOOGLE/OPENAI guidance). Add a row to extend a provider — the
+# component itself never changes.
+_MODEL_GUIDANCE: dict[str, str] = {
+    "anthropic": "",  # Anthropic models need no extra steering by default
+    "claude-code": "",
+    "openai": (
+        "Check prerequisites before acting; verify results before declaring "
+        "done. Prefer non-interactive flags. Don't stop early when another "
+        "tool call would materially improve the result."
+    ),
+    "google": (
+        "Use absolute paths. Check prerequisites before acting; verify before "
+        "declaring done."
+    ),
+}
+
+
+def _build_model_guidance(agent: Any) -> str:
+    """Provider-specific operational guidance, selected by current provider.
+    Empty when the provider is unknown or has no guidance. See design §四 L0."""
+    prov = _agent_provider(agent)
+    if not prov:
+        return ""
+    for key, text in _MODEL_GUIDANCE.items():
+        if key in prov and text:
+            return f"<execution_guidance>\n{text}\n</execution_guidance>"
+    return ""
+
+
 # ── Register the 5 legacy blocks ──────────────────────────────────────────
 # Orders preserve the legacy top-to-bottom order. identity(L0) → workspace(L1)
 # → inline(L0 inline)… legacy interleaved them in one list; to stay byte-equal
@@ -239,6 +298,10 @@ def _build_date(agent: Any) -> str:
 # (现状 read_*_md / memory 不区分 scope),待那一层支持后再细拆;此处先按现有
 # 可区分的语义归层——workspace 文件是项目侧,归 L1。
 register(ContextComponent("identity", "L0", 10, _build_identity))
+# Guidance blocks right after identity (design §四 order 3/4): tool-enforcement
+# (constant) then per-provider model guidance (condition: provider has a row).
+register(ContextComponent("tool_enforcement", "L0", 12, _build_tool_enforcement))
+register(ContextComponent("model_guidance", "L0", 14, _build_model_guidance))
 register(ContextComponent("inline_prompt", "L0", 30, _build_inline))
 register(ContextComponent("skills_index", "L0", 40, _build_skills))
 register(ContextComponent("memory_global", "L0", 50, _build_memory))

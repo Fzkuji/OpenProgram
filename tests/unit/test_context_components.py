@@ -65,3 +65,22 @@ def test_environment_and_date_components_present():
     assert "Today is " in out
     # they sit at the L0 tail: after identity, before the closing fence.
     assert out.index("You are bot") < out.index("<environment>")
+
+
+def test_tool_enforcement_always_present():
+    out = build_system_prompt({"id": "main", "name": "bot"})
+    assert "<tool_use>" in out
+
+
+def test_model_guidance_conditional_on_provider():
+    # google provider → guidance present (absolute paths)
+    g = build_system_prompt({"id": "main", "name": "bot",
+                             "model": {"provider": "google"}})
+    assert "<execution_guidance>" in g and "absolute paths" in g
+    # anthropic → no extra guidance (empty row)
+    a = build_system_prompt({"id": "main", "name": "bot",
+                             "model": {"provider": "anthropic"}})
+    assert "<execution_guidance>" not in a
+    # unknown provider → no guidance
+    u = build_system_prompt({"id": "main", "name": "bot"})
+    assert "<execution_guidance>" not in u
