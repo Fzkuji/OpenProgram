@@ -426,7 +426,7 @@ def _restore_sessions():
 
             # ContextGit migration: backfill parent_id on legacy
             # messages and pick a head_id. Old conversations become a
-            # straight linear chain (see docs/design/context/contextgit.md).
+            # straight linear chain (see docs/design/context/context.md).
             from openprogram.contextgit import (
                 normalize_parent_pointers,
                 head_or_tip,
@@ -1059,7 +1059,6 @@ def _build_ws_action_registry() -> dict:
         runtime as _ws_runtime,
         session as _ws_session,
         context_commits as _ws_commits,
-        revert as _ws_revert,
         turn_files as _ws_turn_files,
         sub_agent as _ws_sub_agent,
         merge as _ws_merge,
@@ -1076,7 +1075,6 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_runtime.ACTIONS)
     table.update(_ws_chat.ACTIONS)
     table.update(_ws_commits.ACTIONS)
-    table.update(_ws_revert.ACTIONS)
     table.update(_ws_turn_files.ACTIONS)
     table.update(_ws_sub_agent.ACTIONS)
     table.update(_ws_merge.ACTIONS)
@@ -1282,7 +1280,7 @@ def create_app():
     _routes_chat.register(app)
 
     # Retry / Edit / Checkout routes live in _chat_routes.py — see
-    # docs/design/context/contextgit.md. Keeping them out of this module keeps
+    # docs/design/context/context.md. Keeping them out of this module keeps
     # it under control.
     from ._chat_routes import router as _chat_router
     app.include_router(_chat_router)

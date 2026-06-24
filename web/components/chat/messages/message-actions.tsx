@@ -211,7 +211,7 @@ export function MessageActions({
     const onMsg = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(ev.data);
-        if (data?.type === "rewind_result" || data?.type === "revert_turn_result") {
+        if (data?.type === "rewind_result") {
           if (data?.data?.assistant_msg_id && data.data.assistant_msg_id !== msg.id) return;
           ws.removeEventListener("message", onMsg);
           const restored = data?.data?.restored_paths ?? [];
