@@ -1042,6 +1042,61 @@ async def handle_undo(ws, cmd: dict):
         }))
 
 
+async def handle_rewind_list(ws, cmd: dict):
+    """List available rewind points for the session."""
+    session_id = (cmd.get("session_id") or "").strip()
+    if not session_id:
+        await ws.send(json.dumps({
+            "type": "rewind_points",
+            "data": {"points": [], "error": "No session_id provided"},
+        }))
+        return
+    try:
+        from openprogram.agent._rewind import list_rewind_points
+        import asyncio
+        loop = asyncio.get_event_loop()
+        points = await loop.run_in_executor(
+            None, lambda: list_rewind_points(session_id),
+        )
+        await ws.send(json.dumps({
+            "type": "rewind_points",
+            "data": {"points": points},
+        }, default=str))
+    except Exception as e:
+        await ws.send(json.dumps({
+            "type": "rewind_points",
+            "data": {"points": [], "error": f"{type(e).__name__}: {e}"},
+        }))
+
+
+async def handle_rewind(ws, cmd: dict):
+    """Rewind code + conversation to a chosen point."""
+    session_id = (cmd.get("session_id") or "").strip()
+    target_msg_id = (cmd.get("target_msg_id") or "").strip()
+    if not session_id or not target_msg_id:
+        await ws.send(json.dumps({
+            "type": "rewind_result",
+            "data": {"error": "session_id and target_msg_id are required"},
+        }))
+        return
+    try:
+        from openprogram.agent._rewind import rewind_to
+        import asyncio
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, lambda: rewind_to(session_id, target_msg_id),
+        )
+        await ws.send(json.dumps({
+            "type": "rewind_result",
+            "data": result,
+        }, default=str))
+    except Exception as e:
+        await ws.send(json.dumps({
+            "type": "rewind_result",
+            "data": {"error": f"{type(e).__name__}: {e}"},
+        }))
+
+
 ACTIONS = {
     "chat": handle_chat,
     "retry_node": handle_retry_node,
@@ -1051,4 +1106,6 @@ ACTIONS = {
     "compact": handle_compact,
     "sandbox": handle_sandbox,
     "undo": handle_undo,
+    "rewind_list": handle_rewind_list,
+    "rewind": handle_rewind,
 }

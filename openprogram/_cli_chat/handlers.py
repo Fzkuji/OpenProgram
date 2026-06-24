@@ -242,6 +242,71 @@ def _handle_undo(console, session_id: str) -> bool:
     return False
 
 
+# --- Rewind (multi-turn rollback) ------------------------------------------
+
+def _handle_rewind(args: list[str], console, session_id: str) -> bool:
+    """Roll back code + conversation to a chosen point (Claude Code /rewind style)."""
+    if not session_id:
+        console.print("[yellow]No active session.[/]")
+        return False
+    try:
+        from openprogram.agent._rewind import list_rewind_points, rewind_to
+        points = list_rewind_points(session_id)
+        if not points:
+            console.print("[dim]No rewind points available.[/]")
+            return False
+
+        if args:
+            try:
+                pick = int(args[0])
+            except ValueError:
+                console.print(f"[yellow]Invalid number: {args[0]}[/]")
+                return False
+        else:
+            console.print("[bold]Rewind[/]  Select a restore point:\n")
+            for i, p in enumerate(points, 1):
+                files_str = ""
+                if p["files_affected"]:
+                    files_str = f"  [dim]({len(p['files_affected'])} file(s))[/]"
+                status = " [dim strikethrough](reverted)[/]" if p["reverted"] else ""
+                console.print(
+                    f"  [cyan]{i:>2}.[/] {p['summary']}{files_str}{status}"
+                )
+            console.print(
+                f"\n[dim]Enter a number (1-{len(points)}) or press Enter to cancel:[/]"
+            )
+            return False
+
+        if pick < 1 or pick > len(points):
+            console.print(f"[yellow]Out of range (1-{len(points)})[/]")
+            return False
+
+        target = points[pick - 1]
+        console.print(
+            f"[bold]Rewinding to:[/] {target['summary']}"
+        )
+        if target["files_affected"]:
+            console.print(
+                f"[dim]Will restore {len(target['files_affected'])} file(s)[/]"
+            )
+
+        result = rewind_to(session_id, target["msg_id"])
+        if result["errors"]:
+            for err in result["errors"]:
+                console.print(f"[yellow]Warning: {err}[/]")
+        restored = result.get("total_restored_paths") or []
+        n = result.get("turns_reverted", 0)
+        console.print(
+            f"[bold green]Rewound {n} turn(s).[/] "
+            f"Restored {len(restored)} file(s)."
+        )
+        for p in restored:
+            console.print(f"  [dim]{p}[/]")
+    except Exception as e:
+        console.print(f"[red]Rewind error: {type(e).__name__}: {e}[/]")
+    return False
+
+
 # --- Sandbox toggle --------------------------------------------------------
 
 def _handle_sandbox(console) -> bool:
