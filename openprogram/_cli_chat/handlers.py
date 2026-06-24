@@ -24,6 +24,8 @@ SLASH_HELP = [
                  "remove the alias for a channel peer"),
     ("/connections", "list every channel peer currently aliased to "
                      "this session"),
+    ("/undo", "undo last assistant turn (restore files)"),
+    ("/rewind", "roll back code + conversation to a chosen point"),
     ("/sandbox", "toggle system sandbox (restrict bash to cwd writes only)"),
     ("/profile [name]", "show or switch active profile (restart required to switch)"),
     ("/clear", "clear the screen"),
@@ -187,10 +189,56 @@ def _handle_slash(cmd: str, console, rt,
         console.print("[dim]Exiting so you can restart cleanly.[/]")
         return True
 
+    if verb == "undo":
+        return _handle_undo(console, session_id)
+
+    if verb == "rewind":
+        return _handle_rewind(args, console, session_id)
+
     if verb == "sandbox":
         return _handle_sandbox(console)
 
     console.print(f"[yellow]Unknown command: /{verb}[/]  (try /help)")
+    return False
+
+
+# --- Undo (single-turn rollback) -------------------------------------------
+
+def _handle_undo(console, session_id: str) -> bool:
+    """Undo the most recent assistant turn — restore files it edited."""
+    if not session_id:
+        console.print("[yellow]No active session.[/]")
+        return False
+    try:
+        from openprogram.store.session.session_store import default_store
+        store = default_store()
+        pair = store._open(session_id)
+        if pair is None:
+            console.print(f"[yellow]Unknown session: {session_id}[/]")
+            return False
+        _git, idx = pair
+        last_assistant_id = None
+        for node in reversed(idx.nodes_by_seq):
+            if node.role == "llm" and not (node.metadata or {}).get("reverted"):
+                last_assistant_id = node.id
+                break
+        if not last_assistant_id:
+            console.print("[dim]Nothing to undo.[/]")
+            return False
+        from openprogram.agent._revert import revert_turn
+        result = revert_turn(session_id, last_assistant_id)
+        if result.get("error"):
+            console.print(f"[red]Undo failed: {result['error']}[/]")
+            return False
+        restored = result.get("restored_paths") or []
+        if restored:
+            console.print(f"[bold green]Undone.[/] Restored {len(restored)} file(s):")
+            for p in restored:
+                console.print(f"  [dim]{p}[/]")
+        else:
+            console.print("[bold green]Undone.[/] [dim](no file changes to restore)[/]")
+    except Exception as e:
+        console.print(f"[red]Undo error: {type(e).__name__}: {e}[/]")
     return False
 
 

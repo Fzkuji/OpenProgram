@@ -985,6 +985,63 @@ async def handle_sandbox(ws, cmd: dict):
     }))
 
 
+async def handle_undo(ws, cmd: dict):
+    """Undo the most recent assistant turn — restore files it edited."""
+    session_id = (cmd.get("session_id") or "").strip()
+    if not session_id:
+        await ws.send(json.dumps({
+            "type": "chat_response",
+            "data": {"type": "status", "content": "No session_id provided"},
+        }))
+        return
+    try:
+        from openprogram.store.session.session_store import default_store
+        store = default_store()
+        pair = store._open(session_id)
+        if pair is None:
+            await ws.send(json.dumps({
+                "type": "chat_response",
+                "data": {"type": "status",
+                         "content": f"Unknown session: {session_id}"},
+            }))
+            return
+        _git, idx = pair
+        last_assistant_id = None
+        for node in reversed(idx.nodes_by_seq):
+            if node.role == "llm" and not (node.metadata or {}).get("reverted"):
+                last_assistant_id = node.id
+                break
+        if not last_assistant_id:
+            await ws.send(json.dumps({
+                "type": "chat_response",
+                "data": {"type": "status", "content": "Nothing to undo."},
+            }))
+            return
+        from openprogram.agent._revert import revert_turn
+        import asyncio
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, lambda: revert_turn(session_id, last_assistant_id),
+        )
+        restored = result.get("restored_paths") or []
+        if result.get("error"):
+            msg = f"Undo failed: {result['error']}"
+        elif restored:
+            msg = f"Undone. Restored {len(restored)} file(s): {', '.join(restored)}"
+        else:
+            msg = "Undone. (no file changes to restore)"
+        await ws.send(json.dumps({
+            "type": "chat_response",
+            "data": {"type": "status", "content": msg},
+        }))
+    except Exception as e:
+        await ws.send(json.dumps({
+            "type": "chat_response",
+            "data": {"type": "status",
+                     "content": f"Undo error: {type(e).__name__}: {e}"},
+        }))
+
+
 ACTIONS = {
     "chat": handle_chat,
     "retry_node": handle_retry_node,
@@ -993,4 +1050,5 @@ ACTIONS = {
     "set_conversation_channel": handle_set_conversation_channel,
     "compact": handle_compact,
     "sandbox": handle_sandbox,
+    "undo": handle_undo,
 }
