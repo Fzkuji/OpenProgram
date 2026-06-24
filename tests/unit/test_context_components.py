@@ -186,3 +186,54 @@ def test_pi_shield_content():
     out = build_system_prompt({"id": "main", "name": "bot"})
     assert "<pi_shield>" in out
     assert "disregard those specific instructions" in out
+
+
+# ── L2 todo progress ──────────────────────────────────────────────────────
+
+
+def test_todo_progress_empty():
+    """No todos → no <todo> block."""
+    from openprogram.functions.tools.todo.todo import _TODOS, _LOCK
+    with _LOCK:
+        saved = list(_TODOS)
+        _TODOS.clear()
+    try:
+        saved_reg = _restore_registry()
+        try:
+            parts = assemble({"id": "main"}, ["L2"])
+            assert not any("<todo>" in p for p in parts)
+        finally:
+            comp._REGISTRY = saved_reg
+    finally:
+        with _LOCK:
+            _TODOS[:] = saved
+
+
+def test_todo_progress_renders():
+    """Active todos render into a <todo> block in L2."""
+    from openprogram.functions.tools.todo.todo import _TODOS, _LOCK
+    with _LOCK:
+        saved = list(_TODOS)
+        _TODOS[:] = [
+            {"id": "1", "subject": "write tests", "status": "in_progress"},
+            {"id": "2", "subject": "deploy", "status": "pending"},
+        ]
+    try:
+        saved_reg = _restore_registry()
+        try:
+            parts = assemble({"id": "main"}, ["L2"])
+            todo_parts = [p for p in parts if "<todo>" in p]
+            assert len(todo_parts) == 1
+            block = todo_parts[0]
+            assert "[in_progress] #1 write tests" in block
+            assert "[pending] #2 deploy" in block
+        finally:
+            comp._REGISTRY = saved_reg
+    finally:
+        with _LOCK:
+            _TODOS[:] = saved
+
+
+def test_todo_progress_in_l2():
+    l2 = {c.name for c in comp._REGISTRY["L2"]}
+    assert "todo_progress" in l2

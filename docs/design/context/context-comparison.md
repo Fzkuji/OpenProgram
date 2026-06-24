@@ -85,7 +85,7 @@ Status: **查漏记录** · Created: 2026-06-24
 | 5 | per-turn memory prefetch（本次检索的料） | ✓ | - | - | ✓ L2（现状错塞 system） | — |
 | 6 | 本次用户输入 + 附件 | ✓ | ✓ | ✓ | ✓ L2 | — |
 | 7 | 输出格式 / schema | - | ✓ | - | ✓ L2 | — |
-| 8 | 输出契约 output_contract | - | - | - | ✗（待补） | — |
+| 8 | 输出契约 output_contract | - | - | - | ✅ L2 已实现 | — (在 _situational_prefix 中) |
 | 9 | timestamp | ✓ | - | pi ✓ | ✓ L2 | —（每次必变，最末） |
 | — | Kanban 多 agent 协调 | ✓ | - | - | ✗ | 漏·低（Hermes 多agent 特有） |
 
@@ -106,11 +106,12 @@ Status: **查漏记录** · Created: 2026-06-24
 - L1 Prompt 注入检测（pi_shield + detect_injection_patterns）
 - L1 git 仓库归位（git_repo_flag）
 - L2 本次处境 situation + call_path（_situational_prefix + _compute_call_path）
+- L2 todo 列表/进度（todo_progress, 读 _TODOS）
 
 **中（看需求）**
-- L1 USER.md 用户档案（已由 workspace_files 加载，无需单独组件）
 - L1 上下文文件截断策略
-- L2 git 分支/status · todo/进度 · output_contract（已在 _situational_prefix 中）
+- L2 git 分支/status
+- L2 output_contract（已在 _situational_prefix 中，非独立组件）
 
 **低（vendor 特有 / 专用，多半不补）**
 - computer-use 指导 / Nous 订阅 / Kanban 多agent / Hermes profile / 外部记忆提供者

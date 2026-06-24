@@ -146,6 +146,20 @@ def _build_identity(agent: Any) -> str:
     return header
 
 
+_MAX_CONTEXT_FILE_CHARS = 8000
+
+
+def _truncate_context_file(text: str) -> str:
+    """Cap a context file at _MAX_CONTEXT_FILE_CHARS to prevent runaway
+    context consumption. Appends a note when truncated."""
+    if len(text) <= _MAX_CONTEXT_FILE_CHARS:
+        return text
+    return (
+        text[:_MAX_CONTEXT_FILE_CHARS]
+        + f"\n... (truncated, {len(text)} chars total)"
+    )
+
+
 def _build_workspace_files(agent: Any) -> str:
     agent_id = _attr(agent, "id", "") or ""
     if not agent_id:
@@ -157,6 +171,7 @@ def _build_workspace_files(agent: Any) -> str:
                    _workspace.read_user_md):
         block = (reader(agent_id) or "").strip()
         if block:
+            block = _truncate_context_file(block)
             hits = detect_injection_patterns(block)
             if hits:
                 import logging
@@ -436,6 +451,57 @@ def _build_pi_shield(agent: Any) -> str:
 
 
 register(ContextComponent("pi_shield", "L1", 5, _build_pi_shield))
+
+
+# ── L2 todo progress ──────────────────────────────────────────────────────
+
+def _build_todo_progress(agent: Any) -> str:
+    """Render the session todo list into context so the model sees outstanding
+    tasks without needing to call todo_read. See design §四' L2 #3."""
+    try:
+        from openprogram.functions.tools.todo.todo import _TODOS, _LOCK
+    except ImportError:
+        return ""
+    with _LOCK:
+        if not _TODOS:
+            return ""
+        lines = [f"- [{t['status']}] #{t['id']} {t['subject']}" for t in _TODOS]
+    return "<todo>\n" + "\n".join(lines) + "\n</todo>"
+
+
+register(ContextComponent("todo_progress", "L2", 30, _build_todo_progress))
+
+
+# ── L2 git status ────────────────────────────────────────────────────────
+
+def _build_git_status(agent: Any) -> str:
+    """Current branch + short status so the model sees uncommitted changes
+    without a tool call. See design §四 L2."""
+    import os
+    import subprocess
+    cwd = os.getcwd()
+    try:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=cwd, capture_output=True, text=True, timeout=3,
+        )
+        status = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=cwd, capture_output=True, text=True, timeout=3,
+        )
+        if branch.returncode != 0 or status.returncode != 0:
+            return ""
+    except Exception:
+        return ""
+    branch_name = branch.stdout.strip()
+    short = status.stdout.strip()
+    lines = [f"Branch: {branch_name}"]
+    if short:
+        lines.append(short)
+    return "<git_status>\n" + "\n".join(lines) + "\n</git_status>"
+
+
+register(ContextComponent("git_status", "L2", 20, _build_git_status))
 
 
 __all__ = [
