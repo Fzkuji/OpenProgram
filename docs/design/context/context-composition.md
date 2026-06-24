@@ -1,6 +1,6 @@
 # 上下文组成 —— 注册式三层（目标态设计）
 
-Status: **大部分已实现** · Created: 2026-06-23 · Updated: 2026-06-24
+Status: **已实现** · Created: 2026-06-23 · Updated: 2026-06-25
 
 > 本文定义**每次 LLM 调用喂什么**的目标态。核心不是"列出有哪些成分"(那会定死、
 > 不可扩展),而是定义**一套规则 + 注册机制**：成分如何归层、如何排序、如何按条件
@@ -578,15 +578,15 @@ root→current 路径。每个 @agentic_function 内部的 `runtime.exec` 调用
 
 ---
 
-## 八、实现要点（开始写代码时）
+## 八、实现状态
 
-1. 定义 `ContextComponent` + 三个注册表 + 组装器(收集→排序→过滤→build)。
-2. 把现状已有成分(✅)改成注册项;把该加的(➕)按 condition 注册。
-3. **纪律**:skills/tools/MCP 默认整会话冻结。@agentic_function 可自定义,但"进函数
-   一次性设定、函数内不变",绝不每次调用都改(否则 L0 抖动、缓存崩)。
-4. 修现状三处塞错:项目身份/项目记忆/prefetch 现在塞在 system 前部当不变前缀,实际
-   会变——按本设计各归其位(项目层→断点③后,prefetch→L2)。
-5. 缓存断点按 §三 四个边界打(对接 `../providers/request-build.md` 的 cache_policy)。
+以下全部已落地：
+
+1. ✅ `ContextComponent` + 三个注册表 + 组装器（`context/components.py`）。14 个组件已注册。
+2. ✅ 所有 ✅ 成分已改成注册项。➕ 仅剩 computer-use 指导和 token 预算提示（低优先级）。
+3. ✅ 对话和函数调用统一走 `render_context`（`context/nodes.py`）+ `render_dag_messages` 渲染管道。
+   对话场景 `frame_entry_seq=None`（顶层，全可见），函数调用场景由 `callers`/`subcalls`/`expose` 控制可见范围。
+4. ✅ L2 处境（`_situational_prefix` + `_compute_call_path`）已在 step 6a/6b 落地。
 
 ---
 
