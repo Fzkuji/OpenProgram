@@ -45,20 +45,23 @@ logger = logging.getLogger(__name__)
 
 
 def is_enabled() -> bool:
-    """Whether project auto-commit is turned on. **Default ON.**
+    """Whether project auto-commit is turned on. **Default OFF (deprecated).**
 
     Resolution: env ``OPENPROGRAM_PROJECT_AUTOCOMMIT`` (1/true/yes/on or
     0/false/no/off) wins; else ``project_auto_commit`` in config.json;
-    else **True**.
+    else **False**.
 
-    Defaulting ON: when the agent edits a bound folder, the turn-end
-    commit records it; a non-git folder gets auto-init'd (safely, see the
-    module docstring) so it, too, gets a git history. Pure-chat turns and
-    worktree-active turns are silent no-ops. Set ``project_auto_commit:
-    false`` (or the env to 0) to opt out.
+    .. deprecated::
+        Project-Git auto-commit pollutes user git history. Use Shadow git
+        (independent store) instead. Re-enable via config if needed.
     """
+    import warnings
     env = os.environ.get("OPENPROGRAM_PROJECT_AUTOCOMMIT", "").strip().lower()
     if env in ("1", "true", "yes", "on"):
+        warnings.warn(
+            "Project-Git auto-commit is deprecated; prefer Shadow git",
+            DeprecationWarning, stacklevel=2,
+        )
         return True
     if env in ("0", "false", "no", "off"):
         return False
@@ -67,10 +70,15 @@ def is_enabled() -> bool:
         cfg = json.loads(get_config_path().read_text(encoding="utf-8"))
         val = cfg.get("project_auto_commit")
         if val is not None:
+            if val:
+                warnings.warn(
+                    "Project-Git auto-commit is deprecated; prefer Shadow git",
+                    DeprecationWarning, stacklevel=2,
+                )
             return bool(val)
     except (OSError, json.JSONDecodeError, ValueError):
         pass
-    return True
+    return False
 
 
 def _project_for(session_id: str):
