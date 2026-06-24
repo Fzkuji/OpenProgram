@@ -330,25 +330,9 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 ## 9. 待做
 
-### 已完成
-
-| 项 | commit |
-|---|---|
-| ① Checkpoint（BackupStore → CheckpointStore 改名） | `c0a73c1c` |
-| ② Shadow git 实现 | `ad6551c7` |
-| 统一入口触发（bash 覆盖） | `69432d88` |
-| Project-Git 默认关闭 | `98550cf8` |
-| ④ 系统级沙箱（Seatbelt/bubblewrap） | `cf2edde5` |
-| `/sandbox` 命令（CLI + webui） | `7097d25e` |
-
-### 待做
-
 | 项 | 说明 |
 |---|---|
-| `/rewind` 多轮回退 | 学 Claude Code：选择回退到任意历史消息（跨多轮）；多种恢复模式（代码+对话 / 只对话 / 只代码）；显示影响范围（哪些文件、多少行变更）；CLI/TUI/webui 三端都要支持 |
-| 简化 undo: `revert_turn` → `/undo` | 用户面对的命令名，联动 checkpoint + shadow git |
 | bash checkpoint 递归扫描 | 当前只扫 cwd 顶层，子目录变更未覆盖 |
-| TUI 命令注册 | `/sandbox` `/undo` `/rewind` 在 TUI 端注册 |
 | UI 明示当前会话的"主回退路径" | 后端就绪, 待前端 |
 | 容器沙箱（远期） | research_agent 等无人值守场景，需 Docker 集成 |
 
