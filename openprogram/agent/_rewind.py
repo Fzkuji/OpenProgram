@@ -1,31 +1,20 @@
-"""Multi-turn rewind — roll back code and conversation to a chosen point.
+"""Multi-turn rewind — roll back to a chosen user message.
 
-Inspired by Claude Code's ``/rewind``: list recent turns, user picks
-one, everything after that point gets reverted (files restored from
-checkpoints, conversation history truncated).
+The user clicks ↩ on a user message. We:
+1. Restore files to the state before that message was sent (via checkpoints)
+2. Return the user message text so the frontend can prefill the input box
+3. Mark all rewound nodes so the current branch no longer shows them
 
-Unlike single-turn ``revert_turn`` (which only restores files for one
-turn), rewind walks backwards from the latest turn to the chosen one,
-reverting each in sequence.
+The DAG is append-only — rewound nodes stay in the graph as a historical
+branch, they just stop being on the active conversation path.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 def list_rewind_points(session_id: str, limit: int = 10) -> list[dict[str, Any]]:
-    """Return recent assistant turns as potential rewind targets.
-
-    Each entry::
-
-        {
-            "msg_id": str,          # assistant node id (the revert key)
-            "seq": int,             # sequence number
-            "summary": str,         # first ~80 chars of assistant output
-            "created_at": float,    # timestamp
-            "files_affected": [...],# files this turn modified (from checkpoint)
-            "reverted": bool,       # already reverted?
-        }
+    """Return recent user turns as potential rewind targets.
 
     Ordered newest-first, up to ``limit`` entries.
     """
@@ -46,7 +35,10 @@ def list_rewind_points(session_id: str, limit: int = 10) -> list[dict[str, Any]]
 
     points: list[dict[str, Any]] = []
     for node in reversed(idx.all_nodes()):
-        if node.role != "llm":
+        if node.role != "user":
+            continue
+        meta = node.metadata or {}
+        if meta.get("rewound"):
             continue
         if len(points) >= limit:
             break
@@ -58,105 +50,118 @@ def list_rewind_points(session_id: str, limit: int = 10) -> list[dict[str, Any]]
         if len(output) > 80:
             summary += "..."
 
-        turn_id = node.id
-        try:
-            files = checkpoint.list_backed_paths(turn_id)
-        except Exception:
-            files = []
+        # Check if the next assistant turn has file backups
+        files: list[str] = []
+        all_nodes = idx.all_nodes()
+        node_idx = next((i for i, n in enumerate(all_nodes) if n.id == node.id), -1)
+        if node_idx >= 0:
+            for j in range(node_idx + 1, len(all_nodes)):
+                nj = all_nodes[j]
+                if nj.role == "llm":
+                    try:
+                        files = checkpoint.list_backed_paths(nj.id)
+                    except Exception:
+                        pass
+                    break
 
-        meta = node.metadata or {}
         points.append({
             "msg_id": node.id,
             "seq": node.seq,
             "summary": summary,
+            "user_text": output,
             "created_at": getattr(node, "created_at", 0) or 0,
             "files_affected": files,
-            "reverted": bool(meta.get("reverted")),
         })
 
     return points
 
 
 def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
-    """Rewind to the state before ``target_msg_id`` was produced.
+    """Rewind to the state before ``target_msg_id`` was sent.
 
-    Reverts all turns from the latest back to (and including)
-    ``target_msg_id``. Returns::
-
-        {
-            "session_id": str,
-            "target_msg_id": str,
-            "turns_reverted": int,
-            "total_restored_paths": [...],
-            "errors": [...],
-        }
+    ``target_msg_id`` is a **user** node ID. We revert all assistant
+    turns from the latest back to (and including) the one that
+    answered this user message, then return the user message text
+    so the frontend can prefill the composer.
     """
     from openprogram.agent._revert import revert_turn
 
-    points = list_rewind_points(session_id, limit=100)
-    if not points:
-        return {
-            "session_id": session_id,
-            "target_msg_id": target_msg_id,
-            "turns_reverted": 0,
-            "total_restored_paths": [],
-            "errors": ["no rewind points found"],
-        }
+    try:
+        from openprogram.store.session.session_store import default_store
+    except Exception as e:
+        return _err(session_id, target_msg_id, f"import failed: {e}")
 
-    resolved_target = target_msg_id
+    store = default_store()
+    pair = store._open(session_id)
+    if pair is None:
+        return _err(session_id, target_msg_id, f"unknown session {session_id!r}")
 
-    # If target_msg_id is a user node, resolve to the next assistant node
-    if not any(p["msg_id"] == target_msg_id for p in points):
-        try:
-            from openprogram.store.session.session_store import default_store
-            store = default_store()
-            pair = store._open(session_id)
-            if pair:
-                _, idx = pair
-                all_nodes = list(idx.all_nodes())
-                for i, n in enumerate(all_nodes):
-                    if n.id == target_msg_id and n.role == "user":
-                        # Find next assistant node after this user node
-                        for j in range(i + 1, len(all_nodes)):
-                            if all_nodes[j].role == "llm":
-                                resolved_target = all_nodes[j].id
-                                break
-                        break
-        except Exception:
-            pass
+    _, idx = pair
+    all_nodes = idx.all_nodes()
 
-    target_found = False
+    # Find the target user node
+    target_node = idx.nodes_by_id.get(target_msg_id)
+    if target_node is None:
+        return _err(session_id, target_msg_id, f"node {target_msg_id!r} not found")
+
+    # Extract user text for prefilling the composer
+    user_text = target_node.output or ""
+    if isinstance(user_text, dict):
+        user_text = str(user_text)
+
+    target_seq = target_node.seq
+
+    # Collect all assistant (llm) nodes at or after the target's seq
+    # These are the turns we need to revert, newest first
     to_revert: list[str] = []
-    for p in points:
-        if p.get("reverted"):
-            continue
-        to_revert.append(p["msg_id"])
-        if p["msg_id"] == resolved_target:
-            target_found = True
+    to_mark: list[str] = []
+    for node in reversed(all_nodes):
+        if node.seq < target_seq:
             break
+        to_mark.append(node.id)
+        if node.role == "llm":
+            meta = node.metadata or {}
+            if not meta.get("reverted"):
+                to_revert.append(node.id)
 
-    if not target_found:
-        return {
-            "session_id": session_id,
-            "target_msg_id": target_msg_id,
-            "turns_reverted": 0,
-            "total_restored_paths": [],
-            "errors": [f"target {target_msg_id!r} not found in recent turns"],
-        }
-
+    # Revert file changes for each assistant turn
     all_restored: list[str] = []
     errors: list[str] = []
-
     for msg_id in to_revert:
         result = revert_turn(session_id, msg_id)
         if result.get("error"):
             errors.append(f"{msg_id}: {result['error']}")
         all_restored.extend(result.get("restored_paths", []))
 
+    # Mark all rewound nodes (user + assistant + code)
+    import time
+    for node_id in to_mark:
+        node = idx.nodes_by_id.get(node_id)
+        if node is not None:
+            node.metadata = {
+                **(node.metadata or {}),
+                "rewound": True,
+                "rewound_at": time.time(),
+            }
+
     return {
         "session_id": session_id,
         "target_msg_id": target_msg_id,
+        "user_text": user_text,
         "turns_reverted": len(to_revert),
+        "nodes_rewound": len(to_mark),
         "total_restored_paths": list(set(all_restored)),
         "errors": errors,
+    }
+
+
+def _err(session_id: str, target: str, msg: str) -> dict[str, Any]:
+    return {
+        "session_id": session_id,
+        "target_msg_id": target,
+        "user_text": "",
+        "turns_reverted": 0,
+        "nodes_rewound": 0,
+        "total_restored_paths": [],
+        "errors": [msg],
     }

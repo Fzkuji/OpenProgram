@@ -211,16 +211,19 @@ export function MessageActions({
         const data = JSON.parse(ev.data);
         if (data?.type === "rewind_result") {
           ws.removeEventListener("message", onMsg);
-          const restored = data?.data?.total_restored_paths ?? data?.data?.restored_paths ?? [];
-          const err = data?.data?.error ?? (data?.data?.errors?.length ? data.data.errors.join("; ") : null);
-          const text = err
-            ? tr(`Rewind failed: ${err}`, `回退失败：${err}`)
-            : tr(
-                `Rewound ${restored.length} file${restored.length === 1 ? "" : "s"}`,
-                `已回退 ${restored.length} 个文件`,
-              );
-          showToast(text);
-          if (!err) {
+          const d = data?.data ?? {};
+          const errors = d.errors ?? [];
+          const err = d.error ?? (errors.length ? errors.join("; ") : null);
+          if (err) {
+            showToast(tr(`Rewind failed: ${err}`, `回退失败：${err}`));
+          } else {
+            const n = d.turns_reverted ?? 0;
+            showToast(tr(`Rewound ${n} turn${n === 1 ? "" : "s"}`, `已回退 ${n} 轮对话`));
+            // Prefill composer with the rewound user message
+            if (d.user_text) {
+              useSessionStore.getState().setComposerInput(d.user_text);
+            }
+            // Reload session so rewound messages disappear
             wsSend({ action: "load_session", session_id: sessionId });
           }
           setBusy(false);
