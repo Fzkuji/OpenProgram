@@ -1,6 +1,6 @@
 # 上下文组成 —— 注册式三层（目标态设计）
 
-Status: **draft（目标态,待实现）** · Created: 2026-06-23 · Updated: 2026-06-24
+Status: **大部分已实现** · Created: 2026-06-23 · Updated: 2026-06-24
 
 > 本文定义**每次 LLM 调用喂什么**的目标态。核心不是"列出有哪些成分"(那会定死、
 > 不可扩展),而是定义**一套规则 + 注册机制**：成分如何归层、如何排序、如何按条件
@@ -138,7 +138,7 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 | 2 | inline agent prompt | 有则出 | ✅ |
 | 3 | 工具强制(act-don't-ask) | 恒(可按模型) | ✅ tool_enforcement |
 | 4 | 模型特定操作指导 | 按当前 provider/model | ✅ model_guidance(_MODEL_GUIDANCE 每 provider 一条) |
-| 5 | 平台渲染格式 | 按当前 channel | ➕(待组装器入参从 agent 扩成 ctx,channel 是 per-turn) |
+| 5 | 平台渲染格式 | 按当前 channel | ✅ platform_format(contextvar + _PLATFORM_RULES per channel) |
 | 6 | computer-use 指导 | computer-use 工具启用 | ➕(低优先) |
 | 7 | 技能索引 | 有启用技能 | ✅ |
 | 8 | 工具 + MCP schema | 恒 | ✅ |
@@ -151,12 +151,12 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 | order | 成分 | condition | 现状 |
 |---|---|---|---|
 | 1 | 项目身份(AGENTS.md) | 有项目文件 | ✅(现状错塞 L0,应 L1) |
-| 2 | Prompt 注入检测(扫 1 再注入) | 加载项目文件时 | ➕(安全,高) |
+| 2 | Prompt 注入检测(扫 1 再注入) | 加载项目文件时 | ✅ pi_shield + detect_injection_patterns |
 | 3 | 上下文文件截断 | 项目文件超大 | ➕ |
 | 4 | 项目级记忆 | 有 | ✅(现状错塞 L0) |
-| 5 | USER.md 用户档案 | 有 | ➕(中) |
+| 5 | USER.md 用户档案 | 有 | ✅ 已由 workspace_files 加载 read_user_md |
 | 6 | 工作目录 cwd | 恒 | ✅ |
-| 7 | 是否在 git 仓库 | 在 git 仓库 | ➕(归位) |
+| 7 | 是否在 git 仓库 | 在 git 仓库 | ✅ git_repo_flag |
 | 8 | session/model/thinking/tier 绑定 | 恒 | ✅ |
 | 9 | deferred tools catalog | 有延迟工具 | ✅ |
 | 10 | **统一调用树(历史)** | 有历史 | ✅ DAG 现成;改造点见下。追加增长 + 完成节点释放 io,排 L1 最后 |
@@ -172,12 +172,12 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 |---|---|---|---|
 | 1 | 本次处境 situation | @agentic_function 内调用 | ✅(step 6a/6b: _situational_prefix + _compute_call_path) |
 | 2 | git 分支 / status | 在 git 仓库 | ➕(中) |
-| 3 | todo / 任务计划 / 进度 | 有 todo | ➕(中,长任务) |
+| 3 | todo / 任务计划 / 进度 | 有 todo | ✅ todo_progress(读 _TODOS 列表) |
 | 4 | token 预算提示 | 接近预算 | ➕(低) |
 | 5 | per-turn memory prefetch | 检索到相关记忆 | ✅(现状错塞 system,应 L2) |
 | 6 | 本次用户输入 + 附件 | 恒 | ✅ |
 | 7 | 输出格式 / schema | 本步要求 | ✅ |
-| 8 | 输出契约 output_contract | 本步有下游 | ➕ |
+| 8 | 输出契约 output_contract | 本步有下游 | ✅ 在 _situational_prefix 中作为 `Your output:` 行 |
 | 9 | timestamp | 恒 | ✅(每次变,最末) |
 
 ### 不注册(我们没这功能,留机制位)

@@ -30,21 +30,21 @@ Status: **查漏记录** · Created: 2026-06-24
 
 | # | 成分 | hermes | claude-code | 其余 | 我们 | 漏？ |
 |:--:|---|:--:|:--:|:--:|---|---|
-| 1 | 整体身份 | ✓ | ✓ | pi ✓ | ✓ L0 | — |
-| 2 | inline agent prompt | ✓ | ✓ | — | ✓ L0 | — |
+| 1 | 整体身份 | ✓ | ✓ | pi ✓ | ✅ L0 已实现 | — (identity) |
+| 2 | inline agent prompt | ✓ | ✓ | — | ✅ L0 已实现 | — (inline_prompt) |
 | 3 | **工具强制（act-don't-ask）** | ✓ | - | - | ✅ L0 已实现 | — (tool_enforcement, 恒定) |
 | 4 | **模型特定操作指导** | ✓ | - | - | ✅ L0 已实现 | — (model_guidance, 按 provider) |
 | 5 | **平台渲染格式（多渠道）** | ✓ | - | - | ✅ L0 已实现 | — (platform_format, 按 channel 参数) |
 | 6 | computer-use 指导 | ✓ | - | - | ✗ | 漏·低（仅该工具启用时） |
-| 7 | 技能索引 | ✓ | - | pi ✓ | ✓ L0 | — |
+| 7 | 技能索引 | ✓ | - | pi ✓ | ✅ L0 已实现 | — (skills_index) |
 | 8 | 工具 + MCP schema | ✓ | ✓ | oc/oclaw ✓ | ✓ L0 | — |
-| 9 | 全局/用户级记忆 | ✓ | - | - | ✓ L0 | — |
+| 9 | 全局/用户级记忆 | ✓ | - | - | ✅ L0 已实现 | — (memory_global) |
 | 10 | 环境信息（OS / shell / 远程后端） | ✓ | - | - | ✅ L0 已实现 | — (environment: OS/shell; cwd 另由 tool-runtime) |
 | 11 | 当前日期（日粒度，缓存友好） | ✓ | - | pi ✓ | ✅ L0 已实现 | — (current_date, 日粒度) |
 
 > 排序说明：身份/指导/工具是配好绝不动的，放最前；环境信息(OS/后端/日期)虽也整会话
 > 稳定，但比身份"更接近会变"(换机器/隔天就变)，放 L0 末尾。
-> 漏的核心：①「工具强制/模型指导/平台格式」三个指导块（高）；②环境信息成体系（中）。
+> L0 除 computer-use 指导（低优先）外全部已实现。
 
 ---
 
@@ -58,7 +58,7 @@ Status: **查漏记录** · Created: 2026-06-24
 | 2 | **Prompt 注入检测**（在 1 加载进 prompt 前扫） | ✓ | - | - | ✅ L1 已实现 | — (pi_shield + detect_injection_patterns) |
 | 3 | 上下文文件截断策略（约束 1 的大小） | ✓ | - | - | ✗ | 漏·中 |
 | 4 | 项目级记忆 | ✓ | - | - | ✓ L1 | — |
-| 5 | **用户档案 USER.md** | ✓ | - | - | ✓ L1 | — (已由 workspace_files 加载 read_user_md) |
+| 5 | **用户档案 USER.md** | ✓ | - | - | ✅ L1 已实现 | — (user_profile, 由 workspace_files 加载 read_user_md) |
 | 6 | 工作目录 cwd | ✓ | - | pi ✓ | ✓ L1 | — |
 | 7 | 是否在 git 仓库 | ✓ | - | - | ✅ L1 已实现 | — (git_repo_flag) |
 | 8 | session_id / model / thinking / tier | ✓ | - | - | ✓ L1 | — |
@@ -68,7 +68,7 @@ Status: **查漏记录** · Created: 2026-06-24
 > 排序说明：项目固定信息（AGENTS.md / 项目记忆 / USER.md / cwd / 绑定）换项目才变，
 > 放前面；**历史每轮都追加，最不稳，放 L1 最后**——这正是你说的"不断变的历史往后放"。
 > 注入检测/截断策略紧挨它们守护的项目文件（2、3 紧跟 1）。
-> 漏的核心：①注入检测（高，安全）；②USER.md（中）；③git 仓库归位（中）。
+> L1 除上下文文件截断策略（中）外全部已实现。
 
 ---
 
@@ -91,27 +91,32 @@ Status: **查漏记录** · Created: 2026-06-24
 
 > 排序说明：处境/环境/todo 是"本次但相对成型"的，放前；用户输入+输出规格在中段；
 > timestamp 每次必变放最末。
-> 漏的核心：①git 分支/status（中）；②todo/进度（中，长任务有用）。
+> L2 剩余未实现：git 分支/status（中）、token 预算提示（低）。
 
 ---
 
 ## 漏项汇总（按优先级，供决定补哪些）
 
 **✅ 已实现**
-- L0 模型特定操作指导（model_guidance）
+- L0 整体身份（identity）
+- L0 inline agent prompt（inline_prompt）
 - L0 工具强制 act-don't-ask（tool_enforcement）
+- L0 模型特定操作指导（model_guidance）
+- L0 平台渲染格式（platform_format, 按 channel 参数）
+- L0 技能索引（skills_index）
+- L0 全局/用户级记忆（memory_global）
 - L0 环境信息（environment: OS/shell）
 - L0 当前日期（current_date, 日粒度）
-- L0 平台渲染格式（platform_format, 按 channel 参数）
 - L1 Prompt 注入检测（pi_shield + detect_injection_patterns）
+- L1 USER.md 用户档案（user_profile, 由 workspace_files 加载 read_user_md）
 - L1 git 仓库归位（git_repo_flag）
 - L2 本次处境 situation + call_path（_situational_prefix + _compute_call_path）
 - L2 todo 列表/进度（todo_progress, 读 _TODOS）
+- L2 output_contract（在 _situational_prefix 中作为 `Your output:` 行）
 
-**中（看需求）**
+**中（看需求，尚未实现）**
 - L1 上下文文件截断策略
 - L2 git 分支/status
-- L2 output_contract（已在 _situational_prefix 中，非独立组件）
 
 **低（vendor 特有 / 专用，多半不补）**
 - computer-use 指导 / Nous 订阅 / Kanban 多agent / Hermes profile / 外部记忆提供者
