@@ -78,7 +78,9 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 1. **不碰用户 git**。Claude Code 和 Hermes 都不往用户仓库写 commit，这是行业共识。
 2. **统一入口触发**。学 Hermes，checkpoint 在所有工具执行前统一触发，覆盖 bash。
 
-### 3.2 三层机制
+### 3.2 四层机制
+
+四个层各管一件事，没有重叠。去掉任何一个都会缺一块能力。
 
 ```
                 ┌─── read-before-edit (并发防护, 所有写操作的前置闸) ───┐
@@ -86,30 +88,31 @@ AI coding agent 管理文件修改，行业里分成两条路线：
                 └───────────────────────────┬──────────────────────────┘
                                              ▼
 
- ┌──────────────── 快照 (Snapshot) ────────────────┐   ┌──── 沙箱 (Sandbox) ────┐
- │                                                  │   │                        │
- │  ①  Checkpoint (文件拷贝)   ②  Shadow git        │   │  ③  Worktree           │
- │     "撤销键 (Ctrl+Z)"         "永久历史 + diff"   │   │     "隔离沙盒"          │
- │     turn 级, 临时              独立 store, 持久   │   │     独立副本, 隔离       │
- │     不碰用户 git               不碰用户 git       │   │     agent 显式进入       │
- │     永远开, 自动               默认开, 自动       │   │     按需                 │
- │                                                  │   │                        │
- └──────────────────────────────────────────────────┘   └────────────────────────┘
+ ┌──────────────── 快照 (Snapshot) ────────────────┐   ┌──────────── 沙箱 (Sandbox) ─────────────┐
+ │                                                  │   │                                         │
+ │  ①  Checkpoint          ②  Shadow git            │   │  ③  Worktree        ④  系统级沙箱        │
+ │     "回滚"                 "历史"                 │   │     "文件隔离"          "权限限制"         │
+ │     turn 级, 临时          独立 store, 持久        │   │     独立副本            限制 bash 范围     │
+ │     不碰用户 git           不碰用户 git            │   │     agent 显式进入      配置开关           │
+ │     永远开, 自动           默认开, 自动            │   │     按需                默认关             │
+ │                                                  │   │                                         │
+ └──────────────────────────────────────────────────┘   └─────────────────────────────────────────┘
 ```
 
-| | ① Checkpoint | ② Shadow git | ③ Worktree |
-|---|---|---|---|
-| **路线** | **快照** | **快照** | **沙箱** |
-| **回答的问题** | 撤销 agent 刚才这一步 | 永久记录改了啥, 能 diff/恢复 | 高风险大改, 别碰我工作树 |
-| **机制** | 全量文件拷贝 | git tree/commit 对象，存在 `~/.openprogram/shadow-git/<project-hash>/` | `git worktree` 隔离分支 |
-| **作用域** | 单个 turn | 整条会话累积 | 一段实验性工作 |
-| **持久度** | 临时 (GC, 上限 100 turn) | 永久（独立 git 历史） | 直到 merge / discard |
-| **碰用户的 git 吗** | **完全不碰** | **完全不碰** | 用独立 worktree, merge 才回主线 |
-| **触发** | 统一入口（所有工具执行前） | turn 结束（自动 commit 本 turn 变更） | agent 显式调 `worktree_create` |
-| **bash 覆盖** | **是**（统一入口触发） | **是**（turn 结束 commit 含 bash 改动） | N/A（隔离环境内） |
-| **默认** | **一直开** | **默认开** | 按需 |
-| **代码** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` |
-| **回退入口** | `undo` | `undo` 联动 | `worktree_discard` |
+| | ① Checkpoint | ② Shadow git | ③ Worktree | ④ 系统级沙箱 |
+|---|---|---|---|---|
+| **路线** | **快照** | **快照** | **沙箱** | **沙箱** |
+| **解决什么** | 改坏了能回滚 | 永久历史 + diff 追溯 | 改坏了丢副本 | 限制 bash 能碰的范围 |
+| **机制** | 全量文件拷贝 | git tree/commit 对象，存在 `~/.openprogram/shadow-git/<project-hash>/` | `git worktree` 隔离分支 | OS 内核限制（Seatbelt / bubblewrap） |
+| **作用域** | 单个 turn | 整条会话累积 | 一段实验性工作 | 整个会话 |
+| **持久度** | 临时 (GC, 上限 100 turn) | 永久（独立 git 历史） | 直到 merge / discard | 会话期间生效 |
+| **碰用户的 git 吗** | **完全不碰** | **完全不碰** | 用独立 worktree, merge 才回主线 | **完全不碰** |
+| **触发** | 统一入口（所有工具执行前） | turn 结束（自动 commit 本 turn 变更） | agent 显式调 `worktree_create` | 配置开关 |
+| **bash 覆盖** | **是**（统一入口触发） | **是**（turn 结束 commit 含 bash 改动） | N/A（隔离环境内） | **是**（内核级拦截） |
+| **默认** | **一直开** | **默认开** | 按需 | **默认关** |
+| **代码** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` | ⏳ 待实现 |
+| **回退入口** | `undo` | `undo` 联动 | `worktree_discard` | N/A（预防性，不需要回退） |
+| **状态** | ✅ 已实现 | ✅ 已实现 | ✅ 已实现 | ⏳ 待实现 |
 
 ### 3.3 ① Checkpoint 和 ② Shadow git 的分工
 
@@ -240,10 +243,21 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 - 支持 `git diff`、`git log`、单文件恢复
 - 不需要 GC（git 天然压缩对象）
 
-### 6.5 三者的关系
+### 6.5 四者的关系
 
-- **Worktree 是正交的**（平时不在场）: 只在 agent 显式调 `worktree_create` 时存在, 走独立目录 `~/.openprogram/worktrees/<id>/`, 跟 ①② 零交叉引用。唯一需要协调的是规则 A。
+四个层各自独立，解决不同问题：
+
+| | 回滚 | 历史 | 文件隔离 | 权限限制 |
+|---|---|---|---|---|
+| ① Checkpoint | ✅ | | | |
+| ② Shadow git | | ✅ | | |
+| ③ Worktree | | | ✅ | |
+| ④ 系统级沙箱 | | | | ✅ |
+
+协调点：
 - **Checkpoint ↔ Shadow git**: 同时运行, 由 `undo` 统一协调（规则 B）。Checkpoint 负责快速恢复, Shadow git 负责永久历史。
+- **Worktree ↔ Shadow git**: 规则 A，Worktree 活跃时 Shadow git 让位。
+- **系统级沙箱**: 和其他三层完全正交——它限制 bash 能碰什么，不影响快照和文件隔离的运作。
 
 ### 6.6 Ad-hoc (默认项目) 会话
 
@@ -251,6 +265,7 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 - ① Checkpoint: 照常。
 - ② Shadow git: 照常（shadow store 不依赖用户仓库）。
 - ③ Worktree: 不适用（没有 source repo）。
+- ④ 系统级沙箱: 照常（限制 bash 范围与项目绑定无关）。
 
 ---
 
@@ -262,6 +277,8 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 | 看 agent 改了什么（diff） | 默认 | ② Shadow git 提供 `git diff` / `git log` |
 | 不想任何额外存储 | 关掉 shadow git | 只有 ① Checkpoint |
 | agent 做高风险大改, 别弄乱工作树 | (agent 自行) `worktree_create` | ③ 隔离, 改好 merge / 改砸 discard |
+| 限制 bash 别碰 cwd 以外的文件 | 开启系统级沙箱 | ④ bash 只能读写当前项目目录 |
+| 最安全模式 | Worktree + 系统级沙箱 | ③ + ④ 文件隔离 + 权限限制 |
 
 ---
 
@@ -278,31 +295,38 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 ---
 
-## 9. 沙箱隔离 — 行业方案与我们的定位
+## 9. 沙箱隔离 — ③ Worktree + ④ 系统级沙箱
 
-### 9.1 三种沙箱方案
+沙箱有三种实现方式，隔离级别从低到高：
 
 | 方案 | 代表框架 | 隔离级别 | 启动延迟 | 实现技术 | 适合场景 |
 |---|---|---|---|---|---|
-| **系统级沙箱** | Claude Code（macOS Seatbelt / Linux bubblewrap）、Cursor（Seatbelt / Landlock + seccomp） | 文件系统 + 网络（进程级限制，只允许读写 cwd 及子目录） | 毫秒级 | OS 内核机制（sandbox-exec / bwrap / Landlock） | 本地交互式开发，限制 bash 能碰的范围 |
-| **容器沙箱** | OpenHands / SWE-agent（Docker）、Devin（云端 ephemeral 容器） | 完整隔离（文件系统 / 网络 / 进程全隔离） | 30-60 秒（新容器），2-15 秒（复用） | Docker / Podman / 云端 VM | 无人值守批量任务、不信任的代码执行 |
-| **Git worktree** | OpenProgram（我们现有） | 仅文件系统（独立副本），无进程/网络隔离 | 秒级 | `git worktree add` | 高风险代码改动（实验性重构） |
+| **Git worktree** | 我们 ③、Claude Code `--worktree` | 仅文件（独立副本），无进程/网络隔离 | 秒级 | `git worktree add` | 高风险代码改动 |
+| **系统级沙箱** | 我们 ④、Claude Code `/sandbox`、Cursor | 文件系统 + 网络（进程级限制） | 毫秒级 | Seatbelt / bubblewrap / Landlock | 本地交互，限制 bash 范围 |
+| **容器沙箱** | OpenHands / SWE-agent / Devin | 完整隔离（文件/网络/进程） | 30-60 秒 | Docker / Podman | 无人值守、不信任代码 |
 
-### 9.2 Worktree 的局限
+### 9.1 ③ Worktree — 文件隔离（✅ 已实现）
 
-Worktree 只隔离文件，不隔离进程和网络：
-- bash 命令仍然能 `rm -rf /`（删除 worktree 之外的文件）
-- bash 命令能访问网络（发请求、下载恶意代码）
-- bash 命令能读敏感文件（`~/.ssh/`, `~/.aws/` 等）
+agent 调 `worktree_create` 创建独立工作目录副本，改好了 `worktree_merge`，改砸了 `worktree_discard`。
 
-Worktree 适合"怕改坏代码"（实验性重构），不适合"怕恶意行为"（不信任的代码执行）。
+**局限**：只隔离文件，不隔离进程和网络——bash 仍能 `rm -rf /`、读 `~/.ssh/`、访问网络。适合"怕改坏代码"，不防"bash 乱来"。
 
-### 9.3 我们的沙箱方向
+### 9.2 ④ 系统级沙箱 — 权限限制（⏳ 待实现）
 
-当前：③ Worktree（轻量 git 隔离），已实现，按需使用。
+用 OS 内核机制限制 bash 进程能做什么：
+- **文件系统**：只能读写 cwd 及子目录，`rm ~/.ssh/id_rsa` → `Operation not permitted`
+- **网络**：不能直连，通过代理 allowlist 控制
+- **实现**：macOS 用 Seatbelt（sandbox-exec），Linux 用 bubblewrap
 
-远期方向（未实施）：
-- **本地交互场景**：系统级沙箱（方案 A），毫秒级启动，限制 bash 写入范围。参考 Claude Code 的 Seatbelt/bubblewrap 方案。
-- **无人值守 agentic function**：容器沙箱（方案 B），research_agent 等长时间跑的场景。需要 Docker 集成。
+参考 Claude Code 的 `/sandbox`：所有工具（含 bash）在沙箱内执行，内核级拦截，绕不过去。
 
-优先级：低。当前 Checkpoint + Shadow git + 统一入口触发已覆盖文件回滚需求。沙箱主要解决安全隔离（防恶意行为），在 agentic function 成熟后再考虑。
+### 9.3 ③ 和 ④ 的关系
+
+两者解决不同问题，可以组合：
+- **单独用 ③**：在副本里改，但 bash 什么都能做
+- **单独用 ④**：在原目录改，但 bash 被限制范围
+- **组合用**：在副本里改，bash 也被限制。最安全
+
+### 9.4 容器沙箱（远期方向）
+
+research_agent 等无人值守 agentic function 的长时间运行场景，需要 Docker 完整隔离。当前不做，等 agentic function 成熟后考虑。
