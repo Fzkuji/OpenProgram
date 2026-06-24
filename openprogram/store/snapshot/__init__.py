@@ -1,7 +1,7 @@
 """Revert / record helpers — undo + concurrency safety.
 
 Group ③ of ``store/`` (see ``store/README.md`` and
-``docs/design/runtime/revert-layers.md``). The "undo" layer plus the guard that
+``docs/design/runtime/file-management.md``). The "undo" layer plus the guard that
 keeps it trustworthy.
 
 Contents:

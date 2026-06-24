@@ -1,7 +1,7 @@
 """Project entity layer + auto-commit.
 
 Group ② of ``store/`` (see ``store/README.md`` and
-``docs/design/memory/memory-v2.md`` / ``revert-layers.md``). Treats the user's
+``docs/design/memory/memory-v2.md`` / ``file-management.md``). Treats the user's
 working directory as a git-backed *project* and records the agent's
 per-turn edits there as attributable commits.
 

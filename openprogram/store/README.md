@@ -68,7 +68,7 @@ store/
 
 Designs: [`git-as-entity-memory.md`](../../docs/design/memory/git-as-entity-memory.md)
 (why git), [`memory-v2.md`](../../docs/design/memory/memory-v2.md) (entity layer),
-[`revert-layers.md`](../../docs/design/runtime/revert-layers.md) (snapshot / commit
+[`file-management.md`](../../docs/design/runtime/file-management.md) (snapshot / commit
 / worktree / read-before-edit — how they combine).
 
 ## ① Session storage — on-disk layout
@@ -100,7 +100,7 @@ agent edits files in a bound, git-backed folder, `project_commit` records
 them as an agent-attributed commit at turn end — so the user gets a
 `git log` / `git diff` / `git revert`-able history.
 
-Key behaviors (full detail in `revert-layers.md` §3):
+Key behaviors (full detail in `file-management.md` §3):
 - **Default ON**, but binding a folder has zero git side-effects;
   auto-init happens only on the first agent edit, and only safely
   (baseline commit of pre-existing files first, refuse on

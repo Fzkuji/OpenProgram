@@ -59,7 +59,7 @@ supporting notes / investigations that should not override it.
 | [`runtime/agent-worktree.md`](runtime/agent-worktree.md) | Agent worktree behaviour |
 | [`runtime/async-task-lifecycle.md`](runtime/async-task-lifecycle.md) | Async task lifecycle |
 | [`runtime/streaming-resume.md`](runtime/streaming-resume.md) | Streaming + resume |
-| [`runtime/revert-layers.md`](runtime/revert-layers.md) | Revert layers (commit / worktree) |
+| [`runtime/file-management.md`](runtime/file-management.md) | Revert layers (commit / worktree) |
 | [`runtime/multi-agent-revert-todo.md`](runtime/multi-agent-revert-todo.md) | Multi-agent revert TODO |
 | [`runtime/session-dag.md`](runtime/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / render_context）+ 两路径合并设计（8 步全完成） |
 | [`runtime/dispatcher-split.md`](runtime/dispatcher-split.md) | Dispatcher split design |

@@ -12,10 +12,10 @@ The directory holds three groups (README has the details):
      user's working dir as a git-backed Project, with safe auto-init and
      a reset/revert-of-a-commit primitive) and ``project_commit`` (wires
      the agent's per-turn edits into that repo). See
-     ``docs/design/memory/memory-v2.md`` and ``docs/design/runtime/revert-layers.md``.
+     ``docs/design/memory/memory-v2.md`` and ``docs/design/runtime/file-management.md``.
   3. **Revert / record helpers** — ``checkpoint/`` (per-turn file
      checkpoints = the "undo" layer) and ``read_tracking`` (read-before-
-     edit concurrency guard). See ``docs/design/runtime/revert-layers.md``.
+     edit concurrency guard). See ``docs/design/runtime/file-management.md``.
 
 Public surface (re-exported for legacy import paths):
 

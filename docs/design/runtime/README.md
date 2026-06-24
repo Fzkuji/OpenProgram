@@ -8,7 +8,7 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`async-task-lifecycle.md`](async-task-lifecycle.md)
 - [`dispatcher-split.md`](dispatcher-split.md) — break `agent/dispatcher.py` into a responsibility-scoped package (no-1000-line rule)
 - [`multi-agent-revert-todo.md`](multi-agent-revert-todo.md)
-- [`revert-layers.md`](revert-layers.md)
+- [`file-management.md`](file-management.md)
 - [`runtime.md`](runtime.md)
 - [`session/`](session/) — Session 子系统：数据模型、存储、命名、列举、生命周期、广播
 - [`streaming-resume.md`](streaming-resume.md)
