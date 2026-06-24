@@ -322,9 +322,7 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 ### 8.5 Agent 可用的工具
 
-这些是 agent（LLM）可以调用的工具，用户不直接操作：
-
-**Worktree（文件隔离沙箱）：**
+agent（LLM）可以调用的工具只有 worktree 系列，用于文件隔离：
 
 | 工具 | 功能 |
 |---|---|
@@ -332,27 +330,7 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 | `worktree_merge` | 把副本的改动合并回主目录 |
 | `worktree_discard` | 丢弃副本 |
 
-**Checkpoint（快照回滚）：**
-
-| 工具 | 功能 |
-|---|---|
-| `checkpoint_list` | 列出当前会话的 checkpoint 列表（turn ID、时间、备份文件） |
-| `checkpoint_restore` | 恢复指定 turn 的文件到 checkpoint 状态 |
-
-**Shadow git（永久历史）：**
-
-| 工具 | 功能 |
-|---|---|
-| `shadow_git_log` | 查看 shadow git 的 commit 历史 |
-| `shadow_git_diff` | 对比两个 commit 之间的文件差异 |
-| `shadow_git_restore_file` | 从某个 commit 恢复单个文件 |
-
-**沙箱（权限限制）：**
-
-| 工具 | 功能 |
-|---|---|
-| `sandbox_status` | 查看沙箱当前状态（开/关、可用性） |
-| `sandbox_toggle` | 开关系统级沙箱 |
+Checkpoint、Shadow git、沙箱都是自动运行的底层机制，不暴露为工具。用户通过 `/rewind` 和 `/sandbox` 命令交互。
 
 ---
 
