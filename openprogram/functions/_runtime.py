@@ -831,7 +831,7 @@ def function(
             loop = asyncio.get_running_loop()
             # Propagate the current Context into the executor thread so
             # tool bodies see ContextVars set on the calling task (e.g.
-            # ``_store`` / ``_current_turn_id`` for file_backup,
+            # ``_store`` / ``_current_turn_id`` for checkpoint,
             # ``_call_id`` for nested @agentic_function attribution).
             # ``run_in_executor`` does not copy context by default.
             ctx = contextvars.copy_context()

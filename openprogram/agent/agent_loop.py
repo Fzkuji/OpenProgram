@@ -519,7 +519,7 @@ def _checkpoint_changed_files(
     try:
         import os
         from openprogram.worktree.context import current_worktree_path
-        from openprogram.store.snapshot.checkpoint.helpers import backup_for_current_turn
+        from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
 
         cwd = current_worktree_path() or os.getcwd()
         for entry in os.scandir(cwd):
@@ -530,7 +530,7 @@ def _checkpoint_changed_files(
                     st = entry.stat(follow_symlinks=False)
                     prev = pre.get(entry.path)
                     if prev is None or prev != (st.st_mtime_ns, st.st_size):
-                        backup_for_current_turn(entry.path)
+                        checkpoint_before_edit(entry.path)
                 except OSError:
                     pass
     except Exception:

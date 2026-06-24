@@ -1,7 +1,7 @@
 """Unit tests for openprogram.agent.internals._revert.revert_turn.
 
-Drives the BackupStore directly (no real dispatcher needed) — the
-unit under test is the wiring between SessionStore + BackupStore +
+Drives the CheckpointStore directly (no real dispatcher needed) — the
+unit under test is the wiring between SessionStore + CheckpointStore +
 DAG metadata stamping.
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import pytest
 
 from openprogram.agent.internals._revert import revert_turn
 from openprogram.store.session.session_store import SessionStore
-from openprogram.store.snapshot.file_backup import BackupStore
+from openprogram.store.snapshot.checkpoint import CheckpointStore
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_revert_restores_file_and_stamps_metadata(store_with_session, tmp_path):
 
     # Simulate a turn: back up, then mutate.
     session_dir = store._session_dir(session_id)
-    backup = BackupStore(session_dir)
+    backup = CheckpointStore(session_dir)
     backup.backup_before_edit(assistant_msg_id, str(target))
     target.write_text("agent overwrote it")
 

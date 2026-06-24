@@ -13,8 +13,8 @@ The directory holds three groups (README has the details):
      a reset/revert-of-a-commit primitive) and ``project_commit`` (wires
      the agent's per-turn edits into that repo). See
      ``docs/design/memory/memory-v2.md`` and ``docs/design/runtime/revert-layers.md``.
-  3. **Revert / record helpers** — ``file_backup/`` (per-turn file
-     snapshots = the "undo" layer) and ``read_tracking`` (read-before-
+  3. **Revert / record helpers** — ``checkpoint/`` (per-turn file
+     checkpoints = the "undo" layer) and ``read_tracking`` (read-before-
      edit concurrency guard). See ``docs/design/runtime/revert-layers.md``.
 
 Public surface (re-exported for legacy import paths):
@@ -82,8 +82,8 @@ _store: ContextVar[Optional[GraphStoreShim]] = ContextVar(
 )
 
 # Dispatcher installs the current turn's assistant_msg_id here so
-# file-mutating tools can resolve which turn to attribute backups
-# to (see store/snapshot/file_backup/helpers.py). Default None =
+# file-mutating tools can resolve which turn to attribute checkpoints
+# to (see store/snapshot/checkpoint/helpers.py). Default None =
 # no active turn; backup helper becomes a no-op.
 _current_turn_id: ContextVar[Optional[str]] = ContextVar(
     "_current_turn_id", default=None,

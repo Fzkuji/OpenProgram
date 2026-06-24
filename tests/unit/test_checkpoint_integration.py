@@ -1,10 +1,10 @@
-"""Integration test: file-mutating tools hook file_backup automatically.
+"""Integration test: file-mutating tools hook checkpoint automatically.
 
 Drives the ``write``, ``edit``, and ``apply_patch`` tool functions via
 their AgentTool ``execute`` coroutine — the same entry point the agent
 loop uses — with the ``_store`` and ``_current_turn_id`` ContextVars
 installed (the same way the dispatcher installs them per turn). Then
-asserts that ``BackupStore.restore_turn`` reverts the file changes.
+asserts that ``CheckpointStore.restore_turn`` reverts the file changes.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import openprogram.functions.tools.apply_patch.apply_patch  # noqa: F401
 
 from openprogram.functions._runtime import get as get_tool
 from openprogram.store import _store, _current_turn_id, SessionStore, GraphStoreShim
-from openprogram.store.snapshot.file_backup import BackupStore
+from openprogram.store.snapshot.checkpoint import CheckpointStore
 
 
 SESSION_ID = "op-fb-integ-test"
@@ -70,10 +70,10 @@ def test_write_tool_backs_up_and_restores(turn_ctx, tmp_path):
     assert "Wrote" in out
     assert target.read_text() == "overwritten"
 
-    backed = BackupStore(session_dir).list_backed_paths(TURN_ID)
+    backed = CheckpointStore(session_dir).list_backed_paths(TURN_ID)
     assert str(target) in backed
 
-    BackupStore(session_dir).restore_turn(TURN_ID)
+    CheckpointStore(session_dir).restore_turn(TURN_ID)
     assert target.read_text() == "original"
 
 
@@ -92,7 +92,7 @@ def test_edit_tool_backs_up_and_restores(turn_ctx, tmp_path):
     assert "Edited" in out
     assert "foo = 99" in target.read_text()
 
-    BackupStore(session_dir).restore_turn(TURN_ID)
+    CheckpointStore(session_dir).restore_turn(TURN_ID)
     assert target.read_text() == "foo = 1\nbar = 2\n"
 
 
@@ -114,7 +114,7 @@ def test_apply_patch_add_then_restore_deletes(turn_ctx, tmp_path):
     assert "Added" in out
     assert target.exists()
 
-    BackupStore(session_dir).restore_turn(TURN_ID)
+    CheckpointStore(session_dir).restore_turn(TURN_ID)
     assert not target.exists()
 
 

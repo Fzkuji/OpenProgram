@@ -1,5 +1,5 @@
 """Bash checkpoint: verify that _snapshot_cwd / _checkpoint_changed_files
-detect file mutations and call backup_for_current_turn."""
+detect file mutations and call checkpoint_before_edit."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def test_checkpoint_detects_modified_file(tmp_path, monkeypatch):
 
     backed_up = []
     with patch("openprogram.worktree.context.current_worktree_path", return_value=None), \
-         patch("openprogram.store.snapshot.checkpoint.helpers.backup_for_current_turn", side_effect=backed_up.append):
+         patch("openprogram.store.snapshot.checkpoint.helpers.checkpoint_before_edit", side_effect=backed_up.append):
         _checkpoint_changed_files("bash", snap)
 
     assert any("target.txt" in p for p in backed_up)
@@ -69,7 +69,7 @@ def test_checkpoint_detects_new_file(tmp_path, monkeypatch):
 
     backed_up = []
     with patch("openprogram.worktree.context.current_worktree_path", return_value=None), \
-         patch("openprogram.store.snapshot.checkpoint.helpers.backup_for_current_turn", side_effect=backed_up.append):
+         patch("openprogram.store.snapshot.checkpoint.helpers.checkpoint_before_edit", side_effect=backed_up.append):
         _checkpoint_changed_files("bash", snap)
 
     assert any("new_file.txt" in p for p in backed_up)
@@ -84,7 +84,7 @@ def test_checkpoint_ignores_unchanged(tmp_path, monkeypatch):
 
     backed_up = []
     with patch("openprogram.worktree.context.current_worktree_path", return_value=None), \
-         patch("openprogram.store.snapshot.checkpoint.helpers.backup_for_current_turn", side_effect=backed_up.append):
+         patch("openprogram.store.snapshot.checkpoint.helpers.checkpoint_before_edit", side_effect=backed_up.append):
         _checkpoint_changed_files("bash", snap)
 
     assert len(backed_up) == 0
@@ -102,7 +102,7 @@ def test_checkpoint_noop_for_non_bash(tmp_path, monkeypatch):
 
     backed_up = []
     with patch("openprogram.worktree.context.current_worktree_path", return_value=None), \
-         patch("openprogram.store.snapshot.checkpoint.helpers.backup_for_current_turn", side_effect=backed_up.append):
+         patch("openprogram.store.snapshot.checkpoint.helpers.checkpoint_before_edit", side_effect=backed_up.append):
         _checkpoint_changed_files("write", snap)
 
     assert len(backed_up) == 0

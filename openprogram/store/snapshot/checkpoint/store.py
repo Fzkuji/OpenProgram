@@ -1,4 +1,4 @@
-"""BackupStore — per-session file-backup orchestrator.
+"""CheckpointStore — per-session file checkpoint orchestrator.
 
 Two operations cover the lifecycle:
 
@@ -8,11 +8,11 @@ Two operations cover the lifecycle:
     via the manifest. The "before" semantics preserve the file's
     state when the turn started, not after some intermediate write.
   * ``restore_turn(turn_id)`` — undo all of this turn's file edits
-    by copying each backup back to its original path. Files the
+    by copying each checkpoint back to its original path. Files the
     agent CREATED during the turn (no pre-existing version) are
     deleted on restore.
 
-Every backup is a full ``shutil.copy2`` of the original. We
+Every checkpoint is a full ``shutil.copy2`` of the original. We
 deliberately avoid hardlinking: most editor / tool write paths use
 ``open(w)``, which truncates the inode in place; a hardlink would
 share that inode and lose the original contents. Disk cost is
@@ -28,8 +28,8 @@ from . import manifest
 from .paths import path_basename, turn_backup_dir, turn_manifest_path
 
 
-class BackupStore:
-    """Per-session backup store rooted under the session's git repo."""
+class CheckpointStore:
+    """Per-session checkpoint store rooted under the session's git repo."""
 
     def __init__(self, session_dir: Path):
         self.session_dir = Path(session_dir)
@@ -37,7 +37,7 @@ class BackupStore:
     # ── Write side ────────────────────────────────────────────────
 
     def backup_before_edit(self, turn_id: str, abs_path: str) -> None:
-        """Idempotent backup. Captures the file's state pre-edit;
+        """Idempotent checkpoint. Captures the file's state pre-edit;
         records ``pre_existing=False`` if the path doesn't exist yet
         so ``restore_turn`` knows to delete-instead-of-restore."""
         if not turn_id or not abs_path:
@@ -62,12 +62,6 @@ class BackupStore:
 
     @staticmethod
     def _copy_file(src: Path, dst: Path) -> bool:
-        """Full copy via shutil.copy2. We intentionally do NOT
-        hardlink: the agent's edit path is typically ``open(w)`` →
-        ``O_TRUNC`` which truncates the inode in place; any hardlink
-        sharing that inode would see the truncation too, defeating
-        the backup. ``copy2`` is the safe choice. Returns False if
-        the OS rejects the copy (perm error etc)."""
         try:
             shutil.copy2(src, dst)
             return True
@@ -79,7 +73,7 @@ class BackupStore:
     def restore_turn(self, turn_id: str) -> list[str]:
         """Restore every file this turn touched to its pre-turn state.
 
-        For ``pre_existing=True`` entries: copy backup back to the
+        For ``pre_existing=True`` entries: copy checkpoint back to the
         original path (atomic-ish via tmp + rename).
         For ``pre_existing=False`` entries (agent CREATED this file
         during the turn): delete the file so the path is gone again.
@@ -123,3 +117,7 @@ class BackupStore:
         want either)."""
         man_path = turn_manifest_path(self.session_dir, turn_id)
         return [e.get("path", "") for _, e in manifest.entries(man_path) if e.get("path")]
+
+
+# Backward-compatible alias
+BackupStore = CheckpointStore

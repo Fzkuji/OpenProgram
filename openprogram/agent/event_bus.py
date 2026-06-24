@@ -52,7 +52,7 @@ class Event:
 def _context_metadata() -> dict:
     """session/turn from the store ContextVars, when inside an agent turn.
 
-    Mirrors ``file_backup.helpers.backup_for_current_turn``: graceful empty
+    Mirrors ``checkpoint.helpers.checkpoint_before_edit``: graceful empty
     dict outside a dispatcher-driven turn (unit tests, B-class sources), so
     A-class events get their correlation for free and B-class events simply
     don't carry a turn — exactly the design's metadata-pocket semantics.

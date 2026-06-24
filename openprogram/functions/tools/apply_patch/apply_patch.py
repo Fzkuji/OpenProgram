@@ -33,7 +33,7 @@ import os
 from typing import Any
 
 from ..._runtime import function
-from openprogram.store.snapshot.file_backup.helpers import backup_for_current_turn
+from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
 
 
 NAME = "apply_patch"
@@ -119,7 +119,7 @@ def _apply_add(path: str, body: list[str]) -> str:
         return f"Error: Add File target already exists: {path}"
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     content = "\n".join(l[1:] if l.startswith("+") else l for l in body)
-    backup_for_current_turn(path)
+    checkpoint_before_edit(path)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content + ("\n" if not content.endswith("\n") else ""))
     # Baseline the new file so a later Update in the same session doesn't
@@ -136,7 +136,7 @@ def _apply_add(path: str, body: list[str]) -> str:
 def _apply_delete(path: str) -> str:
     if not os.path.exists(path):
         return f"Error: Delete File target not found: {path}"
-    backup_for_current_turn(path)
+    checkpoint_before_edit(path)
     os.remove(path)
     _emit_file_changed(path, "delete")
     return f"Deleted {path}"
@@ -217,7 +217,7 @@ def _apply_update(path: str, body: list[str]) -> str:
         text = text.replace(before, after, 1)
         applied += 1
 
-    backup_for_current_turn(path)
+    checkpoint_before_edit(path)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
     try:

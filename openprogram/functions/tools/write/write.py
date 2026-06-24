@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from openprogram.functions._runtime import function
-from openprogram.store.snapshot.file_backup.helpers import backup_for_current_turn
+from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
 from openprogram.worktree.path_resolve import resolve_path
 
 
@@ -63,7 +63,7 @@ def write(file_path: str, content: str) -> str:
     # Back up pre-edit state for turn-scoped revert. Safe to call
     # even when the file doesn't exist yet (records pre_existing=False
     # so restore_turn knows to delete-on-restore).
-    backup_for_current_turn(file_path)
+    checkpoint_before_edit(file_path)
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)

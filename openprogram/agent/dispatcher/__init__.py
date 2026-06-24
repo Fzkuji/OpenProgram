@@ -51,6 +51,7 @@ from openprogram.agent.dispatcher.types import (
 from openprogram.agent.dispatcher.titles import (
     _default_title,
     _maybe_auto_title,
+    _title_from_text,
     trigger_compaction,
 )
 from openprogram.agent.dispatcher.forced_tool import dispatch_forced_tool_call
@@ -366,7 +367,7 @@ def process_user_turn(
     _runtime_token = None
     _store_token = None
     # Tag this turn so file-mutating tools can attribute backups to
-    # the right assistant message via file_backup.helpers.
+    # the right assistant message via checkpoint.helpers.
     _turn_id_token = _turn_id_var.set(assistant_msg_id)
     # Bind the session's active agent worktree (if any) to the
     # _current_worktree_path ContextVar for the duration of this turn.
@@ -571,7 +572,7 @@ def process_user_turn(
         # Classify the failure into the structured taxonomy (an LLMError
         # carries its own reason; anything else is classified) so the webui can
         # render a retryable rate-limit differently from a fatal auth/context
-        # failure. See docs/design/providers/error-taxonomy-propagation.md.
+        # failure. See docs/design/providers/reliability/error-taxonomy-propagation.md.
         try:
             from openprogram.providers.utils.errors import taxonomy_fields
             _e_reason, _e_retryable, _e_retry_after = taxonomy_fields(e)

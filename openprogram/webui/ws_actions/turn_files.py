@@ -6,7 +6,7 @@ Wire format::
     out: {"type": "list_turn_files_result",
           "data": {"session_id", "assistant_msg_id", "paths": [...], "error"?}}
 
-Reads ``BackupStore.list_backed_paths(turn_id)``; ``turn_id`` is the
+Reads ``CheckpointStore.list_backed_paths(turn_id)``; ``turn_id`` is the
 assistant message id (same key the file backup store uses on write).
 """
 from __future__ import annotations
@@ -17,14 +17,14 @@ import json
 
 def _list_paths(session_id: str, assistant_msg_id: str) -> dict:
     from openprogram.store.session.session_store import default_store
-    from openprogram.store.snapshot.file_backup import BackupStore
+    from openprogram.store.snapshot.checkpoint import CheckpointStore
 
     store = default_store()
     pair = store._open(session_id)
     if pair is None:
         return {"paths": [], "error": f"unknown session {session_id!r}"}
     git, _idx = pair
-    backup = BackupStore(git.path)
+    backup = CheckpointStore(git.path)
     try:
         return {"paths": list(backup.list_backed_paths(assistant_msg_id))}
     except Exception as e:  # noqa: BLE001

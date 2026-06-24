@@ -256,13 +256,13 @@ def finalize_turn(
         pass
 
     # 6.95. Evict old per-turn file-backup snapshots beyond the soft cap.
-    # The snapshots (file_backups/<turn>/) are full copies written before
+    # The snapshots (checkpoints/<turn>/) are full copies written before
     # each edit; without this they grow unbounded. Cap is per-session and
     # generous (gc.MAX_TURNS); we run it every turn-end since it's a cheap
     # mtime sort + rmtree of only the excess. Best-effort.
     try:
         from openprogram.store import default_store
-        from openprogram.store.snapshot.file_backup import gc_evict_old
+        from openprogram.store.snapshot.checkpoint import gc_evict_old
         _sdir = default_store()._session_dir(req.session_id)
         gc_evict_old(_sdir)
     except Exception:

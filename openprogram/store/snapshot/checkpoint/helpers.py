@@ -6,8 +6,8 @@ on disk" requires walking three ContextVars + the SessionStore. This
 helper hides that lookup so each tool's pre-write hook is a single
 line::
 
-    from openprogram.store.file_backup.helpers import backup_for_current_turn
-    backup_for_current_turn(file_path)
+    from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
+    checkpoint_before_edit(file_path)
 
 It's a graceful no-op when there is no active session/turn (e.g. unit
 tests calling the tool function directly), so tools stay usable
@@ -15,18 +15,18 @@ outside a dispatcher-driven turn.
 """
 from __future__ import annotations
 
-from .store import BackupStore
+from .store import CheckpointStore
 
 
-def backup_for_current_turn(abs_path: str) -> None:
-    """Back up ``abs_path`` into the current turn's backup dir.
+def checkpoint_before_edit(abs_path: str) -> None:
+    """Checkpoint ``abs_path`` before the current turn edits it.
 
     Silent no-op when:
       * there is no active session (``_store`` ContextVar unset);
       * there is no active turn (``_current_turn_id`` unset);
       * the path is not absolute;
-      * any lookup fails — we don't want a backup glitch to crash the
-        actual edit.
+      * any lookup fails — we don't want a checkpoint glitch to crash
+        the actual edit.
     """
     if not abs_path:
         return
@@ -38,6 +38,10 @@ def backup_for_current_turn(abs_path: str) -> None:
         if shim is None or not turn_id:
             return
         session_dir = shim.store._session_dir(shim.session_id)
-        BackupStore(session_dir).backup_before_edit(turn_id, abs_path)
+        CheckpointStore(session_dir).backup_before_edit(turn_id, abs_path)
     except Exception:
         return
+
+
+# Backward-compatible alias
+backup_for_current_turn = checkpoint_before_edit
