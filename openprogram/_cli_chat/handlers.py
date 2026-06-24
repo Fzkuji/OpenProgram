@@ -24,6 +24,7 @@ SLASH_HELP = [
                  "remove the alias for a channel peer"),
     ("/connections", "list every channel peer currently aliased to "
                      "this session"),
+    ("/sandbox", "toggle system sandbox (restrict bash to cwd writes only)"),
     ("/profile [name]", "show or switch active profile (restart required to switch)"),
     ("/clear", "clear the screen"),
     ("/quit", "exit"),
@@ -186,7 +187,29 @@ def _handle_slash(cmd: str, console, rt,
         console.print("[dim]Exiting so you can restart cleanly.[/]")
         return True
 
+    if verb == "sandbox":
+        return _handle_sandbox(console)
+
     console.print(f"[yellow]Unknown command: /{verb}[/]  (try /help)")
+    return False
+
+
+# --- Sandbox toggle --------------------------------------------------------
+
+def _handle_sandbox(console) -> bool:
+    from openprogram.sandbox import sandbox_enabled, is_available
+    if not is_available():
+        console.print(
+            "[yellow]System sandbox not available.[/]  "
+            "(macOS needs /usr/bin/sandbox-exec; Linux needs bubblewrap)"
+        )
+        return False
+    current = sandbox_enabled.get(False)
+    sandbox_enabled.set(not current)
+    state = "ON" if not current else "OFF"
+    console.print(f"[bold]Sandbox:[/] {state}")
+    if not current:
+        console.print("[dim]Bash commands restricted to cwd writes only.[/]")
     return False
 
 

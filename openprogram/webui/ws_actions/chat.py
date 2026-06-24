@@ -961,6 +961,30 @@ async def handle_compact(ws, cmd: dict):
         })
 
 
+async def handle_sandbox(ws, cmd: dict):
+    """Toggle system sandbox on/off for the current session."""
+    from openprogram.sandbox import sandbox_enabled, is_available
+    available = is_available()
+    if not available:
+        await ws.send(json.dumps({
+            "type": "chat_response",
+            "data": {"type": "status",
+                     "content": "System sandbox not available "
+                                "(macOS needs sandbox-exec; Linux needs bubblewrap)"},
+        }))
+        return
+    current = sandbox_enabled.get(False)
+    sandbox_enabled.set(not current)
+    state = "ON" if not current else "OFF"
+    msg = f"Sandbox: {state}"
+    if not current:
+        msg += " — bash commands restricted to cwd writes only"
+    await ws.send(json.dumps({
+        "type": "chat_response",
+        "data": {"type": "status", "content": msg},
+    }))
+
+
 ACTIONS = {
     "chat": handle_chat,
     "retry_node": handle_retry_node,
@@ -968,4 +992,5 @@ ACTIONS = {
     "switch_attempt": handle_switch_attempt,
     "set_conversation_channel": handle_set_conversation_channel,
     "compact": handle_compact,
+    "sandbox": handle_sandbox,
 }
