@@ -188,3 +188,90 @@ Worktree **只在 agent 显式调 `worktree_create` 时存在**, 走独立目录
 | 撤回粒度 | 回到某条消息之前 (时间倒流) | 单 turn 回退 (`revert_turn`) |
 
 普通用户得到 ≈ Claude Code 的简洁 (快照 + 并发防护); 想要 git 工作流 / 高风险隔离的进阶用户额外得到 ②③。
+
+---
+
+## 8. 行业对比 — 文件修改管理策略
+
+各框架按**架构路线**分为两派：快照派（在宿主机上操作，通过备份/git 提供回滚）和沙箱派（在隔离环境中操作，丢弃环境即回滚）。
+
+### 8.1 快照派
+
+在用户的真实文件系统上工作，通过某种形式的备份提供回滚能力。
+
+| 框架 | 备份机制 | 回滚方式 | bash 覆盖 | 独立于用户 git |
+|---|---|---|---|---|
+| **Hermes** | shadow git checkpoint（所有工具执行前统一 checkpoint 到 `~/.hermes/checkpoints/`） | `/rollback N` + 单文件恢复 + diff 预览 | **是**（统一入口，含 bash） | **是**（shadow store，不碰用户 `.git`） |
+| **Claude Code** | per-response 文件快照（增量，存 `~/.claude/file-history/`） | `/rewind` 按检查点回退 | **否**（只追踪 Write/Edit/NotebookEdit） | **是** |
+| **Cursor** | per-edit checkpoint（存本地隐藏目录） | "Discard to checkpoint" 按钮 | Agent 操作覆盖，用户终端不覆盖 | **是** |
+| **Aider** | 每次 AI 编辑自动 `git commit`（Conventional Commits 格式） | `/undo` = 回退最近一次 aider commit | **是**（git 天然追踪一切） | **否**（直接用用户 git，会污染 git 历史） |
+| **opencode** | git tree object 快照 | `/undo` + `/redo`（已知 bug：文件变更与对话状态脱节） | 是（git 兜底） | **否** |
+| **OpenProgram（我们）** | per-turn BackupStore（write/edit/apply_patch 三个工具） + Project-Git commit + Worktree 隔离 | `revert_turn` git-aware（智能选 reset/revert） + 快照兜底 | **否**（bash 不追踪，见 §9） | **是**（BackupStore 独立；Project-Git 写用户 git 但可关） |
+
+### 8.2 沙箱派
+
+在隔离环境（容器/云端）中工作，天然解决文件追踪问题。
+
+| 框架 | 隔离机制 | 回滚方式 | bash 覆盖 | 产出交付 |
+|---|---|---|---|---|
+| **OpenHands** | Docker 容器（V1 支持 Docker/Local/Remote 三种 runtime） | 丢弃容器；完成后提取 `git_patch` | **天然全覆盖** | git patch 选择性 apply |
+| **SWE-agent** | Docker 沙箱（SWEEnv） | 丢弃沙箱 | **天然全覆盖** | git diff 提取 |
+| **Devin** | 云端 ephemeral 沙箱（per-session，含 shell/编辑器/浏览器） | 沙箱临时，不影响本地 | **天然全覆盖** | PR 形式提交 |
+| **OpenClaw** | Docker/Podman 容器（`agents/sandbox/`），有 workspace mount、fs-bridge、网络隔离 | 容器隔离 | **天然全覆盖** | 容器内操作完提取 |
+
+### 8.3 术语解释
+
+| 术语 | 含义 |
+|---|---|
+| **快照** | 在修改文件前记录原始状态（备份原文件或 git commit），改坏了从备份恢复。agent 直接操作真实文件。 |
+| **沙箱** | 在隔离环境（容器/虚拟机）中执行，agent 操作的是副本，改坏了丢掉整个环境，宿主机不受影响。 |
+| **bash 覆盖** | agent 通过 bash 工具改文件（`sed -i`、`> file`、`rm` 等）时，这些变更能否被追踪和回滚。快照派的核心难题。 |
+| **独立于用户 git** | 备份机制是否使用自己的存储，不污染用户的 git 历史（`git log` 不会出现 AI 自动 commit）。 |
+| **shadow git** | Hermes 的做法：用 git 的 tree/commit 机制存快照，但存在独立的 shadow store 目录，不碰用户的 `.git`。兼顾 git 的追踪能力和不污染用户历史。 |
+
+### 8.4 两派取舍
+
+| | 快照派 | 沙箱派 |
+|---|---|---|
+| **优点** | 零启动延迟；用户直接操作文件；交互体验好 | 天然全覆盖（含 bash）；安全隔离；无副作用泄漏 |
+| **缺点** | bash 改文件难追踪（除非用 git 兜底或统一入口 checkpoint） | 启动延迟；环境配置复杂；资源占用大 |
+| **适合** | 本地交互式开发 | 无人值守批量任务、不信任的代码执行 |
+
+### 8.5 我们的定位
+
+OpenProgram 既有交互式聊天（CLI/webui），又有 agentic function 无人值守执行（research_agent 等长时间运行）。因此：
+
+- **交互式场景**：走快照派（①② 已实现），补 bash 盲点（见 §9）
+- **无人值守场景**：③ Worktree 已提供轻量隔离；完整沙箱（Docker 容器）作为远期方向
+
+---
+
+## 9. 已知缺口：bash 工具文件修改不追踪
+
+### 9.1 问题
+
+write / edit / apply_patch 三个编辑工具在修改文件前通过 `backup_for_current_turn` 做快照备份。但 bash 工具执行的命令（`sed -i`、`> file`、`rm`、`mv` 等）改文件时**完全不追踪**，没有备份也无法通过快照回滚。
+
+`functions/tools/bash/bash.py:38` 有 TODO 承认此问题，原因是精确追踪 bash 命令需要解析命令语义或 LD_PRELOAD，复杂度高。
+
+### 9.2 行业现状
+
+**这是行业共同缺口**——Claude Code、Cursor 都没做。只有两种方案真正覆盖了 bash：
+
+1. **Hermes 的统一入口 checkpoint**：在所有工具执行前（不区分工具类型）做 checkpoint，bash 自然覆盖。
+2. **Aider 的纯 git 方案**：直接用用户 git，`/undo` = git 回退，git 天然追踪一切。但会污染用户 git 历史。
+3. **沙箱派**：容器隔离天然覆盖，但代价大。
+
+### 9.3 推荐方案
+
+借鉴 Hermes：把 checkpoint 触发从"编辑工具内部调用 `backup_for_current_turn`"提升到"工具执行统一入口 `_execute_tool_calls`"。具体：
+
+1. 在 `agent_loop.py` 的 `_execute_tool_calls`（所有工具的单一入口）中，**每个工具执行前**检查该工具是否可能改文件（bash / write / edit / apply_patch），如果是则先对工作目录做快照
+2. bash 的快照不能只备份单个文件（不知道 bash 会改哪个文件），需要改成 **per-turn 的工作目录级快照**——但全目录快照太重
+3. 实际可行的折中：bash 执行前后对工作目录做 `git status --short` diff，记录哪些文件变了，然后对变了的文件补做快照备份。这样：
+   - 在 git 仓库中：git 天然追踪变更（② Project-Git commit 会在 turn 结束时 commit，包含 bash 改动）
+   - 不在 git 仓库中：bash 前后 diff 文件列表，对变更文件补做 `backup_before_edit`
+
+### 9.4 实施优先级
+
+**中优先级**。当前 bash 改文件的场景不多（大部分文件编辑走 write/edit），且 ② Project-Git commit 已经在 turn 结束时覆盖了 bash 改动的 git 记录。真正缺的是"bash 改了非 git 仓库里的文件时无法撤销"这个边缘场景。
