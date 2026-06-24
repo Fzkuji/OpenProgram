@@ -20,17 +20,15 @@ from typing import Any
 def build_system_prompt(agent: Any) -> str:
     """Compose the layered system prompt for ``agent``.
 
-    Accepts either an ``AgentSpec`` (object with .identity / .id /
-    .system_prompt / .skills) or a plain dict (webui code paths pass
-    profile dicts). Falls back to ``agent.system_prompt`` text when
-    layered composition fails so the LLM still sees *something*.
+    Thin shim: the actual composition now lives in the registry-based
+    ``context.components`` (docs/design/context/context-composition.md). The 5
+    legacy blocks are registered there as L0 components and assembled
+    byte-for-byte identically (verified by test_system_prompt_equivalence).
+    Kept as the stable entry point so existing call sites (engine, CLI) need
+    no change. The legacy ``_compose`` below is retained for reference only.
     """
-    try:
-        return _compose(agent)
-    except Exception:
-        # Last-ditch: just the inline prompt.
-        inline = _attr(agent, "system_prompt", "") or ""
-        return str(inline).strip()
+    from openprogram.context.components import build_system_prompt as _assemble
+    return _assemble(agent)
 
 
 def _compose(agent: Any) -> str:
