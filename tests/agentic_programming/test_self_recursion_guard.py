@@ -64,15 +64,29 @@ def test_situational_prefix_warns_against_self_call():
     assert "wiki_agent" in text
     assert "do NOT call it" in text
     assert "recursion" in text.lower()
-    # The docstring is demoted to the end, not the headline.
-    assert "Answer wiki questions." in text
-    assert text.index("recursion") < text.index("Answer wiki questions.")
+    # Job is stated up front (main situational info); recursion warning after.
+    assert "Job: Answer wiki questions." in text
+    assert text.index("Answer wiki questions.") < text.index("recursion")
+    # Wrapped in a <situation> tag.
+    assert text.startswith("<situation>") and text.rstrip().endswith("</situation>")
 
 
 def test_situational_prefix_handles_empty_doc():
     text = _situational_prefix("gui_agent", "")
     assert "gui_agent" in text
-    assert "This function's job" not in text
+    assert "Job:" not in text
+
+
+def test_situational_prefix_optional_fields():
+    text = _situational_prefix(
+        "idea", "Generate ideas.",
+        call_path="research_agent → _pick_stage → idea",
+        position="idea stage, generate step",
+        output_contract="parsed as the idea list",
+    )
+    assert "Call path: research_agent → _pick_stage → idea" in text
+    assert "Position: idea stage, generate step" in text
+    assert "Your output: parsed as the idea list" in text
 
 
 # --- Self-deny removed: the tool stays visible ---------------------------

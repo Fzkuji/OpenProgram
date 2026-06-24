@@ -318,27 +318,41 @@ _current_stream_fn: contextvars.ContextVar[Optional[Any]] = contextvars.ContextV
 )
 
 
-def _situational_prefix(fn_name: str, fn_doc: str) -> str:
-    """Situational prompt prefixed to the inner model's turn so it knows
-    which agentic function it is running inside and why it must not call
-    that function again (self-recursion guidance, replacing the old
-    tool-policy deny). The function's own tool stays visible; the model
-    is steered away from it rather than having it removed.
+def _situational_prefix(
+    fn_name: str,
+    fn_doc: str,
+    call_path: str = "",
+    position: str = "",
+    output_contract: str = "",
+) -> str:
+    """L2 situation prompt prefixed to the inner model's turn — tells it
+    which agentic function it is inside, what its job is, the call path that
+    led here, where it sits, and where its output goes. Also the
+    self-recursion guidance (the function's own tool stays visible; the model
+    is steered away from re-entering it).
 
-    English to match the rest of the model-facing prompt (skills block,
-    [Current function: ...] tag this replaces) which is all English.
+    Design: docs/design/context/context-composition.md §四'·situation. Wrapped
+    in a <situation> tag (paired XML, like the other context sections).
+    Optional fields render only when provided, so existing call sites that pass
+    just (fn_name, fn_doc) stay backward-compatible.
+
+    English to match the rest of the model-facing prompt.
     """
-    text = (
-        f"[Execution context] You are currently running INSIDE the "
-        f"agentic function `{fn_name}`. The tool list may include "
-        f"`{fn_name}` itself — do NOT call it. Calling `{fn_name}` "
-        "re-enters where you are now and causes infinite recursion. "
-        "Use lower-level tools (search / read-write files / run code) "
-        "to do the work directly."
-    )
+    lines = [f"You are running INSIDE the agentic function `{fn_name}`."]
     if fn_doc and fn_doc.strip():
-        text += f"\n\nThis function's job: {fn_doc.strip()}"
-    return text
+        lines.append(f"Job: {fn_doc.strip()}")
+    if call_path and call_path.strip():
+        lines.append(f"Call path: {call_path.strip()}")
+    if position and position.strip():
+        lines.append(f"Position: {position.strip()}")
+    if output_contract and output_contract.strip():
+        lines.append(f"Your output: {output_contract.strip()}")
+    lines.append(
+        f"The tool list may include `{fn_name}` itself — do NOT call it "
+        "(re-entering causes infinite recursion). Use lower-level tools "
+        "(search / read-write files / run code) to do the work directly."
+    )
+    return "<situation>\n" + "\n".join(lines) + "\n</situation>"
 
 
 class Runtime:
@@ -1087,7 +1101,7 @@ class Runtime:
         # Publish the deadline so the provider's INNER stream-retry loop and
         # the SSE parser honour the SAME wall-clock budget — otherwise the
         # nested loops multiply (max_attempts × max_retries) with nobody
-        # capping the total. See docs/design/providers/error-and-timeout-mechanism.html.
+        # capping the total. See docs/design/providers/reliability/error-and-timeout-mechanism.html.
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
         _deadline_token = _dl.set_deadline(_deadline)
