@@ -18,7 +18,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'clear', description: 'Clear the screen' },
   { name: 'compact', description: 'Compact the conversation' },
   { name: 'sandbox', description: 'Toggle system sandbox (restrict bash to cwd writes only)' },
-  { name: 'undo', description: 'Undo the last turn (restore files from checkpoint)' },
   { name: 'rewind', description: 'Rewind to a previous point (restore code and/or conversation)' },
   { name: 'config', description: 'Open configuration' },
   { name: 'login', description: 'Manage Claude accounts (add / switch / rename); /login <channel> for chat channels' },

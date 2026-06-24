@@ -141,15 +141,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     },
   },
   {
-    name: "/undo",
-    description: "Undo the most recent assistant turn (restore files)",
-    run(_rest, { sessionId, send }) {
-      if (!sessionId) return true;
-      send({ action: "undo", session_id: sessionId });
-      return true;
-    },
-  },
-  {
     name: "/rewind",
     args: "[N]",
     description:

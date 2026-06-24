@@ -638,13 +638,6 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
-    case 'undo': {
-      const conv = ctx.currentConversation;
-      if (!conv) { ctx.pushSystem('No active session to undo.'); return true; }
-      ctx.client.send({ action: 'undo', session_id: conv });
-      return true;
-    }
-
     case 'rewind': {
       const conv = ctx.currentConversation;
       if (!conv) { ctx.pushSystem('No active session to rewind.'); return true; }
