@@ -332,3 +332,42 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`（原 `file_backups/`），释
 
 **冒烟测试**: `scripts/smoke_entity_layer.py`、`scripts/smoke_read_before_edit.py` (13 项)、
 `scripts/smoke_revert_ux.py` (11 项)。均在隔离 profile 跑, 全过。Project-Git 废弃后需更新测试。
+
+---
+
+## 10. 沙箱隔离 — 行业方案与我们的定位
+
+### 10.1 三种沙箱方案
+
+| 方案 | 代表框架 | 隔离级别 | 启动延迟 | 实现技术 | 适合场景 |
+|---|---|---|---|---|---|
+| **系统级沙箱** | Claude Code（macOS Seatbelt / Linux bubblewrap）、Cursor（Seatbelt / Landlock + seccomp） | 文件系统 + 网络（进程级限制，只允许读写 cwd 及子目录） | 毫秒级 | OS 内核机制（sandbox-exec / bwrap / Landlock） | 本地交互式开发，限制 bash 能碰的范围 |
+| **容器沙箱** | OpenHands / SWE-agent（Docker）、Devin（云端 ephemeral 容器） | 完整隔离（文件系统 / 网络 / 进程全隔离） | 30-60 秒（新容器），2-15 秒（复用） | Docker / Podman / 云端 VM | 无人值守批量任务、不信任的代码执行 |
+| **Git worktree** | OpenProgram（我们现有） | 仅文件系统（独立副本），无进程/网络隔离 | 秒级 | `git worktree add` | 高风险代码改动（实验性重构） |
+
+### 10.2 术语解释
+
+| 术语 | 含义 |
+|---|---|
+| **系统级沙箱** | 用 OS 内核机制（Seatbelt / Landlock / seccomp / bubblewrap）限制进程的文件访问和网络访问范围。进程仍在宿主机上跑，但被限制了能做什么。 |
+| **容器沙箱** | 在 Docker/Podman 容器内运行 agent。完整隔离——容器内的操作不影响宿主机。完成后通过 git patch 或文件 mount 提取产出。 |
+| **Git worktree** | 用 `git worktree` 创建独立的工作目录副本。agent 在副本里操作，改好了 merge 回主线，改砸了 discard 丢掉。只隔离文件，不隔离进程和网络。 |
+
+### 10.3 Worktree 的局限
+
+Worktree 只隔离文件，不隔离进程和网络：
+- bash 命令仍然能 `rm -rf /`（删除 worktree 之外的文件）
+- bash 命令能访问网络（发请求、下载恶意代码）
+- bash 命令能读敏感文件（`~/.ssh/`, `~/.aws/` 等）
+
+Worktree 适合"怕改坏代码"（实验性重构），不适合"怕恶意行为"（不信任的代码执行）。
+
+### 10.4 我们的沙箱方向
+
+当前：③ Worktree（轻量 git 隔离），已实现，按需使用。
+
+远期方向（未实施）：
+- **本地交互场景**：系统级沙箱（方案 A），毫秒级启动，限制 bash 写入范围。参考 Claude Code 的 Seatbelt/bubblewrap 方案。
+- **无人值守 agentic function**：容器沙箱（方案 B），research_agent 等长时间跑的场景。需要 Docker 集成。
+
+优先级：低。当前 Checkpoint + Shadow git + 统一入口触发已覆盖文件回滚需求。沙箱主要解决安全隔离（防恶意行为），在 agentic function 成熟后再考虑。
