@@ -34,7 +34,7 @@ Status: **查漏记录** · Created: 2026-06-24
 | 2 | inline agent prompt | ✓ | ✓ | — | ✓ L0 | — |
 | 3 | **工具强制（act-don't-ask）** | ✓ | - | - | ✅ L0 已实现 | — (tool_enforcement, 恒定) |
 | 4 | **模型特定操作指导** | ✓ | - | - | ✅ L0 已实现 | — (model_guidance, 按 provider) |
-| 5 | **平台渲染格式（多渠道）** | ✓ | - | - | ✗ | 待 ctx 入参（channel 是 per-turn） |
+| 5 | **平台渲染格式（多渠道）** | ✓ | - | - | ✅ L0 已实现 | — (platform_format, 按 channel 参数) |
 | 6 | computer-use 指导 | ✓ | - | - | ✗ | 漏·低（仅该工具启用时） |
 | 7 | 技能索引 | ✓ | - | pi ✓ | ✓ L0 | — |
 | 8 | 工具 + MCP schema | ✓ | ✓ | oc/oclaw ✓ | ✓ L0 | — |
@@ -55,12 +55,12 @@ Status: **查漏记录** · Created: 2026-06-24
 | # | 成分 | hermes | claude-code | 其余 | 我们 | 漏？ |
 |:--:|---|:--:|:--:|:--:|---|---|
 | 1 | 项目身份（AGENTS.md / .cursorrules） | ✓ | ✓ | oclaw ✓ | ✓ L1 | — |
-| 2 | **Prompt 注入检测**（在 1 加载进 prompt 前扫） | ✓ | - | - | ✗ | **漏·高（安全）** |
+| 2 | **Prompt 注入检测**（在 1 加载进 prompt 前扫） | ✓ | - | - | ✅ L1 已实现 | — (pi_shield + detect_injection_patterns) |
 | 3 | 上下文文件截断策略（约束 1 的大小） | ✓ | - | - | ✗ | 漏·中 |
 | 4 | 项目级记忆 | ✓ | - | - | ✓ L1 | — |
-| 5 | **用户档案 USER.md** | ✓ | - | - | ✗ | **漏·中** |
+| 5 | **用户档案 USER.md** | ✓ | - | - | ✓ L1 | — (已由 workspace_files 加载 read_user_md) |
 | 6 | 工作目录 cwd | ✓ | - | pi ✓ | ✓ L1 | — |
-| 7 | 是否在 git 仓库 | ✓ | - | - | △ | 漏·中 |
+| 7 | 是否在 git 仓库 | ✓ | - | - | ✅ L1 已实现 | — (git_repo_flag) |
 | 8 | session_id / model / thinking / tier | ✓ | - | - | ✓ L1 | — |
 | 9 | deferred tools catalog | - | - | - | ✓ L1 | — |
 | 10 | **历史消息（结果）+ 工具调用记录** | ✓ | - | - | ✓ L1 | —（每轮追加，排最后） |
@@ -79,8 +79,8 @@ Status: **查漏记录** · Created: 2026-06-24
 | # | 成分 | hermes | claude-code | 其余 | 我们 | 漏？ |
 |:--:|---|:--:|:--:|:--:|---|---|
 | 1 | 本次处境 situation（在哪函数/调用栈/第几步） | ✓(_situational) | - | - | ✅ L2 已实现 | — (situation + call_path, step 6a/6b) |
-| 2 | **Git 分支 / status**（本次环境快照） | △(git root) | - | - | ✗ | **漏·中** |
-| 3 | **todo 列表 / 任务计划 / 进度** | - | ✓(todo 工具) | - | ✗ | **漏·中** |
+| 2 | **Git 分支 / status**（本次环境快照） | △(git root) | - | - | ✗ | 漏·中（待实现） |
+| 3 | **todo 列表 / 任务计划 / 进度** | - | ✓(todo 工具) | - | ✅ L2 已实现 | — (todo_progress, 读 _TODOS) |
 | 4 | token 预算提示 | - | - | - | ✗ | 漏·低 |
 | 5 | per-turn memory prefetch（本次检索的料） | ✓ | - | - | ✓ L2（现状错塞 system） | — |
 | 6 | 本次用户输入 + 附件 | ✓ | ✓ | ✓ | ✓ L2 | — |
@@ -97,20 +97,20 @@ Status: **查漏记录** · Created: 2026-06-24
 
 ## 漏项汇总（按优先级，供决定补哪些）
 
-**✅ 已实现（registry 重构 step 3-6b）**
+**✅ 已实现**
 - L0 模型特定操作指导（model_guidance）
 - L0 工具强制 act-don't-ask（tool_enforcement）
-- L0 环境信息（environment: OS/shell；cwd 另由 tool-runtime）
+- L0 环境信息（environment: OS/shell）
 - L0 当前日期（current_date, 日粒度）
+- L0 平台渲染格式（platform_format, 按 channel 参数）
+- L1 Prompt 注入检测（pi_shield + detect_injection_patterns）
+- L1 git 仓库归位（git_repo_flag）
 - L2 本次处境 situation + call_path（_situational_prefix + _compute_call_path）
 
-**高（真提质量/安全，建议补）**
-- L0 平台渲染格式（待组装器入参从 agent 扩成 ctx，channel 是 per-turn）
-- L1 Prompt 注入检测
-
 **中（看需求）**
-- L1 USER.md 用户档案 · git 仓库归位 · 上下文文件截断
-- L2 git 分支/status · todo/进度
+- L1 USER.md 用户档案（已由 workspace_files 加载，无需单独组件）
+- L1 上下文文件截断策略
+- L2 git 分支/status · todo/进度 · output_contract（已在 _situational_prefix 中）
 
 **低（vendor 特有 / 专用，多半不补）**
 - computer-use 指导 / Nous 订阅 / Kanban 多agent / Hermes profile / 外部记忆提供者
