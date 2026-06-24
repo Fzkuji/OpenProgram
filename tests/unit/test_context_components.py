@@ -237,3 +237,80 @@ def test_todo_progress_renders():
 def test_todo_progress_in_l2():
     l2 = {c.name for c in comp._REGISTRY["L2"]}
     assert "todo_progress" in l2
+
+
+# ── Context file truncation ────────────────────────────────────────────
+
+from openprogram.context.components import MAX_WORKSPACE_CHARS, _build_workspace_files
+
+
+def test_truncate_long_workspace():
+    """Oversized workspace output gets truncated with a note."""
+    from unittest.mock import patch
+    from openprogram.context.components import _truncate_context_file
+
+    long_text = "x" * (MAX_WORKSPACE_CHARS + 5000)
+    result = _truncate_context_file(long_text)
+
+    assert len(result) <= MAX_WORKSPACE_CHARS + 100
+    assert "truncated" in result
+    assert f"{len(long_text)} chars total" in result
+
+
+# ── L2 git_status ──────────────────────────────────────────────────────
+
+from unittest.mock import patch, MagicMock
+from openprogram.context.components import _build_git_status
+
+
+def _mock_run_ok(cmd, **kw):
+    """Simulate successful git branch / git status."""
+    r = MagicMock()
+    r.returncode = 0
+    if cmd[1] == "branch":
+        r.stdout = "feat/cool\n"
+    else:
+        r.stdout = " M file.py\n?? new.txt\n"
+    return r
+
+
+def test_git_status_success():
+    with patch("subprocess.run", side_effect=_mock_run_ok):
+        out = _build_git_status({})
+    assert out.startswith("<git_status>")
+    assert out.endswith("</git_status>")
+    assert "Branch: feat/cool" in out
+    assert "M file.py" in out
+    assert "?? new.txt" in out
+
+
+def test_git_status_failure_returns_empty():
+    fail = MagicMock()
+    fail.returncode = 128
+    fail.stdout = ""
+    with patch("subprocess.run", return_value=fail):
+        assert _build_git_status({}) == ""
+
+
+def test_git_status_exception_returns_empty():
+    with patch("subprocess.run", side_effect=OSError("no git")):
+        assert _build_git_status({}) == ""
+
+
+def test_git_status_clean_repo():
+    """No modified files — output has branch but no file lines."""
+    def _run(cmd, **kw):
+        r = MagicMock()
+        r.returncode = 0
+        r.stdout = "main\n" if cmd[1] == "branch" else "\n"
+        return r
+    with patch("subprocess.run", side_effect=_run):
+        out = _build_git_status({})
+    assert "Branch: main" in out
+    inner = out.replace("<git_status>\n", "").replace("\n</git_status>", "")
+    assert inner.strip() == "Branch: main"
+
+
+def test_git_status_registered_in_l2():
+    l2 = {c.name for c in comp._REGISTRY["L2"]}
+    assert "git_status" in l2
