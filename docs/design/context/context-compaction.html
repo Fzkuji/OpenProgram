@@ -456,15 +456,16 @@
 
 <h3 id="s5-1">5.1 触发条件和目标</h3>
 <div class="spec">
-  <dt>触发</dt>
+  <dt>自动触发</dt>
   <dd>
-    history tokens 占 context window 超过阈值：<br>
-    · context ≤ 200K → 触发线 <strong>70%</strong><br>
-    · context &gt; 200K → 触发线 <strong>80%</strong>
+    history tokens 超过 <code>context_window - 13K</code>（约 <strong>83.5%</strong> 占用），和 Claude Code 一致
   </dd>
 
+  <dt>建议手动触发</dt>
+  <dd>用户在 <strong>60%</strong> 时手动 <code>/compact</code>，质量比自动好</dd>
+
   <dt>目标</dt>
-  <dd>压到 <strong>20%</strong></dd>
+  <dd>不设固定百分比，逐级压缩（Snip → 摘要）直到能继续调用 LLM</dd>
 
   <dt>检查时机</dt>
   <dd>每次 LLM 调用前（§3 之后）</dd>
@@ -587,7 +588,7 @@
   </div>
 
   <div class="tl-item phase4">
-    <div class="tl-title">阶段 4（50-70%）：继续对话</div>
+    <div class="tl-title">阶段 4（50-80%）：继续对话</div>
     用户继续讨论、改代码<br>
     §4.1：空闲时旧的 <span class="node-tool">🟡 read_file</span> 输出存磁盘<br>
     turn 结束时预生成 <span class="node-chat">🔵 对话</span> 摘要（§5.3 的准备）
@@ -595,17 +596,17 @@
   </div>
 
   <div class="tl-item phase5">
-    <div class="tl-title">阶段 5（70%）：触发压缩</div>
-    §5.1：超过 70% 触发线<br>
+    <div class="tl-title">阶段 5（~83.5%）：触发自动压缩</div>
+    §5.1：超过 <code>context_window - 13K</code>（约 83.5%）自动触发<br>
     §5.2 Snip：删最旧的 10 轮节点（含已折叠的 <span class="node-func">🟢 research_agent</span>）<br>
     如果还不够 → §5.3：用预生成的 summary 替换更多旧 <span class="node-chat">🔵 对话</span><br>
-    压到 20%
+    逐级压缩直到能继续调用 LLM
     <div class="tl-ref">§5.1 → §5.2 → §5.3</div>
   </div>
 
   <div class="tl-item phase6">
     <div class="tl-title">阶段 6：继续使用</div>
-    压缩后正常对话。再次到 70% 时重复阶段 5（链式压缩）<br>
+    压缩后正常对话。再次到 ~83.5% 时重复阶段 5（链式压缩）<br>
     大模型想回顾 <span class="node-func">🟢 research_agent</span> 的具体过程：<code>read_file("collapsed/abc123.jsonl")</code>
     <div class="tl-ref">§5 循环 + §2.3 检索</div>
   </div>

@@ -91,10 +91,9 @@
 
 ### 5.1 触发条件和目标
 
-- **触发**：history tokens 占 context window 超过阈值
-  - context ≤ 200K：触发线 70%
-  - context > 200K：触发线 80%
-- **目标**：压到 20%
+- **自动触发**：history tokens 超过 `context_window - 13K`（约 83.5% 占用），和 Claude Code 一致
+- **建议手动触发**：用户在 60% 时手动 `/compact`，质量比自动好
+- **目标**：不设固定百分比，逐级压缩（§5.2 Snip → §5.3 摘要）直到能继续调用 LLM
 - **检查时机**：每次 LLM 调用前（§3 之后）
 - **和节点的关系**：计算所有参与渲染的节点的 token 总和
 
@@ -103,9 +102,9 @@
 - **触发**：§5.1 条件满足
 - **做什么**：直接删除最旧的节点（不做摘要，直接从渲染列表移除）
 - **作用对象**：所有类型的节点（🔵 <span style="color:#3b82f6">对话节点</span>、已折叠的 🟢 <span style="color:#22c55e">函数节点</span>、🟡 <span style="color:#eab308">工具调用节点</span>）
-- **删多少**：从最旧的开始删，直到总 token 数降到目标以下
+- **删多少**：从最旧的开始删，直到 token 数降到能继续调用 LLM
 - **删除的节点数据仍在 DAG 中**（不物理删除），只是渲染时跳过（visibility=hidden）
-- **如果 Snip 后仍超目标** → 进入 §5.3
+- **如果 Snip 后仍不够** → 进入 §5.3
 - **和节点的关系**：设置节点的 visibility=hidden，render_context 跳过这些节点
 - **函数调用特殊设计**：
   - §2.2 折叠后的函数节点被当作普通节点，按时间排序参与 Snip
@@ -160,23 +159,24 @@
 - 上下文释放约 30K tokens
 - 折叠后的 🟢 函数节点和 🔵 <span style="color:#3b82f6">对话节点</span>一样参与后续压缩
 
-### 阶段 4（50-70%）：继续对话
+### 阶段 4（50-80%）：继续对话
 
 - 用户继续讨论、改代码
 - §4.1：空闲时旧的 read_file 输出存磁盘
 - turn 结束时预生成对话摘要（§5.3 的准备）
+- 建议用户在 60% 时手动 `/compact`
 
-### 阶段 5（70%）：触发压缩
+### 阶段 5（~83.5%）：触发自动压缩
 
-- §5.1：超过 70% 触发线
-- §5.2 Snip：删最旧的 10 轮 🔵 <span style="color:#3b82f6">对话节点</span>（包括那个已折叠的 🟢 <span style="color:#22c55e">research_agent</span> 节点）
+- §5.1：超过 `context_window - 13K`（约 83.5%）自动触发
+- §5.2 Snip：删最旧的 🔵 <span style="color:#3b82f6">对话节点</span>（包括那个已折叠的 🟢 <span style="color:#22c55e">research_agent</span> 节点）
 - 如果还不够 → §5.3：用预生成的 summary 替换更多旧 🔵 对话
-- 压到 20%
+- 逐级压缩直到能继续调用 LLM
 
 ### 阶段 6：继续使用
 
 - 压缩后正常对话
-- 再次到 70% 时重复阶段 5（链式压缩）
+- 再次到 ~83.5% 时重复阶段 5（链式压缩）
 - 大模型想回顾 research_agent 的具体过程：read_file("collapsed/abc123.jsonl")
 
 ## 7. 和 Claude Code 的对应
