@@ -277,7 +277,7 @@
 <h1>上下文压缩</h1>
 
 <div class="meta">
-  <span class="status">设计完成，待实现</span><br>
+  <span class="status">部分已实现（Budget Reduction + tool aging + microcompact 已有；Snip/Compact 待实现）</span><br>
   代码: <code>context/engine.py</code>、<code>context/budget.py</code>、<code>context/microcompact.py</code>、<code>context/tool_aging/</code><br>
   参考: <a href="../../reference/claude-code-compaction.md">Claude Code 压缩参考</a>
 </div>
@@ -379,9 +379,9 @@
         <span class="node-chat">🔵 user/assistant 消息</span>不截断——对话消息要么整轮删（<span class="xref">§5.2</span> Snip），要么 LLM 摘要（<span class="xref">§5.3</span>）。
       </dd>
       <dt>阈值</dt>
-      <dd>Claude Code 按 <code>tool_result_budget = (context_window - system_prompt - existing_messages) / remaining_tool_results</code> 动态分配每个工具结果的预算。简化实现：单个输出超过 <strong>10000 tokens</strong>（约 40KB 文本）就截断</dd>
+      <dd>✅ <strong>已实现</strong>（<code>context/tool_aging/policy.py: MAX_TOOL_RESULT_CHARS = 4000</code>）。单个工具输出超过 4000 字符（约 1000 tokens）就截断。由 <code>rule_tool_aging</code> 在每轮 context commit 时执行，即使在 tail window 内也截断</dd>
       <dt>截断方式</dt>
-      <dd>保留开头 50% + 结尾 50%（按 token 数），中间用标记替换</dd>
+      <dd>✅ <strong>已实现</strong>（<code>context/tool_aging/truncate.py: middle_truncate</code>）。保留开头 60% + 结尾 40%，中间用 <code>[truncated N chars]</code> 标记替换</dd>
       <dt>截断后格式</dt>
       <dd>
 <pre><code>src/a.py:12: TODO fix this
@@ -615,7 +615,7 @@ Modified: migrations/001_user.py, migrations/002_order.py, src/models.py</code><
         <p><span class="node-chat">🔵 user</span>: "帮我调研 LLM reasoning"</p>
         <p><span class="node-chat">🔵 assistant</span> 调用 <span class="node-func">🟢 research_agent</span>（<span class="xref">§2.1</span> 生效）</p>
         <p><span class="node-func">🟢 research_agent</span> 运行中：内部 15 轮 <span class="node-tool">🟡 工具调用</span>展开在上下文</p>
-        <div class="tl-ref">§3.1：某个 🟡 search_papers 返回 20000 tokens，截断到 10000<br>§4.1：空闲时旧的 🟡 search_papers 输出存磁盘</div>
+        <div class="tl-ref">§3.1：某个 🟡 search_papers 返回 8000 字符，截断到 4000（MAX_TOOL_RESULT_CHARS）<br>§4.1：空闲时旧的 🟡 search_papers 输出存磁盘</div>
       </div>
 
       <div class="tl-item phase3">
@@ -676,8 +676,8 @@ Modified: migrations/001_user.py, migrations/002_order.py, src/models.py</code><
     <table>
       <thead><tr><th>步骤</th><th>做什么</th><th>依赖</th></tr></thead>
       <tbody>
-        <tr><td>1</td><td>截断超大单个输出 — Budget Reduction（§3.1）</td><td>无</td></tr>
-        <tr><td>2</td><td>Microcompact 旧工具输出存磁盘（§4.1）</td><td>无</td></tr>
+        <tr><td>1</td><td>✅ 截断超大单个输出 — Budget Reduction（§3.1）<br><code>context/tool_aging/truncate.py</code> + <code>rules/aging.py</code></td><td>无</td></tr>
+        <tr><td>2</td><td>✅ Microcompact 旧工具输出存磁盘（§4.1）<br><code>context/rules/microcompact.py</code></td><td>无</td></tr>
         <tr><td>3</td><td>Snip 按时间删旧节点（§5.2）</td><td>无</td></tr>
         <tr><td>4</td><td>Context Collapse / Auto-Compact — LLM 摘要（§5.3）</td><td>无</td></tr>
         <tr><td>5</td><td>/compact 命令（§5.4）</td><td>步骤 4</td></tr>
