@@ -48,13 +48,11 @@ def test_real_registry_has_expected_layers():
 
 
 def test_build_system_prompt_fence_and_identity_first():
-    # identity is always present and first; output wrapped in the fence.
+    # identity is always present and first; no outer fence (XML tags are delimiters).
     out = build_system_prompt({"id": "main", "name": "bot"})
-    assert out.startswith("── Agent prompt ──\n")
-    assert out.rstrip().endswith("── End of agent prompt ──")
     assert "You are bot (agent_id=main)." in out
-    # identity appears before any later block boundary
-    assert out.index("You are bot") < out.index("End of agent prompt")
+    # No ASCII fence wrapper — XML tags delimit each component.
+    assert "── Agent prompt ──" not in out
 
 
 def test_environment_and_date_components_present():

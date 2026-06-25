@@ -9,8 +9,8 @@ prefix cache):
     4. Skill index       (one-line per enabled skill)
     5. Memory block      (persistent BuiltinMemoryProvider block)
 
-Wrapped in a ``── Agent prompt ──`` fence so the model sees the
-boundary against the human turn that follows.
+Each component uses XML tags as delimiters (e.g. ``<environment>``,
+``<situation>``); no outer fence is needed.
 """
 from __future__ import annotations
 
@@ -68,9 +68,7 @@ def _compose(agent: Any) -> str:
 
     if not parts:
         return ""
-    return ("── Agent prompt ──\n"
-            + "\n\n".join(parts)
-            + "\n── End of agent prompt ──\n")
+    return "\n\n".join(parts)
 
 
 def _enabled_skills_summary(agent: Any) -> str:

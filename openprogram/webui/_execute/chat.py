@@ -96,11 +96,7 @@ def run_query(
 
     chat_content = []
     if history_parts:
-        context_text = (
-            "── Conversation history ──\n"
-            + "\n".join(history_parts)
-            + "\n── End of history ──\n\n"
-        )
+        context_text = "\n".join(history_parts) + "\n\n"
         chat_content.append({"type": "text", "text": context_text})
     chat_content.append({"type": "text", "text": query})
 

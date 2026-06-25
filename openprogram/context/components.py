@@ -113,8 +113,8 @@ def assemble(
 
 # ── System prompt: same fence as the legacy _compose ──────────────────────
 
-_FENCE_OPEN = "── Agent prompt ──\n"
-_FENCE_CLOSE = "\n── End of agent prompt ──\n"
+_FENCE_OPEN = ""
+_FENCE_CLOSE = ""
 
 
 def build_system_prompt(agent: Any, *, channel: str = "") -> str:
