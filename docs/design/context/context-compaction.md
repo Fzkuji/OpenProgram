@@ -377,6 +377,16 @@ messages = render_dag_messages(graph, nodes)
 
 ---
 
+### 8.1 参考来源
+
+Claude Code 五层压缩管道的信息来自第三方源码逆向分析（非 Anthropic 官方文档）：
+
+- 论文：[Dive into Claude Code: The Design Space of Today's and Future AI Agent Systems](https://arxiv.org/html/2604.14228v1)（arXiv 2604.14228，VILA-Lab）
+- 博客：[How Claude Code Compresses Context — The 5-Level Pipeline](https://harrisonsec.com/blog/claude-code-context-engineering-compression-pipeline/)
+- 对比分析：[Inside Claude Code - Context Compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html)
+
+---
+
 ## 9. 实施计划
 
 | 步骤 | 做什么 | 依赖 | 优先级 |
