@@ -836,13 +836,36 @@ def _run_loop_blocking(
         tools=tools,
     )
 
-    # Auto-compact: when budget crosses the engine's threshold, run the
-    # LLM summariser INLINE so the request that follows fits the window.
-    # Manual /compact still works (see ``trigger_compaction`` below) —
-    # the threshold here only catches the "agent loop overflows mid-
-    # turn" case. We disable auto-compact when the caller passed a
-    # history_override (retry / branch flows) because that history is
-    # often a curated subset we shouldn't second-guess.
+    # Snip: free operation — remove oldest turns before trying the
+    # expensive LLM compact.  Runs only when auto-compact threshold
+    # is crossed and history_override is not set.
+    if req.history_override is None and _ctx_engine.should_auto_compact(prep):
+        try:
+            from openprogram.context.snip import snip
+            from openprogram.context.tokens import count_tokens
+            snipped, n_snipped = snip(
+                prep.history_dicts,
+                token_counter=lambda msgs: count_tokens(msgs, model),
+                context_window=prep.context_window,
+            )
+            if n_snipped > 0:
+                history = snipped
+                prep = _ctx_engine.prepare(
+                    agent=agent_profile,
+                    session=db.get_session(req.session_id) or session,
+                    history=history,
+                    model=model,
+                    tools=tools,
+                )
+                on_event({"type": "chat_response",
+                          "data": {"type": "snip",
+                                   "session_id": req.session_id,
+                                   "turns_removed": n_snipped}})
+        except Exception:
+            pass
+
+    # Auto-compact: when budget STILL crosses the threshold after snip,
+    # run the LLM summariser INLINE.
     if req.history_override is None and _ctx_engine.should_auto_compact(prep):
         try:
             loop = asyncio.new_event_loop()
