@@ -482,6 +482,7 @@ L0 不变省略,只看生长的 L1 调用树 + L2:
 
 <situation>                                                      ← L2
 You are running INSIDE `seed_surveys`.
+Job: Generate seed survey queries for literature discovery.
 Call path: research_agent → _pick_stage → literature → _lit_decide → seed_surveys
 Position: literature 检索工序,产出综述列表
 Your output is stored by literature, fed to extract_framework next.
@@ -514,6 +515,7 @@ Search query: LLM agent frameworks surveys …                     ← L2 curren
 
 <situation>                                                      ← L2
 You are running INSIDE `_pick_stage`.
+Job: Select the next research stage based on completed stages.
 Call path: research_agent → _pick_stage
 Position: 主循环第 2 轮,已完成 [literature],下一候选 idea
 Your output will be parsed into a stage name.
@@ -556,6 +558,7 @@ Progress: literature done (framework ready)。选下一阶段。         ← L2 
 
 <situation>                                                      ← L2
 You are running INSIDE `check_novelty`.
+Job: Check whether the proposed idea is novel against existing literature.
 Call path: research_agent → _pick_stage → idea → generate_ideas → check_novelty
 Position: idea 阶段查新工序
 Your output is passed to generate_ideas as the per-idea novelty verdict.
