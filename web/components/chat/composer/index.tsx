@@ -663,6 +663,7 @@ export function Composer() {
       thinking,
       toolsEnabled,
       webSearchEnabled,
+      activeProfile,
       serviceTier: fastEnabled ? "priority" : undefined,
     });
     if (!handled) {
@@ -1345,10 +1346,10 @@ export function Composer() {
                             marginLeft: 4,
                             minWidth: 160,
                             zIndex: 10,
-                            background: "#252524",
-                            border: "1px solid rgba(255,255,255,0.08)",
+                            background: "var(--bg-secondary)",
+                            border: "1px solid var(--border)",
                             borderRadius: 12,
-                            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
                             padding: 6,
                             display: "flex",
                             flexDirection: "column" as const,
