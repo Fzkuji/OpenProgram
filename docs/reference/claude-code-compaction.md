@@ -14,9 +14,12 @@
 
 ## 常规操作（和上下文长度无关，每轮都做）
 
-以下两个操作不是"压缩"，而是常规的输出大小管理。不管上下文用了 10% 还是 80% 都会执行。和后面的压缩流程无关。
+以下两个操作不是"压缩"，而是常规的输出大小管理。不管上下文用了 10% 还是 80% 都会执行。和后面的压缩流程无关。两者解决不同的问题：
 
-### Budget Reduction（每轮 LLM 调用前）
+- **Budget Reduction**：管"单个太大"——一个工具输出超大就截断它
+- **Microcompact**：管"旧的太多"——时间久了旧的工具输出存磁盘腾空间
+
+### Budget Reduction（每轮 LLM 调用前）— 管"单个太大"
 
 `applyToolResultBudget()` 检查每个工具调用的输出大小。超大的单个输出会被截断——只保留开头和结尾，中间省略。
 
@@ -30,9 +33,9 @@
 
 纯字符串截断，不删消息、不调 LLM、不改对话结构。只处理超大的单个输出，不动正常大小的消息。
 
-### Microcompact（空闲时 + 每轮调用前）
+### Microcompact（空闲时 + 每轮调用前）— 管"旧的太多"
 
-把"过时"的旧工具输出存到磁盘，上下文中只留引用路径。最近几轮的结果保持 inline。
+把"过时"的旧工具输出存到磁盘，上下文中只留引用路径。最近几轮的结果保持 inline。和 Budget Reduction 的区别：Budget Reduction 看单个输出大不大（新旧都看），Microcompact 看时间远不远（只清旧的，不管大小）。
 
 ```
 替换前：
@@ -121,9 +124,9 @@ LLM 回复后，上下文变成：
 
 **触发线：大约 75% 占用**（早期版本是 90%+，后来改成更早触发——留出足够空间给压缩过程本身使用）。
 
-此时 Claude Code 按顺序尝试更激进的压缩：
+此时 Claude Code 进入压缩流程。先做 Snip（删旧消息），然后根据配置二选一：Context Collapse（分段模板摘要）或 Auto-Compact（LLM 全量摘要）。**Context Collapse 和 Auto-Compact 是互斥的，不会同时执行。**
 
-#### Snip（如果启用）
+#### Snip
 
 `snipCompactIfNeeded()` 直接**删除最旧的几轮对话**。不做任何摘要，直接丢掉。
 
@@ -144,9 +147,11 @@ LLM 回复后，上下文变成：
 
 简单粗暴，释放大量空间。但信息完全丢失——模型不知道前 5 轮讨论了什么。
 
-#### Context Collapse（如果启用）
+#### Context Collapse（和 Auto-Compact 二选一，阈值约 90%）
 
-如果 Snip 释放的空间不够，`applyCollapsesIfNeeded()` 进一步压缩。
+**Context Collapse 和 Auto-Compact 是二选一的替代方案**，由配置决定用哪个。Context Collapse 更精细（分段摘要，保留结构），Auto-Compact 更粗暴（全量摘要）。
+
+如果 Snip 释放的空间不够且启用了 Context Collapse，`applyCollapsesIfNeeded()` 进一步压缩。
 
 它把历史分成**几个段**，每段用**模板**（不是 LLM）生成一行摘要：
 
@@ -164,9 +169,9 @@ LLM 回复后，上下文变成：
 
 关键点：**Context Collapse 是读时投影（read-time projection）**——原始历史不删，collapse 摘要存在单独的 collapse store 里。模型看到的是折叠后的版本，但完整历史保留着，理论上可以重建。
 
-#### Auto-Compact（最后手段）
+#### Auto-Compact（和 Context Collapse 二选一，阈值约 87%）
 
-如果前面所有手段都不够，触发 `compactConversation()`——这是唯一**调 LLM** 的压缩步骤。
+**如果没有启用 Context Collapse**（或者 Context Collapse 仍然不够），触发 `compactConversation()`——这是唯一**调 LLM** 的压缩步骤。
 
 过程：
 1. 执行 PreCompact hooks（通知系统即将压缩）
@@ -259,18 +264,19 @@ LLM 在上次摘要的基础上，把新的 30 轮也压进去：
 
 ```
 常规操作（每轮都做，和上下文长度无关）：
-  1. Budget Reduction → 截断超大的单个工具输出
-  2. Microcompact → 旧工具结果存磁盘留引用
+  1. Budget Reduction → 截断超大的单个工具输出（管"单个太大"）
+  2. Microcompact → 旧工具结果存磁盘留引用（管"旧的太多"）
 
 压缩操作（检查阈值，超了才做）：
   3. 计算当前 token 数，如果 < 75%：直接调 LLM，跳到步骤 7
   4. Snip → 删除最旧的历史片段
-  5. Context Collapse → 分段历史用模板摘要
-  6. 如果仍然超阈值 → Auto-Compact（调 LLM 摘要全部历史）
+  5. 二选一（由配置决定）：
+     a. Context Collapse → 分段历史用模板摘要（更精细，保留结构）
+     b. Auto-Compact → 调 LLM 摘要全部历史（更粗暴，信息损失大）
 
-  7. 调 LLM
+  6. 调 LLM
 
-  8. 如果 LLM 返回 prompt_too_long 错误
+  7. 如果 LLM 返回 prompt_too_long 错误
    → 尝试 context-collapse overflow recovery
    → 尝试 reactive compaction（至多每轮一次）
    → 都失败则终止，reason = 'prompt_too_long'
