@@ -30,60 +30,52 @@
 - **和节点的关系**：🟢 <span style="color:#22c55e">函数节点</span>（ROLE_CODE）+ 其下所有 🟡 <span style="color:#eab308">工具子节点</span>都参与渲染（仅在函数内部视角）
 - **函数调用特殊设计**：render_context 的 frame_entry_seq 参数划分"函数前历史"和"函数内历史"，callers 控制能看多少父辈。expose=io 确保函数内部细节不泄漏给调用方
 
-### 2.2 函数结束 → 自动折叠
+### 2.2 函数结束 → expose=io 天然隐藏内部
 
 - **触发**：函数返回，status 从 "running" 变为 "completed"/"error"
-- **做什么**：
-  a. 内部子树（所有子节点）序列化存磁盘
-  b. 存储路径：`~/.openprogram/sessions/<sid>/collapsed/<node_id>.jsonl`
-  c. 节点本身变为折叠状态，只保留一行（输入→输出）：
-     `research_agent("LLM reasoning") → 5 ideas (详见 collapsed/abc123)`
-     这和默认 expose=io 天然一致——外部本来就只看到输入输出
-  d. 折叠后的节点进入 §3-§5 的常规压缩流程，和对话节点一视同仁
-- **大模型调用的函数**：自动折叠
-- **手动调用的函数**：同样折叠，只保留输入输出
-- **嵌套函数**：内层先折叠，外层结束时再折叠（外层的折叠包含已折叠的内层）
-- **和节点的关系**：🟢 <span style="color:#22c55e">函数节点</span>从 status=running 变为 status=completed，🟡 <span style="color:#eab308">工具子节点</span>从 DAG 渲染列表移除（但不物理删除）
-- **函数调用特殊设计**：这是函数调用独有的步骤，对话节点不经过这步
-
-### 2.3 存磁盘的格式和检索
-
-- **格式**：JSONL，每行一个子节点（role/name/input/output/metadata）
-- **检索**：大模型可以通过 read_file 工具读取这个路径，查看函数运行的具体过程
-- **和 §4.1 的关系**：Microcompact 也存磁盘，共用同一套存储目录结构
-- **和节点的关系**：存的是被折叠的子节点，父节点（函数节点本身）留在 DAG 中
+- **做什么**：不需要额外的"折叠 + 存磁盘"操作。expose=io 天然隐藏内部子树——外部调用方只看到函数的输入和输出，内部的工具调用和 LLM 交互不参与渲染，不占 token
+- **DAG 本身就是存储**：子节点保留在 DAG 中（session store 持久化），不需要额外序列化到磁盘。大模型想查内部过程时，可以通过工具读取 DAG 中的子节点
+- **折叠后的节点**进入 §3-§5 的常规压缩流程，和 🔵 对话节点一视同仁
+- **和节点的关系**：🟢 <span style="color:#22c55e">函数节点</span>从 status=running 变为 status=completed，🟡 <span style="color:#eab308">工具子节点</span>不再参与渲染（expose=io 控制）但保留在 DAG 中
+- **函数调用特殊设计**：这是函数调用独有的机制。🔵 对话节点没有 expose 概念，始终 full
+- **⚠ 待定**：函数节点的输入+输出本身可能很长（几百到几千 tokens），多个已完成函数累积后仍然占用大量空间。这部分的老化/截断方案待设计
 
 ## 3. 每轮常规操作
 
 每次 LLM 调用前都做，和上下文长度无关。
 
-### 3.1 截断超大单个输出
+### 3.1 截断超大单个输出（= Claude Code 的 Budget Reduction）
+
+和 Claude Code 的 `applyToolResultBudget()` 一致。检查每个工具调用的输出大小，超大的截断。
 
 - **触发**：每次 LLM 调用前检查所有节点的 output
-- **做什么**：单个工具输出超过阈值（比如 10000 tokens）就截断
-- **截断方式**：保留开头 N tokens + 结尾 M tokens，中间用 `[... truncated ...]` 替代
-- **作用对象**：所有节点（🔵 <span style="color:#3b82f6">对话节点</span>、🟡 <span style="color:#eab308">工具节点</span>、§2.2 折叠后的 🟢 <span style="color:#22c55e">函数节点</span>）
-- **不改变节点状态**，只截断 output 文本
+- **做什么**：单个工具输出超过阈值就截断——保留开头和结尾，中间省略
+- **截断方式**：`[原始开头 N tokens] ... [truncated, X lines omitted] ... [原始结尾 M tokens]`
+- **作用对象**：所有节点（🔵 <span style="color:#3b82f6">对话节点</span>、🟡 <span style="color:#eab308">工具节点</span>、§2.2 后的 🟢 <span style="color:#22c55e">函数节点</span>）
+- **不改变节点状态**，只截断 output 文本。纯字符串操作，不删消息、不调 LLM、不改对话结构
 - **和节点的关系**：作用在单个节点的 output 字段上，不影响节点间的结构
-- **函数调用特殊设计**：无。函数节点和对话节点一样处理。§2.2 折叠后的函数节点只有一行，通常不会触发截断
+- **函数调用特殊设计**：无。expose=io 后的函数节点只有输入+输出，通常不会触发截断
 
 ## 4. 空闲时清理
 
 用户一段时间没发消息时做。
 
-### 4.1 旧工具输出存磁盘（Microcompact）
+### 4.1 旧工具输出存磁盘（= Claude Code 的 Microcompact）
 
-- **触发**：距上次用户交互超过阈值（比如 30 秒）
+和 Claude Code 的 Microcompact 一致。把过时的旧工具输出存到磁盘，上下文中只留引用路径。最近几轮的结果保持 inline。
+
+- **触发**：距上次用户交互超过阈值（比如 30 秒），空闲时自动清理
 - **做什么**：按时间排序，最旧的工具输出存磁盘，上下文中替换为引用路径
-- **存储**：`~/.openprogram/sessions/<sid>/tool_outputs/<node_id>`
-- **上下文中变成**：`[output stored: tool_outputs/abc123, retrievable by read_file]`
+- **上下文中变成**：`[content stored on disk, retrievable by path: <路径>]`（约 20 tokens）
 - **最近的工具输出保持 inline**（不清理）
 - **大模型需要时可以通过 read_file 读回来**
-- **和 §2.3 的关系**：共用存储机制，但针对的是单个工具输出而非函数子树
+- **两条路径**（同 Claude Code）：
+  - 时间路径：旧的先清（默认）
+  - 缓存感知路径：优先清理导致 prompt cache miss 的内容
 - **和节点的关系**：修改 🟡 <span style="color:#eab308">工具节点</span>的 output 字段（替换为引用路径），节点本身保留在 DAG 中
 - **函数调用特殊设计**：
-  - 函数运行中（§2.1）：内部的工具输出也可以被 Microcompact 清理（如果运行时间很长，旧的内部工具输出存磁盘）
-  - 函数结束后（§2.2）：内部子树已经整体存磁盘了，Microcompact 不再作用于这些子节点
+  - 函数运行中（§2.1）：内部的工具输出也可以被 Microcompact 清理（运行时间很长时，旧的内部工具输出存磁盘）
+  - 函数结束后（§2.2）：expose=io 已隐藏内部子树，Microcompact 不作用于这些子节点
 
 ## 5. 阈值触发的压缩
 
@@ -97,42 +89,47 @@
 - **检查时机**：每次 LLM 调用前（§3 之后）
 - **和节点的关系**：计算所有参与渲染的节点的 token 总和
 
-### 5.2 按时间删旧节点（Snip）
+### 5.2 按时间删旧节点（= Claude Code 的 Snip）
+
+和 Claude Code 的 `snipCompactIfNeeded()` 一致。直接删除最旧的几轮对话，不做任何摘要，直接丢掉。简单粗暴，释放大量空间，但信息完全丢失。
 
 - **触发**：§5.1 条件满足
-- **做什么**：直接删除最旧的节点（不做摘要，直接从渲染列表移除）
-- **作用对象**：所有类型的节点（🔵 <span style="color:#3b82f6">对话节点</span>、已折叠的 🟢 <span style="color:#22c55e">函数节点</span>、🟡 <span style="color:#eab308">工具调用节点</span>）
-- **删多少**：从最旧的开始删，直到 token 数降到能继续调用 LLM
-- **删除的节点数据仍在 DAG 中**（不物理删除），只是渲染时跳过（visibility=hidden）
+- **做什么**：从最旧的节点开始，逐个从渲染列表移除，直到 token 数降到能继续调用 LLM
+- **作用对象**：所有类型的节点（🔵 <span style="color:#3b82f6">对话节点</span>、已完成的 🟢 <span style="color:#22c55e">函数节点</span>、🟡 <span style="color:#eab308">工具调用节点</span>）
+- **节点数据仍在 DAG 中**（不物理删除），只是渲染时跳过（visibility=hidden）
 - **如果 Snip 后仍不够** → 进入 §5.3
 - **和节点的关系**：设置节点的 visibility=hidden，render_context 跳过这些节点
 - **函数调用特殊设计**：
-  - §2.2 折叠后的函数节点被当作普通节点，按时间排序参与 Snip
-  - 正在运行的函数（§2.1）不参与 Snip（不能删正在用的）
+  - 已完成的 🟢 函数节点被当作普通节点，按时间排序参与 Snip
+  - 正在运行的 🟢 函数（§2.1）不参与 Snip（不能删正在用的）
 
-### 5.3 对话节点 LLM 摘要
+### 5.3 LLM 摘要（= Claude Code 的 Context Collapse / Auto-Compact）
 
-- **触发**：§5.2 Snip 后仍超目标
-- **做什么**：用 LLM 把旧对话节点摘要成一段文本
-- **摘要预生成**：每轮 turn 结束时异步生成 1-2 句摘要，存在节点 metadata.summary 中
-- **压缩时**：直接用缓存的 summary 替换完整对话，不需要额外 LLM 调用
-- **如果没有预生成的 summary**：调 LLM 生成（更慢，但保底）
-- **摘要后节点变成**：`[turn 3] 用户问了代码性能 → 模型发现3个瓶颈`（约 50 tokens）
-- **和 §2.2 的关系**：折叠后的函数节点已经是一行了，通常不需要再摘要；但如果一行还是太长，也可以进一步缩短
-- **和节点的关系**：节点的 visibility 从 full 变为 degraded，渲染时用 summary 替代完整内容
-- **函数调用特殊设计**：
-  - 🔵 <span style="color:#3b82f6">对话节点</span>（user+assistant）：用预生成的摘要
-  - 已折叠的 🟢 <span style="color:#22c55e">函数节点</span>（§2.2）：已经是一行，通常不再摘要
-  - 正在运行的 🟢 <span style="color:#22c55e">函数节点</span>（§2.1）：不摘要（正在用）
+和 Claude Code 一致，Snip 后仍不够时才调 LLM。不额外预生成摘要——只有在压缩触发或用户手动 `/compact` 时才调 LLM。
 
-### 5.4 /compact 手动命令
+Claude Code 提供两种互斥方案（由配置决定）：
+- **Context Collapse**：分段摘要，每段独立 LLM 调用，原始消息保留（可回滚）
+- **Auto-Compact**：全量摘要，一次 LLM 调用，原始消息替换（不可回滚）
+
+我们同样二选一，默认用 Context Collapse（更精细、可回滚）。
+
+- **触发**：§5.2 Snip 后仍不够
+- **做什么**：调 LLM 对旧对话进行摘要
+- **作用对象**：🔵 <span style="color:#3b82f6">对话节点</span>和已完成的 🟢 <span style="color:#22c55e">函数节点</span>
+- **正在运行的 🟢 函数**（§2.1）：不摘要（正在用）
+- **和节点的关系**：被摘要的节点 visibility 变为 hidden，摘要文本作为新的 compaction 节点插入
+
+### 5.4 /compact 手动命令（= Claude Code 的 /compact）
+
+和 Claude Code 一致。用户手动触发 Auto-Compact（LLM 全量摘要），可带提示词。
 
 - **触发**：用户输入 `/compact` 或 `/compact <提示词>`
-- **做什么**：立即触发 LLM 全量摘要（不经过 §5.2 Snip）
-- **可以带提示词指导保留什么**（比如 `/compact 保留数据库迁移的讨论`）
+- **做什么**：直接跳到 Auto-Compact（不经过 §5.2 Snip），LLM 生成全量摘要
+- **可以带提示词指导保留什么**（比如 `/compact 保留数据库迁移的讨论`），手动质量比自动好
 - **摘要替换所有旧节点**，只保留最近 1-2 轮完整
+- **建议时机**：60% 占用时手动做（同 Claude Code 官方建议）
 - **和节点的关系**：所有旧节点 visibility=hidden，生成一个新的 compaction summary 节点
-- **函数调用特殊设计**：无。已折叠的函数节点和对话节点一起被摘要
+- **函数调用特殊设计**：无。已完成的 🟢 函数节点和 🔵 对话节点一起被摘要
 
 ## 6. 完整流程推演
 
@@ -184,11 +181,11 @@
 | 我们 | Claude Code | 说明 |
 |---|---|---|
 | §2 节点生命周期 | 无 | 我们独有，Claude Code 是线性对话没有 DAG |
-| §3.1 截断超大输出 | Budget Reduction | 相同 |
-| §4.1 旧输出存磁盘 | Microcompact | 相同思路，我们额外有函数子树折叠 |
-| §5.2 Snip | Snip | 相同 |
-| §5.3 LLM 摘要 | Context Collapse / Auto-Compact | Claude Code 二选一，我们统一为预生成摘要 + 按需 LLM |
-| §5.4 /compact | /compact | 相同 |
+| §3.1 截断超大输出 | Budget Reduction | 一致 |
+| §4.1 旧输出存磁盘 | Microcompact | 一致 |
+| §5.2 Snip | Snip | 一致 |
+| §5.3 LLM 摘要 | Context Collapse / Auto-Compact | 一致（二选一，默认 Context Collapse） |
+| §5.4 /compact | /compact | 一致 |
 
 来源：[Dive into Claude Code](https://arxiv.org/html/2604.14228v1)（arXiv 2604.14228）
 
@@ -196,11 +193,10 @@
 
 | 步骤 | 做什么 | 依赖 |
 |---|---|---|
-| 1 | 函数结束时自动折叠子树 + 存磁盘（§2.2） | 无 |
-| 2 | 截断超大单个输出（§3.1） | 无 |
-| 3 | Microcompact 旧工具输出存磁盘（§4.1） | 无 |
-| 4 | turn 结束时预生成对话摘要（§5.3 准备） | 无 |
-| 5 | Snip 按时间删旧节点（§5.2） | 无 |
-| 6 | 摘要替换用预生成的 summary（§5.3） | 步骤 4 |
-| 7 | /compact 命令（§5.4） | 步骤 6 |
-| 8 | /context 命令（查看 token 分布） | 无 |
+| 1 | 截断超大单个输出 — Budget Reduction（§3.1） | 无 |
+| 2 | Microcompact 旧工具输出存磁盘（§4.1） | 无 |
+| 3 | Snip 按时间删旧节点（§5.2） | 无 |
+| 4 | Context Collapse / Auto-Compact — LLM 摘要（§5.3） | 无 |
+| 5 | /compact 命令（§5.4） | 步骤 4 |
+| 6 | /context 命令（查看 token 分布） | 无 |
+| 7 | 函数节点老化方案（§2.2 ⚠ 待定） | 步骤 1-4 |
