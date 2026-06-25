@@ -301,6 +301,7 @@
   <a href="#s4-1" class="indent">4.1 旧工具输出存磁盘（Microcompact）</a>
   <a href="#s5">5. 阈值触发的压缩</a>
   <a href="#s5-1" class="indent">5.1 触发条件和目标</a>
+  <a href="#s5-1b" class="indent">5.1b 各类节点压缩后的展示规则</a>
   <a href="#s5-2" class="indent">5.2 按时间删旧节点（Snip）</a>
   <a href="#s5-3" class="indent">5.3 LLM 摘要（Context Collapse / Auto-Compact）</a>
   <a href="#s5-4" class="indent">5.4 /compact 手动命令</a>
@@ -484,6 +485,53 @@ src/z.py:99: TODO document</code></pre>
       <dd>不设固定百分比，逐级压缩（<span class="xref">§5.2</span> Snip → <span class="xref">§5.3</span> 摘要）直到能继续调用 LLM</dd>
       <dt>检查时机</dt>
       <dd>每次 LLM 调用前（<span class="xref">§3</span> 之后）</dd>
+    </dl>
+
+    <h3 id="s5-1b">5.1b 各类节点压缩后的展示规则</h3>
+    <p>Snip 和摘要之前，先对旧节点做内容截断（不调 LLM，纯截断）。不同类型的节点保留不同的内容：</p>
+
+    <h4><span class="node-chat">🔵 对话节点</span>（user + assistant）</h4>
+    <dl class="spec">
+      <dt>user 输入</dt>
+      <dd><strong>完整保留</strong>（通常不长，几十 tokens）。user 输入是意图，不能丢。</dd>
+      <dt>assistant 回复</dt>
+      <dd>截断到 <strong>200 tokens</strong>，只保留开头（结论通常在前面）。</dd>
+      <dt>理由</dt>
+      <dd>user 问了什么 + assistant 回答的要点，足以让模型理解上下文。</dd>
+    </dl>
+    <p><strong>示例：</strong></p>
+    <p>压缩前（完整对话，2000 tokens）：</p>
+<pre><code>user: 帮我分析一下 src/main.py 这个文件的性能瓶颈，特别是数据库查询部分
+assistant: 我分析了 src/main.py，发现以下性能瓶颈：
+
+1. 数据库查询没有索引
+   - get_users() 函数在第 45 行做了全表扫描...
+   [... 很长的分析，2000 tokens ...]
+
+建议优先加索引，预计提升10倍。</code></pre>
+    <p>压缩后（老化，~250 tokens）：</p>
+<pre><code>user: 帮我分析一下 src/main.py 这个文件的性能瓶颈，特别是数据库查询部分
+assistant: 我分析了 src/main.py，发现以下性能瓶颈：1. 数据库查询没有索引 - get_users() 函数在第 45 行做了全表扫描... [truncated, 200/2000 tokens kept]</code></pre>
+
+    <h4><span class="node-tool">🟡 工具调用节点</span>（bash / read_file / write 等）</h4>
+    <dl class="spec">
+      <dt>保留</dt>
+      <dd>工具名 + 参数摘要（截断到 50 tokens）</dd>
+      <dt>不保留</dt>
+      <dd>完整输出</dd>
+    </dl>
+    <p><strong>示例：</strong></p>
+<pre><code>bash("grep -r 'TODO' src/") → 12 matches
+read_file("src/main.py") → [output stored on disk]</code></pre>
+
+    <h4><span class="node-func">🟢 函数调用节点</span>（@agentic_function）</h4>
+    <dl class="spec">
+      <dt>保留</dt>
+      <dd>函数名 + 参数 + 返回值截断到 200 tokens</dd>
+      <dt>不保留</dt>
+      <dd>内部子树（expose=io 天然隐藏）</dd>
+      <dt>状态</dt>
+      <dd>⚠ 具体老化方案待定（见 <span class="xref">§2.2</span>）</dd>
     </dl>
 
     <h3 id="s5-2">5.2 按时间删旧节点（= Claude Code 的 Snip）</h3>
