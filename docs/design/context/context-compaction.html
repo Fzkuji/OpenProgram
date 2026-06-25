@@ -369,29 +369,40 @@
     <p>每次 LLM 调用前都做，和上下文长度无关。</p>
 
     <h3 id="s3-1">3.1 截断超大单个输出（= Claude Code 的 Budget Reduction）</h3>
-    <p>和 Claude Code 的 <code>applyToolResultBudget()</code> 一致。检查每个工具调用的输出大小，超大的截断。</p>
+    <p>和 Claude Code 的 <code>applyToolResultBudget()</code> 一致。检查每个节点的输出大小，超大的截断。<strong>不只是工具输出——<span class="node-chat">🔵 assistant 回复</span>如果超长也会被截断。</strong></p>
     <dl class="spec">
       <dt>触发</dt>
       <dd>每次 LLM 调用前检查所有节点的 output</dd>
       <dt>做什么</dt>
-      <dd>单个工具输出超过阈值就截断——保留开头和结尾，中间省略</dd>
+      <dd>单个输出超过阈值就截断——保留开头和结尾，中间省略。包括：
+        <ul>
+          <li><span class="node-tool">🟡 工具输出</span>（bash 结果、read_file 内容等）</li>
+          <li><span class="node-chat">🔵 assistant 回复</span>（模型生成的超长回复）</li>
+          <li><span class="node-func">🟢 函数返回值</span>（expose=io 后的输出）</li>
+        </ul>
+        <span class="node-chat">🔵 user 输入</span>通常不长，不需要截断。
+      </dd>
       <dt>阈值</dt>
       <dd>Claude Code 按 <code>tool_result_budget = (context_window - system_prompt - existing_messages) / remaining_tool_results</code> 动态分配每个工具结果的预算。简化实现：单个输出超过 <strong>10000 tokens</strong>（约 40KB 文本）就截断</dd>
       <dt>截断方式</dt>
       <dd>保留开头 50% + 结尾 50%（按 token 数），中间用标记替换</dd>
       <dt>截断后格式</dt>
       <dd>
+        <p><strong>工具输出截断：</strong></p>
 <pre><code>src/a.py:12: TODO fix this
 src/b.py:34: TODO refactor
 src/c.py:56: TODO cleanup
 ... [truncated, 847 lines omitted, original 8500 tokens → 5000 tokens] ...
 src/y.py:234: TODO optimize
 src/z.py:99: TODO document</code></pre>
+        <p><strong>assistant 回复截断：</strong></p>
+<pre><code>分析了代码性能，发现3个主要瓶颈：
+1. 数据库查询没有索引，每次查询扫全表...
+... [truncated, 8000 tokens omitted] ...
+...建议先加索引，预计提升10倍。</code></pre>
       </dd>
-      <dt>哪些输出会被截断</dt>
-      <dd>所有工具的输出都检查（bash、read_file、search 等），不区分工具类型</dd>
       <dt>作用对象</dt>
-      <dd><span class="node-chat">🔵 对话节点</span>、<span class="node-tool">🟡 工具节点</span>、<span class="xref">§2.2</span> 后的 <span class="node-func">🟢 函数节点</span></dd>
+      <dd><span class="node-chat">🔵 对话节点</span>（assistant 回复）、<span class="node-tool">🟡 工具节点</span>（工具输出）、<span class="xref">§2.2</span> 后的 <span class="node-func">🟢 函数节点</span>（函数返回值）</dd>
       <dt>副作用</dt>
       <dd>不改变节点状态，只截断 output 文本。纯字符串操作，不删消息、不调 LLM、不改对话结构</dd>
       <dt>函数调用特殊设计</dt>
@@ -406,24 +417,35 @@ src/z.py:99: TODO document</code></pre>
   <div class="section-body">
     <p>用户一段时间没发消息时做。</p>
 
-    <h3 id="s4-1">4.1 旧工具输出存磁盘（= Claude Code 的 Microcompact）</h3>
-    <p>和 Claude Code 的 Microcompact 一致。把过时的旧工具输出存到磁盘，上下文中只留引用路径。最近几轮的结果保持 inline。</p>
+    <h3 id="s4-1">4.1 旧输出存磁盘（= Claude Code 的 Microcompact）</h3>
+    <p>和 Claude Code 的 Microcompact 一致。把过时的旧输出存到磁盘，上下文中只留引用路径。最近几轮的结果保持 inline。<strong>不只是工具输出——旧的 <span class="node-chat">🔵 assistant 回复</span>如果很长也会存磁盘。</strong></p>
     <dl class="spec">
       <dt>触发</dt>
       <dd>距上次用户交互超过阈值（比如 30 秒），空闲时自动清理；也在每轮 LLM 调用前检查</dd>
       <dt>"旧"的判断标准</dt>
-      <dd>按消息轮次（turn）计算。保留最近 <strong>3-5 轮</strong>的工具输出 inline，更早的存磁盘。不按时间（秒/分钟），按轮数</dd>
+      <dd>按消息轮次（turn）计算。保留最近 <strong>3-5 轮</strong>的输出 inline，更早的存磁盘。不按时间（秒/分钟），按轮数</dd>
+      <dt>哪些输出会被存磁盘</dt>
+      <dd>
+        <ul>
+          <li><span class="node-tool">🟡 工具输出</span>（bash 结果、read_file 内容等）——最常见的大输出来源</li>
+          <li><span class="node-chat">🔵 assistant 回复</span>——如果旧的 assistant 回复很长（比如详细的代码分析），也会存磁盘</li>
+          <li><span class="node-chat">🔵 user 输入</span>——通常不长，不需要存磁盘</li>
+        </ul>
+      </dd>
       <dt>存储位置</dt>
       <dd><code>~/.openprogram/sessions/&lt;session_id&gt;/tool_outputs/&lt;node_id&gt;</code></dd>
       <dt>存储格式</dt>
       <dd>原始输出文本直接写入文件</dd>
       <dt>上下文中替换为</dt>
       <dd>
+        <p><strong>工具输出存磁盘后：</strong></p>
 <pre><code>[tool output stored on disk; to retrieve, call read_file("~/.openprogram/sessions/abc123/tool_outputs/node_456")]</code></pre>
+        <p><strong>assistant 回复存磁盘后：</strong></p>
+<pre><code>[assistant response stored on disk; to retrieve, call read_file("~/.openprogram/sessions/abc123/tool_outputs/node_789")]</code></pre>
         <p>约 20 tokens，替代原来可能几千 tokens 的完整输出</p>
       </dd>
       <dt>最近的保持 inline</dt>
-      <dd>最近 3-5 轮的工具输出不清理</dd>
+      <dd>最近 3-5 轮的所有输出不清理（工具输出和 assistant 回复都保持原样）</dd>
       <dt>检索</dt>
       <dd>大模型需要旧结果时，用 <code>read_file</code> 工具读取磁盘路径，完整内容会重新加载到当前 turn 的上下文中</dd>
       <dt>两条路径（同 Claude Code）</dt>
@@ -434,7 +456,7 @@ src/z.py:99: TODO document</code></pre>
         </ul>
       </dd>
       <dt>节点关系</dt>
-      <dd>修改 <span class="node-tool">🟡 工具节点</span> 的 output 字段（替换为引用路径），节点本身保留在 DAG 中</dd>
+      <dd>修改 <span class="node-tool">🟡 工具节点</span> 和 <span class="node-chat">🔵 assistant 节点</span> 的 output 字段（替换为引用路径），节点本身保留在 DAG 中</dd>
       <dt>函数调用特殊设计</dt>
       <dd>
         <ul>
