@@ -17,9 +17,11 @@
 - **触发**：函数被调用，status="running"
 - **做什么**：内部子树（工具调用、嵌套函数、LLM 交互）完整展开在上下文中
 - **可见范围**：由 render_context 的 callers/subcalls/expose 控制
-- **节点状态**：full（完整渲染 input + output）
-- **和节点的关系**：函数节点（ROLE_CODE）+ 其下所有子节点都参与渲染
-- **函数调用特殊设计**：render_context 的 frame_entry_seq 参数划分"函数前历史"和"函数内历史"，callers 控制能看多少父辈
+- **节点状态**：
+  - **函数内部视角**（函数自己的 LLM 调用）：子节点 full（完整渲染 input + output）
+  - **外部视角**（调用方看这个函数节点）：默认 expose=io，调用方只看到函数的输入和输出，看不到内部的工具调用和 LLM 交互
+- **和节点的关系**：函数节点（ROLE_CODE）+ 其下所有子节点都参与渲染（仅在函数内部视角）
+- **函数调用特殊设计**：render_context 的 frame_entry_seq 参数划分"函数前历史"和"函数内历史"，callers 控制能看多少父辈。expose=io 确保函数内部细节不泄漏给调用方
 
 ### 2.2 函数结束 → 自动折叠
 
@@ -27,8 +29,9 @@
 - **做什么**：
   a. 内部子树（所有子节点）序列化存磁盘
   b. 存储路径：`~/.openprogram/sessions/<sid>/collapsed/<node_id>.jsonl`
-  c. 节点本身从 full 变为折叠状态，只保留一行：
+  c. 节点本身变为折叠状态，只保留一行（输入→输出）：
      `research_agent("LLM reasoning") → 5 ideas (详见 collapsed/abc123)`
+     这和默认 expose=io 天然一致——外部本来就只看到输入输出
   d. 折叠后的节点进入 §3-§5 的常规压缩流程，和对话节点一视同仁
 - **大模型调用的函数**：自动折叠
 - **手动调用的函数**：同样折叠，只保留输入输出
@@ -133,7 +136,7 @@
 
 - user → assistant → user → assistant
 - 没有任何压缩触发
-- 所有节点 visibility=full
+- 对话节点 visibility=full；如有函数节点则 expose=io（外部只看输入输出）
 
 ### 阶段 2（30-50%）：调用函数
 
