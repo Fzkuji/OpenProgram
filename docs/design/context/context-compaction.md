@@ -50,7 +50,18 @@
 
 - **触发**：每次 LLM 调用前检查所有节点的 output
 - **做什么**：单个工具输出超过阈值就截断——保留开头和结尾，中间省略
-- **截断方式**：`[原始开头 N tokens] ... [truncated, X lines omitted] ... [原始结尾 M tokens]`
+- **阈值**：Claude Code 按 `tool_result_budget = (context_window - system_prompt - existing_messages) / remaining_tool_results` 动态分配每个工具结果的预算。简化实现：单个输出超过 **10000 tokens**（约 40KB 文本）就截断
+- **截断方式**：保留开头 50% + 结尾 50%（按 token 数），中间用标记替换
+- **截断后格式**：
+  ```
+  src/a.py:12: TODO fix this
+  src/b.py:34: TODO refactor
+  src/c.py:56: TODO cleanup
+  ... [truncated, 847 lines omitted, original 8500 tokens → 5000 tokens] ...
+  src/y.py:234: TODO optimize
+  src/z.py:99: TODO document
+  ```
+- **哪些输出会被截断**：所有工具的输出都检查（bash、read_file、search 等），不区分工具类型
 - **作用对象**：所有节点（🔵 <span style="color:#3b82f6">对话节点</span>、🟡 <span style="color:#eab308">工具节点</span>、§2.2 后的 🟢 <span style="color:#22c55e">函数节点</span>）
 - **不改变节点状态**，只截断 output 文本。纯字符串操作，不删消息、不调 LLM、不改对话结构
 - **和节点的关系**：作用在单个节点的 output 字段上，不影响节点间的结构
@@ -64,14 +75,21 @@
 
 和 Claude Code 的 Microcompact 一致。把过时的旧工具输出存到磁盘，上下文中只留引用路径。最近几轮的结果保持 inline。
 
-- **触发**：距上次用户交互超过阈值（比如 30 秒），空闲时自动清理
-- **做什么**：按时间排序，最旧的工具输出存磁盘，上下文中替换为引用路径
-- **上下文中变成**：`[content stored on disk, retrievable by path: <路径>]`（约 20 tokens）
-- **最近的工具输出保持 inline**（不清理）
-- **大模型需要时可以通过 read_file 读回来**
+- **触发**：距上次用户交互超过阈值（比如 30 秒），空闲时自动清理；也在每轮 LLM 调用前检查
+- **"旧"的判断标准**：按消息轮次（turn）计算。Claude Code 保留最近 **3-5 轮**的工具输出 inline，更早的存磁盘。不按时间（秒/分钟），按轮数
+- **做什么**：按轮次排序，超过保留窗口的工具输出存磁盘，上下文中替换为引用路径
+- **存储位置**：`~/.openprogram/sessions/<session_id>/tool_outputs/<node_id>`
+- **存储格式**：原始输出文本直接写入文件
+- **上下文中替换为**：
+  ```
+  [tool output stored on disk; to retrieve, call read_file("~/.openprogram/sessions/abc123/tool_outputs/node_456")]
+  ```
+  约 20 tokens，替代原来可能几千 tokens 的完整输出
+- **最近 3-5 轮的工具输出保持 inline**（不清理）
+- **大模型需要旧结果时**：用 read_file 工具读取磁盘路径，完整内容会重新加载到当前 turn 的上下文中
 - **两条路径**（同 Claude Code）：
-  - 时间路径：旧的先清（默认）
-  - 缓存感知路径：优先清理导致 prompt cache miss 的内容
+  - 时间路径：按轮次，旧的先清（默认）
+  - 缓存感知路径（`CACHED_MICROCOMPACT`）：优先清理导致 prompt cache miss 的内容，保护已缓存的前缀
 - **和节点的关系**：修改 🟡 <span style="color:#eab308">工具节点</span>的 output 字段（替换为引用路径），节点本身保留在 DAG 中
 - **函数调用特殊设计**：
   - 函数运行中（§2.1）：内部的工具输出也可以被 Microcompact 清理（运行时间很长时，旧的内部工具输出存磁盘）
@@ -94,13 +112,18 @@
 和 Claude Code 的 `snipCompactIfNeeded()` 一致。直接删除最旧的几轮对话，不做任何摘要，直接丢掉。简单粗暴，释放大量空间，但信息完全丢失。
 
 - **触发**：§5.1 条件满足
-- **做什么**：从最旧的节点开始，逐个从渲染列表移除，直到 token 数降到能继续调用 LLM
-- **作用对象**：所有类型的节点（🔵 <span style="color:#3b82f6">对话节点</span>、已完成的 🟢 <span style="color:#22c55e">函数节点</span>、🟡 <span style="color:#eab308">工具调用节点</span>）
+- **删除粒度**：按**轮**（turn）删除，一轮 = 一对 user + assistant 消息及其工具调用。不是单个节点逐个删，而是整轮一起删——保证不会出现"user 消息在但 assistant 回复被删"的不一致状态
+- **删多少**：从最旧的轮开始，逐轮移除，每删一轮重新计算 token 数。直到总 token 数降到 `context_window - 13K` 以下（能继续调用 LLM）。不是固定删 N 轮，是按需删到够为止
+- **删除后的标记**：在上下文开头插入一行提示，让模型知道前面有内容被删了：
+  ```
+  [Note: 5 earlier conversation turns were removed from context to free space. The conversation continues from turn 6.]
+  ```
+- **作用对象**：所有类型的节点（🔵 <span style="color:#3b82f6">对话节点</span>、已完成的 🟢 <span style="color:#22c55e">函数节点</span>、🟡 <span style="color:#eab308">工具调用节点</span>）——一轮内的所有节点一起删
 - **节点数据仍在 DAG 中**（不物理删除），只是渲染时跳过（visibility=hidden）
 - **如果 Snip 后仍不够** → 进入 §5.3
 - **和节点的关系**：设置节点的 visibility=hidden，render_context 跳过这些节点
 - **函数调用特殊设计**：
-  - 已完成的 🟢 函数节点被当作普通节点，按时间排序参与 Snip
+  - 已完成的 🟢 函数节点被当作普通节点，按时间排序参与 Snip。一个函数调用连同它的 user 触发消息和 assistant 回复作为一轮整体删除
   - 正在运行的 🟢 函数（§2.1）不参与 Snip（不能删正在用的）
 
 ### 5.3 LLM 摘要（= Claude Code 的 Context Collapse / Auto-Compact）
@@ -115,9 +138,66 @@ Claude Code 提供两种互斥方案（由配置决定）：
 
 - **触发**：§5.2 Snip 后仍不够
 - **做什么**：调 LLM 对旧对话进行摘要
+
+#### Context Collapse 的具体做法
+
+- **分段标准**：按轮次分段，每 5-10 轮为一段（根据 token 数动态调整，每段约 10K-20K tokens）
+- **每段独立调 LLM**：用一个摘要 prompt 让 LLM 总结这段对话的关键信息
+- **摘要 prompt 示例**：
+  ```
+  Summarize the following conversation segment. Preserve:
+  - Key decisions and their reasoning
+  - File names that were modified
+  - Current task state and next steps
+  - Any explicit user instructions or constraints
+  
+  Conversation segment:
+  [turn 6-10 的完整内容]
+  ```
+- **摘要后格式**：
+  ```
+  [Conversation summary, turns 6-10]
+  Fixed bug in utils.py: read_config() was not handling missing keys.
+  Added try/except with default values. Tests updated and passing.
+  User asked to keep backward compatibility with old config format.
+  Modified files: src/utils.py, tests/test_utils.py
+  ```
+- **原始消息保留在 DAG 中**（collapse store），可回滚
+
+#### Auto-Compact 的具体做法
+
+- **一次性全量摘要**：把整个对话历史（或 Snip 后剩余的历史）发给 LLM
+- **摘要 prompt 示例**（Claude Code 的 `getCompactPrompt()`）：
+  ```
+  Summarize this conversation concisely. Include:
+  1. What the user is working on (project, task)
+  2. Key decisions made and why
+  3. Current state (what's done, what's next)
+  4. Files that were modified
+  5. Any important constraints or instructions from the user
+  
+  If the user provided custom instructions, prioritize preserving those.
+  ```
+- **带提示词时**（`/compact 保留数据库迁移的讨论`）：用户的提示词追加到 prompt 末尾
+- **摘要后格式**：
+  ```
+  [Conversation compacted]
+  Project: Database migration using Alembic
+  Completed: User/Order table migrations with rollback scripts
+  Current: Working on Payment table foreign key constraints
+  Approach: Batch migration to avoid table locks
+  Key constraint: Must maintain backward compatibility
+  Modified: migrations/001_user.py, migrations/002_order.py, src/models.py
+  ```
+- **原始消息被替换**，不可回滚
+- **system prompt 从 CLAUDE.md 重新加载**，不依赖摘要（永不丢失）
+
+#### 通用说明
+
 - **作用对象**：🔵 <span style="color:#3b82f6">对话节点</span>和已完成的 🟢 <span style="color:#22c55e">函数节点</span>
 - **正在运行的 🟢 函数**（§2.1）：不摘要（正在用）
 - **和节点的关系**：被摘要的节点 visibility 变为 hidden，摘要文本作为新的 compaction 节点插入
+- **链式压缩**：后续再次触发时，在上一次的摘要基础上继续压缩。信息逐层衰减
 
 ### 5.4 /compact 手动命令（= Claude Code 的 /compact）
 
