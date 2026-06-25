@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>上下文压缩 — OpenProgram 设计</title>
+<style>
+  :root {
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --blue-bg: #eff6ff;
+    --green-bg: #f0fdf4;
+    --yellow-bg: #fefce8;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-600: #4b5563;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--gray-800);
+    background: var(--gray-50);
+    line-height: 1.7;
+    padding: 2rem 1rem;
+  }
+
+  .container { max-width: 900px; margin: 0 auto; }
+
+  h1 {
+    font-size: 1.8rem;
+    color: var(--gray-900);
+    border-bottom: 3px solid var(--gray-200);
+    padding-bottom: .5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+    color: var(--gray-900);
+    margin-top: 2.5rem;
+    margin-bottom: .75rem;
+    border-left: 4px solid var(--blue);
+    padding-left: .75rem;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    color: var(--gray-800);
+    margin-top: 1.5rem;
+    margin-bottom: .5rem;
+  }
+
+  p, li { margin-bottom: .4rem; }
+  ul { padding-left: 1.5rem; }
+
+  /* Node type pills */
+  .node-chat, .node-func, .node-tool {
+    display: inline-block;
+    font-size: .85rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 12px;
+    margin: 0 2px;
+    vertical-align: middle;
+  }
+  .node-chat { background: var(--blue-bg); color: var(--blue); }
+  .node-func { background: var(--green-bg); color: var(--green); }
+  .node-tool { background: var(--yellow-bg); color: var(--yellow); }
+
+  /* Legend box */
+  .legend {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .legend-title { font-weight: 700; color: var(--gray-600); font-size: .9rem; }
+
+  /* Status badge */
+  .status {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: .8rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 12px;
+  }
+
+  /* Meta info */
+  .meta {
+    color: var(--gray-600);
+    font-size: .9rem;
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+  }
+  .meta code {
+    background: var(--gray-100);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: .85rem;
+  }
+  .meta a { color: var(--blue); text-decoration: none; }
+  .meta a:hover { text-decoration: underline; }
+
+  /* Details / collapsible */
+  details {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+  }
+  details[open] { border-color: var(--blue); }
+  summary {
+    cursor: pointer;
+    padding: .75rem 1rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--gray-900);
+    background: white;
+    user-select: none;
+    list-style: none;
+  }
+  summary::before {
+    content: "▸ ";
+    color: var(--gray-600);
+  }
+  details[open] > summary::before { content: "▾ "; }
+  summary::-webkit-details-marker { display: none; }
+  .section-body { padding: .5rem 1rem 1rem; }
+
+  /* Spec items */
+  .spec {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: .75rem 0;
+  }
+  .spec dt {
+    font-weight: 700;
+    font-size: .85rem;
+    color: var(--gray-600);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-top: .6rem;
+  }
+  .spec dt:first-child { margin-top: 0; }
+  .spec dd { margin-left: 0; margin-bottom: .2rem; }
+
+  /* Code blocks */
+  code {
+    background: var(--gray-100);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: .9em;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+  pre {
+    background: var(--gray-900);
+    color: #e5e7eb;
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: .85rem;
+    line-height: 1.5;
+    margin: .75rem 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: .75rem 0;
+    font-size: .9rem;
+  }
+  th, td {
+    text-align: left;
+    padding: .5rem .75rem;
+    border: 1px solid var(--gray-200);
+  }
+  th {
+    background: var(--gray-100);
+    font-weight: 700;
+    color: var(--gray-800);
+  }
+  tr:nth-child(even) { background: var(--gray-50); }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 2rem; margin: 1rem 0; }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: .6rem;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--gray-200);
+    border-radius: 2px;
+  }
+  .tl-item {
+    position: relative;
+    margin-bottom: 1.25rem;
+    padding: .75rem 1rem;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+  }
+  .tl-item::before {
+    content: "";
+    position: absolute;
+    left: -1.65rem;
+    top: 1rem;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 3px solid white;
+  }
+  .tl-item.phase1::before { background: var(--blue); }
+  .tl-item.phase2::before { background: var(--green); }
+  .tl-item.phase3::before { background: var(--green); }
+  .tl-item.phase4::before { background: var(--blue); }
+  .tl-item.phase5::before { background: #ef4444; }
+  .tl-item.phase6::before { background: var(--gray-600); }
+  .tl-title { font-weight: 700; margin-bottom: .25rem; }
+  .tl-ref { font-size: .8rem; color: var(--gray-600); }
+
+  /* Cross-ref arrows */
+  .xref {
+    color: var(--blue);
+    font-size: .85rem;
+    font-weight: 600;
+  }
+
+  /* TOC */
+  .toc {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+  }
+  .toc-title { font-weight: 700; margin-bottom: .5rem; color: var(--gray-800); }
+  .toc a {
+    color: var(--gray-800);
+    text-decoration: none;
+    display: block;
+    padding: 2px 0;
+    font-size: .9rem;
+  }
+  .toc a:hover { color: var(--blue); }
+  .toc .indent { padding-left: 1.25rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>上下文压缩</h1>
+
+<div class="meta">
+  <span class="status">设计完成，待实现</span><br>
+  代码: <code>context/engine.py</code>、<code>context/budget.py</code>、<code>context/microcompact.py</code>、<code>context/tool_aging/</code><br>
+  参考: <a href="../../reference/claude-code-compaction.md">Claude Code 压缩参考</a>
+</div>
+
+<div class="legend">
+  <span class="legend-title">节点类型</span>
+  <span class="node-chat">🔵 对话节点</span>
+  <span class="node-func">🟢 函数节点</span>
+  <span class="node-tool">🟡 工具节点</span>
+</div>
+
+<nav class="toc">
+  <div class="toc-title">目录</div>
+  <a href="#s1">1. 核心思路</a>
+  <a href="#s2">2. 节点生命周期管理</a>
+  <a href="#s2-1" class="indent">2.1 函数运行中</a>
+  <a href="#s2-2" class="indent">2.2 函数结束 → 自动折叠</a>
+  <a href="#s2-3" class="indent">2.3 存磁盘的格式和检索</a>
+  <a href="#s3">3. 每轮常规操作</a>
+  <a href="#s3-1" class="indent">3.1 截断超大单个输出</a>
+  <a href="#s4">4. 空闲时清理</a>
+  <a href="#s4-1" class="indent">4.1 旧工具输出存磁盘（Microcompact）</a>
+  <a href="#s5">5. 阈值触发的压缩</a>
+  <a href="#s5-1" class="indent">5.1 触发条件和目标</a>
+  <a href="#s5-2" class="indent">5.2 按时间删旧节点（Snip）</a>
+  <a href="#s5-3" class="indent">5.3 对话节点 LLM 摘要</a>
+  <a href="#s5-4" class="indent">5.4 /compact 手动命令</a>
+  <a href="#s6">6. 完整流程推演</a>
+  <a href="#s7">7. 和 Claude Code 的对应</a>
+  <a href="#s8">8. 实施计划</a>
+</nav>
+
+<!-- §1 -->
+<h2 id="s1">1. 核心思路</h2>
+<p>上下文压缩 = <strong>节点折叠</strong> + <strong>存磁盘留引用</strong> + <strong>时间降级</strong>。所有操作都作用在 DAG 节点上。</p>
+
+<!-- §2 -->
+<details open>
+<summary id="s2">2. 节点生命周期管理</summary>
+<div class="section-body">
+<p>我们独有的设计。Claude Code 是线性对话没有 DAG，不需要这一层。</p>
+
+<h3 id="s2-1">2.1 函数运行中</h3>
+<div class="spec">
+  <dt>触发</dt>
+  <dd><span class="node-func">🟢 函数节点</span> 被调用，status=<code>"running"</code></dd>
+
+  <dt>做什么</dt>
+  <dd>内部子树（<span class="node-tool">🟡 工具调用</span>、嵌套 <span class="node-func">🟢 函数</span>、LLM 交互）完整展开在上下文中</dd>
+
+  <dt>可见范围</dt>
+  <dd>由 <code>render_context</code> 的 callers / subcalls / expose 控制</dd>
+
+  <dt>节点状态</dt>
+  <dd>
+    <strong>函数内部视角</strong>（函数自己的 LLM 调用）：子节点 full（完整渲染 input + output）<br>
+    <strong>外部视角</strong>（调用方看这个函数）：默认 expose=io，调用方只看到输入和输出，看不到内部的 <span class="node-tool">🟡 工具调用</span> 和 LLM 交互
+  </dd>
+
+  <dt>涉及节点</dt>
+  <dd><span class="node-func">🟢 函数节点</span>（ROLE_CODE）+ 其下所有 <span class="node-tool">🟡 工具子节点</span>（仅在函数内部视角参与渲染）</dd>
+
+  <dt>函数调用特殊设计</dt>
+  <dd><code>render_context</code> 的 <code>frame_entry_seq</code> 参数划分"函数前历史"和"函数内历史"，<code>callers</code> 控制能看多少父辈。<code>expose=io</code> 确保内部细节不泄漏给调用方</dd>
+</div>
+
+<h3 id="s2-2">2.2 函数结束 → 自动折叠</h3>
+<div class="spec">
+  <dt>触发</dt>
+  <dd><span class="node-func">🟢 函数节点</span> 返回，status 从 <code>"running"</code> 变为 <code>"completed"</code> / <code>"error"</code></dd>
+
+  <dt>做什么</dt>
+  <dd>
+    a. 内部子树（所有子节点）序列化存磁盘<br>
+    b. 存储路径：<code>~/.openprogram/sessions/&lt;sid&gt;/collapsed/&lt;node_id&gt;.jsonl</code><br>
+    c. 节点变为折叠状态，只保留一行（输入→输出）：<br>
+    <pre><code>research_agent("LLM reasoning") → 5 ideas (详见 collapsed/abc123)</code></pre>
+    这和默认 expose=io 天然一致——外部本来就只看到输入输出<br>
+    d. <span class="xref">→ 折叠后的节点进入 §3-§5 的常规压缩流程，和 <span class="node-chat">🔵 对话节点</span> 一视同仁</span>
+  </dd>
+
+  <dt>各场景</dt>
+  <dd>
+    <strong>大模型调用的函数</strong>：自动折叠<br>
+    <strong>手动调用的函数</strong>：同样折叠，只保留输入输出<br>
+    <strong>嵌套函数</strong>：内层先折叠，外层结束时再折叠
+  </dd>
+
+  <dt>涉及节点</dt>
+  <dd><span class="node-func">🟢 函数节点</span> 从 status=running 变为 completed，子节点从渲染列表移除（不物理删除）</dd>
+
+  <dt>函数调用特殊设计</dt>
+  <dd>这是 <span class="node-func">🟢 函数节点</span> 独有的步骤，<span class="node-chat">🔵 对话节点</span> 不经过这步</dd>
+</div>
+
+<h3 id="s2-3">2.3 存磁盘的格式和检索</h3>
+<div class="spec">
+  <dt>格式</dt>
+  <dd>JSONL，每行一个子节点（role / name / input / output / metadata）</dd>
+
+  <dt>检索</dt>
+  <dd>大模型可以通过 <code>read_file</code> 工具读取路径，查看函数运行的具体过程</dd>
+
+  <dt>关联</dt>
+  <dd><span class="xref">→ §4.1 Microcompact 也存磁盘，共用同一套存储目录结构</span></dd>
+
+  <dt>涉及节点</dt>
+  <dd>存的是被折叠的子节点，父节点（<span class="node-func">🟢 函数节点</span> 本身）留在 DAG 中</dd>
+</div>
+</div>
+</details>
+
+<!-- §3 -->
+<details open>
+<summary id="s3">3. 每轮常规操作</summary>
+<div class="section-body">
+<p>每次 LLM 调用前都做，和上下文长度无关。</p>
+
+<h3 id="s3-1">3.1 截断超大单个输出</h3>
+<div class="spec">
+  <dt>触发</dt>
+  <dd>每次 LLM 调用前检查所有节点的 output</dd>
+
+  <dt>做什么</dt>
+  <dd>单个工具输出超过阈值（比如 10000 tokens）就截断。保留开头 N tokens + 结尾 M tokens，中间用 <code>[... truncated ...]</code> 替代</dd>
+
+  <dt>作用对象</dt>
+  <dd>所有节点：<span class="node-chat">🔵 对话</span> <span class="node-func">🟢 函数</span> <span class="node-tool">🟡 工具</span>（含 §2.2 折叠后的函数节点）</dd>
+
+  <dt>涉及节点</dt>
+  <dd>作用在单个节点的 output 字段上，不改变节点状态，不影响节点间结构</dd>
+
+  <dt>函数调用特殊设计</dt>
+  <dd>无。§2.2 折叠后的 <span class="node-func">🟢 函数节点</span> 只有一行，通常不会触发截断</dd>
+</div>
+</div>
+</details>
+
+<!-- §4 -->
+<details open>
+<summary id="s4">4. 空闲时清理</summary>
+<div class="section-body">
+<p>用户一段时间没发消息时做。</p>
+
+<h3 id="s4-1">4.1 旧工具输出存磁盘（Microcompact）</h3>
+<div class="spec">
+  <dt>触发</dt>
+  <dd>距上次用户交互超过阈值（比如 30 秒）</dd>
+
+  <dt>做什么</dt>
+  <dd>按时间排序，最旧的 <span class="node-tool">🟡 工具输出</span> 存磁盘，上下文中替换为引用路径</dd>
+
+  <dt>存储</dt>
+  <dd><code>~/.openprogram/sessions/&lt;sid&gt;/tool_outputs/&lt;node_id&gt;</code></dd>
+
+  <dt>上下文中变成</dt>
+  <dd><code>[output stored: tool_outputs/abc123, retrievable by read_file]</code></dd>
+
+  <dt>保留条件</dt>
+  <dd>最近的工具输出保持 inline（不清理）。大模型需要时可以通过 <code>read_file</code> 读回来</dd>
+
+  <dt>关联</dt>
+  <dd><span class="xref">→ 和 §2.3 共用存储机制，但针对的是单个 <span class="node-tool">🟡 工具输出</span> 而非 <span class="node-func">🟢 函数子树</span></span></dd>
+
+  <dt>涉及节点</dt>
+  <dd>修改 <span class="node-tool">🟡 工具节点</span> 的 output 字段（替换为引用路径），节点本身保留在 DAG 中</dd>
+
+  <dt>函数调用特殊设计</dt>
+  <dd>
+    <span class="node-func">🟢 函数运行中</span>（§2.1）：内部的 <span class="node-tool">🟡 工具输出</span> 也可以被清理（运行时间长时旧的内部输出存磁盘）<br>
+    <span class="node-func">🟢 函数结束后</span>（§2.2）：内部子树已整体存磁盘，Microcompact 不再作用于这些子节点
+  </dd>
+</div>
+</div>
+</details>
+
+<!-- §5 -->
+<details open>
+<summary id="s5">5. 阈值触发的压缩</summary>
+<div class="section-body">
+<p>上下文占比超过阈值时做。</p>
+
+<h3 id="s5-1">5.1 触发条件和目标</h3>
+<div class="spec">
+  <dt>触发</dt>
+  <dd>
+    history tokens 占 context window 超过阈值：<br>
+    · context ≤ 200K → 触发线 <strong>70%</strong><br>
+    · context &gt; 200K → 触发线 <strong>80%</strong>
+  </dd>
+
+  <dt>目标</dt>
+  <dd>压到 <strong>20%</strong></dd>
+
+  <dt>检查时机</dt>
+  <dd>每次 LLM 调用前（§3 之后）</dd>
+
+  <dt>涉及节点</dt>
+  <dd>计算所有参与渲染的节点的 token 总和</dd>
+</div>
+
+<h3 id="s5-2">5.2 按时间删旧节点（Snip）</h3>
+<div class="spec">
+  <dt>触发</dt>
+  <dd>§5.1 条件满足</dd>
+
+  <dt>做什么</dt>
+  <dd>直接删除最旧的节点（不做摘要，从渲染列表移除）</dd>
+
+  <dt>作用对象</dt>
+  <dd>所有类型：<span class="node-chat">🔵 对话</span> <span class="node-func">🟢 已折叠函数</span> <span class="node-tool">🟡 工具</span></dd>
+
+  <dt>删多少</dt>
+  <dd>从最旧的开始删，直到总 token 数降到目标以下</dd>
+
+  <dt>涉及节点</dt>
+  <dd>设置节点 <code>visibility=hidden</code>，<code>render_context</code> 跳过这些节点。数据仍在 DAG 中（不物理删除）</dd>
+
+  <dt>不够时</dt>
+  <dd><span class="xref">→ 进入 §5.3</span></dd>
+
+  <dt>函数调用特殊设计</dt>
+  <dd>
+    §2.2 折叠后的 <span class="node-func">🟢 函数节点</span> 被当作普通节点，按时间排序参与 Snip<br>
+    正在运行的 <span class="node-func">🟢 函数</span>（§2.1）<strong>不参与</strong> Snip（不能删正在用的）
+  </dd>
+</div>
+
+<h3 id="s5-3">5.3 对话节点 LLM 摘要</h3>
+<div class="spec">
+  <dt>触发</dt>
+  <dd>§5.2 Snip 后仍超目标</dd>
+
+  <dt>做什么</dt>
+  <dd>用 LLM 把旧 <span class="node-chat">🔵 对话节点</span> 摘要成一段文本</dd>
+
+  <dt>摘要预生成</dt>
+  <dd>每轮 turn 结束时异步生成 1-2 句摘要，存在节点 <code>metadata.summary</code> 中</dd>
+
+  <dt>压缩时</dt>
+  <dd>直接用缓存的 summary 替换完整对话，不需要额外 LLM 调用。如果没有预生成的 summary 则调 LLM（更慢，但保底）</dd>
+
+  <dt>摘要后变成</dt>
+  <dd><code>[turn 3] 用户问了代码性能 → 模型发现3个瓶颈</code>（约 50 tokens）</dd>
+
+  <dt>关联</dt>
+  <dd><span class="xref">→ §2.2 折叠后的 <span class="node-func">🟢 函数节点</span> 已经是一行，通常不再摘要；但如果太长也可进一步缩短</span></dd>
+
+  <dt>涉及节点</dt>
+  <dd>节点 visibility 从 full 变为 degraded，渲染时用 summary 替代完整内容</dd>
+
+  <dt>函数调用特殊设计</dt>
+  <dd>
+    <span class="node-chat">🔵 对话节点</span>：用预生成的摘要<br>
+    §2.2 折叠后的 <span class="node-func">🟢 函数节点</span>：已是一行，通常不再摘要<br>
+    正在运行的 <span class="node-func">🟢 函数</span>（§2.1）：不摘要（正在用）
+  </dd>
+</div>
+
+<h3 id="s5-4">5.4 /compact 手动命令</h3>
+<div class="spec">
+  <dt>触发</dt>
+  <dd>用户输入 <code>/compact</code> 或 <code>/compact &lt;提示词&gt;</code></dd>
+
+  <dt>做什么</dt>
+  <dd>立即触发 LLM 全量摘要（不经过 §5.2 Snip）。可以带提示词指导保留什么</dd>
+
+  <dt>示例</dt>
+  <dd><code>/compact 保留数据库迁移的讨论</code></dd>
+
+  <dt>摘要后</dt>
+  <dd>所有旧节点 <code>visibility=hidden</code>，生成一个新的 compaction summary 节点。只保留最近 1-2 轮完整</dd>
+
+  <dt>涉及节点</dt>
+  <dd>所有旧节点（<span class="node-chat">🔵 对话</span> + <span class="node-func">🟢 已折叠函数</span>）一起被摘要</dd>
+
+  <dt>函数调用特殊设计</dt>
+  <dd>无。已折叠的 <span class="node-func">🟢 函数节点</span> 和 <span class="node-chat">🔵 对话节点</span> 一起被摘要</dd>
+</div>
+</div>
+</details>
+
+<!-- §6 -->
+<details open>
+<summary id="s6">6. 完整流程推演</summary>
+<div class="section-body">
+<p>场景：用户在 200K context 下做编程任务，中间调用了 <code>research_agent</code> 函数。</p>
+
+<div class="timeline">
+  <div class="tl-item phase1">
+    <div class="tl-title">阶段 1（0-30%）：正常对话</div>
+    <span class="node-chat">🔵 user</span> → <span class="node-chat">🔵 assistant</span> → <span class="node-chat">🔵 user</span> → <span class="node-chat">🔵 assistant</span><br>
+    没有任何压缩触发。所有 <span class="node-chat">🔵 对话节点</span> visibility=full。
+    <div class="tl-ref">无章节触发</div>
+  </div>
+
+  <div class="tl-item phase2">
+    <div class="tl-title">阶段 2（30-50%）：调用函数</div>
+    <span class="node-chat">🔵 user</span>: "帮我调研 LLM reasoning"<br>
+    <span class="node-chat">🔵 assistant</span> 调用 <span class="node-func">🟢 research_agent</span>（§2.1 生效）<br>
+    <span class="node-func">🟢 research_agent</span> 运行中：内部 15 轮 <span class="node-tool">🟡 工具调用</span> 展开在上下文<br>
+    某个 <span class="node-tool">🟡 search_papers</span> 返回 20000 tokens → 截断到 10000
+    <div class="tl-ref">§2.1 + §3.1 + §4.1</div>
+  </div>
+
+  <div class="tl-item phase3">
+    <div class="tl-title">阶段 3：函数结束</div>
+    <span class="node-func">🟢 research_agent</span> 返回 5 个 idea<br>
+    §2.2 触发：内部 15 轮子树存磁盘（<code>collapsed/abc123.jsonl</code>），节点折叠成一行<br>
+    上下文释放约 30K tokens<br>
+    折叠后的节点和 <span class="node-chat">🔵 对话节点</span> 一样参与后续压缩
+    <div class="tl-ref">§2.2</div>
+  </div>
+
+  <div class="tl-item phase4">
+    <div class="tl-title">阶段 4（50-70%）：继续对话</div>
+    用户继续讨论、改代码<br>
+    §4.1：空闲时旧的 <span class="node-tool">🟡 read_file</span> 输出存磁盘<br>
+    turn 结束时预生成 <span class="node-chat">🔵 对话</span> 摘要（§5.3 的准备）
+    <div class="tl-ref">§4.1 + §5.3 预生成</div>
+  </div>
+
+  <div class="tl-item phase5">
+    <div class="tl-title">阶段 5（70%）：触发压缩</div>
+    §5.1：超过 70% 触发线<br>
+    §5.2 Snip：删最旧的 10 轮节点（含已折叠的 <span class="node-func">🟢 research_agent</span>）<br>
+    如果还不够 → §5.3：用预生成的 summary 替换更多旧 <span class="node-chat">🔵 对话</span><br>
+    压到 20%
+    <div class="tl-ref">§5.1 → §5.2 → §5.3</div>
+  </div>
+
+  <div class="tl-item phase6">
+    <div class="tl-title">阶段 6：继续使用</div>
+    压缩后正常对话。再次到 70% 时重复阶段 5（链式压缩）<br>
+    大模型想回顾 <span class="node-func">🟢 research_agent</span> 的具体过程：<code>read_file("collapsed/abc123.jsonl")</code>
+    <div class="tl-ref">§5 循环 + §2.3 检索</div>
+  </div>
+</div>
+</div>
+</details>
+
+<!-- §7 -->
+<details>
+<summary id="s7">7. 和 Claude Code 的对应</summary>
+<div class="section-body">
+<table>
+  <tr><th>我们</th><th>Claude Code</th><th>说明</th></tr>
+  <tr><td>§2 节点生命周期</td><td>无</td><td>我们独有，Claude Code 是线性对话没有 DAG</td></tr>
+  <tr><td>§3.1 截断超大输出</td><td>Budget Reduction</td><td>相同</td></tr>
+  <tr><td>§4.1 旧输出存磁盘</td><td>Microcompact</td><td>相同思路，我们额外有函数子树折叠</td></tr>
+  <tr><td>§5.2 Snip</td><td>Snip</td><td>相同</td></tr>
+  <tr><td>§5.3 LLM 摘要</td><td>Context Collapse / Auto-Compact</td><td>Claude Code 二选一，我们统一为预生成摘要 + 按需 LLM</td></tr>
+  <tr><td>§5.4 /compact</td><td>/compact</td><td>相同</td></tr>
+</table>
+<p>来源：<a href="https://arxiv.org/html/2604.14228v1">Dive into Claude Code</a>（arXiv 2604.14228）</p>
+</div>
+</details>
+
+<!-- §8 -->
+<details>
+<summary id="s8">8. 实施计划</summary>
+<div class="section-body">
+<table>
+  <tr><th>步骤</th><th>做什么</th><th>依赖</th></tr>
+  <tr><td>1</td><td>函数结束时自动折叠子树 + 存磁盘（§2.2）</td><td>无</td></tr>
+  <tr><td>2</td><td>截断超大单个输出（§3.1）</td><td>无</td></tr>
+  <tr><td>3</td><td>Microcompact 旧工具输出存磁盘（§4.1）</td><td>无</td></tr>
+  <tr><td>4</td><td>turn 结束时预生成对话摘要（§5.3 准备）</td><td>无</td></tr>
+  <tr><td>5</td><td>Snip 按时间删旧节点（§5.2）</td><td>无</td></tr>
+  <tr><td>6</td><td>摘要替换用预生成的 summary（§5.3）</td><td>步骤 4</td></tr>
+  <tr><td>7</td><td>/compact 命令（§5.4）</td><td>步骤 6</td></tr>
+  <tr><td>8</td><td>/context 命令（查看 token 分布）</td><td>无</td></tr>
+</table>
+</div>
+</details>
+
+</div>
+</body>
+</html>
