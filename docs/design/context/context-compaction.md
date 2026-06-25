@@ -4,6 +4,13 @@
 > 代码: `context/engine.py`、`context/budget.py`、`context/microcompact.py`、`context/tool_aging/`
 > 参考: [Claude Code 压缩参考](../../reference/claude-code-compaction.md)
 
+<blockquote>
+<b>节点类型图例</b><br>
+🔵 <span style="color:#3b82f6">对话节点</span>（user + assistant）<br>
+🟢 <span style="color:#22c55e">函数调用节点</span>（ROLE_CODE，@agentic_function）<br>
+🟡 <span style="color:#eab308">工具调用节点</span>（bash / read_file / write 等）
+</blockquote>
+
 ## 1. 核心思路
 
 上下文压缩 = 节点折叠 + 存磁盘留引用 + 时间降级。所有操作都作用在 DAG 节点上。
@@ -20,7 +27,7 @@
 - **节点状态**：
   - **函数内部视角**（函数自己的 LLM 调用）：子节点 full（完整渲染 input + output）
   - **外部视角**（调用方看这个函数节点）：默认 expose=io，调用方只看到函数的输入和输出，看不到内部的工具调用和 LLM 交互
-- **和节点的关系**：函数节点（ROLE_CODE）+ 其下所有子节点都参与渲染（仅在函数内部视角）
+- **和节点的关系**：🟢 <span style="color:#22c55e">函数节点</span>（ROLE_CODE）+ 其下所有 🟡 <span style="color:#eab308">工具子节点</span>都参与渲染（仅在函数内部视角）
 - **函数调用特殊设计**：render_context 的 frame_entry_seq 参数划分"函数前历史"和"函数内历史"，callers 控制能看多少父辈。expose=io 确保函数内部细节不泄漏给调用方
 
 ### 2.2 函数结束 → 自动折叠
@@ -36,7 +43,7 @@
 - **大模型调用的函数**：自动折叠
 - **手动调用的函数**：同样折叠，只保留输入输出
 - **嵌套函数**：内层先折叠，外层结束时再折叠（外层的折叠包含已折叠的内层）
-- **和节点的关系**：函数节点从 ROLE_CODE status=running 变为 status=completed，子节点从 DAG 渲染列表移除（但不物理删除）
+- **和节点的关系**：🟢 <span style="color:#22c55e">函数节点</span>从 status=running 变为 status=completed，🟡 <span style="color:#eab308">工具子节点</span>从 DAG 渲染列表移除（但不物理删除）
 - **函数调用特殊设计**：这是函数调用独有的步骤，对话节点不经过这步
 
 ### 2.3 存磁盘的格式和检索
@@ -55,7 +62,7 @@
 - **触发**：每次 LLM 调用前检查所有节点的 output
 - **做什么**：单个工具输出超过阈值（比如 10000 tokens）就截断
 - **截断方式**：保留开头 N tokens + 结尾 M tokens，中间用 `[... truncated ...]` 替代
-- **作用对象**：所有节点（对话节点、工具节点、§2.2 折叠后的函数节点）
+- **作用对象**：所有节点（🔵 <span style="color:#3b82f6">对话节点</span>、🟡 <span style="color:#eab308">工具节点</span>、§2.2 折叠后的 🟢 <span style="color:#22c55e">函数节点</span>）
 - **不改变节点状态**，只截断 output 文本
 - **和节点的关系**：作用在单个节点的 output 字段上，不影响节点间的结构
 - **函数调用特殊设计**：无。函数节点和对话节点一样处理。§2.2 折叠后的函数节点只有一行，通常不会触发截断
@@ -73,7 +80,7 @@
 - **最近的工具输出保持 inline**（不清理）
 - **大模型需要时可以通过 read_file 读回来**
 - **和 §2.3 的关系**：共用存储机制，但针对的是单个工具输出而非函数子树
-- **和节点的关系**：修改节点的 output 字段（替换为引用路径），节点本身保留在 DAG 中
+- **和节点的关系**：修改 🟡 <span style="color:#eab308">工具节点</span>的 output 字段（替换为引用路径），节点本身保留在 DAG 中
 - **函数调用特殊设计**：
   - 函数运行中（§2.1）：内部的工具输出也可以被 Microcompact 清理（如果运行时间很长，旧的内部工具输出存磁盘）
   - 函数结束后（§2.2）：内部子树已经整体存磁盘了，Microcompact 不再作用于这些子节点
@@ -95,7 +102,7 @@
 
 - **触发**：§5.1 条件满足
 - **做什么**：直接删除最旧的节点（不做摘要，直接从渲染列表移除）
-- **作用对象**：所有类型的节点（对话节点、已折叠的函数节点、工具调用节点）
+- **作用对象**：所有类型的节点（🔵 <span style="color:#3b82f6">对话节点</span>、已折叠的 🟢 <span style="color:#22c55e">函数节点</span>、🟡 <span style="color:#eab308">工具调用节点</span>）
 - **删多少**：从最旧的开始删，直到总 token 数降到目标以下
 - **删除的节点数据仍在 DAG 中**（不物理删除），只是渲染时跳过（visibility=hidden）
 - **如果 Snip 后仍超目标** → 进入 §5.3
@@ -115,9 +122,9 @@
 - **和 §2.2 的关系**：折叠后的函数节点已经是一行了，通常不需要再摘要；但如果一行还是太长，也可以进一步缩短
 - **和节点的关系**：节点的 visibility 从 full 变为 degraded，渲染时用 summary 替代完整内容
 - **函数调用特殊设计**：
-  - 对话节点（user+assistant）：用预生成的摘要
-  - 已折叠的函数节点（§2.2）：已经是一行，通常不再摘要
-  - 正在运行的函数（§2.1）：不摘要（正在用）
+  - 🔵 <span style="color:#3b82f6">对话节点</span>（user+assistant）：用预生成的摘要
+  - 已折叠的 🟢 <span style="color:#22c55e">函数节点</span>（§2.2）：已经是一行，通常不再摘要
+  - 正在运行的 🟢 <span style="color:#22c55e">函数节点</span>（§2.1）：不摘要（正在用）
 
 ### 5.4 /compact 手动命令
 
@@ -134,24 +141,24 @@
 
 ### 阶段 1（0-30%）：正常对话
 
-- user → assistant → user → assistant
+- 🔵 user → 🔵 assistant → 🔵 user → 🔵 assistant
 - 没有任何压缩触发
-- 对话节点 visibility=full；如有函数节点则 expose=io（外部只看输入输出）
+- 🔵 <span style="color:#3b82f6">对话节点</span> visibility=full；如有 🟢 <span style="color:#22c55e">函数节点</span>则 expose=io（外部只看输入输出）
 
 ### 阶段 2（30-50%）：调用函数
 
-- user: "帮我调研 LLM reasoning"
-- assistant 调用 research_agent（函数节点，§2.1 生效）
-- research_agent 运行中：内部 15 轮工具调用展开在上下文
-- §3.1 生效：某个 search_papers 返回 20000 tokens，截断到 10000
-- §4.1 生效：空闲时旧的 search_papers 输出存磁盘
+- 🔵 user: "帮我调研 LLM reasoning"
+- 🔵 assistant 调用 🟢 <span style="color:#22c55e">research_agent</span>（函数节点，§2.1 生效）
+- 🟢 research_agent 运行中：内部 15 轮 🟡 <span style="color:#eab308">工具调用</span>展开在上下文
+- §3.1 生效：某个 🟡 search_papers 返回 20000 tokens，截断到 10000
+- §4.1 生效：空闲时旧的 🟡 search_papers 输出存磁盘
 
 ### 阶段 3：函数结束
 
-- research_agent 返回 5 个 idea
-- §2.2 触发：内部 15 轮子树存磁盘（collapsed/abc123.jsonl），节点折叠成一行
+- 🟢 <span style="color:#22c55e">research_agent</span> 返回 5 个 idea
+- §2.2 触发：内部 15 轮 🟡 <span style="color:#eab308">工具子树</span>存磁盘（collapsed/abc123.jsonl），🟢 函数节点折叠成一行
 - 上下文释放约 30K tokens
-- 折叠后的节点和对话节点一样参与后续压缩
+- 折叠后的 🟢 函数节点和 🔵 <span style="color:#3b82f6">对话节点</span>一样参与后续压缩
 
 ### 阶段 4（50-70%）：继续对话
 
@@ -162,8 +169,8 @@
 ### 阶段 5（70%）：触发压缩
 
 - §5.1：超过 70% 触发线
-- §5.2 Snip：删最旧的 10 轮对话节点（包括那个已折叠的 research_agent 节点）
-- 如果还不够 → §5.3：用预生成的 summary 替换更多旧对话
+- §5.2 Snip：删最旧的 10 轮 🔵 <span style="color:#3b82f6">对话节点</span>（包括那个已折叠的 🟢 <span style="color:#22c55e">research_agent</span> 节点）
+- 如果还不够 → §5.3：用预生成的 summary 替换更多旧 🔵 对话
 - 压到 20%
 
 ### 阶段 6：继续使用
