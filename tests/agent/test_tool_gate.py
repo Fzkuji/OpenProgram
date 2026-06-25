@@ -44,7 +44,7 @@ def _ev(tool: str = "bash"):
     return make_event("tool.before", "agent", {"tool": tool, "args": {}})
 
 
-# ─── decide 语义 ─────────────────────────────────────────────────────────────
+# decide 语义
 
 def test_no_gates_allows():
     assert decide_tool_gate(_ev()) is None
@@ -77,7 +77,7 @@ def test_unregister():
     assert decide_tool_gate(_ev()) is None
 
 
-# ─── 端到端：gate 真的拦下工具 ────────────────────────────────────────────────
+# 端到端：gate 真的拦下工具
 
 def _assistant(content) -> AssistantMessage:
     has_calls = any(isinstance(c, ToolCall) for c in content)

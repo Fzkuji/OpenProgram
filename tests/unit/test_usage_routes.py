@@ -48,7 +48,7 @@ def client(tmp_path, monkeypatch):
     return c
 
 
-# ── summary ──
+# summary
 
 def test_summary_totals(client):
     d = client.get("/api/usage/summary").json()
@@ -84,7 +84,7 @@ def test_summary_by_kind(client):
     assert by["tool"]["total_tokens"] == 100
 
 
-# ── trend ──
+# trend
 
 def test_trend_day_buckets_contiguous_with_zero_fill(client):
     """The seed spans 3 days; querying an explicit window aligned to day
@@ -146,7 +146,7 @@ def test_trend_hour_bucket(client):
     assert len(nonzero) == 3
 
 
-# ── time filtering ──
+# time filtering
 
 def test_since_filter(client):
     base = client._seed_base  # type: ignore[attr-defined]

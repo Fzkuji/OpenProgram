@@ -39,7 +39,7 @@ class Policy:
         return f"{self.name or type(self).__name__}:{event.metadata.get('session', '')}"
 
 
-# ─── 进程级注册表 ─────────────────────────────────────────────────────────────
+# 进程级注册表
 
 _policies: list[Policy] = []
 _lock = threading.Lock()

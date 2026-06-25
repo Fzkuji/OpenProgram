@@ -1,4 +1,4 @@
-"""context.nodes.compute_reads — pure-function helper that picks the
+"""context.nodes.render_context — pure-function helper that picks the
 ids that should go into the next LLM call's ``reads``.
 
 Tests build small graphs manually and assert the algorithm's behavior
@@ -15,7 +15,7 @@ from openprogram.context.nodes import (
     ROLE_USER,
     ROLE_LLM,
     ROLE_CODE,
-    compute_reads,
+    render_context,
 )
 
 
@@ -33,7 +33,7 @@ def _code(g: Graph, name: str, *, expose: str = "io",
                        metadata={"expose": expose}))
 
 
-# ── No frame: top-level chat returns the linear chain ──────────────
+# No frame: top-level chat returns the linear chain
 
 
 def test_top_level_returns_full_chain_in_seq_order():
@@ -41,7 +41,7 @@ def test_top_level_returns_full_chain_in_seq_order():
     u = _user(g, "q1")
     m = _llm(g, "a1")
     u2 = _user(g, "q2")
-    assert compute_reads(g) == [u.id, m.id, u2.id]
+    assert render_context(g) == [u.id, m.id, u2.id]
 
 
 def test_head_seq_caps_the_chain():
@@ -50,15 +50,15 @@ def test_head_seq_caps_the_chain():
     m = _llm(g, "a1")
     u2 = _user(g, "q2")
     # Slice at m: u2 excluded.
-    assert compute_reads(g, head_seq=m.seq) == [u.id, m.id]
+    assert render_context(g, head_seq=m.seq) == [u.id, m.id]
 
 
 def test_empty_graph_returns_empty_list():
     g = Graph()
-    assert compute_reads(g) == []
+    assert render_context(g) == []
 
 
-# ── Inside a frame: in-frame uncapped by default ───────────────────
+# Inside a frame: in-frame uncapped by default
 
 
 def test_in_frame_visible_by_default():
@@ -71,7 +71,7 @@ def test_in_frame_visible_by_default():
     entry = m.seq
     s1 = _llm(g, "step1")
     s2 = _llm(g, "step2")
-    reads = compute_reads(g, frame_entry_seq=entry)
+    reads = render_context(g, frame_entry_seq=entry)
     assert reads == [u.id, m.id, s1.id, s2.id]
 
 
@@ -83,7 +83,7 @@ def test_subcalls_zero_explicitly_hides_in_frame():
     entry = m.seq
     _llm(g, "step1")
     _llm(g, "step2")
-    reads = compute_reads(
+    reads = render_context(
         g, frame_entry_seq=entry, render_range={"subcalls": 0}
     )
     assert reads == [u.id, m.id]
@@ -97,7 +97,7 @@ def test_subcalls_uncapped_shows_all_in_frame():
     entry = m.seq
     in1 = _llm(g, "step1")
     in2 = _llm(g, "step2")
-    reads = compute_reads(g, frame_entry_seq=entry,
+    reads = render_context(g, frame_entry_seq=entry,
                           render_range={"subcalls": -1})
     assert reads == [u.id, m.id, in1.id, in2.id]
 
@@ -108,7 +108,7 @@ def test_callers_zero_isolates_in_frame():
     _llm(g, "a")
     entry = g.last().seq
     s1 = _llm(g, "s1")
-    reads = compute_reads(g, frame_entry_seq=entry,
+    reads = render_context(g, frame_entry_seq=entry,
                           render_range={"callers": 0, "subcalls": -1})
     assert reads == [s1.id]
 
@@ -123,7 +123,7 @@ def test_callers_keeps_recent_pre_frame_only():
     s = _llm(g, "step")
     # callers=2 → keep most recent 2 pre-frame (c, d); subcalls=-1 → all
     # in-frame (s).
-    reads = compute_reads(g, frame_entry_seq=entry,
+    reads = render_context(g, frame_entry_seq=entry,
                           render_range={"callers": 2, "subcalls": -1})
     assert reads == [c.id, d.id, s.id]
 
@@ -135,7 +135,7 @@ def test_subcalls_cap_keeps_recent_in_frame_nodes_only():
     s1 = _llm(g, "1")
     s2 = _llm(g, "2")
     s3 = _llm(g, "3")
-    reads = compute_reads(g, frame_entry_seq=entry,
+    reads = render_context(g, frame_entry_seq=entry,
                           render_range={"subcalls": 2})
     assert u.id in reads
     assert s3.id in reads
@@ -143,7 +143,7 @@ def test_subcalls_cap_keeps_recent_in_frame_nodes_only():
     assert s1.id not in reads
 
 
-# ── Expose filtering on code Calls ─────────────────────────────────
+# Expose filtering on code Calls
 
 
 def test_io_function_hides_internal_llm():
@@ -154,7 +154,7 @@ def test_io_function_hides_internal_llm():
     fn = _code(g, "agent", expose="io")
     internal = _llm(g, "internal", called_by=fn.id)
     final = _llm(g, "after")
-    reads = compute_reads(g)
+    reads = render_context(g)
     assert u.id in reads
     assert fn.id in reads             # the summary visible
     assert internal.id not in reads   # internal hidden
@@ -166,7 +166,7 @@ def test_full_function_keeps_internal_llm():
     u = _user(g, "q")
     fn = _code(g, "agent", expose="full")
     internal = _llm(g, "internal", called_by=fn.id)
-    reads = compute_reads(g)
+    reads = render_context(g)
     assert u.id in reads
     assert fn.id in reads
     assert internal.id in reads       # transparent
@@ -180,14 +180,14 @@ def test_io_only_suppresses_its_own_internals():
     a_llm = _llm(g, "a-internal", called_by=a.id)
     b = _code(g, "b", expose="full")
     b_llm = _llm(g, "b-internal", called_by=b.id)
-    reads = compute_reads(g)
+    reads = render_context(g)
     assert a.id in reads
     assert a_llm.id not in reads       # a is io → hide a's internals
     assert b.id in reads
     assert b_llm.id in reads           # b is full → keep b's internals
 
 
-# ── head_seq + frame combo ──────────────────────────────────────────
+# head_seq + frame combo
 
 
 def test_head_seq_limits_chain_inside_frame_too():
@@ -197,7 +197,7 @@ def test_head_seq_limits_chain_inside_frame_too():
     s1 = _llm(g, "1")
     s2 = _llm(g, "2")
     s3 = _llm(g, "3")
-    reads = compute_reads(g, head_seq=s2.seq, frame_entry_seq=entry,
+    reads = render_context(g, head_seq=s2.seq, frame_entry_seq=entry,
                           render_range={"subcalls": -1})
     assert reads == [u.id, s1.id, s2.id]
     assert s3.id not in reads

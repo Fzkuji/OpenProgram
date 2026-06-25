@@ -31,7 +31,7 @@ from openprogram.context.nodes import (
 )
 
 
-# ── Call basics ─────────────────────────────────────────────────────
+# Call basics
 
 
 def test_call_has_role_and_seq_default_unset():
@@ -49,7 +49,7 @@ def test_role_constants():
     assert ROLE_CODE == "code"
 
 
-# ── Backward-compat factories ──────────────────────────────────────
+# Backward-compat factories
 
 
 def test_user_message_factory_returns_call():
@@ -80,7 +80,7 @@ def test_function_call_factory_returns_call():
     assert n.called_by == "parent_id"
 
 
-# ── Graph: append + seq ─────────────────────────────────────────────
+# Graph: append + seq
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ def test_graph_convenience_builders(graph):
     assert c.result == "ok"
 
 
-# ── Graph.update ───────────────────────────────────────────────────
+# Graph.update
 
 
 def test_graph_update_existing_node(graph):
@@ -153,7 +153,7 @@ def test_graph_update_unknown_raises(graph):
         graph.update("nope", output="x")
 
 
-# ── reads validation ───────────────────────────────────────────────
+# reads validation
 
 
 def test_add_model_call_rejects_unknown_reads(graph):
@@ -161,7 +161,7 @@ def test_add_model_call_rejects_unknown_reads(graph):
         graph.add_model_call(model="x", reads=["nope"], output="")
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
+# Helpers
 
 
 @pytest.fixture
@@ -198,7 +198,7 @@ def test_linear_back_to_target_not_found(chat_graph):
         linear_back_to(chat_graph, "nonexistent")
 
 
-# ── called_by lineage helpers ───────────────────────────────────
+# called_by lineage helpers
 
 
 def test_branch_terminals_and_internal_via_called_by():
@@ -236,7 +236,7 @@ def test_branch_internal_rejects_outside_lineage(chat_graph):
         branch_internal(nodes[0].id, nodes[-1].id, chat_graph)
 
 
-# ── fold_history ─────────────────────────────────────────────────
+# fold_history
 
 
 def test_fold_history_includes_full_current_turn():
@@ -262,7 +262,7 @@ def test_fold_history_includes_full_current_turn():
     assert n6.id in folded
 
 
-# ── Serialization roundtrip ─────────────────────────────────────────
+# Serialization roundtrip
 
 
 def test_to_dict_and_from_dict_roundtrip(chat_graph):

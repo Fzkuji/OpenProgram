@@ -44,7 +44,7 @@ class SettingSpec:
     secret: bool = False
 
 
-# ── validators / choice providers ─────────────────────────────────────────────
+# validators / choice providers
 
 
 def _validate_port(v: Any) -> Optional[str]:
@@ -80,7 +80,7 @@ def _coerce(widget: str, value: Any) -> Any:
     return str(value)
 
 
-# ── the registry ──────────────────────────────────────────────────────────────
+# the registry
 
 SETTINGS: list[SettingSpec] = [
     SettingSpec(
@@ -125,7 +125,7 @@ SETTINGS: list[SettingSpec] = [
 _BY_KEY = {s.key: s for s in SETTINGS}
 
 
-# ── dot-path access (openclaw-style, blocklist-guarded) ───────────────────────
+# dot-path access (openclaw-style, blocklist-guarded)
 
 
 def _get_at(cfg: dict, path: tuple[str, ...], default: Any) -> Any:
@@ -154,7 +154,7 @@ def _set_at(cfg: dict, path: tuple[str, ...], value: Any) -> None:
     node[path[-1]] = value
 
 
-# ── public API ────────────────────────────────────────────────────────────────
+# public API
 
 
 def get_settings() -> list[dict]:

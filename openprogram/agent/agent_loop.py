@@ -478,7 +478,7 @@ async def _stream_assistant_response(
     raise RuntimeError("Stream ended without a final message")
 
 
-# ── Bash checkpoint: snapshot cwd state before/after to catch file mutations ──
+# Bash checkpoint: snapshot cwd state before/after to catch file mutations
 
 _BASH_LIKE_TOOLS = frozenset({"bash"})
 

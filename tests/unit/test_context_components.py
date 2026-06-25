@@ -136,7 +136,7 @@ def test_model_guidance_conditional_on_provider():
     assert "<execution_guidance>" not in u
 
 
-# ── Prompt injection detection ──────────────────────────────────────────
+# Prompt injection detection
 
 from openprogram.context.components import detect_injection_patterns
 
@@ -186,7 +186,7 @@ def test_pi_shield_content():
     assert "disregard those specific instructions" in out
 
 
-# ── L2 todo progress ──────────────────────────────────────────────────────
+# L2 todo progress
 
 
 def test_todo_progress_empty():
@@ -237,7 +237,7 @@ def test_todo_progress_in_l2():
     assert "todo_progress" in l2
 
 
-# ── Workspace files truncation ─────────────────────────────────────────
+# Workspace files truncation
 
 from unittest.mock import patch as _ws_patch
 from openprogram.context.components import MAX_WORKSPACE_CHARS, _build_workspace_files
@@ -300,7 +300,7 @@ def test_workspace_truncation_exact_limit():
     assert "truncated" not in result
 
 
-# ── L2 git_status ──────────────────────────────────────────────────────
+# L2 git_status
 
 from unittest.mock import patch, MagicMock
 from openprogram.context.components import _build_git_status

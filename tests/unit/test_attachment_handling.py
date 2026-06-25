@@ -13,7 +13,7 @@ import pytest
 from openprogram.webui.ws_actions import chat
 
 
-# ── caps are what we think they are ───────────────────────────────────────────
+# caps are what we think they are
 
 def test_cap_constants():
     assert chat.MAX_ATTACH_MB == 32
@@ -22,7 +22,7 @@ def test_cap_constants():
     assert chat.PREVIEW_CAP == 4096
 
 
-# ── filename safety (path traversal, weird chars, length) ─────────────────────
+# filename safety (path traversal, weird chars, length)
 
 @pytest.mark.parametrize("raw,expected", [
     ("../../etc/passwd", "passwd"),     # basename strips traversal
@@ -41,7 +41,7 @@ def test_safe_attach_name_sanitizes_and_truncates():
     assert chat._safe_attach_name("x" * 300) == "x" * 120
 
 
-# ── kind classification ───────────────────────────────────────────────────────
+# kind classification
 
 @pytest.mark.parametrize("raw,name,kind", [
     (b"%PDF-1.7\nstuff", "x.bin", "pdf"),        # magic bytes
@@ -55,7 +55,7 @@ def test_decoded_kind(raw, name, kind):
     assert chat._decoded_kind(raw, name) == kind
 
 
-# ── text preview: line count + PREVIEW_CAP truncation ─────────────────────────
+# text preview: line count + PREVIEW_CAP truncation
 
 def test_count_and_preview_text_small():
     count, preview = chat._count_and_preview(b"a\nb\nc", "text")
@@ -77,7 +77,7 @@ def test_count_and_preview_binary_has_no_preview():
     assert chat._count_and_preview(b"\x00\x01\x02", "binary") == (None, None)
 
 
-# ── corrupt / non-PDF input degrades gracefully, never raises ─────────────────
+# corrupt / non-PDF input degrades gracefully, never raises
 
 def test_pdf_preview_corrupt_falls_back():
     assert chat._pdf_count_and_preview(b"this is not a pdf at all") == (None, None)

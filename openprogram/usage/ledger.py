@@ -97,7 +97,7 @@ class UsageLedger:
         self._conn: Optional[sqlite3.Connection] = None
         self._conn_pid: Optional[int] = None
 
-    # ── connection (per-process; reopened after fork) ──
+    # connection (per-process; reopened after fork)
 
     def _path(self) -> Path:
         if self._explicit_path is not None:
@@ -122,7 +122,7 @@ class UsageLedger:
         self._conn_pid = os.getpid()
         return conn
 
-    # ── write ──
+    # write
 
     def append(self, event: UsageEvent) -> None:
         row = [getattr(event, c) for c in _COLUMNS]
@@ -146,7 +146,7 @@ class UsageLedger:
             conn.executemany(sql, rows)
             conn.commit()
 
-    # ── read ──
+    # read
 
     def query(
         self,

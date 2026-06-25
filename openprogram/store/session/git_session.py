@@ -34,14 +34,14 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 
-# ── Errors ─────────────────────────────────────────────────────────
+# Errors
 
 
 class GitSessionError(RuntimeError):
     """Raised when a git command fails or repo state is unexpected."""
 
 
-# ── GitSession ─────────────────────────────────────────────────────
+# GitSession
 
 
 @dataclass
@@ -69,7 +69,7 @@ class GitSession:
         self._lock = threading.Lock()
         self._initialized: Optional[bool] = None
 
-    # ── Lifecycle ─────────────────────────────────────────────────
+    # Lifecycle
 
     @property
     def workdir_path(self) -> Path:
@@ -122,7 +122,7 @@ class GitSession:
                           "--quiet")
             self._initialized = True
 
-    # ── File ops ─────────────────────────────────────────────────
+    # File ops
 
     def write_history(self, seq: int, role: str, node_id: str, payload: dict) -> Path:
         """Append a node to ``history/``. Filename encodes seq + role
@@ -183,7 +183,7 @@ class GitSession:
         except (json.JSONDecodeError, OSError):
             return None
 
-    # ── Git ops ─────────────────────────────────────────────────
+    # Git ops
 
     def commit_all(self, message: str) -> Optional[str]:
         """``git add -A && git commit -m <message>``. Returns commit sha
@@ -245,7 +245,7 @@ class GitSession:
             else:
                 self._run("checkout", ref, "--quiet")
 
-    # ── Internal: subprocess plumbing ─────────────────────────
+    # Internal: subprocess plumbing
 
     def _run(self, *args: str, check: bool = True, timeout: float = 30.0) -> str:
         """Run ``git <args...>`` in the repo. Returns stdout text.
@@ -276,7 +276,7 @@ class GitSession:
             )
         return cp.stdout
 
-    # ── Cleanup ─────────────────────────────────────────────────
+    # Cleanup
 
     def destroy(self) -> None:
         """Delete the entire repo. Used by ``delete_session``."""

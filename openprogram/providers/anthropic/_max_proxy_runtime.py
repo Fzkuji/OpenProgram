@@ -1,0 +1,128 @@
+"""Claude Max API proxy adapter.
+
+Anthropic's official ``claude`` CLI is the only sanctioned way to use
+the "Claude Max" plan in agent contexts; the underlying account does
+**not** expose a normal ``api.anthropic.com`` key. The recommended
+local-proxy bridge is the ``meridian`` npm package — it runs a local
+HTTP server that exposes an OpenAI-compatible ``/v1/chat/completions``
+endpoint and routes traffic through the official Claude Code SDK's
+``query()`` underneath (no OAuth interception, no binary patching).
+
+Practical setup:
+
+  # one-time install + login
+  npm install -g @anthropic-ai/claude-code
+  claude login
+
+  # one-time proxy install + run
+  npm install -g @rynfar/meridian
+  meridian
+
+The daemon listens on ``http://127.0.0.1:3456`` by default. Override
+with the ``CLAUDE_MAX_PROXY_URL`` env var if you ran it on a
+different port.
+
+Older alternative: the third-party ``claude-max-api-proxy`` npm package
+listens on the same port and works for text-only traffic, but stringifies
+OpenAI multi-part content arrays into ``[object Object]`` (broken for
+gui_agent and anything sending image blocks). Prefer Meridian.
+
+Wire format gotcha: the proxy is OpenAI-compatible, NOT Anthropic
+Messages. Our model registry attaches ``api='openai-completions'`` so
+the standard stream layer routes through ``openai_completions``;
+this Runtime class therefore just configures the modern
+``Runtime(model="claude-code:<id>")`` path — no Anthropic SDK
+involvement.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Optional
+
+from openprogram.agentic_programming.runtime import Runtime
+
+
+_DEFAULT_PROXY_URL = "http://localhost:3456"
+_PLACEHOLDER_KEY = "claude-code"
+
+# The only three model ids the ``claude-max-api`` proxy recognises (see
+# ``_claude_max_proxy_registry._PROXY_MODELS``). Anything else the proxy
+# silently downgrades to Haiku, so callers must land on one of these.
+_PROXY_ALIASES = ("claude-opus-4", "claude-sonnet-4", "claude-haiku-4")
+
+
+def _normalize_proxy_model(model: str) -> str:
+    """Fold an arbitrary Claude model id onto a proxy-recognised alias.
+
+    The runtime can be handed all sorts of ids — a bare alias, a
+    version-suffixed catalog id (``claude-opus-4-7``), or even the
+    env-detected agent model (``claude-opus-4-7[1m]``). The proxy only
+    accepts the three bare family aliases, so match on the family
+    substring and return the alias. Unknown ids fall back to Sonnet
+    (the constructor default) rather than letting the proxy downgrade
+    to Haiku unannounced.
+    """
+    m = (model or "").lower()
+    if m in _PROXY_ALIASES:
+        return m
+    if "opus" in m:
+        return "claude-opus-4"
+    if "haiku" in m:
+        return "claude-haiku-4"
+    return "claude-sonnet-4"
+
+
+def _resolve_base_url() -> str:
+    val = os.environ.get("CLAUDE_MAX_PROXY_URL")
+    return val.rstrip("/") if val else _DEFAULT_PROXY_URL
+
+
+def _resolve_api_key() -> str:
+    # The proxy ignores the key value (it routes via Claude Code's
+    # OAuth), but the openai SDK still requires a non-empty string.
+    return (
+        os.environ.get("CLAUDE_MAX_PROXY_API_KEY")
+        or os.environ.get("ANTHROPIC_API_KEY")
+        or _PLACEHOLDER_KEY
+    )
+
+
+class ClaudeCodeRuntime(Runtime):
+    """Runtime that talks to a local Claude Max HTTP proxy (OpenAI-compatible).
+
+    Default daemon is ``meridian``; the older ``claude-max-api-proxy`` works
+    on the same port for text-only traffic. Drives the modern AgentSession
+    path via ``model="claude-code:<id>"``. The model registry entry carries
+    ``api='openai-completions'`` and ``base_url=http://localhost:3456/v1`` so
+    the standard ``openai_completions.stream_simple`` picks the right wire
+    format.
+
+    Side effect: this constructor exports ``OPENAI_API_KEY`` if not
+    already set, since the openai SDK reads it from the environment
+    when no api_key is passed through the per-call provider config.
+    The proxy ignores the value, but the SDK still requires one.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: str = "claude-sonnet-4",
+        max_retries: int = 2,
+        base_url: Optional[str] = None,  # noqa: ARG002 — kept for API parity
+        **_unused,
+    ) -> None:
+        if not os.environ.get("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = api_key or _resolve_api_key()
+        # Re-resolve base_url at construction so a freshly-changed env
+        # var takes effect for runtimes built after the change. The
+        # registry entry uses the *current* env-resolved URL too.
+        url = (base_url or _resolve_base_url()).rstrip("/")
+        if not url.endswith("/v1"):
+            url = url + "/v1"
+        os.environ.setdefault("CLAUDE_MAX_PROXY_RESOLVED_URL", url)
+        model = _normalize_proxy_model(model)
+        super().__init__(model=f"claude-code:{model}", max_retries=max_retries)
+
+
+__all__ = ["ClaudeCodeRuntime"]

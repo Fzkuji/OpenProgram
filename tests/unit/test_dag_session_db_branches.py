@@ -33,7 +33,7 @@ def _append(db, sess, mid, *, role="user", parent=None, content="x",
     db.append_message(sess, msg)
 
 
-# ── Branch enumeration ───────────────────────────────────────────
+# Branch enumeration
 
 
 def test_list_branches_finds_every_tip(db):
@@ -76,7 +76,7 @@ def test_delete_branch_name(db):
     assert db.list_branches("s1")[0]["name"] == "main"
 
 
-# ── delete_branch_tail ───────────────────────────────────────────
+# delete_branch_tail
 
 
 def test_delete_branch_tail_removes_subtree(db):
@@ -97,7 +97,7 @@ def test_delete_branch_tail_missing_returns_zero(db):
     assert db.delete_branch_tail("s1", "ghost") == 0
 
 
-# ── Token stats ──────────────────────────────────────────────────
+# Token stats
 
 
 def test_token_stats_sums_along_chain(db):
@@ -133,7 +133,7 @@ def test_token_stats_filters_by_model(db):
     assert stats["messages_counted"] == 1
 
 
-# ── message_exists ───────────────────────────────────────────────
+# message_exists
 
 
 def test_message_exists(db):

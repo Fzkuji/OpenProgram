@@ -18,7 +18,7 @@ from openprogram.webui._model_catalog import credentials as cr
 from openprogram.webui._model_catalog import storage as st
 
 
-# ── pure classifiers ──────────────────────────────────────────────────────────
+# pure classifiers
 
 @pytest.mark.parametrize("pid,kind", [
     ("openrouter", "openrouter_key"),
@@ -92,7 +92,7 @@ def test_provider_id_for_env_var(env, pid):
     assert cr.provider_id_for_env_var(env) == pid
 
 
-# ── validate_credential — layer 1 (auth-only), per outcome ────────────────────
+# validate_credential — layer 1 (auth-only), per outcome
 
 @pytest.fixture
 def stub_base(monkeypatch):
@@ -199,7 +199,7 @@ def test_cache_hit_avoids_second_probe(monkeypatch, stub_base):
     cr._cache.clear()
 
 
-# ── validate_credential — layer 2 (named model -> inference ping) ─────────────
+# validate_credential — layer 2 (named model -> inference ping)
 
 class _FakeResp:
     def __init__(self, status_code, text):

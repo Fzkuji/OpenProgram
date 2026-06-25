@@ -20,7 +20,7 @@ from .detect import InstallMethod, detect_install_method, repo_root
 
 CHECK_INTERVAL_SECONDS = 6 * 3600  # 6 hours
 
-# ── kill switch ──────────────────────────────────────────────────────────────
+# kill switch
 
 
 def is_disabled() -> bool:
@@ -29,7 +29,7 @@ def is_disabled() -> bool:
     return raw not in ("", "0", "false", "False", "no")
 
 
-# ── state files ──────────────────────────────────────────────────────────────
+# state files
 
 
 def _state_dir() -> Path:
@@ -89,7 +89,7 @@ def pop_staged_notice() -> Optional[dict]:
     return data
 
 
-# ── public API ───────────────────────────────────────────────────────────────
+# public API
 
 
 @dataclass
@@ -192,7 +192,7 @@ def background_check_and_apply() -> threading.Thread | None:
     return t
 
 
-# ── git path ─────────────────────────────────────────────────────────────────
+# git path
 
 
 def _check_git() -> Optional[UpdateInfo]:
@@ -260,7 +260,7 @@ def _apply_git() -> tuple[bool, str]:
     return _git.pull(repo)
 
 
-# ── pip path ─────────────────────────────────────────────────────────────────
+# pip path
 
 
 def _check_pip() -> Optional[UpdateInfo]:

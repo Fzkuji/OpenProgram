@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 
-# ── liveness probe ────────────────────────────────────────────────────────────
+# liveness probe
 
 
 def port_in_use(port: int, host: str = "127.0.0.1", timeout: float = 0.4) -> bool:
@@ -45,7 +45,7 @@ def port_in_use(port: int, host: str = "127.0.0.1", timeout: float = 0.4) -> boo
         return s.connect_ex((host, port)) == 0
 
 
-# ── identity probes (HTTP signature) ──────────────────────────────────────────
+# identity probes (HTTP signature)
 
 
 def backend_is_ours(port: int) -> Optional[bool]:
@@ -95,7 +95,7 @@ def frontend_is_ours(port: int) -> Optional[bool]:
     return False
 
 
-# ── owner diagnostic (PID + command line) ─────────────────────────────────────
+# owner diagnostic (PID + command line)
 
 
 def pids_on_port(port: int) -> list[int]:

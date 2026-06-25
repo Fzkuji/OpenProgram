@@ -19,11 +19,11 @@ from openprogram.providers.types import (
     ToolResultMessage,
 )
 
-# ─── ThinkingLevel ────────────────────────────────────────────────────────────
+# ThinkingLevel
 
 ThinkingLevel = Literal["off", "minimal", "low", "medium", "high", "xhigh"]
 
-# ─── StreamFn ─────────────────────────────────────────────────────────────────
+# StreamFn
 
 from typing import AsyncGenerator, Protocol
 
@@ -40,7 +40,7 @@ class StreamFn(Protocol):
     ) -> AsyncGenerator[AssistantMessageEvent, None]:
         ...
 
-# ─── AgentMessage ─────────────────────────────────────────────────────────────
+# AgentMessage
 
 # CustomAgentMessages is a protocol that can be extended via Union
 # Applications can extend this by creating a Union with their custom message types
@@ -51,7 +51,7 @@ CustomAgentMessages = Union[tuple]  # Empty union placeholder
 # Custom message types can be added by extending this union in application code
 AgentMessage = Union[Message, CustomAgentMessages]
 
-# ─── AgentLoopConfig ──────────────────────────────────────────────────────────
+# AgentLoopConfig
 
 
 class AgentLoopConfig(SimpleStreamOptions):
@@ -85,7 +85,7 @@ class AgentLoopConfig(SimpleStreamOptions):
     model_config = {"arbitrary_types_allowed": True}
 
 
-# ─── AgentTool ────────────────────────────────────────────────────────────────
+# AgentTool
 
 class AgentToolResult(BaseModel):
     """Result of a tool execution."""
@@ -110,7 +110,7 @@ class AgentTool(Tool):
     model_config = {"arbitrary_types_allowed": True}
 
 
-# ─── AgentContext ─────────────────────────────────────────────────────────────
+# AgentContext
 
 class AgentContext(BaseModel):
     """Context for agent operations."""
@@ -121,7 +121,7 @@ class AgentContext(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-# ─── AgentState ───────────────────────────────────────────────────────────────
+# AgentState
 
 class AgentState(BaseModel):
     """Complete agent state."""
@@ -138,7 +138,7 @@ class AgentState(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-# ─── AgentEvent ───────────────────────────────────────────────────────────────
+# AgentEvent
 
 class AgentEventAgentStart(BaseModel):
     type: Literal["agent_start"] = "agent_start"

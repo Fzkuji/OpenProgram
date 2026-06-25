@@ -40,7 +40,7 @@ def _fresh_registry(monkeypatch):
     yield
 
 
-# ─── child 半：QueueTransport 把提问推进队列 ──────────────────────────────────
+# child 半：QueueTransport 把提问推进队列
 
 def test_queue_transport_pushes_tagged_envelope():
     """QueueTransport.publish 把带 __op_question__ 标记的 envelope 推进队列，
@@ -63,7 +63,7 @@ def test_default_transport_is_event_layer(monkeypatch):
     assert events  # 总线也发了一份
 
 
-# ─── child 半：answer-pump 唤醒本地 registry ──────────────────────────────────
+# child 半：answer-pump 唤醒本地 registry
 
 def test_answer_pump_resolves_local_registry():
     """模拟子进程 _answer_pump：从 answer_queue 取答案 resolve 本地 registry，
@@ -97,7 +97,7 @@ def test_answer_pump_resolves_local_registry():
     answer_q.put(None)
 
 
-# ─── parent 半：_bridge_question_to_parent 三态 ───────────────────────────────
+# parent 半：_bridge_question_to_parent 三态
 
 def _drain_one(answer_q):
     """非阻塞取一条 answer_queue 消息（最多等 2s）。"""
@@ -201,7 +201,7 @@ def test_bridge_cancel_session_declines():
     assert msg == {"id": "qC", "outcome": "declined", "value": None}
 
 
-# ─── 两半接起来：父子全链路（同进程模拟，不真 spawn）──────────────────────────
+# 两半接起来：父子全链路（同进程模拟，不真 spawn）
 
 def test_full_loop_child_asks_parent_answers():
     """两半接成完整闭环：child（本地 registry + QueueTransport 发问 + answer-pump

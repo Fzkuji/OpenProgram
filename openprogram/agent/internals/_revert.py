@@ -72,7 +72,7 @@ def revert_turn(session_id: str, assistant_msg_id: str) -> dict[str, Any]:
     git, idx = pair
     session_dir = git.path if hasattr(git, "path") else store._session_dir(session_id)
 
-    # ── git-aware undo (if this turn produced a project commit) ──
+    # git-aware undo (if this turn produced a project commit)
     # When auto-commit landed a real git commit for this turn, undo it in
     # git too — choosing the safest op (clean reset if it's the tip and
     # unpushed, else an additive revert). This keeps the project's git
@@ -92,7 +92,7 @@ def revert_turn(session_id: str, assistant_msg_id: str) -> dict[str, Any]:
         except Exception as e:  # noqa: BLE001
             git_undo = {"action": "error", "ok": False, "detail": f"{type(e).__name__}: {e}"}
 
-    # ── file-snapshot restore ──
+    # file-snapshot restore
     # The always-available fallback (works even for gitignored files and
     # non-git folders). We run it unless git ALREADY restored the exact
     # file state: a clean ``reset`` makes the snapshot redundant, and an

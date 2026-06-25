@@ -8,7 +8,7 @@ from typing import Any, AsyncGenerator, Awaitable, Callable, Literal, Union
 
 from pydantic import BaseModel, Field
 
-# ─── Provider / API identifiers ──────────────────────────────────────────────
+# Provider / API identifiers
 
 KnownApi = Literal[
     "openai-completions",
@@ -55,7 +55,7 @@ Transport = Literal["sse", "websocket", "auto"]
 StopReason = Literal["stop", "length", "toolUse", "error", "aborted"]
 
 
-# ─── Compat types ─────────────────────────────────────────────────────────────
+# Compat types
 
 @dataclass
 class OpenAICompletionsCompat:
@@ -86,7 +86,7 @@ class VercelGatewayRouting:
     order: list[str] | None = None
 
 
-# ─── Thinking budgets ─────────────────────────────────────────────────────────
+# Thinking budgets
 
 class ThinkingBudgets(BaseModel):
     minimal: int | None = None
@@ -95,7 +95,7 @@ class ThinkingBudgets(BaseModel):
     high: int | None = None
 
 
-# ─── Stream options ───────────────────────────────────────────────────────────
+# Stream options
 
 class StreamOptions(BaseModel):
     temperature: float | None = None
@@ -161,7 +161,7 @@ class SimpleStreamOptions(StreamOptions):
     thinking_budgets: ThinkingBudgets | None = None
 
 
-# ─── Content blocks ───────────────────────────────────────────────────────────
+# Content blocks
 
 class TextContent(BaseModel):
     type: Literal["text"] = "text"
@@ -217,7 +217,7 @@ class ToolCall(BaseModel):
     thought_signature: str | None = None  # Google-specific
 
 
-# ─── Usage / cost ─────────────────────────────────────────────────────────────
+# Usage / cost
 
 class UsageCost(BaseModel):
     input: float = 0.0
@@ -236,7 +236,7 @@ class Usage(BaseModel):
     cost: UsageCost = Field(default_factory=UsageCost)
 
 
-# ─── Messages ─────────────────────────────────────────────────────────────────
+# Messages
 
 class UserMessage(BaseModel):
     role: Literal["user"] = "user"
@@ -276,7 +276,7 @@ class ToolResultMessage(BaseModel):
 Message = Union[UserMessage, AssistantMessage, ToolResultMessage]
 
 
-# ─── Tool ─────────────────────────────────────────────────────────────────────
+# Tool
 
 class Tool(BaseModel):
     name: str
@@ -288,7 +288,7 @@ class Tool(BaseModel):
     cache_control: dict | None = None
 
 
-# ─── Context ──────────────────────────────────────────────────────────────────
+# Context
 
 class Context(BaseModel):
     system_prompt: str | None = None
@@ -296,7 +296,7 @@ class Context(BaseModel):
     tools: list[Tool] | None = None
 
 
-# ─── Model ────────────────────────────────────────────────────────────────────
+# Model
 
 class ModelCost(BaseModel):
     input: float = 0.0   # $/million tokens
@@ -337,7 +337,7 @@ class Model(BaseModel):
     ) = None
 
 
-# ─── Streaming events ─────────────────────────────────────────────────────────
+# Streaming events
 
 class EventStart(BaseModel):
     type: Literal["start"] = "start"

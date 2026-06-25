@@ -47,7 +47,7 @@ from .git_session import GitSession
 from .memory_index import SessionMemoryIndex
 
 
-# ── Paths ─────────────────────────────────────────────────────────
+# Paths
 
 
 def _default_root() -> Path:
@@ -84,7 +84,7 @@ def _projects_default_id_safe() -> str:
         return "default"
 
 
-# ── Edge resolvers ────────────────────────────────────────────────
+# Edge resolvers
 # A node's two edges live in different fields depending on what it is:
 #   * tool / sub-call rows  ─ Call.called_by  (the assistant that ran them)
 #   * conversation rows     ─ metadata.parent_id  (the legacy chat-tree edge)
@@ -106,7 +106,7 @@ def _node_caller(payload_or_call) -> Optional[str]:
     return payload_or_call.get("called_by") or None
 
 
-# ── Cache bound ───────────────────────────────────────────────────
+# Cache bound
 # The in-memory ``SessionMemoryIndex`` cache is pure (rebuildable from
 # git), so it can be size-capped without losing data: an evicted session
 # is transparently rebuilt from disk on next access. Without a cap the
@@ -130,7 +130,7 @@ def _resolve_cache_cap() -> int:
         return _DEFAULT_CACHE_CAP
 
 
-# ── SessionStore ──────────────────────────────────────────────────
+# SessionStore
 
 
 class SessionStore:
@@ -181,7 +181,7 @@ class SessionStore:
     def db_path(self) -> Path:
         return self.root_path
 
-    # ── Location index (per-project session placement) ────────────
+    # Location index (per-project session placement)
 
     def _locations_path(self) -> Path:
         return self.root_path / "locations.json"
@@ -211,7 +211,7 @@ class SessionStore:
             except OSError:
                 pass
 
-    # ── Registry (index.json) ───────────────────────────────────
+    # Registry (index.json)
 
     _INDEX_FIELDS = frozenset({
         "id", "agent_id", "title", "created_at", "updated_at",
@@ -379,7 +379,7 @@ class SessionStore:
                 entry[k] = v
         entry["updated_at"] = time.time()
 
-    # ── Internals ─────────────────────────────────────────────
+    # Internals
 
     def _session_dir(self, session_id: str) -> Path:
         """Where ``session_id``'s git repo lives.
@@ -468,7 +468,7 @@ class SessionStore:
         self._persist_meta(git, idx)
         return git.commit_all(message)
 
-    # ── Session CRUD ──────────────────────────────────────────
+    # Session CRUD
 
     def create_session(
         self,
@@ -497,7 +497,7 @@ class SessionStore:
             if isinstance(_wd, str) and _wd.strip():
                 project_path = _wd.strip()
 
-        # ── Resolve the project + decide the session's home on disk ──
+        # Resolve the project + decide the session's home on disk
         # Every session belongs to a project (entity layer, half 2 —
         # docs/design/memory/memory-v2.md §2):
         #   * caller passed ``project_path`` (a real dir) → that dir is
@@ -696,7 +696,7 @@ class SessionStore:
         with self._lock:
             self._sessions.pop(session_id, None)
 
-    # ── Message append / read ─────────────────────────────────
+    # Message append / read
 
     def append_message(self, session_id: str, msg: dict[str, Any]) -> None:
         pair = self._open(session_id, create_if_missing=True)
@@ -768,7 +768,7 @@ class SessionStore:
             and not (n.metadata or {}).get("rewound")
         ]
 
-    # ── Head ──────────────────────────────────────────────────
+    # Head
 
     def set_head(self, session_id: str, head_id: Optional[str]) -> None:
         pair = self._open(session_id, create_if_missing=True)
@@ -786,7 +786,7 @@ class SessionStore:
         _git, idx = pair
         return msg_id in idx.nodes_by_id
 
-    # ── Branches ──────────────────────────────────────────────
+    # Branches
 
     def list_branches(self, session_id: str) -> list[dict[str, Any]]:
         pair = self._open(session_id)
@@ -1068,7 +1068,7 @@ class SessionStore:
         self._persist_meta(git, idx)
         return True
 
-    # ── Token stats / search / misc — these are derived, keep
+    # Token stats / search / misc — these are derived, keep
     # implementations consistent with old DagSessionDB by delegating
     # to the existing helpers where they're pure functions.
 
@@ -1252,7 +1252,7 @@ class SessionStore:
         return None
 
 
-# ── Singleton ─────────────────────────────────────────────────
+# Singleton
 
 
 _default_lock = threading.Lock()

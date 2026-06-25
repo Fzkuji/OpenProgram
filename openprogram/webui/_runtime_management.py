@@ -736,12 +736,12 @@ def _get_provider_info(session_id: str = None) -> dict:
     }
 
 
-# ───────────────────────────────────────────────────────────────────
+# 
 # Usage sync — dispatcher 直接走 stream_simple, 不通过 runtime.exec,
 # 所以 runtime.last_usage 永远是 None / 0. 把 TurnResult.usage 拷过去,
 # 让 _broadcast_context_stats 这种读 runtime.last_usage 的下游能拿到
 # 真实 token 数. server.py 调一行: sync_turn_usage_to_runtime(runtime, turn_result.usage).
-# ───────────────────────────────────────────────────────────────────
+# 
 
 
 def sync_turn_usage_to_runtime(runtime, turn_usage: Optional[dict]) -> None:

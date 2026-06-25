@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
 
-# ── status taxonomy (doc §7) ──────────────────────────────────────────────────
+# status taxonomy (doc §7)
 VALID = "valid"
 INVALID_CREDENTIAL = "invalid_credential"
 VALID_NO_BALANCE = "valid_no_balance"
@@ -79,7 +79,7 @@ def _result(
     )
 
 
-# ── provider KIND classification (doc §6) ─────────────────────────────────────
+# provider KIND classification (doc §6)
 _OAUTH_PROVIDERS = frozenset({
     "openai-codex", "gemini-subscription", "github-copilot",
     "opencode", "opencode-go",
@@ -134,7 +134,7 @@ def _kind_for(provider_id: str) -> str:
     return "openai_bearer"
 
 
-# ── status-code interpretation (doc §7) ───────────────────────────────────────
+# status-code interpretation (doc §7)
 # Statuses where the request authenticated + routed but the chosen model is
 # transiently unavailable — only reachable past auth, so the key is proven good.
 _MODEL_DOWN_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -164,7 +164,7 @@ def _short(body: str | None, n: int = 200) -> str:
     return (body or "")[:n]
 
 
-# ── auth-only HTTP probe ──────────────────────────────────────────────────────
+# auth-only HTTP probe
 def _http_get(
     url: str, *, headers: dict | None = None, params: dict | None = None,
     timeout: float = 15.0,
@@ -315,7 +315,7 @@ def _oauth_check(provider_id: str, kind: str) -> CredentialResult:
     return _result(provider_id, UNKNOWN, kind=kind, via="AuthManager", detail="Login state unknown.")
 
 
-# ── 60s cache (doc §8) ────────────────────────────────────────────────────────
+# 60s cache (doc §8)
 _CACHE_TTL_S = 60.0
 _cache: dict[tuple, tuple[float, CredentialResult]] = {}
 
@@ -335,7 +335,7 @@ def _cache_put(key: tuple, res: CredentialResult) -> None:
     _cache[key] = (time.time(), res)
 
 
-# ── public API ────────────────────────────────────────────────────────────────
+# public API
 def validate_credential(
     provider_id: str, *, api_key: str | None = None, model: str | None = None,
     timeout: float = 15.0, use_cache: bool = True,

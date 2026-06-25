@@ -122,7 +122,7 @@ def new_question_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-# ─── 提问传输（QuestionTransport）─────────────────────────────────────────────
+# 提问传输（QuestionTransport）
 #
 # 一次提问要"送到能应答的一侧"。这件事跟 Python logging 的 Handler 同构：
 # logging.Handler.emit(record) 把一条记录送到它的目的地，子类换目的地（文件 /

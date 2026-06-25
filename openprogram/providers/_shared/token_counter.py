@@ -40,7 +40,7 @@ class TokenCount:
         return self.input + self.cache_read + self.output
 
 
-# ─── OpenAI-family tiktoken cache ───────────────────────────────────────
+# OpenAI-family tiktoken cache
 
 _TIKTOKEN_ENCODERS: dict[str, Any] = {}
 
@@ -168,7 +168,7 @@ def _chars_to_tokens(text: str, dense_json: bool = False) -> int:
     return max(1, int(round(len(text) / ratio)))
 
 
-# ─── Provider-usage extraction ──────────────────────────────────────────
+# Provider-usage extraction
 
 def _from_provider_usage(msg: dict[str, Any]) -> TokenCount | None:
     """If this is an assistant message with a real Usage payload, use it
@@ -199,7 +199,7 @@ def _from_provider_usage(msg: dict[str, Any]) -> TokenCount | None:
     )
 
 
-# ─── tiktoken path ──────────────────────────────────────────────────────
+# tiktoken path
 
 def _from_tiktoken(msg: dict[str, Any], model: "Model | None") -> TokenCount | None:
     if model is None:
@@ -222,7 +222,7 @@ def _from_tiktoken(msg: dict[str, Any], model: "Model | None") -> TokenCount | N
     return TokenCount(input=n, source="tiktoken")
 
 
-# ─── Anthropic count_tokens path ───────────────────────────────────────
+# Anthropic count_tokens path
 
 def _from_anthropic_count(msg: dict[str, Any], model: "Model | None") -> TokenCount | None:
     # Single-message counting via anthropic SDK is expensive (an API
@@ -232,7 +232,7 @@ def _from_anthropic_count(msg: dict[str, Any], model: "Model | None") -> TokenCo
     return None
 
 
-# ─── Heuristic path ─────────────────────────────────────────────────────
+# Heuristic path
 
 def _from_heuristic(msg: dict[str, Any]) -> TokenCount:
     content = msg.get("content")
@@ -254,7 +254,7 @@ def _from_heuristic(msg: dict[str, Any]) -> TokenCount:
     return TokenCount(input=n, source="heuristic")
 
 
-# ─── Public entry point ────────────────────────────────────────────────
+# Public entry point
 
 def count_tokens(
     msg: dict[str, Any], model: "Model | None" = None

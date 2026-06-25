@@ -136,7 +136,7 @@ def test_defaults_leave_stream_opts_unset():
     assert opts.parallel_tool_calls is None
 
 
-# ── exec → _current_loop_opts normalisation ─────────────────────────
+# exec → _current_loop_opts normalisation
 
 
 class _ProbeRuntime(Runtime):

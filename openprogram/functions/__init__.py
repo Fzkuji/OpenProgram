@@ -129,7 +129,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
         # then harnesses" purely for readability — _expand_preset
         # dedupes so order doesn't matter semantically.
         "tools":    [
-            # ─── leaf @function tools (tools/) ────────────────────
+            # leaf @function tools (tools/)
             "bash", "read", "write", "edit",
             "glob", "grep", "list",
             "apply_patch", "process", "execute_code",
@@ -152,7 +152,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "worktree_create", "worktree_merge", "worktree_discard",
             "worktree_list", "worktree_keep",
 
-            # ─── agentic side ──────────────────────────────────────
+            # agentic side
             # The three harness entry points + the two PDF-extraction
             # utilities. Every other @agentic_function (the composable
             # building blocks like wait / ask_user, the third-party

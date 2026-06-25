@@ -62,7 +62,7 @@ def _install_frame(pending_id):
         _call_id.reset(token)
 
 
-# ── No store: still works, no DAG write ─────────────────────────────
+# No store: still works, no DAG write
 
 
 def test_ask_user_without_store_works_via_handler():
@@ -79,7 +79,7 @@ def test_ask_user_no_store_at_all():
     assert ans == "standalone answer"
 
 
-# ── With store: full lifecycle ──────────────────────────────────────
+# With store: full lifecycle
 
 
 def test_ask_user_records_user_call_with_question_and_answer(store):
@@ -118,7 +118,7 @@ def test_ask_user_called_by_empty_when_top_level(store):
     assert n.called_by == ""
 
 
-# ── Status transitions ────────────────────────────────────────────
+# Status transitions
 
 
 def test_ask_user_status_awaiting_then_answered(store):
@@ -164,7 +164,7 @@ def test_ask_user_unanswered_when_handler_returns_none(store):
     assert n.metadata.get("status") == "unanswered"
 
 
-# ── Distinguishes from spontaneous user message ────────────────────
+# Distinguishes from spontaneous user message
 
 
 def test_ask_user_call_has_input_not_none_unlike_spontaneous_msg(store):

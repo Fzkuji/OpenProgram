@@ -68,7 +68,7 @@ def resolve_provider_key(provider: str) -> str | None:
         return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# 
 # Env-var NAME tables — display labels / identifiers only.
 #
 # The settings UI shows "API key: DEEPSEEK_API_KEY" style labels and the
@@ -76,7 +76,7 @@ def resolve_provider_key(provider: str) -> str | None:
 # NOT read from ``os.environ``: provider keys resolve from the AuthStore
 # exclusively (see resolve_provider_key above). config.json ``api_keys``
 # remains in use only by the web-search / TTS key flows (their own storage).
-# ─────────────────────────────────────────────────────────────────────────────
+# 
 
 # provider_id → accepted env-var names, in precedence order. Merges the four
 # previously-divergent maps; multi-name entries reconcile real conflicts:

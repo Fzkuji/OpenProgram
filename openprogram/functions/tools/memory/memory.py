@@ -25,7 +25,7 @@ from openprogram.memory.builtin.recall import recall_for_prompt
 from openprogram.memory.provider import sanitize_context
 
 
-# ── memory_note ──────────────────────────────────────────────────────────────
+# memory_note
 
 NOTE_NAME = "memory_note"
 NOTE_DESC = (
@@ -72,7 +72,7 @@ def note(
     return f"Noted: ({kind}) {text}"
 
 
-# ── memory_browse ────────────────────────────────────────────────────────────
+# memory_browse
 
 BROWSE_NAME = "memory_browse"
 BROWSE_DESC = (
@@ -119,7 +119,7 @@ def memory_browse(**_: Any) -> str:
     return "\n".join(parts)
 
 
-# ── memory_get ───────────────────────────────────────────────────────────────
+# memory_get
 
 GET_NAME = "memory_get"
 GET_DESC = (
@@ -157,7 +157,7 @@ def memory_get(target: str | None = None, **_: Any) -> str:
     return content
 
 
-# ── memory_recall ────────────────────────────────────────────────────────────
+# memory_recall
 
 RECALL_NAME = "memory_recall"
 RECALL_DESC = (
@@ -199,7 +199,7 @@ def recall(
     return sanitize_context(text) if text else f"No memories matched {query!r}."
 
 
-# ── memory_reflect ───────────────────────────────────────────────────────────
+# memory_reflect
 
 REFLECT_NAME = "memory_reflect"
 REFLECT_DESC = (
@@ -230,7 +230,7 @@ def reflect(query: str | None = None, **_: Any) -> str:
     )
 
 
-# ── memory_ingest ────────────────────────────────────────────────────────────
+# memory_ingest
 
 INGEST_NAME = "memory_ingest"
 INGEST_DESC = (
@@ -265,7 +265,7 @@ def memory_ingest(session_id: str | None = None, **_: Any) -> str:
     return report
 
 
-# ── memory_lint ──────────────────────────────────────────────────────────────
+# memory_lint
 
 LINT_NAME = "memory_lint"
 LINT_DESC = (
@@ -284,7 +284,7 @@ def memory_lint(**_: Any) -> str:
     return wiki_ops.lint()
 
 
-# ── memory_rename ────────────────────────────────────────────────────────────
+# memory_rename
 
 RENAME_NAME = "memory_rename"
 RENAME_DESC = (
@@ -315,7 +315,7 @@ def memory_rename(old: str | None = None, new: str | None = None, **_: Any) -> s
     return f"Renamed [[{old}]] → [[{new}]]; {r.get('rewrites', 0)} pages updated."
 
 
-# ── memory_relink ────────────────────────────────────────────────────────────
+# memory_relink
 
 RELINK_NAME = "memory_relink"
 RELINK_DESC = (
@@ -344,7 +344,7 @@ def memory_relink(old: str | None = None, new: str | None = None, **_: Any) -> s
     return f"Relinked [[{old}]] → [[{new}]] in {r.get('rewrites', 0)} pages."
 
 
-# ── memory_delete ────────────────────────────────────────────────────────────
+# memory_delete
 
 DELETE_NAME = "memory_delete"
 DELETE_DESC = (
@@ -376,7 +376,7 @@ def memory_delete(name: str | None = None, **_: Any) -> str:
     )
 
 
-# ── memory_review ────────────────────────────────────────────────────────────
+# memory_review
 
 REVIEW_NAME = "memory_review"
 REVIEW_DESC = (
@@ -421,7 +421,7 @@ def memory_review(
     return "\n".join(lines).rstrip()
 
 
-# ── memory_status ────────────────────────────────────────────────────────────
+# memory_status
 
 STATUS_NAME = "memory_status"
 STATUS_DESC = (
@@ -456,7 +456,7 @@ def memory_status(**_: Any) -> str:
     return "\n".join(lines)
 
 
-# ── memory_backlinks ─────────────────────────────────────────────────────────
+# memory_backlinks
 
 BACKLINKS_NAME = "memory_backlinks"
 BACKLINKS_DESC = (

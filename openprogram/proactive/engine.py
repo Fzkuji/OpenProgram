@@ -41,7 +41,7 @@ def _cooldown_ok(key: str, cooldown_s: float, now_ts: float) -> bool:
         return True
 
 
-# ─── 挡路 lane（同步，接 tool.before 问询点）─────────────────────────────────
+# 挡路 lane（同步，接 tool.before 问询点）
 
 def _gate_fn(event: Event) -> str | None:
     """tool_gate 回调：跑所有 gate 规则，取最严裁决，返回 deny 理由或 None。
@@ -72,7 +72,7 @@ def _gate_fn(event: Event) -> str | None:
     return None
 
 
-# ─── 旁观 lane（异步，订阅总线）──────────────────────────────────────────────
+# 旁观 lane（异步，订阅总线）
 
 def _land_observer_action(policy, action, event: Event) -> None:
     """把 observer 动作落地。"""

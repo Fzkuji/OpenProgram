@@ -115,7 +115,7 @@ class AgentSession:
         else:
             self._unsubscribe = None
 
-    # ── Accessors ─────────────────────────────────────────────────────────────
+    # Accessors
 
     @property
     def agent(self) -> Agent:
@@ -135,7 +135,7 @@ class AgentSession:
                 return m  # type: ignore[return-value]
         return None
 
-    # ── State mutators (pass-through to Agent) ────────────────────────────────
+    # State mutators (pass-through to Agent)
 
     def replace_messages(self, messages: list[AgentMessage]) -> None:
         """Overwrite the agent's messages. Runtime uses this to inject its own context."""
@@ -153,7 +153,7 @@ class AgentSession:
     def set_thinking_level(self, level: ThinkingLevel) -> None:
         self._agent.set_thinking_level(level)
 
-    # ── Run with retry ────────────────────────────────────────────────────────
+    # Run with retry
 
     async def run(
         self,
@@ -229,7 +229,7 @@ class AgentSession:
 
             current_fn = self._agent.continue_from_context
 
-    # ── Convenience ───────────────────────────────────────────────────────────
+    # Convenience
 
     def abort(self) -> None:
         """Abort the currently-running turn, if any."""
@@ -254,7 +254,7 @@ class AgentSession:
         if self._event_bus is not None:
             self._event_bus.emit("session", data)
 
-    # ── Context manager support ───────────────────────────────────────────────
+    # Context manager support
 
     def __enter__(self) -> "AgentSession":
         return self

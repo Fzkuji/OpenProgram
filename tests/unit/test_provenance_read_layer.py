@@ -36,7 +36,7 @@ def db(tmp_path: Path) -> SessionStore:
     return SessionStore(tmp_path / "sessions")
 
 
-# ── incremental cursor ───────────────────────────────────────────
+# incremental cursor
 
 
 def test_iter_nodes_since_returns_all_by_default(db):
@@ -63,7 +63,7 @@ def test_iter_nodes_since_unknown_session_is_empty(db):
     assert iter_nodes_since(db, "nope") == []
 
 
-# ── node → provenance coordinate ─────────────────────────────────
+# node → provenance coordinate
 
 
 def test_node_provenance_coordinates(db):
@@ -104,7 +104,7 @@ def test_session_project_id_empty_when_unset(db):
     assert session_project_id(db, "s") == ""
 
 
-# ── commit history accessors ─────────────────────────────────────
+# commit history accessors
 
 
 def test_session_commits_surfaces_turn_boundaries(db):

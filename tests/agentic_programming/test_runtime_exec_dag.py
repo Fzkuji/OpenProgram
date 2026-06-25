@@ -46,7 +46,7 @@ def store(tmp_path: Path):
         _store_var.reset(token)
 
 
-# ── Top-level exec (no enclosing @agentic_function) ────────────────
+# Top-level exec (no enclosing @agentic_function)
 
 
 def test_exec_without_function_frame_appends_llm_call(store):
@@ -65,7 +65,7 @@ def test_exec_without_function_frame_appends_llm_call(store):
     assert llm_nodes[0].output == "hello back"
 
 
-# ── exec inside an @agentic_function — called_by set ─────────────
+# exec inside an @agentic_function — called_by set
 
 
 def test_exec_inside_function_stamps_called_by(store):
@@ -113,7 +113,7 @@ def test_exec_nested_calls_stamp_correct_frame(store):
     assert callers == sorted([inner_id, outer_id])
 
 
-# ── No DAG side-effects when no store is installed ────────────────
+# No DAG side-effects when no store is installed
 
 
 def test_exec_without_store_writes_nothing():
@@ -128,7 +128,7 @@ def test_exec_without_store_writes_nothing():
     assert result == "x"
 
 
-# ── llm node lifecycle: opened running, closed completed ──────────
+# llm node lifecycle: opened running, closed completed
 
 
 def test_exec_llm_node_lifecycle_running_then_completed(store):
@@ -204,7 +204,7 @@ def test_tool_loop_subcall_attributes_to_llm_node(store):
     assert child_node.called_by == llm_node.id
 
 
-# ── stream_fn injection: exec(stream_fn=fake) reaches the provider path ──
+# stream_fn injection: exec(stream_fn=fake) reaches the provider path
 
 
 def test_exec_stream_fn_injection(store):

@@ -64,7 +64,7 @@ def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
     corresponding line in the expanded panel.
     """
     out: dict[str, Any] = {}
-    # ── identity / metadata ───────────────────────────────────────
+    # identity / metadata
     for src_key, dst_key in (
         ("name", "name"),
         ("family", "family"),
@@ -78,7 +78,7 @@ def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
     if raw.get("open_weights") is not None:
         out["open_weights"] = bool(raw["open_weights"])
 
-    # ── capabilities ──────────────────────────────────────────────
+    # capabilities
     if raw.get("reasoning") is not None:
         out["reasoning"] = bool(raw["reasoning"])
     if raw.get("tool_call") is not None:
@@ -90,7 +90,7 @@ def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
     if raw.get("temperature") is not None:
         out["temperature_param"] = bool(raw["temperature"])
 
-    # ── modalities ─────────────────────────────────────────────────
+    # modalities
     modalities = raw.get("modalities") or {}
     in_mods = modalities.get("input") or []
     out_mods = modalities.get("output") or []
@@ -106,7 +106,7 @@ def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
     if "audio" in in_mods:
         out["audio"] = True
 
-    # ── limits ─────────────────────────────────────────────────────
+    # limits
     limit = raw.get("limit") or {}
     if limit.get("context"):
         try: out["context_window"] = int(limit["context"])
@@ -118,7 +118,7 @@ def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
         try: out["max_tokens"] = int(limit["output"])
         except Exception: pass
 
-    # ── pricing (USD / 1M tokens) ──────────────────────────────────
+    # pricing (USD / 1M tokens)
     cost = raw.get("cost") or {}
     for src_key, dst_key in (
         ("input", "input_cost"),

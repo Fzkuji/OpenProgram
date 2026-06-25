@@ -76,7 +76,7 @@ class StreamingMsg:
     _last_saved_at: float = 0.0
     _save_timer: Optional[threading.Timer] = field(default=None, repr=False)
 
-    # ── lifecycle ────────────────────────────────────────────────
+    # lifecycle
 
     def start(self) -> None:
         """Transition PENDING → RUNNING + persist initial placeholder."""
@@ -141,7 +141,7 @@ class StreamingMsg:
             self.tree.setdefault("_aborted_reason", reason)
         self.finalize(status=StreamStatus.ABORTED)
 
-    # ── persistence ──────────────────────────────────────────────
+    # persistence
 
     def _schedule_persist(self) -> None:
         """Debounced save — at most one persist per ``SAVE_DEBOUNCE_SEC``."""
@@ -192,7 +192,7 @@ class StreamingMsg:
         #     payload=self.snapshot(),
         # )
 
-    # ── read helpers ─────────────────────────────────────────────
+    # read helpers
 
     def snapshot(self) -> dict:
         """Plain-dict view suitable for WS / persistence."""

@@ -14,7 +14,7 @@ def _before(cmd, tool="bash"):
                       {"tool": tool, "args": {"command": cmd}}, {"session": "s"})
 
 
-# ─── DangerousCommandGuard：拦危险、放日常 ────────────────────────────────────
+# DangerousCommandGuard：拦危险、放日常
 
 def test_guard_blocks_rm_rf_root():
     g = DangerousCommandGuard()
@@ -49,7 +49,7 @@ def test_guard_ignores_non_bash():
     assert g.evaluate(ev, SessionState()) is None
 
 
-# ─── UnvalidatedCompletionNudge ───────────────────────────────────────────────
+# UnvalidatedCompletionNudge
 
 def test_nudge_fires_on_change_without_verification():
     p = UnvalidatedCompletionNudge()
@@ -73,7 +73,7 @@ def test_nudge_silent_when_no_change():
     assert p.evaluate(ev, st) is None
 
 
-# ─── TestGapWatcher ───────────────────────────────────────────────────────────
+# TestGapWatcher
 
 def _completed():
     return make_event("model.response_completed", "agent", {}, {"session": "s"})

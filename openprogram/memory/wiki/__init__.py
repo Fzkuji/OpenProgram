@@ -127,7 +127,7 @@ class Wiki:
         self._runtime = runtime
         self._llm = llm
 
-    # ── Read ────────────────────────────────────────────────────────────
+    # Read
     def find(self, name: str) -> Path | None:
         return helpers.find_node(self.root, name)
 
@@ -146,7 +146,7 @@ class Wiki:
     def pages_of_type(self, t: str) -> list[Path]:
         return access.pages_of_type(t)
 
-    # ── Lint + link ops ─────────────────────────────────────────────────
+    # Lint + link ops
     def lint(self) -> str:
         return ops.lint()
 
@@ -165,7 +165,7 @@ class Wiki:
     def unlinked_mentions(self, name: str, *, max_per_page: int = 3) -> list[dict[str, Any]]:
         return ops.unlinked_mentions(name, max_per_page=max_per_page)
 
-    # ── Agentic ops (need a runtime) ────────────────────────────────────
+    # Agentic ops (need a runtime)
     def survey(self, topic: str) -> dict[str, Any]:
         return ops.survey(topic)
 
@@ -180,7 +180,7 @@ class Wiki:
     def ingest_session_by_id(self, session_id: str) -> dict[str, Any]:
         return ingest.ingest_session_by_id(session_id)
 
-    # ── Git ─────────────────────────────────────────────────────────────
+    # Git
     def git_commit(self, message: str) -> dict[str, Any]:
         return ops.git_commit(message)
 

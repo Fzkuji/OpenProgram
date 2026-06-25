@@ -17,7 +17,7 @@ class Action:
     """所有动作的基类（仅作类型标记）。"""
 
 
-# ─── 挡路 lane 专用 ───────────────────────────────────────────────────────────
+# 挡路 lane 专用
 
 @dataclass(frozen=True)
 class Gate(Action):
@@ -44,7 +44,7 @@ class Gate(Action):
         return Gate("ask", reason)
 
 
-# ─── 旁观 lane 专用 ───────────────────────────────────────────────────────────
+# 旁观 lane 专用
 
 @dataclass(frozen=True)
 class Notify(Action):

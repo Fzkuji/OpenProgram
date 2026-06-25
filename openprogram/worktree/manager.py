@@ -159,7 +159,7 @@ class WorktreeManager:
     def __init__(self) -> None:
         self._lock = threading.Lock()
 
-    # ── Public API ──────────────────────────────────────────────
+    # Public API
 
     def create_worktree(
         self,
@@ -479,7 +479,7 @@ class WorktreeManager:
         self._transition(wt, WorktreeStatus.KEPT)
         return wt
 
-    # ── Internals ───────────────────────────────────────────────
+    # Internals
 
     def _transition(
         self,
@@ -508,7 +508,7 @@ class WorktreeManager:
         return wt
 
 
-# ── Module-level singleton ─────────────────────────────────────
+# Module-level singleton
 
 _manager_lock = threading.Lock()
 _manager: Optional[WorktreeManager] = None

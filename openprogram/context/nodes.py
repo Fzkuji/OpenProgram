@@ -30,7 +30,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, Optional
 
 
-# ── Role constants ─────────────────────────────────────────────────
+# Role constants
 
 
 ROLE_USER = "user"
@@ -44,7 +44,7 @@ def _new_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-# ── Call: the one and only node type ──────────────────────────────
+# Call: the one and only node type
 
 
 @dataclass
@@ -110,7 +110,7 @@ class Call:
     def is_code(self) -> bool:
         return self.role == ROLE_CODE
 
-    # ── Backward-compat property accessors ──
+    # Backward-compat property accessors
     # Old code references UserMessage.content / ModelCall.model /
     # ModelCall.system_prompt / FunctionCall.function_name /
     # FunctionCall.arguments / FunctionCall.result. These map onto
@@ -155,7 +155,7 @@ class Call:
 Node = Call
 
 
-# ── Backward-compat factory functions ────────────────────────────────
+# Backward-compat factory functions
 #
 # Old code says ``UserMessage(content="...")`` / ``ModelCall(model=...)`` /
 # ``FunctionCall(function_name=...)``. These wrappers return a Call so
@@ -208,7 +208,7 @@ def FunctionCall(
     )
 
 
-# ── Graph container ─────────────────────────────────────────────────
+# Graph container
 
 
 class Graph:
@@ -353,7 +353,7 @@ class Graph:
         return g
 
 
-# ── Helpers (operate purely on a Graph) ────────────────────────────
+# Helpers (operate purely on a Graph)
 
 
 def last_user_message(graph: Graph) -> Optional[Call]:

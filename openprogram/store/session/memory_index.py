@@ -43,7 +43,7 @@ class SessionMemoryIndex:
     next_seq: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
-    # ── Mutations ─────────────────────────────────────────────
+    # Mutations
 
     def append(self, node: Call, *, predecessor: Optional[str], caller: Optional[str]) -> int:
         """Insert a fresh node. Assigns seq if unset. Returns assigned seq.
@@ -79,7 +79,7 @@ class SessionMemoryIndex:
         with self._lock:
             self.meta.update(fields)
 
-    # ── Queries ─────────────────────────────────────────────
+    # Queries
 
     def get(self, node_id: str) -> Optional[Call]:
         return self.nodes_by_id.get(node_id)
@@ -132,7 +132,7 @@ class SessionMemoryIndex:
                         stack.append(cid)
         return out
 
-    # ── Rebuild ─────────────────────────────────────────────
+    # Rebuild
 
     def reset(self) -> None:
         with self._lock:

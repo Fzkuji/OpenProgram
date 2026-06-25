@@ -48,7 +48,7 @@ class ProjectStoreError(RuntimeError):
     """Raised on unrecoverable git / registry failure."""
 
 
-# ── paths ──────────────────────────────────────────────────────────
+# paths
 
 
 def projects_dir() -> Path:
@@ -67,7 +67,7 @@ def _default_project_path() -> Path:
     return projects_dir() / "default"
 
 
-# ── Project record ─────────────────────────────────────────────────
+# Project record
 
 
 @dataclass
@@ -103,7 +103,7 @@ class Project:
         )
 
 
-# ── ProjectGit: the git wrapper for a project's working directory ──
+# ProjectGit: the git wrapper for a project's working directory
 
 
 class ProjectGit:
@@ -472,7 +472,7 @@ class ProjectGit:
         return cp.stdout
 
 
-# ── Registry (projects.json) ───────────────────────────────────────
+# Registry (projects.json)
 
 _reg_lock = threading.Lock()
 

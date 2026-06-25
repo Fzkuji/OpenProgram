@@ -330,7 +330,7 @@ def ingest_session(
     tree = folder_tree(vault_root) or "(empty vault)"
     source_title = f"Session {session_id} ({today})"
 
-    # ── Step 1: analysis ────────────────────────────────────────────────
+    # Step 1: analysis
     analysis_prompt = ANALYSIS_PROMPT.format(
         purpose=purpose,
         index=index,
@@ -349,7 +349,7 @@ def ingest_session(
     if not analysis or not analysis.strip():
         return {"ok": False, "error": "analysis returned empty"}
 
-    # ── Step 2: agentic write ───────────────────────────────────────────
+    # Step 2: agentic write
     gen_prompt = GENERATION_INSTRUCTIONS.format(
         vault_root=str(vault_root),
         source_slug=slug,
@@ -388,12 +388,12 @@ def ingest_session(
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"generation: {e}"}
 
-    # ── Parse REVIEW queue ──────────────────────────────────────────────
+    # Parse REVIEW queue
     review_items = _parse_review_block(report)
     if review_items:
         _persist_reviews(review_items, source_slug=slug, ts=today)
 
-    # ── Enrich wikilinks (two directions) ────────────────────────────────
+    # Enrich wikilinks (two directions)
     # We don't know exactly which pages changed (agent decided), so
     # use `git status` against the vault repo to find them. Then:
     #   * outbound: for every touched page, scan its body for plain-
@@ -429,7 +429,7 @@ def ingest_session(
         logger.warning("enrich pass failed (non-fatal): %s", e)
         enrich_stats = {"error": str(e)}
 
-    # ── Git commit ──────────────────────────────────────────────────────
+    # Git commit
     commit_info: dict[str, Any] = {}
     try:
         from . import ops as wiki_ops

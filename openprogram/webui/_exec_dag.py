@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from typing import Optional
 
 
-# ── Tree reconstruction ──────────────────────────────────────────────
+# Tree reconstruction
 
 def _exec_tnode(n, kids: dict[str, list]) -> dict:
     """Turn one DAG node into the TNode dict the Execution DAG renders,
@@ -168,7 +168,7 @@ def build_exec_dag(session_id: str, func_name: str,
     }
 
 
-# ── Live progress streaming ──────────────────────────────────────────
+# Live progress streaming
 
 def _poll(session_id: str, msg_id: str, func_name: str,
           stop: threading.Event,
@@ -332,7 +332,7 @@ def live_progress(session_id: str, msg_id: str, func_name: str, on_event=None):
             pass
 
 
-# ── Interrupted-run repair ───────────────────────────────────────────
+# Interrupted-run repair
 
 def reconcile_interrupted_runs() -> int:
     """Flip every DAG node still at ``status="running"`` to ``"interrupted"``.
@@ -391,7 +391,7 @@ def reconcile_interrupted_runs() -> int:
     return fixed
 
 
-# ── Session-level DAG (session-dag.md step 8) ──────────────────
+# Session-level DAG (session-dag.md step 8)
 
 def build_session_dag(session_id: str) -> Optional[dict]:
     """Build a TNode tree of the entire session's session DAG.

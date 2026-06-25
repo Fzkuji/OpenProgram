@@ -34,7 +34,7 @@ class CheckpointStore:
     def __init__(self, session_dir: Path):
         self.session_dir = Path(session_dir)
 
-    # ── Write side ────────────────────────────────────────────────
+    # Write side
 
     def backup_before_edit(self, turn_id: str, abs_path: str) -> None:
         """Idempotent checkpoint. Captures the file's state pre-edit;
@@ -68,7 +68,7 @@ class CheckpointStore:
         except OSError:
             return False
 
-    # ── Read / restore side ──────────────────────────────────────
+    # Read / restore side
 
     def restore_turn(self, turn_id: str) -> list[str]:
         """Restore every file this turn touched to its pre-turn state.
@@ -109,7 +109,7 @@ class CheckpointStore:
                 continue
         return restored
 
-    # ── Inspection ───────────────────────────────────────────────
+    # Inspection
 
     def list_backed_paths(self, turn_id: str) -> list[str]:
         """Original paths this turn captured. Includes both

@@ -40,7 +40,7 @@ def runtime() -> Runtime:
     return Runtime(call=lambda *a, **kw: "", model="dummy")
 
 
-# ── Basic exit-time append ───────────────────────────────────────
+# Basic exit-time append
 
 
 def test_exit_appends_function_call_node(runtime, store):
@@ -75,7 +75,7 @@ def test_no_store_installed_means_no_dag_write(runtime, tmp_path):
     assert result == "hi world"
 
 
-# ── expose semantics ─────────────────────────────────────────────
+# expose semantics
 
 
 def test_expose_hidden_skips_node(runtime, store):
@@ -99,7 +99,7 @@ def test_expose_full_recorded_in_metadata(runtime, store):
     assert fc.metadata.get("expose") == "full"
 
 
-# ── Error path ────────────────────────────────────────────────────
+# Error path
 
 
 def test_exception_records_error_node(runtime, store):
@@ -118,7 +118,7 @@ def test_exception_records_error_node(runtime, store):
     assert "boom" in fc.result["error"]
 
 
-# ── Nested calls: called_by is the logical caller ────────────────
+# Nested calls: called_by is the logical caller
 
 
 def test_nested_agentic_functions_chain_in_dag(runtime, store):
@@ -153,7 +153,7 @@ def test_nested_agentic_functions_chain_in_dag(runtime, store):
         assert fc.called_by == outer_fc.id
 
 
-# ── Entry-append / exit-update lifecycle ────────────────────────
+# Entry-append / exit-update lifecycle
 
 
 def test_entry_appends_running_node_visible_mid_execution(runtime, store):
@@ -214,7 +214,7 @@ def test_exception_updates_to_error_in_place(runtime, store):
     assert n.metadata.get("status") == "error"
 
 
-# ── Multi-call chronological ordering ────────────────────────────
+# Multi-call chronological ordering
 
 
 def test_top_level_sibling_calls_have_empty_called_by(runtime, store):

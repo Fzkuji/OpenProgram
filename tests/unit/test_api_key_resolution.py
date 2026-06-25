@@ -46,7 +46,7 @@ def env(monkeypatch):
     return monkeypatch
 
 
-# ── env_vars_for (display labels / identifiers only) ─────────────────────────
+# env_vars_for (display labels / identifiers only)
 
 def test_env_vars_for():
     assert ek.env_vars_for("google") == ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]
@@ -57,7 +57,7 @@ def test_env_vars_for():
     assert ek.env_vars_for("totally-unknown") == []
 
 
-# ── resolve_provider_key: AuthStore is the only key source ───────────────────
+# resolve_provider_key: AuthStore is the only key source
 
 def test_store_key_resolves(env, monkeypatch):
     import openprogram.auth.resolver as _resolver
@@ -85,7 +85,7 @@ def test_no_store_no_key(env):
     assert ek.resolve_provider_key("openai") is None
 
 
-# ── is_configured ─────────────────────────────────────────────────────────────
+# is_configured
 
 def test_is_configured_follows_the_store(env, monkeypatch):
     assert ek.is_configured("deepseek") is False
@@ -101,7 +101,7 @@ def test_is_configured_ignores_env(env):
     assert ek.is_configured("deepseek") is False
 
 
-# ── Bedrock / Vertex cloud-credential chains (the one sanctioned env use) ────
+# Bedrock / Vertex cloud-credential chains (the one sanctioned env use)
 
 def test_bedrock_sentinel(env):
     assert ek.resolve_provider_key("amazon-bedrock") is None
@@ -121,7 +121,7 @@ def test_vertex_needs_project_location_and_adc(env, tmp_path):
     assert ek.is_configured("google-vertex") is True
 
 
-# ── provider_id_for_env_var (reverse label lookup) ───────────────────────────
+# provider_id_for_env_var (reverse label lookup)
 
 @pytest.mark.parametrize("env_var,pid", [
     ("GEMINI_API_KEY", "google"),

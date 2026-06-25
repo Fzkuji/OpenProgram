@@ -35,7 +35,7 @@ def rt() -> Runtime:
     return Runtime(call=lambda *a, **kw: "", model="dummy")
 
 
-# ── No store: DAG path returns None ───────────────────────────────
+# No store: DAG path returns None
 
 
 def test_no_store_returns_none(rt):
@@ -47,7 +47,7 @@ def test_no_store_returns_none(rt):
     assert msgs is None
 
 
-# ── With store: DAG history shows up + current turn appended ──────
+# With store: DAG history shows up + current turn appended
 
 
 def test_with_store_builds_history_plus_current(rt, store):
@@ -97,7 +97,7 @@ def test_multiple_text_blocks_keep_separate_parts(rt, store):
     assert parts[1].text == "line 2"
 
 
-# ── Inside an @agentic_function frame ───────────────────────────────
+# Inside an @agentic_function frame
 
 
 def test_dag_prompt_inside_io_function_frame(rt, store):
@@ -185,7 +185,7 @@ def test_render_range_callers_zero_hides_history(rt, store):
     assert any("isolated turn" == t for t in last_texts)
 
 
-# ── Call path appears in <situation> ────────────────────────────────
+# Call path appears in <situation>
 
 
 def test_call_path_appears_in_situation(rt, store):

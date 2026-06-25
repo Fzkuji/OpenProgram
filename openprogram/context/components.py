@@ -111,7 +111,7 @@ def assemble(
         _channel_var.reset(token)
 
 
-# ── System prompt: same fence as the legacy _compose ──────────────────────
+# System prompt: same fence as the legacy _compose
 
 _FENCE_OPEN = ""
 _FENCE_CLOSE = ""
@@ -132,7 +132,7 @@ def build_system_prompt(agent: Any, *, channel: str = "") -> str:
         return str(inline).strip()
 
 
-# ── Builders for the existing 5 blocks (migrated from system_prompt) ───────
+# Builders for the existing 5 blocks (migrated from system_prompt)
 
 def _build_identity(agent: Any) -> str:
     agent_id = _attr(agent, "id", "") or ""
@@ -354,7 +354,7 @@ def _build_platform_format(agent: Any) -> str:
     return f"<platform_format>\n{rules}\n</platform_format>"
 
 
-# ── Register the 5 legacy blocks ──────────────────────────────────────────
+# Register the 5 legacy blocks
 # Orders preserve the legacy top-to-bottom order. identity(L0) → workspace(L1)
 # → inline(L0 inline)… legacy interleaved them in one list; to stay byte-equal
 # we keep the exact sequence identity, workspace, inline, skills, memory.
@@ -406,7 +406,7 @@ def _build_git_repo_flag(agent: Any) -> str:
 register(ContextComponent("git_repo_flag", "L1", 15, _build_git_repo_flag))
 
 
-# ── Prompt injection detection ───────────────────────────────────────────
+# Prompt injection detection
 
 import re as _re
 import logging as _logging
@@ -452,7 +452,7 @@ def _build_pi_shield(agent: Any) -> str:
 register(ContextComponent("pi_shield", "L1", 5, _build_pi_shield))
 
 
-# ── L2 todo progress ──────────────────────────────────────────────────────
+# L2 todo progress
 
 def _build_todo_progress(agent: Any) -> str:
     """Render the session todo list into context so the model sees outstanding
@@ -471,7 +471,7 @@ def _build_todo_progress(agent: Any) -> str:
 register(ContextComponent("todo_progress", "L2", 30, _build_todo_progress))
 
 
-# ── L2 git status ────────────────────────────────────────────────────────
+# L2 git status
 
 def _build_git_status(agent: Any) -> str:
     """Current branch + short status so the model sees uncommitted changes

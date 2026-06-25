@@ -17,7 +17,7 @@ _LOCK = threading.Lock()
 _TODOS: list[dict[str, Any]] = []
 
 
-# ─── todo_read ────────────────────────────────────────────────────────────────
+# todo_read
 
 READ_NAME = "todo_read"
 
@@ -43,7 +43,7 @@ def read_execute(**_: Any) -> str:
         )
 
 
-# ─── todo_write ───────────────────────────────────────────────────────────────
+# todo_write
 
 WRITE_NAME = "todo_write"
 

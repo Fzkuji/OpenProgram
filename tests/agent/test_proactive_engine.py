@@ -30,7 +30,7 @@ def _tool_before(tool="bash", cmd="rm -rf /x", session="s1", ts=1000.0):
                  payload=ev.payload, metadata=ev.metadata)
 
 
-# ─── gate 仲裁 ───────────────────────────────────────────────────────────────
+# gate 仲裁
 
 def test_gate_no_policies_allows():
     assert E._gate_fn(_tool_before()) is None
@@ -80,7 +80,7 @@ def test_gate_policy_error_fails_open():
     assert E._gate_fn(_tool_before()) is None   # 不抛、按放行
 
 
-# ─── observer 分发 + 落地 ────────────────────────────────────────────────────
+# observer 分发 + 落地
 
 def test_observer_fires_and_lands_notify(monkeypatch):
     landed = []
@@ -155,7 +155,7 @@ def test_observer_policy_error_isolated(monkeypatch):
     assert len(landed) == 1   # Bad 出错不影响 Good
 
 
-# ─── state fold（observer 读累积状况）─────────────────────────────────────────
+# state fold（observer 读累积状况）
 
 def test_state_fold_counts_tool_failures():
     store = get_state_store()

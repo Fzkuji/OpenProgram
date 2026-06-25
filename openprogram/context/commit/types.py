@@ -36,30 +36,30 @@ class ContextItem:
 
     溯源到 DAG 哪个节点 + 当前怎么呈现 + 为什么是这状态。
     """
-    # ── 溯源 ───────────────────────────────────────
+    # 溯源
     source_node_id: str          # 对应 DAG 节点 id; summary item 用 "sm_<hex>"
     role: str                    # "user" / "assistant" / "tool" / "summary"
 
-    # ── 当前呈现状态 ──────────────────────────────
+    # 当前呈现状态
     state: ItemState = "full"
     locked: bool = False         # True = 状态决定了, 规则跳过
 
-    # ── 渲染内容 (LLM 实际看到的) ─────────────────
+    # 渲染内容 (LLM 实际看到的)
     rendered: str = ""           # full 时 = 原 output; aged/cleared 时 = stub
     tokens: int = 0              # rendered 的 token 估算
 
-    # ── 决策追溯 (debug + UI 展示用) ──────────────
+    # 决策追溯 (debug + UI 展示用)
     state_set_at: str = ""       # 哪个 context commit 第一次定的这个状态
     reason: str = ""             # "new" / "tail_window" / "idle_60min" / ...
     merged_into: Optional[str] = None  # state=summarized 时, 指向 summary item id
 
-    # ── 锚点机制 (我们独有的, 非 Claude Code) ─────
+    # 锚点机制 (我们独有的, 非 Claude Code)
     # summary 触发时, 部分高价值节点被选成"锚点", 状态保留 full
     # 而不是变 summarized。这样 LLM 既看到 summary 又看到几个关键原文。
     is_anchor: bool = False
     anchor_for_summary: Optional[str] = None  # 锚点服务的 summary id
 
-    # ── Attach 溯源 ────────────────────────────────
+    # Attach 溯源
     # 非 None 表示这条 item 是由 attach pointer 展开来的, 值是
     # source 分支末端的 ContextCommit id。用于 (a) UI 按 attach 块
     # 分组渲染, (b) 跨 turn dedup (parent commit 已经有同一个

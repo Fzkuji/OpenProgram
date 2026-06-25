@@ -19,7 +19,7 @@ def _fresh_registry(monkeypatch):
     yield
 
 
-# ─── registry ────────────────────────────────────────────────────────────────
+# registry
 
 def test_resolve_sets_event_and_value():
     reg = get_question_registry()
@@ -52,7 +52,7 @@ def test_list_and_cancel_session():
     assert reg.consume("a") == ("declined", None)
 
 
-# ─── ask_blocking 三态 ────────────────────────────────────────────────────────
+# ask_blocking 三态
 
 def test_ask_blocking_answered_from_other_thread():
     captured = {}
@@ -88,7 +88,7 @@ def test_ask_blocking_timeout_retracts_card(monkeypatch):
     assert any(f.get("type") == "question.rejected" for f in frames)
 
 
-# ─── runtime.ask / confirm（用 fake runtime 不依赖 webui/LLM）─────────────────
+# runtime.ask / confirm（用 fake runtime 不依赖 webui/LLM）
 
 class _FakeRuntime:
     """只复用 Runtime 的 ask/confirm/form/ask_many，跳过 __init__ 的 provider 解析。"""
@@ -156,7 +156,7 @@ def test_runtime_confirm_timeout_default():
     assert rt.confirm("go?", timeout=0.05, default=False) is False
 
 
-# ─── runtime.form 三态（Phase 4a：多字段表单，答案是 dict）─────────────────────
+# runtime.form 三态（Phase 4a：多字段表单，答案是 dict）
 
 def test_runtime_form_returns_dict():
     rt = _FakeRuntime()
@@ -191,7 +191,7 @@ def test_runtime_form_non_dict_answer_coerced_to_empty():
     assert rt.form("配置", {"x": {"type": "string"}}, timeout=5) == {}
 
 
-# ─── runtime.ask_many（一组问题打包，答案是 list）──────────────────────────────
+# runtime.ask_many（一组问题打包，答案是 list）
 
 def test_runtime_ask_many_returns_list():
     rt = _FakeRuntime()
@@ -253,7 +253,7 @@ def test_form_schema_reaches_pending_question():
     assert captured["schema"] == fields
 
 
-# ─── ask_user 内置原语接到 runtime.ask（复活老接口 + clarify 工具）──────────────
+# ask_user 内置原语接到 runtime.ask（复活老接口 + clarify 工具）
 
 def test_ask_user_routes_to_runtime_ask(monkeypatch):
     """有前端执行上下文（runtime.can_ask）时，ask_user 走 runtime.ask 活链路，

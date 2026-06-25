@@ -30,7 +30,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-# ─── Event ───────────────────────────────────────────────────────────────────
+# Event
 
 #: ``origin`` values: who caused the event.
 ORIGINS = ("user", "agent", "tool", "system", "proactive")
@@ -124,7 +124,7 @@ def emit_ws_frame(frame: dict) -> None:
         pass
 
 
-# ─── Bus ─────────────────────────────────────────────────────────────────────
+# Bus
 
 class EventBus:
     """Process-wide fan-out. Typed subscribers get :class:`Event` objects,
@@ -136,7 +136,7 @@ class EventBus:
         self._subscribers: list[tuple[Callable, frozenset[str] | None]] = []
         self._lock = threading.Lock()
 
-    # ── typed API（事件层） ──
+    # typed API（事件层）
 
     def emit(self, target: Event | str, data: Any = None) -> None:
         """Emit a typed :class:`Event`, or (legacy) ``emit(channel, data)``.
@@ -177,7 +177,7 @@ class EventBus:
 
         return unsubscribe
 
-    # ── shared dispatch ──
+    # shared dispatch
 
     def _call(self, handler: Callable, arg: Any, label: str) -> None:
         if asyncio.iscoroutinefunction(handler):
@@ -203,7 +203,7 @@ class EventBus:
         except Exception as exc:
             print(f"Event handler error ({label}): {exc}", file=sys.stderr)
 
-    # ── legacy channel API ──
+    # legacy channel API
 
     def on(self, channel: str, handler: Callable) -> Callable[[], None]:
         """Subscribe to a legacy channel. Returns an unsubscribe function."""
@@ -232,7 +232,7 @@ def create_event_bus() -> EventBus:
     return EventBus()
 
 
-# ─── process-wide singleton（照 AuthStore / TaskRunner 的双检锁先例） ──────────
+# process-wide singleton（照 AuthStore / TaskRunner 的双检锁先例）
 
 _event_bus: EventBus | None = None
 _event_bus_lock = threading.Lock()
@@ -251,7 +251,7 @@ def get_event_bus() -> EventBus:
     return _event_bus
 
 
-# ─── debug log subscriber（步 1 验收通道） ────────────────────────────────────
+# debug log subscriber（步 1 验收通道）
 
 def _attach_event_log(bus: EventBus) -> None:
     """If OPENPROGRAM_EVENT_LOG is set, append every typed event as one JSON

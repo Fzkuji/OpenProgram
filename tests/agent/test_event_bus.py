@@ -18,7 +18,7 @@ from openprogram.agent.event_bus import (
 )
 
 
-# ─── Event / make_event ──────────────────────────────────────────────────────
+# Event / make_event
 
 def test_make_event_fills_identity_and_defaults():
     ev = make_event("tool.before", "agent", payload={"tool": "bash"})
@@ -56,7 +56,7 @@ def test_make_event_outside_turn_has_no_turn_key():
     assert "turn" not in ev.metadata
 
 
-# ─── typed subscribe / emit ──────────────────────────────────────────────────
+# typed subscribe / emit
 
 def test_subscribe_receives_emitted_event():
     bus = create_event_bus()
@@ -98,7 +98,7 @@ def test_raising_handler_does_not_break_emit_or_other_handlers():
     assert len(got) == 1
 
 
-# ─── legacy channel API stays intact ─────────────────────────────────────────
+# legacy channel API stays intact
 
 def test_legacy_channel_emit_still_works():
     bus = create_event_bus()
@@ -118,7 +118,7 @@ def test_typed_and_legacy_are_isolated():
     assert len(typed) == 1 and len(legacy) == 1
 
 
-# ─── singleton ───────────────────────────────────────────────────────────────
+# singleton
 
 def test_get_event_bus_is_one_instance_across_threads():
     seen = []
@@ -134,7 +134,7 @@ def test_get_event_bus_is_one_instance_across_threads():
     assert len({id(b) for b in seen + [get_event_bus()]}) == 1
 
 
-# ─── ws.frame 透传链（webui 订阅者的核心契约，防回归）─────────────────────────
+# ws.frame 透传链（webui 订阅者的核心契约，防回归）
 
 def test_emit_ws_frame_reaches_subscriber_verbatim(monkeypatch):
     """外部源 emit_ws_frame(帧) → 订阅 WS_FRAME_EVENT 的 handler（webui 的

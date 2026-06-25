@@ -39,11 +39,11 @@ class UsageEvent(BaseModel):
 
     model_config = {"frozen": True}
 
-    # ── identity ──
+    # identity
     event_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     ts: float = 0.0  # unix epoch seconds; stamped by the recorder
 
-    # ── attribution ──
+    # attribution
     session_id: Optional[str] = None
     parent_session_id: Optional[str] = None
     agent_id: Optional[str] = None
@@ -51,19 +51,19 @@ class UsageEvent(BaseModel):
     call_label: Optional[str] = None
     origin_pid: int = Field(default_factory=os.getpid)
 
-    # ── model ──
+    # model
     provider: str = ""
     api: Optional[str] = None
     model_id: str = ""
 
-    # ── tokens (provider-authoritative; 0 when absent) ──
+    # tokens (provider-authoritative; 0 when absent)
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     total_tokens: int = 0
 
-    # ── cost (USD, flattened) ──
+    # cost (USD, flattened)
     cost_input: float = 0.0
     cost_output: float = 0.0
     cost_cache_read: float = 0.0
@@ -71,7 +71,7 @@ class UsageEvent(BaseModel):
     cost_total: float = 0.0
     cost_source: str = "unknown"  # model_catalog | provider_reported | unknown
 
-    # ── provenance ──
+    # provenance
     token_source: str = "provider_usage"  # provider_usage | anthropic_count_api | estimate
     schema_version: int = SCHEMA_VERSION
 

@@ -151,7 +151,7 @@ def test_store_reconcile_orphans_preserves_terminal(store_fixture):
     assert cur.status == TaskStatus.COMPLETED
 
 
-# ── Runner tests ────────────────────────────────────────────────
+# Runner tests
 
 @pytest.fixture
 def fake_worker(monkeypatch):

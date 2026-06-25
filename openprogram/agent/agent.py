@@ -147,7 +147,7 @@ class Agent:
         # TS parity: expose `agent.continue()` despite Python keyword constraints.
         setattr(self, "continue", self.continue_from_context)
 
-    # ── Properties ────────────────────────────────────────────────────────────
+    # Properties
 
     @property
     def session_id(self) -> str | None:
@@ -184,7 +184,7 @@ class Agent:
     def state(self) -> AgentState:
         return self._state
 
-    # ── Subscriptions ─────────────────────────────────────────────────────────
+    # Subscriptions
 
     def subscribe(self, fn: Callable[[AgentEvent], None]) -> Callable[[], None]:
         """Subscribe to agent events. Returns unsubscribe function."""
@@ -195,7 +195,7 @@ class Agent:
         for listener in list(self._listeners):
             listener(event)
 
-    # ── State mutators ────────────────────────────────────────────────────────
+    # State mutators
 
     def set_system_prompt(self, v: str) -> None:
         self._state.system_prompt = v
@@ -300,7 +300,7 @@ class Agent:
         self._steering_queue = []
         self._follow_up_queue = []
 
-    # ── Prompt / Continue ─────────────────────────────────────────────────────
+    # Prompt / Continue
 
     async def prompt(
         self,

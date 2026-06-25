@@ -27,7 +27,7 @@ def _seed(qid, session_id="s1", kind="ask", options=None, multi=False, schema=No
         options=options or [], multi=multi, schema=schema or {}))
 
 
-# ─── 命令拦截：归属 + 解析 ────────────────────────────────────────────────────
+# 命令拦截：归属 + 解析
 
 def test_non_command_falls_through():
     _seed("q1", session_id="s1")
@@ -75,7 +75,7 @@ def test_answer_without_id_falls_through():
     assert out is None
 
 
-# ─── choice 映射 ─────────────────────────────────────────────────────────────
+# choice 映射
 
 def test_map_choice_index_1based():
     q = PendingQuestion(id="x", session_id="s", kind="ask", prompt="?",
@@ -96,7 +96,7 @@ def test_map_choice_multi_comma():
     assert _map_choice(q, "1,3") == ["a", "c"]
 
 
-# ─── 渲染（纯文本，含 /answer 提示）─────────────────────────────────────────
+# 渲染（纯文本，含 /answer 提示）
 
 def test_render_options_includes_answer_command():
     txt = _render_question({"id": "q9", "kind": "ask", "prompt": "Pick",

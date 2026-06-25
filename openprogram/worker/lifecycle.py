@@ -27,7 +27,7 @@ from . import paths
 from .lock import read_holder_pid
 
 
-# ── port file ────────────────────────────────────────────────────────────────
+# port file
 
 
 def write_port_file(port: int) -> None:
@@ -114,7 +114,7 @@ def find_running_webui() -> tuple[Optional[int], Optional[int], str]:
     return None, None, "none"
 
 
-# ── pid file ─────────────────────────────────────────────────────────────────
+# pid file
 
 
 def _read_pid_file() -> Optional[int]:
@@ -199,7 +199,7 @@ def current_worker_pid() -> Optional[int]:
     return None
 
 
-# ── start / stop ─────────────────────────────────────────────────────────────
+# start / stop
 
 
 def spawn_detached() -> int:
@@ -320,7 +320,7 @@ def restart_worker() -> int:
     return spawn_detached()
 
 
-# ── status ───────────────────────────────────────────────────────────────────
+# status
 
 
 def _worker_start_time(pid: int) -> Optional[float]:

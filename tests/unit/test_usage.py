@@ -48,7 +48,7 @@ def _ev(**kw):
     return UsageEvent(**base)
 
 
-# ── ledger ──
+# ledger
 
 def test_append_and_query_totals(ledger):
     ledger.append(_ev(input_tokens=100, output_tokens=20))
@@ -120,7 +120,7 @@ def test_query_empty_ledger(ledger):
     assert rows[0].events == 0
 
 
-# ── contextvar scope ──
+# contextvar scope
 
 def test_usage_scope_sets_and_resets():
     assert current_usage_context().call_kind == "unknown"
@@ -165,7 +165,7 @@ def test_scope_propagates_into_async_task():
     assert asyncio.run(main()) == "subagent"
 
 
-# ── recorder ──
+# recorder
 
 class _FakeUsage:
     def __init__(self, i, o, cr=0, cw=0):

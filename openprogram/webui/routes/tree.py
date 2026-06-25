@@ -66,7 +66,7 @@ def register(app):
         out.sort(key=lambda r: r["name"])
         return JSONResponse(content=out)
 
-    # ── Tool profiles ──────────────────────────────────────────────────
+    # Tool profiles
     # A profile = a named tool set the user configures on the Functions
     # page and selects in the chat composer. "full" = all exposed
     # tools (immutable). New profile = copy of default; user removes

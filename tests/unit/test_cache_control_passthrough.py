@@ -11,7 +11,7 @@ from openprogram.providers.anthropic.anthropic import _build_messages
 from openprogram.providers.types import ImageContent, UserMessage
 
 
-# ── runtime carries it, anthropic preserves it (the full chain) ───────────────
+# runtime carries it, anthropic preserves it (the full chain)
 
 def test_passthrough_runtime_to_anthropic_body():
     ctx, _sys = _build_pi_context([
@@ -37,7 +37,7 @@ def test_image_cache_control_in_anthropic_body():
     assert block.get("cache_control") == {"type": "ephemeral"}
 
 
-# ── zero regression when not passed ───────────────────────────────────────────
+# zero regression when not passed
 
 def test_no_cache_control_body_unchanged():
     ctx, _sys = _build_pi_context([{"type": "text", "text": "hi"}])

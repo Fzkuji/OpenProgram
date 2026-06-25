@@ -115,7 +115,7 @@ def _msg_to_node(msg: dict) -> Call:
 def _node_to_msg(node: Call, session_id: str) -> dict:
     meta = dict(node.metadata or {})
 
-    # ── streaming-resume schema (docs/design/runtime/streaming-resume.md) ──
+    # streaming-resume schema (docs/design/runtime/streaming-resume.md)
     # Every msg dict carries a ``status`` so the chat can tell at a
     # glance whether the producer is still running. Legacy nodes
     # without an explicit status default to ``done`` (they were

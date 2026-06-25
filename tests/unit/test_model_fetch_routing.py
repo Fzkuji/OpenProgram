@@ -24,7 +24,7 @@ from openprogram.webui._model_catalog import storage as st
 from openprogram.webui._model_catalog.fetchers import anthropic as A
 
 
-# ── api-stamp consistency (drift guard) ───────────────────────────────────────
+# api-stamp consistency (drift guard)
 
 @pytest.mark.parametrize("pid", ["minimax", "minimax-cn"])
 def test_default_api_matches_models_generated(pid):
@@ -68,7 +68,7 @@ def test_provider_default_api_table_is_empty_by_default():
     assert P._PROVIDER_DEFAULT_API == {}
 
 
-# ── dispatcher routing ────────────────────────────────────────────────────────
+# dispatcher routing
 
 def test_fetch_dispatch_routes_anthropic_wire_to_anthropic_fetcher(monkeypatch):
     used = {"which": None}
@@ -97,7 +97,7 @@ def test_fetch_dispatch_routes_anthropic_wire_to_anthropic_fetcher(monkeypatch):
     assert res.get("fetched") == 1 and "error" not in res
 
 
-# ── generalized Anthropic fetcher hits the provider's own host ────────────────
+# generalized Anthropic fetcher hits the provider's own host
 
 def test_anthropic_fetcher_uses_provider_base_url(monkeypatch):
     seen = {}

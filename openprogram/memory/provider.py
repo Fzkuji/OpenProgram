@@ -32,7 +32,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Any
 
-# ── Context fencing ──────────────────────────────────────────────────────────
+# Context fencing
 
 _FENCE_TAG_RE = re.compile(r"</?\s*memory-context\s*>", re.IGNORECASE)
 _FENCE_BLOCK_RE = re.compile(
@@ -71,7 +71,7 @@ def fence_memory(raw: str) -> str:
     )
 
 
-# ── Provider base class ──────────────────────────────────────────────────────
+# Provider base class
 
 
 class MemoryProvider(ABC):

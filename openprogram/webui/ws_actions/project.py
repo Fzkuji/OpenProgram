@@ -52,7 +52,7 @@ def _session_meta(session_id: str) -> dict:
         return {}
 
 
-# ── Projects ───────────────────────────────────────────────────────
+# Projects
 
 
 async def handle_list_projects(ws, cmd: dict):
@@ -152,7 +152,7 @@ async def handle_set_session_project(ws, cmd: dict):
     }, default=str))
 
 
-# ── Additional working directories ─────────────────────────────────
+# Additional working directories
 
 
 def _resolve_workdirs(session_id: str) -> list[str]:

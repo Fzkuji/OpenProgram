@@ -167,7 +167,7 @@ class TaskRunner:
         # task_id → threading.Event used to wake await_task() callers.
         self._done_events: dict[str, threading.Event] = {}
 
-    # ── Public API ──────────────────────────────────────────────
+    # Public API
 
     def spawn_task(
         self,
@@ -395,7 +395,7 @@ class TaskRunner:
             # Python 3.8 fallback (no cancel_futures kwarg).
             self._pool.shutdown(wait=wait)
 
-    # ── Worker body ─────────────────────────────────────────────
+    # Worker body
 
     def _run_one(self, task_id: str, cancel_ev: threading.Event,
                  done_ev: threading.Event) -> None:
@@ -612,7 +612,7 @@ class TaskRunner:
             with self._lock:
                 self._tasks.pop(task_id, None)
 
-    # ── Internals ───────────────────────────────────────────────
+    # Internals
 
     def _wake_done(self, task_id: str) -> None:
         with self._lock:
@@ -929,7 +929,7 @@ class TaskRunner:
         threading.Thread(target=_watch, daemon=True).start()
 
 
-# ── Module-level singleton ─────────────────────────────────────
+# Module-level singleton
 
 _runner_lock = threading.Lock()
 _runner: Optional[TaskRunner] = None

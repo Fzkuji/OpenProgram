@@ -31,7 +31,7 @@ def _roles(messages) -> list[str]:
     return [m.role for m in messages]
 
 
-# ── Empty / unknown ────────────────────────────────────────────────
+# Empty / unknown
 
 
 def test_empty_reads_returns_empty_list():
@@ -44,7 +44,7 @@ def test_unknown_ids_are_silently_skipped():
     assert render_dag_messages(g, ["nonexistent"]) == []
 
 
-# ── Single-role renderings ─────────────────────────────────────────
+# Single-role renderings
 
 
 def test_user_renders_to_user_message():
@@ -72,7 +72,7 @@ def test_user_then_llm_two_messages():
     assert _texts(msgs) == ["q", "a"]
 
 
-# ── code Call renders as call/result pair ──────────────────────────
+# code Call renders as call/result pair
 
 
 def test_code_call_renders_as_user_assistant_pair():
@@ -210,7 +210,7 @@ def test_code_call_error_result_shown_with_prefix():
     assert "boom" in assistant_text
 
 
-# ── Order preservation ────────────────────────────────────────────
+# Order preservation
 
 
 def test_order_preserved_from_input_list():
@@ -223,7 +223,7 @@ def test_order_preserved_from_input_list():
     assert _texts(msgs) == ["c", "a", "b"]
 
 
-# ── End-to-end: a realistic chat history ──────────────────────────
+# End-to-end: a realistic chat history
 
 
 def test_full_turn_user_assistant_tool_assistant():

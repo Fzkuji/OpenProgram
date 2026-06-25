@@ -182,7 +182,7 @@ def _build_items_from_node(
             reason="new",
         )]
 
-    # ── Attach pointer ─────────────────────────────────────────
+    # Attach pointer
     attach = _parse_attach_blob(node)
     label = (attach.get("label") if isinstance(attach, dict) else "") or ""
     label = label.strip()
