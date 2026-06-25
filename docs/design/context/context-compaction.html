@@ -294,7 +294,7 @@
   <a href="#s1">1. 核心思路</a>
   <a href="#s2">2. 节点生命周期管理</a>
   <a href="#s2-1" class="indent">2.1 函数运行中</a>
-  <a href="#s2-2" class="indent">2.2 函数结束 → expose=io 天然隐藏内部</a>
+  <a href="#s2-2" class="indent">2.2 函数结束 → expose=io 隐藏内部，走常规压缩</a>
   <a href="#s3">3. 每轮常规操作</a>
   <a href="#s3-1" class="indent">3.1 截断超大单个输出（Budget Reduction）</a>
   <a href="#s4">4. 空闲时清理</a>
@@ -342,7 +342,7 @@
       <dd><code>render_context</code> 的 <code>frame_entry_seq</code> 参数划分"函数前历史"和"函数内历史"，callers 控制能看多少父辈。expose=io 确保函数内部细节不泄漏给调用方</dd>
     </dl>
 
-    <h3 id="s2-2">2.2 函数结束 → expose=io 天然隐藏内部 <span class="pending">⚠ 老化方案待定</span></h3>
+    <h3 id="s2-2">2.2 函数结束 → expose=io 天然隐藏内部</h3>
     <dl class="spec">
       <dt>触发</dt>
       <dd>函数返回，status 从 "running" 变为 "completed"/"error"</dd>
@@ -351,13 +351,11 @@
       <dt>DAG 即存储</dt>
       <dd>子节点保留在 DAG 中（session store 持久化），不需要额外序列化到磁盘。大模型想查内部过程时，可以通过工具读取 DAG 中的子节点</dd>
       <dt>后续流程</dt>
-      <dd>折叠后的节点进入 <span class="xref">→ §3-§5</span> 的常规压缩流程，和 <span class="node-chat">🔵 对话节点</span> 一视同仁</dd>
+      <dd>函数节点（输入+输出）进入 <span class="xref">→ §3-§5</span> 的常规压缩流程，和 <span class="node-chat">🔵 对话节点</span>、<span class="node-tool">🟡 工具节点</span> 一视同仁——不需要单独的策略。输出太大走 Budget Reduction 截断（<span class="xref">§3.1</span>），时间久了走 Snip 整轮删（<span class="xref">§5.2</span>），不够再走 LLM 摘要（<span class="xref">§5.3</span>）</dd>
       <dt>节点关系</dt>
       <dd><span class="node-func">🟢 函数节点</span>从 status=running 变为 status=completed，<span class="node-tool">🟡 工具子节点</span>不再参与渲染（expose=io 控制）但保留在 DAG 中</dd>
       <dt>函数调用特殊设计</dt>
-      <dd>这是函数调用独有的机制。<span class="node-chat">🔵 对话节点</span>没有 expose 概念，始终 full</dd>
-      <dt>⚠ 待定</dt>
-      <dd>函数节点的输入+输出本身可能很长（几百到几千 tokens），多个已完成函数累积后仍然占用大量空间。这部分的老化/截断方案待设计</dd>
+      <dd>这是函数调用独有的机制。<span class="node-chat">🔵 对话节点</span>没有 expose 概念，始终 full。函数结束后不需要额外的老化策略——和其他节点走同一套管道</dd>
     </dl>
   </div>
 </details>
@@ -683,8 +681,7 @@ Modified: migrations/001_user.py, migrations/002_order.py, src/models.py</code><
         <tr><td>3</td><td>Snip 按时间删旧节点（§5.2）</td><td>无</td></tr>
         <tr><td>4</td><td>Context Collapse / Auto-Compact — LLM 摘要（§5.3）</td><td>无</td></tr>
         <tr><td>5</td><td>/compact 命令（§5.4）</td><td>步骤 4</td></tr>
-        <tr><td>6</td><td>/context 命令（查看 token 分布）</td><td>无</td></tr>
-        <tr><td>7</td><td>函数节点老化方案（§2.2 <span class="pending">⚠ 待定</span>）</td><td>步骤 1-4</td></tr>
+        <tr><td>6</td><td>/context 命令（查看 token 分布，参考 Claude Code）</td><td>无</td></tr>
       </tbody>
     </table>
   </div>
