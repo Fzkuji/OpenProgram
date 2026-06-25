@@ -147,13 +147,51 @@ LLM 回复后，上下文变成：
 
 简单粗暴，释放大量空间。但信息完全丢失——模型不知道前 5 轮讨论了什么。
 
-#### Context Collapse（和 Auto-Compact 二选一，阈值约 90%）
+#### Context Collapse 和 Auto-Compact（二选一）
 
-**Context Collapse 和 Auto-Compact 是二选一的替代方案**，由配置决定用哪个。Context Collapse 更精细（分段摘要，保留结构），Auto-Compact 更粗暴（全量摘要）。
+Snip 之后如果仍然超阈值，根据配置二选一执行 Context Collapse 或 Auto-Compact。两者是**互斥的替代方案**，核心区别：
 
-如果 Snip 释放的空间不够且启用了 Context Collapse，`applyCollapsesIfNeeded()` 进一步压缩。
+| | Context Collapse | Auto-Compact |
+|---|---|---|
+| **做法** | 把历史分成若干段，逐段用 LLM 摘要 | 把整个对话历史一次性发给 LLM 生成一个摘要块 |
+| **原始消息** | **保留**（摘要是 View 叠加，底层数据不动） | **替换**（摘要替代所有旧消息，原始不可恢复） |
+| **可回滚** | 是（原始消息还在，理论上可以重建） | 否（旧消息被替换，不可逆） |
+| **触发阈值** | ~90%（非阻塞），95%（阻塞强制） | ~75-87% |
+| **保留结构** | 是（最近 N 轮完整，旧的按段折叠，仍有分段边界） | 否（全部压成一段文字，结构丢失） |
+| **信息损失** | 较少（每段有独立摘要，关键节点可保留） | 较多（只剩一段总结，中间细节全丢） |
+| **LLM 调用** | 多次（每段一次） | 一次 |
+| **手动触发** | 无 | `/compact` 命令 |
 
-它把历史分成**几个段**，每段用**模板**（不是 LLM）生成一行摘要：
+**具体例子——20 轮对话后触发：**
+
+Context Collapse 的结果（分段摘要，结构保留）：
+```
+[turns 1-5 摘要] 讨论了数据库迁移方案，决定用 Alembic，排除了 Django ORM
+[turns 6-10 摘要] 实现了 User 表迁移，修了 FK 约束问题，添加了回滚脚本
+[turn 11] user: "现在做 Order 表"                    ← 最近的完整保留
+[turn 12] assistant: "好的，让我先看一下 Order 模型..." + tool_use + ...
+...
+[turn 20] assistant: "Payment 表的外键已经修好了"
+```
+原始的 turn 1-10 仍然保存在 collapse store 中，只是模型看到的是折叠版本。
+
+Auto-Compact 的结果（全量摘要，结构丢失）：
+```
+[compaction summary]
+用户在做数据库迁移项目。使用 Alembic。已完成 User 表和 Order 表的迁移。
+当前在处理 Payment 表的外键约束。关键决策：用 batch migration 避免锁表。
+修改过的文件：migrations/001_user.py, migrations/002_order.py, src/models.py
+
+[turn 19] user: "修一下 Payment 的外键"              ← 只保留最近 1-2 轮
+[turn 20] assistant: "Payment 表的外键已经修好了"
+```
+原始的 turn 1-18 **永久丢失**，无法恢复。
+
+#### Context Collapse 详细机制
+
+如果启用了 Context Collapse，`applyCollapsesIfNeeded()` 进一步压缩。
+
+它把历史分成**几个段**，每段用 LLM 生成摘要：
 
 ```
 压缩前：
@@ -167,11 +205,11 @@ LLM 回复后，上下文变成：
 [collapse] "Turns 6-10: Fixed bug in utils.py (read → edit → test → fix → pass)"
 ```
 
-关键点：**Context Collapse 是读时投影（read-time projection）**——原始历史不删，collapse 摘要存在单独的 collapse store 里。模型看到的是折叠后的版本，但完整历史保留着，理论上可以重建。
+关键点：**Context Collapse 是读时投影（read-time projection）**——原始历史不删，collapse 摘要存在单独的 collapse store 里（类似数据库的 View——底表不动，查询看到的是摘要视图）。模型看到的是折叠后的版本，但完整历史保留着，理论上可以重建。
 
-#### Auto-Compact（和 Context Collapse 二选一，阈值约 87%）
+#### Auto-Compact 详细机制
 
-**如果没有启用 Context Collapse**（或者 Context Collapse 仍然不够），触发 `compactConversation()`——这是唯一**调 LLM** 的压缩步骤。
+**如果没有启用 Context Collapse**，触发 `compactConversation()`——这是唯一生成**全量摘要**的压缩步骤。
 
 过程：
 1. 执行 PreCompact hooks（通知系统即将压缩）
