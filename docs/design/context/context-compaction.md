@@ -1,263 +1,196 @@
 # 上下文压缩
 
-> 状态: **设计完成，待实现**。
-> 代码: `context/engine.py`、`context/budget.py`、`context/microcompact.py`、`context/tool_aging/`、`context/nodes.py`（`render_context`）。
-> 关联: [`context-composition.md`](context-composition.md)（三层上下文构建）、[Claude Code 压缩参考](../../reference/claude-code-compaction.md)
-
----
+> 状态: **设计完成，待实现**
+> 代码: `context/engine.py`、`context/budget.py`、`context/microcompact.py`、`context/tool_aging/`
+> 参考: [Claude Code 压缩参考](../../reference/claude-code-compaction.md)
 
 ## 1. 核心思路
 
-上下文压缩 = 控制 DAG 节点的展示程度。DAG 本身不动，渲染时决定每个节点展示多少。
-
----
+上下文压缩 = 节点折叠 + 存磁盘留引用 + 时间降级。所有操作都作用在 DAG 节点上。
 
 ## 2. 节点生命周期管理
 
-DAG 中的函数调用节点有运行中和已结束两种状态，压缩前先处理生命周期。
+我们独有的设计。Claude Code 是线性对话没有 DAG，不需要这一层。
 
 ### 2.1 函数运行中
 
-- **触发条件**：函数正在执行（`status="running"`）
-- **做什么**：内部工具调用历史完整展开，按 `render_context` 管道渲染（callers / subcalls / expose 机制控制可见范围）
-- **作用对象**：当前 frame 节点及其子节点
-- **节点状态**：全部 `full`
-- → 如果运行中的函数内部历史超限，对内部节点执行 §5 的降级算法（最旧的内部节点先降）
+- **触发**：函数被调用，status="running"
+- **做什么**：内部子树（工具调用、嵌套函数、LLM 交互）完整展开在上下文中
+- **可见范围**：由 render_context 的 callers/subcalls/expose 控制
+- **节点状态**：full（完整渲染 input + output）
+- **和节点的关系**：函数节点（ROLE_CODE）+ 其下所有子节点都参与渲染
+- **函数调用特殊设计**：render_context 的 frame_entry_seq 参数划分"函数前历史"和"函数内历史"，callers 控制能看多少父辈
 
-### 2.2 函数结束：折叠
+### 2.2 函数结束 → 自动折叠
 
-- **触发条件**：函数正常返回或异常退出（`@agentic_function` 装饰器的 finally 块）
+- **触发**：函数返回，status 从 "running" 变为 "completed"/"error"
 - **做什么**：
-  1. 函数内部的工具调用历史序列化到磁盘
-  2. 函数节点折叠成一行：`{func_name}({args}) → {result}`
-  3. 节点 metadata 存检索路径
-- **作用对象**：已完成的函数节点及其整个子树
-- **节点状态**：子树从 DAG 渲染中移除，函数节点变为一行摘要
-- → 折叠后的节点和对话节点、工具调用节点一样，进入 §3-§5 的常规压缩流程
-- → 存磁盘的机制和 §4.1 的 Microcompact 共用同一套存储（`~/.openprogram/sessions/<sid>/`）
+  a. 内部子树（所有子节点）序列化存磁盘
+  b. 存储路径：`~/.openprogram/sessions/<sid>/collapsed/<node_id>.jsonl`
+  c. 节点本身从 full 变为折叠状态，只保留一行：
+     `research_agent("LLM reasoning") → 5 ideas (详见 collapsed/abc123)`
+  d. 折叠后的节点进入 §3-§5 的常规压缩流程，和对话节点一视同仁
+- **大模型调用的函数**：自动折叠
+- **手动调用的函数**：同样折叠，只保留输入输出
+- **嵌套函数**：内层先折叠，外层结束时再折叠（外层的折叠包含已折叠的内层）
+- **和节点的关系**：函数节点从 ROLE_CODE status=running 变为 status=completed，子节点从 DAG 渲染列表移除（但不物理删除）
+- **函数调用特殊设计**：这是函数调用独有的步骤，对话节点不经过这步
 
-折叠前后的 DAG 结构变化：
+### 2.3 存磁盘的格式和检索
 
-```
-折叠前（函数运行中）：
-root
-├── user_1 → llm_1
-├── user_2 → llm_2
-│       ├── tool_call_1（bash "grep ..."）
-│       └── func_call_1（research_agent, 运行中）        ← 展开
-│           └── llm_3
-│               ├── tool_call_3（search_papers）
-│               └── tool_call_4（write_note）
-
-折叠后（函数已结束）：
-root
-├── user_1 → llm_1
-├── user_2 → llm_2
-│       ├── tool_call_1（bash "grep ..."）
-│       └── [func] research_agent("topic") → 5 ideas    ← 一行，内部存磁盘
-├── user_3 → llm_4
-```
-
-### 2.3 手动调用的函数
-
-- **触发条件**：用户在 CLI/webui 手动执行函数（非 LLM 调用）
-- **做什么**：和 §2.2 相同——结束后折叠成一行，只保留输入输出
-- **作用对象**：手动调用的函数节点
-- **节点状态**：同 §2.2
-
-### 2.4 磁盘存储格式
-
-- **路径**：`~/.openprogram/sessions/<sid>/func_history/<node_id>.jsonl`
-- **格式**：JSONL，每行一个内部节点（role / name / input / output / timestamp）
-- **检索**：模型可通过 `read_file` 工具读取该路径查看函数运行的具体过程
-- → §4.1 的旧工具输出也存磁盘，共用 `~/.openprogram/sessions/<sid>/` 下的存储
-
----
+- **格式**：JSONL，每行一个子节点（role/name/input/output/metadata）
+- **检索**：大模型可以通过 read_file 工具读取这个路径，查看函数运行的具体过程
+- **和 §4.1 的关系**：Microcompact 也存磁盘，共用同一套存储目录结构
+- **和节点的关系**：存的是被折叠的子节点，父节点（函数节点本身）留在 DAG 中
 
 ## 3. 每轮常规操作
 
-每次 LLM 调用前都执行，和上下文长度无关。
+每次 LLM 调用前都做，和上下文长度无关。
 
 ### 3.1 截断超大单个输出
 
-- **触发条件**：每轮 LLM 调用前，检查每个节点的 output 大小
-- **做什么**：单个工具输出超过阈值（如 10K tokens）时截断——保留开头 + 结尾，中间替换为 `[... 省略 N tokens ...]`
-- **作用对象**：所有节点的 output 字段（对话、工具、已折叠的函数）
-- **节点状态**：仍为 `full`，只是 output 被截短
-- → 现有 `tool_aging/truncate.py` 已实现此功能
-- → 这是最便宜的操作，不删节点、不调 LLM、不改 DAG
-
----
+- **触发**：每次 LLM 调用前检查所有节点的 output
+- **做什么**：单个工具输出超过阈值（比如 10000 tokens）就截断
+- **截断方式**：保留开头 N tokens + 结尾 M tokens，中间用 `[... truncated ...]` 替代
+- **作用对象**：所有节点（对话节点、工具节点、§2.2 折叠后的函数节点）
+- **不改变节点状态**，只截断 output 文本
+- **和节点的关系**：作用在单个节点的 output 字段上，不影响节点间的结构
+- **函数调用特殊设计**：无。函数节点和对话节点一样处理。§2.2 折叠后的函数节点只有一行，通常不会触发截断
 
 ## 4. 空闲时清理
 
-用户一段时间没发消息时后台执行。
+用户一段时间没发消息时做。
 
 ### 4.1 旧工具输出存磁盘（Microcompact）
 
-- **触发条件**：距上次用户交互超过阈值（如 30 秒）
-- **做什么**：把旧的工具输出（非最近 N 个）存到磁盘，上下文中只留一行引用路径
-  ```
-  [stored on disk: ~/.openprogram/sessions/<sid>/tool_output/<node_id>]
-  ```
-- **作用对象**：旧的工具调用节点的 output 字段
-- **节点状态**：仍为 `full`，但 output 被替换为引用路径
-- → 和 §2.4 共用存储机制（同一个 session 目录），但针对的是单个工具输出而非函数子树
-- → 现有 `microcompact.py` 已实现，返回变换后的副本，不改原始数据
-- → 模型需要时可通过 `read_file` 读回完整输出
-
----
+- **触发**：距上次用户交互超过阈值（比如 30 秒）
+- **做什么**：按时间排序，最旧的工具输出存磁盘，上下文中替换为引用路径
+- **存储**：`~/.openprogram/sessions/<sid>/tool_outputs/<node_id>`
+- **上下文中变成**：`[output stored: tool_outputs/abc123, retrievable by read_file]`
+- **最近的工具输出保持 inline**（不清理）
+- **大模型需要时可以通过 read_file 读回来**
+- **和 §2.3 的关系**：共用存储机制，但针对的是单个工具输出而非函数子树
+- **和节点的关系**：修改节点的 output 字段（替换为引用路径），节点本身保留在 DAG 中
+- **函数调用特殊设计**：
+  - 函数运行中（§2.1）：内部的工具输出也可以被 Microcompact 清理（如果运行时间很长，旧的内部工具输出存磁盘）
+  - 函数结束后（§2.2）：内部子树已经整体存磁盘了，Microcompact 不再作用于这些子节点
 
 ## 5. 阈值触发的压缩
 
-上下文占比超过阈值时触发，逐步升级。
+上下文占比超过阈值时做。
 
 ### 5.1 触发条件和目标
 
-- **触发条件**：
-  - context ≤ 200K：history tokens 占比 ≥ **70%**
-  - context > 200K：history tokens 占比 ≥ **80%**
-- **目标**：压到 **20%**
-- → 触发后按 §5.2 → §5.3 → §5.4 顺序执行，每步检查是否已达目标，达到就停
+- **触发**：history tokens 占 context window 超过阈值
+  - context ≤ 200K：触发线 70%
+  - context > 200K：触发线 80%
+- **目标**：压到 20%
+- **检查时机**：每次 LLM 调用前（§3 之后）
+- **和节点的关系**：计算所有参与渲染的节点的 token 总和
 
 ### 5.2 按时间删旧节点（Snip）
 
-- **触发条件**：§5.1 触发后，第一步
-- **做什么**：直接删除最旧的节点（不做摘要，直接从渲染列表中移除）
-- **作用对象**：所有类型节点（对话、工具、已折叠函数），按 seq ASC（最旧的先删）
-- **节点状态**：`hidden`（DAG 中保留，渲染时跳过）
-- → 最便宜——不调 LLM，不生成摘要
-- → 删到目标就停；如果删了最旧的 20% 节点还不够，进入 §5.3
+- **触发**：§5.1 条件满足
+- **做什么**：直接删除最旧的节点（不做摘要，直接从渲染列表移除）
+- **作用对象**：所有类型的节点（对话节点、已折叠的函数节点、工具调用节点）
+- **删多少**：从最旧的开始删，直到总 token 数降到目标以下
+- **删除的节点数据仍在 DAG 中**（不物理删除），只是渲染时跳过（visibility=hidden）
+- **如果 Snip 后仍超目标** → 进入 §5.3
+- **和节点的关系**：设置节点的 visibility=hidden，render_context 跳过这些节点
+- **函数调用特殊设计**：
+  - §2.2 折叠后的函数节点被当作普通节点，按时间排序参与 Snip
+  - 正在运行的函数（§2.1）不参与 Snip（不能删正在用的）
 
-### 5.3 对话节点降级为摘要
+### 5.3 对话节点 LLM 摘要
 
-- **触发条件**：§5.2 后仍超目标
-- **做什么**：把剩余的旧对话节点（user+llm 对）从 `full` 降为 `degraded`，用预生成的摘要替换完整内容
-  ```
-  [turn 3] 用户要求分析代码性能 → 模型发现3个瓶颈
-  ```
-- **作用对象**：对话节点（user + llm），按 seq ASC（最旧的先降）
-- **节点状态**：`degraded`（~50-100 tokens/个，相比 full 的 ~2000 tokens）
-- → 摘要来自 `metadata.summary`（每轮 turn 结束时异步预生成，见 §5.3.1）
-- → 如果预生成缓存不存在，fallback 到截取 output 前 50 字符
+- **触发**：§5.2 Snip 后仍超目标
+- **做什么**：用 LLM 把旧对话节点摘要成一段文本
+- **摘要预生成**：每轮 turn 结束时异步生成 1-2 句摘要，存在节点 metadata.summary 中
+- **压缩时**：直接用缓存的 summary 替换完整对话，不需要额外 LLM 调用
+- **如果没有预生成的 summary**：调 LLM 生成（更慢，但保底）
+- **摘要后节点变成**：`[turn 3] 用户问了代码性能 → 模型发现3个瓶颈`（约 50 tokens）
+- **和 §2.2 的关系**：折叠后的函数节点已经是一行了，通常不需要再摘要；但如果一行还是太长，也可以进一步缩短
+- **和节点的关系**：节点的 visibility 从 full 变为 degraded，渲染时用 summary 替代完整内容
+- **函数调用特殊设计**：
+  - 对话节点（user+assistant）：用预生成的摘要
+  - 已折叠的函数节点（§2.2）：已经是一行，通常不再摘要
+  - 正在运行的函数（§2.1）：不摘要（正在用）
 
-#### 5.3.1 摘要预生成
+### 5.4 /compact 手动命令
 
-- **触发条件**：每轮 turn 结束时
-- **做什么**：异步调 LLM 生成 1-2 句对话摘要，存在节点 `metadata.summary` 中
-- **作用对象**：当前 turn 的 user+llm 节点对
-- → 和 shadow git 的 turn-end commit 类似——turn 结束时顺手做
-- → 压缩触发时直接读缓存，不需要额外 LLM 调用
-
-### 5.4 已折叠函数节点的进一步压缩
-
-- **触发条件**：§5.3 后仍超目标
-- **做什么**：§2.2 折叠后的函数节点已经是一行了，进一步降级为 `hidden`（完全从渲染中移除）
-- **作用对象**：已折叠的函数节点，按 seq ASC
-- **节点状态**：`hidden`
-- → 磁盘上的完整历史仍在（§2.4），模型需要时可检索
-- → 这是最后手段，信息损失最大
-
----
+- **触发**：用户输入 `/compact` 或 `/compact <提示词>`
+- **做什么**：立即触发 LLM 全量摘要（不经过 §5.2 Snip）
+- **可以带提示词指导保留什么**（比如 `/compact 保留数据库迁移的讨论`）
+- **摘要替换所有旧节点**，只保留最近 1-2 轮完整
+- **和节点的关系**：所有旧节点 visibility=hidden，生成一个新的 compaction summary 节点
+- **函数调用特殊设计**：无。已折叠的函数节点和对话节点一起被摘要
 
 ## 6. 完整流程推演
 
-场景：200K context，用户对话 + 调用了 research_agent 函数。
+场景：用户在 200K context 下做编程任务，中间调用了 research_agent 函数。
 
-```
-阶段 1：对话开始（0-30%，~60K）
-  用户发 10 条消息，模型回复，调了几个工具。
-  → 无压缩操作。
+### 阶段 1（0-30%）：正常对话
 
-阶段 2：函数调用（30-50%，~100K）
-  模型调用 research_agent，函数内部跑了 20 轮工具调用。
-  → §3.1：每轮检查，某个 search_papers 返回 15K 文本，截断到 5K。
-  → §2.1：函数运行中，内部 20 个工具调用全部展开。
+- user → assistant → user → assistant
+- 没有任何压缩触发
+- 所有节点 visibility=full
 
-阶段 3：函数结束（占比下降到 ~35%）
-  research_agent 返回结果。
-  → §2.2：自动折叠。20 个内部工具调用存磁盘，节点变成一行：
-    [func] research_agent("LLM reasoning") → 5 ideas
-    (详见 ~/.openprogram/sessions/xxx/func_history/node_id.jsonl)
-  → 上下文从 ~100K 骤降到 ~70K（折叠释放了 ~30K）。
+### 阶段 2（30-50%）：调用函数
 
-阶段 4：继续对话（35-60%）
-  用户继续聊了 20 轮。
-  → §4.1：空闲时，10 分钟前的 3 个旧工具输出存磁盘留引用（释放 ~5K）。
+- user: "帮我调研 LLM reasoning"
+- assistant 调用 research_agent（函数节点，§2.1 生效）
+- research_agent 运行中：内部 15 轮工具调用展开在上下文
+- §3.1 生效：某个 search_papers 返回 20000 tokens，截断到 10000
+- §4.1 生效：空闲时旧的 search_papers 输出存磁盘
 
-阶段 5：触发压缩（70%，140K）
-  用户又聊了 15 轮，总计 140K。触发 §5。
-  → §5.2 Snip：删最旧的 10 个节点（~20K），降到 120K。还超。
-  → §5.3 摘要降级：把第 11-25 旧的 15 个对话节点降为 degraded（~1.5K），
-    释放 ~28.5K，降到 ~91.5K。还超。
-  → 继续 §5.3：再降级 15 个，释放 ~28.5K，降到 ~63K。还超。
-  → 继续 §5.3：再降级 10 个，释放 ~19K，降到 ~44K。接近目标。
-  → §5.4：折叠后的 research_agent 节点设为 hidden（释放 ~1K），降到 ~43K。
-  → 达到 ~21.5%，停止。
+### 阶段 3：函数结束
 
-阶段 6：压缩后继续
-  上下文约 43K（21.5%），保留最近 5 轮完整对话。
-  用户继续使用，上下文重新增长。
-  再次到 70% 时，重复 §5 流程（链式压缩）。
-```
+- research_agent 返回 5 个 idea
+- §2.2 触发：内部 15 轮子树存磁盘（collapsed/abc123.jsonl），节点折叠成一行
+- 上下文释放约 30K tokens
+- 折叠后的节点和对话节点一样参与后续压缩
 
----
+### 阶段 4（50-70%）：继续对话
 
-## 7. 渲染管道
+- 用户继续讨论、改代码
+- §4.1：空闲时旧的 read_file 输出存磁盘
+- turn 结束时预生成对话摘要（§5.3 的准备）
 
-```
-DAG 节点
-  │
-  ▼
-render_context（筛选可见节点：callers / subcalls / expose）     ← 已实现
-  │
-  ▼
-apply_degradation（按 §5 的算法降级旧节点）                     ← 待实现
-  │
-  ▼
-render_dag_messages（渲染为消息列表）                           ← 已实现，需扩展
-  │   full 节点 → 完整渲染
-  │   degraded 节点 → 一行摘要（metadata.summary 或截取前 50 字符）
-  │   hidden 节点 → 跳过
-  │
-  ▼
-LLM 调用
-```
+### 阶段 5（70%）：触发压缩
 
-- dispatcher 主循环和 runtime.exec 走同一条管道
-- → `render_context` 已统一（对话和函数调用都走 DAG 渲染）
-- → `apply_degradation` 在 `render_context` 之后、`render_dag_messages` 之前插入
+- §5.1：超过 70% 触发线
+- §5.2 Snip：删最旧的 10 轮对话节点（包括那个已折叠的 research_agent 节点）
+- 如果还不够 → §5.3：用预生成的 summary 替换更多旧对话
+- 压到 20%
 
----
+### 阶段 6：继续使用
 
-## 8. 和 Claude Code 的对应
+- 压缩后正常对话
+- 再次到 70% 时重复阶段 5（链式压缩）
+- 大模型想回顾 research_agent 的具体过程：read_file("collapsed/abc123.jsonl")
+
+## 7. 和 Claude Code 的对应
 
 | 我们 | Claude Code | 说明 |
 |---|---|---|
-| §2 函数折叠 | （无对应） | 我们独有，DAG 结构天然支持 |
-| §3.1 截断超大输出 | Budget Reduction | 每轮做，截断单个大输出 |
-| §4.1 旧工具输出存磁盘 | Microcompact | 空闲时做，存磁盘留引用 |
-| §5.2 Snip | Snip | 按时间删旧节点 |
-| §5.3 摘要降级 | Context Collapse / Auto-Compact | 我们用预生成摘要（零额外 LLM），Claude Code 用分段或全量 LLM 摘要 |
-| §5.4 函数节点 hidden | （无对应） | 我们独有 |
+| §2 节点生命周期 | 无 | 我们独有，Claude Code 是线性对话没有 DAG |
+| §3.1 截断超大输出 | Budget Reduction | 相同 |
+| §4.1 旧输出存磁盘 | Microcompact | 相同思路，我们额外有函数子树折叠 |
+| §5.2 Snip | Snip | 相同 |
+| §5.3 LLM 摘要 | Context Collapse / Auto-Compact | Claude Code 二选一，我们统一为预生成摘要 + 按需 LLM |
+| §5.4 /compact | /compact | 相同 |
 
-参考来源（第三方源码逆向分析）：
-- [Dive into Claude Code](https://arxiv.org/html/2604.14228v1)（arXiv 2604.14228，VILA-Lab）
-- [How Claude Code Compresses Context](https://harrisonsec.com/blog/claude-code-context-engineering-compression-pipeline/)
-- [Inside Claude Code - Context Compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html)
+来源：[Dive into Claude Code](https://arxiv.org/html/2604.14228v1)（arXiv 2604.14228）
 
----
+## 8. 实施计划
 
-## 9. 实施计划
-
-| 步骤 | 做什么 | 依赖 | 优先级 |
-|---|---|---|---|
-| 1 | Call 节点加 `visibility` 字段（full / degraded / hidden），默认 full | 无 | 高 |
-| 2 | 函数结束时自动折叠（§2.2）：序列化内部历史到磁盘，节点折叠成一行 | 无 | 高 |
-| 3 | Turn-end 摘要预生成（§5.3.1）：每轮结束异步生成摘要，存 metadata.summary | 无 | 高 |
-| 4 | 实现 `apply_degradation(nodes, budget)`（§5 算法） | 步骤 1, 3 | 高 |
-| 5 | `render_dag_messages` 支持 degraded 节点的摘要渲染 | 步骤 1 | 高 |
-| 6 | dispatcher 主循环接入（§5 触发检查 + 降级） | 步骤 4, 5 | 高 |
-| 7 | runtime.exec 接入（同样的管道） | 步骤 4, 5 | 高 |
-| 8 | 改造 engine.py compact：从同步 LLM 摘要改为读预生成的 summary 缓存 | 步骤 3, 6 | 中 |
-| 9 | 端到端测试：纯聊天 + 函数折叠 + 运行中函数压缩 + 链式压缩 | 步骤 6, 7 | 高 |
+| 步骤 | 做什么 | 依赖 |
+|---|---|---|
+| 1 | 函数结束时自动折叠子树 + 存磁盘（§2.2） | 无 |
+| 2 | 截断超大单个输出（§3.1） | 无 |
+| 3 | Microcompact 旧工具输出存磁盘（§4.1） | 无 |
+| 4 | turn 结束时预生成对话摘要（§5.3 准备） | 无 |
+| 5 | Snip 按时间删旧节点（§5.2） | 无 |
+| 6 | 摘要替换用预生成的 summary（§5.3） | 步骤 4 |
+| 7 | /compact 命令（§5.4） | 步骤 6 |
+| 8 | /context 命令（查看 token 分布） | 无 |
