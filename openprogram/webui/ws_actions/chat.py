@@ -961,6 +961,81 @@ async def handle_compact(ws, cmd: dict):
         })
 
 
+async def handle_context(ws, cmd: dict):
+    """Show token distribution across the context window."""
+    import asyncio
+    session_id = (cmd.get("session_id") or "").strip()
+
+    def _compute():
+        from openprogram.context.tokens import real_context_window, estimate_message_tokens
+        from openprogram.context.budget import default_allocator
+        from openprogram.context.components import build_system_prompt
+        from openprogram.store import _store as _store_var
+
+        store = _store_var.get(None)
+        history = []
+        if store and hasattr(store, "get_messages"):
+            try:
+                history = store.get_messages(session_id) or []
+            except Exception:
+                pass
+
+        hist_tokens = 0
+        for msg in history:
+            try:
+                hist_tokens += estimate_message_tokens(msg)
+            except Exception:
+                hist_tokens += 50
+
+        tools = []
+        try:
+            from openprogram.functions import agent_tools
+            tools = agent_tools()
+        except Exception:
+            pass
+        tools_tokens = default_allocator._estimate_tools(tools)
+
+        sys_tokens = 0
+        try:
+            from openprogram.webui import server as _s
+            conv = _s._conversations.get(session_id)
+            agent = conv.get("agent") if conv else None
+            if agent:
+                sys_prompt = build_system_prompt(agent)
+                sys_tokens = estimate_message_tokens({"role": "system", "content": sys_prompt}) if sys_prompt else 0
+                ctx_window = real_context_window(getattr(agent, "model", None))
+            else:
+                ctx_window = 200_000
+        except Exception:
+            ctx_window = 200_000
+
+        output_reserve = 16_384
+        total_used = sys_tokens + hist_tokens + tools_tokens
+        free = max(0, ctx_window - total_used - output_reserve)
+        pct = (total_used + output_reserve) / ctx_window * 100 if ctx_window > 0 else 0
+
+        return {
+            "context_window": ctx_window,
+            "system_prompt": sys_tokens,
+            "tools_schema": tools_tokens,
+            "history": hist_tokens,
+            "output_reserve": output_reserve,
+            "total_used": total_used + output_reserve,
+            "free": free,
+            "pct": round(pct, 1),
+        }
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _compute)
+        await ws.send_text(json.dumps({"type": "context_info", "data": result}))
+    except Exception as e:
+        await ws.send_text(json.dumps({
+            "type": "context_info",
+            "data": {"error": f"{type(e).__name__}: {e}"},
+        }))
+
+
 async def handle_sandbox(ws, cmd: dict):
     """Toggle system sandbox on/off for the current session."""
     from openprogram.sandbox import sandbox_enabled, is_available
@@ -1059,6 +1134,7 @@ ACTIONS = {
     "switch_attempt": handle_switch_attempt,
     "set_conversation_channel": handle_set_conversation_channel,
     "compact": handle_compact,
+    "context": handle_context,
     "sandbox": handle_sandbox,
     "rewind_list": handle_rewind_list,
     "rewind": handle_rewind,

@@ -141,6 +141,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     },
   },
   {
+    name: "/context",
+    description: "Show token distribution across context window",
+    run(_rest, { sessionId, send }) {
+      if (!sessionId) return true;
+      send({ action: "context", session_id: sessionId });
+      return true;
+    },
+  },
+  {
     name: "/rewind",
     args: "[N]",
     description:

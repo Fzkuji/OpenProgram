@@ -24,6 +24,7 @@ SLASH_HELP = [
                  "remove the alias for a channel peer"),
     ("/connections", "list every channel peer currently aliased to "
                      "this session"),
+    ("/context", "show token distribution across context window"),
     ("/rewind", "roll back code + conversation to a chosen point"),
     ("/sandbox", "toggle system sandbox (restrict bash to cwd writes only)"),
     ("/profile [name]", "show or switch active profile (restart required to switch)"),
@@ -188,6 +189,9 @@ def _handle_slash(cmd: str, console, rt,
         console.print("[dim]Exiting so you can restart cleanly.[/]")
         return True
 
+    if verb == "context":
+        return _handle_context(console, agent, session_id)
+
     if verb == "rewind":
         return _handle_rewind(args, console, session_id)
 
@@ -200,7 +204,71 @@ def _handle_slash(cmd: str, console, rt,
 
 
 
-# --- Rewind (multi-turn rollback) ------------------------------------------
+def _handle_context(console, agent, session_id: str) -> bool:
+    """Show token distribution across the context window."""
+    try:
+        from openprogram.context.tokens import real_context_window, estimate_message_tokens
+        from openprogram.context.budget import default_allocator
+        from openprogram.context.components import build_system_prompt
+        from openprogram.store import _store as _store_var
+
+        model = getattr(agent, "model", None)
+        ctx_window = real_context_window(model) if model else 200_000
+
+        sys_prompt = ""
+        try:
+            sys_prompt = build_system_prompt(agent)
+        except Exception:
+            pass
+        sys_tokens = estimate_message_tokens({"role": "system", "content": sys_prompt}) if sys_prompt else 0
+
+        history: list[dict] = []
+        store = _store_var.get(None)
+        if store and hasattr(store, "get_messages"):
+            try:
+                history = store.get_messages(session_id) or []
+            except Exception:
+                pass
+        hist_tokens = 0
+        for msg in history:
+            try:
+                hist_tokens += estimate_message_tokens(msg)
+            except Exception:
+                hist_tokens += 50
+
+        tools = []
+        try:
+            from openprogram.functions import agent_tools
+            tools = agent_tools()
+        except Exception:
+            pass
+        tools_tokens = default_allocator._estimate_tools(tools)
+
+        output_reserve = 16_384
+        total_used = sys_tokens + hist_tokens + tools_tokens
+        free = max(0, ctx_window - total_used - output_reserve)
+        pct = (total_used + output_reserve) / ctx_window * 100 if ctx_window > 0 else 0
+
+        def _fmt(n: int) -> str:
+            if n >= 1000:
+                return f"{n / 1000:.1f}k"
+            return str(n)
+
+        console.print(f"\n[bold]Context Usage: {_fmt(total_used + output_reserve)}/{_fmt(ctx_window)} tokens ({pct:.1f}%)[/]\n")
+        console.print(f"  [cyan]System prompt:[/]   {_fmt(sys_tokens):>8} tokens  ({sys_tokens / ctx_window * 100:.1f}%)")
+        console.print(f"  [cyan]Tools schema:[/]    {_fmt(tools_tokens):>8} tokens  ({tools_tokens / ctx_window * 100:.1f}%)")
+        console.print(f"  [cyan]History:[/]         {_fmt(hist_tokens):>8} tokens  ({hist_tokens / ctx_window * 100:.1f}%)")
+        console.print(f"  [cyan]Output reserve:[/]  {_fmt(output_reserve):>8} tokens  ({output_reserve / ctx_window * 100:.1f}%)")
+        console.print(f"  [dim]Free space:[/]      {_fmt(free):>8} tokens  ({free / ctx_window * 100:.1f}%)")
+
+        if pct > 60:
+            console.print(f"\n  [yellow]Tip: consider /compact to free space[/]")
+        console.print()
+
+    except Exception as e:
+        console.print(f"[red]Failed to compute context: {e}[/]")
+    return False
+
 
 def _handle_rewind(args: list[str], console, session_id: str) -> bool:
     """Roll back code + conversation to a chosen point (Claude Code /rewind style)."""
