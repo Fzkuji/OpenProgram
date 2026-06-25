@@ -1,0 +1,347 @@
+# Claude Code 上下文压缩机制 — 完整流程参考
+
+> 调研文档（非设计文档）。以一个完整对话的时间线，记录 Claude Code 从对话开始到多次压缩的全过程。
+>
+> 来源：
+> - [Dive into Claude Code](https://arxiv.org/html/2604.14228v1)（arXiv 2604.14228，VILA-Lab 基于源码逆向分析）
+> - [Inside Claude Code - Context Compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html)
+> - [Claude Code VS OpenCode §5.3](https://0xtresser.github.io/Claude-Code-VS-OpenCode/en/Chapter_05_Session_and_Context/5.3_Context_Compaction.html)
+> - [Context Compression — What Survives](https://okhlopkov.com/claude-code-compaction-explained/)
+> - [How Claude Code Got Better by Protecting More Context](https://hyperdev.matsuoka.com/p/how-claude-code-got-better-by-protecting)
+> - [Context Compaction Deep Dive](https://codex.danielvaughan.com/2026/04/14/context-compaction-deep-dive-codex-cli-claude-code-opencode/)
+
+---
+
+## 场景设定
+
+用户打开 Claude Code，在一个中等复杂度的项目上工作。模型用 Sonnet（200K context）。
+整个会话过程中，用户让 Claude 读代码、改文件、跑测试、修 bug，持续几个小时。
+
+---
+
+## 阶段 1：对话开始（0-30% 占用，约 0-60K tokens）
+
+用户发第一条消息："帮我看一下这个项目的结构"。
+
+Claude Code 在调 LLM 之前，先组装上下文：
+
+```
+[system prompt]                    ← 固定，从 CLAUDE.md 加载
+[工具定义]                          ← 所有可用工具的 schema
+[用户消息] "帮我看一下这个项目的结构"
+```
+
+LLM 回复后，上下文变成：
+
+```
+[system prompt]
+[工具定义]
+[user] "帮我看一下这个项目的结构"
+[assistant] "让我看一下..." + tool_use(bash, "find . -type f | head -50")
+[tool_result] "src/main.py\nsrc/utils.py\n..."（500 tokens）
+[assistant] "项目结构是这样的..."
+```
+
+这时候总共约 5K-10K tokens。**什么压缩都不触发。** Claude Code 每轮 LLM 调用前都会计算当前 token 数，但远没到阈值。
+
+---
+
+## 阶段 2：对话增长（30-60% 占用，约 60K-120K tokens）
+
+用户继续工作："读一下 main.py"、"帮我改这个函数"、"跑一下测试"。
+
+每一轮都往上下文里加内容：
+- `read_file("main.py")` 的结果：可能 3000 tokens
+- `write("main.py", ...)` 的改动记录
+- `bash("pytest")` 的测试输出：可能 2000 tokens
+- 每轮 assistant 回复：500-1500 tokens
+
+20 轮对话后，上下文可能长这样（简化）：
+
+```
+[system prompt]                                          5K tokens
+[工具定义]                                                3K tokens
+[user] "看项目结构"
+[assistant] ... + tool_use(bash) + tool_result + 回复       2K tokens
+[user] "读 main.py"
+[assistant] ... + tool_use(read_file) + tool_result(3K)     4K tokens
+[user] "改这个函数"
+[assistant] ... + tool_use(write) + 回复                    2K tokens
+[user] "跑测试"
+[assistant] ... + tool_use(bash, "pytest") + tool_result(2K) 3K tokens
+... 重复 16 轮 ...
+总计约 80K-100K tokens（40-50%）
+```
+
+**这个阶段 Claude Code 官方建议用户手动 `/compact`。** 因为用户能带提示词指导保留什么（比如 `/compact 保留关于数据库迁移的讨论`），手动压缩的质量比自动的好。但大部分用户不会在这个时候主动 compact。
+
+---
+
+## 阶段 3：接近阈值（60-75% 占用，约 120K-150K tokens）
+
+对话继续，上下文不断增长。**此时两个轻量机制开始生效：**
+
+### Budget Reduction（每轮 LLM 调用前都跑）
+
+`applyToolResultBudget()` 检查每个工具调用的输出大小。假设 10 轮前的一个 `bash("grep -r 'TODO' .")` 输出了 8000 tokens：
+
+```
+压缩前：
+[tool_result] "src/a.py:12: TODO fix this\nsrc/b.py:34: TODO refactor\n..."（8000 tokens）
+
+压缩后：
+[tool_result] "src/a.py:12: TODO fix this\nsrc/b.py:34: TODO refactor\n... [truncated, 150 lines omitted] ...\nsrc/z.py:99: TODO cleanup"（500 tokens）
+```
+
+只保留开头和结尾，中间截断。**不删消息、不调 LLM、不改对话结构。** 这是最便宜的操作——纯字符串截断。释放了 7500 tokens。
+
+但 Budget Reduction 只处理超大的单个输出，不动正常大小的消息。
+
+### Microcompact（空闲时 + 每轮调用前）
+
+Microcompact 做的事和 Budget Reduction 不同——它不是截断，而是**把旧的工具输出存到磁盘**。
+
+假设 15 轮前的 `read_file("config.py")` 返回了 2000 tokens 的文件内容。Microcompact 判断这个结果已经"过时"（距现在太远），把内容写到磁盘文件，上下文中只留引用：
+
+```
+压缩前：
+[tool_result] "import os\nimport sys\n\nclass Config:\n    def __init__(self):\n        self.debug = False\n..."（2000 tokens）
+
+压缩后：
+[tool_result] "[content stored on disk, retrievable by path: /tmp/claude-cache/config.py.result]"（20 tokens）
+```
+
+释放了 1980 tokens。**最近几轮的工具结果保持 inline**（模型可能还需要参考），只清理旧的。
+
+Microcompact 有两条路径：
+- **时间路径**：按时间远近，旧的先清（默认）
+- **缓存感知路径**（`CACHED_MICROCOMPACT` 开关）：优先清理导致 prompt cache miss 的内容，减少 API 成本
+
+---
+
+## 阶段 4：触发自动压缩（75-95% 占用，约 150K-190K tokens）
+
+Budget Reduction 和 Microcompact 能腾出一些空间，但对话持续增长，最终还是会超过阈值。
+
+**触发线：大约 75% 占用**（早期版本是 90%+，后来改成更早触发——留出足够空间给压缩过程本身使用）。
+
+此时 Claude Code 按顺序尝试更激进的压缩：
+
+### Snip（如果启用）
+
+`snipCompactIfNeeded()` 直接**删除最旧的几轮对话**。不做任何摘要，直接丢掉。
+
+```
+压缩前（40 轮对话）：
+[轮 1] user + assistant + tools    ← 删掉
+[轮 2] user + assistant + tools    ← 删掉
+[轮 3] user + assistant + tools    ← 删掉
+[轮 4] user + assistant + tools    ← 删掉
+[轮 5] user + assistant + tools    ← 删掉
+[轮 6-40] ...                      ← 保留
+
+压缩后（35 轮）：
+[轮 6] user + assistant + tools
+[轮 7] user + assistant + tools
+... 
+```
+
+简单粗暴，释放大量空间。但信息完全丢失——模型不知道前 5 轮讨论了什么。
+
+### Context Collapse（如果启用）
+
+如果 Snip 释放的空间不够，`applyCollapsesIfNeeded()` 进一步压缩。
+
+它把历史分成**几个段**，每段用**模板**（不是 LLM）生成一行摘要：
+
+```
+压缩前：
+[轮 6] "读 utils.py" → 读了文件 → "这个文件有个 bug..."
+[轮 7] "改一下" → 写了文件 → "改好了"
+[轮 8] "跑测试" → 跑了 pytest → "3 个测试失败"
+[轮 9] "修 test_a" → 写了文件 → "修好了"
+[轮 10] "再跑" → 跑了 pytest → "全过了"
+
+压缩后（一个 collapse 段）：
+[collapse] "Turns 6-10: Fixed bug in utils.py (read → edit → test → fix → pass)"
+```
+
+关键点：**Context Collapse 是读时投影（read-time projection）**——原始历史不删，collapse 摘要存在单独的 collapse store 里。模型看到的是折叠后的版本，但完整历史保留着，理论上可以重建。
+
+### Auto-Compact（最后手段）
+
+如果前面所有手段都不够，触发 `compactConversation()`——这是唯一**调 LLM** 的压缩步骤。
+
+过程：
+1. 执行 PreCompact hooks（通知系统即将压缩）
+2. 用 `getCompactPrompt()` 构造压缩提示（类似"请把以下对话历史压缩成关键事实"）
+3. 把整个对话历史发给 LLM，让它生成摘要
+4. 用 `buildPostCompactMessages()` 构建压缩后的消息
+
+```
+压缩前（35 轮，150K tokens）：
+[system prompt]
+[35 轮完整对话历史，包含所有工具调用和结果]
+
+压缩后（~30K tokens）：
+[system prompt]                    ← 从 CLAUDE.md 重新加载（不是从压缩摘要来的）
+[工具定义]                          ← 重新加载
+[compaction block]                  ← LLM 生成的摘要，约 2000-5000 tokens
+"会话摘要：用户在做一个 Python 项目的重构。
+已完成：修了 utils.py 的 bug、重构了 config 模块、添加了 3 个测试。
+当前状态：所有测试通过。用户正在处理 API 模块。
+关键决定：使用 FastAPI 替换 Flask、数据库用 PostgreSQL。
+修改过的文件：src/utils.py, src/config.py, tests/test_utils.py, tests/test_config.py"
+```
+
+**压缩后信息损失严重。** 丢失的东西：
+- 早期的指令（"不要碰这个文件"）
+- 中间的设计讨论和推理过程
+- 50+ 轮前的具体代码片段
+- 微妙的风格偏好（格式规则等）
+
+**保留的东西：**
+- 当前任务和近期上下文
+- 最近修改的文件名
+- 最近的错误和解决方案
+- CLAUDE.md 的内容（从磁盘重新加载，不依赖摘要）
+
+---
+
+## 阶段 5：压缩后继续对话
+
+压缩后上下文从 150K 降到约 30K-40K（15-20%）。用户看到的变化：
+
+1. **底栏的 context 计数器重置**（从 75%+ 跳回 15-20%）
+2. **一次性的 API 费用峰值**（压缩本身是一次额外的 LLM 调用）
+3. **模型可能会问已经讨论过的问题**——这是压缩后信息丢失的信号
+
+用户继续工作："现在帮我改 API 模块"。新的对话继续累积：
+
+```
+[system prompt]
+[compaction block]                ← 上次的压缩摘要
+[user] "改 API 模块"
+[assistant] ... + tool_use + ...
+...新的 20 轮对话...
+```
+
+上下文再次增长：30K → 50K → 80K → 100K → ...
+
+---
+
+## 阶段 6：链式压缩（第二次触发）
+
+继续工作 30 轮后，上下文又到了 150K（75%）。再次触发压缩。
+
+这次压缩的输入是：
+
+```
+[compaction block]     ← 上次的摘要（2000-5000 tokens）
+[30 轮新对话]           ← 新积累的历史（~120K tokens）
+```
+
+LLM 在上次摘要的基础上，把新的 30 轮也压进去：
+
+```
+第二次压缩后：
+[compaction block v2]
+"会话摘要（第二轮压缩）：
+之前：用户完成了 utils/config 模块重构，测试全通过。
+最近：重构了 API 模块（Flask → FastAPI），添加了 5 个新端点，
+修了 CORS 配置问题。当前正在写 API 文档。
+修改过的文件：src/api/routes.py, src/api/middleware.py, ..."
+```
+
+**每次压缩都在上一次的摘要基础上再压。** 信息逐层衰减——第一次压缩丢了早期细节，第二次压缩又丢了中期细节。长会话中可能压缩 3-5 次，最终只剩最近的讨论和一个很粗的历史概要。
+
+---
+
+## 每轮 LLM 调用前的完整检查流程
+
+每次要调 LLM 之前，Claude Code 按顺序执行以下检查（`query.ts:365-453`）：
+
+```
+1. 计算当前 token 数
+
+2. Budget Reduction（总是做）
+   → applyToolResultBudget()
+   → 截断超大的单个工具输出
+   → 释放 tokens，但不改消息数量
+
+3. Snip（如果 HISTORY_SNIP 开关开启）
+   → snipCompactIfNeeded()
+   → 删除最旧的历史片段
+   → 返回释放的 token 数
+
+4. Microcompact（总是做）
+   → 时间路径：旧工具结果存磁盘留引用
+   → 缓存感知路径（如果 CACHED_MICROCOMPACT 开启）：
+     优先清理导致 cache miss 的内容
+
+5. Context Collapse（如果 CONTEXT_COLLAPSE 开关开启）
+   → applyCollapsesIfNeeded()
+   → 分段历史用模板摘要
+   → 读时投影，不改原始数据
+
+6. 检查是否仍然超阈值
+   → 如果超：触发 Auto-Compact
+   → compactConversation()
+   → 调 LLM 生成整个对话的摘要
+   → 替换历史，重新加载 system prompt
+
+7. 调 LLM
+
+8. 如果 LLM 返回 prompt_too_long 错误
+   → 尝试 context-collapse overflow recovery
+   → 尝试 reactive compaction（至多每轮一次）
+   → 都失败则终止，reason = 'prompt_too_long'
+```
+
+---
+
+## /compact 手动命令
+
+用户在任何时候可以输入 `/compact` 手动触发压缩：
+
+```
+/compact
+```
+
+或带提示词指导保留什么：
+
+```
+/compact 保留关于数据库迁移的设计决定和 API 端点列表
+```
+
+手动 compact **直接跳到 Auto-Compact**（LLM 摘要），不经过 Snip/Context Collapse。
+因为用户在提示词里指导了保留什么，摘要质量比自动触发的好。
+
+官方建议：**在 60% 占用时手动 `/compact`，不要等到自动触发。**
+
+---
+
+## 关键设计原则
+
+1. **Lazy degradation（最小干预优先）**
+   截断单个输出（最便宜）→ 存磁盘留引用 → 删旧消息 → 模板摘要 → LLM 摘要（最贵）。
+   每层只在上一层不够时才启用。
+
+2. **前四层不调 LLM**
+   Budget Reduction / Snip / Microcompact / Context Collapse 都是纯本地操作。
+   只有 Auto-Compact 才调 LLM，是最后手段。
+
+3. **工具输出优先清理**
+   旧的 grep 结果、文件读取、测试输出是最大且最不重要的 token 消耗者。
+   先清它们，对话消息（用户的意图和模型的推理）尽量保留。
+
+4. **CLAUDE.md 不参与压缩**
+   项目配置、安全规则、编码标准放在 CLAUDE.md 里——它从磁盘重新加载，不是从压缩摘要来的。
+   所以 CLAUDE.md 的内容永远不会被压缩丢失。
+
+5. **链式压缩在摘要基础上继续**
+   每次压缩后摘要成为新的起点。信息逐层衰减但不会从头重建。
+
+6. **用户控制优于自动触发**
+   `/compact` + `/context` 让用户主导压缩时机和保留内容。
+   自动触发是兜底，不是首选。
