@@ -756,10 +756,28 @@ class SessionStore:
         if not head or head not in idx.nodes_by_id:
             return []
 
-        # Edge resolver: prefer conv parent, fall back to caller (matches
-        # legacy DagSessionDB.get_branch semantics).
+        # Edge resolver: prefer conv parent, fall back to caller.
+        # Special case: when a ROOT-parented node is reached (e.g. a
+        # user-triggered function call with called_by=ROOT), find the
+        # previous ROOT-level node by seq order so the branch walk
+        # continues through earlier conversation turns.
         def _edge(node):
-            return _node_conv_predecessor(node) or _node_caller(node) or None
+            pred = _node_conv_predecessor(node)
+            if pred:
+                return pred
+            caller = _node_caller(node)
+            if caller and caller != "ROOT":
+                return caller
+            # ROOT-parented node: find the previous ROOT-level node
+            cur_seq = node.seq if hasattr(node, "seq") else -1
+            best = None
+            for n in idx.nodes_by_seq:
+                if n.seq >= cur_seq:
+                    break
+                cb = n.called_by or ""
+                if cb == "ROOT" or cb == "":
+                    best = n.id
+            return best
 
         chain = idx.get_branch(head, _edge)
         return [

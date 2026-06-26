@@ -394,6 +394,16 @@ async def handle_load_session(ws, cmd: dict):
                 if cur and cur in agg_ids:
                     head = cur
         chain = linear_history(all_msgs, head) if head else list(all_msgs)
+        # If linear_history returned too few messages (head pointed at a
+        # ROOT-parented function call that isn't on the conv chain), fall
+        # back to the full get_branch which handles ROOT traversal.
+        if head and len(chain) < 3 and len(all_msgs) > 3:
+            try:
+                branch_msgs = _db_load.get_branch(session_id)
+                if len(branch_msgs) > len(chain):
+                    chain = branch_msgs
+            except Exception:
+                pass
         # Splice attach pointer rows (function="attach") into the
         # displayed chain. They hang off a parent message via
         # called_by — not on the conv chain itself — so
