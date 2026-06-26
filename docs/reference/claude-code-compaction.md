@@ -23,6 +23,11 @@
 
 `applyToolResultBudget()` 检查每个工具调用的输出大小。超大的单个输出会被截断——只保留开头和结尾，中间省略。
 
+**具体参数：**
+- 截断阈值：**4000 字符**（约 1000 tokens）
+- 截断比例：保留开头 **60%** + 结尾 **40%**
+- 触发时机：**每轮 LLM 调用前**，不管上下文占了多少
+
 ```
 截断前：
 [tool_result] "src/a.py:12: TODO fix this\nsrc/b.py:34: TODO refactor\n..."（8000 tokens）
@@ -47,9 +52,17 @@
 
 有两条路径：
 
-- **Time-based path（时间路径，默认）**：按时间远近，旧的先清。空闲 ~90 分钟后触发。旧 tool_result 内容替换为 sentinel 字符串。sentinel 做了**字节级归一化（byte-stable canonical form）**——重复 microcompact 不会改变已缓存的内容，保护 prompt cache 前缀稳定。
+- **Cache-aware path（缓存感知路径，主力）**：使用 Anthropic API 的 **context editing** 能力（`cache_edits`），服务端直接清除旧 tool_result。**客户端消息不变，缓存前缀完全不破坏。** 这是日常缓存保护的核心机制。
+  - **触发**：**50 次工具调用**后首次触发，之后**每 25 次**再触发一轮
+  - **保留**：最近 N 个工具结果保持 inline，删除其余
+  - **只处理特定工具**：FileRead、Shell、Grep、Glob、WebSearch、WebFetch、FileEdit、FileWrite
+  - **机制**：通过 context editing API 服务端删除，零缓存影响
 
-- **Cache-aware path（缓存感知路径）**：使用 Anthropic API 的 **context editing** 能力（`cache_edits`），服务端直接清除旧 tool_result。**客户端消息不变，缓存前缀完全不破坏。** 这是日常缓存保护的核心机制。
+- **Time-based path（时间路径，备用）**：按时间远近，旧的先清。
+  - **触发**：距上次 assistant 消息 **~90 分钟**
+  - sentinel 字符串做了**字节级归一化（byte-stable canonical form）**——重复 microcompact 不改变已缓存内容
+  - **不可恢复**——替换后原始内容丢失
+  - 此时缓存已冷（90 分钟没活动），不关心缓存命中
 
 #### Context Editing API（cache_edits）
 
@@ -154,6 +167,11 @@ LLM 回复后，上下文变成：
 
 `snipCompactIfNeeded()` 直接**删除最旧的几轮对话**。不做任何摘要，直接丢掉。
 
+**具体参数：**
+- 触发阈值：**context_window - 13K tokens**（约 83.5%）
+- 删除粒度：**整轮**（user + assistant + 该轮所有工具调用一起删）
+- 删多少：从最旧的开始逐轮删，每删一轮重新算 token 数，**删到阈值以下为止**（不是固定删 N 轮）
+
 ```
 压缩前（40 轮对话）：
 [轮 1] user + assistant + tools    ← 删掉
@@ -180,7 +198,8 @@ Snip 之后如果仍然超阈值，根据配置二选一执行 Context Collapse 
 | **做法** | 把历史分成若干段，逐段用 LLM 摘要 | 把整个对话历史一次性发给 LLM 生成一个摘要块 |
 | **原始消息** | **保留**（摘要是 View 叠加，底层数据不动） | **替换**（摘要替代所有旧消息，原始不可恢复） |
 | **可回滚** | 是（原始消息还在，理论上可以重建） | 否（旧消息被替换，不可逆） |
-| **触发阈值** | ~90%（非阻塞），95%（阻塞强制） | ~75-87% |
+| **触发阈值** | Snip 后仍超，~90%（非阻塞），95%（阻塞强制） | Snip 后仍超，~75-87%；或用户手动 `/compact` |
+| **分段标准** | 5-10 轮一段 | N/A（全量） |
 | **保留结构** | 是（最近 N 轮完整，旧的按段折叠，仍有分段边界） | 否（全部压成一段文字，结构丢失） |
 | **信息损失** | 较少（每段有独立摘要，关键节点可保留） | 较多（只剩一段总结，中间细节全丢） |
 | **LLM 调用** | 多次（每段一次） | 一次 |
