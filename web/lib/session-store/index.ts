@@ -362,7 +362,13 @@ function persistComposerSettingsMap(map: Record<string, ComposerSettings>) {
 export const useSessionStore = create<ConvState>((set) => ({
   wsStatus: "connecting",
   agentSettings: {},
-  setAgentSettings: (s) => set({ agentSettings: s }),
+  setAgentSettings: (s) =>
+    set((prev) => ({
+      agentSettings: {
+        chat: s.chat ?? prev.agentSettings.chat,
+        exec: s.exec ?? prev.agentSettings.exec,
+      },
+    })),
   branchInfo: { visible: false, name: "main", count: 0 },
   setBranchInfo: (b) => set({ branchInfo: b }),
   statusBadge: {
