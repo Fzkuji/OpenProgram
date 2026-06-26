@@ -86,9 +86,45 @@ Claude Code 有两类压缩机制：
 | 可恢复 | 否 | 否 |
 | 依赖 | Anthropic API 的 Context Editing（其他 provider 不支持） | 无依赖 |
 
-**压缩效果**：每个被清理的工具输出从原始大小（几百到几千 tokens）→ 0 tokens（cache-aware）或 ~20 tokens（time-based）。
+**压缩效果**：每个被清理的工具输出从原始大小（几百到几千 tokens）→ 0 tokens（cache-aware）或 ~20 tokens（time-based）。例：一次 Microcompact 清理了 10 个旧工具结果，每个平均 500 tokens → 释放约 4800 tokens。
 
-**Context Editing API**：Anthropic API 的公开 beta（header: `context-management-2025-06-27`）。客户端发送完整消息（不修改），同时传 `cache_edits` 参数让服务端清旧 tool_result。和正常 LLM 调用合并，不是额外请求。
+**示例**：
+```
+清理前：
+[tool_result] "import os\nimport sys\n\nclass Config:\n    ..."（2000 tokens）
+
+清理后（cache-aware）：
+[tool_result] ""（服务端清空，0 tokens，缓存不破）
+
+清理后（time-based）：
+[tool_result] "[content no longer available]"（~20 tokens）
+```
+
+**Cache-aware path 细节**：sentinel 字符串做了**字节级归一化（byte-stable canonical form）**——重复 microcompact 不改变已缓存内容。核心原则：已进缓存的内容，客户端不修改（修改会破前缀匹配）。要清旧内容时：
+- 已在缓存 → cache-aware path，通过 Context Editing API 让服务端清
+- 没在缓存 → time-based path，客户端直接替换为 sentinel
+
+#### Context Editing API（cache_edits）
+
+Microcompact cache-aware path 的底层实现。Anthropic API 的公开 beta（header: `context-management-2025-06-27`），不是 Claude Code 专有，普通开发者可用。
+
+**工作原理**：客户端发送完整消息历史（不做任何修改），同时在 API 请求中传一个 `cache_edits` 参数。服务端收到后：
+1. 在缓存内部找到旧的 tool_result 块
+2. 把它们替换为空或占位文本
+3. 缓存前缀不变（因为客户端发的消息没变，服务端只改了缓存内部的数据）
+4. 客户端完全不需要知道哪些被清了
+
+和正常 LLM 调用合并在一起，不是额外请求——发消息的同时顺便告诉服务端"清掉旧的 tool_result"。
+
+| 策略 | 做什么 |
+|---|---|
+| `clear_tool_uses` | 清除旧的 tool_result，只保留最近 N 个 |
+| `clear_thinking` | 清除旧的 thinking blocks |
+| `clear_at_least` | 控制最少清多少 token |
+
+**和其他 Tier 的关系**：Context Editing 不是独立的 Tier，它是 Tier 1 Microcompact cache-aware path 的底层实现。Tier 2-5 都不用这个 API——它们直接修改客户端的消息列表。
+
+**限制**：只有 Anthropic API 支持。OpenAI / Google / 其他 provider 没有类似能力，只能走 time-based path（客户端替换，会破缓存）。
 
 ### Tier 2：Snip
 
@@ -107,18 +143,29 @@ Claude Code 有两类压缩机制：
 
 **做什么**：把旧对话分成若干段（5-10 轮一段），每段用 LLM 生成摘要。
 
-**触发条件**：Tier 2 Snip 做完后仍超阈值（约 90%，95% 时阻塞强制触发）
+**触发条件**：Tier 2 Snip 做完后仍超阈值（约 90%，非阻塞触发；95% 时阻塞强制触发）
 
-**关键特性**：原始消息**保留**在 collapse store 中（类似数据库 View——底表不动，查询看到摘要）。理论上可回滚。
+**关键特性**：原始消息**保留**在 collapse store 中。这是**读时投影（read-time projection）**——类似数据库 View，底表不动，查询看到的是摘要视图。原始历史保留着，理论上可以重建/回滚。
+
+**分段标准**：5-10 轮一段。每段独立用 LLM 摘要。
+
+**和 Tier 4 的区别**：
+- Context Collapse 是**分段**摘要，每段独立，保留分段边界和时间线结构
+- Auto-Compact 是**全量**摘要，一把压成一段，结构丢失
 
 **示例**：
 ```
-压缩前：
-[轮 6-10] 读代码、找 bug、修复、测试（5 轮完整对话）
+压缩前（35 轮）：
+[轮 6-10] 读代码、找 bug、修复、测试
+[轮 11-15] 重构 config 模块
+[轮 16-35] 改 API 模块...
 
 压缩后：
 [摘要] "Turns 6-10: 修了 utils.py 的 bug，添加了回滚脚本"
+[摘要] "Turns 11-15: 重构了 config 模块，抽出了 Settings 类"
+[轮 16-35] ...（最近的完整保留）
 ```
+原始的 turn 6-15 仍然保存在 collapse store 中，模型看到的是折叠版本。
 
 ### Tier 4：Auto-Compact
 
@@ -128,21 +175,40 @@ Claude Code 有两类压缩机制：
 
 **关键特性**：原始消息被**替换**，不可回滚。信息损失最大。
 
+**具体过程**：
+1. 执行 PreCompact hooks（通知系统即将压缩）
+2. 用 `getCompactPrompt()` 构造压缩提示（类似"请把以下对话历史压缩成关键事实"）
+3. 把整个对话历史发给 LLM，生成摘要
+4. 用 `buildPostCompactMessages()` 构建压缩后的消息
+5. system prompt 从 CLAUDE.md **重新加载**（不是从摘要来的，所以 CLAUDE.md 的内容永远不丢）
+
 **`/compact` 手动命令**：
 - `/compact` 或 `/compact 保留关于数据库迁移的讨论`
 - 直接触发 Auto-Compact，不经过 Tier 1-3
+- 带提示词时摘要质量更好（用户指导保留什么）
 - 官方建议在 **60% 占用时手动 `/compact`**
+
+**丢失的**：早期指令、设计讨论、推理过程、50+ 轮前的代码片段、风格偏好。
+**保留的**：当前任务、最近修改的文件名、最近的错误和解决方案、CLAUDE.md 内容。
 
 **示例**：
 ```
 压缩前（35 轮，150K tokens）：
-[35 轮完整对话]
+[system prompt]
+[35 轮完整对话历史]
 
 压缩后（~30K tokens）：
 [system prompt]（从 CLAUDE.md 重新加载）
-[compaction block] "会话摘要：用户在做 Python 项目重构..."
+[compaction block]
+"会话摘要：用户在做 Python 项目重构。
+已完成：修了 utils.py 的 bug、重构了 config 模块、添加了 3 个测试。
+当前状态：所有测试通过。用户正在处理 API 模块。
+关键决定：使用 FastAPI 替换 Flask、数据库用 PostgreSQL。
+修改过的文件：src/utils.py, src/config.py, tests/test_utils.py"
 [最近 1-2 轮完整保留]
 ```
+
+**链式压缩**：压缩后继续聊，再次满了再压。每次在上一次摘要基础上再压，信息逐层衰减——第一次丢早期细节，第二次丢中期细节。长会话可能压缩 3-5 次。
 
 **链式压缩**：压缩后继续聊，再次满了再压。每次在上一次摘要基础上再压，信息逐层衰减。
 
