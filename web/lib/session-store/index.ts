@@ -482,7 +482,9 @@ export const useSessionStore = create<ConvState>((set) => ({
         [oldSid]: s.composerSettings,
       };
       const nextSettings =
-        settingsMap[nextSid] ?? { ...DEFAULT_COMPOSER_SETTINGS };
+        settingsMap[nextSid]
+        ?? (oldSid === COMPOSER_NEW_KEY ? s.composerSettings : null)
+        ?? { ...DEFAULT_COMPOSER_SETTINGS };
       persistComposerSettingsMap(settingsMap);
       return {
         currentSessionId: id,

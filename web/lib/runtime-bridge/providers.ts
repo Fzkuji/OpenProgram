@@ -133,7 +133,8 @@ export async function loadAgentSettings(): Promise<void> {
 }
 
 export function updateAgentBadges(): void {
-  const as = W._agentSettings || {};
+  const as = W._agentSettings;
+  if (!as) return;
   try {
     useSessionStore.getState().setAgentSettings({
       chat: as.chat ? { ...as.chat } : undefined,
