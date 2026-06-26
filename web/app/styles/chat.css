@@ -1421,6 +1421,13 @@
   line-height: 1.6;
   color: var(--text-secondary);
 }
+.chat-thinking .chat-fold-content p {
+  margin-bottom: 0.3em;
+  margin-top: 0;
+}
+.chat-thinking .chat-fold-content p:last-child {
+  margin-bottom: 0;
+}
 .chat-tool-section + .chat-tool-section { margin-top: 8px; }
 .chat-tool-section-label {
   color: var(--text-muted);

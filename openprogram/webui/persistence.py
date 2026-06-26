@@ -162,6 +162,24 @@ def aggregate_tool_messages(messages: list[dict]) -> list[dict]:
                 parent.setdefault("tool_calls", []).append(tool_call)
                 continue  # don't emit a top-level entry
         out.append(m)
+
+    # Extract blocks (thinking / text / tool) from the extra JSON field
+    # so the frontend mapper sees them directly on the message object.
+    import json as _json2
+    for m in out:
+        if m.get("role") != "assistant":
+            continue
+        extra = m.get("extra")
+        if not extra:
+            continue
+        if isinstance(extra, str):
+            try:
+                extra = _json2.loads(extra)
+            except Exception:
+                continue
+        if isinstance(extra, dict) and extra.get("blocks"):
+            m["blocks"] = extra["blocks"]
+
     return out
 
 

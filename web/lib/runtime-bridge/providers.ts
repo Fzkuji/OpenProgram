@@ -97,7 +97,10 @@ export async function loadAgentSettings(): Promise<void> {
       url += "?session_id=" + encodeURIComponent(W.currentSessionId);
     }
     const resp = await fetch(url);
-    W._agentSettings = await resp.json();
+    const newSettings = await resp.json();
+    W._agentSettings = W._agentSettings || {};
+    if (newSettings.chat) W._agentSettings.chat = newSettings.chat;
+    if (newSettings.exec) W._agentSettings.exec = newSettings.exec;
   } catch {
     return;
   }
