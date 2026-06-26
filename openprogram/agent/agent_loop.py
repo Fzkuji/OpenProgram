@@ -552,6 +552,9 @@ async def _execute_tool_calls(
     results: list[ToolResultMessage] = []
     steering_messages: list[AgentMessage] | None = None
 
+    from openprogram.context.cache_aware_microcompact import increment_tool_calls
+    increment_tool_calls(len(tool_calls))
+
     for index, tool_call in enumerate(tool_calls):
         tool = next((t for t in (tools or []) if t.name == tool_call.name), None)
 

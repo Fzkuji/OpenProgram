@@ -685,6 +685,15 @@ async def stream_simple(
     block_index_map: dict[int, int] = {}  # anthropic index → content_blocks index
     tool_arg_buffers: dict[int, str] = {}
 
+    # Cache-aware Microcompact: add cache_edits to clear old tool_result
+    # blocks server-side without breaking prompt cache prefix.
+    # Only fires after 50 tool calls, then every 25. Requires the
+    # context-management beta header (already set for 1M models).
+    from openprogram.context.cache_aware_microcompact import build_cache_edits
+    _ce = build_cache_edits()
+    if _ce is not None:
+        params.update(_ce)
+
     # Apply on_payload callback (mirrors TS: const nextParams = await options?.onPayload?.(params, model))
     if opts.get("on_payload"):
         modified = opts["on_payload"](params, model)
