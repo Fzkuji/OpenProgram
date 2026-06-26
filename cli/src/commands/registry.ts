@@ -17,6 +17,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'search', description: 'Search across past sessions' },
   { name: 'clear', description: 'Clear the screen' },
   { name: 'compact', description: 'Compact the conversation' },
+  { name: 'context', description: 'Show context token distribution' },
   { name: 'sandbox', description: 'Toggle system sandbox (restrict bash to cwd writes only)' },
   { name: 'rewind', description: 'Rewind to a previous point (restore code and/or conversation)' },
   { name: 'config', description: 'Open configuration' },

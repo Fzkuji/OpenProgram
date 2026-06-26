@@ -59,6 +59,7 @@ export type WsRequest =
   | { action: 'question_reply'; id: string; answer: string | string[] }
   | { action: 'question_reject'; id: string; reason?: string }
   | { action: 'sandbox'; session_id?: string }
+  | { action: 'context'; session_id?: string }
   | { action: 'rewind'; session_id: string };
 
 export interface ChatAck {

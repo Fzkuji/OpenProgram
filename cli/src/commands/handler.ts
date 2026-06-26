@@ -645,6 +645,12 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'context': {
+      const conv = ctx.currentConversation;
+      ctx.client.send({ action: 'context', session_id: conv ?? '' });
+      return true;
+    }
+
     case 'memory':
     case 'mcp':
     case 'doctor':
