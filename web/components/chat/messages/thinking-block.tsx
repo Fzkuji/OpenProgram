@@ -8,6 +8,7 @@
  */
 import { useState } from "react";
 import { useTranslation } from "@/lib/i18n";
+import { renderMarkdown, useMarkdownReady } from "./markdown";
 
 export function ThinkingBlock({
   text,
@@ -23,6 +24,7 @@ export function ThinkingBlock({
   const [collapsed, setCollapsed] = useState(false);
   const [copied, setCopied] = useState(false);
   const { text: tr } = useTranslation();
+  useMarkdownReady();
   if (!text) return null;
 
   function copy(e: React.MouseEvent) {
@@ -63,7 +65,7 @@ export function ThinkingBlock({
         </span>
       </div>
       <div className={"inline-tree-body" + (collapsed ? " collapsed" : "")}>
-        <div className="thinking-text">{text}</div>
+        <div className="thinking-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
       </div>
     </div>
   );
