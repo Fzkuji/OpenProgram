@@ -13,7 +13,7 @@
  */
 import { useState } from "react";
 
-import type { ChatToolCall } from "@/lib/session-store";
+import { useSessionStore, type ChatToolCall } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 
 /** Single tree-node row for one tool call. Clicking it opens the
@@ -47,16 +47,14 @@ function ToolNodeRow({ call }: { call: ChatToolCall }) {
     } catch {
       /* leave undefined; detail panel handles missing params */
     }
-    const node = {
+    const { showDetail } = useSessionStore.getState();
+    showDetail({
       path: "tool/" + call.id,
       name: call.tool || "?",
       status,
       params: parsedArgs,
       output: call.result,
-    };
-    (window as unknown as { showDetail?: (n: unknown) => void }).showDetail?.(
-      node,
-    );
+    });
   }
 
   return (

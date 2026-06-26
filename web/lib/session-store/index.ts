@@ -195,11 +195,32 @@ interface ConvState {
   rightDock: { open: boolean; view: string };
   setRightDockOpen: (open: boolean) => void;
   setRightDockView: (view: string) => void;
+
+  /** Node currently shown in the right-rail detail panel. */
+  detailNode: DetailNode | null;
+  showDetail: (node: DetailNode) => void;
+  closeDetail: () => void;
+}
+
+export interface DetailNode {
+  path: string;
+  name: string;
+  status: string;
+  params?: Record<string, unknown>;
+  output?: string;
+  error?: string;
+  duration_ms?: number;
+  prompt?: string;
+  node_type?: string;
+  raw_reply?: string;
+  render?: string;
+  compress?: boolean;
+  attempts?: unknown[];
 }
 
 const RIGHT_LS_OPEN = "rightSidebarOpen";
 const RIGHT_LS_VIEW = "rightSidebarView";
-const VALID_VIEWS = new Set(["history", "context"]);
+const VALID_VIEWS = new Set(["history", "context", "detail"]);
 
 function readRightDock(): { open: boolean; view: string } {
   if (typeof window === "undefined") return { open: false, view: "history" };
@@ -624,6 +645,16 @@ export const useSessionStore = create<ConvState>((set) => ({
       persistRightDock(next);
       return { rightDock: next };
     }),
+
+  detailNode: null,
+  showDetail: (node) =>
+    set((s) => {
+      const next = { ...s.rightDock, open: true, view: "detail" };
+      persistRightDock(next);
+      return { detailNode: node, rightDock: next };
+    }),
+  closeDetail: () =>
+    set({ detailNode: null }),
 }));
 
 

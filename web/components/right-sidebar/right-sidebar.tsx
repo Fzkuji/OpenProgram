@@ -426,20 +426,107 @@ function HighlightModeToggle() {
   );
 }
 
-/**
- * Execution detail placeholder. `showDetail(node)` in `ui.js` sets
- * `#detailTitle` textContent and `#detailBody` innerHTML. The empty
- * state markup ships with the React tree and is restored by the
- * AppShell route-change handler when entering /chat with no session.
- */
 function DetailPanel() {
   const { t } = useTranslation();
+  const node = useSessionStore((s) => s.detailNode);
+
+  if (!node) {
+    return (
+      <div id="detailBody" className="detail-body">
+        <div className="detail-empty">
+          {t("right.no_execution")}
+          <br />
+          <span>{t("right.no_execution_hint")}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const statusIcon = node.status === "success" ? "✓" : node.status === "error" ? "✗" : "●";
+  const dur = node.duration_ms && node.duration_ms > 0 ? `${Math.round(node.duration_ms)}ms` : "running...";
+
+  const filteredParams = node.params
+    ? Object.fromEntries(Object.entries(node.params).filter(([k]) => k !== "runtime" && k !== "callback"))
+    : null;
+
   return (
     <div id="detailBody" className="detail-body">
-      <div className="detail-empty">
-        {t("right.no_execution")}
-        <br />
-        <span>{t("right.no_execution_hint")}</span>
+      <div className="detail-section">
+        <div className="detail-section-title">Status</div>
+        <div className={`detail-badge ${node.status}`}>
+          {statusIcon} {node.status} &middot; {dur}
+        </div>
+      </div>
+
+      <div className="detail-section">
+        <div className="detail-section-title">Path</div>
+        <div className="detail-field-value">{node.path}</div>
+      </div>
+
+      {node.prompt ? (
+        <div className="detail-section">
+          <div className="detail-section-title">Prompt / Docstring</div>
+          <div className="detail-code">{node.prompt}</div>
+        </div>
+      ) : null}
+
+      {filteredParams && Object.keys(filteredParams).length > 0 ? (
+        <div className="detail-section">
+          <div className="detail-section-title">Parameters</div>
+          <div className="detail-code">{JSON.stringify(filteredParams, null, 2)}</div>
+        </div>
+      ) : null}
+
+      {node.output != null ? (
+        <div className="detail-section">
+          <div className="detail-section-title">Output</div>
+          <div className="detail-code">
+            {typeof node.output === "string" ? node.output : JSON.stringify(node.output, null, 2)}
+          </div>
+        </div>
+      ) : null}
+
+      {node.error ? (
+        <div className="detail-section">
+          <div className="detail-section-title">Error</div>
+          <div className="detail-code" style={{ color: "var(--accent-red)" }}>{node.error}</div>
+        </div>
+      ) : null}
+
+      {node.node_type === "exec" ? (
+        <>
+          {node.params?._content ? (
+            <div className="detail-section">
+              <div className="detail-section-title">LLM Input</div>
+              <div className="detail-code">{"→ "}{String(node.params._content)}</div>
+            </div>
+          ) : null}
+          {node.raw_reply != null ? (
+            <div className="detail-section">
+              <div className="detail-section-title">LLM Reply</div>
+              <div className="detail-code">{"← "}{node.raw_reply}</div>
+            </div>
+          ) : null}
+        </>
+      ) : node.raw_reply != null ? (
+        <div className="detail-section">
+          <div className="detail-section-title">Raw LLM Reply</div>
+          <div className="detail-code">{node.raw_reply}</div>
+        </div>
+      ) : null}
+
+      {node.attempts && node.attempts.length > 0 ? (
+        <div className="detail-section">
+          <div className="detail-section-title">Attempts ({node.attempts.length})</div>
+          <div className="detail-code">{JSON.stringify(node.attempts, null, 2)}</div>
+        </div>
+      ) : null}
+
+      <div className="detail-section">
+        <div className="detail-section-title">Render / Compress</div>
+        <div className="detail-field-value">
+          render: {node.render || "summary"} | compress: {node.compress ? "true" : "false"}
+        </div>
       </div>
     </div>
   );

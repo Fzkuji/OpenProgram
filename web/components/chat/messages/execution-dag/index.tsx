@@ -296,9 +296,22 @@ export function ExecutionDag({
 
   const select = useCallback((node: TNode) => {
     setSelectedPath(node.path ?? null);
-    (
-      window as unknown as { showDetail?: (n: unknown) => void }
-    ).showDetail?.(node);
+    const { showDetail } = useSessionStore.getState();
+    showDetail({
+      path: node.path ?? "",
+      name: node.name ?? "?",
+      status: node.status ?? "unknown",
+      params: node.params as Record<string, unknown> | undefined,
+      output: typeof node.output === "string" ? node.output : node.output != null ? JSON.stringify(node.output) : undefined,
+      error: node.error as string | undefined,
+      duration_ms: node.duration_ms as number | undefined,
+      prompt: node.prompt as string | undefined,
+      node_type: node.node_type as string | undefined,
+      raw_reply: node.raw_reply as string | undefined,
+      render: node.render as string | undefined,
+      compress: node.compress as boolean | undefined,
+      attempts: node.attempts as unknown[] | undefined,
+    });
   }, []);
 
   function copy() {
