@@ -256,6 +256,11 @@ class SessionStore:
                 meta = json.loads((sdir / "meta.json").read_text(encoding="utf-8"))
                 sid = meta.get("id") or sdir.name
                 entry = self._meta_to_entry(meta)
+                if not entry.get("created_at"):
+                    try:
+                        entry["created_at"] = (sdir / "meta.json").stat().st_mtime
+                    except OSError:
+                        pass
                 # Backfill preview from history.
                 try:
                     text = self.latest_user_text(sid)
