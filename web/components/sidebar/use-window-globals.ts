@@ -1,23 +1,17 @@
 "use client";
 
 /**
- * Thin React hook that exposes legacy window globals to React components.
+ * Hook that exposes functions and UI state to React components.
  *
- * The legacy chat init script writes:
- *   - `window.availableFunctions` — AgenticFunction[]
- *   - `window.programsMeta`      — { favorites: string[], folders: ... }
- *
- * Neither goes through the zustand store, so we poll at a low rate (250ms —
- * plenty for human-perceivable updates and cheap because each tick is just
- * an object-identity compare on a couple of refs). The conversation list
- * used to be polled here too; it now lives in the store (store.conversations,
- * fed by conv-store-mirror), so the sidebar subscribes to that directly and
- * this hook no longer touches `window.conversations`. As the remaining
- * globals migrate, drop them here as well.
+ * `availableFunctions` and `programsMeta` are now read from the zustand
+ * `useFunctions` store (pushed by the `functions_list` WS handler in
+ * use-ws.ts). `sidebarOpen` is still read from `window` since it's
+ * toggled by legacy UI code.
  */
 
 import { useEffect, useState } from "react";
 import type { AgenticFunction } from "@/lib/session-store";
+import { useFunctions } from "@/lib/functions-store";
 
 interface FunctionsMeta {
   favorites: string[];
@@ -32,51 +26,27 @@ interface WindowGlobalsState {
 }
 
 const EMPTY_META: FunctionsMeta = { favorites: [], folders: {}, icons: {} };
-const EMPTY_FNS: AgenticFunction[] = [];
-
-function capture(): WindowGlobalsState {
-  const w = window as unknown as {
-    availableFunctions?: AgenticFunction[];
-    programsMeta?: FunctionsMeta;
-    sidebarOpen?: boolean;
-  };
-  return {
-    availableFunctions: w.availableFunctions ?? EMPTY_FNS,
-    programsMeta: w.programsMeta ?? EMPTY_META,
-    sidebarOpen: w.sidebarOpen ?? true,
-  };
-}
 
 export function useWindowGlobals(): WindowGlobalsState {
-  const [snap, setSnap] = useState<WindowGlobalsState>(() =>
-    typeof window === "undefined"
-      ? {
-          availableFunctions: EMPTY_FNS,
-          programsMeta: EMPTY_META,
-          sidebarOpen: true,
-        }
-      : capture()
-  );
+  const functions = useFunctions((s) => s.functions);
+  const meta = useFunctions((s) => s.meta);
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
-    let prev = snap;
     const id = setInterval(() => {
-      const next = capture();
-      // `availableFunctions` / `programsMeta` get swapped wholesale, so
-      // a ref compare catches them; `sidebarOpen` is a primitive.
-      if (
-        next.availableFunctions !== prev.availableFunctions ||
-        next.programsMeta !== prev.programsMeta ||
-        next.sidebarOpen !== prev.sidebarOpen
-      ) {
-        prev = next;
-        setSnap(next);
-      }
+      const cur =
+        (window as unknown as { sidebarOpen?: boolean }).sidebarOpen ?? true;
+      setSidebarOpen((prev) => (prev === cur ? prev : cur));
     }, 250);
     return () => clearInterval(id);
   }, []);
 
-  return snap;
+  return {
+    availableFunctions: functions as AgenticFunction[],
+    programsMeta: (meta as FunctionsMeta) ?? EMPTY_META,
+    sidebarOpen,
+  };
 }
 
 /** Subscribe to just `window.currentSessionId`. */

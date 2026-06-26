@@ -42,7 +42,10 @@ const W = window as unknown as PanelWindow;
 export async function loadProgramsMeta(): Promise<void> {
   try {
     const resp = await fetch("/api/programs/meta");
-    W.programsMeta = (await resp.json()) || { favorites: [], folders: {} };
+    const meta = (await resp.json()) || { favorites: [], folders: {} };
+    W.programsMeta = meta;
+    const { useFunctions } = await import("@/lib/functions-store");
+    useFunctions.getState().setMeta(meta);
   } catch {
     W.programsMeta = { favorites: [], folders: {} };
   }
