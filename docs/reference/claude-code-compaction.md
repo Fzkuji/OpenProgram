@@ -1,15 +1,20 @@
 # Claude Code 上下文压缩机制 — 完整流程参考
 
 > 调研文档（非设计文档）。基于源码逆向分析，记录 Claude Code 的压缩机制。
-> 注意：Claude Code 的阈值和实现在不同版本中有调整，以下数字来自逆向分析，可能不完全准确。
 >
-> 来源：
+> **可靠度说明**：5 级级联的描述来自第三方逆向分析，不是 Anthropic 官方文档确认的。
+> 官方 API 文档（platform.claude.com）只描述了单一的 compact 机制（超 token 阈值 → LLM 摘要），
+> 内部的 Microcompact / Snip / Context Collapse 分层是 Claude Code 客户端的实现细节。
+> 不同逆向分析来源对执行顺序的描述有细微差异。以下采用 Inside Claude Code 的版本（分析最详细）。
+> 阈值和参数在不同版本中有调整，以下数字可能不完全准确。
+>
+> 来源（按可靠度排序）：
+> - [Compaction - Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/compaction)（官方，但只描述 API 层面）
+> - [Context editing - Claude API Docs](https://platform.claude.com/docs/en/build-with-claude/context-editing)（官方）
+> - [Inside Claude Code - Context Compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html)（逆向分析，最详细）
 > - [Dive into Claude Code](https://arxiv.org/html/2604.14228v1)（arXiv 2604.14228，VILA-Lab 源码逆向分析）
-> - [Inside Claude Code - Context Compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html)
-> - [Claude Code's Compaction Engine](https://barazany.dev/blog/claude-codes-compaction-engine)
-> - [Context editing - Claude API Docs](https://platform.claude.com/docs/en/build-with-claude/context-editing)
-> - [Compaction - Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/compaction)
-> - [DeepWiki - Context Window & Compaction](https://deepwiki.com/anthropics/claude-code/3.3-context-window-and-compaction)
+> - [DeepWiki - Context Window & Compaction](https://deepwiki.com/anthropics/claude-code/3.3-context-window-and-compaction)（社区 wiki）
+> - [Claude Code VS OpenCode §5.3](https://0xtresser.github.io/Claude-Code-VS-OpenCode/en/Chapter_05_Session_and_Context/5.3_Context_Compaction.html)（对比分析）
 
 ---
 
@@ -20,23 +25,27 @@ Claude Code 有两类压缩机制：
 **常规操作**（每轮 LLM 调用前都做，和上下文长度无关）：
 - Budget Reduction：截断超大的单个工具输出
 
-**级联压缩**（按 Tier 1→2→3→4→5 的顺序，前一级不够才上后一级）：
+**级联压缩**（按 Tier 1→2→3→4→5 的顺序升级，成本低的先做）：
 - Tier 1 Microcompact：清理旧工具输出
 - Tier 2 Snip：删最旧的几轮对话
 - Tier 3 Context Collapse：分段 LLM 摘要
 - Tier 4 Auto-Compact：全量 LLM 摘要
 - Tier 5 Reactive：API 返回 413 时紧急压缩
 
-| | 名称 | 做什么 | 调 LLM | 破缓存 | 信息损失 |
-|---|---|---|---|---|---|
-| 常规 | Budget Reduction | 截断超大单个输出 | 否 | 否 | 中间内容丢 |
-| Tier 1 | Microcompact | 旧工具输出清理 | 否 | cache-aware 不破 | 旧输出丢 |
-| Tier 2 | Snip | 删最旧几轮 | 否 | 是 | 整轮丢 |
-| Tier 3 | Context Collapse | 分段摘要 | 是 | 是 | 细节丢，要点留 |
-| Tier 4 | Auto-Compact | 全量摘要 | 是 | 是 | 大量丢，只留概要 |
-| Tier 5 | Reactive | 紧急压缩 | 是 | 是 | 同 Tier 4 |
+| | 名称 | 做什么 | 触发条件 | 调 LLM | 破缓存 | 信息损失 |
+|---|---|---|---|---|---|---|
+| 常规 | Budget Reduction | 截断超大单个输出 | 单个 tool_result > **4000 字符** | 否 | 否 | 中间内容丢 |
+| Tier 1 | Microcompact | 旧工具输出清理 | 工具调用 ≥ **50 次**（之后每 **25 次**）/ 空闲 **90 分钟** | 否 | cache-aware 不破 | 旧输出丢 |
+| Tier 2 | Snip | 删最旧几轮 | Tier 1 后仍超预算 | 否 | 是 | 整轮丢 |
+| Tier 3 | Context Collapse | 分段摘要 | Tier 2 后仍超，~**90%** 占用 | 是 | 是 | 细节丢，要点留 |
+| Tier 4 | Auto-Compact | 全量摘要 | Tier 3 后仍超 / 用户 `/compact` | 是 | 是 | 大量丢，只留概要 |
+| Tier 5 | Reactive | 紧急压缩 | API 返回 **413** prompt_too_long | 是 | 是 | 同 Tier 4 |
 
-**级联的意思**：每轮 LLM 调用前，先检查 Tier 1 的条件，满足就做；做完后检查 Tier 2，满足就做；以此类推。不是跳着执行，是从 1 到 5 顺序检查。前面的 Tier 成本低，能解决就不上后面的。
+**级联逻辑**：每轮 LLM 调用前，从 Tier 1 开始检查。满足条件就执行，执行完重新检查是否还超。还超就进入下一个 Tier。前面的 Tier 成本低（不调 LLM、不破缓存），尽量在前面解决。
+
+> **注意**：Tier 3 Context Collapse 和 Tier 4 Auto-Compact 的关系，逆向分析来源描述为
+> "overlapping strategies"（重叠策略），不一定是严格的"3 不够才上 4"。可能某些配置下
+> 跳过 Tier 3 直接走 Tier 4。`/compact` 手动命令直接触发 Tier 4，跳过 Tier 1-3。
 
 ---
 
@@ -118,7 +127,7 @@ Microcompact cache-aware path 的底层实现。Anthropic API 的公开 beta（h
 
 | 策略 | 做什么 |
 |---|---|
-| `clear_tool_uses` | 清除旧的 tool_result，只保留最近 N 个 |
+| `clear_tool_uses` | 清除旧的 tool_result，只保留最近 N 个（N 的具体值未从源码确认，逆向分析未给出） |
 | `clear_thinking` | 清除旧的 thinking blocks |
 | `clear_at_least` | 控制最少清多少 token |
 
@@ -133,11 +142,12 @@ Microcompact cache-aware path 的底层实现。Anthropic API 的公开 beta（h
 **触发条件**：Tier 1 做完后仍超预算（逆向分析中出现 ~13K tokens buffer 的说法，但具体阈值可能随版本变化）
 
 **参数**：
-- 删除粒度：**整轮**（user + assistant + 该轮所有工具调用一起删）
-- 删多少：从最旧的开始逐轮删，删到阈值以下为止
+- 删除粒度：**整轮**（user + assistant + 该轮所有工具调用一起删），不会出现"user 在但 assistant 被删"的不一致
+- 删多少：从最旧的开始逐轮删，每删一轮重新算 token 数，**删到阈值以下为止**（不是固定删 N 轮）
 - 删除的内容彻底消失，模型不知道之前聊过什么
+- 没有删除标记（不会在上下文里留"已删除 5 轮"之类的提示）
 
-**代价**：信息完全丢失。但免费（不调 LLM）。
+**代价**：信息完全丢失，缓存前缀被破坏。但免费（不调 LLM），执行速度快。
 
 ### Tier 3：Context Collapse
 
@@ -147,7 +157,11 @@ Microcompact cache-aware path 的底层实现。Anthropic API 的公开 beta（h
 
 **关键特性**：原始消息**保留**在 collapse store 中。这是**读时投影（read-time projection）**——类似数据库 View，底表不动，查询看到的是摘要视图。原始历史保留着，理论上可以重建/回滚。
 
-**分段标准**：5-10 轮一段。每段独立用 LLM 摘要。
+**参数**：
+- 分段标准：**5-10 轮一段**（具体值未从源码确认）
+- 每段独立用 LLM 摘要，每段摘要约 **100-300 tokens**（估算，未确认）
+- 最近 N 轮完整保留，只摘要更旧的段（N 值未确认）
+- LLM 调用次数 = 段数（例：30 轮分 3 段 = 3 次 LLM 调用）
 
 **和 Tier 4 的区别**：
 - Context Collapse 是**分段**摘要，每段独立，保留分段边界和时间线结构
@@ -174,6 +188,13 @@ Microcompact cache-aware path 的底层实现。Anthropic API 的公开 beta（h
 **触发条件**：Tier 3 做完后仍超阈值。或用户手动 `/compact`。
 
 **关键特性**：原始消息被**替换**，不可回滚。信息损失最大。
+
+**参数**：
+- 摘要块大小：约 **2000-5000 tokens**（取决于对话复杂度，由 LLM 自行决定）
+- 保留最近 **1-2 轮**完整对话（不被摘要）
+- LLM 调用：**1 次**（全量摘要）
+- 压缩后上下文从原来的 70-90% 降到约 **15-25%**
+- 可通过 `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` 环境变量调整触发百分比
 
 **具体过程**：
 1. 执行 PreCompact hooks（通知系统即将压缩）
