@@ -74,84 +74,71 @@ function ToolNodeRow({ call }: { call: ChatToolCall }) {
   );
 }
 
-function ToolInlineTree({ call }: { call: ChatToolCall }) {
+export function ToolsBlock({ tools }: { tools: ChatToolCall[] }) {
   const [collapsed, setCollapsed] = useState(true);
   const [copied, setCopied] = useState(false);
   const { text } = useTranslation();
-  const running = call.status === "running";
-  const errored = call.isError || call.status === "error";
+  if (!tools.length) return null;
 
-  function copy(e: React.MouseEvent) {
+  const anyRunning = tools.some((t) => t.status === "running");
+  const anyError = tools.some((t) => t.isError || t.status === "error");
+  const label =
+    tools.length === 1
+      ? text("Function call", "函数调用")
+      : text(`Function calls (${tools.length})`, `函数调用 (${tools.length})`);
+
+  function copyAll(e: React.MouseEvent) {
     e.stopPropagation();
-    let parsedArgs: unknown = call.input;
-    try { parsedArgs = JSON.parse(call.input); } catch { /* keep raw */ }
-    const payload = {
-      tool: call.tool,
-      id: call.id,
-      args: parsedArgs,
-      result: call.result,
-      status: call.status,
-      is_error: call.isError,
-    };
+    const payload = tools.map((t) => {
+      let parsedArgs: unknown = t.input;
+      try { parsedArgs = JSON.parse(t.input); } catch { /* keep raw */ }
+      return { tool: t.tool, id: t.id, args: parsedArgs, result: t.result, status: t.status, is_error: t.isError };
+    });
     const json = JSON.stringify(payload, null, 2);
-    const done = () => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    };
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1200); };
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(json).then(done, done);
     } else { done(); }
   }
+
   return (
     <div
-      className={"inline-tree" + (errored ? " is-error" : "")}
+      className={"inline-tree" + (anyError ? " is-error" : "")}
       data-collapsed={collapsed ? "1" : "0"}
-      data-call-id={call.id}
     >
       <div
         className="inline-tree-header"
         onClick={() => setCollapsed((c) => !c)}
       >
         <span>
-          {running ? (
+          {anyRunning ? (
             <span className="indicator-dot pulse-opacity" />
-          ) : errored ? (
+          ) : anyError ? (
             <span style={{ color: "var(--accent-red)" }}>{"✗"}</span>
           ) : (
             <span className="inline-tree-script" title="function">{"𝓕"}</span>
           )}
-          {"\u00a0\u00a0"}
-          {text("Function call", "函数调用")}
+          {"  "}
+          {label}
         </span>
         <span className="inline-tree-actions">
           <button
             className={"inline-tree-copy" + (copied ? " copied" : "")}
-            title={text("Copy call as JSON", "复制调用 JSON")}
-            onClick={copy}
+            title={text("Copy all as JSON", "复制全部 JSON")}
+            onClick={copyAll}
           >
             {copied ? text("Copied", "已复制") : text("Copy", "复制")}
           </button>
-          <span
-            className={"inline-tree-toggle" + (collapsed ? " collapsed" : "")}
-          >
+          <span className={"inline-tree-toggle" + (collapsed ? " collapsed" : "")}>
             {"▶"}
           </span>
         </span>
       </div>
       <div className={"inline-tree-body" + (collapsed ? " collapsed" : "")}>
-        <ToolNodeRow call={call} />
+        {tools.map((t) => (
+          <ToolNodeRow key={t.id} call={t} />
+        ))}
       </div>
     </div>
-  );
-}
-
-export function ToolsBlock({ tools }: { tools: ChatToolCall[] }) {
-  if (!tools.length) return null;
-  return (
-    <>
-      {tools.map((t) => (
-        <ToolInlineTree key={t.id} call={t} />
-      ))}
-    </>
   );
 }
