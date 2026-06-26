@@ -78,17 +78,32 @@
 
 Anthropic API 的公开 beta 能力（beta header: `context-management-2025-06-27`），不是 Claude Code 专有，普通开发者可以用。
 
+**和其他压缩步骤的关系：**
+- Context Editing 不是独立的压缩步骤，它是 **Microcompact cache-aware path 的底层实现**
+- Microcompact 决定"清哪些工具输出"，Context Editing API 负责"怎么清才不破缓存"
+- Budget Reduction、Snip、Context Collapse、Auto-Compact 都不用这个 API——它们直接修改客户端的消息列表
+
+**调用时机：**
+- 每次 LLM 调用时，如果 Microcompact cache-aware path 判断需要清理（50 次工具调用后首次触发，之后每 25 次），就在 API 请求中附带 `cache_edits` 参数
+- 和正常的 LLM 调用合并在一起，不是额外的请求——发消息的同时顺便告诉服务端"清掉旧的 tool_result"
+
 | 策略 | 做什么 |
 |---|---|
 | `clear_tool_uses` | 自动清除旧的 tool_result，只保留最近 N 个。超过 token 阈值的旧结果被替换为占位文本 |
 | `clear_thinking` | 清除旧的 thinking blocks |
 | `clear_at_least` | 控制最少清多少 token |
 
-**工作原理**：客户端发送完整的消息历史（不做任何修改），同时传一个 `cache_edits` 参数告诉服务端"帮我清掉旧的 tool_result"。服务端在缓存内部执行清除操作，缓存前缀不变。客户端完全不需要知道哪些被清了。
+**工作原理**：客户端发送完整的消息历史（不做任何修改），同时在 API 请求中传一个 `cache_edits` 参数。服务端收到后：
+1. 在缓存内部找到旧的 tool_result 块
+2. 把它们替换为空或占位文本
+3. 缓存前缀不变（因为客户端发的消息没变，服务端只改了缓存内部的数据）
+4. 客户端完全不需要知道哪些被清了
 
-**核心原则**：已经进了缓存的内容不再修改（修改会破坏缓存前缀）。只有还没进缓存的内容才会被客户端替换（走 time-based path）。
+**核心原则**：已经进了缓存的内容，客户端不再修改（修改会破坏缓存前缀匹配）。Microcompact 要清旧内容时：
+- 如果内容已在缓存中 → 走 cache-aware path，通过 Context Editing API 让服务端清
+- 如果内容还没进缓存 → 走 time-based path，客户端直接替换为 sentinel
 
-**限制**：只有 Anthropic API 支持。OpenAI / Google / 其他 provider 没有类似能力，只能走 time-based path。
+**限制**：只有 Anthropic API 支持。OpenAI / Google / 其他 provider 没有类似能力，只能走 time-based path（客户端替换，会破缓存）。
 
 来源：
 - [Context editing - Claude API Docs](https://platform.claude.com/docs/en/build-with-claude/context-editing)
