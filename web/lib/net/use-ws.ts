@@ -3,16 +3,10 @@
 /**
  * Chat WebSocket lifecycle — React owner.
  *
- * Slice A of the WS-layer migration: the socket's open / reconnect /
- * keepalive / teardown used to live at the bottom of the legacy
- * `init.js`. They move here so the connection is tied to React mount
- * and future slices can dispatch straight into the store.
- *
- * The message DISPATCH is still the legacy `window.handleMessage`
- * (init.js) for now — slice E rewrites that. So this hook just owns
- * the socket and pumps each frame into the existing dispatcher; it
- * also keeps `window.ws` assigned so the not-yet-migrated legacy code
- * (and the React `wsSend` helpers) keep working unchanged.
+ * React owns the WebSocket connection. All message types are dispatched
+ * here — known types have explicit handlers, unknown types are surfaced
+ * as `op:ws-message` window events for component-level listeners.
+ * `window.ws` is kept assigned so `wsSend` helpers work unchanged.
  */
 import { useEffect } from "react";
 
@@ -38,7 +32,6 @@ import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 
 interface WsWindow {
   ws?: WebSocket | null;
-  handleMessage?: (msg: unknown) => void;
   updateStatus?: (s: string) => void;
   loadAgentSettings?: () => void;
   currentSessionId?: string | null;
@@ -78,10 +71,9 @@ export function useWS(): void {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
 
-    /** React-side dispatch for migrated message types. Returns true if
-     *  the message was handled here — false means fall through to the
-     *  legacy `window.handleMessage`. Slice E migrates types into here
-     *  one batch at a time until the legacy dispatcher is empty. */
+    /** React-side dispatch for all WS message types. Known types have
+     *  explicit handlers; unknown types are surfaced as `op:ws-message`
+     *  window events for component-level listeners. */
     function dispatch(msg: {
       type?: string;
       data?: Record<string, unknown>;
@@ -379,8 +371,22 @@ export function useWS(): void {
           }
           return true;
         }
+        // Catch-all: surface any unhandled backend message as a window
+        // event so component-level listeners (project menu, settings
+        // panel, rewind button, etc.) can pick them up without needing
+        // a dedicated case here. This replaces the legacy
+        // window.handleMessage fallback.
         default:
-          return false;
+          try {
+            window.dispatchEvent(
+              new CustomEvent("op:ws-message", {
+                detail: { type: msg.type, data: d },
+              }),
+            );
+          } catch {
+            /* defensive */
+          }
+          return true;
       }
     }
 
@@ -425,10 +431,7 @@ export function useWS(): void {
             type?: string;
             data?: { session_id?: string };
           };
-          if (!dispatch(msg)) {
-            // Not yet migrated — hand to the legacy dispatcher.
-            w.handleMessage?.(msg);
-          }
+          dispatch(msg);
         } catch (err) {
           console.error("[useWS] onmessage parse error:", err);
         }
