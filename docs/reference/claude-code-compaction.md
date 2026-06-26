@@ -40,14 +40,24 @@
 
 ### Microcompact（空闲时 + 每轮调用前）— 管"旧的太多"
 
-把"过时"的旧工具输出存到磁盘，上下文中只留引用路径。最近几轮的结果保持 inline。和 Budget Reduction 的区别：Budget Reduction 看单个输出大不大（新旧都看），Microcompact 看时间远不远（只清旧的，不管大小）。
+把"过时"的旧工具输出清掉，上下文中只留一行占位文本（约 20 tokens）。不管原始输出多大（100 tokens 还是 10000 tokens），清掉后都变成同样的一行。最近几轮的结果保持 inline 不动。
+
+和 Budget Reduction 的区别：Budget Reduction 看单个输出大不大（新旧都看），Microcompact 看时间远不远（只清旧的，不管大小）。
+
+**压缩效果：**
+- 每个被清理的工具输出：从原始大小（几百到几千 tokens）→ 约 20 tokens 的占位文本
+- 例：一次 Microcompact 清理了 10 个旧工具结果，每个平均 500 tokens → 释放约 4800 tokens（10 × 500 - 10 × 20）
+- 只清工具输出（tool_result），不动 user/assistant 消息
 
 ```
 替换前：
 [tool_result] "import os\nimport sys\n\nclass Config:\n    ..."（2000 tokens）
 
-替换后：
-[tool_result] "[content stored on disk, retrievable by path: /tmp/claude-cache/config.py.result]"（20 tokens）
+替换后（cache-aware path）：
+[tool_result] ""（服务端清空，0 tokens，缓存前缀不变）
+
+替换后（time-based path）：
+[tool_result] "[content no longer available]"（~20 tokens）
 ```
 
 有两条路径：
