@@ -24,6 +24,7 @@ SLASH_HELP = [
                  "remove the alias for a channel peer"),
     ("/connections", "list every channel peer currently aliased to "
                      "this session"),
+    ("/compact [hint]", "compress conversation history (optional hint guides what to keep)"),
     ("/context", "show token distribution across context window"),
     ("/rewind", "roll back code + conversation to a chosen point"),
     ("/sandbox", "toggle system sandbox (restrict bash to cwd writes only)"),
@@ -189,6 +190,9 @@ def _handle_slash(cmd: str, console, rt,
         console.print("[dim]Exiting so you can restart cleanly.[/]")
         return True
 
+    if verb == "compact":
+        return _handle_compact(args, console, session_id)
+
     if verb == "context":
         return _handle_context(console, agent, session_id)
 
@@ -202,6 +206,38 @@ def _handle_slash(cmd: str, console, rt,
     return False
 
 
+
+
+def _handle_compact(args: list[str], console, session_id: str) -> bool:
+    """Manual compaction — compress conversation history via LLM summary."""
+    if not session_id:
+        console.print("[yellow]No active session[/]")
+        return False
+    try:
+        from openprogram.agent.dispatcher.titles import trigger_compaction
+
+        hint = " ".join(args) if args else None
+        console.print("[dim]Compacting conversation history...[/]")
+
+        def _emit(envelope: dict) -> None:
+            data = envelope.get("data") or {}
+            if data.get("type") == "compaction_started":
+                console.print("[dim]  LLM summarizing...[/]")
+
+        result = trigger_compaction(
+            session_id,
+            on_event=_emit,
+        )
+
+        summary = result.get("summary", "")
+        kept = result.get("kept_count", 0)
+        preview = summary[:200] + "..." if len(summary) > 200 else summary
+        console.print(f"[green]Compacted.[/]  Kept {kept} recent messages.")
+        if preview:
+            console.print(f"[dim]Summary: {preview}[/]")
+    except Exception as e:
+        console.print(f"[red]Compact failed: {type(e).__name__}: {e}[/]")
+    return False
 
 
 def _handle_context(console, agent, session_id: str) -> bool:
