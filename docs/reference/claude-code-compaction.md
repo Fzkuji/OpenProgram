@@ -46,8 +46,32 @@
 ```
 
 有两条路径：
-- **时间路径**：按时间远近，旧的先清（默认）
-- **缓存感知路径**（`CACHED_MICROCOMPACT` 开关）：优先清理导致 prompt cache miss 的内容
+
+- **Time-based path（时间路径，默认）**：按时间远近，旧的先清。空闲 ~90 分钟后触发。旧 tool_result 内容替换为 sentinel 字符串。sentinel 做了**字节级归一化（byte-stable canonical form）**——重复 microcompact 不会改变已缓存的内容，保护 prompt cache 前缀稳定。
+
+- **Cache-aware path（缓存感知路径）**：使用 Anthropic API 的 **context editing** 能力（`cache_edits`），服务端直接清除旧 tool_result。**客户端消息不变，缓存前缀完全不破坏。** 这是日常缓存保护的核心机制。
+
+#### Context Editing API（cache_edits）
+
+Anthropic API 的公开 beta 能力（beta header: `context-management-2025-06-27`），不是 Claude Code 专有，普通开发者可以用。
+
+| 策略 | 做什么 |
+|---|---|
+| `clear_tool_uses` | 自动清除旧的 tool_result，只保留最近 N 个。超过 token 阈值的旧结果被替换为占位文本 |
+| `clear_thinking` | 清除旧的 thinking blocks |
+| `clear_at_least` | 控制最少清多少 token |
+
+**工作原理**：客户端发送完整的消息历史（不做任何修改），同时传一个 `cache_edits` 参数告诉服务端"帮我清掉旧的 tool_result"。服务端在缓存内部执行清除操作，缓存前缀不变。客户端完全不需要知道哪些被清了。
+
+**核心原则**：已经进了缓存的内容不再修改（修改会破坏缓存前缀）。只有还没进缓存的内容才会被客户端替换（走 time-based path）。
+
+**限制**：只有 Anthropic API 支持。OpenAI / Google / 其他 provider 没有类似能力，只能走 time-based path。
+
+来源：
+- [Context editing - Claude API Docs](https://platform.claude.com/docs/en/build-with-claude/context-editing)
+- [Context engineering cookbook](https://platform.claude.com/cookbook/tool-use-context-engineering-context-engineering-tools)
+- [Claude Code's Compaction Engine](https://barazany.dev/blog/claude-codes-compaction-engine)
+- [Claude Code Cache Fix](https://github.com/cnighswonger/claude-code-cache-fix)
 
 ---
 
@@ -367,3 +391,11 @@ LLM 在上次摘要的基础上，把新的 30 轮也压进去：
 6. **用户控制优于自动触发**
    `/compact` + `/context` 让用户主导压缩时机和保留内容。
    自动触发是兜底，不是首选。
+
+7. **缓存保护贯穿全流程**
+   整套压缩机制的设计围绕**保护 prompt cache 前缀稳定**：
+   - **日常**：Microcompact 的 cache-aware path 通过 context editing API 在服务端清除旧 tool_result，客户端消息不变，缓存完全不破。这是日常持续释放空间的主力。
+   - **Microcompact time-based path**：sentinel 字符串做了字节级归一化，重复替换不改变已缓存内容。
+   - **Budget Reduction**：截断发生在消息发给 API 之前，截断后的内容进缓存后就不再变。
+   - **Snip / Compact**：会破坏缓存（前缀变了），但因为 Microcompact 日常已经控制住增长，Snip 极少触发。偶尔一次缓存失效的代价可接受。
+   - **System prompt**：从 CLAUDE.md 重新加载，始终不变，至少这部分能缓存命中。
