@@ -534,15 +534,43 @@ def process_user_turn(
         # instead of as collapsed tool cards under the assistant bubble).
         _agentic_tool_names: set[str] = set()
         _ordered_blocks: list[dict] = []
-        final_text, usage, tool_calls = _run_loop_blocking(
-            req=req,
-            history=loop_history,
-            on_event=_on_event_persist,
-            cancel_event=cancel_event,
-            assistant_msg_id=assistant_msg_id,
-            agentic_tool_names_out=_agentic_tool_names,
-            ordered_blocks_out=_ordered_blocks,
-        )
+        try:
+            final_text, usage, tool_calls = _run_loop_blocking(
+                req=req,
+                history=loop_history,
+                on_event=_on_event_persist,
+                cancel_event=cancel_event,
+                assistant_msg_id=assistant_msg_id,
+                agentic_tool_names_out=_agentic_tool_names,
+                ordered_blocks_out=_ordered_blocks,
+            )
+        except Exception as _loop_exc:
+            from openprogram.context.reactive import is_overflow_error, reactive_compact
+            if is_overflow_error(_loop_exc):
+                _agent_profile = _load_agent_profile(req.agent_id)
+                _compacted = reactive_compact(
+                    agent_profile=_agent_profile,
+                    session_id=req.session_id,
+                    model=_resolve_model(_agent_profile, req.model_override),
+                    history=loop_history,
+                    on_event=_on_event_persist,
+                )
+                if _compacted is not None:
+                    _agentic_tool_names = set()
+                    _ordered_blocks = []
+                    final_text, usage, tool_calls = _run_loop_blocking(
+                        req=req,
+                        history=_compacted,
+                        on_event=_on_event_persist,
+                        cancel_event=cancel_event,
+                        assistant_msg_id=assistant_msg_id,
+                        agentic_tool_names_out=_agentic_tool_names,
+                        ordered_blocks_out=_ordered_blocks,
+                    )
+                else:
+                    raise
+            else:
+                raise
     except Exception as e:
         # Two paths, both delegated to _turn_lifecycle:
         #   * placeholder present → fold the error into the same row
@@ -864,8 +892,42 @@ def _run_loop_blocking(
         except Exception:
             pass
 
-    # Auto-compact: when budget STILL crosses the threshold after snip,
-    # run the LLM summariser INLINE.
+    # Tier 3 Context Collapse: segmented LLM summary.
+    # Runs after Snip, before full Auto-Compact.
+    if req.history_override is None and _ctx_engine.should_auto_compact(prep):
+        try:
+            from openprogram.context.collapse import collapse
+            from openprogram.context.tokens import count_tokens
+
+            def _llm_summarize(prompt: str) -> str:
+                from openprogram.agentic_programming.runtime import Runtime
+                rt = Runtime(call=req.call, model=model)
+                return rt.exec(content=[{"type": "text", "text": prompt}]) or ""
+
+            collapsed, _originals, n_collapsed = collapse(
+                prep.history_dicts,
+                llm_call=_llm_summarize,
+                token_counter=lambda msgs: count_tokens(msgs, model),
+                context_window=prep.context_window,
+            )
+            if n_collapsed > 0:
+                history = collapsed
+                prep = _ctx_engine.prepare(
+                    agent=agent_profile,
+                    session=db.get_session(req.session_id) or session,
+                    history=history,
+                    model=model,
+                    tools=tools,
+                )
+                on_event({"type": "chat_response",
+                          "data": {"type": "context_collapse",
+                                   "session_id": req.session_id,
+                                   "segments_collapsed": n_collapsed}})
+        except Exception:
+            pass
+
+    # Tier 4 Auto-compact: when budget STILL crosses the threshold after
+    # snip + collapse, run the full LLM summariser INLINE.
     if req.history_override is None and _ctx_engine.should_auto_compact(prep):
         try:
             loop = asyncio.new_event_loop()
