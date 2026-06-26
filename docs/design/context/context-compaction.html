@@ -9,9 +9,11 @@
     --blue: #3b82f6;
     --green: #22c55e;
     --yellow: #eab308;
+    --red: #ef4444;
     --blue-bg: #eff6ff;
     --green-bg: #f0fdf4;
     --yellow-bg: #fefce8;
+    --red-bg: #fef2f2;
     --gray-50: #f9fafb;
     --gray-100: #f3f4f6;
     --gray-200: #e5e7eb;
@@ -92,10 +94,10 @@
   }
   .legend-title { font-weight: 700; color: var(--gray-600); font-size: .9rem; }
 
-  .status {
+  .done {
     display: inline-block;
-    background: #fef3c7;
-    color: #92400e;
+    background: #d1fae5;
+    color: #065f46;
     font-size: .8rem;
     font-weight: 600;
     padding: 2px 10px;
@@ -241,7 +243,7 @@
   .tl-item.phase2::before { background: var(--green); }
   .tl-item.phase3::before { background: var(--green); }
   .tl-item.phase4::before { background: var(--blue); }
-  .tl-item.phase5::before { background: #ef4444; }
+  .tl-item.phase5::before { background: var(--red); }
   .tl-item.phase6::before { background: var(--gray-600); }
   .tl-title { font-weight: 700; margin-bottom: .25rem; }
   .tl-ref { font-size: .8rem; color: var(--gray-600); }
@@ -274,12 +276,13 @@
 <body>
 <div class="container">
 
-<h1>上下文压缩</h1>
+<h1>上下文压缩 — OpenProgram 设计</h1>
 
 <div class="meta">
-  <span class="status">部分已实现（Budget Reduction + tool aging + microcompact 已有；Snip/Compact 待实现）</span><br>
-  代码: <code>context/engine.py</code>、<code>context/budget.py</code>、<code>context/microcompact.py</code>、<code>context/tool_aging/</code><br>
-  参考: <a href="../../reference/claude-code-compaction.md">Claude Code 压缩参考</a>
+  <span class="done">Budget Reduction + Microcompact + Snip 已实现</span>
+  <span class="pending">Context Collapse / Reactive 待实现</span><br>
+  代码: <code>context/engine.py</code>、<code>context/budget.py</code>、<code>context/microcompact.py</code>、<code>context/tool_aging/</code>、<code>context/snip.py</code><br>
+  参考: <a href="../../reference/claude-code-compaction.md">Claude Code 压缩参考</a>（5-tier 级联，基于逆向分析）
 </div>
 
 <div class="legend">
@@ -291,360 +294,227 @@
 
 <nav class="toc">
   <div class="toc-title">目录</div>
-  <a href="#s1">1. 核心思路</a>
-  <a href="#s2">2. 节点生命周期管理</a>
+  <a href="#s1">1. 总览：常规操作 + 5 级级联</a>
+  <a href="#s2">2. 我们独有：函数调用节点的生命周期</a>
   <a href="#s2-1" class="indent">2.1 函数运行中</a>
-  <a href="#s2-2" class="indent">2.2 函数结束 → expose=io 隐藏内部，走常规压缩</a>
-  <a href="#s3">3. 每轮常规操作</a>
-  <a href="#s3-1" class="indent">3.1 截断超大单个输出（Budget Reduction）</a>
-  <a href="#s4">4. 空闲时清理</a>
-  <a href="#s4-1" class="indent">4.1 旧工具输出存磁盘（Microcompact）</a>
-  <a href="#s5">5. 阈值触发的压缩</a>
-  <a href="#s5-1" class="indent">5.1 触发条件和目标</a>
-  <a href="#s5-2" class="indent">5.2 按时间删旧节点（Snip）</a>
-  <a href="#s5-3" class="indent">5.3 LLM 摘要（Context Collapse / Auto-Compact）</a>
-  <a href="#s5-4" class="indent">5.4 /compact 手动命令</a>
-  <a href="#s6">6. 完整流程推演</a>
+  <a href="#s2-2" class="indent">2.2 函数结束 → expose=io，走常规级联</a>
+  <a href="#s3">3. 常规操作：Budget Reduction</a>
+  <a href="#s4">4. 级联压缩</a>
+  <a href="#s4-1" class="indent">Tier 1: Microcompact</a>
+  <a href="#s4-2" class="indent">Tier 2: Snip</a>
+  <a href="#s4-3" class="indent">Tier 3: Context Collapse</a>
+  <a href="#s4-4" class="indent">Tier 4: Auto-Compact / /compact</a>
+  <a href="#s4-5" class="indent">Tier 5: Reactive</a>
+  <a href="#s5">5. 执行流程</a>
+  <a href="#s6">6. 完整运行示例</a>
   <a href="#s7">7. 和 Claude Code 的对应</a>
   <a href="#s8">8. 实施计划</a>
 </nav>
 
 <!-- S1 -->
 <details open id="s1">
-  <summary>1. 核心思路</summary>
+  <summary>1. 总览：常规操作 + 5 级级联</summary>
   <div class="section-body">
-    <p>上下文压缩 = 节点折叠 + 存磁盘留引用 + 时间降级。所有操作都作用在 DAG 节点上。</p>
+    <p>和 Claude Code 对齐，分两类：</p>
+    <p><strong>常规操作</strong>（每轮 LLM 调用前都做，和上下文长度无关）：Budget Reduction</p>
+    <p><strong>级联压缩</strong>（按 Tier 1→2→3→4→5 顺序升级，成本低的先做，前一级不够才上后一级）：</p>
+
+    <table>
+      <thead><tr><th></th><th>名称</th><th>做什么</th><th>触发条件</th><th>调 LLM</th><th>破缓存</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>常规</td><td>Budget Reduction</td><td>截断超大单个输出</td><td>单个 tool_result &gt; <strong>4000 字符</strong></td><td>否</td><td>否</td><td><span class="done">✅</span></td></tr>
+        <tr><td>Tier 1</td><td>Microcompact</td><td>旧工具输出清理</td><td>工具调用 ≥ <strong>50 次</strong>（之后每 <strong>25 次</strong>）/ 空闲 <strong>90 分钟</strong></td><td>否</td><td>cache-aware 不破</td><td><span class="done">✅</span></td></tr>
+        <tr><td>Tier 2</td><td>Snip</td><td>删最旧几轮</td><td>Tier 1 后仍超预算</td><td>否</td><td>是</td><td><span class="done">✅</span></td></tr>
+        <tr><td>Tier 3</td><td>Context Collapse</td><td>分段摘要</td><td>Tier 2 后仍超，~<strong>90%</strong></td><td>是（每段一次）</td><td>是</td><td><span class="pending">⏳</span></td></tr>
+        <tr><td>Tier 4</td><td>Auto-Compact</td><td>全量摘要</td><td>Tier 3 后仍超 / 用户 <code>/compact</code></td><td>是（一次）</td><td>是</td><td><span class="done">✅</span></td></tr>
+        <tr><td>Tier 5</td><td>Reactive</td><td>紧急压缩</td><td>API 返回 <strong>413</strong></td><td>是</td><td>是</td><td><span class="pending">⏳</span></td></tr>
+      </tbody>
+    </table>
+
+    <p><strong>级联逻辑</strong>：每轮 LLM 调用前，从 Tier 1 开始检查。满足条件就执行，执行完重新检查是否还超。还超就进入下一个 Tier。</p>
+    <p style="color:var(--gray-600);font-size:.9rem">注：Tier 3 和 Tier 4 在 Claude Code 逆向分析中被描述为"overlapping strategies"，不一定严格级联。<code>/compact</code> 手动命令直接触发 Tier 4，跳过 Tier 1-3。</p>
   </div>
 </details>
 
 <!-- S2 -->
 <details open id="s2">
-  <summary>2. 节点生命周期管理</summary>
+  <summary>2. 我们独有：函数调用节点的生命周期</summary>
   <div class="section-body">
-    <p>我们独有的设计。Claude Code 是线性对话没有 DAG，不需要这一层。</p>
+    <p>Claude Code 是线性对话没有 DAG，不需要这一层。我们有函数调用节点（<span class="node-func">🟢</span>），需要额外处理。</p>
 
     <h3 id="s2-1">2.1 函数运行中</h3>
     <dl class="spec">
       <dt>触发</dt>
       <dd>函数被调用，status="running"</dd>
       <dt>做什么</dt>
-      <dd>内部子树（工具调用、嵌套函数、LLM 交互）完整展开在上下文中</dd>
+      <dd>内部子树完整展开在上下文中</dd>
       <dt>可见范围</dt>
       <dd>由 <code>render_context</code> 的 callers/subcalls/expose 控制</dd>
       <dt>节点状态</dt>
-      <dd>
-        <strong>函数内部视角</strong>（函数自己的 LLM 调用）：子节点 full（完整渲染 input + output）<br>
-        <strong>外部视角</strong>（调用方看这个函数节点）：默认 expose=io，调用方只看到函数的输入和输出，看不到内部的工具调用和 LLM 交互
-      </dd>
-      <dt>节点关系</dt>
-      <dd><span class="node-func">🟢 函数节点</span>（ROLE_CODE）+ 其下所有 <span class="node-tool">🟡 工具子节点</span>都参与渲染（仅在函数内部视角）</dd>
-      <dt>函数调用特殊设计</dt>
-      <dd><code>render_context</code> 的 <code>frame_entry_seq</code> 参数划分"函数前历史"和"函数内历史"，callers 控制能看多少父辈。expose=io 确保函数内部细节不泄漏给调用方</dd>
+      <dd><strong>内部视角</strong>：子节点 full。<strong>外部视角</strong>：默认 expose=io，调用方只看到输入+输出</dd>
+      <dt>和压缩的关系</dt>
+      <dd>函数运行中，内部的 <span class="node-tool">🟡 工具输出</span>照常走 Budget Reduction（<span class="xref">§3</span>）和 Microcompact（<span class="xref">Tier 1</span>）。不参与 Snip（不能删正在用的）</dd>
     </dl>
 
-    <h3 id="s2-2">2.2 函数结束 → expose=io 天然隐藏内部</h3>
+    <h3 id="s2-2">2.2 函数结束 → expose=io，走常规级联</h3>
     <dl class="spec">
       <dt>触发</dt>
-      <dd>函数返回，status 从 "running" 变为 "completed"/"error"</dd>
+      <dd>函数返回，status="completed"/"error"</dd>
       <dt>做什么</dt>
-      <dd>不需要额外的"折叠 + 存磁盘"操作。expose=io 天然隐藏内部子树——外部调用方只看到函数的输入和输出，内部的工具调用和 LLM 交互不参与渲染，不占 token</dd>
-      <dt>DAG 即存储</dt>
-      <dd>子节点保留在 DAG 中（session store 持久化），不需要额外序列化到磁盘。大模型想查内部过程时，可以通过工具读取 DAG 中的子节点</dd>
-      <dt>后续流程</dt>
-      <dd>函数节点（输入+输出）进入 <span class="xref">→ §3-§5</span> 的常规压缩流程，和 <span class="node-chat">🔵 对话节点</span>、<span class="node-tool">🟡 工具节点</span> 一视同仁——不需要单独的策略。输出太大走 Budget Reduction 截断（<span class="xref">§3.1</span>），时间久了走 Snip 整轮删（<span class="xref">§5.2</span>），不够再走 LLM 摘要（<span class="xref">§5.3</span>）</dd>
-      <dt>节点关系</dt>
-      <dd><span class="node-func">🟢 函数节点</span>从 status=running 变为 status=completed，<span class="node-tool">🟡 工具子节点</span>不再参与渲染（expose=io 控制）但保留在 DAG 中</dd>
-      <dt>函数调用特殊设计</dt>
-      <dd>这是函数调用独有的机制。<span class="node-chat">🔵 对话节点</span>没有 expose 概念，始终 full。函数结束后不需要额外的老化策略——和其他节点走同一套管道</dd>
+      <dd>expose=io 天然隐藏内部子树。不需要额外操作。子节点保留在 DAG 中（可查）</dd>
+      <dt>后续</dt>
+      <dd>函数节点（输入+输出）进入 <span class="xref">§3-§4</span> 的常规级联，和 <span class="node-chat">🔵 对话节点</span> 一视同仁。不需要单独的策略</dd>
     </dl>
   </div>
 </details>
 
 <!-- S3 -->
 <details open id="s3">
-  <summary>3. 每轮常规操作</summary>
+  <summary>3. 常规操作：Budget Reduction <span class="done">✅ 已实现</span></summary>
   <div class="section-body">
-    <p>每次 LLM 调用前都做，和上下文长度无关。</p>
-
-    <h3 id="s3-1">3.1 截断超大单个输出（= Claude Code 的 Budget Reduction）</h3>
-    <p>和 Claude Code 的 <code>applyToolResultBudget()</code> 一致。检查<span class="node-tool">🟡 工具输出</span>的大小，超大的截断。<strong>只作用于工具输出，不截断 <span class="node-chat">🔵 user/assistant 消息</span>。</strong></p>
+    <p>和 Claude Code 一致。每轮 LLM 调用前都做，和上下文长度无关。</p>
     <dl class="spec">
-      <dt>触发</dt>
-      <dd>每次 LLM 调用前检查所有 <span class="node-tool">🟡 工具节点</span> 的 output</dd>
       <dt>做什么</dt>
-      <dd>单个工具输出超过阈值就截断——保留开头和结尾，中间省略。
-        <ul>
-          <li><span class="node-tool">🟡 工具输出</span>（bash 结果、read_file 内容等）</li>
-        </ul>
-        <span class="node-chat">🔵 user/assistant 消息</span>不截断——对话消息要么整轮删（<span class="xref">§5.2</span> Snip），要么 LLM 摘要（<span class="xref">§5.3</span>）。
-      </dd>
+      <dd>截断超大的单个 <span class="node-tool">🟡 工具输出</span>。不处理 <span class="node-chat">🔵 user/assistant 消息</span></dd>
       <dt>阈值</dt>
-      <dd>✅ <strong>已实现</strong>（<code>context/tool_aging/policy.py: MAX_TOOL_RESULT_CHARS = 4000</code>）。单个工具输出超过 4000 字符（约 1000 tokens）就截断。由 <code>rule_tool_aging</code> 在每轮 context commit 时执行，即使在 tail window 内也截断</dd>
+      <dd><strong>4000 字符</strong>（约 1000 tokens）</dd>
       <dt>截断方式</dt>
-      <dd>✅ <strong>已实现</strong>（<code>context/tool_aging/truncate.py: middle_truncate</code>）。保留开头 60% + 结尾 40%，中间用 <code>[truncated N chars]</code> 标记替换</dd>
-      <dt>截断后格式</dt>
-      <dd>
-<pre><code>src/a.py:12: TODO fix this
-src/b.py:34: TODO refactor
-src/c.py:56: TODO cleanup
-... [truncated, 847 lines omitted, original 8500 tokens → 5000 tokens] ...
-src/y.py:234: TODO optimize
-src/z.py:99: TODO document</code></pre>
-      </dd>
-      <dt>作用对象</dt>
-      <dd><span class="node-tool">🟡 工具节点</span>（工具输出）</dd>
-      <dt>副作用</dt>
-      <dd>不改变节点状态，只截断 output 文本。纯字符串操作，不删消息、不调 LLM、不改对话结构</dd>
-      <dt>函数调用特殊设计</dt>
-      <dd>无。expose=io 后的函数节点只有输入+输出，通常不会触发截断</dd>
+      <dd>保留前 <strong>2400 字符</strong>（60%）+ 后 <strong>1600 字符</strong>（40%），中间丢弃</dd>
+      <dt>代码</dt>
+      <dd><code>context/tool_aging/truncate.py: middle_truncate</code>、<code>context/tool_aging/policy.py: MAX_TOOL_RESULT_CHARS = 4000</code></dd>
     </dl>
   </div>
 </details>
 
 <!-- S4 -->
 <details open id="s4">
-  <summary>4. 空闲时清理</summary>
+  <summary>4. 级联压缩（Tier 1→5）</summary>
   <div class="section-body">
-    <p>用户一段时间没发消息时做。</p>
+    <p>Budget Reduction 之后，按 Tier 顺序检查。前一级做完仍超阈值才上后一级。</p>
 
-    <h3 id="s4-1">4.1 旧工具输出存磁盘（= Claude Code 的 Microcompact）</h3>
-    <p>和 Claude Code 的 Microcompact 一致。把过时的旧 <span class="node-tool">🟡 工具输出</span> 存到磁盘，上下文中只留引用路径。最近几轮的结果保持 inline。<strong>只处理工具输出，不处理 <span class="node-chat">🔵 user/assistant 消息</span>。</strong></p>
+    <h3 id="s4-1">Tier 1: Microcompact <span class="done">✅ 已实现</span></h3>
+    <p>和 Claude Code 一致。清理旧 <span class="node-tool">🟡 工具输出</span>。</p>
     <dl class="spec">
       <dt>触发</dt>
-      <dd>距上次用户交互超过阈值（比如 30 秒），空闲时自动清理；也在每轮 LLM 调用前检查</dd>
-      <dt>"旧"的判断标准</dt>
-      <dd>按消息轮次（turn）计算。保留最近 <strong>3-5 轮</strong>的输出 inline，更早的存磁盘。不按时间（秒/分钟），按轮数</dd>
-      <dt>哪些输出会被存磁盘</dt>
+      <dd>Cache-aware: <strong>50 次工具调用</strong>后首次，之后每 <strong>25 次</strong>。Time-based: 空闲 <strong>~90 分钟</strong></dd>
+      <dt>只处理</dt>
+      <dd>FileRead、Shell、Grep、Glob、WebSearch、WebFetch、FileEdit、FileWrite</dd>
+      <dt>两条路径</dt>
       <dd>
-        <ul>
-          <li><span class="node-tool">🟡 工具输出</span>（bash 结果、read_file 内容等）——最常见的大输出来源</li>
-        </ul>
-        <span class="node-chat">🔵 user/assistant 消息</span>不存磁盘——对话消息通过 Snip（<span class="xref">§5.2</span>）整轮删或 LLM 摘要（<span class="xref">§5.3</span>）处理。
+        <strong>Cache-aware</strong>（Anthropic provider）：通过 Context Editing API（<code>cache_edits</code>，beta header <code>context-management-2025-06-27</code>）服务端清除旧 tool_result。客户端消息不变，<strong>缓存不破</strong>。sentinel 做了字节级归一化（byte-stable），重复操作不改变已缓存内容<br>
+        <strong>Time-based</strong>（其他 provider / 空闲 90 分钟）：客户端替换为占位文本（~20 tokens）。<strong>会破缓存</strong>
       </dd>
-      <dt>存储位置</dt>
-      <dd><code>~/.openprogram/sessions/&lt;session_id&gt;/tool_outputs/&lt;node_id&gt;</code></dd>
-      <dt>存储格式</dt>
-      <dd>原始输出文本直接写入文件</dd>
-      <dt>上下文中替换为</dt>
-      <dd>
-<pre><code>[tool output stored on disk; to retrieve, call read_file("~/.openprogram/sessions/abc123/tool_outputs/node_456")]</code></pre>
-        <p>约 20 tokens，替代原来可能几千 tokens 的完整输出</p>
-      </dd>
-      <dt>最近的保持 inline</dt>
-      <dd>最近 3-5 轮的工具输出不清理，保持原样</dd>
-      <dt>检索</dt>
-      <dd>大模型需要旧结果时，用 <code>read_file</code> 工具读取磁盘路径，完整内容会重新加载到当前 turn 的上下文中</dd>
-      <dt>两条路径（同 Claude Code）</dt>
-      <dd>
-        <ul>
-          <li><strong>时间路径</strong>：按轮次，旧的先清（默认）</li>
-          <li><strong>缓存感知路径</strong>（<code>CACHED_MICROCOMPACT</code>）：优先清理导致 prompt cache miss 的内容，保护已缓存的前缀</li>
-        </ul>
-      </dd>
-      <dt>节点关系</dt>
-      <dd>修改 <span class="node-tool">🟡 工具节点</span> 的 output 字段（替换为引用路径），节点本身保留在 DAG 中</dd>
-      <dt>函数调用特殊设计</dt>
-      <dd>
-        <ul>
-          <li>函数运行中（<span class="xref">§2.1</span>）：内部的工具输出也可以被 Microcompact 清理（运行时间很长时，旧的内部工具输出存磁盘）</li>
-          <li>函数结束后（<span class="xref">§2.2</span>）：expose=io 已隐藏内部子树，Microcompact 不作用于这些子节点</li>
-        </ul>
-      </dd>
+      <dt>压缩效果</dt>
+      <dd>每个工具输出：原始大小 → 0 tokens（cache-aware）或 ~20 tokens（time-based）</dd>
+      <dt>代码</dt>
+      <dd><code>context/microcompact.py</code>、<code>context/rules/microcompact.py</code></dd>
     </dl>
+
+    <h3 id="s4-2">Tier 2: Snip <span class="done">✅ 已实现</span></h3>
+    <p>和 Claude Code 一致。直接删最旧的几轮对话。不做摘要，不调 LLM。</p>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>Tier 1 做完后仍超预算</dd>
+      <dt>删除粒度</dt>
+      <dd><strong>整轮</strong>（user + assistant + 该轮所有工具调用一起删）</dd>
+      <dt>删多少</dt>
+      <dd>从最旧的开始逐轮删，每删一轮重新算 token 数，删到阈值以下为止（不是固定 N 轮）</dd>
+      <dt>代价</dt>
+      <dd>信息完全丢失，缓存前缀被破坏。但免费（不调 LLM）</dd>
+      <dt>函数节点</dt>
+      <dd>已完成的 <span class="node-func">🟢 函数节点</span>按时间参与 Snip。运行中的不删</dd>
+      <dt>代码</dt>
+      <dd><code>context/snip.py</code></dd>
+    </dl>
+
+    <h3 id="s4-3">Tier 3: Context Collapse <span class="pending">⏳ 待实现</span></h3>
+    <p>和 Claude Code 一致。分段 LLM 摘要，原始消息保留（可回滚）。</p>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>Tier 2 Snip 后仍超（约 90%，95% 阻塞强制）</dd>
+      <dt>分段</dt>
+      <dd><strong>5-10 轮</strong>一段，每段独立 LLM 摘要（每段约 100-300 tokens）</dd>
+      <dt>LLM 调用</dt>
+      <dd>次数 = 段数（例：30 轮分 3 段 = 3 次 LLM 调用）</dd>
+      <dt>可回滚</dt>
+      <dd>原始消息保留在 collapse store 中（读时投影 / read-time projection）</dd>
+    </dl>
+
+    <h3 id="s4-4">Tier 4: Auto-Compact <span class="done">✅ 已实现</span></h3>
+    <p>和 Claude Code 一致。全量 LLM 摘要，替换所有旧消息。不可回滚。</p>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>Tier 3 后仍超。或用户手动 <code>/compact</code>（直接跳到这里）</dd>
+      <dt>LLM 调用</dt>
+      <dd><strong>1 次</strong>（全量摘要）</dd>
+      <dt>摘要大小</dt>
+      <dd>约 <strong>2000-5000 tokens</strong></dd>
+      <dt>保留</dt>
+      <dd>最近 <strong>1-2 轮</strong>完整。system prompt 从配置文件重新加载（不依赖摘要）</dd>
+      <dt>/compact 命令</dt>
+      <dd><code>/compact</code> 或 <code>/compact 保留数据库迁移的讨论</code>。建议在 <strong>60%</strong> 时手动做</dd>
+      <dt>链式压缩</dt>
+      <dd>压缩后继续聊，再次满了在上一次摘要基础上再压。信息逐层衰减</dd>
+      <dt>代码</dt>
+      <dd><code>context/engine.py: compact()</code></dd>
+    </dl>
+
+    <h3 id="s4-5">Tier 5: Reactive <span class="pending">⏳ 待实现</span></h3>
+    <p>API 返回 413（prompt too long）时的紧急压缩。每轮至多触发一次。都失败则终止。</p>
   </div>
 </details>
 
 <!-- S5 -->
 <details open id="s5">
-  <summary>5. 阈值触发的压缩</summary>
+  <summary>5. 执行流程</summary>
   <div class="section-body">
-    <p>上下文占比超过阈值时做。</p>
+<pre><code>每轮 LLM 调用前：
 
-    <h3 id="s5-1">5.1 触发条件和目标</h3>
-    <dl class="spec">
-      <dt>自动触发</dt>
-      <dd>history tokens 超过 <code>context_window - 13K</code>（约 83.5% 占用），和 Claude Code 一致</dd>
-      <dt>建议手动触发</dt>
-      <dd>用户在 60% 时手动 <code>/compact</code>，质量比自动好</dd>
-      <dt>目标</dt>
-      <dd>不设固定百分比，逐级压缩（<span class="xref">§5.2</span> Snip → <span class="xref">§5.3</span> 摘要）直到能继续调用 LLM</dd>
-      <dt>检查时机</dt>
-      <dd>每次 LLM 调用前（<span class="xref">§3</span> 之后）</dd>
-    </dl>
+1. Budget Reduction → 截断超大工具输出（每轮都做）
 
-    <h3 id="s5-2">5.2 按时间删旧节点（= Claude Code 的 Snip）</h3>
-    <p>和 Claude Code 的 <code>snipCompactIfNeeded()</code> 一致。直接删除最旧的几轮对话，不做任何摘要，直接丢掉。</p>
-    <dl class="spec">
-      <dt>触发</dt>
-      <dd><span class="xref">§5.1</span> 条件满足</dd>
-      <dt>删除粒度</dt>
-      <dd>按<strong>轮</strong>（turn）删除，一轮 = 一对 user + assistant 消息及其工具调用。不是单个节点逐个删，而是整轮一起删——保证不会出现"user 消息在但 assistant 回复被删"的不一致状态</dd>
-      <dt>删多少</dt>
-      <dd>从最旧的轮开始，逐轮移除，每删一轮重新计算 token 数。直到总 token 数降到 <code>context_window - 13K</code> 以下。不是固定删 N 轮，是按需删到够为止</dd>
-      <dt>删除后的标记</dt>
-      <dd>
-<pre><code>[Note: 5 earlier conversation turns were removed from context to free space. The conversation continues from turn 6.]</code></pre>
-      </dd>
-      <dt>作用对象</dt>
-      <dd>所有类型：<span class="node-chat">🔵 对话节点</span>、已完成的 <span class="node-func">🟢 函数节点</span>、<span class="node-tool">🟡 工具调用节点</span>——一轮内的所有节点一起删</dd>
-      <dt>节点数据</dt>
-      <dd>仍在 DAG 中（不物理删除），只是渲染时跳过（visibility=hidden）</dd>
-      <dt>不够时</dt>
-      <dd><span class="xref">→ §5.3</span></dd>
-      <dt>函数调用特殊设计</dt>
-      <dd>
-        <ul>
-          <li>已完成的 <span class="node-func">🟢 函数节点</span>被当作普通节点，按时间排序参与 Snip</li>
-          <li>正在运行的 <span class="node-func">🟢 函数</span>（<span class="xref">§2.1</span>）不参与 Snip（不能删正在用的）</li>
-        </ul>
-      </dd>
-    </dl>
+2. 级联检查（按 Tier 顺序）：
+   Tier 1: Microcompact 条件满足？→ 清旧工具输出
+   Tier 2: 仍超阈值？→ Snip 删旧轮
+   Tier 3: 仍超阈值？→ Context Collapse 分段摘要
+   Tier 4: 仍超阈值？→ Auto-Compact 全量摘要
 
-    <h3 id="s5-3">5.3 LLM 摘要（= Claude Code 的 Context Collapse / Auto-Compact）</h3>
-    <p>和 Claude Code 一致，Snip 后仍不够时才调 LLM。Claude Code 提供两种互斥方案（由配置决定）：</p>
-    <ul>
-      <li><strong>Context Collapse</strong>：分段摘要，每段独立 LLM 调用，原始消息保留（可回滚）</li>
-      <li><strong>Auto-Compact</strong>：全量摘要，一次 LLM 调用，原始消息替换（不可回滚）</li>
-    </ul>
-    <p>我们同样二选一，默认用 Context Collapse（更精细、可回滚）。</p>
+3. 调 LLM
 
-    <h4>Context Collapse 的具体做法</h4>
-    <dl class="spec">
-      <dt>分段标准</dt>
-      <dd>按轮次分段，每 5-10 轮为一段（根据 token 数动态调整，每段约 10K-20K tokens）</dd>
-      <dt>每段独立调 LLM</dt>
-      <dd>用一个摘要 prompt 让 LLM 总结这段对话的关键信息</dd>
-      <dt>摘要 prompt 示例</dt>
-      <dd>
-<pre><code>Summarize the following conversation segment. Preserve:
-- Key decisions and their reasoning
-- File names that were modified
-- Current task state and next steps
-- Any explicit user instructions or constraints
-
-Conversation segment:
-[turn 6-10 的完整内容]</code></pre>
-      </dd>
-      <dt>摘要后格式</dt>
-      <dd>
-<pre><code>[Conversation summary, turns 6-10]
-Fixed bug in utils.py: read_config() was not handling missing keys.
-Added try/except with default values. Tests updated and passing.
-User asked to keep backward compatibility with old config format.
-Modified files: src/utils.py, tests/test_utils.py</code></pre>
-      </dd>
-      <dt>可回滚</dt>
-      <dd>原始消息保留在 DAG 中（collapse store）</dd>
-    </dl>
-
-    <h4>Auto-Compact 的具体做法</h4>
-    <dl class="spec">
-      <dt>做法</dt>
-      <dd>一次性全量摘要：把整个对话历史（或 Snip 后剩余的历史）发给 LLM</dd>
-      <dt>摘要 prompt 示例</dt>
-      <dd>
-<pre><code>Summarize this conversation concisely. Include:
-1. What the user is working on (project, task)
-2. Key decisions made and why
-3. Current state (what's done, what's next)
-4. Files that were modified
-5. Any important constraints or instructions from the user
-
-If the user provided custom instructions, prioritize preserving those.</code></pre>
-      </dd>
-      <dt>带提示词时</dt>
-      <dd><code>/compact 保留数据库迁移的讨论</code>：用户的提示词追加到 prompt 末尾</dd>
-      <dt>摘要后格式</dt>
-      <dd>
-<pre><code>[Conversation compacted]
-Project: Database migration using Alembic
-Completed: User/Order table migrations with rollback scripts
-Current: Working on Payment table foreign key constraints
-Approach: Batch migration to avoid table locks
-Key constraint: Must maintain backward compatibility
-Modified: migrations/001_user.py, migrations/002_order.py, src/models.py</code></pre>
-      </dd>
-      <dt>不可回滚</dt>
-      <dd>原始消息被替换。system prompt 从 CLAUDE.md 重新加载，不依赖摘要</dd>
-    </dl>
-
-    <h4>通用说明</h4>
-    <dl class="spec">
-      <dt>作用对象</dt>
-      <dd><span class="node-chat">🔵 对话节点</span>和已完成的 <span class="node-func">🟢 函数节点</span></dd>
-      <dt>正在运行的函数</dt>
-      <dd><span class="xref">§2.1</span> 的 <span class="node-func">🟢 函数</span>不摘要（正在用）</dd>
-      <dt>节点关系</dt>
-      <dd>被摘要的节点 visibility 变为 hidden，摘要文本作为新的 compaction 节点插入</dd>
-      <dt>链式压缩</dt>
-      <dd>后续再次触发时，在上一次的摘要基础上继续压缩。信息逐层衰减</dd>
-    </dl>
-
-    <h3 id="s5-4">5.4 /compact 手动命令（= Claude Code 的 /compact）</h3>
-    <dl class="spec">
-      <dt>触发</dt>
-      <dd>用户输入 <code>/compact</code> 或 <code>/compact &lt;提示词&gt;</code></dd>
-      <dt>做什么</dt>
-      <dd>直接跳到 Auto-Compact（不经过 <span class="xref">§5.2</span> Snip），LLM 生成全量摘要</dd>
-      <dt>带提示词</dt>
-      <dd>可以指导保留什么（比如 <code>/compact 保留数据库迁移的讨论</code>），手动质量比自动好</dd>
-      <dt>建议时机</dt>
-      <dd>60% 占用时手动做（同 Claude Code 官方建议）</dd>
-      <dt>函数调用特殊设计</dt>
-      <dd>无。已完成的 <span class="node-func">🟢 函数节点</span>和 <span class="node-chat">🔵 对话节点</span>一起被摘要</dd>
-    </dl>
+4. 如果 API 返回 413：
+   Tier 5: Reactive → 紧急压缩 → 重试
+   → 失败则终止</code></pre>
   </div>
 </details>
 
 <!-- S6 -->
 <details id="s6">
-  <summary>6. 完整流程推演</summary>
+  <summary>6. 完整运行示例</summary>
   <div class="section-body">
-    <p>场景：用户在 200K context 下做编程任务，中间调用了 research_agent 函数。</p>
-
+    <p>场景：200K context，持续工作几小时，中间调用了 research_agent。</p>
     <div class="timeline">
       <div class="tl-item phase1">
         <div class="tl-title">阶段 1（0-30%）：正常对话</div>
-        <p><span class="node-chat">🔵 user</span> → <span class="node-chat">🔵 assistant</span> → <span class="node-chat">🔵 user</span> → <span class="node-chat">🔵 assistant</span></p>
-        <p>没有任何压缩触发。<span class="node-chat">🔵 对话节点</span> visibility=full；如有 <span class="node-func">🟢 函数节点</span> 则 expose=io</p>
-        <div class="tl-ref">无压缩机制触发</div>
+        <p><span class="node-chat">🔵 user</span> → <span class="node-chat">🔵 assistant</span>，Budget Reduction 检查工具输出，没超的跳过。级联都不触发。</p>
       </div>
-
       <div class="tl-item phase2">
-        <div class="tl-title">阶段 2（30-50%）：调用函数</div>
-        <p><span class="node-chat">🔵 user</span>: "帮我调研 LLM reasoning"</p>
-        <p><span class="node-chat">🔵 assistant</span> 调用 <span class="node-func">🟢 research_agent</span>（<span class="xref">§2.1</span> 生效）</p>
-        <p><span class="node-func">🟢 research_agent</span> 运行中：内部 15 轮 <span class="node-tool">🟡 工具调用</span>展开在上下文</p>
-        <div class="tl-ref">§3.1：某个 🟡 search_papers 返回 8000 字符，截断到 4000（MAX_TOOL_RESULT_CHARS）<br>§4.1：空闲时旧的 🟡 search_papers 输出存磁盘</div>
+        <div class="tl-title">阶段 2（30-50%）：Tier 1 Microcompact 开始工作</div>
+        <p>工具调用超过 50 次。Microcompact cache-aware 首次触发，清理旧工具输出，释放约 15K tokens。之后每 25 次再清一轮。Tier 2-5 不触发。</p>
       </div>
-
       <div class="tl-item phase3">
-        <div class="tl-title">阶段 3：函数结束</div>
-        <p><span class="node-func">🟢 research_agent</span> 返回 5 个 idea</p>
-        <p><span class="xref">§2.2</span> 触发：expose=io 隐藏内部 15 轮 <span class="node-tool">🟡 工具子树</span>，<span class="node-func">🟢 函数节点</span>只显示输入+输出</p>
-        <p>上下文释放约 30K tokens</p>
-        <div class="tl-ref">折叠后的 🟢 函数节点和 🔵 对话节点一样参与后续压缩</div>
+        <div class="tl-title">阶段 3：调用 <span class="node-func">🟢 research_agent</span></div>
+        <p>函数运行中：内部 <span class="node-tool">🟡 工具调用</span>展开。Budget Reduction 截断超大输出。函数结束后 expose=io 隐藏内部子树，节点走常规级联。</p>
       </div>
-
       <div class="tl-item phase4">
-        <div class="tl-title">阶段 4（50-80%）：继续对话</div>
-        <p>用户继续讨论、改代码</p>
-        <div class="tl-ref">§4.1：空闲时旧的 read_file 输出存磁盘<br>建议用户在 60% 时手动 /compact</div>
+        <div class="tl-title">阶段 4（超阈值）：Tier 2 Snip 触发</div>
+        <p>Microcompact 做了还是超。Snip 删最旧 5 轮（包括已完成的函数节点），降到阈值以下。Tier 3-5 不触发。</p>
       </div>
-
       <div class="tl-item phase5">
-        <div class="tl-title">阶段 5（~83.5%）：触发自动压缩</div>
-        <p><span class="xref">§5.1</span>：超过 <code>context_window - 13K</code>（约 83.5%）自动触发</p>
-        <p><span class="xref">§5.2</span> Snip：删最旧的 <span class="node-chat">🔵 对话节点</span>（包括那个已折叠的 <span class="node-func">🟢 research_agent</span> 节点）</p>
-        <p>如果还不够 → <span class="xref">§5.3</span>：LLM 摘要更多旧对话</p>
-        <div class="tl-ref">逐级压缩直到能继续调用 LLM</div>
+        <div class="tl-title">阶段 5（极端）：Tier 3/4 触发</div>
+        <p>反复 Snip 后可删的不多了。Context Collapse 分段摘要。还不够则 Auto-Compact 全量摘要。很少发生。</p>
       </div>
-
       <div class="tl-item phase6">
         <div class="tl-title">阶段 6：继续使用</div>
-        <p>压缩后正常对话</p>
-        <p>再次到 ~83.5% 时重复阶段 5（链式压缩）</p>
-        <div class="tl-ref">大模型想回顾 research_agent 的具体过程：通过工具读取 DAG 中的子节点</div>
+        <p>压缩后正常对话。再次超阈值时重复级联。大模型想查旧的函数内部过程，可以通过工具读取 DAG 子节点。</p>
       </div>
     </div>
   </div>
@@ -657,15 +527,18 @@ Modified: migrations/001_user.py, migrations/002_order.py, src/models.py</code><
     <table>
       <thead><tr><th>我们</th><th>Claude Code</th><th>说明</th></tr></thead>
       <tbody>
-        <tr><td>§2 节点生命周期</td><td>无</td><td>我们独有，Claude Code 是线性对话没有 DAG</td></tr>
-        <tr><td>§3.1 截断超大输出</td><td>Budget Reduction</td><td>一致</td></tr>
-        <tr><td>§4.1 旧输出存磁盘</td><td>Microcompact</td><td>一致</td></tr>
-        <tr><td>§5.2 Snip</td><td>Snip</td><td>一致</td></tr>
-        <tr><td>§5.3 LLM 摘要</td><td>Context Collapse / Auto-Compact</td><td>一致（二选一，默认 Context Collapse）</td></tr>
-        <tr><td>§5.4 /compact</td><td>/compact</td><td>一致</td></tr>
+        <tr><td>§2 函数节点生命周期</td><td>无</td><td>我们独有（DAG + expose=io）</td></tr>
+        <tr><td>§3 Budget Reduction</td><td>Budget Reduction</td><td>一致（4000 字符阈值，60/40 截断）</td></tr>
+        <tr><td>Tier 1 Microcompact</td><td>Tier 1 Microcompact</td><td>一致。Anthropic provider 用 cache-aware path</td></tr>
+        <tr><td>Tier 2 Snip</td><td>Tier 2 Snip</td><td>一致（整轮删）</td></tr>
+        <tr><td>Tier 3 Context Collapse</td><td>Tier 3 Context Collapse</td><td>一致（分段摘要，可回滚）</td></tr>
+        <tr><td>Tier 4 Auto-Compact / /compact</td><td>Tier 4 Auto-Compact / /compact</td><td>一致（全量摘要）</td></tr>
+        <tr><td>Tier 5 Reactive</td><td>Tier 5 Reactive</td><td>一致（413 紧急压缩）</td></tr>
       </tbody>
     </table>
-    <p style="margin-top:.5rem;color:var(--gray-600);font-size:.85rem">来源：<a href="https://arxiv.org/html/2604.14228v1" style="color:var(--blue)">Dive into Claude Code</a>（arXiv 2604.14228）</p>
+    <p style="margin-top:.5rem;color:var(--gray-600);font-size:.85rem">
+      来源：<a href="../../reference/claude-code-compaction.md" style="color:var(--blue)">Claude Code 压缩参考</a>（基于逆向分析，非官方文档）
+    </p>
   </div>
 </details>
 
@@ -674,14 +547,17 @@ Modified: migrations/001_user.py, migrations/002_order.py, src/models.py</code><
   <summary>8. 实施计划</summary>
   <div class="section-body">
     <table>
-      <thead><tr><th>步骤</th><th>做什么</th><th>依赖</th></tr></thead>
+      <thead><tr><th>步骤</th><th>做什么</th><th>状态</th><th>代码</th></tr></thead>
       <tbody>
-        <tr><td>1</td><td>✅ 截断超大单个输出 — Budget Reduction（§3.1）<br><code>context/tool_aging/truncate.py</code> + <code>rules/aging.py</code></td><td>无</td></tr>
-        <tr><td>2</td><td>✅ Microcompact 旧工具输出存磁盘（§4.1）<br><code>context/rules/microcompact.py</code></td><td>无</td></tr>
-        <tr><td>3</td><td>Snip 按时间删旧节点（§5.2）</td><td>无</td></tr>
-        <tr><td>4</td><td>Context Collapse / Auto-Compact — LLM 摘要（§5.3）</td><td>无</td></tr>
-        <tr><td>5</td><td>/compact 命令（§5.4）</td><td>步骤 4</td></tr>
-        <tr><td>6</td><td>/context 命令（查看 token 分布，参考 Claude Code）</td><td>无</td></tr>
+        <tr><td>1</td><td>Budget Reduction — 截断超大输出（§3）</td><td><span class="done">✅</span></td><td><code>context/tool_aging/truncate.py</code></td></tr>
+        <tr><td>2</td><td>Tier 1 Microcompact — 旧工具输出清理</td><td><span class="done">✅</span></td><td><code>context/microcompact.py</code></td></tr>
+        <tr><td>3</td><td>Tier 2 Snip — 删最旧几轮</td><td><span class="done">✅</span></td><td><code>context/snip.py</code></td></tr>
+        <tr><td>4</td><td>Tier 3 Context Collapse — 分段 LLM 摘要</td><td><span class="pending">⏳</span></td><td></td></tr>
+        <tr><td>5</td><td>Tier 4 Auto-Compact — 全量 LLM 摘要</td><td><span class="done">✅</span></td><td><code>context/engine.py</code></td></tr>
+        <tr><td>6</td><td>Tier 5 Reactive — 413 紧急压缩</td><td><span class="pending">⏳</span></td><td></td></tr>
+        <tr><td>7</td><td>/compact 命令</td><td><span class="pending">⏳</span></td><td></td></tr>
+        <tr><td>8</td><td>/context 命令（token 分布）</td><td><span class="done">✅</span></td><td><code>_cli_chat/handlers.py</code></td></tr>
+        <tr><td>9</td><td>Anthropic Context Editing API 集成</td><td><span class="pending">⏳</span></td><td></td></tr>
       </tbody>
     </table>
   </div>
