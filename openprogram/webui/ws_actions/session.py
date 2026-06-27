@@ -102,10 +102,13 @@ def _rebuild_runtime_cards(
 
     # Collect each top code node's transitive descendants (via called_by)
     # so they don't render as separate rows — they live in context_tree.
-    # Use called_by (not called_by) because called_by can incorrectly
-    # link ROOT-parented user nodes to a function call node.
+    # Only tool/assistant nodes are internal sub-calls of a function.
+    # User nodes whose called_by points at a tool node are conv
+    # predecessors (next turn after the fn-call), not sub-calls.
     children_of: dict[str, list[str]] = {}
     for m in all_msgs:
+        if m.get("role") == "user":
+            continue
         p = m.get("called_by") or ""
         if p and p != "ROOT":
             children_of.setdefault(p, []).append(m.get("id"))
@@ -420,6 +423,40 @@ async def handle_load_session(ws, cmd: dict):
                     chain = branch_msgs
             except Exception:
                 pass
+        # get_branch may still be incomplete when the conv chain has
+        # gaps (e.g. a manual function call whose code node has no
+        # conv predecessor — chat → fn-call → chat). Fill gaps by
+        # prepending conversation turns (user + assistant reply) that
+        # precede the chain's earliest entry but were missed.
+        if chain:
+            chain_ids = {m.get("id") for m in chain}
+            earliest_ts = min(
+                (m.get("timestamp") or 0) for m in chain
+            )
+            by_id = {m.get("id"): m for m in all_msgs}
+            # Start with ROOT-parented user/assistant messages
+            roots = [
+                m for m in all_msgs
+                if m.get("id") not in chain_ids
+                and (m.get("timestamp") or 0) < earliest_ts
+                and m.get("role") in ("user", "assistant")
+                and (m.get("called_by") or "ROOT") in ("", "ROOT")
+            ]
+            # Include their conv children (e.g. assistant reply to a
+            # user message) so complete turns are prepended.
+            missing_ids = {m.get("id") for m in roots}
+            missing = list(roots)
+            for m in all_msgs:
+                mid = m.get("id")
+                if mid in chain_ids or mid in missing_ids:
+                    continue
+                cb = m.get("called_by") or ""
+                if cb in missing_ids and m.get("role") in ("user", "assistant"):
+                    missing.append(m)
+                    missing_ids.add(mid)
+            if missing:
+                missing.sort(key=lambda m: m.get("timestamp") or 0)
+                chain = missing + chain
         # Splice attach pointer rows (function="attach") into the
         # displayed chain. They hang off a parent message via
         # called_by — not on the conv chain itself — so
