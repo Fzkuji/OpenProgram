@@ -139,9 +139,11 @@ export function updateAgentBadges(): void {
   const as = W._agentSettings;
   if (!as) return;
   try {
+    const chatValid = as.chat?.provider && as.chat?.model;
+    const execValid = as.exec?.provider && as.exec?.model;
     useSessionStore.getState().setAgentSettings({
-      chat: as.chat ? { ...as.chat } : undefined,
-      exec: as.exec ? { ...as.exec } : undefined,
+      chat: chatValid ? { ...as.chat } : undefined,
+      exec: execValid ? { ...as.exec } : undefined,
     });
   } catch {
     /* ignore — store not ready yet */
