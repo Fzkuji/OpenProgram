@@ -16,6 +16,9 @@ import { useState } from "react";
 import { useSessionStore, type ChatToolCall } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 
+// TODO(indent): Leaf rows (no children) waste 16px on a hidden .node-toggle.
+// Fix: put ✓/✗ status icon in the toggle slot instead of a separate column,
+// so leaf rows use the space and parent rows swap icon for ▶/▼ toggle.
 /** Single tree-node row for one tool call. Clicking it opens the
  *  right-rail detail panel (same UX as the execution-tree's
  *  TreeNodeRow) rather than expanding args/result inline. */
