@@ -6,7 +6,7 @@
     "medium": "medium",
     "high": "high",
     "xhigh": "xhigh",
-    "max": "max"
+    "max": "xhigh"
   },
   "default_effort": "xhigh",
   "model_overrides": {
@@ -16,7 +16,7 @@
         "medium": "medium",
         "high": "high",
         "xhigh": "xhigh",
-        "max": "max"
+        "max": "xhigh"
       }
     }
   }
