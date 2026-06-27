@@ -51,7 +51,7 @@ def _seed_source_commit(store) -> ContextCommit:
     commit = ContextCommit(
         id="src_commit_aa",
         session_id="src",
-        called_by=None,
+        commit_parent=None,
         created_at=time.time(),
         head_node_id="src_node_1",
         rules_version=CURRENT_RULES_VERSION,
@@ -250,7 +250,7 @@ def test_two_attaches_to_different_sources_both_expand(store):
     second_src = ContextCommit(
         id="src_commit_bb",
         session_id="src",
-        called_by=None,
+        commit_parent=None,
         created_at=time.time(),
         head_node_id="src_node_2",
         rules_version=CURRENT_RULES_VERSION,
