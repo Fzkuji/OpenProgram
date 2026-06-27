@@ -11,12 +11,16 @@ def called_by_of(by_id: dict[str, dict], m: dict) -> Optional[str]:
     return None
 
 
-def parent_id_of(by_id: dict[str, dict], m: dict) -> Optional[str]:
-    """The parent_id (conversation predecessor), if in-graph."""
-    p = m.get("parent_id")
+def conv_parent_of(by_id: dict[str, dict], m: dict) -> Optional[str]:
+    """The conversation predecessor (via called_by), if in-graph."""
+    p = m.get("called_by")
     if p and p in by_id and p != m.get("id"):
         return p
     return None
+
+
+# backward compat alias — old name used by depth/topology/lane/filter
+parent_id_of = conv_parent_of
 
 
 def is_root(m: dict) -> bool:

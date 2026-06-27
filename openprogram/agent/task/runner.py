@@ -499,16 +499,16 @@ class TaskRunner:
                 )
                 # Resolve parent for inherit-mode: walk through to the
                 # parent_msg_id supplied at spawn time.
-                parent_id: Optional[str]
+                branch_from: Optional[str]
                 if (task.context_mode or "inherit") == "clean":
-                    parent_id = None
+                    branch_from = None
                 else:
-                    parent_id = task.parent_msg_id
+                    branch_from = task.parent_msg_id
                 result = run_agent_turn(
                     session_id=session_id,
                     prompt=task.prompt,
                     agent_id=task.agent_id,
-                    parent_id=parent_id,
+                    branch_from=branch_from,
                     label=task.label,
                 )
             except Exception as exc:  # noqa: BLE001

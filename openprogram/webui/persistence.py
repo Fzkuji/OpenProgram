@@ -137,10 +137,8 @@ def aggregate_tool_messages(messages: list[dict]) -> list[dict]:
     out: list[dict] = []
     for m in messages:
         if m.get("role") == "tool":
-            parent_id = m.get("called_by") or m.get("parent_id")
-            # Older nodes wrote the parent under extra.tool_use.called_by
-            # instead of the top-level fields; honour that too.
-            if not parent_id:
+            caller_id = m.get("called_by") or m.get("parent_id")
+            if not caller_id:
                 extra = m.get("extra")
                 if isinstance(extra, str):
                     try:
@@ -149,8 +147,8 @@ def aggregate_tool_messages(messages: list[dict]) -> list[dict]:
                     except Exception:  # noqa: BLE001
                         extra = None
                 if isinstance(extra, dict):
-                    parent_id = (extra.get("tool_use") or {}).get("called_by")
-            parent = parents.get(parent_id) if parent_id else None
+                    caller_id = (extra.get("tool_use") or {}).get("called_by")
+            parent = parents.get(caller_id) if caller_id else None
             if parent is not None:
                 tool_call = {
                     "tool_call_id": m.get("id", ""),

@@ -206,7 +206,7 @@ def test_runner_spawn_completes(store_fixture, fake_worker, monkeypatch):
     runner = get_runner()
     tid = runner.spawn_task(
         session_id="p1", prompt="do thing", agent_id="main",
-        branch_from_id="a1", label="alpha",
+        parent_msg_id="a1", label="alpha",
     )
     barrier.set()
     final = runner.await_task(tid, timeout=5.0)
@@ -249,11 +249,11 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     runner = get_runner()
     tid1 = runner.spawn_task(
         session_id="p1", prompt="block", agent_id="main",
-        branch_from_id="a1",
+        parent_msg_id="a1",
     )
     tid2 = runner.spawn_task(
         session_id="p2", prompt="cancel me", agent_id="main",
-        branch_from_id="a2",
+        parent_msg_id="a2",
     )
     # tid1 occupies the worker (waiting on barrier). tid2 sits in
     # queued. Cancel tid2 before it gets picked up.
@@ -275,7 +275,7 @@ def test_runner_cancel_during_run(store_fixture, fake_worker, monkeypatch):
     runner = get_runner()
     tid = runner.spawn_task(
         session_id="p1", prompt="will be cancelled", agent_id="main",
-        branch_from_id="a1",
+        parent_msg_id="a1",
     )
     # Wait until the worker is actually executing fake_run before
     # cancelling — otherwise cancel_task can flip the task to
@@ -306,7 +306,7 @@ def test_runner_pool_backpressure(store_fixture, fake_worker, monkeypatch):
     ids = [
         runner.spawn_task(
             session_id="p1", prompt=f"n{i}", agent_id="main",
-            branch_from_id="a1",
+            parent_msg_id="a1",
         )
         for i in range(3)
     ]
