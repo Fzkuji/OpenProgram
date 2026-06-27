@@ -756,7 +756,6 @@ def _is_run_active(session_id: str) -> bool:
 from openprogram.contextgit import (  # noqa: E402
     advance_head as _raw_advance_head,
     head_or_tip as _head_or_tip,
-    linear_history as _linear_history,
 )
 
 

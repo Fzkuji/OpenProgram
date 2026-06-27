@@ -59,11 +59,14 @@ def run_query(
     # is a flat DAG store containing every sibling branch; if we
     # iterate it raw after a retry/edit, the model sees content
     # from the branch we forked away from, which both pollutes
-    # the prompt and inflates token counts. linear_history walks
-    # the parent chain from HEAD, so retries are isolated.
-    _all_msgs = conv.get("messages", [])
-    _head = _s._head_or_tip(conv, _all_msgs)
-    messages = _s._linear_history(_all_msgs, _head) if _head else _all_msgs
+    # the prompt and inflates token counts. get_branch walks
+    # called_by edges and handles DAG-store sessions correctly.
+    from openprogram.agent.session_db import default_db as _db_chat
+    try:
+        messages = _db_chat().get_branch(session_id)
+    except Exception:
+        _all_msgs = conv.get("messages", [])
+        messages = _all_msgs
     # Drop the in-flight placeholder so the query isn't duplicated
     # (assistant placeholder has empty content; retry of a user
     # turn has msg_id == HEAD with content == query).
