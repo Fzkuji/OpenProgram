@@ -6,7 +6,7 @@ and their subtrees grow downward independently.
 """
 from __future__ import annotations
 
-from ._common import ts, parent_id_of, is_root
+from ._common import ts, called_by_of, is_root
 
 
 def compute_depth(
@@ -62,14 +62,14 @@ def compute_depth(
         if nid in depth:
             continue
         m = by_id[nid]
-        pid = parent_id_of(by_id, m)
+        pid = called_by_of(by_id, m)
         start = 0
         if pid and pid in depth:
             # Find the first sibling's depth
             for other_nid, other_m in by_id.items():
                 if other_nid == nid:
                     continue
-                if parent_id_of(by_id, other_m) == pid and other_nid in depth:
+                if called_by_of(by_id, other_m) == pid and other_nid in depth:
                     start = depth[other_nid]
                     break
             else:

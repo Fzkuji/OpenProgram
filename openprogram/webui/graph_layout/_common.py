@@ -20,7 +20,7 @@ def conv_parent_of(by_id: dict[str, dict], m: dict) -> Optional[str]:
 
 
 # backward compat alias — old name used by depth/topology/lane/filter
-parent_id_of = conv_parent_of
+called_by_of = conv_parent_of
 
 
 def is_root(m: dict) -> bool:

@@ -2,13 +2,13 @@
 (new root) — both inside the same session.
 
 All agents are peers. There is no "sub-agent type". A turn is just
-``(parent_id, prompt, agent_id)``:
+``(called_by, prompt, agent_id)``:
 
-  * ``parent_id = <existing_node_id>`` — the new turn forks off that
+  * ``called_by = <existing_node_id>`` — the new turn forks off that
     node. The agent inherits the conversation chain that leads to
-    ``parent_id`` as context. This is the normal "fork from here" /
+    ``called_by`` as context. This is the normal "fork from here" /
     Claude-Code Task feel.
-  * ``parent_id = None`` — the new turn starts a fresh root. The
+  * ``called_by = None`` — the new turn starts a fresh root. The
     agent sees only the prompt; its turn series becomes an
     independent DAG tree inside the same session repo.
 
@@ -43,12 +43,12 @@ def run_agent_turn(
     prompt: str,
     agent_id: str,
     *,
-    parent_id: Optional[str] = None,
+    branch_from: Optional[str] = None,
     label: Optional[str] = None,
 ) -> AgentTurnResult:
     """Run one agent turn inside ``session_id``.
 
-    ``parent_id`` controls the context:
+    ``called_by`` controls the context:
       * ``None`` → new root (clean start, agent sees only ``prompt``).
       * ``<node_id>`` → fork off that node (agent inherits the chain
         ending at ``node_id`` as context).
@@ -69,8 +69,8 @@ def run_agent_turn(
 
     # Clean start: pass ``history_override=[]`` so the dispatcher's
     # context assembly doesn't pull in any conversation history.
-    # Inherit: history is whatever leads to ``parent_id``, which the
-    # dispatcher already resolves from ``parent_id``.
+    # Inherit: history is whatever leads to ``called_by``, which the
+    # dispatcher already resolves from ``called_by``.
     # Spawned sub-agents run with ``permission_mode="bypass"``: there's
     # no UI subscribed to approval_request events on the spawned lane
     # (the chat view only listens to its own turn), so the default
@@ -83,8 +83,8 @@ def run_agent_turn(
         user_text=prompt,
         agent_id=agent_id,
         source="agent_spawn",
-        parent_id=parent_id,
-        history_override=[] if parent_id is None else None,
+        branch_from=branch_from,
+        history_override=[] if branch_from is None else None,
         permission_mode="bypass",
     )
     try:
@@ -161,7 +161,7 @@ def write_attach_pointer_for_spawn(
         attach_node_id = _uuid.uuid4().hex[:12]
         # Attach is a branch-referencing function_call that lives ON
         # the main sequence (per docs/design/runtime/dag-node-model.md), so it
-        # must hang off the caller via ``parent_id`` (sequence edge),
+        # must hang off the caller via ``called_by`` (sequence edge),
         # not ``called_by`` (which would put it on a side branch and
         # leave the caller's reply orphaned as its own tip).
         attach_msg = {
@@ -170,7 +170,7 @@ def write_attach_pointer_for_spawn(
             "display": "runtime",
             "function": "attach",
             "content": (result.final_text or result.error or "(no output)").strip(),
-            "parent_id": fork_anchor,
+            "called_by": fork_anchor,
             "timestamp": _time.time(),
             "is_error": bool(result.failed or result.error),
             "agent_id": chosen_agent,
@@ -218,7 +218,7 @@ def run_agent_turn_async(
     prompt: str,
     agent_id: str,
     *,
-    parent_id: Optional[str] = None,
+    branch_from: Optional[str] = None,
     label: Optional[str] = None,
     subject: str = "",
     description: str = "",
@@ -245,8 +245,8 @@ def run_agent_turn_async(
         agent_id=agent_id,
         subject=subject or (description or prompt[:60]),
         description=description or prompt,
-        context_mode=context_mode if parent_id is not None or context_mode == "clean" else context_mode,
-        parent_msg_id=parent_id,
+        context_mode=context_mode if branch_from is not None or context_mode == "clean" else context_mode,
+        parent_msg_id=branch_from,
         parent_task_id=parent_task_id,
         label=label,
         attach_pointer_id=attach_pointer_id,

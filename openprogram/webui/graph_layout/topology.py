@@ -2,12 +2,12 @@
 
 Two maps:
   * ``call_children[caller_id]`` — nodes whose called_by points here
-  * ``fork_siblings[parent_id]`` — nodes sharing the same parent_id
+  * ``fork_siblings[called_by]`` — nodes sharing the same called_by
     (for branch/fork detection)
 """
 from __future__ import annotations
 
-from ._common import called_by_of, parent_id_of, ts
+from ._common import called_by_of, called_by_of, ts
 
 
 def build_children(
@@ -19,7 +19,7 @@ def build_children(
         ca = called_by_of(by_id, m)
         if ca:
             call_children.setdefault(ca, []).append(nid)
-        pid = parent_id_of(by_id, m)
+        pid = called_by_of(by_id, m)
         if pid:
             fork_siblings.setdefault(pid, []).append(nid)
     for kids in call_children.values():

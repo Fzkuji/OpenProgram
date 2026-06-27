@@ -43,11 +43,11 @@ def store_fixture(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "hi",
-        "timestamp": 0, "parent_id": None,
+        "timestamp": 0, "called_by": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "parent_id": "u1",
+        "timestamp": 0, "called_by": "u1",
     })
     s.commit_turn("p1", "init")
     return s
@@ -92,7 +92,7 @@ def test_task_binds_worktree_in_worker(
 
     seen: dict = {}
 
-    def fake_run(*, session_id, prompt, agent_id, parent_id, label=None):
+    def fake_run(*, session_id, prompt, agent_id, called_by, label=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         from openprogram.worktree.context import current_worktree_path
         seen["worktree_path"] = current_worktree_path()
@@ -137,7 +137,7 @@ def test_task_cancel_discards_worktree(
     started = threading.Event()
     can_release = threading.Event()
 
-    def fake_run(*, session_id, prompt, agent_id, parent_id, label=None):
+    def fake_run(*, session_id, prompt, agent_id, called_by, label=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         from openprogram.webui._pause_stop import is_cancelled
         started.set()
@@ -197,7 +197,7 @@ def test_task_complete_leaves_worktree_alone(
     mgr = get_wt_mgr()
     wt = mgr.create_worktree(str(repo), label="completewt")
 
-    def fake_run(*, session_id, prompt, agent_id, parent_id, label=None):
+    def fake_run(*, session_id, prompt, agent_id, called_by, label=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         return AgentTurnResult(head_id="head_ok", final_text="ok",
                                failed=False, error=None)

@@ -197,7 +197,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                 full_msgs = []
             # Build a called_by lookup from the underlying Call nodes
             # so graph entries carry the invocation edge (session DAG)
-            # alongside the conversation predecessor (parent_id).
+            # alongside the conversation predecessor (called_by).
             _called_by_map: dict[str, str] = {}
             try:
                 _nodes = db.get_nodes(session_id) or []
@@ -214,7 +214,7 @@ def build_branches_payload(session_id: str | None) -> dict:
             if _root_node:
                 graph.append({
                     "id": _root_node.id,
-                    "parent_id": "",
+                    "called_by": "",
                     "called_by": "",
                     "caller": "",
                     "role": "user",
@@ -233,7 +233,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                 _mid = m.get("id") or ""
                 graph.append({
                     "id": _mid,
-                    "parent_id": m.get("parent_id"),
+                    "called_by": m.get("called_by"),
                     "called_by": _called_by_map.get(_mid, ""),
                     "caller": m.get("caller") or "",
                     "role": m.get("role"),
@@ -645,7 +645,7 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
             "content": (target_preview or "(no preview)").strip(),
             # Same convention as the /task-produced attach pointer:
             # called_by anchors to the conv turn this attach hangs off.
-            # No parent_id, so linear_history skips it and the splicer
+            # No called_by, so linear_history skips it and the splicer
             # grafts it back in.
             "called_by": anchor,
             "timestamp": time.time(),

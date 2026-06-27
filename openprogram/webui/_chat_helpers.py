@@ -52,7 +52,7 @@ def parse_chat_input(text: str) -> dict:
       /merge <sid_a> <sid_b> [...]: <message>
           Consolidate N peer sub-sessions into a single reply on this
           (target) session. Writes a multi-parent ContextCommit whose
-          parent_ids cover the target's prior commit + each peer's
+          commit_parents cover the target's prior commit + each peer's
           latest commit id. ``message`` is the merge instruction the
           merge agent receives alongside each peer's final text.
     """

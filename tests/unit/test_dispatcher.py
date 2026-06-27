@@ -5,7 +5,7 @@ auth) — too heavy for unit tests. We patch ``_run_loop_blocking`` at
 the seam so we can assert:
 
   * SessionDB receives both user + assistant messages with proper
-    parent_id / timestamp / source linkage
+    called_by / timestamp / source linkage
   * `chat_response` envelopes hit ``on_event`` in the right order
   * Errors get surfaced as a ``system`` message + ``error`` envelope,
     not a raw exception
@@ -99,7 +99,7 @@ def test_persists_user_and_assistant(tmp_db: SessionDB, collector) -> None:
     assert msgs[0]["source"] == "tui"
     assert msgs[1]["content"] == "hello world"
     # Assistant message should chain to the user message
-    assert msgs[1]["parent_id"] == msgs[0]["id"]
+    assert msgs[1]["called_by"] == msgs[0]["id"]
 
 
 def test_creates_session_if_missing(tmp_db: SessionDB) -> None:

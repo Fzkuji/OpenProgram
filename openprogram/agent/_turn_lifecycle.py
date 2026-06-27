@@ -76,7 +76,7 @@ def insert_placeholder(
             output="",
             called_by=user_msg_id,
             metadata={
-                "parent_id": user_msg_id,
+                "called_by": user_msg_id,
                 "source": source,
                 "status": "running",
                 "worker_id": current_worker_id(),
@@ -153,7 +153,7 @@ def write_standalone_error_node(
         "role": "system",
         "content": err_text,
         "timestamp": time.time(),
-        "parent_id": user_msg_id,
+        "called_by": user_msg_id,
         "source": source,
         "extra": json.dumps({"trace": trace}),
     })

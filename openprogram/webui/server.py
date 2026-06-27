@@ -86,7 +86,7 @@ _sessions_lock = threading.Lock()
 #
 # Why a cache: WS bootstrap + every chat-history broadcast reads the
 # branch list multiple times. With a thousand-message session,
-# walking the parent_id CTE every time costs ~5ms; cached it's free.
+# walking the called_by CTE every time costs ~5ms; cached it's free.
 # Why bounded LRU: webui keeps tens to hundreds of conversations
 # warm; a single un-bounded dict would creep into RAM. 64 sessions
 # × ~1MB serialized chat = ~64MB — comfortable on any modern host.
@@ -424,7 +424,7 @@ def _restore_sessions():
                 except Exception:
                     runtime = None
 
-            # ContextGit migration: backfill parent_id on legacy
+            # ContextGit migration: backfill called_by on legacy
             # messages and pick a head_id. Old conversations become a
             # straight linear chain (see docs/design/context/context.md).
             from openprogram.contextgit import (

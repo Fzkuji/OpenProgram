@@ -2,8 +2,8 @@
 
 Strategy:
   * ROOT and its first child chain get lane 0 (the trunk).
-  * Fork detection via parent_id: when multiple nodes share the same
-    parent_id, the first (by created_at) keeps the parent's lane,
+  * Fork detection via called_by: when multiple nodes share the same
+    called_by, the first (by created_at) keeps the parent's lane,
     the rest each get a fresh lane.
   * All called_by descendants of a node inherit its lane.
 """
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ._common import called_by_of, parent_id_of, is_root, ts
+from ._common import called_by_of, called_by_of, is_root, ts
 
 
 class LaneAllocator:
@@ -38,7 +38,7 @@ def compute_lane(
     alloc = LaneAllocator()
 
     # Which nodes are the "first" sibling at each fork point.
-    # First = earliest by created_at among nodes sharing the same parent_id.
+    # First = earliest by created_at among nodes sharing the same called_by.
     first_at_fork: set[str] = set()
     for pid, kids in fork_siblings.items():
         if kids:

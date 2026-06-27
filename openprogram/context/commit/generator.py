@@ -43,7 +43,7 @@ def generate_commit(
     """生成新 context commit 并持久化, 返回它.
 
     new_nodes 是这一轮真正新加进 DAG 的节点 (legacy msg dict 格式: 含
-    id/role/content/parent_id/caller/extra/...). 旧 items 从 parent
+    id/role/content/called_by/caller/extra/...). 旧 items 从 parent
     context commit 直接复制, 不需要从 DAG 重读。
     """
     from .store import save_commit
@@ -93,7 +93,7 @@ def generate_commit(
     commit = ContextCommit(
         id=commit_id,
         session_id=session_id,
-        parent_id=parent_commit.id if parent_commit else None,
+        commit_parent=parent_commit.id if parent_commit else None,
         created_at=time.time(),
         head_node_id=head_node_id,
         rules_version=CURRENT_RULES_VERSION,

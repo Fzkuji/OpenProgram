@@ -11,7 +11,7 @@ Wire format::
           "agent_id": "main"}
     out: {"type": "merge_branches_result",
           "data": {"session_id", "target_assistant_id", "commit_id",
-                   "parent_ids", "final_text", "failed", "error"?}}
+                   "commit_parents", "final_text", "failed", "error"?}}
 
 A "branch" is the abstraction: a ``(session_id, head_id)`` pair.
 Same-session merges pass two peers with the same ``session_id`` and
@@ -47,7 +47,7 @@ def _run(
     return {
         "target_assistant_id": out.target_assistant_id,
         "commit_id": out.commit_id,
-        "parent_ids": list(out.parent_ids),
+        "commit_parents": list(out.commit_parents),
         "final_text": out.final_text,
         "failed": out.failed,
         "error": out.error,
@@ -113,7 +113,7 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
             "session_id": target_session_id,
             "target_assistant_id": None,
             "commit_id": None,
-            "parent_ids": [],
+            "commit_parents": [],
             "final_text": "",
             "failed": True,
             "error": "session_id and at least one peer required",

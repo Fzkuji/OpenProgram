@@ -97,7 +97,7 @@ def persist_assistant_message(
         "role": "assistant",
         "content": final_text,
         "timestamp": time.time(),
-        "parent_id": user_msg_id,
+        "called_by": user_msg_id,
         "source": req.source,
         "model": model_id,
         "provider": provider_id,

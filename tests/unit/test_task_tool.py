@@ -18,11 +18,11 @@ def store(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "hi",
-        "timestamp": 0, "parent_id": None,
+        "timestamp": 0, "called_by": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "parent_id": "u1",
+        "timestamp": 0, "called_by": "u1",
     })
     s.commit_turn("p1", "init")
     return s
@@ -48,7 +48,7 @@ def fake_dispatcher(monkeypatch):
     def fake_run(req, *, on_event=None, cancel_event=None):
         captured["prompt"] = req.user_text
         captured["agent_id"] = req.agent_id
-        captured["parent_id"] = req.parent_id
+        captured["called_by"] = req.branch_from
         captured["history_override"] = req.history_override
         from openprogram.agent.session_db import default_db
         s = default_db()
@@ -56,12 +56,12 @@ def fake_dispatcher(monkeypatch):
         a_id = "a_" + str(len(captured))
         s.append_message(req.session_id, {
             "id": u_id, "role": "user", "content": req.user_text,
-            "timestamp": 0, "parent_id": req.parent_id,
+            "timestamp": 0, "called_by": req.branch_from,
             "agent_id": req.agent_id,
         })
         s.append_message(req.session_id, {
             "id": a_id, "role": "assistant", "content": "(spawned reply)",
-            "timestamp": 0, "parent_id": u_id,
+            "timestamp": 0, "called_by": u_id,
             "agent_id": req.agent_id,
         })
         return _R("(spawned reply)")
@@ -105,15 +105,15 @@ def test_task_inherit_default(store, fake_dispatcher):
     assert "(spawned reply)" in out
     assert "[spawned agent branch=p1:" in out
     assert fake_dispatcher["prompt"] == "find the answer"
-    # inherit → parent_id pinned to the caller turn.
-    assert fake_dispatcher["parent_id"] == "a1"
+    # inherit → called_by pinned to the caller turn.
+    assert fake_dispatcher["called_by"] == "a1"
     # inherit → history_override left at default (None) so dispatcher
     # walks the conv chain ending at a1.
     assert fake_dispatcher["history_override"] is None
 
 
 def test_task_clean_mode_starts_new_root(store, fake_dispatcher):
-    """context=clean: new root (parent_id=None) in the same session.
+    """context=clean: new root (called_by=None) in the same session.
     Result string still carries branch=<sid>:<head_id> — same session."""
     out = _call_task(
         prompt="find the answer", description="finder", context="clean",
@@ -121,7 +121,7 @@ def test_task_clean_mode_starts_new_root(store, fake_dispatcher):
     )
     assert "(spawned reply)" in out
     assert "[spawned agent branch=p1:" in out
-    assert fake_dispatcher["parent_id"] is None
+    assert fake_dispatcher["called_by"] is None
     assert fake_dispatcher["history_override"] == []   # empty start
 
 

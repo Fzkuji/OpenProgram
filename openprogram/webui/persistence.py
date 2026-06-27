@@ -115,7 +115,7 @@ def aggregate_tool_messages(messages: list[dict]) -> list[dict]:
     """Fold ``role="tool"`` rows into their parent assistant message.
 
     The SessionDB stores each tool call as a standalone ``role="tool"``
-    row whose ``called_by`` (preferred) or ``parent_id`` points at
+    row whose ``called_by`` (preferred) or ``called_by`` points at
     the assistant message that issued the call. The chat UI wants
     assistant messages to carry their tool calls inline so refresh
     sees the same shape as the live WS stream.
@@ -137,7 +137,7 @@ def aggregate_tool_messages(messages: list[dict]) -> list[dict]:
     out: list[dict] = []
     for m in messages:
         if m.get("role") == "tool":
-            caller_id = m.get("called_by") or m.get("parent_id")
+            caller_id = m.get("called_by")
             if not caller_id:
                 extra = m.get("extra")
                 if isinstance(extra, str):

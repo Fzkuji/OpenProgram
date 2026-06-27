@@ -72,12 +72,12 @@ def test_model_call_factory_returns_call():
 
 def test_function_call_factory_returns_call():
     n = FunctionCall(function_name="search", arguments={"q": "x"},
-                     result={"hits": 3}, called_by="parent_id")
+                     result={"hits": 3}, called_by="called_by")
     assert n.is_code()
     assert n.name == "search" and n.function_name == "search"
     assert n.arguments == {"q": "x"}
     assert n.result == {"hits": 3}
-    assert n.called_by == "parent_id"
+    assert n.called_by == "called_by"
 
 
 # Graph: append + seq

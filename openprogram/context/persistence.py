@@ -68,7 +68,7 @@ class Persister:
             "id": summary_id,
             "role": "system",
             "content": f"[Previous conversation summary]\n{summary_text}",
-            "parent_id": None,
+            "called_by": None,
             "timestamp": summary_ts,
             "type": "compactionSummary",
             "source": "compaction",
@@ -81,14 +81,14 @@ class Persister:
             return None
 
         # Re-parent the kept tail: each kept message gets a new id and
-        # parent_id pointing back through the new chain. Original
+        # called_by pointing back through the new chain. Original
         # rows stay in the DB but become a sibling branch.
         prev = summary_id
         for original in history[cut_idx:]:
             new_id = "k_" + uuid.uuid4().hex[:10]
             row = dict(original)
             row["id"] = new_id
-            row["parent_id"] = prev
+            row["called_by"] = prev
             # If a message has an attachment manifest in ``extra``,
             # keep it — but blow away any aging metadata so future
             # ager passes treat the re-parented copy as fresh.

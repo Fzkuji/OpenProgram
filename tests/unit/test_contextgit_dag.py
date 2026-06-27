@@ -19,7 +19,7 @@ from openprogram.contextgit import (
 
 
 def _msg(id_: str, parent: str | None, *, ts: int = 0) -> dict:
-    return {"id": id_, "parent_id": parent, "created_at": ts}
+    return {"id": id_, "called_by": parent, "created_at": ts}
 
 
 # ---- siblings / sibling_index -------------------------------------------
@@ -62,7 +62,7 @@ def test_sibling_index_unknown_message():
 
 
 def test_root_messages_are_all_siblings():
-    # Messages with parent_id = None share the "root" bucket.
+    # Messages with called_by = None share the "root" bucket.
     msgs = [_msg("u1", None, ts=1), _msg("u2", None, ts=2)]
     assert [s["id"] for s in siblings(msgs, "u1")] == ["u1", "u2"]
 
@@ -114,7 +114,7 @@ def test_linear_history_unknown_head_is_empty():
 
 def test_linear_history_survives_cycles():
     # Malformed data: u1 → u2 → u1. Should terminate, not loop.
-    msgs = [{"id": "u1", "parent_id": "u2"}, {"id": "u2", "parent_id": "u1"}]
+    msgs = [{"id": "u1", "called_by": "u2"}, {"id": "u2", "called_by": "u1"}]
     hist = linear_history(msgs, "u1")
     # We don't guarantee the exact chain for malformed input, just
     # that it terminates. Length is bounded by node count.
@@ -147,18 +147,18 @@ def test_is_ancestor_self_true():
 # ---- normalize_parent_pointers ------------------------------------------
 
 def test_normalize_fills_in_missing_parent():
-    # Legacy messages: no parent_id.
+    # Legacy messages: no called_by.
     msgs = [{"id": "u1"}, {"id": "a1"}, {"id": "u2"}]
     normalize_parent_pointers(msgs)
-    assert msgs[0]["parent_id"] is None
-    assert msgs[1]["parent_id"] == "u1"
-    assert msgs[2]["parent_id"] == "a1"
+    assert msgs[0]["called_by"] is None
+    assert msgs[1]["called_by"] == "u1"
+    assert msgs[2]["called_by"] == "a1"
 
 
 def test_normalize_is_idempotent():
     msgs = [
-        {"id": "u1", "parent_id": None},
-        {"id": "a1", "parent_id": "u1"},
+        {"id": "u1", "called_by": None},
+        {"id": "a1", "called_by": "u1"},
     ]
     before = [dict(m) for m in msgs]
     normalize_parent_pointers(msgs)
@@ -169,12 +169,12 @@ def test_normalize_preserves_explicit_retry_links():
     # Simulated partial migration: a1 and a1_new share parent "u1".
     # normalize shouldn't overwrite them with the prev-in-list chain.
     msgs = [
-        {"id": "u1", "parent_id": None},
-        {"id": "a1", "parent_id": "u1"},
-        {"id": "a1_new", "parent_id": "u1"},
+        {"id": "u1", "called_by": None},
+        {"id": "a1", "called_by": "u1"},
+        {"id": "a1_new", "called_by": "u1"},
     ]
     normalize_parent_pointers(msgs)
-    assert msgs[2]["parent_id"] == "u1"  # NOT a1
+    assert msgs[2]["called_by"] == "u1"  # NOT a1
 
 
 # ---- head_or_tip --------------------------------------------------------
@@ -199,20 +199,20 @@ def test_head_or_tip_empty_conv_returns_none():
 def test_advance_head_missing_parent_inherits_head():
     conv = {"head_id": "u1", "messages": [_msg("u1", None)]}
     advance_head(conv, {"id": "a1", "role": "assistant"})
-    assert conv["messages"][-1]["parent_id"] == "u1"
+    assert conv["messages"][-1]["called_by"] == "u1"
     assert conv["head_id"] == "a1"
 
 
 def test_advance_head_explicit_none_is_preserved():
-    # Regression: retry of a root user message forks at parent_id=None.
+    # Regression: retry of a root user message forks at called_by=None.
     # advance_head must NOT rewrite that to the current HEAD — doing so
     # collapses the fork into a linear append and breaks the DAG.
     conv = {"head_id": "a1", "messages": [
         _msg("u1", None),
         _msg("a1", "u1"),
     ]}
-    advance_head(conv, {"id": "u2", "role": "user", "parent_id": None})
-    assert conv["messages"][-1]["parent_id"] is None
+    advance_head(conv, {"id": "u2", "role": "user", "called_by": None})
+    assert conv["messages"][-1]["called_by"] is None
     assert conv["head_id"] == "u2"
     # u1 and u2 are now siblings at the root.
     assert [s["id"] for s in siblings(conv["messages"], "u2")] == ["u1", "u2"]
@@ -222,8 +222,8 @@ def test_advance_head_explicit_parent_is_preserved():
     conv = {"head_id": "a2", "messages": [
         _msg("u1", None), _msg("a1", "u1"), _msg("a2", "u1"),
     ]}
-    advance_head(conv, {"id": "u2", "role": "user", "parent_id": "u1"})
-    assert conv["messages"][-1]["parent_id"] == "u1"
+    advance_head(conv, {"id": "u2", "role": "user", "called_by": "u1"})
+    assert conv["messages"][-1]["called_by"] == "u1"
 
 
 # ---- deepest_leaf -------------------------------------------------------
@@ -252,7 +252,7 @@ def test_deepest_leaf_picks_latest_when_multiple_children():
 
 
 def test_deepest_leaf_handles_cycles():
-    msgs = [{"id": "a", "parent_id": "b"}, {"id": "b", "parent_id": "a"}]
+    msgs = [{"id": "a", "called_by": "b"}, {"id": "b", "called_by": "a"}]
     # Malformed — function must terminate rather than loop.
     leaf = deepest_leaf(msgs, "a")
     assert leaf in {"a", "b"}

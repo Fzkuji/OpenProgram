@@ -49,7 +49,7 @@ class GraphStoreShim:
         if node.id in idx.nodes_by_id:
             return
         meta = node.metadata or {}
-        predecessor = meta.get("parent_id") or ""
+        predecessor = meta.get("called_by") or ""
         caller = node.called_by or meta.get("caller") or ""
         seq = idx.append(node, predecessor=predecessor, caller=caller)
         git.write_history(seq, node.role, node.id, node.to_dict())

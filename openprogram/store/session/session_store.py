@@ -87,7 +87,7 @@ def _projects_default_id_safe() -> str:
 # Edge resolvers
 # A node's two edges live in different fields depending on what it is:
 #   * tool / sub-call rows  ─ Call.called_by  (the assistant that ran them)
-#   * conversation rows     ─ metadata.parent_id  (the legacy chat-tree edge)
+#   * conversation rows     ─ metadata.called_by  (the legacy chat-tree edge)
 # Keep these as standalone functions so the index doesn't know about
 # message-dict field layout.
 
@@ -95,9 +95,9 @@ def _projects_default_id_safe() -> str:
 def _node_conv_predecessor(payload_or_call) -> Optional[str]:
     """Return the conv-chain parent of a node (or None)."""
     if isinstance(payload_or_call, Call):
-        return (payload_or_call.metadata or {}).get("parent_id") or None
+        return (payload_or_call.metadata or {}).get("called_by") or None
     meta = (payload_or_call.get("metadata") or {})
-    return meta.get("parent_id") or None
+    return meta.get("called_by") or None
 
 
 def _node_caller(payload_or_call) -> Optional[str]:
@@ -898,7 +898,7 @@ class SessionStore:
                 list_commits, load_commit,
             )
             for _c in list_commits(self, session_id, limit=50) or []:
-                pids = list(_c.parent_ids or [])
+                pids = list(_c.commit_parents or [])
                 if len(pids) > 1:
                     for _pid in pids[1:]:
                         try:
@@ -1253,7 +1253,7 @@ class SessionStore:
         if pair is None:
             return None
         _git, idx = pair
-        # Old semantics: longest message-tree chain via metadata.parent_id.
+        # Old semantics: longest message-tree chain via metadata.called_by.
         children = idx.children_by_predecessor
         roots = [msg_id] if msg_id else [
             n.id for n in idx.all_nodes()

@@ -27,11 +27,11 @@ def store(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "kick off",
-        "timestamp": 0, "parent_id": None,
+        "timestamp": 0, "called_by": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "parent_id": "u1",
+        "timestamp": 0, "called_by": "u1",
     })
     s.commit_turn("p1", "parent init")
 
@@ -43,11 +43,11 @@ def store(tmp_path, monkeypatch):
         s.create_session(sid, "main", title=label, label=label)
         s.append_message(sid, {
             "id": f"u_{sid}", "role": "user", "content": "go",
-            "timestamp": 0, "parent_id": None,
+            "timestamp": 0, "called_by": None,
         })
         s.append_message(sid, {
             "id": f"a_{sid}", "role": "assistant", "content": reply,
-            "timestamp": time.time(), "parent_id": f"u_{sid}",
+            "timestamp": time.time(), "called_by": f"u_{sid}",
         })
         s.commit_turn(sid, f"{label} turn")
     return s
@@ -84,7 +84,7 @@ def fake_dispatcher(monkeypatch):
         ]
         default_db().append_message(req.session_id, {
             "id": "merge_a", "role": "assistant",
-            "content": "(merged)", "parent_id": "a1",
+            "content": "(merged)", "called_by": "a1",
             "timestamp": time.time(),
         })
         return _R("(merged)")
@@ -135,12 +135,12 @@ def test_merges_two_peer_sessions(store, fake_dispatcher):
     assert "a_peer_a" in referenced_heads
     assert "a_peer_b" in referenced_heads
 
-    # ContextCommit is written with parent_ids covering each peer's
+    # ContextCommit is written with commit_parents covering each peer's
     # latest commit id (plus any prior target commit).
     from openprogram.context.commit.store import load_commit
     commit = load_commit(store, out.commit_id, session_id="p1")
     assert commit is not None
-    assert commit.parent_ids == out.parent_ids
+    assert commit.commit_parents == out.commit_parents
 
 
 def test_unknown_peers_drop_to_error(store, fake_dispatcher):
@@ -175,12 +175,12 @@ def test_same_session_two_branches_merge(store, fake_dispatcher):
     # head on peer_a to play "the other branch".
     store.append_message("peer_a", {
         "id": "u_peer_a_alt", "role": "user", "content": "alternate path",
-        "timestamp": 0, "parent_id": None,
+        "timestamp": 0, "called_by": None,
     })
     store.append_message("peer_a", {
         "id": "a_peer_a_alt", "role": "assistant",
         "content": "alternate reply",
-        "timestamp": 0, "parent_id": "u_peer_a_alt",
+        "timestamp": 0, "called_by": "u_peer_a_alt",
     })
     store.commit_turn("peer_a", "sibling branch")
 

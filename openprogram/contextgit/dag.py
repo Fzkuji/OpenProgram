@@ -1,20 +1,18 @@
 """Pure DAG helpers over a list of message dicts.
 
-Each message links to its parent via ``called_by`` (preferred) or
-``parent_id`` (legacy fallback). The helper ``_parent_of(m)`` reads
-both, so all traversal works with old and new data alike.
+Each message links to its parent via ``called_by``.
 
 Contract:
 
 * ``siblings(msgs, msg_id)`` — messages sharing a parent with
   ``msg_id``, including ``msg_id`` itself.
 * ``children(msgs, msg_id)`` — messages whose parent is ``msg_id``.
-* ``linear_history(msgs, head_id)`` — walk parent pointers from
+* ``linear_history(msgs, head_id)`` — walk ``called_by`` from
   ``head_id`` back to the root, return list in root-first order.
 * ``is_ancestor(msgs, anc_id, desc_id)`` — whether ``anc_id`` is
-  reachable from ``desc_id`` via parent pointers.
+  reachable from ``desc_id`` via ``called_by``.
 * ``normalize_parent_pointers(msgs)`` — migration helper for legacy
-  conversations without parent pointers.
+  conversations without ``called_by``.
 * ``head_or_tip(conv, msgs)`` — return the conversation's ``head_id``
   if set; otherwise the last message's id.
 """
@@ -33,15 +31,12 @@ class MessageLike(Protocol):
 def _parent_of(m: MessageLike) -> Optional[str]:
     """Return the parent pointer of a message node.
 
-    Prefers ``called_by`` (new DAG store) over ``parent_id`` (legacy).
-    Returns None for root nodes (called_by=ROOT counts as root).
+    Uses ``called_by`` exclusively. Returns None for root nodes
+    (called_by=ROOT or empty/missing).
     """
     cb = m.get("called_by")
     if cb and cb != "ROOT":
         return cb
-    pid = m.get("parent_id")
-    if pid and pid != "ROOT":
-        return pid
     return None
 
 
@@ -93,10 +88,9 @@ def children(msgs: list[MessageLike], msg_id: str) -> list[MessageLike]:
 
 
 def linear_history(msgs: list[MessageLike], head_id: str) -> list[MessageLike]:
-    """Walk from ``head_id`` back to the root along parent pointers.
+    """Walk from ``head_id`` back to the root along ``called_by``.
 
-    Returns messages in root-first order. Uses ``_parent_of`` which
-    prefers ``called_by`` over ``parent_id``.
+    Returns messages in root-first order.
 
     Tolerates cycles (shouldn't happen but we defend): a revisited id
     terminates the walk and logs the chain.
@@ -120,13 +114,7 @@ def linear_history(msgs: list[MessageLike], head_id: str) -> list[MessageLike]:
 def is_ancestor(
     msgs: list[MessageLike], anc_id: str, desc_id: str,
 ) -> bool:
-    """Is ``anc_id`` reachable from ``desc_id`` via parent pointers?
-
-    Used by checkout validation when we want to confirm a proposed
-    new head is actually on the same tree (usually we don't bother —
-    any commit in the repo is a valid head — but the helper exists
-    for UI affordances like 'branch from ancestor').
-    """
+    """Is ``anc_id`` reachable from ``desc_id`` via ``called_by``?"""
     if anc_id == desc_id:
         return True
     by_id = _index_by_id(msgs)
@@ -145,34 +133,29 @@ def is_ancestor(
 
 
 def normalize_parent_pointers(msgs: list[MessageLike]) -> None:
-    """Backfill parent pointers on legacy messages (in place).
+    """Backfill ``called_by`` on legacy messages (in place).
 
-    Conversations created before the DAG store may lack both
-    ``called_by`` and ``parent_id``. Treat that list as a straight
-    chain: each message's parent is the one before it.
-
-    Messages that already carry a parent pointer are left alone.
+    Conversations created before the DAG store may lack ``called_by``.
+    Treat the list as a straight chain: each message's parent is
+    the one before it. Messages that already have ``called_by`` are
+    left alone.
     """
     prev_id: Optional[str] = None
     for m in msgs:
-        has_parent = "called_by" in m or "parent_id" in m
-        if not has_parent:
+        if "called_by" not in m:
             if isinstance(m, dict):
                 m["called_by"] = prev_id
-                m["parent_id"] = prev_id
         prev_id = m.get("id") or prev_id
 
 
 def advance_head(conv: dict, msg: dict) -> None:
     """Append ``msg`` to ``conv['messages']`` and move HEAD to it.
 
-    If the message has no parent pointer (neither ``called_by`` nor
-    ``parent_id``), set it to the current HEAD. An explicit ``None``
-    is respected (root-level fork).
+    If the message has no ``called_by``, set it to the current HEAD.
+    An explicit ``None`` is respected (root-level fork).
     """
-    if "called_by" not in msg and "parent_id" not in msg:
+    if "called_by" not in msg:
         msg["called_by"] = conv.get("head_id")
-        msg["parent_id"] = conv.get("head_id")
     conv.setdefault("messages", []).append(msg)
     if msg.get("id"):
         conv["head_id"] = msg["id"]
@@ -182,11 +165,7 @@ def deepest_leaf(msgs: list[MessageLike], msg_id: str) -> str:
     """Walk down children from ``msg_id`` to the deepest leaf.
 
     When there are multiple children, pick the most recent one
-    (highest ``created_at``, insertion-order tiebreaker). Used by the
-    sibling navigator to answer "if I switch to this other branch,
-    where should HEAD land?" — always the tip of that branch, not
-    the fork point itself. Otherwise users would see an empty branch
-    after clicking <.
+    (highest ``created_at``, insertion-order tiebreaker).
     """
     by_id = _index_by_id(msgs)
     cur_id: Optional[str] = msg_id
@@ -196,18 +175,12 @@ def deepest_leaf(msgs: list[MessageLike], msg_id: str) -> str:
         kids = children(msgs, cur_id)
         if not kids:
             return cur_id
-        # Latest by timestamp; ties fall back to insertion order
-        # inside children() so behavior is deterministic.
         cur_id = kids[-1].get("id")
     return msg_id
 
 
 def head_or_tip(conv: dict, msgs: list[MessageLike]) -> Optional[str]:
-    """Return ``conv['head_id']`` if set; otherwise the last message's id.
-
-    Callers use this to decide what to display for conversations loaded
-    from disk that pre-date the ``head_id`` field.
-    """
+    """Return ``conv['head_id']`` if set; otherwise the last message's id."""
     head = conv.get("head_id")
     if head:
         return head

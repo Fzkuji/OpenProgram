@@ -42,7 +42,7 @@ def _seed_session(store: SessionStore, session_id: str, assistant_msg_id: str,
         "id": assistant_msg_id,
         "role": "assistant",
         "content": "ok done",
-        "parent_id": user_msg_id,
+        "called_by": user_msg_id,
         "timestamp": 2.0,
     })
 

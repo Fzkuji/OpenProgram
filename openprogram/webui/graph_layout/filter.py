@@ -49,23 +49,23 @@ def normalize_followup(graph_entries: list[dict]) -> list[dict]:
         caller = node.get("called_by") or node.get("caller")
         if caller:
             attach_by_caller[caller] = nid
-    # Find task_followup user msgs; redirect their replies' parent_id
+    # Find task_followup user msgs; redirect their replies' called_by
     for nid, node in by_id.items():
         if not _is_task_followup_user(node):
             continue
-        followup_user_parent = node.get("parent_id")
+        followup_user_parent = node.get("called_by")
         attach_id = attach_by_caller.get(followup_user_parent or "")
         if not attach_id:
             continue
-        # Reply's schema parent_id == followup user msg id; rewrite
+        # Reply's schema called_by == followup user msg id; rewrite
         # to point at the attach pointer instead.
         for other_id, other in by_id.items():
             if (
                 other.get("source") == "task_followup"
                 and other.get("role") == "assistant"
-                and other.get("parent_id") == nid
+                and other.get("called_by") == nid
             ):
-                other["parent_id"] = attach_id
+                other["called_by"] = attach_id
     return graph_entries
 
 

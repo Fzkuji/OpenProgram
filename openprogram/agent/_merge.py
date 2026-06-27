@@ -17,7 +17,7 @@ are equal peers.
 Pipeline:
 
   1. For each input session: load its latest ContextCommit (so the
-     ``parent_ids`` we write can point at a real commit, not a stub),
+     ``commit_parents`` we write can point at a real commit, not a stub),
      and pull its final assistant text from the session's HEAD chain
      (one short string we can drop into the merge prompt).
   2. Build a prompt with ``<session label="...">…</session>`` blocks
@@ -25,7 +25,7 @@ Pipeline:
   3. Run ``process_user_turn`` on the target session
      (``history_override=[]`` — the prompt is self-contained).
   4. Save a fresh ContextCommit on the target with
-     ``parent_ids = [target's prior commit id, *peer commit ids]``.
+     ``commit_parents = [target's prior commit id, *peer commit ids]``.
 
 The merge result lands on the target session as a regular assistant
 turn; the multi-parent ContextCommit records the lineage so the UI
@@ -45,7 +45,7 @@ class MergeTurnResult:
     target_session_id: str = ""
     target_assistant_id: Optional[str] = None
     commit_id: Optional[str] = None
-    parent_ids: list[str] = field(default_factory=list)
+    commit_parents: list[str] = field(default_factory=list)
     final_text: str = ""
     failed: bool = False
     error: Optional[str] = None
@@ -83,7 +83,7 @@ def _peer_final_text(
         if (node.role or "") in ("assistant", "llm") and (node.output or "").strip():
             return str(node.output), head
         meta = node.metadata or {}
-        cur = meta.get("parent_id") or node.called_by or None
+        cur = meta.get("called_by") or node.called_by or None
     return "", head
 
 
@@ -319,7 +319,7 @@ def process_merge_turn(
             store.append_message(target_session_id, attach_msg)
             attach_node_ids.append(attach_node_id)
             # Keep head pointed at the target head, not the attach
-            # pointer (attach uses called_by, not parent_id, so the
+            # pointer (attach uses called_by, not called_by, so the
             # branch tip shouldn't move — but append_message has a
             # guard that updates head when the node has no caller. We
             # set called_by above so this is a no-op; defensive
@@ -373,8 +373,8 @@ def process_merge_turn(
     commit = ContextCommit(
         id=_commit_id(),
         session_id=target_session_id,
-        parent_id=parents[0] if parents else None,
-        parent_ids=parents,
+        commit_parent=parents[0] if parents else None,
+        commit_parents=parents,
         created_at=time.time(),
         head_node_id=turn.assistant_msg_id,
         rules_version=CURRENT_RULES_VERSION,
@@ -389,7 +389,7 @@ def process_merge_turn(
             target_session_id=target_session_id,
             target_assistant_id=turn.assistant_msg_id,
             commit_id=None,
-            parent_ids=parents,
+            commit_parents=parents,
             final_text=turn.final_text or "",
             failed=True,
             error=f"save_commit failed: {type(e).__name__}: {e}",
@@ -448,7 +448,7 @@ def process_merge_turn(
         target_session_id=target_session_id,
         target_assistant_id=turn.assistant_msg_id,
         commit_id=commit.id,
-        parent_ids=parents,
+        commit_parents=parents,
         final_text=turn.final_text or "",
         failed=False,
         base_peer=base_idx,

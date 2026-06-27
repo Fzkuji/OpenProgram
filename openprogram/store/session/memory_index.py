@@ -5,7 +5,7 @@ on demand if dropped. Holds:
 
   * ``nodes_by_id`` — id → Call lookup. O(1) any read by id.
   * ``nodes_by_seq`` — ordered list. ``get_messages()`` returns this.
-  * ``children_by_predecessor`` — parent_id → [child_id]. For "find
+  * ``children_by_predecessor`` — called_by → [child_id]. For "find
     conv children of this user/assistant turn". Stable insertion
     order matches seq order so retry sibling ordering is preserved.
   * ``children_by_caller`` — caller_id → [callee_id]. For "find tool
@@ -89,7 +89,7 @@ class SessionMemoryIndex:
 
         ``get_edge(call) -> Optional[str]`` resolves the parent for a
         given Call. The DAG model carries the conv parent in
-        ``metadata["parent_id"]``, not on the Call directly, so the
+        ``metadata["called_by"]``, not on the Call directly, so the
         store passes a closure that knows where to look. Keeps this
         class ignorant of the metadata layout.
         """
@@ -156,7 +156,7 @@ class SessionMemoryIndex:
         ``get_predecessor(payload) -> Optional[str]`` and
         ``get_caller(payload) -> Optional[str]`` translate the raw
         JSON dict back to edge ids. They live outside this class
-        because the field layout (``metadata.parent_id`` vs
+        because the field layout (``metadata.called_by`` vs
         ``called_by``) belongs to the message-dict adapter, not the
         index.
         """

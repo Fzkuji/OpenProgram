@@ -185,36 +185,36 @@ def process_user_turn(
         session = db.get_session(req.session_id) or {}
     if req.history_override is not None:
         history = list(req.history_override)
-    elif isinstance(req.parent_id, _InheritParent):
+    elif isinstance(req.branch_from, _InheritParent):
         # Normal append — walk the active branch.
         history = db.get_branch(req.session_id) or db.get_messages(req.session_id)
-    elif req.parent_id is None:
+    elif req.branch_from is None:
         # Root-level fork — LLM starts with empty history.
         history = []
     else:
         # Sibling fork — history is the branch ending at the explicit
         # parent. LLM sees what existed up to the fork point, not
         # what's currently on the active branch.
-        history = db.get_branch(req.session_id, req.parent_id)
+        history = db.get_branch(req.session_id, req.branch_from)
 
     # 2. Persist user message immediately (so a crash mid-stream still
-    #    leaves the user's input recorded). Resolve parent_id:
+    #    leaves the user's input recorded). Resolve called_by:
     #      INHERIT_PARENT → tail of active branch, or NULL if empty
     #      explicit None  → NULL (root-level fork)
     #      explicit str   → that string (sibling fork)
-    if isinstance(req.parent_id, _InheritParent):
+    if isinstance(req.branch_from, _InheritParent):
         if history:
-            user_parent_id = history[-1].get("id")
+            user_caller_id = history[-1].get("id")
         else:
-            user_parent_id = session.get("head_id")
+            user_caller_id = session.get("head_id")
     else:
-        user_parent_id = req.parent_id
+        user_caller_id = req.branch_from
     user_msg: dict[str, Any] = {
         "id": user_msg_id,
         "role": "user",
         "content": req.user_text,
         "timestamp": time.time(),
-        "parent_id": user_parent_id,
+        "called_by": user_caller_id,
         "source": req.source,
         "peer_display": req.peer_display,
         "peer_id": req.peer_id,
@@ -322,7 +322,7 @@ def process_user_turn(
                 "source": req.source,
                 "peer_display": req.peer_display,
                 "timestamp": user_msg.get("timestamp"),
-                "parent_id": user_msg.get("parent_id"),
+                "called_by": user_msg.get("called_by"),
             },
         })
     else:
@@ -423,7 +423,7 @@ def process_user_turn(
     # 3b. Persist an assistant *placeholder* row so the row exists in
     #     the DB before tool_execution_end events start firing. This
     #     lets the in-flight tool rows (added below in the agent loop)
-    #     hang off ``parent_id = assistant_msg_id`` — and lets a mid-
+    #     hang off ``called_by = assistant_msg_id`` — and lets a mid-
     #     turn page refresh actually find them via the parent
     #     aggregation in webui/persistence._aggregate_tool_messages.
     #     We update this row's content + tool_calls/blocks at turn

@@ -20,7 +20,7 @@ def _append(db, sess, mid, *, role="user", parent=None, content="x",
             cache_read=None):
     msg = {
         "id": mid, "role": role, "content": content,
-        "parent_id": parent, "timestamp": time.time(),
+        "called_by": parent, "timestamp": time.time(),
     }
     if input_tokens is not None:
         msg["input_tokens"] = input_tokens

@@ -27,7 +27,7 @@ from openprogram.store import (
 def _append(db, sess, mid, *, role="user", content="x", parent=None):
     db.append_message(sess, {
         "id": mid, "role": role, "content": content,
-        "parent_id": parent, "timestamp": time.time(),
+        "called_by": parent, "timestamp": time.time(),
     })
 
 

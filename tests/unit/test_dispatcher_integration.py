@@ -274,7 +274,7 @@ def test_real_loop_history_replay(tmp_db: SessionDB, captured, collector) -> Non
     assert seen_message_count[0] >= 3
 
 
-def test_parent_id_forks_sibling_branch(
+def test_called_by_forks_sibling_branch(
     tmp_db: SessionDB, captured, collector,
 ) -> None:
     """User retries an old turn → dispatcher forks a sibling branch off
@@ -295,7 +295,7 @@ def test_parent_id_forks_sibling_branch(
         )
 
     # Turn 2: branch-fork from BEFORE turn 1's user message
-    # (parent_id=None recreates the root-level fork case — matches
+    # (called_by=None recreates the root-level fork case — matches
     # contextgit/dag.py's "first-turn retry" semantics where the
     # forked branch shares the conversation root, not turn 1's user).
     s2 = make_text_stream_fn(["beta"])
@@ -306,7 +306,7 @@ def test_parent_id_forks_sibling_branch(
         r2 = D.process_user_turn(
             D.TurnRequest(session_id="c1", user_text="ask one (retry)",
                           agent_id="main", source="tui",
-                          parent_id=None),  # root-level fork
+                          branch_from=None),  # root-level fork
         )
 
     # Storage layer keeps both branches (4 messages total)
@@ -356,7 +356,7 @@ def test_history_override_skips_session_db_walk(
     tmp_db.create_session("c1", "main", title="t")
     tmp_db.append_message("c1", {
         "id": "x1", "role": "user", "content": "should NOT appear",
-        "timestamp": 1.0, "parent_id": None,
+        "timestamp": 1.0, "called_by": None,
     })
     tmp_db.set_head("c1", "x1")
 
@@ -406,7 +406,7 @@ def test_user_already_persisted_skips_duplicate_user_msg(
     tmp_db.create_session("c1", "main", title="t")
     tmp_db.append_message("c1", {
         "id": "uExt", "role": "user", "content": "hello",
-        "timestamp": 1.0, "parent_id": None,
+        "timestamp": 1.0, "called_by": None,
     })
     tmp_db.set_head("c1", "uExt")
 

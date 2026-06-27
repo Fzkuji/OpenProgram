@@ -37,11 +37,11 @@ def store_fixture(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "hi",
-        "timestamp": 0, "parent_id": None,
+        "timestamp": 0, "called_by": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "parent_id": "u1",
+        "timestamp": 0, "called_by": "u1",
     })
     s.commit_turn("p1", "init")
     return s
@@ -162,12 +162,12 @@ def fake_worker(monkeypatch):
     cancel_seen = threading.Event()  # set inside fake when ev fires
     entered = threading.Event()  # set once the worker is INSIDE fake_run
 
-    def fake_run(*, session_id, prompt, agent_id, parent_id, label=None):
+    def fake_run(*, session_id, prompt, agent_id, called_by, label=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         from openprogram.webui._pause_stop import is_cancelled
         calls.append({
             "session_id": session_id, "prompt": prompt,
-            "agent_id": agent_id, "parent_id": parent_id, "label": label,
+            "agent_id": agent_id, "called_by": called_by, "label": label,
         })
         # Signal "worker is past the pending→running transition and
         # actually executing fake_run". Tests that want to cancel
@@ -216,7 +216,7 @@ def test_runner_spawn_completes(store_fixture, fake_worker, monkeypatch):
     assert final.head_id == "head_ok"
     assert len(calls) == 1
     assert calls[0]["prompt"] == "do thing"
-    assert calls[0]["parent_id"] == "a1"
+    assert calls[0]["called_by"] == "a1"
 
 
 def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
@@ -237,11 +237,11 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     store_fixture.create_session("p2", "main", title="parent2")
     store_fixture.append_message("p2", {
         "id": "u2", "role": "user", "content": "hi",
-        "timestamp": 0, "parent_id": None,
+        "timestamp": 0, "called_by": None,
     })
     store_fixture.append_message("p2", {
         "id": "a2", "role": "assistant", "content": "ok",
-        "timestamp": 0, "parent_id": "u2",
+        "timestamp": 0, "called_by": "u2",
     })
     store_fixture.commit_turn("p2", "init")
 

@@ -29,9 +29,9 @@ def _noop(_: dict) -> None:
     pass
 
 
-# Sentinel: "caller did not specify parent_id, dispatcher should pick"
+# Sentinel: "caller did not specify called_by, dispatcher should pick"
 # vs explicit ``None`` which means "fork from root". The two cases need
-# different behavior — see TurnRequest.parent_id.
+# different behavior — see TurnRequest.called_by.
 class _InheritParent:
     __slots__ = ()
     def __repr__(self) -> str: return "<INHERIT>"
@@ -55,7 +55,7 @@ class TurnRequest:
     # configured tools. Channels can opt out of risky tools per turn
     # (e.g. wechat shouldn't ever hit destructive bash).
     tools_override: Optional[list[str]] = None
-    # Branching: parent_id of the user message we're about to write.
+    # Branching: called_by of the user message we're about to write.
     #   - INHERIT_PARENT (default) → dispatcher uses the active
     #     branch's tail (head_id walk). Normal append.
     #   - explicit string → fork sibling branch off that message.
@@ -66,7 +66,7 @@ class TurnRequest:
     #     message" case from contextgit/dag.py).
     # Mirrors Claude Code's parentUuid chain: append-only, no mutation
     # of historical messages.
-    parent_id: Any = INHERIT_PARENT
+    branch_from: Any = INHERIT_PARENT
     # When the caller has already linearized "the branch the user
     # currently sees" (e.g. webui has its in-memory active-branch
     # walk), pass it here so the dispatcher uses it as the LLM

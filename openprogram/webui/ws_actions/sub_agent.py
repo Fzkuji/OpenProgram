@@ -18,7 +18,7 @@ and inherits the chain that led to it. ``head_id`` is the new
 branch tip in the same session.
 
 ``context="clean"``: the spawned agent starts at a new root inside
-the same session (``parent_id=null``). It sees only the prompt.
+the same session (``called_by=null``). It sees only the prompt.
 Result lands as an independent DAG tree alongside the original
 conversation.
 
@@ -46,7 +46,7 @@ def _run(
         session_id=session_id,
         prompt=prompt,
         agent_id=agent_id,
-        parent_id=pid,
+        branch_from=pid,
         label=label,
     )
     return {

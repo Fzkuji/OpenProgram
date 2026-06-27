@@ -60,7 +60,7 @@ def _run_turn_with_history(
     user_id = _uuid.uuid4().hex[:12]
     user_msg = {
         "role": "user", "id": user_id,
-        "parent_id": messages[-1]["id"] if messages else None,
+        "called_by": messages[-1]["id"] if messages else None,
         "content": message, "timestamp": _time.time(),
         "source": "cli", "peer_display": "you",
     }
@@ -90,7 +90,7 @@ def _run_turn_with_history(
 
     reply_msg = {
         "role": "assistant", "id": user_id + "_reply",
-        "parent_id": user_id,
+        "called_by": user_id,
         "content": reply_text, "timestamp": _time.time(), "source": "cli",
     }
     messages.append(reply_msg)

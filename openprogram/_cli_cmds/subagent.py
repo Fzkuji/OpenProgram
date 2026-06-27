@@ -77,8 +77,8 @@ def _cmd_subagent_spawn(
         return 2
 
     if ctx == "inherit":
-        parent_id = parent_msg or sess.get("head_id")
-        if not parent_id:
+        branch_from = parent_msg or sess.get("head_id")
+        if not branch_from:
             _print(
                 {"error": (
                     f"session {session} has no head_id and no --parent-msg "
@@ -88,13 +88,13 @@ def _cmd_subagent_spawn(
             )
             return 2
     else:
-        parent_id = None  # clean root
+        branch_from = None  # clean root
 
     result = run_agent_turn(
         session_id=session,
         prompt=prompt,
         agent_id=agent_id,
-        parent_id=parent_id,
+        branch_from=branch_from,
         label=label,
     )
     out = {
@@ -162,7 +162,7 @@ def _cmd_subagent_merge(
     out = {
         "target_assistant_id": result.target_assistant_id,
         "commit_id": result.commit_id,
-        "parent_ids": list(result.parent_ids),
+        "commit_parents": list(result.commit_parents),
         "final_text": result.final_text,
         "failed": result.failed,
         "error": result.error,

@@ -37,7 +37,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     ``msg_id`` is the user message that typed the ``/spawn`` command.
     In ``inherit`` mode the spawn forks off that message; in
     ``clean`` mode it starts a new root inside the same session
-    (no parent_id).
+    (no called_by).
 
     With ``wait=True`` (default) the call blocks until the spawn
     finishes and writes a fully-populated ``attach`` pointer row.
@@ -104,7 +104,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             session_id=session_id,
             prompt=prompt,
             agent_id=chosen_agent,
-            parent_id=msg_id if context == "inherit" else None,
+            branch_from=msg_id if context == "inherit" else None,
             label=label,
         )
     except Exception as e:  # noqa: BLE001
@@ -155,9 +155,9 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
                 _, _idx = pair
                 spawn_node = _idx.nodes_by_id.get(msg_id)
                 if spawn_node:
-                    parent_id = (spawn_node.metadata or {}).get("parent_id")
-                    if parent_id:
-                        fork_anchor = parent_id
+                    branch_from_val = (spawn_node.metadata or {}).get("called_by")
+                    if branch_from_val:
+                        fork_anchor = branch_from_val
         except Exception:
             pass
         # Pin the source branch's ContextCommit so the generator can
@@ -181,7 +181,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "display": "runtime",
             "function": "attach",
             "content": (result.final_text or result.error or "(no output)").strip(),
-            # Only ``called_by`` — NOT ``parent_id``. With both set,
+            # Only ``called_by`` — NOT ``called_by``. With both set,
             # the attach pointer would be both a conv child (picked
             # up by linear_history) AND a side-call (picked up by the
             # splicer), so the row showed up twice in the chat. With
@@ -276,9 +276,9 @@ def _run_spawn_async(
                 _, _idx = pair
                 spawn_node = _idx.nodes_by_id.get(msg_id)
                 if spawn_node:
-                    parent_id = (spawn_node.metadata or {}).get("parent_id")
-                    if parent_id:
-                        fork_anchor = parent_id
+                    branch_from_val = (spawn_node.metadata or {}).get("called_by")
+                    if branch_from_val:
+                        fork_anchor = branch_from_val
         except Exception:
             pass
 
@@ -332,7 +332,7 @@ def _run_spawn_async(
             session_id=session_id,
             prompt=prompt,
             agent_id=chosen_agent,
-            parent_id=msg_id if context == "inherit" else None,
+            branch_from=msg_id if context == "inherit" else None,
             label=label,
             subject=label or prompt[:60],
             description=prompt,
@@ -496,8 +496,8 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     extra_lines = []
     if result.commit_id:
         extra_lines.append(f"[merge commit={result.commit_id}]")
-    if result.parent_ids:
-        extra_lines.append(f"[parents={', '.join(result.parent_ids)}]")
+    if result.commit_parents:
+        extra_lines.append(f"[parents={', '.join(result.commit_parents)}]")
     suffix = ("\n\n" + "\n".join(extra_lines)) if extra_lines else ""
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",
@@ -645,7 +645,7 @@ def execute_in_context(
                     "role": "assistant",
                     "type": "cancelled",
                     "id": msg_id + "_reply",
-                    "parent_id": msg_id,
+                    "called_by": msg_id,
                     "content": "Execution stopped by user.",
                     "function": func_name,
                     "display": "runtime",
@@ -694,7 +694,7 @@ def execute_in_context(
             }
             if not func_name:
                 error_msg["retry_query"] = query
-            error_msg["parent_id"] = msg_id
+            error_msg["called_by"] = msg_id
             _s._append_msg(conv, error_msg)
             _s._save_session(session_id)
         except Exception:

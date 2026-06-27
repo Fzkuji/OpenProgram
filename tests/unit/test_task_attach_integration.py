@@ -31,11 +31,11 @@ def isolated_store(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "hi",
-        "timestamp": 0, "parent_id": None,
+        "timestamp": 0, "called_by": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "parent_id": "u1",
+        "timestamp": 0, "called_by": "u1",
     })
     s.commit_turn("p1", "init")
     return s
@@ -70,13 +70,13 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
     # 2. Fake run_agent_turn so the worker finishes in milliseconds.
-    def fake_run(*, session_id, prompt, agent_id, parent_id, label=None):
+    def fake_run(*, session_id, prompt, agent_id, called_by, label=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         # Write the assistant_msg the dispatcher would have written.
         isolated_store.append_message(session_id, {
             "id": "head_alpha", "role": "assistant",
             "content": "final answer",
-            "parent_id": parent_id, "timestamp": time.time(),
+            "called_by": called_by, "timestamp": time.time(),
         })
         isolated_store.commit_turn(session_id, "fake turn")
         return AgentTurnResult(

@@ -108,29 +108,29 @@ class ContextCommit:
     """
     id: str                          # commit_<hex>
     session_id: str
-    parent_id: Optional[str]         # 兼容字段 = parent_ids[0] if parent_ids else None
+    commit_parent: Optional[str]         # 兼容字段 = commit_parents[0] if commit_parents else None
     created_at: float
     head_node_id: str                # 对应 DAG 哪个 head
     rules_version: str               # 哪一版规则生成的
     total_tokens: int
     items: list[ContextItem] = field(default_factory=list)
     summary: str = ""                # 这次变化的 1 行人类可读描述
-    # merge turn 产生多父 commit; 普通 turn 单父 = [parent_id]
-    parent_ids: list[str] = field(default_factory=list)
+    # merge turn 产生多父 commit; 普通 turn 单父 = [called_by]
+    commit_parents: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        # 同步 parent_id <-> parent_ids: 谁不空以谁为准, 都给的话 parent_ids 赢
-        if self.parent_ids:
-            self.parent_id = self.parent_ids[0]
-        elif self.parent_id:
-            self.parent_ids = [self.parent_id]
+        # 同步 called_by <-> commit_parents: 谁不空以谁为准, 都给的话 commit_parents 赢
+        if self.commit_parents:
+            self.commit_parent = self.commit_parents[0]
+        elif self.commit_parent:
+            self.commit_parents = [self.commit_parent]
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "session_id": self.session_id,
-            "parent_id": self.parent_id,
-            "parent_ids": list(self.parent_ids),
+            "commit_parent": self.commit_parent,
+            "commit_parents": list(self.commit_parents),
             "created_at": self.created_at,
             "head_node_id": self.head_node_id,
             "rules_version": self.rules_version,

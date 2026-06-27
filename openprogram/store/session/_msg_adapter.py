@@ -46,7 +46,7 @@ def _decode_extra(raw) -> dict:
 def _msg_to_node(msg: dict) -> Call:
     role = msg.get("role", "user")
     base_id = msg.get("id") or uuid.uuid4().hex[:12]
-    predecessor = msg.get("parent_id")
+    predecessor = msg.get("called_by")
     created_at = msg.get("timestamp") or time.time()
 
     if role == "user":
@@ -70,7 +70,7 @@ def _msg_to_node(msg: dict) -> Call:
         if leftover_extra:
             meta["extra"] = leftover_extra
         called_by = tool_use.get("called_by") or predecessor or ""
-        meta.pop("parent_id", None)
+        meta.pop("called_by", None)
         # Discriminator: a model-emitted tool_use code node carries a
         # tool_call_id (so the renderer can round-trip it as a real
         # ToolCall/ToolResult pair). Direct @agentic_function code nodes
@@ -130,7 +130,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "role": "user",
             "content": node.output or "",
             "called_by": node.called_by or "",
-            "parent_id": node.called_by,
+            "called_by": node.called_by,
             "caller": node.called_by or "",
             "timestamp": node.created_at,
         }
@@ -168,7 +168,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "role": "tool",
             "content": content,
             "called_by": node.called_by or called_by or "",
-            "parent_id": node.called_by,
+            "called_by": node.called_by,
             "caller": node.called_by or called_by or "",
             "timestamp": node.created_at,
             "function": node.name,
@@ -184,17 +184,17 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "session_id": session_id,
             "role": legacy_role,
             "content": node.output or "",
-            # parent_id falls back to called_by here, but meta.parent_id
+            # called_by falls back to called_by here, but meta.called_by
             # (set by _msg_to_node from the original msg) is the real
             # answer and overrides via the base.update(meta) below.
-            "parent_id": node.called_by,
+            "called_by": node.called_by,
             "caller": node.called_by or "",
             "timestamp": node.created_at,
             "token_model": node.name,
         }
         base.update(meta)
         # Restore called_by AFTER meta merge so attach-pointer rows
-        # (which set called_by but no parent_id) keep their pointer
+        # (which set called_by but no called_by) keep their pointer
         # tag for the ws_actions/session.py splicer.
         if node.called_by:
             base["called_by"] = node.called_by
@@ -205,7 +205,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
         "session_id": session_id,
         "role": node.role or "unknown",
         "content": str(node.output or ""),
-        "parent_id": node.called_by,
+        "called_by": node.called_by,
         "timestamp": node.created_at,
     }
 
