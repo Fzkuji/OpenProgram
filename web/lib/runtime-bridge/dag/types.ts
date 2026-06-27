@@ -11,7 +11,6 @@
 
 export interface GNode {
   id: string;
-  parent_id?: string | null;
   called_by?: string | null;
   role?: string;
   display?: string;

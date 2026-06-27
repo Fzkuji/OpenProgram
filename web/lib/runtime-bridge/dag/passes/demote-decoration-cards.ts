@@ -3,7 +3,7 @@
  *
  * When an LLM main-reply triggers an ``@agentic_function``, the
  * runtime placeholder card is persisted as a conv-child of the reply
- * (parent_id = reply_id). If the user then sends a follow-up turn,
+ * (called_by = reply_id). If the user then sends a follow-up turn,
  * the reply ends up with TWO conv-children: the card and the next
  * user msg. Backend lane.py treats that as a fork and allocates a
  * fresh lane for the new-user subtree, so the figure visually splits
@@ -16,7 +16,7 @@
  * non-runtime conv-children) are preserved — only the FIRST
  * non-runtime sibling (by ``created_at``) gets promoted.
  *
- * Manually-triggered fn-form cards have ``parent_id`` = a
+ * Manually-triggered fn-form cards have ``called_by`` = a
  * "[function call]" user pseudo-msg (NOT a reply), so they don't
  * match this rule and stay as main-lane peer nodes.
  *

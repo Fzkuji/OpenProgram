@@ -44,7 +44,7 @@ export function _collapseRuntimePairs(
   graph.forEach((m) => {
     if (removeIds[m.id]) return;
     if (m.id in reparent) {
-      collapsed.push(Object.assign({}, m, { called_by: reparent[m.id], parent_id: reparent[m.id] }));
+      collapsed.push(Object.assign({}, m, { called_by: reparent[m.id] }));
     } else {
       collapsed.push(m);
     }

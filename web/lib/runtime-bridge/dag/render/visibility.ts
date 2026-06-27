@@ -3,7 +3,7 @@
  *
  * Two modes:
  *   * ``viewport`` — scan ``#chatArea`` for visible bubbles, walk up
- *     ``parent_id`` to seed turns whose own bubble is suppressed
+ *     ``called_by`` to seed turns whose own bubble is suppressed
  *     (display=runtime user commands), then propagate visibility down
  *     each internal-owner chain to the internal subtree.
  *   * ``context``  — bypass chat-scroll entirely; the white-fill marks
@@ -134,7 +134,7 @@ export function _recomputeVisibility(): void {
       if (single) newSet[single] = true;
     }
   }
-  // Walk up parent_id to mark SUPPRESSED ancestors (display=runtime
+  // Walk up called_by to mark SUPPRESSED ancestors (display=runtime
   // user anchors that chat-panel hides, so they have no DOM bubble
   // and can never be seeded by the viewport sweep above). STOP at
   // the first ancestor that has its own DOM bubble — that ancestor's

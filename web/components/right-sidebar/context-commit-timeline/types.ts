@@ -6,7 +6,7 @@ export type StateName = "full" | "aged" | "cleared" | "summarized" | "summary";
 
 export interface CommitMeta {
   id: string;
-  parent_id: string | null;
+  commit_parent: string | null;
   created_at: number;
   head_node_id: string;
   /** Commits sharing the same turn_group_id are parallel attempts
@@ -35,7 +35,7 @@ export interface CommitItem {
 export interface CommitDetail {
   id: string;
   session_id?: string;
-  parent_id?: string | null;
+  commit_parent?: string | null;
   created_at?: number;
   head_node_id?: string;
   total_tokens?: number;

@@ -93,7 +93,6 @@ export function _mergeRuns(
     if (m.id in reparent) {
       nm = Object.assign({}, m);
       nm.called_by = reparent[m.id];
-      nm.parent_id = reparent[m.id];
     }
     if (m.id in internalOf) {
       nm = nm || Object.assign({}, m);

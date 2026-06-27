@@ -578,7 +578,6 @@ async def handle_load_session(ws, cmd: dict):
                 graph.append({
                     "id": _root_node.id,
                     "called_by": "",
-                    "called_by": "",
                     "caller": "",
                     "role": "user",
                     "display": "root",
@@ -605,8 +604,7 @@ async def handle_load_session(ws, cmd: dict):
             graph.append({
                 "id": _mid_load,
                 "called_by": m.get("called_by"),
-                "called_by": _called_by_map_load.get(_mid_load, ""),
-                "caller": m.get("caller") or "",
+                "caller": _called_by_map_load.get(_mid_load, "") or m.get("caller") or "",
                 "role": m.get("role"),
                 "function": m.get("function"),
                 "display": m.get("display"),
