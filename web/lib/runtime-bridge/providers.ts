@@ -104,6 +104,7 @@ export async function loadAgentSettings(): Promise<void> {
   } catch {
     return;
   }
+  // Push directly to store as primary data source
   updateAgentBadges();
 
   const as = W._agentSettings || {};

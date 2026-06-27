@@ -234,12 +234,24 @@ export function useWS(): void {
           }
           return true;
         case "agent_settings_changed": {
+          // Keep window._agentSettings in sync (backward compat)
           const as = w._agentSettings;
           if (as) {
             if (d?.chat) as.chat = d.chat as Record<string, unknown>;
             if (d?.exec) as.exec = d.exec as Record<string, unknown>;
           }
-          w.updateAgentBadges?.();
+          // Push directly to React store (primary data source)
+          import("@/lib/session-store").then(({ useSessionStore }) => {
+            const chatData = d?.chat as Record<string, unknown> | undefined;
+            const execData = d?.exec as Record<string, unknown> | undefined;
+            const chatValid = chatData?.provider && chatData?.model;
+            const execValid = execData?.provider && execData?.model;
+            useSessionStore.getState().setAgentSettings({
+              chat: chatValid ? chatData : undefined,
+              exec: execValid ? execData : undefined,
+            });
+          });
+          // Still fetch full settings (includes thinking config etc.)
           w.loadAgentSettings?.();
           return true;
         }
