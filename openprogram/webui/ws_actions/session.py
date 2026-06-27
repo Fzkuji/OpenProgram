@@ -394,10 +394,12 @@ async def handle_load_session(ws, cmd: dict):
                 if cur and cur in agg_ids:
                     head = cur
         chain = linear_history(all_msgs, head) if head else list(all_msgs)
-        # If linear_history returned too few messages (head pointed at a
-        # ROOT-parented function call that isn't on the conv chain), fall
-        # back to the full get_branch which handles ROOT traversal.
-        if head and len(chain) < 3 and len(all_msgs) > 3:
+        # linear_history walks parent_id pointers. Sessions created
+        # via the DAG store (called_by edges, no parent_id) produce
+        # nodes with parent_id=None, so linear_history returns only
+        # the head node. Fall back to get_branch which traverses
+        # called_by and handles ROOT-parented nodes correctly.
+        if len(chain) < len(all_msgs):
             try:
                 branch_msgs = _db_load.get_branch(session_id)
                 if len(branch_msgs) > len(chain):
