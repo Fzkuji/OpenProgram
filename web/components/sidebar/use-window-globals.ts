@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import type { AgenticFunction } from "@/lib/session-store";
+import { useSessionStore } from "@/lib/session-store";
 import { useFunctions } from "@/lib/functions-store";
 
 interface FunctionsMeta {
@@ -49,23 +50,8 @@ export function useWindowGlobals(): WindowGlobalsState {
   };
 }
 
-/** Subscribe to just `window.currentSessionId`. */
+/** Subscribe to just currentSessionId — now reads from the React store
+ *  instead of polling window.currentSessionId at 250ms. */
 export function useCurrentSessionId(): string | null {
-  const [id, setId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return (
-      (window as unknown as { currentSessionId?: string | null })
-        .currentSessionId ?? null
-    );
-  });
-  useEffect(() => {
-    const t = setInterval(() => {
-      const cur =
-        (window as unknown as { currentSessionId?: string | null })
-          .currentSessionId ?? null;
-      setId((prev) => (prev === cur ? prev : cur));
-    }, 250);
-    return () => clearInterval(t);
-  }, []);
-  return id;
+  return useSessionStore((s) => s.currentSessionId);
 }

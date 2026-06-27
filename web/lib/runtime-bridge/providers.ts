@@ -93,8 +93,9 @@ export function updateProviderBadge(info: ProviderInfo | null | undefined): void
 export async function loadAgentSettings(): Promise<void> {
   try {
     let url = "/api/agent_settings";
-    if (W.currentSessionId) {
-      url += "?session_id=" + encodeURIComponent(W.currentSessionId);
+    const sid = useSessionStore.getState().currentSessionId ?? W.currentSessionId;
+    if (sid) {
+      url += "?session_id=" + encodeURIComponent(sid);
     }
     const resp = await fetch(url);
     const newSettings = await resp.json();
@@ -173,7 +174,8 @@ export function recordCacheWrite(sessionId: string): void {
   if (cacheTtlTimer[sessionId]) clearTimeout(cacheTtlTimer[sessionId]);
   cacheTtlTimer[sessionId] = setTimeout(() => {
     delete cacheTtlTimer[sessionId];
-    if (W.currentSessionId === sessionId) refreshTokenBadge();
+    const curSid = useSessionStore.getState().currentSessionId ?? W.currentSessionId;
+    if (curSid === sessionId) refreshTokenBadge();
   }, CACHE_TTL_MS);
 }
 
@@ -255,7 +257,7 @@ export function renderTokenBadge(data: TokenData, sessionId: string): void {
 
 export async function refreshTokenBadge(): Promise<void> {
   const badge = document.getElementById("tokenBadge");
-  const sid = W.currentSessionId;
+  const sid = useSessionStore.getState().currentSessionId ?? W.currentSessionId;
   if (!badge) return;
   if (!sid) {
     badge.style.display = "none";
@@ -340,7 +342,7 @@ export async function switchProvider(name: string): Promise<void> {
     const resp = await fetch("/api/provider/" + encodeURIComponent(name), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: W.currentSessionId }),
+      body: JSON.stringify({ session_id: useSessionStore.getState().currentSessionId ?? W.currentSessionId }),
     });
     const data = await resp.json();
     if (data.switched) {
