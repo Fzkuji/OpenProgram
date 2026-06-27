@@ -1,27 +1,22 @@
 """Pure DAG helpers over a list of message dicts.
 
-Each message is expected to have at minimum ``id`` and ``parent_id``
-(nullable for root messages). No persistence, no streaming — this
-module is called by the server and the CLI both, and must stay pure so
-tests can drive it with plain dicts.
+Each message links to its parent via ``called_by`` (preferred) or
+``parent_id`` (legacy fallback). The helper ``_parent_of(m)`` reads
+both, so all traversal works with old and new data alike.
 
 Contract:
 
 * ``siblings(msgs, msg_id)`` — messages sharing a parent with
-  ``msg_id``, including ``msg_id`` itself. Returned in ``created_at``
-  order (or insertion order if timestamps are absent).
-* ``children(msgs, msg_id)`` — messages whose ``parent_id`` is
-  ``msg_id``.
+  ``msg_id``, including ``msg_id`` itself.
+* ``children(msgs, msg_id)`` — messages whose parent is ``msg_id``.
 * ``linear_history(msgs, head_id)`` — walk parent pointers from
   ``head_id`` back to the root, return list in root-first order.
 * ``is_ancestor(msgs, anc_id, desc_id)`` — whether ``anc_id`` is
   reachable from ``desc_id`` via parent pointers.
-* ``normalize_parent_pointers(msgs)`` — migration helper. For legacy
-  conversations without ``parent_id``, chain each message to its
-  predecessor in ``msgs`` order so old data behaves as a straight
-  linear DAG.
+* ``normalize_parent_pointers(msgs)`` — migration helper for legacy
+  conversations without parent pointers.
 * ``head_or_tip(conv, msgs)`` — return the conversation's ``head_id``
-  if set; otherwise the last message's id (tip of the linear chain).
+  if set; otherwise the last message's id.
 """
 from __future__ import annotations
 
@@ -33,6 +28,21 @@ class MessageLike(Protocol):
 
     def __getitem__(self, key: str) -> Any: ...
     def get(self, key: str, default: Any = ...) -> Any: ...
+
+
+def _parent_of(m: MessageLike) -> Optional[str]:
+    """Return the parent pointer of a message node.
+
+    Prefers ``called_by`` (new DAG store) over ``parent_id`` (legacy).
+    Returns None for root nodes (called_by=ROOT counts as root).
+    """
+    cb = m.get("called_by")
+    if cb and cb != "ROOT":
+        return cb
+    pid = m.get("parent_id")
+    if pid and pid != "ROOT":
+        return pid
+    return None
 
 
 def _index_by_id(msgs: Iterable[MessageLike]) -> dict[str, MessageLike]:
@@ -50,16 +60,16 @@ def _sorted_by_created_at(items: Iterable[MessageLike]) -> list[MessageLike]:
 def siblings(msgs: list[MessageLike], msg_id: str) -> list[MessageLike]:
     """Return messages sharing a parent with ``msg_id`` (includes itself).
 
-    Root messages (``parent_id is None``) are siblings of all other
-    root messages. Unknown ``msg_id`` returns ``[]``.
+    Root messages (parent is None) are siblings of all other root
+    messages. Unknown ``msg_id`` returns ``[]``.
     """
     by_id = _index_by_id(msgs)
     target = by_id.get(msg_id)
     if target is None:
         return []
-    parent_id = target.get("parent_id")
+    target_parent = _parent_of(target)
     return _sorted_by_created_at(
-        m for m in msgs if m.get("parent_id") == parent_id
+        m for m in msgs if _parent_of(m) == target_parent
     )
 
 
@@ -76,18 +86,17 @@ def sibling_index(msgs: list[MessageLike], msg_id: str) -> tuple[int, int]:
 
 
 def children(msgs: list[MessageLike], msg_id: str) -> list[MessageLike]:
-    """Messages whose ``parent_id`` is ``msg_id``, ordered by creation."""
+    """Messages whose parent is ``msg_id``, ordered by creation."""
     return _sorted_by_created_at(
-        m for m in msgs if m.get("parent_id") == msg_id
+        m for m in msgs if _parent_of(m) == msg_id
     )
 
 
 def linear_history(msgs: list[MessageLike], head_id: str) -> list[MessageLike]:
-    """Walk from ``head_id`` back to the root along ``parent_id``.
+    """Walk from ``head_id`` back to the root along parent pointers.
 
-    Returns messages in root-first order. Each step picks the *exact*
-    parent — if you want to choose among siblings mid-walk, do that by
-    setting the conversation's head to the sibling you want first.
+    Returns messages in root-first order. Uses ``_parent_of`` which
+    prefers ``called_by`` over ``parent_id``.
 
     Tolerates cycles (shouldn't happen but we defend): a revisited id
     terminates the walk and logs the chain.
@@ -103,7 +112,7 @@ def linear_history(msgs: list[MessageLike], head_id: str) -> list[MessageLike]:
         seen.add(cur_id)
         cur = by_id[cur_id]
         chain.append(cur)
-        cur_id = cur.get("parent_id")
+        cur_id = _parent_of(cur)
     chain.reverse()
     return chain
 
@@ -121,7 +130,8 @@ def is_ancestor(
     if anc_id == desc_id:
         return True
     by_id = _index_by_id(msgs)
-    cur: Optional[str] = by_id.get(desc_id, {}).get("parent_id") if by_id.get(desc_id) else None
+    desc = by_id.get(desc_id)
+    cur: Optional[str] = _parent_of(desc) if desc else None
     seen: set[str] = set()
     while cur and cur not in seen:
         if cur == anc_id:
@@ -130,30 +140,25 @@ def is_ancestor(
         cur_msg = by_id.get(cur)
         if cur_msg is None:
             break
-        cur = cur_msg.get("parent_id")
+        cur = _parent_of(cur_msg)
     return False
 
 
 def normalize_parent_pointers(msgs: list[MessageLike]) -> None:
-    """Backfill ``parent_id`` on legacy messages (in place).
+    """Backfill parent pointers on legacy messages (in place).
 
-    Conversations created before ContextGit don't have ``parent_id``.
-    Treat that list as a straight chain: each message's parent is the
-    one before it (first message has ``parent_id = None``).
+    Conversations created before the DAG store may lack both
+    ``called_by`` and ``parent_id``. Treat that list as a straight
+    chain: each message's parent is the one before it.
 
-    Messages that already carry an explicit ``parent_id`` are left
-    alone — that way re-normalizing a partially-migrated list is a
-    no-op.
+    Messages that already carry a parent pointer are left alone.
     """
     prev_id: Optional[str] = None
     for m in msgs:
-        # Some callers pass dataclass-like objects, but today they're
-        # dicts. Only assign if the attribute is absent OR explicitly
-        # None AND we haven't already set it. Explicit None is the
-        # pre-migration default — treat it as "needs fill".
-        has_parent = "parent_id" in m and m.get("parent_id") is not None
+        has_parent = "called_by" in m or "parent_id" in m
         if not has_parent:
             if isinstance(m, dict):
+                m["called_by"] = prev_id
                 m["parent_id"] = prev_id
         prev_id = m.get("id") or prev_id
 
@@ -161,20 +166,12 @@ def normalize_parent_pointers(msgs: list[MessageLike]) -> None:
 def advance_head(conv: dict, msg: dict) -> None:
     """Append ``msg`` to ``conv['messages']`` and move HEAD to it.
 
-    Semantics:
-
-    * ``"parent_id" not in msg`` — caller didn't specify one. Parent
-      to the current HEAD (normal "extend the tip" path).
-    * ``msg["parent_id"]`` is present (even if ``None``) — trust the
-      caller verbatim. ``None`` is a legitimate value for root-level
-      siblings (retrying the first turn of a conversation forks a new
-      root), and must NOT be silently rewritten to HEAD — doing so
-      collapses the fork into a linear append and breaks the DAG.
-
-    After the append HEAD == ``msg['id']``. Callers persist via
-    ``_save_session`` separately — we don't do I/O here.
+    If the message has no parent pointer (neither ``called_by`` nor
+    ``parent_id``), set it to the current HEAD. An explicit ``None``
+    is respected (root-level fork).
     """
-    if "parent_id" not in msg:
+    if "called_by" not in msg and "parent_id" not in msg:
+        msg["called_by"] = conv.get("head_id")
         msg["parent_id"] = conv.get("head_id")
     conv.setdefault("messages", []).append(msg)
     if msg.get("id"):
