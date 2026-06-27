@@ -88,12 +88,14 @@ def _rebuild_runtime_cards(
         # (ROOT, anchor user row, no parent) is a manual/fn-form root.
         return role_of.get(parent) != "assistant"
 
-    # Collect each top code node's transitive descendants (via parent_id)
+    # Collect each top code node's transitive descendants (via called_by)
     # so they don't render as separate rows — they live in context_tree.
+    # Use called_by (not parent_id) because parent_id can incorrectly
+    # link ROOT-parented user nodes to a function call node.
     children_of: dict[str, list[str]] = {}
     for m in all_msgs:
-        p = m.get("parent_id")
-        if p:
+        p = m.get("called_by") or ""
+        if p and p != "ROOT":
             children_of.setdefault(p, []).append(m.get("id"))
 
     def _descendants(root_id: str) -> set[str]:
