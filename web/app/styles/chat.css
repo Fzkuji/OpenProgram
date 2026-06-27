@@ -1416,7 +1416,6 @@
 }
 [data-collapsed="0"] > .chat-fold-content { display: block; }
 .chat-thinking .chat-fold-content {
-  white-space: pre-wrap;
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-secondary);

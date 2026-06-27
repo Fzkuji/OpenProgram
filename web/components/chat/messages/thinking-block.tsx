@@ -65,7 +65,7 @@ export function ThinkingBlock({
         </span>
       </div>
       <div className={"inline-tree-body" + (collapsed ? " collapsed" : "")}>
-        <div className="thinking-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+        <div className="thinking-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(text.trim()) }} />
       </div>
     </div>
   );
