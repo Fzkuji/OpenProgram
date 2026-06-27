@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 
 const DEFAULT_THINKING: ThinkingEffort = "medium";
-const FALLBACK_LEVELS = ["low", "medium", "high", "xhigh"] as const;
+const FALLBACK_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export type ThinkingEffort = string;
 
