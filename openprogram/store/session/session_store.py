@@ -762,10 +762,17 @@ class SessionStore:
             return []
 
         # Edge resolver: prefer conv parent, fall back to caller.
-        # Special case: when a ROOT-parented node is reached (e.g. a
-        # user-triggered function call with called_by=ROOT), find the
-        # previous ROOT-level node by seq order so the branch walk
-        # continues through earlier conversation turns.
+        # When a ROOT-parented node is reached, find the previous
+        # ROOT-level node by seq — but only if that previous node
+        # doesn't already have conv children (which would mean it's
+        # the root of a different branch / fork).
+        _root_nodes_by_seq = [
+            n for n in idx.nodes_by_seq
+            if (_node_caller(n) or "") in ("", "ROOT")
+            and not _node_conv_predecessor(n)
+            and (n.metadata or {}).get("display") != "root"
+        ]
+
         def _edge(node):
             pred = _node_conv_predecessor(node)
             if pred:
@@ -773,14 +780,26 @@ class SessionStore:
             caller = _node_caller(node)
             if caller and caller != "ROOT":
                 return caller
-            # ROOT-parented node with no conv predecessor and no
-            # non-ROOT caller: this is a branch root (e.g. the first
-            # user message of a forked branch). Stop walking — don't
-            # cross into sibling branches by seq order.
-            #
-            # Nodes with called_by=ROOT that represent function calls
-            # (gui_agent etc.) are handled above (caller != "ROOT"),
-            # so reaching here means this is a conversation root node.
+            # ROOT-parented node with no conv predecessor.
+            # Find the previous ROOT-level node by seq.
+            node_seq = node.seq if hasattr(node, "seq") else -1
+            prev = None
+            for rn in _root_nodes_by_seq:
+                rn_seq = rn.seq if hasattr(rn, "seq") else -1
+                if rn_seq < node_seq:
+                    prev = rn
+                else:
+                    break
+            if prev is not None:
+                # Only connect if the previous ROOT node does NOT have
+                # conv children — if it does, it's the root of another
+                # branch (fork), and we should not cross into it.
+                has_conv_children = bool(
+                    idx.children_by_predecessor.get(prev.id)
+                )
+                if not has_conv_children:
+                    return prev.id
+            # Fork branch root or first node — stop walking.
             return None
 
         chain = idx.get_branch(head, _edge)
