@@ -302,6 +302,22 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
       return;
     }
 
+    if (m.role === "tool" && m.function) {
+      out.push({
+        id,
+        role: "assistant",
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+        function: m.function || undefined,
+        display: "runtime",
+        status: m.status === "error" ? "error" : "done",
+        rawType: m.type,
+        timestamp: ts,
+        contextTree: (m.context_tree as never) || undefined,
+        agentId: m.agent_id || undefined,
+        ...siblingFields(m),
+      });
+      return;
+    }
     out.push({ id, role: "system", content: m.content || "", status: "done" });
   });
   return out;
