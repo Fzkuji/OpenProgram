@@ -162,12 +162,12 @@ def fake_worker(monkeypatch):
     cancel_seen = threading.Event()  # set inside fake when ev fires
     entered = threading.Event()  # set once the worker is INSIDE fake_run
 
-    def fake_run(*, session_id, prompt, agent_id, called_by, label=None):
+    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         from openprogram.webui._pause_stop import is_cancelled
         calls.append({
             "session_id": session_id, "prompt": prompt,
-            "agent_id": agent_id, "called_by": called_by, "label": label,
+            "agent_id": agent_id, "branch_from": branch_from, "label": label,
         })
         # Signal "worker is past the pending→running transition and
         # actually executing fake_run". Tests that want to cancel
@@ -216,7 +216,7 @@ def test_runner_spawn_completes(store_fixture, fake_worker, monkeypatch):
     assert final.head_id == "head_ok"
     assert len(calls) == 1
     assert calls[0]["prompt"] == "do thing"
-    assert calls[0]["called_by"] == "a1"
+    assert calls[0]["branch_from"] == "a1"
 
 
 def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
