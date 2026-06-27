@@ -135,6 +135,16 @@ export async function loadAgentSettings(): Promise<void> {
     W._thinkingConfig = as.chat.thinking;
     W.buildThinkingMenu?.();
   }
+
+  // Retry once if chat provider is null but exec is set — the backend
+  // may still be initializing providers on first request after restart.
+  if (!newChatProv && newExecProv && !(W as any)._chatRetried) {
+    (W as any)._chatRetried = true;
+    setTimeout(() => {
+      (W as any)._chatRetried = false;
+      loadAgentSettings();
+    }, 2000);
+  }
 }
 
 export function updateAgentBadges(): void {
