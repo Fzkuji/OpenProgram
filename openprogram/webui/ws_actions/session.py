@@ -83,10 +83,22 @@ def _rebuild_runtime_cards(
         if m.get("role") != "tool":
             return False
         parent = m.get("called_by") or m.get("parent_id") or ""
+        # Only ROOT-parented or unparented code nodes are top-level
+        # function calls (manual /run, fn-form). Internal sub-calls
+        # (gui_step, conclusion, plan_next_action) have a non-ROOT
+        # parent that is another code node — they must NOT become
+        # standalone cards.
+        if parent == "ROOT" or parent == "":
+            return True
         # LLM tool-call: parent is the LLM reply → folds into the
-        # assistant bubble, not a standalone card. Everything else
-        # (ROOT, anchor user row, no parent) is a manual/fn-form root.
-        return role_of.get(parent) != "assistant"
+        # assistant bubble, not a standalone card.
+        if role_of.get(parent) == "assistant":
+            return False
+        # Parent is another code node (internal sub-call) → not top level
+        if role_of.get(parent) in ("tool", "code"):
+            return False
+        # Anything else (anchor user row) is a manual/fn-form root.
+        return True
 
     # Collect each top code node's transitive descendants (via called_by)
     # so they don't render as separate rows — they live in context_tree.
