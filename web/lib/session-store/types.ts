@@ -126,10 +126,10 @@ export interface ChatMsg {
    *  can distinguish "real user typed" vs internal synthetic turns
    *  (task_followup, merge_turn, agent_spawn). */
   source?: string;
-  /** Pass-through of metadata.parent_id so we can correlate
+  /** Pass-through of metadata.called_by so we can correlate
    *  internal-source msgs (e.g. task_followup) with the attach
    *  pointer they belong to. */
-  parentId?: string;
+  calledBy?: string;
   /** When this user msg is the root of a spawned sub-branch, points
    *  back at the main-lane turn (LLM reply) that called task() to
    *  create it. Frontend renders a "Spawned from" card at the top

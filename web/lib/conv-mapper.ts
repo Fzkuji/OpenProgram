@@ -74,7 +74,7 @@ interface LegacyMsg {
    *  Used by sweep to detect orphaned ``running`` rows. */
   started_at?: number;
   last_update_at?: number;
-  parent_id?: string;
+  called_by?: string;
   source?: string;
 }
 
@@ -174,7 +174,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         timestamp: ts,
         agentId: m.agent_id || undefined,
         source: typeof m.source === "string" ? m.source : undefined,
-        parentId: typeof m.parent_id === "string" ? m.parent_id : undefined,
+        calledBy: typeof m.called_by === "string" ? m.called_by : undefined,
         spawnedFrom: sf && sf.caller_id
           ? { callerId: sf.caller_id, label: sf.label || undefined }
           : undefined,
@@ -184,13 +184,13 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
     }
 
     // LLM-issued @agentic_function runtime-block placeholder: if its
-    // parent_id points at an assistant row we've already emitted, merge
+    // called_by points at an assistant row we've already emitted, merge
     // it into that assistant's `runtimeChildren` and DO NOT push it
     // onto the top-level `out` list. fn-form / direct-run runtime
-    // blocks (parent_id is a user msg) fall through and stay top-level.
+    // blocks (called_by is a user msg) fall through and stay top-level.
     if (_isRuntimePlaceholder && m.role === "assistant") {
-      const parentId = typeof m.parent_id === "string" ? m.parent_id : undefined;
-      const parent = parentId ? assistantById.get(parentId) : undefined;
+      const calledBy = typeof m.called_by === "string" ? m.called_by : undefined;
+      const parent = calledBy ? assistantById.get(calledBy) : undefined;
       if (parent) {
         const child: ChatMsg = {
           id,
@@ -211,7 +211,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
           timestamp: ts,
           contextTree: (m.context_tree as never) || undefined,
           usage: m.usage,
-          parentId,
+          calledBy,
           agentId: m.agent_id || undefined,
         };
         parent.runtimeChildren = [...(parent.runtimeChildren ?? []), child];

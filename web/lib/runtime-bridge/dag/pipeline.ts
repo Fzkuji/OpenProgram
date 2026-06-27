@@ -203,8 +203,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const parentOf: Record<string, string> = Object.create(null);
   Object.keys(tree.byId).forEach((nid) => {
-    const pid = (tree.byId[nid] as { called_by?: string; parent_id?: string }).called_by
-      || (tree.byId[nid] as { parent_id?: string }).parent_id;
+    const pid = (tree.byId[nid] as { called_by?: string; called_by?: string }).called_by
+      || (tree.byId[nid] as { called_by?: string }).called_by;
     if (pid) parentOf[nid] = pid;
   });
   setParentOf(parentOf);
@@ -317,25 +317,25 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const forkNodes: string[] = [];
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
-    const parentId = node.called_by;
-    if (parentId && tree.byId[parentId]) {
-      const parent = tree.byId[parentId];
+    const callerId = node.called_by;
+    if (callerId && tree.byId[callerId]) {
+      const parent = tree.byId[callerId];
       if ((node._lane || 0) === (parent._lane || 0)) {
-        (trunkChildren[parentId] = trunkChildren[parentId] || []).push(id);
+        (trunkChildren[callerId] = trunkChildren[callerId] || []).push(id);
         return;
       }
     }
     // No called_by or different lane = fork branch
-    if (!parentId && node.parent_id) {
+    if (!callerId && node.called_by) {
       forkNodes.push(id);
     }
   });
 
   // Draw trunk lines + horizontal branches
-  Object.keys(trunkChildren).forEach((parentId) => {
-    const parent = tree.byId[parentId];
+  Object.keys(trunkChildren).forEach((callerId) => {
+    const parent = tree.byId[callerId];
     if (!parent) return;
-    const kids = trunkChildren[parentId];
+    const kids = trunkChildren[callerId];
     const p = pos(parent);
     const color = _branchColor(parent, stableLeafOfNode);
     const nr = NODE_R + 4;
@@ -381,13 +381,13 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   for (const id of forkNodes) {
     const node = tree.byId[id];
     if (!node) continue;
-    const pid = node.parent_id;
+    const pid = node.called_by;
     if (!pid) continue;
     let sibling: GNode | null = null;
     Object.keys(tree.byId).forEach((sid) => {
       if (sid === id) return;
       const sn = tree.byId[sid];
-      if (sn.parent_id === pid && (sn._lane || 0) !== (node._lane || 0)) {
+      if (sn.called_by === pid && (sn._lane || 0) !== (node._lane || 0)) {
         if (!sibling) sibling = sn;
       }
     });
