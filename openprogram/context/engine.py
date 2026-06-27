@@ -617,7 +617,7 @@ class DefaultContextEngine(ContextEngine):
             if n is None:
                 return False
             cb = n.called_by or ""
-            return cb in branch_id_set or cb == "ROOT" or cb == ""
+            return cb in branch_id_set
         read_ids = [nid for nid in read_ids if _in_branch(nid)]
 
         history_dir = None

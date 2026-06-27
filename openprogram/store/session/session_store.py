@@ -773,16 +773,15 @@ class SessionStore:
             caller = _node_caller(node)
             if caller and caller != "ROOT":
                 return caller
-            # ROOT-parented node: find the previous ROOT-level node
-            cur_seq = node.seq if hasattr(node, "seq") else -1
-            best = None
-            for n in idx.nodes_by_seq:
-                if n.seq >= cur_seq:
-                    break
-                cb = n.called_by or ""
-                if cb == "ROOT" or cb == "":
-                    best = n.id
-            return best
+            # ROOT-parented node with no conv predecessor and no
+            # non-ROOT caller: this is a branch root (e.g. the first
+            # user message of a forked branch). Stop walking — don't
+            # cross into sibling branches by seq order.
+            #
+            # Nodes with called_by=ROOT that represent function calls
+            # (gui_agent etc.) are handled above (caller != "ROOT"),
+            # so reaching here means this is a conversation root node.
+            return None
 
         chain = idx.get_branch(head, _edge)
         return [
