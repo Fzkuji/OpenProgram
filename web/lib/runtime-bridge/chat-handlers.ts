@@ -265,6 +265,9 @@ export function handleSessionsList(data: SessionRow[]): void {
           project: c.project || "",
         };
       } else {
+        if (c.created_at && (!convs[c.id].created_at || convs[c.id].created_at === 0)) {
+          convs[c.id].created_at = c.created_at;
+        }
         if ("channel" in c) convs[c.id].channel = c.channel || null;
         if ("account_id" in c) convs[c.id].account_id = c.account_id || null;
         if ("peer" in c) convs[c.id].peer = c.peer || null;
