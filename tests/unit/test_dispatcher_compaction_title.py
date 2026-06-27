@@ -123,7 +123,7 @@ def test_auto_title_stamps_from_first_user_message(tmp_db: SessionDB) -> None:
     sess = tmp_db.get_session("c1")
     assert sess["title"] == "What is the weather?"
     # Titled flag set so a future turn doesn't overwrite it
-    assert sess["extra_meta"].get("_titled") is True
+    assert sess["extra_meta"].get("_auto_titled") is True
 
 
 def test_auto_title_truncates_long_input(tmp_db: SessionDB) -> None:
