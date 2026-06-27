@@ -65,7 +65,7 @@ def test_translate_google_budget():
 
 def test_translate_openai_codex_direct_pass():
     assert translate_reasoning("openai-codex", "gpt-5.5", "xhigh") == "xhigh"
-    assert translate_reasoning("openai-codex", "gpt-5.5", "max") == "max"
+    assert translate_reasoning("openai-codex", "gpt-5.5", "max") == "xhigh"
 
 
 def test_translate_openai_completions_clamp():

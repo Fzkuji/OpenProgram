@@ -267,9 +267,18 @@ async def process_responses_stream(
 
     current_item: dict[str, Any] | None = None
     current_block: Any | None = None
+    reasoning_block: dict[str, Any] | None = None
     blocks = output.content
 
     def block_index() -> int:
+        return len(blocks) - 1
+
+    def reasoning_block_index() -> int:
+        if reasoning_block is not None:
+            try:
+                return blocks.index(reasoning_block)
+            except ValueError:
+                pass
         return len(blocks) - 1
 
     async for event in openai_stream:
@@ -282,6 +291,7 @@ async def process_responses_stream(
             if item_type == "reasoning":
                 current_item = item if isinstance(item, dict) else item.__dict__
                 current_block = {"type": "thinking", "thinking": ""}
+                reasoning_block = current_block
                 output.content.append(current_block)
                 stream.push({"type": "thinking_start", "content_index": block_index(), "partial": output})
 
@@ -307,15 +317,15 @@ async def process_responses_stream(
                 stream.push({"type": "toolcall_start", "content_index": block_index(), "partial": output})
 
         elif event_type == "response.reasoning_summary_text.delta":
-            if current_item and current_item.get("type") == "reasoning" and isinstance(current_block, dict) and current_block.get("type") == "thinking":
+            if reasoning_block is not None:
                 delta = event.get("delta") if isinstance(event, dict) else getattr(event, "delta", "")
-                current_block["thinking"] = current_block.get("thinking", "") + delta
-                stream.push({"type": "thinking_delta", "content_index": block_index(), "delta": delta, "partial": output})
+                reasoning_block["thinking"] = reasoning_block.get("thinking", "") + delta
+                stream.push({"type": "thinking_delta", "content_index": reasoning_block_index(), "delta": delta, "partial": output})
 
         elif event_type == "response.reasoning_summary_part.done":
-            if current_item and current_item.get("type") == "reasoning" and isinstance(current_block, dict) and current_block.get("type") == "thinking":
-                current_block["thinking"] = current_block.get("thinking", "") + "\n\n"
-                stream.push({"type": "thinking_delta", "content_index": block_index(), "delta": "\n\n", "partial": output})
+            if reasoning_block is not None:
+                reasoning_block["thinking"] = reasoning_block.get("thinking", "") + "\n\n"
+                stream.push({"type": "thinking_delta", "content_index": reasoning_block_index(), "delta": "\n\n", "partial": output})
 
         elif event_type == "response.output_text.delta":
             if current_item and current_item.get("type") == "message" and isinstance(current_block, dict) and current_block.get("type") == "text":
