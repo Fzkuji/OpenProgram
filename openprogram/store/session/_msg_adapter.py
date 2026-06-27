@@ -100,7 +100,8 @@ def _msg_to_node(msg: dict) -> Call:
     # spawn — they hang off that turn as a side-child, not as the
     # next conv step. Surfacing called_by onto the Call so
     # list_branches' "tips have no caller" filter skips them.
-    called_by = meta.pop("called_by", None) or ""
+    called_by = meta.get("called_by", None) or ""
+    meta["called_by"] = called_by
     return Call(
         id=base_id,
         created_at=created_at,

@@ -717,10 +717,10 @@ class SessionStore:
         seq = idx.append(node, predecessor=predecessor, caller=caller)
         # Write the raw node file. Commit deferred to turn end.
         git.write_history(seq, node.role, node.id, node.to_dict())
-        # Advance head for conversation nodes (no caller). Matches old
-        # GraphStore.append behavior where caller-tagged nodes don't
-        # bump last_node_id.
-        if not caller:
+        # Advance head for conversation nodes (user/assistant). Code
+        # nodes (function sub-calls) don't bump head — they're internal
+        # to a function invocation, not the conversation chain.
+        if node.role != ROLE_CODE:
             idx.set_head(node.id)
         idx.set_meta(updated_at=time.time())
         # Update registry preview on user messages (debounced to disk).
