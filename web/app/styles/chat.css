@@ -1953,7 +1953,6 @@
 /* Thinking body — paragraph of text the model produced while
  * reasoning. Slightly muted vs the chat-text content. */
 .inline-tree-body .thinking-text {
-  white-space: pre-wrap;
   word-wrap: break-word;
   color: var(--text-secondary);
   font-size: 13px;
