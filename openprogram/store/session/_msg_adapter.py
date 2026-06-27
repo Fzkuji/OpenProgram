@@ -95,20 +95,21 @@ def _msg_to_node(msg: dict) -> Call:
             meta.setdefault(k, v)
     if role == "system":
         meta["role"] = "system"
-    # Attach-pointer rows ride the assistant role but carry a
-    # ``called_by`` pointing at the user turn that triggered the
-    # spawn — they hang off that turn as a side-child, not as the
-    # next conv step. Surfacing called_by onto the Call so
-    # list_branches' "tips have no caller" filter skips them.
-    called_by = meta.get("called_by", None) or ""
-    meta["called_by"] = called_by
+    # Conv predecessor lives in metadata.called_by (for the
+    # predecessor index). Call.called_by is reserved for "caller"
+    # semantics — only attach-pointer rows (side-children of a user
+    # turn) set it, so list_branches' "has caller → skip" filter
+    # correctly hides them without hiding normal assistant nodes.
+    conv_pred = meta.get("called_by", None) or ""
+    meta["called_by"] = conv_pred
+    is_attach = meta.get("function") == "attach"
     return Call(
         id=base_id,
         created_at=created_at,
         role=ROLE_LLM,
         name=msg.get("token_model") or "",
         output=msg.get("content") or "",
-        called_by=called_by,
+        called_by=conv_pred if is_attach else "",
         metadata=meta,
     )
 
@@ -131,7 +132,6 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "role": "user",
             "content": node.output or "",
             "called_by": node.called_by or "",
-            "called_by": node.called_by,
             "caller": node.called_by or "",
             "timestamp": node.created_at,
         }
@@ -169,7 +169,6 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "role": "tool",
             "content": content,
             "called_by": node.called_by or called_by or "",
-            "called_by": node.called_by,
             "caller": node.called_by or called_by or "",
             "timestamp": node.created_at,
             "function": node.name,

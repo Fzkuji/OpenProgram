@@ -33,7 +33,7 @@ from typing import Any, Optional
 
 _log = logging.getLogger(__name__)
 
-from openprogram.context.nodes import Call, ROLE_USER, ROLE_CODE
+from openprogram.context.nodes import Call, ROLE_USER
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
 # tests covering edge cases (sub-call routing, extra_json roundtrip) still hold.
 from ._msg_adapter import (
@@ -717,10 +717,10 @@ class SessionStore:
         seq = idx.append(node, predecessor=predecessor, caller=caller)
         # Write the raw node file. Commit deferred to turn end.
         git.write_history(seq, node.role, node.id, node.to_dict())
-        # Advance head for conversation nodes (user/assistant). Code
-        # nodes (function sub-calls) don't bump head — they're internal
-        # to a function invocation, not the conversation chain.
-        if node.role != ROLE_CODE:
+        # Advance head for conversation nodes (no caller). Matches old
+        # GraphStore.append behavior where caller-tagged nodes don't
+        # bump last_node_id.
+        if not caller:
             idx.set_head(node.id)
         idx.set_meta(updated_at=time.time())
         # Update registry preview on user messages (debounced to disk).
@@ -910,7 +910,7 @@ class SessionStore:
         except Exception:
             pass
         for node in idx.all_nodes():
-            if node.called_by and node.role == ROLE_CODE:
+            if node.called_by:
                 continue
             if (node.metadata or {}).get("display") == "root":
                 continue
