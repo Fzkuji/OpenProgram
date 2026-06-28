@@ -86,6 +86,10 @@ def extract_title(path: Path) -> str:
         if m:
             # strip a common " — OpenProgram" style suffix for nav brevity
             return re.sub(r"\s*[—·|-]\s*OpenProgram.*$", "", m.group(1).strip())
+        # body-only fragment: fall back to its first <h1>
+        h1 = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.IGNORECASE | re.DOTALL)
+        if h1:
+            return re.sub(r"<[^>]+>", "", h1.group(1)).strip()
     return prettify(path.stem)
 
 

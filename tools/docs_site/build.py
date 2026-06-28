@@ -143,19 +143,92 @@ def relink_internal(body_html: str, cur_dir: Path) -> str:
     return re.sub(r'(href=)"([^"]+)"', repl, body_html)
 
 
-# ── hand-written html embedding ─────────────────────────────────────────────
+# ── hand-written html ───────────────────────────────────────────────────────
+
+_FULL_PAGE_RE = re.compile(r"<\s*(html|body)\b", re.IGNORECASE)
+_H1_TAG_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
+
+
+def is_full_page(html_text: str) -> bool:
+    """True if the file is a standalone page (has <html> or <body>).
+
+    Standalone pages are embedded via an isolated iframe (their own layout/
+    styles stay intact). Body-only fragments are wrapped in the site shell.
+    """
+    return bool(_FULL_PAGE_RE.search(html_text))
+
 
 def embed_html(raw_url: str) -> str:
-    """Embed a self-contained hand-written html via an isolated iframe.
+    """Embed a standalone hand-written page via an isolated iframe.
 
-    iframe sandboxing keeps the original's own fixed-position layouts, styles,
-    scripts, and visualizations 100% intact without leaking into the site shell.
+    iframe sandboxing keeps the original's fixed-position layouts, styles,
+    scripts, and visualizations 100% intact without leaking into the shell.
     The original file is shipped verbatim alongside as a .raw.html sibling.
     """
     return (
         f'<iframe class="viz-frame" src="{raw_url}" loading="lazy" '
         f'title="可视化文档"></iframe>'
     )
+
+
+def render_html_fragment(html_text: str, scope_id: str) -> str:
+    """Wrap a body-only hand-written fragment for inclusion in the site shell.
+
+    The author writes just the content (headings, prose, <canvas>, <script>,
+    <style> …) and gets the full chrome (nav, theme, search) for free. Any
+    <style> blocks are scoped to this page's container so they can't restyle
+    the shell; <script> blocks run as-is so animations/interactions work.
+    """
+    container = f"viz-frag-{scope_id}"
+
+    def scope_style(m):
+        css = m.group(1)
+        return f"<style>{_scope_css(css, '#' + container)}</style>"
+
+    scoped = re.sub(r"<style[^>]*>(.*?)</style>", scope_style, html_text,
+                    flags=re.IGNORECASE | re.DOTALL)
+    return f'<div class="viz-fragment" id="{container}">{scoped}</div>'
+
+
+def _scope_css(css: str, prefix: str) -> str:
+    """Prefix every selector in a CSS block with `prefix` so the styles only
+    apply inside the page container. Skips @-rules' first line and keyframes."""
+    out, i, n = [], 0, len(css)
+    while i < n:
+        at = css.find("@", i)
+        brace = css.find("{", i)
+        if brace == -1:
+            out.append(css[i:])
+            break
+        # pass @media/@keyframes wrapper through untouched (recurse on inner)
+        if at != -1 and at < brace:
+            # find matching close of the at-block by brace counting
+            depth, j = 0, brace
+            while j < n:
+                if css[j] == "{":
+                    depth += 1
+                elif css[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            header = css[i:brace]
+            inner = css[brace + 1:j]
+            out.append(header + "{" + _scope_css(inner, prefix) + "}")
+            i = j + 1
+            continue
+        selector = css[i:brace].strip()
+        block_end = css.find("}", brace)
+        if block_end == -1:
+            block_end = n
+        body = css[brace:block_end + 1]
+        scoped_sel = ", ".join(
+            prefix if s.strip() in (":root", "html", "body", "*") else f"{prefix} {s.strip()}"
+            for s in selector.split(",") if s.strip()
+        )
+        out.append(f"{scoped_sel} {body}")
+        i = block_end + 1
+    return "".join(out)
 
 
 # ── nav tree -> html ────────────────────────────────────────────────────────
@@ -237,14 +310,21 @@ def build() -> int:
             body = relink_internal(body, p.out.parent)
             toc = extract_toc(body)
         else:
-            # Ship the original verbatim and embed it via an isolated iframe.
-            raw_rel = p.out.with_suffix("").with_suffix(".raw.html")
-            raw_path = OUT_ROOT / raw_rel
-            raw_path.parent.mkdir(parents=True, exist_ok=True)
-            raw_path.write_text(p.src.read_text(encoding="utf-8", errors="replace"),
-                                encoding="utf-8")
-            body = embed_html(DEPLOY_BASE + str(raw_rel).replace("\\", "/"))
-            toc = ""
+            html_text = p.src.read_text(encoding="utf-8", errors="replace")
+            if is_full_page(html_text):
+                # Standalone page → ship verbatim + isolate in an iframe.
+                raw_rel = p.out.with_suffix("").with_suffix(".raw.html")
+                raw_path = OUT_ROOT / raw_rel
+                raw_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_path.write_text(html_text, encoding="utf-8")
+                body = embed_html(DEPLOY_BASE + str(raw_rel).replace("\\", "/"))
+                toc = ""
+            else:
+                # Body-only fragment → wrap in the site shell (chrome for free).
+                scope = re.sub(r"[^\w]+", "-", str(p.out.with_suffix("")))
+                body = render_html_fragment(html_text, scope)
+                body = relink_internal(body, p.out.parent)
+                toc = extract_toc(body)
 
         nav_html = render_nav(groups, p.out, base)
         full = render_page(
