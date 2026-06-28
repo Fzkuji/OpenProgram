@@ -33,13 +33,16 @@ export function drawEdges(
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     if (node.display === "root") return;
-    let pid = node.predecessor;
+    // Parent edge: predecessor (conv chain) if present, else caller
+    // (sub-call). A first user / a tool has no predecessor — its parent
+    // is its caller (ROOT / the llm), so the edge must follow caller.
+    let pid = node.predecessor || node.caller;
     if (pid && !tree.byId[pid]) {
       let cur = pid;
       let hops = 0;
       while (cur && !tree.byId[cur] && hops < 50) {
         const pn = fullById[cur];
-        cur = pn ? (pn.predecessor || null) : null;
+        cur = pn ? (pn.predecessor || pn.caller || null) : null;
         hops++;
       }
       if (cur && tree.byId[cur]) pid = cur;
