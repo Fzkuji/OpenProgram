@@ -31,11 +31,11 @@ def isolated_store(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "hi",
-        "timestamp": 0, "called_by": None,
+        "timestamp": 0, "predecessor": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "called_by": "u1",
+        "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "init")
     return s
@@ -63,7 +63,7 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
     isolated_store.append_message("p1", {
         "id": attach_node_id, "role": "assistant",
         "display": "runtime", "function": "attach",
-        "content": "(running)", "called_by": "a1",
+        "content": "(running)", "predecessor": "a1",
         "timestamp": time.time(),
         "extra": json.dumps(attach_extra, default=str),
     })
@@ -76,7 +76,7 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
         isolated_store.append_message(session_id, {
             "id": "head_alpha", "role": "assistant",
             "content": "final answer",
-            "called_by": branch_from, "timestamp": time.time(),
+            "predecessor": branch_from, "timestamp": time.time(),
         })
         isolated_store.commit_turn(session_id, "fake turn")
         return AgentTurnResult(

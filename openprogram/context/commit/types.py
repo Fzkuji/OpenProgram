@@ -115,11 +115,11 @@ class ContextCommit:
     total_tokens: int
     items: list[ContextItem] = field(default_factory=list)
     summary: str = ""                # 这次变化的 1 行人类可读描述
-    # merge turn 产生多父 commit; 普通 turn 单父 = [called_by]
+    # merge turn 产生多父 commit; 普通 turn 单父 = [predecessor]
     commit_parents: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        # 同步 called_by <-> commit_parents: 谁不空以谁为准, 都给的话 commit_parents 赢
+        # 同步 predecessor <-> commit_parents: 谁不空以谁为准, 都给的话 commit_parents 赢
         if self.commit_parents:
             self.commit_parent = self.commit_parents[0]
         elif self.commit_parent:

@@ -221,7 +221,7 @@ def test_compaction_recommended_fires_when_branch_large(
         tmp_db.append_message("c1", {
             "id": mid, "role": "user" if i % 2 == 0 else "assistant",
             "content": "x" * 200,   # ~50 tokens each
-            "timestamp": float(i), "called_by": last,
+            "timestamp": float(i), "predecessor": last,
         })
         last = mid
     tmp_db.set_head("c1", last)
@@ -301,7 +301,7 @@ def test_trigger_compaction_inserts_summary_and_moves_head(
         tmp_db.append_message("c1", {
             "id": mid, "role": "user" if i % 2 == 0 else "assistant",
             "content": f"turn {i} content " * 20,
-            "timestamp": float(i), "called_by": last,
+            "timestamp": float(i), "predecessor": last,
         })
         last = mid
     tmp_db.set_head("c1", last)

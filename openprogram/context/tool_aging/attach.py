@@ -1,7 +1,7 @@
 """Attach tool sub-call rows to their owning assistant.
 
 ``DagSessionDB.get_branch()`` walks the conversation chain (user ↔
-assistant ↔ user) by ``metadata.called_by`` only — tools live off the
+assistant ↔ user) by ``metadata.caller`` only — tools live off the
 ``caller`` edge and are NOT on that chain, so they're missing from
 the history dict the assembler gets.
 
@@ -33,7 +33,7 @@ def _load_tool_rows_for_session(session_id: str) -> dict[str, list[dict]]:
     for m in all_msgs:
         if m.get("role") != "tool":
             continue
-        caller = m.get("caller") or m.get("called_by")
+        caller = m.get("caller") or m.get("predecessor")
         if not caller:
             continue
         by_caller.setdefault(caller, []).append(m)

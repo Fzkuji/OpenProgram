@@ -2,7 +2,7 @@
 
 Tests cover:
   - Unified Call node type (role / name / input / output / reads /
-    called_by / seq / metadata)
+    caller / seq / metadata)
   - Graph.add() assigns monotonic seq
   - Graph iteration is seq-ordered
   - Helpers (last_user_message, linear_back_to, branch_terminals,
@@ -72,12 +72,12 @@ def test_model_call_factory_returns_call():
 
 def test_function_call_factory_returns_call():
     n = FunctionCall(function_name="search", arguments={"q": "x"},
-                     result={"hits": 3}, called_by="called_by")
+                     result={"hits": 3}, caller="predecessor")
     assert n.is_code()
     assert n.name == "search" and n.function_name == "search"
     assert n.arguments == {"q": "x"}
     assert n.result == {"hits": 3}
-    assert n.called_by == "called_by"
+    assert n.caller == "predecessor"
 
 
 # Graph: append + seq
@@ -124,10 +124,10 @@ def test_graph_convenience_builders(graph):
     u = graph.add_user_message("hi")
     m = graph.add_model_call(model="x", reads=[u.id], output="hello")
     c = graph.add_function_call(function_name="tool", arguments={"q": 1},
-                                 called_by=m.id, result="ok")
+                                 caller=m.id, result="ok")
     assert u.is_user() and u.output == "hi"
     assert m.is_llm() and m.reads == [u.id]
-    assert c.is_code() and c.called_by == m.id
+    assert c.is_code() and c.caller == m.id
     assert c.result == "ok"
 
 
@@ -198,11 +198,11 @@ def test_linear_back_to_target_not_found(chat_graph):
         linear_back_to(chat_graph, "nonexistent")
 
 
-# called_by lineage helpers
+# caller lineage helpers
 
 
-def test_branch_terminals_and_internal_via_called_by():
-    """Build a fan-out scenario manually using called_by edges:
+def test_branch_terminals_and_internal_via_caller():
+    """Build a fan-out scenario manually using caller edges:
 
         spawn (n2)
          ├─ left_a → left_b
@@ -210,15 +210,15 @@ def test_branch_terminals_and_internal_via_called_by():
     """
     g = Graph()
     spawn = g.add_function_call(function_name="spawn", arguments={},
-                                 called_by="")
+                                 caller="")
     left_a = g.add(Call(role=ROLE_LLM, name="left",
-                        output="L1", called_by=spawn.id))
+                        output="L1", caller=spawn.id))
     left_b = g.add(Call(role=ROLE_LLM, name="left",
-                        output="L2", called_by=left_a.id))
+                        output="L2", caller=left_a.id))
     right_a = g.add(Call(role=ROLE_LLM, name="right",
-                         output="R1", called_by=spawn.id))
+                         output="R1", caller=spawn.id))
     right_b = g.add(Call(role=ROLE_LLM, name="right",
-                         output="R2", called_by=right_a.id))
+                         output="R2", caller=right_a.id))
 
     terminals = branch_terminals(spawn.id, g)
     assert set(terminals) == {left_b.id, right_b.id}

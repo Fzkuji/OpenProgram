@@ -7,7 +7,7 @@ Verifies:
     behaviour is preserved.
   - ``expose='hidden'`` suppresses the FunctionCall node.
   - Error path produces a node with status=error and result.error.
-  - ``called_by`` reflects the logical caller (enclosing
+  - ``caller`` reflects the logical caller (enclosing
     @agentic_function), not chronological predecessor.
 """
 
@@ -118,7 +118,7 @@ def test_exception_records_error_node(runtime, store):
     assert "boom" in fc.result["error"]
 
 
-# Nested calls: called_by is the logical caller
+# Nested calls: caller is the logical caller
 
 
 def test_nested_agentic_functions_chain_in_dag(runtime, store):
@@ -144,13 +144,13 @@ def test_nested_agentic_functions_chain_in_dag(runtime, store):
 
     outer_fc = next(n for n in fcs if n.function_name == "outer")
     # Top-level call has no enclosing function
-    assert outer_fc.called_by == ""
+    assert outer_fc.caller == ""
 
     # Both inner calls are made from within outer's body → their
     # logical caller is outer, regardless of chronological order.
     inner_fcs = [n for n in fcs if n.function_name == "inner"]
     for fc in inner_fcs:
-        assert fc.called_by == outer_fc.id
+        assert fc.caller == outer_fc.id
 
 
 # Entry-append / exit-update lifecycle
@@ -217,8 +217,8 @@ def test_exception_updates_to_error_in_place(runtime, store):
 # Multi-call chronological ordering
 
 
-def test_top_level_sibling_calls_have_empty_called_by(runtime, store):
-    """Two sibling top-level calls both have called_by="" because
+def test_top_level_sibling_calls_have_empty_caller(runtime, store):
+    """Two sibling top-level calls both have caller="" because
     neither has an enclosing @agentic_function on the call stack."""
     @agentic_function
     def one(runtime=None):
@@ -239,5 +239,5 @@ def test_top_level_sibling_calls_have_empty_called_by(runtime, store):
     assert fcs[0].function_name == "one"
     assert fcs[1].function_name == "two"
     # Both top-level → neither has a caller
-    assert fcs[0].called_by == ""
-    assert fcs[1].called_by == ""
+    assert fcs[0].caller == ""
+    assert fcs[1].caller == ""

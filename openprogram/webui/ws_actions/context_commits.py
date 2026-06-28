@@ -34,7 +34,7 @@ def _find_fork_group(idx, head_id: str) -> str:
         node = idx.nodes_by_id.get(cur)
         if node is None:
             break
-        parent = (node.metadata or {}).get("called_by")
+        parent = (node.metadata or {}).get("predecessor")
         if not parent:
             break
         siblings = idx.children_by_predecessor.get(parent, [])
@@ -69,7 +69,7 @@ async def handle_list_commits(ws, cmd: dict):
                 )
                 commits.append({
                     "id": s.id,
-                    "called_by": s.commit_parent,
+                    "predecessor": s.commit_parent,
                     "created_at": s.created_at,
                     "head_node_id": s.head_node_id,
                     "turn_group_id": group_id,
@@ -108,7 +108,7 @@ async def handle_get_commit_detail(ws, cmd: dict):
                 payload.update({
                     "id": commit.id,
                     "session_id": commit.session_id,
-                    "called_by": commit.commit_parent,
+                    "predecessor": commit.commit_parent,
                     "created_at": commit.created_at,
                     "head_node_id": commit.head_node_id,
                     "rules_version": commit.rules_version,

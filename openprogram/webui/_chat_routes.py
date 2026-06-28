@@ -37,7 +37,7 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
 
     Finds the nearest user-message ancestor of ``pivot_id``, creates a
     sibling user message at the same position in the DAG (same
-    ``called_by``), sets that as HEAD, and kicks off execution. The
+    ``predecessor``), sets that as HEAD, and kicks off execution. The
     old turn + its assistant subtree stay reachable as a sibling
     branch.
 
@@ -77,7 +77,7 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
         by_id = {m.get("id"): m for m in msgs}
         cur = pivot
         while cur is not None and cur.get("role") != "user":
-            cur = by_id.get(cur.get("called_by"))
+            cur = by_id.get(cur.get("predecessor"))
         if cur is None:
             return {"__error__": ("no user message to fork from", 400)}
         src_user = cur
@@ -90,7 +90,7 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
         # empty placeholder branches. Edit always forks because the
         # user explicitly changed the prompt.
         has_assistant_child = any(
-            m.get("called_by") == src_user.get("id") and m.get("role") == "assistant"
+            m.get("predecessor") == src_user.get("id") and m.get("role") == "assistant"
             for m in msgs
         )
         if new_content is None and not has_assistant_child:
@@ -111,7 +111,7 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
                            else src_user.get("content", ""),
                 "timestamp": time.time(),
                 # Sibling of src_user: same parent.
-                "called_by": src_user.get("called_by"),
+                "predecessor": src_user.get("predecessor"),
                 # Lineage breadcrumbs (future tooling / debugging).
                 "forked_from": src_user.get("id"),
             }
@@ -219,12 +219,12 @@ async def post_chat_checkout(body: dict = None):
     if not db.message_exists(session_id, target_id):
         return JSONResponse(content={"error": "unknown msg"}, status_code=404)
     # Reject checkout to function-internal nodes — a node with a
-    # ``called_by`` set lives inside an @agentic_function's execution
+    # ``predecessor`` set lives inside an @agentic_function's execution
     # subtree (LLM exec rows, nested code calls). Those are not
     # conversation branches and switching HEAD into one yields a
     # nonsense linear transcript that mixes internal exec output with
     # the user-visible reply. Conv branches are the nodes reachable
-    # purely via called_by; ``called_by`` is the DAG's separate "call"
+    # purely via predecessor; ``predecessor`` is the DAG's separate "call"
     # edge.
     _node = None
     try:
@@ -234,7 +234,7 @@ async def post_chat_checkout(body: dict = None):
                 break
     except Exception:
         _node = None
-    if _node is not None and getattr(_node, "called_by", None):
+    if _node is not None and getattr(_node, "predecessor", None):
         return JSONResponse(
             content={"error": "function-internal node is not a checkout target"},
             status_code=400,

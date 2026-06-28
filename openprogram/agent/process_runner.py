@@ -309,10 +309,10 @@ def _child_entry(
         # Return the id of the real top-level ``code`` node this call just
         # wrote (not a placeholder id — placeholders are no longer
         # persisted). The top-level node is the one named ``tool_name``
-        # whose caller is NOT itself a code node (fn-form → called_by ==
-        # "ROOT"; LLM-driven → called_by == llm-reply id). Nested
+        # whose caller is NOT itself a code node (fn-form → predecessor ==
+        # "ROOT"; LLM-driven → predecessor == llm-reply id). Nested
         # sub-functions are also code + may even share the name, but their
-        # ``called_by`` points at a code node, so excluding those isolates
+        # ``predecessor`` points at a code node, so excluding those isolates
         # the top-level invocation. Take the max-seq match in case the
         # session already holds earlier calls of the same function.
         real_id = None
@@ -323,7 +323,7 @@ def _child_entry(
                 n for n in nodes
                 if n.is_code()
                 and n.name == tool_name
-                and n.called_by not in code_ids
+                and n.caller not in code_ids
             ]
             if tops:
                 real_id = max(tops, key=lambda n: n.seq).id

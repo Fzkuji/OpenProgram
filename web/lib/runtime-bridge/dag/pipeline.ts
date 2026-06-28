@@ -83,7 +83,7 @@ function _signature(graph: GNode[], headId: string | null): string {
   if (!graph || !graph.length) return "empty|" + (headId || "");
   const parts = graph.map(
     (m) =>
-      m.id + ":" + (m.called_by || "") + ":" + (m.role || "") + ":" + (m.display || ""),
+      m.id + ":" + (m.predecessor || "") + ":" + (m.role || "") + ":" + (m.display || ""),
   );
   parts.sort();
   return parts.join(",") + "|" + (headId || "");
@@ -161,7 +161,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const rootNode = tree.byId[rootId];
     const isRunNode = !!rootNode._runNode;
     if (rootNode.role !== "tool" && !isRunNode) return;
-    const owner = isRunNode ? rootId : (rootNode.called_by || null);
+    const owner = isRunNode ? rootId : (rootNode.predecessor || null);
     const stack: string[] = [];
     if (isRunNode) {
       (rootNode.children || []).forEach((c) => {
@@ -199,8 +199,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const parentOf: Record<string, string> = Object.create(null);
   Object.keys(tree.byId).forEach((nid) => {
-    const pid = (tree.byId[nid] as { called_by?: string; called_by?: string }).called_by
-      || (tree.byId[nid] as { called_by?: string }).called_by;
+    const pid = (tree.byId[nid] as { predecessor?: string }).predecessor
+      || (tree.byId[nid] as { predecessor?: string }).predecessor;
     if (pid) parentOf[nid] = pid;
   });
   setParentOf(parentOf);

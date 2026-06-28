@@ -42,18 +42,18 @@ def test_search_returns_matching_messages(env) -> None:
     db.append_message("c1", {
         "id": "m1", "role": "user",
         "content": "How do I make 麻婆豆腐 from scratch?",
-        "timestamp": 1.0, "called_by": None,
+        "timestamp": 1.0, "predecessor": None,
     })
     db.append_message("c1", {
         "id": "m2", "role": "assistant",
         "content": "Heat oil, brown the pork mince, add doubanjiang...",
-        "timestamp": 2.0, "called_by": "m1",
+        "timestamp": 2.0, "predecessor": "m1",
     })
     db.create_session("c2", "main", title="Travel plans")
     db.append_message("c2", {
         "id": "m3", "role": "user",
         "content": "Best route from Beijing to Tokyo?",
-        "timestamp": 3.0, "called_by": None,
+        "timestamp": 3.0, "predecessor": None,
     })
 
     with client.websocket_connect("/ws") as ws:
@@ -86,7 +86,7 @@ def test_search_empty_query_returns_zero(env) -> None:
     db.create_session("c1", "main")
     db.append_message("c1", {
         "id": "m1", "role": "user", "content": "hi",
-        "timestamp": 1.0, "called_by": None,
+        "timestamp": 1.0, "predecessor": None,
     })
 
     with client.websocket_connect("/ws") as ws:
@@ -108,12 +108,12 @@ def test_search_filters_by_agent(env) -> None:
     db.create_session("c1", "main", title="A")
     db.append_message("c1", {
         "id": "m1", "role": "user", "content": "shared keyword zircon",
-        "timestamp": 1.0, "called_by": None,
+        "timestamp": 1.0, "predecessor": None,
     })
     db.create_session("c2", "research-bot", title="B")
     db.append_message("c2", {
         "id": "m2", "role": "user", "content": "shared keyword zircon",
-        "timestamp": 2.0, "called_by": None,
+        "timestamp": 2.0, "predecessor": None,
     })
 
     with client.websocket_connect("/ws") as ws:

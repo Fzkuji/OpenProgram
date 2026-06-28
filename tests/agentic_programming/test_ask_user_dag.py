@@ -5,7 +5,7 @@ DAG modeling:
   role = user            (callee — the human producing the answer)
   input = {"question":}  (what the LLM/code asked)
   output = the answer    (what the user produced)
-  called_by = enclosing  (the @agentic_function or LLM that asked)
+  caller = enclosing  (the @agentic_function or LLM that asked)
   metadata.status        "awaiting" → "answered" / "unanswered"
 
 When no store is installed, ask_user still works via the global
@@ -99,23 +99,23 @@ def test_ask_user_records_user_call_with_question_and_answer(store):
     assert n.metadata.get("status") == "answered"
 
 
-def test_ask_user_called_by_set_to_frame_when_inside_function(store):
+def test_ask_user_caller_set_to_frame_when_inside_function(store):
     """Inside an @agentic_function frame, the placeholder Call's
-    called_by points at the enclosing function's pending id."""
+    caller points at the enclosing function's pending id."""
     with _install_handler(lambda q: "ok"), _install_frame("plan_pending_id"):
         ask_user("clarify?")
     g = store.load()
     n = next(x for x in g if x.is_user())
-    assert n.called_by == "plan_pending_id"
+    assert n.caller == "plan_pending_id"
 
 
-def test_ask_user_called_by_empty_when_top_level(store):
-    """Outside any @agentic_function frame → called_by is empty."""
+def test_ask_user_caller_empty_when_top_level(store):
+    """Outside any @agentic_function frame → caller is empty."""
     with _install_handler(lambda q: "yes"):
         ask_user("global question")
     g = store.load()
     n = next(x for x in g if x.is_user())
-    assert n.called_by == ""
+    assert n.caller == ""
 
 
 # Status transitions

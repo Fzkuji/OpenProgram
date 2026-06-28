@@ -15,25 +15,25 @@ def _annotate_spawn_origin(graph: list[dict]) -> None:
     Switch button mirroring the main-lane AttachCard).
 
     Discovery: scan attach pointer nodes for ``attach_ref`` → sub
-    branch tip. Walk called_by back from the tip to reach the
-    sub-branch root. The attach node's own ``called_by`` (= the main
+    branch tip. Walk predecessor back from the tip to reach the
+    sub-branch root. The attach node's own ``predecessor`` (= the main
     LLM reply that ran the task() tool) is the caller id we record.
     """
     by_id = {n.get("id"): n for n in graph if n.get("id")}
-    # Build conv_children from called_by
+    # Build conv_children from predecessor
     conv_children: dict[str, list[str]] = {}
     for n in graph:
-        p = n.get("called_by")
+        p = n.get("predecessor")
         if p:
             conv_children.setdefault(p, []).append(n.get("id") or "")
     for attach in graph:
         if attach.get("function") != "attach":
             continue
         tip = attach.get("attach_ref")
-        caller = attach.get("called_by") or attach.get("caller")
+        caller = attach.get("predecessor") or attach.get("caller")
         if not tip or tip not in by_id or not caller:
             continue
-        # Walk called_by up from the tip to the sub-branch's
+        # Walk predecessor up from the tip to the sub-branch's
         # ``source=agent_spawn`` root.
         cur: str | None = tip
         hops = 0
@@ -47,7 +47,7 @@ def _annotate_spawn_origin(graph: list[dict]) -> None:
                     and n.get("role") == "user"):
                 sub_root = n
                 break
-            p = n.get("called_by")
+            p = n.get("predecessor")
             if not p:
                 break
             cur = p
@@ -65,7 +65,7 @@ def _rebuild_runtime_cards(
     """Turn a manually-invoked @agentic_function's code node into the
     same Function-call card the live runtime shows.
 
-    A top-level code node (``called_by`` is ROOT / an anchor / anything
+    A top-level code node (``predecessor`` is ROOT / an anchor / anything
     that is not an LLM reply) is the root of one @agentic_function call.
     On refresh it arrives as a bare ``role="tool"`` row whose parent is
     not an assistant, so ``aggregate_tool_messages`` can't fold it — the
@@ -82,7 +82,7 @@ def _rebuild_runtime_cards(
     def _is_top_code(m: dict) -> bool:
         if m.get("role") != "tool":
             return False
-        parent = m.get("called_by") or ""
+        parent = m.get("predecessor") or ""
         # Only ROOT-parented or unparented code nodes are top-level
         # function calls (manual /run, fn-form). Internal sub-calls
         # (gui_step, conclusion, plan_next_action) have a non-ROOT
@@ -100,16 +100,16 @@ def _rebuild_runtime_cards(
         # Anything else (anchor user row) is a manual/fn-form root.
         return True
 
-    # Collect each top code node's transitive descendants (via called_by)
+    # Collect each top code node's transitive descendants (via predecessor)
     # so they don't render as separate rows — they live in context_tree.
     # Only tool/assistant nodes are internal sub-calls of a function.
-    # User nodes whose called_by points at a tool node are conv
+    # User nodes whose predecessor points at a tool node are conv
     # predecessors (next turn after the fn-call), not sub-calls.
     children_of: dict[str, list[str]] = {}
     for m in all_msgs:
         if m.get("role") == "user":
             continue
-        p = m.get("called_by") or ""
+        p = m.get("predecessor") or ""
         if p and p != "ROOT":
             children_of.setdefault(p, []).append(m.get("id"))
 
@@ -135,7 +135,7 @@ def _rebuild_runtime_cards(
         if _is_top_code(m):
             name = m.get("function") or ""
             # Anchor the context_tree on this code node's own id, not on
-            # (name, called_by=ROOT). The latter is "last match wins", so
+            # (name, caller=ROOT). The latter is "last match wins", so
             # calling one function twice in a session would resolve both
             # cards to the most recent invocation's subtree. By-id gives
             # each card its own subtree.
@@ -157,7 +157,7 @@ def _rebuild_runtime_cards(
                 # Top-level card: no assistant parent, so conv-mapper
                 # keeps it on the main list instead of folding it into
                 # an LLM bubble's runtimeChildren.
-                "called_by": "",
+                "predecessor": "",
             }
             out.append(card)
             drop |= _descendants(mid)
@@ -391,7 +391,7 @@ async def handle_load_session(ws, cmd: dict):
         # folded away (e.g. a role="tool" child of an assistant whose
         # turn never reached step 6's ``update_session(head_id=...)``
         # — common after a worker restart mid-turn), walk up the raw
-        # called_by chain until we hit a row that survived
+        # predecessor chain until we hit a row that survived
         # aggregation. Without this the linear_history call below
         # returns [] and the page renders the empty Welcome screen
         # despite the DAG clearly having history.
@@ -402,7 +402,7 @@ async def handle_load_session(ws, cmd: dict):
                 cur = head
                 hops = 0
                 while cur and cur not in agg_ids and hops < 100:
-                    parent = (raw_by_id.get(cur) or {}).get("called_by")
+                    parent = (raw_by_id.get(cur) or {}).get("predecessor")
                     if not parent or parent == cur:
                         cur = None
                         break
@@ -411,11 +411,11 @@ async def handle_load_session(ws, cmd: dict):
                 if cur and cur in agg_ids:
                     head = cur
         chain = linear_history(all_msgs, head) if head else list(all_msgs)
-        # linear_history walks called_by pointers. Sessions created
-        # via the DAG store (called_by edges, no called_by) produce
-        # nodes with called_by=None, so linear_history returns only
+        # linear_history walks predecessor pointers. Sessions created
+        # via the DAG store (predecessor edges, no predecessor) produce
+        # nodes with caller=None, so linear_history returns only
         # the head node. Fall back to get_branch which traverses
-        # called_by and handles ROOT-parented nodes correctly.
+        # predecessor and handles ROOT-parented nodes correctly.
         if len(chain) < len(all_msgs):
             try:
                 branch_msgs = _db_load.get_branch(session_id)
@@ -440,7 +440,7 @@ async def handle_load_session(ws, cmd: dict):
                 if m.get("id") not in chain_ids
                 and (m.get("timestamp") or 0) < earliest_ts
                 and m.get("role") in ("user", "assistant")
-                and (m.get("called_by") or "ROOT") in ("", "ROOT")
+                and (m.get("predecessor") or "ROOT") in ("", "ROOT")
             ]
             # Include their conv children (e.g. assistant reply to a
             # user message) so complete turns are prepended.
@@ -450,7 +450,7 @@ async def handle_load_session(ws, cmd: dict):
                 mid = m.get("id")
                 if mid in chain_ids or mid in missing_ids:
                     continue
-                cb = m.get("called_by") or ""
+                cb = m.get("predecessor") or ""
                 if cb in missing_ids and m.get("role") in ("user", "assistant"):
                     missing.append(m)
                     missing_ids.add(mid)
@@ -459,7 +459,7 @@ async def handle_load_session(ws, cmd: dict):
                 chain = missing + chain
         # Splice attach pointer rows (function="attach") into the
         # displayed chain. They hang off a parent message via
-        # called_by — not on the conv chain itself — so
+        # predecessor — not on the conv chain itself — so
         # linear_history skips them, but the chat needs them inline
         # as standalone AttachCard rows.
         chain_ids = {m.get("id") for m in chain}
@@ -468,12 +468,12 @@ async def handle_load_session(ws, cmd: dict):
             if m.get("function") != "attach":
                 continue
             # Skip pointers already in the chain — older writes set
-            # both called_by and called_by, which made attach pointers
+            # both predecessor and predecessor, which made attach pointers
             # appear as conv children too. New writes only set
-            # called_by; this guard keeps old data from doubling up.
+            # predecessor; this guard keeps old data from doubling up.
             if m.get("id") in chain_ids:
                 continue
-            parent = m.get("called_by") or ""
+            parent = m.get("predecessor") or ""
             if parent and parent in chain_ids:
                 attach_by_parent.setdefault(parent, []).append(m)
         if attach_by_parent:
@@ -486,7 +486,7 @@ async def handle_load_session(ws, cmd: dict):
             chain = spliced
         # Splice runtime-block placeholder rows written by the
         # dispatcher's @agentic_function wrapper. They hang off the
-        # assistant reply that called the tool via called_by but are
+        # assistant reply that called the tool via predecessor but are
         # not on the conv chain itself (the chain's head is the
         # assistant reply, not its runtime child). The chat needs
         # each placeholder as a standalone RuntimeBlock row right
@@ -498,7 +498,7 @@ async def handle_load_session(ws, cmd: dict):
                 continue
             if m.get("id") in chain_ids:
                 continue
-            parent = m.get("called_by") or ""
+            parent = m.get("predecessor") or ""
             if parent and parent in chain_ids:
                 runtime_by_parent.setdefault(parent, []).append(m)
         if runtime_by_parent:

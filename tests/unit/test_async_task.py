@@ -37,11 +37,11 @@ def store_fixture(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "hi",
-        "timestamp": 0, "called_by": None,
+        "timestamp": 0, "predecessor": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "called_by": "u1",
+        "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "init")
     return s
@@ -237,11 +237,11 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     store_fixture.create_session("p2", "main", title="parent2")
     store_fixture.append_message("p2", {
         "id": "u2", "role": "user", "content": "hi",
-        "timestamp": 0, "called_by": None,
+        "timestamp": 0, "predecessor": None,
     })
     store_fixture.append_message("p2", {
         "id": "a2", "role": "assistant", "content": "ok",
-        "timestamp": 0, "called_by": "u2",
+        "timestamp": 0, "predecessor": "u2",
     })
     store_fixture.commit_turn("p2", "init")
 

@@ -11,8 +11,7 @@
 
 export interface GNode {
   id: string;
-  parent_id?: string | null;
-  called_by?: string | null;
+  predecessor?: string | null;
   role?: string;
   display?: string;
   created_at?: number;
@@ -73,9 +72,9 @@ export const LANE_COLORS = [
   "#d05fa0", // rose
 ];
 
-/** Layout parent: called_by (session DAG). */
+/** Layout parent: predecessor (session DAG). */
 export function layoutParent(n: GNode): string | null | undefined {
-  return n.called_by;
+  return n.predecessor;
 }
 
 export type HighlightMode = "viewport" | "context";

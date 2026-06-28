@@ -32,7 +32,7 @@ def store(tmp_path, monkeypatch):
     s.create_session("sess1", "chat", title="t")
     s.append_message("sess1", {
         "id": "u1", "role": "user", "content": "hi",
-        "timestamp": 0, "called_by": None,
+        "timestamp": 0, "predecessor": None,
     })
     s.commit_turn("sess1", "init")
     return s

@@ -5,7 +5,7 @@ When navigating between branches in a session tree, this generates a summary
 of the abandoned branch so context isn't lost. The tree navigator passes in
 its own session object satisfying a duck-typed interface:
 
-    session.get_branch(leaf_id) -> list of entries (each with .id, .called_by, .type, ...)
+    session.get_branch(leaf_id) -> list of entries (each with .id, .caller, .type, ...)
     session.get_entry(entry_id) -> entry or None
 
 Used by the Runtime layer if it maintains a tree-structured context.
@@ -91,7 +91,7 @@ def collect_entries_for_branch_summary(
         if not entry:
             break
         entries.append(entry)
-        current = entry.called_by
+        current = entry.caller
 
     entries.reverse()
     return CollectEntriesResult(entries=entries, common_ancestor_id=common_ancestor_id)

@@ -1,5 +1,5 @@
 """runtime.exec → DAG: each successful LLM call appends an llm-role
-Call. ``called_by`` carries the enclosing ``@agentic_function`` pending
+Call. ``caller`` carries the enclosing ``@agentic_function`` pending
 id (when called from inside one), or empty string at the top level.
 
 Prompt-composition logic is untouched — these tests don't assert what
@@ -65,10 +65,10 @@ def test_exec_without_function_frame_appends_llm_call(store):
     assert llm_nodes[0].output == "hello back"
 
 
-# exec inside an @agentic_function — called_by set
+# exec inside an @agentic_function — caller set
 
 
-def test_exec_inside_function_stamps_called_by(store):
+def test_exec_inside_function_stamps_caller(store):
     rt = _FakeRuntime(reply="reply")
 
     @agentic_function
@@ -82,8 +82,8 @@ def test_exec_inside_function_stamps_called_by(store):
     llm_nodes = [n for n in g if n.is_llm()]
     assert len(code_nodes) == 1
     assert len(llm_nodes) == 1
-    # ModelCall's called_by points at the code Call's id
-    assert llm_nodes[0].called_by == code_nodes[0].id
+    # ModelCall's caller points at the code Call's id
+    assert llm_nodes[0].caller == code_nodes[0].id
 
 
 def test_exec_nested_calls_stamp_correct_frame(store):
@@ -109,7 +109,7 @@ def test_exec_nested_calls_stamp_correct_frame(store):
     # Two LLM calls expected: one inside inner, one inside outer's body.
     llm_nodes = [n for n in g if n.is_llm()]
     assert len(llm_nodes) == 2
-    callers = sorted(n.called_by for n in llm_nodes)
+    callers = sorted(n.caller for n in llm_nodes)
     assert callers == sorted([inner_id, outer_id])
 
 
@@ -153,7 +153,7 @@ def test_exec_llm_node_lifecycle_running_then_completed(store):
 
 def test_tool_loop_subcall_attributes_to_llm_node(store):
     """A function the model calls during an exec's tool loop records
-    ``called_by`` = the llm node (code → llm → code chain), not the
+    ``caller`` = the llm node (code → llm → code chain), not the
     enclosing function frame.
 
     Simulates the tool-loop attribution that ``_call_via_providers`` does:
@@ -197,11 +197,11 @@ def test_tool_loop_subcall_attributes_to_llm_node(store):
     llm_node = next(n for n in g if n.is_llm())
 
     # The llm node is a child of parent's code node.
-    assert llm_node.called_by == parent_node.id
+    assert llm_node.caller == parent_node.id
     # The child the model called during the tool loop is a child of the
     # llm node — NOT a direct sibling under parent. This is the code → llm
     # → code chain the unification fixes.
-    assert child_node.called_by == llm_node.id
+    assert child_node.caller == llm_node.id
 
 
 # stream_fn injection: exec(stream_fn=fake) reaches the provider path

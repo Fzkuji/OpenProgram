@@ -608,7 +608,7 @@ class DefaultContextEngine(ContextEngine):
 
         read_ids = render_context(graph, head_seq=head_seq, frame_entry_seq=-1)
         # restrict to the active branch (guard #1) — but keep code sub-call
-        # nodes whose called_by is an in-branch llm/user node (tool rows
+        # nodes whose predecessor is an in-branch llm/user node (tool rows
         # aren't on the conv branch yet carry the turn's tool calls).
         def _in_branch(nid: str) -> bool:
             if nid in branch_id_set:
@@ -616,7 +616,7 @@ class DefaultContextEngine(ContextEngine):
             n = graph.nodes.get(nid)
             if n is None:
                 return False
-            cb = n.called_by or ""
+            cb = n.caller or ""
             return cb in branch_id_set
         read_ids = [nid for nid in read_ids if _in_branch(nid)]
 
@@ -663,7 +663,7 @@ class DefaultContextEngine(ContextEngine):
         # 它传的 history 是写之前的快照.
         fresh_history_conv = db.get_branch(session_id) or history or []
 
-        # 把每个 assistant 的 tool sub-calls (called_by=assistant_id 的
+        # 把每个 assistant 的 tool sub-calls (caller=assistant_id 的
         # ROLE_CODE 节点) 按顺序插到 assistant 后面 — context commit 反映的
         # 应该是 LLM 真实看到的消息序列, 包含 tool_use + tool_result.
         # 否则 Context tab 只有 user/assistant 纯文本, 看不到调了什么工具.

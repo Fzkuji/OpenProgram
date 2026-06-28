@@ -150,7 +150,7 @@ def load_commit_for_head(
         node = idx.nodes_by_id.get(cur)
         if node is None:
             break
-        parent = (node.metadata or {}).get("called_by")
+        parent = (node.metadata or {}).get("predecessor")
         if not parent:
             break
         cur = parent

@@ -42,12 +42,12 @@ export function _applyCollapse(graph: GNode[]): {
   const internalFlag: Record<string, boolean> = Object.create(null);
   graph.forEach((m) => {
     if (m._internal) internalFlag[m.id] = true;
-    const _lp = m.called_by;
+    const _lp = m.predecessor;
     if (_lp) {
       (childrenOf[_lp] = childrenOf[_lp] || []).push(m.id);
     }
     // Only build caller-kids from the 'caller' field (sub-call
-    // relationship), not from called_by (conv predecessor). This
+    // relationship), not from predecessor (conv predecessor). This
     // prevents folding a user node from collapsing all subsequent
     // turns in the conversation chain.
     const ca = (m as Record<string, unknown>).caller as string | undefined;

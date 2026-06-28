@@ -34,11 +34,11 @@ export function _demoteDecorationCards(graph: GNode[]): void {
   const convKidsOf: Record<string, GNode[]> = Object.create(null);
   const callerKidsOf: Record<string, GNode[]> = Object.create(null);
   graph.forEach((m) => {
-    const _lp = m.called_by;
+    const _lp = m.predecessor;
     if (_lp && byId[_lp]) {
       (convKidsOf[_lp] = convKidsOf[_lp] || []).push(m);
     }
-    const ca = (m as { called_by?: string; caller?: string }).called_by
+    const ca = (m as { predecessor?: string; caller?: string }).predecessor
       || (m as { caller?: string }).caller;
     if (ca && byId[ca]) {
       (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m);

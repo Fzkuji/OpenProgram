@@ -32,9 +32,9 @@ from typing import Optional
 
 def _exec_tnode(n, kids: dict[str, list]) -> dict:
     """Turn one DAG node into the TNode dict the Execution DAG renders,
-    recursing into its ``kids`` (children grouped by ``called_by``).
+    recursing into its ``kids`` (children grouped by ``predecessor``).
 
-    Shared by :func:`build_exec_dag` (locate by ``(name, called_by)``)
+    Shared by :func:`build_exec_dag` (locate by ``(name, predecessor)``)
     and :func:`build_exec_dag_by_id` (locate by the node's own id) so
     both produce byte-identical tree shapes.
     """
@@ -79,11 +79,11 @@ def _exec_tnode(n, kids: dict[str, list]) -> dict:
 def build_exec_dag_by_id(session_id: str,
                           root_node_id: str) -> Optional[dict]:
     """Reconstruct a single call's execution DAG, rooted at the node
-    whose id is ``root_node_id`` (not by ``(name, called_by)``).
+    whose id is ``root_node_id`` (not by ``(name, predecessor)``).
 
     Used by the refresh-rebuild path: a manually-invoked
     @agentic_function persists as a top-level code node with
-    ``called_by="ROOT"``. Calling the same function twice in one session
+    ``caller="ROOT"``. Calling the same function twice in one session
     yields two such nodes — both ``ROOT``-anchored, so the name-based
     :func:`build_exec_dag` ("last match wins") would resolve both cards
     to the most recent invocation's subtree. Anchoring on the node's own
@@ -101,8 +101,8 @@ def build_exec_dag_by_id(session_id: str,
         return None
     kids: dict[str, list] = {}
     for n in nodes:
-        if n.called_by:
-            kids.setdefault(n.called_by, []).append(n)
+        if n.caller:
+            kids.setdefault(n.caller, []).append(n)
     return _exec_tnode(root, kids)
 
 
@@ -130,29 +130,29 @@ def build_exec_dag(session_id: str, func_name: str,
     by_id = {n.id: n for n in nodes}
     kids: dict[str, list] = {}
     for n in nodes:
-        if n.called_by:
-            kids.setdefault(n.called_by, []).append(n)
+        if n.caller:
+            kids.setdefault(n.caller, []).append(n)
 
     # Root: the func_name code call this run's user turn triggered.
     # Last match wins so a re-run picks the most recent invocation.
     root = None
     for n in nodes:
-        if n.is_code() and n.name == func_name and n.called_by == user_turn_id:
+        if n.is_code() and n.name == func_name and n.caller == user_turn_id:
             root = n
 
     if root is not None:
         return _exec_tnode(root, kids)
 
     # Mid-run: the top func_name node isn't persisted yet. Its direct
-    # children already carry its allocated id in ``called_by`` — so they
-    # look like orphans (called_by → an id not in the graph). Collect
+    # children already carry its allocated id in ``predecessor`` — so they
+    # look like orphans (predecessor → an id not in the graph). Collect
     # them, but only ones created at/after this run's user turn, so
     # stale orphans from old deleted branches aren't swept in.
     turn = by_id.get(user_turn_id)
     floor = (turn.created_at or 0.0) if turn else 0.0
     orphan_children = [
         n for n in nodes
-        if n.called_by and n.called_by not in by_id
+        if n.caller and n.caller not in by_id
         and not n.is_user()
         and (n.created_at or 0.0) >= floor
     ]
@@ -404,7 +404,7 @@ def build_session_dag(session_id: str) -> Optional[dict]:
       └─ llm   "you're welcome"
 
     Returns a ROOT TNode with user/llm/code nodes as children.
-    Tool calls (code nodes with called_by pointing at an llm node)
+    Tool calls (code nodes with predecessor pointing at an llm node)
     are nested under their parent llm node.
     """
     try:
@@ -463,12 +463,12 @@ def build_session_dag(session_id: str) -> Optional[dict]:
     # Group code nodes under their parent llm node
     code_by_caller: dict[str, list] = {}
     for n in nodes:
-        if n.is_code() and n.called_by and n.called_by in by_id:
-            code_by_caller.setdefault(n.called_by, []).append(n)
+        if n.is_code() and n.caller and n.caller in by_id:
+            code_by_caller.setdefault(n.caller, []).append(n)
 
     children = []
     for n in nodes:
-        if n.is_code() and n.called_by and n.called_by in by_id:
+        if n.is_code() and n.caller and n.caller in by_id:
             continue  # nested under parent
         tn = _to_tnode(n)
         sub = code_by_caller.get(n.id, [])

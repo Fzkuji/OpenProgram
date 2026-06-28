@@ -356,7 +356,7 @@ def _situational_prefix(
 
 
 def _compute_call_path(graph, frame_node_id: str, max_depth: int = 20) -> str:
-    """Walk up the ``called_by`` chain from ``frame_node_id`` to the root,
+    """Walk up the ``caller`` chain from ``frame_node_id`` to the root,
     collecting the names of agentic-function (code) nodes, and join them
     into ``"root → ... → current"``.
 
@@ -367,7 +367,7 @@ def _compute_call_path(graph, frame_node_id: str, max_depth: int = 20) -> str:
       meaningless intermediate nodes).
     - Cycle-guarded (``seen``) and depth-capped (``max_depth``); when the
       cap is hit the path is truncated with a leading "…".
-    - Stops when a node's ``called_by`` is empty or points outside the graph.
+    - Stops when a node's ``caller`` is empty or points outside the graph.
     """
     try:
         if not graph or frame_node_id not in graph.nodes:
@@ -387,7 +387,7 @@ def _compute_call_path(graph, frame_node_id: str, max_depth: int = 20) -> str:
             name = getattr(node, "name", "") or ""
             if name:
                 names.append(name)
-            cur = getattr(node, "called_by", "") or None
+            cur = getattr(node, "caller", "") or None
         if not names:
             return ""
         names.reverse()  # root → ... → current
@@ -703,7 +703,7 @@ class Runtime:
                 input=({"system": system_prompt} if system_prompt else None),
                 output=None,
                 reads=[],
-                called_by=_call_id.get() or "",
+                caller=_call_id.get() or "",
                 metadata={
                     "status": "running",
                     **({"prompt_text": content_text[:8000]} if content_text else {}),
@@ -1703,7 +1703,7 @@ class Runtime:
         # Repoint _call_id to this exec's llm node for the tool loop, NOW
         # that the prompt history is already built (history rendering above
         # needed _call_id pointing at the enclosing function frame). Any
-        # tool the model calls during session.run records called_by = this
+        # tool the model calls during session.run records caller = this
         # llm node, giving the DAG a correct code → llm → code chain
         # instead of code → code. Reset in finally.
         _frame_token = None

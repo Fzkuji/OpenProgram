@@ -45,9 +45,9 @@ def test_dag_render_excludes_trailing_user_message(db):
     db.create_session(sess, "agent")
     db.append_message(sess, {"id": "u1", "role": "user", "content": "hello"})
     db.append_message(sess, {"id": "a1", "role": "assistant", "content": "hi there",
-                             "called_by": "u1"})
+                             "predecessor": "u1"})
     db.append_message(sess, {"id": "u2", "role": "user", "content": "NEW_QUESTION",
-                             "called_by": "a1"})
+                             "predecessor": "a1"})
 
     msgs = _engine()._build_messages_from_dag(session_id=sess, history=[], model=None)
     blob = "\n".join(_texts(msgs))
@@ -64,13 +64,13 @@ def test_dag_render_accumulates_prior_turns(db):
     for i in range(1, 4):
         msg_u = {"id": f"u{i}", "role": "user", "content": f"q{i}"}
         if prev:
-            msg_u["called_by"] = prev
+            msg_u["predecessor"] = prev
         db.append_message(sess, msg_u)
         db.append_message(sess, {"id": f"a{i}", "role": "assistant", "content": f"a{i}",
-                                 "called_by": f"u{i}"})
+                                 "predecessor": f"u{i}"})
         prev = f"a{i}"
     db.append_message(sess, {"id": "u_last", "role": "user", "content": "LATEST",
-                             "called_by": prev})
+                             "predecessor": prev})
 
     msgs = _engine()._build_messages_from_dag(session_id=sess, history=[], model=None)
     blob = "\n".join(_texts(msgs))

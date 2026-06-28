@@ -33,13 +33,13 @@ export function drawEdges(
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     if (node.display === "root") return;
-    let pid = node.called_by;
+    let pid = node.predecessor;
     if (pid && !tree.byId[pid]) {
       let cur = pid;
       let hops = 0;
       while (cur && !tree.byId[cur] && hops < 50) {
         const pn = fullById[cur];
-        cur = pn ? (pn.called_by || null) : null;
+        cur = pn ? (pn.predecessor || null) : null;
         hops++;
       }
       if (cur && tree.byId[cur]) pid = cur;
@@ -114,13 +114,13 @@ export function drawEdges(
     if (!node) continue;
     const myLane = node._lane || 0;
     if (forkRoots[myLane]?.id !== id) continue;
-    const pid = node.called_by;
+    const pid = node.predecessor;
     if (!pid) continue;
     let sibling: GNode | null = null;
     Object.keys(tree.byId).forEach((sid) => {
       if (sid === id) return;
       const sn = tree.byId[sid];
-      if (sn.called_by === pid && (sn._lane || 0) !== myLane) {
+      if (sn.predecessor === pid && (sn._lane || 0) !== myLane) {
         if (!sibling) sibling = sn;
       }
     });
@@ -192,14 +192,14 @@ export function drawEdges(
   Object.keys(tree.byId).forEach((id) => {
     const taskNode = tree.byId[id];
     if (taskNode.role !== "tool" || taskNode.function !== "task") return;
-    const callerId = taskNode.caller || taskNode.called_by || "";
+    const callerId = taskNode.caller || taskNode.predecessor || "";
     if (!callerId) return;
     let subTipId = "";
     for (const k of Object.keys(tree.byId)) {
       const n = tree.byId[k];
       if (n.function !== "attach") continue;
-      const ac = n.caller || n.called_by || "";
-      const ap = n.called_by || "";
+      const ac = n.caller || n.predecessor || "";
+      const ap = n.predecessor || "";
       if (ac === callerId || ap === callerId) {
         subTipId = String(n.attach_ref || "");
         break;
@@ -211,7 +211,7 @@ export function drawEdges(
     while (cur && !seen[cur]) {
       seen[cur] = true;
       const nn: GNode | undefined = tree.byId[cur];
-      const pp: string | null | undefined = nn && (nn.called_by);
+      const pp: string | null | undefined = nn && (nn.predecessor);
       if (!pp || !tree.byId[pp]) break;
       cur = pp;
     }

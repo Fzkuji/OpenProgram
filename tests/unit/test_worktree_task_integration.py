@@ -43,11 +43,11 @@ def store_fixture(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "hi",
-        "timestamp": 0, "called_by": None,
+        "timestamp": 0, "predecessor": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "called_by": "u1",
+        "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "init")
     return s

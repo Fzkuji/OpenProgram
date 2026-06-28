@@ -2,13 +2,13 @@
 (new root) — both inside the same session.
 
 All agents are peers. There is no "sub-agent type". A turn is just
-``(called_by, prompt, agent_id)``:
+``(predecessor, prompt, agent_id)``:
 
-  * ``called_by = <existing_node_id>`` — the new turn forks off that
+  * ``predecessor = <existing_node_id>`` — the new turn forks off that
     node. The agent inherits the conversation chain that leads to
-    ``called_by`` as context. This is the normal "fork from here" /
+    ``predecessor`` as context. This is the normal "fork from here" /
     Claude-Code Task feel.
-  * ``called_by = None`` — the new turn starts a fresh root. The
+  * ``predecessor = None`` — the new turn starts a fresh root. The
     agent sees only the prompt; its turn series becomes an
     independent DAG tree inside the same session repo.
 
@@ -48,7 +48,7 @@ def run_agent_turn(
 ) -> AgentTurnResult:
     """Run one agent turn inside ``session_id``.
 
-    ``called_by`` controls the context:
+    ``predecessor`` controls the context:
       * ``None`` → new root (clean start, agent sees only ``prompt``).
       * ``<node_id>`` → fork off that node (agent inherits the chain
         ending at ``node_id`` as context).
@@ -69,8 +69,8 @@ def run_agent_turn(
 
     # Clean start: pass ``history_override=[]`` so the dispatcher's
     # context assembly doesn't pull in any conversation history.
-    # Inherit: history is whatever leads to ``called_by``, which the
-    # dispatcher already resolves from ``called_by``.
+    # Inherit: history is whatever leads to ``predecessor``, which the
+    # dispatcher already resolves from ``predecessor``.
     # Spawned sub-agents run with ``permission_mode="bypass"``: there's
     # no UI subscribed to approval_request events on the spawned lane
     # (the chat view only listens to its own turn), so the default
@@ -143,7 +143,7 @@ def write_attach_pointer_for_spawn(
         # LLM reply that ran the task() tool call, or the user_msg of
         # a slash-command path). This is the call-edge semantics from
         # docs/design/runtime/dag-node-model.md: attach is a function_call
-        # whose ``called_by`` is the turn that triggered it. Previously
+        # whose ``predecessor`` is the turn that triggered it. Previously
         # this code re-anchored to the caller's parent (the spawn
         # user_msg) which made depth.py collapse attach onto the same
         # row as the LLM reply.
@@ -161,8 +161,8 @@ def write_attach_pointer_for_spawn(
         attach_node_id = _uuid.uuid4().hex[:12]
         # Attach is a branch-referencing function_call that lives ON
         # the main sequence (per docs/design/runtime/dag-node-model.md), so it
-        # must hang off the caller via ``called_by`` (sequence edge),
-        # not ``called_by`` (which would put it on a side branch and
+        # must hang off the caller via ``predecessor`` (sequence edge),
+        # not ``predecessor`` (which would put it on a side branch and
         # leave the caller's reply orphaned as its own tip).
         attach_msg = {
             "id": attach_node_id,
@@ -170,7 +170,7 @@ def write_attach_pointer_for_spawn(
             "display": "runtime",
             "function": "attach",
             "content": (result.final_text or result.error or "(no output)").strip(),
-            "called_by": fork_anchor,
+            "predecessor": fork_anchor,
             "timestamp": _time.time(),
             "is_error": bool(result.failed or result.error),
             "agent_id": chosen_agent,
