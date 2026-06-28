@@ -306,15 +306,19 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   }
 
   // ── Tree-style edges ──
-  // Vertical trunk at the SMALLER tier (leftmost column between
-  // parent and child), then horizontal branch to the deeper node.
-  // When a conv-chain edge goes from tier=2 (llm) back to tier=1
-  // (next user), the trunk drops at tier=1 (not tier=2), avoiding
-  // the snake-shaped zigzag.
+  // For user nodes: connect from ROOT (tier=0 column) — user is
+  // conceptually ROOT's child regardless of called_by (conv chain).
+  // For other nodes: connect from their called_by parent.
+  // Each edge: vertical drop at parent x, horizontal branch to child x.
+
+  // Find ROOT node position
+  const rootNode = Object.values(tree.byId).find((n) => n.display === "root");
+  const rootPos = rootNode ? pos(rootNode) : null;
 
   const forkNodes: string[] = [];
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
+    if (node.display === "root") return;
     const pid = node.called_by;
     if (!pid || !tree.byId[pid]) return;
     const parent = tree.byId[pid];
@@ -323,16 +327,20 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       forkNodes.push(id);
       return;
     }
-    const p = pos(parent);
     const c = pos(node);
-    const color = _branchColor(parent, stableLeafOfNode);
+    const color = _branchColor(node, stableLeafOfNode);
     const nr = NODE_R + 4;
-    // Trunk drops at the leftmost x (smaller tier)
-    const trunkX = Math.min(p.x, c.x);
+
+    // User nodes connect from ROOT column (tier=0), not from
+    // their called_by (which is the previous llm in conv chain).
+    const isConvUser = node.role === "user" && rootPos;
+    const trunkX = isConvUser ? rootPos.x : pos(parent).x;
+    const fromY = isConvUser ? rootPos.y : pos(parent).y;
+
     // Vertical trunk from parent row to child row
-    if (c.y > p.y) {
+    if (c.y > fromY) {
       edgeG.appendChild(_svg("line", {
-        x1: trunkX, y1: p.y, x2: trunkX, y2: c.y,
+        x1: trunkX, y1: fromY, x2: trunkX, y2: c.y,
         stroke: color,
         "stroke-width": 1.6,
         "stroke-linecap": "round",
@@ -340,18 +348,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
         class: "history-edge",
       }));
     }
-    // Horizontal branch from trunk to the deeper node
-    // (parent or child, whichever is further right)
-    if (p.x !== trunkX) {
-      edgeG.appendChild(_svg("line", {
-        x1: trunkX, y1: p.y, x2: p.x - nr, y2: p.y,
-        stroke: color,
-        "stroke-width": 1.6,
-        "stroke-linecap": "round",
-        "pointer-events": "none",
-        class: "history-edge",
-      }));
-    }
+    // Horizontal branch from trunk to child
     if (c.x !== trunkX) {
       edgeG.appendChild(_svg("line", {
         x1: trunkX, y1: c.y, x2: c.x - nr, y2: c.y,
