@@ -68,18 +68,19 @@ supporting notes / investigations that should not override it.
 
 | Doc | Topic |
 |---|---|
-| [`providers/thinking-effort.md`](providers/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
-| [`providers/models.md`](providers/models.md) | 模型目录最终设计 |
-| [`providers/claude-code-direct-oauth.md`](providers/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
-| [`providers/credential-validation-unification.md`](providers/credential-validation-unification.md) | Unified credential validation |
-| [`providers/unified-auth-storage.md`](providers/unified-auth-storage.md) | 统一认证存储 |
-| [`providers/unified-account-management.md`](providers/unified-account-management.md) | 统一账号管理 + 轮换 |
-| [`providers/credential-status-redesign.md`](providers/credential-status-redesign.md) | 凭证状态重设计 |
-| [`providers/api-key-resolution-unification.md`](providers/api-key-resolution-unification.md) | API key resolution unification |
-| [`providers/error-retry.md`](providers/error-retry.md) | Error + retry handling |
-| [`providers/error-taxonomy-propagation.md`](providers/error-taxonomy-propagation.md) | Error taxonomy + propagation |
-| [`providers/llm-fault-tolerance.md`](providers/llm-fault-tolerance.md) | LLM fault tolerance（调研） |
-| [`providers/error-and-timeout-mechanism.html`](providers/error-and-timeout-mechanism.html) | Error + timeout mechanism (rendered) |
+| [`providers/request-build.md`](providers/request-build.md) | 请求构建流程 |
+| [`providers/models/models.md`](providers/models/models.md) | 模型目录最终设计 |
+| [`providers/models/thinking-effort.md`](providers/models/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
+| [`providers/auth/claude-code-direct-oauth.md`](providers/auth/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
+| [`providers/auth/credential-validation-unification.md`](providers/auth/credential-validation-unification.md) | Unified credential validation |
+| [`providers/auth/unified-auth-storage.md`](providers/auth/unified-auth-storage.md) | 统一认证存储 |
+| [`providers/auth/unified-account-management.md`](providers/auth/unified-account-management.md) | 统一账号管理 + 轮换 |
+| [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | 凭证状态重设计 |
+| [`providers/auth/api-key-resolution-unification.md`](providers/auth/api-key-resolution-unification.md) | API key resolution unification |
+| [`providers/reliability/error-retry.md`](providers/reliability/error-retry.md) | Error + retry handling |
+| [`providers/reliability/error-taxonomy-propagation.md`](providers/reliability/error-taxonomy-propagation.md) | Error taxonomy + propagation |
+| [`providers/reliability/llm-fault-tolerance.md`](providers/reliability/llm-fault-tolerance.md) | LLM fault tolerance（调研） |
+| [`providers/reliability/error-and-timeout-mechanism.html`](providers/reliability/error-and-timeout-mechanism.html) | Error + timeout mechanism (rendered) |
 
 ## function/ — function & tool calling
 
@@ -136,7 +137,7 @@ Extension gating design + reference comparison — see
 
 | Doc | Topic |
 |---|---|
-| [`usage.md`](usage.md) | Usage 子系统（token/cost 记账、ledger、收口点、子进程、消费层） |
+| [`usage-metering.md`](usage-metering.md) | Usage 子系统（token/cost 记账、ledger、收口点、子进程、消费层） |
 
 ## archive/
 

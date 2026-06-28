@@ -2,7 +2,6 @@
 
 Status: proposed (2026-06) — research done, implementation not started.
 Companion: [user-input-requests.md](../runtime/user-input-requests.md) (mid-run questions; its TUI surface lands here).
-Research notes: [tui-upgrade-references.md](tui-upgrade-references.md) (full Claude Code / opencode study + current-state audit).
 
 ## Goal
 

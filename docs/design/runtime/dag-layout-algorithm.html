@@ -1,0 +1,119 @@
+<!DOCTYPE html><html lang=zh><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>DAG 布局算法</title>
+<style>
+:root{--bg:#1a1a18;--pan:#232320;--bd:#3a3a36;--tx:#d8d6cc;--tx2:#9a988e;--acc:#d19a66;--cb:#2a2a26;}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.75 -apple-system,'Segoe UI',sans-serif}
+.w{max-width:820px;margin:0 auto;padding:48px 32px 96px}
+h1{font-size:27px;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:20px;color:var(--acc);margin-top:36px;border-left:3px solid var(--acc);padding-left:12px}
+h3{font-size:16px;margin-top:24px}
+code{background:var(--cb);color:var(--acc);padding:2px 6px;border-radius:4px;font:13px 'JetBrains Mono',Menlo,monospace}
+pre{background:var(--cb);border:1px solid var(--bd);border-radius:8px;padding:16px;overflow-x:auto;line-height:1.5}
+pre code{background:none;color:var(--tx);padding:0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+th,td{border:1px solid var(--bd);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pan);color:var(--acc)}
+blockquote{border-left:3px solid var(--tx2);margin:16px 0;padding:8px 16px;color:var(--tx2);background:var(--pan);border-radius:0 6px 6px 0}
+ul{padding-left:24px}li{margin:5px 0}strong{color:#f0eee6}
+</style></head><body><div class=w><h1>DAG 布局算法设计文档</h1>
+
+<p>Status: <strong>draft（待确认）</strong> · Created: 2026-06-29</p>
+
+<blockquote>DAG 小地图把每个节点放到网格的 (列, 行)。本文定义三件事：节点放第几列、</blockquote>
+<blockquote>第几行。规则要简单——不绕弯。</blockquote>
+
+<h2>一、一个节点的位置 = (x, y)</h2>
+
+<ul><li><strong>x（横向位置）= lane列 + tier缩进</strong></li>
+<li><strong>y（纵向位置）= depth行号</strong></li>
+</ul>
+<p>三个量：lane、tier、depth。下面逐个定义，每个都尽量简单。</p>
+
+<h2>二、lane（这个节点属于第几条分支）</h2>
+
+<p><strong>规则：有几条分支，就排几列。按分支出现的先后顺序编号，从 0 开始，不跳号。</strong></p>
+
+<ul><li>第 1 条分支 → lane 0</li>
+<li>第 2 条分支 → lane 1</li>
+<li>第 3 条分支 → lane 2</li>
+<li>……</li>
+</ul>
+<p>什么是&quot;一条分支&quot;：从一句用户消息开始，顺着对话往下（user → AI回复 → 下一句</p>
+<p>user → AI回复 …），这一整条就是一条分支。中途如果你 retry / 改写某句话，就在</p>
+<p>那个点<strong>岔出一条新分支</strong>，新分支拿下一个编号。</p>
+
+<p><strong>例：只发了一句&quot;你好&quot;（没 retry）</strong></p>
+<p>→ 只有 1 条分支 → 全部 lane 0。不存在第 2 列。</p>
+
+<p><strong>例：发了&quot;你好&quot;，又 retry 改成&quot;在吗&quot;</strong></p>
+<p>→ 2 条分支 → 原来那条 lane 0，retry 出来的那条 lane 1。</p>
+
+<p><strong>不要做的事</strong>（之前代码绕的弯，全删）：</p>
+<ul><li>❌ 不要专门判断&quot;哪条是主干&quot;</li>
+<li>❌ 不要&quot;归零&quot;之类的特殊处理</li>
+<li>❌ 不要让没有分叉的对话也占用第 2 列</li>
+</ul>
+<p>就是：<strong>数分支，按顺序发列号。</strong></p>
+
+<h2>三、tier（节点在自己这列里往右缩进几格）</h2>
+
+<p><strong>规则：按角色固定缩进，表示&quot;谁套在谁里面&quot;。</strong></p>
+
+<ul><li>ROOT（会话根）：缩进 0</li>
+<li>user（用户消息）：缩进 1</li>
+<li>AI 回复：缩进 2</li>
+<li>AI 调用的工具：缩进 3</li>
+<li>工具内部再调的东西：再 +1</li>
+</ul>
+<p>这就是那个&quot;阶梯往右&quot;的效果——<strong>这是对的，本来就该这样缩进</strong>，不是 bug。</p>
+
+<p>下一轮 user 回到缩进 1（不是一直往右涨）。</p>
+
+<h2>四、depth（节点在第几行，从上往下）</h2>
+
+<p><strong>规则：按聊天/执行的先后顺序，从上往下一行一行排。</strong></p>
+
+<ul><li>越早发生的越靠上。</li>
+<li>岔出来的分支，和它岔出的那个位置<strong>对齐到同一行</strong>起步，然后各自往下长。</li>
+</ul>
+<h2>五、画出来长什么样</h2>
+
+<p><strong>只发一句&quot;你好&quot;（1 条分支，全 lane 0）：</strong></p>
+<pre><code>列:   0    1    2
+行0  ◇ROOT
+行1       ○你好          ← lane 0, 缩进 1
+行2            △AI回复    ← lane 0, 缩进 2</code></pre>
+
+<p><strong>发&quot;你好&quot; + retry 改成&quot;在吗&quot;（2 条分支）：</strong></p>
+<pre><code>列:   0    1    2         3    4
+行0  ◇ROOT
+行1       ○你好  ┈┈┈┈┈┈┈ ○在吗       ← 第2条分支 lane 1
+行2            △回复1          △回复2</code></pre>
+<p>（虚线表示这两条是从同一个点岔开的平行分支）</p>
+
+<h2>六、当前 bug</h2>
+
+<p>只发了一句&quot;你好&quot;，本该全 lane 0，但代码给 user/AI回复 发了 <strong>lane 1</strong>（跳过了</p>
+<p>0），导致它们整体往右偏一大块，ROOT 孤零零在左边。</p>
+
+<p>根因：代码判断&quot;分支怎么分列&quot;时用错了一条线（用了&quot;对话前驱&quot;那条，而第一句话</p>
+<p>没有前驱 → 接不上 → 被误判成新分支），还套了一层&quot;主干判断 / 归零&quot;的绕弯逻辑。</p>
+
+<p>**修法：照第二节的规则重写——数分支、按出现顺序发列号 0,1,2，删掉主干判断和</p>
+<p>归零那些东西。**</p>
+
+<h2>七、怎么验证（不用截图网页）</h2>
+
+<pre><code>python tools/dag_dump.py [session_id]</code></pre>
+<p>直接在命令行打印每个节点的 lane / tier / depth + ASCII 网格图。改完代码跑一下</p>
+<p>就能看对不对。</p>
+
+<p>要验的三种情况：</p>
+<p>1. 只发一句话 → 全 lane 0（当前 bug，修完应为 0）</p>
+<p>2. retry 出第二条分支 → 第二条 lane 1</p>
+<p>3. 调用工具 → 工具在 AI 回复下面缩进一格（tier+1），不另开 lane</p>
+
+<h2>八、改哪些文件</h2>
+
+<table><thead><tr><th>文件</th><th>改什么</th></tr></thead><tbody><tr><td><code>graph_layout/lane.py</code></td><td>整个重写：数分支 → 按出现顺序发 lane 0,1,2。删掉 ROOT-walk / first_at_fork / 归零那套</td></tr><tr><td><code>graph_layout/topology.py</code></td><td>提供&quot;同一条分支链&quot;的判断（顺着对话 + 子调用走）</td></tr><tr><td>验证</td><td><code>tools/dag_dump.py</code> 跑三种情况</td></tr></tbody></table>
+</div></body></html>

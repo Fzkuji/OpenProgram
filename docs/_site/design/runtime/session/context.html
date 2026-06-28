@@ -201,7 +201,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
         <span class="k">for</span> <span class="n">_name</span><span class="p">,</span> <span class="n">tok</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">tokens</span><span class="p">):</span>
             <span class="n">tok</span><span class="o">.</span><span class="n">var</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span>
 </code></pre>
-<p><code>session_context</code> 在 session 不存在时会调 <code>create_session</code>——这是 <a href="/docs/design/runtime/session/lifecycle.html">lifecycle.md</a> 中创建入口之一。</p>
+<p><code>session_context</code> 在 session 不存在时会调 <code>create_session</code>——这是 <a href="/docs/design/runtime/session/operations.html">operations.md</a> 中创建入口之一。</p>
 <h2 id="session-边界">session 边界<a class="header-anchor" href="#session-边界">#</a></h2>
 <p>由 <code>session_id</code> 的传递决定，不按调用次数。</p>
 <table>

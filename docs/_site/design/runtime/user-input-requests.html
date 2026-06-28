@@ -176,11 +176,7 @@ QuestionPrompt 卡片，端到端 + 前端双向验证通过。Phase 2：@agenti
 子进程桥——子进程里的 runtime.ask 经 mp.Queue 把问题送回父进程、答案回流
 resume，真 spawn 子进程 e2e 通过。重连恢复也落地（load_session 重放 pending +
 REST /api/questions）。Phase 3（TUI）、4（审批合流+channels+form）待做。
-Companion: <a href="/docs/design/cli/tui-upgrade.html">../cli/tui-upgrade.md</a> (TUI surface).
-Research notes:
-<a href="/docs/design/runtime/user-input-requests-references.html">user-input-requests-references.md</a>
-(full audit of our half-wired mechanisms + Claude Code / opencode /
-openclaw / MCP elicitation study).</p>
+Companion: <a href="/docs/design/cli/tui-upgrade.html">../cli/tui-upgrade.md</a> (TUI surface).</p>
 <h2 id="problem">Problem<a class="header-anchor" href="#problem">#</a></h2>
 <p>A function (especially an <code>@agentic_function</code>) sometimes needs the user
 mid-run: confirm a destructive step, pick between alternatives, supply a

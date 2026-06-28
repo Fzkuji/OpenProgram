@@ -106,7 +106,7 @@ between them. The view scrolls with the chat: clicking a node
 scrolls the conversation to the corresponding message, and the
 panel keeps the currently-viewed range highlighted. d3-hierarchy
 layout is available behind a toggle for fan-out-heavy traces;
-see [`design/mini-dag.md`](design/mini-dag.md) when adding new
+see [`design/runtime/dag-viewport.md`](design/runtime/dag-viewport.md) when adding new
 node kinds.
 
 ## Multi-account + key rotation
@@ -141,7 +141,7 @@ rate-limited key cools down while the next takes over (`429` → cooldown + rota
 `spread evenly` / `random` / `least used`) and ↑ / ↓ priority. A key you'd
 already set the old way (env var / config) is migrated into the list so nothing
 is lost. Design + status:
-[`design/unified-account-management.md`](design/unified-account-management.md).
+[`design/providers/auth/unified-account-management.md`](design/providers/auth/unified-account-management.md).
 
 ## Multi-agent + multi-channel (where this is going)
 

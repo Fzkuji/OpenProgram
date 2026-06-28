@@ -7,10 +7,6 @@ QuestionPrompt 卡片，端到端 + 前端双向验证通过。Phase 2：@agenti
 resume，真 spawn 子进程 e2e 通过。重连恢复也落地（load_session 重放 pending +
 REST /api/questions）。Phase 3（TUI）、4（审批合流+channels+form）待做。
 Companion: [../cli/tui-upgrade.md](../cli/tui-upgrade.md) (TUI surface).
-Research notes:
-[user-input-requests-references.md](user-input-requests-references.md)
-(full audit of our half-wired mechanisms + Claude Code / opencode /
-openclaw / MCP elicitation study).
 
 ## Problem
 

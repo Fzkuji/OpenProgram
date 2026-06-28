@@ -281,7 +281,7 @@ between them. The view scrolls with the chat: clicking a node
 scrolls the conversation to the corresponding message, and the
 panel keeps the currently-viewed range highlighted. d3-hierarchy
 layout is available behind a toggle for fan-out-heavy traces;
-see <a href="/docs/design/mini-dag.html"><code>design/mini-dag.md</code></a> when adding new
+see <a href="/docs/design/runtime/dag-viewport.html"><code>design/runtime/dag-viewport.md</code></a> when adding new
 node kinds.</p>
 <h2 id="multi-account-key-rotation">Multi-account + key rotation<a class="header-anchor" href="#multi-account-key-rotation">#</a></h2>
 <p>One provider, several accounts — and several keys per account — managed the same
@@ -310,7 +310,7 @@ rate-limited key cools down while the next takes over (<code>429</code> → cool
 <code>spread evenly</code> / <code>random</code> / <code>least used</code>) and ↑ / ↓ priority. A key you'd
 already set the old way (env var / config) is migrated into the list so nothing
 is lost. Design + status:
-<a href="/docs/design/unified-account-management.html"><code>design/unified-account-management.md</code></a>.</p>
+<a href="/docs/design/providers/auth/unified-account-management.html"><code>design/providers/auth/unified-account-management.md</code></a>.</p>
 <h2 id="multi-agent-multi-channel-where-this-is-going">Multi-agent + multi-channel (where this is going)<a class="header-anchor" href="#multi-agent-multi-channel-where-this-is-going">#</a></h2>
 <p>The dispatcher already supports multiple <code>agent_id</code>s per
 session — every row is stamped with the producer agent, the

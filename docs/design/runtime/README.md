@@ -13,4 +13,3 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`session/`](session/) — Session 子系统：数据模型、存储、命名、列举、生命周期、广播
 - [`streaming-resume.md`](streaming-resume.md)
 - [`user-input-requests.md`](user-input-requests.md) — pause a running function to ask the user (`runtime.ask`/`confirm`), question registry + WS/REST protocol + subprocess bridge
-- [`user-input-requests-references.md`](user-input-requests-references.md)

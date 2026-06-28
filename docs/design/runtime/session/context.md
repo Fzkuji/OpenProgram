@@ -35,7 +35,7 @@ def session_context(
             tok.var.reset(tok)
 ```
 
-`session_context` 在 session 不存在时会调 `create_session`——这是 [lifecycle.md](lifecycle.md) 中创建入口之一。
+`session_context` 在 session 不存在时会调 `create_session`——这是 [operations.md](operations.md) 中创建入口之一。
 
 ## session 边界
 

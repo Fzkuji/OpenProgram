@@ -10,4 +10,3 @@ The command surface — CLI/TUI redesign, slash commands, settings, and Web UI p
 - [`slash-commands-references.md`](slash-commands-references.md)
 - [`slash-commands.md`](slash-commands.md)
 - [`tui-upgrade.md`](tui-upgrade.md) — transcript rendering & interaction upgrade (tool-call collapsing, ctrl+o transcript, diffs, queued input, keybind table)
-- [`tui-upgrade-references.md`](tui-upgrade-references.md)
