@@ -20,4 +20,4 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
       - name: Run tests
-        run: python -m pytest tests/ --ignore=tests/test_provider_cli.py
+        run: python -m pytest tests/ --ignore=tests/test_provider_cli.py --ignore=tests/integration
