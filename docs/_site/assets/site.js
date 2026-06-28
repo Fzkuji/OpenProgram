@@ -32,6 +32,7 @@
   const I18N = {
     zh: {
       search: "搜索文档", search_ph: "搜索标题或正文…", on_this_page: "本页内容",
+      prev: "上一篇", next: "下一篇", updated: "最后更新",
       home_title: "OpenProgram 设计文档",
       home_sub: "框架的设计笔记、API 与指南，按子系统组织。左侧目录浏览，或按 ",
       home_sub2: " 搜索。", unit: " 篇",
@@ -43,6 +44,7 @@
     },
     en: {
       search: "Search docs", search_ph: "Search titles or text…", on_this_page: "On this page",
+      prev: "Previous", next: "Next", updated: "Last updated",
       home_title: "OpenProgram Documentation",
       home_sub: "Design notes, API and guides, organized by subsystem. Browse the sidebar, or press ",
       home_sub2: " to search.", unit: " docs",

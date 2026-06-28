@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="dag-布局算法设计文档">DAG 布局算法设计文档<a class="header-anchor" href="#dag-布局算法设计文档">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">DAG 布局算法设计文档</span></nav><h1 id="dag-布局算法设计文档">DAG 布局算法设计文档<a class="header-anchor" href="#dag-布局算法设计文档">#</a></h1>
 <p>Status: <strong>draft（待确认）</strong> · Created: 2026-06-29</p>
 <blockquote>
 <p>DAG 小地图把每个节点放到网格的 (列, 行)。本文定义三件事：节点放第几列、
@@ -216,6 +216,16 @@ user → AI回复 …），这一整条就是一条分支。中途如果你 retr
 <li>越早发生的越靠上。</li>
 <li>岔出来的分支，和它岔出的那个位置<strong>对齐到同一行</strong>起步，然后各自往下长。</li>
 </ul>
+<h2 id="四五两条全局排版规则">四·五、两条全局排版规则<a class="header-anchor" href="#四五两条全局排版规则">#</a></h2>
+<p>① <strong>严格网格</strong>：每个节点落在规整网格交点上，行高、列宽全局统一。同一行的节点
+y 完全对齐，同一列的节点 x 完全对齐。不允许半格偏移。</p>
+<p>② <strong>列紧凑</strong>：只有实际有节点的列才占空间。某列空了（本来没节点、或子节点收起
+后空了），右边的列整体左移补上，中间不留空列。lane 之间按各自实际占用的最大
+tier 宽度紧贴排，不留固定大间隔。</p>
+<blockquote>
+<p>收起子调用后，那条 lane 的最大 tier 变小 → 它占的列宽缩小 → 后面的 lane 跟着
+左移。空列绝不保留。</p>
+</blockquote>
 <h2 id="五画出来长什么样">五、画出来长什么样<a class="header-anchor" href="#五画出来长什么样">#</a></h2>
 <p><strong>只发一句&quot;你好&quot;（1 条分支，全 lane 0）：</strong></p>
 <pre><code>列:   0    1    2
@@ -271,12 +281,13 @@ user → AI回复 …），这一整条就是一条分支。中途如果你 retr
 </tr>
 </tbody>
 </table>
-</article></main>
+<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag-viewport.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG Viewport 设计文档</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag-layout-algorithm.viz.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG 布局算法（可视化）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#一一个节点的位置-x-y">一、一个节点的位置 = (x, y)</a>
 <a class="" href="#二lane这个节点属于第几条分支">二、lane（这个节点属于第几条分支）</a>
 <a class="" href="#三tier节点在自己这列里往右缩进几格">三、tier（节点在自己这列里往右缩进几格）</a>
 <a class="" href="#四depth节点在第几行从上往下">四、depth（节点在第几行，从上往下）</a>
+<a class="" href="#四五两条全局排版规则">四·五、两条全局排版规则</a>
 <a class="" href="#五画出来长什么样">五、画出来长什么样</a>
 <a class="" href="#六当前-bug">六、当前 bug</a>
 <a class="" href="#七怎么验证不用截图网页">七、怎么验证（不用截图网页）</a>

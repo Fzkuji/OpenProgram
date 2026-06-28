@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="web-ui-ports-architecture-configuration-and-conflict-handling">Web UI Ports — Architecture, Configuration, and Conflict Handling<a class="header-anchor" href="#web-ui-ports-architecture-configuration-and-conflict-handling">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> CLI / TUI <span class='bc-sep'>›</span> <span class="bc-current">Web UI Ports — Architecture, Configuration, and Conflict Handling</span></nav><h1 id="web-ui-ports-architecture-configuration-and-conflict-handling">Web UI Ports — Architecture, Configuration, and Conflict Handling<a class="header-anchor" href="#web-ui-ports-architecture-configuration-and-conflict-handling">#</a></h1>
 <p>How OpenProgram chooses, configures, and defends the ports its web UI runs
 on. Covers the two-port present, the single-port target, the configuration
 surface (<code>openprogram ports</code>), and what happens when a port is occupied.</p>
@@ -364,7 +364,7 @@ both UI and API. At that point the frontend port, its separate launcher,
 the proxy, and most of <code>worker/web.py</code> go away — and &quot;frontend port in
 use&quot; stops being a possible state. The <code>openprogram ports</code> surface stays;
 <code>--frontend</code> simply becomes a no-op alias once there's a single port.</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/cli/tui-upgrade.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">TUI upgrade: transcript rendering &amp; interaction</span></a><a class="pn-link pn-next" href="/docs/design/cli/drop-run-command.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">统一 @agentic_function 执行路径</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#ports-at-a-glance">Ports at a glance</a>
 <a class="lvl-3" href="#why-18109-18100">Why 18109 / 18100</a>

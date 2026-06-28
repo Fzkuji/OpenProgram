@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="p3-三端同步补全-p1p2-上三端">P3 — 三端同步(补全)+ P1/P2 上三端<a class="header-anchor" href="#p3-三端同步补全-p1p2-上三端">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">P3 — 三端同步(补全)+ P1/P2 上三端</span></nav><h1 id="p3-三端同步补全-p1p2-上三端">P3 — 三端同步(补全)+ P1/P2 上三端<a class="header-anchor" href="#p3-三端同步补全-p1p2-上三端">#</a></h1>
 <p>调研后修正:三端同步的地基比预想完整得多,真空很窄。</p>
 <h2 id="已有不用做">已有(不用做)<a class="header-anchor" href="#已有不用做">#</a></h2>
 <table>
@@ -225,7 +225,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <li>attended 改 per-session:确认要(单 worker 多 session 时全局开关会串)。默认仍 unattended。</li>
 <li>前端改动:TUI(Ink, cli/src)+ web(web/)两套前端都要加 toggle/输入框。工作量主要在这。先做后端 WS action(三端共享、可测),前端 UI 随后。</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-17</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/next-step-decision.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Next-step decision making(decision.make / exec(choices=))</span></a><a class="pn-link pn-next" href="/docs/design/runtime/rewind.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Rewind — 回退到任意历史消息</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#已有不用做">已有(不用做)</a>
 <a class="" href="#真空p3-要做">真空(P3 要做)</a>

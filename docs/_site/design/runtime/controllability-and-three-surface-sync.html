@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="长跑-agent-任务的可控性-三端一致性">长跑 agent 任务的可控性 + 三端一致性<a class="header-anchor" href="#长跑-agent-任务的可控性-三端一致性">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">长跑 agent 任务的可控性 + 三端一致性</span></nav><h1 id="长跑-agent-任务的可控性-三端一致性">长跑 agent 任务的可控性 + 三端一致性<a class="header-anchor" href="#长跑-agent-任务的可控性-三端一致性">#</a></h1>
 <p>用户需求(原话整理):</p>
 <ol>
 <li><strong>值守开关</strong>:无人值守时(我睡觉了)别问我;观察时可以问我。做法已定 —— 无人值守就<strong>不把&quot;询问用户&quot;工具给 agent</strong>,它拿不到就不问,顶多生成点不确定内容,靠后续模型思考自解。</li>
@@ -259,7 +259,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <li>P2 注入时机:只在 step 边界优雅注入(推荐),还是要支持&quot;立即打断当前 step&quot;?</li>
 <li>顺序:是否就按 P1→P2→P3→P4。</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-17</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/streaming-resume.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">运行中状态的持久化 / 重连恢复</span></a><a class="pn-link pn-next" href="/docs/design/runtime/session/README.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Session 子系统</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#地基盘点已有可复用">地基盘点(已有,可复用)</a>
 <a class="" href="#重要发现值守开关的真正落点">重要发现:值守开关的真正落点</a>

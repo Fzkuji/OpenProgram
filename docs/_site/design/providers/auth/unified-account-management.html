@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="unified-account-management-pool-rotationfallback">Unified account management + pool rotation/fallback<a class="header-anchor" href="#unified-account-management-pool-rotationfallback">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Providers <span class='bc-sep'>›</span> Auth <span class='bc-sep'>›</span> <span class="bc-current">Unified account management + pool rotation/fallback</span></nav><h1 id="unified-account-management-pool-rotationfallback">Unified account management + pool rotation/fallback<a class="header-anchor" href="#unified-account-management-pool-rotationfallback">#</a></h1>
 <p><strong>Goal (user):</strong> one consistent way to manage accounts across CLI / web / TUI —
 list / add / activate / rename / remove multiple accounts per provider, plus
 rotation / failover with on/off switches. The <em>backend</em> per provider (Meridian
@@ -349,7 +349,7 @@ flow with <code>profile=&lt;name&gt;</code> (already). claude-code = Meridian (a
 </ul>
 <p>Web + TUI then render this one model; the api-key creds-in-pool surface
 (<code>…/accounts/default/keys*</code>, pool <code>active_credential_id</code>/<code>fixed</code>) is retired.</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-23</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/providers/auth/credential-validation-unification.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Credential-validation unification</span></a><a class="pn-link pn-next" href="/docs/design/providers/auth/unified-auth-storage.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Unified self-contained auth storage</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#core-idea">Core idea</a>
 <a class="" href="#whats-already-there-dont-rebuild">What&#x27;s already there (don&#x27;t rebuild)</a>

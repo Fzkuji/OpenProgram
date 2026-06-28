@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="请求构建context-各-provider-参数">请求构建:Context → 各 provider 参数<a class="header-anchor" href="#请求构建context-各-provider-参数">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Providers <span class='bc-sep'>›</span> <span class="bc-current">请求构建:Context → 各 provider 参数</span></nav><h1 id="请求构建context-各-provider-参数">请求构建:Context → 各 provider 参数<a class="header-anchor" href="#请求构建context-各-provider-参数">#</a></h1>
 <p>Status: <strong>decided</strong> · Created: 2026-06-24</p>
 <blockquote>
 <p>providers 层的唯一职责:<strong>拿到一个准备好的 <code>Context</code>,翻译成当前 provider 的 wire
@@ -355,7 +355,7 @@ Context 级结构,也不要求改 system_prompt 类型。</strong></p>
 <p>与 opencode 的一处差异:opencode 的 <code>system</code> 是分段数组,能在&quot;最后一段 system&quot;上
 单独标断点;本层 <code>Context.system_prompt</code> 是单字符串,system 断点由各 provider 的
 <code>_build_system</code> 在那一整块上打。policy 层只覆盖 tools + messages。</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-24</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/providers/error-and-timeout-mechanism.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">OpenProgram · 报错与超时机制（现状）</span></a><a class="pn-link pn-next" href="/docs/design/providers/auth/api-key-resolution-unification.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">API-key / credential resolution unification</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#一核心一份统一格式-每-provider-一个翻译">一、核心:一份统一格式 + 每 provider 一个翻译</a>
 <a class="" href="#二统一格式context">二、统一格式:Context</a>

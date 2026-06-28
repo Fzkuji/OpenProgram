@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="runtime-设计理由">Runtime — 设计理由<a class="header-anchor" href="#runtime-设计理由">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">Runtime — 设计理由</span></nav><h1 id="runtime-设计理由">Runtime — 设计理由<a class="header-anchor" href="#runtime-设计理由">#</a></h1>
 <p>API 用法见 <a href="/docs/api/runtime.html"><code>../api/runtime.md</code></a>。本文档只讲<strong>为什么</strong>
 Runtime 长成这样、哪些备选方案被否决、哪些权衡是有意识做的。</p>
 <h2 id="1-runtime-1-session">1 runtime = 1 session<a class="header-anchor" href="#1-runtime-1-session">#</a></h2>
@@ -266,7 +266,7 @@ id,以便函数体内 LLM 调用有 frame 可参照)。</p>
 <li><code>openprogram/context/nodes.py</code> <code>render_context</code> — DAG → reads 计算(<code>render_range</code> 的实际语义)</li>
 <li><code>openprogram/context/render.py</code> <code>render_dag_messages</code> — reads → provider messages 转换</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/rewind.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Rewind — 回退到任意历史消息</span></a><a class="pn-link pn-next" href="/docs/design/runtime/session-dag.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#1-runtime-1-session">1 runtime = 1 session</a>
 <a class="" href="#contextvar-自动注入-runtime">ContextVar 自动注入 runtime</a>

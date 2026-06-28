@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="session-name-会话命名设计">Session Name — 会话命名设计<a class="header-anchor" href="#session-name-会话命名设计">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">Session Name — 会话命名设计</span></nav><h1 id="session-name-会话命名设计">Session Name — 会话命名设计<a class="header-anchor" href="#session-name-会话命名设计">#</a></h1>
 <h2 id="1-现状与问题">1. 现状与问题<a class="header-anchor" href="#1-现状与问题">#</a></h2>
 <p><code>titles.py</code> 的 <code>_maybe_auto_title</code> 在第一轮 turn 结束时取用户消息前 50 字符作为标题。没有 LLM 参与，标题通常是一段截断的自然语言，识别度低。<code>finalize.py:176</code> 注释标注 &quot;LLM-summarized titles are a future upgrade&quot;。</p>
 <p><code>entity-memory.md</code> §3.3 已设计了 LLM 标题生成的完整规格，但代码未实现。</p>
@@ -404,7 +404,7 @@ Return ONLY the title text, no quotes, no prefix, no explanation.
 <li><strong>branch name 生成</strong>：同时生成 kebab-case slug（Claude Code 的 <code>teleport_generate_title</code>）</li>
 <li><strong>程序化命名 API</strong>：<code>PATCH /sessions/:id</code> REST 端点</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-20</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/session-dag.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dispatcher-split.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Splitting `agent/dispatcher.py` into a responsibility-scoped package</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#1-现状与问题">1. 现状与问题</a>
 <a class="" href="#2-同类产品调研">2. 同类产品调研</a>

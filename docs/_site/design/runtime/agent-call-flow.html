@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="agent-调用流程权威设计">Agent 调用流程（权威设计）<a class="header-anchor" href="#agent-调用流程权威设计">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">Agent 调用流程（权威设计）</span></nav><h1 id="agent-调用流程权威设计">Agent 调用流程（权威设计）<a class="header-anchor" href="#agent-调用流程权威设计">#</a></h1>
 <p>Status: design · Created: 2026-06-18</p>
 <blockquote>
 <p>这是 agent 调用的<strong>核心框架</strong>——所有 turn / LLM 调用都按这个流程走。后续加功能在此基础上往对应节点插入,不改骨架。本文档曾名&quot;LLM 调用路径统一&quot;,现升级为整个调用流程的权威设计。</p>
@@ -592,7 +592,7 @@ exec 返回  → 回填 llm 节点 (output=最终回复, status=success)
 <li><code>openprogram/store/session/_msg_adapter.py</code> — _node_to_msg(序列化收口点,role 还原)</li>
 <li><code>openprogram/agentic_programming/function.py</code> — @agentic_function wrapper</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/agent-worktree.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Agent Worktree 工具</span></a><a class="pn-link pn-next" href="/docs/design/runtime/agentic-self-recursion.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agentic 函数防自递归机制</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#总览图">总览图</a>
 <a class="" href="#真实拓扑收敛分叉不是三层嵌套">真实拓扑:收敛分叉,不是三层嵌套</a>

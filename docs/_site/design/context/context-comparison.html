@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="上下文成分对比-参考项目-vs-我们按三层组织">上下文成分对比 —— 参考项目 vs 我们（按三层组织）<a class="header-anchor" href="#上下文成分对比-参考项目-vs-我们按三层组织">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Context <span class='bc-sep'>›</span> <span class="bc-current">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</span></nav><h1 id="上下文成分对比-参考项目-vs-我们按三层组织">上下文成分对比 —— 参考项目 vs 我们（按三层组织）<a class="header-anchor" href="#上下文成分对比-参考项目-vs-我们按三层组织">#</a></h1>
 <p>Status: <strong>查漏记录</strong> · Created: 2026-06-24</p>
 <blockquote>
 <p>把参考项目喂给 LLM 的上下文成分，跟我们的 L0/L1/L2 设计对比，找出<strong>我们漏了什么</strong>。
@@ -567,7 +567,7 @@ L2 剩余未实现：token 预算提示（低）。</p>
 <h2 id="下一步">下一步<a class="header-anchor" href="#下一步">#</a></h2>
 <p>决定补哪些后，把它们写进 <code>context-composition.md</code> 对应层 + §三'' 对照表。本文查漏完成
 后可删或留作追溯。</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-24</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/context/context-compaction.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">上下文压缩</span></a><a class="pn-link pn-next" href="/docs/design/context/context-composition.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">上下文组成 —— 注册式三层（目标态设计）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#l0-系统级配好不动">L0 系统级（配好不动）</a>
 <a class="" href="#l1-会话项目级跟项目会话走会变">L1 会话/项目级（跟项目/会话走，会变）</a>

@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="agent-worktree-工具">Agent Worktree 工具<a class="header-anchor" href="#agent-worktree-工具">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">Agent Worktree 工具</span></nav><h1 id="agent-worktree-工具">Agent Worktree 工具<a class="header-anchor" href="#agent-worktree-工具">#</a></h1>
 <blockquote>
 <p>Agent 在用户真实代码仓库里跑高风险改动时，需要一个隔离的临时工作目录：
 改成了 merge 回主线，改坏了 discard 一抹了之，主仓库一字未动。
@@ -922,7 +922,7 @@ docker backend。</li>
 <li><strong>session 关闭时自动清理 active worktree</strong>：保留 active worktree 跨 session
 重启（重启后 list_worktrees 探测，仍 active 的标 kept 让用户手动处理）。</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/README.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Runtime</span></a><a class="pn-link pn-next" href="/docs/design/runtime/agent-call-flow.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent 调用流程（权威设计）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#part-1-设计需要考虑的维度">Part 1. 设计需要考虑的维度</a>
 <a class="lvl-3" href="#d1-worktree-实体存什么">D1. Worktree 实体存什么</a>

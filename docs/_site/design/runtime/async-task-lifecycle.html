@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="async-task-生命周期">Async Task 生命周期<a class="header-anchor" href="#async-task-生命周期">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">Async Task 生命周期</span></nav><h1 id="async-task-生命周期">Async Task 生命周期<a class="header-anchor" href="#async-task-生命周期">#</a></h1>
 <blockquote>
 <p>把 sub-agent 调用从同步阻塞改成&quot;显式 task 实体 + 后台 worker + 可查可取消&quot;。对齐 Claude Code 的 TaskCreate / TaskList / TaskGet / TaskUpdate / TaskStop。</p>
 <p>当前现状基线：<code>run_agent_turn</code> (<code>openprogram/agent/sub_agent_run.py</code>) 同步阻塞 → 调用 <code>process_user_turn</code> → 返回 <code>AgentTurnResult</code>。<code>/task</code> tool、<code>/spawn</code> WS action、<code>_merge.process_merge_turn</code> 都直接复用这条同步路径。
@@ -807,7 +807,7 @@ WebUI 已经有的协作机制：每个 session 一个 worker thread (<code>_exe
 <li><strong>Task 输出流式订阅</strong>：初版只在 task 完成时拿 final_text。中途订阅 stream（让父 agent 看到 sub-agent 边想边说）留给后续。</li>
 <li><strong>资源配额</strong>：单 user 同时 task 数 / token 上限不在本设计，需要先有 multi-tenant 模型。</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/agentic-self-recursion.viz.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Agentic 函数防自递归机制 — 设计文档（可视化）</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag-viewport.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG Viewport 设计文档</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#part-1-async-task-生命周期需要考虑的维度">Part 1. Async Task 生命周期需要考虑的维度</a>
 <a class="lvl-3" href="#d1-task-实体存什么">D1. Task 实体存什么</a>

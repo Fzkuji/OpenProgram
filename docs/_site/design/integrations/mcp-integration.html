@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="mcp-工具集成">MCP 工具集成<a class="header-anchor" href="#mcp-工具集成">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Integrations <span class='bc-sep'>›</span> <span class="bc-current">MCP 工具集成</span></nav><h1 id="mcp-工具集成">MCP 工具集成<a class="header-anchor" href="#mcp-工具集成">#</a></h1>
 <p>Status: <strong>implemented</strong>(stdio transport only)。
 关联代码:<code>openprogram/mcp/</code>。</p>
 <h2 id="一句话概括">一句话概括<a class="header-anchor" href="#一句话概括">#</a></h2>
@@ -366,7 +366,7 @@ webui 显示
 <li><code>restart_server(name)</code> API — 不用重启整个 worker</li>
 <li>接 <code>sampling/createMessage</code> capability — server 可反向借 client 的 LLM 做推理(目前 client 不实现,会 reject 这种请求)</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/integrations/harness-standard.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Harness Standard — how an agentic program plugs into OpenProgram</span></a><a class="pn-link pn-next" href="/docs/design/integrations/skills-and-plugins.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#一句话概括">一句话概括</a>
 <a class="" href="#角色-我们做-client不做-server">角色 — 我们做 client,不做 server</a>

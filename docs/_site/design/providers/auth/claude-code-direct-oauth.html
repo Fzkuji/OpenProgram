@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="claude-code-直连订阅砍掉-meridian">claude-code 直连订阅(砍掉 Meridian)<a class="header-anchor" href="#claude-code-直连订阅砍掉-meridian">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Providers <span class='bc-sep'>›</span> Auth <span class='bc-sep'>›</span> <span class="bc-current">claude-code 直连订阅(砍掉 Meridian)</span></nav><h1 id="claude-code-直连订阅砍掉-meridian">claude-code 直连订阅(砍掉 Meridian)<a class="header-anchor" href="#claude-code-直连订阅砍掉-meridian">#</a></h1>
 <h2 id="目标">目标<a class="header-anchor" href="#目标">#</a></h2>
 <p>把 <code>claude-code</code> provider 从「本地 Meridian 代理 daemon」改成「anthropic SDK 用订阅
 OAuth token 直连 <code>api.anthropic.com</code>」——与 <code>openai-codex</code> 直读 <code>~/.codex/auth.json</code></p>
@@ -318,7 +318,7 @@ add_mode=login → 自动渲染两个登录按钮。已 build + worker restart +
 <p><code>_max_proxy_runtime.py</code> / <code>_claude_max_proxy_registry.py</code> / <code>_meridian_cli.py</code> 暂留
 (WebUI 的「添加 Claude 账号」P1/P2 仍引用),仅 registry 不再默认指向它。后续若
 确认无引用再删。</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-23</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/providers/auth/api-key-resolution-unification.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">API-key / credential resolution unification</span></a><a class="pn-link pn-next" href="/docs/design/providers/auth/credential-status-redesign.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#目标">目标</a>
 <a class="" href="#背景为什么-meridian-不是技术必需">背景:为什么 Meridian 不是技术必需</a>

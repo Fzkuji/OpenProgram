@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="user-input-requests-pausing-a-run-to-ask-the-user">User input requests: pausing a run to ask the user<a class="header-anchor" href="#user-input-requests-pausing-a-run-to-ask-the-user">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">User input requests: pausing a run to ask the user</span></nav><h1 id="user-input-requests-pausing-a-run-to-ask-the-user">User input requests: pausing a run to ask the user<a class="header-anchor" href="#user-input-requests-pausing-a-run-to-ask-the-user">#</a></h1>
 <p>Status: <strong>Phase 1 + Phase 2 已落地并验证</strong>（2026-06-13）。Phase 1：
 runtime.ask/confirm/can_ask、QuestionRegistry、WS question_reply/reject、前端
 QuestionPrompt 卡片，端到端 + 前端双向验证通过。Phase 2：@agentic_function
@@ -348,7 +348,7 @@ _bridge_question_to_parent + _decline_bridged_question）。验证：
 registry when the decision target is the human rather than the model
 (out of scope here, noted for the function-calling unification doc).</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-13</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dispatcher-split.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Splitting `agent/dispatcher.py` into a responsibility-scoped package</span></a><a class="pn-link pn-next" href="/docs/design/runtime/branch-naming.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">分支自动命名设计文档</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#problem">Problem</a>
 <a class="" href="#what-already-exists-audit-conclusion">What already exists (audit conclusion)</a>

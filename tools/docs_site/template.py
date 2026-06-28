@@ -19,6 +19,9 @@ def render_page(
     nav_html: str,
     toc_html: str,
     base: str,
+    breadcrumb_html: str = "",
+    prevnext_html: str = "",
+    meta_html: str = "",
     extra_head: str = "",
 ) -> str:
     """Assemble one full HTML document.
@@ -56,7 +59,7 @@ def render_page(
 <div class="scrim"></div>
 <div class="layout">
   <nav class="sidebar">{nav_html}</nav>
-  <main class="content"><article>{body_html}</article></main>
+  <main class="content"><article>{breadcrumb_html}{body_html}{meta_html}{prevnext_html}</article></main>
   <aside class="toc">{toc_html}</aside>
 </div>
 

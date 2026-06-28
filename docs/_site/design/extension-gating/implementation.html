@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="implementation-map">Implementation map<a class="header-anchor" href="#implementation-map">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Extension Gating <span class='bc-sep'>›</span> <span class="bc-current">Implementation map</span></nav><h1 id="implementation-map">Implementation map<a class="header-anchor" href="#implementation-map">#</a></h1>
 <p>Where the gating model lives in the code. Use this when touching the implementation.</p>
 <h2 id="file-map">File map<a class="header-anchor" href="#file-map">#</a></h2>
 <pre><code>openprogram/agent/management/
@@ -317,7 +317,7 @@ openprogram/functions/
 <li>WS smoke test — <code>/skill X</code> with a disabled-pattern profile returns the rejection message in the chat transcript.</li>
 </ul>
 <p>Add proper unit tests if <code>match_any</code> semantics ever diverge from <code>fnmatch.fnmatchcase</code> (e.g. if we ever add <code>**</code> recursive-glob support).</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-17</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/extension-gating/future-work.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Future work — explicitly NOT built</span></a><a class="pn-link pn-next" href="/docs/design/extension-gating/reference-comparison.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Reference-implementation comparison</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#file-map">File map</a>
 <a class="" href="#shared-helper-module">Shared helper module</a>

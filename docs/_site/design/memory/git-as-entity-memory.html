@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="实体记忆走-git-session-git-project-git">实体记忆走 Git: Session-Git + Project-Git<a class="header-anchor" href="#实体记忆走-git-session-git-project-git">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Memory — 记忆系统设计 <span class='bc-sep'>›</span> <span class="bc-current">实体记忆走 Git: Session-Git + Project-Git</span></nav><h1 id="实体记忆走-git-session-git-project-git">实体记忆走 Git: Session-Git + Project-Git<a class="header-anchor" href="#实体记忆走-git-session-git-project-git">#</a></h1>
 <h2 id="心智模型">心智模型<a class="header-anchor" href="#心智模型">#</a></h2>
 <p>&quot;实体记忆&quot;= 真实发生过的事, 可逐步回溯. Git 天生就是这个范式 (commit
 是不可变的, log 是时间线, checkout 能时光机). 不再用自研 DAG-as-truth,
@@ -394,7 +394,7 @@ tools: read, grep × 3, list
 <p>commit 可以选择性 export 到 git (e.g. 用户想看&quot;那时 LLM 看到啥&quot;), 但不是强制.</p>
 <hr />
 <p>要不要按这个 plan 开干 Phase B.1 (session-git 基础)? 或者先调整某些设计点 (workdir 关联 / branch 策略 / 触发频率).</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/memory/entity-memory.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">实体记忆 (Entity Memory)</span></a><a class="pn-link pn-next" href="/docs/design/memory/virtual-memory.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">抽象记忆 (Virtual Memory)</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#心智模型">心智模型</a>
 <a class="" href="#1-跟现有-dag-的关系">1. 跟现有 DAG 的关系</a>

@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="agentic-函数防自递归机制">Agentic 函数防自递归机制<a class="header-anchor" href="#agentic-函数防自递归机制">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">Agentic 函数防自递归机制</span></nav><h1 id="agentic-函数防自递归机制">Agentic 函数防自递归机制<a class="header-anchor" href="#agentic-函数防自递归机制">#</a></h1>
 <blockquote>
 <p>现状：从「deny 屏蔽工具」改成「处境引导 + 递归深度上限兜底」(commit <code>1f6f5fce</code>)。
 本文档基于真实代码逐条对应 file:line，可照着核对。
@@ -437,7 +437,7 @@ re-enters where you are now and causes infinite recursion. Use lower-level tools
 <li><code>docs/design/runtime/session-dag.md</code> 决策6 —— 统一 system 前缀约束，本机制把处境提示放 user turn 正是为遵守该约束。</li>
 <li><code>docs/design/TODO-doc-code-gaps.md</code> §1 —— 7 层嵌套根因记录。</li>
 </ul>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-28</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/agent-call-flow.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Agent 调用流程（权威设计）</span></a><a class="pn-link pn-next" href="/docs/design/runtime/agentic-self-recursion.viz.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agentic 函数防自递归机制 — 设计文档（可视化）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#1-问题agentic-函数为什么会自递归">1. 问题：agentic 函数为什么会自递归</a>
 <a class="" href="#2-设计理念为什么用引导而非deny">2. 设计理念：为什么用「引导」而非「deny」</a>

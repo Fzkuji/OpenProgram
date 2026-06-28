@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="附件处理设计web-聊天">附件处理设计（Web 聊天）<a class="header-anchor" href="#附件处理设计web-聊天">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Web UI <span class='bc-sep'>›</span> <span class="bc-current">附件处理设计（Web 聊天）</span></nav><h1 id="附件处理设计web-聊天">附件处理设计（Web 聊天）<a class="header-anchor" href="#附件处理设计web-聊天">#</a></h1>
 <p>综合 Claude Code / opencode / openclaw 三家做法 + OpenProgram 自身约束的统一设计。
 现状基线已提交于 <code>c29ef3dd</code>（图片→vision、文档→绝对路径引用、agent 按需读）；本文是它的下一步演进。</p>
 <h2 id="一句话原则">一句话原则<a class="header-anchor" href="#一句话原则">#</a></h2>
@@ -285,7 +285,7 @@ image, model.input 不含 &quot;image&quot;（退化的 codex 配置）
 <li><code>MAX_ATTACH_BYTES</code>（建议 32MB）。压制 git workdir blob 膨胀(提交进 git 的 blob 在历史里永久,是真实成本)vs 容纳更大真实 PDF。先 32MB,可调。</li>
 </ol>
 <p>唯一真正面向产品、可推迟到实际触发时再定的问题:大二进制永久累积在 per-session git 历史里(是&quot;workdir = 自包含已提交状态&quot;不变式的代价)是否可接受,还是将来要一个 git 之外的内容存储——但那会牺牲重放可复现性,所以现在的设计<strong>有意保留</strong>这个不变式,不是 P0 的待决项。</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/ui/surface-system.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Surface system (dark mode)</span></a><a class="pn-link pn-next" href="/docs/philosophy/agentic-programming.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agentic Programming — 设计哲学</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#一句话原则">一句话原则</a>
 <a class="" href="#决策矩阵权威纯文本对齐列非-markdown-表">决策矩阵（权威，纯文本对齐列，非 markdown 表）</a>

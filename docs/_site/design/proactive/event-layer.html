@@ -165,7 +165,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="事件层">事件层<a class="header-anchor" href="#事件层">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Proactive Layer — 设计 <span class='bc-sep'>›</span> <span class="bc-current">事件层</span></nav><h1 id="事件层">事件层<a class="header-anchor" href="#事件层">#</a></h1>
 <p>一条统一的事件流，给整个框架用。proactive 只是它第一个消费者。</p>
 <blockquote>
 <p><strong>实现状态（2026-06-13）</strong>：本篇 §1–§5 已全部落地——<code>Event</code>/<code>make_event</code>/<code>emit_safe</code>/
@@ -377,7 +377,7 @@ auth/channel 事件 emit 时它是空的，口袋里自然没 turn。</p>
 <p>接线点（file:line）、把六套源桥进总线的做法、分步与验证，见
 <a href="/docs/plans/proactive-implementation.html">实施规划</a>。顺序：先把 A 类收口成总线并验证能打出完整
 事件序列，再补文件改动事件和工具前可截，再桥进 B 类系统事件，最后补并发的 lane 区分。</p>
-</article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-13</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/proactive/events-and-state.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">事件与状态（地基）</span></a><a class="pn-link pn-next" href="/docs/design/proactive/overview.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">总览：跟着一个场景走一遍</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#1-event-模型">1. Event 模型</a>
 <a class="" href="#2-两类事件源">2. 两类事件源</a>

@@ -36,6 +36,12 @@ text{font-family:-apple-system,sans-serif}
   <span>┈┈ 虚线=fork分叉连线</span>
 </div>
 
+<div class="rule" style="margin-bottom:24px;border-left-color:var(--acc)">
+<b style="color:var(--acc)">两条全局排版规则：</b><br>
+① <b>严格网格</b>：每个节点落在规整网格交点上，行高、列宽全局统一。同一行的节点 y 完全对齐，同一列的节点 x 完全对齐。不允许半格偏移。<br>
+② <b>列紧凑</b>：只有实际有节点的列才占空间。某列空了（本来没节点、或子节点收起后空了），右边的列整体左移补上，中间不留空列。lane 之间也按实际占用的最大 tier 宽度紧贴排，不留固定大间隔。
+</div>
+
 <!-- 画图用的 JS 在底部，这里放容器 -->
 <div id="scenes"></div>
 
@@ -177,28 +183,52 @@ scene(5,"手动调用函数（如 gui_agent）",
 
 // ---- 场景6：综合（多轮 + retry + 工具）----
 scene(6,"综合：多轮 + retry + 工具",
- "所有规则一起：lane 按分支顺序 0,1；tier 按嵌套缩进；depth 按时间。",
- 9,7,()=>{
+ "所有规则一起：lane 按分支顺序 0,1；tier 按嵌套缩进；depth 按时间。lane1 紧贴 lane0 后面（lane0 用到 tier3=列3，留1列画分叉虚线，lane1 从列5起），中间不留多余空白。",
+ 8,7,()=>{
   let s="";
   s+=edge(0,0,1,1,C.blue);
   s+=edge(1,1,2,2,C.blue);
   s+=edge(2,2,3,3,C.blue);     // llm调tool (子调用,从llm连)
   s+=edge(0,0,1,4,C.blue);     // 追问: 从 ROOT 连(不是从llm串)
   s+=edge(1,4,2,5,C.blue);
-  // fork from user(1,1)
-  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+6*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
-  s+=edge(6,1,7,2,C.purple);
+  // fork from user(1,1) → lane1 紧凑起始列=5
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+5*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=edge(5,1,6,2,C.purple);
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"问题");
   s+=node(null,2,2,'llm',C.blue,"回复");
   s+=node(null,3,3,'code',C.blue,"工具","tier3");
   s+=node(null,1,4,'user',C.blue,"追问");
   s+=node(null,2,5,'llm',C.blue,"回复2");
-  s+=node(null,6,1,'user',C.purple,"问题(改写)","lane1");
-  s+=node(null,7,2,'llm',C.purple,"回复'");
+  s+=node(null,5,1,'user',C.purple,"问题(改写)","lane1");
+  s+=node(null,6,2,'llm',C.purple,"回复'");
   return s;
  },
- "lane: 主链=0, retry链=1。tier: 工具在 llm 下缩进到 3。depth: 按时间从上到下。");
+ "lane: 主链=0, retry链=1（紧贴，列5起）。tier: 工具在 llm 下缩进到 3。depth: 按时间从上到下。");
+
+// ---- 场景7：收起后列紧凑 ----
+scene(7,"收起子调用 → 列左移补空",
+ "左：AI 调了工具，占到 tier3（列3）。右：把工具调用收起后，列3 空了 → lane1 整体左移补上，中间不留空列。",
+ 8,6,()=>{
+  let s="";
+  // 左半：展开
+  s+=edge(0,0,1,1,C.blue);
+  s+=edge(1,1,2,2,C.blue);
+  s+=edge(2,2,3,3,C.blue);  // 工具 tier3
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"问题");
+  s+=node(null,2,2,'llm',C.blue,"回复");
+  s+=node(null,3,3,'code',C.blue,"工具(展开)","占列3");
+  // 右半（收起后，整体左移：tier 最大只到2 → lane起列更靠左）
+  const OX=5;
+  s+=edge(OX+0,0,OX+1,1,C.green);
+  s+=edge(OX+1,1,OX+2,2,C.green);
+  s+=node(null,OX+0,0,'root',C.green,"ROOT");
+  s+=node(null,OX+1,1,'user',C.green,"问题");
+  s+=node(null,OX+2,2,'llm',C.green,"回复 +1","工具收起,列3空→无");
+  return s;
+ },
+ "收起后这条 lane 最大 tier 从 3 降到 2 → 它占的列宽缩小，后面的 lane 跟着左移。空列绝不保留。");
 
 </script>
 </div></body></html>

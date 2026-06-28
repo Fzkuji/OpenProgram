@@ -231,6 +231,71 @@ def _scope_css(css: str, prefix: str) -> str:
     return "".join(out)
 
 
+# ── ordered flatten + breadcrumbs + git mtime ───────────────────────────────
+
+def flatten_pages(groups):
+    """Pages in sidebar display order, each with its group chain (for prev/next
+    and breadcrumbs). Returns list of (page, [group_titles])."""
+    out = []
+
+    def walk(g, chain):
+        new_chain = chain if not g.title else chain + [g.title]
+        for p in g.pages:
+            out.append((p, new_chain))
+        for sg in g.subgroups:
+            walk(sg, new_chain)
+
+    for g in groups:
+        walk(g, [])
+    return out
+
+
+def render_breadcrumb(chain, title):
+    if not chain:
+        return ""
+    parts = " <span class='bc-sep'>›</span> ".join(_html.escape(c) for c in chain)
+    return (f'<nav class="breadcrumb">{parts}'
+            f" <span class='bc-sep'>›</span> "
+            f'<span class="bc-current">{_html.escape(title)}</span></nav>')
+
+
+def render_prevnext(prev_p, next_p):
+    if not prev_p and not next_p:
+        return ""
+    left = right = ""
+    if prev_p:
+        href = DEPLOY_BASE + str(prev_p.out).replace("\\", "/")
+        left = (f'<a class="pn-link pn-prev" href="{href}">'
+                f'<span class="pn-dir" data-i18n="prev">上一篇</span>'
+                f'<span class="pn-title">{_html.escape(prev_p.title)}</span></a>')
+    if next_p:
+        href = DEPLOY_BASE + str(next_p.out).replace("\\", "/")
+        right = (f'<a class="pn-link pn-next" href="{href}">'
+                 f'<span class="pn-dir" data-i18n="next">下一篇</span>'
+                 f'<span class="pn-title">{_html.escape(next_p.title)}</span></a>')
+    return f'<div class="prevnext">{left}{right}</div>'
+
+
+_GIT_MTIME_CACHE: dict[str, str] = {}
+
+
+def git_mtime(src: Path) -> str:
+    """Last commit date (YYYY-MM-DD) for a file, or '' if not tracked."""
+    key = str(src)
+    if key in _GIT_MTIME_CACHE:
+        return _GIT_MTIME_CACHE[key]
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "log", "-1", "--format=%ad", "--date=short", "--", str(src)],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+    except Exception:
+        out = ""
+    _GIT_MTIME_CACHE[key] = out
+    return out
+
+
 # ── nav tree -> html ────────────────────────────────────────────────────────
 
 def render_nav(groups, current_out: Path, base: str) -> str:
@@ -299,6 +364,12 @@ def build() -> int:
     search_records: list[dict] = []
     rendered = 0
 
+    # ordered sequence (for prev/next) + per-page group chain (for breadcrumbs)
+    ordered = flatten_pages(groups)
+    seq = [pg for pg, _chain in ordered]
+    chain_of = {pg.out: chain for pg, chain in ordered}
+    idx_of = {pg.out: i for i, pg in enumerate(seq)}
+
     for p in pages:
         global _SLUG_DEDUP
         _SLUG_DEDUP = {}
@@ -327,9 +398,22 @@ def build() -> int:
                 toc = extract_toc(body)
 
         nav_html = render_nav(groups, p.out, base)
+
+        # breadcrumb + prev/next + last-updated
+        chain = chain_of.get(p.out, [])
+        breadcrumb = render_breadcrumb(chain, p.title)
+        i = idx_of.get(p.out)
+        prev_p = seq[i - 1] if i and i > 0 else None
+        next_p = seq[i + 1] if i is not None and i + 1 < len(seq) else None
+        prevnext = render_prevnext(prev_p, next_p)
+        updated = git_mtime(p.src)
+        meta_html = (f'<div class="page-updated"><span data-i18n="updated">最后更新</span>'
+                     f' · {updated}</div>') if updated else ""
+
         full = render_page(
             title=p.title, body_html=body, nav_html=nav_html,
             toc_html=toc, base=base,
+            breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
         )
         out_path = OUT_ROOT / p.out
         out_path.parent.mkdir(parents=True, exist_ok=True)
