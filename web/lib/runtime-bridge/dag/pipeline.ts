@@ -363,17 +363,17 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
         trunkX = rootPos.x;
         fromY = rootPos.y;
       } else {
-        // Fork lane → find the first node in this lane (fork root)
-        let forkRoot: GNode | null = null;
+        // Fork lane → use virtual trunk at forkRoot.x - COL_W
+        let forkRootNode: GNode | null = null;
         Object.values(tree.byId).forEach((n) => {
           if ((n._lane || 0) !== myLane) return;
-          if (!forkRoot || (n._depth || 0) < (forkRoot._depth || 0)) {
-            forkRoot = n;
+          if (!forkRootNode || (n._depth || 0) < (forkRootNode._depth || 0)) {
+            forkRootNode = n;
           }
         });
-        if (forkRoot && forkRoot.id !== id) {
-          const fp = pos(forkRoot);
-          trunkX = fp.x;
+        if (forkRootNode) {
+          const fp = pos(forkRootNode);
+          trunkX = fp.x - COL_W;
           fromY = fp.y;
         } else {
           trunkX = c.x;
@@ -405,30 +405,43 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     }
   });
 
-  // Fork sibling dashed lines
+  // Fork branches: dashed bridge from main sibling → fork root,
+  // then a solid vertical trunk line within the fork lane so that
+  // subsequent user nodes branch off it (mirroring main lane's ROOT trunk).
+  const forkRoots: Record<number, GNode> = Object.create(null);
   for (const id of forkNodes) {
     const node = tree.byId[id];
     if (!node) continue;
+    const myLane = node._lane || 0;
+    if (!forkRoots[myLane] || (node._depth || 0) < (forkRoots[myLane]._depth || 0)) {
+      forkRoots[myLane] = node;
+    }
+  }
+  // Draw dashed bridge for fork roots only (first node in each fork lane)
+  for (const id of forkNodes) {
+    const node = tree.byId[id];
+    if (!node) continue;
+    const myLane = node._lane || 0;
+    if (forkRoots[myLane]?.id !== id) continue;
     const pid = node.called_by;
     if (!pid) continue;
     let sibling: GNode | null = null;
     Object.keys(tree.byId).forEach((sid) => {
       if (sid === id) return;
       const sn = tree.byId[sid];
-      if (sn.called_by === pid && (sn._lane || 0) !== (node._lane || 0)) {
+      if (sn.called_by === pid && (sn._lane || 0) !== myLane) {
         if (!sibling) sibling = sn;
       }
     });
     if (!sibling) continue;
     const sp = pos(sibling);
-    const c = pos(node);
+    const forkPos = pos(node);
     const nr = NODE_R + 4;
-    const startX = sp.x + nr;
-    const endX = c.x - nr;
+    const trunkX = forkPos.x - COL_W;
     const color = _branchColor(node, stableLeafOfNode);
-    const path = _edgePath(startX, sp.y, endX, c.y);
+    // Dashed bridge: main sibling → fork trunk column
     edgeG.appendChild(_svg("path", {
-      d: path,
+      d: _edgePath(sp.x + nr, sp.y, trunkX, forkPos.y),
       stroke: color,
       "stroke-width": 1.4,
       fill: "none",
@@ -437,6 +450,33 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       "pointer-events": "none",
       class: "history-edge fork-edge",
     }));
+    // Solid horizontal branch: trunk → fork root node
+    edgeG.appendChild(_svg("line", {
+      x1: trunkX, y1: forkPos.y, x2: forkPos.x - nr, y2: forkPos.y,
+      stroke: color,
+      "stroke-width": 1.6,
+      "stroke-linecap": "round",
+      "pointer-events": "none",
+      class: "history-edge",
+    }));
+    // Solid vertical trunk for the fork lane (from fork root down
+    // to the last node in this lane)
+    let lastY = forkPos.y;
+    Object.values(tree.byId).forEach((n) => {
+      if ((n._lane || 0) !== myLane) return;
+      const np = pos(n);
+      if (np.y > lastY) lastY = np.y;
+    });
+    if (lastY > forkPos.y) {
+      edgeG.appendChild(_svg("line", {
+        x1: trunkX, y1: forkPos.y, x2: trunkX, y2: lastY,
+        stroke: color,
+        "stroke-width": 1.6,
+        "stroke-linecap": "round",
+        "pointer-events": "none",
+        class: "history-edge",
+      }));
+    }
   }
 
   // Attach-reference edges: dashed line from source branch tip to the
