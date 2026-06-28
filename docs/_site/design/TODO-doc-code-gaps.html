@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设计文档与代码不对齐的待修项 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../README.html">Documentation</a>
+<a class="navlink" href="../API.html">API Reference</a>
+<a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../api/providers.html">Providers</a>
+<a class="navlink" href="../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../design/README.html">Design Documents</a>
+<a class="navlink" href="../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink active" href="../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../design/channels/README.html">Channels</a>
+<a class="navlink" href="../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../design/context/README.html">Context</a>
+<a class="navlink" href="../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../design/function/README.html">Function Design</a>
+<a class="navlink" href="../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../design/providers/README.html">Providers</a>
+<a class="navlink" href="../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="设计文档与代码不对齐的待修项">设计文档与代码不对齐的待修项<a class="header-anchor" href="#设计文档与代码不对齐的待修项">#</a></h1>
+<p>审计日期: 2026-06-18（第二次审计）</p>
+<p>本文件记录设计文档与实际代码的偏差，按优先级排列。修复后从此处删除对应条目。</p>
+<hr />
+<h2 id="路径错误已修复"><s>路径错误</s>（已修复）<a class="header-anchor" href="#路径错误已修复">#</a></h2>
+<h3 id="extension-gatingimplementationmd"><s>extension-gating/implementation.md</s><a class="header-anchor" href="#extension-gatingimplementationmd">#</a></h3>
+<ul>
+<li><s>文档写的路径: <code>openprogram/agents/gating.py</code>, <code>openprogram/agents/manager.py</code></s></li>
+<li><s>实际路径: <code>openprogram/agent/management/gating.py</code>, <code>openprogram/agent/management/manager.py</code></s></li>
+<li>状态: ✅ 已修正，文档路径现已正确</li>
+</ul>
+<hr />
+<h2 id="需要更新的文档high">需要更新的文档（HIGH）<a class="header-anchor" href="#需要更新的文档high">#</a></h2>
+<h3 id="providersthinking-effortmd">providers/thinking-effort.md<a class="header-anchor" href="#providersthinking-effortmd">#</a></h3>
+<ol>
+<li><strong>§10 待修项中 Opus 4.7 override 条目过时</strong>: 文档把 <code>[&quot;low&quot;,&quot;medium&quot;,&quot;high&quot;]</code> 限制当作 bug，
+但这是 Anthropic（Claude 4.6 guidance）的 deliberate design choice。应删除该待修条目或改为说明设计原因。</li>
+<li><strong>&quot;max&quot; 级别映射标记错误</strong>: 文档声称 5 个 provider 的 max 映射&quot;未映射&quot;，但实际代码中
+<code>anthropic.py</code> 已有 <code>xhigh → max</code> 映射，所有 provider 都支持 max level。应更新映射表。</li>
+<li><strong>Fable 5</strong>: 文档提到缺少 Fable 5 说明，但 <code>thinking_catalog.py</code> 中也没有 Fable 5 条目。
+需要确认：是代码缺还是文档多写了？如果该模型已经存在于 models.dev 目录但 catalog 未收录，需加上。</li>
+</ol>
+<hr />
+<h2 id="状态标记过期medium">状态标记过期（MEDIUM）<a class="header-anchor" href="#状态标记过期medium">#</a></h2>
+<h3 id="memorymemory-v2md">memory/memory-v2.md<a class="header-anchor" href="#memorymemory-v2md">#</a></h3>
+<ul>
+<li>Phase 0-1: 已完成（文档标记正确）</li>
+<li>Phase 2: 文档标 &quot;❌ 未开始&quot;，但 §0.5 又提到 &quot;前置读层已落地&quot;（Provenance dataclass）</li>
+<li>应明确：Phase 2 分拆为子步骤，标注哪些 substep 已 partial、哪些待做</li>
+</ul>
+<h3 id="contextcontextgitmd-已并入-contextstorage-and-enginemd"><s>context/contextgit.md → 已并入 context/storage-and-engine.md</s><a class="header-anchor" href="#contextcontextgitmd-已并入-contextstorage-and-enginemd">#</a></h3>
+<ul>
+<li><s>文档标记: &quot;Status: proposal, not implemented&quot;</s></li>
+<li>状态: ✅ 已与 context-commit-chain / context-engine-spec / context-attach-merge / cross-turn 一并合入 <code>context/context.md</code>（DAG 底座在 <code>contextgit/dag.py</code>，上层未建）</li>
+</ul>
+<hr />
+<h2 id="实施滞后设计有效但代码未完全跟上">实施滞后（设计有效但代码未完全跟上）<a class="header-anchor" href="#实施滞后设计有效但代码未完全跟上">#</a></h2>
+<h3 id="contextcross-turn-tool-contextmd">context/cross-turn-tool-context.md<a class="header-anchor" href="#contextcross-turn-tool-contextmd">#</a></h3>
+<ul>
+<li>&quot;tool aging + 1 行语义 stub&quot; 策略文档描述完整</li>
+<li><code>openprogram/context/tool_aging/</code> 存在但实现与文档有偏差</li>
+<li>待实施完成后同步文档</li>
+</ul>
+<h3 id="providersmodel-catalog-finalmd">providers/model-catalog-final.md<a class="header-anchor" href="#providersmodel-catalog-finalmd">#</a></h3>
+<ul>
+<li>models.dev 自动更新 TTL + fetched 覆盖式保存的完整流水线未完全落地</li>
+<li>模型列表拉取逻辑存在但自动刷新机制未实现</li>
+</ul>
+<hr />
+<h2 id="内容缺失">内容缺失<a class="header-anchor" href="#内容缺失">#</a></h2>
+<h3 id="runtime-缺-process_runner-设计文档">runtime/ 缺 process_runner 设计文档<a class="header-anchor" href="#runtime-缺-process_runner-设计文档">#</a></h3>
+<ul>
+<li><code>agent/process_runner.py</code> 是重要的子进程执行模块（spawn、stop、user-input bridge）</li>
+<li>没有对应的设计文档</li>
+</ul>
+<h3 id="runtime-缺-dispatcher-设计文档">runtime/ 缺 dispatcher 设计文档<a class="header-anchor" href="#runtime-缺-dispatcher-设计文档">#</a></h3>
+<ul>
+<li><code>agent/dispatcher/__init__.py</code> 是 530 行的核心模块</li>
+<li>没有独立的设计文档（<a href="http://dispatcher-split.md">dispatcher-split.md</a> 只讨论拆分，不是完整设计）</li>
+</ul>
+<hr />
+<h2 id="本次审计确认已正确的文档">本次审计确认已正确的文档<a class="header-anchor" href="#本次审计确认已正确的文档">#</a></h2>
+<p>以下文档经审计与代码完全一致，无需修改：</p>
+<ul>
+<li><code>runtime/controllability-and-three-surface-sync.md</code> — attended/unattended、graceful stop、三端同步均已实现</li>
+<li><code>runtime/user-input-requests.md</code> — Phase 1+2 已落地（QuestionRegistry、三种 Transport 含新增的 TTYTransport）</li>
+<li><code>function/function-calling-unification.md</code> — 已使用 &quot;profiles&quot; 术语，与代码一致</li>
+<li><code>extension-gating/implementation.md</code> — 路径已正确</li>
+<li><code>context/context.md</code>（合并自 contextgit 等五份 + 总图）— 状态标记正确</li>
+</ul>
+<hr />
+<h2 id="工具调用体系待解决问题">工具调用体系待解决问题<a class="header-anchor" href="#工具调用体系待解决问题">#</a></h2>
+<h3 id="1-wiki_agent-自递归原因-已查明">1. wiki_agent 自递归原因（✅ 已查明）<a class="header-anchor" href="#1-wiki_agent-自递归原因-已查明">#</a></h3>
+<ul>
+<li><strong>根因</strong>：<code>research_harness/wiki/wiki_agent.py:122</code> 裸调 <code>runtime.exec(content=[task])</code>——
+不传 toolset/tools,默认拿 <code>DEFAULT_TOOLSET=&quot;full&quot;</code>(98 个工具,含 wiki_agent 自身)。
+模型看到 wiki_agent 的 tool description(&quot;Maintain a wiki vault — route to ingest...&quot;)
+正好匹配当前任务(&quot;调研 long horizon agent&quot;) → 认为需要调 wiki_agent → 调自己 →
+进去又是裸 exec 又看到自己 → 无限递归。每层返回
+<code>{'error': &quot;'info|warning|success|error'&quot;}</code>(wiki 内部 enum validation 失败),
+上层模型收到错误 → 重试又调自己。</li>
+<li><strong>已解决（commit <code>1f6f5fce</code>）</strong>：从「self-deny 屏蔽工具」改成「处境引导 + 递归深度上限兜底」。
+<ul>
+<li>处境提示(<code>runtime._situational_prefix</code>)注入 user turn 开头,告诉模型「你在 X 体内、调 X = 无限递归、用底层工具」,docstring 降级置后 → 直接否定「该路由给 wiki_agent」的前提。</li>
+<li>兜底:<code>_MAX_AGENTIC_RECURSION_DEPTH=5</code>,per-function-name 计数,同名超 5 层抛 <code>RecursionError</code>。</li>
+<li>self-deny 已删,工具列表含函数自己,靠引导不靠屏蔽。</li>
+<li>设计文档:<code>docs/design/runtime/agentic-self-recursion.md</code>;测试:<code>tests/agentic_programming/test_self_recursion_guard.py</code>(8 用例)。</li>
+</ul>
+</li>
+<li><strong>遗留</strong>（待做，见 #2）：各 harness 的 exec 限定工具集 + 跨函数环(A→B→A)识别(当前只防直接自递归)。</li>
+<li>会话记录：<code>~/.openprogram/sessions/local_d125e9a9c3/history/</code>
+context_tree 展示 7 层嵌套(4d76→0c07→0964→c6f9→f1c9→4379→8746→100c)。</li>
+</ul>
+<h3 id="2-harness-内部工具集是否需要限制">2. Harness 内部工具集是否需要限制<a class="header-anchor" href="#2-harness-内部工具集是否需要限制">#</a></h3>
+<ul>
+<li>问题：wiki_agent/research_agent/gui_agent 这些 harness 在自己的内部 exec 里,是否应该只看到&quot;做本职工作需要的工具&quot;,而不是 full 全集?</li>
+<li>现状：默认全开(full),self-deny 只挡了自己调自己;一个 harness 仍可调另一个(wiki 调 research、research 调 gui)——可能导致&quot;跑偏&quot;。</li>
+<li>决策待定：(a) 框架不管,各 harness 自己在 exec 里传 toolset 限制;(b) 框架自动 deny 所有 harness entry points(wiki/research/gui)当一个 harness 在跑时;(c) 保持现状只防自递归。</li>
+<li>参考：Claude Code 的 subagent 用 allowlist 限工具,正是防这种跑偏。</li>
+</ul>
+<h3 id="3-tool-profile-选择尚未影响实际工具解析">3. Tool Profile 选择尚未影响实际工具解析<a class="header-anchor" href="#3-tool-profile-选择尚未影响实际工具解析">#</a></h3>
+<ul>
+<li>问题：聊天框 profile picker 可选 profile、后端持久化 active profile,但<strong>选了某 profile 后这次对话实际用的工具仍由 Tools toggle(on/off)决定</strong>,没有把 profile 的工具列表作为 tools_override 发给 dispatcher。</li>
+<li>修法：WS chat action 传 active profile name → dispatcher 用 <code>agent_tools(toolset=&lt;profile&gt;)</code> 解析 → 只给那组工具。</li>
+<li>位置：<code>webui/ws_actions/chat.py:313-316</code> (tools_override 逻辑) + <code>composer/index.tsx</code> submit 函数。</li>
+</ul>
+<h3 id="4-functions-页-agenticbuilt-in-tab-分离进行中">4. Functions 页 Agentic/Built-in tab 分离(进行中)<a class="header-anchor" href="#4-functions-页-agenticbuilt-in-tab-分离进行中">#</a></h3>
+<ul>
+<li>设计：顶部 tab 栏(类似 Memory 页的 Wiki/Journal/Core),分 Agentic(函数管理+文件夹)和 Built-in Tools(profile 管理)。</li>
+<li>现状：tab 栏已加、tab 状态已加、sidebar 在 builtin tab 隐藏、agentic 内容在 builtin tab 隐藏、tools 只在 builtin tab 显示。CSS 已加。</li>
+<li>待做：typecheck + build + 浏览器验证,确认分 tab 渲染正确。</li>
+</ul>
+<h3 id="5-functions-页删除操作仍用原生-confirm">5. <s>Functions 页删除操作仍用原生 confirm()</s><a class="header-anchor" href="#5-functions-页删除操作仍用原生-confirm">#</a></h3>
+<ul>
+<li>✅ 已修复：搜索确认无残留原生 <code>confirm()</code> 调用，已全部替换为 ConfirmDialog。</li>
+</ul>
+<h3 id="6-functions-页工具右键菜单不合理">6. <s>Functions 页工具右键菜单不合理</s><a class="header-anchor" href="#6-functions-页工具右键菜单不合理">#</a></h3>
+<ul>
+<li>✅ 已修复：<code>functions-page.tsx:579</code> 已改为 <code>tab === &quot;agentic&quot; ? contentCtx : undefined</code>，builtin tab 不触发 contentCtx。</li>
+</ul>
+<hr />
+<h2 id="agentic-function-运行时待解决问题">Agentic Function 运行时待解决问题<a class="header-anchor" href="#agentic-function-运行时待解决问题">#</a></h2>
+<h3 id="7-断点续跑checkpoint-resume">7. 断点续跑（checkpoint resume）<a class="header-anchor" href="#7-断点续跑checkpoint-resume">#</a></h3>
+<ul>
+<li><strong>问题</strong>：agentic function 内部 <code>runtime.exec</code> 连续 6 次重试全失败（provider 不可达）后直接抛错，函数终止，无法恢复。</li>
+<li><strong>现状</strong>：DAG 状态完整（frame 节点标 <code>status=&quot;error&quot;</code>，子节点全保留），<code>_render_history_messages</code> 从 DAG 加载历史，基础设施已就位。</li>
+<li><strong>方案</strong>：提供 <code>resume_function(session_id, node_id)</code> 入口——把 frame 节点 status 改回 <code>running</code>，用同一个 frame_node_id 重新调 <code>runtime.exec</code>，DAG 历史自动接上。webui 加&quot;重试&quot;按钮触发。</li>
+<li><strong>核心改动</strong>：需要一个&quot;重入&quot;入口 + 恢复 contextvar（_call_id 等）+ 重建 runtime/agent 上下文。</li>
+<li><strong>位置</strong>：<code>agentic_programming/function.py</code>（wrapper 层）、<code>agentic_programming/runtime.py</code>（exec 层）</li>
+</ul>
+<h3 id="8-bash-工具文件修改不追踪"><s>8. Bash 工具文件修改不追踪</s><a class="header-anchor" href="#8-bash-工具文件修改不追踪">#</a></h3>
+<ul>
+<li>✅ 已解决（<code>69432d88</code>）：统一入口触发——<code>_execute_tool_calls</code> 中 bash 执行前后做文件状态 diff，变更文件自动补做 checkpoint。</li>
+<li>已知限制：当前只扫 cwd 顶层文件，子目录变更未覆盖（待后续改为递归扫描）。</li>
+<li>另外 ④ 系统级沙箱（<code>cf2edde5</code>）也从源头限制了 bash 能碰的文件范围。</li>
+</ul>
+<hr />
+<h2 id="其它待解决已修复"><s>其它待解决</s>（已修复）<a class="header-anchor" href="#其它待解决已修复">#</a></h2>
+<h3 id="research_agent-的假预设-toolsetharness"><s>research_agent 的假预设 <code>toolset=(&quot;harness&quot;,)</code></s><a class="header-anchor" href="#research_agent-的假预设-toolsetharness">#</a></h3>
+<ul>
+<li>✅ 已修复：改为 <code>toolset=(&quot;research&quot;,)</code>（2026-06-18）</li>
+</ul>
+<h3 id="设计文档-full-静态列表注释过时"><s>设计文档 &quot;full&quot; 静态列表注释过时</s><a class="header-anchor" href="#设计文档-full-静态列表注释过时">#</a></h3>
+<ul>
+<li>✅ 已修复：<code>functions/__init__.py</code> TOOLSETS[&quot;full&quot;] 注释已更新，说明 full 现在只是命名预设，暴露由 <code>exposed_names()</code> 动态收集。</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#路径错误已修复">路径错误（已修复）</a>
+<a class="lvl-3" href="#extension-gatingimplementationmd">extension-gating/implementation.md</a>
+<a class="" href="#需要更新的文档high">需要更新的文档（HIGH）</a>
+<a class="lvl-3" href="#providersthinking-effortmd">providers/thinking-effort.md</a>
+<a class="" href="#状态标记过期medium">状态标记过期（MEDIUM）</a>
+<a class="lvl-3" href="#memorymemory-v2md">memory/memory-v2.md</a>
+<a class="lvl-3" href="#contextcontextgitmd-已并入-contextstorage-and-enginemd">context/contextgit.md → 已并入 context/storage-and-engine.md</a>
+<a class="" href="#实施滞后设计有效但代码未完全跟上">实施滞后（设计有效但代码未完全跟上）</a>
+<a class="lvl-3" href="#contextcross-turn-tool-contextmd">context/cross-turn-tool-context.md</a>
+<a class="lvl-3" href="#providersmodel-catalog-finalmd">providers/model-catalog-final.md</a>
+<a class="" href="#内容缺失">内容缺失</a>
+<a class="lvl-3" href="#runtime-缺-process_runner-设计文档">runtime/ 缺 process_runner 设计文档</a>
+<a class="lvl-3" href="#runtime-缺-dispatcher-设计文档">runtime/ 缺 dispatcher 设计文档</a>
+<a class="" href="#本次审计确认已正确的文档">本次审计确认已正确的文档</a>
+<a class="" href="#工具调用体系待解决问题">工具调用体系待解决问题</a>
+<a class="lvl-3" href="#1-wiki_agent-自递归原因-已查明">1. wiki_agent 自递归原因（✅ 已查明）</a>
+<a class="lvl-3" href="#2-harness-内部工具集是否需要限制">2. Harness 内部工具集是否需要限制</a>
+<a class="lvl-3" href="#3-tool-profile-选择尚未影响实际工具解析">3. Tool Profile 选择尚未影响实际工具解析</a>
+<a class="lvl-3" href="#4-functions-页-agenticbuilt-in-tab-分离进行中">4. Functions 页 Agentic/Built-in tab 分离(进行中)</a>
+<a class="lvl-3" href="#5-functions-页删除操作仍用原生-confirm">5. Functions 页删除操作仍用原生 confirm()</a>
+<a class="lvl-3" href="#6-functions-页工具右键菜单不合理">6. Functions 页工具右键菜单不合理</a>
+<a class="" href="#agentic-function-运行时待解决问题">Agentic Function 运行时待解决问题</a>
+<a class="lvl-3" href="#7-断点续跑checkpoint-resume">7. 断点续跑（checkpoint resume）</a>
+<a class="lvl-3" href="#8-bash-工具文件修改不追踪">8. Bash 工具文件修改不追踪</a>
+<a class="" href="#其它待解决已修复">其它待解决（已修复）</a>
+<a class="lvl-3" href="#research_agent-的假预设-toolsetharness">research_agent 的假预设 toolset=(&amp;quot;harness&amp;quot;,)</a>
+<a class="lvl-3" href="#设计文档-full-静态列表注释过时">设计文档 &amp;quot;full&amp;quot; 静态列表注释过时</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-agent + per-turn revert: status · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink active" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="multi-agent-per-turn-revert-status">Multi-agent + per-turn revert: status<a class="header-anchor" href="#multi-agent-per-turn-revert-status">#</a></h1>
+<p>Working branch: <code>git-as-truth</code>. HEAD = <code>6b5c5ea</code>.</p>
+<h2 id="whats-done">What's done<a class="header-anchor" href="#whats-done">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Commit</th>
+<th>Scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>a0a6700</code></td>
+<td><code>openprogram/store/file_backup/</code> subpackage (paths / manifest / store / gc) + 7 unit tests. Git-agnostic per-turn file commits. Hook API: <code>BackupStore.backup_before_edit(turn_id, abs_path)</code> / <code>.restore_turn(turn_id)</code>.</td>
+</tr>
+<tr>
+<td><code>3674f3e</code></td>
+<td>Dispatcher sets <code>_current_turn_id</code> ContextVar = <code>assistant_msg_id</code>. <code>write</code> / <code>edit</code> / <code>apply_patch</code> tools call <code>backup_for_current_turn(path)</code> pre-fs-mutate. <code>_runtime.py</code> wraps sync-tool executor in <code>copy_context().run(...)</code> so ContextVars propagate to thread-pool. <code>revert_turn(session_id, assistant_msg_id)</code> dispatcher fn + WS action <code>revert_turn</code> exposed.</td>
+</tr>
+<tr>
+<td><code>eb2b06a</code></td>
+<td>D + G: <code>ContextCommit.parent_ids: list[str]</code> with single-parent back-compat via <code>__post_init__</code>; frontend assistant bubble gets a Revert button calling the <code>revert_turn</code> WS action with toast feedback.</td>
+</tr>
+<tr>
+<td><code>6fde168</code></td>
+<td>C part 1: <code>&lt;repo&gt;/workdir/</code> materialized on session init (with <code>.gitkeep</code>). <code>GitSession.workdir_path</code> + <code>SessionStore.session_workdir(sid)</code> accessors. <code>commit_all</code> already picks up workdir edits via <code>git add -A</code>.</td>
+</tr>
+<tr>
+<td><code>6de702f</code></td>
+<td>E part 1: <code>GitSession.add_worktree(branch, base_ref) / remove_worktree(path) / list_worktrees()</code> primitives. Worktrees live at <code>&lt;repo&gt;/_worktrees/&lt;branch&gt;/</code>.</td>
+</tr>
+<tr>
+<td><code>5ba1314</code></td>
+<td>E part 2: <code>openprogram/agent/sub_agent.py::allocate_sub_agent(session_id, parent_assistant_id, label?) / release_sub_agent(ws)</code> and <code>SessionStore.{allocate,release}_sub_agent_worktree(...)</code>. Mints <code>sub_&lt;aid&gt;_&lt;label?&gt;_&lt;hex&gt;</code> branch + materializes worktree.</td>
+</tr>
+<tr>
+<td><code>1066afd</code></td>
+<td>H: WS action <code>list_turn_files</code> returns <code>BackupStore.list_backed_paths(turn_id)</code>; assistant bubble renders a <code>.turn-files-chips</code> chip strip showing basenames when the turn touched any files. Verified via chrome MCP.</td>
+</tr>
+<tr>
+<td><code>feda1d4</code></td>
+<td>C part 2: <code>openprogram/agent/_workdir.py::apply_default_workdir(runtime, session_id)</code> called from <code>webui/_execute/__init__.py</code> after the chat runtime is fetched. <code>runtime.set_workdir</code> defaults to the session's <code>workdir/</code>; <code>/api/run</code> still overrides via its own set_workdir call. In-process tools consult <code>get_default_workdir()</code> not <code>os.getcwd()</code>, so the cwd switch is safe.</td>
+</tr>
+<tr>
+<td><code>acd7fa5</code></td>
+<td>E part 3 (first pass): <code>agent/sub_agent_run.py::run_sub_agent_turn(parent_session_id, parent_assistant_id, prompt, agent_id, label?)</code> + <code>session_db.set_db_override / reset_db_override</code> ContextVar override so the dispatcher routes through a worktree-rooted SessionStore. WS action <code>spawn_sub_agent</code>.</td>
+</tr>
+<tr>
+<td><code>6b5c5ea</code></td>
+<td>F + E part 3 isolation fixes: <code>agent/_merge.py::process_merge_turn(...)</code>, WS action <code>merge_branches</code>, multi-parent ContextCommit write. Same commit hardens sub-agent isolation: clear worktree-inherited history/+ context commits, write summary as <code>role=&quot;assistant&quot;</code> (not tool), preserve parent HEAD across the synthetic write.</td>
+</tr>
+</tbody>
+</table>
+<p>Tests: 675 pass / 0 fail across <code>tests/ --ignore=tests/integration</code>.</p>
+<p>End-to-end (chrome MCP, real LLM):</p>
+<ul>
+<li><code>spawn_sub_agent</code> → <code>final_text=&quot;red&quot;</code>, sub-branch commit recorded.</li>
+<li>Second <code>spawn_sub_agent</code> → <code>final_text=&quot;blue&quot;</code>, second sub-branch.</li>
+<li><code>merge_branches</code> over both → <code>final_text=&quot;Red and blue are two distinct colors.&quot;</code>, <code>commit_id=commit_a64d36670cdfbfd2</code>, <code>parent_ids</code> carries the prior parent ContextCommit id + 2 sub-branch SHAs.</li>
+</ul>
+<h2 id="known-constraints-mvp-level-not-yet-addressed">Known constraints (MVP-level, not yet addressed)<a class="header-anchor" href="#known-constraints-mvp-level-not-yet-addressed">#</a></h2>
+<p>These don't block shipping the current behavior but are the obvious next iterations:</p>
+<ol>
+<li>
+<p><strong>No workdir-level merge in F.</strong> The merge turn synthesizes a textual answer from each sub-branch's summary; it doesn't <code>git merge</code> the sub-branches' file edits into the parent's <code>workdir/</code>. If two sub-agents wrote different code, the user has to pick a branch manually with <code>git checkout</code> or <code>git merge</code>.</p>
+</li>
+<li>
+<p><strong>Sub-branch context commits aren't surfaced.</strong> After <code>release_sub_agent</code>, the worktree dir is gone. The ContextCommit JSON files committed onto the sub-branch are reachable only via <code>git show &lt;branch&gt;:context/commits/&lt;id&gt;.json</code>. The merge resolver uses the parent's DAG summary row instead, which works but doesn't expose the per-branch reasoning chain.</p>
+</li>
+<li>
+<p><strong>No UI yet for <code>spawn_sub_agent</code> / <code>merge_branches</code>.</strong> Both WS actions work, but there's no button in the chat composer or DAG view that fires them. Plumbing is in; UI is the next visible feature.</p>
+</li>
+<li>
+<p><strong>Concurrent sub-agents off the same parent.</strong> Each gets its own worktree (no fs contention), but <code>default_db()</code> ContextVar override is per-context — two sub-agents spawned from the same WS handler would need separate executor threads (and <code>copy_context().run(...)</code> per thread) so the overrides don't clobber. The single-thread executor path used by the WS handler is fine for sequential spawns; parallel spawn would need a careful pass.</p>
+</li>
+<li>
+<p><strong>Old sessions with broken sub_agent tool rows need cleanup.</strong> If you have <code>~/.openprogram/sessions/&lt;sid&gt;/history/</code> JSON files where <code>role=&quot;code&quot;</code> and <code>name=&quot;sub_agent&quot;</code> (left over from the first E-part-3 implementation), they'll still trip <code>No tool call found for function call output</code> on subsequent turns. Wipe those files + their referencing context commits and <code>git commit</code> the deletion. Fresh sessions don't need this.</p>
+</li>
+</ol>
+<h2 id="touch-points-worth-re-reading-before-extending">Touch-points worth re-reading before extending<a class="header-anchor" href="#touch-points-worth-re-reading-before-extending">#</a></h2>
+<ul>
+<li><code>openprogram/agent/dispatcher.py::process_user_turn</code> — reads <code>default_db()</code> at turn start; the ContextVar override is what makes sub-agent isolation possible.</li>
+<li><code>openprogram/context/engine.py::_build_messages_from_commit</code> — pulls <code>db.get_branch(session_id)</code> and <code>db.get_messages(session_id)</code>, splices sub-calls by caller. Sub-agent's worktree DAG must NOT inherit parent's nodes here.</li>
+<li><code>openprogram/store/_msg_adapter.py::_msg_to_node</code> — only tool rows pick up <code>called_by</code> from <code>extra.tool_use.called_by</code>; assistant rows leave it in metadata. That's why the sub_agent summary write preserves HEAD manually.</li>
+<li><code>ContextCommit.parent_ids</code> — list, set via <code>__post_init__</code> from single <code>parent_id</code> for back-compat. Merge turn is the first writer that puts &gt; 1 entry.</li>
+</ul>
+<h2 id="verification-baseline">Verification baseline<a class="header-anchor" href="#verification-baseline">#</a></h2>
+<pre><code class="language-bash">python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/<span class="w"> </span>--ignore<span class="o">=</span>tests/integration<span class="w"> </span>-q
+<span class="c1"># expected: 675 passed</span>
+git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>55588ad..HEAD
+<span class="c1"># expected: 1066afd / feda1d4 / acd7fa5 / 6b5c5ea</span>
+</code></pre>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#whats-done">What&#x27;s done</a>
+<a class="" href="#known-constraints-mvp-level-not-yet-addressed">Known constraints (MVP-level, not yet addressed)</a>
+<a class="" href="#touch-points-worth-re-reading-before-extending">Touch-points worth re-reading before extending</a>
+<a class="" href="#verification-baseline">Verification baseline</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

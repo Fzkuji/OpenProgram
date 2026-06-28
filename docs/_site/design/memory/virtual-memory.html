@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>抽象记忆 (Virtual Memory) · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory" open><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink active" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="抽象记忆-virtual-memory">抽象记忆 (Virtual Memory)<a class="header-anchor" href="#抽象记忆-virtual-memory">#</a></h1>
+<h2 id="1-概念">1. 概念<a class="header-anchor" href="#1-概念">#</a></h2>
+<p>抽象记忆是从实体记忆提炼出的紧凑索引。它不替代实体层，而是给实体层建一张<strong>带坐标的导航地图</strong>。</p>
+<p>核心属性：</p>
+<ul>
+<li><strong>Provenance-linked</strong>：每条记忆都带指针回指实体层出处</li>
+<li><strong>Bi-temporal</strong>：每条记忆记两个时间——<code>event_time</code>（事情发生时）和 <code>ingestion_time</code>（记下来时）</li>
+<li><strong>不可变追加</strong>：旧记录不删除，冲突时标 <code>superseded_by</code></li>
+</ul>
+<p>当前抽象记忆有三种类型（+ v1 过渡期的 Journal/Wiki）：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>回答的问题</th>
+<th>存储</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Timeline</td>
+<td>何时发生了什么</td>
+<td><code>memory/timeline/YYYY-MM.jsonl</code></td>
+<td>Phase 2 待实现</td>
+</tr>
+<tr>
+<td>Knowledge Graph</td>
+<td>什么和什么是什么关系</td>
+<td><code>memory/graph/{entities,edges}.jsonl</code></td>
+<td>Phase 2 待实现</td>
+</tr>
+<tr>
+<td><a href="http://Core.md">Core.md</a></td>
+<td>LLM 每次必看的最小快照</td>
+<td><code>memory/core.md</code></td>
+<td>v1 已有，Phase 2 重写</td>
+</tr>
+<tr>
+<td>Journal/Wiki (v1)</td>
+<td>同上（粗粒度）</td>
+<td><code>memory/short-term/</code>, <code>memory/wiki/</code></td>
+<td>运行中，待被取代</td>
+</tr>
+</tbody>
+</table>
+<h2 id="2-timeline时间轴">2. Timeline（时间轴）<a class="header-anchor" href="#2-timeline时间轴">#</a></h2>
+<p>按时间组织的事件流。回答&quot;何时发生了什么&quot;。</p>
+<h3 id="21-创建">2.1 创建<a class="header-anchor" href="#21-创建">#</a></h3>
+<p><strong>触发</strong>：</p>
+<ul>
+<li>Session 空闲（idle ≥30 min）→ watcher 触发提炼</li>
+<li>Daily sleep（03:00）→ 批量整理</li>
+</ul>
+<p><strong>过程</strong>：</p>
+<ol>
+<li>从实体层读新增的 DAG 节点（<code>iter_nodes_since()</code>）</li>
+<li>LLM 提取事件（Stage 2: extract）</li>
+<li>每个事件挂 <code>Provenance</code> 指针</li>
+<li>Append 到对应月份的 JSONL 文件</li>
+</ol>
+<h3 id="22-存储">2.2 存储<a class="header-anchor" href="#22-存储">#</a></h3>
+<pre><code>~/.openprogram/memory/timeline/
+├── 2026-05.jsonl
+├── 2026-06.jsonl
+└── ...
+</code></pre>
+<p>单条记录：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ev_abc&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;summary&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;在 OpenProgram 修了 Windows cp1252 编码 bug，涉及 38 个文件&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;work&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;provenance&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;project_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;proj_openprogram&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local_13d5&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;commit&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;73bfc05&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;event_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1779900000</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;ingestion_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1779986400</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;entities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;project.openprogram&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;issue.cp1252&quot;</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre>
+<p><code>kind</code> 枚举：<code>work</code> | <code>decision</code> | <code>learning</code> | <code>event</code></p>
+<h3 id="23-读取">2.3 读取<a class="header-anchor" href="#23-读取">#</a></h3>
+<ul>
+<li>按时间范围：<code>memory_timeline(since, until)</code></li>
+<li>按关联实体：<code>memory_timeline(entity=&quot;project.openprogram&quot;)</code></li>
+<li>召回时注入最近高信号事件到 <a href="http://Core.md">Core.md</a></li>
+</ul>
+<h3 id="24-更新">2.4 更新<a class="header-anchor" href="#24-更新">#</a></h3>
+<p>Append-only。同一事实被重新提炼时，旧记录标 <code>superseded_by</code> 指向新记录 ID，不删除。</p>
+<h3 id="25-删除">2.5 删除<a class="header-anchor" href="#25-删除">#</a></h3>
+<p>不删除。理由：事件是历史事实的记录，删除会破坏时间线完整性。标记 superseded 即可。</p>
+<h2 id="3-knowledge-graph知识图谱">3. Knowledge Graph（知识图谱）<a class="header-anchor" href="#3-knowledge-graph知识图谱">#</a></h2>
+<p>实体 + 关系的图结构。回答&quot;什么和什么是什么关系&quot;。</p>
+<h3 id="31-创建">3.1 创建<a class="header-anchor" href="#31-创建">#</a></h3>
+<p><strong>触发</strong>：同 Timeline（session-end / daily sleep）。</p>
+<p><strong>过程</strong>：</p>
+<ol>
+<li>提炼管道 Stage 2 从 DAG 抽取实体和关系</li>
+<li>Stage 3 做 alias resolution（&quot;worker&quot;/&quot;后端&quot;/&quot;daemon&quot; → 同一节点）</li>
+<li>Stage 4 做矛盾检测（新边与旧边冲突 → 标 superseded）</li>
+<li>Append 到 JSONL</li>
+</ol>
+<h3 id="32-存储">3.2 存储<a class="header-anchor" href="#32-存储">#</a></h3>
+<pre><code>~/.openprogram/memory/graph/
+├── entities.jsonl           点
+├── edges.jsonl              边（带 bi-temporal + provenance）
+└── views/
+    └── entity/&lt;slug&gt;.md     每个实体一个可读页面
+</code></pre>
+<p>实体：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;project.openprogram&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;project&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;OpenProgram&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;attrs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Users/fzkuji/OpenProgram&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;lang&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;python&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;scope&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;global&quot;</span>
+<span class="p">}</span>
+</code></pre>
+<p>边：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;from&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;issue.cp1252&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;to&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;commit.73bfc05&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;relation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;fixed-by&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;event_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1779900000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;ingestion_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1779986400</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;provenance&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;project_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;proj_openprogram&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;local_13d5&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;confidence&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;superseded_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="33-读取">3.3 读取<a class="header-anchor" href="#33-读取">#</a></h3>
+<ul>
+<li>邻居遍历：<code>memory_graph_neighbors(entity, hops=2)</code></li>
+<li>Hybrid search：<code>memory_search(query)</code> — FTS + 可选向量</li>
+<li>Scope 过滤：查询时按当前上下文过滤（<code>global</code> + <code>project:&lt;current&gt;</code>）</li>
+</ul>
+<h3 id="34-更新">3.4 更新<a class="header-anchor" href="#34-更新">#</a></h3>
+<ul>
+<li><strong>Alias resolution</strong>：相同实体的不同名称合并为一个节点</li>
+<li><strong>矛盾处理</strong>：新边与旧边冲突时，旧边标 <code>superseded_by</code> 指向新边，不删除旧边</li>
+<li><strong>Views 重建</strong>：Stage 5 重新投影 <code>views/entity/*.md</code></li>
+</ul>
+<h3 id="35-删除">3.5 删除<a class="header-anchor" href="#35-删除">#</a></h3>
+<p>不删除。旧边标 <code>superseded_by</code>，保留完整历史。</p>
+<h3 id="36-scope-标签">3.6 Scope 标签<a class="header-anchor" href="#36-scope-标签">#</a></h3>
+<p>每个 entity/edge 带 scope，查询时按上下文过滤：</p>
+<pre><code>scope: &quot;global&quot;                  跨所有项目（如用户语言偏好）
+scope: &quot;project:openprogram&quot;     仅此项目
+scope: &quot;agent:research&quot;          仅此 agent
+</code></pre>
+<h2 id="4-coremd注入快照">4. <a href="http://Core.md">Core.md</a>（注入快照）<a class="header-anchor" href="#4-coremd注入快照">#</a></h2>
+<p>LLM 每次调用时注入 system prompt 的最小记忆快照。≤2KB。</p>
+<h3 id="41-创建更新">4.1 创建/更新<a class="header-anchor" href="#41-创建更新">#</a></h3>
+<p><strong>触发</strong>：sleep::deep（daily 03:00）重新生成。</p>
+<p><strong>来源</strong>：</p>
+<ul>
+<li>Timeline 中最近的高信号事件（top-N by recency × importance）</li>
+<li>Graph 中高频/高置信的实体和关系</li>
+</ul>
+<p><strong>每一行都带 provenance 指针</strong>（<code>↪ session:&lt;id&gt;</code>），LLM 看到后可用导航工具深入。</p>
+<h3 id="42-读取">4.2 读取<a class="header-anchor" href="#42-读取">#</a></h3>
+<p>每次 LLM 调用时，<a href="http://Core.md">Core.md</a> 内容被注入 system prompt：</p>
+<pre><code>═══════════════════════════════════════════════
+OpenProgram 记忆 — 项目: OpenProgram, 最后整理 2026-06-18
+═══════════════════════════════════════════════
+[时间轴 · 最近]
+· 2026-06-15 重构 Functions 页面为三 tab 布局            ↪ session:local_fc03
+· 2026-06-17 修复 CLI attended mode 问题                ↪ session:local_d125
+
+[图谱 · 当前项目相关]
+· OpenProgram 在 /Users/fzkuji/OpenProgram (python, next.js)
+· worker ──listens-on──► :18109
+
+需要细节: memory_open_session(&lt;id&gt;) / memory_git_log(&lt;project&gt;)
+═══════════════════════════════════════════════
+</code></pre>
+<h3 id="43-删除">4.3 删除<a class="header-anchor" href="#43-删除">#</a></h3>
+<p>覆盖式更新。每次 sleep::deep 重新生成整个文件，旧内容被完全替换。</p>
+<h2 id="5-journalwiki-v1-过渡">5. Journal/Wiki (v1 过渡)<a class="header-anchor" href="#5-journalwiki-v1-过渡">#</a></h2>
+<h3 id="51-当前状态">5.1 当前状态<a class="header-anchor" href="#51-当前状态">#</a></h3>
+<p>v1 的三层架构仍在运行：</p>
+<pre><code>short-term/YYYY-MM-DD.md  → (sleep::light) →  wiki/&lt;kind&gt;/&lt;slug&gt;.md  → (sleep::deep) →  core.md
+</code></pre>
+<ul>
+<li><strong>short-term</strong>：session-end 时追加 0–10 条事实到当日文件</li>
+<li><strong>wiki</strong>：sleep::deep 把 short-term 事实提升为知识页面</li>
+<li><strong><a href="http://core.md">core.md</a></strong>：sleep::deep 从 wiki 投影最小快照</li>
+</ul>
+<h3 id="52-问题">5.2 问题<a class="header-anchor" href="#52-问题">#</a></h3>
+<p>v1 管道从 <code>get_branch()</code> 渲染的对话文本读取，不读 DAG 节点。丢失了：</p>
+<ul>
+<li>工具调用链（agent 跑了什么、参数、结果）</li>
+<li><code>reads</code> 边（什么影响了决策）</li>
+<li>project-git commit 历史</li>
+</ul>
+<h3 id="53-未来">5.3 未来<a class="header-anchor" href="#53-未来">#</a></h3>
+<p>Phase 2 完成后，v1 管道被新的 Timeline + Graph 取代：</p>
+<ul>
+<li><code>short-term/</code> → Timeline 替代</li>
+<li><code>wiki/</code> → Graph 替代</li>
+<li><code>core.md</code> → 从 Timeline + Graph 重新投影</li>
+</ul>
+<p>过渡期两套并存，新管道验证通过后移除旧管道。</p>
+<h2 id="6-提炼管道实体-抽象">6. 提炼管道（实体 → 抽象）<a class="header-anchor" href="#6-提炼管道实体-抽象">#</a></h2>
+<h3 id="61-触发时机">6.1 触发时机<a class="header-anchor" href="#61-触发时机">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>触发</th>
+<th>频率</th>
+<th>目的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Session-end</td>
+<td>会话空闲 ≥30 min</td>
+<td>增量提炼新 turn</td>
+</tr>
+<tr>
+<td>Sleep (03:00)</td>
+<td>每天一次</td>
+<td>批量整理、消歧、矛盾检测、重建 core</td>
+</tr>
+<tr>
+<td>Pre-compress</td>
+<td>context 接近上限时</td>
+<td>flush 对话中的关键信息到实体层</td>
+</tr>
+</tbody>
+</table>
+<h3 id="62-五阶段-five-stages">6.2 五阶段 (Five Stages)<a class="header-anchor" href="#62-五阶段-five-stages">#</a></h3>
+<pre><code>Stage 1: Collect    从 session-git + project-git 拉自上次提炼以来的新 commit
+                    读 DAG 节点全量（user/llm/code + reads 边）
+
+Stage 2: Extract    LLM 一遍：抽取时间轴事件 + 图实体/关系，每条挂 provenance
+
+Stage 3: Link       新实体跟现有图做 alias resolution
+
+Stage 4: Reconcile  矛盾检测，旧边标 superseded，不删
+
+Stage 5: Project    重新投影 core.md / entity views / timeline 分片
+</code></pre>
+<p>Stage 2 是最贵的（需要 LLM），可先用规则版（pattern match）起步，prompt 版逐步替换。</p>
+<h3 id="63-关键直接读-dag">6.3 关键：直接读 DAG<a class="header-anchor" href="#63-关键直接读-dag">#</a></h3>
+<p>v1 读渲染文本。v2 直接读 session-git 里的 <code>Call</code> DAG，包括 <code>code</code> 节点（工具调用）和 <code>reads</code> 边（上下文引用）。这些是图谱投影的关键数据来源。</p>
+<p>读层已实现：<code>store/session/provenance.py</code> 提供 <code>iter_nodes_since()</code> / <code>node_provenance()</code> / <code>session_commits()</code> / <code>project_commits()</code>。</p>
+<h2 id="7-召回机制">7. 召回机制<a class="header-anchor" href="#7-召回机制">#</a></h2>
+<h3 id="71-注入只给抽象">7.1 注入（只给抽象）<a class="header-anchor" href="#71-注入只给抽象">#</a></h3>
+<p>LLM 每次调用时注入：</p>
+<ul>
+<li><a href="http://Core.md">Core.md</a>（≤2KB，始终注入）</li>
+<li>可选：按当前 query 召回的 timeline/graph 结果</li>
+</ul>
+<p>不注入任何 raw chat。</p>
+<h3 id="72-导航llm-自取">7.2 导航（LLM 自取）<a class="header-anchor" href="#72-导航llm-自取">#</a></h3>
+<p>LLM 需要实体层细节时，调导航工具：</p>
+<table>
+<thead>
+<tr>
+<th>工具</th>
+<th>作用</th>
+<th>落到实体层哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>memory_open_session(session_id, turn)</code></td>
+<td>读某会话原始消息</td>
+<td>Session-Git history/</td>
+</tr>
+<tr>
+<td><code>memory_git_log(project_id, since)</code></td>
+<td>看某项目提交历史</td>
+<td>Project-Git</td>
+</tr>
+<tr>
+<td><code>memory_git_show(project_id, commit)</code></td>
+<td>看某次改了什么</td>
+<td>git show</td>
+</tr>
+<tr>
+<td><code>memory_timeline(entity|since|until)</code></td>
+<td>时间轴切片</td>
+<td>Virtual timeline</td>
+</tr>
+<tr>
+<td><code>memory_graph_neighbors(entity, hops)</code></td>
+<td>图的邻居</td>
+<td>Virtual graph</td>
+</tr>
+<tr>
+<td><code>memory_search(query)</code></td>
+<td>跨虚拟层 hybrid 搜索</td>
+<td>Virtual (FTS + 向量)</td>
+</tr>
+</tbody>
+</table>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-概念">1. 概念</a>
+<a class="" href="#2-timeline时间轴">2. Timeline（时间轴）</a>
+<a class="lvl-3" href="#21-创建">2.1 创建</a>
+<a class="lvl-3" href="#22-存储">2.2 存储</a>
+<a class="lvl-3" href="#23-读取">2.3 读取</a>
+<a class="lvl-3" href="#24-更新">2.4 更新</a>
+<a class="lvl-3" href="#25-删除">2.5 删除</a>
+<a class="" href="#3-knowledge-graph知识图谱">3. Knowledge Graph（知识图谱）</a>
+<a class="lvl-3" href="#31-创建">3.1 创建</a>
+<a class="lvl-3" href="#32-存储">3.2 存储</a>
+<a class="lvl-3" href="#33-读取">3.3 读取</a>
+<a class="lvl-3" href="#34-更新">3.4 更新</a>
+<a class="lvl-3" href="#35-删除">3.5 删除</a>
+<a class="lvl-3" href="#36-scope-标签">3.6 Scope 标签</a>
+<a class="" href="#4-coremd注入快照">4. Core.md（注入快照）</a>
+<a class="lvl-3" href="#41-创建更新">4.1 创建/更新</a>
+<a class="lvl-3" href="#42-读取">4.2 读取</a>
+<a class="lvl-3" href="#43-删除">4.3 删除</a>
+<a class="" href="#5-journalwiki-v1-过渡">5. Journal/Wiki (v1 过渡)</a>
+<a class="lvl-3" href="#51-当前状态">5.1 当前状态</a>
+<a class="lvl-3" href="#52-问题">5.2 问题</a>
+<a class="lvl-3" href="#53-未来">5.3 未来</a>
+<a class="" href="#6-提炼管道实体-抽象">6. 提炼管道（实体 → 抽象）</a>
+<a class="lvl-3" href="#61-触发时机">6.1 触发时机</a>
+<a class="lvl-3" href="#62-五阶段-five-stages">6.2 五阶段 (Five Stages)</a>
+<a class="lvl-3" href="#63-关键直接读-dag">6.3 关键：直接读 DAG</a>
+<a class="" href="#7-召回机制">7. 召回机制</a>
+<a class="lvl-3" href="#71-注入只给抽象">7.1 注入（只给抽象）</a>
+<a class="lvl-3" href="#72-导航llm-自取">7.2 导航（LLM 自取）</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

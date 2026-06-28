@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API-key / credential resolution unification · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers" open><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink active" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="api-key-credential-resolution-unification">API-key / credential resolution unification<a class="header-anchor" href="#api-key-credential-resolution-unification">#</a></h1>
+<p>Status: <strong>core landed (steps 1–5)</strong> · step 6 deferred (see §4) · Owner: providers · Created: 2026-06-04</p>
+<p>Part of the 2026-06 optimization roadmap (audit item #3 — the root cause of the
+provider-config fragmentation theme). Follows <a href="credential-validation-unification.html">credential-validation-unification</a>:
+that doc unified &quot;is this key <em>valid</em>&quot;; this one unifies &quot;what <em>is</em> the key, and
+is the provider <em>configured</em>&quot;.</p>
+<h2 id="1-problem">1. Problem<a class="header-anchor" href="#1-problem">#</a></h2>
+<p>&quot;What API key does provider X use, and is X configured?&quot; is answered by at least
+<strong>four env-var maps</strong> and <strong>three resolvers</strong>, each with different knowledge:</p>
+<p>Maps (provider → env var):</p>
+<ul>
+<li><code>providers/env_api_keys.py:10</code> <code>PROVIDER_ENV_VARS</code> — 20 providers; <code>google → GEMINI_API_KEY</code>.</li>
+<li><code>webui/_model_catalog/providers.py:97</code> <code>_ENV_API_KEYS</code> — 19 providers; <code>google → GOOGLE_GENERATIVE_AI_API_KEY</code>, <code>anthropic → ANTHROPIC_API_KEY</code>.</li>
+<li><code>webui/_model_catalog/credentials.py</code> <code>provider_id_for_env_var</code> — inline reverse aliases.</li>
+<li><code>webui/_model_catalog/storage.py:_resolve_api_key</code> — inline Google multi-name special case.</li>
+</ul>
+<p>Resolvers:</p>
+<ul>
+<li><code>env_api_keys.get_env_api_key(provider_id)</code> — the <strong>runtime</strong> path (used by
+<code>providers/stream.py:62,105</code> and every provider adapter). <strong>Env vars only, no
+config.json.</strong> Has the broadest special-case knowledge: GitHub Copilot (3
+tokens), Anthropic (<code>ANTHROPIC_OAUTH_TOKEN</code> &gt; <code>ANTHROPIC_API_KEY</code>), Amazon
+Bedrock + Google Vertex (return the <code>&quot;&lt;authenticated&gt;&quot;</code> sentinel).</li>
+<li><code>storage._resolve_api_key(provider_id)</code> — the <strong>webui/model-catalog</strong> path
+(validate, fetchers, test). Uses <code>_env_var_for</code> (the <em>other</em> map) + a
+config.json <code>api_keys</code> fallback + my Google multi-name fallback. Does <strong>not</strong>
+know Anthropic OAuth precedence, Bedrock/Vertex, or Copilot.</li>
+<li><code>server._get_api_key(env_var)</code> — keyed by env-var <em>name</em> (not provider id);
+env &gt; config.json. Used for &quot;is configured&quot; checks in <code>check_providers</code>.</li>
+</ul>
+<h3 id="consequences">Consequences<a class="header-anchor" href="#consequences">#</a></h3>
+<ol>
+<li><strong>A provider can read &quot;configured&quot; on one surface and &quot;missing&quot; on another.</strong>
+<code>google</code> resolves under different env-var names per path. Anthropic resolves
+to <code>ANTHROPIC_OAUTH_TOKEN</code> at runtime but <code>ANTHROPIC_API_KEY</code> in the webui.</li>
+<li><strong>Latent runtime bug.</strong> Nothing hydrates config.json <code>api_keys</code> into
+<code>os.environ</code> at startup — only <code>routes/config.py:87</code> does, <em>on save, in that
+process</em>. The runtime resolver <code>get_env_api_key</code> is <strong>env-only</strong>. So a key
+saved purely through the web UI is in config.json + the live process env, but
+after a <strong>worker restart</strong> it's gone from env, and runtime LLM calls fail to
+find it even though config.json has it. (The webui path masks this because
+<code>_resolve_api_key</code> <em>does</em> read config.json — so the connectivity check passes
+while the actual chat fails.)</li>
+<li><strong><code>&quot;&lt;authenticated&gt;&quot;</code> sentinel</strong> conflates &quot;configured&quot; with &quot;here's the key&quot;:
+Bedrock/Vertex return a fake string that any Bearer-header code would send
+verbatim. Today their runtime adapters use the AWS/ADC SDK chains and only
+treat it as a truthiness flag, but it's a footgun.</li>
+</ol>
+<h2 id="2-goal">2. Goal<a class="header-anchor" href="#2-goal">#</a></h2>
+<p>One canonical credential module — <code>providers/env_api_keys.py</code> (it already has
+the broadest special-case knowledge and lives in <code>providers/</code>, importable by
+both the runtime and the webui with no circular dependency). Every other
+resolver/map becomes a thin wrapper over it. Unifying onto a resolver <strong>with a
+config.json fallback also fixes the restart bug</strong>, so this is correctness work,
+not just dedup.</p>
+<p>Best-design bar: the resolver must be the single place that knows how any
+provider's credential is found, layered (env → config → cloud-cred chain),
+cached on the hot path, and reverse-mappable — so adding a provider is one entry.</p>
+<h2 id="3-canonical-api-in-providersenv_api_keyspy">3. Canonical API (in <code>providers/env_api_keys.py</code>)<a class="header-anchor" href="#3-canonical-api-in-providersenv_api_keyspy">#</a></h2>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">env_vars_for</span><span class="p">(</span><span class="n">provider_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Accepted env-var names for this provider, in precedence order.</span>
+<span class="sd">    google -&gt; [GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY]</span>
+<span class="sd">    anthropic -&gt; [ANTHROPIC_OAUTH_TOKEN, ANTHROPIC_API_KEY]</span>
+<span class="sd">    github-copilot -&gt; [COPILOT_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN]</span>
+<span class="sd">    Replaces PROVIDER_ENV_VARS, _ENV_API_KEYS, and _env_var_for.&quot;&quot;&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_api_key</span><span class="p">(</span><span class="n">provider_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">allow_config</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The real, usable key/token, or None.</span>
+<span class="sd">    1. each env var in env_vars_for(), first hit wins;</span>
+<span class="sd">    2. if allow_config: config.json api_keys[&lt;name&gt;] for each name (cached);</span>
+<span class="sd">    3. cloud-credential providers (bedrock/vertex) -&gt; None here (no bearer key);</span>
+<span class="sd">       their state is is_configured(), not a key.</span>
+<span class="sd">    Replaces get_env_api_key and storage._resolve_api_key.&quot;&quot;&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">is_configured</span><span class="p">(</span><span class="n">provider_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;True when the provider has working credentials, INCLUDING cloud-cred</span>
+<span class="sd">    chains: resolve_api_key() is not None, OR the bedrock AWS chain / vertex ADC</span>
+<span class="sd">    is satisfied (the logic that used to mint the &#39;&lt;authenticated&gt;&#39; sentinel).</span>
+<span class="sd">    Replaces the scattered bool(_get_api_key(env)) / _is_configured checks.&quot;&quot;&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">provider_id_for_env_var</span><span class="p">(</span><span class="n">env_var</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reverse of env_vars_for, for the save-key verify path that only knows the</span>
+<span class="sd">    env-var name. Moves here from credentials.py.&quot;&quot;&quot;</span>
+</code></pre>
+<p>The <code>&quot;&lt;authenticated&gt;&quot;</code> sentinel is <strong>deleted</strong>: <code>resolve_api_key</code> returns <code>None</code>
+for cloud-cred providers (their adapters never used it as a real key), and
+<code>is_configured</code> carries the &quot;yes, configured&quot; answer. A cheap module-level cache
+(config dict by mtime) keeps <code>resolve_api_key</code> off the filesystem on the
+per-stream hot path.</p>
+<h2 id="4-migration-each-step-independently-committable-verifiable">4. Migration (each step independently committable + verifiable)<a class="header-anchor" href="#4-migration-each-step-independently-committable-verifiable">#</a></h2>
+<p>Status: steps 1–5 <strong>landed</strong> (commits f4fec73d, 9d4d55dc, 62e78e3c, d3ce990d,
+5c4d6aa6). Step 6 <strong>deferred</strong> — see the note after the list.</p>
+<ol>
+<li><strong>(done)</strong> Add the canonical functions (<code>env_vars_for</code>, <code>resolve_api_key</code>,
+<code>is_configured</code>, <code>provider_id_for_env_var</code>) to <code>env_api_keys.py</code> with the
+merged env-var table + mtime-cached config read. No callers changed. Added
+<code>tests/unit/test_api_key_resolution.py</code>.</li>
+<li><strong>(done)</strong> <code>storage._resolve_api_key</code> delegates to <code>resolve_api_key</code> (known
+providers); community/models.dev providers keep the env-var fallback.</li>
+<li><strong>(done)</strong> <code>get_env_api_key</code> (runtime) delegates to <code>resolve_api_key</code> — gains
+the config.json fallback (the restart-bug fix); Bedrock/Vertex keep the
+sentinel for their adapters.</li>
+<li><strong>(done)</strong> <code>_model_catalog/providers.py:_is_configured</code> key-branch and
+<code>providers/registry.py:check_providers</code> (the latter was env-only — same
+restart bug, now config-aware) delegate to the canonical <code>is_configured</code>.
+The <code>server.py</code> provider table + <code>routes/providers.py:45</code> keep <code>_get_api_key</code>
+— already env+config aware (duplicative, not buggy), left as-is.</li>
+<li><strong>(done)</strong> <code>credentials.provider_id_for_env_var</code> re-exports the canonical.</li>
+<li><strong>(deferred)</strong> Collapse the legacy flat maps. <em>Not a safe mechanical change:</em>
+<code>_env_var_for</code>/<code>_ENV_API_KEYS</code> is the <strong>display-primary</strong> name (anthropic →
+<code>ANTHROPIC_API_KEY</code> for the key form), which is a different concept from
+<code>env_vars_for</code>'s <strong>resolution-precedence</strong> list (anthropic → OAuth first), so
+<code>_env_var_for</code> is <em>not</em> <code>env_vars_for(pid)[0]</code>. And the flat <code>PROVIDER_ENV_VARS</code>
+is still consumed by <code>auth/cli.py</code> + <code>auth/interactive.py</code> as the
+&quot;providers-with-an-env-key&quot; list whose membership <strong>intentionally excludes</strong>
+anthropic/copilot (former special cases) — deriving it from the canonical
+table would change that list's membership and the auth-CLI login flow. Closing
+this needs the auth-CLI semantics reconciled first; tracked as future work.</li>
+</ol>
+<p>Back-compat: <code>get_env_api_key</code>, <code>_resolve_api_key</code>, <code>_env_var_for</code> keep their
+names as thin wrappers so the ~30 call sites don't churn.</p>
+<h2 id="5-verification">5. Verification<a class="header-anchor" href="#5-verification">#</a></h2>
+<ul>
+<li>Unit: <code>tests/unit/test_api_key_resolution.py</code> — precedence, config fallback,
+cloud-cred is_configured True with no key, reverse map, Anthropic OAuth&gt;key,
+Google three-name, no <code>&lt;authenticated&gt;</code> ever returned by <code>resolve_api_key</code>.</li>
+<li>Cross-surface: for each of the user's configured providers (anthropic, openai,
+google, deepseek, openrouter, …) confirm the SAME resolution from the runtime
+path and the webui path.</li>
+<li>Restart-bug repro: POST a key via <code>/api/config</code>, restart the worker, assert
+<code>resolve_api_key</code> finds it from config.json (env cleared).</li>
+<li>Each migration step: restart worker, <code>/healthz</code>, <code>/api/providers/auth-status</code>
+unchanged, a real provider validate still <code>valid</code>.</li>
+</ul>
+<h2 id="6-open-questions">6. Open questions<a class="header-anchor" href="#6-open-questions">#</a></h2>
+<ul>
+<li>Should the runtime config fallback be always-on, or behind <code>allow_config</code>
+defaulting True with a way for pure-env deployments to opt out? (Proposed:
+always-on; a key in config.json is the user's intent regardless of env.)</li>
+<li>Config-read caching: mtime-stat per call is cheap; a TTL is simpler. Proposed
+mtime so a freshly-saved key is picked up immediately without a restart.</li>
+<li>Longer term: a <code>Provider</code> metadata dataclass (id, env_vars, kind, base_url,
+default_api) folding in <a href="credential-validation-unification.html">credential-validation-unification</a>'s
+KIND table and <code>_PROVIDER_DEFAULT_API</code> — one registry per provider. Out of
+scope here; this doc only unifies key resolution.</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-problem">1. Problem</a>
+<a class="lvl-3" href="#consequences">Consequences</a>
+<a class="" href="#2-goal">2. Goal</a>
+<a class="" href="#3-canonical-api-in-providersenv_api_keyspy">3. Canonical API (in providers/env_api_keys.py)</a>
+<a class="" href="#4-migration-each-step-independently-committable-verifiable">4. Migration (each step independently committable + verifiable)</a>
+<a class="" href="#5-verification">5. Verification</a>
+<a class="" href="#6-open-questions">6. Open questions</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

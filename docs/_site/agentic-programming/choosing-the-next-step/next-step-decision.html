@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Next-step decision making (decision.make / exec(choices=)) · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming" open><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step" open><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink active" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design"><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="next-step-decision-making-decisionmake-execchoices">Next-step decision making (decision.make / exec(choices=))<a class="header-anchor" href="#next-step-decision-making-decisionmake-execchoices">#</a></h1>
+<p>This document describes OpenProgram's <strong>next-step decision</strong> mechanism: an
+agentic function hands &quot;what happens next&quot; to the LLM — give it a set of
+options, it picks one, and the framework resolves that pick directly into
+&quot;the result of the next step&quot;. This mechanism is a separate path from
+provider-native tool calls.</p>
+<p>It lives in the framework at <code>openprogram/agentic_programming/decision.py</code>.
+Two entry points share the same option shapes and parsing:</p>
+<ul>
+<li><code>decision.make(prompt, options)</code> — pure decision; the model does no work,
+it just picks.</li>
+<li><code>runtime.exec(..., choices=options)</code> — the model first runs a full turn
+(reasoning, tool calls), and only the closing move is a decision.</li>
+</ul>
+<p><code>decision.make</code> needs a runtime to issue the model call, but the runtime is
+taken automatically from the <code>_current_runtime</code> ContextVar. That ContextVar
+is only set when a function on the call chain declares a runtime-class
+parameter (<code>runtime</code> / <code>exec_runtime</code> / <code>review_runtime</code>) — an entry-point
+<code>@agentic_function</code> without one makes <code>decision.make</code> raise <code>RuntimeError</code>.
+So declare <code>runtime=None</code> on the function and you do not pass it on; only
+outside an agentic function do you pass <code>runtime=</code> explicitly.</p>
+<h2 id="versus-native-tool-calls">Versus native tool calls<a class="header-anchor" href="#versus-native-tool-calls">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Native tool call</th>
+<th>Next-step decision (this mechanism)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>How options reach the model</td>
+<td>the provider protocol's <code>tools</code> field</td>
+<td>a text menu inside the prompt</td>
+</tr>
+<tr>
+<td>How the model expresses its pick</td>
+<td>protocol-level structured <code>ToolCall</code></td>
+<td>a JSON snippet in the reply body</td>
+</tr>
+<tr>
+<td>Who parses</td>
+<td>provider / agent_loop</td>
+<td><code>decision.py</code> itself</td>
+</tr>
+<tr>
+<td>Can an option be a non-function</td>
+<td>no, must be a tool</td>
+<td>yes, value options are supported</td>
+</tr>
+<tr>
+<td>Dependency</td>
+<td>provider tool-use support</td>
+<td>none, plain text suffices</td>
+</tr>
+</tbody>
+</table>
+<p>Pick this mechanism when you don't want to depend on the provider's tool-use
+support, or when you need &quot;an option that is not a function&quot; — a decision
+that returns a value directly (typically routing markers like <code>done</code> /
+<code>escalate</code>).</p>
+<h2 id="entry-one-decisionmake-pure-decision">Entry one: <code>decision.make</code> — pure decision<a class="header-anchor" href="#entry-one-decisionmake-pure-decision">#</a></h2>
+<p>Inside an <code>@agentic_function</code>, call <code>decision.make</code> once — no runtime passed,
+no <code>if</code> written:</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.agentic_programming</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span><span class="p">,</span> <span class="n">decision</span>
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">route_message</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">decision</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="s2">&quot;Pick one way to handle this message.&quot;</span><span class="p">,</span> <span class="p">{</span>
+        <span class="s2">&quot;analyze&quot;</span><span class="p">:</span>  <span class="n">analyze_sentiment</span><span class="p">,</span>        <span class="c1"># a function</span>
+        <span class="s2">&quot;fallback&quot;</span><span class="p">:</span> <span class="n">fallback_reply</span><span class="p">,</span>           <span class="c1"># a function</span>
+        <span class="s2">&quot;done&quot;</span><span class="p">:</span>     <span class="s2">&quot;CONVERSATION_OVER&quot;</span><span class="p">,</span>      <span class="c1"># a value</span>
+    <span class="p">})</span>
+</code></pre>
+<p><code>decision.make</code> renders the menu, calls the model, parses the reply, then
+<strong>resolves the pick directly into the result of the next step</strong>:</p>
+<ul>
+<li>LLM picked a function → that function executes (with parsed + injected
+arguments) and its return value is returned.</li>
+<li>LLM picked a value → that value is returned as-is.</li>
+</ul>
+<p>Both cases return &quot;the result of the next step&quot; itself. The caller never
+checks &quot;which one was picked&quot; and never branches by type — the decision IS
+the branch, so there is no <code>if</code> to write.</p>
+<h2 id="entry-two-runtimeexecchoices-work-first-decide-last">Entry two: <code>runtime.exec(choices=...)</code> — work first, decide last<a class="header-anchor" href="#entry-two-runtimeexecchoices-work-first-decide-last">#</a></h2>
+<p>The more common need: the model first runs a full turn (reasoning, tool
+calls, whatever the job takes), and the <strong>closing</strong> return must be a
+decision. Use <code>exec</code>'s <code>choices=</code> parameter:</p>
+<pre><code class="language-python"><span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">handle_ticket</span><span class="p">(</span><span class="n">ticket</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Read the ticket, look things up, then decide which flow to route to.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;Handle this ticket: </span><span class="si">{</span><span class="n">ticket</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="n">toolset</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">,</span>          <span class="c1"># before: the model uses tools to research, run commands</span>
+        <span class="n">choices</span><span class="o">=</span><span class="p">{</span>                   <span class="c1"># closing: the return must be one of these</span>
+            <span class="s2">&quot;refund&quot;</span><span class="p">:</span>    <span class="n">issue_refund</span><span class="p">,</span>
+            <span class="s2">&quot;escalate&quot;</span><span class="p">:</span>  <span class="n">escalate_to_human</span><span class="p">,</span>
+            <span class="s2">&quot;close&quot;</span><span class="p">:</span>     <span class="p">{</span><span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;closed&quot;</span><span class="p">},</span>
+        <span class="p">},</span>
+    <span class="p">)</span>
+</code></pre>
+<p>What <code>exec(choices=...)</code> does: it splices the option menu plus a &quot;work
+first, close with a JSON pick&quot; instruction (<code>DECISION_FINISH_INSTRUCTION</code>)
+into the prompt, then runs a normal exec turn — tools from <code>tools</code> /
+<code>toolset</code> get called as usual, the model reasons as usual. At the end of the
+turn, the model's final reply must be one <code>{&quot;call&quot;: ...}</code> JSON, and <code>exec</code>
+resolves it with <code>resolve_decision</code>: a picked function executes and returns
+its result, a picked value is returned.</p>
+<p><code>exec</code> without <code>choices</code> returns the raw reply text; with <code>choices</code> it
+returns the resolved decision result. <code>decision.make(prompt, options)</code> is
+equivalent to an <code>exec(choices=options)</code> with no preceding work — with one
+nuance: only <code>exec(choices=)</code> appends the <code>DECISION_FINISH_INSTRUCTION</code>;
+<code>decision.make</code> sends just your prompt plus the menu, so your own prompt
+must tell the model to pick.</p>
+<h2 id="option-containers">Option containers<a class="header-anchor" href="#option-containers">#</a></h2>
+<p>Each option is shaped like a tool: it has a name, a description, and a
+<strong>payload schema</strong>. Three option kinds:</p>
+<table>
+<thead>
+<tr>
+<th>Option kind</th>
+<th>When picked</th>
+<th>Schema comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Function option</td>
+<td>executes the function, returns its return value</td>
+<td>the function signature</td>
+</tr>
+<tr>
+<td>Value option</td>
+<td>returns that fixed value</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Schema option</td>
+<td>the model fills structured data per the schema; returns <code>{&quot;decision&quot;: name, **filled fields}</code></td>
+<td>the schema you declare explicitly</td>
+</tr>
+</tbody>
+</table>
+<p><code>options</code> can be a dict or a list.</p>
+<p><strong>Dict form</strong> <code>{name: handler}</code>, where the key is the option name:</p>
+<pre><code class="language-python"><span class="n">decision</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="p">{</span>
+    <span class="s2">&quot;retry&quot;</span><span class="p">:</span>     <span class="n">retry_fn</span><span class="p">,</span>                            <span class="c1"># function option</span>
+    <span class="s2">&quot;skip&quot;</span><span class="p">:</span>      <span class="s2">&quot;SKIPPED&quot;</span><span class="p">,</span>                           <span class="c1"># value option</span>
+    <span class="s2">&quot;abort&quot;</span><span class="p">:</span>     <span class="p">(</span><span class="n">AbortSignal</span><span class="p">(),</span> <span class="s2">&quot;pick when stuck&quot;</span><span class="p">),</span>  <span class="c1"># value option + description</span>
+    <span class="s2">&quot;emit_plan&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;Produce a plan.&quot;</span><span class="p">,</span> <span class="p">{</span>                <span class="c1"># schema option: (&quot;description&quot;, schema)</span>
+        <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">}],</span>
+        <span class="s2">&quot;rationale&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">}),</span>
+<span class="p">})</span>
+</code></pre>
+<p><strong>List form</strong> — each item is a callable, a <code>(callable, &quot;description&quot;)</code>
+tuple, or a string option shape (<code>&quot;name&quot;</code> / <code>(&quot;name&quot;, &quot;description&quot;)</code> /
+<code>(&quot;name&quot;, &quot;description&quot;, schema)</code>). In list form a function option's name is
+the function's <code>__name__</code>.</p>
+<h3 id="schema-structure">Schema structure<a class="header-anchor" href="#schema-structure">#</a></h3>
+<p>A schema is <code>{field_name: field_type}</code>, and field types <strong>nest
+recursively</strong>, so one option can have the model return arbitrarily
+structured JSON:</p>
+<table>
+<thead>
+<tr>
+<th>Notation</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>field: str</code> (any Python type)</td>
+<td>a scalar of that type</td>
+</tr>
+<tr>
+<td><code>field: &quot;description&quot;</code></td>
+<td>a described <code>str</code> scalar</td>
+</tr>
+<tr>
+<td><code>field: [subschema]</code></td>
+<td>a list whose every element matches <code>subschema</code></td>
+</tr>
+<tr>
+<td><code>field: {subfield: ...}</code></td>
+<td>a nested object (keys are subfield names)</td>
+</tr>
+<tr>
+<td><code>field: {&quot;type&quot;: T, &quot;description&quot;: ..., &quot;options&quot;: [...]}</code></td>
+<td>meta-description with type/description/enum</td>
+</tr>
+</tbody>
+</table>
+<p>Three caveats: a list schema must contain <strong>exactly one</strong> item template —
+<code>[str, int]</code> raises <code>TypeError</code>; a dict whose keys all fall inside
+<code>{type, description, options, fields, items}</code> is parsed as a meta-spec, not
+a nested object (a nested object needs at least one key outside that set);
+and tuples are reserved syntax in handler position — a literal 2-tuple value
+option gets misparsed as <code>(value, &quot;description&quot;)</code>.</p>
+<p>After parsing, <code>parse_args</code> <strong>recursively validates</strong> types and nesting
+against the schema; the <code>Call:</code> example <code>render_options</code> renders also
+carries the nested placeholder shape. This aligns &quot;finite-branch choice&quot;
+with tool calling — every branch can carry an arbitrarily structured
+payload. If the need is &quot;no branching at all, always return the same
+structure&quot;, use a single-option <code>decision.make</code>, or just
+<code>exec(response_format=...)</code>.</p>
+<h2 id="internal-steps">Internal steps<a class="header-anchor" href="#internal-steps">#</a></h2>
+<h3 id="1-render_options-renders-the-menu">1. <code>render_options</code> renders the menu<a class="header-anchor" href="#1-render_options-renders-the-menu">#</a></h3>
+<p>For each option it emits: the signature <code>name(param: type, ...)</code>, the
+description, per-parameter detail, and a one-line <code>Call:</code> JSON example. Only
+<code>source=&quot;llm&quot;</code> parameters are shown — <code>runtime</code> / <code>context</code> injected
+parameters are hidden from the LLM. If a parameter declares <code>options</code>
+(enum), the detail lists the allowed values. Placeholder values in the
+<code>Call:</code> example are native JSON literals (<code>0</code> / <code>false</code> / <code>[]</code> / <code>{}</code> /
+<code>&quot;&lt;str&gt;&quot;</code>).</p>
+<h3 id="2-call-the-model">2. Call the model<a class="header-anchor" href="#2-call-the-model">#</a></h3>
+<p><code>decision.make</code> does a direct <code>runtime.exec(prompt + menu)</code>;
+<code>exec(choices=)</code> splices the menu into the turn it was going to send anyway.</p>
+<h3 id="3-parse_args-parses-and-validates">3. <code>parse_args</code> parses and validates<a class="header-anchor" href="#3-parse_args-parses-and-validates">#</a></h3>
+<ul>
+<li><code>extract_action</code> digs the JSON carrying a <code>call</code> key out of a
+<code>```json</code> code block or bare text. The <code>call</code> key has aliases
+<code>action</code> / <code>function</code> / <code>tool</code>, any of which is accepted.</li>
+<li><code>call</code> not in the registry → <code>_ParseError(&quot;unknown_call&quot;)</code>.</li>
+<li><code>_validate_field</code> validates field by field: type
+(<code>str/int/float/bool/list/dict</code>; <code>bool</code> does not count as <code>int</code>, <code>float</code>
+accepts <code>int</code>), enum (<code>options</code>).</li>
+<li>Function options: fill <code>source=&quot;context&quot;</code> parameters from the <code>context</code>
+dict per the signature, inject <code>runtime</code>-class parameters, drop fields
+outside the signature, check required ones (those without defaults).</li>
+<li>Value/text options: every declared schema field is required; hallucinated
+fields outside the schema are dropped.</li>
+<li>Returns <code>(chosen, kwargs)</code> — for a function option <code>chosen</code> is the
+original function; for a value/text option it is the name string.</li>
+</ul>
+<h3 id="4-retry-on-parse-failure">4. Retry on parse failure<a class="header-anchor" href="#4-retry-on-parse-failure">#</a></h3>
+<p>If any step raises <code>_ParseError</code>, <code>parse_args</code> retries (default
+<code>max_retries=1</code>, set 0 to disable; <code>max_retries</code> is settable only on
+<code>decision.make</code> / <code>parse_args</code> — the <code>exec(choices=)</code> path is fixed at one
+retry): it uses <code>runtime.exec</code> to send &quot;the
+previous reply + the error reason + the re-rendered menu&quot; back to the LLM
+for another pick. The retry is a model call like any other and lands in the
+DAG as usual. When all retries are exhausted → raises <code>DecisionError</code>
+carrying the last error kind, message, and the head of the reply.</p>
+<p><code>DecisionError</code> subclasses <code>ValueError</code> (old <code>except ValueError</code> code still
+catches it), and callers can <code>except DecisionError</code> to catch exactly &quot;the
+model never produced a valid pick&quot; without trapping unrelated
+<code>ValueError</code>s — e.g. a planner treating it as &quot;this step is over&quot;. The
+framework stops at &quot;raise a clear exception&quot;; what happens after catching is
+the caller's business, with no built-in fallback.</p>
+<h3 id="5-resolve_decision-resolves-into-a-result">5. <code>resolve_decision</code> resolves into a result<a class="header-anchor" href="#5-resolve_decision-resolves-into-a-result">#</a></h3>
+<p>If <code>chosen</code> is a function, run <code>chosen(**kwargs)</code> and return the result; if
+it is a string, look the value up in the value table and return it (a value
+option that declared a schema returns <code>{&quot;decision&quot;: name, **kwargs}</code>).</p>
+<h2 id="relation-to-the-tool-call-loop">Relation to the tool-call loop<a class="header-anchor" href="#relation-to-the-tool-call-loop">#</a></h2>
+<p>This mechanism does not conflict with the tool-call loop of
+<code>agent_loop.py</code> described in <code>tool-calling.md</code> — they are two parallel
+implementations of &quot;let the model pick the next step&quot;. An
+<code>@agentic_function</code> can serve both as a native tool for <code>exec(tools=[...])</code>
+and as a decision option — same function, two call paths. Which to use
+hinges on: whether you want to depend on provider tool use, whether an
+option needs to be a value rather than a function, and whether every
+decision and retry should be a traceable DAG node.</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#versus-native-tool-calls">Versus native tool calls</a>
+<a class="" href="#entry-one-decisionmake-pure-decision">Entry one: decision.make — pure decision</a>
+<a class="" href="#entry-two-runtimeexecchoices-work-first-decide-last">Entry two: runtime.exec(choices=...) — work first, decide last</a>
+<a class="" href="#option-containers">Option containers</a>
+<a class="lvl-3" href="#schema-structure">Schema structure</a>
+<a class="" href="#internal-steps">Internal steps</a>
+<a class="lvl-3" href="#1-render_options-renders-the-menu">1. render_options renders the menu</a>
+<a class="lvl-3" href="#2-call-the-model">2. Call the model</a>
+<a class="lvl-3" href="#3-parse_args-parses-and-validates">3. parse_args parses and validates</a>
+<a class="lvl-3" href="#4-retry-on-parse-failure">4. Retry on parse failure</a>
+<a class="lvl-3" href="#5-resolve_decision-resolves-into-a-result">5. resolve_decision resolves into a result</a>
+<a class="" href="#relation-to-the-tool-call-loop">Relation to the tool-call loop</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

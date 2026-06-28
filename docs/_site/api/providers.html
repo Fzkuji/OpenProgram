@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Providers · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../README.html">Documentation</a>
+<a class="navlink" href="../API.html">API Reference</a>
+<a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api" open><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../api/agentic_function.html">agentic_function</a>
+<a class="navlink active" href="../api/providers.html">Providers</a>
+<a class="navlink" href="../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design"><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../design/README.html">Design Documents</a>
+<a class="navlink" href="../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../design/channels/README.html">Channels</a>
+<a class="navlink" href="../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../design/context/README.html">Context</a>
+<a class="navlink" href="../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../design/function/README.html">Function Design</a>
+<a class="navlink" href="../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../design/providers/README.html">Providers</a>
+<a class="navlink" href="../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="providers">Providers<a class="header-anchor" href="#providers">#</a></h1>
+<blockquote>
+<p>Source: <a href="../../openprogram/providers/"><code>openprogram/providers/</code></a></p>
+</blockquote>
+<p>内置 Runtime 子类，开箱即用。每个 provider 都是<strong>可选依赖</strong>——只在你 import 对应类时才需要安装 SDK。</p>
+<hr />
+<h2 id="安装">安装<a class="header-anchor" href="#安装">#</a></h2>
+<p>框架核心没有任何 SDK 依赖。按需安装：</p>
+<pre><code class="language-bash"><span class="c1"># Anthropic Claude API</span>
+pip<span class="w"> </span>install<span class="w"> </span>anthropic
+
+<span class="c1"># OpenAI GPT / Responses API</span>
+pip<span class="w"> </span>install<span class="w"> </span>openai
+
+<span class="c1"># Google Gemini API</span>
+pip<span class="w"> </span>install<span class="w"> </span>google-genai
+
+<span class="c1"># Claude Code CLI</span>
+npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@anthropic-ai/claude-code
+
+<span class="c1"># OpenAI Codex CLI</span>
+npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@openai/codex
+
+<span class="c1"># Gemini CLI</span>
+npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@google/gemini-cli
+</code></pre>
+<hr />
+<h2 id="anthropicruntime">AnthropicRuntime<a class="header-anchor" href="#anthropicruntime">#</a></h2>
+<p>Anthropic Claude API。支持 text + image content blocks、<code>response_format</code> JSON 约束，自动 prompt caching。</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnthropicRuntime</span>
+
+<span class="n">rt</span> <span class="o">=</span> <span class="n">AnthropicRuntime</span><span class="p">(</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;sk-ant-...&quot;</span><span class="p">,</span>      <span class="c1"># 或设置 ANTHROPIC_API_KEY 环境变量</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-sonnet-4-6&quot;</span><span class="p">,</span>
+    <span class="n">max_tokens</span><span class="o">=</span><span class="mi">4096</span><span class="p">,</span>
+    <span class="n">system</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant.&quot;</span><span class="p">,</span>  <span class="c1"># 可选 system prompt</span>
+    <span class="n">cache_system</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>          <span class="c1"># 缓存 system prompt（默认 True）</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="构造参数">构造参数<a class="header-anchor" href="#构造参数">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>类型</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api_key</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>API key。<code>None</code> 时读 <code>ANTHROPIC_API_KEY</code> 环境变量</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td><code>&quot;claude-sonnet-4-6&quot;</code></td>
+<td>默认模型</td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td><code>int</code></td>
+<td><code>4096</code></td>
+<td>最大输出 token 数</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>System prompt</td>
+</tr>
+<tr>
+<td><code>cache_system</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>是否缓存 system prompt</td>
+</tr>
+<tr>
+<td><code>max_retries</code></td>
+<td><code>int</code></td>
+<td><code>2</code></td>
+<td>重试次数</td>
+</tr>
+</tbody>
+</table>
+<h3 id="prompt-caching">Prompt Caching<a class="header-anchor" href="#prompt-caching">#</a></h3>
+<p>AnthropicRuntime 自动在最后一个 content block 上添加 <code>cache_control: {&quot;type&quot;: &quot;ephemeral&quot;}</code>。这意味着：</p>
+<ul>
+<li><strong>context 前缀被缓存</strong>：连续调用时，相同的 Context 前缀命中缓存，大幅降低延迟和成本</li>
+<li><strong>system prompt 被缓存</strong>：如果设置了 <code>system</code> 且 <code>cache_system=True</code></li>
+</ul>
+<p>你也可以手动控制缓存：</p>
+<pre><code class="language-python"><span class="n">rt</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+    <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;cache_control&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;ephemeral&quot;</span><span class="p">}},</span>
+    <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">},</span>
+<span class="p">])</span>
+</code></pre>
+<h3 id="response_format">response_format<a class="header-anchor" href="#response_format">#</a></h3>
+<p>Anthropic API 本身没有像 OpenAI 那样的原生 JSON schema 参数，这里采用文本约束方式追加一条“只返回匹配 schema 的 JSON”指令：</p>
+<pre><code class="language-python"><span class="n">result</span> <span class="o">=</span> <span class="n">rt</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
+    <span class="n">content</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;Extract title and authors&quot;</span><span class="p">}],</span>
+    <span class="n">response_format</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;object&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;title&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;authors&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;array&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;items&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">},</span>
+            <span class="p">},</span>
+        <span class="p">},</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="image-支持">Image 支持<a class="header-anchor" href="#image-支持">#</a></h3>
+<pre><code class="language-python"><span class="c1"># 从文件</span>
+<span class="n">rt</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+    <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;What&#39;s in this image?&quot;</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">,</span> <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;screenshot.png&quot;</span><span class="p">},</span>
+<span class="p">])</span>
+
+<span class="c1"># 从 base64</span>
+<span class="n">rt</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+    <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="s2">&quot;&lt;base64&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;media_type&quot;</span><span class="p">:</span> <span class="s2">&quot;image/png&quot;</span><span class="p">},</span>
+<span class="p">])</span>
+
+<span class="c1"># 从 URL</span>
+<span class="n">rt</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+    <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">,</span> <span class="s2">&quot;url&quot;</span><span class="p">:</span> <span class="s2">&quot;https://example.com/image.png&quot;</span><span class="p">},</span>
+<span class="p">])</span>
+</code></pre>
+<hr />
+<h2 id="openairuntime">OpenAIRuntime<a class="header-anchor" href="#openairuntime">#</a></h2>
+<p>OpenAI GPT API。支持 text + image，response_format（JSON mode / structured output）。</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAIRuntime</span>
+
+<span class="n">rt</span> <span class="o">=</span> <span class="n">OpenAIRuntime</span><span class="p">(</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;sk-...&quot;</span><span class="p">,</span>          <span class="c1"># 或设置 OPENAI_API_KEY 环境变量</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span>
+    <span class="n">max_tokens</span><span class="o">=</span><span class="mi">4096</span><span class="p">,</span>
+    <span class="n">system</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant.&quot;</span><span class="p">,</span>
+    <span class="n">temperature</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span>           <span class="c1"># 可选</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://...&quot;</span><span class="p">,</span>    <span class="c1"># 可选，用于 Azure 或本地服务</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="构造参数-1">构造参数<a class="header-anchor" href="#构造参数-1">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>类型</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api_key</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>API key。<code>None</code> 时读 <code>OPENAI_API_KEY</code> 环境变量</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td><code>&quot;gpt-4o&quot;</code></td>
+<td>默认模型</td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td><code>int</code></td>
+<td><code>4096</code></td>
+<td>最大输出 token 数</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>System prompt</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td><code>float | None</code></td>
+<td><code>None</code></td>
+<td>采样温度</td>
+</tr>
+<tr>
+<td><code>max_retries</code></td>
+<td><code>int</code></td>
+<td><code>2</code></td>
+<td>重试次数</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>自定义 base URL</td>
+</tr>
+</tbody>
+</table>
+<h3 id="response_format-1">response_format<a class="header-anchor" href="#response_format-1">#</a></h3>
+<pre><code class="language-python"><span class="c1"># JSON mode</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">rt</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
+    <span class="n">content</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;List 3 colors as JSON array&quot;</span><span class="p">}],</span>
+    <span class="n">response_format</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;json_object&quot;</span><span class="p">},</span>
+<span class="p">)</span>
+
+<span class="c1"># Structured output (JSON schema)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">rt</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
+    <span class="n">content</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;Rate this idea&quot;</span><span class="p">}],</span>
+    <span class="n">response_format</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;json_schema&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;json_schema&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;rating&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;schema&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;object&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;score&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;integer&quot;</span><span class="p">},</span>
+                    <span class="s2">&quot;reasoning&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">},</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+        <span class="p">},</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="兼容-api">兼容 API<a class="header-anchor" href="#兼容-api">#</a></h3>
+<p>通过 <code>base_url</code> 可以连接任何 OpenAI 兼容的 API：</p>
+<pre><code class="language-python"><span class="c1"># Azure OpenAI</span>
+<span class="n">rt</span> <span class="o">=</span> <span class="n">OpenAIRuntime</span><span class="p">(</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://your-resource.openai.azure.com/openai/deployments/gpt-4o&quot;</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Local server (vLLM, Ollama, etc.)</span>
+<span class="n">rt</span> <span class="o">=</span> <span class="n">OpenAIRuntime</span><span class="p">(</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;not-needed&quot;</span><span class="p">,</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:8000/v1&quot;</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;meta-llama/Llama-3-70B&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre>
+<hr />
+<h2 id="geminiruntime">GeminiRuntime<a class="header-anchor" href="#geminiruntime">#</a></h2>
+<p>Google Gemini API。支持 text + image。</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeminiRuntime</span>
+
+<span class="n">rt</span> <span class="o">=</span> <span class="n">GeminiRuntime</span><span class="p">(</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">,</span>             <span class="c1"># 或设置 GOOGLE_API_KEY 环境变量</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-2.5-flash&quot;</span><span class="p">,</span>
+    <span class="n">max_output_tokens</span><span class="o">=</span><span class="mi">4096</span><span class="p">,</span>
+    <span class="n">system_instruction</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant.&quot;</span><span class="p">,</span>
+    <span class="n">temperature</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="构造参数-2">构造参数<a class="header-anchor" href="#构造参数-2">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>类型</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api_key</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>API key。<code>None</code> 时读 <code>GOOGLE_API_KEY</code> 环境变量</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td><code>&quot;gemini-2.5-flash&quot;</code></td>
+<td>默认模型</td>
+</tr>
+<tr>
+<td><code>max_output_tokens</code></td>
+<td><code>int</code></td>
+<td><code>4096</code></td>
+<td>最大输出 token 数</td>
+</tr>
+<tr>
+<td><code>system_instruction</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>System instruction</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td><code>float | None</code></td>
+<td><code>None</code></td>
+<td>采样温度</td>
+</tr>
+<tr>
+<td><code>max_retries</code></td>
+<td><code>int</code></td>
+<td><code>2</code></td>
+<td>重试次数</td>
+</tr>
+</tbody>
+</table>
+<h3 id="response_format-2">response_format<a class="header-anchor" href="#response_format-2">#</a></h3>
+<p>GeminiRuntime 支持通过 <code>response_format</code> 参数请求 JSON 输出：</p>
+<pre><code class="language-python"><span class="n">result</span> <span class="o">=</span> <span class="n">rt</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
+    <span class="n">content</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;List 3 colors&quot;</span><span class="p">}],</span>
+    <span class="n">response_format</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;schema&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;array&quot;</span><span class="p">,</span> <span class="s2">&quot;items&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">}}},</span>
+<span class="p">)</span>
+</code></pre>
+<p>传入 <code>response_format</code> 时，自动设置 <code>response_mime_type=&quot;application/json&quot;</code>。如果包含 <code>schema</code> 字段，还会设置 <code>response_schema</code>。</p>
+<hr />
+<h2 id="claudecoderuntime">ClaudeCodeRuntime<a class="header-anchor" href="#claudecoderuntime">#</a></h2>
+<p>Claude Code CLI。适合本地开发机 / 订阅账号场景，不需要在 Python 里单独配置 API key。</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClaudeCodeRuntime</span>
+
+<span class="n">rt</span> <span class="o">=</span> <span class="n">ClaudeCodeRuntime</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;haiku&quot;</span><span class="p">,</span>
+    <span class="n">timeout</span><span class="o">=</span><span class="mi">120</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre>
+<p>使用前先完成：</p>
+<pre><code class="language-bash">npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@anthropic-ai/claude-code
+claude<span class="w"> </span>login
+</code></pre>
+<p>说明：</p>
+<ul>
+<li>主要面向 text 和 image 输入</li>
+<li>更适合交互式开发工作流，而不是高吞吐服务端调用</li>
+<li>如果传入 audio / video / file blocks，会给出 warning 并跳过不支持的内容</li>
+</ul>
+<hr />
+<h2 id="openaicodexruntime">OpenAICodexRuntime<a class="header-anchor" href="#openaicodexruntime">#</a></h2>
+<p>ChatGPT / Codex subscription runtime. It reads OAuth credentials from the Codex
+CLI auth file and uses the ChatGPT Responses backend.</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAICodexRuntime</span>
+
+<span class="n">rt</span> <span class="o">=</span> <span class="n">OpenAICodexRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-5.5&quot;</span><span class="p">)</span>
+</code></pre>
+<p>使用前先完成：</p>
+<pre><code class="language-bash">npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@openai/codex
+codex<span class="w"> </span>login<span class="w"> </span>--device-auth
+</code></pre>
+<h3 id="构造参数-3">构造参数<a class="header-anchor" href="#构造参数-3">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>类型</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td><code>&quot;gpt-5.5-mini&quot;</code></td>
+<td>默认模型</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>作为 <code>instructions</code> 转发</td>
+</tr>
+<tr>
+<td><code>profile</code></td>
+<td><code>str | None</code></td>
+<td>active profile</td>
+<td>指定 OpenProgram auth profile</td>
+</tr>
+</tbody>
+</table>
+<p>说明：</p>
+<ul>
+<li>需要 OAuth credential，不使用 bare OpenAI API key</li>
+<li>兼容旧调用方传入的 subprocess-era 参数；这些额外参数会被忽略</li>
+<li>如果只有 OpenAI API key，请使用 <code>OpenAIRuntime</code></li>
+</ul>
+<hr />
+<h2 id="geminicliruntime">GeminiCLIRuntime<a class="header-anchor" href="#geminicliruntime">#</a></h2>
+<p>Gemini CLI / subscription runtime. It reads Gemini CLI OAuth credentials and
+uses the Gemini HTTP backend through OpenProgram's provider layer.</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeminiCLIRuntime</span>
+
+<span class="n">rt</span> <span class="o">=</span> <span class="n">GeminiCLIRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-2.5-flash&quot;</span><span class="p">)</span>
+</code></pre>
+<p>如果你想显式使用类，也可以直接这样写：</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers.google_gemini_cli</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeminiCLIRuntime</span>
+
+<span class="n">rt</span> <span class="o">=</span> <span class="n">GeminiCLIRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-2.5-flash&quot;</span><span class="p">)</span>
+</code></pre>
+<p>使用前先完成：</p>
+<pre><code class="language-bash">npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@google/gemini-cli
+gemini
+</code></pre>
+<h3 id="构造参数-4">构造参数<a class="header-anchor" href="#构造参数-4">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>类型</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td><code>&quot;gemini-2.5-flash&quot;</code></td>
+<td>默认模型</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>作为 <code>instructions</code> 转发</td>
+</tr>
+<tr>
+<td><code>profile</code></td>
+<td><code>str | None</code></td>
+<td>active profile</td>
+<td>指定 OpenProgram auth profile</td>
+</tr>
+</tbody>
+</table>
+<p>说明：</p>
+<ul>
+<li>需要 Gemini CLI OAuth credential</li>
+<li>兼容旧调用方传入的 subprocess-era 参数；这些额外参数会被忽略</li>
+<li>如果只有 Google API key，请使用 <code>GeminiRuntime</code></li>
+</ul>
+<hr />
+<h2 id="自定义-provider">自定义 Provider<a class="header-anchor" href="#自定义-provider">#</a></h2>
+<p>所有内置 provider 都是 <code>Runtime</code> 的子类。你可以用同样的方式创建自己的：</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.agentic_programming.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyRuntime</span><span class="p">(</span><span class="n">Runtime</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">api_key</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;my-model&quot;</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">api_key</span> <span class="o">=</span> <span class="n">api_key</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="n">response_format</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># 1. 把 content blocks 转成你的 API 格式</span>
+        <span class="c1"># 2. 调用 API</span>
+        <span class="c1"># 3. 返回 str</span>
+        <span class="n">texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">b</span><span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">content</span> <span class="k">if</span> <span class="n">b</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;text&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">my_api_call</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">texts</span><span class="p">),</span> <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">)</span>
+</code></pre>
+<p>关键：<code>_call()</code> 接收 <code>content: list[dict]</code>，返回 <code>str</code>。就这么简单。</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#安装">安装</a>
+<a class="" href="#anthropicruntime">AnthropicRuntime</a>
+<a class="lvl-3" href="#构造参数">构造参数</a>
+<a class="lvl-3" href="#prompt-caching">Prompt Caching</a>
+<a class="lvl-3" href="#response_format">response_format</a>
+<a class="lvl-3" href="#image-支持">Image 支持</a>
+<a class="" href="#openairuntime">OpenAIRuntime</a>
+<a class="lvl-3" href="#构造参数-1">构造参数</a>
+<a class="lvl-3" href="#response_format-1">response_format</a>
+<a class="lvl-3" href="#兼容-api">兼容 API</a>
+<a class="" href="#geminiruntime">GeminiRuntime</a>
+<a class="lvl-3" href="#构造参数-2">构造参数</a>
+<a class="lvl-3" href="#response_format-2">response_format</a>
+<a class="" href="#claudecoderuntime">ClaudeCodeRuntime</a>
+<a class="" href="#openaicodexruntime">OpenAICodexRuntime</a>
+<a class="lvl-3" href="#构造参数-3">构造参数</a>
+<a class="" href="#geminicliruntime">GeminiCLIRuntime</a>
+<a class="lvl-3" href="#构造参数-4">构造参数</a>
+<a class="" href="#自定义-provider">自定义 Provider</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../assets/site.js"></script>
+</body>
+</html>

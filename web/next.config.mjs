@@ -61,6 +61,10 @@ const nextConfig = {
       // bake in a port at startup.
       { source: "/ws", destination: `${BACKEND}/ws` },
       { source: "/ws/:path*", destination: `${BACKEND}/ws/:path*` },
+      // ``/docs`` — static design-documentation site served by the backend
+      // (StaticFiles mount). Same bake-in caveat as ``/ws``.
+      { source: "/docs", destination: `${BACKEND}/docs` },
+      { source: "/docs/:path*", destination: `${BACKEND}/docs/:path*` },
     ];
   },
 };

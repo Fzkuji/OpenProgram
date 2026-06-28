@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>改动规划：让 content block 上的 cache_control 透传到 Anthropic API · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../README.html">Documentation</a>
+<a class="navlink" href="../API.html">API Reference</a>
+<a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../api/providers.html">Providers</a>
+<a class="navlink" href="../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design"><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../design/README.html">Design Documents</a>
+<a class="navlink" href="../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../design/channels/README.html">Channels</a>
+<a class="navlink" href="../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../design/context/README.html">Context</a>
+<a class="navlink" href="../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../design/function/README.html">Function Design</a>
+<a class="navlink" href="../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../design/providers/README.html">Providers</a>
+<a class="navlink" href="../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans" open><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink active" href="../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="改动规划让-content-block-上的-cache_control-透传到-anthropic-api">改动规划：让 content block 上的 cache_control 透传到 Anthropic API<a class="header-anchor" href="#改动规划让-content-block-上的-cache_control-透传到-anthropic-api">#</a></h1>
+<h2 id="目标">目标<a class="header-anchor" href="#目标">#</a></h2>
+<p>让 OpenProgram 的调用方（如 GUI-Agent-Harness 的 screenspot 定位器）能在
+<code>runtime.exec(content=[...])</code> 的某个 content block 上显式标记
+<code>&quot;cache_control&quot;: {&quot;type&quot;: &quot;ephemeral&quot;}</code>，并保证这个标记原样到达 Anthropic
+Messages API 请求体，从而在「调用方指定的那个 block」之后设置 prompt cache 断点。</p>
+<p>当前问题：调用方在 content dict 里写的 <code>cache_control</code> 会在 OpenProgram 内部
+被丢弃，导致无法在自定义位置打缓存断点。现在只有 provider 自动加的「最后一块」
+断点生效，而最后一块（图 / 动态文本）每次请求都不同，缓存命中率为 0。</p>
+<p>适用范围：只对 <strong>anthropic</strong> 一类 provider（原生 Anthropic API、Claude Code
+订阅经代理、任何 anthropic-messages 接口）有效。OpenAI / codex 一类是自动前缀
+缓存、不读 cache_control，本规划不涉及它们。</p>
+<h2 id="约束">约束<a class="header-anchor" href="#约束">#</a></h2>
+<ul>
+<li>三处改动全部是「新增可选字段 + 条件保留」，<strong>不传 cache_control 时行为与现在
+完全一致</strong>，对所有现有调用方零回归。</li>
+<li>不要动 provider 已有的「在最后一块自动打断点」逻辑（<code>is_last and cache_control</code>
+那两段），只是额外让调用方显式标记的断点也能保留。</li>
+<li>cache_control 的值是一个 dict（如 <code>{&quot;type&quot;: &quot;ephemeral&quot;}</code>，或带 <code>ttl</code>），原样
+透传，不在 OpenProgram 内解析或校验其内容。</li>
+</ul>
+<h2 id="改动清单共-3-处">改动清单（共 3 处）<a class="header-anchor" href="#改动清单共-3-处">#</a></h2>
+<h3 id="改动-1-openprogramproviderstypespy数据类加可选字段">改动 1 — <code>openprogram/providers/types.py</code>：数据类加可选字段<a class="header-anchor" href="#改动-1-openprogramproviderstypespy数据类加可选字段">#</a></h3>
+<p>在 <code>TextContent</code> 和 <code>ImageContent</code> 两个 pydantic 模型上各加一个可选字段
+<code>cache_control</code>，给缓存标记一个存放槽位。</p>
+<p><code>TextContent</code>（当前约 153-156 行）：</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">TextContent</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+    <span class="nb">type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;text&quot;</span>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">text_signature</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">cache_control</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>        <span class="c1"># 新增</span>
+</code></pre>
+<p><code>ImageContent</code>（当前约 173-176 行）：</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">ImageContent</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+    <span class="nb">type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;image&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;image&quot;</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># base64 encoded</span>
+    <span class="n">mime_type</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># e.g. &quot;image/jpeg&quot;</span>
+    <span class="n">cache_control</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>        <span class="c1"># 新增</span>
+</code></pre>
+<p>说明：只需 Text 和 Image 两类（screenspot 的固定规则前缀是 text，图是 image）。
+Video/Audio 暂不需要，可不动。</p>
+<h3 id="改动-2-openprogramagentic_programmingruntimepy_build_pi_context-带上字段">改动 2 — <code>openprogram/agentic_programming/runtime.py</code>：<code>_build_pi_context</code> 带上字段<a class="header-anchor" href="#改动-2-openprogramagentic_programmingruntimepy_build_pi_context-带上字段">#</a></h3>
+<p><code>_build_pi_context</code>（当前约 1343-1405 行）把调用方的 <code>content: list[dict]</code> 转成
+<code>TextContent</code> / <code>ImageContent</code> 对象时，目前只取 text / data / mime，丢掉了 dict 里
+的 <code>cache_control</code>。改成把它一起带过去。</p>
+<p>当前（约 1388-1392 行）：</p>
+<pre><code class="language-python">        <span class="k">if</span> <span class="n">btype</span> <span class="o">==</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">TextContent</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="n">block</span><span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">]))</span>
+        <span class="k">elif</span> <span class="n">btype</span> <span class="o">==</span> <span class="s2">&quot;image&quot;</span><span class="p">:</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">mime</span> <span class="o">=</span> <span class="n">_load_media</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">_media_defaults</span><span class="p">[</span><span class="s2">&quot;image&quot;</span><span class="p">])</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ImageContent</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">&quot;image&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">mime_type</span><span class="o">=</span><span class="n">mime</span><span class="p">))</span>
+</code></pre>
+<p>改为：</p>
+<pre><code class="language-python">        <span class="k">if</span> <span class="n">btype</span> <span class="o">==</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">TextContent</span><span class="p">(</span>
+                <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;text&quot;</span><span class="p">,</span>
+                <span class="n">text</span><span class="o">=</span><span class="n">block</span><span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">],</span>
+                <span class="n">cache_control</span><span class="o">=</span><span class="n">block</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cache_control&quot;</span><span class="p">),</span>
+            <span class="p">))</span>
+        <span class="k">elif</span> <span class="n">btype</span> <span class="o">==</span> <span class="s2">&quot;image&quot;</span><span class="p">:</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">mime</span> <span class="o">=</span> <span class="n">_load_media</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">_media_defaults</span><span class="p">[</span><span class="s2">&quot;image&quot;</span><span class="p">])</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ImageContent</span><span class="p">(</span>
+                <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;image&quot;</span><span class="p">,</span>
+                <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+                <span class="n">mime_type</span><span class="o">=</span><span class="n">mime</span><span class="p">,</span>
+                <span class="n">cache_control</span><span class="o">=</span><span class="n">block</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cache_control&quot;</span><span class="p">),</span>
+            <span class="p">))</span>
+</code></pre>
+<p>注意：<code>role == &quot;system&quot;</code> 的 text block 在 1381-1386 行被单独抽成 system_text，
+那条分支不涉及缓存断点（system 的断点由 anthropic provider 的 _build_system
+另行处理），保持不动。</p>
+<h3 id="改动-3-openprogramprovidersanthropicanthropicpy_build_messages-保留字段">改动 3 — <code>openprogram/providers/anthropic/anthropic.py</code>：<code>_build_messages</code> 保留字段<a class="header-anchor" href="#改动-3-openprogramprovidersanthropicanthropicpy_build_messages-保留字段">#</a></h3>
+<p><code>_build_messages</code>（当前约 304-398 行）在从 <code>TextContent</code> / <code>ImageContent</code> 重建
+发给 Anthropic 的 API block 时，目前只写 type/text/source，把对象上的
+<code>cache_control</code> 又丢了。改成：对象上带了就写进生成的 block。</p>
+<p>当前（约 332-344 行，UserMessage 的 list content 分支）：</p>
+<pre><code class="language-python">                <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">msg</span><span class="o">.</span><span class="n">content</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">TextContent</span><span class="p">):</span>
+                        <span class="n">text</span> <span class="o">=</span> <span class="n">sanitize_surrogates</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                            <span class="n">content_blocks</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="n">text</span><span class="p">})</span>
+                    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">ImageContent</span><span class="p">):</span>
+                        <span class="n">content_blocks</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">,</span>
+                            <span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="p">{</span>
+                                <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;base64&quot;</span><span class="p">,</span>
+                                <span class="s2">&quot;media_type&quot;</span><span class="p">:</span> <span class="n">block</span><span class="o">.</span><span class="n">mime_type</span><span class="p">,</span>
+                                <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="n">block</span><span class="o">.</span><span class="n">data</span><span class="p">,</span>
+                            <span class="p">},</span>
+                        <span class="p">})</span>
+</code></pre>
+<p>改为：</p>
+<pre><code class="language-python">                <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">msg</span><span class="o">.</span><span class="n">content</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">TextContent</span><span class="p">):</span>
+                        <span class="n">text</span> <span class="o">=</span> <span class="n">sanitize_surrogates</span><span class="p">(</span><span class="n">block</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                            <span class="n">b</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="n">text</span><span class="p">}</span>
+                            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="s2">&quot;cache_control&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+                                <span class="n">b</span><span class="p">[</span><span class="s2">&quot;cache_control&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">block</span><span class="o">.</span><span class="n">cache_control</span>
+                            <span class="n">content_blocks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+                    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">ImageContent</span><span class="p">):</span>
+                        <span class="n">b</span> <span class="o">=</span> <span class="p">{</span>
+                            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">,</span>
+                            <span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="p">{</span>
+                                <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;base64&quot;</span><span class="p">,</span>
+                                <span class="s2">&quot;media_type&quot;</span><span class="p">:</span> <span class="n">block</span><span class="o">.</span><span class="n">mime_type</span><span class="p">,</span>
+                                <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="n">block</span><span class="o">.</span><span class="n">data</span><span class="p">,</span>
+                            <span class="p">},</span>
+                        <span class="p">}</span>
+                        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="s2">&quot;cache_control&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+                            <span class="n">b</span><span class="p">[</span><span class="s2">&quot;cache_control&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">block</span><span class="o">.</span><span class="n">cache_control</span>
+                        <span class="n">content_blocks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+</code></pre>
+<p>保持不变：紧随其后的 <code>if is_last and cache_control and content_blocks:</code>（约 345-346
+行）那段「自动给最后一块打断点」逻辑不要删。它和「调用方显式标记」可以共存：
+Anthropic 允许一个请求里多个 cache_control 断点（上限 4 个）。</p>
+<p>不需要改的同名分支：322-328 行的「content 是 str」分支不涉及调用方按 block 标记，
+不动；350 行起的 AssistantMessage / 383 行起的 ToolResultMessage 不动。</p>
+<h2 id="验证执行方做完后自检">验证（执行方做完后自检）<a class="header-anchor" href="#验证执行方做完后自检">#</a></h2>
+<ol>
+<li>静态：不传 cache_control 的调用，生成的请求体与改动前逐字段一致（可对一个
+已有单测的请求 body 做快照对比）。</li>
+<li>透传：构造一个 <code>content=[{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;X&quot;,&quot;cache_control&quot;:{&quot;type&quot;:&quot;ephemeral&quot;}}, ...]</code>
+的 exec，断言最终发往 Anthropic 的 messages[...]['content'][0] 里带有
+<code>&quot;cache_control&quot;: {&quot;type&quot;: &quot;ephemeral&quot;}</code>。</li>
+<li>命中：对同一段固定前缀连发两次真实请求（经实际使用的 Anthropic 端点 / 代理），
+第二次返回的 usage 里 <code>cache_read</code> &gt; 0、<code>cache_creation</code> 仅第一次 &gt; 0。
+—— 这一步同时验证「所用代理是否透传 body」：若代理丢弃了 cache_control，
+cache_read 会一直是 0，说明代理不透传，需另行处理代理层。</li>
+</ol>
+<h2 id="不在本规划内由-harness-侧另做">不在本规划内（由 harness 侧另做）<a class="header-anchor" href="#不在本规划内由-harness-侧另做">#</a></h2>
+<ul>
+<li>把 screenspot 各处 prompt 的固定规则段拆成「第一个 text block + 打 cache_control」，
+动态内容和图排在其后。这是调用方（GUI-Agent-Harness/screenspot_locator.py）的改动，
+不属于 OpenProgram。</li>
+<li>OpenAI / codex 一类的前缀缓存优化（只需 harness 前缀前置，不碰 OpenProgram）。</li>
+</ul>
+<h2 id="实现状态已落地">实现状态（已落地）<a class="header-anchor" href="#实现状态已落地">#</a></h2>
+<p>三处改动都已实现（commit <code>2f253405</code>），并补了单测（<code>tests/unit/test_cache_control_passthrough.py</code>，6 例）：</p>
+<ul>
+<li><code>types.py</code>：<code>TextContent</code> / <code>ImageContent</code> 各加 <code>cache_control: dict | None = None</code>。</li>
+<li><code>runtime._build_pi_context</code>：把 <code>block.get(&quot;cache_control&quot;)</code> 带到 <code>TextContent</code> /
+<code>ImageContent</code> 上。</li>
+<li><code>anthropic._build_messages</code>：从对象上把 <code>cache_control</code> 写进生成的 API block。</li>
+<li>自动断点的「不覆盖调用方」做得比原规划更稳：用
+<code>caller_marked = any(&quot;cache_control&quot; in b for b in content_blocks)</code> 判断——<strong>只要这条
+消息里任意一块被调用方标了断点，就完全不再自动给最后一块打断点</strong>（不只是不覆盖最后一块）。
+这样调用方标在靠前的稳定前缀块时，也不会白白多占一个断点槽、也不会把缓存命中点移到动态尾块。</li>
+</ul>
+<p>测试覆盖：全链路透传（runtime→anthropic body）、图片透传、不传时 body 字节级不变、
+无调用方断点时自动断点照常生效、调用方标最后一块时不被覆盖、调用方标靠前块时自动断点被抑制。</p>
+<h3 id="验证结论-已确认的边界">验证结论 / 已确认的边界<a class="header-anchor" href="#验证结论-已确认的边界">#</a></h3>
+<ul>
+<li><strong>非 Anthropic provider 零泄漏</strong>（核实过):OpenAI/codex 的 block 构建是逐字段读
+<code>.text</code> / <code>.data</code>(<code>openai_completions:96</code>、<code>_shared/transform_messages</code>),那两处
+<code>model_dump()</code>(responses/codex)dump 的是<strong>选项对象</strong>不是内容块,所以新增的可选字段
+对它们是惰性的;<code>TextContent.model_dump()</code> round-trip 也干净(持久化安全)。</li>
+<li><strong>Anthropic 最小可缓存 token 数</strong>:一个断点只有在其前缀 ≥ 1024 token(Haiku 2048)时才真的
+缓存,否则<strong>静默忽略、不报错也不命中</strong>。调用方(screenspot)必须保证被标的固定前缀够长,
+否则加了断点 <code>cache_read</code> 仍为 0。并进上面验证第 3 步一起看。</li>
+<li><strong>最多 4 个断点</strong>:OpenProgram 已自动加 ~2 个(system 块 + 最后一块)。调用方自己的断点 +
+这些加起来超过 4 个,Anthropic 直接 400。调用方大约只剩 ~2 个名额。</li>
+<li><strong>代理透传</strong>(规划已提):claude-code 订阅走 Meridian 代理时,若代理吞掉 cache_control,
+<code>cache_read</code> 永远是 0——这是代理层的事,需单独验。</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#目标">目标</a>
+<a class="" href="#约束">约束</a>
+<a class="" href="#改动清单共-3-处">改动清单（共 3 处）</a>
+<a class="lvl-3" href="#改动-1-openprogramproviderstypespy数据类加可选字段">改动 1 — openprogram/providers/types.py：数据类加可选字段</a>
+<a class="lvl-3" href="#改动-2-openprogramagentic_programmingruntimepy_build_pi_context-带上字段">改动 2 — openprogram/agentic_programming/runtime.py：_build_pi_context 带上字段</a>
+<a class="lvl-3" href="#改动-3-openprogramprovidersanthropicanthropicpy_build_messages-保留字段">改动 3 — openprogram/providers/anthropic/anthropic.py：_build_messages 保留字段</a>
+<a class="" href="#验证执行方做完后自检">验证（执行方做完后自检）</a>
+<a class="" href="#不在本规划内由-harness-侧另做">不在本规划内（由 harness 侧另做）</a>
+<a class="" href="#实现状态已落地">实现状态（已落地）</a>
+<a class="lvl-3" href="#验证结论-已确认的边界">验证结论 / 已确认的边界</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../assets/site.js"></script>
+</body>
+</html>

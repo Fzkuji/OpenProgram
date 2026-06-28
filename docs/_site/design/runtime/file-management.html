@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文件修改管理 — 行业分析与 OpenProgram 设计 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink active" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="文件修改管理-行业分析与-openprogram-设计">文件修改管理 — 行业分析与 OpenProgram 设计<a class="header-anchor" href="#文件修改管理-行业分析与-openprogram-设计">#</a></h1>
+<blockquote>
+<p>状态: <strong>已实现</strong> (2026-06)。
+关联: <a href="agent-worktree.html"><code>agent-worktree.md</code></a>、<a href="../memory/memory-v2.html"><code>memory-v2.md</code></a>
+(实体层)、<a href="../memory/git-as-entity-memory.html"><code>git-as-entity-memory.md</code></a>。
+代码: <code>store/snapshot/checkpoint/</code>、<code>store/shadow_git/</code>、
+<code>store/read_tracking.py</code>、<code>agent/_revert.py</code>、<code>worktree/</code>。</p>
+</blockquote>
+<hr />
+<h2 id="1-两大路线快照-vs-沙箱">1. 两大路线：快照 vs 沙箱<a class="header-anchor" href="#1-两大路线快照-vs-沙箱">#</a></h2>
+<p>AI coding agent 管理文件修改，行业里分成两条路线：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>快照 (Snapshot)</th>
+<th>沙箱 (Sandbox)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>做法</strong></td>
+<td>agent 直接操作用户的真实文件，修改前记录原始状态（备份文件或 git commit），改坏了从备份恢复</td>
+<td>agent 在隔离环境（容器/虚拟机）中操作副本，改坏了丢掉整个环境，宿主机不受影响</td>
+</tr>
+<tr>
+<td><strong>回滚</strong></td>
+<td>从备份恢复文件</td>
+<td>丢弃容器/环境</td>
+</tr>
+<tr>
+<td><strong>优点</strong></td>
+<td>零启动延迟；用户直接操作文件；交互体验好</td>
+<td>天然全覆盖（含 bash）；安全隔离；无副作用泄漏</td>
+</tr>
+<tr>
+<td><strong>缺点</strong></td>
+<td>bash 改文件难追踪（除非用 git 兜底或统一入口 checkpoint）</td>
+<td>启动延迟；环境配置复杂；资源占用大</td>
+</tr>
+<tr>
+<td><strong>适合</strong></td>
+<td>本地交互式开发</td>
+<td>无人值守批量任务、不信任的代码执行</td>
+</tr>
+</tbody>
+</table>
+<p><strong>不是二选一。</strong> 头部框架已经往两者并存的方向走——快照解决日常回滚体验（秒级恢复），沙箱解决安全隔离（bash 全覆盖）。</p>
+<hr />
+<h2 id="2-行业对比">2. 行业对比<a class="header-anchor" href="#2-行业对比">#</a></h2>
+<h3 id="21-全景对比">2.1 全景对比<a class="header-anchor" href="#21-全景对比">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>框架</th>
+<th>快照机制</th>
+<th>沙箱机制</th>
+<th>bash 覆盖</th>
+<th>独立于用户 git</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Claude Code</strong></td>
+<td>per-response 快照，<code>/rewind</code> 回退</td>
+<td><code>/sandbox</code> 限制 bash 写入范围</td>
+<td>快照不覆盖；沙箱限制写入范围</td>
+<td>是</td>
+</tr>
+<tr>
+<td><strong>Cursor</strong></td>
+<td>per-edit checkpoint</td>
+<td>Seatbelt/Landlock/seccomp 系统级沙箱</td>
+<td>Agent 操作覆盖</td>
+<td>是</td>
+</tr>
+<tr>
+<td><strong>Hermes</strong></td>
+<td>shadow git checkpoint，所有工具执行前统一 checkpoint</td>
+<td>无</td>
+<td><strong>是</strong>（统一入口，含 bash）</td>
+<td>是（shadow store）</td>
+</tr>
+<tr>
+<td><strong>Aider</strong></td>
+<td>每次编辑自动 git commit</td>
+<td>无</td>
+<td><strong>是</strong>（git 天然覆盖一切）</td>
+<td>否（污染用户 git）</td>
+</tr>
+<tr>
+<td><strong>opencode</strong></td>
+<td>git tree object 快照</td>
+<td>无</td>
+<td>是（git 兜底）</td>
+<td>否</td>
+</tr>
+<tr>
+<td><strong>OpenHands</strong></td>
+<td>event-sourcing 支持回放</td>
+<td>Docker 容器（主要模式）</td>
+<td>沙箱内全覆盖</td>
+<td>N/A</td>
+</tr>
+<tr>
+<td><strong>SWE-agent</strong></td>
+<td>无</td>
+<td>Docker 沙箱（SWEEnv）</td>
+<td>沙箱内全覆盖</td>
+<td>N/A</td>
+</tr>
+<tr>
+<td><strong>Devin</strong></td>
+<td>无</td>
+<td>云端 ephemeral 沙箱</td>
+<td>沙箱内全覆盖</td>
+<td>N/A</td>
+</tr>
+<tr>
+<td><strong>OpenClaw</strong></td>
+<td>无内置快照（本地模式）</td>
+<td>Docker/Podman 容器</td>
+<td>沙箱内全覆盖</td>
+<td>N/A</td>
+</tr>
+</tbody>
+</table>
+<h3 id="22-快照的三种实现方式">2.2 快照的三种实现方式<a class="header-anchor" href="#22-快照的三种实现方式">#</a></h3>
+<p>行业里快照机制有三种具体做法：</p>
+<table>
+<thead>
+<tr>
+<th>方式</th>
+<th>做法</th>
+<th>代表</th>
+<th>bash 覆盖</th>
+<th>独立于用户 git</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>文件拷贝</strong></td>
+<td>改文件前 <code>shutil.copy2</code> 到备份目录</td>
+<td>Claude Code、Cursor</td>
+<td>否（只能备份已知文件）</td>
+<td>是</td>
+</tr>
+<tr>
+<td><strong>Git commit</strong></td>
+<td>每次编辑后 <code>git commit</code> 到用户仓库</td>
+<td>Aider、opencode</td>
+<td>是（git 追踪一切）</td>
+<td><strong>否</strong>（污染用户 git）</td>
+</tr>
+<tr>
+<td><strong>Shadow git</strong></td>
+<td>用 git tree/commit 对象存快照，存在独立目录</td>
+<td>Hermes</td>
+<td>是（统一入口触发）</td>
+<td>是</td>
+</tr>
+</tbody>
+</table>
+<p>三种可以共用——它们解决的问题不同：</p>
+<ul>
+<li>文件拷贝：最快的撤销（不依赖 git，非 git 项目也能用）</li>
+<li>Git commit：永久历史（<code>git log</code> 可查，但污染用户 git）</li>
+<li>Shadow git：兼顾 diff 追溯能力和不碰用户 git</li>
+</ul>
+<h3 id="23-术语解释">2.3 术语解释<a class="header-anchor" href="#23-术语解释">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>术语</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Checkpoint</strong></td>
+<td>行业通用叫法（Claude Code、Cursor、Hermes 都用），指改文件前保存的快照。</td>
+</tr>
+<tr>
+<td><strong>bash 覆盖</strong></td>
+<td>agent 通过 bash 工具改文件（<code>sed -i</code>、<code>&gt; file</code>、<code>rm</code> 等）时，这些变更能否被追踪和回滚。快照派的核心难题——编辑工具（write/edit）能精确知道改了哪个文件，bash 不能。</td>
+</tr>
+<tr>
+<td><strong>独立于用户 git</strong></td>
+<td>备份机制是否使用自己的存储，不污染用户的 git 历史。Aider 直接在用户仓库里 git commit，<code>git log</code> 会混入大量 AI 自动 commit；Hermes 和 Claude Code 用独立存储，用户 git 历史保持干净。</td>
+</tr>
+<tr>
+<td><strong>Shadow git</strong></td>
+<td>用 git 的 tree/commit 机制存快照，但存在独立目录（如 <code>~/.hermes/checkpoints/</code>），不碰用户的 <code>.git</code>。兼顾 git 的追踪能力（diff、单文件恢复）和不污染用户历史。</td>
+</tr>
+<tr>
+<td><strong>统一入口触发</strong></td>
+<td>Hermes 的关键设计：不在每个编辑工具内部触发 checkpoint，而在<strong>所有工具的执行入口</strong>统一触发。这样 bash 执行前也会做 checkpoint，自然覆盖 bash 盲点。</td>
+</tr>
+<tr>
+<td><strong>系统级沙箱</strong></td>
+<td>用 OS 内核机制（Seatbelt / Landlock / seccomp / bubblewrap）限制进程的文件访问和网络访问范围。进程仍在宿主机上跑，但被限制了能做什么。毫秒级启动。</td>
+</tr>
+<tr>
+<td><strong>容器沙箱</strong></td>
+<td>在 Docker/Podman 容器内运行 agent。完整隔离——容器内的操作不影响宿主机。完成后通过 git patch 或文件 mount 提取产出。</td>
+</tr>
+<tr>
+<td><strong>Git worktree</strong></td>
+<td>用 <code>git worktree</code> 创建独立的工作目录副本。agent 在副本里操作，改好了 merge 回主线，改砸了 discard 丢掉。只隔离文件，不隔离进程和网络。</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-openprogram-的方案">3. OpenProgram 的方案<a class="header-anchor" href="#3-openprogram-的方案">#</a></h2>
+<h3 id="31-设计原则">3.1 设计原则<a class="header-anchor" href="#31-设计原则">#</a></h3>
+<ol>
+<li><strong>不碰用户 git</strong>。Claude Code 和 Hermes 都不往用户仓库写 commit，这是行业共识。</li>
+<li><strong>统一入口触发</strong>。学 Hermes，checkpoint 在所有工具执行前统一触发，覆盖 bash。</li>
+</ol>
+<h3 id="32-四层机制">3.2 四层机制<a class="header-anchor" href="#32-四层机制">#</a></h3>
+<p>四个层各管一件事，没有重叠。去掉任何一个都会缺一块能力。</p>
+<pre><code>                ┌─── read-before-edit (并发防护, 所有写操作的前置闸) ───┐
+                │  agent 写前: 没读过 / 读后磁盘变了 → 拒绝, 让它重读     │
+                └───────────────────────────┬──────────────────────────┘
+                                             ▼
+
+ ┌──────────────── 快照 (Snapshot) ────────────────┐   ┌──────────── 沙箱 (Sandbox) ─────────────┐
+ │                                                  │   │                                         │
+ │  ①  Checkpoint          ②  Shadow git            │   │  ③  Worktree        ④  系统级沙箱        │
+ │     &quot;回滚&quot;                 &quot;历史&quot;                 │   │     &quot;文件隔离&quot;          &quot;权限限制&quot;         │
+ │     turn 级, 临时          独立 store, 持久        │   │     独立副本            限制 bash 范围     │
+ │     不碰用户 git           不碰用户 git            │   │     agent 显式进入      配置开关           │
+ │     永远开, 自动           默认开, 自动            │   │     按需                默认关             │
+ │                                                  │   │                                         │
+ └──────────────────────────────────────────────────┘   └─────────────────────────────────────────┘
+</code></pre>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>① Checkpoint</th>
+<th>② Shadow git</th>
+<th>③ Worktree</th>
+<th>④ 系统级沙箱</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>路线</strong></td>
+<td><strong>快照</strong></td>
+<td><strong>快照</strong></td>
+<td><strong>沙箱</strong></td>
+<td><strong>沙箱</strong></td>
+</tr>
+<tr>
+<td><strong>解决什么</strong></td>
+<td>改坏了能回滚</td>
+<td>永久历史 + diff 追溯</td>
+<td>改坏了丢副本</td>
+<td>限制 bash 能碰的范围</td>
+</tr>
+<tr>
+<td><strong>机制</strong></td>
+<td>全量文件拷贝</td>
+<td>git tree/commit 对象，存在 <code>~/.openprogram/shadow-git/&lt;project-hash&gt;/</code></td>
+<td><code>git worktree</code> 隔离分支</td>
+<td>OS 内核限制（Seatbelt / bubblewrap）</td>
+</tr>
+<tr>
+<td><strong>作用域</strong></td>
+<td>单个 turn</td>
+<td>整条会话累积</td>
+<td>一段实验性工作</td>
+<td>整个会话</td>
+</tr>
+<tr>
+<td><strong>持久度</strong></td>
+<td>临时 (GC, 上限 100 turn)</td>
+<td>永久（独立 git 历史）</td>
+<td>直到 merge / discard</td>
+<td>会话期间生效</td>
+</tr>
+<tr>
+<td><strong>碰用户的 git 吗</strong></td>
+<td><strong>完全不碰</strong></td>
+<td><strong>完全不碰</strong></td>
+<td>用独立 worktree, merge 才回主线</td>
+<td><strong>完全不碰</strong></td>
+</tr>
+<tr>
+<td><strong>触发</strong></td>
+<td>统一入口（所有工具执行前）</td>
+<td>turn 结束（自动 commit 本 turn 变更）</td>
+<td>agent 显式调 <code>worktree_create</code></td>
+<td>配置开关</td>
+</tr>
+<tr>
+<td><strong>bash 覆盖</strong></td>
+<td><strong>是</strong>（统一入口触发）</td>
+<td><strong>是</strong>（turn 结束 commit 含 bash 改动）</td>
+<td>N/A（隔离环境内）</td>
+<td><strong>是</strong>（内核级拦截）</td>
+</tr>
+<tr>
+<td><strong>默认</strong></td>
+<td><strong>一直开</strong></td>
+<td><strong>默认开</strong></td>
+<td>按需</td>
+<td><strong>默认关</strong></td>
+</tr>
+<tr>
+<td><strong>代码</strong></td>
+<td><code>store/snapshot/checkpoint/</code></td>
+<td><code>store/shadow_git/</code></td>
+<td><code>worktree/</code></td>
+<td><code>sandbox/</code></td>
+</tr>
+<tr>
+<td><strong>回退入口</strong></td>
+<td><code>/rewind</code></td>
+<td><code>/rewind</code> 联动</td>
+<td><code>worktree_discard</code></td>
+<td>N/A（预防性，不需要回退）</td>
+</tr>
+<tr>
+<td><strong>状态</strong></td>
+<td>✅ 已实现</td>
+<td>✅ 已实现</td>
+<td>✅ 已实现</td>
+<td>✅ 已实现</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33-①-checkpoint-和-②-shadow-git-的分工">3.3 ① Checkpoint 和 ② Shadow git 的分工<a class="header-anchor" href="#33-①-checkpoint-和-②-shadow-git-的分工">#</a></h3>
+<p>两者同时运行，不是二选一：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>① Checkpoint</th>
+<th>② Shadow git</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>速度</strong></td>
+<td>最快（直接文件覆盖）</td>
+<td>较快（git checkout）</td>
+</tr>
+<tr>
+<td><strong>diff 能力</strong></td>
+<td>无（只有原文件副本）</td>
+<td>有（<code>git diff</code>、<code>git log</code>、单文件恢复）</td>
+</tr>
+<tr>
+<td><strong>非 git 项目</strong></td>
+<td>可用</td>
+<td>可用（shadow store 自带 git，不依赖用户仓库）</td>
+</tr>
+<tr>
+<td><strong>GC</strong></td>
+<td>有（上限 100 turn）</td>
+<td>无需 GC（git 天然压缩）</td>
+</tr>
+<tr>
+<td><strong>主要用途</strong></td>
+<td>快速撤销的第一选择</td>
+<td>永久历史追溯、diff 对比、单文件精确恢复</td>
+</tr>
+</tbody>
+</table>
+<p><code>/rewind</code> 回滚时联动：先从 checkpoint 恢复文件（最快），shadow git 记录保持可查。</p>
+<hr />
+<h2 id="4-统一入口触发覆盖-bash-的关键改动">4. 统一入口触发（覆盖 bash 的关键改动）<a class="header-anchor" href="#4-统一入口触发覆盖-bash-的关键改动">#</a></h2>
+<h3 id="41-实现方式">4.1 实现方式<a class="header-anchor" href="#41-实现方式">#</a></h3>
+<p>write / edit / apply_patch 三个编辑工具<strong>各自内部</strong>调用 <code>checkpoint_before_edit</code>做精确的单文件备份——保留不动。</p>
+<p>bash 工具的覆盖在 <code>_execute_tool_calls</code>（<code>agent_loop.py</code>，所有工具的单一入口）中实现：</p>
+<pre><code class="language-python"><span class="c1">#### agent_loop.py — _execute_tool_calls 内部</span>
+<span class="k">if</span> <span class="n">tool_name</span> <span class="o">==</span> <span class="s2">&quot;bash&quot;</span><span class="p">:</span>
+    <span class="n">pre_snapshot</span> <span class="o">=</span> <span class="n">_snapshot_cwd</span><span class="p">(</span><span class="n">cwd</span><span class="p">)</span>       <span class="c1"># 记录文件 mtime+size</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+    <span class="n">_checkpoint_changed_files</span><span class="p">(</span><span class="n">cwd</span><span class="p">,</span> <span class="n">pre_snapshot</span><span class="p">)</span>  <span class="c1"># 对比，变更文件补做 checkpoint</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">tool</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>               <span class="c1"># write/edit 内部已有精确备份</span>
+</code></pre>
+<p><code>_snapshot_cwd</code>：扫描 cwd 下的文件，记录 <code>{path: (mtime_ns, size)}</code>，跳过 dotfile 目录。
+<code>_checkpoint_changed_files</code>：对比前后快照，对新增/修改的文件调用 <code>checkpoint_before_edit</code>。</p>
+<p><strong>已知限制</strong>：当前快照只扫描 cwd 顶层文件，子目录中的变更暂未覆盖（可后续改为递归扫描）。</p>
+<hr />
+<h2 id="5-并发防护-read-before-edit-前置闸">5. 并发防护: read-before-edit (前置闸)<a class="header-anchor" href="#5-并发防护-read-before-edit-前置闸">#</a></h2>
+<p><code>store/read_tracking.py</code>。整套机制的安全地基: 保证 agent 永远不会在&quot;用户刚改过、agent 还没看到&quot;的文件上盲写, 于是落进 ① checkpoint 和 ② shadow git 的每一笔都是<strong>干净的 agent 改动</strong>, 回退时不会误伤用户。</p>
+<p>照搬 Claude Code 的 Edit/Write 契约:</p>
+<ul>
+<li><strong><code>read</code> 记基线</strong> —— 读文件时记下它的指纹 <code>(mtime_ns, size, sha1)</code>。</li>
+<li><strong>写前校验</strong> —— <code>edit</code> / <code>write 覆盖已有文件</code> / <code>apply_patch Update</code> 写之前比对:
+<ul>
+<li>没读过 (<code>NEVER_READ</code>) → 拒绝, 提示先读。</li>
+<li>读过但磁盘变了 (<code>STALE</code>, 用户/linter/别的进程改了) → 拒绝, 提示重读。改动<strong>不落盘</strong>。</li>
+</ul>
+</li>
+<li><strong>新文件跳过</strong> —— <code>write 新文件</code> / <code>apply_patch Add</code> 不要求先读, 写完记基线。</li>
+<li><strong>写成功刷新基线</strong> —— 同一文件能接着改, 不用重读。</li>
+</ul>
+<p>用<strong>内容 hash</strong> 而非只看 mtime: 用户手速快时改动可能落在同一个 mtime tick 里, 光看时间戳会漏。session 经 <code>_store</code> ContextVar 解析, 不在 turn 里 (单测/独立调用) 时整个防护 no-op (<code>UNTRACKED</code> → 放行)。</p>
+<hr />
+<h2 id="6-实现细节">6. 实现细节<a class="header-anchor" href="#6-实现细节">#</a></h2>
+<h3 id="61-协调规则">6.1 协调规则<a class="header-anchor" href="#61-协调规则">#</a></h3>
+<h4>规则 A: Worktree 活跃时, shadow git commit 让位</h4>
+<p><code>shadow_git.commit_turn_changes</code> 先查 <code>find_active_for_session(sid)</code>:</p>
+<ul>
+<li>有活跃 worktree → 跳过（agent 改动在 worktree 副本里, 提交原始目录是错的/空的）。</li>
+<li>无 → 照常。</li>
+</ul>
+<h4>规则 B: /rewind = checkpoint 恢复 + shadow git 保持可查</h4>
+<p><code>/rewind</code> 撤回时:</p>
+<ol>
+<li>从 checkpoint 恢复文件（最快路径）。</li>
+<li>shadow git 历史<strong>不回退</strong>——保持可查，用户可以 diff 看 agent 改了什么。</li>
+<li>gitignored 文件 / 非 git 文件夹：checkpoint 是唯一兜底。</li>
+</ol>
+<p>不需要判断 git reset vs revert，回滚逻辑简洁。</p>
+<h3 id="62-完整生命周期">6.2 完整生命周期<a class="header-anchor" href="#62-完整生命周期">#</a></h3>
+<p>以一条<strong>绑定了真实项目目录</strong>的会话为例:</p>
+<pre><code>会话开始
+  │
+  ├─ [turn N 开始]
+  │
+  ├─ agent 要编辑 a.py
+  │     [前置闸] read-before-edit 校验 a.py 新鲜度 (没读过/已变 → 拒绝)
+  │     [统一入口] checkpoint(turn=N, a.py)   ← 编辑前拷旧内容进 &lt;session&gt;/checkpoints/N/
+  │     ↓ 真正写 a.py → 刷新 read 基线
+  │
+  ├─ agent 执行 bash &quot;sed -i 's/old/new/' b.py&quot;
+  │     [统一入口] 记录工作目录文件状态 hash
+  │     ↓ 真正执行 bash
+  │     [统一入口] 对比 hash, b.py 变了 → 补做 checkpoint(turn=N, b.py)
+  │
+  ├─ [turn N 结束]
+  │     · session-git commit (对话 DAG)              ← 一直发生
+  │     · ② shadow git commit:                      ← 默认开
+  │         - 有活跃 worktree? → 跳过 (规则 A)
+  │         - 否则 commit 本 turn 所有文件变更到 shadow store
+  │     · GC: gc_evict_old(session) ← 删超过上限的旧 checkpoint
+  │
+  ├─ 用户点 ↩ rewind 或输入 /rewind
+  │     → 规则 B: 从 checkpoint 恢复文件, shadow git 保持可查
+  │
+  └─ ……
+</code></pre>
+<h3 id="63-checkpoint-的释放">6.3 Checkpoint 的释放<a class="header-anchor" href="#63-checkpoint-的释放">#</a></h3>
+<p>checkpoint 存 <code>&lt;session&gt;/checkpoints/&lt;turn_id&gt;/</code>，释放:</p>
+<table>
+<thead>
+<tr>
+<th>触发</th>
+<th>实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>GC (软上限 100 turn)</strong></td>
+<td><code>gc_evict_old</code> 在每个 turn 结束由 dispatcher 调用, 按 mtime 删最老的超额 turn</td>
+</tr>
+<tr>
+<td><strong>会话删除</strong></td>
+<td>会话仓整个删掉时连带删除</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>注: checkpoint 是<strong>全量文件拷贝</strong> (<code>shutil.copy2</code>), 故意不用 hardlink (agent 的 <code>open(w)</code> 会 truncate inode, 共享 hardlink 会丢原内容)。磁盘成本线性于 files×turns, 由 GC 上限兜底。</p>
+</blockquote>
+<h3 id="64-shadow-git-存储">6.4 Shadow git 存储<a class="header-anchor" href="#64-shadow-git-存储">#</a></h3>
+<p>存储位置: <code>~/.openprogram/shadow-git/&lt;project-hash&gt;/</code></p>
+<ul>
+<li>每个项目目录一个 shadow git store（按路径 hash 区分）</li>
+<li>不碰用户的 <code>.git</code>，完全独立</li>
+<li>turn 结束时自动 commit 本 turn 所有文件变更</li>
+<li>支持 <code>git diff</code>、<code>git log</code>、单文件恢复</li>
+<li>不需要 GC（git 天然压缩对象）</li>
+</ul>
+<h3 id="65-四者的关系">6.5 四者的关系<a class="header-anchor" href="#65-四者的关系">#</a></h3>
+<p>四个层各自独立，解决不同问题：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>回滚</th>
+<th>历史</th>
+<th>文件隔离</th>
+<th>权限限制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① Checkpoint</td>
+<td>✅</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>② Shadow git</td>
+<td></td>
+<td>✅</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>③ Worktree</td>
+<td></td>
+<td></td>
+<td>✅</td>
+<td></td>
+</tr>
+<tr>
+<td>④ 系统级沙箱</td>
+<td></td>
+<td></td>
+<td></td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<p>协调点：</p>
+<ul>
+<li><strong>Checkpoint ↔ Shadow git</strong>: 同时运行, 由 <code>undo</code> 统一协调（规则 B）。Checkpoint 负责快速恢复, Shadow git 负责永久历史。</li>
+<li><strong>Worktree ↔ Shadow git</strong>: 规则 A，Worktree 活跃时 Shadow git 让位。</li>
+<li><strong>系统级沙箱</strong>: 和其他三层完全正交——它限制 bash 能碰什么，不影响快照和文件隔离的运作。</li>
+</ul>
+<h3 id="66-ad-hoc-默认项目-会话">6.6 Ad-hoc (默认项目) 会话<a class="header-anchor" href="#66-ad-hoc-默认项目-会话">#</a></h3>
+<p>没绑真实目录的随手聊:</p>
+<ul>
+<li>① Checkpoint: 照常。</li>
+<li>② Shadow git: 照常（shadow store 不依赖用户仓库）。</li>
+<li>③ Worktree: 不适用（没有 source repo）。</li>
+<li>④ 系统级沙箱: 照常（限制 bash 范围与项目绑定无关）。</li>
+</ul>
+<hr />
+<h2 id="7-用户决策矩阵">7. 用户决策矩阵<a class="header-anchor" href="#7-用户决策矩阵">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>我想要</th>
+<th>配置</th>
+<th>得到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>像 Claude Code, 撤销键就够</td>
+<td>默认</td>
+<td>① Checkpoint + ② Shadow git</td>
+</tr>
+<tr>
+<td>看 agent 改了什么（diff）</td>
+<td>默认</td>
+<td>② Shadow git 提供 <code>git diff</code> / <code>git log</code></td>
+</tr>
+<tr>
+<td>不想任何额外存储</td>
+<td>关掉 shadow git</td>
+<td>只有 ① Checkpoint</td>
+</tr>
+<tr>
+<td>agent 做高风险大改, 别弄乱工作树</td>
+<td>(agent 自行) <code>worktree_create</code></td>
+<td>③ 隔离, 改好 merge / 改砸 discard</td>
+</tr>
+<tr>
+<td>限制 bash 别碰 cwd 以外的文件</td>
+<td>开启系统级沙箱</td>
+<td>④ bash 只能读写当前项目目录</td>
+</tr>
+<tr>
+<td>最安全模式</td>
+<td>Worktree + 系统级沙箱</td>
+<td>③ + ④ 文件隔离 + 权限限制</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8-使用指南">8. 使用指南<a class="header-anchor" href="#8-使用指南">#</a></h2>
+<h3 id="81-网页端webui">8.1 网页端（webui）<a class="header-anchor" href="#81-网页端webui">#</a></h3>
+<p><strong>回退操作：</strong></p>
+<ul>
+<li>每条 <strong>user</strong> 消息右上角有 ↩ 按钮（&quot;Rewind to here&quot;）——点击后：
+<ol>
+<li>该消息的文本回到输入框（可重新编辑）</li>
+<li>该消息及之后的所有对话从界面上移除</li>
+<li>文件恢复到该消息之前的状态（通过 checkpoint）</li>
+<li>DAG 中旧对话保留为历史分支，不丢失</li>
+</ol>
+</li>
+<li>在聊天框输入 <code>/rewind</code>——列出最近的回退点（最多 10 条），每条显示摘要和时间</li>
+<li>在聊天框输入 <code>/rewind N</code>——回退到第 N 个回退点（N 从列表中选）</li>
+</ul>
+<p><strong>沙箱：</strong></p>
+<ul>
+<li>在聊天框输入 <code>/sandbox</code>——开启系统级沙箱（限制 bash 只能读写当前项目目录）</li>
+<li>再次输入 <code>/sandbox</code>——关闭沙箱</li>
+</ul>
+<h3 id="82-cli-命令行">8.2 CLI 命令行<a class="header-anchor" href="#82-cli-命令行">#</a></h3>
+<ul>
+<li><code>/rewind</code>——列出回退点</li>
+<li><code>/rewind N</code>——回退到第 N 个点</li>
+<li><code>/sandbox</code>——开关沙箱</li>
+</ul>
+<h3 id="83-tui-终端界面">8.3 TUI 终端界面<a class="header-anchor" href="#83-tui-终端界面">#</a></h3>
+<ul>
+<li><code>/rewind</code>、<code>/rewind N</code>——同 CLI</li>
+<li><code>/sandbox</code>——同 CLI</li>
+</ul>
+<h3 id="84-自动生效的功能用户不需要手动操作">8.4 自动生效的功能（用户不需要手动操作）<a class="header-anchor" href="#84-自动生效的功能用户不需要手动操作">#</a></h3>
+<p>这些功能在后台自动运行，用户不需要做任何操作：</p>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>什么时候触发</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Checkpoint</td>
+<td>每次工具执行前</td>
+<td>自动备份即将被修改的文件（含 bash）</td>
+</tr>
+<tr>
+<td>Shadow git</td>
+<td>每个 turn 结束时</td>
+<td>自动 commit 本 turn 的文件变更到独立 git store</td>
+</tr>
+<tr>
+<td>read-before-edit</td>
+<td>每次写文件前</td>
+<td>自动检查文件是否被外部修改过，防止覆盖</td>
+</tr>
+</tbody>
+</table>
+<h3 id="85-agent-可用的工具">8.5 Agent 可用的工具<a class="header-anchor" href="#85-agent-可用的工具">#</a></h3>
+<p>agent（LLM）可以调用的工具只有 worktree 系列，用于文件隔离：</p>
+<table>
+<thead>
+<tr>
+<th>工具</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>worktree_create</code></td>
+<td>创建独立工作目录副本</td>
+</tr>
+<tr>
+<td><code>worktree_merge</code></td>
+<td>把副本的改动合并回主目录</td>
+</tr>
+<tr>
+<td><code>worktree_discard</code></td>
+<td>丢弃副本</td>
+</tr>
+</tbody>
+</table>
+<p>Checkpoint、Shadow git、沙箱都是自动运行的底层机制，不暴露为工具。用户通过 <code>/rewind</code> 和 <code>/sandbox</code> 命令交互。</p>
+<hr />
+<h2 id="9-待做">9. 待做<a class="header-anchor" href="#9-待做">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bash checkpoint 递归扫描</td>
+<td>当前只扫 cwd 顶层，子目录变更未覆盖</td>
+</tr>
+<tr>
+<td>UI 明示当前会话的&quot;主回退路径&quot;</td>
+<td>后端就绪, 待前端</td>
+</tr>
+<tr>
+<td>容器沙箱（远期）</td>
+<td>research_agent 等无人值守场景，需 Docker 集成</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10-沙箱隔离-③-worktree-④-系统级沙箱">10. 沙箱隔离 — ③ Worktree + ④ 系统级沙箱<a class="header-anchor" href="#10-沙箱隔离-③-worktree-④-系统级沙箱">#</a></h2>
+<p>沙箱有三种实现方式，隔离级别从低到高：</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>代表框架</th>
+<th>隔离级别</th>
+<th>启动延迟</th>
+<th>实现技术</th>
+<th>适合场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Git worktree</strong></td>
+<td>我们 ③、Claude Code <code>--worktree</code></td>
+<td>仅文件（独立副本），无进程/网络隔离</td>
+<td>秒级</td>
+<td><code>git worktree add</code></td>
+<td>高风险代码改动</td>
+</tr>
+<tr>
+<td><strong>系统级沙箱</strong></td>
+<td>我们 ④、Claude Code <code>/sandbox</code>、Cursor</td>
+<td>文件系统 + 网络（进程级限制）</td>
+<td>毫秒级</td>
+<td>Seatbelt / bubblewrap / Landlock</td>
+<td>本地交互，限制 bash 范围</td>
+</tr>
+<tr>
+<td><strong>容器沙箱</strong></td>
+<td>OpenHands / SWE-agent / Devin</td>
+<td>完整隔离（文件/网络/进程）</td>
+<td>30-60 秒</td>
+<td>Docker / Podman</td>
+<td>无人值守、不信任代码</td>
+</tr>
+</tbody>
+</table>
+<h3 id="101-③-worktree-文件隔离-已实现">10.1 ③ Worktree — 文件隔离（✅ 已实现）<a class="header-anchor" href="#101-③-worktree-文件隔离-已实现">#</a></h3>
+<p>agent 调 <code>worktree_create</code> 创建独立工作目录副本，改好了 <code>worktree_merge</code>，改砸了 <code>worktree_discard</code>。</p>
+<p><strong>局限</strong>：只隔离文件，不隔离进程和网络——bash 仍能 <code>rm -rf /</code>、读 <code>~/.ssh/</code>、访问网络。适合&quot;怕改坏代码&quot;，不防&quot;bash 乱来&quot;。</p>
+<h3 id="102-④-系统级沙箱-权限限制-已实现">10.2 ④ 系统级沙箱 — 权限限制（✅ 已实现）<a class="header-anchor" href="#102-④-系统级沙箱-权限限制-已实现">#</a></h3>
+<p>用 OS 内核机制限制 bash 进程能做什么：</p>
+<ul>
+<li><strong>文件系统</strong>：只能读写 cwd 及子目录，<code>rm ~/.ssh/id_rsa</code> → <code>Operation not permitted</code></li>
+<li><strong>网络</strong>：不能直连，通过代理 allowlist 控制</li>
+<li><strong>实现</strong>：macOS 用 Seatbelt（sandbox-exec），Linux 用 bubblewrap</li>
+<li><strong>代码</strong>：<code>openprogram/sandbox/__init__.py</code>（<code>sandbox_enabled</code> contextvar + <code>wrap_command</code>）、<code>backend/local.py</code>（<code>_invocation</code> 集成）</li>
+<li><strong>命令</strong>：<code>/sandbox</code> 开关（CLI <code>_cli_chat/handlers.py</code> + webui <code>ws_actions/chat.py</code>）</li>
+</ul>
+<h3 id="103-③-和-④-的关系">10.3 ③ 和 ④ 的关系<a class="header-anchor" href="#103-③-和-④-的关系">#</a></h3>
+<p>两者解决不同问题，可以组合：</p>
+<ul>
+<li><strong>单独用 ③</strong>：在副本里改，但 bash 什么都能做</li>
+<li><strong>单独用 ④</strong>：在原目录改，但 bash 被限制范围</li>
+<li><strong>组合用</strong>：在副本里改，bash 也被限制。最安全</li>
+</ul>
+<h3 id="104-容器沙箱远期方向">10.4 容器沙箱（远期方向）<a class="header-anchor" href="#104-容器沙箱远期方向">#</a></h3>
+<p>research_agent 等无人值守 agentic function 的长时间运行场景，需要 Docker 完整隔离。当前不做，等 agentic function 成熟后考虑。</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-两大路线快照-vs-沙箱">1. 两大路线：快照 vs 沙箱</a>
+<a class="" href="#2-行业对比">2. 行业对比</a>
+<a class="lvl-3" href="#21-全景对比">2.1 全景对比</a>
+<a class="lvl-3" href="#22-快照的三种实现方式">2.2 快照的三种实现方式</a>
+<a class="lvl-3" href="#23-术语解释">2.3 术语解释</a>
+<a class="" href="#3-openprogram-的方案">3. OpenProgram 的方案</a>
+<a class="lvl-3" href="#31-设计原则">3.1 设计原则</a>
+<a class="lvl-3" href="#32-四层机制">3.2 四层机制</a>
+<a class="lvl-3" href="#33-①-checkpoint-和-②-shadow-git-的分工">3.3 ① Checkpoint 和 ② Shadow git 的分工</a>
+<a class="" href="#4-统一入口触发覆盖-bash-的关键改动">4. 统一入口触发（覆盖 bash 的关键改动）</a>
+<a class="lvl-3" href="#41-实现方式">4.1 实现方式</a>
+<a class="" href="#5-并发防护-read-before-edit-前置闸">5. 并发防护: read-before-edit (前置闸)</a>
+<a class="" href="#6-实现细节">6. 实现细节</a>
+<a class="lvl-3" href="#61-协调规则">6.1 协调规则</a>
+<a class="lvl-3" href="#62-完整生命周期">6.2 完整生命周期</a>
+<a class="lvl-3" href="#63-checkpoint-的释放">6.3 Checkpoint 的释放</a>
+<a class="lvl-3" href="#64-shadow-git-存储">6.4 Shadow git 存储</a>
+<a class="lvl-3" href="#65-四者的关系">6.5 四者的关系</a>
+<a class="lvl-3" href="#66-ad-hoc-默认项目-会话">6.6 Ad-hoc (默认项目) 会话</a>
+<a class="" href="#7-用户决策矩阵">7. 用户决策矩阵</a>
+<a class="" href="#8-使用指南">8. 使用指南</a>
+<a class="lvl-3" href="#81-网页端webui">8.1 网页端（webui）</a>
+<a class="lvl-3" href="#82-cli-命令行">8.2 CLI 命令行</a>
+<a class="lvl-3" href="#83-tui-终端界面">8.3 TUI 终端界面</a>
+<a class="lvl-3" href="#84-自动生效的功能用户不需要手动操作">8.4 自动生效的功能（用户不需要手动操作）</a>
+<a class="lvl-3" href="#85-agent-可用的工具">8.5 Agent 可用的工具</a>
+<a class="" href="#9-待做">9. 待做</a>
+<a class="" href="#10-沙箱隔离-③-worktree-④-系统级沙箱">10. 沙箱隔离 — ③ Worktree + ④ 系统级沙箱</a>
+<a class="lvl-3" href="#101-③-worktree-文件隔离-已实现">10.1 ③ Worktree — 文件隔离（✅ 已实现）</a>
+<a class="lvl-3" href="#102-④-系统级沙箱-权限限制-已实现">10.2 ④ 系统级沙箱 — 权限限制（✅ 已实现）</a>
+<a class="lvl-3" href="#103-③-和-④-的关系">10.3 ③ 和 ④ 的关系</a>
+<a class="lvl-3" href="#104-容器沙箱远期方向">10.4 容器沙箱（远期方向）</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

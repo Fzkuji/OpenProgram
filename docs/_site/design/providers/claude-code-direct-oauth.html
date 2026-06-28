@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude-code 直连订阅(砍掉 Meridian) · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers" open><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink active" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="claude-code-直连订阅砍掉-meridian">claude-code 直连订阅(砍掉 Meridian)<a class="header-anchor" href="#claude-code-直连订阅砍掉-meridian">#</a></h1>
+<h2 id="目标">目标<a class="header-anchor" href="#目标">#</a></h2>
+<p>把 <code>claude-code</code> provider 从「本地 Meridian 代理 daemon」改成「anthropic SDK 用订阅
+OAuth token 直连 <code>api.anthropic.com</code>」——与 <code>openai-codex</code> 直读 <code>~/.codex/auth.json</code></p>
+<ul>
+<li>直连 <code>chatgpt.com/backend-api</code> 完全同构。</li>
+</ul>
+<p>约束(用户拍板):</p>
+<ul>
+<li><strong>保留 <code>claude-code</code> 这个 provider 名字</strong>(WebUI/CLI 不变),只换底层 Runtime。</li>
+<li><strong>不碰 macOS 钥匙串</strong>,走 OpenProgram 自己的凭证体系(AuthStore +
+<code>~/.claude/.credentials.json</code> 文件)。</li>
+</ul>
+<h2 id="背景为什么-meridian-不是技术必需">背景:为什么 Meridian 不是技术必需<a class="header-anchor" href="#背景为什么-meridian-不是技术必需">#</a></h2>
+<p><code>anthropic.py:245-261</code> 早已支持订阅 OAuth 直连:当 token 是 <code>sk-ant-oat…</code> 时,用
+<code>auth_token=&lt;token&gt;</code> + <code>anthropic-beta: claude-code-20250219,oauth-2025-04-20,…</code> +
+<code>user-agent: claude-cli/&lt;ver&gt;</code> 直发 Messages API。这跟 codex 直连 <a href="http://chatgpt.com">chatgpt.com</a>
+是同一套思路。Meridian 当初被选中的两个理由现已不成立:</p>
+<ul>
+<li>「Max 账号不暴露 <a href="http://api.anthropic.com">api.anthropic.com</a> key」——对,但订阅用的是 <strong>OAuth token</strong>,不是
+api-key;直连走 Bearer + beta header,不需要 api-key。</li>
+<li>「第三方代理把 image block 弄坏成 <code>[object Object]</code>」——那是某个代理的 bug;走官方
+<code>anthropic</code> SDK 直发 Messages API 原生支持 image block,多模态不丢。</li>
+</ul>
+<h2 id="真正的障碍token-怎么进来-怎么-refresh">真正的障碍:token 怎么进来 + 怎么 refresh<a class="header-anchor" href="#真正的障碍token-怎么进来-怎么-refresh">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>凭证形态</th>
+<th>来源</th>
+<th>kind</th>
+<th>refresh</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>旁观 Claude CLI</td>
+<td><code>~/.claude/.credentials.json</code></td>
+<td><code>cli_delegated</code></td>
+<td>Claude CLI 自刷,OpenProgram 旁观重读</td>
+</tr>
+<tr>
+<td>自持 api-key</td>
+<td><code>openprogram auth login anthropic --api-key</code></td>
+<td><code>api_key</code></td>
+<td>不过期</td>
+</tr>
+</tbody>
+</table>
+<p>现状两个洞:</p>
+<ol>
+<li>anthropic provider 解析 token 用 <code>resolve_provider_key()</code>,它<strong>显式排除 OAuth</strong>
+(<code>env_api_keys.py:52</code> 注释:OAuth 走 claude-code daemon)。</li>
+<li>resolver 的 <code>_extract_token()</code> 对 <code>cli_delegated</code> 返回 None
+(<code>resolver.py:132-137</code>),即使改调 <code>resolve_api_key_sync</code> 也取不出订阅 token。</li>
+</ol>
+<h2 id="方案轻量白蹭-claude-cli-刷新-与-codex-一字不差">方案(轻量,白蹭 Claude CLI 刷新 —— 与 codex 一字不差)<a class="header-anchor" href="#方案轻量白蹭-claude-cli-刷新-与-codex-一字不差">#</a></h2>
+<p>codex 的 cli_delegated 模式:codex CLI 维护 <code>~/.codex/auth.json</code>,OpenProgram 每次
+重读取最新 access_token。我们对 Claude 照搬:Claude CLI 维护
+<code>~/.claude/.credentials.json</code>(Linux/Win 是文件,直读;mac 钥匙串不碰),OpenProgram
+每次重读 <code>claudeAiOauth.accessToken</code>。</p>
+<h3 id="改动点">改动点<a class="header-anchor" href="#改动点">#</a></h3>
+<ol>
+<li>
+<p><strong>resolver 补 cli_delegated 取 token</strong> —— <code>auth/resolver.py:_extract_token</code>
+对 <code>CliDelegatedPayload</code> 重读 <code>store_path</code>,按 <code>access_key_path</code> 取出 access_token。
+这是通用修复(codex 的 cli_delegated 也受益)。</p>
+</li>
+<li>
+<p><strong>anthropic provider 改用统一解析</strong> —— <code>providers/anthropic/anthropic.py</code>
+<code>stream_simple</code> 里 token 解析从 <code>resolve_provider_key(provider)</code> 换成
+<code>resolve_api_key_sync(provider)</code>(含 OAuth/cli_delegated/manager-refresh)。
+<code>AnthropicRuntime.__init__</code> 同改。</p>
+</li>
+<li>
+<p><strong>registry 切换</strong> —— <code>providers/registry.py</code> 把
+<code>&quot;claude-code&quot;</code> 从 <code>_max_proxy_runtime.ClaudeCodeRuntime</code> 换成直连 Runtime。
+保留 <code>claude-code</code> 名字:新增一个轻 Runtime,模型走 <code>anthropic:&lt;id&gt;</code> namespace
+(复用 anthropic provider 的 wire),token 从 <code>anthropic</code> pool 解析。
+normalize 模型 alias(opus/sonnet/haiku)沿用。</p>
+</li>
+<li>
+<p><strong>expiry 处理</strong> —— cli_delegated 过期时 AuthManager 抛 <code>AuthReadOnlyError</code>
+(read-only 不能自刷),错误信息引导用户 <code>claude login</code>。直连路径沿用,不另做。</p>
+</li>
+</ol>
+<h3 id="验证">验证<a class="header-anchor" href="#验证">#</a></h3>
+<ul>
+<li>单元:<code>_extract_token</code> 对 cli_delegated 重读文件取 token;anthropic provider 在
+只有 cli_delegated 凭证时能解析出 <code>sk-ant-oat</code> token;registry 解析 <code>claude-code</code>
+得到直连 Runtime 而非 Meridian Runtime。</li>
+<li>端到端:本机 <code>claude login</code> 后,OpenProgram 跑 claude-code 一次,确认直连
+<a href="http://api.anthropic.com">api.anthropic.com</a>(无 Meridian 进程),多模态 image block 正常。</li>
+</ul>
+<h2 id="实现状态已落地">实现状态(已落地)<a class="header-anchor" href="#实现状态已落地">#</a></h2>
+<ol>
+<li>✅ <code>auth/resolver.py:_extract_token</code> + 新 <code>_read_delegated_token</code>:cli_delegated
+重读 <code>store_path</code> 取 access_token(codex 的 cli_delegated 也受益)。</li>
+<li>✅ <code>providers/anthropic/anthropic.py:stream_simple</code> + <code>runtime.py:AnthropicRuntime</code>
+改用 <code>resolve_api_key_sync</code>(含 OAuth/cli_delegated)。</li>
+<li>✅ 新 <code>providers/anthropic/_claude_code_direct_runtime.py</code>:ClaudeCodeRuntime
+直连,模型映射到 <code>anthropic:&lt;id&gt;</code>,token 从 anthropic pool 解析。</li>
+<li>✅ <code>providers/registry.py</code>:<code>claude-code</code> → 直连 Runtime(旧 Meridian Runtime
+仅残留可 import)。</li>
+<li>✅ 测试:<code>tests/unit/test_claude_code_direct_oauth.py</code>(10)新增;
+<code>test_runtime_key_ladder.py</code> mock 点更新(AnthropicRuntime 走统一解析)。
+全量 unit 810 passed / 4 skipped。</li>
+</ol>
+<p>注:<code>api=&quot;claude-code-cli&quot;</code> 这个 wire 标签只在 <code>_claude_code_registry.py</code> 声明、
+全仓无消费者(悬空标签),实际请求恒走 Runtime → <code>anthropic:&lt;id&gt;</code> Messages wire,
+所以切换不触及任何 wire 实现。Meridian 的 <code>x-meridian-profile</code> header 注入挂在
+openai_completions chokepoint,直连模型 api 是 anthropic Messages,天然不经过那里。</p>
+<h2 id="订阅登录浏览器-oauth-setup-token-已落地">订阅登录(浏览器 OAuth + setup-token)—— 已落地<a class="header-anchor" href="#订阅登录浏览器-oauth-setup-token-已落地">#</a></h2>
+<p>直连只解决&quot;有 token 时怎么用&quot;,登录解决&quot;token 怎么进来&quot;。照搬 codex 的
+PKCE 框架给 claude-code 接订阅登录:</p>
+<ul>
+<li><strong>OAuth 参数(实测可用)</strong>:<code>auth_adapter.py</code> 加 <code>OAUTH_CLIENT_ID</code>
+=<code>9d1c250a-e61b-44d9-88ed-5944d1962f5e</code>、authorize=<code>claude.ai/oauth/authorize</code>、
+token=<code>console.anthropic.com/v1/oauth/token</code>、redirect=<code>console.anthropic.com/oauth/code/callback</code>。
+<code>build_pkce_config()</code> 用 manual-paste 模式(Anthropic 是 hosted-redirect 显示
+<code>code#state</code>,不是 loopback callback)+ token JSON。</li>
+<li><strong>通用 PKCE 框架扩展</strong>:<code>pkce_oauth.py</code> 加 <code>manual_paste_only</code>/<code>redirect_uri_override</code>/
+<code>token_use_json</code> 三个开关 + <code>_credential_from_tokens</code> 抽取 + exchange 带 state。</li>
+<li><strong>refresh</strong>:<code>_anthropic_refresh</code>(refresh_token 换新,JSON),注册到 ProviderAuthConfig;
+无 refresh_token 的(setup-token)自动 no-op。</li>
+<li><strong>setup-token</strong>:<code>import_setup_token</code> 存 oauth kind、空 refresh_token、~1y 过期。</li>
+<li><strong>登录方式</strong>:<code>login_methods</code> 里 anthropic + claude-code 只留
+<code>pkce_oauth</code>(默认) + <code>setup_token</code> —— <strong>不要 import_from_cli、不要 api_key</strong>
+(用户明确废弃从 ~/.claude 导入)。</li>
+<li><strong>driver</strong>:<code>login_driver</code> 加 anthropic pkce 分支 + setup_token 分发;
+<code>_credential_provider_id</code>(claude-code→anthropic)保证凭证落 anthropic pool。</li>
+<li><strong>多账号</strong>:每账号一个 profile,复用统一账号管理 + 429 轮换。</li>
+</ul>
+<h2 id="webuiclaude-code-脱离-meridian-账号体系-已落地">WebUI:claude-code 脱离 Meridian 账号体系 —— 已落地<a class="header-anchor" href="#webuiclaude-code-脱离-meridian-账号体系-已落地">#</a></h2>
+<p>claude-code 的账号 UI 原本被前后端硬编码到 Meridian 专属路由,绕过通用登录。
+切换:</p>
+<ul>
+<li><code>webui/routes/providers.py</code>:删整块 <code>/api/providers/claude-code/accounts/*</code>
+字面量路由(原调 <code>_meridian_cli</code>,字面量路由优先级高会截走请求)。</li>
+<li><code>webui/routes/accounts.py</code>:加 <code>_pool_id</code>(claude-code→anthropic),删 5 处
+<code>if provider==&quot;claude-code&quot;</code> 短路,所有通用路由按 pool 存取;<code>_api_key_env</code>
+对 claude-code 返回 &quot;&quot;(强制 add_mode=login,不显示 key-paste)。</li>
+<li><code>setup_hints.py</code>:claude-code 文案改成&quot;直连 Anthropic 用订阅 OAuth&quot;,删
+backend/Meridian 描述,说明两种登录。</li>
+<li>前端 <code>account-manager.tsx</code>/<code>provider-login.tsx</code> 数据驱动,零改动:后端
+add_mode=login → 自动渲染两个登录按钮。已 build + worker restart + 浏览器自查
+确认界面正确(两个按钮、无 Import、文案对)。</li>
+</ul>
+<p><code>_meridian_cli.py</code>/<code>_max_proxy_runtime.py</code> 等保留在磁盘但不再被任何路由调用。</p>
+<h2 id="meridian-残留处置">Meridian 残留处置<a class="header-anchor" href="#meridian-残留处置">#</a></h2>
+<p><code>_max_proxy_runtime.py</code> / <code>_claude_max_proxy_registry.py</code> / <code>_meridian_cli.py</code> 暂留
+(WebUI 的「添加 Claude 账号」P1/P2 仍引用),仅 registry 不再默认指向它。后续若
+确认无引用再删。</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#目标">目标</a>
+<a class="" href="#背景为什么-meridian-不是技术必需">背景:为什么 Meridian 不是技术必需</a>
+<a class="" href="#真正的障碍token-怎么进来-怎么-refresh">真正的障碍:token 怎么进来 + 怎么 refresh</a>
+<a class="" href="#方案轻量白蹭-claude-cli-刷新-与-codex-一字不差">方案(轻量,白蹭 Claude CLI 刷新 —— 与 codex 一字不差)</a>
+<a class="lvl-3" href="#改动点">改动点</a>
+<a class="lvl-3" href="#验证">验证</a>
+<a class="" href="#实现状态已落地">实现状态(已落地)</a>
+<a class="" href="#订阅登录浏览器-oauth-setup-token-已落地">订阅登录(浏览器 OAuth + setup-token)—— 已落地</a>
+<a class="" href="#webuiclaude-code-脱离-meridian-账号体系-已落地">WebUI:claude-code 脱离 Meridian 账号体系 —— 已落地</a>
+<a class="" href="#meridian-残留处置">Meridian 残留处置</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

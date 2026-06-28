@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模型目录与 Provider 配置 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../../assets/site.css">
+<link rel="stylesheet" href="../../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../../README.html">Documentation</a>
+<a class="navlink" href="../../../API.html">API Reference</a>
+<a class="navlink" href="../../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../../api/providers.html">Providers</a>
+<a class="navlink" href="../../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../../design/context/README.html">Context</a>
+<a class="navlink" href="../../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers" open><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models" open><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink active" href="../../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="模型目录与-provider-配置">模型目录与 Provider 配置<a class="header-anchor" href="#模型目录与-provider-配置">#</a></h1>
+<blockquote>
+<p>Thinking effort 的控制逻辑见 <a href="thinking-effort.html">thinking-effort.md</a>。本文讲模型目录的数据布局、配置结构、Fetch 流程和数据合并。</p>
+</blockquote>
+<h2 id="1-核心原则">1. 核心原则<a class="header-anchor" href="#1-核心原则">#</a></h2>
+<p><strong>每个 provider 自包含。</strong> 所有配置（thinking 映射、探测脚本、Fetch 数据）都在 <code>providers/&lt;provider&gt;/</code> 下。加一个新 provider = 加一个文件夹；什么都不加也行，走 OpenAI 兼容 fallback。</p>
+<p>两类数据分开存：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>thinking.json</th>
+<th>models.json</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内容</td>
+<td>API 参数格式、effort 映射、per-model override</td>
+<td>Fetch 拉到的模型列表（id、context、reasoning 等）</td>
+</tr>
+<tr>
+<td>变化频率</td>
+<td>几个月一次（API 格式改了才变）</td>
+<td>每次 Fetch 覆写</td>
+</tr>
+<tr>
+<td>版本控制</td>
+<td>进 git</td>
+<td>.gitignore</td>
+</tr>
+</tbody>
+</table>
+<h2 id="2-文件布局">2. 文件布局<a class="header-anchor" href="#2-文件布局">#</a></h2>
+<pre><code>openprogram/providers/
+├── anthropic/
+│   ├── anthropic.py             ← stream 实现
+│   ├── thinking.json            ← 进 git：thinking effort 映射
+│   ├── probe_thinking.py        ← Fetch 时自动运行的探测脚本
+│   └── models.json              ← .gitignore：Fetch 生成的模型列表
+├── deepseek/
+│   ├── thinking.json
+│   ├── probe_thinking.py
+│   └── models.json
+├── google/
+│   ├── google.py
+│   ├── thinking.json
+│   ├── probe_thinking.py
+│   └── models.json
+├── openai_codex/
+│   ├── openai_codex.py
+│   ├── thinking.json
+│   ├── probe_thinking.py
+│   └── models.json
+├── github_copilot/
+│   ├── thinking.json            ← wire_format: &quot;none&quot;（不支持 thinking）
+│   └── ...
+├── thinking_spec.py             ← 公共：加载 thinking.json + 翻译 + 推导
+├── thinking_catalog.py          ← 公共：启动时填 Model 对象的 thinking 字段
+└── _shared/                     ← 公共工具函数
+</code></pre>
+<p><code>.gitignore</code> 里有一行 <code>openprogram/providers/*/models.json</code>，所有 provider 的 models.json 都不进 git。</p>
+<h3 id="21-没有文件夹的-provider">2.1 没有文件夹的 provider<a class="header-anchor" href="#21-没有文件夹的-provider">#</a></h3>
+<p>社区 provider（groq、mistral 等）可以没有文件夹。此时：</p>
+<ul>
+<li><strong>thinking.json</strong>：<code>thinking_spec.get_thinking_spec()</code> 返回 OpenAI 兼容 fallback（<code>effort_string</code> + <code>low/medium/high</code>）</li>
+<li><strong>probe_thinking.py</strong>：Fetch 时 <code>_load_probe()</code> catch ImportError，静默跳过</li>
+<li><strong>models.json</strong>：Fetch 时 <code>_provider_dir()</code> 自动创建文件夹并写入</li>
+</ul>
+<h3 id="22-provider-alias">2.2 Provider alias<a class="header-anchor" href="#22-provider-alias">#</a></h3>
+<p><code>claude-code</code> 和 <code>anthropic</code> 用同一套 API 和模型。<code>thinking_spec._THINKING_ALIASES = {&quot;claude-code&quot;: &quot;anthropic&quot;}</code> 让 claude-code 共用 anthropic 的 thinking.json，不复制文件。</p>
+<h2 id="3-thinkingjson-结构">3. thinking.json 结构<a class="header-anchor" href="#3-thinkingjson-结构">#</a></h2>
+<p>声明该 provider 的 API 怎么接收 thinking/effort 参数。</p>
+<h3 id="31-字段定义">3.1 字段定义<a class="header-anchor" href="#31-字段定义">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wire_format</code></td>
+<td><code>&quot;effort_string&quot;</code> / <code>&quot;budget_tokens&quot;</code> / <code>&quot;none&quot;</code></td>
+<td>API 接受字符串、token 数、还是不支持 thinking</td>
+</tr>
+<tr>
+<td><code>effort_map</code></td>
+<td><code>{框架级别: API字符串}</code></td>
+<td><code>wire_format=&quot;effort_string&quot;</code> 时的映射表</td>
+</tr>
+<tr>
+<td><code>budget_map</code></td>
+<td><code>{框架级别: token数}</code></td>
+<td><code>wire_format=&quot;budget_tokens&quot;</code> 时的映射表</td>
+</tr>
+<tr>
+<td><code>default_effort</code></td>
+<td><code>string</code> / <code>null</code></td>
+<td>用户不选时的默认级别</td>
+</tr>
+<tr>
+<td><code>model_overrides</code></td>
+<td><code>{model_id: {...}}</code></td>
+<td>特定模型的覆盖配置</td>
+</tr>
+<tr>
+<td><code>model_overrides.&lt;id&gt;.effort_map</code></td>
+<td><code>{}</code> 空 dict</td>
+<td>表示该模型不支持 effort 调节</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-示例">3.2 示例<a class="header-anchor" href="#32-示例">#</a></h3>
+<p><strong>Anthropic</strong>——effort 字符串，model_overrides 由 API capabilities 自动写入：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;effort_string&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;minimal&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;xhigh&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;xhigh&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;max&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model_overrides&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;claude-opus-4-8&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="s2">&quot;medium&quot;</span><span class="p">,</span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="nt">&quot;xhigh&quot;</span><span class="p">:</span><span class="s2">&quot;xhigh&quot;</span><span class="p">,</span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="s2">&quot;max&quot;</span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;claude-opus-4-5-20251101&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="s2">&quot;medium&quot;</span><span class="p">,</span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="s2">&quot;high&quot;</span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<p>Opus 4.8 的 override 只有 5 个 key（没有 minimal），所以 UI 显示 5 档。Opus 4.5 只有 3 个 key，UI 显示 3 档。Provider 级别的 <code>effort_map</code> 有 6 个 key，作为没有 override 的模型的 fallback。</p>
+<p><strong>DeepSeek</strong>——V4 五档，R1 无 effort 控制：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;effort_string&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;minimal&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;minimal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;max&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model_overrides&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;deepseek-reasoner&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}},</span>
+<span class="w">    </span><span class="nt">&quot;deepseek-chat&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<p><code>deepseek-reasoner</code> 的 <code>effort_map</code> 是空 dict <code>{}</code>——表示这个模型有 reasoning 能力但不支持 effort 调节（R1 永远全力推理）。<code>deepseek-chat</code> 的空 dict 表示 V3 不支持 reasoning。</p>
+<p><strong>Google Gemini</strong>——用 token 数而非字符串：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;budget_tokens&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;budget_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;minimal&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2048</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">24576</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;xhigh&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">32768</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">65536</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span>
+<span class="p">}</span>
+</code></pre>
+<p><strong>GitHub Copilot</strong>——不支持 thinking：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;none&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="33-thinking_levels-的推导规则">3.3 thinking_levels 的推导规则<a class="header-anchor" href="#33-thinking_levels-的推导规则">#</a></h3>
+<p>UI 显示几档不是手动维护的，而是从映射表的 key 自动推导：</p>
+<ol>
+<li><code>reasoning=false</code> → 空列表，UI 不显示滑块</li>
+<li>有 <code>model_overrides</code> 且 <code>effort_map</code> 不是 null → 用 override 的 key（空 <code>{}</code> → 空列表 → UI 不显示）</li>
+<li>无 override → 用 provider 级别的 <code>effort_map</code>/<code>budget_map</code> 的 key</li>
+<li>无 thinking.json → fallback 的 key（low/medium/high）</li>
+</ol>
+<h2 id="4-modelsjson-结构">4. models.json 结构<a class="header-anchor" href="#4-modelsjson-结构">#</a></h2>
+<p>Fetch Models 生成，存在 provider 文件夹里，不进 git：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepseek&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepseek-v4-flash&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepseek-v4-flash&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;reasoning&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;thinking_levels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;minimal&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;max&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;default_thinking_level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;context_window&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1000000</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">384000</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;input_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.14</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;output_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.28</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre>
+<p>Anthropic 的 models.json 还包含 <code>supports_adaptive</code> 字段（从 capabilities API 获取）。</p>
+<h2 id="5-fetch-流程">5. Fetch 流程<a class="header-anchor" href="#5-fetch-流程">#</a></h2>
+<p>用户在 Settings 里点&quot;Fetch Models&quot;触发：</p>
+<pre><code>1. fetchers/__init__.py: fetch_models_remote(provider_id)
+       │
+       ▼
+2. 选 fetcher（_FETCHERS 表 或 通用 _fetch_openai_compat）
+       │
+       ▼
+3. 调 provider 的 API（如 /v1/models）拿模型列表
+       │
+       ├── Anthropic: 对每个模型额外调 GET /v1/models/{id}
+       │   → _extract_thinking_caps() 提取 effort/adaptive capabilities
+       │
+       ├── 其他: _load_probe(provider_id) 调 probe_thinking.probe()
+       │   → 从 model id 推断 reasoning 能力
+       │
+       ▼
+4. enrichment: 合并 models.dev 数据（pricing、reasoning 标记）
+       │
+       ▼
+5. 写入 providers/&lt;provider_dir&gt;/models.json
+       │
+       ▼
+6. 前端重新请求 /api/agent_settings → UI 刷新
+</code></pre>
+<h2 id="6-数据合并三层叠加">6. 数据合并：三层叠加<a class="header-anchor" href="#6-数据合并三层叠加">#</a></h2>
+<p><code>listing.py</code> 的 <code>list_models_for_provider()</code> 是模型数据的唯一出口。它把三层数据合并成最终结果：</p>
+<pre><code>第 1 层: combined_models(provider_id)
+         = models.json (Fetch 数据) + models.dev (pricing/caps)
+         → 得到每个模型的基础信息 (id, reasoning, context_window, ...)
+
+第 2 层: thinking_spec.derive_thinking_fields()
+         = 读 thinking.json → model_overrides → provider 级别映射 → fallback
+         → 得到 thinking_levels / default / variant
+
+第 3 层: Fetch 数据里的 thinking_levels（当第 2 层无结果时用）
+         → models.dev 或 API capabilities 提供的 thinking_levels
+</code></pre>
+<p>合并后的结果被三个消费方使用：</p>
+<table>
+<thead>
+<tr>
+<th>消费方</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_models_for_provider()</code></td>
+<td>Settings 页面的模型表格</td>
+</tr>
+<tr>
+<td><code>list_enabled_models()</code></td>
+<td>Chat 页面的模型选择器（委托给上面）</td>
+</tr>
+<tr>
+<td><code>get_thinking_config_for_model()</code></td>
+<td>UI thinking picker 的选项列表（委托给上面）</td>
+</tr>
+</tbody>
+</table>
+<p>三个消费方走同一条路径，保证前端显示和后端数据完全一致。</p>
+<h2 id="7-modelsdev-的角色">7. models.dev 的角色<a class="header-anchor" href="#7-modelsdev-的角色">#</a></h2>
+<p><code>models.dev</code> 是跨 provider 的通用数据源，提供：</p>
+<ul>
+<li>没 Fetch 过的 provider 的模型列表（兜底）</li>
+<li>pricing（官方 API 通常不返回价格）</li>
+<li>reasoning 标记、能力细节</li>
+</ul>
+<p>缓存在内存，TTL 24h，启动时惰性刷新。不存在 provider 文件夹里（它是跨 provider 的，不属于任何一个）。</p>
+<h2 id="8-加新-provider-的步骤">8. 加新 provider 的步骤<a class="header-anchor" href="#8-加新-provider-的步骤">#</a></h2>
+<h3 id="81-有专属-api-的-provider如-deepseek">8.1 有专属 API 的 provider（如 DeepSeek）<a class="header-anchor" href="#81-有专属-api-的-provider如-deepseek">#</a></h3>
+<ol>
+<li>创建 <code>providers/&lt;name&gt;/</code> 目录</li>
+<li>写 <code>thinking.json</code>（声明 wire_format、effort_map、必要的 model_overrides）</li>
+<li>写 <code>probe_thinking.py</code>（暴露 <code>probe()</code> 函数，从 API 或 model id 推断 reasoning）</li>
+<li>在 <code>fetchers/</code> 里加一个专属 fetcher（或走通用 <code>_fetch_openai_compat</code>）</li>
+<li>用户点 Fetch → models.json 自动生成 → UI 自动显示</li>
+</ol>
+<h3 id="82-社区-provider如-groqmistral">8.2 社区 provider（如 groq、mistral）<a class="header-anchor" href="#82-社区-provider如-groqmistral">#</a></h3>
+<p>什么都不用做。用户在 Settings 里填 API key + 点 Fetch：</p>
+<ul>
+<li>Fetch 走通用 <code>_fetch_openai_compat</code></li>
+<li>thinking.json 缺失 → 自动用 fallback（low/medium/high）</li>
+<li>probe_thinking.py 缺失 → 静默跳过</li>
+<li>models.json 写入时自动创建文件夹</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-核心原则">1. 核心原则</a>
+<a class="" href="#2-文件布局">2. 文件布局</a>
+<a class="lvl-3" href="#21-没有文件夹的-provider">2.1 没有文件夹的 provider</a>
+<a class="lvl-3" href="#22-provider-alias">2.2 Provider alias</a>
+<a class="" href="#3-thinkingjson-结构">3. thinking.json 结构</a>
+<a class="lvl-3" href="#31-字段定义">3.1 字段定义</a>
+<a class="lvl-3" href="#32-示例">3.2 示例</a>
+<a class="lvl-3" href="#33-thinking_levels-的推导规则">3.3 thinking_levels 的推导规则</a>
+<a class="" href="#4-modelsjson-结构">4. models.json 结构</a>
+<a class="" href="#5-fetch-流程">5. Fetch 流程</a>
+<a class="" href="#6-数据合并三层叠加">6. 数据合并：三层叠加</a>
+<a class="" href="#7-modelsdev-的角色">7. models.dev 的角色</a>
+<a class="" href="#8-加新-provider-的步骤">8. 加新 provider 的步骤</a>
+<a class="lvl-3" href="#81-有专属-api-的-provider如-deepseek">8.1 有专属 API 的 provider（如 DeepSeek）</a>
+<a class="lvl-3" href="#82-社区-provider如-groqmistral">8.2 社区 provider（如 groq、mistral）</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../../assets/site.js"></script>
+</body>
+</html>

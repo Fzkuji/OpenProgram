@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Standard — how an agentic program plugs into OpenProgram · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations" open><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink active" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="harness-standard-how-an-agentic-program-plugs-into-openprogram">Harness Standard — how an agentic program plugs into OpenProgram<a class="header-anchor" href="#harness-standard-how-an-agentic-program-plugs-into-openprogram">#</a></h1>
+<blockquote>
+<p>Status: standard / spec. The contract every <strong>harness</strong> (a self-contained
+agentic program shipped as its own repo) must satisfy so that cloning it
+into OpenProgram's <code>agentics/</code> folder makes it <strong>auto-detected and usable
+with no host edits</strong>. The three first-party harnesses (GUI / Research /
+Wiki) are the reference implementations; third parties follow the same
+rules.
+Related: <a href="../../installing-harnesses.html"><code>../installing-harnesses.md</code></a>
+(install procedure), <code>openprogram/functions/_registry.py</code> (the loader),
+<code>openprogram/functions/_programs.py</code> (first-party catalogue).</p>
+</blockquote>
+<h2 id="0-the-one-rule-that-matters">0. The one rule that matters<a class="header-anchor" href="#0-the-one-rule-that-matters">#</a></h2>
+<p><strong>A harness is anything you drop into <code>&lt;openprogram&gt;/functions/agentics/</code>
+that exposes its functions through <code>&lt;pkg&gt;/agentics/__init__.py</code>.</strong> The host
+walks that folder on startup (and, with hot-reload, whenever it changes),
+finds the inner package, imports <code>&lt;pkg&gt;.agentics</code>, and the
+<code>@agentic_function</code> decorators self-register. Nothing else is required and
+no host file is edited.</p>
+<pre><code>&lt;Harness-Repo&gt;/                    ← what you git clone into agentics/
+└── &lt;pkg&gt;/                         ← importable package; folder name == import name
+    ├── __init__.py                ← marks it a package (may re-export niceties)
+    └── agentics/
+        └── __init__.py            ← THE ENTRY POINT — exposes AGENTIC_FUNCTIONS
+</code></pre>
+<p>If a cloned folder doesn't match this shape, the host <strong>silently ignores
+it</strong> (a non-harness folder must never break the load). So &quot;auto-detect&quot;
+== &quot;matches this contract&quot;.</p>
+<h2 id="1-the-entry-point-agentics__init__py">1. The entry point: <code>&lt;pkg&gt;/agentics/__init__.py</code><a class="header-anchor" href="#1-the-entry-point-agentics__init__py">#</a></h2>
+<p>Must define <code>AGENTIC_FUNCTIONS</code> — a list of <code>@agentic_function</code>-decorated
+callables. Importing this module fires the decorators, which register the
+functions into the shared tool registry. The list is also the harness's
+declared public surface.</p>
+<p><strong>Required pattern — degrade gracefully, never crash the host:</strong></p>
+<pre><code class="language-python"><span class="c1"># &lt;pkg&gt;/agentics/__init__.py</span>
+<span class="sd">&quot;&quot;&quot;Entry point for the Foo harness.&quot;&quot;&quot;</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.foo_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">foo_agent</span><span class="p">,</span> <span class="n">foo_helper</span>
+    <span class="n">AGENTIC_FUNCTIONS</span> <span class="o">=</span> <span class="p">[</span><span class="n">foo_agent</span><span class="p">,</span> <span class="n">foo_helper</span><span class="p">]</span>
+<span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>          <span class="c1"># missing optional dep, unsupported platform, …</span>
+    <span class="c1"># The host imports this module during discovery. If the harness can&#39;t</span>
+    <span class="c1"># load on this machine (a heavy dep isn&#39;t installed, this OS has no</span>
+    <span class="c1"># backend, …), expose NOTHING rather than raising — &quot;can run → listed,</span>
+    <span class="c1"># can&#39;t → skipped&quot;, per the discovery contract. The host logs the</span>
+    <span class="c1"># cause under OPENPROGRAM_DEBUG_REGISTRY=1.</span>
+    <span class="n">AGENTIC_FUNCTIONS</span> <span class="o">=</span> <span class="p">[]</span>
+</code></pre>
+<p>Rules:</p>
+<ul>
+<li><code>AGENTIC_FUNCTIONS</code> <strong>must always be defined</strong> (even if <code>[]</code>).</li>
+<li>The <code>try/except</code> is <strong>mandatory</strong> — a harness that can't run on this
+machine must yield <code>[]</code>, not propagate an <code>ImportError</code>. This is what
+makes &quot;clone anything in, the ones that can run light up, the rest stay
+dark&quot; work.</li>
+<li>Don't do heavy work at import time (no model downloads, no network, no
+GUI grab). Import must be cheap and side-effect-free beyond registration.</li>
+</ul>
+<h2 id="2-the-package">2. The package: <code>&lt;pkg&gt;/</code><a class="header-anchor" href="#2-the-package">#</a></h2>
+<ul>
+<li><strong>Folder name == import name.</strong> <code>gui_harness/</code> is imported as
+<code>gui_harness</code>. The host puts the harness root on <code>sys.path</code> so the
+harness's own absolute imports (<code>from gui_harness.x import y</code>) resolve.
+A hyphenated <em>repo</em> folder (<code>GUI-Agent-Harness/</code>) is fine — the host
+finds the inner ascii-identifier package inside it.</li>
+<li>May vendor sibling packages (e.g. GUI harness ships <code>desktop_env/</code>
+alongside <code>gui_harness/</code>). The host picks the <strong>one</strong> package that has
+an <code>agentics/</code> sub-package as the entry; vendored siblings are ignored
+by discovery and just ride along on <code>sys.path</code>.</li>
+</ul>
+<h2 id="3-configuration-the-unified-convention">3. Configuration — the unified convention<a class="header-anchor" href="#3-configuration-the-unified-convention">#</a></h2>
+<p>Harnesses differ wildly in what they configure (Research: providers +
+work dir; Wiki: a vault path; GUI: vision model + platform backend). The
+<strong>standard is the mechanism, not the parameters</strong>:</p>
+<ol>
+<li><strong>Per-call parameters first.</strong> Anything that varies per invocation is a
+function argument with a sane default:<pre><code class="language-python"><span class="nd">@agentic_function</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;foo_agent&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">foo_agent</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">max_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">15</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span> <span class="o">...</span>
+</code></pre>
+</li>
+<li><strong>The runtime is injected, never constructed.</strong> A harness function that
+needs an LLM declares a <code>runtime</code> parameter; the host injects the
+active runtime. Harnesses <strong>must not</strong> build their own provider /
+read <code>ANTHROPIC_API_KEY</code> themselves for the in-host path — provider
+selection and auth belong to the host. (A harness MAY keep a
+standalone CLI that calls <code>create_runtime(...)</code> for use outside the
+host; that's separate from the in-host entry point.)</li>
+<li><strong>Environment variables for machine-level settings</strong>, namespaced with
+the harness's prefix, documented in the README:<pre><code>WAH_VAULT          # Wiki: vault root
+GUI_AGENT_MEMORY   # GUI: learned-component store
+</code></pre>
+</li>
+<li><strong>No config files required to start.</strong> A harness must work with zero
+config (sensible defaults); config is opt-in override, never a setup
+gate. No mandatory wizard / first-run prompt.</li>
+<li><strong>State / scratch goes under the host state dir</strong>, not a hand-rolled
+home path. Use <code>openprogram.paths.get_state_dir()</code> (→ <code>~/.openprogram/</code>)
+as the base; <strong>never hardcode <code>~/.agentic/...</code></strong> (that path is retired).
+A per-harness subdir is the convention:
+<code>get_state_dir() / &quot;harnesses&quot; / &quot;&lt;pkg&gt;&quot;</code>.</li>
+</ol>
+<h2 id="4-dependencies">4. Dependencies<a class="header-anchor" href="#4-dependencies">#</a></h2>
+<ul>
+<li><strong>Do NOT declare <code>openprogram</code> as a git dependency.</strong> The host is the
+thing importing the harness, so it's already installed. A
+<code>openprogram @ git+https://...</code> line in the harness's <code>pyproject.toml</code>
+causes <code>pip install &lt;harness&gt;</code> to re-fetch and possibly downgrade the
+host. List openprogram only as a documented <em>assumption</em> (&quot;install into
+an environment that already has openprogram&quot;), not a hard dep.</li>
+<li><strong>Declare the harness's own third-party deps</strong> (torch, Jinja2, …) in its
+<code>pyproject.toml</code> / <code>requirements.txt</code>. Installing those is the
+<strong>harness's</strong> install step (run when the user installs the harness),
+not OpenProgram's concern — the host never auto-installs harness deps.</li>
+<li><strong>Heavy / native deps go behind an extra</strong> so a light clone stays light:<pre><code class="language-toml"><span class="k">[project.optional-dependencies]</span>
+<span class="n">ocr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;easyocr&quot;</span><span class="p">]</span>
+</code></pre>
+</li>
+<li>The graceful-degrade <code>try/except</code> in §1 is what lets a harness be
+<em>cloned</em> before its deps are installed without breaking the host — it
+just stays dark until the deps are present.</li>
+</ul>
+<h2 id="5-platform-support">5. Platform support<a class="header-anchor" href="#5-platform-support">#</a></h2>
+<ul>
+<li>A harness MAY be platform-specific in its own code (GUI harness drives
+the desktop; its macOS / Linux backends differ, and Windows may be
+unimplemented). That's allowed.</li>
+<li><strong>Express &quot;unsupported here&quot; as <code>AGENTIC_FUNCTIONS = []</code></strong>, via the §1
+<code>try/except</code> or an explicit <code>platform.system()</code> check — never as an
+uncaught <code>NotImplementedError</code> at import. Install/registration always
+succeeds; whether a function is <em>listed</em> reflects whether it can run on
+this OS.</li>
+<li>Detect backends at runtime (<code>shutil.which</code>, <code>importlib.util.find_spec</code>),
+don't assume. Document the per-OS setup in the harness README.</li>
+</ul>
+<h2 id="6-discovery-hot-reload-host-side-what-a-harness-can-rely-on">6. Discovery &amp; hot-reload (host side — what a harness can rely on)<a class="header-anchor" href="#6-discovery-hot-reload-host-side-what-a-harness-can-rely-on">#</a></h2>
+<ul>
+<li><strong>Startup:</strong> the host imports every matching folder under <code>agentics/</code>.</li>
+<li><strong>Hot-reload (planned):</strong> the host watches <code>agentics/</code> and, when a new
+folder appears, runs the same discovery on it and broadcasts a
+<code>programs:changed</code> event so the web UI lists the new harness without a
+restart. A harness needs to do nothing special — just satisfy §1.</li>
+<li><strong>First-party catalogue:</strong> GUI / Research / Wiki are also listed in
+<code>_programs.py</code> so <code>openprogram programs install &lt;name&gt;</code> can clone them
+by name. Third-party harnesses skip the catalogue and are installed by
+cloning into <code>agentics/</code> directly; discovery treats them identically.</li>
+</ul>
+<h2 id="7-conformance-checklist-for-a-harness-author">7. Conformance checklist (for a harness author)<a class="header-anchor" href="#7-conformance-checklist-for-a-harness-author">#</a></h2>
+<ul class="contains-task-list">
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> Repo clones into <code>agentics/&lt;Repo-Name&gt;/</code>; inside is a package
+<code>&lt;pkg&gt;/</code> whose folder name equals its import name.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> <code>&lt;pkg&gt;/agentics/__init__.py</code> defines <code>AGENTIC_FUNCTIONS = [...]</code>.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> That module wraps its imports in <code>try/except</code> → <code>[]</code> on failure.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> Import is cheap: no network / model-download / GUI grab at import.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> LLM access via an injected <code>runtime</code> parameter, not self-built.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> No required config file / wizard; works at zero-config defaults.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> State under <code>get_state_dir()</code>, never <code>~/.agentic</code> or another
+hardcoded home path.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> <code>openprogram</code> is NOT a git dependency in <code>pyproject.toml</code>.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> Own third-party deps declared; heavy/native ones behind an extra.</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> Platform-unsupported → <code>AGENTIC_FUNCTIONS = []</code>, not a crash.</li>
+</ul>
+<h2 id="8-where-the-three-first-party-harnesses-stand-today-gap-list">8. Where the three first-party harnesses stand today (gap list)<a class="header-anchor" href="#8-where-the-three-first-party-harnesses-stand-today-gap-list">#</a></h2>
+<p>Captured from a survey of the current repos — these are the changes
+needed to bring them to this standard (tracked for when we update them):</p>
+<table>
+<thead>
+<tr>
+<th>Harness</th>
+<th>Conforms?</th>
+<th>Gap to close</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Wiki</strong></td>
+<td>✅ closest</td>
+<td><code>agentics/__init__.py</code> + <code>AGENTIC_FUNCTIONS</code> + <code>try/except</code> already present. Fix: default vault path uses retired <code>~/.agentic/memory/wiki</code> → move under <code>get_state_dir()</code>. Drop <code>openprogram</code> git dep.</td>
+</tr>
+<tr>
+<td><strong>GUI</strong></td>
+<td>⚠ partial</td>
+<td>Exposes functions but no single standard <code>&lt;pkg&gt;/agentics/__init__.py</code> with <code>AGENTIC_FUNCTIONS</code>; decorators are spread across modules. Add the entry module. Keep heavy deps behind an extra (already partly done). Windows path: degrade to <code>[]</code>, don't crash. Drop <code>openprogram</code> git dep.</td>
+</tr>
+<tr>
+<td><strong>Research</strong></td>
+<td>❌ non-conforming</td>
+<td><strong>No <code>agentics/</code> sub-package at all</strong> — uses its own <code>registry.py</code>, so the host's auto-discovery can't see it. Add <code>research_harness/agentics/__init__.py</code> exposing <code>AGENTIC_FUNCTIONS</code>. Drop <code>openprogram</code> git dep.</td>
+</tr>
+</tbody>
+</table>
+<p>All three currently declare <code>openprogram @ git+…</code> as a dependency (§4
+violation) — removing that is a shared fix.</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#0-the-one-rule-that-matters">0. The one rule that matters</a>
+<a class="" href="#1-the-entry-point-agentics__init__py">1. The entry point: &amp;lt;pkg&amp;gt;/agentics/__init__.py</a>
+<a class="" href="#2-the-package">2. The package: &amp;lt;pkg&amp;gt;/</a>
+<a class="" href="#3-configuration-the-unified-convention">3. Configuration — the unified convention</a>
+<a class="" href="#4-dependencies">4. Dependencies</a>
+<a class="" href="#5-platform-support">5. Platform support</a>
+<a class="" href="#6-discovery-hot-reload-host-side-what-a-harness-can-rely-on">6. Discovery &amp;amp; hot-reload (host side — what a harness can rely on)</a>
+<a class="" href="#7-conformance-checklist-for-a-harness-author">7. Conformance checklist (for a harness author)</a>
+<a class="" href="#8-where-the-three-first-party-harnesses-stand-today-gap-list">8. Where the three first-party harnesses stand today (gap list)</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

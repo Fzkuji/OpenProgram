@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills &amp; Plugins — 设计稿 v2（博采众长，全功能） · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations" open><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink active" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="skills-plugins-设计稿-v2博采众长全功能">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）<a class="header-anchor" href="#skills-plugins-设计稿-v2博采众长全功能">#</a></h1>
+<p>目标：把 claude-code / opencode / hermes 三家的 skill &amp; plugin 能力<strong>全部</strong>纳入，遇到栈不同就换等价物，并在我们独有的宿主优势上做差异化优化。</p>
+<p>参考实现：</p>
+<ul>
+<li><code>references/claude-code-leaked/src/{skills,plugins,commands/{skills,plugin}}</code></li>
+<li><code>references/opencode/packages/opencode/src/{skill,plugin}</code>、<code>packages/plugin</code>、<code>.opencode/{skills,plugins}</code></li>
+<li><code>references/hermes-agent/{skills,plugins,optional-skills}</code>、<code>web/src/plugins</code></li>
+</ul>
+<hr />
+<h2 id="1-概念与文件约定">1. 概念与文件约定<a class="header-anchor" href="#1-概念与文件约定">#</a></h2>
+<h3 id="skill">Skill<a class="header-anchor" href="#skill">#</a></h3>
+<p>单位：一个目录，含 <code>SKILL.md</code> + 可选 <code>references/</code>、<code>templates/</code>、其它资源。</p>
+<p><code>SKILL.md</code> frontmatter（claude-code 标准 + opencode/hermes 增量）：</p>
+<pre><code class="language-yaml"><span class="nn">---</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-skill</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">One-line trigger description (LLM reads this to decide invocation)</span>
+<span class="nt">category</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">devops</span><span class="w">              </span><span class="c1"># hermes 风格分组</span>
+<span class="nt">optional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">               </span><span class="c1"># hermes optional-skills 取代目录区分</span>
+<span class="nt">allowed-tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Read</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Edit</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># claude-code: 限定可用工具</span>
+<span class="nt">triggers</span><span class="p">:</span><span class="w">                     </span><span class="c1"># 显式触发条件（我们的扩展，三家都未真用）</span>
+<span class="w">  </span><span class="nt">keywords</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;deploy&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;ci&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">file_patterns</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;*.yml&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">slash</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/deploy&quot;</span>
+<span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0.0</span>
+<span class="nt">author</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<span class="nn">---</span>
+</code></pre>
+<p>来源（合并显示，冲突时后者覆盖前者）：</p>
+<ol>
+<li><strong>Bundled</strong> — <code>openprogram/skills_bundled/&lt;name&gt;/</code>（随包发布，对标 claude-code <code>src/skills/bundled</code>）</li>
+<li><strong>User</strong> — <code>~/.openprogram/skills/&lt;name&gt;/</code></li>
+<li><strong>Project</strong> — <code>&lt;project&gt;/skills/&lt;name&gt;/</code>（已存在）</li>
+<li><strong>Plugin-provided</strong> — 已启用 plugin 贡献</li>
+<li><strong>Remote-pulled</strong> — <code>~/.openprogram/cache/skills/&lt;name&gt;/</code>（对标 opencode discovery，按 index 远端拉取）</li>
+</ol>
+<p>资源布局（hermes 约定）：<code>SKILL.md</code> + <code>references/</code> + <code>templates/</code>。</p>
+<h3 id="plugin">Plugin<a class="header-anchor" href="#plugin">#</a></h3>
+<p>单位：一个包，含 manifest + 入口。<strong>三种 manifest 都支持</strong>，统一解析：</p>
+<ul>
+<li><code>plugin.json</code>（claude-code / hermes 风格）</li>
+<li><code>pyproject.toml</code> 内 <code>[tool.openprogram.plugin]</code>（Python 原生）</li>
+<li><code>package.json</code> 内 <code>&quot;openprogram&quot;</code> 字段（Node 原生，opencode 风格）</li>
+</ul>
+<p>manifest 字段：</p>
+<pre><code class="language-jsonc">{
+  &quot;name&quot;: &quot;...&quot;,
+  &quot;version&quot;: &quot;...&quot;,
+  &quot;description&quot;: &quot;...&quot;,
+  &quot;deprecated&quot;: false,            // opencode 风格
+  &quot;compatibility&quot;: &quot;&gt;=0.1.0&quot;,     // opencode 风格 minVersion 检查
+  &quot;trust&quot;: &quot;community&quot;,           // community | verified
+  &quot;entrypoints&quot;: {
+    &quot;commands&quot;:   &quot;...&quot;,
+    &quot;skills&quot;:     &quot;./skills&quot;,
+    &quot;agents&quot;:     &quot;...&quot;,
+    &quot;hooks&quot;:      &quot;...&quot;,
+    &quot;mcpServers&quot;: &quot;...&quot;,
+    &quot;providers&quot;:  &quot;...&quot;,          // opencode 风格：LLM provider 注入
+    &quot;web&quot;:        &quot;./web/dist&quot;    // hermes 风格 dashboard，可注册前端
+  },
+  &quot;sidebar&quot;: [                     // 我们的扩展：plugin 注册一等公民侧栏项
+    { &quot;label&quot;: &quot;My Tool&quot;, &quot;icon&quot;: &quot;...&quot;, &quot;route&quot;: &quot;/plugin/my-plugin/tool&quot; }
+  ],
+  &quot;options&quot;: { /* JSON Schema, 对照 PluginOptionsDialog.tsx */ }
+}
+</code></pre>
+<p>来源：</p>
+<ol>
+<li><strong>Installed via pip</strong> — Python 包，扫描 entry_points group <code>openprogram.plugins</code></li>
+<li><strong>Installed via npm</strong> — Node 包，<code>~/.openprogram/plugins/node_modules/&lt;name&gt;/</code>（opencode 风格 PluginLoader）</li>
+<li><strong>Local path</strong> — <code>~/.openprogram/plugins/&lt;name&gt;/</code>（hermes 风格，手动放）</li>
+<li><strong>Project-pinned</strong> — <code>&lt;project&gt;/.openprogram/plugins.json</code>（声明启用、版本、source）</li>
+</ol>
+<hr />
+<h2 id="2-后端">2. 后端<a class="header-anchor" href="#2-后端">#</a></h2>
+<h3 id="目录">目录<a class="header-anchor" href="#目录">#</a></h3>
+<pre><code>openprogram/
+  skills/
+    loader.py           # 五来源合并加载
+    discovery.py        # 远端 index 按需 pull（对标 opencode discovery.ts）
+    watcher.py          # watchdog 文件监听，热重载 + WS 广播
+  skills_bundled/       # 内置 skills
+    ...
+  plugins/
+    loader.py           # 多 manifest 解析、安装、卸载
+    sandbox.py          # 分层沙箱：subprocess / in-process
+    marketplace.py      # 多 marketplace、claude-code schema 适配
+    trust.py            # 信任策略 + 持久化
+    bundled/
+  webui/routes/
+    skills.py
+    plugins.py
+</code></pre>
+<h3 id="skills-apiroutesskillspy">Skills API（<code>routes/skills.py</code>）<a class="header-anchor" href="#skills-apiroutesskillspy">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/skills</code></td>
+<td>五来源合并列表，含 source / enabled / category / optional</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/skills/{name}</code></td>
+<td><a href="http://SKILL.md">SKILL.md</a> 全文 + frontmatter + 资源文件树</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/skills</code></td>
+<td>新建到 project / user</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/skills/{name}</code></td>
+<td>仅删 project / user / remote-cache</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/skills/{name}/toggle</code></td>
+<td>enable/disable</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/skills/{name}/invoke-trace</code></td>
+<td>返回上次 LLM 调用本 skill 的注入记录（独有）</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/skills/discovery/sources</code></td>
+<td>列已注册的远端 index</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/skills/discovery/sources</code></td>
+<td>添加远端 index</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/skills/discovery/pull</code></td>
+<td>按 index 拉单个 skill 到 cache</td>
+</tr>
+<tr>
+<td>WS</td>
+<td><code>skills:changed</code></td>
+<td>watcher 触发</td>
+</tr>
+</tbody>
+</table>
+<h3 id="plugins-apiroutespluginspy">Plugins API（<code>routes/plugins.py</code>）<a class="header-anchor" href="#plugins-apiroutespluginspy">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/plugins</code></td>
+<td>已装列表 + 状态 + 错误</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/plugins/{name}</code></td>
+<td>详情 + manifest + entrypoints 加载状态</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/plugins/install</code></td>
+<td>`{source: pip</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/plugins/{name}/uninstall</code></td>
+<td></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/plugins/{name}/toggle</code></td>
+<td></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/plugins/{name}/reload</code></td>
+<td>对标 claude-code <code>/reload-plugins</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/plugins/{name}/validate</code></td>
+<td>对标 <code>ValidatePlugin.tsx</code>，dry-run 检查</td>
+</tr>
+<tr>
+<td>GET / POST</td>
+<td><code>/api/plugins/{name}/options</code></td>
+<td>options JSON Schema 读写</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/plugins/{name}/trust</code></td>
+<td>设置 trust 等级，影响沙箱策略</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/plugins/marketplaces</code></td>
+<td>列 marketplace</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/plugins/marketplaces</code></td>
+<td>添加（兼容 claude-code marketplace schema）</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/plugins/marketplace/{id}/index</code></td>
+<td>浏览，搜索 / 分类 / 分页</td>
+</tr>
+<tr>
+<td>WS</td>
+<td><code>plugins:changed</code></td>
+<td></td>
+</tr>
+<tr>
+<td>WS</td>
+<td><code>plugins:error</code></td>
+<td>加载失败实时推送</td>
+</tr>
+</tbody>
+</table>
+<h3 id="plugin-贡献入口的接合点">Plugin 贡献入口的接合点<a class="header-anchor" href="#plugin-贡献入口的接合点">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>入口类型</th>
+<th>注入到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>skills</td>
+<td>skill 注册表（与文件系统 skills 合流）</td>
+</tr>
+<tr>
+<td>commands</td>
+<td><code>availableFunctions</code>，附 <code>source=plugin:&lt;name&gt;</code> tag</td>
+</tr>
+<tr>
+<td>mcpServers</td>
+<td>现有 <code>openprogram/mcp/</code> registry，<code>/mcp</code> 页面零改动</td>
+</tr>
+<tr>
+<td>providers</td>
+<td>provider 注册表（对应 openprogram provider 体系，opencode 风格）</td>
+</tr>
+<tr>
+<td>agents</td>
+<td>subagent 注册表</td>
+</tr>
+<tr>
+<td>hooks</td>
+<td>事件总线（PreToolUse / PostToolUse / SessionStart / Stop 等）</td>
+</tr>
+<tr>
+<td>web</td>
+<td>静态资源挂载到 <code>/plugin/&lt;name&gt;/static/</code>，Next.js 动态路由 <code>/plugin/[name]/[...slug]</code> 渲染</td>
+</tr>
+<tr>
+<td>sidebar</td>
+<td>推到 sidebar store 的 plugin section（独有）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="沙箱分层">沙箱（分层）<a class="header-anchor" href="#沙箱分层">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>trust</th>
+<th>加载方式</th>
+<th>失败行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>verified</code></td>
+<td>in-process import</td>
+<td>加载失败仅禁用该 plugin</td>
+</tr>
+<tr>
+<td><code>community</code></td>
+<td>subprocess + RPC（stdin/stdout JSON-RPC），CPU / 内存 / FS 限额</td>
+<td>进程崩溃不影响主进程</td>
+</tr>
+<tr>
+<td><code>untrusted</code></td>
+<td>拒绝加载，UI 弹 trust 确认</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>Hook 执行始终走 subprocess（即使 verified），与 claude-code 一致。</p>
+<hr />
+<h2 id="3-前端">3. 前端<a class="header-anchor" href="#3-前端">#</a></h2>
+<h3 id="侧栏新增webcomponentssidebarsidebartsx">侧栏新增（<code>web/components/sidebar/sidebar.tsx</code>）<a class="header-anchor" href="#侧栏新增webcomponentssidebarsidebartsx">#</a></h3>
+<pre><code>New chat
+Functions
+Skills        ← 新增
+Plugins       ← 新增
+MCP Servers
+Memory
+Chats
+─────────── (plugin 注册的侧栏项动态插入到此分隔下)
+&lt;Plugin A nav&gt;
+&lt;Plugin B nav&gt;
+</code></pre>
+<h3 id="路由">路由<a class="header-anchor" href="#路由">#</a></h3>
+<ul>
+<li><code>/skills</code> — 列表（按 category 分组、optional 折叠）、详情、新建、远端 index 管理</li>
+<li><code>/plugins</code> — Installed / Marketplace / Errors 三 tab
+<ul>
+<li>Installed：<code>UnifiedInstalledCell</code>-style 行</li>
+<li>Marketplace：marketplace 选择器 + 卡片浏览 + 安装（移植 <code>BrowseMarketplace / AddMarketplace / DiscoverPlugins</code>）</li>
+<li>Errors：移植 <code>PluginErrors</code></li>
+</ul>
+</li>
+<li><code>/plugin/[name]/[...slug]</code> — 动态渲染 plugin 自带前端（来自 <code>web/dist</code>）</li>
+<li><code>/skills/[name]/trace</code> — Skill 调用记录可视化（独有）</li>
+</ul>
+<h3 id="组件">组件<a class="header-anchor" href="#组件">#</a></h3>
+<pre><code>web/components/skills/
+  skills-list.tsx, skill-detail.tsx, new-skill-dialog.tsx,
+  discovery-sources.tsx, invoke-trace.tsx
+web/components/plugins/
+  installed-list.tsx, marketplace-browser.tsx, add-marketplace-dialog.tsx,
+  plugin-options-dialog.tsx, plugin-trust-warning.tsx, plugin-errors.tsx,
+  validate-plugin.tsx, plugin-detail.tsx, plugin-host.tsx (iframe / dynamic mount)
+</code></pre>
+<h3 id="store">Store<a class="header-anchor" href="#store">#</a></h3>
+<p><code>lib/skills-store.ts</code>、<code>lib/plugins-store.ts</code>，WS 订阅 <code>skills:changed</code> / <code>plugins:changed</code> / <code>plugins:error</code>。</p>
+<hr />
+<h2 id="4-独有优化三家都没有-都很弱">4. 独有优化（三家都没有 / 都很弱）<a class="header-anchor" href="#4-独有优化三家都没有-都很弱">#</a></h2>
+<ol>
+<li><strong>Plugin 一等公民侧栏项</strong>：manifest <code>sidebar: [...]</code> → 自动注入侧栏，等同内置导航</li>
+<li><strong>Skill 调用 trace</strong>：每次 SkillTool 调用记录 <code>{ skill, injected_md_hash, accessed_refs, ts }</code>，右栏 / <code>/skills/[name]/trace</code> 可视化</li>
+<li><strong>Skill 热重载</strong>：watchdog 监听五来源任一变动 → 重新解析 → WS 广播，无需 <code>/reload</code></li>
+<li><strong>三 manifest 统一</strong>：<code>plugin.json</code> / <code>pyproject.toml</code> / <code>package.json</code> 任一形式都能识别，迁移零成本</li>
+<li><strong>跨生态 marketplace 互通</strong>：claude-code marketplace schema 适配层，能直接添加其官方 / 第三方 marketplace</li>
+<li><strong>双轨包管理</strong>：pip + npm 双轨，opencode 的 Node plugin 和 hermes 的 Python plugin 都能装</li>
+<li><strong>显式 triggers</strong>：<code>triggers.{keywords, file_patterns, slash}</code>，对话/文件/命令任一命中即激活提示</li>
+<li><strong>Provider 作为一等贡献类型</strong>：从 opencode 引入，让 LLM provider 也能用 plugin 形式分发</li>
+<li><strong>沙箱分层</strong>：trust 等级映射到加载策略，不是一刀切</li>
+<li><strong>Validate dry-run</strong>：安装前 <code>POST /validate</code> 检查 manifest / 入口 / 依赖 / 兼容性，对标 <code>ValidatePlugin.tsx</code></li>
+</ol>
+<hr />
+<h2 id="5-来自三家的能力清单覆盖确认">5. 来自三家的能力清单覆盖确认<a class="header-anchor" href="#5-来自三家的能力清单覆盖确认">#</a></h2>
+<p><strong>claude-code</strong>：bundled skills ✓、<a href="http://SKILL.md">SKILL.md</a> frontmatter ✓、SkillTool 工具调用 ✓、Marketplace / AddMarketplace / BrowseMarketplace / ManageMarketplaces ✓、ManagePlugins / DiscoverPlugins / ValidatePlugin / PluginErrors / PluginOptionsDialog / PluginTrustWarning / UnifiedInstalledCell ✓、ReloadPlugins ✓、commands/skills/agents/hooks/mcpServers 五入口 ✓</p>
+<p><strong>opencode</strong>：远端 skill discovery（IndexSkill schema）✓、npm 包形态 plugin ✓、Provider plugin ✓、PluginPackage / resolvePluginTarget / compatibility / deprecated 字段 ✓、Effect-style 并发与重试（换 httpx+tenacity）✓</p>
+<p><strong>hermes</strong>：按领域分组 skills ✓（category）、optional 区分 ✓（optional 字段）、<code>SKILL.md</code> + <code>references/</code> + <code>templates/</code> 资源布局 ✓、<code>plugin_api.py</code> 入口 ✓、<code>dashboard/dist/</code> 前端贡献 ✓（升级为 web entrypoint + sidebar 注册）</p>
+<hr />
+<h2 id="6-分期落地">6. 分期落地<a class="header-anchor" href="#6-分期落地">#</a></h2>
+<ul>
+<li>
+<p><strong>M1 Skills 全量</strong>（覆盖三家 skill 能力）</p>
+<ul>
+<li>五来源 loader + watchdog + WS</li>
+<li><a href="http://SKILL.md">SKILL.md</a> 解析（含 triggers / category / optional）</li>
+<li><code>/skills</code> 页面 + bundled 默认集</li>
+<li>SkillTool 内置工具 + invoke trace</li>
+<li>远端 discovery（opencode 等价物）</li>
+</ul>
+</li>
+<li>
+<p><strong>M2 Plugins 本地</strong></p>
+<ul>
+<li>三 manifest 统一解析</li>
+<li>pip / npm / git / path 四种来源安装</li>
+<li>沙箱分层 + trust</li>
+<li>commands / skills / mcpServers / providers / hooks / agents 入口注入</li>
+<li>Installed / Errors 页面 + Validate / Options / Reload</li>
+</ul>
+</li>
+<li>
+<p><strong>M3 Plugins 前端与侧栏</strong></p>
+<ul>
+<li><code>web</code> entrypoint 资源挂载</li>
+<li><code>/plugin/[name]/[...slug]</code> 动态渲染</li>
+<li>sidebar 注册项</li>
+</ul>
+</li>
+<li>
+<p><strong>M4 Marketplace 全套</strong></p>
+<ul>
+<li>多 marketplace、claude-code schema 适配</li>
+<li>BrowseMarketplace / AddMarketplace / DiscoverPlugins 移植</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="7-待确认不阻塞但要选一下">7. 待确认（不阻塞，但要选一下）<a class="header-anchor" href="#7-待确认不阻塞但要选一下">#</a></h2>
+<ol>
+<li><code>~/.openprogram/</code> 还是沿用现有项目约定的某个全局目录</li>
+<li>Provider plugin 入口怎么和 OpenProgram 现有 provider 抽象对齐（要看 <code>openprogram/providers/</code>）</li>
+<li>Hook 事件命名是否对齐 claude-code（PreToolUse 等）</li>
+</ol>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-概念与文件约定">1. 概念与文件约定</a>
+<a class="lvl-3" href="#skill">Skill</a>
+<a class="lvl-3" href="#plugin">Plugin</a>
+<a class="" href="#2-后端">2. 后端</a>
+<a class="lvl-3" href="#目录">目录</a>
+<a class="lvl-3" href="#skills-apiroutesskillspy">Skills API（routes/skills.py）</a>
+<a class="lvl-3" href="#plugins-apiroutespluginspy">Plugins API（routes/plugins.py）</a>
+<a class="lvl-3" href="#plugin-贡献入口的接合点">Plugin 贡献入口的接合点</a>
+<a class="lvl-3" href="#沙箱分层">沙箱（分层）</a>
+<a class="" href="#3-前端">3. 前端</a>
+<a class="lvl-3" href="#侧栏新增webcomponentssidebarsidebartsx">侧栏新增（web/components/sidebar/sidebar.tsx）</a>
+<a class="lvl-3" href="#路由">路由</a>
+<a class="lvl-3" href="#组件">组件</a>
+<a class="lvl-3" href="#store">Store</a>
+<a class="" href="#4-独有优化三家都没有-都很弱">4. 独有优化（三家都没有 / 都很弱）</a>
+<a class="" href="#5-来自三家的能力清单覆盖确认">5. 来自三家的能力清单覆盖确认</a>
+<a class="" href="#6-分期落地">6. 分期落地</a>
+<a class="" href="#7-待确认不阻塞但要选一下">7. 待确认（不阻塞，但要选一下）</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

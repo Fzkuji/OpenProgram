@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context — 上下文层 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context" open><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink active" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="context-上下文层">Context — 上下文层<a class="header-anchor" href="#context-上下文层">#</a></h1>
+<p><strong>把会话历史 + 当前输入,组装成每次喂给 LLM 的内容。</strong> 在
+<a href="../providers/"><code>../providers/</code></a> 的上游:context 产出一个 <code>Context</code>(system /
+messages / tools),providers 把它翻译成各家 wire 请求。</p>
+<p>契约 = <code>Context</code>(system / messages / tools,content block 可带 <code>cache_control</code>)。
+本层决定<strong>喂什么、怎么分层</strong>;providers 决定<strong>怎么发给某一家</strong>。两层解耦。</p>
+<blockquote>
+<p>目标态(每次调用按稳定度分层 + 让模型知道自己的处境)见
+<a href="context-composition.html"><code>context-composition.md</code></a>;本文讲现状机制。</p>
+</blockquote>
+<hr />
+<h2 id="一现状链路">一、现状链路<a class="header-anchor" href="#一现状链路">#</a></h2>
+<p>主聊天路径只有一个真正的上下文组装引擎:</p>
+<pre><code>dispatcher.process_user_turn
+  → engine.prepare()            ← 核心:6 步产出 TurnPrep
+      1. 引用扫描(references)
+      2. 选历史消息  ── commit-chain(默认) 或 dag(flag) 二选一
+      3. 拼 system prompt(身份 + 工作区文件 + 技能 + 记忆)
+      4. 算 token 预算(四分:system / history / tools / 输出预留)
+      5. usage 融合(provider 实测 + 本地估算)
+      6. 返回 TurnPrep
+  → should_auto_compact? → compact()(可选,内联调 LLM 总结)
+  → agent_loop → Context(system, messages, tools) → provider
+</code></pre>
+<p>阈值:70% 提示 / 80% 自动压缩 / 95% 急救(<code>engine.py</code>)。</p>
+<p><strong>主路径 vs 辅助路径</strong>:主路径之外,有 8-10 处功能各自单独调一次 LLM(总结 /
+记忆 sleep / 分支总结 / mixture-of-agents / agentic runtime),它们绕过
+engine.prepare,手搓一个极简 <code>Context</code>(基本只有 system + 一条 user,无 tools)。
+这是有意的分层 —— 这些调用不需要完整聊天上下文。</p>
+<hr />
+<h2 id="二存储模型dag">二、存储模型:DAG<a class="header-anchor" href="#二存储模型dag">#</a></h2>
+<p>会话记忆分两层:</p>
+<ul>
+<li><strong>DAG</strong>:会话真实历史。append-only,永不改写。存 user / assistant / tool /
+runtime 节点,以及 branch / retry / attach / merge 的拓扑。</li>
+<li><strong>ContextCommit</strong>:某个 head 下&quot;LLM 输入上下文&quot;的不可变快照(压缩、老化、
+summary、attach 展开后的结果)。见 §三。</li>
+</ul>
+<h3 id="节点">节点<a class="header-anchor" href="#节点">#</a></h3>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Call</span><span class="p">:</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">seq</span><span class="p">:</span> <span class="nb">int</span>                      <span class="c1"># session 内单调递增,排序唯一依据(≠ wall-clock)</span>
+    <span class="n">created_at</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">role</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;assistant&quot;</span><span class="p">,</span> <span class="s2">&quot;tool&quot;</span><span class="p">,</span> <span class="s2">&quot;system&quot;</span><span class="p">]</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>                     <span class="c1"># tool 名 / model 名 / &quot;&quot;</span>
+    <span class="nb">input</span><span class="p">:</span> <span class="n">Any</span>                    <span class="c1"># tool args / system text</span>
+    <span class="n">output</span><span class="p">:</span> <span class="n">Any</span>                   <span class="c1"># tool result / assistant 内容 / user 内容(永久原文)</span>
+    <span class="n">predecessor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>    <span class="c1"># 对话边(user/assistant 链)        ┐ 互斥</span>
+    <span class="n">caller</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>         <span class="c1"># 调用边(assistant → tool → sub-llm)┘</span>
+    <span class="n">reads</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>              <span class="c1"># 声明读了哪些节点</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span>
+</code></pre>
+<p>约束:<code>predecessor</code>/<code>caller</code> 互斥(写入侧保证);<code>output</code> 永久原文,任何
+aging/compact 都不动它。</p>
+<h3 id="git-隐喻retry-edit-fork-是同一操作">git 隐喻:retry / edit / fork 是同一操作<a class="header-anchor" href="#git-隐喻retry-edit-fork-是同一操作">#</a></h3>
+<p>每个 turn 是一次 &quot;commit&quot;,<code>predecessor</code> 是它响应的对象。retry / edit / fork
+本质相同 —— 在某节点的父下挂一个 divergent 兄弟,只是触发方式不同:</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>发新消息</td>
+<td>在当前 HEAD 下 append 一个节点,HEAD 前进</td>
+</tr>
+<tr>
+<td>retry</td>
+<td>同内容的兄弟(assistant 重采样 / 函数重跑)</td>
+</tr>
+<tr>
+<td>edit</td>
+<td>不同内容的兄弟(在同一父下分叉)</td>
+</tr>
+<tr>
+<td>切版本 <code>&lt; N/M &gt;</code></td>
+<td>checkout 到某个兄弟,<strong>纯显示,不重跑</strong></td>
+</tr>
+<tr>
+<td>分支成新会话</td>
+<td>新 Session,HEAD 指向某节点,未来发散</td>
+</tr>
+</tbody>
+</table>
+<p>要点:<strong>checkout 永不触发重跑</strong>(切 HEAD 只是重渲染);<strong>agent 运行中禁止
+edit/retry</strong>(避免把活动执行树挂到即将&quot;变旧&quot;的节点上);<strong>workdir 不随 checkout
+回滚</strong>(副作用用户自有,如 <code>git checkout</code> 不会重跑你的测试)。</p>
+<hr />
+<h2 id="三contextcommit-不可变快照">三、ContextCommit 不可变快照<a class="header-anchor" href="#三contextcommit-不可变快照">#</a></h2>
+<p>某个 head 下&quot;喂给 LLM 的上下文&quot;的不可变快照。当前实现:git-backed JSON
+(<code>&lt;session_repo&gt;/context/commits/&lt;id&gt;.json</code>),代码在 <code>openprogram/context/commit/</code>。</p>
+<h3 id="数据结构">数据结构<a class="header-anchor" href="#数据结构">#</a></h3>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ContextCommit</span><span class="p">:</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">parent_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>   <span class="c1"># 普通 turn 单父;merge turn 多父</span>
+    <span class="n">created_at</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">head_node_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">rules_version</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">total_tokens</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">items</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">ContextItem</span><span class="p">]</span>
+    <span class="n">summary</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ContextItem</span><span class="p">:</span>
+    <span class="n">source_node_id</span><span class="p">:</span> <span class="nb">str</span>          <span class="c1"># 对应 DAG 节点(summary 用虚拟 sm_&lt;hex&gt;)</span>
+    <span class="n">role</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">state</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;full&quot;</span><span class="p">,</span> <span class="s2">&quot;aged&quot;</span><span class="p">,</span> <span class="s2">&quot;cleared&quot;</span><span class="p">,</span> <span class="s2">&quot;summarized&quot;</span><span class="p">,</span> <span class="s2">&quot;summary&quot;</span><span class="p">]</span>
+    <span class="n">locked</span><span class="p">:</span> <span class="nb">bool</span>                 <span class="c1"># True = 规则不再动它</span>
+    <span class="n">rendered</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">tokens</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span>                  <span class="c1"># &quot;new&quot; / &quot;tail_window&quot; / &quot;idle_60min&quot; / &quot;attached_from:X&quot;</span>
+    <span class="n">merged_into</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">is_anchor</span><span class="p">:</span> <span class="nb">bool</span>              <span class="c1"># summary 时保留的高价值原文</span>
+    <span class="n">attached_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="c1"># 来自某个 attach 展开的 source commit</span>
+</code></pre>
+<p>state:<code>full</code>(原内容)/ <code>aged</code>(工具结果替成短文本)/ <code>cleared</code>(老工具结果替成
+固定占位符,cache 友好)/ <code>summarized</code>(已合入某 summary,不渲染)/ <code>summary</code>
+(合成的摘要 item)。</p>
+<h3 id="生成">生成<a class="header-anchor" href="#生成">#</a></h3>
+<p><code>ensure_latest_commit()</code>:找 head 祖先链上最近的 commit;已对应当前 head 直接返回;
+有新节点则 <code>generate_commit()</code>(复制 parent items → 新节点转 <code>full</code> item → 跑
+<code>RULE_PIPELINE</code> → 算 token 存 JSON)。规则只改未锁定 item,不回写 DAG,summary item
+只存在于 commit(用 <code>sm_&lt;hex&gt;</code>)。</p>
+<h3 id="压缩三类规则">压缩:三类规则<a class="header-anchor" href="#压缩三类规则">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>规则</th>
+<th>触发</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>tool aging</strong></td>
+<td>tool result 超 tail window(默认 <code>tail_turns=3</code>)</td>
+<td>full → aged,替成 <code>[tool &lt;name&gt;] output: &lt;头&gt;… &lt;尾&gt;</code></td>
+</tr>
+<tr>
+<td><strong>idle clearing</strong></td>
+<td>aged 后 60min 未动</td>
+<td>aged → cleared 固定占位符,cache prefix 更稳</td>
+</tr>
+<tr>
+<td><strong>summarize</strong></td>
+<td><code>total_tokens &gt; threshold</code>(~70-80% budget)</td>
+<td>最老连续若干 item 折成一条 <code>summary</code>;被折的标 <code>summarized</code>;高价值(cited/pinned/anchor)保留 full</td>
+</tr>
+</tbody>
+</table>
+<h3 id="渲染">渲染<a class="header-anchor" href="#渲染">#</a></h3>
+<p><code>render_commit(commit)</code> → provider messages:<code>summarized</code> 跳过;<code>summary</code> 渲染为
+assistant 文本加 <code>[Summary]</code> 前缀;tool item 降级为 user 文本(缺配对信息时避免协议
+错误)。<strong>纯函数,同输入同输出</strong> —— 便于测试、调试、缓存命中预测。</p>
+<hr />
+<h2 id="四attach-merge多分支引用与聚合">四、Attach / Merge(多分支引用与聚合)<a class="header-anchor" href="#四attach-merge多分支引用与聚合">#</a></h2>
+<p>attach 与 merge 复用同一机制 —— 把别的分支的 ContextCommit 在当前 commit 里展开成
+一组 item。区别:<strong>attach 被动</strong>(stage,等下次 LLM 跑),<strong>merge 主动</strong>(立即触发一
+次 LLM turn,写多父 commit)。</p>
+<ul>
+<li>
+<p><strong>Attach</strong>:attach pointer 是 DAG 中 <code>function=&quot;attach&quot;</code> 节点(metadata 含
+source session/head/commit)。generator 读 <code>source_commit_id</code> 展开其 items,用
+open/close marker 包住,每条标 <code>attached_from</code>;按 <code>attached_from</code> 去重(<strong>跨 turn
+只展开一次</strong>);不可加载则 fallback 单条 user item。展开的 item 默认 <code>full/未锁</code>,
+和原生 turn 平等过规则(<strong>能被压缩</strong>);summarize 尊重 attach 边界。</p>
+</li>
+<li>
+<p><strong>Merge</strong>:<code>process_merge_turn()</code> 在 target head 后写 N 个临时 attach pointer
+(各指一个 peer 末端 commit)+ 一个 merge instruction → 跑 <code>process_user_turn()</code>
+→ 保存<strong>多父</strong> commit(<code>parent_ids=[target_prev, peer_1, …]</code>)→ 标 peer head
+merged。<code>base_peer</code> 的 attach 块标 <code>locked=True</code>(保证 merge agent 看到原文),其他
+peer 可被 summarize。多父 commit 仅来自 merge。</p>
+</li>
+</ul>
+<hr />
+<h2 id="五跨-turn-tool-上下文">五、跨 turn tool 上下文<a class="header-anchor" href="#五跨-turn-tool-上下文">#</a></h2>
+<p><strong>问题</strong>:历史里的 <code>role=tool</code> 行若被丢掉,模型跨 turn 看不到自己调过哪些 tool、
+参数、返回 —— 会重复调用、瞎编调过的文件。这与整段历史的 summarize 是两件事(逐条
+tool aging vs 整段语义压缩)。</p>
+<p><strong>策略</strong>(tool aging,即 §三的第一条规则,细化):</p>
+<ul>
+<li><strong>tail-window 全文</strong>:最近 <code>TAIL_TURNS=3</code> 个 assistant turn 的 tool_use /
+tool_result 完整保留。</li>
+<li><strong>老 turn aging</strong>:更早的 tool_use 头保留(args 截 <code>MAX_TOOL_ARGS_CHARS=200</code>),
+tool_result 换 1 行语义 stub。</li>
+<li><strong>单条上限</strong>:任何 tool_result 超 <code>MAX_TOOL_RESULT_CHARS=4000</code> 截首尾(tail 内也
+截,防单 turn 爆)。</li>
+<li><strong>关键 tool 保护</strong>:<code>PRUNE_PROTECTED_TOOLS={todo_read, todo_write, web_search}</code>
+不参与 aging。</li>
+</ul>
+<p>数据流:<code>get_branch</code> → 把 caller-children tool 行挂回 assistant → tool aging(tail
+全文 / 老的换 stub)→ 单条截断 → (超阈值时)整段 summarize → 渲染成 ToolUse +
+ToolResult content blocks。代码:<code>openprogram/context/tool_aging/</code>。</p>
+<p>阈值取自参考框架:tail-window(OpenCode)、逐条 stub(Hermes)、单条截断 + 关键
+tool 保护(OpenCode)。</p>
+<hr />
+<h2 id="六不变式">六、不变式<a class="header-anchor" href="#六不变式">#</a></h2>
+<ol>
+<li>DAG 是 append-only,规则永不改节点 content。</li>
+<li>ContextCommit 保存后不回写;新规则只影响后续 commit。</li>
+<li>ContextItem 压缩状态单向收紧,不回退到更完整状态。</li>
+<li><code>locked=True</code> 不被规则修改;<code>state=full</code> 是默认。</li>
+<li>summary item 不写 DAG。</li>
+<li>attach 展开按 <code>attached_from</code> 去重,只展开一次。</li>
+<li>多父 commit 仅来自 merge。</li>
+<li><code>render_commit</code> 是纯函数。</li>
+<li>checkout 纯显示,不重跑,不回滚 workdir。</li>
+</ol>
+<hr />
+<h2 id="七ui">七、UI<a class="header-anchor" href="#七ui">#</a></h2>
+<ul>
+<li><strong>History 视图</strong>:完整 DAG,节点 = circle/triangle/square,显示所有 tool 调用 /
+retry 分支 / merge 汇流(靠 <code>parent_ids</code> 画分叉)。</li>
+<li><strong>ContextCommit Timeline</strong>(右栏):<code>web/components/right-sidebar/context-commit-timeline/</code>
+<ul>
+<li><code>ws_actions/context_commits.py</code>。按状态徽章 + token 计数列出当前 commit 的 items
+(full/aged/cleared/summary、来源 <code>attached_from</code>)。</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="八目标态与缺口">八、目标态与缺口<a class="header-anchor" href="#八目标态与缺口">#</a></h2>
+<p><a href="context-composition.html"><code>context-composition.md</code></a> 是这一层的目标:每次 LLM 调用按
+&quot;多久变一次&quot;分三层,既服务缓存(稳定的靠前),也让模型知道自己的处境。</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>内容</th>
+<th>变化频率</th>
+<th>现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>L0 恒定</strong></td>
+<td>身份 / 全局指令 / 工具清单</td>
+<td>整 session 不变</td>
+<td>✅ engine 已拼(未按缓存分层)</td>
+</tr>
+<tr>
+<td><strong>L1 处境</strong></td>
+<td>我是哪个函数的零件 / 谁调我 / 在程序哪一步 / 输出去哪</td>
+<td>每进一个 frame 变</td>
+<td>❌ <strong>完全缺失</strong></td>
+</tr>
+<tr>
+<td><strong>L2 任务</strong></td>
+<td>frame 内进展 / 继承的上游结果 / 当前输入 / 输出格式</td>
+<td>每步变</td>
+<td>✅ engine 已选历史</td>
+</tr>
+</tbody>
+</table>
+<p>缺口(按价值):</p>
+<ol>
+<li><strong>L1 处境层完全缺失</strong> —— 模型不知道自己是哪个 @agentic_function 的零件、谁调它、
+输出会被怎么用。价值最高(论文 LLM-as-Code 核心),现状零实现。</li>
+<li><strong>两条历史渲染路并存有 parity 风险</strong> —— commit-chain 与 dag 各一套遍历逻辑,改一
+条易忘另一条(曾有 ThinkingContent 只在 dag 路处理、commit 路漏的真实 bug)。该收
+敛成一条。</li>
+<li><strong>辅助路径的 system prompt 不跟 agent 走</strong> —— 总结/分支总结用硬编码的
+<code>SUMMARIZATION_SYSTEM_PROMPT</code>,不随用户的 <a href="http://AGENTS.md">AGENTS.md</a> / 身份 / 技能变。</li>
+</ol>
+<hr />
+<h2 id="九早期方案已废留作追溯">九、早期方案(已废,留作追溯)<a class="header-anchor" href="#九早期方案已废留作追溯">#</a></h2>
+<p>曾设计过一版 <strong>SQLite <code>node_annotations</code> 派生模型</strong>:DAG truth + 每节点一条可重算的
+Annotation,每 turn 跑 annotator 流水线更新,再 <code>build_view</code> 纯函数渲染。它和
+ContextCommit 是两种落地:annotation 是&quot;派生可丢弃重算 + SQL 表&quot;,ContextCommit 是
+&quot;不可变快照 + git JSON&quot;。<strong>已被 ContextCommit 取代</strong>;其仍成立的思想(压缩单向收紧、
+view 纯函数、summary 不写 DAG)已并入上文。pinning / dedup / 用户手动 pin-unpin 在
+ContextCommit 下尚未全部落地,属待补能力。</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#一现状链路">一、现状链路</a>
+<a class="" href="#二存储模型dag">二、存储模型:DAG</a>
+<a class="lvl-3" href="#节点">节点</a>
+<a class="lvl-3" href="#git-隐喻retry-edit-fork-是同一操作">git 隐喻:retry / edit / fork 是同一操作</a>
+<a class="" href="#三contextcommit-不可变快照">三、ContextCommit 不可变快照</a>
+<a class="lvl-3" href="#数据结构">数据结构</a>
+<a class="lvl-3" href="#生成">生成</a>
+<a class="lvl-3" href="#压缩三类规则">压缩:三类规则</a>
+<a class="lvl-3" href="#渲染">渲染</a>
+<a class="" href="#四attach-merge多分支引用与聚合">四、Attach / Merge(多分支引用与聚合)</a>
+<a class="" href="#五跨-turn-tool-上下文">五、跨 turn tool 上下文</a>
+<a class="" href="#六不变式">六、不变式</a>
+<a class="" href="#七ui">七、UI</a>
+<a class="" href="#八目标态与缺口">八、目标态与缺口</a>
+<a class="" href="#九早期方案已废留作追溯">九、早期方案(已废,留作追溯)</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

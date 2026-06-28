@@ -1361,6 +1361,10 @@ def create_app():
     from openprogram.webui.routes import commands as _routes_commands
     _routes_commands.register(app)
 
+    # /docs — static design-documentation site (built into docs/_site/)
+    from openprogram.webui.routes import docs as _routes_docs
+    _routes_docs.register(app)
+
     return app
 
 

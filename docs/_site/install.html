@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installing OpenProgram · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="assets/site.css">
+<link rel="stylesheet" href="assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="README.html">Documentation</a>
+<a class="navlink" href="API.html">API Reference</a>
+<a class="navlink" href="INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink active" href="install.html">Installing OpenProgram</a>
+<a class="navlink" href="features.html">Key Features — detailed tour</a>
+<a class="navlink" href="INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="README_CN.html">Readme Cn</a>
+<a class="navlink" href="troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="api/providers.html">Providers</a>
+<a class="navlink" href="api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design"><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="design/README.html">Design Documents</a>
+<a class="navlink" href="design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="design/channels/README.html">Channels</a>
+<a class="navlink" href="design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="design/context/README.html">Context</a>
+<a class="navlink" href="design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="design/function/README.html">Function Design</a>
+<a class="navlink" href="design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="design/integrations/README.html">Integrations</a>
+<a class="navlink" href="design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="design/providers/README.html">Providers</a>
+<a class="navlink" href="design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="design/runtime/README.html">Runtime</a>
+<a class="navlink" href="design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="design/ui/README.html">Web UI</a>
+<a class="navlink" href="design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="installing-openprogram">Installing OpenProgram<a class="header-anchor" href="#installing-openprogram">#</a></h1>
+<h2 id="the-model-read-this-first">The model — read this first<a class="header-anchor" href="#the-model-read-this-first">#</a></h2>
+<p><strong>OpenProgram is the host. You install it once, then add agent <em>programs</em> into it.</strong></p>
+<pre><code>OpenProgram  (the host runtime — install this first, anywhere you like)
+└── openprogram/functions/agentics/      ← programs live here, auto-discovered
+    ├── GUI-Agent-Harness/               ← `gui_agent`      (clone in + run its installer)
+    ├── Research-Agent-Harness/          ← `research_agent` (openprogram programs install research)
+    └── Wiki-Agent-Harness/              ← `wiki_agent`     (openprogram programs install wiki)
+</code></pre>
+<p>A program dropped into <code>functions/agentics/</code> is <strong>auto-registered</strong> at launch
+(<code>import_installed_programs()</code> imports its <code>agentics</code> sub-package, firing the
+<code>@agentic_function</code> decorator) — so it shows up in the <strong>web UI</strong> and function
+list with no extra wiring. Install order is therefore always: <strong>OpenProgram
+first, then the program(s).</strong></p>
+<blockquote>
+<p>⚠️ Installing just the Python package is <strong>not</strong> the whole job — it doesn't
+build the web UI (needs <code>npm</code>), fetch the GUI agent's model weight, or warm the
+OCR models. <strong>The install script below is the source of truth</strong> — it does
+everything.</p>
+</blockquote>
+<hr />
+<h2 id="one-command-recommended">One command (recommended)<a class="header-anchor" href="#one-command-recommended">#</a></h2>
+<p>Clone the host wherever you want it to live, then run the installer. The default
+install brings up <strong>everything light</strong>: web UI (built), terminal UI, the Research
+and Wiki agent programs, browser tool + channels. The GUI agent is opt-in (it
+downloads PyTorch): <code>openprogram programs install gui</code>, or <code>openprogram setup</code> →
+programs. <code>--minimal</code> installs a bare host instead.</p>
+<p><strong>macOS / Linux</strong></p>
+<pre><code class="language-bash">git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Fzkuji/OpenProgram
+<span class="nb">cd</span><span class="w"> </span>OpenProgram
+./scripts/install.sh<span class="w">                  </span><span class="c1"># everything · bare host: --minimal</span>
+</code></pre>
+<p><strong>Windows (PowerShell)</strong></p>
+<pre><code class="language-powershell"><span class="n">git</span> <span class="n">clone</span> <span class="n">https</span><span class="p">://</span><span class="n">github</span><span class="p">.</span><span class="n">com</span><span class="p">/</span><span class="n">Fzkuji</span><span class="p">/</span><span class="n">OpenProgram</span>
+<span class="nb">cd </span><span class="n">OpenProgram</span>
+<span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span>                 <span class="c"># everything · bare host: -Minimal</span>
+</code></pre>
+<p>Then just start it — the <strong>first run walks you through provider setup</strong>, then
+opens the chat:</p>
+<pre><code class="language-bash">openprogram<span class="w">                                   </span><span class="c1"># first run = guided provider setup, then chat</span>
+openprogram<span class="w"> </span>web<span class="w">                               </span><span class="c1"># or the browser UI -&gt; http://localhost:18100</span>
+</code></pre>
+<p>The installer is <strong>idempotent</strong> — re-run it any time to repair or update.</p>
+<hr />
+<h2 id="what-the-installer-does">What the installer does<a class="header-anchor" href="#what-the-installer-does">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Action</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Verify / install <strong>Python 3.11+, Node 20+, git</strong></td>
+<td>macOS <code>brew</code> / Linux <code>apt</code>·<code>dnf</code>·<code>pacman</code> / Windows <code>winget</code>. Best-effort.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Python env</strong></td>
+<td>Active <code>venv</code>/conda if any, else creates <code>./.venv</code>. Override: <code>--python</code> / <code>-Python</code>. This is the &quot;wherever you want&quot; location.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>OpenProgram</strong> editable install (<code>pip install -e .</code>)</td>
+<td>The host + base deps.</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Web UI</strong> — <code>npm install &amp;&amp; npm run build</code> in <code>web/</code></td>
+<td>Next.js frontend on <strong>:18100</strong>, backend on <strong>:18109</strong>. <code>--minimal</code> skips the build (the worker builds on first start).</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Ink TUI</strong> — <code>npm install &amp;&amp; npm run build</code> in <code>cli/</code></td>
+<td>POSIX only; Windows uses the Rich REPL. <code>--minimal</code> skips.</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Bundled programs</strong> — <code>openprogram programs install research</code> + <code>wiki</code></td>
+<td>Clones the two light harnesses into <code>functions/agentics/</code> (editable, auto-register; no deps beyond openprogram). The GUI agent is <strong>opt-in</strong> — <code>openprogram programs install gui</code> pulls PyTorch (~300 MB; the CPU wheel is auto-selected on GPU-less Linux, ~3 GB only on CUDA boxes). <code>--minimal</code> skips.</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Browser tool + channels</strong></td>
+<td><code>pip install -e .[all]</code> + <code>playwright install chromium</code> (~150 MB). <code>--minimal</code> skips. Heavier stealth browsers / agent-browser stay opt-in — see <a href="#extras">Extras</a>.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="flags">Flags<a class="header-anchor" href="#flags">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Goal</th>
+<th><code>install.sh</code> (POSIX)</th>
+<th><code>install.ps1</code> (Windows)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bare host (skip web build / TUI / programs / extras)</td>
+<td><code>--minimal</code></td>
+<td><code>-Minimal</code></td>
+</tr>
+<tr>
+<td>Target a specific interpreter</td>
+<td><code>--python /path/python</code></td>
+<td><code>-Python C:\path\python.exe</code></td>
+</tr>
+<tr>
+<td>Stealth browsers (patchright + camoufox)</td>
+<td><code>--stealth</code></td>
+<td><code>-Stealth</code></td>
+</tr>
+<tr>
+<td><code>agent-browser</code> tool</td>
+<td><code>--agent-browser</code></td>
+<td><code>-AgentBrowser</code></td>
+</tr>
+</tbody>
+</table>
+<p>Explicit CUDA/CPU PyTorch for the GUI harness: run its own installer after the
+host install — <code>openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --cuda cu124</code>.</p>
+<hr />
+<h2 id="adding-agent-programs">Adding agent programs<a class="header-anchor" href="#adding-agent-programs">#</a></h2>
+<p>Programs always land in <code>functions/agentics/&lt;Repo&gt;/</code> and auto-register on the next
+start. The <strong>universal</strong> way — works for the catalogued harnesses <em>and your own</em> —
+is to clone a repo into that folder and run its installer:</p>
+<pre><code class="language-bash"><span class="nb">cd</span><span class="w"> </span>openprogram/functions/agentics
+git<span class="w"> </span>clone<span class="w"> </span>&lt;harness-repo&gt;
+<span class="nb">cd</span><span class="w"> </span>&lt;Harness&gt;
+./scripts/install.sh<span class="w">          </span><span class="c1"># if it ships one (Windows: .\scripts\install.ps1)</span>
+</code></pre>
+<p>The <strong>GUI agent</strong> has native deps (PyTorch, detector weight, OCR), so it ships its
+own per-platform installer — use it via the steps above; full guide in its
+<a href="../openprogram/functions/agentics/GUI-Agent-Harness#1-install">install section</a>.
+(The default <code>./scripts/install.sh</code> already clones it via <code>openprogram programs install all</code>; run the harness's own installer afterwards only if you need its asset setup or an explicit CUDA/CPU torch.)</p>
+<p>For <strong>pure-Python</strong> catalogued harnesses there's a one-line shortcut that clones,
+installs, and registers them for you:</p>
+<pre><code class="language-bash">openprogram<span class="w"> </span>programs<span class="w"> </span>install<span class="w"> </span>research<span class="w">     </span><span class="c1"># or: wiki / all</span>
+openprogram<span class="w"> </span>programs<span class="w"> </span>available<span class="w">            </span><span class="c1"># see install status</span>
+</code></pre>
+<p><code>programs install</code> does a <strong>non-editable</strong> install (deps to site-packages, code runs
+in-tree); it does <strong>not</strong> fetch native assets like the GUI's YOLO weight or OCR — so
+the GUI agent uses its own installer (above) instead.</p>
+<p>After any of these, restart the worker (or hit <strong>Refresh</strong> on the Functions page)
+and the program shows in the web UI. Third-party harnesses work the same way:
+<a href="installing-harnesses.html">installing-harnesses.md</a>.</p>
+<hr />
+<h2 id="extras">Extras<a class="header-anchor" href="#extras">#</a></h2>
+<p>The <strong>browser tool + chat channels install by default</strong> (the <code>[all]</code> extra), and
+the installer fetches the Playwright Chromium binary for you — nothing to opt into.
+Pass <code>--minimal</code> / <code>-Minimal</code> to skip them (e.g. CI / air-gapped / bandwidth-limited).</p>
+<table>
+<thead>
+<tr>
+<th>Default extra</th>
+<th>Installs</th>
+<th>Post-install (automated)</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>browser (<code>[browser]</code>)</td>
+<td><code>playwright</code></td>
+<td><code>playwright install chromium</code></td>
+<td>~150 MB</td>
+</tr>
+<tr>
+<td>channels (<code>[channels]</code>)</td>
+<td><code>discord.py</code>, <code>slack_sdk</code>, <code>qrcode</code></td>
+<td><em>(set tokens in <code>~/.openprogram/config.json</code>)</em></td>
+<td>small</td>
+</tr>
+</tbody>
+</table>
+<p>Heavier, still opt-in (add the flag):</p>
+<table>
+<thead>
+<tr>
+<th>Flag / extra</th>
+<th>Installs</th>
+<th>Post-install (automated)</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--stealth</code> · <code>[browser-stealth]</code></td>
+<td><code>patchright</code>, <code>camoufox</code></td>
+<td><code>patchright install chromium</code>, <code>camoufox fetch</code></td>
+<td>~350 MB</td>
+</tr>
+<tr>
+<td><code>--agent-browser</code> · <code>[agent-browser]</code></td>
+<td>global npm <code>agent-browser</code></td>
+<td><code>agent-browser install</code></td>
+<td>~150 MB</td>
+</tr>
+</tbody>
+</table>
+<p>Provider SDKs (<code>anthropic</code>, <code>openai</code>, <code>google-genai</code>) ship in the base install —
+no extra needed.</p>
+<hr />
+<h2 id="providers-credentials">Providers / credentials<a class="header-anchor" href="#providers-credentials">#</a></h2>
+<p>At least one provider is required before any chat turn:</p>
+<pre><code class="language-bash">openprogram<span class="w"> </span>providers<span class="w"> </span>login<span class="w"> </span>openai-codex<span class="w">      </span><span class="c1"># ChatGPT subscription (recommended)</span>
+openprogram<span class="w"> </span>providers<span class="w"> </span>login<span class="w"> </span>anthropic<span class="w">          </span><span class="c1"># Claude</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>sk-ant-...<span class="w">             </span><span class="c1"># …or an API key (Windows: $env:ANTHROPIC_API_KEY=&quot;...&quot;)</span>
+</code></pre>
+<p>Auto-adopts an installed Claude Code / Codex / Gemini CLI. Check with <code>openprogram doctor</code>.</p>
+<hr />
+<h2 id="ports">Ports<a class="header-anchor" href="#ports">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Service</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>18100</strong></td>
+<td>Next.js <strong>frontend</strong> — open this</td>
+<td><code>http://localhost:18100</code></td>
+</tr>
+<tr>
+<td><strong>18109</strong></td>
+<td>FastAPI <strong>backend</strong> (API + WebSocket)</td>
+<td>proxied by the frontend; no HTML pages</td>
+</tr>
+</tbody>
+</table>
+<p>Change with <code>openprogram ports --backend &lt;p&gt; --frontend &lt;p&gt;</code>.</p>
+<hr />
+<h2 id="full-dependency-matrix">Full dependency matrix<a class="header-anchor" href="#full-dependency-matrix">#</a></h2>
+<p>Everything beyond <code>pip</code>. The installer handles every &quot;auto&quot; row.</p>
+<h3 id="host-openprogram">Host (OpenProgram)<a class="header-anchor" href="#host-openprogram">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Required for</th>
+<th>How</th>
+<th>Platform</th>
+<th>Auto?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python ≥ 3.11</td>
+<td>everything</td>
+<td>system / pyenv / conda</td>
+<td>all</td>
+<td>check</td>
+</tr>
+<tr>
+<td>Node.js ≥ 20 + npm</td>
+<td>web UI, TUI</td>
+<td><a href="http://nodejs.org">nodejs.org</a> / pkg mgr</td>
+<td>all</td>
+<td>install</td>
+</tr>
+<tr>
+<td>git</td>
+<td>sessions are git repos</td>
+<td>pkg mgr</td>
+<td>all</td>
+<td>install</td>
+</tr>
+<tr>
+<td><code>web/node_modules</code></td>
+<td>web UI (:18100)</td>
+<td><code>npm install</code> in <code>web/</code></td>
+<td>all</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td><code>cli/</code> Ink bundle</td>
+<td>TUI</td>
+<td><code>npm install &amp;&amp; npm run build</code> in <code>cli/</code></td>
+<td>macOS/Linux</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td>provider credential</td>
+<td>any chat turn</td>
+<td><code>openprogram providers login</code> (or settings UI)</td>
+<td>all</td>
+<td>manual</td>
+</tr>
+<tr>
+<td>Playwright / patchright / camoufox / agent-browser</td>
+<td>browser tools</td>
+<td>flags above</td>
+<td>all</td>
+<td>flag</td>
+</tr>
+</tbody>
+</table>
+<h3 id="gui-agent-harness-program-installed-by-default-see-adding-agent-programs">GUI-Agent-Harness program (installed by default — see <a href="#adding-agent-programs">Adding agent programs</a>)<a class="header-anchor" href="#gui-agent-harness-program-installed-by-default-see-adding-agent-programs">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Required for</th>
+<th>How</th>
+<th>Platform</th>
+<th>Auto?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PyTorch (+ torchvision)</td>
+<td>YOLO / OCR</td>
+<td>pip resolves the default build; the harness's own installer auto-detects NVIDIA GPU → CUDA (<code>--cpu</code> / <code>--cuda cuXXX</code> to force)</td>
+<td>all</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td>harness Python deps</td>
+<td>core</td>
+<td><code>pip install -e .[ocr]</code> (ultralytics, opencv, pynput, easyocr)</td>
+<td>all</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td><strong>GPA YOLO weight</strong> <code>model.pt</code></td>
+<td>element detection</td>
+<td><code>Salesforce/GPA-GUI-Detector</code> → <code>~/GPA-GUI-Detector/model.pt</code></td>
+<td>all</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td>EasyOCR models (en + ch_sim)</td>
+<td>text detection</td>
+<td>pre-warmed (<code>~/.EasyOCR/model</code>, ~300 MB)</td>
+<td>Win/Linux</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td><code>xclip</code> (+ wmctrl/xdotool/scrot)</td>
+<td>clipboard, windows</td>
+<td><code>apt install …</code></td>
+<td>Linux</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td>Xcode CLT (Swift)</td>
+<td>Apple Vision OCR</td>
+<td><code>xcode-select --install</code></td>
+<td>macOS</td>
+<td>best-effort*</td>
+</tr>
+<tr>
+<td>Screen Recording + Accessibility</td>
+<td>screenshots, clicks</td>
+<td>System Settings → Privacy</td>
+<td>macOS</td>
+<td>manual</td>
+</tr>
+<tr>
+<td>Win32 + PowerShell clipboard</td>
+<td>everything</td>
+<td>built-in</td>
+<td>Windows</td>
+<td>n/a</td>
+</tr>
+</tbody>
+</table>
+<p>* EasyOCR is installed as a cross-platform fallback, so the GUI agent works on
+macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
+<a href="../openprogram/functions/agentics/GUI-Agent-Harness/docs/install.html">GUI-Agent-Harness/docs/install.md</a>.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting<a class="header-anchor" href="#troubleshooting">#</a></h2>
+<ul>
+<li><strong><code>openprogram web</code> showed a page that won't load / only the backend came up.</strong>
+The Next.js <code>node_modules</code> weren't installed. Re-run the installer, then open
+<strong><a href="http://localhost:18100">http://localhost:18100</a></strong> (not :18109).</li>
+<li><strong><code>pip</code> can't reinstall: <code>WinError 32 … openprogram.exe is being used</code>.</strong>
+Stop the running <code>openprogram web</code> / worker first, then re-run.</li>
+<li><strong><code>gui_agent</code> doesn't appear in the UI.</strong> Restart the worker (or Refresh the
+Functions page). Confirm it's registered: <code>openprogram programs available</code>.</li>
+<li><strong>NVIDIA GPU unused.</strong> The installer auto-detects it; if it picked CPU (no driver at install time, or you passed <code>--cpu</code>): <code>pip uninstall -y torch torchvision</code>, then re-run the installer.</li>
+<li><strong>GPA weight didn't download</strong> (offline): <code>hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector</code>.</li>
+</ul>
+<hr />
+<h2 id="manual-advanced">Manual / advanced<a class="header-anchor" href="#manual-advanced">#</a></h2>
+<pre><code class="language-bash">python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>.<span class="w"> </span>.venv/bin/activate<span class="w">      </span><span class="c1"># Windows: .venv\Scripts\activate</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">                                  </span><span class="c1"># host</span>
+<span class="o">(</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>web<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install<span class="w"> </span><span class="o">)</span><span class="w">                         </span><span class="c1"># web UI</span>
+<span class="o">(</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cli<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w"> </span><span class="o">)</span><span class="w">        </span><span class="c1"># TUI (POSIX)</span>
+<span class="c1"># GUI program (editable, in-tree → auto-registers):</span>
+pip<span class="w"> </span>install<span class="w"> </span>torch<span class="w"> </span>torchvision<span class="w"> </span>--index-url<span class="w"> </span>https://download.pytorch.org/whl/cpu
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;openprogram/functions/agentics/GUI-Agent-Harness[ocr]&quot;</span>
+hf<span class="w"> </span>download<span class="w"> </span>Salesforce/GPA-GUI-Detector<span class="w"> </span>model.pt<span class="w"> </span>--local-dir<span class="w"> </span>~/GPA-GUI-Detector
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import easyocr; easyocr.Reader([&#39;en&#39;,&#39;ch_sim&#39;], gpu=False)&quot;</span>
+</code></pre>
+<p>Multi-repo local development (editing several harnesses side-by-side):
+<a href="troubleshooting.html#local-development-install-multi-repo">troubleshooting.md → Local-development install</a>.</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#the-model-read-this-first">The model — read this first</a>
+<a class="" href="#one-command-recommended">One command (recommended)</a>
+<a class="" href="#what-the-installer-does">What the installer does</a>
+<a class="" href="#flags">Flags</a>
+<a class="" href="#adding-agent-programs">Adding agent programs</a>
+<a class="" href="#extras">Extras</a>
+<a class="" href="#providers-credentials">Providers / credentials</a>
+<a class="" href="#ports">Ports</a>
+<a class="" href="#full-dependency-matrix">Full dependency matrix</a>
+<a class="lvl-3" href="#host-openprogram">Host (OpenProgram)</a>
+<a class="lvl-3" href="#gui-agent-harness-program-installed-by-default-see-adding-agent-programs">GUI-Agent-Harness program (installed by default — see Adding agent programs)</a>
+<a class="" href="#troubleshooting">Troubleshooting</a>
+<a class="" href="#manual-advanced">Manual / advanced</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

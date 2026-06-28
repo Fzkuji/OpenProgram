@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic 函数防自递归机制 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink active" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="agentic-函数防自递归机制">Agentic 函数防自递归机制<a class="header-anchor" href="#agentic-函数防自递归机制">#</a></h1>
+<blockquote>
+<p>现状：从「deny 屏蔽工具」改成「处境引导 + 递归深度上限兜底」(commit <code>1f6f5fce</code>)。
+本文档基于真实代码逐条对应 file:line，可照着核对。
+相关代码：</p>
+<ul>
+<li><code>openprogram/agentic_programming/function.py</code></li>
+<li><code>openprogram/agentic_programming/runtime.py</code></li>
+<li>测试：<code>tests/agentic_programming/test_self_recursion_guard.py</code>(8 用例)</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="1-问题agentic-函数为什么会自递归">1. 问题：agentic 函数为什么会自递归<a class="header-anchor" href="#1-问题agentic-函数为什么会自递归">#</a></h2>
+<p>一个 agentic 函数(如 <code>wiki_agent</code>)的函数体里跑一个内层 agent loop——通过 <code>runtime.exec(content=[task])</code> 驱动内层 LLM。</p>
+<p>两个诱因叠加：</p>
+<ol>
+<li>
+<p><strong>默认 toolset = full，含函数自己。</strong> 裸 <code>runtime.exec(content=...)</code> 不传 <code>tools=</code> / <code>toolset=</code>，<code>_call_via_providers</code> 把它解析成 <code>DEFAULT_TOOLSET = &quot;full&quot;</code>：</p>
+<ul>
+<li><code>openprogram/agentic_programming/runtime.py:1467</code> <code>DEFAULT_TOOLSET = &quot;full&quot;</code></li>
+<li><code>runtime.py:1468-1483</code> <code>raw_tools is None</code> 分支 → <code>_resolve_agent_tools(toolset=&quot;full&quot;, ...)</code></li>
+<li>而 <code>full</code> 工具集列出了所有 harness 入口本身(<code>wiki_agent</code> / <code>research_agent</code> / <code>gui_agent</code> …，见 <code>openprogram.functions.TOOLSETS[&quot;full&quot;]</code>)。所以内层模型的工具列表里<strong>有它正在执行的那个函数</strong>。</li>
+</ul>
+</li>
+<li>
+<p><strong>模型看到 docstring 匹配任务，误以为该调。</strong> 模型看到 <code>wiki_agent</code> 的工具描述(&quot;Maintain a wiki vault — route to ingest…&quot;)正好匹配当前任务，认为应该路由给 <code>wiki_agent</code> → 调自己 → 进去又是裸 exec、又看到自己 → 无限递归。</p>
+</li>
+</ol>
+<p>实战根因记录(7 层嵌套实例)：<code>docs/design/TODO-doc-code-gaps.md</code> §1。会话记录里 <code>context_tree</code> 展示了 7 层嵌套(<code>4d76→0c07→0964→c6f9→f1c9→4379→8746→100c</code>)。</p>
+<hr />
+<h2 id="2-设计理念为什么用引导而非deny">2. 设计理念：为什么用「引导」而非「deny」<a class="header-anchor" href="#2-设计理念为什么用引导而非deny">#</a></h2>
+<p><strong>让模型理解自己的处境、自主判断不调，而不是强行从工具列表里屏蔽掉它自己。</strong></p>
+<p>旧的 deny 方案(wrapper 把函数自己的名字推进 <code>_current_tool_policy[&quot;deny&quot;]</code>，使内层模型看不到自己)的问题：</p>
+<ul>
+<li>模型学不会处境判断——它不知道「我正在 X 内部」这件事，只是「X 不在工具列表里」。换个上下文(deny 没生效、或跨函数环)它照样会犯。</li>
+<li>违背理念——框架替模型做了决定，而不是给模型足够信息让它自己做对的决定。这是用户明确要求的方向：模型该知道自己在哪、自己判断不调。</li>
+</ul>
+<p>新方案把「不调自己」变成模型能理解的一条处境信息(你正在 X 体内，调 X = 无限递归)，模型据此自主不调；同时保留一个与模型判断无关的<strong>深度上限</strong>作为止损兜底。</p>
+<hr />
+<h2 id="3-三个机制怎么协同">3. 三个机制怎么协同<a class="header-anchor" href="#3-三个机制怎么协同">#</a></h2>
+<h3 id="主-处境提示-防发生">(主) 处境提示 —— 防「发生」<a class="header-anchor" href="#主-处境提示-防发生">#</a></h3>
+<p><code>_situational_prefix(fn_name, fn_doc)</code>(<code>runtime.py:321-341</code>)生成一段英文处境提示：</p>
+<pre><code>[Execution context] You are currently running INSIDE the agentic function `{fn_name}`.
+The tool list may include `{fn_name}` itself — do NOT call it. Calling `{fn_name}`
+re-enters where you are now and causes infinite recursion. Use lower-level tools
+(search / read-write files / run code) to do the work directly.
+</code></pre>
+<p><code>fn_doc</code> 非空时，docstring 被<strong>降级置后</strong>(<code>text += f&quot;\n\nThis function's job: {fn_doc.strip()}&quot;</code>，<code>runtime.py:339-340</code>)——诱因(docstring 描述)不再盖过警告。</p>
+<p><strong>注入到哪：user turn 开头的 text block，不进 system 前缀。</strong></p>
+<ul>
+<li>DAG 路径：<code>runtime.py:578-587</code> 构造 <code>frame_prefix_blocks</code>(从当前 frame 节点读 <code>name</code> + <code>metadata.doc</code>)，然后 <code>runtime.py:597</code> <code>_build_pi_context(frame_prefix_blocks + (content or []))</code>——拼在当前轮 <code>content</code> 之前，作为当前轮 user 消息的开头 block。</li>
+<li>standalone 回退路径(无 store)：<code>runtime.py:1518-1532</code>，从 <code>_recursion_depth</code> 取最深的函数名(<code>max(_depths, key=_depths.get)</code>，<code>runtime.py:1525</code>)，<code>_situational_prefix(_cur_fn, &quot;&quot;)</code>(无 doc)，同样拼在 <code>content</code> 之前(<code>runtime.py:1532</code>)。</li>
+<li>system 前缀单独组装(<code>runtime.py:1535-1539</code>：<code>self.system</code> + <code>_skills_block()</code>)，<strong>处境提示不进 system</strong>。</li>
+</ul>
+<p><strong>为什么放 user turn、不放 system：</strong> 决策6(<code>session-dag.md</code>)要求整个项目共用一个<strong>统一且恒定</strong>的 system prompt(身份 + 项目记忆 + 统一工具列表 + skills)以最大化 KV 缓存命中——前缀一变，长上下文后全不命中、成本爆。处境提示是<strong>逐函数、逐调用点</strong>变化的(每个函数名/docstring 不同)，放进 system 会破坏前缀恒定。放在 user turn 开头既能让模型看到，又不碰 system 前缀。</p>
+<h3 id="删-deny-工具列表含函数自己靠引导不靠屏蔽">删 deny —— 工具列表含函数自己，靠引导不靠屏蔽<a class="header-anchor" href="#删-deny-工具列表含函数自己靠引导不靠屏蔽">#</a></h3>
+<p>wrapper 不再把函数自己的名字推进 <code>_current_tool_policy[&quot;deny&quot;]</code>。内层模型的工具列表里<strong>仍然能看到它自己</strong>，靠处境提示让模型自主不调。</p>
+<p><code>_current_tool_policy</code> 的<strong>其它用途保留未动</strong>：<code>source</code> / <code>allow</code> / <code>toolset</code> / unattended deny。具体见 <code>runtime.py:1451-1458</code>——<code>policy.get(&quot;deny&quot;)</code> 仍在用，与 unattended 的 <code>denied_ask_tools</code> 合并(<code>runtime.py:1457</code>)；<code>source</code>/<code>allow</code>/<code>toolset</code> 在 <code>runtime.py:1469</code>/<code>1479-1482</code> 仍生效。删的只是「把函数自己名字注入 deny」这一处。</p>
+<h3 id="兜底-深度上限-止损安全网">(兜底) 深度上限 —— 止损安全网<a class="header-anchor" href="#兜底-深度上限-止损安全网">#</a></h3>
+<ul>
+<li><code>_MAX_AGENTIC_RECURSION_DEPTH = 5</code>(<code>function.py:48</code>)。</li>
+<li><code>_recursion_depth</code> 是一个 <code>ContextVar[Optional[dict]]</code>(<code>function.py:49-51</code>)，存 <strong>per-function-name</strong> 的当前嵌套深度 <code>{name: depth}</code>。</li>
+<li>进入 wrapper 时：取本函数名(<code>getattr(self, &quot;tool_name&quot;, None) or fn.__name__</code>，sync <code>function.py:964</code>，async <code>function.py:852</code>)，读当前深度，<strong>超限则抛 <code>RecursionError</code></strong>，否则 +1 写回(token 保存)：
+<ul>
+<li>sync：<code>function.py:964-976</code></li>
+<li>async：<code>function.py:852-864</code></li>
+</ul>
+</li>
+<li>抛错确切条件：<code>_cur_depth &gt;= _MAX_AGENTIC_RECURSION_DEPTH</code>(即已经在第 5 层、要进第 6 层时抛)。消息：<code>f&quot;agentic function {name} exceeded max nesting depth {5} — possible runaway recursion&quot;</code>(sync <code>function.py:967-972</code>，async <code>function.py:855-860</code>)。</li>
+<li><code>finally</code> 复位：<code>_recursion_depth.reset(token)</code>(sync <code>function.py:989</code>，async <code>function.py:877</code>)——return / 异常都复位。</li>
+</ul>
+<p><strong>正常调用永不触及上限</strong>：处境提示先拦住「发生」，深度计数只在模型无视引导、连续 re-enter 同名函数 5 层后才触发。</p>
+<p><strong>三者定位：</strong> 处境提示 = 防发生(让模型自己不调)；删 deny = 配套(工具可见，引导才有对象)；深度上限 = 止损安全网(模型失控时不烧无限 token)。</p>
+<hr />
+<h2 id="4-关键代码位置表">4. 关键代码位置表<a class="header-anchor" href="#4-关键代码位置表">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>机制</th>
+<th>代码</th>
+<th>file:line</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>深度上限常量</td>
+<td><code>_MAX_AGENTIC_RECURSION_DEPTH = 5</code></td>
+<td><code>function.py:48</code></td>
+</tr>
+<tr>
+<td>深度计数 contextvar</td>
+<td><code>_recursion_depth</code></td>
+<td><code>function.py:49-51</code></td>
+</tr>
+<tr>
+<td>sync wrapper：本函数名</td>
+<td><code>getattr(self,&quot;tool_name&quot;,None) or fn.__name__</code></td>
+<td><code>function.py:964</code></td>
+</tr>
+<tr>
+<td>sync wrapper：超限抛错</td>
+<td><code>if _cur_depth &gt;= MAX: raise RecursionError</code></td>
+<td><code>function.py:967-972</code></td>
+</tr>
+<tr>
+<td>sync wrapper：+1 写回</td>
+<td><code>_recursion_depth.set({**prev, name: cur+1})</code></td>
+<td><code>function.py:973-976</code></td>
+</tr>
+<tr>
+<td>sync wrapper：finally 复位</td>
+<td><code>_recursion_depth.reset(token)</code></td>
+<td><code>function.py:989</code></td>
+</tr>
+<tr>
+<td>async wrapper：本函数名</td>
+<td>同上</td>
+<td><code>function.py:852</code></td>
+</tr>
+<tr>
+<td>async wrapper：超限抛错</td>
+<td>同上</td>
+<td><code>function.py:855-860</code></td>
+</tr>
+<tr>
+<td>async wrapper：+1 写回</td>
+<td>同上</td>
+<td><code>function.py:861-864</code></td>
+</tr>
+<tr>
+<td>async wrapper：finally 复位</td>
+<td>同上</td>
+<td><code>function.py:877</code></td>
+</tr>
+<tr>
+<td>处境提示文案</td>
+<td><code>_situational_prefix(fn_name, fn_doc)</code></td>
+<td><code>runtime.py:321-341</code></td>
+</tr>
+<tr>
+<td>处境提示注入(DAG 路径)</td>
+<td><code>frame_prefix_blocks</code> → <code>_build_pi_context(prefix + content)</code></td>
+<td><code>runtime.py:578-587</code>, <code>597</code></td>
+</tr>
+<tr>
+<td>处境提示注入(standalone 回退)</td>
+<td>从 <code>_recursion_depth</code> 取最深名 → 拼 content 前</td>
+<td><code>runtime.py:1518-1532</code></td>
+</tr>
+<tr>
+<td>system 前缀单独组装(不含提示)</td>
+<td><code>self.system</code> + <code>_skills_block()</code></td>
+<td><code>runtime.py:1535-1539</code></td>
+</tr>
+<tr>
+<td><code>_current_tool_policy</code> 其它用途</td>
+<td>deny/source/allow/toolset 解析</td>
+<td><code>runtime.py:1451-1483</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-行为契约从测试提炼">5. 行为契约(从测试提炼)<a class="header-anchor" href="#5-行为契约从测试提炼">#</a></h2>
+<p>来自 <code>tests/agentic_programming/test_self_recursion_guard.py</code>：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>契约</th>
+<th>测试</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>处境提示含函数名、含 &quot;do NOT call it&quot;、含 &quot;recursion&quot;，docstring 降级到末尾(<code>recursion</code> 出现位置在 docstring 之前)</td>
+<td><code>test_situational_prefix_warns_against_self_call</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>空 docstring 时不追加 &quot;This function's job&quot;，提示仍含函数名</td>
+<td><code>test_situational_prefix_handles_empty_doc</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>函数自己的名字<strong>不再</strong>进 <code>_current_tool_policy[&quot;deny&quot;]</code>(self-deny 删干净)</td>
+<td><code>test_self_name_NOT_denied_during_call</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>正常调用一层时，本函数名深度 = 1(进入即 +1)</td>
+<td><code>test_depth_increments_during_call</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>无脑自调超限抛 <code>RecursionError</code>，消息含函数名 + 上限数字；进入函数体次数恰为 <code>_MAX_AGENTIC_RECURSION_DEPTH</code>(到上限止住、不再深入)</td>
+<td><code>test_depth_backstop_raises_past_limit</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>A→B 不同名独立计数：B 深 nesting 不计入 A 的限额，反之亦然(per-name 不误伤)</td>
+<td><code>test_distinct_subcalls_not_collateral_damage</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>return 后深度复位回调用前的值</td>
+<td><code>test_depth_restored_after_return</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>抛异常后深度也复位</td>
+<td><code>test_depth_restored_after_exception</code></td>
+</tr>
+</tbody>
+</table>
+<p>补充：测试用 <code>_deny()</code> helper(<code>test:51-53</code>)读 <code>_current_tool_policy.get(None).get(&quot;deny&quot;)</code>，<code>_depth(name)</code> helper(<code>test:55-56</code>)读 <code>_recursion_depth.get(None).get(name, 0)</code>——核对时可对照这两个读法确认计数/deny 形态。</p>
+<hr />
+<h2 id="6-与旧-deny-方案的对比">6. 与旧 deny 方案的对比<a class="header-anchor" href="#6-与旧-deny-方案的对比">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>旧:deny 屏蔽工具</th>
+<th>新:处境引导 + 深度上限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>怎么做</td>
+<td>wrapper 把函数自己名字推进 <code>_current_tool_policy[&quot;deny&quot;]</code>，内层模型看不到自己</td>
+<td>工具列表含函数自己；user turn 开头注入处境提示让模型自主不调；超 5 层抛 <code>RecursionError</code> 兜底</td>
+</tr>
+<tr>
+<td>模型认知</td>
+<td>不知道「我在 X 内部」，只是 X 不在列表</td>
+<td>明确知道处境(你在 X 体内、调 X = 递归)</td>
+</tr>
+<tr>
+<td>是否破坏 system 前缀缓存</td>
+<td>deny 在 policy 层、不动 system；但屏蔽是「替模型决定」</td>
+<td>提示放 user turn、不进 system，前缀仍恒定(符合决策6)</td>
+</tr>
+<tr>
+<td>失控止损</td>
+<td>靠屏蔽间接挡(屏蔽失效就无底)</td>
+<td>显式深度上限 5 层硬止损</td>
+</tr>
+<tr>
+<td>优</td>
+<td>直接、无需模型配合</td>
+<td>模型学会处境判断；符合理念;兜底确定性强</td>
+</tr>
+<tr>
+<td>劣</td>
+<td>模型学不会处境判断;违背理念;屏蔽一旦不生效就裸奔</td>
+<td>纯引导对弱模型不 100% 可靠(故有深度上限兜底)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-已知局限">7. 已知局限<a class="header-anchor" href="#7-已知局限">#</a></h2>
+<ol>
+<li><strong>纯引导对弱模型 / 长上下文不 100% 可靠。</strong> 处境提示是让模型自主判断，弱模型或上下文过长稀释提示时可能仍会调自己——所以保留深度上限作为确定性兜底。</li>
+<li><strong>跨函数环(A→B→A 交替)第一版未覆盖。</strong> 深度上限按<strong>同名</strong>计数(<code>_recursion_depth[name]</code>)，只挡直接自递归(A→A→A…)。A→B→A→B 这种交替环里 A 的深度每次只 +1 到一定层、B 同理，不会触发任一名的上限。整条调用链识别(把 A 在调用链上出现过就算环)是增强项，未做。</li>
+<li><strong>旧 deny 实现其实也只挡直接自递归、不挡跨函数环。</strong> 旧 deny 把「当前函数自己」推进 deny，A 跑时 deny 的是 A，B 仍可被调、B 里再调 A 也不在 B 的 deny 里。所以新方案在「跨函数环」这点上<strong>不是回退</strong>——两版都只防直接自递归，跨链识别是两版共同的待办增强。</li>
+</ol>
+<hr />
+<h2 id="关联文档">关联文档<a class="header-anchor" href="#关联文档">#</a></h2>
+<ul>
+<li><code>docs/design/runtime/session-dag.md</code> 决策6 —— 统一 system 前缀约束，本机制把处境提示放 user turn 正是为遵守该约束。</li>
+<li><code>docs/design/TODO-doc-code-gaps.md</code> §1 —— 7 层嵌套根因记录。</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-问题agentic-函数为什么会自递归">1. 问题：agentic 函数为什么会自递归</a>
+<a class="" href="#2-设计理念为什么用引导而非deny">2. 设计理念：为什么用「引导」而非「deny」</a>
+<a class="" href="#3-三个机制怎么协同">3. 三个机制怎么协同</a>
+<a class="lvl-3" href="#主-处境提示-防发生">(主) 处境提示 —— 防「发生」</a>
+<a class="lvl-3" href="#删-deny-工具列表含函数自己靠引导不靠屏蔽">删 deny —— 工具列表含函数自己，靠引导不靠屏蔽</a>
+<a class="lvl-3" href="#兜底-深度上限-止损安全网">(兜底) 深度上限 —— 止损安全网</a>
+<a class="" href="#4-关键代码位置表">4. 关键代码位置表</a>
+<a class="" href="#5-行为契约从测试提炼">5. 行为契约(从测试提炼)</a>
+<a class="" href="#6-与旧-deny-方案的对比">6. 与旧 deny 方案的对比</a>
+<a class="" href="#7-已知局限">7. 已知局限</a>
+<a class="" href="#关联文档">关联文档</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

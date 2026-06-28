@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage Metering 子系统设计 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../README.html">Documentation</a>
+<a class="navlink" href="../API.html">API Reference</a>
+<a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../api/providers.html">Providers</a>
+<a class="navlink" href="../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../design/README.html">Design Documents</a>
+<a class="navlink" href="../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink active" href="../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../design/channels/README.html">Channels</a>
+<a class="navlink" href="../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../design/context/README.html">Context</a>
+<a class="navlink" href="../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../design/function/README.html">Function Design</a>
+<a class="navlink" href="../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../design/providers/README.html">Providers</a>
+<a class="navlink" href="../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="usage-metering-子系统设计">Usage Metering 子系统设计<a class="header-anchor" href="#usage-metering-子系统设计">#</a></h1>
+<p>状态：实施中（2026-06）
+作者：设计 + 实现一体推进</p>
+<h2 id="1-目标">1. 目标<a class="header-anchor" href="#1-目标">#</a></h2>
+<p>让框架内<strong>每一次 LLM 调用</strong>的 token / 模型 / 成本被无遗漏地记录，带来源标签、时间序列、按模型/来源/会话分组的聚合能力，支撑可视化面板与成本核算，并为未来的配额、限流、预算告警、导出预留扩展口。</p>
+<p>明确不做的妥协：不为旧的累积快照式记账保留兼容代码；旧职责该拆该删则拆删。</p>
+<h2 id="2-现状诊断实施前">2. 现状诊断（实施前）<a class="header-anchor" href="#2-现状诊断实施前">#</a></h2>
+<p>LLM 调用最终都过 <code>providers/stream.py</code> 的 <code>stream_simple()</code>（流式）/ <code>complete_simple()</code>（非流式，内部跑 stream_simple）。返回的 <code>AssistantMessage</code> 带 <code>usage</code>（<code>Usage</code> 对象：input/output/cache_read/cache_write/total_tokens/cost）。</p>
+<p>记账只覆盖「走 engine 的主路径」，两层：</p>
+<ul>
+<li>消息级：<code>dispatcher/persistence.py</code> 把 token 写进 assistant 消息历史列（单条消息 pill 用）。</li>
+<li>会话累积级：<code>context/usage.py</code> 的 <code>UsageTracker.record_turn()</code> 写进 git session meta 的 <code>_usage</code>（只有累积总数，无时间序列、无 per-model、无 per-source、无成本）。</li>
+</ul>
+<p>三个根本问题：</p>
+<ol>
+<li>
+<p><strong>收口点不统一</strong>。<code>stream.py</code> 本身不记账，记账在更上层的 dispatcher；而 <code>memory/llm_bridge.py</code> 直接调 <code>api_provider.stream_simple()</code> 连 <a href="http://stream.py">stream.py</a> 都绕过。&quot;过了 stream_simple&quot; ≠ &quot;被记账&quot;。</p>
+</li>
+<li>
+<p><strong>存储是累积快照不是流水</strong>。session meta <code>_usage</code> 无法跨 session 聚合、无法按时间桶查询、无 per-model 索引。</p>
+</li>
+<li>
+<p><strong>职责耦合</strong>。<code>UsageTracker</code> 同时干记账、compaction 阈值估算（<code>estimated_input</code>/<code>record_compaction</code>）、热路径 budget 缓存——三者生命周期与消费者完全不同。</p>
+</li>
+</ol>
+<p><strong>漏记路径清单</strong>（直接调 complete_simple/stream_simple 绕过 engine）：
+<code>context/summarize.py</code>、<code>agent/compaction/compaction.py</code>、<code>agent/compaction/branch_summarization.py</code>、<code>functions/tools/mixture_of_agents</code>、<code>memory/llm_bridge.py</code>，以及 <code>@agentic_function</code> 子进程（<code>process_runner.py</code>，进程内单例 tracker 主进程收不到，返回结果不含 usage）。</p>
+<p>一个有利事实：<code>providers/models.py:calculate_cost(model, usage)</code> 已能从 <code>Model.cost</code> 算成本。metering 层只需在收口点确保它被调用，不必新建定价逻辑。</p>
+<h2 id="3-分层架构">3. 分层架构<a class="header-anchor" href="#3-分层架构">#</a></h2>
+<pre><code>消费层  webui 面板 / CLI / 导出 / 未来配额引擎
+          │ query(filters, group_by, time_bucket)
+存储层  UsageLedger  —  SQLite 单库 usage_events 表 (append-only)
+          │ record(UsageEvent)
+记账层  UsageRecorder  —  唯一收口逻辑：usage + model + 来源上下文 → UsageEvent
+          │ 读 call-context
+上下文层 UsageContext  —  contextvar + usage_scope() 上下文管理器
+
+(独立保留) context budget 估算 — compaction 阈值，从 UsageTracker 拆出
+</code></pre>
+<p>新增模块 <code>openprogram/metering/</code>：</p>
+<ul>
+<li><code>event.py</code> — <code>UsageEvent</code> schema</li>
+<li><code>context.py</code> — contextvar + <code>usage_scope()</code> / <code>current_usage_context()</code> / <code>snapshot()</code> / <code>apply_snapshot()</code></li>
+<li><code>ledger.py</code> — <code>UsageLedger</code>（SQLite 后端 + 聚合查询）</li>
+<li><code>recorder.py</code> — <code>UsageRecorder</code>（收口，best-effort）</li>
+<li><code>subprocess.py</code> — 子进程账目桥</li>
+<li><code>__init__.py</code> — 门面</li>
+</ul>
+<p>放顶层 <code>metering/</code> 而非 <code>context/</code> 之下：metering 是横切关注点（providers/agent/memory/functions 都依赖），放 context 会制造 <code>providers → context</code> 反向依赖。<code>metering/</code> 只依赖 <code>providers/types</code>（纯数据），无环。</p>
+<h2 id="4-usageevent-schema">4. UsageEvent Schema<a class="header-anchor" href="#4-usageevent-schema">#</a></h2>
+<p>一条 event = 一次 LLM 调用的完整记账记录（<code>metering/event.py</code>，pydantic frozen）：</p>
+<p>身份：<code>event_id</code>(uuid 幂等键)、<code>ts</code>(unix epoch float)。
+归属：<code>session_id</code>、<code>parent_session_id</code>(子 agent 归属父)、<code>agent_id</code>、<code>call_kind</code>(核心来源标签)、<code>call_label</code>(自由文本细分)、<code>origin_pid</code>(主进程 vs 子进程)。
+模型：<code>provider</code>、<code>api</code>、<code>model_id</code>。
+tokens（provider 权威值，缺失为 0）：<code>input_tokens</code>、<code>output_tokens</code>、<code>cache_read_tokens</code>、<code>cache_write_tokens</code>、<code>total_tokens</code>。
+成本（USD，拍平便于 SUM）：<code>cost_input/output/cache_read/cache_write/total</code>、<code>cost_source</code>(&quot;model_catalog&quot;|&quot;provider_reported&quot;|&quot;unknown&quot;)。
+溯源：<code>token_source</code>(&quot;provider_usage&quot;|&quot;anthropic_count_api&quot;|&quot;estimate&quot;)、<code>schema_version</code>。</p>
+<p><code>call_kind</code> 用字符串而非 Enum（可扩展，新增调用方不改底层）：
+<code>chat</code> / <code>exec</code> / <code>compaction</code> / <code>summarize</code> / <code>memory</code> / <code>subagent</code> / <code>tool</code> / <code>title</code> / <code>unknown</code>。</p>
+<p>取舍：cost 拍平而非嵌套 UsageCost → SQLite 列化、SUM 无需 JSON 解析；token_source 单列 → 面板可标注&quot;估算&quot;避免误导成本。</p>
+<h2 id="5-来源标签传递contextvar-为主metadata-显式覆盖兜底">5. 来源标签传递：contextvar 为主，metadata 显式覆盖兜底<a class="header-anchor" href="#5-来源标签传递contextvar-为主metadata-显式覆盖兜底">#</a></h2>
+<p>底层 <code>stream_simple</code> 不知道自己被谁调。三种传法：</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>优</th>
+<th>劣</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>显式参数 <code>options.call_kind</code></td>
+<td>显式</td>
+<td>每个调用方都改，穿透多层签名，违反&quot;加调用方不改底层&quot;</td>
+</tr>
+<tr>
+<td><code>SimpleStreamOptions.metadata</code></td>
+<td>字段已有</td>
+<td>深层调用易漏；memory 绕过 <a href="http://stream.py">stream.py</a> 时也到不了</td>
+</tr>
+<tr>
+<td><strong>contextvar</strong></td>
+<td>一行 <code>with usage_scope(...)</code>，async Task 自动继承</td>
+<td>跨进程/线程不自动传播（需显式快照）</td>
+</tr>
+</tbody>
+</table>
+<p>采用 contextvar 为主 + metadata 显式覆盖。<code>metering/context.py</code>：
+<code>usage_scope(call_kind, call_label, parent_session_id, agent_id)</code> 上下文管理器，set/reset contextvar，支持嵌套 merge。<code>current_usage_context()</code> 读。<code>snapshot()</code>/<code>apply_snapshot()</code> 跨进程序列化。</p>
+<p>边界说明：asyncio 建 Task 默认 <code>copy_context()</code>，stream_simple 在 create_task 下游能读对 scope。线程边界（run_in_executor/裸 Thread）不继承 → 入口 apply_snapshot。进程边界 fork 拷贝 contextvar 当前值（对 process_runner fork 有利），但 spawn 不行 → snapshot/apply_snapshot 作可靠路径。</p>
+<p>recorder 合并优先级：<code>metadata.usage</code> &gt; contextvar &gt; 默认 <code>unknown</code>。</p>
+<h2 id="6-收口点streampy-包装-把-memory-拉回">6. 收口点：<a href="http://stream.py">stream.py</a> 包装 + 把 memory 拉回<a class="header-anchor" href="#6-收口点streampy-包装-把-memory-拉回">#</a></h2>
+<p>在 <code>stream.py</code> 的 <code>stream()</code>/<code>stream_simple()</code> 包记账装饰器，并把 <code>memory/llm_bridge.py</code> 拉回 <a href="http://stream.py">stream.py</a>。</p>
+<p>理由：</p>
+<ol>
+<li><a href="http://stream.py">stream.py</a> 是&quot;一次逻辑 LLM 调用&quot;的语义边界，已做 api_key 解析/provider 查找，能拿到 model(含 cost)+最终 AssistantMessage.usage。</li>
+<li>stream() 是 generator，包装方式 = 消费 done/error 时提取 final_message.usage → <code>calculate_cost</code> → 读 contextvar → 组 UsageEvent → recorder。流式不阻塞，记账只在终止 event 触发一次。</li>
+<li>不选 api_registry 层：ApiProvider 是 Protocol，每实现各自 stream_simple，收口要么改 Protocol（侵入所有 provider）要么包 registry（包装点分散）。<a href="http://stream.py">stream.py</a> 是唯一单函数收口。</li>
+<li>memory 必须拉回：现 <code>llm_bridge.py</code> 直连 api_provider = 漏账。改调 <code>providers.stream_simple</code> + <code>usage_scope(&quot;memory&quot;)</code>，顺带修复 <a href="http://stream.py">stream.py</a> 注释担心的 header 不一致。</li>
+</ol>
+<p>不变量：记账失败必须 best-effort（try/except 吞），绝不打断 LLM 响应。</p>
+<p>dispatcher 现有 <code>persist_assistant_message</code>（messages 列）<strong>保留不动</strong>——那是单条消息 pill 的数据。ledger 是独立第二份权威账：消息列=&quot;这条消息花多少&quot;，ledger=&quot;可聚合全局流水&quot;。</p>
+<h2 id="7-存储独立全局-sqlite-ledger">7. 存储：独立全局 SQLite ledger<a class="header-anchor" href="#7-存储独立全局-sqlite-ledger">#</a></h2>
+<p>废弃 session meta 塞累积 dict。新建 <code>~/.openprogram/usage.db</code> 一张 append-only 表：</p>
+<pre><code class="language-sql"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">usage_events</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="n">event_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span><span class="w"> </span><span class="n">ts</span><span class="w"> </span><span class="nb">REAL</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">    </span><span class="n">session_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">parent_session_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">agent_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
+<span class="w">    </span><span class="n">call_kind</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">call_label</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">origin_pid</span><span class="w"> </span><span class="nb">INTEGER</span><span class="p">,</span>
+<span class="w">    </span><span class="n">provider</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">api</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">model_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">    </span><span class="n">input_tokens</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">output_tokens</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">cache_read_tokens</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">cache_write_tokens</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">total_tokens</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="n">cost_total</span><span class="w"> </span><span class="nb">REAL</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">cost_input</span><span class="w"> </span><span class="nb">REAL</span><span class="p">,</span><span class="w"> </span><span class="n">cost_output</span><span class="w"> </span><span class="nb">REAL</span><span class="p">,</span>
+<span class="w">    </span><span class="n">cost_cache_read</span><span class="w"> </span><span class="nb">REAL</span><span class="p">,</span><span class="w"> </span><span class="n">cost_cache_write</span><span class="w"> </span><span class="nb">REAL</span><span class="p">,</span><span class="w"> </span><span class="n">cost_source</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">token_source</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
+<span class="w">    </span><span class="n">schema_version</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">);</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">ix_usage_ts</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">usage_events</span><span class="p">(</span><span class="n">ts</span><span class="p">);</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">ix_usage_model_ts</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">usage_events</span><span class="p">(</span><span class="n">model_id</span><span class="p">,</span><span class="w"> </span><span class="n">ts</span><span class="p">);</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">ix_usage_session</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">usage_events</span><span class="p">(</span><span class="n">session_id</span><span class="p">);</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">ix_usage_kind_ts</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">usage_events</span><span class="p">(</span><span class="n">call_kind</span><span class="p">,</span><span class="w"> </span><span class="n">ts</span><span class="p">);</span>
+</code></pre>
+<p>WAL 模式，支持子进程并发追加。SQLite 用 stdlib <code>sqlite3</code>，零外部依赖。</p>
+<p>为什么不扩展 session meta：那是 git session 的 idx.meta JSON，无法跨 session 聚合/按时间桶查/per-model 索引；子进程写它还争 git 锁。</p>
+<p>聚合 API <code>UsageLedger.query(since, until, group_by=[...], filters={...}, time_bucket=&quot;day&quot;|&quot;hour&quot;|None)</code>，供面板（趋势=bucket，柱状=group_by）与 CLI 同源消费。</p>
+<p>后端抽象为接口（append/query），默认 SQLite，留 JSONL/远程实现口子。</p>
+<h2 id="8-子进程边界">8. 子进程边界<a class="header-anchor" href="#8-子进程边界">#</a></h2>
+<p><code>@agentic_function</code> 子进程：fork 跑 tool body，子进程内 LLM 调用（gui_agent 等）的 default_tracker 是进程内单例，主进程收不到。</p>
+<p>方案：<strong>子进程直接写共享 SQLite ledger（账本真相）</strong>。</p>
+<ul>
+<li>子进程打开同一 usage.db（WAL 多进程安全），自己 recorder 直接 append，<code>origin_pid</code> 标记来源。无需主进程二次入账（避免双计）。</li>
+<li>SIGKILL 风险：已 append 的 event 在库中（WAL 落盘）是正确的——那些 token 确实花了；被杀前未完成调用没收到 done event，不入账，符合&quot;绝不编造&quot;。</li>
+</ul>
+<p><strong>实施落地（与初版方案的差异）</strong>：<code>process_runner.py</code> 用的是 <strong>spawn 而非 fork</strong>（父 worker 已加载 PyTorch/libomp/Cocoa，fork 后这些库处于不安全状态会 SIGSEGV）。spawn 不复制 contextvar，所以靠显式参数传递：父侧 <code>run_agentic_in_subprocess</code> 调 <code>metering.context.snapshot()</code> 把当前 UsageContext 序列化为 dict，作为 <code>_child_entry</code> 的新增参数 <code>usage_ctx_snapshot</code>；子侧入口（<code>os.setpgrp()</code> 之后）调 <code>apply_snapshot()</code> 还原。ledger 的 <code>_connect()</code> 检测到 <code>os.getpid()</code> 变化会自动重开 sqlite 连接（fork/spawn 后旧 handle 不可用），子进程因此自动拿到独立 handle 写共享 WAL db。<strong>没有单独的 <code>metering/subprocess.py</code></strong>——快照/还原直接复用 <code>context.py</code> 的 <code>snapshot()</code>/<code>apply_snapshot()</code>，process_runner 只多两处调用，比独立模块更克制。result pickle 暂未回传 usage_summary（面板已能从 ledger 实时查到子进程写入的 event，即时显示无额外价值）。</p>
+<h2 id="9-可扩展留口不实现">9. 可扩展留口（不实现）<a class="header-anchor" href="#9-可扩展留口不实现">#</a></h2>
+<ul>
+<li>per-user：UsageEvent 加 <code>user_id</code>（默认单用户，多租户由 usage_scope 注入），query(group_by=[&quot;user_id&quot;])。</li>
+<li>限流/告警：UsageRecorder.record() 暴露 post-record hook 列表（register_usage_hook），事件驱动不阻塞热路径。</li>
+<li>导出：ledger 后端接口加 export(format, filters) 或 JSONL 镜像后端。</li>
+<li>远程聚合：后端换 push OTLP/collector 实现，event schema 不变。</li>
+</ul>
+<h2 id="10-删除-重构清单">10. 删除 / 重构清单<a class="header-anchor" href="#10-删除-重构清单">#</a></h2>
+<h3 id="101-实际执行phase-4-落地">10.1 实际执行（Phase 4 落地）<a class="header-anchor" href="#101-实际执行phase-4-落地">#</a></h3>
+<ul>
+<li><strong>删 <code>agent/compaction/</code></strong> 整个目录（<code>__init__.py</code>/<code>compaction.py</code>/<code>branch_summarization.py</code>/<code>utils.py</code>，约 1180 行）：确认无任何外部 import、无动态引用、非副作用加载，是真死代码。</li>
+<li><strong><code>webui/routes/usage.py</code> 完全重写</strong>：从扫 <code>session_db</code> + 读 session meta <code>_usage</code> 改为查 <code>UsageLedger</code>；新增 <code>/api/usage/trend</code>（day/hour bucket 时序）与 by_kind 分解，入参支持 since/until。</li>
+</ul>
+<h3 id="102-改方案usagetracker-保留不拆">10.2 改方案：UsageTracker 保留，不拆<a class="header-anchor" href="#102-改方案usagetracker-保留不拆">#</a></h3>
+<p>初版计划把 <code>UsageTracker</code>（context/usage.py）拆 3 职责、删 <code>record_turn</code>/<code>_persist</code>/<code>_load_from_db</code>、抽 <code>context/budget_state.py</code>。<strong>实施时否决了这条</strong>，原因：</p>
+<ul>
+<li><code>UsageTracker</code> 与 <code>UsageLedger</code> <strong>职责本就分离</strong>，不冲突。Tracker 是 <strong>compaction 预算状态机</strong>——给 <code>ContextEngine.prepare/compact</code> 回答&quot;上一轮真实 input_tokens 是多少、cache 命中率多少、是否该压缩&quot;，热路径 sub-μs 读、按 session 缓存、写 session meta <code>_usage</code>（compaction 决策的持久化，不是计费账本）。Ledger 是 <strong>计费记账</strong>——append-only、跨进程、带 per-model/per-source/时间序列。两者消费者、生命周期、数据形状完全不同，强行合并反而耦合。</li>
+<li>删 <code>record_turn</code> 会触碰 <code>engine.after_turn</code> 这条与本任务无关的核心热路径（context 压缩链路），违反 surgical-change 原则、引入回归风险，且收益为零（session meta <code>_usage</code> 体量极小，留着无害）。</li>
+<li><code>budget_state.py</code> 抽取是&quot;为拆而拆&quot;——Tracker 当前就是单一职责的干净实现（标题虽叫 Tracker，实质是 budget state），没有真实痛点要解。</li>
+</ul>
+<p>结论：<strong>Tracker 原样保留</strong>，<code>UsageState</code>/session meta <code>_usage</code> 原样保留（compaction 在用）。计费记账完全由新的 Ledger 承担，与 Tracker 并存、互不读写。</p>
+<p>不动（metering 的输入，复用）：<code>models.py:calculate_cost</code>、<code>_event_parsing.py:extract_usage</code>、<code>dispatcher/persistence.py</code> 消息列、<code>types.py:Usage/UsageCost</code>。</p>
+<h2 id="11-分阶段实施全部完成">11. 分阶段实施（全部完成）<a class="header-anchor" href="#11-分阶段实施全部完成">#</a></h2>
+<ul>
+<li><strong>Phase 0 ✅</strong>：metering 地基（event/context/ledger/recorder + 单测），无行为变更。</li>
+<li><strong>Phase 1 ✅</strong>：<a href="http://stream.py">stream.py</a> 收口；dispatcher chat 包 usage_scope。关键修复：async generator 的消费者（agent_loop）在收到 done event 时直接 <code>return</code>，把生成器挂起在 <code>yield</code> 处——循环后记账永不执行。改为<strong>在 terminal event 处、yield 之前就记账</strong>（<code>recorded</code> flag 防双计）。</li>
+<li><strong>Phase 2 ✅</strong>：summarize / mixture_of_agents(proposer+aggregator) 包 usage_scope；memory/llm_bridge 从直调 <code>api_provider.stream_simple</code> 拉回经 <code>providers.stream_simple</code>（让收口生效）+ 包 <code>usage_scope(call_kind=&quot;memory&quot;)</code>。（compaction/branch 路径随 §10.1 删除而消失，无需包。）</li>
+<li><strong>Phase 3 ✅</strong>：spawn 子进程 UsageContext 透传（snapshot/apply_snapshot via 参数，见 §8 实施落地）；ledger pid 重检自动重连。未做 result usage_summary 回传（面板已能实时查到）。</li>
+<li><strong>Phase 4 ✅</strong>：删 <code>agent/compaction/</code> 死代码；usage 路由换 ledger。<strong>未拆 UsageTracker</strong>（见 §10.2 改方案）。</li>
+<li><strong>Phase 5 ✅</strong>：<code>/api/usage/summary</code>+<code>/api/usage/trend</code> 查 ledger；前端面板趋势折线（ResizeObserver 真实像素绘制，避免 viewBox 拉伸失真）+ by_source 横条 + per-model 表 + 成本卡；配色用 <code>--accent-blue</code>（品牌暖橙）。未做 CLI <code>op usage</code>（留口，按需补）。</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-目标">1. 目标</a>
+<a class="" href="#2-现状诊断实施前">2. 现状诊断（实施前）</a>
+<a class="" href="#3-分层架构">3. 分层架构</a>
+<a class="" href="#4-usageevent-schema">4. UsageEvent Schema</a>
+<a class="" href="#5-来源标签传递contextvar-为主metadata-显式覆盖兜底">5. 来源标签传递：contextvar 为主，metadata 显式覆盖兜底</a>
+<a class="" href="#6-收口点streampy-包装-把-memory-拉回">6. 收口点：stream.py 包装 + 把 memory 拉回</a>
+<a class="" href="#7-存储独立全局-sqlite-ledger">7. 存储：独立全局 SQLite ledger</a>
+<a class="" href="#8-子进程边界">8. 子进程边界</a>
+<a class="" href="#9-可扩展留口不实现">9. 可扩展留口（不实现）</a>
+<a class="" href="#10-删除-重构清单">10. 删除 / 重构清单</a>
+<a class="lvl-3" href="#101-实际执行phase-4-落地">10.1 实际执行（Phase 4 落地）</a>
+<a class="lvl-3" href="#102-改方案usagetracker-保留不拆">10.2 改方案：UsageTracker 保留，不拆</a>
+<a class="" href="#11-分阶段实施全部完成">11. 分阶段实施（全部完成）</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../assets/site.js"></script>
+</body>
+</html>

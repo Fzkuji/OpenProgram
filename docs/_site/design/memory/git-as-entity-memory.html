@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>实体记忆走 Git: Session-Git + Project-Git · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory" open><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink active" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="实体记忆走-git-session-git-project-git">实体记忆走 Git: Session-Git + Project-Git<a class="header-anchor" href="#实体记忆走-git-session-git-project-git">#</a></h1>
+<h2 id="心智模型">心智模型<a class="header-anchor" href="#心智模型">#</a></h2>
+<p>&quot;实体记忆&quot;= 真实发生过的事, 可逐步回溯. Git 天生就是这个范式 (commit
+是不可变的, log 是时间线, checkout 能时光机). 不再用自研 DAG-as-truth,
+直接复用 Git.</p>
+<p>整体记忆模型 (用户原话, 4+1):</p>
+<pre><code>实体记忆 (raw, 可回溯)
+  ├─ Session memory     ← session-level git (每 turn 一个 commit)
+  └─ Project memory     ← project-level git (绑工作目录, 改文件自动 commit)
+
+抽象记忆 (derived, 从实体提炼)        ← 等实体打通后再做
+  ├─ Journal (时间轴)
+  └─ Wiki (知识图谱)
+
+Core (自我认知)                       ← 已有 memory/core.md
+</code></pre>
+<p>本文档只规划<strong>实体记忆</strong> (前两块). 抽象记忆留到实体跑通后再设计映射.</p>
+<h2 id="1-跟现有-dag-的关系">1. 跟现有 DAG 的关系<a class="header-anchor" href="#1-跟现有-dag-的关系">#</a></h2>
+<p><strong>不替换, 是叠加.</strong> DAG (SQLite) 保留, git 增量同步.</p>
+<ul>
+<li>DAG 优势: SQL 查询快, 索引 caller / parent_id / seq, commit chain 已经在跑</li>
+<li>Git 优势: 工具成熟 (log / diff / checkout / revert), 持久化 atomic, 用户能直接 cd 进去看</li>
+<li>双写: 每个 turn 写 DAG 节点之后, 同步 git commit 一份 JSON 序列化</li>
+</ul>
+<p>读路径还是走 DAG (commit 等). git 是<strong>回溯 + 备份 + 用户可视</strong>入口.</p>
+<h2 id="2-session-git">2. Session-Git<a class="header-anchor" href="#2-session-git">#</a></h2>
+<h3 id="21-文件布局">2.1 文件布局<a class="header-anchor" href="#21-文件布局">#</a></h3>
+<p>每个 session 一个独立 git repo:</p>
+<pre><code>~/.openprogram/sessions/&lt;session_id&gt;/
+├── .git/
+├── meta.json              # session 元数据 (title, agent_id, model, ...)
+├── messages/
+│   ├── 000001-u-abc123.json    # user message
+│   ├── 000002-a-def456.json    # assistant message
+│   ├── 000003-t-fc_xxx.json    # tool result (caller=def456)
+│   ├── 000004-a-ghi789.json
+│   └── ...
+└── commits/
+    └── commit_xxx.json      # 每个 context commit 一份 (可选, 先不做)
+</code></pre>
+<p>文件名按 <code>&lt;seq&gt;-&lt;role[0]&gt;-&lt;node_id&gt;.json</code> 排序 — 数字前缀让 ls 顺序就是时序, 不依赖文件系统排序.</p>
+<p>每个 message 文件内容就是 DAG 节点的 JSON 序列化:</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc123&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;你好&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;predecessor&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;caller&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1779500000.0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="22-commit-时机">2.2 Commit 时机<a class="header-anchor" href="#22-commit-时机">#</a></h3>
+<p>每个 <strong>turn 结束</strong>时一次 commit (不是每条消息一次, 那太碎). turn 结束 =
+dispatcher.process_user_turn() 返回 TurnResult 时.</p>
+<p>一个 turn 包含:</p>
+<ul>
+<li>1 个 user message</li>
+<li>1 个 assistant placeholder → 最终带 content</li>
+<li>N 个 tool result (caller = assistant)</li>
+</ul>
+<p>commit message:</p>
+<pre><code>turn &lt;N&gt;: &lt;first 60 chars of user msg&gt;
+
+assistant: &lt;first 80 chars of reply&gt;
+tools: read, grep × 3, list
+
+[meta: turn took 12.3s, 18 tools, 4521 tokens]
+</code></pre>
+<h3 id="23-branch-retry">2.3 Branch / Retry<a class="header-anchor" href="#23-branch-retry">#</a></h3>
+<p>DAG 已有 retry 分支 (多个 conv-child 共享 parent). 映射到 git:</p>
+<ul>
+<li>session repo 默认 branch = <code>main</code> (= 当前 HEAD 路径)</li>
+<li>DAG 上一个新的 retry 触发时, 创建 git branch <code>retry-&lt;assistant_id&gt;</code>, 跳到那</li>
+<li>切换 DAG head → checkout git branch</li>
+<li>用户在 UI 上的 &quot;switch branch&quot; → 后端 <code>git checkout</code></li>
+</ul>
+<p>git branch 跟 DAG branch 是同一个东西的两个视角.</p>
+<h3 id="24-回溯-ui-claude-code-风格">2.4 回溯 UI (Claude Code 风格)<a class="header-anchor" href="#24-回溯-ui-claude-code-风格">#</a></h3>
+<p>chat 顶部 / 历史区右侧加 prev / next 按钮:</p>
+<pre><code>[← prev turn]  Turn 7 / 12  [next turn →]    [view full history]
+</code></pre>
+<ul>
+<li>prev: <code>git checkout HEAD~1</code> + 重放 UI 到那时状态</li>
+<li>next: 反向走 reflog</li>
+<li>view full history: 弹一个 timeline (每个 commit 一条, 点开看 message 内容)</li>
+</ul>
+<p>实现层面: WS action <code>git_history(session_id)</code> 返回 commit log, <code>git_checkout(session_id, commit_sha)</code> 切到某个状态, dispatcher 下一轮 user message 续在那个 commit 上.</p>
+<h3 id="25-双写一致性">2.5 双写一致性<a class="header-anchor" href="#25-双写一致性">#</a></h3>
+<p><strong>主路径</strong>: dispatcher 写 DAG (现状).
+<strong>镜像</strong>: turn 完成后, 异步把这一 turn 的所有节点序列化到 session repo + commit.</p>
+<p>异步是因为 git commit ~100-500ms, 不该卡用户. 用 <code>threading.Thread</code> 后台跑, 失败只记日志不阻塞.</p>
+<p>冲突可能性: 极低 (一个 session 一个 repo, 串行 commit). 用文件锁兜底.</p>
+<h3 id="26-老-session-迁移">2.6 老 session 迁移<a class="header-anchor" href="#26-老-session-迁移">#</a></h3>
+<p>启动时扫已有 SessionDB, 给没 repo 的 session 跑一次性 backfill: 按 seq 遍历节点, 逐 turn commit 出来. 一次跑完, 之后增量.</p>
+<h2 id="3-project-git">3. Project-Git<a class="header-anchor" href="#3-project-git">#</a></h2>
+<h3 id="31-概念">3.1 概念<a class="header-anchor" href="#31-概念">#</a></h3>
+<p>Project = 一个长期工作单元. 比如 &quot;wiki-agent 重构&quot;, 它:</p>
+<ul>
+<li>关联一个<strong>文件系统目录</strong> (用户的代码仓 / 文档仓 e.g. <code>/Users/x/code/wiki-agent</code>)</li>
+<li>关联<strong>多个 session</strong> (用户在这 project 上的多次对话)</li>
+<li>有名字 / 描述 / 状态</li>
+</ul>
+<p>Project 本身<strong>就是用户的 git repo</strong> (如果还没 init, agent 帮 init 一个).</p>
+<p>Agent 在 project 工作目录里跑 tool 改文件 → 自动 commit 到 project repo.</p>
+<h3 id="32-关联">3.2 关联<a class="header-anchor" href="#32-关联">#</a></h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">Project</span><span class="p">:</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">workdir</span><span class="p">:</span> <span class="nb">str</span>               <span class="c1"># 绝对路径, 用户文件系统目录</span>
+    <span class="n">sessions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>        <span class="c1"># session id 列表 (谁在这 project 里干活)</span>
+    <span class="n">status</span><span class="p">:</span> <span class="s2">&quot;active&quot;</span> <span class="o">|</span> <span class="s2">&quot;paused&quot;</span> <span class="o">|</span> <span class="s2">&quot;done&quot;</span>
+    <span class="n">created_at</span><span class="p">:</span> <span class="nb">float</span>
+
+<span class="c1"># 反向关联:</span>
+<span class="n">Session</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;project_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;proj_xxx&quot;</span>   <span class="c1"># 加到 sessions 表</span>
+</code></pre>
+<p>session 可以独立存在 (没 project, 跟现在一样). 有 project 时, agent 修改文件触发的 commit 落在 project repo.</p>
+<h3 id="33-agent-改文件触发自动-commit">3.3 Agent 改文件触发自动 commit<a class="header-anchor" href="#33-agent-改文件触发自动-commit">#</a></h3>
+<p>dispatcher 现在调 tool 时, write/edit/apply_patch 这类有副作用的 tool 改了 project workdir 里的文件. 钩子:</p>
+<pre><code>turn 结束:
+  if session.project_id:
+    proj = load_project(session.project_id)
+    with cwd(proj.workdir):
+      if git_status_dirty():
+        git add -A
+        git commit -m &quot;[agent &lt;session_id&gt;] turn &lt;N&gt;: &lt;user msg first 60 chars&gt;&quot;
+</code></pre>
+<p>提交者 (committer) 标 &quot;agent (claude-sonnet-4.7 via OpenProgram)&quot; 跟用户自己手动改的 commit 区分.</p>
+<h3 id="34-用户手动改-vs-agent-改">3.4 用户手动改 vs agent 改<a class="header-anchor" href="#34-用户手动改-vs-agent-改">#</a></h3>
+<p>用户在 IDE 里改文件, 当然不是 OpenProgram 触发的 commit. 几种策略:</p>
+<ul>
+<li><strong>Strategy A (推荐)</strong>: agent 每 turn 结束前, 先 <code>git status</code> 看有没有 dirty.
+<ul>
+<li>全是 agent 改的 → agent 一次 commit</li>
+<li>有用户未提交的改 → agent <strong>不动</strong> (不要污染用户 working tree), 在 UI 警告 &quot;你有未提交改动, agent 修改先不自动 commit&quot;</li>
+</ul>
+</li>
+<li><strong>Strategy B</strong>: agent 用专属 branch <code>agent/&lt;session_id&gt;</code>, 切到那 branch 上 commit, 用户 branch (main) 不动. 完成后用户决定 merge.</li>
+</ul>
+<p>我倾向 <strong>A</strong>, 简单且符合直觉. 用户自己负责管 git, agent 只在干净时 commit.</p>
+<h3 id="35-没绑-project-的-session">3.5 没绑 project 的 session<a class="header-anchor" href="#35-没绑-project-的-session">#</a></h3>
+<p>跟现在一样, 完全独立. 不强制每个 session 都属于某个 project.</p>
+<p>UI 上&quot;创建 project&quot;是显式操作 — 用户选个目录 + 起个名字. 已有 session 可以&quot;加入&quot; project, 后续的工作 commit 到那。</p>
+<h2 id="4-ui-入口">4. UI / 入口<a class="header-anchor" href="#4-ui-入口">#</a></h2>
+<h3 id="41-session-历史回溯">4.1 Session 历史回溯<a class="header-anchor" href="#41-session-历史回溯">#</a></h3>
+<p>chat 顶部 / 右栏:</p>
+<ul>
+<li>timeline 视图 (每 commit 一条)</li>
+<li>&quot;← prev turn&quot; / &quot;next turn →&quot; 按钮</li>
+<li>选某个 commit → 重放到那个状态, 新发的消息从那分叉</li>
+</ul>
+<p>跟现在 DAG history 视图共存 (DAG 看分支结构, git timeline 看时间序).</p>
+<h3 id="42-projects-panel">4.2 Projects panel<a class="header-anchor" href="#42-projects-panel">#</a></h3>
+<p>左 sidebar 加 section &quot;Projects&quot;:</p>
+<pre><code>─ Projects ─────────
+  ● Wiki Agent Refactor   2 sessions  ●  active
+  ○ DAG Visualization    1 session   done
+  ○ ...
+  + New Project
+</code></pre>
+<p>点击 project → 进 project detail page: 名字 / workdir / 关联 sessions / 提交历史 / 抽象记忆入口 (留 Phase B).</p>
+<p>新建 project 流程: 选个目录 → 起名 → 创建 / 复用 git repo → 把当前 session 关联进去 (可选).</p>
+<h3 id="43-chat-顶部-project-指示">4.3 Chat 顶部 project 指示<a class="header-anchor" href="#43-chat-顶部-project-指示">#</a></h3>
+<p>如果当前 session 关联了 project, 顶部 status 区显示 project 名字 + workdir 简写, 点击进 project page.</p>
+<h2 id="5-实施分期">5. 实施分期<a class="header-anchor" href="#5-实施分期">#</a></h2>
+<p>Phase B (这次设计的): Project + Session 都接 git
+↑ 等用户确认后开干</p>
+<p><strong>Phase B.1: Session-git 基础设施</strong> (~1 天)</p>
+<ul>
+<li>新模块 <code>openprogram/memory/session_git/</code> (init / commit / log / checkout 包装)</li>
+<li>dispatcher.process_user_turn 末尾 hook: 后台线程跑 commit</li>
+<li>backfill 脚本: 老 session → 生成 git repo</li>
+<li>WS action: <code>git_session_log</code>, <code>git_session_checkout</code></li>
+</ul>
+<p><strong>Phase B.2: Project schema + UI</strong> (~1-2 天)</p>
+<ul>
+<li>DB 表 <code>projects</code> (id, name, workdir, status, ...)</li>
+<li>sessions 表加 <code>project_id</code></li>
+<li>WS: <code>list_projects</code>, <code>create_project</code>, <code>add_session_to_project</code></li>
+<li>左 sidebar 加 Projects section</li>
+</ul>
+<p><strong>Phase B.3: Project-git auto-commit</strong> (~1 天)</p>
+<ul>
+<li>session.project_id 已绑 → turn 后跑 project commit hook</li>
+<li>Strategy A (干净时 commit, 有 dirty 就警告)</li>
+<li>UI 警告 banner</li>
+</ul>
+<p><strong>Phase B.4: 回溯 UI</strong> (~1-2 天)</p>
+<ul>
+<li>chat 顶部 prev/next + timeline view</li>
+<li>WS action 调 git_checkout 重放历史</li>
+</ul>
+<p><strong>Phase B.5: 老数据迁移</strong></p>
+<ul>
+<li>现有 session 全部跑一遍 backfill</li>
+<li>已有 git 项目可以 import 成 Project</li>
+</ul>
+<p>总: 5-7 天工作量, 大头是 Phase B.1 + B.4.</p>
+<h2 id="6-关键不变式">6. 关键不变式<a class="header-anchor" href="#6-关键不变式">#</a></h2>
+<ol>
+<li><strong>DAG 是当前真源, Git 是镜像</strong>. Git 失败不影响 DAG. 反过来不行 — git 落盘但 DAG 没写就是脏数据.</li>
+<li><strong>Session-git 一 turn 一 commit</strong>, 不按消息细分.</li>
+<li><strong>Project-git 干净优先</strong>: 用户 working tree 不能被 agent 污染. 有未提交改动时 agent 跳过 commit.</li>
+<li><strong>回溯不破坏 DAG</strong>: checkout 是只读视图, 用户发新消息会基于该 commit 在 DAG 上 fork 新分支.</li>
+<li><strong>抽象记忆等实体打通后再做</strong> — 别提前优化.</li>
+</ol>
+<h2 id="7-风险点">7. 风险点<a class="header-anchor" href="#7-风险点">#</a></h2>
+<ul>
+<li><strong>Git 异步 commit 失败</strong>: 用户看不到, 静默漏数据. 缓解: 后台线程失败重试 + 启动时校验 DAG seq vs git commit 数, 不对就触发 backfill.</li>
+<li><strong>Project workdir 不是 git 仓</strong>: agent 第一次 commit 时自动 <code>git init</code>. 用户已经有 git 的仓: 直接复用.</li>
+<li><strong>多 session 并发改同一 project</strong>: file lock 串行化 project commit. 极端情况退化到队列.</li>
+<li><strong>回溯 + 继续聊天的语义</strong>: 用户回到 turn 5 后发新消息, 是 fork 新分支还是覆盖之后? 我倾向 fork (DAG retry 已有这个概念), git 自然映射到 branch.</li>
+</ul>
+<h2 id="8-跟-claude-code-对比">8. 跟 Claude Code 对比<a class="header-anchor" href="#8-跟-claude-code-对比">#</a></h2>
+<ul>
+<li>Claude Code 也支持回溯 (它有 &quot;rewind to previous user message&quot; UI)</li>
+<li>实现没公开, 但大概率是把 session messages 当文档 + 用某种 commit-like 机制</li>
+<li>我们这个设计<strong>显式用 git</strong>, 用户能直接 <code>cd ~/.openprogram/sessions/&lt;sid&gt;</code> 看历史, 透明性更高</li>
+</ul>
+<h2 id="9-跟现有-commit-chain-的关系">9. 跟现有 commit chain 的关系<a class="header-anchor" href="#9-跟现有-commit-chain-的关系">#</a></h2>
+<p>不冲突. commit chain 是&quot;LLM 看到的 context view&quot;, 跟 git 是&quot;实际发生过的 history&quot; 是两个层:</p>
+<ul>
+<li>DAG 节点 (raw 真源) → git commit (持久化镜像)</li>
+<li>ContextCommit chain (LLM 视角) → 不入 git (派生, 可重算)</li>
+</ul>
+<p>commit 可以选择性 export 到 git (e.g. 用户想看&quot;那时 LLM 看到啥&quot;), 但不是强制.</p>
+<hr />
+<p>要不要按这个 plan 开干 Phase B.1 (session-git 基础)? 或者先调整某些设计点 (workdir 关联 / branch 策略 / 触发频率).</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#心智模型">心智模型</a>
+<a class="" href="#1-跟现有-dag-的关系">1. 跟现有 DAG 的关系</a>
+<a class="" href="#2-session-git">2. Session-Git</a>
+<a class="lvl-3" href="#21-文件布局">2.1 文件布局</a>
+<a class="lvl-3" href="#22-commit-时机">2.2 Commit 时机</a>
+<a class="lvl-3" href="#23-branch-retry">2.3 Branch / Retry</a>
+<a class="lvl-3" href="#24-回溯-ui-claude-code-风格">2.4 回溯 UI (Claude Code 风格)</a>
+<a class="lvl-3" href="#25-双写一致性">2.5 双写一致性</a>
+<a class="lvl-3" href="#26-老-session-迁移">2.6 老 session 迁移</a>
+<a class="" href="#3-project-git">3. Project-Git</a>
+<a class="lvl-3" href="#31-概念">3.1 概念</a>
+<a class="lvl-3" href="#32-关联">3.2 关联</a>
+<a class="lvl-3" href="#33-agent-改文件触发自动-commit">3.3 Agent 改文件触发自动 commit</a>
+<a class="lvl-3" href="#34-用户手动改-vs-agent-改">3.4 用户手动改 vs agent 改</a>
+<a class="lvl-3" href="#35-没绑-project-的-session">3.5 没绑 project 的 session</a>
+<a class="" href="#4-ui-入口">4. UI / 入口</a>
+<a class="lvl-3" href="#41-session-历史回溯">4.1 Session 历史回溯</a>
+<a class="lvl-3" href="#42-projects-panel">4.2 Projects panel</a>
+<a class="lvl-3" href="#43-chat-顶部-project-指示">4.3 Chat 顶部 project 指示</a>
+<a class="" href="#5-实施分期">5. 实施分期</a>
+<a class="" href="#6-关键不变式">6. 关键不变式</a>
+<a class="" href="#7-风险点">7. 风险点</a>
+<a class="" href="#8-跟-claude-code-对比">8. 跟 Claude Code 对比</a>
+<a class="" href="#9-跟现有-commit-chain-的关系">9. 跟现有 commit chain 的关系</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

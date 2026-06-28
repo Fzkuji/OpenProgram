@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../README.html">Documentation</a>
+<a class="navlink" href="../API.html">API Reference</a>
+<a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api" open><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../api/providers.html">Providers</a>
+<a class="navlink active" href="../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design"><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../design/README.html">Design Documents</a>
+<a class="navlink" href="../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../design/channels/README.html">Channels</a>
+<a class="navlink" href="../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../design/context/README.html">Context</a>
+<a class="navlink" href="../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../design/function/README.html">Function Design</a>
+<a class="navlink" href="../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../design/providers/README.html">Providers</a>
+<a class="navlink" href="../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="runtime">Runtime<a class="header-anchor" href="#runtime">#</a></h1>
+<blockquote>
+<p>Source: <a href="../../openprogram/agentic_programming/runtime.py"><code>openprogram/agentic_programming/runtime.py</code></a></p>
+</blockquote>
+<p>LLM 运行时。封装 LLM provider,自动从 session DAG 算上下文、调用 LLM、把回复写回 DAG。</p>
+<hr />
+<h2 id="class-runtime">Class: <code>Runtime</code><a class="header-anchor" href="#class-runtime">#</a></h2>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">Runtime</span><span class="p">(</span><span class="n">call</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">)</span>
+</code></pre>
+<h3 id="构造参数">构造参数<a class="header-anchor" href="#构造参数">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>类型</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>call</code></td>
+<td><code>Callable | None</code></td>
+<td><code>None</code></td>
+<td>LLM provider 函数。签名：<code>fn(content: list[dict], model: str, response_format: dict) -&gt; str</code>。如果不传，需要子类化并重写 <code>_call()</code></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td><code>&quot;default&quot;</code></td>
+<td>默认模型名称，每次调用可覆盖</td>
+</tr>
+<tr>
+<td><code>max_retries</code></td>
+<td><code>int | None</code></td>
+<td><code>None</code></td>
+<td>exec() 最大尝试次数（包含首次调用，且必须 &gt;= 1）。<code>None</code> = 读环境变量 <code>OPENPROGRAM_MAX_RETRIES</code>，没设则为 <code>6</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="属性">属性<a class="header-anchor" href="#属性">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td>默认模型名称</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="方法">方法<a class="header-anchor" href="#方法">#</a></h2>
+<h3 id="exec"><code>exec()</code><a class="header-anchor" href="#exec">#</a></h3>
+<pre><code class="language-python"><span class="n">Runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">response_format</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+             <span class="n">tools</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">toolset</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tools_source</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tools_allow</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+             <span class="n">tools_deny</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tool_choice</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="n">parallel_tool_calls</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+             <span class="n">max_iterations</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">choices</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">timeout_s</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">on_retry</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span>
+</code></pre>
+<p>调用 LLM,上下文从 session DAG 自动算出。</p>
+<p><strong>在 <code>@agentic_function</code> 内部调用时:</strong></p>
+<ol>
+<li>从当前函数的 DAG 节点出发,<code>render_context</code> 按 <code>expose</code> / <code>render_range</code> 算出本次要读哪些历史节点</li>
+<li><code>render_dag_messages</code> 把这些节点渲染成 messages</li>
+<li>调用 <code>_call()</code> 发送请求</li>
+<li>把回复写成一个新的 <code>llm</code> 节点 append 到 DAG</li>
+</ol>
+<p><strong>在 <code>@agentic_function</code> 外部调用时:</strong> 直接调用 LLM,不算上下文、不写 DAG(退化成单轮调用)。</p>
+<p>一个 <code>@agentic_function</code> 可以多次调用 <code>exec()</code>,每次都是 DAG 上的一个新 <code>llm</code> 节点。</p>
+<h4>参数</h4>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>类型</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td><code>list[dict]</code></td>
+<td><em>(必填)</em></td>
+<td>内容块列表（见下方格式）</td>
+</tr>
+<tr>
+<td><code>context</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>手动覆盖自动算出的上下文。<code>None</code> = 从 DAG 自动算</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td><code>dict | None</code></td>
+<td><code>None</code></td>
+<td>输出格式约束（JSON schema），传给 <code>_call()</code></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>str | None</code></td>
+<td><code>None</code></td>
+<td>覆盖默认模型</td>
+</tr>
+<tr>
+<td><code>tools</code></td>
+<td><code>list | None</code></td>
+<td><code>None</code></td>
+<td>本次调用 LLM 可用的工具。设了就跑工具循环直到模型返回纯文本</td>
+</tr>
+<tr>
+<td><code>toolset</code> / <code>tools_source</code> / <code>tools_allow</code> / <code>tools_deny</code></td>
+<td>—</td>
+<td><code>None</code></td>
+<td>工具集与策略过滤</td>
+</tr>
+<tr>
+<td><code>tool_choice</code></td>
+<td><code>str | dict</code></td>
+<td><code>&quot;auto&quot;</code></td>
+<td><code>&quot;auto&quot;</code> / <code>&quot;required&quot;</code> / <code>&quot;none&quot;</code> / <code>{&quot;type&quot;:&quot;function&quot;,&quot;name&quot;:&quot;X&quot;}</code> 强制某工具。透传到 provider（OpenAI / Anthropic / Gemini / Bedrock 各自映射协议形态）</td>
+</tr>
+<tr>
+<td><code>parallel_tool_calls</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>允许一轮多个工具调用；<code>False</code> 透传到支持该开关的 provider</td>
+</tr>
+<tr>
+<td><code>max_iterations</code></td>
+<td><code>int</code></td>
+<td><code>20</code></td>
+<td>工具循环轮数上限（一轮 = 一次模型调用 + 其工具执行）。生效值为 <code>min(50, max_iterations)</code>，50 是 <code>agent_loop.py</code> 的硬上限</td>
+</tr>
+<tr>
+<td><code>choices</code></td>
+<td><code>dict | list | None</code></td>
+<td><code>None</code></td>
+<td>设了则约束 turn 的<strong>收尾</strong>:模型跑完整 turn 后,最终回复必须从 <code>choices</code> 里选一个;<code>exec</code> 解析并返回该选择的结果。详见 <a href="../agentic-programming/choosing-the-next-step/next-step-decision.html">next-step-decision</a></td>
+</tr>
+<tr>
+<td><code>timeout_s</code></td>
+<td><code>float | None</code></td>
+<td><code>None</code></td>
+<td>整个 <code>exec()</code>（含全部重试）的 wall-clock 时间预算,超时抛 <code>LLMError</code>（<code>reason=timeout</code>）</td>
+</tr>
+<tr>
+<td><code>on_retry</code></td>
+<td><code>Callable | None</code></td>
+<td><code>None</code></td>
+<td>每次重试前调用的观测回调,入参 <code>RetryInfo</code>;回调内抛出的异常被忽略</td>
+</tr>
+</tbody>
+</table>
+<h4>Content block 格式</h4>
+<pre><code class="language-python"><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span>  <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;Find the login button.&quot;</span><span class="p">}</span>
+<span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">,</span> <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;screenshot.png&quot;</span><span class="p">}</span>
+<span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;audio&quot;</span><span class="p">,</span> <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;recording.wav&quot;</span><span class="p">}</span>
+<span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;file&quot;</span><span class="p">,</span>  <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;data.csv&quot;</span><span class="p">}</span>
+</code></pre>
+<h4>返回值</h4>
+<p><code>str</code> — LLM 的回复文本。带 <code>choices</code> 时返回解析后的决策结果(选中函数的返回值,或选中值本身)。</p>
+<h4>异常</h4>
+<ul>
+<li><code>RuntimeError</code> — 同一个 <code>@agentic_function</code> 内调用了两次</li>
+<li><code>TypeError</code> — 传入了 async 的 call 函数（应使用 <code>async_exec()</code>）</li>
+<li><code>NotImplementedError</code> — 没有配置 call 函数</li>
+<li><code>LLMError</code> — 重试耗尽或遇到不可重试错误时抛出,结构化字段含 <code>reason</code> / <code>retryable</code> / <code>http_status</code> / <code>attempts</code> 等</li>
+</ul>
+<hr />
+<h3 id="async_exec"><code>async_exec()</code><a class="header-anchor" href="#async_exec">#</a></h3>
+<pre><code class="language-python"><span class="k">await</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">async_exec</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">response_format</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</code></pre>
+<p><code>exec()</code> 的异步版本。内部调用 <code>_async_call()</code>。</p>
+<p>参数和行为与 <code>exec()</code> 相同。如果传入同步 call 函数，会自动适配（不报错）。</p>
+<hr />
+<h3 id="_call"><code>_call()</code><a class="header-anchor" href="#_call">#</a></h3>
+<pre><code class="language-python"><span class="n">Runtime</span><span class="o">.</span><span class="n">_call</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="n">response_format</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</code></pre>
+<p>实际调用 LLM 的方法。<strong>子类化时重写此方法。</strong></p>
+<h4>参数</h4>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td><code>list[dict]</code></td>
+<td>完整的内容列表（context + 用户内容）</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>str</code></td>
+<td>模型名称</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td><code>dict | None</code></td>
+<td>输出格式约束</td>
+</tr>
+</tbody>
+</table>
+<h4>返回值</h4>
+<p><code>str</code> — LLM 回复文本。</p>
+<hr />
+<h3 id="_async_call"><code>_async_call()</code><a class="header-anchor" href="#_async_call">#</a></h3>
+<pre><code class="language-python"><span class="k">await</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">_async_call</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="n">response_format</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</code></pre>
+<p><code>_call()</code> 的异步版本。子类化时重写此方法以支持异步 provider。</p>
+<hr />
+<h2 id="使用方式">使用方式<a class="header-anchor" href="#使用方式">#</a></h2>
+<h3 id="方式一传入-call-函数">方式一：传入 call 函数<a class="header-anchor" href="#方式一传入-call-函数">#</a></h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.agentic_programming.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">my_llm</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;sonnet&quot;</span><span class="p">,</span> <span class="n">response_format</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># 把 content 转成你的 provider 格式，发请求</span>
+    <span class="n">texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">b</span><span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">content</span> <span class="k">if</span> <span class="n">b</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;text&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">call_my_api</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">texts</span><span class="p">),</span> <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">)</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">call</span><span class="o">=</span><span class="n">my_llm</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;sonnet&quot;</span><span class="p">)</span>
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">observe</span><span class="p">(</span><span class="n">task</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Look at the screen.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Find: </span><span class="si">{</span><span class="n">task</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;image&quot;</span><span class="p">,</span> <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;screenshot.png&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+</code></pre>
+<h3 id="方式二子类化">方式二：子类化<a class="header-anchor" href="#方式二子类化">#</a></h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">AnthropicRuntime</span><span class="p">(</span><span class="n">Runtime</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">api_key</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;sonnet&quot;</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">anthropic</span><span class="o">.</span><span class="n">Anthropic</span><span class="p">(</span><span class="n">api_key</span><span class="o">=</span><span class="n">api_key</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;sonnet&quot;</span><span class="p">,</span> <span class="n">response_format</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">messages_content</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">content</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">block</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span>
+                <span class="n">messages_content</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="n">block</span><span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">]})</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">messages</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span> <span class="n">max_tokens</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span>
+            <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">messages_content</span><span class="p">}],</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">text</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">AnthropicRuntime</span><span class="p">(</span><span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;sk-...&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-sonnet-4-6&quot;</span><span class="p">)</span>
+</code></pre>
+<h3 id="多个-runtime-共存">多个 Runtime 共存<a class="header-anchor" href="#多个-runtime-共存">#</a></h3>
+<pre><code class="language-python"><span class="n">fast</span> <span class="o">=</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">call</span><span class="o">=</span><span class="n">gemini_call</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-2.5-flash&quot;</span><span class="p">)</span>
+<span class="n">strong</span> <span class="o">=</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">call</span><span class="o">=</span><span class="n">claude_call</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;sonnet&quot;</span><span class="p">)</span>
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">observe</span><span class="p">(</span><span class="n">task</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Quick observation with cheap model.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">fast</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])</span>
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">plan</span><span class="p">(</span><span class="n">goal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Complex planning with strong model.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">strong</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])</span>
+</code></pre>
+<hr />
+<h2 id="retry-机制">Retry 机制<a class="header-anchor" href="#retry-机制">#</a></h2>
+<p><code>exec()</code> 和 <code>async_exec()</code> 内置自动重试，用于处理 LLM API 的临时性错误（网络超时、速率限制、服务器错误等）。</p>
+<h3 id="配置">配置<a class="header-anchor" href="#配置">#</a></h3>
+<pre><code class="language-python"><span class="c1"># 默认：max_retries=None → 读环境变量 OPENPROGRAM_MAX_RETRIES,没设则为 6</span>
+<span class="n">rt</span> <span class="o">=</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">call</span><span class="o">=</span><span class="n">my_llm</span><span class="p">)</span>
+
+<span class="c1"># 不重试（失败即抛异常）</span>
+<span class="n">rt</span> <span class="o">=</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">call</span><span class="o">=</span><span class="n">my_llm</span><span class="p">,</span> <span class="n">max_retries</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="c1"># 多次重试（适用于不稳定的 API）</span>
+<span class="n">rt</span> <span class="o">=</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">call</span><span class="o">=</span><span class="n">my_llm</span><span class="p">,</span> <span class="n">max_retries</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</code></pre>
+<h3 id="行为规则">行为规则<a class="header-anchor" href="#行为规则">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>情况</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API 调用成功</td>
+<td>返回结果</td>
+</tr>
+<tr>
+<td>API 抛出异常（非 <code>TypeError</code> / <code>NotImplementedError</code>）</td>
+<td>记录失败 attempt，然后继续重试，直到达到 <code>max_retries</code></td>
+</tr>
+<tr>
+<td><code>TypeError</code> 或 <code>NotImplementedError</code></td>
+<td>立即抛出，不重试（通常是 provider 实现或调用方式的问题）</td>
+</tr>
+<tr>
+<td>所有重试均失败</td>
+<td>抛出结构化 <code>LLMError</code>（<code>reason</code> / <code>retryable</code> / <code>http_status</code> / <code>attempts</code> 等字段），并附上完整 attempt 报告</td>
+</tr>
+</tbody>
+</table>
+<h3 id="错误报告格式">错误报告格式<a class="header-anchor" href="#错误报告格式">#</a></h3>
+<p>当所有重试耗尽时,抛出的 <code>LLMError</code> 包含每次尝试的错误信息,结构化字段（<code>reason</code> / <code>retryable</code> / <code>http_status</code> / <code>attempts</code> / <code>elapsed_s</code> 等）可直接读取:</p>
+<pre><code>LLMError: exec() failed after 3 attempt(s):
+Attempt 1: ConnectionError: timeout
+Attempt 2: RateLimitError: 429 Too Many Requests
+Attempt 3: ConnectionError: timeout
+</code></pre>
+<h3 id="重试的边界">重试的边界<a class="header-anchor" href="#重试的边界">#</a></h3>
+<p><code>max_retries</code> 只处理 API 层面的瞬态故障(网络超时、速率限制等)。如果是函数本身的逻辑或输出格式有问题,重试解决不了——直接修改函数代码,参见 <a href="../../skills/agentic-programming/SKILL.html"><code>skills/agentic-programming/SKILL.md</code></a>。</p>
+<pre><code class="language-python"><span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">call</span><span class="o">=</span><span class="n">my_llm</span><span class="p">,</span> <span class="n">max_retries</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">my_agentic_function</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+    <span class="n">my_agentic_function</span> <span class="o">=</span> <span class="n">fix</span><span class="p">(</span>
+        <span class="n">fn</span><span class="o">=</span><span class="n">my_agentic_function</span><span class="p">,</span>
+        <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">,</span>
+        <span class="n">instruction</span><span class="o">=</span><span class="s2">&quot;Handle empty input and always return valid JSON.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#class-runtime">Class: Runtime</a>
+<a class="lvl-3" href="#构造参数">构造参数</a>
+<a class="lvl-3" href="#属性">属性</a>
+<a class="" href="#方法">方法</a>
+<a class="lvl-3" href="#exec">exec()</a>
+<a class="lvl-3" href="#async_exec">async_exec()</a>
+<a class="lvl-3" href="#_call">_call()</a>
+<a class="lvl-3" href="#_async_call">_async_call()</a>
+<a class="" href="#使用方式">使用方式</a>
+<a class="lvl-3" href="#方式一传入-call-函数">方式一：传入 call 函数</a>
+<a class="lvl-3" href="#方式二子类化">方式二：子类化</a>
+<a class="lvl-3" href="#多个-runtime-共存">多个 Runtime 共存</a>
+<a class="" href="#retry-机制">Retry 机制</a>
+<a class="lvl-3" href="#配置">配置</a>
+<a class="lvl-3" href="#行为规则">行为规则</a>
+<a class="lvl-3" href="#错误报告格式">错误报告格式</a>
+<a class="lvl-3" href="#重试的边界">重试的边界</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../assets/site.js"></script>
+</body>
+</html>

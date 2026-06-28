@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 管理方案对比 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../../assets/site.css">
+<link rel="stylesheet" href="../../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../../README.html">Documentation</a>
+<a class="navlink" href="../../../API.html">API Reference</a>
+<a class="navlink" href="../../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../../api/providers.html">Providers</a>
+<a class="navlink" href="../../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../../design/context/README.html">Context</a>
+<a class="navlink" href="../../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session" open><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink active" href="../../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="session-管理方案对比">Session 管理方案对比<a class="header-anchor" href="#session-管理方案对比">#</a></h1>
+<p>Claude Code、OpenCode、OpenClaw、OpenProgram（我们的设计）四个项目的 session 管理机制全面对比。</p>
+<h2 id="1-存储格式">1. 存储格式<a class="header-anchor" href="#1-存储格式">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>存储介质</td>
+<td>文件系统（每 session 一个 JSONL）</td>
+<td>SQLite 数据库（单文件 <code>opencode.db</code>）</td>
+<td>JSON 注册表（<code>sessions.json</code>）+ 每 session 一个 JSONL</td>
+<td>Git 仓库（每 session 一个目录）+ JSON 注册表（<code>index.json</code>）</td>
+</tr>
+<tr>
+<td>元数据位置</td>
+<td>混在 JSONL 里（<code>ai-title</code>、<code>custom-title</code>、<code>mode</code> 等条目）</td>
+<td><code>sessions</code> 表（10 个字段）</td>
+<td><code>sessions.json</code> 里的 SessionEntry（约 70 个字段）</td>
+<td><code>meta.json</code>（每 session 目录内）+ <code>index.json</code>（注册表缓存）</td>
+</tr>
+<tr>
+<td>消息位置</td>
+<td>同一个 JSONL 文件（<code>user</code>、<code>assistant</code> 条目）</td>
+<td>独立的 <code>messages</code> 表 + <code>parts</code> 列（JSON 数组）</td>
+<td>独立的 <code>&lt;id&gt;.jsonl</code> transcript 文件</td>
+<td>Git history（每消息一个文件，DAG 结构）</td>
+</tr>
+<tr>
+<td>文件快照</td>
+<td>JSONL 里的 <code>file-history-snapshot</code> 条目</td>
+<td>独立的 <code>files</code> 表（path, content, version）</td>
+<td>无</td>
+<td>Git worktree（每 session 可有独立工作目录）</td>
+</tr>
+<tr>
+<td>存储路径</td>
+<td><code>~/.claude/projects/&lt;slug&gt;/&lt;uuid&gt;.jsonl</code></td>
+<td><code>&lt;data_dir&gt;/opencode.db</code></td>
+<td><code>&lt;state&gt;/agents/&lt;id&gt;/sessions/sessions.json</code> + <code>&lt;id&gt;.jsonl</code></td>
+<td><code>&lt;state&gt;/sessions/&lt;id&gt;/</code>（meta.json + history/）+ <code>&lt;state&gt;/sessions/index.json</code></td>
+</tr>
+<tr>
+<td>元数据与消息分离</td>
+<td>不分离，全在一个文件</td>
+<td>分离（不同表）</td>
+<td>分离（不同文件）</td>
+<td>分离（meta.json vs history/）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="2-session-元数据字段">2. Session 元数据字段<a class="header-anchor" href="#2-session-元数据字段">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>字段类别</th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>id</strong></td>
+<td>JSONL 文件名（UUID）</td>
+<td><code>sessions.id</code>（UUID）</td>
+<td><code>sessionId</code></td>
+<td><code>id</code>（UUID）</td>
+</tr>
+<tr>
+<td><strong>标题</strong></td>
+<td><code>aiTitle</code> + <code>customTitle</code> 两个独立条目</td>
+<td><code>sessions.title</code> 单字段</td>
+<td><code>displayName</code> + <code>label</code></td>
+<td><code>title</code> 单字段</td>
+</tr>
+<tr>
+<td><strong>标题优先级</strong></td>
+<td><code>customTitle &gt; aiTitle &gt; summaryHint &gt; firstPrompt &gt; id</code></td>
+<td>最后写入的值</td>
+<td><code>displayName &gt; label</code></td>
+<td>最后写入的值（截取 / LLM / 手动三个来源平等覆盖）</td>
+</tr>
+<tr>
+<td><strong>创建时间</strong></td>
+<td>JSONL 首条消息的 timestamp</td>
+<td><code>sessions.created_at</code></td>
+<td><code>startedAt</code></td>
+<td><code>created_at</code></td>
+</tr>
+<tr>
+<td><strong>更新时间</strong></td>
+<td>文件 mtime 或 sidecar</td>
+<td><code>sessions.updated_at</code>（trigger 自动）</td>
+<td><code>updatedAt</code>（应用层写入）</td>
+<td><code>updated_at</code>（应用层写入）</td>
+</tr>
+<tr>
+<td><strong>消息计数</strong></td>
+<td>无</td>
+<td><code>sessions.message_count</code>（trigger 自动 +1/-1）</td>
+<td>无</td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>token 统计</strong></td>
+<td>无（在 <code>usage</code> 里但不汇总）</td>
+<td><code>prompt_tokens</code> / <code>completion_tokens</code> / <code>cost</code></td>
+<td><code>inputTokens</code> / <code>outputTokens</code> / <code>totalTokens</code> / <code>estimatedCostUsd</code> / <code>cacheRead</code> / <code>cacheWrite</code> / <code>contextTokens</code></td>
+<td>无（由独立的 UsageLedger 子系统管理）</td>
+</tr>
+<tr>
+<td><strong>运行状态</strong></td>
+<td><code>~/.claude/sessions/&lt;pid&gt;.json</code> 里的 <code>status</code>（idle/busy）</td>
+<td>无</td>
+<td><code>status</code>（running/done/failed/killed/timeout）</td>
+<td><code>status</code> 枚举（idle/running/needs_input/done/failed，dispatcher 写入，启动时重置）</td>
+</tr>
+<tr>
+<td><strong>父子关系</strong></td>
+<td>无</td>
+<td><code>parent_session_id</code>（title 生成和 task 用子 session）</td>
+<td><code>spawnedBy</code> / <code>parentSessionKey</code> / <code>spawnDepth</code>（0=主, 1=子agent, 2=子子agent）</td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>渠道/来源</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>channel</code> / <code>groupId</code> / <code>origin</code>（含 label/provider/surface/chatType/from/to/nativeChannelId/accountId/threadId） + <code>lastChannel</code> / <code>lastTo</code> / <code>lastAccountId</code> / <code>lastThreadId</code></td>
+<td><code>source</code> / <code>channel</code> / <code>account_id</code> / <code>peer_display</code> / <code>peer_id</code></td>
+</tr>
+<tr>
+<td><strong>模型/配置</strong></td>
+<td>JSONL 里的 <code>mode</code>、<code>permission-mode</code> 条目</td>
+<td>无（运行时状态）</td>
+<td><code>providerOverride</code> / <code>modelOverride</code> / <code>modelOverrideSource</code> / <code>authProfileOverride</code> / <code>thinkingLevel</code> / <code>fastMode</code> / <code>verboseLevel</code> 等</td>
+<td>非持久（runtime 对象持有，不存 meta.json）</td>
+</tr>
+<tr>
+<td><strong>Compaction</strong></td>
+<td><code>system:compact_boundary</code> 条目（preTokens/postTokens/preservedSegment）</td>
+<td><code>summary_message_id</code> 指向摘要消息</td>
+<td><code>compactionCount</code> / <code>compactionCheckpoints</code> 数组（每个含 tokensBefore/tokensAfter/summary）</td>
+<td>compactionSummary 消息节点（DAG 中的特殊节点，source=&quot;compaction&quot;）</td>
+</tr>
+<tr>
+<td><strong>项目绑定</strong></td>
+<td>通过目录路径隐式绑定（<code>projects/&lt;slug&gt;/</code>）</td>
+<td>无</td>
+<td>无（通过 agent 目录隐式）</td>
+<td><code>project_id</code> 字段 + 项目内 <code>.openprogram/sessions/</code> 目录</td>
+</tr>
+<tr>
+<td><strong>Git 分支</strong></td>
+<td>JSONL 里的 <code>gitBranch</code> 字段</td>
+<td>无</td>
+<td>无</td>
+<td>DAG 分支（<code>head_id</code> + branches map）</td>
+</tr>
+<tr>
+<td><strong>Preview</strong></td>
+<td>无独立字段（列举时从尾部提取 firstPrompt）</td>
+<td>无</td>
+<td>无</td>
+<td><code>preview</code>（注册表字段，<code>append_message</code> 时更新）</td>
+</tr>
+<tr>
+<td><strong>归档/置顶/分组</strong></td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+<td><code>pinned</code> / <code>archived</code> / <code>group</code></td>
+</tr>
+<tr>
+<td><strong>未读标记</strong></td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+<td><code>unread</code>（background run 完成时标记，打开时清除）</td>
+</tr>
+<tr>
+<td><strong>队列策略</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>queueMode</code>（steer/followup/collect/interrupt 等 7 种）/ <code>queueDebounceMs</code> / <code>queueCap</code> / <code>queueDrop</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>子 agent 角色</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>subagentRole</code>（orchestrator/leaf）/ <code>subagentControlScope</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>Heartbeat</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>lastHeartbeatText</code> / <code>lastHeartbeatSentAt</code> / <code>heartbeatTaskState</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>Memory flush</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>memoryFlushAt</code> / <code>memoryFlushCompactionCount</code> / <code>memoryFlushContextHash</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>CLI 绑定</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>cliSessionIds</code> / <code>cliSessionBindings</code> / <code>claudeCliSessionId</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>自动命名标记</strong></td>
+<td>无（靠 <code>customTitle</code> 条目是否存在判断）</td>
+<td>无（靠 <code>isDefaultTitle</code> 正则判断）</td>
+<td>无</td>
+<td><code>_auto_titled</code>（bool，首轮自动命名幂等标记）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="3-session-列举">3. Session 列举<a class="header-anchor" href="#3-session-列举">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>机制</strong></td>
+<td>扫目录 + 读文件尾部</td>
+<td>SQL 查询</td>
+<td>读 sessions.json</td>
+<td>读 index.json 注册表</td>
+</tr>
+<tr>
+<td><strong>索引</strong></td>
+<td>无</td>
+<td>数据库索引</td>
+<td>注册表本身</td>
+<td>注册表（<code>index.json</code>）</td>
+</tr>
+<tr>
+<td><strong>具体流程</strong></td>
+<td><code>readdir</code> → <code>stat</code> 取 mtime → 按 mtime 降序 → 批量（每批 32 个）读尾部内容 → 字符串搜索提取标题等字段</td>
+<td><code>SELECT * FROM sessions WHERE parent_session_id IS NULL ORDER BY created_at DESC</code></td>
+<td><code>fs.readFileSync</code> → <code>JSON.parse</code> → 返回整个 <code>Record&lt;string, SessionEntry&gt;</code></td>
+<td>启动时读 <code>index.json</code> 到内存 → <code>list_sessions()</code> 纯内存遍历</td>
+</tr>
+<tr>
+<td><strong>读取量</strong></td>
+<td>每个文件读尾部内容（字符串搜索，不做 JSON.parse）</td>
+<td>一条 SQL</td>
+<td>一个文件</td>
+<td>一个文件（启动时），之后纯内存</td>
+</tr>
+<tr>
+<td><strong>过滤</strong></td>
+<td>只扫当前项目目录（隐式按项目过滤）</td>
+<td><code>WHERE parent_session_id IS NULL</code>（过滤子 session）</td>
+<td>无</td>
+<td>不过滤（空壳从创建入口防）</td>
+</tr>
+<tr>
+<td><strong>排序</strong></td>
+<td>按文件 mtime 降序</td>
+<td><code>ORDER BY created_at DESC</code></td>
+<td>调用方自行排序</td>
+<td>内存中按 <code>updated_at</code> 降序</td>
+</tr>
+<tr>
+<td><strong>分页</strong></td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+<td><code>limit</code> + <code>offset</code></td>
+</tr>
+<tr>
+<td><strong>搜索</strong></td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>缓存</strong></td>
+<td>可选 sidecar <code>.ccr-tip.json</code>（存最后事件 ID + 更新时间，避免读文件内容）</td>
+<td>SQLite 页缓存（8MB）</td>
+<td>mtime + fileSize 判断是否重读（TTL 45 秒）</td>
+<td>内存常驻（写操作同步更新内存 + 磁盘）</td>
+</tr>
+<tr>
+<td><strong>超时保护</strong></td>
+<td>有（列举超时兜底）</td>
+<td>不需要</td>
+<td>不需要</td>
+<td>不需要</td>
+</tr>
+<tr>
+<td><strong>复杂度</strong></td>
+<td>O(n) 文件 I/O</td>
+<td>O(log n) 数据库查询</td>
+<td>O(1) 文件读 + O(n) 内存遍历</td>
+<td>O(n) 内存遍历（不碰磁盘）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4-session-创建">4. Session 创建<a class="header-anchor" href="#4-session-创建">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>入口</strong></td>
+<td>1 个：创建 JSONL 文件</td>
+<td>3 个：<code>Create</code>（普通）/ <code>CreateTitleSession</code>（标题子 session）/ <code>CreateTaskSession</code>（task 子 session）</td>
+<td>1 个：<code>updateSessionStore</code> 里往 store 加 key</td>
+<td>2 个：<code>dispatcher.process_user_turn</code>（用户发消息）/ <code>channel handler</code>（渠道消息）</td>
+</tr>
+<tr>
+<td><strong>ID 生成</strong></td>
+<td>UUID 文件名</td>
+<td>UUID / <code>&quot;title-&quot; + parentId</code> / toolCallID</td>
+<td>sessionKey</td>
+<td><code>&quot;local_&quot; + uuid</code></td>
+</tr>
+<tr>
+<td><strong>注册</strong></td>
+<td>无需注册（扫目录发现）</td>
+<td>数据库 INSERT 后自动可查</td>
+<td>写入 sessions.json</td>
+<td>写入 <code>index.json</code> 注册表</td>
+</tr>
+<tr>
+<td><strong>事件通知</strong></td>
+<td>无</td>
+<td>pubsub <code>CreatedEvent</code></td>
+<td>无</td>
+<td>无（创建不广播，前端通过 <code>list_sessions</code> 发现）</td>
+</tr>
+<tr>
+<td><strong>原子性</strong></td>
+<td>文件创建本身原子</td>
+<td><code>INSERT ... RETURNING</code> 数据库事务</td>
+<td>文件锁内 read-modify-write</td>
+<td>创建 + 写入第一条消息原子化（不产生空壳）</td>
+</tr>
+<tr>
+<td><strong>空壳防护</strong></td>
+<td>无（session = 文件，创建即有内容）</td>
+<td>无（INSERT 时必须有 title）</td>
+<td>无</td>
+<td>有（延迟创建：<code>session_context</code> 进入时只记 id，第一条消息写入时才真正创建）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="5-session-删除">5. Session 删除<a class="header-anchor" href="#5-session-删除">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>方式</strong></td>
+<td>删除 JSONL 文件</td>
+<td><code>DELETE FROM sessions WHERE id = ?</code></td>
+<td>从 sessions.json 删 key</td>
+<td><code>delete_session</code> 清磁盘 + 删注册表条目</td>
+</tr>
+<tr>
+<td><strong>级联清理</strong></td>
+<td>只删一个文件（元数据和消息在同一文件）</td>
+<td><code>ON DELETE CASCADE</code> 自动清 messages 和 files</td>
+<td>手动归档 transcript 文件（<code>archiveSessionTranscripts</code>，不直接删）</td>
+<td>删除整个 session 目录（meta.json + history/）</td>
+</tr>
+<tr>
+<td><strong>事件通知</strong></td>
+<td>无</td>
+<td>pubsub <code>DeletedEvent</code></td>
+<td>无</td>
+<td>WebSocket <code>session_deleted</code> 广播</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-session-resume">6. Session Resume<a class="header-anchor" href="#6-session-resume">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>方式</strong></td>
+<td>读整个 JSONL，通过 <code>uuid</code>/<code>parentUuid</code> 重建消息链，恢复 mode/permissionMode/title 等状态</td>
+<td>SQL 查询 session + messages，按 created_at 排序</td>
+<td>读 transcript JSONL，恢复消息序列</td>
+<td><code>get_branch(session_id, head_id)</code> 从 DAG 中沿 parent_id 链回溯，返回线性消息序列</td>
+</tr>
+<tr>
+<td><strong>Compaction 处理</strong></td>
+<td>从 <code>compact_boundary</code> 条目的 <code>preservedSegment</code> 确定保留范围</td>
+<td>如果 <code>summary_message_id != &quot;&quot;</code>，跳过该消息之前的所有消息</td>
+<td>从 <code>compactionCheckpoints</code> 恢复</td>
+<td>compactionSummary 节点作为新的分支起点，旧消息在 DAG 中保留但不在活跃分支上</td>
+</tr>
+</tbody>
+</table>
+<h2 id="7-compaction上下文压缩">7. Compaction（上下文压缩）<a class="header-anchor" href="#7-compaction上下文压缩">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>触发</strong></td>
+<td>手动 + 自动</td>
+<td>手动</td>
+<td>自动（按 token 阈值）</td>
+<td>手动（<code>/compact</code>）+ 自动（<code>compaction_recommended</code> 信号）</td>
+</tr>
+<tr>
+<td><strong>实现</strong></td>
+<td>append <code>system:compact_boundary</code> 条目到 JSONL</td>
+<td>用专用 <code>summarizeProvider</code> 生成摘要，写入新 message，<code>summary_message_id</code> 指向它</td>
+<td>生成摘要，记录 checkpoint（tokensBefore/tokensAfter/summary），更新 <code>compactionCount</code></td>
+<td>LLM 生成摘要 → 写入 compactionSummary 节点（source=&quot;compaction&quot;）→ 保留尾部消息重新挂到摘要节点下 → 移动 head_id</td>
+</tr>
+<tr>
+<td><strong>记录的信息</strong></td>
+<td>trigger/preTokens/postTokens/preservedSegment/durationMs</td>
+<td>summary_message_id</td>
+<td>compactionCount + compactionCheckpoints 数组</td>
+<td>摘要内容在节点 content 里，budget_pct/context_window 在推荐信号里</td>
+</tr>
+<tr>
+<td><strong>旧消息</strong></td>
+<td>保留在 JSONL 里，通过 preservedSegment 标记哪些活跃</td>
+<td>保留在数据库，加载时跳过 summary 之前的</td>
+<td>保留在 transcript 里</td>
+<td>保留在 DAG 中（append-only），但不在活跃分支上</td>
+</tr>
+</tbody>
+</table>
+<h2 id="8-活跃进程跟踪">8. 活跃进程跟踪<a class="header-anchor" href="#8-活跃进程跟踪">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>机制</strong></td>
+<td><code>~/.claude/sessions/&lt;pid&gt;.json</code> 独立文件</td>
+<td>无（单进程 TUI）</td>
+<td>SessionEntry 的 <code>status</code> 字段</td>
+<td><code>status</code> 枚举字段（meta.json + 注册表）</td>
+</tr>
+<tr>
+<td><strong>字段</strong></td>
+<td>pid, sessionId, cwd, startedAt, version, kind（interactive）, entrypoint（cli）, status（idle/busy）, updatedAt, name, bridgeSessionId</td>
+<td>—</td>
+<td>status（running/done/failed/killed/timeout）, runtimeMs, abortedLastRun</td>
+<td><code>status</code>（idle/running/needs_input/done/failed）</td>
+</tr>
+<tr>
+<td><strong>崩溃恢复</strong></td>
+<td>进程退出后文件残留（需外部清理）</td>
+<td>—</td>
+<td>status 可能卡在 running（无自动恢复）</td>
+<td>启动时重置所有 <code>status=running</code> → <code>idle</code></td>
+</tr>
+<tr>
+<td><strong>与 session 列举的关系</strong></td>
+<td>不参与列举</td>
+<td>—</td>
+<td>参与列举（status 是 SessionEntry 的一部分）</td>
+<td>参与列举（<code>status</code> 在注册表中）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="9-并发控制">9. 并发控制<a class="header-anchor" href="#9-并发控制">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>机制</strong></td>
+<td>文件级（单进程写，多进程通过 pid 文件协调）</td>
+<td>SQLite WAL 模式 + 8MB 页缓存</td>
+<td>文件锁（lockfile）+ 进程内 FIFO 队列</td>
+<td>Python <code>threading.Lock</code>（<code>_sessions_lock</code>）+ Git 文件级操作</td>
+</tr>
+<tr>
+<td><strong>锁粒度</strong></td>
+<td>每个 JSONL 文件</td>
+<td>数据库级</td>
+<td>每个 sessions.json 文件</td>
+<td>SessionStore 级（<code>self._lock</code>）</td>
+</tr>
+<tr>
+<td><strong>进程内</strong></td>
+<td>单线程</td>
+<td>SQLite 处理</td>
+<td>FIFO 队列串行化同一 storePath 的写操作</td>
+<td><code>threading.Lock</code> 保护 <code>_sessions</code> dict 和注册表写入</td>
+</tr>
+<tr>
+<td><strong>跨进程</strong></td>
+<td>pid 文件标记（<code>sessions/&lt;pid&gt;.json</code>）</td>
+<td>SQLite 内置</td>
+<td>lockfile 排他锁（stale 检测 30 分钟 + PID 存活检查）</td>
+<td>无显式跨进程锁（单 worker 进程模型）</td>
+</tr>
+<tr>
+<td><strong>锁超时/看门狗</strong></td>
+<td>无</td>
+<td>无（SQLite busy timeout）</td>
+<td>看门狗每 60 秒巡检，持有超时 5 分钟</td>
+<td>无</td>
+</tr>
+</tbody>
+</table>
+<h2 id="10-数据维护">10. 数据维护<a class="header-anchor" href="#10-数据维护">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>过期清理</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>pruneStaleEntries</code>：30 天未更新的条目</td>
+<td>启动时清理 <code>archived=True</code> 且超 90 天未更新的 session</td>
+</tr>
+<tr>
+<td><strong>容量限制</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>capEntryCount</code>：最多 500 个条目，超出删最旧</td>
+<td>上限 1000，超出删最旧的已归档 session</td>
+</tr>
+<tr>
+<td><strong>文件轮转</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>rotateSessionFile</code>：sessions.json 超 10MB 轮转，保留最近 3 个备份</td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>磁盘预算</strong></td>
+<td>无</td>
+<td>无</td>
+<td><code>enforceSessionDiskBudget</code>：可选，按总磁盘占用清理</td>
+<td>无</td>
+</tr>
+<tr>
+<td><strong>删除时归档</strong></td>
+<td>无（直接删文件）</td>
+<td>无（CASCADE 直接删）</td>
+<td>有（transcript 文件归档而非直接删）</td>
+<td>无（直接删目录）</td>
+</tr>
+<tr>
+<td><strong>维护模式</strong></td>
+<td>—</td>
+<td>—</td>
+<td>&quot;warn&quot;（默认只警告）/ &quot;enforce&quot;（真正执行）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>updated_at 维护</strong></td>
+<td>隐式（文件 mtime）</td>
+<td>SQLite trigger 自动</td>
+<td>应用层写入</td>
+<td>应用层写入（<code>_persist_meta</code> 时自动设 <code>time.time()</code>）</td>
+</tr>
+<tr>
+<td><strong>message_count 维护</strong></td>
+<td>不跟踪</td>
+<td>SQLite trigger 自动 +1/-1</td>
+<td>不跟踪</td>
+<td>不跟踪</td>
+</tr>
+</tbody>
+</table>
+<h2 id="11-标题命名">11. 标题（命名）<a class="header-anchor" href="#11-标题命名">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>自动命名</strong></td>
+<td>第一轮后异步 LLM 生成</td>
+<td>第一轮后 fork 异步 LLM 生成（专用 title agent）</td>
+<td>无（手动设 displayName）</td>
+<td>第一轮后：同步截取前 50 字符 → 异步 daemon 线程 LLM 生成</td>
+</tr>
+<tr>
+<td><strong>手动命名</strong></td>
+<td><code>custom-title</code> 条目覆盖</td>
+<td>无（没有 rename 功能）</td>
+<td>设置 <code>displayName</code> / <code>label</code></td>
+<td>UI rename / <code>/rename</code> / agent rename 工具</td>
+</tr>
+<tr>
+<td><strong>LLM 重新生成</strong></td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+<td><code>/rename</code> 不带参数 → 重新调 LLM 生成</td>
+</tr>
+<tr>
+<td><strong>防注入</strong></td>
+<td><code>&lt;session&gt;</code> 标签包裹 + &quot;treat as data&quot; 指令</td>
+<td>无（title agent 的 prompt 直接拼接）</td>
+<td>—</td>
+<td><code>&lt;session&gt;</code> 标签包裹 + &quot;treat as data&quot; 指令</td>
+</tr>
+<tr>
+<td><strong>语言跟随</strong></td>
+<td>prompt 要求用对话语言</td>
+<td>prompt 要求用对话语言</td>
+<td>—</td>
+<td>prompt 要求用对话语言</td>
+</tr>
+<tr>
+<td><strong>后处理</strong></td>
+<td>JSON schema structured output</td>
+<td>去 <code>&lt;think&gt;</code> 标签、取首非空行、截断 100 字符</td>
+<td>—</td>
+<td>去 <code>&lt;think&gt;</code> 标签、去引号、去前缀、截断 80 字符</td>
+</tr>
+<tr>
+<td><strong>幂等标记</strong></td>
+<td>无（靠是否已有 <code>ai-title</code> 条目判断）</td>
+<td>靠 <code>isDefaultTitle</code> 正则判断</td>
+<td>—</td>
+<td><code>_auto_titled</code> bool 标记</td>
+</tr>
+<tr>
+<td><strong>竞态保护</strong></td>
+<td>无</td>
+<td>无</td>
+<td>—</td>
+<td>后台线程写入前检查 title 是否仍是截取值</td>
+</tr>
+<tr>
+<td><strong>标题广播</strong></td>
+<td>无（前端重读 JSONL）</td>
+<td>无（TUI 直接读数据库）</td>
+<td>—</td>
+<td>WebSocket <code>session_updated {id, title}</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="12-消息存储模型">12. 消息存储模型<a class="header-anchor" href="#12-消息存储模型">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>结构</strong></td>
+<td>线性 JSONL（通过 uuid/parentUuid 可构建树）</td>
+<td>扁平表（session_id + created_at 排序）</td>
+<td>线性 JSONL</td>
+<td>DAG（每消息有 parent_id，支持分支）</td>
+</tr>
+<tr>
+<td><strong>分支</strong></td>
+<td>有（parentUuid 支持树结构，但 UI 不暴露）</td>
+<td>无</td>
+<td>无</td>
+<td>有（head_id + branches map，UI 可切换分支）</td>
+</tr>
+<tr>
+<td><strong>消息 ID</strong></td>
+<td>uuid（每条消息）</td>
+<td>id（每条消息）</td>
+<td>无显式 ID（按行序）</td>
+<td>id（每条消息）</td>
+</tr>
+<tr>
+<td><strong>消息格式</strong></td>
+<td><code>{type, message: {role, content}, uuid, parentUuid, timestamp, ...}</code></td>
+<td><code>{id, session_id, role, parts, model, created_at, ...}</code></td>
+<td><code>{role, content, ...}</code></td>
+<td><code>{id, role, content, parent_id, timestamp, ...}</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="13-jsonl-条目类型claude-code-独有">13. JSONL 条目类型（Claude Code 独有）<a class="header-anchor" href="#13-jsonl-条目类型claude-code-独有">#</a></h2>
+<p>Claude Code 的 JSONL 混合了消息和元数据，条目类型丰富：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user</code></td>
+<td>用户消息（含 uuid, parentUuid, timestamp, cwd, gitBranch）</td>
+</tr>
+<tr>
+<td><code>assistant</code></td>
+<td>助手回复（含 usage, model, requestId）</td>
+</tr>
+<tr>
+<td><code>attachment</code></td>
+<td>附件（文件、图片）</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td>系统事件（子类型：turn_duration / away_summary / compact_boundary / api_error / local_command / informational / bridge_status / scheduled_task_fire）</td>
+</tr>
+<tr>
+<td><code>ai-title</code></td>
+<td>LLM 自动生成的标题</td>
+</tr>
+<tr>
+<td><code>custom-title</code></td>
+<td>用户手动设置的标题</td>
+</tr>
+<tr>
+<td><code>agent-name</code></td>
+<td>agent 名称</td>
+</tr>
+<tr>
+<td><code>last-prompt</code></td>
+<td>最后提示位置（leafUuid）</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td>对话模式（normal/plan/...）</td>
+</tr>
+<tr>
+<td><code>permission-mode</code></td>
+<td>权限模式</td>
+</tr>
+<tr>
+<td><code>file-history-snapshot</code></td>
+<td>文件快照（用于 revert）</td>
+</tr>
+<tr>
+<td><code>bridge-session</code></td>
+<td>Bridge 会话 ID</td>
+</tr>
+<tr>
+<td><code>queue-operation</code></td>
+<td>队列操作</td>
+</tr>
+</tbody>
+</table>
+<h2 id="14-总结">14. 总结<a class="header-anchor" href="#14-总结">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Claude Code</th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>设计哲学</strong></td>
+<td>文件即数据，append-only</td>
+<td>关系数据库，结构化查询</td>
+<td>注册表 + transcript</td>
+<td>Git DAG + 注册表</td>
+</tr>
+<tr>
+<td><strong>列举性能</strong></td>
+<td>最慢（扫目录 + 读文件）</td>
+<td>最快（数据库索引）</td>
+<td>快（读一个 JSON 文件）</td>
+<td>快（内存常驻注册表）</td>
+</tr>
+<tr>
+<td><strong>元数据丰富度</strong></td>
+<td>少（标题 + 几个状态标记）</td>
+<td>中等（10 个字段）</td>
+<td>最多（约 70 个字段）</td>
+<td>中等（约 18 个字段）</td>
+</tr>
+<tr>
+<td><strong>维护能力</strong></td>
+<td>无</td>
+<td>无</td>
+<td>最完善（过期/容量/轮转/预算）</td>
+<td>有（90 天过期清理 + 1000 容量上限）</td>
+</tr>
+<tr>
+<td><strong>并发能力</strong></td>
+<td>弱（单进程写）</td>
+<td>强（SQLite WAL）</td>
+<td>中等（文件锁 + 队列）</td>
+<td>中等（threading.Lock，单 worker）</td>
+</tr>
+<tr>
+<td><strong>分支能力</strong></td>
+<td>有（DAG，UI 不暴露）</td>
+<td>无</td>
+<td>无</td>
+<td>有（DAG，UI 可切换）</td>
+</tr>
+<tr>
+<td><strong>渠道支持</strong></td>
+<td>无</td>
+<td>无</td>
+<td>有（完整路由字段）</td>
+<td>有（channel/account_id/peer）</td>
+</tr>
+<tr>
+<td><strong>归档/置顶</strong></td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+<td>有（pinned/archived/group）</td>
+</tr>
+<tr>
+<td><strong>崩溃恢复</strong></td>
+<td>无自动恢复</td>
+<td>不需要（单进程）</td>
+<td>无自动恢复</td>
+<td>启动时重置 status=running → idle + 注册表损坏自动重建</td>
+</tr>
+<tr>
+<td><strong>空壳防护</strong></td>
+<td>不需要（文件即内容）</td>
+<td>不需要（INSERT 即有数据）</td>
+<td>不需要</td>
+<td>延迟创建 + 创建即写消息原子化</td>
+</tr>
+</tbody>
+</table>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-存储格式">1. 存储格式</a>
+<a class="" href="#2-session-元数据字段">2. Session 元数据字段</a>
+<a class="" href="#3-session-列举">3. Session 列举</a>
+<a class="" href="#4-session-创建">4. Session 创建</a>
+<a class="" href="#5-session-删除">5. Session 删除</a>
+<a class="" href="#6-session-resume">6. Session Resume</a>
+<a class="" href="#7-compaction上下文压缩">7. Compaction（上下文压缩）</a>
+<a class="" href="#8-活跃进程跟踪">8. 活跃进程跟踪</a>
+<a class="" href="#9-并发控制">9. 并发控制</a>
+<a class="" href="#10-数据维护">10. 数据维护</a>
+<a class="" href="#11-标题命名">11. 标题（命名）</a>
+<a class="" href="#12-消息存储模型">12. 消息存储模型</a>
+<a class="" href="#13-jsonl-条目类型claude-code-独有">13. JSONL 条目类型（Claude Code 独有）</a>
+<a class="" href="#14-总结">14. 总结</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../../assets/site.js"></script>
+</body>
+</html>

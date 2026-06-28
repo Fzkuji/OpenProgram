@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Function Metadata Specification · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function" open><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink active" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="function-metadata-specification">Function Metadata Specification<a class="header-anchor" href="#function-metadata-specification">#</a></h1>
+<p>This document defines what metadata a function in this framework must carry — whether or not it calls an LLM — where that metadata lives, and which components consume it.</p>
+<p>Scope: every function decorated with <code>@agentic_function</code>, plus any plain Python callable passed into <code>render_options</code>, <code>runtime.exec(tools=[...])</code>, or any other component of the catalog protocol.</p>
+<h2 id="1-why-this-spec-exists">1. Why this spec exists<a class="header-anchor" href="#1-why-this-spec-exists">#</a></h2>
+<p>Historically the same piece of information lived in multiple places:</p>
+<ul>
+<li>Parameter descriptions could be written in the docstring <code>Args:</code> section or in <code>@agentic_function(input={...})</code></li>
+<li>Catalog callers hand-wrote a verbose <code>available</code> registry dict at the call site, repeating information already present on the function</li>
+<li>Different consumers (tool_use spec, WebUI, catalog menu, meta/create) followed slightly different read-order conventions</li>
+</ul>
+<p>The result: authors of new functions didn't know where to put descriptions, the framework read metadata from inconsistent sources, and code generated by meta/create didn't always match what other consumers expected.</p>
+<p>This spec defines a single source-of-truth so every consumer reads metadata by the same rules.</p>
+<h2 id="2-who-consumes-function-metadata">2. Who consumes function metadata<a class="header-anchor" href="#2-who-consumes-function-metadata">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Consumer</th>
+<th>Required fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runtime.exec(tools=[fn])</code> (provider-native tool_use)</td>
+<td>function name, overall description, parameter JSON schema (type / required / enum / description)</td>
+</tr>
+<tr>
+<td><code>render_options(options)</code> (catalog menu)</td>
+<td>function name, when-to-pick description, parameter name / type / description / enum, whether each parameter is system-filled</td>
+</tr>
+<tr>
+<td><code>parse_args(reply, options, runtime, ...)</code> (catalog extract + dispatch + retry)</td>
+<td>parameter names + types + enum + hidden flag, <code>runtime</code>-style auto-inject allowlist</td>
+</tr>
+<tr>
+<td>WebUI parameter form</td>
+<td>description / placeholder / multiline / options / hidden</td>
+</tr>
+<tr>
+<td><code>runtime.exec</code> default system prompt</td>
+<td>full docstring</td>
+</tr>
+<tr>
+<td>Context tree rendering</td>
+<td><code>expose</code> mode + <code>render_range</code></td>
+</tr>
+<tr>
+<td>meta/create / edit / fix / improve</td>
+<td>docstring conventions, signature constraints, <code>input=</code> metadata</td>
+</tr>
+<tr>
+<td>auto-trace / persistence</td>
+<td>function identity, argument values, return value, timing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="3-metadata-fields-and-their-canonical-locations">3. Metadata fields and their canonical locations<a class="header-anchor" href="#3-metadata-fields-and-their-canonical-locations">#</a></h2>
+<p>Every piece of information has exactly one source-of-truth. This table is the spec:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Where it lives</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Function name</td>
+<td><code>def name(...)</code></td>
+<td><code>fn.__name__</code></td>
+</tr>
+<tr>
+<td>Parameter names</td>
+<td>signature</td>
+<td><code>inspect.signature(fn).parameters</code></td>
+</tr>
+<tr>
+<td>Parameter types</td>
+<td>annotation</td>
+<td><code>param.annotation</code></td>
+</tr>
+<tr>
+<td>Parameter defaults</td>
+<td>annotation default</td>
+<td><code>param.default</code></td>
+</tr>
+<tr>
+<td>One-line summary (what / when-to-pick)</td>
+<td>first paragraph of docstring (up to first blank line)</td>
+<td><code>inspect.getdoc(fn)</code>, first paragraph</td>
+</tr>
+<tr>
+<td>Per-call LLM instructions (prompt + data for one specific <code>runtime.exec</code>)</td>
+<td>the <code>content=[...]</code> list of that exec call</td>
+<td>passed directly at call time</td>
+</tr>
+<tr>
+<td>Per-parameter description</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;description&quot;: ...}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;description&quot;]</code></td>
+</tr>
+<tr>
+<td>Per-parameter enum</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;options&quot;: [...]}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;options&quot;]</code></td>
+</tr>
+<tr>
+<td>Whether the parameter is LLM-visible</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;hidden&quot;: True}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;hidden&quot;]</code></td>
+</tr>
+<tr>
+<td>WebUI placeholder</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;placeholder&quot;: &quot;...&quot;}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;placeholder&quot;]</code></td>
+</tr>
+<tr>
+<td>WebUI multiline input</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;multiline&quot;: True}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;multiline&quot;]</code></td>
+</tr>
+<tr>
+<td>Dynamic option source</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;options_from&quot;: &quot;functions&quot;}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;options_from&quot;]</code></td>
+</tr>
+<tr>
+<td>Working-directory picker mode</td>
+<td><code>@agentic_function(workdir_mode=&quot;optional&quot;|&quot;hidden&quot;|&quot;required&quot;)</code></td>
+<td><code>fn.workdir_mode</code></td>
+</tr>
+<tr>
+<td>Framework-auto-injected parameters</td>
+<td>global constant <code>_AUTO_PARAMS = {&quot;runtime&quot;, &quot;exec_runtime&quot;, &quot;review_runtime&quot;}</code></td>
+<td>module level</td>
+</tr>
+<tr>
+<td>Override of <code>runtime.exec</code> system prompt</td>
+<td><code>@agentic_function(system=&quot;...&quot;)</code></td>
+<td><code>fn.system</code></td>
+</tr>
+<tr>
+<td>Context-tree expose mode</td>
+<td><code>@agentic_function(expose=&quot;io&quot;|&quot;llm&quot;|&quot;full&quot;|&quot;hidden&quot;)</code> — controls what <strong>callers</strong> see of this function in their DAG render</td>
+<td><code>fn.expose</code></td>
+</tr>
+<tr>
+<td>Context-tree render range</td>
+<td><code>@agentic_function(render_range={&quot;callers&quot;: N, &quot;subcalls&quot;: M})</code> — controls how much DAG history <strong>this function's own</strong> <code>runtime.exec</code> reads. Both are node-count slices on <code>seq</code>: <code>callers</code> = most-recent N nodes written <strong>before</strong> this function's frame started (default <code>None</code> = uncapped, <code>0</code> = wall off all prior context); <code>subcalls</code> = most-recent N nodes written <strong>since</strong> this function's frame started (default <code>-1</code> = uncapped — the frame sees its own progress; child internals are hidden by <em>their</em> <code>expose</code> setting, not by subcalls counting; set <code>N&gt;=0</code> only to actively cap prompt size in a loop).</td>
+<td><code>fn.render_range</code></td>
+</tr>
+<tr>
+<td>Whether runtime gets a tool set</td>
+<td><code>@agentic_function(no_tools=True)</code></td>
+<td><code>fn.no_tools</code></td>
+</tr>
+<tr>
+<td>Skill trigger words / agent discovery</td>
+<td>sibling <code>SKILL.md</code> frontmatter</td>
+<td>loaded separately by the skill loader</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Core principle</strong>: anything expressible in the signature / annotation is not repeated in the decorator; anything expressible in <code>input=</code> is not repeated in the docstring.</p>
+<h3 id="effective-defaults-for-a-bare-agentic_function">Effective defaults for a bare <code>@agentic_function</code><a class="header-anchor" href="#effective-defaults-for-a-bare-agentic_function">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Default</th>
+<th>Resulting behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expose</code></td>
+<td><code>&quot;io&quot;</code></td>
+<td>Callers see my name + input + output. My internal <code>runtime.exec</code> (<code>llm</code> Calls) are hidden from them.</td>
+</tr>
+<tr>
+<td><code>render_range</code></td>
+<td><code>None</code> → <code>render_context</code> falls through to <code>callers=None, subcalls=-1</code></td>
+<td>Pre-frame history is uncapped. In-frame nodes (the frame's own progress: earlier <code>runtime.exec</code> results, returned sub-function io) are also uncapped. Child <code>@agentic_function</code> internals stay hidden because the child carries <code>expose=&quot;io&quot;</code>, not because subcalls trims them.</td>
+</tr>
+<tr>
+<td>top-level chat turn</td>
+<td><code>frame_entry_seq=-1</code>, no pre-frame</td>
+<td>Same code path as any other frame — all nodes are in-frame and visible. No special-casing.</td>
+</tr>
+<tr>
+<td><code>no_tools</code></td>
+<td><code>False</code></td>
+<td>The active toolset is injected into <code>runtime.exec</code>.</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td><code>None</code></td>
+<td>Use the runtime's existing system prompt as-is.</td>
+</tr>
+</tbody>
+</table>
+<p>Implication: a frame naturally accumulates its own work. Set <code>subcalls=N</code> explicitly only to bound prompt size in a long loop. Set <code>subcalls=0</code> explicitly to fully wall off in-frame nodes (rare).</p>
+<h2 id="4-the-role-of-the-docstring-vs-content">4. The role of the docstring vs <code>content</code><a class="header-anchor" href="#4-the-role-of-the-docstring-vs-content">#</a></h2>
+<p>These two channels can carry overlapping information, but they have <strong>different responsibilities</strong> — neither replaces the other:</p>
+<table>
+<thead>
+<tr>
+<th>Channel</th>
+<th>Scope</th>
+<th>What goes here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>docstring</td>
+<td>Whole-function level. Describes what the function as a whole does (it may run preprocessing, several LLM calls, and postprocessing). Read by humans, catalog menus, tool_use specs, and meta tooling.</td>
+<td>One-line summary required. May also describe in detail what each LLM call does, expected output, edge cases — as much detail as you want, for readers and for context.</td>
+</tr>
+<tr>
+<td><code>runtime.exec(content=[...])</code></td>
+<td>One specific LLM call inside the function. Each <code>exec</code> is its own &quot;ask&quot;; the function may make several with different prompts.</td>
+<td>The actual prompt + data for <em>this</em> LLM call: what task, what output format, what constraints, plus the data to operate on. <strong>This must be written even if the docstring already describes it.</strong></td>
+</tr>
+</tbody>
+</table>
+<p>A function may have a rich docstring explaining &quot;this function classifies sentiment by asking the LLM and normalizing the reply&quot;, but the body still needs an explicit <code>runtime.exec(content=[...])</code> containing the actual instruction + data going to the LLM. <strong>Documentation in the docstring does not propagate into the LLM call</strong> — the framework sends docstring as descriptive context (rendered in the tree), not as authoritative instruction. Provider behavior varies; codex CLI in particular ignores docstring as instruction. Always put the per-call prompt in <code>content</code>.</p>
+<p>Docstring writing rules:</p>
+<ul>
+<li>One-line summary (the first paragraph) is required — that's what catalog menus and tool_use specs read.</li>
+<li>The body may be as detailed as is useful for code readers — including describing what each LLM call does.</li>
+<li>Do not write filler (&quot;You are a helpful assistant&quot;, &quot;Complete the task&quot;).</li>
+<li>A detailed docstring does NOT eliminate the need for explicit <code>content=[...]</code> text on each exec call.</li>
+</ul>
+<p><code>content</code> writing rules:</p>
+<ul>
+<li>Each item is a dict like <code>{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: ...}</code> or <code>{&quot;type&quot;: &quot;image&quot;, &quot;path&quot;: ...}</code>.</li>
+<li>Embed both the instruction <em>and</em> the data for this LLM call. Example:<pre><code class="language-python"><span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="p">(</span>
+    <span class="sa">f</span><span class="s2">&quot;Classify the sentiment of the following text. Reply with exactly one &quot;</span>
+    <span class="sa">f</span><span class="s2">&quot;word: positive, negative, or neutral.</span><span class="se">\n\n</span><span class="s2">Text:</span><span class="se">\n</span><span class="si">{</span><span class="n">text</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="p">)}])</span>
+</code></pre>
+</li>
+<li>Define the exact output format inline; don't rely on the docstring or external context to convey it.</li>
+</ul>
+<h2 id="5-input-vs-docstring-args-section">5. <code>input=</code> vs. docstring <code>Args:</code> section<a class="header-anchor" href="#5-input-vs-docstring-args-section">#</a></h2>
+<p>Historically the same parameter description could appear both in the docstring <code>Args:</code> section and in <code>@agentic_function(input={...})</code>. This spec makes <code>input=</code> the source-of-truth.</p>
+<h3 id="recommended-style-required-for-new-code">Recommended style (required for new code)<a class="header-anchor" href="#recommended-style-required-for-new-code">#</a></h3>
+<p>Minimal example:</p>
+<pre><code class="language-python"><span class="nd">@agentic_function</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">&quot;text&quot;</span><span class="p">:</span>  <span class="p">{</span><span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Text to polish.&quot;</span><span class="p">},</span>
+    <span class="s2">&quot;style&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Output style.&quot;</span><span class="p">,</span> <span class="s2">&quot;options&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;academic&quot;</span><span class="p">,</span> <span class="s2">&quot;casual&quot;</span><span class="p">]},</span>
+<span class="p">})</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">polish</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">style</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Polish a text in the given style.&quot;&quot;&quot;</span>
+    <span class="o">...</span>
+</code></pre>
+<p>Fuller example exercising more metadata features (placeholder, multiline, hidden, mixed types):</p>
+<pre><code class="language-python"><span class="nd">@agentic_function</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">&quot;essay&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Essay to review.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span> <span class="s2">&quot;Paste the essay text here...&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;multiline&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;rubric_id&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Which rubric to apply.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;options&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;ielts_writing&quot;</span><span class="p">,</span> <span class="s2">&quot;toefl_writing&quot;</span><span class="p">,</span> <span class="s2">&quot;gre_argument&quot;</span><span class="p">],</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;max_score&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Upper bound for the numeric score.&quot;</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;show_rubric_internals&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Include rubric breakdown in the output.&quot;</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;session_id&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="c1"># System-supplied; LLM does not see this.</span>
+        <span class="s2">&quot;hidden&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">})</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">review_essay</span><span class="p">(</span>
+    <span class="n">essay</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">rubric_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">max_score</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">show_rubric_internals</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>           <span class="c1"># filled by Python via context, not LLM</span>
+    <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">,</span>          <span class="c1"># auto-injected</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Score an essay against a named rubric and return a structured report.&quot;&quot;&quot;</span>
+    <span class="o">...</span>
+</code></pre>
+<p>The docstring keeps only the one-line summary — <strong>no <code>Args:</code> section and no <code>Returns:</code> section</strong>. If the meaning of return-value fields matters to downstream LLM-driven calls, encode it with a structured return type (e.g. <code>TypedDict</code> or a dataclass) so consumers can introspect it; do not duplicate the schema in a docstring paragraph.</p>
+<h3 id="legacy-style-still-supported">Legacy style (still supported)<a class="header-anchor" href="#legacy-style-still-supported">#</a></h3>
+<pre><code class="language-python"><span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">polish</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">style</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Polish a text in the given style.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        text: Text to polish.</span>
+<span class="sd">        style: Output style.</span>
+<span class="sd">        runtime: LLM runtime.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Polished text.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="o">...</span>
+</code></pre>
+<p>Legacy functions still work — when <code>input_meta</code> provides no description for a parameter, <code>render_options</code> and <code>_build_agentic_tool_spec</code> fall back to parsing the docstring <code>Args:</code> section. Fallback order:</p>
+<pre><code>fn.input_meta[name][&quot;description&quot;]
+    ↓ not found
+docstring Args section for name (Google-style)
+    ↓ not found
+fn.input_meta[name][&quot;placeholder&quot;]  (prefixed with &quot;e.g.&quot;)
+    ↓ not found
+no description; the menu shows only parameter name + type
+</code></pre>
+<h2 id="6-plain-python-callables-undecorated">6. Plain Python callables (undecorated)<a class="header-anchor" href="#6-plain-python-callables-undecorated">#</a></h2>
+<p><code>@agentic_function</code> is not required. Plain callables can also be passed to <code>render_options</code> and <code>runtime.exec(tools=[...])</code>, but they carry less metadata:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Decorated</th>
+<th>Undecorated</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parameter description</td>
+<td>from <code>input=</code></td>
+<td>from docstring <code>Args:</code> fallback, or empty</td>
+</tr>
+<tr>
+<td>Parameter enum</td>
+<td><code>input={&quot;x&quot;: {&quot;options&quot;: [...]}}</code></td>
+<td>none; annotation <code>Literal[&quot;a&quot;,&quot;b&quot;]</code> is detected</td>
+</tr>
+<tr>
+<td>Hidden flag</td>
+<td><code>input={&quot;x&quot;: {&quot;hidden&quot;: True}}</code></td>
+<td>only <code>_AUTO_PARAMS</code> names (<code>runtime</code>, etc.) are auto-hidden</td>
+</tr>
+<tr>
+<td>Recorded in context tree</td>
+<td>yes</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<p>Use plain callables for: simple decision branches with few parameters, no WebUI surface, and no need for rich catalog hints. Upgrade to <code>@agentic_function</code> as soon as you need enums, hidden parameters, or detailed descriptions.</p>
+<h2 id="7-auto-injected-parameters">7. Auto-injected parameters<a class="header-anchor" href="#7-auto-injected-parameters">#</a></h2>
+<p>The following parameter names are reserved by convention: if a function's signature includes any of them, the framework auto-injects them at call time. The LLM does not see them and does not need to fill them.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter name</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runtime</code></td>
+<td>The current Runtime instance</td>
+</tr>
+<tr>
+<td><code>exec_runtime</code></td>
+<td>The runtime used for execution (multi-runtime setups)</td>
+</tr>
+<tr>
+<td><code>review_runtime</code></td>
+<td>The runtime used for review (multi-runtime setups)</td>
+</tr>
+</tbody>
+</table>
+<p>To add a new auto-injected name, edit <code>_AUTO_PARAMS</code> in <code>agentic_programming/function.py</code>. Do not mark them per-callsite via <code>input={&quot;x&quot;: {&quot;hidden&quot;: True}}</code>.</p>
+<h2 id="8-webui-rendering-behavior">8. WebUI rendering behavior<a class="header-anchor" href="#8-webui-rendering-behavior">#</a></h2>
+<p>The WebUI form renders each parameter by the following rules (implemented in <code>web/components/programs/program-run-dialog.tsx</code>). When authoring <code>@agentic_function(input={...})</code>, use this table to predict what kind of input control your function will produce:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter trait</th>
+<th>WebUI control</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bool</code> type</td>
+<td>Yes / No toggle buttons (not a checkbox)</td>
+</tr>
+<tr>
+<td><code>str</code> type, <code>multiline</code> not set</td>
+<td>Defaults to a textarea (<code>multiline=True</code> is implied)</td>
+</tr>
+<tr>
+<td><code>str</code> type, <code>multiline: False</code></td>
+<td>Single-line <code>&lt;input&gt;</code></td>
+</tr>
+<tr>
+<td>Non-<code>str</code> non-<code>bool</code>, <code>multiline</code> not set</td>
+<td>Single-line <code>&lt;input&gt;</code></td>
+</tr>
+<tr>
+<td><code>options: [&quot;a&quot;, &quot;b&quot;, ...]</code></td>
+<td>Clickable chips plus a free-form text input (user can pick a preset OR type a custom value)</td>
+</tr>
+<tr>
+<td><code>options_from: &quot;functions&quot;</code></td>
+<td><code>&lt;select&gt;</code> dropdown populated from currently-registered non-builtin / non-meta functions</td>
+</tr>
+<tr>
+<td><code>hidden: True</code></td>
+<td>Omitted from the form entirely</td>
+</tr>
+<tr>
+<td>Has a Python default and no explicit <code>placeholder</code></td>
+<td>placeholder auto-set to <code>&quot;default: X&quot;</code></td>
+</tr>
+</tbody>
+</table>
+<p>The working-directory picker is rendered separately at the bottom of the form, governed by the top-level <code>workdir_mode</code>:</p>
+<table>
+<thead>
+<tr>
+<th><code>workdir_mode</code> value</th>
+<th>Form behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&quot;optional&quot;</code> (default)</td>
+<td>Picker shown; may be left empty</td>
+</tr>
+<tr>
+<td><code>&quot;hidden&quot;</code></td>
+<td>Picker not shown (function doesn't depend on filesystem location)</td>
+</tr>
+<tr>
+<td><code>&quot;required&quot;</code></td>
+<td>Picker shown and required; the form blocks submission without a value</td>
+</tr>
+</tbody>
+</table>
+<p>Parameter <code>description</code> renders as a small label next to the parameter name; the type annotation and the &quot;required&quot; marker are also shown on the same row.</p>
+<h2 id="9-out-of-scope-deferred-for-future-expansion">9. Out of scope (deferred for future expansion)<a class="header-anchor" href="#9-out-of-scope-deferred-for-future-expansion">#</a></h2>
+<p>The following fields were discussed and are <strong>intentionally not introduced now</strong>, because no consumer exists yet:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Intended use</th>
+<th>Why deferred</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>effects=[&quot;fs&quot;, &quot;net&quot;, &quot;state&quot;]</code></td>
+<td>Mark function side effects for permission gating / dangerous-op blocking</td>
+<td>No permission gateway component exists yet</td>
+</tr>
+<tr>
+<td><code>permissions=[...]</code></td>
+<td>Required permission scope before calling</td>
+<td>Same as above</td>
+</tr>
+<tr>
+<td><code>idempotent=True</code></td>
+<td>Whether the function can be safely retried</td>
+<td>No auto-retry component exists</td>
+</tr>
+<tr>
+<td><code>latency_hint=&quot;long&quot;</code></td>
+<td>Scheduler hint</td>
+<td>No scheduler exists</td>
+</tr>
+<tr>
+<td><code>cost_hint=...</code></td>
+<td>Quota management</td>
+<td>Same as above</td>
+</tr>
+</tbody>
+</table>
+<p>Revisit this section once a real upstream consumer appears.</p>
+<h2 id="10-migration-path-informational">10. Migration path (informational)<a class="header-anchor" href="#10-migration-path-informational">#</a></h2>
+<p>The recommended order for migrating existing code to this spec; not strictly required:</p>
+<ol>
+<li>Add a shared helper <code>_parse_docstring_args(fn) -&gt; dict[name, description]</code> in <code>agentic_programming/function.py</code></li>
+<li><code>_build_agentic_tool_spec</code> calls this helper as a fallback (currently the spec does not read docstring <code>Args:</code> at all)</li>
+<li><code>render_options</code> calls the same helper for the same fallback</li>
+<li>Existing <code>@agentic_function</code> functions do not need immediate rewriting; convert opportunistically when you touch them</li>
+</ol>
+<h2 id="11-style-checklist">11. Style checklist<a class="header-anchor" href="#11-style-checklist">#</a></h2>
+<p>When writing a new <code>@agentic_function</code>:</p>
+<ul class="contains-task-list">
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> First paragraph of the docstring is a one-line summary (state what the function does / when to pick it, directly)</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> No <code>Args:</code> or <code>Returns:</code> sections in the docstring (unless you specifically want them for debugging / reading)</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> Every LLM-visible parameter has a <code>description</code> in <code>input=</code></li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> Enum parameters use <code>options</code> in <code>input=</code> (not buried in the description text)</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> System-filled parameters (DB session, current user, etc.) are marked <code>hidden: True</code></li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> Framework auto-injected parameters (<code>runtime</code>, etc.) need no annotation; the framework detects them</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> The function name is clear (<code>fn.__name__</code> is what the LLM sees as the action name)</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> No role-play, no empty directives, no metaphors in the docstring</li>
+</ul>
+<h2 id="12-references">12. References<a class="header-anchor" href="#12-references">#</a></h2>
+<ul>
+<li><code>openprogram/agentic_programming/function.py</code> — <code>@agentic_function</code> decorator implementation</li>
+<li><code>openprogram/agentic_programming/decision.py</code> — options-menu rendering, reply parsing, and the next-step decision primitive (<code>decision.make</code>, <code>render_options</code>, <code>parse_args</code>, <code>DecisionError</code>)</li>
+<li><code>docs/design/function/agentic_function.md</code> — decorator usage guide</li>
+<li><code>docs/design/function/function-calling-unification.md</code> — function/tool calling framework</li>
+<li><code>docs/design/function/tool-calling.md</code> — per-turn native tool-use loop mechanics</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-why-this-spec-exists">1. Why this spec exists</a>
+<a class="" href="#2-who-consumes-function-metadata">2. Who consumes function metadata</a>
+<a class="" href="#3-metadata-fields-and-their-canonical-locations">3. Metadata fields and their canonical locations</a>
+<a class="lvl-3" href="#effective-defaults-for-a-bare-agentic_function">Effective defaults for a bare @agentic_function</a>
+<a class="" href="#4-the-role-of-the-docstring-vs-content">4. The role of the docstring vs content</a>
+<a class="" href="#5-input-vs-docstring-args-section">5. input= vs. docstring Args: section</a>
+<a class="lvl-3" href="#recommended-style-required-for-new-code">Recommended style (required for new code)</a>
+<a class="lvl-3" href="#legacy-style-still-supported">Legacy style (still supported)</a>
+<a class="" href="#6-plain-python-callables-undecorated">6. Plain Python callables (undecorated)</a>
+<a class="" href="#7-auto-injected-parameters">7. Auto-injected parameters</a>
+<a class="" href="#8-webui-rendering-behavior">8. WebUI rendering behavior</a>
+<a class="" href="#9-out-of-scope-deferred-for-future-expansion">9. Out of scope (deferred for future expansion)</a>
+<a class="" href="#10-migration-path-informational">10. Migration path (informational)</a>
+<a class="" href="#11-style-checklist">11. Style checklist</a>
+<a class="" href="#12-references">12. References</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

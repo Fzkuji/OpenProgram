@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>上下文压缩 — OpenProgram 设计</title>
+<style>
+  :root {
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --blue-bg: #eff6ff;
+    --green-bg: #f0fdf4;
+    --yellow-bg: #fefce8;
+    --red-bg: #fef2f2;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-600: #4b5563;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--gray-800);
+    background: var(--gray-50);
+    line-height: 1.7;
+    padding: 2rem 1rem;
+  }
+
+  .container { max-width: 900px; margin: 0 auto; }
+
+  h1 {
+    font-size: 1.8rem;
+    color: var(--gray-900);
+    border-bottom: 3px solid var(--gray-200);
+    padding-bottom: .5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+    color: var(--gray-900);
+    margin-top: 2.5rem;
+    margin-bottom: .75rem;
+    border-left: 4px solid var(--blue);
+    padding-left: .75rem;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    color: var(--gray-800);
+    margin-top: 1.5rem;
+    margin-bottom: .5rem;
+  }
+
+  h4 {
+    font-size: 1rem;
+    color: var(--gray-800);
+    margin-top: 1.25rem;
+    margin-bottom: .4rem;
+  }
+
+  p, li { margin-bottom: .4rem; }
+  ul { padding-left: 1.5rem; }
+
+  .node-chat, .node-func, .node-tool {
+    display: inline-block;
+    font-size: .85rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 12px;
+    margin: 0 2px;
+    vertical-align: middle;
+  }
+  .node-chat { background: var(--blue-bg); color: var(--blue); }
+  .node-func { background: var(--green-bg); color: var(--green); }
+  .node-tool { background: var(--yellow-bg); color: var(--yellow); }
+
+  .legend {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .legend-title { font-weight: 700; color: var(--gray-600); font-size: .9rem; }
+
+  .done {
+    display: inline-block;
+    background: #d1fae5;
+    color: #065f46;
+    font-size: .8rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 12px;
+  }
+
+  .pending {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: .8rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+
+  .meta {
+    color: var(--gray-600);
+    font-size: .9rem;
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+  }
+  .meta code {
+    background: var(--gray-100);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: .85rem;
+  }
+  .meta a { color: var(--blue); text-decoration: none; }
+  .meta a:hover { text-decoration: underline; }
+
+  details {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+  }
+  details[open] { border-color: var(--blue); }
+  summary {
+    cursor: pointer;
+    padding: .75rem 1rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--gray-900);
+    background: white;
+    user-select: none;
+    list-style: none;
+  }
+  summary::before {
+    content: "▸ ";
+    color: var(--gray-600);
+  }
+  details[open] > summary::before { content: "▾ "; }
+  summary::-webkit-details-marker { display: none; }
+  .section-body { padding: .5rem 1rem 1rem; }
+
+  .spec {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: .75rem 0;
+  }
+  .spec dt {
+    font-weight: 700;
+    font-size: .85rem;
+    color: var(--gray-600);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-top: .6rem;
+  }
+  .spec dt:first-child { margin-top: 0; }
+  .spec dd { margin-left: 0; margin-bottom: .2rem; }
+
+  code {
+    background: var(--gray-100);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: .9em;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+  pre {
+    background: var(--gray-900);
+    color: #e5e7eb;
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: .85rem;
+    line-height: 1.5;
+    margin: .75rem 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: .75rem 0;
+    font-size: .9rem;
+  }
+  th, td {
+    text-align: left;
+    padding: .5rem .75rem;
+    border: 1px solid var(--gray-200);
+  }
+  th {
+    background: var(--gray-100);
+    font-weight: 700;
+    color: var(--gray-800);
+  }
+  tr:nth-child(even) { background: var(--gray-50); }
+
+  .timeline { position: relative; padding-left: 2rem; margin: 1rem 0; }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: .6rem;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--gray-200);
+    border-radius: 2px;
+  }
+  .tl-item {
+    position: relative;
+    margin-bottom: 1.25rem;
+    padding: .75rem 1rem;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+  }
+  .tl-item::before {
+    content: "";
+    position: absolute;
+    left: -1.65rem;
+    top: 1rem;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 3px solid white;
+  }
+  .tl-item.phase1::before { background: var(--blue); }
+  .tl-item.phase2::before { background: var(--green); }
+  .tl-item.phase3::before { background: var(--green); }
+  .tl-item.phase4::before { background: var(--blue); }
+  .tl-item.phase5::before { background: var(--red); }
+  .tl-item.phase6::before { background: var(--gray-600); }
+  .tl-title { font-weight: 700; margin-bottom: .25rem; }
+  .tl-ref { font-size: .8rem; color: var(--gray-600); }
+
+  .xref {
+    color: var(--blue);
+    font-size: .85rem;
+    font-weight: 600;
+  }
+
+  .toc {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+  }
+  .toc-title { font-weight: 700; margin-bottom: .5rem; color: var(--gray-800); }
+  .toc a {
+    color: var(--gray-800);
+    text-decoration: none;
+    display: block;
+    padding: 2px 0;
+    font-size: .9rem;
+  }
+  .toc a:hover { color: var(--blue); }
+  .toc .indent { padding-left: 1.25rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>上下文压缩 — OpenProgram 设计</h1>
+
+<div class="meta">
+  <span class="done">Budget Reduction + Microcompact + Snip 已实现</span>
+  <span class="pending">Context Collapse / Reactive 待实现</span><br>
+  代码: <code>context/engine.py</code>、<code>context/budget.py</code>、<code>context/microcompact.py</code>、<code>context/tool_aging/</code>、<code>context/snip.py</code><br>
+  参考: <a href="../../reference/claude-code-compaction.md">Claude Code 压缩参考</a>（5-tier 级联，基于逆向分析）
+</div>
+
+<div class="legend">
+  <span class="legend-title">节点类型</span>
+  <span class="node-chat">🔵 对话节点</span>
+  <span class="node-func">🟢 函数节点</span>
+  <span class="node-tool">🟡 工具节点</span>
+</div>
+
+<nav class="toc">
+  <div class="toc-title">目录</div>
+  <a href="#s1">1. 总览：常规操作 + 5 级级联</a>
+  <a href="#s2">2. 我们独有：函数调用节点的生命周期</a>
+  <a href="#s2-1" class="indent">2.1 函数运行中</a>
+  <a href="#s2-2" class="indent">2.2 函数结束 → expose=io，走常规级联</a>
+  <a href="#s3">3. 常规操作：Budget Reduction</a>
+  <a href="#s4">4. 级联压缩</a>
+  <a href="#s4-1" class="indent">Tier 1: Microcompact</a>
+  <a href="#s4-2" class="indent">Tier 2: Snip</a>
+  <a href="#s4-3" class="indent">Tier 3: Context Collapse</a>
+  <a href="#s4-4" class="indent">Tier 4: Auto-Compact / /compact</a>
+  <a href="#s4-5" class="indent">Tier 5: Reactive</a>
+  <a href="#s5">5. 执行流程</a>
+  <a href="#s6">6. 完整运行示例</a>
+  <a href="#s7">7. 和 Claude Code 的对应</a>
+  <a href="#s8">8. 实施计划</a>
+</nav>
+
+<!-- S1 -->
+<details open id="s1">
+  <summary>1. 总览：常规操作 + 5 级级联</summary>
+  <div class="section-body">
+    <p>和 Claude Code 对齐，分两类：</p>
+    <p><strong>常规操作</strong>（每轮 LLM 调用前都做，和上下文长度无关）：Budget Reduction</p>
+    <p><strong>级联压缩</strong>（按 Tier 1→2→3→4→5 顺序升级，成本低的先做，前一级不够才上后一级）：</p>
+
+    <table>
+      <thead><tr><th></th><th>名称</th><th>做什么</th><th>触发条件</th><th>调 LLM</th><th>破缓存</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>常规</td><td>Budget Reduction</td><td>截断超大单个输出</td><td>单个 tool_result &gt; <strong>4000 字符</strong></td><td>否</td><td>否</td><td><span class="done">✅</span></td></tr>
+        <tr><td>Tier 1</td><td>Microcompact</td><td>旧工具输出清理</td><td>工具调用 ≥ <strong>50 次</strong>（之后每 <strong>25 次</strong>）/ 空闲 <strong>90 分钟</strong></td><td>否</td><td>cache-aware 不破</td><td><span class="done">✅</span></td></tr>
+        <tr><td>Tier 2</td><td>Snip</td><td>删最旧几轮</td><td>Tier 1 后仍超预算</td><td>否</td><td>是</td><td><span class="done">✅</span></td></tr>
+        <tr><td>Tier 3</td><td>Context Collapse</td><td>分段摘要</td><td>Tier 2 后仍超，~<strong>90%</strong></td><td>是（每段一次）</td><td>是</td><td><span class="pending">⏳</span></td></tr>
+        <tr><td>Tier 4</td><td>Auto-Compact</td><td>全量摘要</td><td>Tier 3 后仍超 / 用户 <code>/compact</code></td><td>是（一次）</td><td>是</td><td><span class="done">✅</span></td></tr>
+        <tr><td>Tier 5</td><td>Reactive</td><td>紧急压缩</td><td>API 返回 <strong>413</strong></td><td>是</td><td>是</td><td><span class="pending">⏳</span></td></tr>
+      </tbody>
+    </table>
+
+    <p><strong>级联逻辑</strong>：每轮 LLM 调用前，从 Tier 1 开始检查。满足条件就执行，执行完重新检查是否还超。还超就进入下一个 Tier。</p>
+    <p style="color:var(--gray-600);font-size:.9rem">注：Tier 3 和 Tier 4 在 Claude Code 逆向分析中被描述为"overlapping strategies"，不一定严格级联。<code>/compact</code> 手动命令直接触发 Tier 4，跳过 Tier 1-3。</p>
+  </div>
+</details>
+
+<!-- S2 -->
+<details open id="s2">
+  <summary>2. 我们独有：函数调用节点的生命周期</summary>
+  <div class="section-body">
+    <p>Claude Code 是线性对话没有 DAG，不需要这一层。我们有函数调用节点（<span class="node-func">🟢</span>），需要额外处理。</p>
+
+    <h3 id="s2-1">2.1 函数运行中</h3>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>函数被调用，status="running"</dd>
+      <dt>做什么</dt>
+      <dd>内部子树完整展开在上下文中</dd>
+      <dt>可见范围</dt>
+      <dd>由 <code>render_context</code> 的 callers/subcalls/expose 控制</dd>
+      <dt>节点状态</dt>
+      <dd><strong>内部视角</strong>：子节点 full。<strong>外部视角</strong>：默认 expose=io，调用方只看到输入+输出</dd>
+      <dt>和压缩的关系</dt>
+      <dd>函数运行中，内部的 <span class="node-tool">🟡 工具输出</span>照常走 Budget Reduction（<span class="xref">§3</span>）和 Microcompact（<span class="xref">Tier 1</span>）。不参与 Snip（不能删正在用的）</dd>
+    </dl>
+
+    <h3 id="s2-2">2.2 函数结束 → expose=io，走常规级联</h3>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>函数返回，status="completed"/"error"</dd>
+      <dt>做什么</dt>
+      <dd>expose=io 天然隐藏内部子树。不需要额外操作。子节点保留在 DAG 中（可查）</dd>
+      <dt>后续</dt>
+      <dd>函数节点（输入+输出）进入 <span class="xref">§3-§4</span> 的常规级联，和 <span class="node-chat">🔵 对话节点</span> 一视同仁。不需要单独的策略</dd>
+    </dl>
+  </div>
+</details>
+
+<!-- S3 -->
+<details open id="s3">
+  <summary>3. 常规操作：Budget Reduction <span class="done">✅ 已实现</span></summary>
+  <div class="section-body">
+    <p>和 Claude Code 一致。每轮 LLM 调用前都做，和上下文长度无关。</p>
+    <dl class="spec">
+      <dt>做什么</dt>
+      <dd>截断超大的单个 <span class="node-tool">🟡 工具输出</span>。不处理 <span class="node-chat">🔵 user/assistant 消息</span></dd>
+      <dt>阈值</dt>
+      <dd><strong>4000 字符</strong>（约 1000 tokens）</dd>
+      <dt>截断方式</dt>
+      <dd>保留前 <strong>2400 字符</strong>（60%）+ 后 <strong>1600 字符</strong>（40%），中间丢弃</dd>
+      <dt>代码</dt>
+      <dd><code>context/tool_aging/truncate.py: middle_truncate</code>、<code>context/tool_aging/policy.py: MAX_TOOL_RESULT_CHARS = 4000</code></dd>
+    </dl>
+  </div>
+</details>
+
+<!-- S4 -->
+<details open id="s4">
+  <summary>4. 级联压缩（Tier 1→5）</summary>
+  <div class="section-body">
+    <p>Budget Reduction 之后，按 Tier 顺序检查。前一级做完仍超阈值才上后一级。</p>
+
+    <h3 id="s4-1">Tier 1: Microcompact <span class="done">✅ 已实现</span></h3>
+    <p>和 Claude Code 一致。清理旧 <span class="node-tool">🟡 工具输出</span>。</p>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>Cache-aware: <strong>50 次工具调用</strong>后首次，之后每 <strong>25 次</strong>。Time-based: 空闲 <strong>~90 分钟</strong></dd>
+      <dt>只处理</dt>
+      <dd>FileRead、Shell、Grep、Glob、WebSearch、WebFetch、FileEdit、FileWrite</dd>
+      <dt>两条路径</dt>
+      <dd>
+        <strong>Cache-aware</strong>（Anthropic provider）：通过 Context Editing API（<code>cache_edits</code>，beta header <code>context-management-2025-06-27</code>）服务端清除旧 tool_result。客户端消息不变，<strong>缓存不破</strong>。sentinel 做了字节级归一化（byte-stable），重复操作不改变已缓存内容<br>
+        <strong>Time-based</strong>（其他 provider / 空闲 90 分钟）：客户端替换为占位文本（~20 tokens）。<strong>会破缓存</strong>
+      </dd>
+      <dt>压缩效果</dt>
+      <dd>每个工具输出：原始大小 → 0 tokens（cache-aware）或 ~20 tokens（time-based）</dd>
+      <dt>代码</dt>
+      <dd><code>context/microcompact.py</code>、<code>context/rules/microcompact.py</code></dd>
+    </dl>
+
+    <h3 id="s4-2">Tier 2: Snip <span class="done">✅ 已实现</span></h3>
+    <p>和 Claude Code 一致。直接删最旧的几轮对话。不做摘要，不调 LLM。</p>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>Tier 1 做完后仍超预算</dd>
+      <dt>删除粒度</dt>
+      <dd><strong>整轮</strong>（user + assistant + 该轮所有工具调用一起删）</dd>
+      <dt>删多少</dt>
+      <dd>从最旧的开始逐轮删，每删一轮重新算 token 数，删到阈值以下为止（不是固定 N 轮）</dd>
+      <dt>代价</dt>
+      <dd>信息完全丢失，缓存前缀被破坏。但免费（不调 LLM）</dd>
+      <dt>函数节点</dt>
+      <dd>已完成的 <span class="node-func">🟢 函数节点</span>按时间参与 Snip。运行中的不删</dd>
+      <dt>代码</dt>
+      <dd><code>context/snip.py</code></dd>
+    </dl>
+
+    <h3 id="s4-3">Tier 3: Context Collapse <span class="pending">⏳ 待实现</span></h3>
+    <p>和 Claude Code 一致。分段 LLM 摘要，原始消息保留（可回滚）。</p>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>Tier 2 Snip 后仍超（约 90%，95% 阻塞强制）</dd>
+      <dt>分段</dt>
+      <dd><strong>5-10 轮</strong>一段，每段独立 LLM 摘要（每段约 100-300 tokens）</dd>
+      <dt>LLM 调用</dt>
+      <dd>次数 = 段数（例：30 轮分 3 段 = 3 次 LLM 调用）</dd>
+      <dt>可回滚</dt>
+      <dd>原始消息保留在 collapse store 中（读时投影 / read-time projection）</dd>
+    </dl>
+
+    <h3 id="s4-4">Tier 4: Auto-Compact <span class="done">✅ 已实现</span></h3>
+    <p>和 Claude Code 一致。全量 LLM 摘要，替换所有旧消息。不可回滚。</p>
+    <dl class="spec">
+      <dt>触发</dt>
+      <dd>Tier 3 后仍超。或用户手动 <code>/compact</code>（直接跳到这里）</dd>
+      <dt>LLM 调用</dt>
+      <dd><strong>1 次</strong>（全量摘要）</dd>
+      <dt>摘要大小</dt>
+      <dd>约 <strong>2000-5000 tokens</strong></dd>
+      <dt>保留</dt>
+      <dd>最近 <strong>1-2 轮</strong>完整。system prompt 从配置文件重新加载（不依赖摘要）</dd>
+      <dt>/compact 命令</dt>
+      <dd><code>/compact</code> 或 <code>/compact 保留数据库迁移的讨论</code>。建议在 <strong>60%</strong> 时手动做</dd>
+      <dt>链式压缩</dt>
+      <dd>压缩后继续聊，再次满了在上一次摘要基础上再压。信息逐层衰减</dd>
+      <dt>代码</dt>
+      <dd><code>context/engine.py: compact()</code></dd>
+    </dl>
+
+    <h3 id="s4-5">Tier 5: Reactive <span class="pending">⏳ 待实现</span></h3>
+    <p>API 返回 413（prompt too long）时的紧急压缩。每轮至多触发一次。都失败则终止。</p>
+  </div>
+</details>
+
+<!-- S5 -->
+<details open id="s5">
+  <summary>5. 执行流程</summary>
+  <div class="section-body">
+<pre><code>每轮 LLM 调用前：
+
+1. Budget Reduction → 截断超大工具输出（每轮都做）
+
+2. 级联检查（按 Tier 顺序）：
+   Tier 1: Microcompact 条件满足？→ 清旧工具输出
+   Tier 2: 仍超阈值？→ Snip 删旧轮
+   Tier 3: 仍超阈值？→ Context Collapse 分段摘要
+   Tier 4: 仍超阈值？→ Auto-Compact 全量摘要
+
+3. 调 LLM
+
+4. 如果 API 返回 413：
+   Tier 5: Reactive → 紧急压缩 → 重试
+   → 失败则终止</code></pre>
+  </div>
+</details>
+
+<!-- S6 -->
+<details id="s6">
+  <summary>6. 完整运行示例</summary>
+  <div class="section-body">
+    <p>场景：200K context，持续工作几小时，中间调用了 research_agent。</p>
+    <div class="timeline">
+      <div class="tl-item phase1">
+        <div class="tl-title">阶段 1（0-30%）：正常对话</div>
+        <p><span class="node-chat">🔵 user</span> → <span class="node-chat">🔵 assistant</span>，Budget Reduction 检查工具输出，没超的跳过。级联都不触发。</p>
+      </div>
+      <div class="tl-item phase2">
+        <div class="tl-title">阶段 2（30-50%）：Tier 1 Microcompact 开始工作</div>
+        <p>工具调用超过 50 次。Microcompact cache-aware 首次触发，清理旧工具输出，释放约 15K tokens。之后每 25 次再清一轮。Tier 2-5 不触发。</p>
+      </div>
+      <div class="tl-item phase3">
+        <div class="tl-title">阶段 3：调用 <span class="node-func">🟢 research_agent</span></div>
+        <p>函数运行中：内部 <span class="node-tool">🟡 工具调用</span>展开。Budget Reduction 截断超大输出。函数结束后 expose=io 隐藏内部子树，节点走常规级联。</p>
+      </div>
+      <div class="tl-item phase4">
+        <div class="tl-title">阶段 4（超阈值）：Tier 2 Snip 触发</div>
+        <p>Microcompact 做了还是超。Snip 删最旧 5 轮（包括已完成的函数节点），降到阈值以下。Tier 3-5 不触发。</p>
+      </div>
+      <div class="tl-item phase5">
+        <div class="tl-title">阶段 5（极端）：Tier 3/4 触发</div>
+        <p>反复 Snip 后可删的不多了。Context Collapse 分段摘要。还不够则 Auto-Compact 全量摘要。很少发生。</p>
+      </div>
+      <div class="tl-item phase6">
+        <div class="tl-title">阶段 6：继续使用</div>
+        <p>压缩后正常对话。再次超阈值时重复级联。大模型想查旧的函数内部过程，可以通过工具读取 DAG 子节点。</p>
+      </div>
+    </div>
+  </div>
+</details>
+
+<!-- S7 -->
+<details id="s7">
+  <summary>7. 和 Claude Code 的对应</summary>
+  <div class="section-body">
+    <table>
+      <thead><tr><th>我们</th><th>Claude Code</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>§2 函数节点生命周期</td><td>无</td><td>我们独有（DAG + expose=io）</td></tr>
+        <tr><td>§3 Budget Reduction</td><td>Budget Reduction</td><td>一致（4000 字符阈值，60/40 截断）</td></tr>
+        <tr><td>Tier 1 Microcompact</td><td>Tier 1 Microcompact</td><td>一致。Anthropic provider 用 cache-aware path</td></tr>
+        <tr><td>Tier 2 Snip</td><td>Tier 2 Snip</td><td>一致（整轮删）</td></tr>
+        <tr><td>Tier 3 Context Collapse</td><td>Tier 3 Context Collapse</td><td>一致（分段摘要，可回滚）</td></tr>
+        <tr><td>Tier 4 Auto-Compact / /compact</td><td>Tier 4 Auto-Compact / /compact</td><td>一致（全量摘要）</td></tr>
+        <tr><td>Tier 5 Reactive</td><td>Tier 5 Reactive</td><td>一致（413 紧急压缩）</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:.5rem;color:var(--gray-600);font-size:.85rem">
+      来源：<a href="../../reference/claude-code-compaction.md" style="color:var(--blue)">Claude Code 压缩参考</a>（基于逆向分析，非官方文档）
+    </p>
+  </div>
+</details>
+
+<!-- S8 -->
+<details id="s8">
+  <summary>8. 实施计划</summary>
+  <div class="section-body">
+    <table>
+      <thead><tr><th>步骤</th><th>做什么</th><th>状态</th><th>代码</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Budget Reduction — 截断超大输出（§3）</td><td><span class="done">✅</span></td><td><code>context/tool_aging/truncate.py</code></td></tr>
+        <tr><td>2</td><td>Tier 1 Microcompact — 旧工具输出清理</td><td><span class="done">✅</span></td><td><code>context/microcompact.py</code></td></tr>
+        <tr><td>3</td><td>Tier 2 Snip — 删最旧几轮</td><td><span class="done">✅</span></td><td><code>context/snip.py</code></td></tr>
+        <tr><td>4</td><td>Tier 3 Context Collapse — 分段 LLM 摘要</td><td><span class="pending">⏳</span></td><td></td></tr>
+        <tr><td>5</td><td>Tier 4 Auto-Compact — 全量 LLM 摘要</td><td><span class="done">✅</span></td><td><code>context/engine.py</code></td></tr>
+        <tr><td>6</td><td>Tier 5 Reactive — 413 紧急压缩</td><td><span class="pending">⏳</span></td><td></td></tr>
+        <tr><td>7</td><td>/compact 命令</td><td><span class="pending">⏳</span></td><td></td></tr>
+        <tr><td>8</td><td>/context 命令（token 分布）</td><td><span class="done">✅</span></td><td><code>_cli_chat/handlers.py</code></td></tr>
+        <tr><td>9</td><td>Anthropic Context Editing API 集成</td><td><span class="pending">⏳</span></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+</div>
+</body>
+</html>

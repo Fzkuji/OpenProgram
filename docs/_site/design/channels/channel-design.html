@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel 子系统设计 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels" open><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink active" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="channel-子系统设计">Channel 子系统设计<a class="header-anchor" href="#channel-子系统设计">#</a></h1>
+<p>外部 chat 平台 (Telegram / Discord / Slack / WeChat) 通过这个子系统跟 OpenProgram 双向通讯：用户在 platform 上发消息触发 agent，agent 回复通过同一条 channel 发回去。</p>
+<p>本文档描述<strong>实施完成后的当前形态</strong>。设计演化历史 + 修复过的缺陷列表见 <a href="./channel-audit.html"><code>channel-audit.md</code></a>。</p>
+<h2 id="1-整体形态">1. 整体形态<a class="header-anchor" href="#1-整体形态">#</a></h2>
+<pre><code>┌─────────────────────┐       ┌──────────────────────┐
+│  外部用户/Telegram   │       │  你自己写的 Python   │
+│  Discord/Slack/WX   │       │  脚本/cron/jupyter   │
+└──────────┬──────────┘       └──────────┬───────────┘
+           │ 用户发消息进来                │ 想给某人发消息
+           ▼                              ▼
+  ┌──────────────────┐            ┌────────────────────┐
+  │ telegram.py 等   │            │   outbound.py      │  ← 入口 A
+  │ 4 个 adapter     │            │   send(...)        │     一次性发, 不需要长跑进程
+  │ - 长轮询/事件循环│            └─────────┬──────────┘
+  │ - parse 出统一   │                      │
+  │   ChannelMessage │                      │
+  └────────┬─────────┘                      │
+           │                                │
+           ▼                                │
+  ┌───────────────────────────┐             │
+  │   dispatch_inbound        │             │
+  │   (流量中枢, 串起所有事)  │             │
+  │                           │             │
+  │   ① 路由: 决定哪个 agent  │             │
+  │   ② 算 session_key        │             │
+  │   ③ 加载 session 状态     │             │
+  │   ④ 调 agent 跑这一回合   │             │
+  │   ⑤ progress streaming    │             │
+  │   ⑥ 推 webui WS           │             │
+  └────────┬──────────────────┘             │
+           │                                │
+           │ 边跑边 edit 占位/最终 reply    │
+           ▼                                ▼
+  ┌─────────────────────────────────────────────────┐
+  │           _transport.py (统一底层)              │  ← 唯一往外发字节的地方
+  │                                                 │
+  │   post_message(平台, 账号, 收信人, 文本)        │
+  │   patch_message(平台, 账号, 收信人, msg_id, 文本)│
+  │                                                 │
+  │   返回 SendResult {                             │
+  │     ok, message_id, error_kind, retryable       │
+  │   }                                             │
+  └────────┬────────────────────────────────────────┘
+           │ HTTPS POST/PATCH
+           ▼
+  Telegram API / Discord API / Slack API / WeChat iLink API
+</code></pre>
+<h2 id="2-端到端用例用户发消息进来-bot-回复">2. 端到端用例：用户发消息进来 → bot 回复<a class="header-anchor" href="#2-端到端用例用户发消息进来-bot-回复">#</a></h2>
+<p><strong>示例</strong>：你在 Telegram 给 bot 发&quot;帮我看下当前目录有什么 Python 文件&quot;。</p>
+<pre><code>1. Telegram 服务器把消息推给 bot
+   → openprogram/channels/telegram.py 在长轮询, 收到 update dict
+
+2. _handle_update(update) 内部:
+   a. 抽 text = &quot;帮我看下当前目录有什么 Python 文件&quot;
+   b. 构造 ChannelMessage {
+        text=..., chat_id=&quot;123&quot;, user_id=&quot;456&quot;,
+        user_display=&quot;zhangsan&quot;, chat_type=&quot;direct&quot;,
+        ts=1716000000, reply_to_id=&quot;&quot;, thread_id=&quot;&quot;,
+      }
+   c. 调 dispatch_inbound(channel=&quot;telegram&quot;, account_id=&quot;default&quot;,
+                          peer_kind=&quot;direct&quot;, peer_id=&quot;123&quot;,
+                          user_text=text, user_display=&quot;zhangsan&quot;,
+                          progress_stream=True)
+
+3. dispatch_inbound 内部 (在 _conversation.py):
+   a. 查 bindings → 决定用 &quot;main&quot; agent
+   b. 算 session_key = &quot;default_direct_123&quot; (在 _session_routing.py)
+   c. 加载 / 创建 session (在 _session_store.py 调 SessionDB)
+   d. 发占位消息: _transport.post_message(&quot;telegram&quot;, &quot;default&quot;, &quot;123&quot;,
+                                          &quot;⏳ working...&quot;)
+      返回 SendResult{ok=True, message_id=&quot;9001&quot;}
+      → MessageHandle{platform=&quot;telegram&quot;, account=&quot;default&quot;,
+                      target=&quot;123&quot;, message_id=&quot;9001&quot;}
+   e. 调 process_user_turn(req, on_event=_on_event) 跑 agent
+
+4. Agent 内部决定调 bash tool 跑 `ls *.py`:
+   a. dispatcher emit tool_use envelope → _on_event 拿到
+   b. _on_event 看到 tool_use → progress_lines = [&quot;⚙ bash&quot;]
+   c. 节流满足 (距上次 edit &gt;1s) → _transport.patch_message(
+        &quot;telegram&quot;, &quot;default&quot;, &quot;123&quot;, &quot;9001&quot;, &quot;⚙ bash&quot;)
+      → Telegram 上那条 &quot;⏳ working...&quot; 变成 &quot;⚙ bash&quot;
+
+5. bash 跑完返回 &quot;a.py b.py c.py&quot;:
+   a. dispatcher emit tool_result envelope → _on_event 拿到
+   b. progress_lines = [&quot;✓ bash&quot;]  (把 ⚙ 换成 ✓)
+   c. 节流满足 → patch_message edit 成 &quot;✓ bash&quot;
+
+6. Agent 综合 bash 输出写出最终回复 &quot;找到 3 个 Python 文件: a.py / b.py / c.py&quot;:
+   a. process_user_turn 返回, result.final_text = 这段话
+   b. dispatch_inbound 强制 edit (跳节流): _transport.patch_message
+      把 &quot;9001&quot; 改成完整回复
+   c. 持久化到 SessionDB, broadcast 给 webui
+   d. dispatch_inbound 返回 None
+
+7. telegram.py 拿到 None → 不发任何 reply (因为已经 edit 进去了)
+   用户在 Telegram 看到那条占位 &quot;⏳...&quot; 已经长成完整回复
+</code></pre>
+<h2 id="3-用例-bcron-agentic_function-主动发消息">3. 用例 B：cron / @agentic_function 主动发消息<a class="header-anchor" href="#3-用例-bcron-agentic_function-主动发消息">#</a></h2>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.channels.outbound</span><span class="w"> </span><span class="kn">import</span> <span class="n">send</span>
+
+<span class="c1"># 在任何 Python 脚本里, 不需要 worker 在跑</span>
+<span class="n">send</span><span class="p">(</span><span class="s2">&quot;telegram&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;1234&quot;</span><span class="p">,</span> <span class="s2">&quot;早上好&quot;</span><span class="p">)</span>
+</code></pre>
+<p>发生的事：</p>
+<pre><code>1. outbound.send 调 _transport.post_message
+2. _transport.post_message 拿凭据 → HTTPS POST sendMessage
+3. SendResult 返回 → outbound.send 返回 True/False
+4. 脚本继续
+</code></pre>
+<p><strong>没有</strong>：adapter 实例、worker 进程、session、agent 调用、webui broadcast。一行调用即发即走。</p>
+<p>这就是为什么 outbound.send 是单独入口而不是走 adapter——cron 脚本根本没有 adapter 实例在跑。</p>
+<h2 id="4-五条核心设计原则">4. 五条核心设计原则<a class="header-anchor" href="#4-五条核心设计原则">#</a></h2>
+<h3 id="41-两个入口一份实现">4.1 两个入口、一份实现<a class="header-anchor" href="#41-两个入口一份实现">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>入口</th>
+<th>用途</th>
+<th>状态</th>
+<th>谁调</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>outbound.send</code></td>
+<td>一次性发, 不需要长跑进程</td>
+<td>无状态</td>
+<td>cron 脚本 / jupyter / @agentic_function / webui (回复)</td>
+</tr>
+<tr>
+<td><code>Channel.send_text</code> + <code>edit_text</code></td>
+<td>持有 message_id 后续 edit</td>
+<td>有状态</td>
+<td>dispatch_inbound progress streaming</td>
+</tr>
+</tbody>
+</table>
+<p>底下都调同一个 <code>_transport.post_message</code> / <code>patch_message</code>。HTTP 调用 / 凭据加载 / chunking 只有一份代码。</p>
+<p>为什么不合并入口：cron 脚本 / jupyter 临时调用没有 worker 进程在跑，需要无状态的 raw HTTP 接口；progress streaming 需要持有 message_id 才能 edit，需要 stateful 接口。两类需求不同，但底层共享。</p>
+<h3 id="42-dispatch_inbound-是流量中枢">4.2 dispatch_inbound 是流量中枢<a class="header-anchor" href="#42-dispatch_inbound-是流量中枢">#</a></h3>
+<p>所有从外部进来的消息都走它。它本身不做具体活儿，只串流程：</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">dispatch_inbound</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">channel</span><span class="p">,</span> <span class="n">account_id</span><span class="p">,</span> <span class="n">peer_kind</span><span class="p">,</span> <span class="n">peer_id</span><span class="p">,</span>
+                    <span class="n">user_text</span><span class="p">,</span> <span class="n">user_display</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">progress_stream</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="c1"># 委托给独立模块</span>
+    <span class="n">agent_id</span> <span class="o">=</span> <span class="n">bindings</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="o">...</span><span class="p">)</span> <span class="ow">or</span> <span class="n">session_aliases</span><span class="o">.</span><span class="n">lookup</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+    <span class="n">session_key</span> <span class="o">=</span> <span class="n">_session_routing</span><span class="o">.</span><span class="n">session_key_for_agent</span><span class="p">(</span><span class="o">...</span><span class="p">)</span> <span class="o">+</span> <span class="n">apply_reset_policy</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+    <span class="n">meta</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_session_store</span><span class="o">.</span><span class="n">load_or_init_session</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+
+    <span class="c1"># 可选: 发占位 + 订阅 stream → progress edit</span>
+    <span class="k">if</span> <span class="n">progress_stream</span><span class="p">:</span>
+        <span class="n">placeholder_handle</span> <span class="o">=</span> <span class="n">_transport</span><span class="o">.</span><span class="n">post_message</span><span class="p">(</span><span class="o">...</span> <span class="s2">&quot;⏳ working...&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 跑 agent</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_user_turn</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">on_event</span><span class="o">=...</span><span class="p">)</span>
+
+    <span class="c1"># 持久化 + broadcast</span>
+    <span class="n">_broadcast</span><span class="o">.</span><span class="n">broadcast_channel_turn</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">final_text</span>  <span class="c1"># 或 None (progress 模式)</span>
+</code></pre>
+<p><code>_conversation.py</code> 自己只有 283 行（之前一个文件 588 行 5 职责）。</p>
+<h3 id="43-平台差异封到底层">4.3 平台差异封到底层<a class="header-anchor" href="#43-平台差异封到底层">#</a></h3>
+<p><code>_transport.py</code> 是<strong>唯一</strong>调 HTTP 往外发的地方。Telegram 的 <code>editMessageText</code>、Discord 的 <code>PATCH /messages/{id}</code>、Slack 的 <code>chat.update</code>、WeChat 的 iLink 协议——全都在这里。</p>
+<p>adapter 类 (<code>telegram.py</code> 等) 只负责：(a) 连服务器的事件循环、(b) 把 platform-native 对象 parse 成 <code>ChannelMessage</code>。<strong>不负责发消息</strong>——发消息是 dispatch_inbound 通过 <code>_transport</code> 干的。</p>
+<h3 id="44-错误信号结构化">4.4 错误信号结构化<a class="header-anchor" href="#44-错误信号结构化">#</a></h3>
+<p><code>_transport.post_message</code> 返回 <code>SendResult</code>：</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SendResult</span><span class="p">:</span>
+    <span class="n">ok</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">message_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">error_kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>          <span class="c1"># auth / rate_limit / bad_target / network / not_supported / unknown</span>
+    <span class="n">error_detail</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>        <span class="c1"># human-readable 一行</span>
+    <span class="n">retryable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>       <span class="c1"># 瞬态可重试 vs 永久失败</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__bool__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ok</span>
+</code></pre>
+<p>调用方可以做&quot;token 失效请重新登录&quot; vs &quot;chat_id 错误&quot; vs &quot;稍后重试&quot;的区分。</p>
+<p><code>outbound.send</code> 保留 bool 签名（兼容旧 caller），<code>outbound.send_full()</code> 暴露完整 SendResult。<code>Channel.send_text</code> / <code>edit_text</code> 同理，有 <code>_full</code> 变体。</p>
+<h3 id="45-plugin-扩展点">4.5 plugin 扩展点<a class="header-anchor" href="#45-plugin-扩展点">#</a></h3>
+<p>要加新平台（比如 WhatsApp）不用改源码：</p>
+<p><strong>方式 A</strong> — <code>pyproject.toml</code> entry_point（推荐）：</p>
+<pre><code class="language-toml"><span class="k">[project.entry-points.</span><span class="s2">&quot;openprogram.channels&quot;</span><span class="k">]</span>
+<span class="n">whatsapp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my_pkg.whatsapp:WhatsAppChannel&quot;</span>
+</code></pre>
+<p>启动时 <code>importlib.metadata.entry_points(group=&quot;openprogram.channels&quot;)</code> 自动扫描。</p>
+<p><strong>方式 B</strong> — <code>register_channel</code> imperative 调用：</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.channels</span><span class="w"> </span><span class="kn">import</span> <span class="n">register_channel</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">my_pkg.whatsapp</span><span class="w"> </span><span class="kn">import</span> <span class="n">WhatsAppChannel</span>
+
+<span class="n">register_channel</span><span class="p">(</span><span class="s2">&quot;whatsapp&quot;</span><span class="p">,</span> <span class="n">WhatsAppChannel</span><span class="p">)</span>
+</code></pre>
+<p>适合 jupyter 临时挂或 plugin hooks 里动态注册。</p>
+<p>内置 4 个平台优先，同名 plugin 被无声忽略。</p>
+<h2 id="5-模块清单">5. 模块清单<a class="header-anchor" href="#5-模块清单">#</a></h2>
+<pre><code>openprogram/channels/   14 文件
+├── base.py              Channel ABC + MessageHandle + send_text/edit_text(_full)
+├── _transport.py        SendResult + 4 个平台 HTTP post/patch (统一底层)
+├── _message.py          ChannelMessage 入站中性结构 dataclass
+├── outbound.py          入口 A: send / send_full (薄包装)
+├── _conversation.py     dispatch_inbound 主流程 + progress streaming
+├── _session_store.py    session 路径 / 创建 / 加载 / 保存
+├── _session_routing.py  session_key + reset policy
+├── _broadcast.py        webui WS push (channel_turn / session_updated)
+├── __init__.py          CHANNEL_CLASSES proxy + register_channel + entry_points
+├── telegram.py          Telegram bot 长轮询入站
+├── discord.py           Discord bot Gateway 入站
+├── slack.py             Slack Socket Mode 入站
+├── wechat.py            WeChat iLink 长轮询入站 (含 QR 登录)
+├── accounts.py          凭据存储
+└── bindings.py          (channel, account, peer) → agent 路由表
+</code></pre>
+<p>读法：每个模块只跟它声明的 caller 打交道，不存在循环依赖。</p>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>职责</th>
+<th>典型 caller</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_transport.py</code></td>
+<td>唯一往外发字节, 4 个平台 HTTP</td>
+<td>outbound + base.send_text</td>
+</tr>
+<tr>
+<td><code>_message.py</code></td>
+<td>ChannelMessage parse 中性结构</td>
+<td>adapter 入口</td>
+</tr>
+<tr>
+<td><code>base.py</code></td>
+<td>Channel ABC + MessageHandle</td>
+<td>adapter 子类、dispatch_inbound</td>
+</tr>
+<tr>
+<td><code>outbound.py</code></td>
+<td>入口 A (一次性发)</td>
+<td>cron 脚本、jupyter、@agentic_function</td>
+</tr>
+<tr>
+<td><code>_conversation.py</code></td>
+<td>dispatch_inbound 主流程</td>
+<td>4 个 adapter 的 on_message</td>
+</tr>
+<tr>
+<td><code>_session_store.py</code></td>
+<td>session 加载/保存</td>
+<td>dispatch_inbound</td>
+</tr>
+<tr>
+<td><code>_session_routing.py</code></td>
+<td>session_key 计算</td>
+<td>dispatch_inbound</td>
+</tr>
+<tr>
+<td><code>_broadcast.py</code></td>
+<td>webui WS push</td>
+<td>dispatch_inbound</td>
+</tr>
+<tr>
+<td><code>telegram.py</code> 等</td>
+<td>入站事件循环 + parse</td>
+<td>worker 启动时实例化</td>
+</tr>
+<tr>
+<td><code>__init__.py</code></td>
+<td>CHANNEL_CLASSES + plugin 注册</td>
+<td>webui list_status / worker</td>
+</tr>
+<tr>
+<td><code>accounts.py</code></td>
+<td>凭据存储</td>
+<td>所有 _transport 函数</td>
+</tr>
+<tr>
+<td><code>bindings.py</code></td>
+<td>inbound 路由</td>
+<td>dispatch_inbound</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-支持的平台">6. 支持的平台<a class="header-anchor" href="#6-支持的平台">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>平台</th>
+<th>入站机制</th>
+<th>出站机制</th>
+<th>progress streaming</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Telegram</strong></td>
+<td>长轮询 <code>getUpdates</code> (无 webhook 依赖)</td>
+<td>bot API <code>sendMessage</code> / <code>editMessageText</code></td>
+<td>✓</td>
+<td>bot token, public Bot API</td>
+</tr>
+<tr>
+<td><strong>Discord</strong></td>
+<td><a href="http://discord.py">discord.py</a> Gateway WS</td>
+<td>REST <code>POST /messages</code> / <code>PATCH /messages/{id}</code></td>
+<td>✓</td>
+<td>bot token, intents.message_content</td>
+</tr>
+<tr>
+<td><strong>Slack</strong></td>
+<td>Socket Mode (slack_sdk)</td>
+<td><code>chat.postMessage</code> / <code>chat.update</code></td>
+<td>✓</td>
+<td>bot_token (xoxb-) + app_token (xapp-)</td>
+</tr>
+<tr>
+<td><strong>WeChat</strong></td>
+<td>iLink <code>getupdates</code> 长轮询</td>
+<td>iLink <code>sendmessage</code></td>
+<td>✗ (iLink 不支持 edit)</td>
+<td>个微扫码登录, 无企业认证门槛</td>
+</tr>
+</tbody>
+</table>
+<p>平台差异以本表和各 adapter 顶部 docstring 为准。</p>
+<h2 id="7-用户入口">7. 用户入口<a class="header-anchor" href="#7-用户入口">#</a></h2>
+<h3 id="71-cli">7.1 CLI<a class="header-anchor" href="#71-cli">#</a></h3>
+<p>完整的命令树 (<code>openprogram channels</code>)：</p>
+<pre><code>openprogram channels list                          显示每个 platform/account 状态
+openprogram channels setup                         交互式 setup wizard
+
+openprogram channels accounts
+  ├── list                                         列所有账号
+  ├── add &lt;channel&gt; --id &lt;name&gt;                    新建一个账号 slot
+  ├── login &lt;channel&gt; --id &lt;name&gt;                  交互式录入凭据
+  │     - telegram/discord/slack: getpass 粘贴 token
+  │     - wechat: 启动 iLink QR 扫码流程
+  └── rm &lt;channel&gt; &lt;account_id&gt;                    删账号 + 关联 bindings
+
+openprogram channels bindings
+  ├── list                                         列所有路由规则
+  ├── add &lt;agent_id&gt; --channel &lt;ch&gt; [--account &lt;acct&gt;] [--peer &lt;peer&gt; --peer-kind &lt;kind&gt;]
+  │                                                  把 (channel, account, peer) 路由到 agent
+  └── rm &lt;binding_id&gt;                              删一条路由
+</code></pre>
+<h3 id="72-tui">7.2 TUI<a class="header-anchor" href="#72-tui">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>入口</th>
+<th>实现</th>
+<th>行数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/channel</code> slash command</td>
+<td><code>cli/src/commands/handler.ts</code> 触发 <code>pickers/channel.tsx</code></td>
+<td>374 行 picker</td>
+</tr>
+<tr>
+<td>Channel 实时活动 feed</td>
+<td><code>cli/src/components/ChannelActivityFeed.tsx</code></td>
+<td>66 行</td>
+</tr>
+<tr>
+<td>WS handler 显示 channel turn</td>
+<td><code>cli/src/screens/repl/wsHandlers/handleChannelTurn.ts</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><code>/channel</code> 工作流：选 channel → 选 account → 引导用户用 <code>/attach</code> 把当前对话绑到 channel peer。</p>
+<h3 id="73-web-ui">7.3 Web UI<a class="header-anchor" href="#73-web-ui">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>入口</th>
+<th>实现</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Topbar channel popover</td>
+<td><code>web/components/chat/top-bar/channel-menu.tsx</code> (168 行)</td>
+<td>✓ 完整</td>
+</tr>
+<tr>
+<td>Health badge status API</td>
+<td><code>/api/channels/{platform}/{account_id}/status</code> 返回 alive/stale/unknown</td>
+<td>✓ 完整</td>
+</tr>
+<tr>
+<td>独立 settings 页</td>
+<td>—</td>
+<td><strong>⚠ 缺失</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Web 端目前<strong>没有 <code>/settings/channels</code> 配置页</strong>。所有账号 / bindings 管理只能走 CLI。后续要做 Web 端配置 UI 的话，对应 API 加在 <code>openprogram/webui/routes/channels.py</code> 里。</p>
+<h2 id="8-plugin-扩展未来工作">8. plugin / 扩展未来工作<a class="header-anchor" href="#8-plugin-扩展未来工作">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>当前状态</th>
+<th>后续若需扩展</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4 个内置平台</td>
+<td>加 WhatsApp / Signal / Matrix / LINE 等 — 写 <code>Channel</code> 子类 + entry_point 注册</td>
+</tr>
+<tr>
+<td>ChannelMessage 已含 <code>reply_to_id</code> / <code>thread_id</code> / <code>attachments</code> 字段</td>
+<td>dispatch_inbound 暂不消费, 等真实需求出现 (reply quote / thread 隔离 / 附件读取) 再接</td>
+</tr>
+<tr>
+<td>Reaction approval (✓/✗ 确认 dangerous tool)</td>
+<td>未实现, hermes/OpenClaw 都有, 等用户提需求再做</td>
+</tr>
+<tr>
+<td>Token-level text streaming</td>
+<td>目前只在 tool 边界 edit, 没有 reply text delta 实时 edit (rate limit 风险)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="9-参考">9. 参考<a class="header-anchor" href="#9-参考">#</a></h2>
+<ul>
+<li><a href="./channel-audit.html"><code>channel-audit.md</code></a> — 设计演化历史 + 已修缺陷清单 + 跟 OpenClaw / Hermes 的对比</li>
+<li>各 adapter 顶部 docstring — platform-specific 协议细节</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-整体形态">1. 整体形态</a>
+<a class="" href="#2-端到端用例用户发消息进来-bot-回复">2. 端到端用例：用户发消息进来 → bot 回复</a>
+<a class="" href="#3-用例-bcron-agentic_function-主动发消息">3. 用例 B：cron / @agentic_function 主动发消息</a>
+<a class="" href="#4-五条核心设计原则">4. 五条核心设计原则</a>
+<a class="lvl-3" href="#41-两个入口一份实现">4.1 两个入口、一份实现</a>
+<a class="lvl-3" href="#42-dispatch_inbound-是流量中枢">4.2 dispatch_inbound 是流量中枢</a>
+<a class="lvl-3" href="#43-平台差异封到底层">4.3 平台差异封到底层</a>
+<a class="lvl-3" href="#44-错误信号结构化">4.4 错误信号结构化</a>
+<a class="lvl-3" href="#45-plugin-扩展点">4.5 plugin 扩展点</a>
+<a class="" href="#5-模块清单">5. 模块清单</a>
+<a class="" href="#6-支持的平台">6. 支持的平台</a>
+<a class="" href="#7-用户入口">7. 用户入口</a>
+<a class="lvl-3" href="#71-cli">7.1 CLI</a>
+<a class="lvl-3" href="#72-tui">7.2 TUI</a>
+<a class="lvl-3" href="#73-web-ui">7.3 Web UI</a>
+<a class="" href="#8-plugin-扩展未来工作">8. plugin / 扩展未来工作</a>
+<a class="" href="#9-参考">9. 参考</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

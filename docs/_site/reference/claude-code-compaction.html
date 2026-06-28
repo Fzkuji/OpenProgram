@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code 上下文压缩机制 — 完整流程参考 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../README.html">Documentation</a>
+<a class="navlink" href="../API.html">API Reference</a>
+<a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../api/providers.html">Providers</a>
+<a class="navlink" href="../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design"><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../design/README.html">Design Documents</a>
+<a class="navlink" href="../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../design/channels/README.html">Channels</a>
+<a class="navlink" href="../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../design/context/README.html">Context</a>
+<a class="navlink" href="../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../design/function/README.html">Function Design</a>
+<a class="navlink" href="../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../design/providers/README.html">Providers</a>
+<a class="navlink" href="../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference" open><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink active" href="../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="claude-code-上下文压缩机制-完整流程参考">Claude Code 上下文压缩机制 — 完整流程参考<a class="header-anchor" href="#claude-code-上下文压缩机制-完整流程参考">#</a></h1>
+<blockquote>
+<p>调研文档（非设计文档）。基于源码逆向分析，记录 Claude Code 的压缩机制。</p>
+<p><strong>可靠度说明</strong>：5 级级联的描述来自第三方逆向分析，不是 Anthropic 官方文档确认的。
+官方 API 文档（<a href="http://platform.claude.com">platform.claude.com</a>）只描述了单一的 compact 机制（超 token 阈值 → LLM 摘要），
+内部的 Microcompact / Snip / Context Collapse 分层是 Claude Code 客户端的实现细节。
+不同逆向分析来源对执行顺序的描述有细微差异。以下采用 Inside Claude Code 的版本（分析最详细）。
+阈值和参数在不同版本中有调整，以下数字可能不完全准确。</p>
+<p>来源（按可靠度排序）：</p>
+<ul>
+<li><a href="https://platform.claude.com/docs/en/build-with-claude/compaction">Compaction - Claude Platform Docs</a>（官方，但只描述 API 层面）</li>
+<li><a href="https://platform.claude.com/docs/en/build-with-claude/context-editing">Context editing - Claude API Docs</a>（官方）</li>
+<li><a href="https://y-agent.github.io/inside-claude-code/04-context-compaction.html">Inside Claude Code - Context Compaction</a>（逆向分析，最详细）</li>
+<li><a href="https://arxiv.org/html/2604.14228v1">Dive into Claude Code</a>（arXiv 2604.14228，VILA-Lab 源码逆向分析）</li>
+<li><a href="https://deepwiki.com/anthropics/claude-code/3.3-context-window-and-compaction">DeepWiki - Context Window &amp; Compaction</a>（社区 wiki）</li>
+<li><a href="https://0xtresser.github.io/Claude-Code-VS-OpenCode/en/Chapter_05_Session_and_Context/5.3_Context_Compaction.html">Claude Code VS OpenCode §5.3</a>（对比分析）</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="1-总览">1. 总览<a class="header-anchor" href="#1-总览">#</a></h2>
+<p>Claude Code 有两类压缩机制：</p>
+<p><strong>常规操作</strong>（每轮 LLM 调用前都做，和上下文长度无关）：</p>
+<ul>
+<li>Budget Reduction：截断超大的单个工具输出</li>
+</ul>
+<p><strong>级联压缩</strong>（按 Tier 1→2→3→4→5 的顺序升级，成本低的先做）：</p>
+<ul>
+<li>Tier 1 Microcompact：清理旧工具输出</li>
+<li>Tier 2 Snip：删最旧的几轮对话</li>
+<li>Tier 3 Context Collapse：分段 LLM 摘要</li>
+<li>Tier 4 Auto-Compact：全量 LLM 摘要</li>
+<li>Tier 5 Reactive：API 返回 413 时紧急压缩</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>名称</th>
+<th>做什么</th>
+<th>触发条件</th>
+<th>调 LLM</th>
+<th>破缓存</th>
+<th>信息损失</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>常规</td>
+<td>Budget Reduction</td>
+<td>截断超大单个输出</td>
+<td>单个 tool_result &gt; <strong>4000 字符</strong></td>
+<td>否</td>
+<td>否</td>
+<td>中间内容丢</td>
+</tr>
+<tr>
+<td>Tier 1</td>
+<td>Microcompact</td>
+<td>旧工具输出清理</td>
+<td>工具调用 ≥ <strong>50 次</strong>（之后每 <strong>25 次</strong>）/ 空闲 <strong>90 分钟</strong></td>
+<td>否</td>
+<td>cache-aware 不破</td>
+<td>旧输出丢</td>
+</tr>
+<tr>
+<td>Tier 2</td>
+<td>Snip</td>
+<td>删最旧几轮</td>
+<td>Tier 1 后仍超预算</td>
+<td>否</td>
+<td>是</td>
+<td>整轮丢</td>
+</tr>
+<tr>
+<td>Tier 3</td>
+<td>Context Collapse</td>
+<td>分段摘要</td>
+<td>Tier 2 后仍超，~<strong>90%</strong> 占用</td>
+<td>是</td>
+<td>是</td>
+<td>细节丢，要点留</td>
+</tr>
+<tr>
+<td>Tier 4</td>
+<td>Auto-Compact</td>
+<td>全量摘要</td>
+<td>Tier 3 后仍超 / 用户 <code>/compact</code></td>
+<td>是</td>
+<td>是</td>
+<td>大量丢，只留概要</td>
+</tr>
+<tr>
+<td>Tier 5</td>
+<td>Reactive</td>
+<td>紧急压缩</td>
+<td>API 返回 <strong>413</strong> prompt_too_long</td>
+<td>是</td>
+<td>是</td>
+<td>同 Tier 4</td>
+</tr>
+</tbody>
+</table>
+<p><strong>级联逻辑</strong>：每轮 LLM 调用前，从 Tier 1 开始检查。满足条件就执行，执行完重新检查是否还超。还超就进入下一个 Tier。前面的 Tier 成本低（不调 LLM、不破缓存），尽量在前面解决。</p>
+<blockquote>
+<p><strong>注意</strong>：Tier 3 Context Collapse 和 Tier 4 Auto-Compact 的关系，逆向分析来源描述为
+&quot;overlapping strategies&quot;（重叠策略），不一定是严格的&quot;3 不够才上 4&quot;。可能某些配置下
+跳过 Tier 3 直接走 Tier 4。<code>/compact</code> 手动命令直接触发 Tier 4，跳过 Tier 1-3。</p>
+</blockquote>
+<hr />
+<h2 id="2-常规操作budget-reduction">2. 常规操作：Budget Reduction<a class="header-anchor" href="#2-常规操作budget-reduction">#</a></h2>
+<p><strong>和级联无关</strong>，每轮 LLM 调用前都做。</p>
+<p><strong>做什么</strong>：检查每个工具输出的大小，超过阈值就截断。</p>
+<p><strong>参数</strong>：</p>
+<ul>
+<li>截断阈值：<strong>4000 字符</strong>（约 1000 tokens）</li>
+<li>截断方式：超过 4000 字符的输出，只保留前 <strong>2400 字符</strong>（60%）+ 后 <strong>1600 字符</strong>（40%），中间丢弃</li>
+<li>只处理工具输出（tool_result），不处理 user/assistant 消息</li>
+</ul>
+<p><strong>示例</strong>：</p>
+<pre><code>截断前（50000 字符）：
+[tool_result] &quot;src/a.py:12: TODO fix this\nsrc/b.py:34: ...&quot;
+
+截断后（4000 字符）：
+[tool_result] &quot;src/a.py:12: TODO fix this\n...[46000 chars removed]...\nsrc/z.py:99: TODO cleanup&quot;
+</code></pre>
+<hr />
+<h2 id="3-级联压缩">3. 级联压缩<a class="header-anchor" href="#3-级联压缩">#</a></h2>
+<p>每轮 LLM 调用前，Budget Reduction 之后，按 Tier 顺序检查和执行。</p>
+<h3 id="tier-1microcompact">Tier 1：Microcompact<a class="header-anchor" href="#tier-1microcompact">#</a></h3>
+<p><strong>做什么</strong>：清理旧的工具输出，释放空间。</p>
+<p><strong>触发条件</strong>：</p>
+<ul>
+<li>Cache-aware path：<strong>50 次工具调用</strong>后首次触发，之后<strong>每 25 次</strong>再触发</li>
+<li>Time-based path：距上次 assistant 消息 <strong>~90 分钟</strong></li>
+</ul>
+<p><strong>只处理特定工具</strong>：FileRead、Shell、Grep、Glob、WebSearch、WebFetch、FileEdit、FileWrite</p>
+<p><strong>两条路径</strong>：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Cache-aware（主力）</th>
+<th>Time-based（备用）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>做什么</td>
+<td>通过 Context Editing API 让服务端清除旧 tool_result</td>
+<td>客户端把旧 tool_result 替换为 sentinel 字符串</td>
+</tr>
+<tr>
+<td>破缓存</td>
+<td>不破（服务端操作，客户端消息不变）</td>
+<td>破（客户端改了消息）</td>
+</tr>
+<tr>
+<td>触发</td>
+<td>50 次工具调用后，每 25 次</td>
+<td>空闲 ~90 分钟</td>
+</tr>
+<tr>
+<td>可恢复</td>
+<td>否</td>
+<td>否</td>
+</tr>
+<tr>
+<td>依赖</td>
+<td>Anthropic API 的 Context Editing（其他 provider 不支持）</td>
+<td>无依赖</td>
+</tr>
+</tbody>
+</table>
+<p><strong>压缩效果</strong>：每个被清理的工具输出从原始大小（几百到几千 tokens）→ 0 tokens（cache-aware）或 ~20 tokens（time-based）。例：一次 Microcompact 清理了 10 个旧工具结果，每个平均 500 tokens → 释放约 4800 tokens。</p>
+<p><strong>示例</strong>：</p>
+<pre><code>清理前：
+[tool_result] &quot;import os\nimport sys\n\nclass Config:\n    ...&quot;（2000 tokens）
+
+清理后（cache-aware）：
+[tool_result] &quot;&quot;（服务端清空，0 tokens，缓存不破）
+
+清理后（time-based）：
+[tool_result] &quot;[content no longer available]&quot;（~20 tokens）
+</code></pre>
+<p><strong>Cache-aware path 细节</strong>：sentinel 字符串做了<strong>字节级归一化（byte-stable canonical form）</strong>——重复 microcompact 不改变已缓存内容。核心原则：已进缓存的内容，客户端不修改（修改会破前缀匹配）。要清旧内容时：</p>
+<ul>
+<li>已在缓存 → cache-aware path，通过 Context Editing API 让服务端清</li>
+<li>没在缓存 → time-based path，客户端直接替换为 sentinel</li>
+</ul>
+<h4>Context Editing API（cache_edits）</h4>
+<p>Microcompact cache-aware path 的底层实现。Anthropic API 的公开 beta（header: <code>context-management-2025-06-27</code>），不是 Claude Code 专有，普通开发者可用。</p>
+<p><strong>工作原理</strong>：客户端发送完整消息历史（不做任何修改），同时在 API 请求中传一个 <code>cache_edits</code> 参数。服务端收到后：</p>
+<ol>
+<li>在缓存内部找到旧的 tool_result 块</li>
+<li>把它们替换为空或占位文本</li>
+<li>缓存前缀不变（因为客户端发的消息没变，服务端只改了缓存内部的数据）</li>
+<li>客户端完全不需要知道哪些被清了</li>
+</ol>
+<p>和正常 LLM 调用合并在一起，不是额外请求——发消息的同时顺便告诉服务端&quot;清掉旧的 tool_result&quot;。</p>
+<table>
+<thead>
+<tr>
+<th>策略</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clear_tool_uses</code></td>
+<td>清除旧的 tool_result，只保留最近 N 个（N 的具体值未从源码确认，逆向分析未给出）</td>
+</tr>
+<tr>
+<td><code>clear_thinking</code></td>
+<td>清除旧的 thinking blocks</td>
+</tr>
+<tr>
+<td><code>clear_at_least</code></td>
+<td>控制最少清多少 token</td>
+</tr>
+</tbody>
+</table>
+<p><strong>和其他 Tier 的关系</strong>：Context Editing 不是独立的 Tier，它是 Tier 1 Microcompact cache-aware path 的底层实现。Tier 2-5 都不用这个 API——它们直接修改客户端的消息列表。</p>
+<p><strong>限制</strong>：只有 Anthropic API 支持。OpenAI / Google / 其他 provider 没有类似能力，只能走 time-based path（客户端替换，会破缓存）。</p>
+<h3 id="tier-2snip">Tier 2：Snip<a class="header-anchor" href="#tier-2snip">#</a></h3>
+<p><strong>做什么</strong>：直接删除最旧的几轮对话。不做摘要、不存磁盘，直接丢。</p>
+<p><strong>触发条件</strong>：Tier 1 做完后仍超预算（逆向分析中出现 ~13K tokens buffer 的说法，但具体阈值可能随版本变化）</p>
+<p><strong>参数</strong>：</p>
+<ul>
+<li>删除粒度：<strong>整轮</strong>（user + assistant + 该轮所有工具调用一起删），不会出现&quot;user 在但 assistant 被删&quot;的不一致</li>
+<li>删多少：从最旧的开始逐轮删，每删一轮重新算 token 数，<strong>删到阈值以下为止</strong>（不是固定删 N 轮）</li>
+<li>删除的内容彻底消失，模型不知道之前聊过什么</li>
+<li>没有删除标记（不会在上下文里留&quot;已删除 5 轮&quot;之类的提示）</li>
+</ul>
+<p><strong>代价</strong>：信息完全丢失，缓存前缀被破坏。但免费（不调 LLM），执行速度快。</p>
+<h3 id="tier-3context-collapse">Tier 3：Context Collapse<a class="header-anchor" href="#tier-3context-collapse">#</a></h3>
+<p><strong>做什么</strong>：把旧对话分成若干段（5-10 轮一段），每段用 LLM 生成摘要。</p>
+<p><strong>触发条件</strong>：Tier 2 Snip 做完后仍超阈值（约 90%，非阻塞触发；95% 时阻塞强制触发）</p>
+<p><strong>关键特性</strong>：原始消息<strong>保留</strong>在 collapse store 中。这是<strong>读时投影（read-time projection）</strong>——类似数据库 View，底表不动，查询看到的是摘要视图。原始历史保留着，理论上可以重建/回滚。</p>
+<p><strong>参数</strong>：</p>
+<ul>
+<li>分段标准：<strong>5-10 轮一段</strong>（具体值未从源码确认）</li>
+<li>每段独立用 LLM 摘要，每段摘要约 <strong>100-300 tokens</strong>（估算，未确认）</li>
+<li>最近 N 轮完整保留，只摘要更旧的段（N 值未确认）</li>
+<li>LLM 调用次数 = 段数（例：30 轮分 3 段 = 3 次 LLM 调用）</li>
+</ul>
+<p><strong>和 Tier 4 的区别</strong>：</p>
+<ul>
+<li>Context Collapse 是<strong>分段</strong>摘要，每段独立，保留分段边界和时间线结构</li>
+<li>Auto-Compact 是<strong>全量</strong>摘要，一把压成一段，结构丢失</li>
+</ul>
+<p><strong>示例</strong>：</p>
+<pre><code>压缩前（35 轮）：
+[轮 6-10] 读代码、找 bug、修复、测试
+[轮 11-15] 重构 config 模块
+[轮 16-35] 改 API 模块...
+
+压缩后：
+[摘要] &quot;Turns 6-10: 修了 utils.py 的 bug，添加了回滚脚本&quot;
+[摘要] &quot;Turns 11-15: 重构了 config 模块，抽出了 Settings 类&quot;
+[轮 16-35] ...（最近的完整保留）
+</code></pre>
+<p>原始的 turn 6-15 仍然保存在 collapse store 中，模型看到的是折叠版本。</p>
+<h3 id="tier-4auto-compact">Tier 4：Auto-Compact<a class="header-anchor" href="#tier-4auto-compact">#</a></h3>
+<p><strong>做什么</strong>：把整个对话历史一次性发给 LLM，生成一个摘要块，替换所有旧消息。</p>
+<p><strong>触发条件</strong>：Tier 3 做完后仍超阈值。或用户手动 <code>/compact</code>。</p>
+<p><strong>关键特性</strong>：原始消息被<strong>替换</strong>，不可回滚。信息损失最大。</p>
+<p><strong>参数</strong>：</p>
+<ul>
+<li>摘要块大小：约 <strong>2000-5000 tokens</strong>（取决于对话复杂度，由 LLM 自行决定）</li>
+<li>保留最近 <strong>1-2 轮</strong>完整对话（不被摘要）</li>
+<li>LLM 调用：<strong>1 次</strong>（全量摘要）</li>
+<li>压缩后上下文从原来的 70-90% 降到约 <strong>15-25%</strong></li>
+<li>可通过 <code>CLAUDE_AUTOCOMPACT_PCT_OVERRIDE</code> 环境变量调整触发百分比</li>
+</ul>
+<p><strong>具体过程</strong>：</p>
+<ol>
+<li>执行 PreCompact hooks（通知系统即将压缩）</li>
+<li>用 <code>getCompactPrompt()</code> 构造压缩提示（类似&quot;请把以下对话历史压缩成关键事实&quot;）</li>
+<li>把整个对话历史发给 LLM，生成摘要</li>
+<li>用 <code>buildPostCompactMessages()</code> 构建压缩后的消息</li>
+<li>system prompt 从 <a href="http://CLAUDE.md">CLAUDE.md</a> <strong>重新加载</strong>（不是从摘要来的，所以 <a href="http://CLAUDE.md">CLAUDE.md</a> 的内容永远不丢）</li>
+</ol>
+<p><strong><code>/compact</code> 手动命令</strong>：</p>
+<ul>
+<li><code>/compact</code> 或 <code>/compact 保留关于数据库迁移的讨论</code></li>
+<li>直接触发 Auto-Compact，不经过 Tier 1-3</li>
+<li>带提示词时摘要质量更好（用户指导保留什么）</li>
+<li>官方建议在 <strong>60% 占用时手动 <code>/compact</code></strong></li>
+</ul>
+<p><strong>丢失的</strong>：早期指令、设计讨论、推理过程、50+ 轮前的代码片段、风格偏好。
+<strong>保留的</strong>：当前任务、最近修改的文件名、最近的错误和解决方案、<a href="http://CLAUDE.md">CLAUDE.md</a> 内容。</p>
+<p><strong>示例</strong>：</p>
+<pre><code>压缩前（35 轮，150K tokens）：
+[system prompt]
+[35 轮完整对话历史]
+
+压缩后（~30K tokens）：
+[system prompt]（从 CLAUDE.md 重新加载）
+[compaction block]
+&quot;会话摘要：用户在做 Python 项目重构。
+已完成：修了 utils.py 的 bug、重构了 config 模块、添加了 3 个测试。
+当前状态：所有测试通过。用户正在处理 API 模块。
+关键决定：使用 FastAPI 替换 Flask、数据库用 PostgreSQL。
+修改过的文件：src/utils.py, src/config.py, tests/test_utils.py&quot;
+[最近 1-2 轮完整保留]
+</code></pre>
+<p><strong>链式压缩</strong>：压缩后继续聊，再次满了再压。每次在上一次摘要基础上再压，信息逐层衰减——第一次丢早期细节，第二次丢中期细节。长会话可能压缩 3-5 次。</p>
+<p><strong>链式压缩</strong>：压缩后继续聊，再次满了再压。每次在上一次摘要基础上再压，信息逐层衰减。</p>
+<h3 id="tier-5reactive">Tier 5：Reactive<a class="header-anchor" href="#tier-5reactive">#</a></h3>
+<p><strong>做什么</strong>：API 返回 413（prompt too long）错误时的紧急压缩。</p>
+<p><strong>触发条件</strong>：LLM 调用失败，返回 prompt_too_long / 413 错误。</p>
+<p><strong>做法</strong>：尝试 context-collapse overflow recovery，失败则做紧急 compact。每轮至多触发一次。都失败则终止会话。</p>
+<hr />
+<h2 id="4-执行流程">4. 执行流程<a class="header-anchor" href="#4-执行流程">#</a></h2>
+<p>每轮 LLM 调用前的完整流程：</p>
+<pre><code>1. Budget Reduction → 截断超大工具输出（每轮都做）
+
+2. 级联检查（按 Tier 顺序）：
+   Tier 1: Microcompact 条件满足？→ 清旧工具输出
+   Tier 2: 仍超阈值？→ Snip 删旧轮
+   Tier 3: 仍超阈值？→ Context Collapse 分段摘要
+   Tier 4: 仍超阈值？→ Auto-Compact 全量摘要
+
+3. 调 LLM
+
+4. 如果 API 返回 413：
+   Tier 5: Reactive → 紧急压缩 → 重试
+   → 失败则终止
+</code></pre>
+<hr />
+<h2 id="5-完整运行示例">5. 完整运行示例<a class="header-anchor" href="#5-完整运行示例">#</a></h2>
+<p>场景：200K context，持续工作几小时。</p>
+<p><strong>阶段 1（0-30%）</strong>：正常对话。Budget Reduction 检查工具输出大小，没超的跳过。级联都不触发。</p>
+<p><strong>阶段 2（30-50%）</strong>：工具调用超过 50 次。Tier 1 Microcompact cache-aware 首次触发，清理前 30 次工具调用的输出，释放约 15K tokens。之后每 25 次再清一轮。级联到 Tier 1 就够了，Tier 2-4 不触发。</p>
+<p><strong>阶段 3（超阈值）</strong>：对话消息累积超阈值。Tier 1 Microcompact 做了，还是超。Tier 2 Snip 触发，删最旧的 5 轮，释放约 25K tokens。降到阈值以下，Tier 3-4 不触发。</p>
+<p><strong>阶段 4</strong>：继续使用。再次超阈值时重复阶段 3（Microcompact + Snip）。</p>
+<p><strong>阶段 5（极端）</strong>：反复 Snip 后可删的旧轮不多了，Snip 不够用。Tier 3 Context Collapse 触发，分段摘要。还不够则 Tier 4 Auto-Compact。这种情况很少——因为 Microcompact 日常控制住了工具输出的增长，Snip 通常够用。</p>
+<hr />
+<h2 id="6-关键设计原则">6. 关键设计原则<a class="header-anchor" href="#6-关键设计原则">#</a></h2>
+<ol>
+<li>
+<p><strong>Lazy degradation</strong>：成本低的先做。Microcompact（免费不破缓存）→ Snip（免费破缓存）→ Context Collapse（调 LLM）→ Auto-Compact（调 LLM，最激进）。</p>
+</li>
+<li>
+<p><strong>工具输出优先清理</strong>：旧的 grep / read_file / bash 输出是最大且最不重要的消耗者。先清它们，对话消息尽量保留。</p>
+</li>
+<li>
+<p><strong>日常靠 Microcompact</strong>：cache-aware path 持续释放空间且不破缓存。这使得 Snip/Compact 极少触发。</p>
+</li>
+<li>
+<p><strong>缓存保护</strong>：Microcompact cache-aware 通过 Context Editing API 服务端清除，缓存不破。Budget Reduction 截断后内容固定。Snip/Compact 会破缓存但触发频率低。</p>
+</li>
+<li>
+<p><strong>对话消息不单独截断</strong>：user/assistant 消息要么整轮删（Snip），要么 LLM 摘要（Compact）。不对单条消息截断。</p>
+</li>
+<li>
+<p><strong><a href="http://CLAUDE.md">CLAUDE.md</a> 不参与压缩</strong>：从磁盘重新加载，永远不丢。</p>
+</li>
+<li>
+<p><strong>用户控制</strong>：<code>/compact</code> + <code>/context</code> 让用户主导。自动是兜底。</p>
+</li>
+</ol>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-总览">1. 总览</a>
+<a class="" href="#2-常规操作budget-reduction">2. 常规操作：Budget Reduction</a>
+<a class="" href="#3-级联压缩">3. 级联压缩</a>
+<a class="lvl-3" href="#tier-1microcompact">Tier 1：Microcompact</a>
+<a class="lvl-3" href="#tier-2snip">Tier 2：Snip</a>
+<a class="lvl-3" href="#tier-3context-collapse">Tier 3：Context Collapse</a>
+<a class="lvl-3" href="#tier-4auto-compact">Tier 4：Auto-Compact</a>
+<a class="lvl-3" href="#tier-5reactive">Tier 5：Reactive</a>
+<a class="" href="#4-执行流程">4. 执行流程</a>
+<a class="" href="#5-完整运行示例">5. 完整运行示例</a>
+<a class="" href="#6-关键设计原则">6. 关键设计原则</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../assets/site.js"></script>
+</body>
+</html>

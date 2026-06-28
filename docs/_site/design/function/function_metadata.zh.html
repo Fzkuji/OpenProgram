@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>函数元数据规范 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function" open><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink active" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="函数元数据规范">函数元数据规范<a class="header-anchor" href="#函数元数据规范">#</a></h1>
+<blockquote>
+<p>本文档是 <a href="function_metadata.html"><code>function_metadata.md</code></a> 的中文翻译，仅供阅读参考。<strong>所有规范以英文版为准</strong>——当两份内容不一致时，请按英文版执行；翻译版可能滞后。</p>
+</blockquote>
+<p>本文档定义&quot;在这个框架里写一个函数（不管是否调用 LLM）时，需要承载哪些元数据、写在哪里、由谁消费&quot;。</p>
+<p>适用范围：所有用 <code>@agentic_function</code> 装饰的函数；以及未被装饰、但被传给 <code>render_options</code> / <code>runtime.exec(tools=[...])</code> / catalog 协议任意一个组件的普通 Python callable。</p>
+<h2 id="1-为什么需要这份规范">1. 为什么需要这份规范<a class="header-anchor" href="#1-为什么需要这份规范">#</a></h2>
+<p>历史上同一份信息散落在多处：</p>
+<ul>
+<li>参数描述既可以写在 docstring 的 <code>Args:</code> 段，也可以写在 <code>@agentic_function(input={...})</code> 里</li>
+<li>catalog 调用方在调用点手写 <code>available</code> registry dict，重复声明已经在函数定义里有的信息</li>
+<li>不同消费者（tool_use spec、WebUI、catalog 菜单、meta/create）各自约定不同的读取顺序</li>
+</ul>
+<p>结果是：写新函数的人不确定该把描述写在哪，框架内部读元数据时来源也不统一，meta/create 生成的代码风格跟其他消费者期望的不完全一致。</p>
+<p>这份规范的目标是定一份单一来源（source-of-truth），让所有消费者按同一套规则读元数据。</p>
+<h2 id="2-谁消费函数的元数据">2. 谁消费函数的元数据<a class="header-anchor" href="#2-谁消费函数的元数据">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>消费者</th>
+<th>需要哪些字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runtime.exec(tools=[fn])</code>（provider 原生 tool_use）</td>
+<td>函数名、整体描述、参数 JSON schema（type / required / enum / description）</td>
+</tr>
+<tr>
+<td><code>render_options(options)</code>（catalog 菜单）</td>
+<td>函数名、何时选、参数名/类型/描述/枚举、参数是否系统填</td>
+</tr>
+<tr>
+<td><code>parse_args(action, fns, ...)</code>（catalog 派发）</td>
+<td>参数名、是否 hidden、<code>runtime</code> 等自动注入名单</td>
+</tr>
+<tr>
+<td>WebUI 参数输入表单</td>
+<td>description / placeholder / multiline / options / hidden</td>
+</tr>
+<tr>
+<td><code>runtime.exec</code> 默认 system prompt</td>
+<td>docstring 全文</td>
+</tr>
+<tr>
+<td>Context tree 渲染</td>
+<td><code>expose</code> 模式 + <code>render_range</code></td>
+</tr>
+<tr>
+<td>meta/create / edit / fix / improve</td>
+<td>docstring 风格、签名约束、<code>input=</code> 元数据</td>
+</tr>
+<tr>
+<td>auto-trace / 持久化</td>
+<td>函数标识、参数值、返回值、时长</td>
+</tr>
+</tbody>
+</table>
+<h2 id="3-元数据字段及其唯一归属">3. 元数据字段及其唯一归属<a class="header-anchor" href="#3-元数据字段及其唯一归属">#</a></h2>
+<p>每条信息只能有一个 source-of-truth。下面这张表是规范：</p>
+<table>
+<thead>
+<tr>
+<th>数据</th>
+<th>写在哪</th>
+<th>读出的方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>函数名</td>
+<td><code>def name(...)</code></td>
+<td><code>fn.__name__</code></td>
+</tr>
+<tr>
+<td>参数名</td>
+<td>signature</td>
+<td><code>inspect.signature(fn).parameters</code></td>
+</tr>
+<tr>
+<td>参数类型</td>
+<td>annotation</td>
+<td><code>param.annotation</code></td>
+</tr>
+<tr>
+<td>参数默认值</td>
+<td>annotation 默认值</td>
+<td><code>param.default</code></td>
+</tr>
+<tr>
+<td>函数一句话总结（&quot;干啥 / 何时选&quot;）</td>
+<td>docstring 第一段（到第一个空行）</td>
+<td><code>inspect.getdoc(fn)</code> 取首段</td>
+</tr>
+<tr>
+<td>函数执行细节指令（LLM 内部 system prompt）</td>
+<td>docstring 全文</td>
+<td><code>inspect.getdoc(fn)</code></td>
+</tr>
+<tr>
+<td>每参数描述</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;description&quot;: ...}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;description&quot;]</code></td>
+</tr>
+<tr>
+<td>每参数枚举值</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;options&quot;: [...]}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;options&quot;]</code></td>
+</tr>
+<tr>
+<td>参数是否对 LLM 可见</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;hidden&quot;: True}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;hidden&quot;]</code></td>
+</tr>
+<tr>
+<td>参数 WebUI placeholder</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;placeholder&quot;: &quot;...&quot;}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;placeholder&quot;]</code></td>
+</tr>
+<tr>
+<td>参数 WebUI 多行输入</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;multiline&quot;: True}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;multiline&quot;]</code></td>
+</tr>
+<tr>
+<td>参数动态选项来源</td>
+<td><code>@agentic_function(input={&quot;x&quot;: {&quot;options_from&quot;: &quot;functions&quot;}})</code></td>
+<td><code>fn.input_meta[&quot;x&quot;][&quot;options_from&quot;]</code></td>
+</tr>
+<tr>
+<td>工作目录选择器模式</td>
+<td><code>@agentic_function(workdir_mode=&quot;optional&quot;|&quot;hidden&quot;|&quot;required&quot;)</code></td>
+<td><code>fn.workdir_mode</code></td>
+</tr>
+<tr>
+<td>框架自动注入参数</td>
+<td>全局常量 <code>_AUTO_PARAMS = {&quot;runtime&quot;, &quot;exec_runtime&quot;, &quot;review_runtime&quot;}</code></td>
+<td>模块级</td>
+</tr>
+<tr>
+<td>runtime.exec system prompt 覆盖</td>
+<td><code>@agentic_function(system=&quot;...&quot;)</code></td>
+<td><code>fn.system</code></td>
+</tr>
+<tr>
+<td>context 暴露程度</td>
+<td><code>@agentic_function(expose=&quot;io&quot;|&quot;llm&quot;|&quot;full&quot;|&quot;hidden&quot;)</code> —— <strong>朝外</strong>:别人渲染 DAG 时能看到我的什么</td>
+<td><code>fn.expose</code></td>
+</tr>
+<tr>
+<td>context 渲染范围</td>
+<td><code>@agentic_function(render_range={&quot;callers&quot;: N, &quot;subcalls&quot;: M})</code> —— <strong>朝内</strong>:本函数自己的 <code>runtime.exec</code> 拼 prompt 时,从 DAG 读多少历史节点。两个都是按 <code>seq</code> 的节点计数切片:<code>callers</code> = 本函数 frame <strong>启动前</strong>写入的节点,取最近 N 个(默认 <code>None</code> = 不限,<code>0</code> = 墙掉所有);<code>subcalls</code> = 本函数 frame <strong>启动后</strong>写入的节点,取最近 N 个(默认 <code>-1</code> = 不限,frame 自然看见自己的进度;子函数内部由它自己的 <code>expose</code> 负责藏,不靠 subcalls 计数;只在长 loop 想截断 prompt 时才显式设 <code>N&gt;=0</code>)</td>
+<td><code>fn.render_range</code></td>
+</tr>
+<tr>
+<td>是否给 runtime 工具集</td>
+<td><code>@agentic_function(no_tools=True)</code></td>
+<td><code>fn.no_tools</code></td>
+</tr>
+<tr>
+<td>skill trigger 词 / agent 发现</td>
+<td>同目录 <code>SKILL.md</code> frontmatter</td>
+<td>skill loader 单独加载</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心原则</strong>：能在 signature / annotation 里表达的，不在装饰器里重复；能用 <code>input=</code> 装饰器表达的结构化信息，不在 docstring 里重复。</p>
+<h3 id="裸-agentic_function-的实际默认行为">裸 <code>@agentic_function</code> 的实际默认行为<a class="header-anchor" href="#裸-agentic_function-的实际默认行为">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>默认</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expose</code></td>
+<td><code>&quot;io&quot;</code></td>
+<td>调用方在 DAG 里看到我的 name + input + output。我内部的 <code>runtime.exec</code>（<code>llm</code> 节点）对调用方不可见</td>
+</tr>
+<tr>
+<td><code>render_range</code></td>
+<td><code>None</code> → <code>render_context</code> 退到 <code>callers=None, subcalls=-1</code></td>
+<td>pre-frame 全保留。in-frame（frame 自己的进度：前几次 <code>runtime.exec</code> 结果、已 return 的子函数 io）也全保留。子 <code>@agentic_function</code> 的内部之所以看不到，是因为子函数自带 <code>expose=&quot;io&quot;</code>，不是因为 subcalls 在切。</td>
+</tr>
+<tr>
+<td>顶层 chat turn</td>
+<td><code>frame_entry_seq=-1</code>，无 pre-frame</td>
+<td>走和普通 frame 一模一样的路径——所有节点都算 in-frame，全部可见。没有特殊处理。</td>
+</tr>
+<tr>
+<td><code>no_tools</code></td>
+<td><code>False</code></td>
+<td>runtime 自动注入当前 toolset</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td><code>None</code></td>
+<td>用 runtime 现有 system prompt</td>
+</tr>
+</tbody>
+</table>
+<p>含义：frame 默认会自然累加自己 frame 内的产物。只有想截断长 loop 的 prompt 时才显式设 <code>subcalls=N</code>；想完全墙掉 in-frame（罕见）就显式设 <code>subcalls=0</code>。</p>
+<h2 id="4-docstring-与-content-的分工">4. docstring 与 <code>content</code> 的分工<a class="header-anchor" href="#4-docstring-与-content-的分工">#</a></h2>
+<p>两者职责不同，谁都不能替代谁：</p>
+<table>
+<thead>
+<tr>
+<th>通道</th>
+<th>范围</th>
+<th>写什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>docstring</td>
+<td>整个函数级。描述函数整体在干啥（可能有预处理、多次 LLM 调用、后处理）。读者：人、catalog 菜单、tool_use spec、meta 工具链。</td>
+<td>第一段是一行总结（必需）。正文可以详细描述每次 LLM 调用做什么、期望输出、注意事项——想写多详细都行，是给读代码的人和上下文用的。</td>
+</tr>
+<tr>
+<td><code>runtime.exec(content=[...])</code></td>
+<td>函数内每一次具体的 LLM 调用。函数里可能有多次 exec，每次有自己的 prompt。</td>
+<td>这一次 LLM 调用真正的 prompt + 数据：任务、输出格式、约束、加上要操作的数据。<strong>即使 docstring 已经描述过，这里仍然必须写。</strong></td>
+</tr>
+</tbody>
+</table>
+<p>一个函数 docstring 可以详细解释&quot;我用 LLM 做分类、再把回复归一化&quot;，但函数体仍然要写显式的 <code>runtime.exec(content=[...])</code>，里面带真正发给 LLM 的指令和数据。<strong>docstring 的内容不会自动传到 LLM 调用里</strong>——框架把 docstring 当描述性上下文渲染进 tree，不当权威指令；部分 provider（如 codex CLI）完全不读 docstring 当指令。每次调用都把 per-call prompt 写进 <code>content</code>。</p>
+<p>docstring 写法约束：</p>
+<ul>
+<li>第一段必须有，一行总结（catalog 菜单、tool_use spec 读这一段）。</li>
+<li>正文想写多详细都行，包括描述每次 LLM 调用做什么。</li>
+<li>不要扮演角色（不要 &quot;You are a helpful assistant&quot;）、不要空指令（不要 &quot;Complete the task&quot;）。</li>
+<li>docstring 写得详细<strong>不能</strong>省略具体 exec 调用里 <code>content=[...]</code> 的文字。</li>
+</ul>
+<p><code>content</code> 写法约束：</p>
+<ul>
+<li>每项是 <code>{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: ...}</code> 或 <code>{&quot;type&quot;: &quot;image&quot;, &quot;path&quot;: ...}</code> 这种 dict。</li>
+<li>这一次的指令 <strong>和</strong> 数据一起塞进 content。例：<pre><code class="language-python"><span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="p">(</span>
+    <span class="sa">f</span><span class="s2">&quot;Classify the sentiment of the following text. Reply with exactly one &quot;</span>
+    <span class="sa">f</span><span class="s2">&quot;word: positive, negative, or neutral.</span><span class="se">\n\n</span><span class="s2">Text:</span><span class="se">\n</span><span class="si">{</span><span class="n">text</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="p">)}])</span>
+</code></pre>
+</li>
+<li>输出格式在 content 里精确写明，不依赖 docstring 或外部上下文传达。</li>
+</ul>
+<h2 id="5-input-与-docstring-args-段的关系">5. <code>input=</code> 与 docstring <code>Args:</code> 段的关系<a class="header-anchor" href="#5-input-与-docstring-args-段的关系">#</a></h2>
+<p>历史上同一份参数描述既会写在 docstring 的 <code>Args:</code> 段，又会写在 <code>@agentic_function(input={...})</code> 里。本规范把 <code>input=</code> 定为 source-of-truth。</p>
+<h3 id="推荐风格新代码必须用">推荐风格（新代码必须用）<a class="header-anchor" href="#推荐风格新代码必须用">#</a></h3>
+<p>最小示例：</p>
+<pre><code class="language-python"><span class="nd">@agentic_function</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">&quot;text&quot;</span><span class="p">:</span>  <span class="p">{</span><span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Text to polish.&quot;</span><span class="p">},</span>
+    <span class="s2">&quot;style&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Output style.&quot;</span><span class="p">,</span> <span class="s2">&quot;options&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;academic&quot;</span><span class="p">,</span> <span class="s2">&quot;casual&quot;</span><span class="p">]},</span>
+<span class="p">})</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">polish</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">style</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Polish a text in the given style.&quot;&quot;&quot;</span>
+    <span class="o">...</span>
+</code></pre>
+<p>涉及更多元数据特性的完整示例（placeholder、multiline、hidden、混合类型）：</p>
+<pre><code class="language-python"><span class="nd">@agentic_function</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">&quot;essay&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Essay to review.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span> <span class="s2">&quot;Paste the essay text here...&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;multiline&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;rubric_id&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Which rubric to apply.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;options&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;ielts_writing&quot;</span><span class="p">,</span> <span class="s2">&quot;toefl_writing&quot;</span><span class="p">,</span> <span class="s2">&quot;gre_argument&quot;</span><span class="p">],</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;max_score&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Upper bound for the numeric score.&quot;</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;show_rubric_internals&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Include rubric breakdown in the output.&quot;</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;session_id&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="c1"># System-supplied; LLM does not see this.</span>
+        <span class="s2">&quot;hidden&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">})</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">review_essay</span><span class="p">(</span>
+    <span class="n">essay</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">rubric_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">max_score</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">show_rubric_internals</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>           <span class="c1"># filled by Python via context, not LLM</span>
+    <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">,</span>          <span class="c1"># auto-injected</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Score an essay against a named rubric and return a structured report.&quot;&quot;&quot;</span>
+    <span class="o">...</span>
+</code></pre>
+<p>docstring 只保留一句话总结，<strong>不写 <code>Args:</code> 段，也不写 <code>Returns:</code> 段</strong>。返回值的字段含义如果对 LLM 链式调用重要，请用结构化返回类型（例如 <code>TypedDict</code> 或 dataclass）让消费者自查；不要写自然语言段落。</p>
+<h3 id="旧风格兼容保留">旧风格（兼容保留）<a class="header-anchor" href="#旧风格兼容保留">#</a></h3>
+<pre><code class="language-python"><span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">polish</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">style</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Polish a text in the given style.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        text: Text to polish.</span>
+<span class="sd">        style: Output style.</span>
+<span class="sd">        runtime: LLM runtime.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Polished text.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="o">...</span>
+</code></pre>
+<p>旧风格函数仍然能跑——<code>render_options</code> 和 <code>_build_agentic_tool_spec</code> 在 <code>input_meta</code> 没给某参数描述时，会 fallback 解析 docstring <code>Args:</code> 段。fallback 顺序：</p>
+<pre><code>fn.input_meta[name][&quot;description&quot;]
+    ↓ 找不到
+docstring Args 段里 name 的描述（Google-style）
+    ↓ 找不到
+fn.input_meta[name][&quot;placeholder&quot;]（前缀 &quot;e.g.&quot;）
+    ↓ 找不到
+无描述，菜单只显示参数名 + 类型
+</code></pre>
+<h2 id="6-普通-python-函数未装饰的待遇">6. 普通 Python 函数（未装饰）的待遇<a class="header-anchor" href="#6-普通-python-函数未装饰的待遇">#</a></h2>
+<p><code>@agentic_function</code> 不是强制要求。普通 callable 也能进 <code>render_options</code> 和 <code>runtime.exec(tools=[...])</code>，只是元数据缺：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>装饰过</th>
+<th>未装饰</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>参数描述</td>
+<td><code>input=</code></td>
+<td>docstring <code>Args:</code> fallback，没就是空</td>
+</tr>
+<tr>
+<td>参数枚举</td>
+<td><code>input={&quot;x&quot;: {&quot;options&quot;: [...]}}</code></td>
+<td>不存在；annotation 写 <code>Literal[&quot;a&quot;,&quot;b&quot;]</code> 可识别</td>
+</tr>
+<tr>
+<td>hidden</td>
+<td><code>input={&quot;x&quot;: {&quot;hidden&quot;: True}}</code></td>
+<td>只 <code>_AUTO_PARAMS</code> 名单里的（<code>runtime</code> 等）自动 hidden</td>
+</tr>
+<tr>
+<td>context tree 记录</td>
+<td>是</td>
+<td>否</td>
+</tr>
+</tbody>
+</table>
+<p>普通函数适用于：决策分支简单、参数少、不需要 WebUI 展示、不需要 catalog 菜单复杂提示的临时函数。一旦需要 enum / hidden / 详细参数描述，就升级为 <code>@agentic_function</code>。</p>
+<h2 id="7-已自动注入的参数">7. 已自动注入的参数<a class="header-anchor" href="#7-已自动注入的参数">#</a></h2>
+<p>下面这些参数名是约定保留的，框架会自动从运行时填入；用户函数签名里出现就自动注入，不出现就不注入。LLM 不会看到、不需要填：</p>
+<table>
+<thead>
+<tr>
+<th>参数名</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runtime</code></td>
+<td>当前 Runtime 实例</td>
+</tr>
+<tr>
+<td><code>exec_runtime</code></td>
+<td>执行用的 Runtime（多 runtime 场景）</td>
+</tr>
+<tr>
+<td><code>review_runtime</code></td>
+<td>审查用的 Runtime（多 runtime 场景）</td>
+</tr>
+</tbody>
+</table>
+<p>需要新增自动注入名时，在 <code>agentic_programming/function.py</code> 的 <code>_AUTO_PARAMS</code> 里加；不要靠 case-by-case 在 <code>input={&quot;x&quot;: {&quot;hidden&quot;: True}}</code> 里手标。</p>
+<h2 id="8-webui-渲染行为">8. WebUI 渲染行为<a class="header-anchor" href="#8-webui-渲染行为">#</a></h2>
+<p>WebUI 表单按以下规则渲染每个参数（在 <code>web/components/programs/program-run-dialog.tsx</code> 实现）。函数作者写 <code>@agentic_function(input={...})</code> 时应据此判断会得到什么样的输入控件：</p>
+<table>
+<thead>
+<tr>
+<th>参数特征</th>
+<th>WebUI 控件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bool</code> 类型</td>
+<td>Yes / No 切换按钮（不是复选框）</td>
+</tr>
+<tr>
+<td><code>str</code> 类型，未指定 <code>multiline</code></td>
+<td>默认渲染为 textarea（<code>multiline=True</code>）</td>
+</tr>
+<tr>
+<td><code>str</code> 类型，<code>multiline: False</code></td>
+<td>单行 <code>&lt;input&gt;</code></td>
+</tr>
+<tr>
+<td>非 <code>str</code> / 非 <code>bool</code>，未指定 <code>multiline</code></td>
+<td>单行 <code>&lt;input&gt;</code></td>
+</tr>
+<tr>
+<td><code>options: [&quot;a&quot;, &quot;b&quot;, ...]</code></td>
+<td>一组可点击 chips + 一个 &quot;自填&quot; 文本框（用户可选可填）</td>
+</tr>
+<tr>
+<td><code>options_from: &quot;functions&quot;</code></td>
+<td><code>&lt;select&gt;</code> 下拉，选项来自当前注册的非内置 / 非 meta 函数列表</td>
+</tr>
+<tr>
+<td><code>hidden: True</code></td>
+<td>完全不在表单出现</td>
+</tr>
+<tr>
+<td>有 Python 默认值且未显式给 <code>placeholder</code></td>
+<td>placeholder 自动设为 <code>&quot;default: X&quot;</code></td>
+</tr>
+</tbody>
+</table>
+<p>工作目录选择器在表单底部独立渲染，行为受顶层 <code>workdir_mode</code> 控制：</p>
+<table>
+<thead>
+<tr>
+<th><code>workdir_mode</code> 值</th>
+<th>表单行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&quot;optional&quot;</code>（默认）</td>
+<td>显示工作目录选择器，可空可填</td>
+</tr>
+<tr>
+<td><code>&quot;hidden&quot;</code></td>
+<td>不显示工作目录选择器（函数本身不依赖文件系统位置）</td>
+</tr>
+<tr>
+<td><code>&quot;required&quot;</code></td>
+<td>显示工作目录选择器，必填，不填不让提交</td>
+</tr>
+</tbody>
+</table>
+<p>参数描述（<code>description</code>）渲染在参数名旁的小字标签里；type 注解和&quot;required&quot; 标记也展示在参数名行。</p>
+<h2 id="9-不在本规范范围内暂留作未来扩展">9. 不在本规范范围内（暂留作未来扩展）<a class="header-anchor" href="#9-不在本规范范围内暂留作未来扩展">#</a></h2>
+<p>以下字段在评审中被讨论过但<strong>目前不引入</strong>，原因是没有现成消费者：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>设想用途</th>
+<th>不引入的原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>effects=[&quot;fs&quot;, &quot;net&quot;, &quot;state&quot;]</code></td>
+<td>标记函数副作用，给权限网关 / 危险操作拦截用</td>
+<td>还没有权限网关组件</td>
+</tr>
+<tr>
+<td><code>permissions=[...]</code></td>
+<td>调用前需要的权限 scope</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>idempotent=True</code></td>
+<td>能否安全重试</td>
+<td>当前没有自动重试器</td>
+</tr>
+<tr>
+<td><code>latency_hint=&quot;long&quot;</code></td>
+<td>调度提示</td>
+<td>当前没有调度器</td>
+</tr>
+<tr>
+<td><code>cost_hint=...</code></td>
+<td>配额管理</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table>
+<p>等真有上游消费者出现，再回头扩这一节。</p>
+<h2 id="10-落地步骤参考">10. 落地步骤（参考）<a class="header-anchor" href="#10-落地步骤参考">#</a></h2>
+<p>下面是把现有代码迁移到这套规范的建议顺序，不在本规范强制：</p>
+<ol>
+<li>在 <code>agentic_programming/function.py</code> 加共用 helper <code>_parse_docstring_args(fn) -&gt; dict[name, description]</code></li>
+<li><code>_build_agentic_tool_spec</code> 调这个 helper 做 fallback（目前 spec 完全不读 docstring Args）</li>
+<li><code>render_options</code> 同样调这个 helper 做 fallback</li>
+<li>现有 <code>@agentic_function</code> 不需要立刻改写；后续接触到时顺手改成新风格</li>
+</ol>
+<h2 id="11-风格速查">11. 风格速查<a class="header-anchor" href="#11-风格速查">#</a></h2>
+<p>新写 <code>@agentic_function</code> 时检查：</p>
+<ul class="contains-task-list">
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> docstring 第一段是一句话总结（直接陈述函数做什么 / 何时该调）</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> docstring 没有 <code>Args:</code> 或 <code>Returns:</code> 段（除非有特殊调试 / 阅读需要）</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> 每个 LLM 可见参数在 <code>input=</code> 里有 <code>description</code></li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> 枚举参数用 <code>input=</code> 的 <code>options</code>（不是写在描述里）</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> Python 自动填的参数（DB session、当前用户等）标 <code>hidden: True</code></li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> 框架自动注入（<code>runtime</code> 等）参数不需要任何标注，框架自动识别</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> 函数名清楚（<code>fn.__name__</code> 会被 LLM 当 action 名称）</li>
+<li class="task-list-item enabled"><input class="task-list-item-checkbox"  type="checkbox"> 没用比喻 / 没扮角色 / 没空指令的 docstring</li>
+</ul>
+<h2 id="12-参考">12. 参考<a class="header-anchor" href="#12-参考">#</a></h2>
+<ul>
+<li><code>openprogram/agentic_programming/function.py</code> — <code>@agentic_function</code> 装饰器实现</li>
+<li><code>openprogram/agentic_programming/decision.py</code> — 选项菜单渲染、回复解析,以及下一步决策原语(<code>decision.make</code>、<code>render_options</code>、<code>parse_args</code>、<code>DecisionError</code>)</li>
+<li><code>docs/design/function/agentic_function.md</code> — 装饰器使用指南</li>
+<li><code>docs/design/function/function-calling-unification.md</code> — function/tool calling 框架</li>
+<li><code>docs/design/function/tool-calling.md</code> — 单轮原生 tool-use 循环机制</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-为什么需要这份规范">1. 为什么需要这份规范</a>
+<a class="" href="#2-谁消费函数的元数据">2. 谁消费函数的元数据</a>
+<a class="" href="#3-元数据字段及其唯一归属">3. 元数据字段及其唯一归属</a>
+<a class="lvl-3" href="#裸-agentic_function-的实际默认行为">裸 @agentic_function 的实际默认行为</a>
+<a class="" href="#4-docstring-与-content-的分工">4. docstring 与 content 的分工</a>
+<a class="" href="#5-input-与-docstring-args-段的关系">5. input= 与 docstring Args: 段的关系</a>
+<a class="lvl-3" href="#推荐风格新代码必须用">推荐风格（新代码必须用）</a>
+<a class="lvl-3" href="#旧风格兼容保留">旧风格（兼容保留）</a>
+<a class="" href="#6-普通-python-函数未装饰的待遇">6. 普通 Python 函数（未装饰）的待遇</a>
+<a class="" href="#7-已自动注入的参数">7. 已自动注入的参数</a>
+<a class="" href="#8-webui-渲染行为">8. WebUI 渲染行为</a>
+<a class="" href="#9-不在本规范范围内暂留作未来扩展">9. 不在本规范范围内（暂留作未来扩展）</a>
+<a class="" href="#10-落地步骤参考">10. 落地步骤（参考）</a>
+<a class="" href="#11-风格速查">11. 风格速查</a>
+<a class="" href="#12-参考">12. 参考</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

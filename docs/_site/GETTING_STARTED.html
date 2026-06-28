@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting Started | 快速上手 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="assets/site.css">
+<link rel="stylesheet" href="assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="README.html">Documentation</a>
+<a class="navlink" href="API.html">API Reference</a>
+<a class="navlink" href="INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink active" href="GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="install.html">Installing OpenProgram</a>
+<a class="navlink" href="features.html">Key Features — detailed tour</a>
+<a class="navlink" href="INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="README_CN.html">Readme Cn</a>
+<a class="navlink" href="troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="api/providers.html">Providers</a>
+<a class="navlink" href="api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design"><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="design/README.html">Design Documents</a>
+<a class="navlink" href="design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="design/channels/README.html">Channels</a>
+<a class="navlink" href="design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="design/context/README.html">Context</a>
+<a class="navlink" href="design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="design/function/README.html">Function Design</a>
+<a class="navlink" href="design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="design/integrations/README.html">Integrations</a>
+<a class="navlink" href="design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="design/providers/README.html">Providers</a>
+<a class="navlink" href="design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="design/runtime/README.html">Runtime</a>
+<a class="navlink" href="design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="design/ui/README.html">Web UI</a>
+<a class="navlink" href="design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="getting-started-快速上手">Getting Started | 快速上手<a class="header-anchor" href="#getting-started-快速上手">#</a></h1>
+<p><a href="#english">English</a> | <a href="#%E4%B8%AD%E6%96%87">中文</a></p>
+<hr />
+<p><a id="english"></a></p>
+<h2 id="3-minute-quick-start">🚀 3-Minute Quick Start<a class="header-anchor" href="#3-minute-quick-start">#</a></h2>
+<h3 id="step-1-install">Step 1: Install<a class="header-anchor" href="#step-1-install">#</a></h3>
+<p>The one-command installer sets up everything — Python package + web UI + terminal UI + the GUI agent (with its model weight and OCR):</p>
+<pre><code class="language-bash">git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Fzkuji/OpenProgram.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>OpenProgram
+./scripts/install.sh<span class="w">              </span><span class="c1"># macOS/Linux   ·   Windows:  .\scripts\install.ps1</span>
+</code></pre>
+<p>Requires Python ≥ 3.11, Node ≥ 20, git. The default install brings up everything light — web UI, TUI, the Research / Wiki agent programs, browser tool + channels; the GUI agent is opt-in (<code>openprogram programs install gui</code>, downloads PyTorch); <code>--minimal</code> installs a bare host. Full dependency matrix and flags: <a href="install.html">docs/install.md</a>.</p>
+<h3 id="step-2-connect-a-provider">Step 2: Connect a provider<a class="header-anchor" href="#step-2-connect-a-provider">#</a></h3>
+<p>No separate command needed — <strong>the first time you run <code>openprogram</code>, it walks you through provider setup</strong> (importing credentials from a logged-in Claude Code / Codex / Gemini CLI, or asking for an API key), then opens the chat. Re-run it any time with <code>openprogram setup</code>.</p>
+<p>Or set a key manually and skip the wizard:</p>
+<pre><code class="language-bash"><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>sk-ant-...<span class="w">                 </span><span class="c1"># Claude</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-...<span class="w">                        </span><span class="c1"># GPT</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">GOOGLE_API_KEY</span><span class="o">=</span>...<span class="w">                           </span><span class="c1"># Gemini</span>
+<span class="c1"># Or CLI-based (no API key, uses your existing subscription):</span>
+<span class="c1">#   npm i -g @anthropic-ai/claude-code &amp;&amp; claude login</span>
+<span class="c1">#   npm i -g @openai/codex &amp;&amp; codex auth</span>
+<span class="c1">#   npm i -g @google/gemini-cli &amp;&amp; gemini auth login</span>
+</code></pre>
+<p>Sanity-check: <code>openprogram providers</code> lists what's detected.</p>
+<h3 id="step-3-write-your-first-agentic-function">Step 3: Write your first agentic function<a class="header-anchor" href="#step-3-write-your-first-agentic-function">#</a></h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_runtime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">create_runtime</span><span class="p">()</span>                          <span class="c1"># auto-picks the first available provider</span>
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">greet</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Greet someone in a creative, fun way.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Say hello to </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> in a creative way. Keep it short (1-2 sentences).&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">greet</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;World&quot;</span><span class="p">))</span>
+</code></pre>
+<pre><code class="language-bash">python<span class="w"> </span>your_script.py
+</code></pre>
+<p>That's it. Your function now <strong>thinks</strong>.</p>
+<hr />
+<h2 id="choose-your-provider">Choose Your Provider<a class="header-anchor" href="#choose-your-provider">#</a></h2>
+<p>Agentic Programming supports 6 built-in runtimes out of the box. Pick one:</p>
+<h3 id="option-a-claude-subscription-via-the-meridian-proxy-recommended-for-getting-started">Option A: Claude subscription via the Meridian proxy (Recommended for Getting Started)<a class="header-anchor" href="#option-a-claude-subscription-via-the-meridian-proxy-recommended-for-getting-started">#</a></h3>
+<p><strong>No API key needed.</strong> Uses your Claude Code subscription through a local
+HTTP bridge — the <code>claude-code</code> provider talks to a Meridian daemon (which
+routes through the official Claude Code SDK underneath), not a spawned CLI.</p>
+<p><strong>Prerequisites:</strong></p>
+<pre><code class="language-bash"><span class="c1"># 1. The Claude Code SDK + login (Meridian routes through it)</span>
+npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@anthropic-ai/claude-code<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>claude<span class="w"> </span>login
+<span class="c1"># 2. The Meridian proxy daemon — exposes a local OpenAI-compatible endpoint</span>
+npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@rynfar/meridian<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>meridian<span class="w">        </span><span class="c1"># listens on :3456</span>
+</code></pre>
+<p>(Override the port with <code>CLAUDE_MAX_PROXY_URL</code> if you ran Meridian elsewhere.)</p>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClaudeCodeRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">ClaudeCodeRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;haiku&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Pros:</strong> Zero API-key setup, uses your existing subscription, full
+multimodal content (unlike the older <code>claude-max-api-proxy</code>).
+<strong>Cons:</strong> One extra local daemon; slightly slower than a direct API key.</p>
+<hr />
+<h3 id="option-b-anthropic-api-claude">Option B: Anthropic API (Claude)<a class="header-anchor" href="#option-b-anthropic-api-claude">#</a></h3>
+<p><strong>Best for production.</strong> Direct API access with prompt caching.</p>
+<p><strong>Setup:</strong></p>
+<pre><code class="language-bash">pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">          </span><span class="c1"># anthropic SDK is included by default</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-ant-...&quot;</span>
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnthropicRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">AnthropicRuntime</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-sonnet-4-6&quot;</span><span class="p">,</span>
+    <span class="c1"># api_key=&quot;sk-ant-...&quot;  # or use ANTHROPIC_API_KEY env var</span>
+<span class="p">)</span>
+</code></pre>
+<p><strong>Supports:</strong> Text, images (base64/URL/file), prompt caching, system prompts.</p>
+<hr />
+<h3 id="option-c-openai-api-gpt">Option C: OpenAI API (GPT)<a class="header-anchor" href="#option-c-openai-api-gpt">#</a></h3>
+<p><strong>Setup:</strong></p>
+<pre><code class="language-bash">pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">          </span><span class="c1"># openai SDK is included by default</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-...&quot;</span>
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAIRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">OpenAIRuntime</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span>
+    <span class="c1"># api_key=&quot;sk-...&quot;  # or use OPENAI_API_KEY env var</span>
+<span class="p">)</span>
+</code></pre>
+<p><strong>Supports:</strong> Text, images (base64/URL/file), response_format (JSON mode), system prompts.</p>
+<hr />
+<h3 id="option-d-google-gemini-api">Option D: Google Gemini API<a class="header-anchor" href="#option-d-google-gemini-api">#</a></h3>
+<p><strong>Setup:</strong></p>
+<pre><code class="language-bash">pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">          </span><span class="c1"># google-genai SDK is included by default</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">GOOGLE_API_KEY</span><span class="o">=</span><span class="s2">&quot;...&quot;</span>
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeminiRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">GeminiRuntime</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-2.5-flash&quot;</span><span class="p">,</span>
+    <span class="c1"># api_key=&quot;...&quot;  # or use GOOGLE_API_KEY env var</span>
+<span class="p">)</span>
+</code></pre>
+<p><strong>Supports:</strong> Text, images (base64/URL/file), system instructions, JSON schema output.</p>
+<hr />
+<h3 id="option-e-codex-cli">Option E: Codex CLI<a class="header-anchor" href="#option-e-codex-cli">#</a></h3>
+<p><strong>No Python API key needed.</strong> Uses the Codex CLI you already signed into.</p>
+<p><strong>Prerequisites:</strong></p>
+<pre><code class="language-bash"><span class="c1"># install Codex CLI first, then sign in</span>
+codex<span class="w"> </span>login<span class="w"> </span>--device-auth
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAICodexRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">OpenAICodexRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-5.5&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Pros:</strong> Local CLI workflow, easy to reuse an existing Codex setup.
+<strong>Cons:</strong> Subprocess overhead, text-only.</p>
+<hr />
+<h3 id="option-f-gemini-cli">Option F: Gemini CLI<a class="header-anchor" href="#option-f-gemini-cli">#</a></h3>
+<p><strong>No Python API key needed.</strong> Uses the Gemini CLI session on your machine.</p>
+<p><strong>Prerequisites:</strong></p>
+<pre><code class="language-bash"><span class="c1"># install Gemini CLI first, then sign in</span>
+gemini
+</code></pre>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeminiCLIRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">GeminiCLIRuntime</span><span class="p">()</span>
+</code></pre>
+<p><strong>Pros:</strong> Local CLI workflow, no Python-side SDK setup.
+<strong>Cons:</strong> Subprocess overhead, text-only.</p>
+<hr />
+<h2 id="complete-working-example">Complete Working Example<a class="header-anchor" href="#complete-working-example">#</a></h2>
+<p>Here's a full script you can copy, paste, and run:</p>
+<pre><code class="language-python"><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Full working example: Task decomposition with Agentic Programming.</span>
+<span class="sd">Uses ClaudeCodeRuntime (no API key needed, just `claude` CLI).</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClaudeCodeRuntime</span>
+
+<span class="c1"># Initialize runtime (no API key needed)</span>
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">ClaudeCodeRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;haiku&quot;</span><span class="p">)</span>
+
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">analyze</span><span class="p">(</span><span class="n">topic</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze a topic and list 3 key points.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;List exactly 3 key points about: </span><span class="si">{</span><span class="n">topic</span><span class="si">}</span><span class="se">\n</span><span class="s2">One line per point, numbered 1-3.&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">elaborate</span><span class="p">(</span><span class="n">point</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Elaborate on a single point with one insightful sentence.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Elaborate on this point in exactly one insightful sentence:</span><span class="se">\n</span><span class="si">{</span><span class="n">point</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">research</span><span class="p">(</span><span class="n">topic</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Analyze a topic, then elaborate on each point.&quot;&quot;&quot;</span>
+    <span class="c1"># Step 1: Get key points (Python controls the flow)</span>
+    <span class="n">points_text</span> <span class="o">=</span> <span class="n">analyze</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">topic</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;📋 Key points:</span><span class="se">\n</span><span class="si">{</span><span class="n">points_text</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Step 2: Elaborate on each point (Python controls the loop)</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">points_text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">and</span> <span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()]</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">[:</span><span class="mi">3</span><span class="p">]:</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="n">elaborate</span><span class="p">(</span><span class="n">point</span><span class="o">=</span><span class="n">line</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  💡 </span><span class="si">{</span><span class="n">detail</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Step 3: Return summary (LLM sees full context automatically)</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;Based on the analysis above, write a one-paragraph summary.&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">research</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="s2">&quot;Why Rust is gaining popularity in systems programming&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">📝 Summary:</span><span class="se">\n</span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre>
+<p>Save this as <code>demo.py</code> and run with <code>python demo.py</code>.</p>
+<hr />
+<h2 id="key-concepts">Key Concepts<a class="header-anchor" href="#key-concepts">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>What It Is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@agentic_function</code></td>
+<td>Decorator. Records each call as a node in the session DAG</td>
+</tr>
+<tr>
+<td><code>runtime.exec()</code></td>
+<td>Calls the LLM — context is computed from the DAG automatically</td>
+</tr>
+<tr>
+<td>Session DAG</td>
+<td>Every user message / LLM call / function call is a node — see <code>openprogram/context/</code></td>
+</tr>
+<tr>
+<td>Docstring</td>
+<td>Documents the function; the per-call prompt lives in <code>runtime.exec(content=...)</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-core-pattern">The Core Pattern<a class="header-anchor" href="#the-core-pattern">#</a></h3>
+<pre><code class="language-python"><span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">my_function</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This docstring IS the prompt. The LLM reads it.&quot;&quot;&quot;</span>
+
+    <span class="n">data</span> <span class="o">=</span> <span class="n">do_something_deterministic</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>   <span class="c1"># Python: guaranteed execution</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])</span>       <span class="c1"># LLM: reasoning step</span>
+    <span class="k">return</span> <span class="n">result</span>                              <span class="c1"># Python: guaranteed return</span>
+</code></pre>
+<p><strong>Python controls flow. LLM does reasoning. That's the whole idea.</strong></p>
+<hr />
+<h2 id="next-steps">Next Steps<a class="header-anchor" href="#next-steps">#</a></h2>
+<ul>
+<li>📖 <a href="API.html">API Reference</a></li>
+<li>🔗 <a href="INTEGRATION_CLAUDE_CODE.html">Claude Code Integration</a> — Use without any API key</li>
+<li>🔗 <a href="INTEGRATION_OPENCLAW.html">OpenClaw Integration</a> — Use as OpenClaw skill/tool</li>
+<li>📂 <a href="../examples/">Examples</a> — More runnable demos</li>
+</ul>
+<hr />
+<hr />
+<p><a id="中文"></a></p>
+<h2 id="3-分钟快速上手">🚀 3 分钟快速上手<a class="header-anchor" href="#3-分钟快速上手">#</a></h2>
+<h3 id="第-1-步安装">第 1 步：安装<a class="header-anchor" href="#第-1-步安装">#</a></h3>
+<p>一条命令装齐——Python 包 + 网页 UI + 终端 UI + GUI agent（含模型权重/OCR）：</p>
+<pre><code class="language-bash">git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Fzkuji/OpenProgram.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>OpenProgram
+./scripts/install.sh<span class="w">              </span><span class="c1"># macOS/Linux   ·   Windows:  .\scripts\install.ps1</span>
+</code></pre>
+<p>需要 Python ≥ 3.11、Node ≥ 20、git。默认安装包含全部轻量内容——web UI、TUI、Research / Wiki 两个 agent 程序、浏览器工具和 channels；GUI agent 按需安装（<code>openprogram programs install gui</code>，需下载 PyTorch）；<code>--minimal</code> 只装精简 host。完整依赖矩阵与参数见 <a href="install.html">docs/install.md</a>。</p>
+<h3 id="第-2-步写你的第一个-agentic-function">第 2 步：写你的第一个 Agentic Function<a class="header-anchor" href="#第-2-步写你的第一个-agentic-function">#</a></h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClaudeCodeRuntime</span>
+
+<span class="c1"># ClaudeCodeRuntime 使用 Claude Code CLI，不需要 API key</span>
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">ClaudeCodeRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;haiku&quot;</span><span class="p">)</span>
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">greet</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;用创意的方式跟人打招呼。&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;用创意的方式跟 </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> 打招呼，简短一点（1-2 句话）。&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+
+<span class="n">result</span> <span class="o">=</span> <span class="n">greet</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;World&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+</code></pre>
+<h3 id="第-3-步运行">第 3 步：运行<a class="header-anchor" href="#第-3-步运行">#</a></h3>
+<pre><code class="language-bash">python<span class="w"> </span>your_script.py
+</code></pre>
+<p>完成。你的函数现在<strong>会思考</strong>了。</p>
+<hr />
+<h2 id="选择-provider">选择 Provider<a class="header-anchor" href="#选择-provider">#</a></h2>
+<p>Agentic Programming 内置 6 个 runtime / provider，选一个：</p>
+<h3 id="方案-aclaude-code-cli推荐新手使用">方案 A：Claude Code CLI（推荐新手使用）<a class="header-anchor" href="#方案-aclaude-code-cli推荐新手使用">#</a></h3>
+<p><strong>不需要 API key。</strong> 使用你的 Claude Code 订阅。</p>
+<p><strong>前置条件：</strong></p>
+<pre><code class="language-bash">npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@anthropic-ai/claude-code
+claude<span class="w"> </span>login
+</code></pre>
+<p><strong>用法：</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClaudeCodeRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">ClaudeCodeRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;haiku&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>优点：</strong> 零配置，用已有订阅。
+<strong>缺点：</strong> 比直接 API 慢（子进程开销），仅支持文本。</p>
+<hr />
+<h3 id="方案-banthropic-apiclaude">方案 B：Anthropic API（Claude）<a class="header-anchor" href="#方案-banthropic-apiclaude">#</a></h3>
+<p><strong>适合生产环境。</strong> 直接 API 访问，支持 prompt caching。</p>
+<p><strong>配置：</strong></p>
+<pre><code class="language-bash">pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">          </span><span class="c1"># anthropic SDK is included by default</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-ant-...&quot;</span>
+</code></pre>
+<p><strong>用法：</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnthropicRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">AnthropicRuntime</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;claude-sonnet-4-6&quot;</span><span class="p">,</span>
+    <span class="c1"># api_key=&quot;sk-ant-...&quot;  # 或者用 ANTHROPIC_API_KEY 环境变量</span>
+<span class="p">)</span>
+</code></pre>
+<p><strong>支持：</strong> 文本、图片（base64/URL/文件）、prompt caching、系统提示词。</p>
+<hr />
+<h3 id="方案-copenai-apigpt">方案 C：OpenAI API（GPT）<a class="header-anchor" href="#方案-copenai-apigpt">#</a></h3>
+<p><strong>配置：</strong></p>
+<pre><code class="language-bash">pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">          </span><span class="c1"># openai SDK is included by default</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-...&quot;</span>
+</code></pre>
+<p><strong>用法：</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAIRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">OpenAIRuntime</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span>
+    <span class="c1"># api_key=&quot;sk-...&quot;  # 或者用 OPENAI_API_KEY 环境变量</span>
+<span class="p">)</span>
+</code></pre>
+<p><strong>支持：</strong> 文本、图片（base64/URL/文件）、response_format（JSON 模式）、系统提示词。</p>
+<hr />
+<h3 id="方案-dgoogle-gemini-api">方案 D：Google Gemini API<a class="header-anchor" href="#方案-dgoogle-gemini-api">#</a></h3>
+<p><strong>配置：</strong></p>
+<pre><code class="language-bash">pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">          </span><span class="c1"># google-genai SDK is included by default</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">GOOGLE_API_KEY</span><span class="o">=</span><span class="s2">&quot;...&quot;</span>
+</code></pre>
+<p><strong>用法：</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeminiRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">GeminiRuntime</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gemini-2.5-flash&quot;</span><span class="p">,</span>
+    <span class="c1"># api_key=&quot;...&quot;  # 或者用 GOOGLE_API_KEY 环境变量</span>
+<span class="p">)</span>
+</code></pre>
+<p><strong>支持：</strong> 文本、图片（base64/URL/文件）、系统指令、JSON schema 输出。</p>
+<hr />
+<h3 id="方案-ecodex-cli">方案 E：Codex CLI<a class="header-anchor" href="#方案-ecodex-cli">#</a></h3>
+<p><strong>不需要在 Python 里配置 API key。</strong> 直接复用你已经登录好的 Codex CLI。</p>
+<p><strong>前置条件：</strong></p>
+<pre><code class="language-bash"><span class="c1"># 先安装 Codex CLI，然后登录</span>
+codex<span class="w"> </span>login<span class="w"> </span>--device-auth
+</code></pre>
+<p><strong>用法：</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAICodexRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">OpenAICodexRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-5.5&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>优点：</strong> 本地 CLI 工作流友好，适合已经在用 Codex 的环境。
+<strong>缺点：</strong> 有子进程开销，仅支持文本。</p>
+<hr />
+<h3 id="方案-fgemini-cli">方案 F：Gemini CLI<a class="header-anchor" href="#方案-fgemini-cli">#</a></h3>
+<p><strong>不需要在 Python 里配置 API key。</strong> 直接使用你机器上的 Gemini CLI 会话。</p>
+<p><strong>前置条件：</strong></p>
+<pre><code class="language-bash"><span class="c1"># 先安装 Gemini CLI，然后登录</span>
+gemini
+</code></pre>
+<p><strong>用法：</strong></p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeminiCLIRuntime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">GeminiCLIRuntime</span><span class="p">()</span>
+</code></pre>
+<p><strong>优点：</strong> 本地 CLI 工作流友好，不需要额外装 Python SDK。
+<strong>缺点：</strong> 有子进程开销，仅支持文本。</p>
+<hr />
+<h2 id="完整可运行示例">完整可运行示例<a class="header-anchor" href="#完整可运行示例">#</a></h2>
+<p>把下面的脚本复制粘贴就能跑：</p>
+<pre><code class="language-python"><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">完整示例：用 Agentic Programming 做任务分解。</span>
+<span class="sd">使用 ClaudeCodeRuntime（不需要 API key，只需 claude CLI）。</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClaudeCodeRuntime</span>
+
+<span class="c1"># 初始化 runtime（不需要 API key）</span>
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">ClaudeCodeRuntime</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;haiku&quot;</span><span class="p">)</span>
+
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">analyze</span><span class="p">(</span><span class="n">topic</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;分析一个话题，列出 3 个关键点。&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;列出关于以下话题的 3 个关键点：</span><span class="si">{</span><span class="n">topic</span><span class="si">}</span><span class="se">\n</span><span class="s2">每行一个，编号 1-3。&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">elaborate</span><span class="p">(</span><span class="n">point</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;用一句有洞察力的话展开一个观点。&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;用一句有洞察力的话展开这个观点：</span><span class="se">\n</span><span class="si">{</span><span class="n">point</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">research</span><span class="p">(</span><span class="n">topic</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;分析一个话题，然后展开每个要点。&quot;&quot;&quot;</span>
+    <span class="c1"># 第 1 步：获取关键点（Python 控制流程）</span>
+    <span class="n">points_text</span> <span class="o">=</span> <span class="n">analyze</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">topic</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;📋 关键点：</span><span class="se">\n</span><span class="si">{</span><span class="n">points_text</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 第 2 步：展开每个要点（Python 控制循环）</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">points_text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">and</span> <span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()]</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">[:</span><span class="mi">3</span><span class="p">]:</span>
+        <span class="n">detail</span> <span class="o">=</span> <span class="n">elaborate</span><span class="p">(</span><span class="n">point</span><span class="o">=</span><span class="n">line</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  💡 </span><span class="si">{</span><span class="n">detail</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 第 3 步：返回总结（LLM 自动看到完整上下文）</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;根据上面的分析，写一段总结。&quot;</span><span class="p">},</span>
+    <span class="p">])</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">research</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="s2">&quot;为什么 Rust 在系统编程领域越来越流行&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">📝 总结：</span><span class="se">\n</span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre>
+<p>保存为 <code>demo.py</code>，运行 <code>python demo.py</code>。</p>
+<hr />
+<h2 id="核心概念">核心概念<a class="header-anchor" href="#核心概念">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@agentic_function</code></td>
+<td>装饰器。每次调用记录为 session DAG 的一个节点</td>
+</tr>
+<tr>
+<td><code>runtime.exec()</code></td>
+<td>调用 LLM,上下文从 DAG 自动算出</td>
+</tr>
+<tr>
+<td>Session DAG</td>
+<td>每条用户消息 / LLM 调用 / 函数调用都是一个节点,见 <code>openprogram/context/</code></td>
+</tr>
+<tr>
+<td>Docstring</td>
+<td>描述函数本身;本次调用的指令写在 <code>runtime.exec(content=...)</code> 里</td>
+</tr>
+</tbody>
+</table>
+<h3 id="核心模式">核心模式<a class="header-anchor" href="#核心模式">#</a></h3>
+<pre><code class="language-python"><span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">my_function</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;这个 docstring 就是 prompt。LLM 会读到它。&quot;&quot;&quot;</span>
+
+    <span class="n">data</span> <span class="o">=</span> <span class="n">do_something_deterministic</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>   <span class="c1"># Python：确定性执行</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])</span>       <span class="c1"># LLM：推理步骤</span>
+    <span class="k">return</span> <span class="n">result</span>                              <span class="c1"># Python：确定性返回</span>
+</code></pre>
+<p><strong>Python 控制流程。LLM 做推理。就这么简单。</strong></p>
+<hr />
+<h2 id="下一步">下一步<a class="header-anchor" href="#下一步">#</a></h2>
+<ul>
+<li>📖 <a href="API.html">API 参考</a></li>
+<li>🔗 <a href="INTEGRATION_CLAUDE_CODE.html">Claude Code 集成指南</a> — 不需要 API key</li>
+<li>🔗 <a href="INTEGRATION_OPENCLAW.html">OpenClaw 集成指南</a> — 作为 OpenClaw skill/tool 使用</li>
+<li>📂 <a href="../examples/">示例</a> — 更多可运行的 demo</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#3-minute-quick-start">🚀 3-Minute Quick Start</a>
+<a class="lvl-3" href="#step-1-install">Step 1: Install</a>
+<a class="lvl-3" href="#step-2-connect-a-provider">Step 2: Connect a provider</a>
+<a class="lvl-3" href="#step-3-write-your-first-agentic-function">Step 3: Write your first agentic function</a>
+<a class="" href="#choose-your-provider">Choose Your Provider</a>
+<a class="lvl-3" href="#option-a-claude-subscription-via-the-meridian-proxy-recommended-for-getting-started">Option A: Claude subscription via the Meridian proxy (Recommended for Getting Started)</a>
+<a class="lvl-3" href="#option-b-anthropic-api-claude">Option B: Anthropic API (Claude)</a>
+<a class="lvl-3" href="#option-c-openai-api-gpt">Option C: OpenAI API (GPT)</a>
+<a class="lvl-3" href="#option-d-google-gemini-api">Option D: Google Gemini API</a>
+<a class="lvl-3" href="#option-e-codex-cli">Option E: Codex CLI</a>
+<a class="lvl-3" href="#option-f-gemini-cli">Option F: Gemini CLI</a>
+<a class="" href="#complete-working-example">Complete Working Example</a>
+<a class="" href="#key-concepts">Key Concepts</a>
+<a class="lvl-3" href="#the-core-pattern">The Core Pattern</a>
+<a class="" href="#next-steps">Next Steps</a>
+<a class="" href="#3-分钟快速上手">🚀 3 分钟快速上手</a>
+<a class="lvl-3" href="#第-1-步安装">第 1 步：安装</a>
+<a class="lvl-3" href="#第-2-步写你的第一个-agentic-function">第 2 步：写你的第一个 Agentic Function</a>
+<a class="lvl-3" href="#第-3-步运行">第 3 步：运行</a>
+<a class="" href="#选择-provider">选择 Provider</a>
+<a class="lvl-3" href="#方案-aclaude-code-cli推荐新手使用">方案 A：Claude Code CLI（推荐新手使用）</a>
+<a class="lvl-3" href="#方案-banthropic-apiclaude">方案 B：Anthropic API（Claude）</a>
+<a class="lvl-3" href="#方案-copenai-apigpt">方案 C：OpenAI API（GPT）</a>
+<a class="lvl-3" href="#方案-dgoogle-gemini-api">方案 D：Google Gemini API</a>
+<a class="lvl-3" href="#方案-ecodex-cli">方案 E：Codex CLI</a>
+<a class="lvl-3" href="#方案-fgemini-cli">方案 F：Gemini CLI</a>
+<a class="" href="#完整可运行示例">完整可运行示例</a>
+<a class="" href="#核心概念">核心概念</a>
+<a class="lvl-3" href="#核心模式">核心模式</a>
+<a class="" href="#下一步">下一步</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

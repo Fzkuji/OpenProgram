@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TUI upgrade: transcript rendering &amp; interaction · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli" open><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink active" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="tui-upgrade-transcript-rendering-interaction">TUI upgrade: transcript rendering &amp; interaction<a class="header-anchor" href="#tui-upgrade-transcript-rendering-interaction">#</a></h1>
+<p>Status: proposed (2026-06) — research done, implementation not started.
+Companion: <a href="../runtime/user-input-requests.html">user-input-requests.md</a> (mid-run questions; its TUI surface lands here).
+Research notes: <a href="tui-upgrade-references.html">tui-upgrade-references.md</a> (full Claude Code / opencode study + current-state audit).</p>
+<h2 id="goal">Goal<a class="header-anchor" href="#goal">#</a></h2>
+<p>Bring the Ink TUI's transcript display and interaction up to the level of
+Claude Code and opencode: tool calls that collapse without losing
+information, a ctrl+o expanded transcript view, structured diff rendering,
+message queueing while busy, and a keybinding system with discoverability.</p>
+<h2 id="current-state-audit-summary">Current state (audit summary)<a class="header-anchor" href="#current-state-audit-summary">#</a></h2>
+<p>The base is solid: vendored hermes-ink cell-grid renderer with mouse
+tracking + ScrollBox, 4 themes with live preview, rich BottomBar
+(tokens/context%/cache/permission mode), command palette (ctrl+k), fish
+autosuggest, @file completion, per-session drafts, full account/channel
+flows. What's missing is concentrated in the transcript itself:</p>
+<ul>
+<li>Tool output is hard-folded at 6 lines (<code>Turn.tsx</code> MAX_LINES) with <strong>no
+expand affordance at all</strong> — no keybind, no verbose mode.</li>
+<li>Tool args are one truncated line; no per-tool rendering (every tool looks
+the same).</li>
+<li>No diff rendering anywhere; <code>/diff</code> dumps raw <code>git diff</code> text.</li>
+<li>Streaming text shows raw markdown source, then visually jumps when the
+final render lands (<code>Turn.tsx:123</code>); <code>renderMarkdown</code> is un-memoized under
+a full-redraw renderer.</li>
+<li><code>follow_up_question</code> / <code>approval_request</code> envelopes are typed in
+<code>ws/client.ts</code> but <strong>silently dropped</strong> — agent questions time out, the
+<code>ask</code> permission mode is unreachable (shift+tab only cycles bypass↔auto).</li>
+<li><code>/resume</code> rebuilds the transcript from role+content only — tool history
+is lost (<code>useWsEvents.ts:326-336</code>).</li>
+<li>Tool results are matched to calls <strong>by tool name</strong> (server stream events
+carry no call id) — concurrent same-name calls mis-attribute.</li>
+<li>Busy = input locked (<code>submitText</code> returns); no message queueing.</li>
+<li>The <code>ui/</code> kit (ModalProvider/Confirm/Form/MultiSelect/Toast) is built but
+only used by the <code>--demo</code> screen; the REPL still runs a 24-state
+<code>pickerKind</code> enum.</li>
+</ul>
+<h2 id="what-we-adopt-and-from-where">What we adopt, and from where<a class="header-anchor" href="#what-we-adopt-and-from-where">#</a></h2>
+<p>From <strong>Claude Code</strong> (information density — see references doc for file
+pointers into <code>references/claude-code-leaked/src</code>):</p>
+<ol>
+<li><strong>Tool renderer interface.</strong> Each tool gets render hooks (use-line /
+progress / result / error), with one shared shell: status dot
+(<code>⏺</code> queued-dim / running-blink / done-green / error-red) + bold name +
+parenthesized arg summary, result indented under a <code>⎿</code> gutter. Two
+glyphs carry all tool state; no boxes.</li>
+<li><strong>&quot;3 lines + <code>… +N lines (ctrl+o to expand)</code>&quot; truncation</strong>, with their
+two refinements: if only 1 line is hidden, just show it; pre-truncate
+huge outputs by chars and estimate the remaining line count.</li>
+<li><strong>Quantified one-line summaries</strong> per tool instead of ellipsis cuts:
+<code>Read 52 lines</code>, <code>Added 5 lines, removed 2 lines</code> + diff, <code>Found 8 files</code>, <code>Done (12 calls · 48k tokens · 2m 10s)</code> for sub-runs.</li>
+<li><strong>ctrl+o = frozen-snapshot transcript screen</strong> (a separate Screen state,
+not in-place expansion): freeze the message list, re-render everything
+expanded, footer with exit hints; ctrl+e inside = show-all (no
+truncation at all).</li>
+<li><strong>Composite spinner line</strong>: <code>✻ verb… (esc to interrupt · 42s · ↓ 3.2k tokens)</code> with progressive width gating — we already have the spinner
+and the token stats, this is a merge.</li>
+<li><strong>Queued messages while busy</strong>: typing during a run queues the message
+(dim, above the input), ↑ recalls it for editing, queue flushes between
+turns.</li>
+</ol>
+<p>From <strong>opencode</strong> (interaction architecture — see references doc for
+pointers into <code>references/opencode/packages/opencode/src</code>):</p>
+<ol start="7">
+<li><strong>Command registry as single source of truth</strong>: one declaration per
+command (name/title/category/keybind/slash-name/enabled) drives
+keybindings, the ctrl+k palette, slash commands, and live key hints in
+footers. Fixes the existing registry/handler drift (<code>/branch</code> etc.
+implemented but unlisted; <code>/memory</code> etc. listed but stubbed).</li>
+<li><strong>Keybind definitions table + user overrides</strong>: defaults + descriptions
+declared once, generating the config schema (fits the existing
+schema-driven settings design); unknown keys error; <code>&quot;none&quot;</code> disables.</li>
+<li><strong>Question/permission prompts replace the input box</strong> (a three-way slot:
+Prompt | QuestionPrompt | ApprovalPrompt) instead of a modal — the
+transcript stays visible and scrollable, esc semantics stay clear.
+This is the landing site for <a href="http://user-input-requests.md">user-input-requests.md</a>'s TUI surface.</li>
+<li><strong>In-row danger confirmation</strong> (press again to confirm, row turns red)
+instead of nested confirm layers, for destructive picker actions.</li>
+</ol>
+<p>Explicitly <strong>not</strong> adopted: switching renderers (OpenTUI). Our vendored
+hermes-ink already has mouse tracking and ScrollBox; markdown lands via
+marked-terminal; diff we write ourselves. Renderer swap is out of scope.</p>
+<h2 id="phases">Phases<a class="header-anchor" href="#phases">#</a></h2>
+<h3 id="p0-transcript-density-pure-tui-no-server-changes">P0 — transcript density (pure TUI, no server changes)<a class="header-anchor" href="#p0-transcript-density-pure-tui-no-server-changes">#</a></h3>
+<ul>
+<li>Tool render shell: <code>⏺</code> status dot + name + arg summary, <code>⎿</code> result
+gutter; per-tool renderers for bash/read/write/edit/grep + generic
+fallback (<code>tool [k=v, …]</code>).</li>
+<li>3-line truncation with <code>… +N lines (ctrl+o to expand)</code> + the 1-line and
+huge-output refinements.</li>
+<li>ctrl+o transcript screen (frozen snapshot, all expanded, q/esc exits,
+ctrl+e show-all; reuse TranscriptViewport scrolling).</li>
+<li>Diff component (line numbers, add/remove coloring, 3 context lines);
+used by edit-style tool results and <code>/diff</code>.</li>
+<li>Memoize <code>renderMarkdown</code> per turn (cheap, big win under full-redraw).</li>
+</ul>
+<p>Acceptance: a run with mixed tools reads as two-line entries; ctrl+o shows
+everything; an edit shows a colored diff; long bash output folds with an
+accurate +N count.</p>
+<h3 id="p1-interaction">P1 — interaction<a class="header-anchor" href="#p1-interaction">#</a></h3>
+<ul>
+<li>Queued messages while busy + ↑ to edit queue.</li>
+<li>Composite spinner/status line (verb · esc hint · elapsed · ↓ tokens).</li>
+<li>Command registry unification (palette/slash/keys from one table) and the
+keybind definitions table with <code>~/.openprogram</code> overrides; <code>?</code> shortcut
+help generated from the same table.</li>
+</ul>
+<h3 id="p2-fixes-convergence-needs-small-server-changes">P2 — fixes &amp; convergence (needs small server changes)<a class="header-anchor" href="#p2-fixes-convergence-needs-small-server-changes">#</a></h3>
+<ul>
+<li>Server: include a <code>call_id</code> in tool stream events; TUI matches results by
+id (fixes concurrent same-name mis-attribution).</li>
+<li>Server: <code>conversation_loaded</code> carries tool blocks; <code>/resume</code> restores
+tool history.</li>
+<li>Question/approval prompts in the input slot — implements the TUI side of
+<a href="http://user-input-requests.md">user-input-requests.md</a> (handles <code>follow_up_question</code> and
+<code>approval_request</code>, makes the <code>ask</code> permission mode reachable).</li>
+<li>Migrate REPL pickers from <code>pickerKind</code> enum to ModalProvider/Form kit
+(mechanical; do opportunistically per picker).</li>
+</ul>
+<h2 id="risks">Risks<a class="header-anchor" href="#risks">#</a></h2>
+<ul>
+<li>The cell-grid renderer redraws everything per frame; P0 adds heavier
+per-turn rendering — memoization (markdown, diff) is part of P0, not an
+afterthought.</li>
+<li>ctrl+o as a global key must not collide with terminal flow control
+(it doesn't; ctrl+s/ctrl+q do).</li>
+<li>P2's server changes touch <code>_event_parsing.py</code> / dispatcher event
+emission — coordinate with the in-flight event_bus work.</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#goal">Goal</a>
+<a class="" href="#current-state-audit-summary">Current state (audit summary)</a>
+<a class="" href="#what-we-adopt-and-from-where">What we adopt, and from where</a>
+<a class="" href="#phases">Phases</a>
+<a class="lvl-3" href="#p0-transcript-density-pure-tui-no-server-changes">P0 — transcript density (pure TUI, no server changes)</a>
+<a class="lvl-3" href="#p1-interaction">P1 — interaction</a>
+<a class="lvl-3" href="#p2-fixes-convergence-needs-small-server-changes">P2 — fixes &amp;amp; convergence (needs small server changes)</a>
+<a class="" href="#risks">Risks</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

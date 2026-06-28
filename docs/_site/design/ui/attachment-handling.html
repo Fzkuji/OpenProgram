@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>附件处理设计（Web 聊天） · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui" open><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink active" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="附件处理设计web-聊天">附件处理设计（Web 聊天）<a class="header-anchor" href="#附件处理设计web-聊天">#</a></h1>
+<p>综合 Claude Code / opencode / openclaw 三家做法 + OpenProgram 自身约束的统一设计。
+现状基线已提交于 <code>c29ef3dd</code>（图片→vision、文档→绝对路径引用、agent 按需读）；本文是它的下一步演进。</p>
+<h2 id="一句话原则">一句话原则<a class="header-anchor" href="#一句话原则">#</a></h2>
+<p><strong>materialize once to a path; deliver the best block the active model accepts plus a small head preview; let the agent page the rest with its bounded tools.</strong></p>
+<p>附件字节最多落盘一次，用<strong>一个绝对路径</strong>标识；它的内容<strong>怎么</strong>到达模型，每一轮按 <code>(文件类型 × 当前模型声明的输入模态)</code> 重新计算，按 <code>原生 block → ≤4KB 首部预览 → 路径 + agent 分页读</code> 逐级降级。<strong>每个文件的 prompt 成本是 O(1)，与文件大小无关</strong>。同一次上传在 codex/gpt-5.5 上现在就能用，将来换 PDF-native 的 Claude/Gemini 也直接生效，<strong>前端零改动</strong>。</p>
+<p>三层判断（前两层是基线直觉，第三层是新增）：</p>
+<ol>
+<li>是不是图片？→ vision block。</li>
+<li>有没有现成的本机路径？上传/远程渠道 = 没有 → 落盘；<code>@</code>提及/打路径 = 有 → 原地引用。</li>
+<li>能力叠加层：只有当模型声明支持 <code>document</code> 时，才把 PDF 的交付升级成原生 document block。</li>
+</ol>
+<h2 id="决策矩阵权威纯文本对齐列非-markdown-表">决策矩阵（权威，纯文本对齐列，非 markdown 表）<a class="header-anchor" href="#决策矩阵权威纯文本对齐列非-markdown-表">#</a></h2>
+<p><code>DELIVER (now)</code> 基于默认 codex/gpt-5.5：<code>model.input=[&quot;text&quot;,&quot;image&quot;]</code>，无 <code>document</code>。
+某一行的交付方式<strong>只有</strong>当 <code>model.input</code> 声明了对应模态时才会翻转。</p>
+<pre><code>来源          文件类型      落盘?                     DELIVER(现在, codex/gpt-5.5)                  READ 路径
+------------  ------------  ------------------------  -------------------------------------------  ----------------------------
+upload        image         否 (内存→b64 直发)        ImageContent block (像素)                    模型 vision 原生
+upload        text/code     是 attachments/&lt;safe&gt;     [attachment:..@/abs] + ≤4KB 首部预览         read 工具 2000行/200KB 分页
+upload        pdf           是 attachments/&lt;safe&gt;     [attachment:..(P页)@/abs] + 第1页首部+大纲   pdf 工具 80KB/页窗口
+upload        其它二进制    是 attachments/&lt;safe&gt;     [attachment:..@/abs] 仅提及（无预览）        bash file/strings/xxd
+@-mention     image         否 (重读+b64)             ImageContent block                           模型 vision 原生
+@-mention     text/code     否 (已在磁盘)             [attachment:..@/abs] + ≤4KB 首部             read 分页
+@-mention     pdf           否 (已在磁盘)             [attachment:..(P页)@/abs] + 第1页首部        pdf 分页
+@-mention     其它二进制    否 (已在磁盘)             [attachment:..@/abs] 仅提及                  bash
+打路径        任意          = @-mention               file-resolve 把裸路径按对应类型同等处理
+远程渠道      image         是 attachments/&lt;safe&gt;     ImageContent（从落盘字节重读）               模型 vision 原生
+远程渠道      text/pdf      是 attachments/&lt;safe&gt;     [attachment:..@/abs] + 首部预览（同 upload）  read/pdf 分页
+远程渠道      其它二进制    是 attachments/&lt;safe&gt;     [attachment:..@/abs] 仅提及                  bash
+</code></pre>
+<p><strong>能力更强的模型上会翻转的格子（单一规则，任意来源）：</strong></p>
+<pre><code>pdf, model.input 含 &quot;document&quot;, size ≤ NATIVE_DOC_INLINE_CAP(10MB 且 provider 页数上限)
+    → DELIVER 变成原生 document content block（整文件 base64，从落盘路径读出来构建）；
+      [attachment:..@/abs] 提及保留（驱动 chip + 让 agent 还能再读一段）；
+      首部预览被抑制（模型已拿到整文件）。
+pdf, 含 &quot;document&quot; 但 size &gt; NATIVE_DOC_INLINE_CAP
+    → 留在&quot;现在&quot;那列（路径 + 首部预览）；不构建原生 block（避免炸上下文）。
+image, model.input 不含 &quot;image&quot;（退化的 codex 配置）
+    → png 存盘 + [attachment:..@/abs — 用 image_analyze 查看]
+      （修掉 providers/_shared/openai_responses.py:120-121 在 image 不在 model.input 时静默丢弃 input_image 的 bug）。
+</code></pre>
+<p><strong>轴的纪律</strong>：<code>来源</code>轴只决定字节<strong>落在哪</strong>（落盘 vs 原地引用）；<code>(文件类型 × 能力)</code> 这一对是<strong>唯一</strong>决定 DELIVER 的东西。</p>
+<h2 id="与-claude-codeopencodeopenclaw-的关系">与 Claude Code/opencode/openclaw 的关系<a class="header-anchor" href="#与-claude-codeopencodeopenclaw-的关系">#</a></h2>
+<ul>
+<li><strong>图片走 vision</strong>：三家 + 我们一致。</li>
+<li><strong>PDF 原生 document block</strong>：Claude Code/opencode/openclaw 的首选路径。OpenProgram 的能力叠加层让这条路在配置了 doc-capable 模型时<strong>自动生效</strong>——这就是&quot;博采&quot;的核心，把它们最好的那条路接进来但不强求。</li>
+<li><strong>路径 + 分页工具读</strong>：所有人在 agent <strong>自己任务中途</strong>探索文件时都这么做。OpenProgram 在 codex 上把<strong>用户附件</strong>也走这条，是因为 codex 收不了 document block——但有了 P0 的首部预览，可靠性差距被补上。</li>
+<li><strong>落盘到管理目录</strong>：openclaw 的 claim-check（入站只有字节没有路径）。我们用 per-session git workdir 而非全局 + TTL，更适合 agentic（就是 agent 的 cwd、每轮 git 提交、可重放）。</li>
+<li><strong>被否决的做法</strong>：opencode/P3 的&quot;提交时合成一个假的 read() tool_use+tool_result 把内容塞进去&quot;——否决，因为(a)要镜像真实 read/pdf 工具的上限会漂移、(b)一旦换成原生 block 就成死重、(c)增加提交时同步延迟。改用被动的 <code>&lt;attachment-preview&gt;</code> 内容片段，常数成本给模型第一眼。</li>
+</ul>
+<h2 id="大文件保证no-context-blowup-invariant">大文件保证（no-context-blowup invariant）<a class="header-anchor" href="#大文件保证no-context-blowup-invariant">#</a></h2>
+<p>后端塞进 prompt 的<strong>只可能</strong>是：(a) 一个 image block，(b) 一次性 ≤4KB 首部预览（仅首轮），(c) 一条约 90 字节的路径提及，或 (d) 同时受&quot;模型能力 + size≤10MB&quot;双重门控的原生 doc block。其它一切只通过 agent 自己的<strong>有界分页工具</strong>逐页进上下文。</p>
+<p>实测上限（源码核验）：<code>pdf</code> 工具 80KB 字符/次（按页 offset/limit）；<code>read</code> 工具 2000 行/次、结果上限 200KB；<code>file_search.py</code> 的 256KB 只喂预览、永不喂交付。</p>
+<p>十个 30MB PDF 一起拖进来：那一轮约 <code>10×(90B 提及 + 4KB 预览) ≈ 41KB</code>，之后为零——<strong>与大小无关</strong>。500 页 PDF 在 codex 上：落盘一次，提及带&quot;500 pages&quot;，预览 = 第1页文本 + 每页首行大纲（截到约 50 条后&quot;…(450 more pages)&quot;），attach 时 prompt 成本 ≤4KB+90B，8MB 本体永不进上下文；agent 用 <code>pdf(offset=N,limit=20)</code> 窗口、靠大纲<strong>直接跳到</strong>相关页区，而不是顺序扫。</p>
+<h2 id="存储-去重-安全-生命周期">存储 / 去重 / 安全 / 生命周期<a class="header-anchor" href="#存储-去重-安全-生命周期">#</a></h2>
+<ul>
+<li><strong>位置</strong>：per-session <code>&lt;state_dir&gt;/sessions/&lt;id&gt;/workdir/attachments/&lt;safe-name&gt;</code>（不变）。它就是 agent 的 cwd、每轮 git 提交——附件成为会话可重放状态的一部分。全局 media store 会破坏这两个不变式。</li>
+<li><strong>谁落盘</strong>：只有无路径来源（浏览器上传、远程渠道）。<code>@</code>提及/打路径已在磁盘，原地引用、零复制。</li>
+<li><strong>命名</strong>：保持基线 <code>_safe_attach_name()</code>——<code>os.path.basename</code> + 非 <code>alnum._- 空格</code> 替成 <code>_</code>、120 字符上限、永不空。人类可读，让 agent 的 <code>./attachments/spec.pdf</code> 直觉成立。不用 sha 前缀名。</li>
+<li><strong>去重（新增）</strong>：写盘前对解码字节 sha256，维护 <code>attachments/.opdedup.json {sha256: 相对名}</code>。命中则重新 stat+hash 确认同一文件后<strong>复用</strong>，不写重复。幂等：重复拖同一篇论文、或一轮重试，都是 no-op。<strong>修掉基线 bug</strong>：当前 <code>-N</code> no-clobber 循环对同名文件无字节比较，重拖相同文件会产生第二份副本。仅会话内去重（workdir 是独立 git 仓库，不做跨会话）。索引尽力而为：丢失/损坏只会多写一份（无害），绝不会错映射（复用前必校验）。</li>
+<li><strong>超限（新增）</strong>：硬上限 <code>MAX_ATTACH_BYTES=32MB</code>/文件，在 <code>write_bytes</code> 前<strong>和</strong> WS intake（base64 过 socket 之前）双重检查。超限：跳过保存，提及改写成&quot;— too large (&gt;32MB), not stored&quot;，<strong>告诉模型</strong>，绝不给死路径。图片 5MB/≤2000px（先降采样）。每轮聚合上限 64MB。注意 b64 ~1.33× 膨胀。</li>
+<li><strong>安全/逃逸</strong>（源码核验）：上传/远程根本不带源路径（沙箱）+ basename 清洗 → 结构上无法逃逸；<code>@</code>/打路径走 <code>/api/file-resolve</code> 的 <code>(cwd/path).resolve()</code> + <code>is_relative_to(cwd)</code> → 越界 400。<code>.resolve()</code> 会完整解析符号链接，所以&quot;根内符号链接指向根外&quot;<strong>已经</strong>被拒——P1/P4 担心的 symlink gap 在现有代码里不存在。</li>
+<li><strong>GC</strong>：附件已 git 提交，删它会破坏重放——所以 GC 是会话级懒回收：删会话 → <code>rm -rf workdir</code> 连附件一起带走。无 web 路径 TTL。会话加载时清理 dedup 索引中目标已失踪的条目。openclaw 的 2 分钟入站 TTL 只适用于将来远程渠道落盘前的 staging 区。</li>
+</ul>
+<h2 id="显示层">显示层<a class="header-anchor" href="#显示层">#</a></h2>
+<ul>
+<li><strong>chip</strong>：解析 <code>[attachment: name (type, KB[, P pages|L lines]) @ /abs]</code> → 文件名 + 类型徽章 + 大小 + <strong>新增 scope 徽章</strong>（&quot;500 pages&quot;/&quot;200K lines&quot;）；<code>@ /abs</code> 后缀显示时剥掉。<code>&lt;attachment-preview&gt;…&lt;/…&gt;</code> 片段像提及一样从气泡里剥掉——用户看到 chip,不是 4KB 首部。</li>
+<li><strong>交付模式子标签</strong>（UX 诚实）：从 <code>delivery_mode</code> 派生&quot;read on demand&quot;/&quot;sent inline&quot;/&quot;previewed first N lines&quot;,让用户明确知道模型到底拿到了什么,不用猜&quot;它看见我的文件没&quot;。</li>
+<li><strong>乐观气泡时序</strong>（关键）：前端<strong>永远不知道</strong>落盘后的绝对路径(<code>@/abs</code> 是 <code>_persist_doc_attachments</code> 在 WS 消息处理后追加的)。所以乐观气泡的 chip 必须用<strong>客户端数据</strong>(<a href="http://file.name/size/type/b64">file.name/size/type/b64</a>)渲染,而非提及文本;重载时再用最终存储文本的提及解析。两者必须渲染成同一个 chip,对账键 = 客户端算的 sha8。因此前端发的 <code>[attachment: name (type, KB)]</code> 是<strong>故意无路径</strong>的,chip 解析器要对<strong>无路径(在途)和有路径(改写后)两种形式都渲染 chip</strong>。</li>
+<li><strong>预览弹窗</strong>:本地完整解码,永不发送。HUMAN 客户端滚完整文件,MODEL 只看了 4KB 首部——这就是回报。</li>
+<li><strong>侧边栏标题</strong>:<code>_title_from_text</code> 在 50 字截断前剥掉提及(不变);新增也剥掉 <code>&lt;attachment-preview&gt;</code>。</li>
+</ul>
+<h2 id="与基线-c29ef3dd-的-diff">与基线 c29ef3dd 的 diff<a class="header-anchor" href="#与基线-c29ef3dd-的-diff">#</a></h2>
+<p><strong>基线已做（源码核验,不要重建）</strong>:上传字节落盘到 workdir/attachments;<code>_safe_attach_name</code> 清洗 + 120 上限;<code>-N</code> no-clobber;<code>[attachment: name (type, KB) @ /abs]</code> 提及 + 后端补 @path;首轮 workdir 竞态 fallback;image→ImageContent;<code>@</code>/打路径零复制 + file-resolve 逃逸检查(含 symlink);<code>_title_from_text</code> 截断前剥提及;<code>user_msg[&quot;extra&quot;]</code> 附件清单;文档在进 dispatcher 前从 req.attachments 剥除;validate 只查 user 消息。</p>
+<p><strong>净新增</strong>:</p>
+<ol>
+<li><code>providers/types.py</code> Model.input Literal 加 <code>&quot;document&quot;</code>。</li>
+<li><code>validate_modalities.py</code> <code>_MODALITY_TYPES</code> 加 <code>&quot;document&quot;</code>。</li>
+<li>新纯函数 <code>choose_delivery(file_kind, size, model) → &quot;native_image&quot;|&quot;native_document&quot;|&quot;path_preview&quot;|&quot;path_only&quot;</code>。</li>
+<li>dispatcher ~1888 把 image-only 循环换成按 <code>choose_delivery</code> 的逐附件 switch。</li>
+<li><code>_persist_doc_attachments</code> 加:32MB 上限 + &quot;too large&quot; 改写;sha256 会话内去重;页/行数<strong>注入到改写正则捕获的括号组里</strong>(不是括号外追加,保持单 token 不变式 + 各 strip 正则继续匹配);一次性 <code>&lt;attachment-preview&gt;</code>(≤4KB 首部,先字节后行截断;二进制→bash 提示无预览);image-on-incapable-model 存盘+analyze 提示。</li>
+<li><code>handle_chat</code> intake 加 32MB/64MB 上限。</li>
+<li><code>handle_chat</code> ~307 让&quot;进 dispatcher 前剥文档&quot;<strong>按能力条件化</strong>(模型支持 document 时保留,以便下游构建原生 block)。</li>
+<li><code>/api/file-resolve</code> 返回里加页/行数 + 截断首部,让 <code>@</code>提及预览和上传预览一致(无需改 symlink)。</li>
+<li><code>user-attachments.tsx</code> 解析 count 成 scope 徽章;剥 <code>&lt;attachment-preview&gt;</code>;加交付模式子标签;无路径/有路径两形式都渲染 chip。</li>
+<li><code>use-composer-attachments.ts</code>/<code>file-tiles.tsx</code> 每 chip 状态/错误徽章 + &quot;counting…&quot;乐观占位 + &quot;already attached&quot;去重反馈(键=客户端 sha8);弹窗&quot;模型预览了前 N 行&quot;。</li>
+<li><code>_title_from_text</code> 扩展 strip 也去掉 <code>&lt;attachment-preview&gt;</code>。</li>
+</ol>
+<p><strong>线上保持不变</strong>:<code>[attachment: … @ /abs]</code> token(仅在括号内可选加 count)。codex/gpt-5.5 行为与今天逐字节相同,<strong>外加</strong>首部预览 + count;原生 document 分支在配置 doc-capable 模型前休眠。</p>
+<h2 id="分阶段计划">分阶段计划<a class="header-anchor" href="#分阶段计划">#</a></h2>
+<p><strong>P0 — 现在就建（对默认 codex/gpt-5.5 端到端可用，全部相对基线净新增）</strong></p>
+<ul>
+<li><code>_persist_doc_attachments</code>:32MB 上限 + &quot;too large&quot;;sha256 会话内去重;页/行数注入括号组;一次性 <code>&lt;attachment-preview&gt;</code>(≤4KB,先字节后行;二进制→bash 提示);image-on-incapable 存盘+analyze。</li>
+<li><code>handle_chat</code>:WS intake 32MB/64MB 上限。</li>
+<li><code>choose_delivery()</code> 纯函数 + 接进 dispatcher switch(native_image 不变;path_preview/path_only 为活分支;native_document 是降级到 path_preview 的守卫桩)。</li>
+<li><code>types.py</code> + <code>validate_modalities.py</code> 加 <code>&quot;document&quot;</code>(定义接缝;codex 上无害,因为没有模型声明它)。</li>
+<li><code>/api/file-resolve</code> 返回 count + 截断首部。</li>
+<li>前端:scope 徽章 + 剥 <code>&lt;attachment-preview&gt;</code> + 每 chip 状态/错误 + &quot;counting…&quot;乐观 + &quot;already attached&quot; + 无路径/有路径 chip 一致。</li>
+<li><code>_title_from_text</code> 扩展 strip。</li>
+<li><strong>价值</strong>:中小文档免费拿到首部预览(降延迟、模型有 gist);大文件靠路径+有界工具保持 O(1) prompt 成本;超限被告知-不存储;去重修掉基线相同字节双拷;能力接缝就位。</li>
+<li><strong>验证</strong>(按 hard self-verify 规则):重启 worker、curl healthz,再用 chrome MCP 在 fresh session 上走真实 WS:小 .txt(预览出现、chip 干净)、500 页 PDF(count 徽章、第1页大纲、不炸上下文)、超限文件(&quot;too large&quot; chip)、<code>@</code>提及(零复制、count+预览),确认侧边栏标题干净、无 500/build overlay。</li>
+</ul>
+<p><strong>P1 — 推迟（需配置 doc-capable 模型；接缝在 P0 已建）</strong></p>
+<ul>
+<li>各 provider 的原生 document block 构建器(Anthropic document / Gemini inline_data application/pdf 线格式),挂在 <code>choose_delivery==&quot;native_document&quot;</code> + size 守卫后。</li>
+<li>让 <code>chat.py:307</code> 的&quot;进 dispatcher 前剥文档&quot;按能力条件化。</li>
+<li>推迟原因:今天没有配置的模型 input 含 document,无法对真实默认端到端测;且需各 provider 请求构建器 + 核实原生 size 上限。</li>
+</ul>
+<p><strong>P2 — 推迟（需远程渠道上线）</strong></p>
+<ul>
+<li>openclaw 式远程入站 staging 目录 + 2 分钟 TTL GC + claim-check + <code>media://</code> 间接 + 渠道适配器(discord download_attachment / wechat)把入站字节接进同一个 <code>_persist</code> 保存调用。保存+提及+预览的表示已能容纳&quot;只有字节&quot;的来源,只差入站管道 + staging 生命周期。</li>
+<li>同时推迟:扫描版/纯图 PDF 的页图 fallback;xlsx/docx 结构化抽取(当二进制→路径);接近 32MB 的分块/可续传上传 + WS 最大帧上调;每会话附件配额提示 UI;跨会话全局去重(故意永不做——per-session-workdir 不变式)。</li>
+</ul>
+<h2 id="待定不阻塞-p0">待定（不阻塞 P0）<a class="header-anchor" href="#待定不阻塞-p0">#</a></h2>
+<p>两个可调常量，都有可辩护的默认、都是单一配置旋钮而非架构分叉：</p>
+<ol>
+<li><code>PREVIEW_CAP</code>（建议 4KB / ~60 行）。太低给将将超标的小文档多一次 read 往返;太高每次 attach 多漏点正文。先 4KB,可调。</li>
+<li><code>MAX_ATTACH_BYTES</code>（建议 32MB）。压制 git workdir blob 膨胀(提交进 git 的 blob 在历史里永久,是真实成本)vs 容纳更大真实 PDF。先 32MB,可调。</li>
+</ol>
+<p>唯一真正面向产品、可推迟到实际触发时再定的问题:大二进制永久累积在 per-session git 历史里(是&quot;workdir = 自包含已提交状态&quot;不变式的代价)是否可接受,还是将来要一个 git 之外的内容存储——但那会牺牲重放可复现性,所以现在的设计<strong>有意保留</strong>这个不变式,不是 P0 的待决项。</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#一句话原则">一句话原则</a>
+<a class="" href="#决策矩阵权威纯文本对齐列非-markdown-表">决策矩阵（权威，纯文本对齐列，非 markdown 表）</a>
+<a class="" href="#与-claude-codeopencodeopenclaw-的关系">与 Claude Code/opencode/openclaw 的关系</a>
+<a class="" href="#大文件保证no-context-blowup-invariant">大文件保证（no-context-blowup invariant）</a>
+<a class="" href="#存储-去重-安全-生命周期">存储 / 去重 / 安全 / 生命周期</a>
+<a class="" href="#显示层">显示层</a>
+<a class="" href="#与基线-c29ef3dd-的-diff">与基线 c29ef3dd 的 diff</a>
+<a class="" href="#分阶段计划">分阶段计划</a>
+<a class="" href="#待定不阻塞-p0">待定（不阻塞 P0）</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Next-step decision making(decision.make / exec(choices=)) · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink active" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="next-step-decision-makingdecisionmake-execchoices">Next-step decision making(decision.make / exec(choices=))<a class="header-anchor" href="#next-step-decision-makingdecisionmake-execchoices">#</a></h1>
+<p>本文档描述 OpenProgram 里的<strong>下一步决策</strong>机制:agentic 函数把&quot;下一步做什么&quot;交给 LLM 决定——给它一组选项,它选一个,框架把这个选择直接解析成&quot;下一步的结果&quot;。这套机制和 provider 原生的 tool call 是两条独立的路。</p>
+<p>实现在框架内的 <code>openprogram/agentic_programming/decision.py</code>。两个入口,共用同一套选项形态和解析:</p>
+<ul>
+<li><code>decision.make(prompt, options)</code> —— 纯决策,模型不干活、直接挑。</li>
+<li><code>runtime.exec(..., choices=options)</code> —— 模型先跑一个完整 turn(推理、调工具),收尾才是一个决策。</li>
+</ul>
+<p><code>decision.make</code> 需要 runtime 去发模型调用,但 runtime 从 <code>@agentic_function</code> 装饰器设好的 <code>_current_runtime</code> ContextVar 自动取,所以在 agentic 函数内部调它不用传 runtime;在 agentic 函数外面调才需要显式传 <code>runtime=</code>。</p>
+<h2 id="和原生-tool-call-的区别">和原生 tool call 的区别<a class="header-anchor" href="#和原生-tool-call-的区别">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>原生 tool call</th>
+<th>下一步决策(本机制)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>选项怎么给模型</td>
+<td>provider 协议的 <code>tools</code> 字段</td>
+<td>prompt 里的一段文本菜单</td>
+</tr>
+<tr>
+<td>模型怎么表达选择</td>
+<td>协议层结构化 <code>ToolCall</code></td>
+<td>回复正文里的一段 JSON</td>
+</tr>
+<tr>
+<td>谁解析</td>
+<td>provider / agent_loop</td>
+<td><code>decision.py</code> 自己解析</td>
+</tr>
+<tr>
+<td>选项能不能是非函数</td>
+<td>不能,必须是工具</td>
+<td>能,支持值选项</td>
+</tr>
+<tr>
+<td>依赖</td>
+<td>provider 支持 tool use</td>
+<td>无,纯文本即可</td>
+</tr>
+</tbody>
+</table>
+<p>选这套机制的场景:不想依赖 provider 的 tool use 支持;或者需要&quot;选项不是函数&quot;——一个直接返回某个值的决策(典型是 <code>done</code> / <code>escalate</code> 这类路由标记)。</p>
+<h2 id="入口一decisionmake-纯决策">入口一:<code>decision.make</code> —— 纯决策<a class="header-anchor" href="#入口一decisionmake-纯决策">#</a></h2>
+<p><code>@agentic_function</code> 里调一次 <code>decision.make</code>,不传 runtime、不写任何 <code>if</code>:</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.agentic_programming</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span><span class="p">,</span> <span class="n">decision</span>
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">route_message</span><span class="p">(</span><span class="n">msg</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">decision</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="s2">&quot;挑一个方式处理这条消息。&quot;</span><span class="p">,</span> <span class="p">{</span>
+        <span class="s2">&quot;analyze&quot;</span><span class="p">:</span>  <span class="n">analyze_sentiment</span><span class="p">,</span>        <span class="c1"># 一个函数</span>
+        <span class="s2">&quot;fallback&quot;</span><span class="p">:</span> <span class="n">fallback_reply</span><span class="p">,</span>           <span class="c1"># 一个函数</span>
+        <span class="s2">&quot;done&quot;</span><span class="p">:</span>     <span class="s2">&quot;CONVERSATION_OVER&quot;</span><span class="p">,</span>      <span class="c1"># 一个值</span>
+    <span class="p">})</span>
+</code></pre>
+<p><code>decision.make</code> 渲染菜单、调模型、解析回复,然后<strong>把选择直接解析成下一步的结果</strong>:</p>
+<ul>
+<li>LLM 选了函数 → 该函数被执行(带上解析+注入好的参数),返回它的返回值。</li>
+<li>LLM 选了值 → 该值原样返回。</li>
+</ul>
+<p>两种情况都返回&quot;下一步的结果&quot;本身。调用方不检查&quot;选的是哪个&quot;、不按类型分支——决策本身就是分支,所以没有 <code>if</code> 要写。</p>
+<h2 id="入口二runtimeexecchoices-先干活再决策">入口二:<code>runtime.exec(choices=...)</code> —— 先干活、再决策<a class="header-anchor" href="#入口二runtimeexecchoices-先干活再决策">#</a></h2>
+<p>更常见的需求是:模型先跑一个完整 turn(推理、调工具、该干什么干什么),<strong>收尾时</strong>的 return 才是一个决策。用 <code>exec</code> 的 <code>choices=</code> 参数:</p>
+<pre><code class="language-python"><span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">handle_ticket</span><span class="p">(</span><span class="n">ticket</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;读工单、查资料、然后决定派给哪个流程。&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;处理这个工单:</span><span class="si">{</span><span class="n">ticket</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="n">toolset</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">,</span>          <span class="c1"># 前面:模型用工具查资料、跑命令</span>
+        <span class="n">choices</span><span class="o">=</span><span class="p">{</span>                   <span class="c1"># 收尾:return 必须是这里选一个</span>
+            <span class="s2">&quot;refund&quot;</span><span class="p">:</span>    <span class="n">issue_refund</span><span class="p">,</span>
+            <span class="s2">&quot;escalate&quot;</span><span class="p">:</span>  <span class="n">escalate_to_human</span><span class="p">,</span>
+            <span class="s2">&quot;close&quot;</span><span class="p">:</span>     <span class="p">{</span><span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;closed&quot;</span><span class="p">},</span>
+        <span class="p">},</span>
+    <span class="p">)</span>
+</code></pre>
+<p><code>exec(choices=...)</code> 做的事:把选项菜单和一句&quot;先干活、最后用 JSON 挑一个收尾&quot;的指令(<code>DECISION_FINISH_INSTRUCTION</code>)拼进 prompt,然后跑正常的 exec turn——<code>tools</code> / <code>toolset</code> 给的工具该调调、模型该推理推理。turn 结束时模型的最终回复必须是一个 <code>{&quot;call&quot;: ...}</code> JSON,<code>exec</code> 用 <code>resolve_decision</code> 把它解析掉:选了函数就执行返回结果,选了值就返回值。</p>
+<p><code>exec</code> 不带 <code>choices</code> 时返回原始回复文本;带 <code>choices</code> 时返回解析后的决策结果。<code>decision.make(prompt, options)</code> 等价于&quot;没有前置工作&quot;的 <code>exec(choices=options)</code>。</p>
+<h2 id="选项容器">选项容器<a class="header-anchor" href="#选项容器">#</a></h2>
+<p>每个选项像一个 tool:有名字、描述,以及一份<strong>负载 schema</strong>。三种选项:</p>
+<table>
+<thead>
+<tr>
+<th>选项类型</th>
+<th>选中后</th>
+<th>schema 来自</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>函数选项</td>
+<td>执行函数,返回它的返回值</td>
+<td>函数签名</td>
+</tr>
+<tr>
+<td>值选项</td>
+<td>返回那个固定值</td>
+<td>无</td>
+</tr>
+<tr>
+<td>schema 选项</td>
+<td>模型按 schema 填一份结构化数据,返回 <code>{&quot;decision&quot;: 名字, **填好的字段}</code></td>
+<td>你显式声明的 schema</td>
+</tr>
+</tbody>
+</table>
+<p><code>options</code> 可以是 dict 或 list。</p>
+<p><strong>dict 形式</strong> <code>{名字: handler}</code>,key 是选项名:</p>
+<pre><code class="language-python"><span class="n">decision</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="p">{</span>
+    <span class="s2">&quot;retry&quot;</span><span class="p">:</span>     <span class="n">retry_fn</span><span class="p">,</span>                       <span class="c1"># 函数选项</span>
+    <span class="s2">&quot;skip&quot;</span><span class="p">:</span>      <span class="s2">&quot;SKIPPED&quot;</span><span class="p">,</span>                      <span class="c1"># 值选项</span>
+    <span class="s2">&quot;abort&quot;</span><span class="p">:</span>     <span class="p">(</span><span class="n">AbortSignal</span><span class="p">(),</span> <span class="s2">&quot;无法继续时选&quot;</span><span class="p">),</span>  <span class="c1"># 值选项 + 描述</span>
+    <span class="s2">&quot;emit_plan&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;产出一份计划。&quot;</span><span class="p">,</span> <span class="p">{</span>              <span class="c1"># schema 选项:(&quot;描述&quot;, schema)</span>
+        <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[{</span><span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">}],</span>
+        <span class="s2">&quot;rationale&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">}),</span>
+<span class="p">})</span>
+</code></pre>
+<p><strong>list 形式</strong>——每项是可调用对象、<code>(callable, &quot;描述&quot;)</code>、或字符串选项形态(<code>&quot;name&quot;</code> / <code>(&quot;name&quot;, &quot;描述&quot;)</code> / <code>(&quot;name&quot;, &quot;描述&quot;, schema)</code>)。list 形式函数选项的名字取函数 <code>__name__</code>。</p>
+<h3 id="schema-的结构">schema 的结构<a class="header-anchor" href="#schema-的结构">#</a></h3>
+<p>schema 是 <code>{字段名: 字段类型}</code>,字段类型可以<strong>递归嵌套</strong>,这样一个选项就能让模型返回任意结构化 JSON:</p>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>字段: str</code> (任意 Python 类型)</td>
+<td>该类型的标量</td>
+</tr>
+<tr>
+<td><code>字段: &quot;描述&quot;</code></td>
+<td>带描述的 <code>str</code> 标量</td>
+</tr>
+<tr>
+<td><code>字段: [子schema]</code></td>
+<td>列表,每个元素匹配 <code>子schema</code></td>
+</tr>
+<tr>
+<td><code>字段: {子字段: ...}</code></td>
+<td>嵌套对象(键名是子字段名)</td>
+</tr>
+<tr>
+<td><code>字段: {&quot;type&quot;: T, &quot;description&quot;: ..., &quot;options&quot;: [...]}</code></td>
+<td>带类型/描述/枚举的元描述</td>
+</tr>
+</tbody>
+</table>
+<p><code>parse_args</code> 解析后会按 schema <strong>递归校验</strong>类型与嵌套结构;<code>render_options</code> 渲染的 <code>Call:</code> 示例也带嵌套占位形状。这让&quot;有限分支选择&quot;和 tool calling 对齐——每个分支带任意结构的负载。需求若是&quot;压根不分支、永远返回同一份结构&quot;,就用单选项的 <code>decision.make</code>,或直接 <code>exec(response_format=...)</code>。</p>
+<h2 id="内部步骤">内部步骤<a class="header-anchor" href="#内部步骤">#</a></h2>
+<h3 id="1-render_options-渲染菜单">1. <code>render_options</code> 渲染菜单<a class="header-anchor" href="#1-render_options-渲染菜单">#</a></h3>
+<p>对每个选项输出:签名 <code>name(参数: 类型, ...)</code>、描述、逐参数明细、一行 <code>Call:</code> JSON 示例。只显示 <code>source=&quot;llm&quot;</code> 的参数——<code>runtime</code> / <code>context</code> 注入的参数对 LLM 隐藏。参数若声明了 <code>options</code>(枚举),明细里列出可选值。<code>Call:</code> 示例的占位值是 JSON 原生字面量(<code>0</code> / <code>false</code> / <code>[]</code> / <code>{}</code> / <code>&quot;&lt;str&gt;&quot;</code>)。</p>
+<h3 id="2-调模型">2. 调模型<a class="header-anchor" href="#2-调模型">#</a></h3>
+<p><code>decision.make</code> 直接 <code>runtime.exec(prompt + 菜单)</code>;<code>exec(choices=)</code> 是把菜单拼进本来就要发的那次 turn。</p>
+<h3 id="3-parse_args-解析与校验">3. <code>parse_args</code> 解析与校验<a class="header-anchor" href="#3-parse_args-解析与校验">#</a></h3>
+<ul>
+<li><code>extract_action</code> 从 <code>```json</code> 代码块或裸文本里抠出带 <code>call</code> 键的 JSON。<code>call</code> 键有别名 <code>action</code> / <code>function</code> / <code>tool</code>,任一都接受。</li>
+<li><code>call</code> 不在 registry → <code>_ParseError(&quot;unknown_call&quot;)</code>。</li>
+<li><code>_validate_field</code> 逐字段校验:类型(<code>str/int/float/bool/list/dict</code>,<code>bool</code> 不当 <code>int</code>,<code>float</code> 接受 <code>int</code>)、枚举(<code>options</code>)。</li>
+<li>函数选项:按签名补 <code>source=&quot;context&quot;</code> 参数(从 <code>context</code> dict 取)、注入 <code>runtime</code> 类参数、丢掉签名外的多余字段、检查必填(签名无默认值的)。</li>
+<li>值/文本选项:声明的 schema 字段全部必填,丢掉 schema 外的幻觉字段。</li>
+<li>返回 <code>(chosen, kwargs)</code>——函数选项的 <code>chosen</code> 是原函数;值/文本选项的 <code>chosen</code> 是名字字符串。</li>
+</ul>
+<h3 id="4-解析失败重试">4. 解析失败重试<a class="header-anchor" href="#4-解析失败重试">#</a></h3>
+<p>任一步抛 <code>_ParseError</code>,<code>parse_args</code> 走重试(默认 <code>max_retries=1</code>,设 0 关闭):用 <code>runtime.exec</code> 把&quot;上次回复 + 错误原因 + 重渲染的菜单&quot;发给 LLM 让它重选。这次重试也是一次模型调用,照样落进 DAG。重试全部用尽仍失败 → 抛 <code>DecisionError</code>,带最后一次错误类型、消息、回复头部。</p>
+<p><code>DecisionError</code> 继承 <code>ValueError</code>(老的 <code>except ValueError</code> 仍能接住),调用方可以 <code>except DecisionError</code> 精确捕获&quot;模型始终没选出合法选项&quot;这一种情况、不误伤无关的 <code>ValueError</code>——例如让某个 planner 把它当作&quot;结束这一步&quot;。框架到&quot;抛清晰异常&quot;为止,接住后怎么收场是调用方的事,框架不内置任何 fallback。</p>
+<h3 id="5-resolve_decision-解析成结果">5. <code>resolve_decision</code> 解析成结果<a class="header-anchor" href="#5-resolve_decision-解析成结果">#</a></h3>
+<p><code>chosen</code> 是函数就 <code>chosen(**kwargs)</code> 执行并返回结果;<code>chosen</code> 是字符串就在值表里查出对应值返回(值选项若声明了 schema,则返回 <code>{&quot;decision&quot;: 名字, **kwargs}</code>)。</p>
+<h2 id="与-tool-call-循环的关系">与 tool call 循环的关系<a class="header-anchor" href="#与-tool-call-循环的关系">#</a></h2>
+<p>这套机制和 <code>tool-calling.md</code> 里 <code>agent_loop.py</code> 的 tool call 循环不冲突,是并列的两种&quot;让模型选下一步&quot;的实现。<code>@agentic_function</code> 既可以作为 <code>exec(tools=[...])</code> 的原生工具,也可以作为决策选项——同一个函数,两套调用路径。选哪套取决于:要不要依赖 provider tool use、要不要&quot;选项是个值而不是函数&quot;、要不要把每次决策和重试都作为可追溯的 DAG 节点。</p>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#和原生-tool-call-的区别">和原生 tool call 的区别</a>
+<a class="" href="#入口一decisionmake-纯决策">入口一:decision.make —— 纯决策</a>
+<a class="" href="#入口二runtimeexecchoices-先干活再决策">入口二:runtime.exec(choices=...) —— 先干活、再决策</a>
+<a class="" href="#选项容器">选项容器</a>
+<a class="lvl-3" href="#schema-的结构">schema 的结构</a>
+<a class="" href="#内部步骤">内部步骤</a>
+<a class="lvl-3" href="#1-render_options-渲染菜单">1. render_options 渲染菜单</a>
+<a class="lvl-3" href="#2-调模型">2. 调模型</a>
+<a class="lvl-3" href="#3-parse_args-解析与校验">3. parse_args 解析与校验</a>
+<a class="lvl-3" href="#4-解析失败重试">4. 解析失败重试</a>
+<a class="lvl-3" href="#5-resolve_decision-解析成结果">5. resolve_decision 解析成结果</a>
+<a class="" href="#与-tool-call-循环的关系">与 tool call 循环的关系</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>

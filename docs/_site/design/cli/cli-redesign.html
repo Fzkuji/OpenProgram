@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="../../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenProgram CLI / TUI Redesign · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="../../assets/site.css">
+<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar"><a class="navlink" href="../../README.html">Documentation</a>
+<a class="navlink" href="../../API.html">API Reference</a>
+<a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html">Claude Code Integration | Claude Code 集成指南</a>
+<a class="navlink" href="../../GETTING_STARTED.html">Getting Started | 快速上手</a>
+<a class="navlink" href="../../installing-harnesses.html">Harnesses: install, manage, write your own</a>
+<a class="navlink" href="../../install.html">Installing OpenProgram</a>
+<a class="navlink" href="../../features.html">Key Features — detailed tour</a>
+<a class="navlink" href="../../INTEGRATION_OPENCLAW.html">OpenClaw Integration | OpenClaw 集成指南</a>
+<a class="navlink" href="../../provider-token-tracking.html">Provider Token Tracking</a>
+<a class="navlink" href="../../README_CN.html">Readme Cn</a>
+<a class="navlink" href="../../troubleshooting.html">Troubleshooting</a>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="../../api/providers.html">Providers</a>
+<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
+<a class="navlink" href="../../design/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/usage.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
+<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli" open><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink active" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
+<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
+<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
+<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
+<a class="navlink" href="../../design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
+<a class="navlink" href="../../design/providers/models.html">模型目录与 Provider 配置</a>
+<a class="navlink" href="../../design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
+<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
+<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <main class="content"><article><h1 id="openprogram-cli-tui-redesign">OpenProgram CLI / TUI Redesign<a class="header-anchor" href="#openprogram-cli-tui-redesign">#</a></h1>
+<blockquote>
+<p><strong>Status: implemented (2026-06).</strong> The schema (<code>openprogram/config_schema.py</code>)
+is the single source of truth; it renders in all four surfaces — the
+<code>openprogram config</code> CLI, the <code>setup</code> wizard (<code>prompt_schema_group</code>), the
+TUI <code>/config</code> panel (<code>cli/src/components/SettingsPanel.tsx</code>, also reachable
+via the Ctrl+K command palette), and the web <strong>System</strong> tab
+(<code>/settings/system</code> ← <code>/api/settings</code>). Covered config settings: <strong>Ports,
+Memory, Search, Tools</strong> (per-tool toggles). Model / effort / theme /
+providers are reached from the panel's action rows, which launch the
+existing pickers/flows (<code>/model</code>, <code>/effort</code>, <code>/theme</code>, <code>/login</code>) rather
+than duplicating them. The four-way fragmentation this doc set out to fix
+is closed: a new <code>SettingSpec</code> appears in CLI + wizard + TUI + web with no
+per-surface code. The sections below are the original design; behaviour
+matches them except keybind editing, which stays deferred (opencode ships
+none).</p>
+</blockquote>
+<p>Motivation: settings that today live only behind CLI flags (most acutely <strong>ports</strong>) must be editable from a visual, in-app interface. The audit of our own codebase confirms the core problem: settings are fragmented across four surfaces (argparse flags, the questionary <code>setup</code> wizard, incomplete web <code>/settings</code> pages, and TUI pickers), and the TUI <code>/config</code> slash command is a stub that redirects users back to the shell (<code>cli/src/commands/handler.ts:601-612</code>). This doc proposes a fix grounded primarily in opencode, secondarily in openclaw.</p>
+<p>The non-negotiable design principle, taken from opencode: <strong>opencode has no web-only settings editor.</strong> Its TUI edits live state through <code>DialogSelect</code> / <code>DialogThemeList</code> dialogs (theme preview-on-move, model/agent/provider pickers). The web dashboard exists but is not the only way to change a setting. Our mistake was building web <code>/settings</code> pages and TUI pickers as separate, partial surfaces with no shared backing. We unify them on one schema.</p>
+<h2 id="1-command-model-keep-the-verb-grammar-close-the-discoverability-gaps">1. Command model — keep the verb grammar, close the discoverability gaps<a class="header-anchor" href="#1-command-model-keep-the-verb-grammar-close-the-discoverability-gaps">#</a></h2>
+<p>What we already have right, and should keep:</p>
+<ul>
+<li>The single-verb model (<code>openprogram &lt;verb&gt; &lt;subverb&gt;</code>, openclaw/<code>gh</code>/<code>docker</code> style) is correct and matches both references. opencode is noun-at-root / verb-at-subcommand (<code>session list</code>, <code>mcp add</code>, <code>console login</code>); openclaw is the same (<code>config get/set</code>, <code>channels accounts add</code>). Our <code>cli.py</code> already does this with argparse subparsers (<code>programs run</code>, <code>skills list</code>, <code>mcp add</code>, <code>channels accounts add</code>).</li>
+<li>Retiring <code>--tui</code> / <code>--web</code> / <code>--cli</code> mode flags in favor of verbs (<code>openprogram web</code>, bare <code>openprogram</code> = chat) is the right call — opencode does exactly this (<code>$0</code> positional launches the TUI, <code>web</code>/<code>serve</code> are verbs).</li>
+<li><code>openprogram ports</code> is a good, focused command and <code>_ports.py</code> is genuinely strong: it mirrors openclaw's three-part port story (liveness probe, identity probe <code>backend_is_ours</code>/<code>frontend_is_ours</code>, owner diagnostic <code>describe_port_owner</code>/<code>port_owner_hint</code>) and the reuse-if-ours / report-if-not stance. <strong>Build on this, don't replace it.</strong></li>
+</ul>
+<p>Two concrete gaps to fix, each grounded in an opencode pattern:</p>
+<p><strong>(a) Container verbs must always show their subcommands.</strong> opencode uses <code>yargs.command(A).command(B).demandCommand()</code> so a bare <code>opencode session</code> prints the subcommand list instead of doing nothing. Several of our argparse container parsers (e.g. when <code>programs_verb</code>/<code>memory_verb</code> is <code>None</code>) rely on ad-hoc <code>print_help()</code> calls that aren't uniform. Add a single helper that every container verb's dispatcher calls when its <code>*_verb</code> is <code>None</code>: print that subparser's help and exit non-zero. One pass over <code>cli.py</code>.</p>
+<blockquote>
+<p><strong>Done (2026-06).</strong> <code>cli._need_subcommand(parser)</code> (print help + <code>sys.exit(2)</code>); every pure container verb (programs / skills / plugins / sessions / channels / memory / worker / mcp / browser / subagent, and <code>agents.py</code> inline) routes its no-subcommand branch through it, so they all exit 2 with the verb list — previously half exited 0. Verbs with a real default action (<code>providers</code>→pools, <code>ports</code>→show, <code>config</code>→list) deliberately keep that default. Separately, every <code>add_argument</code>/<code>add_parser</code> across the CLI now carries <code>help=</code> (whole-package scan: 0 undocumented), and the top-level <code>--help</code> gained a &quot;common commands&quot; epilog for discoverability.</p>
+</blockquote>
+<p><strong>(b) <code>openprogram config</code> becomes a first-class concept, not a <code>setup</code> alias.</strong> Today <code>config</code> is in the TUI-bypass word list (<code>cli.py:91</code>) but the actual command is <code>setup [menu|&lt;section&gt;]</code>. Rename/alias to <code>openprogram config</code>:</p>
+<ul>
+<li><code>openprogram config</code> (no arg) → schema-driven picker menu (the openclaw <code>run_configure_menu</code> pick-loop we already have in <code>wizard.py:265</code>).</li>
+<li><code>openprogram config get &lt;dot.path&gt;</code> / <code>config set &lt;dot.path&gt; &lt;value&gt;</code> → non-interactive, exactly openclaw's <code>config get/set/unset</code> with <code>parseConfigPath</code>. This gives scriptable edits and a stable target for docs.</li>
+<li><code>openprogram config &lt;section&gt;</code> → jump to one section (already supported).</li>
+</ul>
+<p>Naming stays noun-first; <code>setup</code> remains as an alias for the first-run linear walk (<code>run_full_setup</code>). Help text for each verb already exists; the only addition is the <code>get</code>/<code>set</code> leaves backed by the schema in §3.</p>
+<h2 id="2-the-visual-settings-experience-a-tui-settings-panel-schema-driven-over-the-existing-websocket">2. The visual settings experience — a TUI settings panel, schema-driven, over the existing WebSocket<a class="header-anchor" href="#2-the-visual-settings-experience-a-tui-settings-panel-schema-driven-over-the-existing-websocket">#</a></h2>
+<p>Decision: <strong>add a real Settings panel to the Ink TUI</strong>, opened by <code>/config</code> (and a future Ctrl+K palette entry). Not &quot;another picker&quot; — a grouped editor. Reasoning from the references:</p>
+<ul>
+<li>opencode's settings UX in the terminal is <em>dialogs that edit live state</em> (<code>DialogThemeList</code>, <code>DialogSelect</code> for model/agent/provider). It does not bounce users to a browser for theme/model/provider. Our TUI already has the exact substrate: the <code>Picker</code> component (<code>cli/src/components/Picker.tsx</code>) is a self-contained overlay with filter + arrow-select, and <code>openPicker(kind)</code> is already wired in <code>REPL.tsx</code>. A settings panel is the same overlay machinery with a group→field→editor structure on top.</li>
+<li>openclaw's <code>configure</code> is a TUI wizard with composable sections (auth, models, gateway, channels, plugins). That validates &quot;in-app, sectioned settings editing in a terminal&quot; as a shape — but openclaw's is a one-shot wizard, not a persistent panel. We take opencode's <em>persistent, live-edit dialog</em> model because mid-session editing (toggle a tool, change model, fix a port) is the actual user need the audit identified (&quot;users in mid-session want to toggle tools or change model without exiting&quot;).</li>
+</ul>
+<h3 id="what-the-panel-edits-and-how-each-field-applies">What the panel edits, and how each field applies<a class="header-anchor" href="#what-the-panel-edits-and-how-each-field-applies">#</a></h3>
+<p>The panel is organized into groups. Each field declares whether it applies <strong>live</strong> (takes effect this session) or <strong>next-start</strong> (worker/web must restart). This live-vs-next-start flag is the key UX honesty: <code>set_ui_ports</code> in <code>setup.py:150</code> already documents &quot;takes effect on the next start — nothing live is rebound here.&quot; We surface that per-field instead of burying it.</p>
+<pre><code>Group        Field                 Widget        Apply        Backing
+Ports        backend port          number-input  next-start   ui.port      (set_ui_ports)
+             frontend port         number-input  next-start   ui.web_port  (set_ui_ports)
+             open browser          toggle        next-start   ui.open_browser
+Model        default model         picker        live         default_provider/default_model
+             thinking effort       picker        live         agent.thinking_effort (per default agent)
+Providers    &lt;provider&gt; key set?   status+action live*        api_keys.* (POST /api/config)
+Theme        color theme           picker+preview live         (TUI-local: setTheme)
+Tools        enabled/disabled      checkbox      live          tools.disabled
+Channels     &lt;channel&gt; enabled     status+action mixed         channels.* (status only in panel; login stays a flow)
+Search       default backend       picker        live         search.default_provider
+Memory       backend               picker        next-start*   memory.backend
+</code></pre>
+<p>Notes grounded in our code and the references:</p>
+<ul>
+<li><strong>Ports</strong> is the headline. The number-input widget is new (Picker is enum-only today); it's a single small Ink input reusing <code>LineInput</code>. Editing writes through <code>set_ui_ports</code> and the panel shows &quot;saved — takes effect next <code>openprogram web</code>/<code>worker</code> start&quot;, reusing the exact wording the CLI already prints. When the user types a port, validate with <code>_ports.port_in_use</code> + <code>describe_port_owner</code> and warn if it's held by something not ours — the openclaw report-if-not stance our <code>_ports.py</code> already implements.</li>
+<li><strong>Theme</strong> uses opencode's <code>DialogThemeList</code> <strong>preview-on-move / rollback-on-cancel</strong> pattern: set the theme on cursor move, restore the original on ESC, no separate Apply button (<code>setTheme</code> is already a live TUI callback in <code>SlashContext</code>).</li>
+<li><strong>Providers / Channels</strong> show <em>status and an action</em>, not raw secret entry inline. opencode masks API keys in its provider editor; we already have <code>/api/config</code> returning masked keys and <code>/api/config/verify</code>. Channel login (QR / token) stays a guided flow — openclaw keeps credential collection in a wizard adapter, not a single field. The panel's job is to show &quot;Anthropic: key set ✓ / not set ✗&quot; and launch the existing flow, not to reimplement OAuth in a text box.</li>
+<li><strong>Keybinds are deliberately out of scope</strong> for the panel. opencode itself ships <strong>no</strong> visual keybind editor — keybinds are file-only (<code>tui.json</code>). Our Ink TUI has fixed keybinds and no keybind config file. Inventing one is unsupported by the findings; defer (see §4 P2-optional).</li>
+</ul>
+<h3 id="discoverability-a-command-palette-over-the-slash-registry-p2">Discoverability: a command palette over the slash registry (P2)<a class="header-anchor" href="#discoverability-a-command-palette-over-the-slash-registry-p2">#</a></h3>
+<p>opencode's <code>command-palette.tsx</code> (Ctrl/Cmd+K) lists commands filtered by namespace/visibility with keybind hints. We have 40+ slash commands in <code>registry.ts</code> but they're only discoverable via <code>/help</code> text. A Ctrl+K palette that renders <code>SLASH_COMMANDS</code> (name + description) through the existing <code>Picker</code> overlay raises discoverability with no grammar change, and is where <code>/config</code>, <code>/model</code>, <code>/theme</code> all surface uniformly. This is additive and low-risk; it lands after the panel.</p>
+<h2 id="3-config-viewedit-end-to-end-one-schema-three-renderers-one-writer">3. Config view/edit end-to-end — one schema, three renderers, one writer<a class="header-anchor" href="#3-config-viewedit-end-to-end-one-schema-three-renderers-one-writer">#</a></h2>
+<p>The root cause of the fragmentation is that every surface poke the config dict directly: <code>setup.py</code> has <code>read_ui_prefs</code>/<code>set_ui_ports</code>/<code>read_search_default_provider</code>; <code>webui/server.py</code> has its own <code>_load_config</code>/<code>_save_config</code>; <code>routes/config.py</code> writes <code>api_keys</code> directly; each questionary section in <code>_setup_sections/sections.py</code> reads/writes its own keys. There is no shared description of &quot;what settings exist.&quot;</p>
+<p><strong>Introduce <code>openprogram/config_schema.py</code></strong> — a single ordered registry, the way openclaw centralizes config behind <code>parseConfigPath</code>/<code>setConfigValueAtPath</code> (with prototype-pollution guards via <code>isBlockedObjectKey</code>) and opencode centralizes behind typed <code>Config.Service</code> + Zod-like schemas.</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SettingSpec</span><span class="p">:</span>
+    <span class="n">key</span><span class="p">:</span> <span class="nb">str</span>                 <span class="c1"># stable id, e.g. &quot;ui.port&quot;</span>
+    <span class="n">path</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>    <span class="c1"># dot-path into config.json, e.g. (&quot;ui&quot;,&quot;port&quot;)</span>
+    <span class="n">group</span><span class="p">:</span> <span class="nb">str</span>               <span class="c1"># &quot;Ports&quot; | &quot;Model&quot; | &quot;Theme&quot; | ...</span>
+    <span class="n">label</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">widget</span><span class="p">:</span> <span class="nb">str</span>              <span class="c1"># &quot;number&quot; | &quot;toggle&quot; | &quot;enum&quot; | &quot;checkbox&quot; | &quot;secret-status&quot;</span>
+    <span class="n">apply</span><span class="p">:</span> <span class="nb">str</span>               <span class="c1"># &quot;live&quot; | &quot;next-start&quot;</span>
+    <span class="n">choices</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>   <span class="c1"># for enum/checkbox, computed at read time</span>
+    <span class="n">validate</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># returns error or None</span>
+    <span class="n">secret</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+</code></pre>
+<p>A single <code>SETTINGS: list[SettingSpec]</code> is the source of truth. Two functions replace all ad-hoc access:</p>
+<ul>
+<li><code>get_settings() -&gt; list[ResolvedSetting]</code> — reads <code>config.json</code> once, resolves each spec's current value (computing <code>choices()</code> lazily), masks secrets.</li>
+<li><code>set_setting(key, value) -&gt; {applied: 'live'|'next-start', error?}</code> — validates against the spec, writes via the <em>existing</em> typed helper when one exists (<code>set_ui_ports</code> for <code>ui.*</code>, <code>write_search_default_provider</code> for search, <code>/api/config</code> writer for <code>api_keys</code>) and falls back to a generic dot-path write (with openclaw's blocked-key guard) otherwise.</li>
+</ul>
+<p>Dot-path mutation with the prototype-pollution blocklist is taken straight from openclaw's <code>parseConfigPath</code> + <code>setConfigValueAtPath</code>/<code>unsetConfigValueAtPath</code>. This is what makes <code>config set ui.port 19000</code> safe and makes the TUI panel and web pages writers of the <em>same</em> validated path.</p>
+<p><strong>Single source of truth = <code>~/.openprogram/config.json</code></strong>, read through <code>get_config_path()</code> (already profile-aware via the <code>_ConfigPathProxy</code> in <code>setup.py:35</code>). Per-agent settings (model, effort, skills) keep living in the agent record; the schema's <code>set_setting</code> for those keys delegates to <code>agents.manager</code> exactly as <code>read_agent_prefs</code>/<code>read_disabled_skills</code> already do. The schema does not flatten agent state into global config — it routes to the right writer per spec. This respects the existing split the audit flagged, instead of papering over it.</p>
+<p><strong>Three renderers, zero duplicated field logic:</strong></p>
+<ol>
+<li>questionary sections (<code>_setup_sections/sections.py</code>) iterate the schema groups instead of hand-coding prompts.</li>
+<li>the TUI Settings panel iterates the same groups.</li>
+<li>the web <code>/settings</code> pages render the same groups (finishing the incomplete pages by data-driving them).</li>
+</ol>
+<p><strong>Live vs next-start, made explicit by the schema.</strong> <code>set_setting</code> returns <code>applied</code>. For <code>live</code> fields (theme, effort, model, search-default, tool toggles — all already re-read per use today), the change takes effect immediately; the TUI panel reflects it without a restart. For <code>next-start</code> fields (<code>ui.port</code>, <code>ui.web_port</code>, <code>memory.backend</code>, backend-exec), the panel shows the &quot;takes effect next start&quot; line and, where relevant, the <code>_ports.port_owner_hint</code> if the new port is occupied. This matches both references: opencode reads config lazily so most changes are live; ports/server binding are inherently start-time.</p>
+<p><strong>Transport for the TUI panel = the existing worker WebSocket.</strong> Add <code>openprogram/webui/ws_actions/settings.py</code> exporting an <code>ACTIONS</code> dict with <code>get_settings</code> and <code>set_setting</code>, wired into the dispatch table at <code>webui/server.py:1067-1108</code> (one <code>table.update(_ws_settings.ACTIONS)</code> line, exactly how every other action module is registered). The handlers call <code>config_schema.get_settings()</code> / <code>set_setting()</code>. The Ink panel sends <code>{action:'get_settings'}</code> and <code>{action:'set_setting', key, value}</code> over the same <code>BackendClient</code> it already uses for <code>list_models</code>/<code>set_default_agent</code> — no new transport, no new process. The web pages call REST (<code>/api/config</code> extended to the generic schema, or a thin <code>/api/settings</code> mirroring the WS actions).</p>
+<h2 id="4-phased-plan-p0-p1-p2-for-our-architecture-argparse-questionary-ink-over-ws">4. Phased plan (P0 / P1 / P2) for our architecture (argparse + questionary + Ink-over-WS)<a class="header-anchor" href="#4-phased-plan-p0-p1-p2-for-our-architecture-argparse-questionary-ink-over-ws">#</a></h2>
+<p><strong>P0 — schema + ports-editable-in-TUI (the user's actual ask). ~2–3 days.</strong></p>
+<ul>
+<li><code>openprogram/config_schema.py</code>: <code>SettingSpec</code>, <code>SETTINGS</code> (start with Ports, Model, Theme, Tools, Search groups), <code>get_settings</code>, <code>set_setting</code> with openclaw-style dot-path write + blocked-key guard. Delegate <code>ui.*</code> to existing <code>set_ui_ports</code>. <em>(small–medium)</em></li>
+<li><code>webui/ws_actions/settings.py</code> + one line in <code>server.py</code> dispatch table. <em>(small)</em></li>
+<li>Ink <code>SettingsPanel.tsx</code> overlay (reuse <code>Picker</code> for enum/checkbox; add a small number/text field via <code>LineInput</code> for ports). Wire <code>/config</code> in <code>handler.ts</code> to open it instead of the stub at lines 601-612; add <code>PickerKind</code>/panel state in <code>REPL.tsx</code>. <em>(medium)</em></li>
+<li>Ports field: validate with <code>_ports.port_in_use</code> + <code>describe_port_owner</code>, show next-start notice. <em>(small)</em></li>
+</ul>
+<p>Exit criterion: in a running TUI session, <code>/config</code> → Ports → change backend port → see &quot;saved, takes effect next start&quot; with a conflict warning if occupied. This alone satisfies the motivating requirement.</p>
+<p><strong>P1 — unify the other surfaces on the schema; live-preview theme. ~2–3 days.</strong></p>
+<ul>
+<li>Rewrite <code>_setup_sections/sections.py</code> runners to iterate schema groups (questionary widgets chosen by <code>spec.widget</code>). New setting = one <code>SettingSpec</code>, appears in wizard + TUI automatically. <em>(medium)</em></li>
+<li>Add <code>openprogram config get/set</code> leaves in <code>cli.py</code> backed by <code>config_schema</code>. <em>(small)</em></li>
+<li>Theme group in the TUI panel uses opencode's preview-on-move / rollback-on-ESC. <em>(medium)</em></li>
+<li>Finish the web <code>/settings</code> pages by data-driving them from the schema via <code>/api/settings</code>. <em>(medium)</em> — closes the &quot;incomplete web pages&quot; gap from the audit.</li>
+</ul>
+<p><strong>P2 — discoverability + polish. ~2 days.</strong></p>
+<ul>
+<li>Ctrl+K command palette over <code>registry.ts</code> (opencode <code>command-palette.tsx</code>), with keybind hints. <em>(medium)</em></li>
+<li>Container-verb help uniformity in <code>cli.py</code> (opencode <code>.demandCommand()</code> behavior). <em>(small)</em></li>
+<li>Providers/Channels status-and-action rows in the panel (status from <code>/api/config</code> masked keys + channels list; actions launch existing flows). <em>(medium)</em></li>
+</ul>
+<p><strong>Explicitly deferred (unsupported by findings):</strong> a visual keybind editor. opencode ships none (file-only <code>tui.json</code>); our TUI has no keybind config file at all. If demand appears, add a <code>keybinds</code> group backed by a new <code>cfg['tui']['keybinds']</code> map, using opencode's separate-schema-per-context approach — but only then.</p>
+<h3 id="why-this-fits-our-stack-specifically">Why this fits our stack specifically<a class="header-anchor" href="#why-this-fits-our-stack-specifically">#</a></h3>
+<ul>
+<li>It adds <strong>no new runtime</strong>: the TUI panel rides the worker WebSocket already in use; the schema is plain Python in the existing config module; questionary and the Ink Picker are reused as-is.</li>
+<li>It removes the four-way fragmentation by making <code>config_schema.py</code> the one writer, the way opencode centralizes on <code>Config.Service</code> and openclaw on <code>parseConfigPath</code>/<code>mutateConfigFile</code>.</li>
+<li>It keeps the parts we already did well — the verb grammar, <code>openprogram ports</code>, and <code>_ports.py</code> ownership diagnostics — and makes them reachable from inside the app instead of only from the shell.</li>
+</ul>
+</article></main>
+  <aside class="toc"><div class="toc-title">本页内容</div>
+<a class="" href="#1-command-model-keep-the-verb-grammar-close-the-discoverability-gaps">1. Command model — keep the verb grammar, close the discoverability gaps</a>
+<a class="" href="#2-the-visual-settings-experience-a-tui-settings-panel-schema-driven-over-the-existing-websocket">2. The visual settings experience — a TUI settings panel, schema-driven, over the existing WebSocket</a>
+<a class="lvl-3" href="#what-the-panel-edits-and-how-each-field-applies">What the panel edits, and how each field applies</a>
+<a class="lvl-3" href="#discoverability-a-command-palette-over-the-slash-registry-p2">Discoverability: a command palette over the slash registry (P2)</a>
+<a class="" href="#3-config-viewedit-end-to-end-one-schema-three-renderers-one-writer">3. Config view/edit end-to-end — one schema, three renderers, one writer</a>
+<a class="" href="#4-phased-plan-p0-p1-p2-for-our-architecture-argparse-questionary-ink-over-ws">4. Phased plan (P0 / P1 / P2) for our architecture (argparse + questionary + Ink-over-WS)</a>
+<a class="lvl-3" href="#why-this-fits-our-stack-specifically">Why this fits our stack specifically</a></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="../../assets/site.js"></script>
+</body>
+</html>
