@@ -54,23 +54,17 @@ export async function _checkout(msgId: string): Promise<void> {
   if (!sessionId || !msgId) return;
   const target = _leafOfNode[msgId] || msgId;
   if (target === _currentHead) return;
-  try {
-    if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {
-      HGW.ws.send(JSON.stringify({
-        action: "checkout_branch",
-        session_id: sessionId,
-        head_msg_id: target,
-      }));
-      HGW._postCheckoutScrollTo = msgId;
-      // Reload session after checkout
-      setTimeout(() => {
-        if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {
-          HGW.ws.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
-        }
-      }, 300);
-    }
-  } catch (err) {
-    console.error("[history-graph] checkout failed:", err);
+  if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {
+    HGW._postCheckoutScrollTo = msgId;
+    HGW.ws.send(JSON.stringify({
+      action: "checkout_branch",
+      session_id: sessionId,
+      head_msg_id: target,
+    }));
+    HGW.ws.send(JSON.stringify({
+      action: "load_session",
+      session_id: sessionId,
+    }));
   }
 }
 
