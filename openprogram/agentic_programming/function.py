@@ -143,6 +143,23 @@ def _append_function_call_entry(
     # visible to the model running inside it.
     if docstring:
         meta["doc"] = docstring
+    _caller = _call_id.get() or ""
+    # Top-level manual function call (fn-form / Functions panel) — no
+    # enclosing @agentic_function on the stack, so ``_call_id`` is empty.
+    # Without a conv predecessor the code node has no place in the
+    # conversation chain and the DAG viewport renders it as a detached
+    # root. Stamp the session's current head as ``metadata.called_by``
+    # (the conv-chain edge) so it attaches under the active branch's tip.
+    if not _caller:
+        try:
+            pair = store.store._open(store.session_id)
+            if pair is not None:
+                _git, _idx = pair
+                head = _idx.head_id
+                if head and head != "ROOT":
+                    meta["called_by"] = head
+        except Exception:
+            pass
     node = Call(
         id=pending_id,
         created_at=started_at or time.time(),
