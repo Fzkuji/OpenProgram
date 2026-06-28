@@ -331,11 +331,12 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const color = _branchColor(node, stableLeafOfNode);
     const nr = NODE_R + 4;
 
-    // User nodes connect from ROOT column (tier=0), not from
-    // their called_by (which is the previous llm in conv chain).
-    const isConvUser = node.role === "user" && rootPos;
-    const trunkX = isConvUser ? rootPos.x : pos(parent).x;
-    const fromY = isConvUser ? rootPos.y : pos(parent).y;
+    // Main-lane user nodes connect from ROOT column (tier=0).
+    // Fork-lane user nodes connect from their called_by parent
+    // within their own lane.
+    const isMainUser = node.role === "user" && rootPos && (node._lane || 0) === (rootNode?._lane || 0);
+    const trunkX = isMainUser ? rootPos.x : pos(parent).x;
+    const fromY = isMainUser ? rootPos.y : pos(parent).y;
 
     // Vertical trunk from parent row to child row
     if (c.y > fromY) {
