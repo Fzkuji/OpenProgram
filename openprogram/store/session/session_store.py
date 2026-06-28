@@ -753,6 +753,19 @@ class SessionStore:
         session_id: str,
         head_msg_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
+        """Return the active conversation branch as message dicts.
+
+        Design-doc model: top-level user nodes are ROOT's children
+        (called_by=ROOT), ordered by seq. Fork/retry branches have
+        called_by=None (explicit branch_from=None in dispatcher).
+
+        Algorithm:
+        1. Find head node, walk backward to its ROOT-child ancestor.
+        2. Include all normal turns (called_by=ROOT) with seq <= head's
+           turn, plus each turn's subtree.
+        3. Fork nodes (called_by=None/empty) are included only if
+           they're on the head path (i.e. head_user itself).
+        """
         pair = self._open(session_id)
         if pair is None:
             return []
@@ -761,18 +774,92 @@ class SessionStore:
         if not head or head not in idx.nodes_by_id:
             return []
 
-        def _edge(node):
-            pred = _node_conv_predecessor(node)
-            if pred:
-                return pred
-            caller = _node_caller(node)
-            if caller and caller != "ROOT":
-                return caller
-            return None
+        # Build children indexes for subtree collection.
+        caller_kids: dict[str, list[str]] = {}
+        pred_kids: dict[str, list[str]] = {}
+        for n in idx.nodes_by_seq:
+            c = _node_caller(n)
+            if c and c != "ROOT":
+                caller_kids.setdefault(c, []).append(n.id)
+            p = _node_conv_predecessor(n)
+            if p and p != "ROOT":
+                pred_kids.setdefault(p, []).append(n.id)
 
-        chain = idx.get_branch(head, _edge)
+        def _subtree_ids(root_id: str) -> set[str]:
+            out: set[str] = set()
+            stack = [root_id]
+            while stack:
+                nid = stack.pop()
+                if nid in out or nid not in idx.nodes_by_id:
+                    continue
+                out.add(nid)
+                stack.extend(caller_kids.get(nid, []))
+                stack.extend(pred_kids.get(nid, []))
+            return out
+
+        # Walk from head backward to find its ROOT-child ancestor.
+        head_user_id: Optional[str] = None
+        cur: Optional[str] = head
+        visited: set[str] = set()
+        while cur and cur not in visited and cur in idx.nodes_by_id:
+            visited.add(cur)
+            node = idx.nodes_by_id[cur]
+            meta_cb = (node.metadata or {}).get("called_by")
+            ncaller = _node_caller(node)
+            if meta_cb == "ROOT" or (not meta_cb and (not ncaller or ncaller == "ROOT")):
+                head_user_id = cur
+                break
+            pred = _node_conv_predecessor(node)
+            if pred and pred != "ROOT":
+                cur = pred
+            elif ncaller and ncaller != "ROOT":
+                cur = ncaller
+            else:
+                head_user_id = cur
+                break
+
+        if not head_user_id:
+            head_user_id = head
+
+        head_user_seq = -1
+        hu = idx.nodes_by_id.get(head_user_id)
+        if hu:
+            head_user_seq = hu.seq if hasattr(hu, "seq") else -1
+
+        # Head user's subtree is always included.
+        selected: set[str] = _subtree_ids(head_user_id)
+
+        # Include earlier normal turns (called_by=ROOT) only if
+        # head_user is itself a normal turn. Fork branches
+        # (called_by=None) are standalone alternatives — they don't
+        # inherit earlier turns.
+        head_meta_cb = (hu.metadata or {}).get("called_by") if hu else None
+        if head_meta_cb == "ROOT":
+            for n in idx.nodes_by_seq:
+                if n.id in selected:
+                    continue
+                if (n.metadata or {}).get("display") == "root":
+                    continue
+                if (n.metadata or {}).get("rewound"):
+                    continue
+                if (n.metadata or {}).get("called_by") != "ROOT":
+                    continue
+                n_seq = n.seq if hasattr(n, "seq") else 0
+                if n_seq < head_user_seq:
+                    selected |= _subtree_ids(n.id)
+
+        # Filter: only include nodes up to head's seq. When head is
+        # rewound to an earlier node, later nodes are not on this branch.
+        head_node = idx.nodes_by_id.get(head)
+        head_seq_limit = (head_node.seq if head_node and hasattr(head_node, "seq") else float("inf"))
+        result = [
+            idx.nodes_by_id[nid] for nid in selected
+            if nid in idx.nodes_by_id
+            and (idx.nodes_by_id[nid].seq if hasattr(idx.nodes_by_id[nid], "seq") else 0) <= head_seq_limit
+        ]
+        result.sort(key=lambda n: n.seq if hasattr(n, "seq") else 0)
         return [
-            _node_to_msg(n, session_id) for n in chain
+            _node_to_msg(n, session_id) for n in result
             if (n.metadata or {}).get("display") != "root"
             and not (n.metadata or {}).get("rewound")
         ]
