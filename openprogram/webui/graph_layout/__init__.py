@@ -70,9 +70,14 @@ def annotate_graph(
         base_lane = lane.get(forked_from) if forked_from else None
         first_tier = tier.get(first, 0) if first else 0
         if base_lane is not None:
-            # fork's first node goes one column right of the base lane's
-            # rightmost column → offset = that + 1 - first node's tier.
-            off = _rightmost_col(base_lane) + 1 - first_tier
+            # A fork lane has its OWN vertical trunk column (like the
+            # main branch hangs off the ROOT trunk). So it needs TWO
+            # columns past the base lane: +1 for the fork's trunk line,
+            # +1 for the fork's nodes. The fork's nodes therefore sit at
+            #   rightmost_col(base) + 2
+            # and the trunk line lives one column to their left (drawn by
+            # edges.ts as forkPos.x - COL_W), clear of the base lane.
+            off = _rightmost_col(base_lane) + 2 - first_tier
         else:
             off = max(lane_offset.values(), default=0) + 1
         lane_offset[ln] = off
