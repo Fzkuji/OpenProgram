@@ -193,6 +193,24 @@ article strong { color: var(--tx); font-weight: 650; }
 
 /* page meta (status line right under h1) */
 .page-meta { color: var(--tx-faint); font-size: 13.5px; margin-bottom: 24px; }
+.page-meta kbd {
+  font: 11px var(--mono); background: var(--bg-side); border: 1px solid var(--bd);
+  border-radius: 4px; padding: 1px 5px;
+}
+
+/* landing page card grid */
+.home-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px; margin-top: 28px;
+}
+.home-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 18px 18px 16px; border: 1px solid var(--bd); border-radius: 12px;
+  background: var(--bg-card); transition: border-color .15s, transform .15s;
+}
+.home-card:hover { border-color: var(--acc); transform: translateY(-2px); text-decoration: none; }
+.home-card .hc-title { font-weight: 650; font-size: 15px; color: var(--tx); }
+.home-card .hc-count { font-size: 12px; color: var(--tx-faint); font-family: var(--mono); }
 
 /* embedded visualization (hand-written html via isolated iframe) */
 .viz-frame {

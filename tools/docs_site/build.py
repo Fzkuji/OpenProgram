@@ -161,11 +161,28 @@ def render_nav(groups, current_out: Path, base: str) -> str:
         return "\n".join(out)
 
     def render_group(g, top=False) -> str:
-        # The synthetic root "Guides" group renders flat (no collapsible header):
-        # its loose top-level pages always show, its subgroups become the
-        # collapsible top-level sections.
+        # The synthetic root "Guides" group: render its loose pages as a
+        # collapsible "Guides" section (default open), then its subgroups as
+        # their own top-level collapsible sections.
         if top:
-            return render_pages_and_subs(g)
+            parts = []
+            if g.pages:
+                key = "__guides__"
+                is_open = any(p.out == current_out for p in g.pages) or current_out == Path("index.html")
+                open_attr = " open" if is_open else ""
+                pages_html = "\n".join(
+                    f'<a class="navlink{" active" if p.out == current_out else ""}" '
+                    f'href="{base + str(p.out).replace(chr(92), "/")}">{_html.escape(p.title)}</a>'
+                    for p in g.pages
+                )
+                parts.append(
+                    f'<details class="group" data-key="{key}"{open_attr}>'
+                    f'<summary class="group-title">指南 Guides</summary>'
+                    f'<div class="group-body">{pages_html}</div></details>'
+                )
+            for sg in g.subgroups:
+                parts.append(render_group(sg))
+            return "\n".join(parts)
         key = str(g.rel_dir).replace("\\", "/")
         is_open = contains_current(g)
         open_attr = " open" if is_open else ""
@@ -176,7 +193,6 @@ def render_nav(groups, current_out: Path, base: str) -> str:
             f"</details>"
         )
 
-    # Top-level loose pages first, then collapsible sections.
     return "\n".join(render_group(g, top=True) for g in groups)
 
 
@@ -251,22 +267,41 @@ def build() -> int:
 
 
 def _write_home(groups) -> None:
-    """A simple landing page linking the top of each group."""
+    """Landing page: a card grid of the top-level sections only."""
     root = groups[0]
+
+    def count_pages(g) -> int:
+        return len(g.pages) + sum(count_pages(sg) for sg in g.subgroups)
+
+    def landing(g):
+        # link to the group's README if it has one, else its first page
+        readme = next((p for p in g.pages if p.is_readme), None)
+        target = readme or (g.pages[0] if g.pages else None)
+        if target is None:
+            for sg in g.subgroups:
+                t = landing(sg)
+                if t:
+                    return t
+            return None
+        return str(target.out).replace("\\", "/")
+
     cards = []
-    def collect(g, prefix=""):
-        for sg in g.subgroups:
-            first = sg.pages[0] if sg.pages else None
-            if first:
-                cards.append((sg.title, str(first.out).replace("\\", "/")))
-            collect(sg)
-    collect(root)
+    for sg in root.subgroups:
+        url = landing(sg)
+        if url:
+            cards.append((sg.title, url, count_pages(sg)))
+
     body = ['<h1>OpenProgram 设计文档</h1>',
-            '<p class="page-meta">框架的设计笔记、API 与指南，按子系统组织。</p>',
-            '<ul>']
-    for title, url in cards:
-        body.append(f'<li><a href="{url}">{_html.escape(title)}</a></li>')
-    body.append("</ul>")
+            '<p class="page-meta">框架的设计笔记、API 与指南，按子系统组织。'
+            '左侧目录浏览，或按 <kbd>⌘K</kbd> 搜索。</p>',
+            '<div class="home-grid">']
+    for title, url, n in cards:
+        body.append(
+            f'<a class="home-card" href="{url}">'
+            f'<span class="hc-title">{_html.escape(title)}</span>'
+            f'<span class="hc-count">{n} 篇</span></a>'
+        )
+    body.append("</div>")
     nav_html = render_nav(groups, Path("index.html"), "")
     full = render_page(title="OpenProgram 设计文档", body_html="\n".join(body),
                        nav_html=nav_html, toc_html="", base="")
