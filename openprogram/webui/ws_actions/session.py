@@ -82,7 +82,7 @@ def _rebuild_runtime_cards(
     def _is_top_code(m: dict) -> bool:
         if m.get("role") != "tool":
             return False
-        parent = m.get("called_by") or m.get("called_by") or ""
+        parent = m.get("called_by") or ""
         # Only ROOT-parented or unparented code nodes are top-level
         # function calls (manual /run, fn-form). Internal sub-calls
         # (gui_step, conclusion, plan_next_action) have a non-ROOT
@@ -473,7 +473,7 @@ async def handle_load_session(ws, cmd: dict):
             # called_by; this guard keeps old data from doubling up.
             if m.get("id") in chain_ids:
                 continue
-            parent = m.get("called_by") or m.get("called_by") or ""
+            parent = m.get("called_by") or ""
             if parent and parent in chain_ids:
                 attach_by_parent.setdefault(parent, []).append(m)
         if attach_by_parent:
@@ -578,7 +578,6 @@ async def handle_load_session(ws, cmd: dict):
                 graph.append({
                     "id": _root_node.id,
                     "called_by": "",
-                    "called_by": "",
                     "caller": "",
                     "role": "user",
                     "display": "root",
@@ -605,8 +604,7 @@ async def handle_load_session(ws, cmd: dict):
             graph.append({
                 "id": _mid_load,
                 "called_by": m.get("called_by"),
-                "called_by": _called_by_map_load.get(_mid_load, ""),
-                "caller": m.get("caller") or "",
+                "caller": _called_by_map_load.get(_mid_load, "") or m.get("caller") or "",
                 "role": m.get("role"),
                 "function": m.get("function"),
                 "display": m.get("display"),

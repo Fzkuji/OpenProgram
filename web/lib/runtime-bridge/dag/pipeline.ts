@@ -325,8 +325,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
         return;
       }
     }
-    // No called_by or different lane = fork branch
-    if (!callerId && node.called_by) {
+    // Different lane from parent = fork branch (retry/edit)
+    if (callerId && tree.byId[callerId]) {
       forkNodes.push(id);
     }
   });
@@ -398,14 +398,16 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const startX = sp.x + nr;
     const endX = c.x - nr;
     const color = _branchColor(node, stableLeafOfNode);
-    edgeG.appendChild(_svg("line", {
-      x1: startX, y1: sp.y, x2: endX, y2: c.y,
+    const path = _edgePath(startX, sp.y, endX, c.y);
+    edgeG.appendChild(_svg("path", {
+      d: path,
       stroke: color,
       "stroke-width": 1.4,
-      "stroke-dasharray": "4 3",
-      opacity: 0.6,
+      fill: "none",
+      "stroke-dasharray": "6 4",
+      opacity: 0.7,
       "pointer-events": "none",
-      class: "history-edge",
+      class: "history-edge fork-edge",
     }));
   }
 

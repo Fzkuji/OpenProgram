@@ -12,17 +12,28 @@ from ._common import ts, called_by_of, is_root
 def compute_depth(
     by_id: dict[str, dict],
     call_children: dict[str, list[str]],
+    fork_siblings: dict[str, list[str]] | None = None,
 ) -> dict[str, float]:
     depth: dict[str, float] = {}
     counter = [0]
 
+    # Non-first fork siblings — skipped during DFS so they land in
+    # the "remaining" pass and align with the first sibling's depth.
+    _skip_in_dfs: set[str] = set()
+    if fork_siblings:
+        for _pid, kids in fork_siblings.items():
+            if len(kids) > 1:
+                for k in kids[1:]:
+                    _skip_in_dfs.add(k)
+
     def _walk_dfs(nid: str) -> None:
-        """DFS walk using global counter — for the main trunk."""
         if nid in depth:
             return
         depth[nid] = counter[0]
         counter[0] += 1
         for kid in call_children.get(nid, []):
+            if kid in _skip_in_dfs:
+                continue
             _walk_dfs(kid)
 
     def _walk_branch(nid: str, start: float) -> None:
