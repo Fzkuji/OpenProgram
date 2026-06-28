@@ -644,34 +644,68 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     nodeG.appendChild(g);
   });
 
-  (function _drawBranchTags() {
+  (function _drawBranchBadges() {
     const sid = HGW.currentSessionId;
     const rows = (sid && HGW._branchesByConv && HGW._branchesByConv[sid]) || [];
-    const named = rows.filter((r) => !!(r.name && (r.name as string).trim()));
-    if (!named.length) return;
+    if (!rows.length) return;
     const tagG = _svg("g", { class: "history-branch-tags" });
-    named.forEach((b) => {
+    rows.forEach((b) => {
       const node = b.head_msg_id ? tree.byId[b.head_msg_id] : null;
       if (!node) return;
       const p = pos(node);
-      const label = b.name as string;
-      const dy = 22;
+      const label = (b.name as string) || b.head_msg_id.slice(0, 8);
+      const isActive = !!b.active;
+      const dy = 20;
       const color = _branchColor(node, stableLeafOfNode);
       const tg = _svg("g", {
-        class: "history-branch-tag",
-        transform: "translate(" + p.x + "," + p.y + ")",
+        class: "history-branch-tag" + (isActive ? " active" : ""),
+        transform: "translate(" + p.x + "," + (p.y + dy) + ")",
+        "data-head": b.head_msg_id,
       });
+      (tg as SVGGraphicsElement).style.cursor = isActive ? "default" : "pointer";
+      const bw = Math.max(label.length * 6 + 12, 40);
+      const bh = 16;
+      const rect = _svg("rect", {
+        x: String(-bw / 2),
+        y: String(-bh / 2),
+        width: String(bw),
+        height: String(bh),
+        rx: "4",
+        ry: "4",
+        fill: isActive ? color : "var(--bg-hover, #2e2e2c)",
+        stroke: color,
+        "stroke-width": isActive ? "0" : "1",
+        opacity: isActive ? "0.9" : "0.7",
+      });
+      tg.appendChild(rect);
       const text = _svg("text", {
         x: "0",
-        y: String(dy),
+        y: "4",
         "text-anchor": "middle",
-        "font-size": "10",
+        "font-size": "9",
         "font-family": "var(--font-sans, sans-serif)",
         "font-weight": "600",
-        fill: color,
+        fill: isActive ? "var(--bg-primary, #1f1f1e)" : color,
+        "pointer-events": "none",
       });
       text.textContent = label;
       tg.appendChild(text);
+      if (!isActive) {
+        tg.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {
+            HGW.ws.send(JSON.stringify({
+              action: "checkout_branch",
+              session_id: sid,
+              head_msg_id: b.head_msg_id,
+            }));
+            HGW.ws.send(JSON.stringify({
+              action: "load_session",
+              session_id: sid,
+            }));
+          }
+        });
+      }
       tagG.appendChild(tg);
     });
     svg.appendChild(tagG);
