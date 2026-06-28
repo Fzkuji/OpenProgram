@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>agentic_function · OpenProgram Docs</title>
+<title>@agentic_function 按固定顺序调用子函数 · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -51,10 +51,10 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
 <a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
-<details class="group" data-key="api" open><summary class="group-title">Api</summary><div class="group-body"><a class="navlink active" href="/docs/api/agentic_function.html">agentic_function</a>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html">agentic_function</a>
 <a class="navlink" href="/docs/api/providers.html">Providers</a>
 <a class="navlink" href="/docs/api/runtime.html">Runtime</a></div></details>
-<details class="group" data-key="design"><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
 <a class="navlink" href="/docs/design/usage-metering.html">Usage Metering 子系统设计</a>
 <a class="navlink" href="/docs/design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
 <a class="navlink" href="/docs/design/docs-site.html">设计文档站（统一文档网页）</a>
@@ -79,14 +79,14 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
 <a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
 <a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
-<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
-<a class="navlink" href="/docs/design/function/agentic_function.html">@agentic_function</a>
+<details class="group" data-key="design/function" open><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
-<a class="navlink" href="/docs/design/function/function_metadata.html">Function Metadata Specification</a>
-<a class="navlink" href="/docs/design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/design/function/function-metadata.zh.html">函数元数据规范</a>
 <a class="navlink" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
-<a class="navlink" href="/docs/design/function/pure_python.html">纯 Python 函数</a>
-<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<a class="navlink" href="/docs/design/function/pure-python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling" open><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink active" href="/docs/design/function/function-calling/code-call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
 <details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
 <a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
 <a class="navlink" href="/docs/design/integrations/mcp-integration.html">MCP 工具集成</a>
@@ -169,78 +169,137 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb">Api <span class='bc-sep'>›</span> <span class="bc-current">agentic_function</span></nav><h1 id="agentic_function">agentic_function<a class="header-anchor" href="#agentic_function">#</a></h1>
-<blockquote>
-<p>Source: <a href="/docs/../openprogram/agentic_programming/function.py"><code>openprogram/agentic_programming/function.py</code></a></p>
-</blockquote>
-<p><code>@agentic_function</code> 把普通 Python 函数变成 Agentic Function:每次调用记录为 session DAG 的一个 <code>code</code> 节点,函数体内的 <code>runtime.exec</code> 调用记录为 <code>llm</code> 节点。</p>
-<p>完整的编写规范——文件布局、docstring 与 <code>content</code> 的分工、参数元数据、校验清单、冒烟测试——见 <a href="/docs/../skills/agentic-programming/SKILL.html"><code>skills/agentic-programming/SKILL.md</code></a>。本文只列装饰器本身。</p>
-<h2 id="用法">用法<a class="header-anchor" href="#用法">#</a></h2>
-<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Function Design <span class='bc-sep'>›</span> Function Calling <span class='bc-sep'>›</span> <span class="bc-current">@agentic_function 按固定顺序调用子函数</span></nav><h1 id="agentic_function-按固定顺序调用子函数">@agentic_function 按固定顺序调用子函数<a class="header-anchor" href="#agentic_function-按固定顺序调用子函数">#</a></h1>
+<p>调用大模型（可选），按代码写死的顺序调用多个子函数。</p>
+<h2 id="适用场景">适用场景<a class="header-anchor" href="#适用场景">#</a></h2>
+<ul>
+<li>研究流程：调研 → 找 gap → 生成想法</li>
+<li>论文流程：写初稿 → 审稿 → 修改</li>
+<li>数据流程：采集 → 清洗 → 分析</li>
+<li>任何步骤顺序固定的多步任务</li>
+</ul>
+<h2 id="设计要点">设计要点<a class="header-anchor" href="#设计要点">#</a></h2>
+<ul>
+<li>用 <code>@agentic_function</code> 装饰器</li>
+<li>按固定顺序调用多个子 <code>@agentic_function</code></li>
+<li><code>exec()</code> 可选：不调（纯串联），或调多次（每次创建一个 exec 子节点）</li>
+<li>子函数之间通过 Python 变量传递数据</li>
+<li>一个函数可以调多次 <code>exec()</code>，也可以调任意多个其他 <code>@agentic_function</code></li>
+</ul>
+<h2 id="示例不调-exec纯串联">示例：不调 exec，纯串联<a class="header-anchor" href="#示例不调-exec纯串联">#</a></h2>
+<pre><code class="language-python"><span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">research_pipeline</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;执行完整研究流程：调研 → 找 gap → 生成想法。</span>
 
-<span class="nd">@agentic_function</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">f</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;One-line summary of what f does.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;...</span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">}])</span>
+<span class="sd">    Args:</span>
+<span class="sd">        task: 研究主题。</span>
+<span class="sd">        runtime: LLM 运行时实例。</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        包含 survey、gaps、ideas 的结果字典。</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+    <span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+    <span class="n">ideas</span> <span class="o">=</span> <span class="n">generate_ideas</span><span class="p">(</span><span class="n">gaps</span><span class="o">=</span><span class="n">gaps</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;survey&quot;</span><span class="p">:</span> <span class="n">survey</span><span class="p">,</span> <span class="s2">&quot;gaps&quot;</span><span class="p">:</span> <span class="n">gaps</span><span class="p">,</span> <span class="s2">&quot;ideas&quot;</span><span class="p">:</span> <span class="n">ideas</span><span class="p">}</span>
 </code></pre>
-<p>裸用 <code>@agentic_function</code> 或带参数 <code>@agentic_function(...)</code> 都可以。</p>
-<h2 id="装饰器参数">装饰器参数<a class="header-anchor" href="#装饰器参数">#</a></h2>
+<h2 id="示例调一次-exec-做总结">示例：调一次 exec 做总结<a class="header-anchor" href="#示例调一次-exec-做总结">#</a></h2>
+<pre><code class="language-python"><span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">research_pipeline</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;执行完整研究流程并总结结果。</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        task: 研究主题。</span>
+<span class="sd">        runtime: LLM 运行时实例。</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        整合后的研究总结。</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+    <span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+    <span class="n">ideas</span> <span class="o">=</span> <span class="n">generate_ideas</span><span class="p">(</span><span class="n">gaps</span><span class="o">=</span><span class="n">gaps</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Survey:</span><span class="se">\n</span><span class="si">{</span><span class="n">survey</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Gaps:</span><span class="se">\n</span><span class="si">{</span><span class="n">gaps</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Ideas:</span><span class="se">\n</span><span class="si">{</span><span class="n">ideas</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)},</span>
+    <span class="p">])</span>
+</code></pre>
+<h2 id="context-tree">Context Tree<a class="header-anchor" href="#context-tree">#</a></h2>
+<pre><code>research_pipeline
+├── survey_topic       ← 第1步
+├── identify_gaps      ← 第2步
+└── generate_ideas     ← 第3步
+</code></pre>
+<h2 id="步骤之间的数据传递">步骤之间的数据传递<a class="header-anchor" href="#步骤之间的数据传递">#</a></h2>
+<p>子函数之间通过 Python 变量传递，不需要大模型参与：</p>
+<pre><code class="language-python"><span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+<span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+</code></pre>
+<p><code>survey_topic</code> 的返回值直接作为 <code>identify_gaps</code> 的输入参数。</p>
+<h2 id="步骤之间插入-python-处理">步骤之间插入 Python 处理<a class="header-anchor" href="#步骤之间插入-python-处理">#</a></h2>
+<pre><code class="language-python"><span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+
+<span class="c1"># 中间插入普通 Python 处理</span>
+<span class="n">key_points</span> <span class="o">=</span> <span class="n">extract_key_points</span><span class="p">(</span><span class="n">survey</span><span class="p">)</span>
+<span class="n">filtered</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">key_points</span> <span class="k">if</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;relevance&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">]</span>
+
+<span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">filtered</span><span class="p">),</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+</code></pre>
+<h2 id="错误处理">错误处理<a class="header-anchor" href="#错误处理">#</a></h2>
+<pre><code class="language-python"><span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">survey</span> <span class="ow">or</span> <span class="s2">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">survey</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s2">&quot;Survey failed&quot;</span><span class="p">,</span> <span class="s2">&quot;survey&quot;</span><span class="p">:</span> <span class="n">survey</span><span class="p">}</span>
+
+<span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+</code></pre>
+<h2 id="与大模型选择调用的区别">与&quot;大模型选择调用&quot;的区别<a class="header-anchor" href="#与大模型选择调用的区别">#</a></h2>
 <table>
 <thead>
 <tr>
-<th>参数</th>
-<th>类型</th>
-<th>默认</th>
-<th>说明</th>
+<th></th>
+<th>固定顺序调用</th>
+<th>大模型选择调用</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>expose</code></td>
-<td><code>str</code></td>
-<td><code>&quot;io&quot;</code></td>
-<td><strong>朝外</strong>:别人渲染 DAG 时能看到我的什么。<code>&quot;io&quot;</code> = 本函数的 input/output 节点对外可见,内部直接的 LLM 调用对外隐藏;<code>&quot;llm&quot;</code> = 反过来,只露内部 LLM 交换,藏 input/output;<code>&quot;full&quot;</code> = 全可见;<code>&quot;hidden&quot;</code> = 根本不写 DAG 节点</td>
+<td>谁决定调用顺序</td>
+<td>Python 代码</td>
+<td>大模型</td>
 </tr>
 <tr>
-<td><code>render_range</code></td>
-<td><code>dict</code></td>
-<td><code>None</code></td>
-<td><strong>朝内</strong>:本函数内部 <code>runtime.exec</code> 拼 prompt 时,从 DAG 读多少历史节点。形状 <code>{&quot;callers&quot;: N, &quot;subcalls&quot;: M}</code>,两个数字都是 <strong>节点计数(按 <code>seq</code> 切片)</strong>:<br>• <code>callers</code> — 本函数 frame <strong>启动前</strong>的节点,取最近 N 个(<code>None</code> 默认 = 不限,<code>0</code> = 全墙)<br>• <code>subcalls</code> — 本函数 frame <strong>启动后</strong>已写入的节点,取最近 N 个(<code>-1</code> 默认 = 不限,frame 自然看见自己的进度;<code>N&gt;=0</code> = 只想截 prompt 时显式设;<code>0</code> = 完全墙掉 in-frame)<br><code>{&quot;callers&quot;:0,&quot;subcalls&quot;:0}</code> = 跟外界和自己 frame 全断绝</td>
+<td>调用几个子函数</td>
+<td>多个，全部执行</td>
+<td>1个，选择执行</td>
 </tr>
 <tr>
-<td><code>input</code></td>
-<td><code>dict</code></td>
-<td><code>None</code></td>
-<td>每个参数的 UI 元数据(<code>description</code> / <code>placeholder</code> / <code>multiline</code> / <code>options</code> / <code>hidden</code> 等),WebUI 据此渲染输入表单</td>
+<td>是否需要函数注册表</td>
+<td>不需要</td>
+<td>需要</td>
 </tr>
 <tr>
-<td><code>workdir_mode</code></td>
-<td><code>str</code></td>
-<td><code>None</code></td>
-<td>工作目录选择器模式:<code>&quot;optional&quot;</code> / <code>&quot;hidden&quot;</code> / <code>&quot;required&quot;</code>,其余值报错。消费方是 WebUI——它通过 AST 解析源码文本读取,所以必须以字面量写在装饰器调用里才生效</td>
-</tr>
-<tr>
-<td><code>system</code></td>
-<td><code>str</code></td>
-<td><code>None</code></td>
-<td>本函数 LLM 调用的 system prompt(调用期间盖到注入的 runtime 上,调用后恢复)</td>
+<td>灵活性</td>
+<td>固定流程</td>
+<td>根据任务变化</td>
 </tr>
 </tbody>
 </table>
-<p>函数名、参数名 / 类型 / 默认值、一句话摘要都从函数签名和 docstring 自动读取,不在装饰器里重复(见 <a href="http://SKILL.md">SKILL.md</a> §3)。</p>
-<h2 id="记录到-dag">记录到 DAG<a class="header-anchor" href="#记录到-dag">#</a></h2>
-<ul>
-<li><strong>进入函数</strong>:写一个 <code>code</code> 节点(<code>output=None</code>, <code>status=&quot;running&quot;</code>),函数 docstring 一并存进该节点的 <code>metadata.doc</code>,渲染上下文时拼在 <code>函数名(参数)</code> 前面。</li>
-<li><strong>函数体内 <code>runtime.exec</code></strong>:每次调用写一个 <code>llm</code> 节点。</li>
-<li><strong>退出函数</strong>:回填同一个 <code>code</code> 节点的 <code>output</code> / <code>status</code>。</li>
-</ul>
-<p><code>expose=&quot;hidden&quot;</code> 时不写任何节点。standalone 运行(没安装 DAG store)时记录全部 no-op,函数照常执行。</p>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-13</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/agentic-programming/writing-functions/pure-python.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Pure Python functions</span></a><a class="pn-link pn-next" href="/docs/api/providers.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Providers</span></a></div></article></main>
+<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/pure-python.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">纯 Python 函数</span></a><a class="pn-link pn-next" href="/docs/design/integrations/README.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Integrations</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#用法">用法</a>
-<a class="" href="#装饰器参数">装饰器参数</a>
-<a class="" href="#记录到-dag">记录到 DAG</a>
+<a class="" href="#适用场景">适用场景</a>
+<a class="" href="#设计要点">设计要点</a>
+<a class="" href="#示例不调-exec纯串联">示例：不调 exec，纯串联</a>
+<a class="" href="#示例调一次-exec-做总结">示例：调一次 exec 做总结</a>
+<a class="" href="#context-tree">Context Tree</a>
+<a class="" href="#步骤之间的数据传递">步骤之间的数据传递</a>
+<a class="" href="#步骤之间插入-python-处理">步骤之间插入 Python 处理</a>
+<a class="" href="#错误处理">错误处理</a>
+<a class="" href="#与大模型选择调用的区别">与&amp;quot;大模型选择调用&amp;quot;的区别</a>
 </div></aside>
 </div>
 

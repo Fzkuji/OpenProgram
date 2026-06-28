@@ -5,7 +5,7 @@
 `expose="hidden"` is used.
 
 This page explains the usage patterns. Metadata rules live in
-[`function_metadata.md`](function_metadata.md).
+[`function-metadata.md`](function-metadata.md).
 
 ## Basic pattern
 
@@ -70,10 +70,10 @@ be passed directly into `tools=[...]`.
 
 The decorator fields (`expose`, `render_range`, `input`, `no_tools`,
 `system`, `workdir_mode`, …) are documented in **one place**:
-[`function_metadata.md`](function_metadata.md) §3. The API reference at
-[`../../api/agentic_function.md`](../../api/agentic_function.md) carries
+[`function-metadata.md`](function-metadata.md) §3. The API reference at
+[`../../api/agentic_function.md`](../../api/agentic-function.md) carries
 the same table for quick lookup.
 
 This page covers usage *patterns*; it intentionally does not duplicate
 the field-by-field reference. If you're looking for what a field does,
-go to `function_metadata.md`.
+go to `function-metadata.md`.

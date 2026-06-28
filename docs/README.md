@@ -34,7 +34,7 @@ tutorial will not teach you. **Read this before writing functions.**
 
 | File | Purpose |
 |---|---|
-| [`api/agentic_function.md`](api/agentic_function.md) | `@agentic_function` decorator API |
+| [`api/agentic_function.md`](api/agentic-function.md) | `@agentic_function` decorator API |
 | [`api/runtime.md`](api/runtime.md) | `Runtime.exec()` and runtime behavior |
 | [`api/providers.md`](api/providers.md) | Provider/runtime classes and setup |
 | [`provider-token-tracking.md`](provider-token-tracking.md) | Provider usage accounting semantics |

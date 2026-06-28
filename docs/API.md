@@ -6,7 +6,7 @@
 
 | 组件 | 源文件 | 说明 |
 |------|--------|------|
-| [`agentic_function`](api/agentic_function.md) | `agentic_programming/function.py` | 装饰器。把普通函数变成 Agentic Function,每次调用记录为 session DAG 的一个节点 |
+| [`agentic_function`](api/agentic-function.md) | `agentic_programming/function.py` | 装饰器。把普通函数变成 Agentic Function,每次调用记录为 session DAG 的一个节点 |
 | [`Runtime`](api/runtime.md) | `agentic_programming/runtime.py` | LLM 运行时。从 DAG 算上下文、调用 LLM、把回复写回 DAG |
 | [`create_runtime` 与内置 providers](api/providers.md) | `providers/` | 自动检测或显式创建 Runtime,支持 Anthropic / OpenAI / Gemini / CLI providers |
 

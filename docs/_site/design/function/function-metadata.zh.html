@@ -51,7 +51,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
 <a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
-<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic_function.html">agentic_function</a>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html">agentic_function</a>
 <a class="navlink" href="/docs/api/providers.html">Providers</a>
 <a class="navlink" href="/docs/api/runtime.html">Runtime</a></div></details>
 <details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
@@ -80,13 +80,13 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
 <a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
 <details class="group" data-key="design/function" open><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
-<a class="navlink" href="/docs/design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
-<a class="navlink" href="/docs/design/function/function_metadata.html">Function Metadata Specification</a>
-<a class="navlink active" href="/docs/design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink active" href="/docs/design/function/function-metadata.zh.html">函数元数据规范</a>
 <a class="navlink" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
-<a class="navlink" href="/docs/design/function/pure_python.html">纯 Python 函数</a>
-<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<a class="navlink" href="/docs/design/function/pure-python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
 <details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
 <a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
 <a class="navlink" href="/docs/design/integrations/mcp-integration.html">MCP 工具集成</a>
@@ -171,7 +171,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
   </nav>
   <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Function Design <span class='bc-sep'>›</span> <span class="bc-current">函数元数据规范</span></nav><h1 id="函数元数据规范">函数元数据规范<a class="header-anchor" href="#函数元数据规范">#</a></h1>
 <blockquote>
-<p>本文档是 <a href="/docs/design/function/function_metadata.html"><code>function_metadata.md</code></a> 的中文翻译，仅供阅读参考。<strong>所有规范以英文版为准</strong>——当两份内容不一致时，请按英文版执行；翻译版可能滞后。</p>
+<p>本文档是 <a href="/docs/design/function/function-metadata.html"><code>function-metadata.md</code></a> 的中文翻译，仅供阅读参考。<strong>所有规范以英文版为准</strong>——当两份内容不一致时，请按英文版执行；翻译版可能滞后。</p>
 </blockquote>
 <p>本文档定义&quot;在这个框架里写一个函数（不管是否调用 LLM）时，需要承载哪些元数据、写在哪里、由谁消费&quot;。</p>
 <p>适用范围：所有用 <code>@agentic_function</code> 装饰的函数；以及未被装饰、但被传给 <code>render_options</code> / <code>runtime.exec(tools=[...])</code> / catalog 协议任意一个组件的普通 Python callable。</p>
@@ -676,11 +676,11 @@ fn.input_meta[name][&quot;placeholder&quot;]（前缀 &quot;e.g.&quot;）
 <ul>
 <li><code>openprogram/agentic_programming/function.py</code> — <code>@agentic_function</code> 装饰器实现</li>
 <li><code>openprogram/agentic_programming/decision.py</code> — 选项菜单渲染、回复解析,以及下一步决策原语(<code>decision.make</code>、<code>render_options</code>、<code>parse_args</code>、<code>DecisionError</code>)</li>
-<li><code>docs/design/function/agentic_function.md</code> — 装饰器使用指南</li>
+<li><code>docs/design/function/agentic-function.md</code> — 装饰器使用指南</li>
 <li><code>docs/design/function/function-calling-unification.md</code> — function/tool calling 框架</li>
 <li><code>docs/design/function/tool-calling.md</code> — 单轮原生 tool-use 循环机制</li>
 </ul>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/function_metadata.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Function Metadata Specification</span></a><a class="pn-link pn-next" href="/docs/design/function/tool-calling.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">模型选择下一步的逻辑(工具调用循环)</span></a></div></article></main>
+<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/function-metadata.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Function Metadata Specification</span></a><a class="pn-link pn-next" href="/docs/design/function/tool-calling.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">模型选择下一步的逻辑(工具调用循环)</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#1-为什么需要这份规范">1. 为什么需要这份规范</a>

@@ -1,6 +1,6 @@
 # 函数元数据规范
 
-> 本文档是 [`function_metadata.md`](function_metadata.md) 的中文翻译，仅供阅读参考。**所有规范以英文版为准**——当两份内容不一致时，请按英文版执行；翻译版可能滞后。
+> 本文档是 [`function-metadata.md`](function-metadata.md) 的中文翻译，仅供阅读参考。**所有规范以英文版为准**——当两份内容不一致时，请按英文版执行；翻译版可能滞后。
 
 本文档定义"在这个框架里写一个函数（不管是否调用 LLM）时，需要承载哪些元数据、写在哪里、由谁消费"。
 
@@ -277,6 +277,6 @@ WebUI 表单按以下规则渲染每个参数（在 `web/components/programs/pro
 
 - `openprogram/agentic_programming/function.py` — `@agentic_function` 装饰器实现
 - `openprogram/agentic_programming/decision.py` — 选项菜单渲染、回复解析,以及下一步决策原语(`decision.make`、`render_options`、`parse_args`、`DecisionError`)
-- `docs/design/function/agentic_function.md` — 装饰器使用指南
+- `docs/design/function/agentic-function.md` — 装饰器使用指南
 - `docs/design/function/function-calling-unification.md` — function/tool calling 框架
 - `docs/design/function/tool-calling.md` — 单轮原生 tool-use 循环机制

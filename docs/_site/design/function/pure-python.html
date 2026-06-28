@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>@agentic_function 按固定顺序调用子函数 · OpenProgram Docs</title>
+<title>纯 Python 函数 · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -51,7 +51,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
 <a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
-<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic_function.html">agentic_function</a>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html">agentic_function</a>
 <a class="navlink" href="/docs/api/providers.html">Providers</a>
 <a class="navlink" href="/docs/api/runtime.html">Runtime</a></div></details>
 <details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
@@ -80,13 +80,13 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
 <a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
 <details class="group" data-key="design/function" open><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
-<a class="navlink" href="/docs/design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
-<a class="navlink" href="/docs/design/function/function_metadata.html">Function Metadata Specification</a>
-<a class="navlink" href="/docs/design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/design/function/function-metadata.zh.html">函数元数据规范</a>
 <a class="navlink" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
-<a class="navlink" href="/docs/design/function/pure_python.html">纯 Python 函数</a>
-<details class="group" data-key="design/function/function_calling" open><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink active" href="/docs/design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<a class="navlink active" href="/docs/design/function/pure-python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
 <details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
 <a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
 <a class="navlink" href="/docs/design/integrations/mcp-integration.html">MCP 工具集成</a>
@@ -169,137 +169,101 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Function Design <span class='bc-sep'>›</span> Function Calling <span class='bc-sep'>›</span> <span class="bc-current">@agentic_function 按固定顺序调用子函数</span></nav><h1 id="agentic_function-按固定顺序调用子函数">@agentic_function 按固定顺序调用子函数<a class="header-anchor" href="#agentic_function-按固定顺序调用子函数">#</a></h1>
-<p>调用大模型（可选），按代码写死的顺序调用多个子函数。</p>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Function Design <span class='bc-sep'>›</span> <span class="bc-current">纯 Python 函数</span></nav><h1 id="纯-python-函数">纯 Python 函数<a class="header-anchor" href="#纯-python-函数">#</a></h1>
 <h2 id="适用场景">适用场景<a class="header-anchor" href="#适用场景">#</a></h2>
+<p>任务是纯确定性逻辑，不需要 LLM 推理。例如：</p>
 <ul>
-<li>研究流程：调研 → 找 gap → 生成想法</li>
-<li>论文流程：写初稿 → 审稿 → 修改</li>
-<li>数据流程：采集 → 清洗 → 分析</li>
-<li>任何步骤顺序固定的多步任务</li>
+<li>字数统计</li>
+<li>文件读写</li>
+<li>数据格式转换</li>
+<li>数学计算</li>
 </ul>
 <h2 id="设计要点">设计要点<a class="header-anchor" href="#设计要点">#</a></h2>
 <ul>
-<li>用 <code>@agentic_function</code> 装饰器</li>
-<li>按固定顺序调用多个子 <code>@agentic_function</code></li>
-<li><code>exec()</code> 可选：不调（纯串联），或调多次（每次创建一个 exec 子节点）</li>
-<li>子函数之间通过 Python 变量传递数据</li>
-<li>一个函数可以调多次 <code>exec()</code>，也可以调任意多个其他 <code>@agentic_function</code></li>
+<li><strong>不用</strong> <code>@agentic_function</code> 装饰器</li>
+<li><strong>不用</strong> <code>runtime.exec()</code></li>
+<li><strong>不需要</strong> <code>runtime</code> 参数</li>
+<li>用标准 Google-style docstring</li>
 </ul>
-<h2 id="示例不调-exec纯串联">示例：不调 exec，纯串联<a class="header-anchor" href="#示例不调-exec纯串联">#</a></h2>
-<pre><code class="language-python"><span class="nd">@agentic_function</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">research_pipeline</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;执行完整研究流程：调研 → 找 gap → 生成想法。</span>
+<h2 id="示例">示例<a class="header-anchor" href="#示例">#</a></h2>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">word_count</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;统计文本中的单词数量。</span>
 
 <span class="sd">    Args:</span>
-<span class="sd">        task: 研究主题。</span>
-<span class="sd">        runtime: LLM 运行时实例。</span>
+<span class="sd">        text: 输入文本。</span>
 
 <span class="sd">    Returns:</span>
-<span class="sd">        包含 survey、gaps、ideas 的结果字典。</span>
+<span class="sd">        单词数量。</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-    <span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-    <span class="n">ideas</span> <span class="o">=</span> <span class="n">generate_ideas</span><span class="p">(</span><span class="n">gaps</span><span class="o">=</span><span class="n">gaps</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;survey&quot;</span><span class="p">:</span> <span class="n">survey</span><span class="p">,</span> <span class="s2">&quot;gaps&quot;</span><span class="p">:</span> <span class="n">gaps</span><span class="p">,</span> <span class="s2">&quot;ideas&quot;</span><span class="p">:</span> <span class="n">ideas</span><span class="p">}</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
 </code></pre>
-<h2 id="示例调一次-exec-做总结">示例：调一次 exec 做总结<a class="header-anchor" href="#示例调一次-exec-做总结">#</a></h2>
-<pre><code class="language-python"><span class="nd">@agentic_function</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">research_pipeline</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runtime</span><span class="p">:</span> <span class="n">Runtime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;执行完整研究流程并总结结果。</span>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">extract_emails</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;从文本中提取所有邮箱地址。</span>
 
 <span class="sd">    Args:</span>
-<span class="sd">        task: 研究主题。</span>
-<span class="sd">        runtime: LLM 运行时实例。</span>
+<span class="sd">        text: 输入文本。</span>
 
 <span class="sd">    Returns:</span>
-<span class="sd">        整合后的研究总结。</span>
+<span class="sd">        邮箱地址列表。</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-    <span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-    <span class="n">ideas</span> <span class="o">=</span> <span class="n">generate_ideas</span><span class="p">(</span><span class="n">gaps</span><span class="o">=</span><span class="n">gaps</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">runtime</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="p">[</span>
-        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Survey:</span><span class="se">\n</span><span class="si">{</span><span class="n">survey</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;Gaps:</span><span class="se">\n</span><span class="si">{</span><span class="n">gaps</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;Ideas:</span><span class="se">\n</span><span class="si">{</span><span class="n">ideas</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="p">)},</span>
-    <span class="p">])</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;[\w.+-]+@[\w-]+\.[\w.-]+&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
 </code></pre>
 <h2 id="context-tree">Context Tree<a class="header-anchor" href="#context-tree">#</a></h2>
-<pre><code>research_pipeline
-├── survey_topic       ← 第1步
-├── identify_gaps      ← 第2步
-└── generate_ideas     ← 第3步
-</code></pre>
-<h2 id="步骤之间的数据传递">步骤之间的数据传递<a class="header-anchor" href="#步骤之间的数据传递">#</a></h2>
-<p>子函数之间通过 Python 变量传递，不需要大模型参与：</p>
-<pre><code class="language-python"><span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-<span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-</code></pre>
-<p><code>survey_topic</code> 的返回值直接作为 <code>identify_gaps</code> 的输入参数。</p>
-<h2 id="步骤之间插入-python-处理">步骤之间插入 Python 处理<a class="header-anchor" href="#步骤之间插入-python-处理">#</a></h2>
-<pre><code class="language-python"><span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+<p>纯 Python 函数不出现在 context tree 中（除非加了 <code>@traced</code> 装饰器）。</p>
+<p>如果希望在 execution tree 中看到调用记录，可以加 <code>@traced</code>：</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.agentic_programming.function</span><span class="w"> </span><span class="kn">import</span> <span class="n">traced</span>
 
-<span class="c1"># 中间插入普通 Python 处理</span>
-<span class="n">key_points</span> <span class="o">=</span> <span class="n">extract_key_points</span><span class="p">(</span><span class="n">survey</span><span class="p">)</span>
-<span class="n">filtered</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">key_points</span> <span class="k">if</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;relevance&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">]</span>
-
-<span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">filtered</span><span class="p">),</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
+<span class="nd">@traced</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">word_count</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;统计文本中的单词数量。&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
 </code></pre>
-<h2 id="错误处理">错误处理<a class="header-anchor" href="#错误处理">#</a></h2>
-<pre><code class="language-python"><span class="n">survey</span> <span class="o">=</span> <span class="n">survey_topic</span><span class="p">(</span><span class="n">topic</span><span class="o">=</span><span class="n">task</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">survey</span> <span class="ow">or</span> <span class="s2">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">survey</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s2">&quot;Survey failed&quot;</span><span class="p">,</span> <span class="s2">&quot;survey&quot;</span><span class="p">:</span> <span class="n">survey</span><span class="p">}</span>
-
-<span class="n">gaps</span> <span class="o">=</span> <span class="n">identify_gaps</span><span class="p">(</span><span class="n">survey</span><span class="o">=</span><span class="n">survey</span><span class="p">,</span> <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">)</span>
-</code></pre>
-<h2 id="与大模型选择调用的区别">与&quot;大模型选择调用&quot;的区别<a class="header-anchor" href="#与大模型选择调用的区别">#</a></h2>
+<h2 id="何时用纯-python何时用-agentic_function">何时用纯 Python，何时用 @agentic_function<a class="header-anchor" href="#何时用纯-python何时用-agentic_function">#</a></h2>
 <table>
 <thead>
 <tr>
-<th></th>
-<th>固定顺序调用</th>
-<th>大模型选择调用</th>
+<th>判断标准</th>
+<th>纯 Python</th>
+<th>@agentic_function</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>谁决定调用顺序</td>
-<td>Python 代码</td>
-<td>大模型</td>
+<td>输入确定 → 输出确定</td>
+<td>✓</td>
+<td></td>
 </tr>
 <tr>
-<td>调用几个子函数</td>
-<td>多个，全部执行</td>
-<td>1个，选择执行</td>
+<td>需要理解语义</td>
+<td></td>
+<td>✓</td>
 </tr>
 <tr>
-<td>是否需要函数注册表</td>
-<td>不需要</td>
-<td>需要</td>
+<td>需要生成自然语言</td>
+<td></td>
+<td>✓</td>
 </tr>
 <tr>
-<td>灵活性</td>
-<td>固定流程</td>
-<td>根据任务变化</td>
+<td>需要分类/判断/推理</td>
+<td></td>
+<td>✓</td>
+</tr>
+<tr>
+<td>有明确的算法/规则</td>
+<td>✓</td>
+<td></td>
 </tr>
 </tbody>
 </table>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-20</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/pure_python.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">纯 Python 函数</span></a><a class="pn-link pn-next" href="/docs/design/integrations/README.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Integrations</span></a></div></article></main>
+<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/tool-calling.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">模型选择下一步的逻辑(工具调用循环)</span></a><a class="pn-link pn-next" href="/docs/design/function/function-calling/code-call.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">@agentic_function 按固定顺序调用子函数</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#适用场景">适用场景</a>
 <a class="" href="#设计要点">设计要点</a>
-<a class="" href="#示例不调-exec纯串联">示例：不调 exec，纯串联</a>
-<a class="" href="#示例调一次-exec-做总结">示例：调一次 exec 做总结</a>
+<a class="" href="#示例">示例</a>
 <a class="" href="#context-tree">Context Tree</a>
-<a class="" href="#步骤之间的数据传递">步骤之间的数据传递</a>
-<a class="" href="#步骤之间插入-python-处理">步骤之间插入 Python 处理</a>
-<a class="" href="#错误处理">错误处理</a>
-<a class="" href="#与大模型选择调用的区别">与&amp;quot;大模型选择调用&amp;quot;的区别</a>
+<a class="" href="#何时用纯-python何时用-agentic_function">何时用纯 Python，何时用 @agentic_function</a>
 </div></aside>
 </div>
 
