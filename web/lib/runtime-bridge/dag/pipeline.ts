@@ -681,8 +681,9 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       tg.appendChild(rect);
       const text = _svg("text", {
         x: "0",
-        y: "4",
+        y: "0",
         "text-anchor": "middle",
+        "dominant-baseline": "central",
         "font-size": "9",
         "font-family": "var(--font-sans, sans-serif)",
         "font-weight": "500",
