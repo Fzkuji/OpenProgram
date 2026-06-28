@@ -209,6 +209,6 @@ web/components/chat/composer/
 
 ## 关联
 
-* user-input registry / runtime.ask：[../runtime/user-input-requests.md](../runtime/user-input-requests.md)
+* user-input registry / runtime.ask：[../runtime/user-input-requests.md](../runtime/operations/user-input-requests.md)
 * 事件层（统一事件流，这是它在前端的对齐落点）：
   [../proactive/event-reference.html](../proactive/event-reference.html)

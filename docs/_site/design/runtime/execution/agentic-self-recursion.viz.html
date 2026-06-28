@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Multi-agent + per-turn revert: status · OpenProgram Docs</title>
+<title>Agentic 函数防自递归机制 — 设计文档（可视化） · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -124,34 +124,34 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
 <details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
-<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
-<a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
-<a class="navlink" href="/docs/design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-spec.html">DAG 布局视觉规范</a>
-<a class="navlink" href="/docs/design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
-<a class="navlink active" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
-<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
 <a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
-<a class="navlink" href="/docs/design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
 <a class="navlink" href="/docs/design/runtime/runtime.html">Runtime — 设计理由</a>
-<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
-<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
-<a class="navlink" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
-<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.html">分支自动命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
-<a class="navlink" href="/docs/design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
 <a class="navlink" href="/docs/design/runtime/unified-session-context.html">统一 session 上下文创建</a>
-<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a></div></details>
+<details class="group" data-key="design/runtime/execution" open><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink active" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html">运行中状态的持久化 / 重连恢复</a></div></details>
 <details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html">Session 子系统</a>
 <a class="navlink" href="/docs/design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html">Session Name — 会话命名设计</a>
 <a class="navlink" href="/docs/design/runtime/session/context.html">Session 上下文</a>
 <a class="navlink" href="/docs/design/runtime/session/operations.html">Session 操作流程</a>
 <a class="navlink" href="/docs/design/runtime/session/storage.html">Session 数据模型</a>
@@ -169,106 +169,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">Multi-agent + per-turn revert: status</span></nav><h1 id="multi-agent-per-turn-revert-status">Multi-agent + per-turn revert: status<a class="header-anchor" href="#multi-agent-per-turn-revert-status">#</a></h1>
-<p>Working branch: <code>git-as-truth</code>. HEAD = <code>6b5c5ea</code>.</p>
-<h2 id="whats-done">What's done<a class="header-anchor" href="#whats-done">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>Commit</th>
-<th>Scope</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>a0a6700</code></td>
-<td><code>openprogram/store/file_backup/</code> subpackage (paths / manifest / store / gc) + 7 unit tests. Git-agnostic per-turn file commits. Hook API: <code>BackupStore.backup_before_edit(turn_id, abs_path)</code> / <code>.restore_turn(turn_id)</code>.</td>
-</tr>
-<tr>
-<td><code>3674f3e</code></td>
-<td>Dispatcher sets <code>_current_turn_id</code> ContextVar = <code>assistant_msg_id</code>. <code>write</code> / <code>edit</code> / <code>apply_patch</code> tools call <code>backup_for_current_turn(path)</code> pre-fs-mutate. <code>_runtime.py</code> wraps sync-tool executor in <code>copy_context().run(...)</code> so ContextVars propagate to thread-pool. <code>revert_turn(session_id, assistant_msg_id)</code> dispatcher fn + WS action <code>revert_turn</code> exposed.</td>
-</tr>
-<tr>
-<td><code>eb2b06a</code></td>
-<td>D + G: <code>ContextCommit.parent_ids: list[str]</code> with single-parent back-compat via <code>__post_init__</code>; frontend assistant bubble gets a Revert button calling the <code>revert_turn</code> WS action with toast feedback.</td>
-</tr>
-<tr>
-<td><code>6fde168</code></td>
-<td>C part 1: <code>&lt;repo&gt;/workdir/</code> materialized on session init (with <code>.gitkeep</code>). <code>GitSession.workdir_path</code> + <code>SessionStore.session_workdir(sid)</code> accessors. <code>commit_all</code> already picks up workdir edits via <code>git add -A</code>.</td>
-</tr>
-<tr>
-<td><code>6de702f</code></td>
-<td>E part 1: <code>GitSession.add_worktree(branch, base_ref) / remove_worktree(path) / list_worktrees()</code> primitives. Worktrees live at <code>&lt;repo&gt;/_worktrees/&lt;branch&gt;/</code>.</td>
-</tr>
-<tr>
-<td><code>5ba1314</code></td>
-<td>E part 2: <code>openprogram/agent/sub_agent.py::allocate_sub_agent(session_id, parent_assistant_id, label?) / release_sub_agent(ws)</code> and <code>SessionStore.{allocate,release}_sub_agent_worktree(...)</code>. Mints <code>sub_&lt;aid&gt;_&lt;label?&gt;_&lt;hex&gt;</code> branch + materializes worktree.</td>
-</tr>
-<tr>
-<td><code>1066afd</code></td>
-<td>H: WS action <code>list_turn_files</code> returns <code>BackupStore.list_backed_paths(turn_id)</code>; assistant bubble renders a <code>.turn-files-chips</code> chip strip showing basenames when the turn touched any files. Verified via chrome MCP.</td>
-</tr>
-<tr>
-<td><code>feda1d4</code></td>
-<td>C part 2: <code>openprogram/agent/_workdir.py::apply_default_workdir(runtime, session_id)</code> called from <code>webui/_execute/__init__.py</code> after the chat runtime is fetched. <code>runtime.set_workdir</code> defaults to the session's <code>workdir/</code>; <code>/api/run</code> still overrides via its own set_workdir call. In-process tools consult <code>get_default_workdir()</code> not <code>os.getcwd()</code>, so the cwd switch is safe.</td>
-</tr>
-<tr>
-<td><code>acd7fa5</code></td>
-<td>E part 3 (first pass): <code>agent/sub_agent_run.py::run_sub_agent_turn(parent_session_id, parent_assistant_id, prompt, agent_id, label?)</code> + <code>session_db.set_db_override / reset_db_override</code> ContextVar override so the dispatcher routes through a worktree-rooted SessionStore. WS action <code>spawn_sub_agent</code>.</td>
-</tr>
-<tr>
-<td><code>6b5c5ea</code></td>
-<td>F + E part 3 isolation fixes: <code>agent/_merge.py::process_merge_turn(...)</code>, WS action <code>merge_branches</code>, multi-parent ContextCommit write. Same commit hardens sub-agent isolation: clear worktree-inherited history/+ context commits, write summary as <code>role=&quot;assistant&quot;</code> (not tool), preserve parent HEAD across the synthetic write.</td>
-</tr>
-</tbody>
-</table>
-<p>Tests: 675 pass / 0 fail across <code>tests/ --ignore=tests/integration</code>.</p>
-<p>End-to-end (chrome MCP, real LLM):</p>
-<ul>
-<li><code>spawn_sub_agent</code> → <code>final_text=&quot;red&quot;</code>, sub-branch commit recorded.</li>
-<li>Second <code>spawn_sub_agent</code> → <code>final_text=&quot;blue&quot;</code>, second sub-branch.</li>
-<li><code>merge_branches</code> over both → <code>final_text=&quot;Red and blue are two distinct colors.&quot;</code>, <code>commit_id=commit_a64d36670cdfbfd2</code>, <code>parent_ids</code> carries the prior parent ContextCommit id + 2 sub-branch SHAs.</li>
-</ul>
-<h2 id="known-constraints-mvp-level-not-yet-addressed">Known constraints (MVP-level, not yet addressed)<a class="header-anchor" href="#known-constraints-mvp-level-not-yet-addressed">#</a></h2>
-<p>These don't block shipping the current behavior but are the obvious next iterations:</p>
-<ol>
-<li>
-<p><strong>No workdir-level merge in F.</strong> The merge turn synthesizes a textual answer from each sub-branch's summary; it doesn't <code>git merge</code> the sub-branches' file edits into the parent's <code>workdir/</code>. If two sub-agents wrote different code, the user has to pick a branch manually with <code>git checkout</code> or <code>git merge</code>.</p>
-</li>
-<li>
-<p><strong>Sub-branch context commits aren't surfaced.</strong> After <code>release_sub_agent</code>, the worktree dir is gone. The ContextCommit JSON files committed onto the sub-branch are reachable only via <code>git show &lt;branch&gt;:context/commits/&lt;id&gt;.json</code>. The merge resolver uses the parent's DAG summary row instead, which works but doesn't expose the per-branch reasoning chain.</p>
-</li>
-<li>
-<p><strong>No UI yet for <code>spawn_sub_agent</code> / <code>merge_branches</code>.</strong> Both WS actions work, but there's no button in the chat composer or DAG view that fires them. Plumbing is in; UI is the next visible feature.</p>
-</li>
-<li>
-<p><strong>Concurrent sub-agents off the same parent.</strong> Each gets its own worktree (no fs contention), but <code>default_db()</code> ContextVar override is per-context — two sub-agents spawned from the same WS handler would need separate executor threads (and <code>copy_context().run(...)</code> per thread) so the overrides don't clobber. The single-thread executor path used by the WS handler is fine for sequential spawns; parallel spawn would need a careful pass.</p>
-</li>
-<li>
-<p><strong>Old sessions with broken sub_agent tool rows need cleanup.</strong> If you have <code>~/.openprogram/sessions/&lt;sid&gt;/history/</code> JSON files where <code>role=&quot;code&quot;</code> and <code>name=&quot;sub_agent&quot;</code> (left over from the first E-part-3 implementation), they'll still trip <code>No tool call found for function call output</code> on subsequent turns. Wipe those files + their referencing context commits and <code>git commit</code> the deletion. Fresh sessions don't need this.</p>
-</li>
-</ol>
-<h2 id="touch-points-worth-re-reading-before-extending">Touch-points worth re-reading before extending<a class="header-anchor" href="#touch-points-worth-re-reading-before-extending">#</a></h2>
-<ul>
-<li><code>openprogram/agent/dispatcher.py::process_user_turn</code> — reads <code>default_db()</code> at turn start; the ContextVar override is what makes sub-agent isolation possible.</li>
-<li><code>openprogram/context/engine.py::_build_messages_from_commit</code> — pulls <code>db.get_branch(session_id)</code> and <code>db.get_messages(session_id)</code>, splices sub-calls by caller. Sub-agent's worktree DAG must NOT inherit parent's nodes here.</li>
-<li><code>openprogram/store/_msg_adapter.py::_msg_to_node</code> — only tool rows pick up <code>called_by</code> from <code>extra.tool_use.called_by</code>; assistant rows leave it in metadata. That's why the sub_agent summary write preserves HEAD manually.</li>
-<li><code>ContextCommit.parent_ids</code> — list, set via <code>__post_init__</code> from single <code>parent_id</code> for back-compat. Merge turn is the first writer that puts &gt; 1 entry.</li>
-</ul>
-<h2 id="verification-baseline">Verification baseline<a class="header-anchor" href="#verification-baseline">#</a></h2>
-<pre><code class="language-bash">python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/<span class="w"> </span>--ignore<span class="o">=</span>tests/integration<span class="w"> </span>-q
-<span class="c1"># expected: 675 passed</span>
-git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>55588ad..HEAD
-<span class="c1"># expected: 1066afd / feda1d4 / acd7fa5 / 6b5c5ea</span>
-</code></pre>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/edge-field-rename.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 边字段重命名设计文档</span></a><a class="pn-link pn-next" href="/docs/design/runtime/next-step-decision.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Next-step decision making(decision.make / exec(choices=))</span></a></div></article></main>
-  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
-<div class="toc-list">
-<a class="" href="#whats-done">What&#x27;s done</a>
-<a class="" href="#known-constraints-mvp-level-not-yet-addressed">Known constraints (MVP-level, not yet addressed)</a>
-<a class="" href="#touch-points-worth-re-reading-before-extending">Touch-points worth re-reading before extending</a>
-<a class="" href="#verification-baseline">Verification baseline</a>
-</div></aside>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> Execution <span class='bc-sep'>›</span> <span class="bc-current">Agentic 函数防自递归机制 — 设计文档（可视化）</span></nav><iframe class="viz-frame" src="/docs/design/runtime/execution/agentic-self-recursion.raw.html" loading="lazy" title="可视化文档"></iframe><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/execution/agentic-self-recursion.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Agentic 函数防自递归机制</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/async-task-lifecycle.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Async Task 生命周期</span></a></div></article></main>
+  <aside class="toc"></aside>
 </div>
 
 <div class="search-overlay">

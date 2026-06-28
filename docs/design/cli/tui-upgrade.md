@@ -1,7 +1,7 @@
 # TUI upgrade: transcript rendering & interaction
 
 Status: proposed (2026-06) — research done, implementation not started.
-Companion: [user-input-requests.md](../runtime/user-input-requests.md) (mid-run questions; its TUI surface lands here).
+Companion: [user-input-requests.md](../runtime/operations/user-input-requests.md) (mid-run questions; its TUI surface lands here).
 
 ## Goal
 

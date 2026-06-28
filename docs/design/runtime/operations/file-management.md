@@ -1,8 +1,8 @@
 # 文件修改管理 — 行业分析与 OpenProgram 设计
 
 > 状态: **已实现** (2026-06)。
-> 关联: [`agent-worktree.md`](agent-worktree.md)、[`memory-v2.md`](../memory/memory-v2.md)
-> (实体层)、[`git-as-entity-memory.md`](../memory/git-as-entity-memory.md)。
+> 关联: [`agent-worktree.md`](../execution/agent-worktree.md)、[`memory-v2.md`](../../memory/memory-v2.md)
+> (实体层)、[`git-as-entity-memory.md`](../../memory/git-as-entity-memory.md)。
 > 代码: `store/snapshot/checkpoint/`、`store/shadow_git/`、
 > `store/read_tracking.py`、`agent/_revert.py`、`worktree/`。
 

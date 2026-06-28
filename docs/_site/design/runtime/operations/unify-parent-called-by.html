@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DAG 布局算法设计文档 · OpenProgram Docs</title>
+<title>统一 parent_id 与 called_by — 设计方案 · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -124,34 +124,34 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
 <details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
-<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
-<a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
-<a class="navlink" href="/docs/design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
-<a class="navlink active" href="/docs/design/runtime/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-spec.html">DAG 布局视觉规范</a>
-<a class="navlink" href="/docs/design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
-<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
 <a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
-<a class="navlink" href="/docs/design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
 <a class="navlink" href="/docs/design/runtime/runtime.html">Runtime — 设计理由</a>
-<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
-<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
-<a class="navlink" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
-<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.html">分支自动命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
-<a class="navlink" href="/docs/design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
 <a class="navlink" href="/docs/design/runtime/unified-session-context.html">统一 session 上下文创建</a>
-<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations" open><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink active" href="/docs/design/runtime/operations/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html">运行中状态的持久化 / 重连恢复</a></div></details>
 <details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html">Session 子系统</a>
 <a class="navlink" href="/docs/design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html">Session Name — 会话命名设计</a>
 <a class="navlink" href="/docs/design/runtime/session/context.html">Session 上下文</a>
 <a class="navlink" href="/docs/design/runtime/session/operations.html">Session 操作流程</a>
 <a class="navlink" href="/docs/design/runtime/session/storage.html">Session 数据模型</a>
@@ -169,197 +169,164 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">DAG 布局算法设计文档</span></nav><h1 id="dag-布局算法设计文档">DAG 布局算法设计文档<a class="header-anchor" href="#dag-布局算法设计文档">#</a></h1>
-<p>Status: <strong>decided（视觉规范已定，照此实现）</strong> · Created: 2026-06-29</p>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> Operations <span class='bc-sep'>›</span> <span class="bc-current">统一 parent_id 与 called_by — 设计方案</span></nav><h1 id="统一-parent_id-与-called_by-设计方案">统一 parent_id 与 called_by — 设计方案<a class="header-anchor" href="#统一-parent_id-与-called_by-设计方案">#</a></h1>
 <blockquote>
-<p>右侧 DAG 小地图把每个节点放到网格的 (列, 行)。本文是<strong>权威实现标准</strong>：以后
-所有布局代码照此写，出问题就对照本文（含 <code>dag-layout-spec.html</code> 的 7 张图）查。</p>
-<p><strong>视觉规范（必看）</strong>：<code>docs/design/runtime/dag-layout-spec.html</code> —— 用真 SVG
-画出 7 种场景的目标效果。代码画出来必须和那 7 张图一致。本文是文字版规则，
-那个 html 是图示版，两者等价。</p>
+<p>状态: <strong>部分实施</strong>
+代码: <code>store/session/_msg_adapter.py</code>、<code>webui/persistence.py</code>、<code>contextgit/dag.py</code>、<code>webui/ws_actions/session.py</code></p>
 </blockquote>
-<h2 id="一一个节点的位置-列-行">一、一个节点的位置 = (列, 行)<a class="header-anchor" href="#一一个节点的位置-列-行">#</a></h2>
-<ul>
-<li><strong>列（横向）= lane起始列 + tier缩进</strong></li>
-<li><strong>行（纵向）= depth</strong></li>
-</ul>
-<p>三个量：<strong>lane</strong>（属于第几条分支）、<strong>tier</strong>（在分支内缩进几格）、<strong>depth</strong>
-（第几行）。下面逐个定义。</p>
-<h2 id="二lane-这个节点属于第几条分支">二、lane —— 这个节点属于第几条分支<a class="header-anchor" href="#二lane-这个节点属于第几条分支">#</a></h2>
-<p><strong>规则：有几条分支，就排几列。按分支出现的先后顺序编号，从 0 开始，不跳号。</strong></p>
-<ul>
-<li>第 1 条分支 → lane 0</li>
-<li>第 2 条分支 → lane 1</li>
-<li>第 3 条分支 → lane 2 ……</li>
-</ul>
-<p><strong>一条分支</strong> = 一条对话链：从一句 user 消息开始，顺着对话往下（user → AI回复 →
-下一句 user → AI回复 …）连成的整条。中途 retry / 改写某句话，就在那个点<strong>岔出
-一条新分支</strong>，新分支拿下一个编号。</p>
+<h2 id="1-问题">1. 问题<a class="header-anchor" href="#1-问题">#</a></h2>
+<p>DAG 节点有两个&quot;父指针&quot;字段，含义不同，在不同地方被读写，导致遍历结果不一致。</p>
 <table>
 <thead>
 <tr>
-<th>场景</th>
-<th>分支数</th>
-<th>lane</th>
+<th>字段</th>
+<th>含义</th>
+<th>谁写</th>
+<th>谁读</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>只发一句&quot;你好&quot;（没 retry）</td>
-<td>1</td>
-<td>全 lane 0，不存在第 2 列</td>
+<td><code>called_by</code></td>
+<td>调用关系（谁调用了我）</td>
+<td>DAG store（<code>context/nodes.py</code> 的 <code>Call</code> 对象）</td>
+<td><code>render_context</code>、<code>get_branch</code>、<code>_rebuild_runtime_cards</code>、<code>aggregate_tool_messages</code>（改后）</td>
 </tr>
 <tr>
-<td>&quot;你好&quot; + retry 改成&quot;在吗&quot;</td>
-<td>2</td>
-<td>原 lane 0，retry 出来的 lane 1</td>
+<td><code>parent_id</code></td>
+<td>对话链（我的上一条消息是谁）</td>
+<td><code>_msg_adapter.py</code>（从 <code>called_by</code> 复制）</td>
+<td><code>linear_history</code>、<code>_annotate_spawn_origin</code>、dispatcher 分支管理</td>
 </tr>
 </tbody>
 </table>
-<p><strong>绝不要做</strong>（之前代码绕的弯，全删）：</p>
+<p><strong>根本问题</strong>：<code>_msg_adapter.py</code> 把 <code>called_by</code> 直接赋给 <code>parent_id</code>（行 132/169/188/206），但两者的语义不同：</p>
 <ul>
-<li>❌ 专门判断&quot;哪条是主干&quot;</li>
-<li>❌ &quot;归零&quot;之类特殊处理</li>
-<li>❌ 让没有分叉的对话占用第 2 列</li>
+<li><code>called_by</code> 是<strong>调用层级</strong>：user 的 called_by=ROOT，函数的 called_by=ROOT（手动调用）或 assistant_id（LLM 调用），工具的 called_by=函数 id</li>
+<li><code>parent_id</code> 应该是<strong>对话顺序</strong>：第二条消息的 parent_id 应指向第一条，第三条指向第二条</li>
 </ul>
-<p>就是：<strong>数分支，按出现顺序发列号。</strong></p>
-<h2 id="三tier-在分支内往右缩进几格">三、tier —— 在分支内往右缩进几格<a class="header-anchor" href="#三tier-在分支内往右缩进几格">#</a></h2>
-<p><strong>规则：按角色固定缩进，表示&quot;谁套在谁里面&quot;（沿 <code>caller</code> 子调用边）。</strong></p>
+<p>直接赋值导致：同一个会话里两个 ROOT-parented 的 user 节点，它们的 <code>parent_id</code> 都是空（ROOT 不是有效的消息 id），<code>linear_history</code> 沿 parent_id 走就断了。</p>
+<h2 id="2-两种数据结构">2. 两种数据结构<a class="header-anchor" href="#2-两种数据结构">#</a></h2>
+<p>DAG 和聊天 UI 需要不同的数据格式，两者都需要：</p>
 <table>
 <thead>
 <tr>
-<th>节点</th>
-<th>tier</th>
+<th></th>
+<th>DAG 原始节点</th>
+<th>聊天 UI 消息</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>ROOT</td>
-<td>0</td>
+<td>用途</td>
+<td>运行时（render_context 构建上下文）</td>
+<td>前端显示（消息列表、工具调用卡片）</td>
 </tr>
 <tr>
-<td>user</td>
-<td>1</td>
+<td>工具调用</td>
+<td>每个工具一个独立节点</td>
+<td>折叠进 assistant 消息的 tool_calls[]</td>
 </tr>
 <tr>
-<td>AI 回复（llm）</td>
-<td>2</td>
+<td>thinking</td>
+<td>在 extra 字段里</td>
+<td>提取到 blocks[]</td>
 </tr>
 <tr>
-<td>AI 调用的工具（code）</td>
-<td>3</td>
+<td>格式</td>
+<td><code>{role, name, input, output, called_by, seq}</code></td>
+<td><code>{role, content, tool_calls, blocks, parent_id}</code></td>
 </tr>
 <tr>
-<td>工具内部再调的（子调用）</td>
-<td>上一级 +1</td>
+<td>构建时机</td>
+<td>写入时</td>
+<td>加载时（aggregate_tool_messages）</td>
 </tr>
 </tbody>
 </table>
-<p>&quot;阶梯往右&quot;的缩进效果是<strong>对的</strong>，不是 bug。下一轮 user 回到 tier 1（不是一直
-往右涨）——因为所有顶层 user 都直接挂在 ROOT 下，平级。</p>
-<h2 id="四depth-第几行从上往下">四、depth —— 第几行，从上往下<a class="header-anchor" href="#四depth-第几行从上往下">#</a></h2>
-<p><strong>规则：按聊天/执行的先后顺序（<code>predecessor</code> 对话链 + seq），从上往下排。</strong></p>
-<ul>
-<li>越早发生的越靠上。</li>
-<li>岔出来的分支，和它岔出的位置<strong>对齐到同一行</strong>起步，然后各自往下长。</li>
-</ul>
-<h2 id="五三条全局排版规则">五、三条全局排版规则<a class="header-anchor" href="#五三条全局排版规则">#</a></h2>
-<p><strong>① 正方形网格</strong>：横向格距 = 纵向格距（<code>COL_W == ROW_H</code>）。整张图是标准棋盘格，
-每列列距、每排行距完全一致。子节点在父节点的<strong>严格右下角</strong>——往右一格 + 往下
-一格（45° 对角线，距离 √2×格距）。</p>
-<p><strong>② 严格网格对齐 + 横竖都紧凑</strong>：每个节点落在网格交点上，同一行 y 完全对齐、
-同一列 x 完全对齐，不允许半格偏移。<strong>列空了右边左移补上，行空了下面上移补上</strong>
-——收起一个节点，它占的那一行腾空，下面所有行整体上移；它占的列腾空，右边的
-列左移。空行、空列都不保留。</p>
-<p><strong>③ 分支按实际占用列紧贴排，不重叠</strong>：一条分支占用的列 = 从它的起始列到它子树
-最深那一格。<strong>下一条分支从上一条实际占用的最右列 +1 开始</strong>，整条在前一条右边，
-互不重叠。</p>
-<blockquote>
-<p>规则 ②③ 联动 = &quot;收起左移&quot;：前一条分支的子调用收起 → 它占用的列变少 → 后面
-分支起始列跟着左移。例：lane0 展开占列 0~3，lane1 从列4 起；工具收起后 lane0
-只占 0~2，lane1 左移到列3，同时下面的行也上移。</p>
-</blockquote>
-<h2 id="六画出来长什么样文字版图示见-spechtml">六、画出来长什么样（文字版；图示见 spec.html）<a class="header-anchor" href="#六画出来长什么样文字版图示见-spechtml">#</a></h2>
-<p><strong>只发一句&quot;你好&quot;（1 条分支，全 lane 0）：</strong></p>
-<pre><code>列:   0    1    2
-行0  ◇ROOT
-行1       ○你好          ← lane0, tier1
-行2            △AI回复    ← lane0, tier2
-</code></pre>
-<p><strong>&quot;你好&quot; + retry 改成&quot;在吗&quot;（2 条分支）：</strong></p>
-<pre><code>列:   0    1    2    3    4
-行0  ◇ROOT
-行1       ○你好 ┈┈┈ ○在吗          ← lane1 从列3 起（lane0 占列0~2）
-行2            △回复1    △回复1'
-</code></pre>
-<p>lane0 占列 0~2 → lane1 从列 3 起，紧贴不重叠。虚线 = 从同一点岔开的平行分支。</p>
-<blockquote>
-<p>完整 7 种场景（单轮 / 多轮 / retry / 工具 / 手动调函数 / 综合 / 收起左移）
-见 <code>dag-layout-spec.html</code>。</p>
-</blockquote>
-<h2 id="七当前-bug要修的">七、当前 bug（要修的）<a class="header-anchor" href="#七当前-bug要修的">#</a></h2>
-<p>只发一句&quot;你好&quot;，本该全 lane 0，但代码给 user/AI回复 发了 <strong>lane 1</strong>（跳过 0），
-导致整体往右偏一大块，ROOT 孤零零在左边。</p>
-<p>根因：判断&quot;分支怎么分列&quot;时用错了边——用了 <code>predecessor</code>（对话前驱），而第一句
-话没有前驱 → 接不上 → 被误判成新分支；还套了一层&quot;主干判断 / 归零&quot;的绕弯逻辑。</p>
-<p><strong>修法：照第二节重写——数分支、按出现顺序发列号 0,1,2，删掉主干判断和归零。</strong></p>
-<h2 id="八改哪些文件">八、改哪些文件<a class="header-anchor" href="#八改哪些文件">#</a></h2>
+<p><code>aggregate_tool_messages</code> 就是把 DAG 格式转成 UI 格式的。</p>
+<h2 id="3-已完成的修复">3. 已完成的修复<a class="header-anchor" href="#3-已完成的修复">#</a></h2>
 <table>
 <thead>
 <tr>
-<th>文件</th>
-<th>改什么</th>
+<th>修复</th>
+<th>commit</th>
+<th>做了什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>graph_layout/lane.py</code></td>
-<td>整个重写：数分支 → 按出现顺序发 lane 0,1,2。删掉 ROOT-walk / first_at_fork / 归零那套</td>
+<td><code>_rebuild_runtime_cards</code> 用 called_by</td>
+<td><code>476aa8f6</code></td>
+<td>函数后代关系用 called_by 判断，不再误 drop user 节点</td>
 </tr>
 <tr>
-<td><code>graph_layout/topology.py</code></td>
-<td>提供&quot;同一条分支链&quot;判断：沿 <code>caller</code>（子调用树）+ <code>predecessor</code>（对话链）走</td>
+<td><code>aggregate_tool_messages</code> 优先 called_by</td>
+<td>本次</td>
+<td>工具→assistant 聚合用 <code>called_by</code> 找父节点，<code>parent_id</code> 作 fallback</td>
 </tr>
 <tr>
-<td><code>graph_layout/__init__.py</code></td>
-<td>分支占列计算（规则③）：按每条 lane 实际最大 tier 紧贴排，下一条 = 上一条最右列 +1</td>
-</tr>
-<tr>
-<td><code>dag/types.ts</code> 等前端</td>
-<td><code>COL_W == ROW_H</code>（正方形网格，规则①）</td>
-</tr>
-<tr>
-<td>验证</td>
-<td><code>tools/dag_dump.py</code> 跑下方 7 种场景</td>
+<td><code>handle_load_session</code> fallback</td>
+<td><code>1adfbbc3</code></td>
+<td>linear_history 不完整时 fallback 到 get_branch</td>
 </tr>
 </tbody>
 </table>
-<h2 id="九验证命令行不用截图网页">九、验证（命令行，不用截图网页）<a class="header-anchor" href="#九验证命令行不用截图网页">#</a></h2>
-<pre><code>python tools/dag_dump.py [session_id]
-</code></pre>
-<p>打印每个节点的 lane / tier / depth + ASCII 网格图。改完代码跑一下对照。</p>
-<p>要验的场景（对应 spec.html 7 张图）：</p>
+<h2 id="4-当前策略">4. 当前策略<a class="header-anchor" href="#4-当前策略">#</a></h2>
+<p><strong>渐进式统一</strong>：不一次性废弃 <code>parent_id</code>，而是逐步让关键路径优先使用 <code>called_by</code>。</p>
+<p><code>parent_id</code> 在 188 处被引用，深入 dispatcher、分支管理、sub_agent 等核心模块。一次性替换风险太高。当前策略：</p>
 <ol>
-<li>单轮：&quot;你好&quot; → 全 lane 0</li>
-<li>多轮：所有 user 挂 ROOT、tier1 同列；全 lane 0</li>
-<li>retry：第 2 条分支 lane1，从 lane0 最右列 +1 起</li>
-<li>工具调用：工具 tier3，在 AI 下缩进，不另开 lane</li>
-<li>手动调函数：函数挂 ROOT（tier1），内部子调用逐层缩进</li>
-<li>综合：lane 不重叠、tier 缩进、depth 按时间</li>
-<li>收起：横向 lane 左移、纵向行上移，空行空列不留</li>
+<li><strong>聚合层</strong>（<a href="http://persistence.py">persistence.py</a>）：优先 <code>called_by</code>，<code>parent_id</code> 作 fallback ✅ 已完成</li>
+<li><strong>渲染层</strong>（<a href="http://session.py">session.py</a> _rebuild_runtime_cards）：用 <code>called_by</code> ✅ 已完成</li>
+<li><strong>加载层</strong>（<a href="http://session.py">session.py</a> handle_load_session）：linear_history + get_branch fallback ✅ 已完成</li>
+<li><strong>_msg_adapter.py</strong>：继续复制 called_by → parent_id（向后兼容）</li>
+<li><strong>linear_history</strong>：保持用 parent_id（有 fallback 兜底）</li>
 </ol>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag-viewport.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG Viewport 设计文档</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag-layout-algorithm.viz.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG 布局算法（可视化）</span></a></div></article></main>
+<h2 id="5-后续计划低优先级">5. 后续计划（低优先级）<a class="header-anchor" href="#5-后续计划低优先级">#</a></h2>
+<p>当以上修复经过充分验证后，可以进一步：</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>做什么</th>
+<th>前提</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td><code>_msg_adapter.py</code> 的 parent_id 按对话 seq 顺序设（而非复制 called_by）</td>
+<td>确认当前修复稳定</td>
+</tr>
+<tr>
+<td>B</td>
+<td><code>linear_history</code> 改用正确的 parent_id 遍历（步骤 A 后自然正确）</td>
+<td>步骤 A</td>
+</tr>
+<tr>
+<td>C</td>
+<td>移除 handle_load_session 的 get_branch fallback（不需要了）</td>
+<td>步骤 B</td>
+</tr>
+<tr>
+<td>D</td>
+<td>标记 parent_id 为 deprecated，长期只用 called_by</td>
+<td>步骤 A-C 全部稳定</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-风险">6. 风险<a class="header-anchor" href="#6-风险">#</a></h2>
+<p><strong>当前方案的风险</strong>：低。只改了聚合层的字段优先级，parent_id 作 fallback 保留。最坏情况 = called_by 缺失时 fallback 到 parent_id（和改之前行为一致）。</p>
+<p><strong>后续步骤的风险</strong>：中-高。改 _msg_adapter.py 影响所有消息加载，需要 feature flag + 充分测试。</p>
+<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/operations/file-management.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">文件修改管理 — 行业分析与 OpenProgram 设计</span></a><a class="pn-link pn-next" href="/docs/design/runtime/operations/streaming-resume.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">运行中状态的持久化 / 重连恢复</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#一一个节点的位置-列-行">一、一个节点的位置 = (列, 行)</a>
-<a class="" href="#二lane-这个节点属于第几条分支">二、lane —— 这个节点属于第几条分支</a>
-<a class="" href="#三tier-在分支内往右缩进几格">三、tier —— 在分支内往右缩进几格</a>
-<a class="" href="#四depth-第几行从上往下">四、depth —— 第几行，从上往下</a>
-<a class="" href="#五三条全局排版规则">五、三条全局排版规则</a>
-<a class="" href="#六画出来长什么样文字版图示见-spechtml">六、画出来长什么样（文字版；图示见 spec.html）</a>
-<a class="" href="#七当前-bug要修的">七、当前 bug（要修的）</a>
-<a class="" href="#八改哪些文件">八、改哪些文件</a>
-<a class="" href="#九验证命令行不用截图网页">九、验证（命令行，不用截图网页）</a>
+<a class="" href="#1-问题">1. 问题</a>
+<a class="" href="#2-两种数据结构">2. 两种数据结构</a>
+<a class="" href="#3-已完成的修复">3. 已完成的修复</a>
+<a class="" href="#4-当前策略">4. 当前策略</a>
+<a class="" href="#5-后续计划低优先级">5. 后续计划（低优先级）</a>
+<a class="" href="#6-风险">6. 风险</a>
 </div></aside>
 </div>
 

@@ -124,34 +124,34 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
 <details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
-<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
-<a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
-<a class="navlink" href="/docs/design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-spec.html">DAG 布局视觉规范</a>
-<a class="navlink" href="/docs/design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
-<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
 <a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
-<a class="navlink" href="/docs/design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
 <a class="navlink active" href="/docs/design/runtime/runtime.html">Runtime — 设计理由</a>
-<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
-<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
-<a class="navlink" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
-<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.html">分支自动命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
-<a class="navlink" href="/docs/design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
 <a class="navlink" href="/docs/design/runtime/unified-session-context.html">统一 session 上下文创建</a>
-<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html">运行中状态的持久化 / 重连恢复</a></div></details>
 <details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html">Session 子系统</a>
 <a class="navlink" href="/docs/design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html">Session Name — 会话命名设计</a>
 <a class="navlink" href="/docs/design/runtime/session/context.html">Session 上下文</a>
 <a class="navlink" href="/docs/design/runtime/session/operations.html">Session 操作流程</a>
 <a class="navlink" href="/docs/design/runtime/session/storage.html">Session 数据模型</a>
@@ -270,7 +270,7 @@ id,以便函数体内 LLM 调用有 frame 可参照)。</p>
 <li><code>openprogram/context/nodes.py</code> <code>render_context</code> — DAG → reads 计算(<code>render_range</code> 的实际语义)</li>
 <li><code>openprogram/context/render.py</code> <code>render_dag_messages</code> — reads → provider messages 转换</li>
 </ul>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/rewind.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Rewind — 回退到任意历史消息</span></a><a class="pn-link pn-next" href="/docs/design/runtime/session-dag.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/p3-three-surface-sync.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">P3 — 三端同步(补全)+ P1/P2 上三端</span></a><a class="pn-link pn-next" href="/docs/design/runtime/unified-session-context.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">统一 session 上下文创建</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#1-runtime-1-session">1 runtime = 1 session</a>

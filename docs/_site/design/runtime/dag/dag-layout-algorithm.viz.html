@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Splitting `agent/dispatcher.py` into a responsibility-scoped package · OpenProgram Docs</title>
+<title>DAG 布局算法（可视化） · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -124,34 +124,34 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
 <details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
-<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
-<a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
-<a class="navlink" href="/docs/design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-spec.html">DAG 布局视觉规范</a>
-<a class="navlink" href="/docs/design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
-<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
 <a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
-<a class="navlink" href="/docs/design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
 <a class="navlink" href="/docs/design/runtime/runtime.html">Runtime — 设计理由</a>
-<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
-<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
-<a class="navlink active" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
-<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.html">分支自动命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
-<a class="navlink" href="/docs/design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
 <a class="navlink" href="/docs/design/runtime/unified-session-context.html">统一 session 上下文创建</a>
-<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag" open><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
+<a class="navlink active" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html">运行中状态的持久化 / 重连恢复</a></div></details>
 <details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html">Session 子系统</a>
 <a class="navlink" href="/docs/design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html">Session Name — 会话命名设计</a>
 <a class="navlink" href="/docs/design/runtime/session/context.html">Session 上下文</a>
 <a class="navlink" href="/docs/design/runtime/session/operations.html">Session 操作流程</a>
 <a class="navlink" href="/docs/design/runtime/session/storage.html">Session 数据模型</a>
@@ -169,129 +169,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">Splitting `agent/dispatcher.py` into a responsibility-scoped package</span></nav><h1 id="splitting-agentdispatcherpy-into-a-responsibility-scoped-package">Splitting <code>agent/dispatcher.py</code> into a responsibility-scoped package<a class="header-anchor" href="#splitting-agentdispatcherpy-into-a-responsibility-scoped-package">#</a></h1>
-<p>Status: <strong>in progress</strong> · dead-code removed (1fab7479) · step 0 package · step 1 <a href="http://types.py">types.py</a> · step 2 <a href="http://titles.py">titles.py</a> + forced_tool.py · step 3a runtime_attach.py (<code>_wrap_agentic_runtime_block</code>) · step 4 <a href="http://finalize.py">finalize.py</a> (phase 6) · step 5a <a href="http://persistence.py">persistence.py</a> (phase 5 assistant persist) · <code>__init__.py</code> now &lt;1000 lines · Owner: agent/runtime · Created: 2026-06-04</p>
-<blockquote>
-<p><strong>Test seam note (discovered during step 3).</strong> The dispatcher unit tests
-monkeypatch <code>D._resolve_model</code> / <code>D._load_agent_profile</code> / <code>D._run_loop_blocking</code>
-on the <strong>package</strong> object, and capture <code>orig = D._run_loop_blocking</code> to run
-the real loop with a fake <code>stream_fn</code>. A function's internal helper lookups
-resolve in <em>its own</em> module globals, so moving <code>_run_loop_blocking</code> to
-<code>loop.py</code> would make its <code>_resolve_model</code> call miss the <code>D.*</code> patch and break
-~40 tests. Therefore: functions that internally call the test-patched helpers
-(<code>_run_loop_blocking</code>) stay put for now; in-function <strong>phases</strong> (persist /
-finalize) extract cleanly by passing the already-resolved model/profile as
-explicit args (the dispatcher resolves them once, under the patch, and hands
-them down), so the extracted module never calls a patched helper. Standalone
-functions that touch none of the patched helpers (<code>_wrap_agentic_runtime_block</code>)
-move freely. The eventual <code>loop.py</code> move needs either a patch-stable helper
-seam (access via <code>_model_tools.&lt;fn&gt;</code> at call time) or updated test patch
-targets — tracked as its own step, not folded into a code-motion commit.</p>
-</blockquote>
-<p>Roadmap item under the no-1000-line-files rule and the &quot;hierarchical code
-structure — module dirs by responsibility&quot; convention. <code>dispatcher.py</code> is the
-webui chat turn's real execution path; this plans how to break it apart without
-changing behavior.</p>
-<h2 id="1-problem">1. Problem<a class="header-anchor" href="#1-problem">#</a></h2>
-<p><code>openprogram/agent/dispatcher.py</code> is 1928 lines (was 2059; the dead
-<code>_legacy_dispatch_forced_tool_call_unused</code> was deleted in 1fab7479). One file
-holds the whole turn lifecycle, two ~300–830-line functions, and all the
-turn-finalization bookkeeping. It is hard to read, hard to test in isolation,
-and every new concern (a new bookkeeping step, a new persistence detail) grows
-the same file.</p>
-<p>The single worst offender is <code>process_user_turn</code> at ~835 lines (599–1433). It is
-already self-documented as seven numbered phases, so the seams are clear; they
-just live inside one function instead of being separable units.</p>
-<h2 id="2-current-structure-grounded-post-1fab7479">2. Current structure (grounded, post-1fab7479)<a class="header-anchor" href="#2-current-structure-grounded-post-1fab7479">#</a></h2>
-<pre><code>line   symbol                                  role
-49     _InheritParent                          sentinel for &quot;inherit parent id&quot;
-58     TurnRequest                             input dataclass
-116    TurnResult                              output dataclass (+ error taxonomy fields)
-158    _wrap_agentic_runtime_block (~308 ln)   wrap an @agentic_function block as a turn
-466    dispatch_forced_tool_call (~133 ln)     forced single tool-call path
-599    process_user_turn (~835 ln)             MAIN turn orchestration — phases 1–7
-1434   _noop / _default_title                  tiny helpers
-1443   _maybe_auto_title (~28 ln)              placeholder-title backfill
-1471   trigger_compaction (~63 ln)             compaction trigger
-1534   _run_loop_blocking (~395 ln)            the actual agent loop (chat main path)
-</code></pre>
-<p><code>process_user_turn</code>'s seven phases (line → phase):</p>
-<pre><code>648    1. ensure session, load active-branch history
-676    2. persist user message + attachment manifest
-772    3. attach Runtime (real provider) with the session GraphStore
-864    4. run the agent loop; classify + report errors        &lt;- error taxonomy lives here
-1036   5. persist assistant message
-1193   6. bookkeeping: head_id, tokens, context-commit backfill (6.1),
-       usage feedback (6.4), auto-title (6.5), compaction signal (6.6),
-       git commit (6.8), project auto-commit (6.9), snapshot eviction (6.95)
-1413   7. final TurnResult event
-</code></pre>
-<h2 id="3-proposed-package-layout">3. Proposed package layout<a class="header-anchor" href="#3-proposed-package-layout">#</a></h2>
-<p>Convert the module into <code>openprogram/agent/dispatcher/</code> (a package), each file a
-single responsibility, none over ~500 lines:</p>
-<pre><code>dispatcher/
-  __init__.py        re-export the public surface (back-compat, see §5)
-  types.py           _InheritParent, TurnRequest, TurnResult, INHERIT_PARENT
-  turn.py            process_user_turn — thin orchestrator calling the phases
-  persistence.py     phase 2 + 5: persist user/assistant nodes, attachment manifest
-  runtime_attach.py  phase 3: create_runtime + GraphStore wiring, _wrap_agentic_runtime_block
-  finalize.py        phase 6: head/token bookkeeping, usage feedback, git + project commit, eviction
-  titles.py          _default_title, _maybe_auto_title, trigger_compaction
-  forced_tool.py     dispatch_forced_tool_call
-  loop.py            _run_loop_blocking — the agent loop + its error boundary
-</code></pre>
-<p><code>turn.py</code>'s <code>process_user_turn</code> becomes an orchestrator: load → persist user →
-attach runtime → run loop → persist assistant → finalize → emit result, each a
-named call into the sibling modules. The error taxonomy classification (phase 4
-/ the loop's except) stays co-located with the loop in <code>loop.py</code>, matching
-<code>docs/design/providers/reliability/error-taxonomy-propagation.md</code>.</p>
-<h2 id="4-migration-order-smallest-blast-radius-first">4. Migration order (smallest blast radius first)<a class="header-anchor" href="#4-migration-order-smallest-blast-radius-first">#</a></h2>
-<p>Each step is its own commit, compiles + imports + worker-restart-healthz green
-before the next. Pure code-motion — no logic edits in the same commit as a move.</p>
-<ol>
-<li><strong><a href="http://types.py">types.py</a></strong> — move the three dataclasses + sentinel. Lowest risk: they have
-no internal deps. <code>__init__</code> re-exports them.</li>
-<li><strong><a href="http://titles.py">titles.py</a> + forced_tool.py</strong> — leaf helpers, few callers.</li>
-<li><strong><a href="http://persistence.py">persistence.py</a></strong> — extract phases 2 &amp; 5 as <code>persist_user_turn(...)</code> /
-<code>persist_assistant_message(...)</code> taking explicit args (no hidden closure
-over <code>process_user_turn</code> locals). This is where most care goes — the phases
-read/write many locals, so the function signatures must be drawn deliberately.</li>
-<li><strong><a href="http://finalize.py">finalize.py</a></strong> — extract phase 6 as <code>finalize_turn(...)</code>; it is the most
-self-contained block (bookkeeping only, already sub-numbered 6.1–6.95).</li>
-<li><strong>runtime_attach.py</strong> — phase 3 + <code>_wrap_agentic_runtime_block</code>.</li>
-<li><strong><a href="http://loop.py">loop.py</a></strong> — <code>_run_loop_blocking</code> + its error boundary.</li>
-<li><strong><a href="http://turn.py">turn.py</a></strong> — what remains of <code>process_user_turn</code> is the orchestrator.</li>
-</ol>
-<p>If any phase resists clean extraction (too many interdependent locals), stop and
-record why in this doc rather than forcing a leaky split.</p>
-<h2 id="5-back-compat">5. Back-compat<a class="header-anchor" href="#5-back-compat">#</a></h2>
-<p>Everything imports <code>from openprogram.agent.dispatcher import process_user_turn</code>
-(and <code>dispatch_forced_tool_call</code>, <code>TurnRequest</code>, <code>TurnResult</code>,
-<code>trigger_compaction</code>). The package <code>__init__.py</code> re-exports the full current
-public surface so <strong>no caller changes</strong>. Verify with a repo-wide grep of
-<code>from openprogram.agent.dispatcher import</code> / <code>dispatcher\.</code> before and after — the
-import set must be identical.</p>
-<h2 id="6-verification">6. Verification<a class="header-anchor" href="#6-verification">#</a></h2>
-<p>Per step: <code>py_compile</code> the package, <code>python -c &quot;from openprogram.agent import dispatcher; dispatcher.process_user_turn; dispatcher.dispatch_forced_tool_call&quot;</code>,
-<code>openprogram worker restart</code> + <code>/healthz</code> ok + <code>tools_registered</code> unchanged
-(55), then a real chat turn through the webui (send a message, get a streamed
-reply, confirm it persists across reload). The existing dispatcher-touching unit
-tests must stay green. No behavior assertion changes — this is structure only.</p>
-<h2 id="7-non-goals">7. Non-goals<a class="header-anchor" href="#7-non-goals">#</a></h2>
-<p>Not changing the turn lifecycle, the error taxonomy, persistence schema, or any
-event payload. Not splitting <code>runtime.py</code> / <code>server.py</code> (separate items). Not
-introducing async where the path is currently blocking.</p>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-23</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/session-name.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Session Name — 会话命名设计</span></a><a class="pn-link pn-next" href="/docs/design/runtime/user-input-requests.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">User input requests: pausing a run to ask the user</span></a></div></article></main>
-  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
-<div class="toc-list">
-<a class="" href="#1-problem">1. Problem</a>
-<a class="" href="#2-current-structure-grounded-post-1fab7479">2. Current structure (grounded, post-1fab7479)</a>
-<a class="" href="#3-proposed-package-layout">3. Proposed package layout</a>
-<a class="" href="#4-migration-order-smallest-blast-radius-first">4. Migration order (smallest blast radius first)</a>
-<a class="" href="#5-back-compat">5. Back-compat</a>
-<a class="" href="#6-verification">6. Verification</a>
-<a class="" href="#7-non-goals">7. Non-goals</a>
-</div></aside>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> Dag <span class='bc-sep'>›</span> <span class="bc-current">DAG 布局算法（可视化）</span></nav><iframe class="viz-frame" src="/docs/design/runtime/dag/dag-layout-algorithm.raw.html" loading="lazy" title="可视化文档"></iframe><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/dag-layout-algorithm.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 布局算法设计文档</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/dag-layout-spec.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG 布局视觉规范</span></a></div></article></main>
+  <aside class="toc"></aside>
 </div>
 
 <div class="search-overlay">

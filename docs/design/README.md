@@ -52,17 +52,17 @@ supporting notes / investigations that should not override it.
 | Doc | Topic |
 |---|---|
 | [`runtime/runtime.md`](runtime/runtime.md) | Runtime API behaviour (see also [`../api/runtime.md`](../api/runtime.md)) |
-| [`runtime/user-input-requests.md`](runtime/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
+| [`runtime/user-input-requests.md`](runtime/operations/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
 | [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
-| [`runtime/agent-worktree.md`](runtime/agent-worktree.md) | Agent worktree behaviour |
-| [`runtime/async-task-lifecycle.md`](runtime/async-task-lifecycle.md) | Async task lifecycle |
-| [`runtime/streaming-resume.md`](runtime/streaming-resume.md) | Streaming + resume |
-| [`runtime/file-management.md`](runtime/file-management.md) | Revert layers (commit / worktree) |
-| [`runtime/multi-agent-revert-todo.md`](runtime/multi-agent-revert-todo.md) | Multi-agent revert TODO |
-| [`runtime/session-dag.md`](runtime/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / render_context）+ 两路径合并设计（8 步全完成） |
-| [`runtime/dispatcher-split.md`](runtime/dispatcher-split.md) | Dispatcher split design |
+| [`runtime/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree behaviour |
+| [`runtime/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | Async task lifecycle |
+| [`runtime/streaming-resume.md`](runtime/operations/streaming-resume.md) | Streaming + resume |
+| [`runtime/file-management.md`](runtime/operations/file-management.md) | Revert layers (commit / worktree) |
+| [`runtime/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | Multi-agent revert TODO |
+| [`runtime/session-dag.md`](runtime/dag/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / render_context）+ 两路径合并设计（8 步全完成） |
+| [`runtime/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher split design |
 
 ## providers/ — LLM providers, credentials, model catalog, thinking/effort
 

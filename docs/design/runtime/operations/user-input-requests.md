@@ -6,7 +6,7 @@ QuestionPrompt 卡片，端到端 + 前端双向验证通过。Phase 2：@agenti
 子进程桥——子进程里的 runtime.ask 经 mp.Queue 把问题送回父进程、答案回流
 resume，真 spawn 子进程 e2e 通过。重连恢复也落地（load_session 重放 pending +
 REST /api/questions）。Phase 3（TUI）、4（审批合流+channels+form）待做。
-Companion: [../cli/tui-upgrade.md](../cli/tui-upgrade.md) (TUI surface).
+Companion: [../cli/tui-upgrade.md](../../cli/tui-upgrade.md) (TUI surface).
 
 ## Problem
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>统一 parent_id 与 called_by — 设计方案 · OpenProgram Docs</title>
+<title>运行中状态的持久化 / 重连恢复 · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -124,34 +124,34 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
 <details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
-<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
-<a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
-<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
-<a class="navlink" href="/docs/design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-spec.html">DAG 布局视觉规范</a>
-<a class="navlink" href="/docs/design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
-<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
 <a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
-<a class="navlink" href="/docs/design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
 <a class="navlink" href="/docs/design/runtime/runtime.html">Runtime — 设计理由</a>
-<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
-<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
-<a class="navlink" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
-<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.html">分支自动命名设计文档</a>
-<a class="navlink" href="/docs/design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
-<a class="navlink active" href="/docs/design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
 <a class="navlink" href="/docs/design/runtime/unified-session-context.html">统一 session 上下文创建</a>
-<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations" open><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink active" href="/docs/design/runtime/operations/streaming-resume.html">运行中状态的持久化 / 重连恢复</a></div></details>
 <details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html">Session 子系统</a>
 <a class="navlink" href="/docs/design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html">Session Name — 会话命名设计</a>
 <a class="navlink" href="/docs/design/runtime/session/context.html">Session 上下文</a>
 <a class="navlink" href="/docs/design/runtime/session/operations.html">Session 操作流程</a>
 <a class="navlink" href="/docs/design/runtime/session/storage.html">Session 数据模型</a>
@@ -169,164 +169,172 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">统一 parent_id 与 called_by — 设计方案</span></nav><h1 id="统一-parent_id-与-called_by-设计方案">统一 parent_id 与 called_by — 设计方案<a class="header-anchor" href="#统一-parent_id-与-called_by-设计方案">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> Operations <span class='bc-sep'>›</span> <span class="bc-current">运行中状态的持久化 / 重连恢复</span></nav><h1 id="运行中状态的持久化-重连恢复">运行中状态的持久化 / 重连恢复<a class="header-anchor" href="#运行中状态的持久化-重连恢复">#</a></h1>
+<h2 id="问题陈述">问题陈述<a class="header-anchor" href="#问题陈述">#</a></h2>
+<p>当前 UI 上任何&quot;正在跑&quot;的产物（LLM streaming reply / tool call / agentic
+function / task spawn / merge）在跑完之前<strong>只活在内存 + WebSocket
+stream 里</strong>。刷新页面就丢——因为 SessionDB 里这条 msg 还没存。要等
+最后一刻写盘后才能在新页面看到。</p>
+<p>并且如果 backend 在跑到一半挂了 / 网络断了，那条产物就永远丢了，没
+状态可查、没办法恢复、也没办法&quot;看一眼当前进度&quot;。</p>
+<h2 id="目标">目标<a class="header-anchor" href="#目标">#</a></h2>
 <blockquote>
-<p>状态: <strong>部分实施</strong>
-代码: <code>store/session/_msg_adapter.py</code>、<code>webui/persistence.py</code>、<code>contextgit/dag.py</code>、<code>webui/ws_actions/session.py</code></p>
+<p>任何能在 chat / DAG 上看到的&quot;运行中&quot;产物，<strong>第一时间就持久化一条
+placeholder</strong>，之后每个 incremental update 落盘 + 推 WS。前端任意时
+刻刷新 / 切回，能看到当前进度 + 继续接收实时流，零状态丢失。</p>
 </blockquote>
-<h2 id="1-问题">1. 问题<a class="header-anchor" href="#1-问题">#</a></h2>
-<p>DAG 节点有两个&quot;父指针&quot;字段，含义不同，在不同地方被读写，导致遍历结果不一致。</p>
-<table>
-<thead>
-<tr>
-<th>字段</th>
-<th>含义</th>
-<th>谁写</th>
-<th>谁读</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>called_by</code></td>
-<td>调用关系（谁调用了我）</td>
-<td>DAG store（<code>context/nodes.py</code> 的 <code>Call</code> 对象）</td>
-<td><code>render_context</code>、<code>get_branch</code>、<code>_rebuild_runtime_cards</code>、<code>aggregate_tool_messages</code>（改后）</td>
-</tr>
-<tr>
-<td><code>parent_id</code></td>
-<td>对话链（我的上一条消息是谁）</td>
-<td><code>_msg_adapter.py</code>（从 <code>called_by</code> 复制）</td>
-<td><code>linear_history</code>、<code>_annotate_spawn_origin</code>、dispatcher 分支管理</td>
-</tr>
-</tbody>
-</table>
-<p><strong>根本问题</strong>：<code>_msg_adapter.py</code> 把 <code>called_by</code> 直接赋给 <code>parent_id</code>（行 132/169/188/206），但两者的语义不同：</p>
+<h2 id="五个组件">五个组件<a class="header-anchor" href="#五个组件">#</a></h2>
+<h3 id="1-统一-placeholder-schema">1. 统一 placeholder schema<a class="header-anchor" href="#1-统一-placeholder-schema">#</a></h3>
+<p>每条 msg（无论 user / assistant / tool）都新增三个字段：</p>
+<pre><code>status:          &quot;pending&quot; | &quot;running&quot; | &quot;done&quot; | &quot;error&quot; | &quot;aborted&quot;
+started_at:      float (epoch)
+last_update_at:  float (epoch)
+</code></pre>
+<p><code>pending</code> = 已分配 id 但还没开始；<code>running</code> = 正在产出；终态三选一。</p>
+<p><strong>写入时机</strong>：任何会跑一段时间的操作 <strong>第一时间</strong> 就写 placeholder：</p>
 <ul>
-<li><code>called_by</code> 是<strong>调用层级</strong>：user 的 called_by=ROOT，函数的 called_by=ROOT（手动调用）或 assistant_id（LLM 调用），工具的 called_by=函数 id</li>
-<li><code>parent_id</code> 应该是<strong>对话顺序</strong>：第二条消息的 parent_id 应指向第一条，第三条指向第二条</li>
+<li>LLM streaming reply: dispatcher 调 LLM 之前</li>
+<li>tool call: tool dispatcher 调函数之前</li>
+<li>agentic function: <code>_execute/run.py</code> 跑 function 之前</li>
+<li>task spawn: 已经有 (<a href="/docs/openprogram/agent/task/runner.py"><code>runner.py</code></a>)</li>
+<li>merge: <code>_execute/_run_merge</code> 之前</li>
 </ul>
-<p>直接赋值导致：同一个会话里两个 ROOT-parented 的 user 节点，它们的 <code>parent_id</code> 都是空（ROOT 不是有效的消息 id），<code>linear_history</code> 沿 parent_id 走就断了。</p>
-<h2 id="2-两种数据结构">2. 两种数据结构<a class="header-anchor" href="#2-两种数据结构">#</a></h2>
-<p>DAG 和聊天 UI 需要不同的数据格式，两者都需要：</p>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>DAG 原始节点</th>
-<th>聊天 UI 消息</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>用途</td>
-<td>运行时（render_context 构建上下文）</td>
-<td>前端显示（消息列表、工具调用卡片）</td>
-</tr>
-<tr>
-<td>工具调用</td>
-<td>每个工具一个独立节点</td>
-<td>折叠进 assistant 消息的 tool_calls[]</td>
-</tr>
-<tr>
-<td>thinking</td>
-<td>在 extra 字段里</td>
-<td>提取到 blocks[]</td>
-</tr>
-<tr>
-<td>格式</td>
-<td><code>{role, name, input, output, called_by, seq}</code></td>
-<td><code>{role, content, tool_calls, blocks, parent_id}</code></td>
-</tr>
-<tr>
-<td>构建时机</td>
-<td>写入时</td>
-<td>加载时（aggregate_tool_messages）</td>
-</tr>
-</tbody>
-</table>
-<p><code>aggregate_tool_messages</code> 就是把 DAG 格式转成 UI 格式的。</p>
-<h2 id="3-已完成的修复">3. 已完成的修复<a class="header-anchor" href="#3-已完成的修复">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>修复</th>
-<th>commit</th>
-<th>做了什么</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>_rebuild_runtime_cards</code> 用 called_by</td>
-<td><code>476aa8f6</code></td>
-<td>函数后代关系用 called_by 判断，不再误 drop user 节点</td>
-</tr>
-<tr>
-<td><code>aggregate_tool_messages</code> 优先 called_by</td>
-<td>本次</td>
-<td>工具→assistant 聚合用 <code>called_by</code> 找父节点，<code>parent_id</code> 作 fallback</td>
-</tr>
-<tr>
-<td><code>handle_load_session</code> fallback</td>
-<td><code>1adfbbc3</code></td>
-<td>linear_history 不完整时 fallback 到 get_branch</td>
-</tr>
-</tbody>
-</table>
-<h2 id="4-当前策略">4. 当前策略<a class="header-anchor" href="#4-当前策略">#</a></h2>
-<p><strong>渐进式统一</strong>：不一次性废弃 <code>parent_id</code>，而是逐步让关键路径优先使用 <code>called_by</code>。</p>
-<p><code>parent_id</code> 在 188 处被引用，深入 dispatcher、分支管理、sub_agent 等核心模块。一次性替换风险太高。当前策略：</p>
+<h3 id="2-增量节流持久化">2. 增量节流持久化<a class="header-anchor" href="#2-增量节流持久化">#</a></h3>
+<p>每条 <code>status=running</code> 的 msg 在跑的过程中，<strong>节流 ~250ms</strong> 把当前快照写
+回 SessionDB：</p>
+<ul>
+<li><code>content</code>: streaming partial / 当前 tree dump</li>
+<li><code>metadata.context_tree</code>: agentic function 的 DAG snapshot</li>
+<li><code>metadata.partial_tokens_used</code>: 累计 input/output token</li>
+<li><code>last_update_at</code>: now</li>
+</ul>
+<p>节流由一个 per-msg <code>_ThrottledSaver</code> 实例管理，确保 backend 退出前最
+后一次必落盘（atexit / signal hook）。</p>
+<p>跑完调 <code>finalize(status=&quot;done&quot;, content=...)</code> 写终态。</p>
+<h3 id="3-ws-按-msg_id-订阅">3. WS 按 msg_id 订阅<a class="header-anchor" href="#3-ws-按-msg_id-订阅">#</a></h3>
+<p>新 ws action：</p>
+<pre><code class="language-json"><span class="p">{</span><span class="w"> </span><span class="nt">&quot;action&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;subscribe_msg&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;msg_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span><span class="p">}</span>
+</code></pre>
+<p>backend 维护：</p>
+<pre><code class="language-python"><span class="n">_msg_subscribers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="nb">set</span><span class="p">[</span><span class="n">WebSocket</span><span class="p">]]</span>
+</code></pre>
+<p>每次 placeholder update 时既走持久化又 push 到该 channel：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;msg_update&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;msg_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;content_delta&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;tree&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;running&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<p>订阅释放：客户端 <code>unsubscribe_msg</code> / 断连 / msg 进入终态后自动清理。</p>
+<h3 id="4-前端-load_session-检测-自动续连">4. 前端 load_session 检测 + 自动续连<a class="header-anchor" href="#4-前端-load_session-检测-自动续连">#</a></h3>
+<p><code>session-store</code> 的 <code>feedFromConv</code> 调用之后，扫一遍所有 ChatMsg：</p>
+<pre><code class="language-ts"><span class="kd">const</span><span class="w"> </span><span class="nx">running</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">msgs</span><span class="p">.</span><span class="nx">filter</span><span class="p">(</span><span class="nx">m</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">m</span><span class="p">.</span><span class="nx">status</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s2">&quot;running&quot;</span><span class="p">);</span>
+<span class="nx">running</span><span class="p">.</span><span class="nx">forEach</span><span class="p">(</span><span class="nx">m</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">wsSend</span><span class="p">({</span>
+<span class="w">  </span><span class="nx">action</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;subscribe_msg&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">session_id</span><span class="o">:</span><span class="w"> </span><span class="kt">sid</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">msg_id</span><span class="o">:</span><span class="w"> </span><span class="kt">m.id</span><span class="p">,</span>
+<span class="p">}));</span>
+</code></pre>
+<p>收到 <code>msg_update</code> 事件就 <code>patch</code> 对应 ChatMsg 的 content / tree。</p>
+<p>UI 层：</p>
+<ul>
+<li><code>AssistantBubble</code> 看到 <code>status=running</code> 渲染光标 / streaming 动画</li>
+<li><code>RuntimeBlock</code> 看到 <code>status=running</code> 显示运行中 Execution DAG（已经支
+持，因为现在 stream tree 就这么画）</li>
+<li>attach card：跟现有 <code>status=running</code> 行为一致（已有）</li>
+</ul>
+<h3 id="5-死亡检测-abort-sweep">5. 死亡检测 + abort sweep<a class="header-anchor" href="#5-死亡检测-abort-sweep">#</a></h3>
+<p>worker 启动时：</p>
 <ol>
-<li><strong>聚合层</strong>（<a href="http://persistence.py">persistence.py</a>）：优先 <code>called_by</code>，<code>parent_id</code> 作 fallback ✅ 已完成</li>
-<li><strong>渲染层</strong>（<a href="http://session.py">session.py</a> _rebuild_runtime_cards）：用 <code>called_by</code> ✅ 已完成</li>
-<li><strong>加载层</strong>（<a href="http://session.py">session.py</a> handle_load_session）：linear_history + get_branch fallback ✅ 已完成</li>
-<li><strong>_msg_adapter.py</strong>：继续复制 called_by → parent_id（向后兼容）</li>
-<li><strong>linear_history</strong>：保持用 parent_id（有 fallback 兜底）</li>
+<li>扫 <code>~/.openprogram/sessions/*/history/*.json</code></li>
+<li>找 <code>status=running</code> 且 <code>last_update_at</code> 超过阈值（如 5 分钟）的 msg</li>
+<li>改 status=<code>aborted</code>，append 一行 <code>metadata.aborted_reason=&quot;worker restart&quot;</code></li>
 </ol>
-<h2 id="5-后续计划低优先级">5. 后续计划（低优先级）<a class="header-anchor" href="#5-后续计划低优先级">#</a></h2>
-<p>当以上修复经过充分验证后，可以进一步：</p>
+<p>保证 backend 重启后没有&quot;永远在跑&quot;的孤儿 msg。</p>
+<h2 id="schema-改动-phase-1">Schema 改动 (Phase 1)<a class="header-anchor" href="#schema-改动-phase-1">#</a></h2>
+<p><code>openprogram/store/_msg_adapter.py::_node_to_msg</code>：</p>
+<ul>
+<li>写入时把 <code>node.metadata.status</code> / <code>started_at</code> / <code>last_update_at</code>
+反映到 msg dict</li>
+<li>没有 status 字段的旧节点默认 <code>status=&quot;done&quot;</code>（向后兼容）</li>
+</ul>
+<p><code>openprogram/context/nodes.py::Call</code>：不动 dataclass，新字段全走
+<code>metadata</code>。</p>
+<h2 id="实施分期">实施分期<a class="header-anchor" href="#实施分期">#</a></h2>
 <table>
 <thead>
 <tr>
-<th>步骤</th>
-<th>做什么</th>
-<th>前提</th>
+<th>Phase</th>
+<th>范围</th>
+<th>估时</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>A</td>
-<td><code>_msg_adapter.py</code> 的 parent_id 按对话 seq 顺序设（而非复制 called_by）</td>
-<td>确认当前修复稳定</td>
+<td>1</td>
+<td>placeholder schema + worker abort sweep</td>
+<td>30 min</td>
 </tr>
 <tr>
-<td>B</td>
-<td><code>linear_history</code> 改用正确的 parent_id 遍历（步骤 A 后自然正确）</td>
-<td>步骤 A</td>
+<td>2</td>
+<td><code>_execute/run.py</code> agentic function 写 placeholder + 节流 tree save</td>
+<td>60 min</td>
 </tr>
 <tr>
-<td>C</td>
-<td>移除 handle_load_session 的 get_branch fallback（不需要了）</td>
-<td>步骤 B</td>
+<td>3</td>
+<td>dispatcher LLM reply 写 placeholder + streaming content save</td>
+<td>60 min</td>
 </tr>
 <tr>
-<td>D</td>
-<td>标记 parent_id 为 deprecated，长期只用 called_by</td>
-<td>步骤 A-C 全部稳定</td>
+<td>4</td>
+<td>inline tool call placeholder（bash 等长跑）</td>
+<td>30 min</td>
+</tr>
+<tr>
+<td>5</td>
+<td>WS <code>subscribe_msg</code> channel + per-msg broadcast</td>
+<td>60 min</td>
+</tr>
+<tr>
+<td>6</td>
+<td>前端 load_session 检测 + auto subscribe + live patch</td>
+<td>60 min</td>
+</tr>
+<tr>
+<td>7</td>
+<td>测试 + edge cases (重启 / 断连 / msg_id 冲突)</td>
+<td>30 min</td>
 </tr>
 </tbody>
 </table>
-<h2 id="6-风险">6. 风险<a class="header-anchor" href="#6-风险">#</a></h2>
-<p><strong>当前方案的风险</strong>：低。只改了聚合层的字段优先级，parent_id 作 fallback 保留。最坏情况 = called_by 缺失时 fallback 到 parent_id（和改之前行为一致）。</p>
-<p><strong>后续步骤的风险</strong>：中-高。改 _msg_adapter.py 影响所有消息加载，需要 feature flag + 充分测试。</p>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-27</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/file-management.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">文件修改管理 — 行业分析与 OpenProgram 设计</span></a><a class="pn-link pn-next" href="/docs/design/runtime/unified-session-context.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">统一 session 上下文创建</span></a></div></article></main>
+<p>总计 ~5h。每 phase 独立可用 + 可回滚。</p>
+<h2 id="不在本次范围">不在本次范围<a class="header-anchor" href="#不在本次范围">#</a></h2>
+<ul>
+<li>真正的&quot;中断后恢复&quot; — 比如 backend 跑到一半挂了，重启后继续跑剩下
+的 sub-call。这要 checkpoint LLM context + 重放，工作量数倍于本设
+计。当前方案下中断的 msg 会被标 aborted，用户用 Retry 按钮重跑。</li>
+<li>跨 session 全局活跃任务面板（&quot;现在有哪些 msg 在跑&quot;）。可以基于
+<code>_msg_subscribers</code> 的 keyspace 容易扩展，但不在本期。</li>
+</ul>
+<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/operations/unify-parent-called-by.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">统一 parent_id 与 called_by — 设计方案</span></a><a class="pn-link pn-next" href="/docs/design/runtime/session/README.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Session 子系统</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#1-问题">1. 问题</a>
-<a class="" href="#2-两种数据结构">2. 两种数据结构</a>
-<a class="" href="#3-已完成的修复">3. 已完成的修复</a>
-<a class="" href="#4-当前策略">4. 当前策略</a>
-<a class="" href="#5-后续计划低优先级">5. 后续计划（低优先级）</a>
-<a class="" href="#6-风险">6. 风险</a>
+<a class="" href="#问题陈述">问题陈述</a>
+<a class="" href="#目标">目标</a>
+<a class="" href="#五个组件">五个组件</a>
+<a class="lvl-3" href="#1-统一-placeholder-schema">1. 统一 placeholder schema</a>
+<a class="lvl-3" href="#2-增量节流持久化">2. 增量节流持久化</a>
+<a class="lvl-3" href="#3-ws-按-msg_id-订阅">3. WS 按 msg_id 订阅</a>
+<a class="lvl-3" href="#4-前端-load_session-检测-自动续连">4. 前端 load_session 检测 + 自动续连</a>
+<a class="lvl-3" href="#5-死亡检测-abort-sweep">5. 死亡检测 + abort sweep</a>
+<a class="" href="#schema-改动-phase-1">Schema 改动 (Phase 1)</a>
+<a class="" href="#实施分期">实施分期</a>
+<a class="" href="#不在本次范围">不在本次范围</a>
 </div></aside>
 </div>
 
