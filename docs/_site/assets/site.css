@@ -200,6 +200,35 @@ article pre {
 }
 article pre code { background: none; border: none; color: var(--tx); padding: 0; font-size: 13px; }
 
+/* code-block copy button */
+article pre { position: relative; }
+article pre .copy-btn {
+  position: absolute; top: 8px; right: 8px; opacity: 0; transition: opacity .15s;
+  background: var(--bg-card); border: 1px solid var(--bd); color: var(--tx-soft);
+  font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+}
+article pre:hover .copy-btn { opacity: 1; }
+article pre .copy-btn:hover { color: var(--tx); border-color: var(--acc); }
+article pre .copy-btn.copied { color: var(--acc); border-color: var(--acc); }
+
+/* callouts */
+.callout {
+  margin: 16px 0; border: 1px solid var(--bd); border-left: 3px solid var(--cl-accent);
+  border-radius: 0 8px 8px 0; background: var(--cl-bg); padding: 12px 16px;
+}
+.callout-head {
+  display: flex; align-items: center; gap: 7px;
+  font-weight: 650; font-size: 13.5px; color: var(--cl-accent); margin-bottom: 4px;
+}
+.callout-icon { font-size: 14px; }
+.callout-body p { margin: 4px 0; }
+.callout-body p:last-child { margin-bottom: 0; }
+.callout-note      { --cl-accent: #3b82f6; --cl-bg: color-mix(in srgb, #3b82f6 8%, var(--bg)); }
+.callout-tip       { --cl-accent: #2f9e6e; --cl-bg: color-mix(in srgb, #2f9e6e 8%, var(--bg)); }
+.callout-important { --cl-accent: #8b5cf6; --cl-bg: color-mix(in srgb, #8b5cf6 8%, var(--bg)); }
+.callout-warning   { --cl-accent: #d9920a; --cl-bg: color-mix(in srgb, #d9920a 10%, var(--bg)); }
+.callout-caution   { --cl-accent: #e0533d; --cl-bg: color-mix(in srgb, #e0533d 9%, var(--bg)); }
+
 article blockquote {
   margin: 16px 0; padding: 10px 18px; color: var(--tx-soft);
   background: var(--bg-side); border-left: 3px solid var(--acc); border-radius: 0 8px 8px 0;

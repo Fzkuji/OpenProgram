@@ -94,6 +94,39 @@ def _make_unique_slug(text: str) -> str:
     return base if n == 0 else f"{base}-{n}"
 
 
+# ── callouts (GitHub-style > [!NOTE] / [!WARNING] / [!TIP] / [!IMPORTANT]) ───
+
+_CALLOUT_KINDS = {
+    "NOTE": ("note", "ℹ", "提示"),
+    "TIP": ("tip", "✓", "建议"),
+    "IMPORTANT": ("important", "★", "重要"),
+    "WARNING": ("warning", "⚠", "注意"),
+    "CAUTION": ("caution", "⛔", "警告"),
+}
+_BLOCKQUOTE_RE = re.compile(r"<blockquote>\s*(.*?)\s*</blockquote>", re.DOTALL)
+_CALLOUT_HEAD_RE = re.compile(
+    r'^\s*<p>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*?)</p>',
+    re.DOTALL | re.IGNORECASE)
+
+
+def apply_callouts(html: str) -> str:
+    """Turn blockquotes whose first line is [!KIND] into styled callout boxes."""
+    def repl(m):
+        inner = m.group(1)
+        head = _CALLOUT_HEAD_RE.match(inner)
+        if not head:
+            return m.group(0)
+        kind = head.group(1).upper()
+        cls, icon, label = _CALLOUT_KINDS[kind]
+        rest_first = head.group(2).strip()  # text on the same line after [!KIND]
+        rest = inner[head.end():]
+        first = f"<p>{rest_first}</p>" if rest_first else ""
+        return (f'<div class="callout callout-{cls}">'
+                f'<div class="callout-head"><span class="callout-icon">{icon}</span>{label}</div>'
+                f'<div class="callout-body">{first}{rest}</div></div>')
+    return _BLOCKQUOTE_RE.sub(repl, html)
+
+
 # ── toc extraction (from rendered html headings) ────────────────────────────
 
 _HEADING_RE = re.compile(r'<h([23])[^>]*\bid="([^"]+)"[^>]*>(.*?)</h[23]>', re.DOTALL)
@@ -378,6 +411,7 @@ def build() -> int:
         if p.kind == "md":
             text = p.src.read_text(encoding="utf-8", errors="replace")
             body = md.render(text)
+            body = apply_callouts(body)
             body = relink_internal(body, p.out.parent)
             toc = extract_toc(body)
         else:

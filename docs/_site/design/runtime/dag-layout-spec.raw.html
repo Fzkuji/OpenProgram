@@ -37,9 +37,10 @@ text{font-family:-apple-system,sans-serif}
 </div>
 
 <div class="rule" style="margin-bottom:24px;border-left-color:var(--acc)">
-<b style="color:var(--acc)">两条全局排版规则：</b><br>
-① <b>严格网格</b>：每个节点落在规整网格交点上，行高、列宽全局统一。同一行的节点 y 完全对齐，同一列的节点 x 完全对齐。不允许半格偏移。<br>
-② <b>列紧凑</b>：只有实际有节点的列才占空间。某列空了（本来没节点、或子节点收起后空了），右边的列整体左移补上，中间不留空列。lane 之间也按实际占用的最大 tier 宽度紧贴排，不留固定大间隔。
+<b style="color:var(--acc)">三条全局排版规则：</b><br>
+① <b>正方形网格</b>：横向格距 = 纵向格距（COL_W = ROW_H）。整张图是标准棋盘格，每一列的列距、每一排的行距完全一致。子节点在父节点的<b>严格右下角</b>——往右一格 + 往下一格（45° 对角线，距离 √2×格距）。<br>
+② <b>严格网格对齐</b>：每个节点落在网格交点上。同一行的节点 y 完全对齐，同一列的节点 x 完全对齐。不允许半格偏移。<br>
+③ <b>列紧凑</b>：只有实际有节点的列才占空间。某列空了（本来没节点、或子节点收起后空了），右边的列整体左移补上，中间不留空列。lane 之间也按实际占用的最大 tier 宽度紧贴排，不留固定大间隔。
 </div>
 
 <!-- 画图用的 JS 在底部，这里放容器 -->
@@ -47,7 +48,9 @@ text{font-family:-apple-system,sans-serif}
 
 <script>
 const C = {blue:"#4f8ef7", purple:"#a371f7", green:"#5aad4e", muted:"#6b6a63"};
-const COL=64, ROW=52, PADX=40, PADY=36, R=11;
+// 正方形网格：横向格距 = 纵向格距。子节点在父节点严格右下角（右1格+下1格,
+// 45°对角线, √2×格距）。每列列距、每排行距完全一致。
+const COL=56, ROW=56, PADX=44, PADY=40, R=11;
 
 // shape: 'root'|'user'|'llm'|'code'
 function node(svg, x, y, shape, color, label, sub){
@@ -206,29 +209,25 @@ scene(6,"综合：多轮 + retry + 工具",
  },
  "lane: 主链=0, retry链=1（紧贴，列5起）。tier: 工具在 llm 下缩进到 3。depth: 按时间从上到下。");
 
-// ---- 场景7：收起后列紧凑 ----
-scene(7,"收起子调用 → 列左移补空",
- "左：AI 调了工具，占到 tier3（列3）。右：把工具调用收起后，列3 空了 → lane1 整体左移补上，中间不留空列。",
- 8,6,()=>{
+// ---- 场景7：收起子调用后，后面的分支左移（一个 ROOT）----
+scene(7,"收起子调用 → 后面分支左移",
+ "同一棵树（一个 ROOT）。第1条对话的工具调用被收起 → 它原本占到 tier3 的那一列空了，这条 lane 只到 tier2 → 第2条分支(lane1)整体左移紧贴，不留空列。「回复」上的「+1」表示收起了 1 个子节点。",
+ 7,5,()=>{
   let s="";
-  // 左半：展开
+  // lane0：工具已收起，最大只到 tier2（列2）
   s+=edge(0,0,1,1,C.blue);
   s+=edge(1,1,2,2,C.blue);
-  s+=edge(2,2,3,3,C.blue);  // 工具 tier3
+  // fork → lane1 紧贴：lane0 收起后最大 tier=2(列2)，留1列虚线=列3，lane1 从列4起
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=edge(4,1,5,2,C.purple);
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"问题");
-  s+=node(null,2,2,'llm',C.blue,"回复");
-  s+=node(null,3,3,'code',C.blue,"工具(展开)","占列3");
-  // 右半（收起后，整体左移：tier 最大只到2 → lane起列更靠左）
-  const OX=5;
-  s+=edge(OX+0,0,OX+1,1,C.green);
-  s+=edge(OX+1,1,OX+2,2,C.green);
-  s+=node(null,OX+0,0,'root',C.green,"ROOT");
-  s+=node(null,OX+1,1,'user',C.green,"问题");
-  s+=node(null,OX+2,2,'llm',C.green,"回复 +1","工具收起,列3空→无");
+  s+=node(null,2,2,'llm',C.blue,"回复 +1","工具已收起");
+  s+=node(null,4,1,'user',C.purple,"问题(改写)","lane1 左移到列4");
+  s+=node(null,5,2,'llm',C.purple,"回复'");
   return s;
  },
- "收起后这条 lane 最大 tier 从 3 降到 2 → 它占的列宽缩小，后面的 lane 跟着左移。空列绝不保留。");
+ "对比场景6：工具展开时 lane1 在列5；这里工具收起、lane0 变窄 → lane1 左移到列4。空列不保留。");
 
 </script>
 </div></body></html>

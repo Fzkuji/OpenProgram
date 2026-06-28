@@ -113,6 +113,24 @@
     if (active) active.scrollIntoView({ block: "center" });
   })();
 
+  // ── code-block copy buttons ──
+  document.querySelectorAll("article pre").forEach((pre) => {
+    if (pre.querySelector(".copy-btn")) return;
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.type = "button";
+    btn.textContent = "复制";
+    btn.addEventListener("click", () => {
+      const code = pre.querySelector("code") || pre;
+      navigator.clipboard.writeText(code.innerText).then(() => {
+        btn.textContent = "已复制 ✓";
+        btn.classList.add("copied");
+        setTimeout(() => { btn.textContent = "复制"; btn.classList.remove("copied"); }, 1500);
+      }).catch(() => { btn.textContent = "复制失败"; });
+    });
+    pre.appendChild(btn);
+  });
+
   // ── toc scroll-spy ──
   const tocLinks = Array.from(document.querySelectorAll("aside.toc a"));
   if (tocLinks.length) {
