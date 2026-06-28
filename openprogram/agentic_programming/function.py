@@ -137,12 +137,23 @@ def _append_function_call_entry(
     }
     if render_range:
         meta["render_range"] = dict(render_range)
-    # The function's docstring travels on the node so it renders into
-    # the context of any LLM call that reads this code Call — restoring
-    # the tree-Context behaviour where a function's documentation was
-    # visible to the model running inside it.
     if docstring:
         meta["doc"] = docstring
+    caller = _call_id.get() or ""
+    # Top-level calls (no enclosing @agentic_function) need a conv
+    # predecessor so get_branch can traverse through them.
+    if not caller:
+        try:
+            from openprogram.webui._pause_stop import get_current_session_id
+            sid = get_current_session_id()
+            if sid:
+                from openprogram.agent.session_db import default_db
+                sess = default_db().get_session(sid)
+                head = (sess or {}).get("head_id")
+                if head:
+                    meta["called_by"] = head
+        except Exception:
+            pass
     node = Call(
         id=pending_id,
         created_at=started_at or time.time(),
@@ -150,12 +161,7 @@ def _append_function_call_entry(
         name=function_name,
         input=_sanitize_function_args(arguments or {}),
         output=None,
-        # ``called_by`` is the logical caller — the @agentic_function
-        # whose body is the one invoking us. ``_call_id`` is set by
-        # the outer wrapper before we run; reading it now gives us
-        # the right ancestor. Empty string when this is a top-level
-        # call (no enclosing @agentic_function on the call stack).
-        called_by=_call_id.get() or "",
+        called_by=caller,
         metadata=meta,
     )
     try:
