@@ -30,7 +30,10 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 
 <div class="scrim"></div>
 <div class="layout">
-  <nav class="sidebar"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
 <a class="navlink" href="/docs/README.html" data-i18n="p_overview">项目总览</a>
 <a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
 <a class="navlink" href="/docs/features.html" data-i18n="p_features">功能详解</a>
@@ -164,7 +167,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
-<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
+  </nav>
   <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> CLI / TUI <span class='bc-sep'>›</span> <span class="bc-current">OpenProgram CLI / TUI Redesign</span></nav><h1 id="openprogram-cli-tui-redesign">OpenProgram CLI / TUI Redesign<a class="header-anchor" href="#openprogram-cli-tui-redesign">#</a></h1>
 <blockquote>
 <p><strong>Status: implemented (2026-06).</strong> The schema (<code>openprogram/config_schema.py</code>)

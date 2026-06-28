@@ -23,7 +23,7 @@
           "PingFang SC", "Microsoft YaHei", monospace;
 
   --nav-w: 270px;
-  --toc-w: 220px;
+  --toc-w: 256px;
   --maxw:  820px;
 }
 
@@ -97,6 +97,13 @@ nav.sidebar {
   overflow-y: auto; padding: 20px 14px 60px; border-right: 1px solid var(--bd);
   background: var(--bg-side);
 }
+nav.sidebar .nav-filter {
+  width: 100%; margin-bottom: 12px; padding: 7px 11px; font-size: 13px;
+  background: var(--bg); border: 1px solid var(--bd); border-radius: 8px;
+  color: var(--tx); outline: none;
+}
+nav.sidebar .nav-filter:focus { border-color: var(--acc); }
+nav.sidebar .nav-filter::placeholder { color: var(--tx-faint); }
 nav.sidebar details.group { margin: 1px 0; }
 nav.sidebar summary.group-title {
   list-style: none; cursor: pointer; user-select: none;
@@ -135,19 +142,26 @@ article { width: 100%; max-width: var(--maxw); }
 /* right toc */
 aside.toc {
   position: fixed; top: 56px; right: 0; width: var(--toc-w); bottom: 0;
-  overflow-y: auto; padding: 38px 18px 60px; font-size: 13px;
+  overflow-y: auto; padding: 38px 20px 60px; font-size: 13px;
 }
 aside.toc .toc-title {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .08em; color: var(--tx-faint); margin-bottom: 10px;
+  font-size: 12px; font-weight: 700;
+  letter-spacing: .02em; color: var(--tx-soft); margin-bottom: 12px;
 }
 aside.toc a {
-  display: block; padding: 3px 0 3px 10px; color: var(--tx-faint);
-  border-left: 2px solid var(--bd); line-height: 1.4;
+  display: block; line-height: 1.45; border-left: 2px solid var(--bd);
+  color: var(--tx-soft);
 }
-aside.toc a.lvl-3 { padding-left: 22px; }
+/* level 1 (h2): heavier, darker, own line spacing */
+aside.toc a:not(.lvl-3) {
+  padding: 6px 0 6px 14px; font-size: 13.5px; font-weight: 550; color: var(--tx-soft);
+}
+/* level 2 (h3): deeper indent, smaller, lighter */
+aside.toc a.lvl-3 {
+  padding: 4px 0 4px 30px; font-size: 12.5px; color: var(--tx-faint);
+}
 aside.toc a:hover { color: var(--tx); text-decoration: none; }
-aside.toc a.active { color: var(--acc); border-left-color: var(--acc); }
+aside.toc a.active { color: var(--acc); border-left-color: var(--acc); font-weight: 600; }
 
 /* ── breadcrumb ── */
 .breadcrumb { font-size: 13px; color: var(--tx-faint); margin-bottom: 18px; }

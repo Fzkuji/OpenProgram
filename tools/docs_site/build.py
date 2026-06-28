@@ -457,6 +457,7 @@ def build() -> int:
         search_records.append({
             "title": p.title,
             "url": str(p.out).replace("\\", "/"),
+            "group": " › ".join(chain) if chain else "",
             "text": searchmod.plain_text(body),
         })
 

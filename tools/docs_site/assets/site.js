@@ -32,7 +32,7 @@
   const I18N = {
     zh: {
       search: "搜索文档", search_ph: "搜索标题或正文…", on_this_page: "本页内容",
-      prev: "上一篇", next: "下一篇", updated: "最后更新",
+      prev: "上一篇", next: "下一篇", updated: "最后更新", nav_filter: "过滤目录…",
       home_title: "OpenProgram 设计文档",
       home_sub: "框架的设计笔记、API 与指南，按子系统组织。左侧目录浏览，或按 ",
       home_sub2: " 搜索。", unit: " 篇",
@@ -44,7 +44,7 @@
     },
     en: {
       search: "Search docs", search_ph: "Search titles or text…", on_this_page: "On this page",
-      prev: "Previous", next: "Next", updated: "Last updated",
+      prev: "Previous", next: "Next", updated: "Last updated", nav_filter: "Filter docs…",
       home_title: "OpenProgram Documentation",
       home_sub: "Design notes, API and guides, organized by subsystem. Browse the sidebar, or press ",
       home_sub2: " to search.", unit: " docs",
@@ -131,6 +131,36 @@
     pre.appendChild(btn);
   });
 
+  // ── sidebar filter ──
+  const navFilter = document.querySelector(".nav-filter");
+  if (navFilter) {
+    const allLinks = Array.from(document.querySelectorAll("nav.sidebar a.navlink"));
+    const allGroups = Array.from(document.querySelectorAll("nav.sidebar details.group"));
+    const savedOpen = new WeakMap();
+    navFilter.addEventListener("input", () => {
+      const q = navFilter.value.trim().toLowerCase();
+      if (!q) {
+        allLinks.forEach((a) => (a.style.display = ""));
+        allGroups.forEach((g) => {
+          g.style.display = "";
+          if (savedOpen.has(g)) g.open = savedOpen.get(g);
+        });
+        return;
+      }
+      // remember original open-state once, on first filter keystroke
+      allGroups.forEach((g) => { if (!savedOpen.has(g)) savedOpen.set(g, g.open); });
+      allLinks.forEach((a) => {
+        a.style.display = a.textContent.toLowerCase().includes(q) ? "" : "none";
+      });
+      // a group is visible iff it has any visible link; expand visible ones
+      allGroups.forEach((g) => {
+        const hasMatch = g.querySelector('a.navlink:not([style*="display: none"])');
+        g.style.display = hasMatch ? "" : "none";
+        if (hasMatch) g.open = true;
+      });
+    });
+  }
+
   // ── toc scroll-spy ──
   const tocLinks = Array.from(document.querySelectorAll("aside.toc a"));
   if (tocLinks.length) {
@@ -208,7 +238,7 @@
       }
       return `<a href="${BASE + r.doc.url}" class="${i === 0 ? "sel" : ""}" data-i="${i}">
         <div class="r-title">${highlight(r.doc.title.replace(/</g, "&lt;"), q)}</div>
-        <div class="r-path">${r.doc.url}</div>
+        <div class="r-path">${r.doc.group ? r.doc.group.replace(/</g, "&lt;") : r.doc.url}</div>
         ${snip ? `<div class="r-snippet">${snip}</div>` : ""}
       </a>`;
     }).join("");

@@ -58,7 +58,11 @@ def render_page(
 
 <div class="scrim"></div>
 <div class="layout">
-  <nav class="sidebar">{nav_html}</nav>
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree">{nav_html}</div>
+  </nav>
   <main class="content"><article>{breadcrumb_html}{body_html}{meta_html}{prevnext_html}</article></main>
   <aside class="toc">{toc_html}</aside>
 </div>
