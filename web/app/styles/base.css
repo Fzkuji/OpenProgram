@@ -592,6 +592,12 @@ button, input, select, textarea, optgroup {
 .history-edge.attach-edge {
   animation: attachEdgeFlow 0.9s linear infinite;
 }
+@keyframes forkEdgeFlow {
+  to { stroke-dashoffset: -20; }
+}
+.history-edge.fork-edge {
+  animation: forkEdgeFlow 1.2s linear infinite;
+}
 /* Pulse around DAG mini-map nodes whose async task is currently
    running. is-running class is toggled by branches-panel via a
    MutationObserver on .history-body so the indicator survives

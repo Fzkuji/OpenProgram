@@ -324,9 +324,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
         (trunkChildren[callerId] = trunkChildren[callerId] || []).push(id);
         return;
       }
-    }
-    // No called_by or different lane = fork branch
-    if (!callerId && node.called_by) {
+      // Different lane = fork branch (retry/edit sibling)
       forkNodes.push(id);
     }
   });
@@ -377,12 +375,13 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     }
   });
 
-  // Fork sibling dashed lines
+  // Fork sibling dashed lines with marching-ants animation
   for (const id of forkNodes) {
     const node = tree.byId[id];
     if (!node) continue;
     const pid = node.called_by;
     if (!pid) continue;
+    // Find the first sibling on a different lane
     let sibling: GNode | null = null;
     Object.keys(tree.byId).forEach((sid) => {
       if (sid === id) return;
@@ -398,14 +397,16 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const startX = sp.x + nr;
     const endX = c.x - nr;
     const color = _branchColor(node, stableLeafOfNode);
-    edgeG.appendChild(_svg("line", {
-      x1: startX, y1: sp.y, x2: endX, y2: c.y,
+    const path = _edgePath(startX, sp.y, endX, c.y);
+    edgeG.appendChild(_svg("path", {
+      d: path,
       stroke: color,
       "stroke-width": 1.4,
-      "stroke-dasharray": "4 3",
-      opacity: 0.6,
+      fill: "none",
+      "stroke-dasharray": "6 4",
+      opacity: 0.7,
       "pointer-events": "none",
-      class: "history-edge",
+      class: "history-edge fork-edge",
     }));
   }
 
