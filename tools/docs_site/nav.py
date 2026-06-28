@@ -56,6 +56,8 @@ class Page:
     is_readme: bool
     kind: str          # "md" or "html"
     i18n_key: str = ""  # if set, sidebar label switches with the UI language
+    en_src: Path | None = None   # English-version source (xxx.en.md), if any
+    en_out: Path | None = None   # English-version output path, if any
 
 
 @dataclass
@@ -99,7 +101,22 @@ def prettify(name: str) -> str:
 
 
 def discover(docs_root: Path) -> list[Page]:
-    """All renderable pages under docs/, excluding EXCLUDE_DIRS."""
+    """All renderable pages under docs/, excluding EXCLUDE_DIRS.
+
+    Bilingual convention: ``xxx.md`` is the default (Chinese) version; a sibling
+    ``xxx.en.md`` is its English version. The .en.md does NOT get its own
+    sidebar entry — it's attached to xxx.md as ``en_src`` and reached via the
+    language toggle.
+    """
+    # First pass: collect all .en.md english sources, keyed by their base stem.
+    en_sources: dict[Path, Path] = {}  # base rel (xxx.md) -> en src path
+    for path in docs_root.rglob("*.en.md"):
+        rel = path.relative_to(docs_root)
+        if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        base_rel = rel.with_name(rel.name[:-len(".en.md")] + ".md")
+        en_sources[base_rel] = path
+
     pages: list[Page] = []
     for path in sorted(docs_root.rglob("*")):
         if path.suffix not in (".md", ".html"):
@@ -107,10 +124,14 @@ def discover(docs_root: Path) -> list[Page]:
         rel = path.relative_to(docs_root)
         if any(part in EXCLUDE_DIRS for part in rel.parts):
             continue
+        if rel.name.endswith(".en.md"):
+            continue  # english version is attached to its base, not a page
         out = rel.with_suffix(".html")
         rel_str = str(rel).replace("\\", "/")
         override = ROOT_PAGE_GROUPS.get(rel_str)
         title = override[0] if override else extract_title(path)
+        en_src = en_sources.get(rel)
+        en_out = (rel.with_name(rel.stem + ".en.html")) if en_src else None
         pages.append(
             Page(
                 src=path,
@@ -120,6 +141,8 @@ def discover(docs_root: Path) -> list[Page]:
                 is_readme=path.stem.upper() == "README",
                 kind=path.suffix.lstrip("."),
                 i18n_key=ROOT_PAGE_I18N.get(rel_str, ""),
+                en_src=en_src,
+                en_out=en_out,
             )
         )
     return _dedupe_md_html(pages)

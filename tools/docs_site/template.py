@@ -19,6 +19,8 @@ def render_page(
     nav_html: str,
     toc_html: str,
     base: str,
+    page_lang: str = "zh",
+    alt_lang_url: str = "",
     breadcrumb_html: str = "",
     prevnext_html: str = "",
     meta_html: str = "",
@@ -28,10 +30,14 @@ def render_page(
 
     base — relative prefix back to _site root (e.g. "../../") so asset and nav
     links resolve from any nesting depth.
+    page_lang — this page's own content language ("zh"/"en").
+    alt_lang_url — URL of the other-language version of THIS page, if any; the
+    language toggle navigates there.
     """
     safe_title = _html.escape(title)
+    alt_attr = f' data-alt-lang-url="{alt_lang_url}"' if alt_lang_url else ""
     return f"""<!DOCTYPE html>
-<html lang="zh" data-base="{base}">
+<html lang="{page_lang}" data-base="{base}" data-page-lang="{page_lang}"{alt_attr}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

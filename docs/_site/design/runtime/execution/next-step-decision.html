@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh" data-base="/docs/">
+<html lang="zh" data-base="/docs/" data-page-lang="zh">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -82,8 +82,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
 <a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
-<a class="navlink" href="/docs/design/function/function-metadata.html">Function Metadata Specification</a>
-<a class="navlink" href="/docs/design/function/function-metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html">函数元数据规范</a>
 <a class="navlink" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
 <a class="navlink" href="/docs/design/function/pure-python.html">纯 Python 函数</a>
 <details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
@@ -345,7 +344,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p><code>chosen</code> 是函数就 <code>chosen(**kwargs)</code> 执行并返回结果;<code>chosen</code> 是字符串就在值表里查出对应值返回(值选项若声明了 schema,则返回 <code>{&quot;decision&quot;: 名字, **kwargs}</code>)。</p>
 <h2 id="与-tool-call-循环的关系">与 tool call 循环的关系<a class="header-anchor" href="#与-tool-call-循环的关系">#</a></h2>
 <p>这套机制和 <code>tool-calling.md</code> 里 <code>agent_loop.py</code> 的 tool call 循环不冲突,是并列的两种&quot;让模型选下一步&quot;的实现。<code>@agentic_function</code> 既可以作为 <code>exec(tools=[...])</code> 的原生工具,也可以作为决策选项——同一个函数,两套调用路径。选哪套取决于:要不要依赖 provider tool use、要不要&quot;选项是个值而不是函数&quot;、要不要把每次决策和重试都作为可追溯的 DAG 节点。</p>
-<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/execution/async-task-lifecycle.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Async Task 生命周期</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/dispatcher-split.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Splitting `agent/dispatcher.py` into a responsibility-scoped package</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/execution/async-task-lifecycle.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Async Task 生命周期</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/dispatcher-split.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Splitting `agent/dispatcher.py` into a responsibility-scoped package</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#和原生-tool-call-的区别">和原生 tool call 的区别</a>

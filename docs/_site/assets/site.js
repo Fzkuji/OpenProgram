@@ -79,6 +79,13 @@
       try { localStorage.setItem("op-docs-lang", curLang); } catch (e) {}
       applyLang(curLang);
       window.dispatchEvent(new CustomEvent("documentLangChange", { detail: { lang: curLang } }));
+      // If THIS page has an other-language version, jump to it so the body
+      // language matches the chosen UI language.
+      const altUrl = ROOT.getAttribute("data-alt-lang-url");
+      const pageLang = ROOT.getAttribute("data-page-lang");
+      if (altUrl && pageLang && pageLang !== curLang) {
+        location.href = altUrl;
+      }
     });
   }
 

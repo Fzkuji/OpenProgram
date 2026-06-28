@@ -1,7 +1,5 @@
 # 函数元数据规范
 
-> 本文档是 [`function-metadata.md`](function-metadata.md) 的中文翻译，仅供阅读参考。**所有规范以英文版为准**——当两份内容不一致时，请按英文版执行；翻译版可能滞后。
-
 本文档定义"在这个框架里写一个函数（不管是否调用 LLM）时，需要承载哪些元数据、写在哪里、由谁消费"。
 
 适用范围：所有用 `@agentic_function` 装饰的函数；以及未被装饰、但被传给 `render_options` / `runtime.exec(tools=[...])` / catalog 协议任意一个组件的普通 Python callable。

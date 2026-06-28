@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh" data-base="/docs/">
+<html lang="zh" data-base="/docs/" data-page-lang="zh">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -82,8 +82,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
 <a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
-<a class="navlink" href="/docs/design/function/function-metadata.html">Function Metadata Specification</a>
-<a class="navlink" href="/docs/design/function/function-metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html">函数元数据规范</a>
 <a class="navlink" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
 <a class="navlink" href="/docs/design/function/pure-python.html">纯 Python 函数</a>
 <details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
@@ -478,7 +477,7 @@ GNode 里 <code>parent_id</code> 没人写，纯死字段。倾向本次一起�
 <code>called_by</code>&quot;，与实际两条边不符。倾向本次一并修正文档，把两条边写清楚。</p>
 </li>
 </ol>
-<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/execution/dispatcher-split.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Splitting `agent/dispatcher.py` into a responsibility-scoped package</span></a><a class="pn-link pn-next" href="/docs/design/runtime/operations/multi-agent-revert-todo.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Multi-agent + per-turn revert: status</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/execution/dispatcher-split.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Splitting `agent/dispatcher.py` into a responsibility-scoped package</span></a><a class="pn-link pn-next" href="/docs/design/runtime/operations/multi-agent-revert-todo.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Multi-agent + per-turn revert: status</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#一问题两个同名-called_by">一、问题：两个同名 called_by</a>

@@ -446,15 +446,36 @@ def build() -> int:
         meta_html = (f'<div class="page-updated"><span data-i18n="updated">最后更新</span>'
                      f' · {updated}</div>') if updated else ""
 
+        # bilingual: if an English version exists, its URL lets the language
+        # toggle jump straight to it (and vice-versa from the EN page).
+        alt_url = (DEPLOY_BASE + str(p.en_out).replace("\\", "/")) if p.en_out else ""
+
         full = render_page(
             title=p.title, body_html=body, nav_html=nav_html,
-            toc_html=toc, base=base,
+            toc_html=toc, base=base, page_lang="zh", alt_lang_url=alt_url,
             breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
         )
         out_path = OUT_ROOT / p.out
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(full, encoding="utf-8")
         rendered += 1
+
+        # English version (same shell, English body), if present.
+        if p.en_src is not None and p.en_out is not None:
+            _SLUG_DEDUP = {}
+            en_text = p.en_src.read_text(encoding="utf-8", errors="replace")
+            en_body = relink_internal(apply_callouts(md.render(en_text)), p.en_out.parent)
+            en_toc = extract_toc(en_body)
+            en_back = DEPLOY_BASE + str(p.out).replace("\\", "/")
+            en_full = render_page(
+                title=p.title, body_html=en_body, nav_html=nav_html,
+                toc_html=en_toc, base=base, page_lang="en", alt_lang_url=en_back,
+                breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
+            )
+            en_path = OUT_ROOT / p.en_out
+            en_path.parent.mkdir(parents=True, exist_ok=True)
+            en_path.write_text(en_full, encoding="utf-8")
+            rendered += 1
 
         search_records.append({
             "title": p.title,

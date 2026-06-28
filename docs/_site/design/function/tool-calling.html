@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh" data-base="/docs/">
+<html lang="zh" data-base="/docs/" data-page-lang="zh">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -82,8 +82,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/function" open><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
 <a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
-<a class="navlink" href="/docs/design/function/function-metadata.html">Function Metadata Specification</a>
-<a class="navlink" href="/docs/design/function/function-metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html">函数元数据规范</a>
 <a class="navlink active" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
 <a class="navlink" href="/docs/design/function/pure-python.html">纯 Python 函数</a>
 <details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
@@ -229,7 +228,7 @@ exec 层 max_iterations(默认 20)    exec 自己的工具循环安全帽
 <p>内层退出后,<code>get_follow_up_messages</code> 若有后续消息则把它们设为 <code>pending_messages</code> 再开一轮;没有就彻底结束,推 <code>AgentEventAgentEnd</code>。</p>
 <h2 id="与-agentic_function-的关系">与 <code>@agentic_function</code> 的关系<a class="header-anchor" href="#与-agentic_function-的关系">#</a></h2>
 <p>被当作工具传给 <code>exec(tools=[...])</code> 的 <code>@agentic_function</code>,在模型眼里就是一个可选函数。模型选中它 → <code>_execute_tool_calls</code> 调它的 <code>.execute</code> → 这个函数内部如果又调 <code>runtime.exec</code>,就再开一层同样的选择循环。&quot;选下一步要运行的函数&quot;在多层 agentic function 嵌套下是同一套机制递归展开。</p>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-20</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/function-metadata.zh.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">函数元数据规范</span></a><a class="pn-link pn-next" href="/docs/design/function/pure-python.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">纯 Python 函数</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-20</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/function-metadata.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">函数元数据规范</span></a><a class="pn-link pn-next" href="/docs/design/function/pure-python.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">纯 Python 函数</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#一句话概括">一句话概括</a>
