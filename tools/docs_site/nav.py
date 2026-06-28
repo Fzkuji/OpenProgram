@@ -14,8 +14,25 @@ from pathlib import Path
 # Folders that are never part of the docs site.
 EXCLUDE_DIRS = {"_site", "images", "slides"}
 
-# Top-level loose pages get collected under this synthetic group.
-GUIDES_GROUP = "Guides"
+# The top-level loose pages in docs/ have no folder of their own, so we group
+# them logically by filename. (rel-path string -> (display title, subgroup).)
+# This keeps the source files in place — they're linked from many other docs —
+# while giving the sidebar clean names and a sensible structure.
+ROOT_PAGE_GROUPS: dict[str, tuple[str, str]] = {
+    "README.md":                  ("项目总览", "快速上手"),
+    "README_CN.md":               ("项目总览（中文）", "快速上手"),
+    "GETTING_STARTED.md":         ("快速上手", "快速上手"),
+    "install.md":                 ("安装", "快速上手"),
+    "features.md":                ("功能详解", "快速上手"),
+    "INTEGRATION_CLAUDE_CODE.md": ("集成 Claude Code", "集成"),
+    "INTEGRATION_OPENCLAW.md":    ("集成 OpenClaw", "集成"),
+    "installing-harnesses.md":    ("安装与编写 Harness", "集成"),
+    "API.md":                     ("API 参考", "参考"),
+    "provider-token-tracking.md": ("Provider Token 追踪", "参考"),
+    "troubleshooting.md":         ("故障排查", "参考"),
+}
+# Order the synthetic root subgroups appear in.
+ROOT_SUBGROUP_ORDER = ["快速上手", "集成", "参考"]
 
 
 @dataclass
@@ -73,12 +90,15 @@ def discover(docs_root: Path) -> list[Page]:
         if any(part in EXCLUDE_DIRS for part in rel.parts):
             continue
         out = rel.with_suffix(".html")
+        rel_str = str(rel).replace("\\", "/")
+        override = ROOT_PAGE_GROUPS.get(rel_str)
+        title = override[0] if override else extract_title(path)
         pages.append(
             Page(
                 src=path,
                 rel=rel,
                 out=out,
-                title=extract_title(path),
+                title=title,
                 is_readme=path.stem.upper() == "README",
                 kind=path.suffix.lstrip("."),
             )
@@ -116,7 +136,7 @@ def build_tree(docs_root: Path, pages: list[Page]) -> list[Group]:
         if rel_dir in groups:
             return groups[rel_dir]
         if rel_dir == Path("."):
-            g = Group(title=GUIDES_GROUP, rel_dir=Path("."))
+            g = Group(title="", rel_dir=Path("."))
         else:
             readme = docs_root / rel_dir / "README.md"
             title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
@@ -128,13 +148,33 @@ def build_tree(docs_root: Path, pages: list[Page]) -> list[Group]:
             parent.subgroups.append(g)
         return g
 
-    for p in pages:
-        group_for(p.rel.parent if str(p.rel.parent) != "." else Path(".")).pages.append(p)
+    # Synthetic subgroups for the loose root pages (快速上手 / 集成 / 参考).
+    root_subgroups: dict[str, Group] = {}
 
-    # sort pages within each group: README first, then by title
+    def root_subgroup(name: str) -> Group:
+        if name not in root_subgroups:
+            root_subgroups[name] = Group(title=name, rel_dir=Path(f"__{name}__"))
+        return root_subgroups[name]
+
+    for p in pages:
+        parent_str = str(p.rel.parent)
+        if parent_str == ".":
+            rel_str = str(p.rel).replace("\\", "/")
+            override = ROOT_PAGE_GROUPS.get(rel_str)
+            if override:
+                root_subgroup(override[1]).pages.append(p)
+            else:
+                group_for(Path(".")).pages.append(p)  # uncategorized → root
+        else:
+            group_for(p.rel.parent).pages.append(p)
+
+    # sort pages within each real group
     for g in groups.values():
         g.pages.sort(key=lambda p: (not p.is_readme, p.title.lower()))
         g.subgroups.sort(key=lambda sg: sg.title.lower())
 
-    root = groups.get(Path("."))
-    return [root] if root else []
+    root = group_for(Path("."))
+    # Prepend the synthetic root subgroups in a fixed order.
+    ordered = [root_subgroups[n] for n in ROOT_SUBGROUP_ORDER if n in root_subgroups]
+    root.subgroups = ordered + root.subgroups
+    return [root]

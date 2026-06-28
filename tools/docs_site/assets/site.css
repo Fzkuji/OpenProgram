@@ -97,26 +97,29 @@ nav.sidebar {
   overflow-y: auto; padding: 20px 14px 60px; border-right: 1px solid var(--bd);
   background: var(--bg-side);
 }
-nav.sidebar details.group { margin: 2px 0; }
+nav.sidebar details.group { margin: 1px 0; }
 nav.sidebar summary.group-title {
   list-style: none; cursor: pointer; user-select: none;
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .05em; color: var(--tx-soft);
-  padding: 7px 8px; border-radius: 6px; margin: 2px 0;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 600; letter-spacing: 0;
+  color: var(--tx); padding: 7px 8px; border-radius: 7px; margin: 1px 0;
 }
 nav.sidebar summary.group-title::-webkit-details-marker { display: none; }
 nav.sidebar summary.group-title::before {
-  content: "▸"; font-size: 10px; color: var(--tx-faint);
-  transition: transform .15s; display: inline-block;
+  content: "›"; font-size: 17px; line-height: 1; color: var(--tx-faint);
+  transition: transform .15s; display: inline-block; width: 12px; text-align: center;
 }
 nav.sidebar details[open] > summary.group-title::before { transform: rotate(90deg); }
 nav.sidebar summary.group-title:hover { background: var(--bd-soft); color: var(--tx); }
-nav.sidebar .group-body { padding-left: 6px; margin-left: 6px; border-left: 1px solid var(--bd-soft); }
+/* nested subgroup headers: a touch lighter than top-level */
+nav.sidebar details.group details.group > summary.group-title {
+  font-size: 13px; font-weight: 550; color: var(--tx-soft);
+}
+nav.sidebar .group-body { padding-left: 8px; margin-left: 9px; border-left: 1px solid var(--bd-soft); }
 nav.sidebar details.group details.group { margin-left: 2px; }
 nav.sidebar a.navlink {
-  display: block; padding: 5px 8px; border-radius: 6px; font-size: 13.5px;
-  color: var(--tx-soft); line-height: 1.4;
+  display: block; padding: 6px 9px; border-radius: 7px; font-size: 14px;
+  color: var(--tx-soft); line-height: 1.45;
 }
 nav.sidebar a.navlink:hover { background: var(--bd-soft); color: var(--tx); text-decoration: none; }
 nav.sidebar a.navlink.active { background: var(--acc-soft); color: var(--acc); font-weight: 600; }

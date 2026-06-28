@@ -161,30 +161,21 @@ def render_nav(groups, current_out: Path, base: str) -> str:
         return "\n".join(out)
 
     def render_group(g, top=False) -> str:
-        # The synthetic root "Guides" group: render its loose pages as a
-        # collapsible "Guides" section (default open), then its subgroups as
-        # their own top-level collapsible sections.
+        # Root group: render any loose pages directly, then each subgroup as a
+        # top-level collapsible section.
         if top:
             parts = []
-            if g.pages:
-                key = "__guides__"
-                is_open = any(p.out == current_out for p in g.pages) or current_out == Path("index.html")
-                open_attr = " open" if is_open else ""
-                pages_html = "\n".join(
-                    f'<a class="navlink{" active" if p.out == current_out else ""}" '
-                    f'href="{base + str(p.out).replace(chr(92), "/")}">{_html.escape(p.title)}</a>'
-                    for p in g.pages
-                )
-                parts.append(
-                    f'<details class="group" data-key="{key}"{open_attr}>'
-                    f'<summary class="group-title">指南 Guides</summary>'
-                    f'<div class="group-body">{pages_html}</div></details>'
-                )
+            for p in g.pages:
+                href = base + str(p.out).replace("\\", "/")
+                active = " active" if p.out == current_out else ""
+                parts.append(f'<a class="navlink{active}" href="{href}">{_html.escape(p.title)}</a>')
             for sg in g.subgroups:
                 parts.append(render_group(sg))
             return "\n".join(parts)
         key = str(g.rel_dir).replace("\\", "/")
-        is_open = contains_current(g)
+        # synthetic root subgroups (快速上手/集成/参考) default-open on the home page
+        is_synthetic = key.startswith("__")
+        is_open = contains_current(g) or (is_synthetic and current_out == Path("index.html"))
         open_attr = " open" if is_open else ""
         return (
             f'<details class="group" data-key="{_html.escape(key)}"{open_attr}>'
