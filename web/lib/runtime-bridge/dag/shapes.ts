@@ -129,12 +129,15 @@ export function _buildShapeEl(
     });
   } else if (shape === "diamond") {
     const s = r * SQR_SCALE;
+    // ROOT diamond is filled (white) — it's the session anchor, drawn
+    // solid so it reads as the root, not just another outline node.
     return _svg("rect", {
       x: -s, y: -s, width: s * 2, height: s * 2,
       rx: 0.6, ry: 0.6,
       transform: "rotate(45)",
       "stroke-linejoin": "round",
       ...common,
+      fill: "#ffffff",
     });
   }
   return null;

@@ -86,9 +86,15 @@ export function drawEdges(
       }
     }
 
-    if (c.y > fromY) {
+    // Start the vertical trunk at the parent's BOTTOM edge, not its
+    // centre — otherwise the line runs through the lower half of the
+    // parent node. Only when the trunk sits in the parent's own column
+    // (sub-call indent) would it overlap; offsetting by nr is harmless
+    // when the trunk is a separate column (user → ROOT lane).
+    const vTop = fromY + nr;
+    if (c.y > vTop) {
       edgeG.appendChild(_svg("line", {
-        x1: trunkX, y1: fromY, x2: trunkX, y2: c.y,
+        x1: trunkX, y1: vTop, x2: trunkX, y2: c.y,
         stroke: color, "stroke-width": 1.6, "stroke-linecap": "round",
         "pointer-events": "none", class: "history-edge",
       }));
