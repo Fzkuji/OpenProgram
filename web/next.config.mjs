@@ -62,8 +62,10 @@ const nextConfig = {
       { source: "/ws", destination: `${BACKEND}/ws` },
       { source: "/ws/:path*", destination: `${BACKEND}/ws/:path*` },
       // ``/docs`` — static design-documentation site served by the backend
-      // (StaticFiles mount). Same bake-in caveat as ``/ws``.
-      { source: "/docs", destination: `${BACKEND}/docs` },
+      // (StaticFiles mount). Same bake-in caveat as ``/ws``. Map the
+      // no-slash form straight to the backend's ``/docs/`` so the user
+      // never gets bounced to the backend port by StaticFiles' redirect.
+      { source: "/docs", destination: `${BACKEND}/docs/` },
       { source: "/docs/:path*", destination: `${BACKEND}/docs/:path*` },
     ];
   },

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh" data-base="../../">
+<html lang="zh" data-base="/docs/">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,9 +9,9 @@
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
-<link rel="stylesheet" href="../../assets/site.css">
-<link rel="stylesheet" href="../../assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
-<link rel="stylesheet" href="../../assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="stylesheet" href="/docs/assets/site.css">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
@@ -19,7 +19,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <body>
 <header class="topbar">
   <button class="icon hamburger" aria-label="菜单">☰</button>
-  <a class="brand" href="../../index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
   <div class="spacer"></div>
   <button class="search-trigger" aria-label="搜索">
     <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
@@ -30,138 +30,138 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 
 <div class="scrim"></div>
 <div class="layout">
-  <nav class="sidebar"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="../../GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
-<a class="navlink" href="../../README.html" data-i18n="p_overview">项目总览</a>
-<a class="navlink" href="../../README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
-<a class="navlink" href="../../features.html" data-i18n="p_features">功能详解</a>
-<a class="navlink" href="../../install.html" data-i18n="p_install">安装</a></div></details>
-<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="../../INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
-<a class="navlink" href="../../INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
-<a class="navlink" href="../../installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
-<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="../../API.html" data-i18n="p_api">API 参考</a>
-<a class="navlink" href="../../provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
-<a class="navlink" href="../../troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
-<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/README.html">Agentic Programming Guide</a>
-<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
-<a class="navlink" href="../../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
-<a class="navlink" href="../../agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
-<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="../../agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
-<a class="navlink" href="../../agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
-<a class="navlink" href="../../agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
-<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="../../api/agentic_function.html">agentic_function</a>
-<a class="navlink" href="../../api/providers.html">Providers</a>
-<a class="navlink" href="../../api/runtime.html">Runtime</a></div></details>
-<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="../../design/README.html">Design Documents</a>
-<a class="navlink" href="../../design/usage-metering.html">Usage Metering 子系统设计</a>
-<a class="navlink" href="../../design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
-<a class="navlink" href="../../design/docs-site.html">设计文档站（统一文档网页）</a>
-<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="../../design/channels/README.html">Channels</a>
-<a class="navlink" href="../../design/channels/channel-design.html">Channel 子系统设计</a>
-<a class="navlink" href="../../design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
-<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="../../design/cli/README.html">CLI / TUI</a>
-<a class="navlink" href="../../design/cli/cli-naming.html">CLI Naming Convention</a>
-<a class="navlink" href="../../design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
-<a class="navlink" href="../../design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
-<a class="navlink" href="../../design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
-<a class="navlink" href="../../design/cli/slash-commands.html">Slash Commands — Unified Design</a>
-<a class="navlink" href="../../design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
-<a class="navlink" href="../../design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
-<a class="navlink" href="../../design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
-<details class="group" data-key="design/context" open><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="../../design/context/README.html">Context</a>
-<a class="navlink" href="../../design/context/context.html">Context — 上下文层</a>
-<a class="navlink" href="../../design/context/context-compaction.html">上下文压缩</a>
-<a class="navlink" href="../../design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
-<a class="navlink active" href="../../design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
-<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="../../design/extension-gating/README.html">Extension Gating</a>
-<a class="navlink" href="../../design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
-<a class="navlink" href="../../design/extension-gating/implementation.html">Implementation map</a>
-<a class="navlink" href="../../design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
-<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="../../design/function/README.html">Function Design</a>
-<a class="navlink" href="../../design/function/agentic_function.html">@agentic_function</a>
-<a class="navlink" href="../../design/function/function-calling-unification.html">Function calling</a>
-<a class="navlink" href="../../design/function/function_metadata.html">Function Metadata Specification</a>
-<a class="navlink" href="../../design/function/function_metadata.zh.html">函数元数据规范</a>
-<a class="navlink" href="../../design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
-<a class="navlink" href="../../design/function/pure_python.html">纯 Python 函数</a>
-<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="../../design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
-<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="../../design/integrations/README.html">Integrations</a>
-<a class="navlink" href="../../design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
-<a class="navlink" href="../../design/integrations/mcp-integration.html">MCP 工具集成</a>
-<a class="navlink" href="../../design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
-<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="../../design/memory/README.html">Memory — 记忆系统设计</a>
-<a class="navlink" href="../../design/memory/memory.html">Memory subsystem</a>
-<a class="navlink" href="../../design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
-<a class="navlink" href="../../design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
-<a class="navlink" href="../../design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
-<a class="navlink" href="../../design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
-<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="../../design/proactive/README.html">Proactive Layer — 设计</a>
-<a class="navlink" href="../../design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
-<a class="navlink" href="../../design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
-<a class="navlink" href="../../design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
-<a class="navlink" href="../../design/proactive/policies-mvp.html">三条样板规则</a>
-<a class="navlink" href="../../design/proactive/events-and-state.html">事件与状态（地基）</a>
-<a class="navlink" href="../../design/proactive/event-layer.html">事件层</a>
-<a class="navlink" href="../../design/proactive/overview.html">总览：跟着一个场景走一遍</a>
-<a class="navlink" href="../../design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
-<a class="navlink" href="../../design/proactive/invariants.html">框架自己要守的底线</a>
-<a class="navlink" href="../../design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
-<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="../../design/providers/README.html">Providers</a>
-<a class="navlink" href="../../design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
-<a class="navlink" href="../../design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
-<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="../../design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
-<a class="navlink" href="../../design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
-<a class="navlink" href="../../design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
-<a class="navlink" href="../../design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
-<a class="navlink" href="../../design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
-<a class="navlink" href="../../design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
-<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="../../design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
-<a class="navlink" href="../../design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
-<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="../../design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
-<a class="navlink" href="../../design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
-<a class="navlink" href="../../design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
-<a class="navlink" href="../../design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
-<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="../../design/runtime/README.html">Runtime</a>
-<a class="navlink" href="../../design/runtime/agent-worktree.html">Agent Worktree 工具</a>
-<a class="navlink" href="../../design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
-<a class="navlink" href="../../design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
-<a class="navlink" href="../../design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
-<a class="navlink" href="../../design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
-<a class="navlink" href="../../design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
-<a class="navlink" href="../../design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
-<a class="navlink" href="../../design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
-<a class="navlink" href="../../design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
-<a class="navlink" href="../../design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
-<a class="navlink" href="../../design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
-<a class="navlink" href="../../design/runtime/runtime.html">Runtime — 设计理由</a>
-<a class="navlink" href="../../design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
-<a class="navlink" href="../../design/runtime/session-name.html">Session Name — 会话命名设计</a>
-<a class="navlink" href="../../design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
-<a class="navlink" href="../../design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
-<a class="navlink" href="../../design/runtime/branch-naming.html">分支自动命名设计文档</a>
-<a class="navlink" href="../../design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
-<a class="navlink" href="../../design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
-<a class="navlink" href="../../design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
-<a class="navlink" href="../../design/runtime/unified-session-context.html">统一 session 上下文创建</a>
-<a class="navlink" href="../../design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
-<a class="navlink" href="../../design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
-<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="../../design/runtime/session/README.html">Session 子系统</a>
-<a class="navlink" href="../../design/runtime/session/name.html">LLM 标题生成</a>
-<a class="navlink" href="../../design/runtime/session/context.html">Session 上下文</a>
-<a class="navlink" href="../../design/runtime/session/operations.html">Session 操作流程</a>
-<a class="navlink" href="../../design/runtime/session/storage.html">Session 数据模型</a>
-<a class="navlink" href="../../design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
-<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="../../design/ui/README.html">Web UI</a>
-<a class="navlink" href="../../design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
-<a class="navlink" href="../../design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
-<a class="navlink" href="../../design/ui/indicator-dots.html">Indicator dot system</a>
-<a class="navlink" href="../../design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
-<a class="navlink" href="../../design/ui/surface-system.html">Surface system (dark mode)</a>
-<a class="navlink" href="../../design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
-<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="../../philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
-<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="../../plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
-<a class="navlink" href="../../plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
-<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="../../reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
-<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="../../research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
+  <nav class="sidebar"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic_function.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
+<a class="navlink" href="/docs/design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="/docs/design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context" open><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink active" href="/docs/design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
+<a class="navlink" href="/docs/design/function/agentic_function.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function_metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/design/function/function_metadata.zh.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure_python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function_calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function_calling/code_call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
+<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
   <main class="content"><article><h1 id="上下文组成-注册式三层目标态设计">上下文组成 —— 注册式三层（目标态设计）<a class="header-anchor" href="#上下文组成-注册式三层目标态设计">#</a></h1>
 <p>Status: <strong>已实现</strong> · Created: 2026-06-23 · Updated: 2026-06-25</p>
 <blockquote>
@@ -1156,6 +1156,6 @@ io 已释放</strong> —— 它是历史的安全网,不是删光。整会话�
   </div>
 </div>
 
-<script src="../../assets/site.js"></script>
+<script src="/docs/assets/site.js"></script>
 </body>
 </html>

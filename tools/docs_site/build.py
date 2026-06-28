@@ -10,6 +10,7 @@ Run:  python -m tools.docs_site.build
 from __future__ import annotations
 
 import html as _html
+import os
 import re
 import shutil
 import sys
@@ -32,6 +33,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCS_ROOT = REPO_ROOT / "docs"
 OUT_ROOT = DOCS_ROOT / "_site"
 ASSETS_SRC = Path(__file__).parent / "assets"
+
+# Absolute URL prefix the site is mounted under. The worker serves it at /docs,
+# so all asset/nav/internal links are absolute (/docs/...) — this makes them
+# resolve correctly whether the page URL has a trailing slash or not.
+# Override with OPENPROGRAM_DOCS_BASE (must start and end with "/").
+DEPLOY_BASE = os.environ.get("OPENPROGRAM_DOCS_BASE", "/docs/")
 
 _SLUG_DEDUP: dict[str, int] = {}
 
@@ -110,11 +117,17 @@ def extract_toc(body_html: str) -> str:
     return "\n".join(rows)
 
 
-def relink_internal(body_html: str) -> str:
-    """Rewrite relative .md / README links to their built .html targets."""
+def relink_internal(body_html: str, cur_dir: Path) -> str:
+    """Rewrite relative .md links to absolute built .html URLs.
+
+    cur_dir is the page's directory relative to _site root. Relative links are
+    resolved against it and re-emitted under DEPLOY_BASE, so they work no matter
+    whether the page URL has a trailing slash.
+    """
     def repl(m):
         attr, url = m.group(1), m.group(2)
-        if re.match(r"^[a-z]+://", url) or url.startswith("#") or url.startswith("mailto:"):
+        if (re.match(r"^[a-z]+://", url) or url.startswith("#")
+                or url.startswith("mailto:") or url.startswith("/")):
             return m.group(0)
         anchor = ""
         if "#" in url:
@@ -122,7 +135,11 @@ def relink_internal(body_html: str) -> str:
             anchor = "#" + anchor
         if url.endswith(".md"):
             url = url[:-3] + ".html"
-        return f'{attr}"{url}{anchor}"'
+        if not url:  # pure anchor like "#foo" already handled above
+            return f'{attr}"{anchor}"'
+        # resolve relative to the current page's directory, then make absolute
+        resolved = os.path.normpath(str(cur_dir / url)).replace("\\", "/")
+        return f'{attr}"{DEPLOY_BASE}{resolved}{anchor}"'
     return re.sub(r'(href=)"([^"]+)"', repl, body_html)
 
 
@@ -212,13 +229,12 @@ def build() -> int:
     for p in pages:
         global _SLUG_DEDUP
         _SLUG_DEDUP = {}
-        depth = len(p.out.parts) - 1
-        base = "../" * depth
+        base = DEPLOY_BASE
 
         if p.kind == "md":
             text = p.src.read_text(encoding="utf-8", errors="replace")
             body = md.render(text)
-            body = relink_internal(body)
+            body = relink_internal(body, p.out.parent)
             toc = extract_toc(body)
         else:
             # Ship the original verbatim and embed it via an isolated iframe.
@@ -227,7 +243,7 @@ def build() -> int:
             raw_path.parent.mkdir(parents=True, exist_ok=True)
             raw_path.write_text(p.src.read_text(encoding="utf-8", errors="replace"),
                                 encoding="utf-8")
-            body = embed_html(raw_rel.name)
+            body = embed_html(DEPLOY_BASE + str(raw_rel).replace("\\", "/"))
             toc = ""
 
         nav_html = render_nav(groups, p.out, base)
@@ -286,14 +302,14 @@ def _write_home(groups) -> None:
     for title, url, n, ikey in cards:
         ti18n = f' data-i18n="{ikey}"' if ikey else ""
         body.append(
-            f'<a class="home-card" href="{url}">'
+            f'<a class="home-card" href="{DEPLOY_BASE}{url}">'
             f'<span class="hc-title"{ti18n}>{_html.escape(title)}</span>'
             f'<span class="hc-count">{n}<span data-i18n="unit"> 篇</span></span></a>'
         )
     body.append("</div>")
-    nav_html = render_nav(groups, Path("index.html"), "")
+    nav_html = render_nav(groups, Path("index.html"), DEPLOY_BASE)
     full = render_page(title="OpenProgram 设计文档", body_html="\n".join(body),
-                       nav_html=nav_html, toc_html="", base="")
+                       nav_html=nav_html, toc_html="", base=DEPLOY_BASE)
     (OUT_ROOT / "index.html").write_text(full, encoding="utf-8")
 
 
