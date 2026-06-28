@@ -725,6 +725,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   _recomputeVisibility();
   requestAnimationFrame(_recomputeVisibility);
   setTimeout(_recomputeVisibility, 250);
+  setTimeout(_recomputeVisibility, 800);
   setTimeout(_recomputeVisibility, 700);
 
   const bodyAny = body as any;
