@@ -46,7 +46,8 @@ def _decode_extra(raw) -> dict:
 def _msg_to_node(msg: dict) -> Call:
     role = msg.get("role", "user")
     base_id = msg.get("id") or uuid.uuid4().hex[:12]
-    predecessor = msg.get("called_by")
+    # Conversation-chain predecessor (聊天顺序上的前驱).
+    predecessor = msg.get("predecessor")
     created_at = msg.get("timestamp") or time.time()
 
     if role == "user":
@@ -69,8 +70,10 @@ def _msg_to_node(msg: dict) -> Call:
         leftover_extra = {k: v for k, v in extra.items() if k != "tool_use"}
         if leftover_extra:
             meta["extra"] = leftover_extra
-        called_by = tool_use.get("called_by") or predecessor or ""
-        meta.pop("called_by", None)
+        # Code/tool node: caller = the LLM (or ROOT) that invoked it.
+        caller = tool_use.get("caller") or msg.get("caller") or predecessor or ""
+        meta.pop("caller", None)
+        meta.pop("predecessor", None)
         # Discriminator: a model-emitted tool_use code node carries a
         # tool_call_id (so the renderer can round-trip it as a real
         # ToolCall/ToolResult pair). Direct @agentic_function code nodes
@@ -85,7 +88,7 @@ def _msg_to_node(msg: dict) -> Call:
             name=tool_use.get("name") or msg.get("function") or "",
             input=tool_use.get("arguments") or {},
             output=msg.get("content"),
-            called_by=called_by,
+            caller=caller,
             metadata=meta,
         )
     meta = {k: v for k, v in msg.items() if k not in _ASSISTANT_NATIVE}
@@ -95,21 +98,24 @@ def _msg_to_node(msg: dict) -> Call:
             meta.setdefault(k, v)
     if role == "system":
         meta["role"] = "system"
-    # Conv predecessor lives in metadata.called_by (for the
-    # predecessor index). Call.called_by is reserved for "caller"
+    # Conv predecessor lives in metadata.predecessor (for the
+    # predecessor index). Call.caller is reserved for sub-call
     # semantics — only attach-pointer rows (side-children of a user
     # turn) set it, so list_branches' "has caller → skip" filter
     # correctly hides them without hiding normal assistant nodes.
-    conv_pred = meta.get("called_by", None) or ""
-    meta["called_by"] = conv_pred
+    conv_pred = meta.get("predecessor", None) or predecessor or ""
+    meta["predecessor"] = conv_pred
     is_attach = meta.get("function") == "attach"
+    # Attach-pointer rows are side-children: their caller points at the
+    # user turn that spawned them, so list_branches' "has caller → skip"
+    # filter hides them. Normal assistant replies have no caller.
     return Call(
         id=base_id,
         created_at=created_at,
         role=ROLE_LLM,
         name=msg.get("token_model") or "",
         output=msg.get("content") or "",
-        called_by=conv_pred if is_attach else "",
+        caller=(msg.get("caller") or conv_pred) if is_attach else (msg.get("caller") or ""),
         metadata=meta,
     )
 
@@ -131,15 +137,16 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "session_id": session_id,
             "role": "user",
             "content": node.output or "",
-            "called_by": node.called_by or "",
-            "caller": node.called_by or "",
+            # predecessor comes from metadata (set below via base.update);
+            # caller is the sub-call edge (empty for plain user turns).
+            "predecessor": meta.get("predecessor") or "",
+            "caller": node.caller or "",
             "timestamp": node.created_at,
         }
         base.update(meta)
         return base
 
     if node.is_code():
-        called_by = meta.pop("called_by", None) or ""
         # tool_call_id lives inside the tool_use blob (symmetric with
         # _msg_to_node, which reads it from there). pop from meta so it
         # doesn't leak as a stray top-level field via base.update(meta).
@@ -147,7 +154,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
         _tu = {
             "name": node.name,
             "arguments": node.input or {},
-            "called_by": called_by,
+            "caller": node.caller or "",
         }
         if _tcid:
             _tu["tool_call_id"] = _tcid
@@ -168,8 +175,8 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "session_id": session_id,
             "role": "tool",
             "content": content,
-            "called_by": node.called_by or called_by or "",
-            "caller": node.called_by or called_by or "",
+            "predecessor": meta.get("predecessor") or "",
+            "caller": node.caller or "",
             "timestamp": node.created_at,
             "function": node.name,
             "extra": json.dumps(extra_blob, ensure_ascii=False, default=str),
@@ -184,20 +191,16 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "session_id": session_id,
             "role": legacy_role,
             "content": node.output or "",
-            # called_by falls back to called_by here, but meta.called_by
-            # (set by _msg_to_node from the original msg) is the real
-            # answer and overrides via the base.update(meta) below.
-            "called_by": node.called_by,
-            "caller": node.called_by or "",
+            "predecessor": meta.get("predecessor") or "",
+            "caller": node.caller or "",
             "timestamp": node.created_at,
             "token_model": node.name,
         }
         base.update(meta)
-        # Restore called_by AFTER meta merge so attach-pointer rows
-        # (which set called_by but no called_by) keep their pointer
-        # tag for the ws_actions/session.py splicer.
-        if node.called_by:
-            base["called_by"] = node.called_by
+        # Restore caller AFTER meta merge so attach-pointer rows keep
+        # their pointer tag for the ws_actions/session.py splicer.
+        if node.caller:
+            base["caller"] = node.caller
         return base
 
     return {
@@ -205,7 +208,8 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
         "session_id": session_id,
         "role": node.role or "unknown",
         "content": str(node.output or ""),
-        "called_by": node.called_by,
+        "predecessor": meta.get("predecessor") or "",
+        "caller": node.caller or "",
         "timestamp": node.created_at,
     }
 

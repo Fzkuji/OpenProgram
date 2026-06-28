@@ -37,13 +37,13 @@ def build_session_graph(
     except Exception:
         full_msgs = []
 
-    called_by_map: dict[str, str] = {}
+    caller_map: dict[str, str] = {}
     nodes = []
     try:
         nodes = db.get_nodes(session_id) or []
         for n in nodes:
-            if n.called_by:
-                called_by_map[n.id] = n.called_by
+            if n.caller:
+                caller_map[n.id] = n.caller
     except Exception:
         pass
 
@@ -56,7 +56,7 @@ def build_session_graph(
     if root_node:
         graph.append({
             "id": root_node.id,
-            "called_by": "",
+            "predecessor": "",
             "caller": "",
             "role": "user",
             "display": "root",
@@ -73,8 +73,8 @@ def build_session_graph(
         mid = m.get("id") or ""
         graph.append({
             "id": mid,
-            "called_by": m.get("called_by"),
-            "caller": called_by_map.get(mid, "") or m.get("caller") or "",
+            "predecessor": m.get("predecessor"),
+            "caller": caller_map.get(mid, "") or m.get("caller") or "",
             "role": m.get("role"),
             "function": m.get("function"),
             "display": m.get("display"),

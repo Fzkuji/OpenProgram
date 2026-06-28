@@ -39,7 +39,7 @@ def _wrap_agentic_runtime_block(
 
     Before exec: set ``_call_id`` to the real caller so the
     @agentic_function decorator writes its top DAG node with
-    ``called_by`` pointing at that caller (build_exec_dag walks from
+    ``predecessor`` pointing at that caller (build_exec_dag walks from
     that id to reconstruct the tree). No placeholder node is created.
 
     During exec: poll build_exec_dag and broadcast tree_update
@@ -69,7 +69,7 @@ def _wrap_agentic_runtime_block(
         # ``assistant_msg_id`` is already the real caller in both paths:
         #   * fn-form: routes/chat.py passes "ROOT".
         #   * LLM call: it's the LLM reply id.
-        # Set _call_id so the code node's called_by points at it.
+        # Set _call_id so the code node's predecessor points at it.
         _real_caller = assistant_msg_id
         _call_token = _call_id_var.set(_real_caller)
         # Live Execution DAG streaming: poll build_exec_dag(...,
@@ -214,11 +214,11 @@ def _wrap_agentic_runtime_block(
                 _dbg_nodes = db.get_nodes(req.session_id)
                 _dbg_kids = [n for n in _dbg_nodes
                              if n.is_code() and n.name == tool_name
-                             and n.called_by == _real_caller]
+                             and n.caller == _real_caller]
                 _dbg_total = len(_dbg_nodes)
                 _dbg_top_id = _dbg_kids[-1].id if _dbg_kids else None
                 _dbg_grand = sum(1 for n in _dbg_nodes
-                                 if n.called_by == _dbg_top_id) if _dbg_top_id else 0
+                                 if n.caller == _dbg_top_id) if _dbg_top_id else 0
                 print(f"[dispatcher.debug] finalize tool={tool_name} "
                       f"caller={_real_caller} total_nodes={_dbg_total} "
                       f"top_match={bool(_dbg_top_id)} grand_children={_dbg_grand}",

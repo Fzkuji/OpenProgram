@@ -18,7 +18,7 @@ and inherits the chain that led to it. ``head_id`` is the new
 branch tip in the same session.
 
 ``context="clean"``: the spawned agent starts at a new root inside
-the same session (``called_by=null``). It sees only the prompt.
+the same session (``caller=null``). It sees only the prompt.
 Result lands as an independent DAG tree alongside the original
 conversation.
 

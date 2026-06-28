@@ -134,7 +134,7 @@ def test_model_tool_use_code_node_renders_as_toolcall_toolresult():
         name="search",
         input={"query": "DAG"},
         output={"hits": 3},
-        called_by=llm.id,
+        caller=llm.id,
         metadata={"tool_call_id": "call_abc"},
     ))
     msgs = render_dag_messages(g, [llm.id, tc.id])

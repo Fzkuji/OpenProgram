@@ -83,7 +83,7 @@ def _peer_final_text(
         if (node.role or "") in ("assistant", "llm") and (node.output or "").strip():
             return str(node.output), head
         meta = node.metadata or {}
-        cur = meta.get("called_by") or node.called_by or None
+        cur = meta.get("predecessor") or node.caller or None
     return "", head
 
 
@@ -300,7 +300,7 @@ def process_merge_turn(
             "display": "runtime",
             "function": "attach",
             "content": (p.get("text") or "(no output)").strip(),
-            "called_by": target_head,
+            "predecessor": target_head,
             "timestamp": time.time(),
             "agent_id": agent_id,
             "extra": json.dumps({
@@ -319,10 +319,10 @@ def process_merge_turn(
             store.append_message(target_session_id, attach_msg)
             attach_node_ids.append(attach_node_id)
             # Keep head pointed at the target head, not the attach
-            # pointer (attach uses called_by, not called_by, so the
+            # pointer (attach uses predecessor, not predecessor, so the
             # branch tip shouldn't move — but append_message has a
             # guard that updates head when the node has no caller. We
-            # set called_by above so this is a no-op; defensive
+            # set predecessor above so this is a no-op; defensive
             # restoration covers any future regression.)
             if target_head:
                 store.set_head(target_session_id, target_head)
@@ -334,7 +334,7 @@ def process_merge_turn(
 
     # ``history_override=None`` lets the dispatcher load the active
     # branch — the attach pointers we just wrote get spliced in via
-    # the called_by chain and reach ensure_latest_commit. With
+    # the predecessor chain and reach ensure_latest_commit. With
     # history_override=[] (legacy behaviour) the generator wouldn't
     # see them and the attach expansion path would be a no-op.
     req = TurnRequest(

@@ -29,9 +29,9 @@ def _noop(_: dict) -> None:
     pass
 
 
-# Sentinel: "caller did not specify called_by, dispatcher should pick"
+# Sentinel: "caller did not specify predecessor, dispatcher should pick"
 # vs explicit ``None`` which means "fork from root". The two cases need
-# different behavior — see TurnRequest.called_by.
+# different behavior — see TurnRequest.caller.
 class _InheritParent:
     __slots__ = ()
     def __repr__(self) -> str: return "<INHERIT>"
@@ -55,7 +55,7 @@ class TurnRequest:
     # configured tools. Channels can opt out of risky tools per turn
     # (e.g. wechat shouldn't ever hit destructive bash).
     tools_override: Optional[list[str]] = None
-    # Branching: called_by of the user message we're about to write.
+    # Branching: predecessor of the user message we're about to write.
     #   - INHERIT_PARENT (default) → dispatcher uses the active
     #     branch's tail (head_id walk). Normal append.
     #   - explicit string → fork sibling branch off that message.

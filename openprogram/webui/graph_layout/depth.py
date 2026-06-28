@@ -6,7 +6,7 @@ and their subtrees grow downward independently.
 """
 from __future__ import annotations
 
-from ._common import ts, called_by_of, is_root
+from ._common import ts, predecessor_of, is_root
 
 
 def compute_depth(
@@ -38,7 +38,7 @@ def compute_depth(
 
     def _walk_branch(nid: str, start: float) -> None:
         """Walk a branch subtree starting at a fixed depth, then
-        incrementing for each called_by child."""
+        incrementing for each predecessor child."""
         if nid in depth:
             return
         depth[nid] = start
@@ -58,7 +58,7 @@ def compute_depth(
     if not roots:
         roots = sorted(
             (nid for nid, m in by_id.items()
-             if not m.get("called_by") and not m.get("caller")),
+             if not m.get("predecessor") and not m.get("caller")),
             key=lambda x: ts(by_id, x),
         )
     for r in roots:
@@ -73,14 +73,14 @@ def compute_depth(
         if nid in depth:
             continue
         m = by_id[nid]
-        pid = called_by_of(by_id, m)
+        pid = predecessor_of(by_id, m)
         start = 0
         if pid and pid in depth:
             # Find the first sibling's depth
             for other_nid, other_m in by_id.items():
                 if other_nid == nid:
                     continue
-                if called_by_of(by_id, other_m) == pid and other_nid in depth:
+                if predecessor_of(by_id, other_m) == pid and other_nid in depth:
                     start = depth[other_nid]
                     break
             else:

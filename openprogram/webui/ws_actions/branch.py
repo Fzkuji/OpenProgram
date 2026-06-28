@@ -510,7 +510,7 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
             for m in anchor_msgs:
                 if m.get("function") != "attach":
                     continue
-                if m.get("called_by") != anchor:
+                if m.get("predecessor") != anchor:
                     continue
                 ad = m.get("attach")
                 if isinstance(ad, dict) and (ad.get("head_id") or "").strip() == target_head:
@@ -575,10 +575,10 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
             "function": "attach",
             "content": (target_preview or "(no preview)").strip(),
             # Same convention as the /task-produced attach pointer:
-            # called_by anchors to the conv turn this attach hangs off.
-            # No called_by, so linear_history skips it and the splicer
+            # predecessor anchors to the conv turn this attach hangs off.
+            # No predecessor, so linear_history skips it and the splicer
             # grafts it back in.
-            "called_by": anchor,
+            "predecessor": anchor,
             "timestamp": time.time(),
             "agent_id": (anchor_sess.get("agent_id") or "main"),
             "extra": _json.dumps({

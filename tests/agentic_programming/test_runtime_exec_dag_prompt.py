@@ -189,7 +189,7 @@ def test_render_range_callers_zero_hides_history(rt, store):
 
 
 def test_call_path_appears_in_situation(rt, store):
-    """When a frame node has a called_by chain (parent → child), the
+    """When a frame node has a caller chain (parent → child), the
     <situation> block must include 'Call path: research_agent → idea'."""
     from openprogram.agentic_programming.function import _call_id
     from openprogram.context.nodes import Call, ROLE_CODE
@@ -201,7 +201,7 @@ def test_call_path_appears_in_situation(rt, store):
     store.append(parent)
     child = Call(
         role=ROLE_CODE, name="idea", input={"topic": "test"},
-        output=None, called_by=parent.id,
+        output=None, caller=parent.id,
         metadata={"expose": "io", "status": "running"},
     )
     store.append(child)

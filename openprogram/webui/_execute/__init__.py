@@ -37,7 +37,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     ``msg_id`` is the user message that typed the ``/spawn`` command.
     In ``inherit`` mode the spawn forks off that message; in
     ``clean`` mode it starts a new root inside the same session
-    (no called_by).
+    (no predecessor).
 
     With ``wait=True`` (default) the call blocks until the spawn
     finishes and writes a fully-populated ``attach`` pointer row.
@@ -127,7 +127,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     # spawned another agent. ``session_id`` deliberately matches the
     # CURRENT session — the spawn lives as a branch in the same git
     # repo, not as a separate sub_xxx session. The pointer hangs off
-    # ``msg_id`` via ``called_by`` so ``linear_history`` skips it and
+    # ``msg_id`` via ``predecessor`` so ``linear_history`` skips it and
     # the chat splices it in as a standalone AttachCard row (see
     # ``ws_actions/session.py`` chain splicing).
     try:
@@ -155,7 +155,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
                 _, _idx = pair
                 spawn_node = _idx.nodes_by_id.get(msg_id)
                 if spawn_node:
-                    branch_from_val = (spawn_node.metadata or {}).get("called_by")
+                    branch_from_val = (spawn_node.metadata or {}).get("predecessor")
                     if branch_from_val:
                         fork_anchor = branch_from_val
         except Exception:
@@ -181,14 +181,14 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "display": "runtime",
             "function": "attach",
             "content": (result.final_text or result.error or "(no output)").strip(),
-            # Only ``called_by`` — NOT ``called_by``. With both set,
+            # Only ``predecessor`` — NOT ``predecessor``. With both set,
             # the attach pointer would be both a conv child (picked
             # up by linear_history) AND a side-call (picked up by the
             # splicer), so the row showed up twice in the chat. With
-            # called_by alone it's a pure side-call: linear_history
+            # predecessor alone it's a pure side-call: linear_history
             # ignores it, the splicer in ws_actions/session.py grafts
             # it back in once.
-            "called_by": fork_anchor,
+            "predecessor": fork_anchor,
             "timestamp": time.time(),
             "is_error": bool(result.failed or result.error),
             "agent_id": chosen_agent,
@@ -276,7 +276,7 @@ def _run_spawn_async(
                 _, _idx = pair
                 spawn_node = _idx.nodes_by_id.get(msg_id)
                 if spawn_node:
-                    branch_from_val = (spawn_node.metadata or {}).get("called_by")
+                    branch_from_val = (spawn_node.metadata or {}).get("predecessor")
                     if branch_from_val:
                         fork_anchor = branch_from_val
         except Exception:
@@ -293,7 +293,7 @@ def _run_spawn_async(
             "display": "runtime",
             "function": "attach",
             "content": "(running)",
-            "called_by": fork_anchor,
+            "predecessor": fork_anchor,
             "timestamp": time.time(),
             "is_error": False,
             "agent_id": chosen_agent,
@@ -645,7 +645,7 @@ def execute_in_context(
                     "role": "assistant",
                     "type": "cancelled",
                     "id": msg_id + "_reply",
-                    "called_by": msg_id,
+                    "predecessor": msg_id,
                     "content": "Execution stopped by user.",
                     "function": func_name,
                     "display": "runtime",
@@ -694,7 +694,7 @@ def execute_in_context(
             }
             if not func_name:
                 error_msg["retry_query"] = query
-            error_msg["called_by"] = msg_id
+            error_msg["predecessor"] = msg_id
             _s._append_msg(conv, error_msg)
             _s._save_session(session_id)
         except Exception:

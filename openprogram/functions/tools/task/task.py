@@ -1,14 +1,14 @@
 """task — spawn another agent in the same session and return its reply.
 
 Same-session multi-agent model: a turn is just
-``(called_by, prompt, agent_id)``. The new turn lands as a branch
+``(predecessor, prompt, agent_id)``. The new turn lands as a branch
 in the parent session's DAG. Two context modes:
 
   * ``context="inherit"`` (default) — the spawned agent forks off
     the caller's turn, inheriting the conversation that led up to
     it. Same DAG semantics as a "fork from here" click.
   * ``context="clean"`` — the spawned agent starts at a new root
-    (``called_by=null``), inside the same session repo. It sees
+    (``caller=null``), inside the same session repo. It sees
     only the prompt; the result becomes a peer DAG tree alongside
     the original conversation.
 

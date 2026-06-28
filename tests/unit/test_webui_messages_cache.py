@@ -45,7 +45,7 @@ def test_get_messages_reads_from_db_on_cache_miss(server) -> None:
     db.create_session("c1", "main", title="t")
     db.append_message("c1", {"id": "m1", "role": "user",
                               "content": "hi", "timestamp": 1.0,
-                              "called_by": None})
+                              "predecessor": None})
     db.set_head("c1", "m1")
 
     msgs = srv._get_messages("c1")
@@ -56,7 +56,7 @@ def test_get_messages_uses_cache_on_warm_read(server) -> None:
     srv, db = server
     db.create_session("c1", "main")
     db.append_message("c1", {"id": "m1", "role": "user", "content": "x",
-                              "timestamp": 1.0, "called_by": None})
+                              "timestamp": 1.0, "predecessor": None})
     db.set_head("c1", "m1")
 
     # First read populates cache.
@@ -66,7 +66,7 @@ def test_get_messages_uses_cache_on_warm_read(server) -> None:
     # Mutate the DB without invalidating cache → second read should
     # still see the cached version (proves the cache is actually used).
     db.append_message("c1", {"id": "m2", "role": "assistant", "content": "y",
-                              "timestamp": 2.0, "called_by": "m1"})
+                              "timestamp": 2.0, "predecessor": "m1"})
     db.set_head("c1", "m2")
 
     second = srv._get_messages("c1")
@@ -77,12 +77,12 @@ def test_invalidate_clears_cache(server) -> None:
     srv, db = server
     db.create_session("c1", "main")
     db.append_message("c1", {"id": "m1", "role": "user", "content": "x",
-                              "timestamp": 1.0, "called_by": None})
+                              "timestamp": 1.0, "predecessor": None})
     db.set_head("c1", "m1")
 
     srv._get_messages("c1")  # warm cache
     db.append_message("c1", {"id": "m2", "role": "assistant", "content": "y",
-                              "timestamp": 2.0, "called_by": "m1"})
+                              "timestamp": 2.0, "predecessor": "m1"})
     db.set_head("c1", "m2")
     srv._invalidate_messages("c1")
 
@@ -103,7 +103,7 @@ def test_lru_cap_evicts_oldest(server, monkeypatch: pytest.MonkeyPatch) -> None:
         db.create_session(cid, "main")
         db.append_message(cid, {"id": f"m{i}", "role": "user",
                                  "content": "x", "timestamp": 1.0,
-                                 "called_by": None})
+                                 "predecessor": None})
         db.set_head(cid, f"m{i}")
         srv._get_messages(cid)   # warm
     # Cache should hold the 3 most-recent (c2, c3, c4).
@@ -120,10 +120,10 @@ def test_get_or_create_conversation_hydrates_from_db(server) -> None:
     db.create_session("c1", "main", title="from-db")
     db.append_message("c1", {"id": "m1", "role": "user",
                               "content": "hi", "timestamp": 1.0,
-                              "called_by": None})
+                              "predecessor": None})
     db.append_message("c1", {"id": "m2", "role": "assistant",
                               "content": "hello", "timestamp": 2.0,
-                              "called_by": "m1"})
+                              "predecessor": "m1"})
     db.set_head("c1", "m2")
 
     conv = srv._get_or_create_session("c1")
@@ -216,15 +216,15 @@ def test_deepest_leaf_db_finds_subtree_tip(server) -> None:
     # root → a → b (leaf t=2)
     #          → c → d (leaf t=4)
     db.append_message("c1", {"id": "root", "role": "user", "content": "x",
-                              "timestamp": 1.0, "called_by": None})
+                              "timestamp": 1.0, "predecessor": None})
     db.append_message("c1", {"id": "a", "role": "assistant", "content": "x",
-                              "timestamp": 1.5, "called_by": "root"})
+                              "timestamp": 1.5, "predecessor": "root"})
     db.append_message("c1", {"id": "b", "role": "user", "content": "x",
-                              "timestamp": 2.0, "called_by": "a"})
+                              "timestamp": 2.0, "predecessor": "a"})
     db.append_message("c1", {"id": "c", "role": "user", "content": "x",
-                              "timestamp": 3.0, "called_by": "a"})
+                              "timestamp": 3.0, "predecessor": "a"})
     db.append_message("c1", {"id": "d", "role": "assistant", "content": "x",
-                              "timestamp": 4.0, "called_by": "c"})
+                              "timestamp": 4.0, "predecessor": "c"})
 
     assert srv._deepest_leaf_db("c1", "a") == "d"
     assert srv._deepest_leaf_db("c1", "b") == "b"
@@ -241,7 +241,7 @@ def test_agentic_function_result_persists_via_append_msg(server) -> None:
     conv = srv._get_or_create_session("c1", agent_id="main")
     # Simulate run action: the assistant result. fn-form no longer
     # writes a user-side anchor row — the @agentic_function's code node
-    # (called_by=ROOT) is the canonical record, so the only _append_msg
+    # (predecessor=ROOT) is the canonical record, so the only _append_msg
     # here is the assistant result.
     srv._append_msg(conv, {
         "id": "a1", "role": "assistant",
@@ -274,19 +274,19 @@ def test_hydrate_returns_branch_after_set_head_change(server) -> None:
     srv, db = server
     db.create_session("c1", "main")
     db.append_message("c1", {"id": "u1", "role": "user", "content": "first",
-                              "timestamp": 1.0, "called_by": None})
+                              "timestamp": 1.0, "predecessor": None})
     db.append_message("c1", {"id": "a1", "role": "assistant", "content": "old",
-                              "timestamp": 2.0, "called_by": "u1"})
+                              "timestamp": 2.0, "predecessor": "u1"})
     db.set_head("c1", "a1")
     srv._get_messages("c1")  # warm
 
     # User retries → new branch from u1's parent (None)
     db.append_message("c1", {"id": "u1prime", "role": "user",
                               "content": "retry", "timestamp": 3.0,
-                              "called_by": None})
+                              "predecessor": None})
     db.append_message("c1", {"id": "a1prime", "role": "assistant",
                               "content": "new", "timestamp": 4.0,
-                              "called_by": "u1prime"})
+                              "predecessor": "u1prime"})
     db.set_head("c1", "a1prime")
 
     # _hydrate forces re-read; branch now follows the new fork.

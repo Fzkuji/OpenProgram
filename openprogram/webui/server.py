@@ -86,7 +86,7 @@ _sessions_lock = threading.Lock()
 #
 # Why a cache: WS bootstrap + every chat-history broadcast reads the
 # branch list multiple times. With a thousand-message session,
-# walking the called_by CTE every time costs ~5ms; cached it's free.
+# walking the predecessor CTE every time costs ~5ms; cached it's free.
 # Why bounded LRU: webui keeps tens to hundreds of conversations
 # warm; a single un-bounded dict would creep into RAM. 64 sessions
 # × ~1MB serialized chat = ~64MB — comfortable on any modern host.
@@ -424,7 +424,7 @@ def _restore_sessions():
                 except Exception:
                     runtime = None
 
-            # ContextGit migration: backfill called_by on legacy
+            # ContextGit migration: backfill predecessor on legacy
             # messages and pick a head_id. Old conversations become a
             # straight linear chain (see docs/design/context/context.md).
             from openprogram.contextgit import (
@@ -825,7 +825,7 @@ def _append_msg(conv: dict, msg: dict) -> None:
                 if v is not None:
                     create_kwargs[fld] = v
             db.create_session(cid, msg.get("agent_id") or _default_agent_id(), **create_kwargs)
-        # Ensure ROOT node + user called_by=ROOT for session DAG.
+        # Ensure ROOT node + user caller=ROOT for session DAG.
         if msg.get("role") == "user":
             try:
                 from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
@@ -840,7 +840,7 @@ def _append_msg(conv: dict, msg: dict) -> None:
                     id=msg_id,
                     role=_RU,
                     output=msg.get("content") or "",
-                    called_by=_ROOT_ID,
+                    caller=_ROOT_ID,
                     metadata={k: v for k, v in msg.items()
                               if k not in {"id", "role", "content", "timestamp"}
                               and v is not None},

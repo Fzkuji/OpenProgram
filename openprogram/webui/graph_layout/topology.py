@@ -1,13 +1,13 @@
-"""Build adjacency maps from called_by edges.
+"""Build adjacency maps from predecessor edges.
 
 Two maps:
-  * ``call_children[caller_id]`` — nodes whose called_by points here
-  * ``fork_siblings[called_by]`` — nodes sharing the same called_by
+  * ``call_children[caller_id]`` — nodes whose predecessor points here
+  * ``fork_siblings[predecessor]`` — nodes sharing the same predecessor
     (for branch/fork detection)
 """
 from __future__ import annotations
 
-from ._common import called_by_of, called_by_of, ts
+from ._common import predecessor_of, ts
 
 
 def build_children(
@@ -16,10 +16,10 @@ def build_children(
     call_children: dict[str, list[str]] = {}
     fork_siblings: dict[str, list[str]] = {}
     for nid, m in by_id.items():
-        ca = called_by_of(by_id, m)
+        ca = predecessor_of(by_id, m)
         if ca:
             call_children.setdefault(ca, []).append(nid)
-        pid = called_by_of(by_id, m)
+        pid = predecessor_of(by_id, m)
         if pid:
             fork_siblings.setdefault(pid, []).append(nid)
     for kids in call_children.values():

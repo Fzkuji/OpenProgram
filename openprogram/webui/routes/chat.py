@@ -176,12 +176,12 @@ def register(app):
             pass
         # msg_id is only a WS-routing handle for the response stream;
         # it is never written to the DAG. The code node written by the
-        # @agentic_function is the canonical record and its called_by
+        # @agentic_function is the canonical record and its predecessor
         # resolves to ROOT (anchor_msg_id="ROOT" below).
         msg_id = uuid.uuid4().hex[:8]
 
         # Ensure the session ROOT node exists so the code node's
-        # called_by=ROOT resolves to a real node. No anchor row.
+        # caller=ROOT resolves to a real node. No anchor row.
         try:
             from openprogram.agent.session_db import default_db
             from openprogram.context.nodes import Call as _C, ROLE_USER as _RU

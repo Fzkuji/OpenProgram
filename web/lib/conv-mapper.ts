@@ -74,7 +74,7 @@ interface LegacyMsg {
    *  Used by sweep to detect orphaned ``running`` rows. */
   started_at?: number;
   last_update_at?: number;
-  called_by?: string;
+  predecessor?: string;
   source?: string;
 }
 
@@ -174,7 +174,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         timestamp: ts,
         agentId: m.agent_id || undefined,
         source: typeof m.source === "string" ? m.source : undefined,
-        calledBy: typeof m.called_by === "string" ? m.called_by : undefined,
+        calledBy: typeof m.predecessor === "string" ? m.predecessor : undefined,
         spawnedFrom: sf && sf.caller_id
           ? { callerId: sf.caller_id, label: sf.label || undefined }
           : undefined,
@@ -184,12 +184,12 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
     }
 
     // LLM-issued @agentic_function runtime-block placeholder: if its
-    // called_by points at an assistant row we've already emitted, merge
+    // predecessor points at an assistant row we've already emitted, merge
     // it into that assistant's `runtimeChildren` and DO NOT push it
     // onto the top-level `out` list. fn-form / direct-run runtime
-    // blocks (called_by is a user msg) fall through and stay top-level.
+    // blocks (predecessor is a user msg) fall through and stay top-level.
     if (_isRuntimePlaceholder && m.role === "assistant") {
-      const calledBy = typeof m.called_by === "string" ? m.called_by : undefined;
+      const calledBy = typeof m.predecessor === "string" ? m.predecessor : undefined;
       const parent = calledBy ? assistantById.get(calledBy) : undefined;
       if (parent) {
         const child: ChatMsg = {

@@ -1,7 +1,7 @@
 """Unified per-turn session context.
 
 OpenProgram's core agentic features — function docstrings flowing into the
-prompt, DAG persistence, ask_user tracking, nested called_by attribution —
+prompt, DAG persistence, ask_user tracking, nested predecessor attribution —
 all depend on a set of per-turn ContextVars (``_store`` /
 ``_current_turn_id`` / ``_current_runtime``) built from a ``SessionStore``
 and a ``session_id``.

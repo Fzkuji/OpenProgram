@@ -23,13 +23,13 @@ def _user(g: Graph, content: str) -> Call:
     return g.add(Call(role=ROLE_USER, output=content))
 
 
-def _llm(g: Graph, output: str, *, called_by: str = "") -> Call:
-    return g.add(Call(role=ROLE_LLM, output=output, called_by=called_by))
+def _llm(g: Graph, output: str, *, caller: str = "") -> Call:
+    return g.add(Call(role=ROLE_LLM, output=output, caller=caller))
 
 
 def _code(g: Graph, name: str, *, expose: str = "io",
-          called_by: str = "") -> Call:
-    return g.add(Call(role=ROLE_CODE, name=name, called_by=called_by,
+          caller: str = "") -> Call:
+    return g.add(Call(role=ROLE_CODE, name=name, caller=caller,
                        metadata={"expose": expose}))
 
 
@@ -148,11 +148,11 @@ def test_subcalls_cap_keeps_recent_in_frame_nodes_only():
 
 def test_io_function_hides_internal_llm():
     """code Call with expose='io' suppresses llm Calls that point at
-    it via ``called_by``."""
+    it via ``caller``."""
     g = Graph()
     u = _user(g, "q")
     fn = _code(g, "agent", expose="io")
-    internal = _llm(g, "internal", called_by=fn.id)
+    internal = _llm(g, "internal", caller=fn.id)
     final = _llm(g, "after")
     reads = render_context(g)
     assert u.id in reads
@@ -165,7 +165,7 @@ def test_full_function_keeps_internal_llm():
     g = Graph()
     u = _user(g, "q")
     fn = _code(g, "agent", expose="full")
-    internal = _llm(g, "internal", called_by=fn.id)
+    internal = _llm(g, "internal", caller=fn.id)
     reads = render_context(g)
     assert u.id in reads
     assert fn.id in reads
@@ -177,9 +177,9 @@ def test_io_only_suppresses_its_own_internals():
     sibling function's expose=io."""
     g = Graph()
     a = _code(g, "a", expose="io")
-    a_llm = _llm(g, "a-internal", called_by=a.id)
+    a_llm = _llm(g, "a-internal", caller=a.id)
     b = _code(g, "b", expose="full")
-    b_llm = _llm(g, "b-internal", called_by=b.id)
+    b_llm = _llm(g, "b-internal", caller=b.id)
     reads = render_context(g)
     assert a.id in reads
     assert a_llm.id not in reads       # a is io → hide a's internals

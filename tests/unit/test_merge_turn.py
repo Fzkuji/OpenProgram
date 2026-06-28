@@ -27,11 +27,11 @@ def store(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "kick off",
-        "timestamp": 0, "called_by": None,
+        "timestamp": 0, "predecessor": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "called_by": "u1",
+        "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "parent init")
 
@@ -43,11 +43,11 @@ def store(tmp_path, monkeypatch):
         s.create_session(sid, "main", title=label, label=label)
         s.append_message(sid, {
             "id": f"u_{sid}", "role": "user", "content": "go",
-            "timestamp": 0, "called_by": None,
+            "timestamp": 0, "predecessor": None,
         })
         s.append_message(sid, {
             "id": f"a_{sid}", "role": "assistant", "content": reply,
-            "timestamp": time.time(), "called_by": f"u_{sid}",
+            "timestamp": time.time(), "predecessor": f"u_{sid}",
         })
         s.commit_turn(sid, f"{label} turn")
     return s
@@ -84,7 +84,7 @@ def fake_dispatcher(monkeypatch):
         ]
         default_db().append_message(req.session_id, {
             "id": "merge_a", "role": "assistant",
-            "content": "(merged)", "called_by": "a1",
+            "content": "(merged)", "predecessor": "a1",
             "timestamp": time.time(),
         })
         return _R("(merged)")
@@ -125,7 +125,7 @@ def test_merges_two_peer_sessions(store, fake_dispatcher):
 
     # An attach pointer for each peer landed on the target session
     # ahead of the merge turn, anchored to the previous head via
-    # called_by (so the splicer picks them up and the generator
+    # caller (so the splicer picks them up and the generator
     # expands them). Snapshot was taken at the dispatcher entry —
     # the cleanup at the end of process_merge_turn drops them again.
     attaches = fake_dispatcher.get("attaches_at_dispatch") or []
@@ -175,12 +175,12 @@ def test_same_session_two_branches_merge(store, fake_dispatcher):
     # head on peer_a to play "the other branch".
     store.append_message("peer_a", {
         "id": "u_peer_a_alt", "role": "user", "content": "alternate path",
-        "timestamp": 0, "called_by": None,
+        "timestamp": 0, "predecessor": None,
     })
     store.append_message("peer_a", {
         "id": "a_peer_a_alt", "role": "assistant",
         "content": "alternate reply",
-        "timestamp": 0, "called_by": "u_peer_a_alt",
+        "timestamp": 0, "predecessor": "u_peer_a_alt",
     })
     store.commit_turn("peer_a", "sibling branch")
 

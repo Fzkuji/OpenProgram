@@ -35,7 +35,7 @@ def test_healthz_reports_ok_when_db_responds(client) -> None:
     db.create_session("c1", "main", title="t")
     db.append_message("c1", {
         "id": "m1", "role": "user", "content": "x",
-        "timestamp": __import__("time").time(), "called_by": None,
+        "timestamp": __import__("time").time(), "predecessor": None,
     })
 
     r = c.get("/healthz")

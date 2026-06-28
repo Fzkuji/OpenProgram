@@ -126,7 +126,7 @@ export interface ChatMsg {
    *  can distinguish "real user typed" vs internal synthetic turns
    *  (task_followup, merge_turn, agent_spawn). */
   source?: string;
-  /** Pass-through of metadata.called_by so we can correlate
+  /** Pass-through of metadata.predecessor so we can correlate
    *  internal-source msgs (e.g. task_followup) with the attach
    *  pointer they belong to. */
   calledBy?: string;

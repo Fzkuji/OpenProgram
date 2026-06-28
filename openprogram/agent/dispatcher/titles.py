@@ -427,7 +427,7 @@ def trigger_compaction(session_id: str, agent_id: str = "main",
          point as the original first kept message).
       4. set_head to the new summary row.
       5. Re-link the kept tail: each kept message gets a new id and
-         called_by pointing back through the new chain.
+         predecessor pointing back through the new chain.
 
     Mirrors Claude Code's compaction model (a real "summary" message
     in the transcript) but stays SQL-native — no JSONL fork needed.

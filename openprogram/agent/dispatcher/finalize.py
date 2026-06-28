@@ -94,7 +94,7 @@ def finalize_turn(
                     _patched = True
                     break
             # Also splice in tool sub-calls written during the LLM loop
-            # (called_by=assistant_msg_id). ensure_latest_commit ran at
+            # (caller=assistant_msg_id). ensure_latest_commit ran at
             # turn-start before any tool node existed, so the context commit
             # has no tool items — the Context panel was showing a fake
             # "user → assistant" pair instead of the real "user →

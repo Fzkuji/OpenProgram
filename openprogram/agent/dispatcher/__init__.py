@@ -198,7 +198,7 @@ def process_user_turn(
         history = db.get_branch(req.session_id, req.branch_from)
 
     # 2. Persist user message immediately (so a crash mid-stream still
-    #    leaves the user's input recorded). Resolve called_by:
+    #    leaves the user's input recorded). Resolve predecessor:
     #      INHERIT_PARENT → tail of active branch, or NULL if empty
     #      explicit None  → NULL (root-level fork)
     #      explicit str   → that string (sibling fork)
@@ -214,7 +214,7 @@ def process_user_turn(
         "role": "user",
         "content": req.user_text,
         "timestamp": time.time(),
-        "called_by": user_caller_id,
+        "predecessor": user_caller_id,
         "source": req.source,
         "peer_display": req.peer_display,
         "peer_id": req.peer_id,
@@ -295,7 +295,7 @@ def process_user_turn(
                 created_at=user_msg.get("timestamp") or time.time(),
                 role=ROLE_USER,
                 output=req.user_text,
-                called_by=_ROOT_ID,
+                caller=_ROOT_ID,
                 metadata=_user_meta,
             )
             _shim.append(_user_node)
@@ -322,7 +322,7 @@ def process_user_turn(
                 "source": req.source,
                 "peer_display": req.peer_display,
                 "timestamp": user_msg.get("timestamp"),
-                "called_by": user_msg.get("called_by"),
+                "predecessor": user_msg.get("predecessor"),
             },
         })
     else:
@@ -423,7 +423,7 @@ def process_user_turn(
     # 3b. Persist an assistant *placeholder* row so the row exists in
     #     the DB before tool_execution_end events start firing. This
     #     lets the in-flight tool rows (added below in the agent loop)
-    #     hang off ``called_by = assistant_msg_id`` — and lets a mid-
+    #     hang off ``caller = assistant_msg_id`` — and lets a mid-
     #     turn page refresh actually find them via the parent
     #     aggregation in webui/persistence._aggregate_tool_messages.
     #     We update this row's content + tool_calls/blocks at turn
@@ -513,7 +513,7 @@ def process_user_turn(
                             name=_tool_name,
                             input=meta.get("input") or {},
                             output=str(evt.get("result") or ""),
-                            called_by=assistant_msg_id,
+                            caller=assistant_msg_id,
                             metadata={
                                 "tool_call_id": tid,
                                 "is_error": bool(evt.get("is_error")),

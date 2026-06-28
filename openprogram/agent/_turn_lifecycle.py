@@ -74,9 +74,8 @@ def insert_placeholder(
             created_at=now,
             role=ROLE_LLM,
             output="",
-            called_by=user_msg_id,
             metadata={
-                "called_by": user_msg_id,
+                "predecessor": user_msg_id,
                 "source": source,
                 "status": "running",
                 "worker_id": current_worker_id(),
@@ -153,7 +152,7 @@ def write_standalone_error_node(
         "role": "system",
         "content": err_text,
         "timestamp": time.time(),
-        "called_by": user_msg_id,
+        "predecessor": user_msg_id,
         "source": source,
         "extra": json.dumps({"trace": trace}),
     })

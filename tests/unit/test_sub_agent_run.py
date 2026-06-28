@@ -9,7 +9,7 @@ writes explicit multi-parent commits).
 Tests:
   * inherit mode forks off a given node (same session) and stamps
     ``agent_id`` on the new turn's metadata.
-  * clean mode writes a new root (``called_by=null``) in the same
+  * clean mode writes a new root (``caller=null``) in the same
     session.
   * unknown session is reported as a structured failure.
   * dispatcher failure is surfaced (not swallowed).
@@ -33,11 +33,11 @@ def parent_store(tmp_path, monkeypatch):
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {
         "id": "u1", "role": "user", "content": "first turn",
-        "timestamp": 0, "called_by": None,
+        "timestamp": 0, "predecessor": None,
     })
     s.append_message("p1", {
         "id": "a1", "role": "assistant", "content": "ok",
-        "timestamp": 0, "called_by": "u1",
+        "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "initial parent turn")
     return s
@@ -67,7 +67,7 @@ def fake_dispatcher(monkeypatch):
             "history_override": req.history_override,
             "agent_id": req.agent_id,
             "source": req.source,
-            "called_by": req.branch_from,
+            "predecessor": req.branch_from,
         })
         from openprogram.agent.session_db import default_db
         store = default_db()
@@ -78,14 +78,14 @@ def fake_dispatcher(monkeypatch):
             "id": u_id, "role": "user",
             "content": req.user_text,
             "timestamp": 0,
-            "called_by": req.branch_from,
+            "predecessor": req.branch_from,
             "agent_id": req.agent_id,
         })
         store.append_message(req.session_id, {
             "id": a_id, "role": "assistant",
             "content": "(spawned reply)",
             "timestamp": 0,
-            "called_by": u_id,
+            "predecessor": u_id,
             "agent_id": req.agent_id,
         })
         return _R("(spawned reply)", asst_id=a_id)
@@ -95,7 +95,7 @@ def fake_dispatcher(monkeypatch):
 
 
 def test_inherit_forks_off_parent_node(parent_store, fake_dispatcher):
-    """inherit mode: forks off ``called_by`` in the SAME session.
+    """inherit mode: forks off ``caller`` in the SAME session.
     No new session id is minted; no attach pointer is written by
     ``run_agent_turn`` itself."""
     from openprogram.agent.sub_agent_run import run_agent_turn
@@ -118,10 +118,10 @@ def test_inherit_forks_off_parent_node(parent_store, fake_dispatcher):
     post_sessions = {s.get("id") for s in parent_store.list_sessions(limit=999) or []}
     assert post_sessions == pre_sessions
 
-    # The fake dispatcher saw a TurnRequest with called_by pointing at a1.
+    # The fake dispatcher saw a TurnRequest with caller pointing at a1.
     last = fake_dispatcher["calls"][-1]
     assert last["session_id"] == "p1"
-    assert last["called_by"] == "a1"
+    assert last["predecessor"] == "a1"
     assert last["agent_id"] == "probe"
 
     # No attach pointer landed automatically — that's the caller's job.
@@ -131,7 +131,7 @@ def test_inherit_forks_off_parent_node(parent_store, fake_dispatcher):
 
 
 def test_clean_starts_new_root(parent_store, fake_dispatcher):
-    """clean mode: called_by=None → dispatcher gets history_override=[]
+    """clean mode: caller=None → dispatcher gets history_override=[]
     and the new turn becomes a new root in the same session."""
     from openprogram.agent.sub_agent_run import run_agent_turn
 
@@ -147,7 +147,7 @@ def test_clean_starts_new_root(parent_store, fake_dispatcher):
 
     last = fake_dispatcher["calls"][-1]
     assert last["session_id"] == "p1"
-    assert last["called_by"] is None
+    assert last["predecessor"] is None
     assert last["history_override"] == []   # clean start
 
 

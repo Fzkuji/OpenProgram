@@ -72,7 +72,7 @@ def ask_user(question: str) -> Optional[str]:
     返回用户答案；如果没有任何 handler 可用，返回 None。
 
     DAG 集成：把这次询问建模成一个 user-role Call —— caller 是
-    LLM/代码（called_by 指向 enclosing @agentic_function），
+    LLM/代码（predecessor 指向 enclosing @agentic_function），
     callee 是人类（产生 output = 用户的回答）。入口 append 占位
     （output=None，metadata.status="awaiting"），handler 返回后
     update output。跟用户主动发消息通过 ``input is not None`` 区分。
@@ -144,7 +144,7 @@ def _begin_ask_user_node(question: str) -> Optional[str]:
         role=ROLE_USER,
         input={"question": question},
         output=None,
-        called_by=_call_id.get() or "",
+        caller=_call_id.get() or "",
         metadata={"status": "awaiting"},
     )
     try:

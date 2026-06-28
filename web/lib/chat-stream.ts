@@ -57,10 +57,10 @@ interface ChatResponseData {
   usage?: unknown;
   attempts?: { content: string; timestamp: number; tree?: unknown; usage?: unknown }[];
   current_attempt?: number;
-  /** called_by for runtime-block placeholder rows written by the
+  /** predecessor for runtime-block placeholder rows written by the
    *  dispatcher's @agentic_function wrapper — anchors the row to the
    *  assistant reply that called the tool. */
-  called_by?: string;
+  predecessor?: string;
   status?: string;
   /** Structured error taxonomy on a `type:"error"` response — lets the
    *  bubble show a categorized, actionable error (rate-limit retry hint vs
@@ -265,10 +265,10 @@ function handleResponse(d: ChatResponseData | undefined): void {
   }
 }
 
-/** True iff the called_by refers to an assistant ChatMsg already in the
- *  store. LLM-issued @agentic_function runtime blocks have called_by =
+/** True iff the predecessor refers to an assistant ChatMsg already in the
+ *  store. LLM-issued @agentic_function runtime blocks have predecessor =
  *  assistant reply id; fn-form / direct-run runtime blocks have
- *  called_by = user msg id. Only the former gets merged INSIDE the
+ *  predecessor = user msg id. Only the former gets merged INSIDE the
  *  assistant bubble; the latter stays as a top-level row. */
 function _isAssistantCaller(calledBy: string | undefined): boolean {
   if (!calledBy) return false;
@@ -308,7 +308,7 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
   if (!d.msg_id) return;
   const store = useSessionStore.getState();
   const existing = store.messagesById[d.msg_id];
-  const calledBy = d.called_by;
+  const calledBy = d.predecessor;
   const mergeIntoAssistant = _isAssistantCaller(calledBy);
 
   if (d.type === "status") {
