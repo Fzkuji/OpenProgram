@@ -348,20 +348,36 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const color = _branchColor(node, stableLeafOfNode);
     const nr = NODE_R + 4;
 
-    // User nodes connect from their lane's trunk column — the
-    // leftmost x in that lane. Main lane uses ROOT's x (tier=0).
-    // Fork lanes use the fork root's x (tier=1 for user fork root).
-    // This prevents snake-shaped zigzags within any lane.
+    // User nodes connect from their lane's "root" — the first node
+    // in that lane (conceptual trunk). Main lane → ROOT node.
+    // Fork lane → the fork branch's first user node.
+    // All other nodes connect from their called_by parent directly.
     const p = pos(parent);
     const isUserNode = node.role === "user";
     let trunkX = p.x;
     let fromY = p.y;
     if (isUserNode) {
-      if (rootPos && (node._lane || 0) === (rootNode?._lane || 0)) {
+      const myLane = node._lane || 0;
+      if (rootPos && myLane === (rootNode?._lane || 0)) {
+        // Main lane → connect from ROOT
         trunkX = rootPos.x;
         fromY = rootPos.y;
       } else {
-        trunkX = Math.min(p.x, c.x);
+        // Fork lane → find the first node in this lane (fork root)
+        let forkRoot: GNode | null = null;
+        Object.values(tree.byId).forEach((n) => {
+          if ((n._lane || 0) !== myLane) return;
+          if (!forkRoot || (n._depth || 0) < (forkRoot._depth || 0)) {
+            forkRoot = n;
+          }
+        });
+        if (forkRoot && forkRoot.id !== id) {
+          const fp = pos(forkRoot);
+          trunkX = fp.x;
+          fromY = fp.y;
+        } else {
+          trunkX = c.x;
+        }
       }
     }
 
