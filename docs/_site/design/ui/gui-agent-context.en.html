@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh" data-base="/docs/" data-page-lang="zh" data-alt-lang-url="/docs/design/ui/gui-agent-context.en.html">
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/ui/gui-agent-context.html">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -168,130 +168,168 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Web UI <span class='bc-sep'>›</span> <span class="bc-current">GUI agent — 调用结构与上下文流</span></nav><h1 id="gui-agent-调用结构与上下文流">GUI agent — 调用结构与上下文流<a class="header-anchor" href="#gui-agent-调用结构与上下文流">#</a></h1>
-<p>本文档记录 <code>gui_agent</code> 在当前 <code>expose</code> / <code>render_range</code> 默认语义下的上下文是怎么流动的，以及每个 <code>@agentic_function</code> 上的装饰器参数为什么这么设。</p>
-<p>参考：</p>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Web UI <span class='bc-sep'>›</span> <span class="bc-current">GUI agent — 调用结构与上下文流</span></nav><h1 id="gui-agent-call-structure-context-flow">GUI agent — call structure &amp; context flow<a class="header-anchor" href="#gui-agent-call-structure-context-flow">#</a></h1>
+<p>This document records how context flows through <code>gui_agent</code> under the current
+<code>expose</code> / <code>render_range</code> default semantics, and why each <code>@agentic_function</code>'s
+decorator arguments are set the way they are.</p>
+<p>References:</p>
 <ul>
-<li>装饰器语义：<a href="/docs/agentic-programming/writing-functions/function-metadata.html"><code>agentic-programming/function-metadata.md</code></a></li>
-<li>render_context 实现：<code>openprogram/context/nodes.py</code></li>
-<li>代码：<code>openprogram/functions/agentics/GUI-Agent-Harness/gui_harness/</code></li>
+<li>Decorator semantics: <a href="/docs/agentic-programming/writing-functions/function-metadata.html"><code>agentic-programming/function-metadata.md</code></a></li>
+<li>render_context implementation: <code>openprogram/context/nodes.py</code></li>
+<li>Code: <code>openprogram/functions/agentics/GUI-Agent-Harness/gui_harness/</code></li>
 </ul>
-<h2 id="1-调用结构">1. 调用结构<a class="header-anchor" href="#1-调用结构">#</a></h2>
-<pre><code>gui_agent(task)                   ← 顶层 @agentic_function (no render_range)
-  └─ loop N 次：
-     gui_step(task, feedback)     ← @agentic_function 编排 (no runtime.exec)
-       ├─ observe()               Python: 截图 + 检测组件 + 识别状态
+<h2 id="1-call-structure">1. Call structure<a class="header-anchor" href="#1-call-structure">#</a></h2>
+<pre><code>gui_agent(task)                   ← top-level @agentic_function (no render_range)
+  └─ loop N times:
+     gui_step(task, feedback)     ← @agentic_function orchestration (no runtime.exec)
+       ├─ observe()               Python: screenshot + detect components + read state
        ├─ verify_step(...)        @agentic_function LLM leaf
        ├─ plan_next_action(...)   @agentic_function LLM leaf
-       └─ dispatch_action(...)    Python: 执行 plan 选的动作
+       └─ dispatch_action(...)    Python: run the action plan picked
      ↓ return dict(goal, action, target, success, error, ...)
-     ↓ 作为下一个 gui_step 的 feedback 传入
+     ↓ passed in as the next gui_step's feedback
   └─ conclusion(task, ...)        @agentic_function LLM leaf
 </code></pre>
-<p><code>gui_step</code> 不直接调 <code>runtime.exec</code>，它的作用是把四个阶段串起来。所有 LLM 调用发生在 <code>verify_step</code> / <code>plan_next_action</code> / <code>conclusion</code> 这三个 leaf 函数里。</p>
-<h2 id="2-各函数的-render_range-配置">2. 各函数的 render_range 配置<a class="header-anchor" href="#2-各函数的-render_range-配置">#</a></h2>
+<p><code>gui_step</code> doesn't call <code>runtime.exec</code> directly; its job is to chain the four
+stages together. All LLM calls happen inside the three leaf functions
+<code>verify_step</code> / <code>plan_next_action</code> / <code>conclusion</code>.</p>
+<h2 id="2-render_range-config-per-function">2. render_range config per function<a class="header-anchor" href="#2-render_range-config-per-function">#</a></h2>
 <table>
 <thead>
 <tr>
-<th>函数</th>
+<th>Function</th>
 <th>render_range</th>
-<th>理由</th>
+<th>Rationale</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>gui_agent</code></td>
-<td>不设（用默认）</td>
-<td>顶层，应该看到完整对话历史 + 自己 frame 内所有 gui_step 的 io。<code>callers=None</code>（全保留 chat 历史）+ <code>subcalls=-1</code>（gui_step 链自然累积）正好是想要的</td>
+<td>unset (default)</td>
+<td>Top level — should see the full conversation history plus the io of every gui_step in its own frame. <code>callers=None</code> (keep all chat history) + <code>subcalls=-1</code> (the gui_step chain accumulates naturally) is exactly what's wanted</td>
 </tr>
 <tr>
 <td><code>gui_step</code></td>
-<td>不设</td>
-<td>自己不调 <code>runtime.exec</code>，render_range 对它没有任何实际意义</td>
+<td>unset</td>
+<td>It doesn't call <code>runtime.exec</code> itself, so render_range has no practical meaning for it</td>
 </tr>
 <tr>
 <td><code>verify_step</code></td>
 <td><code>{&quot;callers&quot;: 0}</code></td>
-<td>一次快照判断&quot;上一步做没做成&quot;。所需信息（前一步 goal/action/target/outcome、当前 screenshot、本步检测到的组件）全部通过 <code>content=[...]</code> 显式塞进去。<code>callers=0</code> 把上层 chat 历史和之前的 gui_step 链全墙掉，避免淹没快照判断</td>
+<td>A one-shot snapshot judgment of &quot;did the previous step succeed?&quot;. Everything it needs (the previous step's goal/action/target/outcome, the current screenshot, the components detected this step) is pushed in explicitly via <code>content=[...]</code>. <code>callers=0</code> walls off the upper chat history and the prior gui_step chain so they don't drown the snapshot judgment</td>
 </tr>
 <tr>
 <td><code>plan_next_action</code></td>
-<td>不设（用默认）</td>
-<td><strong>planner 必须看见历史</strong>才能做出非重复决策。默认 <code>callers=None</code> 让它看到 task 描述 + 之前所有 gui_step 的 io（goal/action/target/success）+ 本轮 verify 的 io。<code>subcalls=-1</code> 在 leaf 里没作用（leaf 没有 in-frame 节点）</td>
+<td>unset (default)</td>
+<td><strong>The planner must see history</strong> to make non-repeating decisions. The default <code>callers=None</code> lets it see the task description + the io of every prior gui_step (goal/action/target/success) + this round's verify io. <code>subcalls=-1</code> has no effect in a leaf (a leaf has no in-frame nodes)</td>
 </tr>
 <tr>
 <td><code>conclusion</code></td>
 <td><code>{&quot;callers&quot;: 0}</code></td>
-<td>总结要 ground 在最终屏幕状态，不让 step-by-step 叙述污染。所需信息（task、completed、steps_taken、final screenshot）显式塞进 <code>content=[...]</code></td>
+<td>The summary should be grounded in the final screen state, not polluted by the step-by-step narrative. Everything it needs (task, completed, steps_taken, final screenshot) is pushed in explicitly via <code>content=[...]</code></td>
 </tr>
 </tbody>
 </table>
-<p>辅助 leaf（component_memory 里的几个、<code>learn</code>、<code>observe</code>、<code>general_action</code>）都用 <code>{&quot;callers&quot;: 0}</code> —— 它们是独立判断器，输入都通过 <code>content=[...]</code> 给齐，不需要对话上下文。</p>
-<h2 id="3-关键设计点">3. 关键设计点<a class="header-anchor" href="#3-关键设计点">#</a></h2>
-<h3 id="plan_next_action-看见什么">plan_next_action 看见什么<a class="header-anchor" href="#plan_next_action-看见什么">#</a></h3>
-<p>从 plan 第 5 步的视角，<code>render_context</code> 的输入：</p>
+<p>The helper leaves (the ones in component_memory, <code>learn</code>, <code>observe</code>,
+<code>general_action</code>) all use <code>{&quot;callers&quot;: 0}</code> — they are independent judges whose
+input is fully supplied via <code>content=[...]</code> and need no conversation context.</p>
+<h2 id="3-key-design-points">3. Key design points<a class="header-anchor" href="#3-key-design-points">#</a></h2>
+<h3 id="what-plan_next_action-sees">What plan_next_action sees<a class="header-anchor" href="#what-plan_next_action-sees">#</a></h3>
+<p>From the perspective of plan step #5, the inputs to <code>render_context</code>:</p>
 <ul>
-<li><code>frame_entry_seq</code> = plan_next_action #5 这个 code 节点的 seq</li>
-<li><code>head_seq</code> = DAG 当前最大 seq</li>
-<li><code>render_range</code> = <code>None</code>（用默认 <code>callers=None, subcalls=-1</code>）</li>
+<li><code>frame_entry_seq</code> = the seq of the plan_next_action #5 code node</li>
+<li><code>head_seq</code> = the current max seq in the DAG</li>
+<li><code>render_range</code> = <code>None</code> (use defaults <code>callers=None, subcalls=-1</code>)</li>
 </ul>
-<p>走 render_context：</p>
+<p>Walking render_context:</p>
 <ul>
-<li>pre-frame = 所有 seq ≤ frame_entry_seq 的节点 = 顶层 chat 那条 user 消息、gui_agent 的 code 节点、gui_step #1..#4 的 code 节点（含各自 io）、本轮 gui_step #5 的 verify_step code 节点（含 io）、observe Python 结果对应的节点（如果走 DAG 的话）</li>
-<li>in-frame = plan_next_action #5 自己 frame 内的节点 = 空（leaf 还没发 exec）</li>
-<li>pre-frame 不截断；in-frame 不截断（也没东西可截）</li>
-<li>expose 过滤：每个 gui_step 是 <code>expose=&quot;io&quot;</code>，所以 gui_step 的 io 节点保留、gui_step 内部的 verify_step / plan_next_action 的 LLM 调用被藏掉</li>
+<li>pre-frame = all nodes with seq ≤ frame_entry_seq = the top-level chat user
+message, gui_agent's code node, the code nodes of gui_step #1..#4 (with their
+io), this round's gui_step #5 verify_step code node (with io), and the node for
+the observe Python result (if it goes through the DAG)</li>
+<li>in-frame = the nodes inside plan_next_action #5's own frame = empty (the leaf
+hasn't issued exec yet)</li>
+<li>pre-frame is not truncated; in-frame is not truncated (nothing to truncate)</li>
+<li>expose filtering: each gui_step is <code>expose=&quot;io&quot;</code>, so the gui_step io nodes are
+kept while the LLM calls of verify_step / plan_next_action inside gui_step are
+hidden</li>
 </ul>
-<p>最后 plan_next_action #5 的 prompt 里有：</p>
-<pre><code>user: &lt;原始 task&gt;
-... 之前 chat 历史 ...
+<p>So plan_next_action #5's prompt ends up with:</p>
+<pre><code>user: &lt;original task&gt;
+... prior chat history ...
 [gui_step #1] input={...} output={&quot;goal&quot;: &quot;open Firefox&quot;, &quot;action&quot;: &quot;click&quot;, &quot;target&quot;: &quot;Firefox icon&quot;, &quot;success&quot;: true}
 [gui_step #2] input={...} output={&quot;goal&quot;: &quot;open url bar&quot;, &quot;action&quot;: &quot;click&quot;, ...}
 [gui_step #3] input={...} output={...}
 [gui_step #4] input={...} output={...}
 [verify_step #5] input={...} output={&quot;step_succeeded&quot;: true, &quot;observation&quot;: ...}
-[plan_next_action #5] input={...}   ← 自己
+[plan_next_action #5] input={...}   ← itself
 </code></pre>
-<p>planner 因此能看到&quot;前四步都做了什么、最近一步 verify 怎么判的&quot;，做出不重复的下一步决策。</p>
-<h3 id="verify_step-为什么相反">verify_step 为什么相反<a class="header-anchor" href="#verify_step-为什么相反">#</a></h3>
-<p>verify_step 是被动判断：&quot;上一步做的事情，从当前截图看成功了吗？&quot;判断材料完全是局部的：</p>
+<p>The planner can therefore see &quot;what the first four steps did, and how the most
+recent verify judged it&quot; and make a non-repeating next-step decision.</p>
+<h3 id="why-verify_step-is-the-opposite">Why verify_step is the opposite<a class="header-anchor" href="#why-verify_step-is-the-opposite">#</a></h3>
+<p>verify_step is a passive judgment: &quot;did the thing the previous step did succeed,
+as seen from the current screenshot?&quot;. Its evidence is entirely local:</p>
 <ul>
-<li>上一步 feedback dict（goal/action/target/success/error）— 已经通过 <code>content=[feedback_text]</code> 塞进</li>
-<li>当前 screenshot — 已经通过 <code>content=[{&quot;type&quot;: &quot;image&quot;, ...}]</code> 塞进</li>
-<li>当前检测到的组件 — 已经通过 <code>content=[component_info]</code> 塞进</li>
+<li>the previous step's feedback dict (goal/action/target/success/error) — already
+pushed in via <code>content=[feedback_text]</code></li>
+<li>the current screenshot — already pushed in via <code>content=[{&quot;type&quot;: &quot;image&quot;, ...}]</code></li>
+<li>the components detected this step — already pushed in via <code>content=[component_info]</code></li>
 </ul>
-<p>如果让它看完整 chat + gui_step 链，反而会引入噪音让&quot;上一步是否成功&quot;这个简单判断被宏观叙述带偏。所以显式 <code>callers=0</code> 墙掉。</p>
-<h3 id="conclusion-同理">conclusion 同理<a class="header-anchor" href="#conclusion-同理">#</a></h3>
-<p>总结要写出&quot;最终屏幕上 visibly 是什么&quot;，不要写&quot;step 3 干了什么、step 7 又干了什么&quot;那种过程叙述。<code>callers=0</code> + 在 prompt 里硬约束&quot;用屏幕上具体可见的文字&quot;。</p>
-<h2 id="4-跟旧版本的差异">4. 跟旧版本的差异<a class="header-anchor" href="#4-跟旧版本的差异">#</a></h2>
-<p>之前的代码用了 <code>{&quot;callers&quot;: 0, &quot;subcalls&quot;: 0}</code> 全墙策略，再通过 Python 显式构造 feedback dict 一层层往下传。问题是 planner 真的只看得到上一步的 feedback，看不到完整 trace，会出现重复执行同样动作的 bug。</p>
-<p>现在的设计：</p>
+<p>Letting it see the full chat + gui_step chain would instead introduce noise that
+biases this simple &quot;did the last step succeed&quot; judgment with the macro narrative.
+Hence the explicit <code>callers=0</code> wall.</p>
+<h3 id="conclusion-same-reasoning">conclusion, same reasoning<a class="header-anchor" href="#conclusion-same-reasoning">#</a></h3>
+<p>The summary should state &quot;what is visibly on the final screen&quot;, not narrate
+&quot;step 3 did this, step 7 did that&quot;. <code>callers=0</code> plus a hard constraint in the
+prompt to &quot;use the concrete text visible on screen&quot;.</p>
+<h2 id="4-difference-from-the-old-version">4. Difference from the old version<a class="header-anchor" href="#4-difference-from-the-old-version">#</a></h2>
+<p>The earlier code used a full-wall <code>{&quot;callers&quot;: 0, &quot;subcalls&quot;: 0}</code> strategy and
+then explicitly built a feedback dict in Python and threaded it down level by
+level. The problem was that the planner could really only see the previous step's
+feedback, not the full trace, leading to a bug where it repeatedly performed the
+same action.</p>
+<p>The current design:</p>
 <ul>
-<li>planner 走 DAG 默认行为天然看见历史（不再需要显式累加）</li>
-<li>隔离需要的 leaf（verify / conclusion / 工具型判断器）显式 <code>callers=0</code></li>
-<li>不再有&quot;top-level 是特例&quot;的分支 —— gui_agent 顶层和它内部的 gui_step 都走完全相同的 render_context 代码路径</li>
+<li>the planner sees history naturally via the DAG default behavior (no more
+explicit accumulation)</li>
+<li>isolate the leaves that need it (verify / conclusion / tool-style judges) with
+an explicit <code>callers=0</code></li>
+<li>there's no longer a &quot;top-level is a special case&quot; branch — the gui_agent top
+level and the gui_step inside it go through exactly the same render_context code
+path</li>
 </ul>
-<p>旧的 &quot;collapsed 模式提议&quot;、&quot;hidden 副作用&quot;、&quot;子函数 io 冗余&quot;等分析都已经不适用：</p>
+<p>The old analyses about a &quot;collapsed mode proposal&quot;, &quot;hidden side effects&quot;,
+&quot;sub-function io redundancy&quot; no longer apply:</p>
 <ul>
-<li>旧 &quot;io 漏点：露 code 子调用&quot;分析过时——<code>expose=&quot;io&quot;</code> 现在的语义就是 frame-自己的 input/output 露、frame 内部的 LLM 藏；嵌套子函数自己再用自己的 expose 决定它的 io 露不露</li>
-<li>不再需要 &quot;collapsed&quot; 模式——<code>expose=&quot;io&quot;</code> 默认就把内部 LLM 藏好，子函数的 io 在它自己的 expose 决定下要么露要么藏，没有&quot;既要露 io 又要藏嵌套孙子&quot;的中间需要</li>
+<li>the old &quot;io leak: exposing code sub-calls&quot; analysis is outdated — <code>expose=&quot;io&quot;</code>
+now means: the frame's own input/output is exposed, the LLM inside the frame is
+hidden; a nested sub-function decides whether its own io is exposed via its own
+expose</li>
+<li>a &quot;collapsed&quot; mode is no longer needed — <code>expose=&quot;io&quot;</code> hides the inner LLM by
+default, and a sub-function's io is either exposed or hidden under its own
+expose; there's no in-between need to &quot;expose io while hiding nested grandchildren&quot;</li>
 </ul>
-<h2 id="5-改完后需要观察什么">5. 改完后需要观察什么<a class="header-anchor" href="#5-改完后需要观察什么">#</a></h2>
+<h2 id="5-what-to-watch-after-the-change">5. What to watch after the change<a class="header-anchor" href="#5-what-to-watch-after-the-change">#</a></h2>
 <ul>
-<li>长 task 跑下来 plan_next_action 的 prompt 会不会因为 gui_step 链太长而过大。如果有 token 压力，给 <code>plan_next_action</code> 或 <code>gui_agent</code> 加 <code>render_range={&quot;callers&quot;: N}</code> 显式截断最近 N 个 gui_step</li>
-<li>screenshot 是 image 节点，N 张大图会撑爆 context。可能要走&quot;压缩老 screenshot 为文字描述&quot;路径，但那是 prompt 层的优化，不是 render_range 层的事</li>
+<li>For long tasks, plan_next_action's prompt may grow large because the gui_step
+chain gets long. Under token pressure, give <code>plan_next_action</code> or <code>gui_agent</code> a
+<code>render_range={&quot;callers&quot;: N}</code> to explicitly truncate to the most recent N
+gui_steps</li>
+<li>A screenshot is an image node; N large images will blow up the context. We may
+need a &quot;compress old screenshots into text descriptions&quot; path, but that's a
+prompt-layer optimization, not a render_range-layer concern</li>
 </ul>
 <div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/ui/composer-interaction-modes.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</span></a><a class="pn-link pn-next" href="/docs/design/ui/indicator-dots.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Indicator dot system</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#1-调用结构">1. 调用结构</a>
-<a class="" href="#2-各函数的-render_range-配置">2. 各函数的 render_range 配置</a>
-<a class="" href="#3-关键设计点">3. 关键设计点</a>
-<a class="lvl-3" href="#plan_next_action-看见什么">plan_next_action 看见什么</a>
-<a class="lvl-3" href="#verify_step-为什么相反">verify_step 为什么相反</a>
-<a class="lvl-3" href="#conclusion-同理">conclusion 同理</a>
-<a class="" href="#4-跟旧版本的差异">4. 跟旧版本的差异</a>
-<a class="" href="#5-改完后需要观察什么">5. 改完后需要观察什么</a>
+<a class="" href="#1-call-structure">1. Call structure</a>
+<a class="" href="#2-render_range-config-per-function">2. render_range config per function</a>
+<a class="" href="#3-key-design-points">3. Key design points</a>
+<a class="lvl-3" href="#what-plan_next_action-sees">What plan_next_action sees</a>
+<a class="lvl-3" href="#why-verify_step-is-the-opposite">Why verify_step is the opposite</a>
+<a class="lvl-3" href="#conclusion-same-reasoning">conclusion, same reasoning</a>
+<a class="" href="#4-difference-from-the-old-version">4. Difference from the old version</a>
+<a class="" href="#5-what-to-watch-after-the-change">5. What to watch after the change</a>
 </div></aside>
 </div>
 
