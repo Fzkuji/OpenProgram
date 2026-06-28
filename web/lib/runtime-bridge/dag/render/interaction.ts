@@ -55,15 +55,19 @@ export async function _checkout(msgId: string): Promise<void> {
   const target = _leafOfNode[msgId] || msgId;
   if (target === _currentHead) return;
   try {
-    const r = await fetch("/api/chat/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, msg_id: target }),
-    });
-    if (!r.ok) throw new Error(await r.text());
-    HGW._postCheckoutScrollTo = msgId;
     if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {
-      HGW.ws.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
+      HGW.ws.send(JSON.stringify({
+        action: "checkout_branch",
+        session_id: sessionId,
+        head_msg_id: target,
+      }));
+      HGW._postCheckoutScrollTo = msgId;
+      // Reload session after checkout
+      setTimeout(() => {
+        if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {
+          HGW.ws.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
+        }
+      }, 300);
     }
   } catch (err) {
     console.error("[history-graph] checkout failed:", err);
