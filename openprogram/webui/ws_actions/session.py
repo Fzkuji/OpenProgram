@@ -558,76 +558,8 @@ async def handle_load_session(ws, cmd: dict):
             shown.append(enriched)
 
         tree_data = {}  # tree Context retired — execution trace lives in SessionDB DAG nodes
-        try:
-            full_msgs = _ddb().get_messages(conv["id"])
-        except Exception:
-            full_msgs = all_msgs
-        from openprogram.webui.graph_layout import annotate_graph
-        graph = []
-        # Include ROOT node if present (filtered by get_messages).
-        try:
-            _all_nodes = _ddb().get_nodes(conv["id"]) or []
-            _called_by_map_load: dict[str, str] = {}
-            for _n in _all_nodes:
-                if _n.called_by:
-                    _called_by_map_load[_n.id] = _n.called_by
-            _root_node = next(
-                (n for n in _all_nodes
-                 if (n.metadata or {}).get("display") == "root"), None)
-            if _root_node:
-                graph.append({
-                    "id": _root_node.id,
-                    "called_by": "",
-                    "caller": "",
-                    "role": "user",
-                    "display": "root",
-                    "preview": "ROOT",
-                })
-        except Exception:
-            _called_by_map_load = {}
-        for m in full_msgs:
-            content = m.get("content") or ""
-            preview = content.strip().replace("\n", " ")
-            if len(preview) > 80:
-                preview = preview[:77] + "…"
-            from openprogram.webui.ws_actions.branch import (
-                _extract_tool_input,
-                _extract_function_name,
-                _extract_tool_is_error,
-                _extract_llm_meta,
-                _extract_attach_label,
-            )
-            input_str = _extract_tool_input(m)
-            _aref, _amanual, _asrc_commit = _ainfo(m)
-            _aembed_n, _aembed_tok = _astats(_ddb(), conv["id"], _asrc_commit)
-            _mid_load = m.get("id") or ""
-            graph.append({
-                "id": _mid_load,
-                "called_by": m.get("called_by"),
-                "caller": _called_by_map_load.get(_mid_load, "") or m.get("caller") or "",
-                "role": m.get("role"),
-                "function": m.get("function"),
-                "display": m.get("display"),
-                "source": m.get("source"),
-                "preview": preview,
-                "input": input_str,
-                "name": _extract_function_name(m),
-                "is_error": _extract_tool_is_error(m),
-                "llm": _extract_llm_meta(m),
-                "created_at": m.get("created_at"),
-                "attach_ref": _aref,
-                "attach_manual": _amanual,
-                "attach_label": _extract_attach_label(m),
-                "attach_source_commit_id": _asrc_commit,
-                "attach_embed_count": _aembed_n,
-                "attach_embed_tokens": _aembed_tok,
-            })
-        # Compute (depth, lane) server-side so the frontend renders
-        # parallel branches correctly without re-deriving topology.
-        # ``annotate_graph`` filters microcompact synthetic nodes
-        # (summary_*/k_*) — reassign so the WS payload ships only
-        # the DAG-visible subset.
-        graph = annotate_graph(graph, head)
+        from openprogram.webui.graph_builder import build_session_graph
+        graph = build_session_graph(conv["id"], head)
 
         # Reverse-link each spawned sub-branch's root user msg back
         # to the main-lane turn that produced it, so the frontend

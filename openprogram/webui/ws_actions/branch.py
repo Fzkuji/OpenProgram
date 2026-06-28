@@ -191,74 +191,8 @@ def build_branches_payload(session_id: str | None) -> dict:
             db = default_db()
             sess = db.get_session(session_id)
             active_head = (sess or {}).get("head_id")
-            try:
-                full_msgs = db.get_messages(session_id) or []
-            except Exception:
-                full_msgs = []
-            # Build a called_by lookup from the underlying Call nodes
-            # so graph entries carry the invocation edge (session DAG)
-            # alongside the conversation predecessor (called_by).
-            _called_by_map: dict[str, str] = {}
-            try:
-                _nodes = db.get_nodes(session_id) or []
-                for _n in _nodes:
-                    if _n.called_by:
-                        _called_by_map[_n.id] = _n.called_by
-            except Exception:
-                pass
-            # Include ROOT node in graph if it exists.
-            _root_node = next(
-                (n for n in _nodes if (n.metadata or {}).get("display") == "root"),
-                None,
-            ) if _nodes else None
-            if _root_node:
-                graph.append({
-                    "id": _root_node.id,
-                    "called_by": "",
-                    "caller": "",
-                    "role": "user",
-                    "display": "root",
-                    "preview": "ROOT",
-                })
-            for m in full_msgs:
-                content = m.get("content") or ""
-                preview = content.strip().replace("\n", " ")
-                if len(preview) > 80:
-                    preview = preview[:77] + "…"
-                _aref, _amanual, _asrc_commit = _attach_info(m)
-                _aembed_n, _aembed_tok = _attach_embed_stats(
-                    db, session_id, _asrc_commit,
-                )
-                _mid = m.get("id") or ""
-                graph.append({
-                    "id": _mid,
-                    "called_by": m.get("called_by"),
-                    "caller": _called_by_map.get(_mid, "") or m.get("caller") or "",
-                    "role": m.get("role"),
-                    "function": m.get("function"),
-                    "display": m.get("display"),
-                    "source": m.get("source"),
-                    "preview": preview,
-                    "input": _extract_tool_input(m),
-                    "name": _extract_function_name(m),
-                    "is_error": _extract_tool_is_error(m),
-                    "llm": _extract_llm_meta(m),
-                    "created_at": m.get("created_at"),
-                    "attach_ref": _aref,
-                    "attach_manual": _amanual,
-                    "attach_label": _extract_attach_label(m),
-                    "attach_source_commit_id": _asrc_commit,
-                    "attach_embed_count": _aembed_n,
-                    "attach_embed_tokens": _aembed_tok,
-                })
-            # Server-side layout — keeps the parallel-branch geometry
-            # consistent across load_session, list_branches, and any
-            # other path that ships ``graph`` to the frontend.
-            from openprogram.webui.graph_layout import annotate_graph
-            # ``annotate_graph`` filters out microcompact synthetic
-            # nodes (summary_*/k_*) — reassign so the WS payload
-            # ships only the DAG-visible subset.
-            graph = annotate_graph(graph, active_head)
+            from openprogram.webui.graph_builder import build_session_graph
+            graph = build_session_graph(session_id, active_head)
             leaves = db.list_branches(session_id)
             for row in leaves:
                 mid = row["head_msg_id"]
