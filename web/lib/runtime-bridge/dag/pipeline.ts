@@ -282,9 +282,12 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const _sortedVisibleLanes = Object.keys(_visibleLaneTiers).map(Number).sort((a, b) => a - b);
   const _laneToCol: Record<number, number> = Object.create(null);
   let _col = 0;
-  for (const ln of _sortedVisibleLanes) {
+  for (let li = 0; li < _sortedVisibleLanes.length; li++) {
+    const ln = _sortedVisibleLanes[li];
     _laneToCol[ln] = _col;
     _col += (_visibleLaneTiers[ln] || 0) + 1;
+    // Extra column gap before fork lanes for their virtual trunk line
+    if (li < _sortedVisibleLanes.length - 1) _col += 1;
   }
 
   // Compact depth mapping: collapse gaps from folded subtrees.
