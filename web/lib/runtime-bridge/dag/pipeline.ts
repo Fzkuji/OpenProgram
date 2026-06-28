@@ -460,10 +460,11 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       class: "history-edge",
     }));
     // Solid vertical trunk for the fork lane (from fork root down
-    // to the last node in this lane)
+    // to the last user node in this lane — not past the last llm)
     let lastY = forkPos.y;
     Object.values(tree.byId).forEach((n) => {
       if ((n._lane || 0) !== myLane) return;
+      if (n.role !== "user") return;
       const np = pos(n);
       if (np.y > lastY) lastY = np.y;
     });
