@@ -167,3 +167,45 @@ def test_tool_plus_fork_no_overlap():
     ])
     assert _col(by["u1b"]) > _col(by["t1"])  # fork past the tool
     assert _no_overlap(by)
+
+
+# Edge cases — must not crash, must not overlap.
+
+def test_empty_graph():
+    assert annotate_graph([], None) == []
+
+
+def test_root_only():
+    by = _annotate([_root()])
+    assert by["ROOT"]["_lane"] == 0 and by["ROOT"]["_tier"] == 0
+
+
+def test_deep_nesting_no_crash():
+    """Function calling function … 10 levels deep — tier keeps climbing,
+    no recursion blow-up, no overlap."""
+    nodes = [_root()]
+    prev = "ROOT"
+    for i in range(10):
+        nodes.append({"id": f"c{i}", "role": "code", "caller": prev, "created_at": i + 1})
+        prev = f"c{i}"
+    by = _annotate(nodes)
+    assert by["c9"]["_tier"] > by["c0"]["_tier"]  # tier climbs with depth
+    assert _no_overlap(by)
+
+
+def test_self_referencing_caller_no_crash():
+    """A node whose caller points at itself must not loop forever."""
+    by = _annotate([
+        _root(),
+        {"id": "x", "role": "code", "caller": "x", "created_at": 1},
+    ])
+    assert "x" in by  # produced a result, didn't hang
+
+
+def test_orphan_no_root():
+    """A graph with no display=root node still lays out without overlap."""
+    by = _annotate([
+        {"id": "a", "role": "user", "created_at": 0},
+        {"id": "b", "role": "assistant", "caller": "a", "predecessor": "a", "created_at": 1},
+    ])
+    assert _no_overlap(by)
