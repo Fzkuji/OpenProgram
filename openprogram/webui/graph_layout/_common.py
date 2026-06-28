@@ -23,18 +23,6 @@ def conv_parent_of(by_id: dict[str, dict], m: dict) -> Optional[str]:
 called_by_of = conv_parent_of
 
 
-def caller_of(by_id: dict[str, dict], m: dict) -> Optional[str]:
-    """The caller (sub-call parent via 'caller' field), if in-graph.
-    Ignores ROOT — conv-chain nodes parented to ROOT are not sub-calls."""
-    c = m.get("caller")
-    if c and c != "ROOT" and c in by_id and c != m.get("id"):
-        p = by_id.get(c)
-        if p and p.get("display") == "root":
-            return None
-        return c
-    return None
-
-
 def is_root(m: dict) -> bool:
     return m.get("display") == "root"
 

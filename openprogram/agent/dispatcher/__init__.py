@@ -203,7 +203,10 @@ def process_user_turn(
     #      explicit None  → NULL (root-level fork)
     #      explicit str   → that string (sibling fork)
     if isinstance(req.branch_from, _InheritParent):
-        user_caller_id = "ROOT"
+        if history:
+            user_caller_id = history[-1].get("id")
+        else:
+            user_caller_id = session.get("head_id")
     else:
         user_caller_id = req.branch_from
     user_msg: dict[str, Any] = {

@@ -49,11 +49,12 @@ def compute_lane(
             return
         lane[nid] = my_lane
 
+        # Walk called_by children. Children with called_by always
+        # inherit the parent's lane (they're part of the trunk).
+        # Fork detection only applies to nodes WITHOUT called_by
+        # (handled in the remaining pass below).
         for kid in call_children.get(nid, []):
-            if kid in first_at_fork:
-                _walk(kid, my_lane)
-            else:
-                _walk(kid, alloc.alloc())
+            _walk(kid, my_lane)
 
     # Start from ROOT (display=root) only
     from ._common import is_root

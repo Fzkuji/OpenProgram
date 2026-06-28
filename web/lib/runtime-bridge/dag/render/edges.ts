@@ -4,7 +4,7 @@
  * Three edge kinds, all currently drawn inline inside ``render()`` in
  * ``../pipeline.ts``:
  *
- *   * ``called_by`` (conv chain) — solid coloured curve, branch-coloured.
+ *   * ``parent_id`` (conv chain) — solid coloured curve, branch-coloured.
  *   * ``attach_ref`` (function="attach" / "merge") — dashed marching-ants
  *     overlay from the source branch tip to the attach-pointer node.
  *   * spawn — dot-dash neutral grey from a ``function="task"`` node

@@ -12,32 +12,22 @@ from ._common import ts, called_by_of, is_root
 def compute_depth(
     by_id: dict[str, dict],
     call_children: dict[str, list[str]],
-    fork_siblings: dict[str, list[str]] | None = None,
 ) -> dict[str, float]:
     depth: dict[str, float] = {}
     counter = [0]
 
-    # Which nodes are the first sibling at each fork point.
-    first_at_fork: set[str] = set()
-    if fork_siblings:
-        for _pid, kids in fork_siblings.items():
-            if len(kids) > 1:
-                first_at_fork.add(kids[0])
-
     def _walk_dfs(nid: str) -> None:
+        """DFS walk using global counter — for the main trunk."""
         if nid in depth:
             return
         depth[nid] = counter[0]
         counter[0] += 1
         for kid in call_children.get(nid, []):
-            if fork_siblings and kid not in first_at_fork:
-                # Check if this kid is a non-first fork sibling
-                pid = called_by_of(by_id, by_id.get(kid, {}))
-                if pid and fork_siblings.get(pid) and len(fork_siblings[pid]) > 1 and kid != fork_siblings[pid][0]:
-                    continue
             _walk_dfs(kid)
 
     def _walk_branch(nid: str, start: float) -> None:
+        """Walk a branch subtree starting at a fixed depth, then
+        incrementing for each called_by child."""
         if nid in depth:
             return
         depth[nid] = start
@@ -49,6 +39,7 @@ def compute_depth(
                 for grandkid in call_children.get(kid, []):
                     _walk_branch(grandkid, depth[kid] + 1)
 
+    # Main trunk: DFS from ROOT
     roots = sorted(
         (nid for nid, m in by_id.items() if is_root(m)),
         key=lambda x: ts(by_id, x),
@@ -74,6 +65,7 @@ def compute_depth(
         pid = called_by_of(by_id, m)
         start = 0
         if pid and pid in depth:
+            # Find the first sibling's depth
             for other_nid, other_m in by_id.items():
                 if other_nid == nid:
                     continue

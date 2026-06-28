@@ -31,7 +31,7 @@ def annotate_graph(
 
     call_children, fork_siblings = build_children(by_id)
     tier = compute_tier(by_id)
-    depth = compute_depth(by_id, call_children, fork_siblings)
+    depth = compute_depth(by_id, call_children)
     lane, alloc = compute_lane(by_id, call_children, fork_siblings, head_id)
 
     # Spread lanes so each branch has room for its tier width.

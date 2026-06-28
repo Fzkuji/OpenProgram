@@ -215,6 +215,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                 graph.append({
                     "id": _root_node.id,
                     "called_by": "",
+                    "called_by": "",
                     "caller": "",
                     "role": "user",
                     "display": "root",
@@ -233,7 +234,8 @@ def build_branches_payload(session_id: str | None) -> dict:
                 graph.append({
                     "id": _mid,
                     "called_by": m.get("called_by"),
-                    "caller": _called_by_map.get(_mid, "") or m.get("caller") or "",
+                    "called_by": _called_by_map.get(_mid, ""),
+                    "caller": m.get("caller") or "",
                     "role": m.get("role"),
                     "function": m.get("function"),
                     "display": m.get("display"),

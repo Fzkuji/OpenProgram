@@ -3,7 +3,7 @@
  *
  * Output:
  *   * ``byId``  — id-indexed map with ``children`` arrays filled in.
- *   * ``roots`` — nodes whose ``called_by`` is missing or unknown.
+ *   * ``roots`` — nodes whose ``parent_id`` is missing or unknown.
  *
  * Children + roots are sorted by ``created_at`` so deterministic order
  * matches the time the user actually saw each turn.

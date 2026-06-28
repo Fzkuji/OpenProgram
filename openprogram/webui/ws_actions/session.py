@@ -82,7 +82,7 @@ def _rebuild_runtime_cards(
     def _is_top_code(m: dict) -> bool:
         if m.get("role") != "tool":
             return False
-        parent = m.get("called_by") or ""
+        parent = m.get("called_by") or m.get("called_by") or ""
         # Only ROOT-parented or unparented code nodes are top-level
         # function calls (manual /run, fn-form). Internal sub-calls
         # (gui_step, conclusion, plan_next_action) have a non-ROOT
@@ -365,6 +365,7 @@ async def handle_load_session(ws, cmd: dict):
         from openprogram.contextgit import (
             deepest_leaf,
             head_or_tip,
+            linear_history,
             sibling_index,
             siblings as _siblings,
         )
@@ -373,6 +374,9 @@ async def handle_load_session(ws, cmd: dict):
         _db_load = _db_for_load()
         try:
             raw_msgs = _db_load.get_messages(conv["id"]) or []
+            # Fold standalone role="tool" rows into their parent assistant's
+            # tool_calls[] so the chat UI sees the same shape on refresh
+            # as it does on live WS stream.
             all_msgs = aggregate_tool_messages(raw_msgs)
         except Exception:
             all_msgs = conv.get("messages", []) or []
@@ -383,9 +387,76 @@ async def handle_load_session(ws, cmd: dict):
         except Exception:
             _persisted_head = None
         head = _persisted_head or head_or_tip(conv, all_msgs)
-        # get_branch collects all ROOT-child user turns up to head,
-        # plus each turn's subtree, sorted by seq.
-        chain = _db_load.get_branch(session_id) or list(all_msgs)
+        # If the persisted head points at a row that aggregation just
+        # folded away (e.g. a role="tool" child of an assistant whose
+        # turn never reached step 6's ``update_session(head_id=...)``
+        # — common after a worker restart mid-turn), walk up the raw
+        # called_by chain until we hit a row that survived
+        # aggregation. Without this the linear_history call below
+        # returns [] and the page renders the empty Welcome screen
+        # despite the DAG clearly having history.
+        if head:
+            agg_ids = {m.get("id") for m in all_msgs}
+            if head not in agg_ids:
+                raw_by_id = {m.get("id"): m for m in raw_msgs}
+                cur = head
+                hops = 0
+                while cur and cur not in agg_ids and hops < 100:
+                    parent = (raw_by_id.get(cur) or {}).get("called_by")
+                    if not parent or parent == cur:
+                        cur = None
+                        break
+                    cur = parent
+                    hops += 1
+                if cur and cur in agg_ids:
+                    head = cur
+        chain = linear_history(all_msgs, head) if head else list(all_msgs)
+        # linear_history walks called_by pointers. Sessions created
+        # via the DAG store (called_by edges, no called_by) produce
+        # nodes with called_by=None, so linear_history returns only
+        # the head node. Fall back to get_branch which traverses
+        # called_by and handles ROOT-parented nodes correctly.
+        if len(chain) < len(all_msgs):
+            try:
+                branch_msgs = _db_load.get_branch(session_id)
+                if len(branch_msgs) > len(chain):
+                    chain = branch_msgs
+            except Exception:
+                pass
+        # get_branch may still be incomplete when the conv chain has
+        # gaps (e.g. a manual function call whose code node has no
+        # conv predecessor — chat → fn-call → chat). Fill gaps by
+        # prepending conversation turns (user + assistant reply) that
+        # precede the chain's earliest entry but were missed.
+        if chain:
+            chain_ids = {m.get("id") for m in chain}
+            earliest_ts = min(
+                (m.get("timestamp") or 0) for m in chain
+            )
+            by_id = {m.get("id"): m for m in all_msgs}
+            # Start with ROOT-parented user/assistant messages
+            roots = [
+                m for m in all_msgs
+                if m.get("id") not in chain_ids
+                and (m.get("timestamp") or 0) < earliest_ts
+                and m.get("role") in ("user", "assistant")
+                and (m.get("called_by") or "ROOT") in ("", "ROOT")
+            ]
+            # Include their conv children (e.g. assistant reply to a
+            # user message) so complete turns are prepended.
+            missing_ids = {m.get("id") for m in roots}
+            missing = list(roots)
+            for m in all_msgs:
+                mid = m.get("id")
+                if mid in chain_ids or mid in missing_ids:
+                    continue
+                cb = m.get("called_by") or ""
+                if cb in missing_ids and m.get("role") in ("user", "assistant"):
+                    missing.append(m)
+                    missing_ids.add(mid)
+            if missing:
+                missing.sort(key=lambda m: m.get("timestamp") or 0)
+                chain = missing + chain
         # Splice attach pointer rows (function="attach") into the
         # displayed chain. They hang off a parent message via
         # called_by — not on the conv chain itself — so
@@ -402,7 +473,7 @@ async def handle_load_session(ws, cmd: dict):
             # called_by; this guard keeps old data from doubling up.
             if m.get("id") in chain_ids:
                 continue
-            parent = m.get("called_by") or ""
+            parent = m.get("called_by") or m.get("called_by") or ""
             if parent and parent in chain_ids:
                 attach_by_parent.setdefault(parent, []).append(m)
         if attach_by_parent:
@@ -507,6 +578,7 @@ async def handle_load_session(ws, cmd: dict):
                 graph.append({
                     "id": _root_node.id,
                     "called_by": "",
+                    "called_by": "",
                     "caller": "",
                     "role": "user",
                     "display": "root",
@@ -533,7 +605,8 @@ async def handle_load_session(ws, cmd: dict):
             graph.append({
                 "id": _mid_load,
                 "called_by": m.get("called_by"),
-                "caller": _called_by_map_load.get(_mid_load, "") or m.get("caller") or "",
+                "called_by": _called_by_map_load.get(_mid_load, ""),
+                "caller": m.get("caller") or "",
                 "role": m.get("role"),
                 "function": m.get("function"),
                 "display": m.get("display"),
