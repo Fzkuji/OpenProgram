@@ -655,7 +655,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       const p = pos(node);
       const label = (b.name as string) || b.head_msg_id.slice(0, 8);
       const isActive = !!b.active;
-      const dy = 20;
+      const dy = 28;
       const color = _branchColor(node, stableLeafOfNode);
       const tg = _svg("g", {
         class: "history-branch-tag" + (isActive ? " active" : ""),
@@ -664,18 +664,16 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       });
       (tg as SVGGraphicsElement).style.cursor = isActive ? "default" : "pointer";
       const bw = Math.max(label.length * 6 + 12, 40);
-      const bh = 16;
+      const bh = 18;
       const rect = _svg("rect", {
         x: String(-bw / 2),
         y: String(-bh / 2),
         width: String(bw),
         height: String(bh),
-        rx: "4",
-        ry: "4",
-        fill: isActive ? color : "var(--bg-hover, #2e2e2c)",
-        stroke: color,
-        "stroke-width": isActive ? "0" : "1",
-        opacity: isActive ? "0.9" : "0.7",
+        rx: "6",
+        ry: "6",
+        fill: "var(--bg-hover, #2e2e2c)",
+        opacity: "0.85",
       });
       tg.appendChild(rect);
       const text = _svg("text", {
@@ -684,8 +682,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
         "text-anchor": "middle",
         "font-size": "9",
         "font-family": "var(--font-sans, sans-serif)",
-        "font-weight": "600",
-        fill: isActive ? "var(--bg-primary, #1f1f1e)" : color,
+        "font-weight": "500",
+        fill: isActive ? "var(--text-bright, #f8f8f6)" : "var(--text-muted, #6b6a63)",
         "pointer-events": "none",
       });
       text.textContent = label;
