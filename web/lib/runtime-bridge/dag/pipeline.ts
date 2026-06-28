@@ -267,24 +267,11 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   svg.appendChild(edgeG);
   svg.appendChild(nodeG);
 
-  // Compact lane mapping: only visible lanes get column space.
-  // Each lane occupies (maxTierInLane + 1) columns width.
-  const _visibleLaneTiers: Record<number, number> = Object.create(null);
-  graph.forEach((n) => {
-    const ln = n._lane || 0;
-    const t = typeof n._tier === "number" ? n._tier : 0;
-    _visibleLaneTiers[ln] = Math.max(_visibleLaneTiers[ln] || 0, t);
-  });
-  const _sortedVisibleLanes = Object.keys(_visibleLaneTiers).map(Number).sort((a, b) => a - b);
-  const _laneToCol: Record<number, number> = Object.create(null);
-  let _col = 0;
-  for (let li = 0; li < _sortedVisibleLanes.length; li++) {
-    const ln = _sortedVisibleLanes[li];
-    _laneToCol[ln] = _col;
-    _col += (_visibleLaneTiers[ln] || 0) + 1;
-    // Extra column gap before fork lanes for their virtual trunk line
-    if (li < _sortedVisibleLanes.length - 1) _col += 1;
-  }
+  // Column = backend ``_lane`` (already the final column offset for the
+  // branch) + ``_tier`` (indent within the branch). The backend packs
+  // lanes (annotate_graph): a fork lane starts one column right of the
+  // sibling it diverged from. Do NOT recompute offsets here — that
+  // double-counts and pushes forks far away.
 
   // Compact depth mapping: collapse gaps from folded subtrees.
   const _visibleDepths = Array.from(new Set(
@@ -295,7 +282,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   function pos(n: GNode): { x: number; y: number } {
     const tier = typeof n._tier === "number" ? n._tier : 0;
-    const laneCol = _laneToCol[n._lane || 0] || 0;
+    const laneCol = n._lane || 0;
     const d = typeof n._depth === "number" ? n._depth : 0;
     const row = _depthToRow[d] ?? d;
     return {

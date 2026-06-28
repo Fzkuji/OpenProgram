@@ -34,18 +34,52 @@ def annotate_graph(
     depth = compute_depth(by_id, call_children, fork_siblings)
     lane, alloc = compute_lane(by_id, call_children, fork_siblings, head_id)
 
-    # Spread lanes so each branch has room for its tier width.
-    # lane=0 with max_tier=1 occupies columns 0-1; lane=1 starts at 2.
-    lane_groups: dict[int, int] = {}  # lane_id → max tier in that lane
+    # Column offset per lane. A fork lane starts ONE column right of the
+    # ENTIRE base lane it diverged from — i.e. right of the base lane's
+    # rightmost occupied column (its deepest node, sub-tree included), so
+    # the two branches never overlap. Collapsed sub-calls don't exist in
+    # ``tier``, so they take no column — the fork packs tight against
+    # what's actually visible.
+    from ._common import predecessor_of
+
+    # nodes grouped by lane; first node = the lane's earliest (by depth).
+    lane_nodes: dict[int, list[str]] = {}
+    lane_first: dict[int, str] = {}
     for nid, ln in lane.items():
-        t = tier.get(nid, 0)
-        lane_groups[ln] = max(lane_groups.get(ln, 0), t)
-    sorted_lanes = sorted(lane_groups.keys())
+        lane_nodes.setdefault(ln, []).append(nid)
+        cur = lane_first.get(ln)
+        if cur is None or depth.get(nid, 0) < depth.get(cur, 0):
+            lane_first[ln] = nid
+
     lane_offset: dict[int, int] = {}
-    col = 0
-    for ln in sorted_lanes:
-        lane_offset[ln] = col
-        col += lane_groups[ln] + 1  # +1 for the lane's own column
+
+    def _rightmost_col(ln: int) -> int:
+        """Rightmost occupied column of a lane (offset + max tier)."""
+        base = _offset(ln)
+        return base + max((tier.get(n, 0) for n in lane_nodes.get(ln, [])), default=0)
+
+    def _offset(ln: int) -> int:
+        if ln in lane_offset:
+            return lane_offset[ln]
+        if ln == 0:
+            lane_offset[ln] = 0
+            return 0
+        first = lane_first.get(ln)
+        forked_from = predecessor_of(by_id, by_id[first]) if first else None
+        # base lane = the lane the fork diverged from.
+        base_lane = lane.get(forked_from) if forked_from else None
+        first_tier = tier.get(first, 0) if first else 0
+        if base_lane is not None:
+            # fork's first node goes one column right of the base lane's
+            # rightmost column → offset = that + 1 - first node's tier.
+            off = _rightmost_col(base_lane) + 1 - first_tier
+        else:
+            off = max(lane_offset.values(), default=0) + 1
+        lane_offset[ln] = off
+        return off
+
+    for ln in sorted(set(lane.values())):
+        _offset(ln)
     for nid in lane:
         lane[nid] = lane_offset.get(lane[nid], lane[nid])
 
