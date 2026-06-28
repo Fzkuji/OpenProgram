@@ -116,6 +116,11 @@ export function setChatMutationWired(v: boolean): void {
   _chatMutationWired = v;
 }
 
+export let _chatMutationObserver: MutationObserver | null = null;
+export function setChatMutationObserver(v: MutationObserver | null): void {
+  _chatMutationObserver = v;
+}
+
 export let _panelResizeWired = false;
 export function setPanelResizeWired(v: boolean): void {
   _panelResizeWired = v;

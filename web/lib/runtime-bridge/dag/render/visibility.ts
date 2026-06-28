@@ -2,33 +2,30 @@
  * Renderer: white-fill visibility for nodes whose chat row is on-screen.
  *
  * Two modes:
- *   * ``viewport`` — scan ``#chatArea`` for visible bubbles, walk up
- *     ``parent_id`` to seed turns whose own bubble is suppressed
- *     (display=runtime user commands), then propagate visibility down
- *     each internal-owner chain to the internal subtree.
+ *   * ``viewport`` — scan ``#chatArea`` for visible bubbles and mark
+ *     the matching DAG nodes with a white fill. No propagation —
+ *     only direct bubble hits get the fill.
  *   * ``context``  — bypass chat-scroll entirely; the white-fill marks
  *     the node set the next LLM call will load as context (from
  *     ``/api/sessions/:id/context-range``).
  *
- * Also owns the ``mouseover``/``scroll``/``mutation``/manual-wheel
- * wiring that triggers recomputation.
+ * Also owns the ``scroll``/``mutation``/manual-wheel wiring that
+ * triggers recomputation.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { _applyShapeSize } from "../shapes";
 import {
-  _chatMutationWired,
+  _chatMutationObserver,
   _chatScrollWired,
   _contextSet,
   _highlightMode,
-  _internalOwner,
   _panelResizeWired,
-  _parentOf,
   _userScrolledGraph,
   _userScrollTimer,
   _visibleIds,
-  setChatMutationWired,
+  setChatMutationObserver,
   setChatScrollWired,
   setPanelResizeWired,
   setUserScrolledGraph,
@@ -134,59 +131,6 @@ export function _recomputeVisibility(): void {
       if (single) newSet[single] = true;
     }
   }
-  // Walk up parent_id to mark SUPPRESSED ancestors (display=runtime
-  // user anchors that chat-panel hides, so they have no DOM bubble
-  // and can never be seeded by the viewport sweep above). STOP at
-  // the first ancestor that has its own DOM bubble — that ancestor's
-  // visibility is governed by its own getBoundingClientRect; if it's
-  // off-screen, marking it visible here is a stale-highlight bug.
-  //
-  // Build a set of ids that DO have a DOM bubble in #chatMessages.
-  // Anything in this set is a "real" ancestor — break on encountering
-  // one. Anything NOT in it is suppressed (or absent from chat) —
-  // safe to propagate visibility through.
-  const inDom: Record<string, boolean> = Object.create(null);
-  for (let i = 0; i < bubbles.length; i++) {
-    const single = bubbles[i].getAttribute("data-msg-id");
-    if (single) inDom[single] = true;
-    const multi = bubbles[i].getAttribute("data-msg-ids");
-    if (multi) {
-      const parts = multi.split(/\s+/);
-      for (let j = 0; j < parts.length; j++) {
-        if (parts[j]) inDom[parts[j]] = true;
-      }
-    }
-  }
-  {
-    const seeds = Object.keys(newSet);
-    for (let si = 0; si < seeds.length; si++) {
-      let cur: string | undefined = seeds[si];
-      let hops = 0;
-      while (cur && _parentOf[cur] && hops < 256) {
-        const parent: string | undefined = _parentOf[cur];
-        if (!parent) break;
-        cur = parent;
-        if (newSet[cur]) break;
-        // If the parent has its own DOM bubble, don't override its
-        // viewport status — leave it to the rect check above.
-        if (inDom[cur]) break;
-        newSet[cur] = true;
-        hops++;
-      }
-    }
-  }
-  for (let pass = 0; pass < 6; pass++) {
-    let changed = false;
-    for (const internalId in _internalOwner) {
-      if (newSet[internalId]) continue;
-      if (newSet[_internalOwner[internalId]]) {
-        newSet[internalId] = true;
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-
   _setVisibleSet(newSet);
 }
 
@@ -211,11 +155,14 @@ export function _wireChatScrollSync(): void {
 }
 
 export function _wireChatMutationSync(): void {
-  if (_chatMutationWired) return;
   if (typeof MutationObserver === "undefined") return;
   const container = document.getElementById("chatMessages");
   if (!container) return;
-  setChatMutationWired(true);
+  // Disconnect previous observer if any (container may have been
+  // replaced by load_session).
+  if (_chatMutationObserver) {
+    _chatMutationObserver.disconnect();
+  }
   let raf = 0;
   const mo = new MutationObserver(() => {
     if (raf) return;
@@ -225,6 +172,7 @@ export function _wireChatMutationSync(): void {
     });
   });
   mo.observe(container, { childList: true, subtree: true });
+  setChatMutationObserver(mo);
 }
 
 export function _wirePanelResize(onResize: () => void): void {
