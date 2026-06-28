@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DAG 布局视觉规范</title>
+<style>
+:root{--bg:#1f1f1e;--pan:#171716;--bd:#3a3a36;--tx:#d8d6cc;--tx2:#9a988e;--acc:#d19a66;
+  --blue:#4f8ef7;--purple:#a371f7;--green:#5aad4e;--cb:#2a2a26;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.7 -apple-system,'Segoe UI',sans-serif}
+.w{max-width:1000px;margin:0 auto;padding:40px 32px 96px}
+h1{font-size:26px;border-bottom:2px solid var(--acc);padding-bottom:12px}
+h2{font-size:19px;color:var(--acc);margin-top:8px}
+.scene{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:20px 24px;margin:24px 0}
+.scene-head{display:flex;align-items:baseline;gap:12px;margin-bottom:8px}
+.scene-num{background:var(--acc);color:#1a1a19;font-weight:700;border-radius:6px;padding:1px 9px;font-size:14px}
+.desc{color:var(--tx2);font-size:14px;margin:6px 0 14px}
+.row{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+svg{background:#141413;border-radius:8px;border:1px solid var(--bd)}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0 28px;font-size:13px;color:var(--tx2)}
+.legend b{color:var(--tx)}
+.rule{font-size:13px;color:var(--tx2);margin-top:10px;border-left:3px solid var(--bd);padding-left:12px}
+code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+text{font-family:-apple-system,sans-serif}
+</style></head>
+<body><div class="w">
+<h1>DAG 布局视觉规范</h1>
+<p class="desc">右侧 Viewport 小地图：每种场景应该长什么样。这是实现的对照标准 ——
+代码画出来必须和这里一致。节点位置 = (lane列 + tier缩进, depth行)。</p>
+
+<div class="legend">
+  <span>◇ <b>ROOT</b> 会话根（菱形）</span>
+  <span>● <b>user</b> 用户消息（圆）</span>
+  <span>▲ <b>llm</b> AI回复（三角）</span>
+  <span>■ <b>code</b> 工具/函数（方块）</span>
+  <span>—— 实线=同分支连线</span>
+  <span>┈┈ 虚线=fork分叉连线</span>
+</div>
+
+<!-- 画图用的 JS 在底部，这里放容器 -->
+<div id="scenes"></div>
+
+<script>
+const C = {blue:"#4f8ef7", purple:"#a371f7", green:"#5aad4e", muted:"#6b6a63"};
+const COL=64, ROW=52, PADX=40, PADY=36, R=11;
+
+// shape: 'root'|'user'|'llm'|'code'
+function node(svg, x, y, shape, color, label, sub){
+  const cx=PADX+x*COL, cy=PADY+y*ROW;
+  const g=`<g>`;
+  let s="";
+  if(shape==='root') s=`<rect x="${cx-R}" y="${cy-R}" width="${2*R}" height="${2*R}" rx="3" transform="rotate(45 ${cx} ${cy})" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+  else if(shape==='user') s=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+  else if(shape==='llm') s=`<polygon points="${cx},${cy-R} ${cx-R},${cy+R*0.8} ${cx+R},${cy+R*0.8}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+  else if(shape==='code') s=`<rect x="${cx-R*0.85}" y="${cy-R*0.85}" width="${R*1.7}" height="${R*1.7}" rx="2" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+  const lbl=`<text x="${cx+R+8}" y="${cy+4}" fill="${color}" font-size="12">${label}</text>`;
+  const subt = sub?`<text x="${cx+R+8}" y="${cy+18}" fill="#6b6a63" font-size="10">${sub}</text>`:"";
+  return s+lbl+subt;
+}
+// vertical trunk + horizontal branch from parent(px,py) to child(cx,cy)
+function edge(px,py,cx,cy,color,dashed){
+  const PX=PADX+px*COL, PY=PADY+py*ROW, CX=PADX+cx*COL, CY=PADY+cy*ROW;
+  const d = dashed?`stroke-dasharray="5 4"`:"";
+  // vertical at parent col down to child row, then horizontal to child
+  return `<path d="M ${PX} ${PY+R} L ${PX} ${CY} L ${CX-R-3} ${CY}" fill="none" stroke="${color}" stroke-width="1.8" ${d} opacity="${dashed?0.7:1}"/>`;
+}
+
+function scene(num, title, desc, w, h, draw, rule){
+  const id='s'+num;
+  const div=document.createElement('div');
+  div.className='scene';
+  div.innerHTML=`<div class="scene-head"><span class="scene-num">${num}</span><h2>${title}</h2></div>
+    <div class="desc">${desc}</div>
+    <svg width="${PADX*2+w*COL}" height="${PADY*2+h*ROW}" viewBox="0 0 ${PADX*2+w*COL} ${PADY*2+h*ROW}">${draw()}</svg>
+    <div class="rule">${rule}</div>`;
+  document.getElementById('scenes').appendChild(div);
+}
+
+// ---- 场景1：单条对话（一句你好）----
+scene(1,"单条对话（发一句话）",
+ "只有 1 条分支，全部在第 0 列。tier 缩进：ROOT=0, user=1, llm=2。",
+ 4,3,()=>{
+  let s="";
+  s+=edge(0,0,1,1,C.blue);   // root -> user
+  s+=edge(1,1,2,2,C.blue);   // user -> llm
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"你好");
+  s+=node(null,2,2,'llm',C.blue,"AI 回复");
+  return s;
+ },
+ "lane=0 (1条分支)。tier: ROOT 0 / user 1 / llm 2 —— 阶梯往右是对的。");
+
+// ---- 场景2：多轮对话 ----
+scene(2,"多轮对话",
+ "所有 user 都直接挂在 ROOT 下（平级，都 tier=1）。ROOT 那条竖线贯穿，每个 user 从它横向分出，各自的 AI 回复再往下缩进。user2 不是接在 llm1 后面，是接在 ROOT 上。",
+ 4,5,()=>{
+  let s="";
+  // 两个 user 都从 ROOT 列(0)分出 —— ROOT 这条竖线贯穿，user 平级挂上去
+  s+=edge(0,0,1,1,C.blue);   // ROOT -> user1
+  s+=edge(1,1,2,2,C.blue);   // user1 -> llm1
+  s+=edge(0,0,1,3,C.blue);   // ROOT -> user2 (不是从 llm1 串下来!)
+  s+=edge(1,3,2,4,C.blue);   // user2 -> llm2
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"你好");
+  s+=node(null,2,2,'llm',C.blue,"回复1");
+  s+=node(null,1,3,'user',C.blue,"今天天气");
+  s+=node(null,2,4,'llm',C.blue,"回复2");
+  return s;
+ },
+ "全 lane=0。user 永远 tier=1，llm 永远 tier=2，下一轮回到 tier=1。");
+
+// ---- 场景3：retry 出多分支 ----
+scene(3,"retry 多分支",
+ "对 user1 改写/重试 → 岔出第 2 条分支。第1条 lane 0，第2条 lane 1。两条从同一点用虚线连。",
+ 8,5,()=>{
+  let s="";
+  // branch 0 — 两个 user 都从 ROOT 列分出
+  s+=edge(0,0,1,1,C.blue);   // ROOT -> user1
+  s+=edge(1,1,2,2,C.blue);   // user1 -> llm1
+  s+=edge(0,0,1,3,C.blue);   // ROOT -> user2
+  s+=edge(1,3,2,4,C.blue);   // user2 -> llm2
+  // fork dashed: user1(1,1) -> user1'(5,1)
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+5*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  // branch 1 (purple), lane1 => col 5,6
+  s+=edge(5,1,6,2,C.purple);
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"你好");
+  s+=node(null,2,2,'llm',C.blue,"回复1");
+  s+=node(null,1,3,'user',C.blue,"天气");
+  s+=node(null,2,4,'llm',C.blue,"回复2");
+  s+=node(null,5,1,'user',C.purple,"你好(改写)","fork");
+  s+=node(null,6,2,'llm',C.purple,"回复1'");
+  return s;
+ },
+ "lane 0 = 原分支，lane 1 = retry 分支（往右整块偏移 + 虚线连分叉点）。");
+
+// ---- 场景4：工具调用 ----
+scene(4,"AI 调用工具",
+ "AI 回复里调了 web_search → 工具在 AI 下面再缩进一格（tier=3），不另开分支（还是 lane 0）。",
+ 5,4,()=>{
+  let s="";
+  s+=edge(0,0,1,1,C.blue);
+  s+=edge(1,1,2,2,C.blue);
+  s+=edge(2,2,3,3,C.blue);  // llm -> code (tier3)
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"北京天气");
+  s+=node(null,2,2,'llm',C.blue,"AI 回复");
+  s+=node(null,3,3,'code',C.blue,"web_search","tier=3");
+  return s;
+ },
+ "工具是子调用 → tier+1（缩进，不是新分支）。lane 仍 0。");
+
+// ---- 场景5：手动调用函数（带内部子调用）----
+scene(5,"手动调用函数（如 gui_agent）",
+ "手动调函数 → 函数节点挂在当前对话下（不是另起分支）。函数内部的子步骤层层缩进，全在同一条 lane。",
+ 6,8,()=>{
+  let s="";
+  // user 和 gui_agent 都挂 ROOT (tier=1)，从 ROOT 列分出
+  s+=edge(0,0,1,1,C.blue);       // ROOT -> user
+  s+=edge(1,1,2,2,C.blue);       // user -> llm
+  s+=edge(0,0,1,3,C.blue);       // ROOT -> gui_agent (手动调,挂 ROOT,tier=1)
+  // gui_agent 内部子调用，从 gui_agent 列(1)分出
+  s+=edge(1,3,2,4,C.blue);       // gui_agent -> gui_step (tier2)
+  s+=edge(2,4,3,5,C.blue);       // gui_step -> 内部LLM (tier3)
+  s+=edge(1,3,2,6,C.blue);       // gui_agent -> conclusion (tier2)
+  s+=edge(2,6,3,7,C.blue);       // conclusion -> 内部LLM
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"你好");
+  s+=node(null,2,2,'llm',C.blue,"AI 回复");
+  s+=node(null,1,3,'code',C.blue,"gui_agent","手动调,挂ROOT");
+  s+=node(null,2,4,'code',C.blue,"gui_step");
+  s+=node(null,3,5,'llm',C.blue,"内部LLM");
+  s+=node(null,2,6,'code',C.blue,"conclusion");
+  s+=node(null,3,7,'llm',C.blue,"内部LLM");
+  return s;
+ },
+ "手动调函数 = 挂在当前对话链上（不另开 lane）。内部子调用 tier 逐层 +1。");
+
+// ---- 场景6：综合（多轮 + retry + 工具）----
+scene(6,"综合：多轮 + retry + 工具",
+ "所有规则一起：lane 按分支顺序 0,1；tier 按嵌套缩进；depth 按时间。",
+ 9,7,()=>{
+  let s="";
+  s+=edge(0,0,1,1,C.blue);
+  s+=edge(1,1,2,2,C.blue);
+  s+=edge(2,2,3,3,C.blue);     // llm调tool (子调用,从llm连)
+  s+=edge(0,0,1,4,C.blue);     // 追问: 从 ROOT 连(不是从llm串)
+  s+=edge(1,4,2,5,C.blue);
+  // fork from user(1,1)
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+6*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=edge(6,1,7,2,C.purple);
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"问题");
+  s+=node(null,2,2,'llm',C.blue,"回复");
+  s+=node(null,3,3,'code',C.blue,"工具","tier3");
+  s+=node(null,1,4,'user',C.blue,"追问");
+  s+=node(null,2,5,'llm',C.blue,"回复2");
+  s+=node(null,6,1,'user',C.purple,"问题(改写)","lane1");
+  s+=node(null,7,2,'llm',C.purple,"回复'");
+  return s;
+ },
+ "lane: 主链=0, retry链=1。tier: 工具在 llm 下缩进到 3。depth: 按时间从上到下。");
+
+</script>
+</div></body></html>

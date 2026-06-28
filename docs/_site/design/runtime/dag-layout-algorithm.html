@@ -128,6 +128,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
 <a class="navlink" href="/docs/design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
 <a class="navlink active" href="/docs/design/runtime/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag-layout-spec.html">DAG 布局视觉规范</a>
 <a class="navlink" href="/docs/design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
 <a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
 <a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
@@ -164,243 +166,121 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
   <main class="content"><article><h1 id="dag-布局算法设计文档">DAG 布局算法设计文档<a class="header-anchor" href="#dag-布局算法设计文档">#</a></h1>
-<p>Status: <strong>draft（待讨论确认）</strong> · Created: 2026-06-29</p>
+<p>Status: <strong>draft（待确认）</strong> · Created: 2026-06-29</p>
 <blockquote>
-<p>DAG viewport 把每个节点放到 (x, y) 网格。x 由 lane + tier 决定，y 由 depth
-决定。本文定义这三个维度各自该用哪条边（caller / predecessor），消除当前
-&quot;三个维度各凭感觉用边&quot;导致的布局 bug（首条 user 跑到 lane 1）。</p>
+<p>DAG 小地图把每个节点放到网格的 (列, 行)。本文定义三件事：节点放第几列、
+第几行。规则要简单——不绕弯。</p>
 </blockquote>
-<h2 id="一两条边前提见-session-dagmd">一、两条边（前提，见 <a href="http://session-dag.md">session-dag.md</a>）<a class="header-anchor" href="#一两条边前提见-session-dagmd">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>边</th>
-<th>含义</th>
-<th>举例</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>caller</code></td>
-<td>谁调用我（子调用）</td>
-<td>顶层节点 caller=ROOT；工具 caller=调它的 llm</td>
-</tr>
-<tr>
-<td><code>predecessor</code></td>
-<td>聊天顺序我接在谁后面（对话链）</td>
-<td>第二轮 user 的 predecessor=第一轮 llm；首条 user 为空</td>
-</tr>
-</tbody>
-</table>
-<p>关键事实：</p>
+<h2 id="一一个节点的位置-x-y">一、一个节点的位置 = (x, y)<a class="header-anchor" href="#一一个节点的位置-x-y">#</a></h2>
 <ul>
-<li><strong>caller 让整张图连通</strong>：从 ROOT 沿 caller 能走到任何节点（顶层节点都 caller=ROOT）。</li>
-<li><strong>predecessor 表达对话顺序 + 分支</strong>：首条 user 的 predecessor 为空（它没有&quot;上一句&quot;）。</li>
+<li><strong>x（横向位置）= lane列 + tier缩进</strong></li>
+<li><strong>y（纵向位置）= depth行号</strong></li>
 </ul>
-<h2 id="二三个布局维度">二、三个布局维度<a class="header-anchor" href="#二三个布局维度">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>维度</th>
-<th>含义</th>
-<th>决定 x 还是 y</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>tier</strong></td>
-<td>子调用嵌套深度（水平缩进）</td>
-<td>x（列内偏移）</td>
-</tr>
-<tr>
-<td><strong>lane</strong></td>
-<td>哪条分支（主干 / fork）</td>
-<td>x（分支列）</td>
-</tr>
-<tr>
-<td><strong>depth</strong></td>
-<td>聊天/执行的先后行号</td>
-<td>y（行）</td>
-</tr>
-</tbody>
-</table>
-<p>最终坐标：<code>x = lane_col[lane] + tier</code>，<code>y = depth_row[depth]</code>。</p>
-<h2 id="三每个维度该用哪条边核心定义">三、每个维度该用哪条边（核心定义）<a class="header-anchor" href="#三每个维度该用哪条边核心定义">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>维度</th>
-<th>用哪条边</th>
-<th>为什么</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>tier</strong></td>
-<td><code>caller</code></td>
-<td>tier 是子调用嵌套。工具被 llm 调 → tier+1。对话链不算嵌套（user/llm 是固定 tier 1/2）。</td>
-</tr>
-<tr>
-<td><strong>lane</strong></td>
-<td><code>caller</code>（连主干骨架）+ <code>predecessor</code>（fork 检测）</td>
-<td>主干 = 从 ROOT 沿 caller 走到的链（一整张连通图）。fork = 同一 predecessor 有多个孩子 → 非首个分新 lane。</td>
-</tr>
-<tr>
-<td><strong>depth</strong></td>
-<td><code>predecessor</code>（对话先后）+ seq</td>
-<td>depth 是聊天行号，靠对话链排。fork siblings 对齐到首个 sibling 的 depth。</td>
-</tr>
-</tbody>
-</table>
-<p><strong>关键修正</strong>：lane 的&quot;主干骨架&quot;必须用 <strong>caller</strong> 建，不能用 predecessor。
-首条 user 的 predecessor 为空，用 predecessor 建骨架会让它和 ROOT 断开 →
-被当成独立分支。用 caller（首条 user 的 caller=ROOT）就能正确连到主干。</p>
-<h2 id="四当前-bug实测">四、当前 bug（实测）<a class="header-anchor" href="#四当前-bug实测">#</a></h2>
-<p>新会话两轮节点，<code>build_session_graph</code> 输出：</p>
-<pre><code>id              role   caller   predecessor  lane tier depth   ← 错误
-ROOT            user            (空)          0    0    0
-dce427f3        user   ROOT     (空)          1    1    0   ← 应该 lane=0
-dce427f3_reply  llm    (空)     dce427f3      1    2    1
-</code></pre>
-<p>渲染成（dag_dump 实测）：</p>
-<pre><code>d0  ◇ ROOT          ○ user      ← user 偏到右边独立列，ROOT 孤立
-d1                       △ llm
-</code></pre>
-<p>应该是：</p>
-<pre><code>d0  ◇ ROOT
-d1  ○ user          ← 主干 lane 0，ROOT 正下方
-d2  △ llm
-</code></pre>
-<h3 id="根因">根因<a class="header-anchor" href="#根因">#</a></h3>
-<p><code>topology.py:build_children</code> 里 <code>call_children</code> 和 <code>fork_siblings</code> <strong>都用
-<code>predecessor_of</code> 建</strong>（第 19、22 行完全一样）：</p>
-<pre><code class="language-python"><span class="n">ca</span> <span class="o">=</span> <span class="n">predecessor_of</span><span class="p">(</span><span class="n">by_id</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span>   <span class="c1"># call_children — 错，应该用 caller</span>
-<span class="k">if</span> <span class="n">ca</span><span class="p">:</span> <span class="n">call_children</span><span class="p">[</span><span class="n">ca</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nid</span><span class="p">)</span>
-<span class="n">pid</span> <span class="o">=</span> <span class="n">predecessor_of</span><span class="p">(</span><span class="n">by_id</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span>  <span class="c1"># fork_siblings — 对</span>
-<span class="k">if</span> <span class="n">pid</span><span class="p">:</span> <span class="n">fork_siblings</span><span class="p">[</span><span class="n">pid</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nid</span><span class="p">)</span>
-</code></pre>
-<p><code>lane.py:_walk</code> 从 ROOT 沿 <code>call_children</code> 走分配 lane。但 <code>call_children</code>
-用 predecessor 建，首条 user 的 predecessor 为空 → 不在 <code>call_children[ROOT]</code>
-里 → walk 走不到它 → 落到 lane.py:73-80 的 remaining，分了新 lane。</p>
-<p>llm 节点的 <code>caller</code> 也是空（重命名时 llm 的 caller 没设，只有 predecessor）——
-这是第二个待确认点（见 §六）。</p>
-<h2 id="五修复方案">五、修复方案<a class="header-anchor" href="#五修复方案">#</a></h2>
-<h3 id="topologypy两个-map-用不同的边"><a href="http://topology.py">topology.py</a>：两个 map 用不同的边<a class="header-anchor" href="#topologypy两个-map-用不同的边">#</a></h3>
-<pre><code class="language-python"><span class="n">call_children</span><span class="p">[</span><span class="n">caller</span><span class="p">]</span>      <span class="err">←</span> <span class="n">caller_of</span><span class="p">(</span><span class="n">by_id</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span>      <span class="c1"># 子调用树骨架</span>
-<span class="n">fork_siblings</span><span class="p">[</span><span class="n">predecessor</span><span class="p">]</span> <span class="err">←</span> <span class="n">predecessor_of</span><span class="p">(</span><span class="n">by_id</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span> <span class="c1"># 分支检测</span>
-</code></pre>
-<p>但 lane 的 <code>_walk</code> 要沿&quot;主干&quot;走，主干是 caller 链 + 对话链的组合：</p>
+<p>三个量：lane、tier、depth。下面逐个定义，每个都尽量简单。</p>
+<h2 id="二lane这个节点属于第几条分支">二、lane（这个节点属于第几条分支）<a class="header-anchor" href="#二lane这个节点属于第几条分支">#</a></h2>
+<p><strong>规则：有几条分支，就排几列。按分支出现的先后顺序编号，从 0 开始，不跳号。</strong></p>
 <ul>
-<li>ROOT → user（caller=ROOT）→ llm（caller=user 或 predecessor=user）→ 下一轮 user（predecessor=llm）</li>
+<li>第 1 条分支 → lane 0</li>
+<li>第 2 条分支 → lane 1</li>
+<li>第 3 条分支 → lane 2</li>
+<li>……</li>
 </ul>
-<p>主干其实是 <strong>caller 树 + predecessor 链</strong>的并集。所以 lane 的 walk 需要两种
-children 都跟：先按 caller 连（ROOT→user→llm→tool），再按 predecessor 连
-（llm→下一轮 user）。</p>
-<p><strong>建议</strong>：topology 输出三个 map：</p>
+<p>什么是&quot;一条分支&quot;：从一句用户消息开始，顺着对话往下（user → AI回复 → 下一句
+user → AI回复 …），这一整条就是一条分支。中途如果你 retry / 改写某句话，就在
+那个点<strong>岔出一条新分支</strong>，新分支拿下一个编号。</p>
+<p><strong>例：只发了一句&quot;你好&quot;（没 retry）</strong>
+→ 只有 1 条分支 → 全部 lane 0。不存在第 2 列。</p>
+<p><strong>例：发了&quot;你好&quot;，又 retry 改成&quot;在吗&quot;</strong>
+→ 2 条分支 → 原来那条 lane 0，retry 出来的那条 lane 1。</p>
+<p><strong>不要做的事</strong>（之前代码绕的弯，全删）：</p>
 <ul>
-<li><code>caller_children[caller]</code> — caller 边（子调用树）</li>
-<li><code>pred_children[predecessor]</code> — predecessor 边（对话链）</li>
-<li><code>fork_siblings[predecessor]</code> — fork 检测（同 pred 多孩子）</li>
+<li>❌ 不要专门判断&quot;哪条是主干&quot;</li>
+<li>❌ 不要&quot;归零&quot;之类的特殊处理</li>
+<li>❌ 不要让没有分叉的对话也占用第 2 列</li>
 </ul>
-<p>lane 的 <code>_walk</code>：从 ROOT 出发，同时跟 caller_children 和 pred_children；
-遇到 fork（pred_children 里非首个 sibling）才分新 lane。</p>
-<h3 id="lanepy主干-caller-predecessor-并集"><a href="http://lane.py">lane.py</a>：主干 = caller + predecessor 并集<a class="header-anchor" href="#lanepy主干-caller-predecessor-并集">#</a></h3>
-<pre><code>_walk(ROOT, lane=0):
-  for kid in caller_children[ROOT] + pred_children[ROOT]:
-    if kid 是 fork 非首孩子: _walk(kid, 新lane)
-    else: _walk(kid, 同lane)
+<p>就是：<strong>数分支，按顺序发列号。</strong></p>
+<h2 id="三tier节点在自己这列里往右缩进几格">三、tier（节点在自己这列里往右缩进几格）<a class="header-anchor" href="#三tier节点在自己这列里往右缩进几格">#</a></h2>
+<p><strong>规则：按角色固定缩进，表示&quot;谁套在谁里面&quot;。</strong></p>
+<ul>
+<li>ROOT（会话根）：缩进 0</li>
+<li>user（用户消息）：缩进 1</li>
+<li>AI 回复：缩进 2</li>
+<li>AI 调用的工具：缩进 3</li>
+<li>工具内部再调的东西：再 +1</li>
+</ul>
+<p>这就是那个&quot;阶梯往右&quot;的效果——<strong>这是对的，本来就该这样缩进</strong>，不是 bug。</p>
+<p>下一轮 user 回到缩进 1（不是一直往右涨）。</p>
+<h2 id="四depth节点在第几行从上往下">四、depth（节点在第几行，从上往下）<a class="header-anchor" href="#四depth节点在第几行从上往下">#</a></h2>
+<p><strong>规则：按聊天/执行的先后顺序，从上往下一行一行排。</strong></p>
+<ul>
+<li>越早发生的越靠上。</li>
+<li>岔出来的分支，和它岔出的那个位置<strong>对齐到同一行</strong>起步，然后各自往下长。</li>
+</ul>
+<h2 id="五画出来长什么样">五、画出来长什么样<a class="header-anchor" href="#五画出来长什么样">#</a></h2>
+<p><strong>只发一句&quot;你好&quot;（1 条分支，全 lane 0）：</strong></p>
+<pre><code>列:   0    1    2
+行0  ◇ROOT
+行1       ○你好          ← lane 0, 缩进 1
+行2            △AI回复    ← lane 0, 缩进 2
 </code></pre>
-<h3 id="depthpy-tierpy"><a href="http://depth.py">depth.py</a> / <a href="http://tier.py">tier.py</a><a class="header-anchor" href="#depthpy-tierpy">#</a></h3>
-<ul>
-<li>tier 已用 caller（对，§三）。</li>
-<li>depth 用 predecessor（对话先后，对）。但 depth 的 <code>call_children</code> 参数现在
-传的是 predecessor 建的 map（恰好对，因为 depth 要的就是对话链）。topology
-拆成三 map 后，depth 改传 <code>pred_children</code>。</li>
-</ul>
-<h2 id="六待确认的设计决策">六、待确认的设计决策<a class="header-anchor" href="#六待确认的设计决策">#</a></h2>
+<p><strong>发&quot;你好&quot; + retry 改成&quot;在吗&quot;（2 条分支）：</strong></p>
+<pre><code>列:   0    1    2         3    4
+行0  ◇ROOT
+行1       ○你好  ┈┈┈┈┈┈┈ ○在吗       ← 第2条分支 lane 1
+行2            △回复1          △回复2
+</code></pre>
+<p>（虚线表示这两条是从同一个点岔开的平行分支）</p>
+<h2 id="六当前-bug">六、当前 bug<a class="header-anchor" href="#六当前-bug">#</a></h2>
+<p>只发了一句&quot;你好&quot;，本该全 lane 0，但代码给 user/AI回复 发了 <strong>lane 1</strong>（跳过了
+0），导致它们整体往右偏一大块，ROOT 孤零零在左边。</p>
+<p>根因：代码判断&quot;分支怎么分列&quot;时用错了一条线（用了&quot;对话前驱&quot;那条，而第一句话
+没有前驱 → 接不上 → 被误判成新分支），还套了一层&quot;主干判断 / 归零&quot;的绕弯逻辑。</p>
+<p><strong>修法：照第二节的规则重写——数分支、按出现顺序发列号 0,1,2，删掉主干判断和
+归零那些东西。</strong></p>
+<h2 id="七怎么验证不用截图网页">七、怎么验证（不用截图网页）<a class="header-anchor" href="#七怎么验证不用截图网页">#</a></h2>
+<pre><code>python tools/dag_dump.py [session_id]
+</code></pre>
+<p>直接在命令行打印每个节点的 lane / tier / depth + ASCII 网格图。改完代码跑一下
+就能看对不对。</p>
+<p>要验的三种情况：</p>
 <ol>
-<li>
-<p><strong>llm 节点的 caller 该不该设？</strong> 现在 llm 的 caller 是空（只有
-predecessor=本轮 user）。按 <a href="http://session-dag.md">session-dag.md</a>，llm 的 caller 应该是&quot;触发它的
-节点&quot;= 本轮 user。要不要补上 llm.caller=user？</p>
-<ul>
-<li>补上：caller 树完整（ROOT→user→llm），lane 主干 walk 只靠 caller 就够，
-不用并 predecessor。更干净。</li>
-<li>不补：lane walk 要并 caller + predecessor 两种边（§五方案）。</li>
-<li><strong>倾向补上</strong> llm.caller=user，让 caller 成为完整的连通树，lane/tier 都只
-靠 caller，predecessor 只管对话顺序(depth)和 fork 检测。这样三个维度的
-边分工最清晰：<strong>tier/lane 用 caller，depth/fork 用 predecessor</strong>。</li>
-</ul>
-</li>
-<li>
-<p><strong><a href="http://reflow.py">reflow.py</a> 怎么配合？</strong> 还有个 <code>graph_layout/reflow.py</code>（reflow_overlaps /
-_relane_descendants）做重叠消解，本文没覆盖。修 lane 后要确认 reflow 不会
-把修好的布局又打乱。</p>
-</li>
-<li>
-<p><strong>topology 拆三 map 会不会影响别的调用方？</strong> <code>build_children</code> 只被
-<code>annotate_graph</code> 调（codegraph 确认），改它签名安全。</p>
-</li>
+<li>只发一句话 → 全 lane 0（当前 bug，修完应为 0）</li>
+<li>retry 出第二条分支 → 第二条 lane 1</li>
+<li>调用工具 → 工具在 AI 回复下面缩进一格（tier+1），不另开 lane</li>
 </ol>
-<h2 id="七落地步骤待确认后">七、落地步骤（待确认后）<a class="header-anchor" href="#七落地步骤待确认后">#</a></h2>
+<h2 id="八改哪些文件">八、改哪些文件<a class="header-anchor" href="#八改哪些文件">#</a></h2>
 <table>
 <thead>
 <tr>
-<th>步</th>
-<th>做什么</th>
-<th>验证（用 tools/dag_dump.py）</th>
+<th>文件</th>
+<th>改什么</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>1</td>
-<td>决策 1 定了：若补 llm.caller=user，改 <code>_msg_adapter</code>/dispatcher 写 llm 节点处</td>
-<td>dag_dump 看 llm.caller=user</td>
+<td><code>graph_layout/lane.py</code></td>
+<td>整个重写：数分支 → 按出现顺序发 lane 0,1,2。删掉 ROOT-walk / first_at_fork / 归零那套</td>
 </tr>
 <tr>
-<td>2</td>
-<td>topology 拆成 caller_children + pred_children + fork_siblings</td>
-<td>—</td>
+<td><code>graph_layout/topology.py</code></td>
+<td>提供&quot;同一条分支链&quot;的判断（顺着对话 + 子调用走）</td>
 </tr>
 <tr>
-<td>3</td>
-<td>lane 主干 walk 用 caller（决策1补全后）；fork 用 predecessor</td>
-<td>dag_dump：首条 user lane=0</td>
-</tr>
-<tr>
-<td>4</td>
-<td>depth 改用 pred_children</td>
-<td>dag_dump：对话行号对</td>
-</tr>
-<tr>
-<td>5</td>
-<td>确认 reflow 不打乱</td>
-<td>dag_dump + 浏览器</td>
-</tr>
-<tr>
-<td>6</td>
-<td>全量测试 + build + 新建会话端到端</td>
-<td>dag_dump 单会话/fork/工具调用三场景</td>
+<td>验证</td>
+<td><code>tools/dag_dump.py</code> 跑三种情况</td>
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>验证工具：<code>python tools/dag_dump.py [session_id]</code> — 命令行直接看每个节点的
-caller/predecessor/lane/tier/depth + ASCII 布局网格，不用截图网页。</p>
-</blockquote>
 </article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
-<a class="" href="#一两条边前提见-session-dagmd">一、两条边（前提，见 session-dag.md）</a>
-<a class="" href="#二三个布局维度">二、三个布局维度</a>
-<a class="" href="#三每个维度该用哪条边核心定义">三、每个维度该用哪条边（核心定义）</a>
-<a class="" href="#四当前-bug实测">四、当前 bug（实测）</a>
-<a class="lvl-3" href="#根因">根因</a>
-<a class="" href="#五修复方案">五、修复方案</a>
-<a class="lvl-3" href="#topologypy两个-map-用不同的边">topology.py：两个 map 用不同的边</a>
-<a class="lvl-3" href="#lanepy主干-caller-predecessor-并集">lane.py：主干 = caller + predecessor 并集</a>
-<a class="lvl-3" href="#depthpy-tierpy">depth.py / tier.py</a>
-<a class="" href="#六待确认的设计决策">六、待确认的设计决策</a>
-<a class="" href="#七落地步骤待确认后">七、落地步骤（待确认后）</a></aside>
+<a class="" href="#一一个节点的位置-x-y">一、一个节点的位置 = (x, y)</a>
+<a class="" href="#二lane这个节点属于第几条分支">二、lane（这个节点属于第几条分支）</a>
+<a class="" href="#三tier节点在自己这列里往右缩进几格">三、tier（节点在自己这列里往右缩进几格）</a>
+<a class="" href="#四depth节点在第几行从上往下">四、depth（节点在第几行，从上往下）</a>
+<a class="" href="#五画出来长什么样">五、画出来长什么样</a>
+<a class="" href="#六当前-bug">六、当前 bug</a>
+<a class="" href="#七怎么验证不用截图网页">七、怎么验证（不用截图网页）</a>
+<a class="" href="#八改哪些文件">八、改哪些文件</a></aside>
 </div>
 
 <div class="search-overlay">

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GUI agent — 调用结构与上下文流 · OpenProgram Docs</title>
+<title>DAG 布局视觉规范 · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -120,7 +120,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
-<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
+<details class="group" data-key="design/runtime" open><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
 <a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
 <a class="navlink" href="/docs/design/runtime/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
@@ -129,7 +129,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/dag-viewport.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
-<a class="navlink" href="/docs/design/runtime/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink active" href="/docs/design/runtime/dag-layout-spec.html">DAG 布局视觉规范</a>
 <a class="navlink" href="/docs/design/runtime/edge-field-rename.html">DAG 边字段重命名设计文档</a>
 <a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
 <a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
@@ -153,9 +153,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/session/operations.html">Session 操作流程</a>
 <a class="navlink" href="/docs/design/runtime/session/storage.html">Session 数据模型</a>
 <a class="navlink" href="/docs/design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
-<details class="group" data-key="design/ui" open><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
 <a class="navlink" href="/docs/design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
-<a class="navlink active" href="/docs/design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
 <a class="navlink" href="/docs/design/ui/indicator-dots.html">Indicator dot system</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
 <a class="navlink" href="/docs/design/ui/surface-system.html">Surface system (dark mode)</a>
@@ -165,129 +165,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></nav>
-  <main class="content"><article><h1 id="gui-agent-调用结构与上下文流">GUI agent — 调用结构与上下文流<a class="header-anchor" href="#gui-agent-调用结构与上下文流">#</a></h1>
-<p>本文档记录 <code>gui_agent</code> 在当前 <code>expose</code> / <code>render_range</code> 默认语义下的上下文是怎么流动的，以及每个 <code>@agentic_function</code> 上的装饰器参数为什么这么设。</p>
-<p>参考：</p>
-<ul>
-<li>装饰器语义：<a href="/docs/agentic-programming/writing-functions/function-metadata.html"><code>agentic-programming/function-metadata.md</code></a></li>
-<li>render_context 实现：<code>openprogram/context/nodes.py</code></li>
-<li>代码：<code>openprogram/functions/agentics/GUI-Agent-Harness/gui_harness/</code></li>
-</ul>
-<h2 id="1-调用结构">1. 调用结构<a class="header-anchor" href="#1-调用结构">#</a></h2>
-<pre><code>gui_agent(task)                   ← 顶层 @agentic_function (no render_range)
-  └─ loop N 次：
-     gui_step(task, feedback)     ← @agentic_function 编排 (no runtime.exec)
-       ├─ observe()               Python: 截图 + 检测组件 + 识别状态
-       ├─ verify_step(...)        @agentic_function LLM leaf
-       ├─ plan_next_action(...)   @agentic_function LLM leaf
-       └─ dispatch_action(...)    Python: 执行 plan 选的动作
-     ↓ return dict(goal, action, target, success, error, ...)
-     ↓ 作为下一个 gui_step 的 feedback 传入
-  └─ conclusion(task, ...)        @agentic_function LLM leaf
-</code></pre>
-<p><code>gui_step</code> 不直接调 <code>runtime.exec</code>，它的作用是把四个阶段串起来。所有 LLM 调用发生在 <code>verify_step</code> / <code>plan_next_action</code> / <code>conclusion</code> 这三个 leaf 函数里。</p>
-<h2 id="2-各函数的-render_range-配置">2. 各函数的 render_range 配置<a class="header-anchor" href="#2-各函数的-render_range-配置">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>函数</th>
-<th>render_range</th>
-<th>理由</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>gui_agent</code></td>
-<td>不设（用默认）</td>
-<td>顶层，应该看到完整对话历史 + 自己 frame 内所有 gui_step 的 io。<code>callers=None</code>（全保留 chat 历史）+ <code>subcalls=-1</code>（gui_step 链自然累积）正好是想要的</td>
-</tr>
-<tr>
-<td><code>gui_step</code></td>
-<td>不设</td>
-<td>自己不调 <code>runtime.exec</code>，render_range 对它没有任何实际意义</td>
-</tr>
-<tr>
-<td><code>verify_step</code></td>
-<td><code>{&quot;callers&quot;: 0}</code></td>
-<td>一次快照判断&quot;上一步做没做成&quot;。所需信息（前一步 goal/action/target/outcome、当前 screenshot、本步检测到的组件）全部通过 <code>content=[...]</code> 显式塞进去。<code>callers=0</code> 把上层 chat 历史和之前的 gui_step 链全墙掉，避免淹没快照判断</td>
-</tr>
-<tr>
-<td><code>plan_next_action</code></td>
-<td>不设（用默认）</td>
-<td><strong>planner 必须看见历史</strong>才能做出非重复决策。默认 <code>callers=None</code> 让它看到 task 描述 + 之前所有 gui_step 的 io（goal/action/target/success）+ 本轮 verify 的 io。<code>subcalls=-1</code> 在 leaf 里没作用（leaf 没有 in-frame 节点）</td>
-</tr>
-<tr>
-<td><code>conclusion</code></td>
-<td><code>{&quot;callers&quot;: 0}</code></td>
-<td>总结要 ground 在最终屏幕状态，不让 step-by-step 叙述污染。所需信息（task、completed、steps_taken、final screenshot）显式塞进 <code>content=[...]</code></td>
-</tr>
-</tbody>
-</table>
-<p>辅助 leaf（component_memory 里的几个、<code>learn</code>、<code>observe</code>、<code>general_action</code>）都用 <code>{&quot;callers&quot;: 0}</code> —— 它们是独立判断器，输入都通过 <code>content=[...]</code> 给齐，不需要对话上下文。</p>
-<h2 id="3-关键设计点">3. 关键设计点<a class="header-anchor" href="#3-关键设计点">#</a></h2>
-<h3 id="plan_next_action-看见什么">plan_next_action 看见什么<a class="header-anchor" href="#plan_next_action-看见什么">#</a></h3>
-<p>从 plan 第 5 步的视角，<code>render_context</code> 的输入：</p>
-<ul>
-<li><code>frame_entry_seq</code> = plan_next_action #5 这个 code 节点的 seq</li>
-<li><code>head_seq</code> = DAG 当前最大 seq</li>
-<li><code>render_range</code> = <code>None</code>（用默认 <code>callers=None, subcalls=-1</code>）</li>
-</ul>
-<p>走 render_context：</p>
-<ul>
-<li>pre-frame = 所有 seq ≤ frame_entry_seq 的节点 = 顶层 chat 那条 user 消息、gui_agent 的 code 节点、gui_step #1..#4 的 code 节点（含各自 io）、本轮 gui_step #5 的 verify_step code 节点（含 io）、observe Python 结果对应的节点（如果走 DAG 的话）</li>
-<li>in-frame = plan_next_action #5 自己 frame 内的节点 = 空（leaf 还没发 exec）</li>
-<li>pre-frame 不截断；in-frame 不截断（也没东西可截）</li>
-<li>expose 过滤：每个 gui_step 是 <code>expose=&quot;io&quot;</code>，所以 gui_step 的 io 节点保留、gui_step 内部的 verify_step / plan_next_action 的 LLM 调用被藏掉</li>
-</ul>
-<p>最后 plan_next_action #5 的 prompt 里有：</p>
-<pre><code>user: &lt;原始 task&gt;
-... 之前 chat 历史 ...
-[gui_step #1] input={...} output={&quot;goal&quot;: &quot;open Firefox&quot;, &quot;action&quot;: &quot;click&quot;, &quot;target&quot;: &quot;Firefox icon&quot;, &quot;success&quot;: true}
-[gui_step #2] input={...} output={&quot;goal&quot;: &quot;open url bar&quot;, &quot;action&quot;: &quot;click&quot;, ...}
-[gui_step #3] input={...} output={...}
-[gui_step #4] input={...} output={...}
-[verify_step #5] input={...} output={&quot;step_succeeded&quot;: true, &quot;observation&quot;: ...}
-[plan_next_action #5] input={...}   ← 自己
-</code></pre>
-<p>planner 因此能看到&quot;前四步都做了什么、最近一步 verify 怎么判的&quot;，做出不重复的下一步决策。</p>
-<h3 id="verify_step-为什么相反">verify_step 为什么相反<a class="header-anchor" href="#verify_step-为什么相反">#</a></h3>
-<p>verify_step 是被动判断：&quot;上一步做的事情，从当前截图看成功了吗？&quot;判断材料完全是局部的：</p>
-<ul>
-<li>上一步 feedback dict（goal/action/target/success/error）— 已经通过 <code>content=[feedback_text]</code> 塞进</li>
-<li>当前 screenshot — 已经通过 <code>content=[{&quot;type&quot;: &quot;image&quot;, ...}]</code> 塞进</li>
-<li>当前检测到的组件 — 已经通过 <code>content=[component_info]</code> 塞进</li>
-</ul>
-<p>如果让它看完整 chat + gui_step 链，反而会引入噪音让&quot;上一步是否成功&quot;这个简单判断被宏观叙述带偏。所以显式 <code>callers=0</code> 墙掉。</p>
-<h3 id="conclusion-同理">conclusion 同理<a class="header-anchor" href="#conclusion-同理">#</a></h3>
-<p>总结要写出&quot;最终屏幕上 visibly 是什么&quot;，不要写&quot;step 3 干了什么、step 7 又干了什么&quot;那种过程叙述。<code>callers=0</code> + 在 prompt 里硬约束&quot;用屏幕上具体可见的文字&quot;。</p>
-<h2 id="4-跟旧版本的差异">4. 跟旧版本的差异<a class="header-anchor" href="#4-跟旧版本的差异">#</a></h2>
-<p>之前的代码用了 <code>{&quot;callers&quot;: 0, &quot;subcalls&quot;: 0}</code> 全墙策略，再通过 Python 显式构造 feedback dict 一层层往下传。问题是 planner 真的只看得到上一步的 feedback，看不到完整 trace，会出现重复执行同样动作的 bug。</p>
-<p>现在的设计：</p>
-<ul>
-<li>planner 走 DAG 默认行为天然看见历史（不再需要显式累加）</li>
-<li>隔离需要的 leaf（verify / conclusion / 工具型判断器）显式 <code>callers=0</code></li>
-<li>不再有&quot;top-level 是特例&quot;的分支 —— gui_agent 顶层和它内部的 gui_step 都走完全相同的 render_context 代码路径</li>
-</ul>
-<p>旧的 &quot;collapsed 模式提议&quot;、&quot;hidden 副作用&quot;、&quot;子函数 io 冗余&quot;等分析都已经不适用：</p>
-<ul>
-<li>旧 &quot;io 漏点：露 code 子调用&quot;分析过时——<code>expose=&quot;io&quot;</code> 现在的语义就是 frame-自己的 input/output 露、frame 内部的 LLM 藏；嵌套子函数自己再用自己的 expose 决定它的 io 露不露</li>
-<li>不再需要 &quot;collapsed&quot; 模式——<code>expose=&quot;io&quot;</code> 默认就把内部 LLM 藏好，子函数的 io 在它自己的 expose 决定下要么露要么藏，没有&quot;既要露 io 又要藏嵌套孙子&quot;的中间需要</li>
-</ul>
-<h2 id="5-改完后需要观察什么">5. 改完后需要观察什么<a class="header-anchor" href="#5-改完后需要观察什么">#</a></h2>
-<ul>
-<li>长 task 跑下来 plan_next_action 的 prompt 会不会因为 gui_step 链太长而过大。如果有 token 压力，给 <code>plan_next_action</code> 或 <code>gui_agent</code> 加 <code>render_range={&quot;callers&quot;: N}</code> 显式截断最近 N 个 gui_step</li>
-<li>screenshot 是 image 节点，N 张大图会撑爆 context。可能要走&quot;压缩老 screenshot 为文字描述&quot;路径，但那是 prompt 层的优化，不是 render_range 层的事</li>
-</ul>
-</article></main>
-  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
-<a class="" href="#1-调用结构">1. 调用结构</a>
-<a class="" href="#2-各函数的-render_range-配置">2. 各函数的 render_range 配置</a>
-<a class="" href="#3-关键设计点">3. 关键设计点</a>
-<a class="lvl-3" href="#plan_next_action-看见什么">plan_next_action 看见什么</a>
-<a class="lvl-3" href="#verify_step-为什么相反">verify_step 为什么相反</a>
-<a class="lvl-3" href="#conclusion-同理">conclusion 同理</a>
-<a class="" href="#4-跟旧版本的差异">4. 跟旧版本的差异</a>
-<a class="" href="#5-改完后需要观察什么">5. 改完后需要观察什么</a></aside>
+  <main class="content"><article><iframe class="viz-frame" src="/docs/design/runtime/dag-layout-spec.raw.html" loading="lazy" title="可视化文档"></iframe></article></main>
+  <aside class="toc"></aside>
 </div>
 
 <div class="search-overlay">
