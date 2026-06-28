@@ -22,24 +22,25 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
   <a class="brand" href="../index.html"><span class="dot"></span>OpenProgram Docs</a>
   <div class="spacer"></div>
   <button class="search-trigger" aria-label="搜索">
-    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
   </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
   <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
 </header>
 
 <div class="scrim"></div>
 <div class="layout">
-  <nav class="sidebar"><details class="group" data-key="__快速上手__"><summary class="group-title">快速上手</summary><div class="group-body"><a class="navlink" href="../GETTING_STARTED.html">快速上手</a>
-<a class="navlink" href="../README.html">项目总览</a>
-<a class="navlink" href="../README_CN.html">项目总览（中文）</a>
-<a class="navlink" href="../features.html">功能详解</a>
-<a class="navlink" href="../install.html">安装</a></div></details>
-<details class="group" data-key="__集成__"><summary class="group-title">集成</summary><div class="group-body"><a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html">集成 Claude Code</a>
-<a class="navlink" href="../INTEGRATION_OPENCLAW.html">集成 OpenClaw</a>
-<a class="navlink" href="../installing-harnesses.html">安装与编写 Harness</a></div></details>
-<details class="group" data-key="__参考__"><summary class="group-title">参考</summary><div class="group-body"><a class="navlink" href="../API.html">API 参考</a>
-<a class="navlink" href="../provider-token-tracking.html">Provider Token 追踪</a>
-<a class="navlink" href="../troubleshooting.html">故障排查</a></div></details>
+  <nav class="sidebar"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="../GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+<a class="navlink" href="../README.html" data-i18n="p_overview">项目总览</a>
+<a class="navlink" href="../README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
+<a class="navlink" href="../features.html" data-i18n="p_features">功能详解</a>
+<a class="navlink" href="../install.html" data-i18n="p_install">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
+<a class="navlink" href="../INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
+<a class="navlink" href="../installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="../API.html" data-i18n="p_api">API 参考</a>
+<a class="navlink" href="../provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
+<a class="navlink" href="../troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
 <details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../agentic-programming/README.html">Agentic Programming Guide</a>
 <details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
 <a class="navlink" href="../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
@@ -327,7 +328,7 @@ tokens（provider 权威值，缺失为 0）：<code>input_tokens</code>、<code
 <li><strong>Phase 5 ✅</strong>：<code>/api/usage/summary</code>+<code>/api/usage/trend</code> 查 ledger；前端面板趋势折线（ResizeObserver 真实像素绘制，避免 viewBox 拉伸失真）+ by_source 横条 + per-model 表 + 成本卡；配色用 <code>--accent-blue</code>（品牌暖橙）。未做 CLI <code>op usage</code>（留口，按需补）。</li>
 </ul>
 </article></main>
-  <aside class="toc"><div class="toc-title">本页内容</div>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#1-目标">1. 目标</a>
 <a class="" href="#2-现状诊断实施前">2. 现状诊断（实施前）</a>
 <a class="" href="#3-分层架构">3. 分层架构</a>
@@ -345,7 +346,7 @@ tokens（provider 权威值，缺失为 0）：<code>input_tokens</code>、<code
 
 <div class="search-overlay">
   <div class="search-box">
-    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
     <div class="search-results"></div>
   </div>
 </div>

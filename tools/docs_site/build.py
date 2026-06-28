@@ -103,7 +103,7 @@ def extract_toc(body_html: str) -> str:
         items.append((level, hid, text))
     if not items:
         return ""
-    rows = ['<div class="toc-title">本页内容</div>']
+    rows = ['<div class="toc-title" data-i18n="on_this_page">本页内容</div>']
     for level, hid, text in items:
         cls = "lvl-3" if level == "3" else ""
         rows.append(f'<a class="{cls}" href="#{_html.escape(hid)}">{_html.escape(text)}</a>')
@@ -149,37 +149,33 @@ def render_nav(groups, current_out: Path, base: str) -> str:
             return True
         return any(contains_current(sg) for sg in g.subgroups)
 
+    def navlink(p) -> str:
+        href = base + str(p.out).replace("\\", "/")
+        active = " active" if p.out == current_out else ""
+        i18n = f' data-i18n="{p.i18n_key}"' if p.i18n_key else ""
+        return f'<a class="navlink{active}" href="{href}"{i18n}>{_html.escape(p.title)}</a>'
+
     def render_pages_and_subs(g) -> str:
-        out = []
-        for p in g.pages:
-            href = base + str(p.out).replace("\\", "/")
-            active = " active" if p.out == current_out else ""
-            label = _html.escape(p.title)
-            out.append(f'<a class="navlink{active}" href="{href}">{label}</a>')
-        for sg in g.subgroups:
-            out.append(render_group(sg))
+        out = [navlink(p) for p in g.pages]
+        out += [render_group(sg) for sg in g.subgroups]
         return "\n".join(out)
 
     def render_group(g, top=False) -> str:
         # Root group: render any loose pages directly, then each subgroup as a
         # top-level collapsible section.
         if top:
-            parts = []
-            for p in g.pages:
-                href = base + str(p.out).replace("\\", "/")
-                active = " active" if p.out == current_out else ""
-                parts.append(f'<a class="navlink{active}" href="{href}">{_html.escape(p.title)}</a>')
-            for sg in g.subgroups:
-                parts.append(render_group(sg))
+            parts = [navlink(p) for p in g.pages]
+            parts += [render_group(sg) for sg in g.subgroups]
             return "\n".join(parts)
         key = str(g.rel_dir).replace("\\", "/")
         # synthetic root subgroups (快速上手/集成/参考) default-open on the home page
         is_synthetic = key.startswith("__")
         is_open = contains_current(g) or (is_synthetic and current_out == Path("index.html"))
         open_attr = " open" if is_open else ""
+        i18n = f' data-i18n="{g.i18n_key}"' if g.i18n_key else ""
         return (
             f'<details class="group" data-key="{_html.escape(key)}"{open_attr}>'
-            f'<summary class="group-title">{_html.escape(g.title)}</summary>'
+            f'<summary class="group-title"{i18n}>{_html.escape(g.title)}</summary>'
             f'<div class="group-body">{render_pages_and_subs(g)}</div>'
             f"</details>"
         )
@@ -280,17 +276,19 @@ def _write_home(groups) -> None:
     for sg in root.subgroups:
         url = landing(sg)
         if url:
-            cards.append((sg.title, url, count_pages(sg)))
+            cards.append((sg.title, url, count_pages(sg), sg.i18n_key))
 
-    body = ['<h1>OpenProgram 设计文档</h1>',
-            '<p class="page-meta">框架的设计笔记、API 与指南，按子系统组织。'
-            '左侧目录浏览，或按 <kbd>⌘K</kbd> 搜索。</p>',
+    body = ['<h1 data-i18n="home_title">OpenProgram 设计文档</h1>',
+            '<p class="page-meta"><span data-i18n="home_sub">框架的设计笔记、API 与指南，'
+            '按子系统组织。左侧目录浏览，或按 </span><kbd>⌘K</kbd>'
+            '<span data-i18n="home_sub2"> 搜索。</span></p>',
             '<div class="home-grid">']
-    for title, url, n in cards:
+    for title, url, n, ikey in cards:
+        ti18n = f' data-i18n="{ikey}"' if ikey else ""
         body.append(
             f'<a class="home-card" href="{url}">'
-            f'<span class="hc-title">{_html.escape(title)}</span>'
-            f'<span class="hc-count">{n} 篇</span></a>'
+            f'<span class="hc-title"{ti18n}>{_html.escape(title)}</span>'
+            f'<span class="hc-count">{n}<span data-i18n="unit"> 篇</span></span></a>'
         )
     body.append("</div>")
     nav_html = render_nav(groups, Path("index.html"), "")

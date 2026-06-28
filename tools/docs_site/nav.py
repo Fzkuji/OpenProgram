@@ -34,6 +34,18 @@ ROOT_PAGE_GROUPS: dict[str, tuple[str, str]] = {
 # Order the synthetic root subgroups appear in.
 ROOT_SUBGROUP_ORDER = ["快速上手", "集成", "参考"]
 
+# i18n key for each synthetic subgroup (so the sidebar headers can switch lang).
+ROOT_SUBGROUP_I18N = {"快速上手": "grp_start", "集成": "grp_integ", "参考": "grp_ref"}
+
+# Per-root-page i18n key (clean bilingual display names for the loose pages).
+ROOT_PAGE_I18N = {
+    "README.md": "p_overview", "README_CN.md": "p_overview_cn",
+    "GETTING_STARTED.md": "p_start", "install.md": "p_install",
+    "features.md": "p_features", "INTEGRATION_CLAUDE_CODE.md": "p_int_cc",
+    "INTEGRATION_OPENCLAW.md": "p_int_oc", "installing-harnesses.md": "p_harness",
+    "API.md": "p_api", "provider-token-tracking.md": "p_token", "troubleshooting.md": "p_trouble",
+}
+
 
 @dataclass
 class Page:
@@ -43,6 +55,7 @@ class Page:
     title: str
     is_readme: bool
     kind: str          # "md" or "html"
+    i18n_key: str = ""  # if set, sidebar label switches with the UI language
 
 
 @dataclass
@@ -51,6 +64,7 @@ class Group:
     rel_dir: Path                       # relative to docs/ ("" for root)
     pages: list[Page] = field(default_factory=list)
     subgroups: list["Group"] = field(default_factory=list)
+    i18n_key: str = ""  # if set, group header switches with the UI language
 
 
 _H1_RE = re.compile(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", re.MULTILINE)
@@ -101,6 +115,7 @@ def discover(docs_root: Path) -> list[Page]:
                 title=title,
                 is_readme=path.stem.upper() == "README",
                 kind=path.suffix.lstrip("."),
+                i18n_key=ROOT_PAGE_I18N.get(rel_str, ""),
             )
         )
     return _dedupe_md_html(pages)
@@ -153,7 +168,10 @@ def build_tree(docs_root: Path, pages: list[Page]) -> list[Group]:
 
     def root_subgroup(name: str) -> Group:
         if name not in root_subgroups:
-            root_subgroups[name] = Group(title=name, rel_dir=Path(f"__{name}__"))
+            root_subgroups[name] = Group(
+                title=name, rel_dir=Path(f"__{name}__"),
+                i18n_key=ROOT_SUBGROUP_I18N.get(name, ""),
+            )
         return root_subgroups[name]
 
     for p in pages:

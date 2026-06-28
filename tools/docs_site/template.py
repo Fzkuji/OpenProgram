@@ -47,8 +47,9 @@ def render_page(
   <a class="brand" href="{base}index.html"><span class="dot"></span>OpenProgram Docs</a>
   <div class="spacer"></div>
   <button class="search-trigger" aria-label="搜索">
-    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
   </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
   <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
 </header>
 
@@ -61,7 +62,7 @@ def render_page(
 
 <div class="search-overlay">
   <div class="search-box">
-    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
     <div class="search-results"></div>
   </div>
 </div>

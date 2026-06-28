@@ -22,24 +22,25 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
   <a class="brand" href="../index.html"><span class="dot"></span>OpenProgram Docs</a>
   <div class="spacer"></div>
   <button class="search-trigger" aria-label="搜索">
-    <span>🔍</span><span class="label">搜索文档</span><kbd>⌘K</kbd>
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
   </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
   <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
 </header>
 
 <div class="scrim"></div>
 <div class="layout">
-  <nav class="sidebar"><details class="group" data-key="__快速上手__"><summary class="group-title">快速上手</summary><div class="group-body"><a class="navlink" href="../GETTING_STARTED.html">快速上手</a>
-<a class="navlink" href="../README.html">项目总览</a>
-<a class="navlink" href="../README_CN.html">项目总览（中文）</a>
-<a class="navlink" href="../features.html">功能详解</a>
-<a class="navlink" href="../install.html">安装</a></div></details>
-<details class="group" data-key="__集成__"><summary class="group-title">集成</summary><div class="group-body"><a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html">集成 Claude Code</a>
-<a class="navlink" href="../INTEGRATION_OPENCLAW.html">集成 OpenClaw</a>
-<a class="navlink" href="../installing-harnesses.html">安装与编写 Harness</a></div></details>
-<details class="group" data-key="__参考__"><summary class="group-title">参考</summary><div class="group-body"><a class="navlink" href="../API.html">API 参考</a>
-<a class="navlink" href="../provider-token-tracking.html">Provider Token 追踪</a>
-<a class="navlink" href="../troubleshooting.html">故障排查</a></div></details>
+  <nav class="sidebar"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="../GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+<a class="navlink" href="../README.html" data-i18n="p_overview">项目总览</a>
+<a class="navlink" href="../README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
+<a class="navlink" href="../features.html" data-i18n="p_features">功能详解</a>
+<a class="navlink" href="../install.html" data-i18n="p_install">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="../INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
+<a class="navlink" href="../INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
+<a class="navlink" href="../installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="../API.html" data-i18n="p_api">API 参考</a>
+<a class="navlink" href="../provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
+<a class="navlink" href="../troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
 <details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="../agentic-programming/README.html">Agentic Programming Guide</a>
 <details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="../agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
 <a class="navlink" href="../agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
@@ -362,7 +363,7 @@ docs/_site/                   ← 构建产物（git 忽略或按需提交）
 <li><strong>托管方式</strong> ✅：做到最优 —— 接进 worker 单端口路由 <code>/docs</code>。</li>
 </ol>
 </article></main>
-  <aside class="toc"><div class="toc-title">本页内容</div>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <a class="" href="#一目标与非目标">一、目标与非目标</a>
 <a class="lvl-3" href="#目标">目标</a>
 <a class="lvl-3" href="#非目标">非目标</a>
@@ -379,7 +380,7 @@ docs/_site/                   ← 构建产物（git 忽略或按需提交）
 
 <div class="search-overlay">
   <div class="search-box">
-    <input type="text" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
     <div class="search-results"></div>
   </div>
 </div>

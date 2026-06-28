@@ -28,6 +28,58 @@
     themeBtn.textContent = ROOT.getAttribute("data-theme") === "dark" ? "☀" : "☾";
   }
 
+  // ── language toggle (UI chrome only; doc body stays in its source language) ──
+  const I18N = {
+    zh: {
+      search: "搜索文档", search_ph: "搜索标题或正文…", on_this_page: "本页内容",
+      home_title: "OpenProgram 设计文档",
+      home_sub: "框架的设计笔记、API 与指南，按子系统组织。左侧目录浏览，或按 ",
+      home_sub2: " 搜索。", unit: " 篇",
+      grp_start: "快速上手", grp_integ: "集成", grp_ref: "参考",
+      p_overview: "项目总览", p_overview_cn: "项目总览（中文）", p_start: "快速上手",
+      p_install: "安装", p_features: "功能详解", p_int_cc: "集成 Claude Code",
+      p_int_oc: "集成 OpenClaw", p_harness: "安装与编写 Harness", p_api: "API 参考",
+      p_token: "Provider Token 追踪", p_trouble: "故障排查",
+    },
+    en: {
+      search: "Search docs", search_ph: "Search titles or text…", on_this_page: "On this page",
+      home_title: "OpenProgram Documentation",
+      home_sub: "Design notes, API and guides, organized by subsystem. Browse the sidebar, or press ",
+      home_sub2: " to search.", unit: " docs",
+      grp_start: "Getting Started", grp_integ: "Integrations", grp_ref: "Reference",
+      p_overview: "Overview", p_overview_cn: "Overview (中文)", p_start: "Getting Started",
+      p_install: "Install", p_features: "Features", p_int_cc: "Claude Code Integration",
+      p_int_oc: "OpenClaw Integration", p_harness: "Install & Write Harnesses", p_api: "API Reference",
+      p_token: "Provider Token Tracking", p_trouble: "Troubleshooting",
+    },
+  };
+  function applyLang(lang) {
+    const t = I18N[lang] || I18N.zh;
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      const v = t[el.getAttribute("data-i18n")];
+      if (v != null) el.textContent = v;
+    });
+    document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+      const v = t[el.getAttribute("data-i18n-ph")];
+      if (v != null) el.setAttribute("placeholder", v);
+    });
+    ROOT.setAttribute("lang", lang === "en" ? "en" : "zh");
+    const btn = document.getElementById("lang-toggle");
+    if (btn) btn.textContent = lang === "en" ? "EN" : "中";
+  }
+  let curLang = "zh";
+  try { curLang = localStorage.getItem("op-docs-lang") || "zh"; } catch (e) {}
+  applyLang(curLang);
+  const langBtn = document.getElementById("lang-toggle");
+  if (langBtn) {
+    langBtn.addEventListener("click", () => {
+      curLang = curLang === "en" ? "zh" : "en";
+      try { localStorage.setItem("op-docs-lang", curLang); } catch (e) {}
+      applyLang(curLang);
+      window.dispatchEvent(new CustomEvent("documentLangChange", { detail: { lang: curLang } }));
+    });
+  }
+
   // ── mobile drawer ──
   const nav = document.querySelector("nav.sidebar");
   const scrim = document.querySelector(".scrim");
