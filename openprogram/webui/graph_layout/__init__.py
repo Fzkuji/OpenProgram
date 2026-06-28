@@ -4,7 +4,7 @@ Public entry point:
 
     annotate_graph(graph_entries, head_id) -> graph_entries
 
-Reads ``called_by`` (conv edge) + ``caller`` (sub-call edge) from each
+Reads ``predecessor`` (conv edge) + ``caller`` (sub-call edge) from each
 entry, writes ``_depth`` / ``_lane`` / ``_tier`` back into the same
 dicts. Returns the same list (mutated) — except entries filtered out
 in stage 1 (microcompact noise), which are dropped from the result so

@@ -2,16 +2,16 @@
 
 Strategy:
   * ROOT and its first child chain get lane 0 (the trunk).
-  * Fork detection via called_by: when multiple nodes share the same
-    called_by, the first (by created_at) keeps the parent's lane,
+  * Fork detection via predecessor: when multiple nodes share the same
+    predecessor, the first (by created_at) keeps the parent's lane,
     the rest each get a fresh lane.
-  * All called_by descendants of a node inherit its lane.
+  * All predecessor descendants of a node inherit its lane.
 """
 from __future__ import annotations
 
 from typing import Optional
 
-from ._common import called_by_of, called_by_of, is_root, ts
+from ._common import predecessor_of, is_root, ts
 
 
 class LaneAllocator:
@@ -38,7 +38,7 @@ def compute_lane(
     alloc = LaneAllocator()
 
     # Which nodes are the "first" sibling at each fork point.
-    # First = earliest by created_at among nodes sharing the same called_by.
+    # First = earliest by created_at among nodes sharing the same predecessor.
     first_at_fork: set[str] = set()
     for pid, kids in fork_siblings.items():
         if kids:
@@ -64,13 +64,13 @@ def compute_lane(
     if not roots:
         roots = sorted(
             (nid for nid, m in by_id.items()
-             if not called_by_of(by_id, m)),
+             if not predecessor_of(by_id, m)),
             key=lambda x: ts(by_id, x),
         )
     for r in roots:
         _walk(r, alloc.alloc())
 
-    # Fork branches without called_by: assign fresh lanes
+    # Fork branches without predecessor: assign fresh lanes
     remaining = sorted(
         (nid for nid in by_id if nid not in lane),
         key=lambda x: ts(by_id, x),

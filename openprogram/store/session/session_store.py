@@ -16,7 +16,7 @@ Internal model:
 
 Message <-> Call dataclass mapping reuses the existing helpers in
 ``openprogram.store._msg_adapter`` so adapter semantics (extra fields,
-called_by routing, ...) stay identical to the SQLite era.
+caller/predecessor routing, ...) stay identical to the SQLite era.
 """
 from __future__ import annotations
 
@@ -85,25 +85,25 @@ def _projects_default_id_safe() -> str:
 
 
 # Edge resolvers
-# A node's two edges live in different fields depending on what it is:
-#   * tool / sub-call rows  ─ Call.called_by  (the assistant that ran them)
-#   * conversation rows     ─ metadata.called_by  (the legacy chat-tree edge)
+# A node has two distinct parent edges:
+#   * caller       ─ Call.caller  (the LLM/ROOT that invoked a sub-call)
+#   * predecessor  ─ metadata.predecessor  (the conversation-chain parent)
 # Keep these as standalone functions so the index doesn't know about
 # message-dict field layout.
 
 
 def _node_conv_predecessor(payload_or_call) -> Optional[str]:
-    """Return the conv-chain parent of a node (or None)."""
+    """Return the conv-chain predecessor of a node (or None)."""
     if isinstance(payload_or_call, Call):
-        return (payload_or_call.metadata or {}).get("called_by") or None
+        return (payload_or_call.metadata or {}).get("predecessor") or None
     meta = (payload_or_call.get("metadata") or {})
-    return meta.get("called_by") or None
+    return meta.get("predecessor") or payload_or_call.get("predecessor") or None
 
 
 def _node_caller(payload_or_call) -> Optional[str]:
     if isinstance(payload_or_call, Call):
-        return payload_or_call.called_by or None
-    return payload_or_call.get("called_by") or None
+        return payload_or_call.caller or None
+    return payload_or_call.get("caller") or None
 
 
 # Cache bound
@@ -844,7 +844,7 @@ class SessionStore:
         # down the middle" gets the "main" label.
         roots = [
             n for n in idx.all_nodes()
-            if not n.called_by and not _node_conv_predecessor(n)
+            if not n.caller and not _node_conv_predecessor(n)
             and (n.metadata or {}).get("display") != "root"
         ]
         main_tip_id: Optional[str] = None
@@ -911,7 +911,7 @@ class SessionStore:
             pass
         for node in idx.all_nodes():
             # Skip sub-call nodes (tool/code with a real caller).
-            # Don't skip user/assistant nodes — their called_by is
+            # Don't skip user/assistant nodes — their caller is
             # a conv predecessor or ROOT, not a sub-call caller.
             caller = _node_caller(node)
             if caller and caller != "ROOT" and node.role not in (ROLE_USER, ROLE_LLM):
@@ -920,7 +920,7 @@ class SessionStore:
                 continue
             # Attach-pointer rows ride the assistant role but are
             # side-calls, not real branch tips. Old writes didn't
-            # populate Call.called_by so the ``node.called_by`` check
+            # populate Call.caller so the ``node.caller`` check
             # above misses them — fall back to metadata.function.
             if (node.metadata or {}).get("function") == "attach":
                 continue
@@ -1233,7 +1233,7 @@ class SessionStore:
         _git, idx = pair
         if msg_id not in idx.nodes_by_id:
             return []
-        # Old semantics: descendants follow called_by only (sub-calls of
+        # Old semantics: descendants follow caller only (sub-calls of
         # this node, not retry siblings).
         out = idx.descendants(msg_id, follow_caller=True)
         # The descendants helper crawls predecessor by default; here we
@@ -1257,7 +1257,7 @@ class SessionStore:
         if pair is None:
             return None
         _git, idx = pair
-        # Old semantics: longest message-tree chain via metadata.called_by.
+        # Old semantics: longest message-tree chain via metadata.predecessor.
         children = idx.children_by_predecessor
         roots = [msg_id] if msg_id else [
             n.id for n in idx.all_nodes()

@@ -5,7 +5,7 @@ on demand if dropped. Holds:
 
   * ``nodes_by_id`` — id → Call lookup. O(1) any read by id.
   * ``nodes_by_seq`` — ordered list. ``get_messages()`` returns this.
-  * ``children_by_predecessor`` — called_by → [child_id]. For "find
+  * ``children_by_predecessor`` — predecessor → [child_id]. For "find
     conv children of this user/assistant turn". Stable insertion
     order matches seq order so retry sibling ordering is preserved.
   * ``children_by_caller`` — caller_id → [callee_id]. For "find tool
@@ -50,7 +50,7 @@ class SessionMemoryIndex:
 
         ``predecessor`` / ``caller`` are passed explicitly because the
         Call dataclass doesn't track the conv edge separately — it
-        carries ``called_by`` but the conv edge is a metadata-level
+        carries ``caller`` but the conv edge is a metadata-level
         concept (see DagSessionDB._msg_to_node mapping). Keep them as
         explicit args so the writer is the single source of truth.
         """
@@ -89,7 +89,7 @@ class SessionMemoryIndex:
 
         ``get_edge(call) -> Optional[str]`` resolves the parent for a
         given Call. The DAG model carries the conv parent in
-        ``metadata["called_by"]``, not on the Call directly, so the
+        ``metadata["predecessor"]``, not on the Call directly, so the
         store passes a closure that knows where to look. Keeps this
         class ignorant of the metadata layout.
         """
@@ -156,8 +156,8 @@ class SessionMemoryIndex:
         ``get_predecessor(payload) -> Optional[str]`` and
         ``get_caller(payload) -> Optional[str]`` translate the raw
         JSON dict back to edge ids. They live outside this class
-        because the field layout (``metadata.called_by`` vs
-        ``called_by``) belongs to the message-dict adapter, not the
+        because the field layout (``metadata.predecessor`` vs
+        ``caller``) belongs to the message-dict adapter, not the
         index.
         """
         self.reset()
@@ -169,7 +169,7 @@ class SessionMemoryIndex:
             # Drop fields not on the Call dataclass; tolerate extras.
             kwargs = {k: payload.get(k) for k in (
                 "id", "created_at", "seq", "role", "name",
-                "input", "output", "called_by", "reads", "metadata",
+                "input", "output", "caller", "reads", "metadata",
             )}
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
             try:

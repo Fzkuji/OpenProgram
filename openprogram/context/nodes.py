@@ -55,7 +55,7 @@ class Call:
 
       WHO did it          ─ role + name
       WHAT they did       ─ input + output
-      WHERE it fits       ─ seq (time order) + called_by (caller)
+      WHERE it fits       ─ seq (time order) + caller (caller)
                             + reads (context references)
 
     Fields:
@@ -73,7 +73,7 @@ class Call:
       output:       what the actor produced — reply text / return value /
                     answer / None
 
-      called_by: id of the Call that invoked me. Empty string at the
+      caller: id of the Call that invoked me. Empty string at the
                     very root. (DAG edge: caller → callee)
       reads:        ids of nodes whose content went into this call's
                     prompt. [] when not applicable. (DAG edge: context)
@@ -92,7 +92,7 @@ class Call:
     input: Any = None
     output: Any = None
 
-    called_by: str = ""
+    caller: str = ""
     reads: list[str] = field(default_factory=list)
 
     metadata: dict = field(default_factory=dict)
@@ -194,7 +194,7 @@ def FunctionCall(
     function_name: str = "",
     arguments: Optional[dict] = None,
     result: Any = None,
-    called_by: str = "",
+    caller: str = "",
     **kwargs,
 ) -> Call:
     """Construct a code-role Call. Backward-compat shim."""
@@ -203,7 +203,7 @@ def FunctionCall(
         name=function_name,
         input=arguments or {},
         output=result,
-        called_by=called_by,
+        caller=caller,
         **kwargs,
     )
 
@@ -267,7 +267,7 @@ class Graph:
         reads: list[str],
         system_prompt: Optional[str] = None,
         output: Optional[str] = None,
-        called_by: str = "",
+        caller: str = "",
     ) -> Call:
         unknown = [r for r in reads if r not in self.nodes]
         if unknown:
@@ -278,7 +278,7 @@ class Graph:
             input={"system": system_prompt} if system_prompt else None,
             output=output,
             reads=list(reads),
-            called_by=called_by,
+            caller=caller,
         )
         return self.add(node)
 
@@ -287,10 +287,10 @@ class Graph:
         *,
         function_name: str,
         arguments: dict,
-        called_by: str,
+        caller: str,
         result: Any = None,
     ) -> Call:
-        # ``called_by`` may reference a node id that doesn't yet exist
+        # ``caller`` may reference a node id that doesn't yet exist
         # (parent @agentic_function whose own node is appended after
         # its children). We don't enforce presence — read-side code does
         # the resolution.
@@ -299,7 +299,7 @@ class Graph:
             name=function_name,
             input=arguments,
             output=result,
-            called_by=called_by,
+            caller=caller,
         )
         return self.add(node)
 
@@ -391,23 +391,23 @@ def spawn_task(function_call_id: str, graph: Graph) -> list[str]:
 
 
 def branch_terminals(spawn_function_call_id: str, graph: Graph) -> list[str]:
-    """Walk the called_by tree under ``spawn_function_call_id``,
+    """Walk the caller tree under ``spawn_function_call_id``,
     returning the terminal (deepest, latest-seq) descendant for each
     direct child branch.
 
-    A "child branch" starts with a node whose ``called_by`` points
-    at the spawn call. The terminal is found by following called_by
+    A "child branch" starts with a node whose ``caller`` points
+    at the spawn call. The terminal is found by following caller
     children further down (max seq at each level).
     """
     direct_children = [
-        n.id for n in graph if n.called_by == spawn_function_call_id
+        n.id for n in graph if n.caller == spawn_function_call_id
     ]
     out: list[str] = []
     for child in direct_children:
         cur = child
         while True:
             descendants = [
-                n.id for n in graph if n.called_by == cur
+                n.id for n in graph if n.caller == cur
             ]
             if not descendants:
                 break
@@ -421,7 +421,7 @@ def branch_internal(
     terminal_id: str,
     graph: Graph,
 ) -> list[str]:
-    """All nodes in the called_by lineage from a spawn code Call
+    """All nodes in the caller lineage from a spawn code Call
     down to ``terminal_id``, in seq order (oldest first), inclusive
     of both endpoints.
     """
@@ -435,10 +435,10 @@ def branch_internal(
         out.append(cur)
         if cur == spawn_function_call_id:
             break
-        cur = graph[cur].called_by or None
+        cur = graph[cur].caller or None
     if not out or out[-1] != spawn_function_call_id:
         raise ValueError(
-            f"{terminal_id!r} is not in a called_by lineage rooted at "
+            f"{terminal_id!r} is not in a caller lineage rooted at "
             f"{spawn_function_call_id!r}"
         )
     out.reverse()
@@ -619,11 +619,11 @@ def render_context(
     kept = []
     for n in chain:
         # io function: hide its internal llm exchanges.
-        if n.is_llm() and n.called_by in io_owners:
+        if n.is_llm() and n.caller in io_owners:
             continue
         # llm function: hide its own input/output node and its nested
         # code sub-calls — only its llm exchanges survive.
-        if n.id in llm_owners or (n.is_code() and n.called_by in llm_owners):
+        if n.id in llm_owners or (n.is_code() and n.caller in llm_owners):
             continue
         kept.append(n)
 

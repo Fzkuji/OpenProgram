@@ -31,7 +31,7 @@ _current_runtime: ContextVar = ContextVar('_current_runtime', default=None)
 # token gives us scope-bound semantics for free, so nested invocations
 # automatically restore the outer caller's id on exit. Downstream code
 # (``Runtime.exec``, ``ask_user``) reads this to stamp the
-# ``called_by`` field on whatever DAG node it appends.
+# ``caller`` field on whatever DAG node it appends.
 _call_id: ContextVar[Optional[str]] = ContextVar(
     '_call_id', default=None,
 )
@@ -148,7 +148,7 @@ def _append_function_call_entry(
     # enclosing @agentic_function on the stack, so ``_call_id`` is empty.
     # Without a conv predecessor the code node has no place in the
     # conversation chain and the DAG viewport renders it as a detached
-    # root. Stamp the session's current head as ``metadata.called_by``
+    # root. Stamp the session's current head as ``metadata.predecessor``
     # (the conv-chain edge) so it attaches under the active branch's tip.
     if not _caller:
         try:
@@ -157,7 +157,7 @@ def _append_function_call_entry(
                 _git, _idx = pair
                 head = _idx.head_id
                 if head and head != "ROOT":
-                    meta["called_by"] = head
+                    meta["predecessor"] = head
         except Exception:
             pass
     node = Call(
@@ -167,12 +167,12 @@ def _append_function_call_entry(
         name=function_name,
         input=_sanitize_function_args(arguments or {}),
         output=None,
-        # ``called_by`` is the logical caller — the @agentic_function
+        # ``caller`` is the logical caller — the @agentic_function
         # whose body is the one invoking us. ``_call_id`` is set by
         # the outer wrapper before we run; reading it now gives us
         # the right ancestor. Empty string when this is a top-level
         # call (no enclosing @agentic_function on the call stack).
-        called_by=_call_id.get() or "",
+        caller=_call_id.get() or "",
         metadata=meta,
     )
     try:
@@ -838,8 +838,8 @@ class agentic_function:
                 docstring=inspect.getdoc(fn) or "",
             )
             # Stamp ``_call_id`` so anything further down the call
-            # tree (rt.exec → ModelCall.called_by, ask_user → user
-            # Call.called_by) attributes its writes to this invocation.
+            # tree (rt.exec → ModelCall.caller, ask_user → user
+            # Call.caller) attributes its writes to this invocation.
             _call_token = _call_id.set(_pending_call_id)
             _system_saved = _apply_system(system, bound_args)
             output = None
