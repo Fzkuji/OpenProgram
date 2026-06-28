@@ -428,35 +428,41 @@ async def handle_load_session(ws, cmd: dict):
         # conv predecessor — chat → fn-call → chat). Fill gaps by
         # prepending conversation turns (user + assistant reply) that
         # precede the chain's earliest entry but were missed.
+        # Skip when the session has fork branches — gap-fill would
+        # pull in messages from sibling branches.
         if chain:
             chain_ids = {m.get("id") for m in chain}
-            earliest_ts = min(
-                (m.get("timestamp") or 0) for m in chain
-            )
-            by_id = {m.get("id"): m for m in all_msgs}
-            # Start with ROOT-parented user/assistant messages
-            roots = [
+            root_children = [
                 m for m in all_msgs
-                if m.get("id") not in chain_ids
-                and (m.get("timestamp") or 0) < earliest_ts
-                and m.get("role") in ("user", "assistant")
-                and (m.get("called_by") or "ROOT") in ("", "ROOT")
+                if (m.get("called_by") or "ROOT") in ("", "ROOT")
+                and m.get("role") == "user"
             ]
-            # Include their conv children (e.g. assistant reply to a
-            # user message) so complete turns are prepended.
-            missing_ids = {m.get("id") for m in roots}
-            missing = list(roots)
-            for m in all_msgs:
-                mid = m.get("id")
-                if mid in chain_ids or mid in missing_ids:
-                    continue
-                cb = m.get("called_by") or ""
-                if cb in missing_ids and m.get("role") in ("user", "assistant"):
-                    missing.append(m)
-                    missing_ids.add(mid)
-            if missing:
-                missing.sort(key=lambda m: m.get("timestamp") or 0)
-                chain = missing + chain
+            has_fork = len(root_children) > 1
+            if not has_fork:
+                earliest_ts = min(
+                    (m.get("timestamp") or 0) for m in chain
+                )
+                by_id = {m.get("id"): m for m in all_msgs}
+                roots = [
+                    m for m in all_msgs
+                    if m.get("id") not in chain_ids
+                    and (m.get("timestamp") or 0) < earliest_ts
+                    and m.get("role") in ("user", "assistant")
+                    and (m.get("called_by") or "ROOT") in ("", "ROOT")
+                ]
+                missing_ids = {m.get("id") for m in roots}
+                missing = list(roots)
+                for m in all_msgs:
+                    mid = m.get("id")
+                    if mid in chain_ids or mid in missing_ids:
+                        continue
+                    cb = m.get("called_by") or ""
+                    if cb in missing_ids and m.get("role") in ("user", "assistant"):
+                        missing.append(m)
+                        missing_ids.add(mid)
+                if missing:
+                    missing.sort(key=lambda m: m.get("timestamp") or 0)
+                    chain = missing + chain
         # Splice attach pointer rows (function="attach") into the
         # displayed chain. They hang off a parent message via
         # called_by — not on the conv chain itself — so
