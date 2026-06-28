@@ -185,14 +185,12 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   });
   Object.keys(tree.byId).forEach((nid) => {
     const n = tree.byId[nid];
-    const c = (n as { caller?: string; called_by?: string }).caller
-      || (n as { called_by?: string }).called_by;
-    if (c) {
-      // ROOT's direct children are trunk nodes, not internal sub-calls
-      const parent = c ? tree.byId[c] : null;
+    const c = (n as { caller?: string }).caller;
+    if (c && c !== "ROOT") {
+      const parent = tree.byId[c];
       if (parent && parent.display === "root") {
-        // Not internal — this is a trunk node
-      } else {
+        // ROOT's direct children are trunk nodes, not internal
+      } else if (parent) {
         internalSet[nid] = true;
         if (!internalOwner[nid]) internalOwner[nid] = c;
       }
