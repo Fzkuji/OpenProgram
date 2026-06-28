@@ -77,12 +77,26 @@ def annotate_graph(
             #   rightmost_col(base) + 2
             # and the trunk line lives one column to their left (drawn by
             # edges.ts as forkPos.x - COL_W), clear of the base lane.
-            off = _rightmost_col(base_lane) + 2 - first_tier
+            #
+            # MUST also clear every ALREADY-PLACED lane: with multiple
+            # fork siblings off the same point, each one must go past the
+            # previous sibling's columns, not just past the base lane —
+            # otherwise the 2nd and 3rd forks collide in the same column.
+            base_right = _rightmost_col(base_lane)
+            placed_right = max(
+                (_rightmost_col(pl) for pl in lane_offset),
+                default=base_right,
+            )
+            off = max(base_right, placed_right) + 2 - first_tier
         else:
-            off = max(lane_offset.values(), default=0) + 1
+            off = max(
+                (_rightmost_col(pl) for pl in lane_offset), default=-1,
+            ) + 2
         lane_offset[ln] = off
         return off
 
+    # Place lanes in lane-number order (= seq order of branch starts), so
+    # each fork sibling is positioned after the ones that appeared before.
     for ln in sorted(set(lane.values())):
         _offset(ln)
     for nid in lane:
