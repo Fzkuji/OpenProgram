@@ -1,17 +1,25 @@
-"""Lane (column) assignment for the session DAG.
+"""Lane (branch column) assignment for the session DAG.
 
-Strategy:
-  * ROOT and its first child chain get lane 0 (the trunk).
-  * Fork detection via predecessor: when multiple nodes share the same
-    predecessor, the first (by created_at) keeps the parent's lane,
-    the rest each get a fresh lane.
-  * All predecessor descendants of a node inherit its lane.
+Rule (docs/design/runtime/dag-layout-algorithm.md §2): count branches,
+number them in the order they appear (by seq), starting from 0. No
+"trunk" special case, no zeroing.
+
+A branch = a conversation chain. Walk from a start node down the
+``caller`` sub-call tree AND the ``predecessor`` conversation chain,
+claiming every node into the same lane. At a fork (same predecessor
+with >1 child), the first sibling continues the lane; each later
+sibling starts a NEW branch → next lane number.
+
+Lane numbers are assigned in seq order of branch starts:
+  * ROOT (and the trunk hanging off it) → lane 0
+  * each fork's later siblings → next lane, in the order they appear
 """
 from __future__ import annotations
 
 from typing import Optional
 
-from ._common import predecessor_of, is_root, ts
+from .topology import build_maps
+from ._common import is_root, ts
 
 
 class LaneAllocator:
@@ -37,46 +45,57 @@ def compute_lane(
     lane: dict[str, int] = {}
     alloc = LaneAllocator()
 
-    # Which nodes are the "first" sibling at each fork point.
-    # First = earliest by created_at among nodes sharing the same predecessor.
-    first_at_fork: set[str] = set()
-    for pid, kids in fork_siblings.items():
-        if kids:
-            first_at_fork.add(kids[0])
+    caller_children, pred_children, _ = build_maps(by_id)
 
-    def _walk(nid: str, my_lane: int) -> None:
-        if nid in lane:
-            return
-        lane[nid] = my_lane
+    # A fork = a predecessor with >1 child. The first sibling (by seq)
+    # continues its parent's lane; later siblings each begin a NEW branch.
+    # ``is_fork_continuation`` excludes those later siblings from same-lane
+    # claiming — they get their own lane in the branch-start pass.
+    is_fork_continuation: dict[str, bool] = {}
+    for _pid, kids in fork_siblings.items():
+        if len(kids) > 1:
+            for i, k in enumerate(kids):
+                is_fork_continuation[k] = (i == 0)
 
-        for kid in call_children.get(nid, []):
-            if kid in first_at_fork:
-                _walk(kid, my_lane)
-            else:
-                _walk(kid, alloc.alloc())
+    def _same_lane(kid: str) -> bool:
+        """A child stays in the parent's lane unless it's a later fork
+        sibling (those start a new branch)."""
+        return is_fork_continuation.get(kid, True)
 
-    # Start from ROOT (display=root) only
-    from ._common import is_root
-    roots = sorted(
-        (nid for nid, m in by_id.items() if is_root(m)),
-        key=lambda x: ts(by_id, x),
-    )
-    if not roots:
-        roots = sorted(
-            (nid for nid, m in by_id.items()
-             if not predecessor_of(by_id, m)),
-            key=lambda x: ts(by_id, x),
-        )
+    def _claim(start: str, my_lane: int) -> None:
+        """Paint start + its same-branch descendants into my_lane.
+
+        Walk both edges: ``caller`` sub-calls and ``predecessor``
+        conversation chain. A later fork sibling (same predecessor, not
+        the first) is NOT claimed — it begins its own branch/lane.
+        """
+        stack = [start]
+        while stack:
+            cur = stack.pop()
+            if cur in lane:
+                continue
+            lane[cur] = my_lane
+            for kid in caller_children.get(cur, []):
+                if kid not in lane and _same_lane(kid):
+                    stack.append(kid)
+            for kid in pred_children.get(cur, []):
+                if kid not in lane and _same_lane(kid):
+                    stack.append(kid)
+
+    def _seq(nid: str) -> float:
+        return ts(by_id, nid)
+
+    # 1) trunk roots first (ROOT / display=root) → lane 0
+    roots = sorted((nid for nid, m in by_id.items() if is_root(m)), key=_seq)
     for r in roots:
-        _walk(r, alloc.alloc())
+        if r not in lane:
+            _claim(r, alloc.alloc())
 
-    # Fork branches without predecessor: assign fresh lanes
-    remaining = sorted(
-        (nid for nid in by_id if nid not in lane),
-        key=lambda x: ts(by_id, x),
-    )
-    for nid in remaining:
+    # 2) remaining nodes in seq order — each unclaimed one is a branch
+    #    start (a fork's later sibling, or a top-level node with no root).
+    #    Lane numbers come out in branch-appearance order.
+    for nid in sorted(by_id, key=_seq):
         if nid not in lane:
-            _walk(nid, alloc.alloc())
+            _claim(nid, alloc.alloc())
 
     return lane, alloc
