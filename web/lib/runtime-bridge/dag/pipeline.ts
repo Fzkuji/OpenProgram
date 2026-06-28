@@ -315,11 +315,28 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const rootNode = Object.values(tree.byId).find((n) => n.display === "root");
   const rootPos = rootNode ? pos(rootNode) : null;
 
+  // Build a full id→node map from pre-collapse graph for parent
+  // lookup when a called_by parent was collapsed away.
+  const fullById: Record<string, GNode> = Object.create(null);
+  graphIn.forEach((m) => { fullById[m.id] = m; });
+
   const forkNodes: string[] = [];
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     if (node.display === "root") return;
-    const pid = node.called_by;
+    let pid = node.called_by;
+    // If called_by parent was collapsed, walk up to find visible ancestor
+    if (pid && !tree.byId[pid]) {
+      let cur = pid;
+      let hops = 0;
+      while (cur && !tree.byId[cur] && hops < 50) {
+        const pn = fullById[cur];
+        cur = pn ? (pn.called_by || null) : null;
+        hops++;
+      }
+      if (cur && tree.byId[cur]) pid = cur;
+      else return;
+    }
     if (!pid || !tree.byId[pid]) return;
     const parent = tree.byId[pid];
     const sameLane = (node._lane || 0) === (parent._lane || 0);
@@ -331,12 +348,22 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const color = _branchColor(node, stableLeafOfNode);
     const nr = NODE_R + 4;
 
-    // Main-lane user nodes connect from ROOT column (tier=0).
-    // Fork-lane user nodes connect from their called_by parent
-    // within their own lane.
-    const isMainUser = node.role === "user" && rootPos && (node._lane || 0) === (rootNode?._lane || 0);
-    const trunkX = isMainUser ? rootPos.x : pos(parent).x;
-    const fromY = isMainUser ? rootPos.y : pos(parent).y;
+    // User nodes connect from their lane's trunk column — the
+    // leftmost x in that lane. Main lane uses ROOT's x (tier=0).
+    // Fork lanes use the fork root's x (tier=1 for user fork root).
+    // This prevents snake-shaped zigzags within any lane.
+    const p = pos(parent);
+    const isUserNode = node.role === "user";
+    let trunkX = p.x;
+    let fromY = p.y;
+    if (isUserNode) {
+      if (rootPos && (node._lane || 0) === (rootNode?._lane || 0)) {
+        trunkX = rootPos.x;
+        fromY = rootPos.y;
+      } else {
+        trunkX = Math.min(p.x, c.x);
+      }
+    }
 
     // Vertical trunk from parent row to child row
     if (c.y > fromY) {
