@@ -40,6 +40,7 @@ text{font-family:-apple-system,sans-serif}
 <b style="color:var(--acc)">三条全局排版规则：</b><br>
 ① <b>正方形网格</b>：横向格距 = 纵向格距（COL_W = ROW_H）。整张图是标准棋盘格，每一列的列距、每一排的行距完全一致。子节点在父节点的<b>严格右下角</b>——往右一格 + 往下一格（45° 对角线，距离 √2×格距）。<br>
 ② <b>严格网格对齐</b>：每个节点落在网格交点上。同一行的节点 y 完全对齐，同一列的节点 x 完全对齐。不允许半格偏移。<br>
+&nbsp;&nbsp;<b>横竖都紧凑</b>：列空了右边左移补上（见③）；行空了下面上移补上（收起一个节点 → 它占的那一行腾空 → 下面所有行整体上移）。空行、空列都不保留。<br>
 ③ <b>分支按实际占用列紧贴排，不重叠</b>：一条分支占用的列 = 从它的起始列到它子树最深那一格。<b>下一条分支从上一条实际占用的最右列 +1 开始</b>，整条在前一条右边，互不重叠。<br>
 &nbsp;&nbsp;<b>收起会让它左移</b>：若前一条分支的子调用被收起 → 它占用的列变少 → 后面那条分支的起始列跟着左移。例：lane0 展开时占列 0~3，lane1 从列4 起；把工具收起后 lane0 只占 0~2，lane1 就左移到列3。空列绝不保留。
 </div>
@@ -211,26 +212,26 @@ scene(6,"综合：多轮 + retry + 工具",
 
 // ---- 场景7：收起 lane0 的工具 → lane1 左移一列 ----
 scene(7,"收起子调用 → 后面分支左移",
- "对比场景6（同一棵树，一个 ROOT）。把 lane0 的「工具」收起 → lane0 不再占列3，只占 0~2 → lane1 的起始列从 4 左移到 3。「回复 +1」表示收起了 1 个子节点。空列不保留。",
- 6,7,()=>{
+ "对比场景6（同一棵树，一个 ROOT）。把 lane0 的「工具」收起：① 横向——lane0 不占列3 了，lane1 从列4 左移到列3；② 纵向——工具原本占的那一行腾空，下面的「追问/回复2」整体上移一行。横竖都紧凑，空行空列都不保留。",
+ 5,5,()=>{
   let s="";
   s+=edge(0,0,1,1,C.blue);
   s+=edge(1,1,2,2,C.blue);   // 回复(工具已收起,lane0 只到列2)
-  s+=edge(0,0,1,4,C.blue);   // 追问
-  s+=edge(1,4,2,5,C.blue);
+  s+=edge(0,0,1,3,C.blue);   // 追问 上移到行3(原行4,工具收起腾出行)
+  s+=edge(1,3,2,4,C.blue);
   // lane0 收起后占列 0~2 → lane1 从列3 起
   s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+3*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
   s+=edge(3,1,4,2,C.purple);
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"问题");
   s+=node(null,2,2,'llm',C.blue,"回复 +1","工具已收起");
-  s+=node(null,1,4,'user',C.blue,"追问");
-  s+=node(null,2,5,'llm',C.blue,"回复2");
-  s+=node(null,3,1,'user',C.purple,"问题(改写)","lane1 左移到列3");
+  s+=node(null,1,3,'user',C.blue,"追问","上移一行");
+  s+=node(null,2,4,'llm',C.blue,"回复2");
+  s+=node(null,3,1,'user',C.purple,"问题(改写)","左移到列3");
   s+=node(null,4,2,'llm',C.purple,"回复'");
   return s;
  },
- "工具收起 → lane0 占列变 0~2 → lane1 起始列从 4 左移到 3。这就是「收起左移、空列不保留」。");
+ "收起工具：横向 lane1 列4→列3，纵向 追问/回复2 上移一行。横竖都紧凑，空行空列都不保留。");
 
 </script>
 </div></body></html>

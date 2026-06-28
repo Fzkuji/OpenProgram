@@ -395,6 +395,7 @@ webui 发一条真实消息（前端改动需 <code>cd web &amp;&amp; npm run bu
 依序出现 <code>user.prompt_submitted → model.response_started → tool.before → tool.after → model.response_completed → turn.ended</code>，且 metadata 带 session/turn。</p>
 <div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-13</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/plans/cache-control-passthrough.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</span></a><a class="pn-link pn-next" href="/docs/reference/claude-code-compaction.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Claude Code 上下文压缩机制 — 完整流程参考</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
 <a class="" href="#复用的现有机制">复用的现有机制</a>
 <a class="" href="#事件-tap-接线点">事件 tap 接线点</a>
 <a class="" href="#gate-接入点">gate 接入点</a>
@@ -402,7 +403,8 @@ webui 发一条真实消息（前端改动需 <code>cd web &amp;&amp; npm run bu
 <a class="" href="#附带要修的洞">附带要修的洞</a>
 <a class="" href="#分阶段对应-framework-evolutionmd-4-的五步迁移">分阶段（对应 framework-evolution.md §4 的五步迁移）</a>
 <a class="" href="#已落地的实现步-12-as-built">已落地的实现（步 1–2 as-built）</a>
-<a class="" href="#验证">验证</a></aside>
+<a class="" href="#验证">验证</a>
+</div></aside>
 </div>
 
 <div class="search-overlay">

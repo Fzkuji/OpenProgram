@@ -148,17 +148,23 @@ aside.toc .toc-title {
   font-size: 12px; font-weight: 700;
   letter-spacing: .02em; color: var(--tx-soft); margin-bottom: 12px;
 }
+/* tree with a guide line down the left, like the sidebar */
+aside.toc .toc-list { border-left: 1px solid var(--bd); }
 aside.toc a {
-  display: block; line-height: 1.45; border-left: 2px solid var(--bd);
-  color: var(--tx-soft);
+  display: block; line-height: 1.45; color: var(--tx-soft);
+  position: relative; border-left: 2px solid transparent; margin-left: -1px;
 }
-/* level 1 (h2): heavier, darker, own line spacing */
+/* level 1 (h2): heavier, darker */
 aside.toc a:not(.lvl-3) {
-  padding: 6px 0 6px 14px; font-size: 13.5px; font-weight: 550; color: var(--tx-soft);
+  padding: 6px 0 6px 16px; font-size: 13.5px; font-weight: 550; color: var(--tx-soft);
 }
-/* level 2 (h3): deeper indent, smaller, lighter */
+/* level 2 (h3): deeper indent + its own thinner guide branch */
 aside.toc a.lvl-3 {
   padding: 4px 0 4px 30px; font-size: 12.5px; color: var(--tx-faint);
+}
+aside.toc a.lvl-3::before {
+  content: ""; position: absolute; left: 16px; top: 0; bottom: 0;
+  border-left: 1px solid var(--bd-soft);
 }
 aside.toc a:hover { color: var(--tx); text-decoration: none; }
 aside.toc a.active { color: var(--acc); border-left-color: var(--acc); font-weight: 600; }

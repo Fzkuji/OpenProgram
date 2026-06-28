@@ -170,103 +170,139 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
   </nav>
   <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Runtime <span class='bc-sep'>›</span> <span class="bc-current">DAG 布局算法设计文档</span></nav><h1 id="dag-布局算法设计文档">DAG 布局算法设计文档<a class="header-anchor" href="#dag-布局算法设计文档">#</a></h1>
-<p>Status: <strong>draft（待确认）</strong> · Created: 2026-06-29</p>
+<p>Status: <strong>decided（视觉规范已定，照此实现）</strong> · Created: 2026-06-29</p>
 <blockquote>
-<p>DAG 小地图把每个节点放到网格的 (列, 行)。本文定义三件事：节点放第几列、
-第几行。规则要简单——不绕弯。</p>
+<p>右侧 DAG 小地图把每个节点放到网格的 (列, 行)。本文是<strong>权威实现标准</strong>：以后
+所有布局代码照此写，出问题就对照本文（含 <code>dag-layout-spec.html</code> 的 7 张图）查。</p>
+<p><strong>视觉规范（必看）</strong>：<code>docs/design/runtime/dag-layout-spec.html</code> —— 用真 SVG
+画出 7 种场景的目标效果。代码画出来必须和那 7 张图一致。本文是文字版规则，
+那个 html 是图示版，两者等价。</p>
 </blockquote>
-<h2 id="一一个节点的位置-x-y">一、一个节点的位置 = (x, y)<a class="header-anchor" href="#一一个节点的位置-x-y">#</a></h2>
+<h2 id="一一个节点的位置-列-行">一、一个节点的位置 = (列, 行)<a class="header-anchor" href="#一一个节点的位置-列-行">#</a></h2>
 <ul>
-<li><strong>x（横向位置）= lane列 + tier缩进</strong></li>
-<li><strong>y（纵向位置）= depth行号</strong></li>
+<li><strong>列（横向）= lane起始列 + tier缩进</strong></li>
+<li><strong>行（纵向）= depth</strong></li>
 </ul>
-<p>三个量：lane、tier、depth。下面逐个定义，每个都尽量简单。</p>
-<h2 id="二lane这个节点属于第几条分支">二、lane（这个节点属于第几条分支）<a class="header-anchor" href="#二lane这个节点属于第几条分支">#</a></h2>
+<p>三个量：<strong>lane</strong>（属于第几条分支）、<strong>tier</strong>（在分支内缩进几格）、<strong>depth</strong>
+（第几行）。下面逐个定义。</p>
+<h2 id="二lane-这个节点属于第几条分支">二、lane —— 这个节点属于第几条分支<a class="header-anchor" href="#二lane-这个节点属于第几条分支">#</a></h2>
 <p><strong>规则：有几条分支，就排几列。按分支出现的先后顺序编号，从 0 开始，不跳号。</strong></p>
 <ul>
 <li>第 1 条分支 → lane 0</li>
 <li>第 2 条分支 → lane 1</li>
-<li>第 3 条分支 → lane 2</li>
-<li>……</li>
+<li>第 3 条分支 → lane 2 ……</li>
 </ul>
-<p>什么是&quot;一条分支&quot;：从一句用户消息开始，顺着对话往下（user → AI回复 → 下一句
-user → AI回复 …），这一整条就是一条分支。中途如果你 retry / 改写某句话，就在
-那个点<strong>岔出一条新分支</strong>，新分支拿下一个编号。</p>
-<p><strong>例：只发了一句&quot;你好&quot;（没 retry）</strong>
-→ 只有 1 条分支 → 全部 lane 0。不存在第 2 列。</p>
-<p><strong>例：发了&quot;你好&quot;，又 retry 改成&quot;在吗&quot;</strong>
-→ 2 条分支 → 原来那条 lane 0，retry 出来的那条 lane 1。</p>
-<p><strong>不要做的事</strong>（之前代码绕的弯，全删）：</p>
+<p><strong>一条分支</strong> = 一条对话链：从一句 user 消息开始，顺着对话往下（user → AI回复 →
+下一句 user → AI回复 …）连成的整条。中途 retry / 改写某句话，就在那个点<strong>岔出
+一条新分支</strong>，新分支拿下一个编号。</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>分支数</th>
+<th>lane</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只发一句&quot;你好&quot;（没 retry）</td>
+<td>1</td>
+<td>全 lane 0，不存在第 2 列</td>
+</tr>
+<tr>
+<td>&quot;你好&quot; + retry 改成&quot;在吗&quot;</td>
+<td>2</td>
+<td>原 lane 0，retry 出来的 lane 1</td>
+</tr>
+</tbody>
+</table>
+<p><strong>绝不要做</strong>（之前代码绕的弯，全删）：</p>
 <ul>
-<li>❌ 不要专门判断&quot;哪条是主干&quot;</li>
-<li>❌ 不要&quot;归零&quot;之类的特殊处理</li>
-<li>❌ 不要让没有分叉的对话也占用第 2 列</li>
+<li>❌ 专门判断&quot;哪条是主干&quot;</li>
+<li>❌ &quot;归零&quot;之类特殊处理</li>
+<li>❌ 让没有分叉的对话占用第 2 列</li>
 </ul>
-<p>就是：<strong>数分支，按顺序发列号。</strong></p>
-<h2 id="三tier节点在自己这列里往右缩进几格">三、tier（节点在自己这列里往右缩进几格）<a class="header-anchor" href="#三tier节点在自己这列里往右缩进几格">#</a></h2>
-<p><strong>规则：按角色固定缩进，表示&quot;谁套在谁里面&quot;。</strong></p>
-<ul>
-<li>ROOT（会话根）：缩进 0</li>
-<li>user（用户消息）：缩进 1</li>
-<li>AI 回复：缩进 2</li>
-<li>AI 调用的工具：缩进 3</li>
-<li>工具内部再调的东西：再 +1</li>
-</ul>
-<p>这就是那个&quot;阶梯往右&quot;的效果——<strong>这是对的，本来就该这样缩进</strong>，不是 bug。</p>
-<p>下一轮 user 回到缩进 1（不是一直往右涨）。</p>
-<h2 id="四depth节点在第几行从上往下">四、depth（节点在第几行，从上往下）<a class="header-anchor" href="#四depth节点在第几行从上往下">#</a></h2>
-<p><strong>规则：按聊天/执行的先后顺序，从上往下一行一行排。</strong></p>
+<p>就是：<strong>数分支，按出现顺序发列号。</strong></p>
+<h2 id="三tier-在分支内往右缩进几格">三、tier —— 在分支内往右缩进几格<a class="header-anchor" href="#三tier-在分支内往右缩进几格">#</a></h2>
+<p><strong>规则：按角色固定缩进，表示&quot;谁套在谁里面&quot;（沿 <code>caller</code> 子调用边）。</strong></p>
+<table>
+<thead>
+<tr>
+<th>节点</th>
+<th>tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ROOT</td>
+<td>0</td>
+</tr>
+<tr>
+<td>user</td>
+<td>1</td>
+</tr>
+<tr>
+<td>AI 回复（llm）</td>
+<td>2</td>
+</tr>
+<tr>
+<td>AI 调用的工具（code）</td>
+<td>3</td>
+</tr>
+<tr>
+<td>工具内部再调的（子调用）</td>
+<td>上一级 +1</td>
+</tr>
+</tbody>
+</table>
+<p>&quot;阶梯往右&quot;的缩进效果是<strong>对的</strong>，不是 bug。下一轮 user 回到 tier 1（不是一直
+往右涨）——因为所有顶层 user 都直接挂在 ROOT 下，平级。</p>
+<h2 id="四depth-第几行从上往下">四、depth —— 第几行，从上往下<a class="header-anchor" href="#四depth-第几行从上往下">#</a></h2>
+<p><strong>规则：按聊天/执行的先后顺序（<code>predecessor</code> 对话链 + seq），从上往下排。</strong></p>
 <ul>
 <li>越早发生的越靠上。</li>
-<li>岔出来的分支，和它岔出的那个位置<strong>对齐到同一行</strong>起步，然后各自往下长。</li>
+<li>岔出来的分支，和它岔出的位置<strong>对齐到同一行</strong>起步，然后各自往下长。</li>
 </ul>
-<h2 id="四五三条全局排版规则">四·五、三条全局排版规则<a class="header-anchor" href="#四五三条全局排版规则">#</a></h2>
-<p>① <strong>正方形网格</strong>：横向格距 = 纵向格距（<code>COL_W == ROW_H</code>）。整张图是标准棋盘
-格，每一列的列距、每一排的行距完全一致。子节点在父节点的<strong>严格右下角</strong>——往右
-一格 + 往下一格（45° 对角线，距离 √2×格距）。</p>
-<p>② <strong>严格网格对齐</strong>：每个节点落在网格交点上。同一行的节点 y 完全对齐，同一列的
-节点 x 完全对齐。不允许半格偏移。</p>
-<p>③ <strong>分支按实际占用列紧贴排，不重叠</strong>：一条分支占用的列 = 从它的起始列到它子树
+<h2 id="五三条全局排版规则">五、三条全局排版规则<a class="header-anchor" href="#五三条全局排版规则">#</a></h2>
+<p><strong>① 正方形网格</strong>：横向格距 = 纵向格距（<code>COL_W == ROW_H</code>）。整张图是标准棋盘格，
+每列列距、每排行距完全一致。子节点在父节点的<strong>严格右下角</strong>——往右一格 + 往下
+一格（45° 对角线，距离 √2×格距）。</p>
+<p><strong>② 严格网格对齐 + 横竖都紧凑</strong>：每个节点落在网格交点上，同一行 y 完全对齐、
+同一列 x 完全对齐，不允许半格偏移。<strong>列空了右边左移补上，行空了下面上移补上</strong>
+——收起一个节点，它占的那一行腾空，下面所有行整体上移；它占的列腾空，右边的
+列左移。空行、空列都不保留。</p>
+<p><strong>③ 分支按实际占用列紧贴排，不重叠</strong>：一条分支占用的列 = 从它的起始列到它子树
 最深那一格。<strong>下一条分支从上一条实际占用的最右列 +1 开始</strong>，整条在前一条右边，
 互不重叠。</p>
 <blockquote>
-<p><strong>收起会让它左移</strong>：若前一条分支的子调用被收起 → 它占用的列变少 → 后面那条
-分支的起始列跟着左移。例：lane0 展开时占列 0~3，lane1 从列4 起；把工具收起后
-lane0 只占 0~2，lane1 就左移到列3。空列绝不保留。</p>
+<p>规则 ②③ 联动 = &quot;收起左移&quot;：前一条分支的子调用收起 → 它占用的列变少 → 后面
+分支起始列跟着左移。例：lane0 展开占列 0~3，lane1 从列4 起；工具收起后 lane0
+只占 0~2，lane1 左移到列3，同时下面的行也上移。</p>
 </blockquote>
-<h2 id="五画出来长什么样">五、画出来长什么样<a class="header-anchor" href="#五画出来长什么样">#</a></h2>
+<h2 id="六画出来长什么样文字版图示见-spechtml">六、画出来长什么样（文字版；图示见 spec.html）<a class="header-anchor" href="#六画出来长什么样文字版图示见-spechtml">#</a></h2>
 <p><strong>只发一句&quot;你好&quot;（1 条分支，全 lane 0）：</strong></p>
 <pre><code>列:   0    1    2
 行0  ◇ROOT
-行1       ○你好          ← lane 0, 缩进 1
-行2            △AI回复    ← lane 0, 缩进 2
+行1       ○你好          ← lane0, tier1
+行2            △AI回复    ← lane0, tier2
 </code></pre>
-<p><strong>发&quot;你好&quot; + retry 改成&quot;在吗&quot;（2 条分支）：</strong></p>
+<p><strong>&quot;你好&quot; + retry 改成&quot;在吗&quot;（2 条分支）：</strong></p>
 <pre><code>列:   0    1    2    3    4
 行0  ◇ROOT
-行1       ○你好 ┈┈┈ ○在吗          ← lane1 从列3 起(lane0 占列0~2)
+行1       ○你好 ┈┈┈ ○在吗          ← lane1 从列3 起（lane0 占列0~2）
 行2            △回复1    △回复1'
 </code></pre>
-<p>lane0 占列 0~2（ROOT/你好/回复1），所以 lane1 从列 3 开始，紧贴不重叠。
-虚线表示这两条是从同一个点岔开的平行分支。</p>
-<h2 id="六当前-bug">六、当前 bug<a class="header-anchor" href="#六当前-bug">#</a></h2>
-<p>只发了一句&quot;你好&quot;，本该全 lane 0，但代码给 user/AI回复 发了 <strong>lane 1</strong>（跳过了
-0），导致它们整体往右偏一大块，ROOT 孤零零在左边。</p>
-<p>根因：代码判断&quot;分支怎么分列&quot;时用错了一条线（用了&quot;对话前驱&quot;那条，而第一句话
-没有前驱 → 接不上 → 被误判成新分支），还套了一层&quot;主干判断 / 归零&quot;的绕弯逻辑。</p>
-<p><strong>修法：照第二节的规则重写——数分支、按出现顺序发列号 0,1,2，删掉主干判断和
-归零那些东西。</strong></p>
-<h2 id="七怎么验证不用截图网页">七、怎么验证（不用截图网页）<a class="header-anchor" href="#七怎么验证不用截图网页">#</a></h2>
-<pre><code>python tools/dag_dump.py [session_id]
-</code></pre>
-<p>直接在命令行打印每个节点的 lane / tier / depth + ASCII 网格图。改完代码跑一下
-就能看对不对。</p>
-<p>要验的三种情况：</p>
-<ol>
-<li>只发一句话 → 全 lane 0（当前 bug，修完应为 0）</li>
-<li>retry 出第二条分支 → 第二条 lane 1</li>
-<li>调用工具 → 工具在 AI 回复下面缩进一格（tier+1），不另开 lane</li>
-</ol>
+<p>lane0 占列 0~2 → lane1 从列 3 起，紧贴不重叠。虚线 = 从同一点岔开的平行分支。</p>
+<blockquote>
+<p>完整 7 种场景（单轮 / 多轮 / retry / 工具 / 手动调函数 / 综合 / 收起左移）
+见 <code>dag-layout-spec.html</code>。</p>
+</blockquote>
+<h2 id="七当前-bug要修的">七、当前 bug（要修的）<a class="header-anchor" href="#七当前-bug要修的">#</a></h2>
+<p>只发一句&quot;你好&quot;，本该全 lane 0，但代码给 user/AI回复 发了 <strong>lane 1</strong>（跳过 0），
+导致整体往右偏一大块，ROOT 孤零零在左边。</p>
+<p>根因：判断&quot;分支怎么分列&quot;时用错了边——用了 <code>predecessor</code>（对话前驱），而第一句
+话没有前驱 → 接不上 → 被误判成新分支；还套了一层&quot;主干判断 / 归零&quot;的绕弯逻辑。</p>
+<p><strong>修法：照第二节重写——数分支、按出现顺序发列号 0,1,2，删掉主干判断和归零。</strong></p>
 <h2 id="八改哪些文件">八、改哪些文件<a class="header-anchor" href="#八改哪些文件">#</a></h2>
 <table>
 <thead>
@@ -282,25 +318,49 @@ lane0 只占 0~2，lane1 就左移到列3。空列绝不保留。</p>
 </tr>
 <tr>
 <td><code>graph_layout/topology.py</code></td>
-<td>提供&quot;同一条分支链&quot;的判断（顺着对话 + 子调用走）</td>
+<td>提供&quot;同一条分支链&quot;判断：沿 <code>caller</code>（子调用树）+ <code>predecessor</code>（对话链）走</td>
+</tr>
+<tr>
+<td><code>graph_layout/__init__.py</code></td>
+<td>分支占列计算（规则③）：按每条 lane 实际最大 tier 紧贴排，下一条 = 上一条最右列 +1</td>
+</tr>
+<tr>
+<td><code>dag/types.ts</code> 等前端</td>
+<td><code>COL_W == ROW_H</code>（正方形网格，规则①）</td>
 </tr>
 <tr>
 <td>验证</td>
-<td><code>tools/dag_dump.py</code> 跑三种情况</td>
+<td><code>tools/dag_dump.py</code> 跑下方 7 种场景</td>
 </tr>
 </tbody>
 </table>
+<h2 id="九验证命令行不用截图网页">九、验证（命令行，不用截图网页）<a class="header-anchor" href="#九验证命令行不用截图网页">#</a></h2>
+<pre><code>python tools/dag_dump.py [session_id]
+</code></pre>
+<p>打印每个节点的 lane / tier / depth + ASCII 网格图。改完代码跑一下对照。</p>
+<p>要验的场景（对应 spec.html 7 张图）：</p>
+<ol>
+<li>单轮：&quot;你好&quot; → 全 lane 0</li>
+<li>多轮：所有 user 挂 ROOT、tier1 同列；全 lane 0</li>
+<li>retry：第 2 条分支 lane1，从 lane0 最右列 +1 起</li>
+<li>工具调用：工具 tier3，在 AI 下缩进，不另开 lane</li>
+<li>手动调函数：函数挂 ROOT（tier1），内部子调用逐层缩进</li>
+<li>综合：lane 不重叠、tier 缩进、depth 按时间</li>
+<li>收起：横向 lane 左移、纵向行上移，空行空列不留</li>
+</ol>
 <div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag-viewport.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG Viewport 设计文档</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag-layout-algorithm.viz.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG 布局算法（可视化）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
-<a class="" href="#一一个节点的位置-x-y">一、一个节点的位置 = (x, y)</a>
-<a class="" href="#二lane这个节点属于第几条分支">二、lane（这个节点属于第几条分支）</a>
-<a class="" href="#三tier节点在自己这列里往右缩进几格">三、tier（节点在自己这列里往右缩进几格）</a>
-<a class="" href="#四depth节点在第几行从上往下">四、depth（节点在第几行，从上往下）</a>
-<a class="" href="#四五三条全局排版规则">四·五、三条全局排版规则</a>
-<a class="" href="#五画出来长什么样">五、画出来长什么样</a>
-<a class="" href="#六当前-bug">六、当前 bug</a>
-<a class="" href="#七怎么验证不用截图网页">七、怎么验证（不用截图网页）</a>
-<a class="" href="#八改哪些文件">八、改哪些文件</a></aside>
+<div class="toc-list">
+<a class="" href="#一一个节点的位置-列-行">一、一个节点的位置 = (列, 行)</a>
+<a class="" href="#二lane-这个节点属于第几条分支">二、lane —— 这个节点属于第几条分支</a>
+<a class="" href="#三tier-在分支内往右缩进几格">三、tier —— 在分支内往右缩进几格</a>
+<a class="" href="#四depth-第几行从上往下">四、depth —— 第几行，从上往下</a>
+<a class="" href="#五三条全局排版规则">五、三条全局排版规则</a>
+<a class="" href="#六画出来长什么样文字版图示见-spechtml">六、画出来长什么样（文字版；图示见 spec.html）</a>
+<a class="" href="#七当前-bug要修的">七、当前 bug（要修的）</a>
+<a class="" href="#八改哪些文件">八、改哪些文件</a>
+<a class="" href="#九验证命令行不用截图网页">九、验证（命令行，不用截图网页）</a>
+</div></aside>
 </div>
 
 <div class="search-overlay">

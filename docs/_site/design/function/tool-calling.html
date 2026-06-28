@@ -231,12 +231,14 @@ exec 层 max_iterations(默认 20)    exec 自己的工具循环安全帽
 <p>被当作工具传给 <code>exec(tools=[...])</code> 的 <code>@agentic_function</code>,在模型眼里就是一个可选函数。模型选中它 → <code>_execute_tool_calls</code> 调它的 <code>.execute</code> → 这个函数内部如果又调 <code>runtime.exec</code>,就再开一层同样的选择循环。&quot;选下一步要运行的函数&quot;在多层 agentic function 嵌套下是同一套机制递归展开。</p>
 <div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-20</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/function_metadata.zh.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">函数元数据规范</span></a><a class="pn-link pn-next" href="/docs/design/function/pure_python.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">纯 Python 函数</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
 <a class="" href="#一句话概括">一句话概括</a>
 <a class="" href="#入口runtimeexec">入口:runtime.exec</a>
 <a class="" href="#循环主体_run_loop">循环主体:_run_loop</a>
 <a class="" href="#函数执行_execute_tool_calls">函数执行:_execute_tool_calls</a>
 <a class="" href="#终止条件">终止条件</a>
-<a class="" href="#与-agentic_function-的关系">与 @agentic_function 的关系</a></aside>
+<a class="" href="#与-agentic_function-的关系">与 @agentic_function 的关系</a>
+</div></aside>
 </div>
 
 <div class="search-overlay">

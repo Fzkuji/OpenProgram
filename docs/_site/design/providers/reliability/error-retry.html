@@ -230,12 +230,14 @@ invalid api key / invalid_api_key                        ← 凭证错误
 <p><code>agent.py</code> 捕获异常时,<code>err_text = f&quot;{type(err).__name__}: {err}&quot;</code>(异常文本为空时退化为只有类型名),并把 traceback 打到 stderr。<code>runtime.py</code> 的兜底信息不再是裸的 <code>&quot;Agent session failed&quot;</code>,而是带上每次 attempt 的 <code>类型名: 异常文本</code> 列表和失败原因(permanently / after N attempts)。</p>
 <div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-23</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">OpenProgram · 报错与超时机制（现状）</span></a><a class="pn-link pn-next" href="/docs/design/runtime/README.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Runtime</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
 <a class="" href="#调用链">调用链</a>
 <a class="" href="#第一层agentsession-自动重试">第一层:AgentSession 自动重试</a>
 <a class="" href="#第二层runtimeexec-重试循环">第二层:Runtime.exec() 重试循环</a>
 <a class="" href="#两层重试是相乘的">两层重试是相乘的</a>
 <a class="" href="#边界重试解决不了的">边界:重试解决不了的</a>
-<a class="" href="#错误信息的可诊断性">错误信息的可诊断性</a></aside>
+<a class="" href="#错误信息的可诊断性">错误信息的可诊断性</a>
+</div></aside>
 </div>
 
 <div class="search-overlay">

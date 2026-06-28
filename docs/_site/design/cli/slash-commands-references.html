@@ -634,6 +634,7 @@ pi-mono      →  纯反例
 <p>如果上游做了破坏性变更（比如 claude-code 改了 frontmatter 字段名），<strong>不跟随</strong>——我们的 frontmatter 是稳定 contract，向后兼容优先。把别名映射写在 <code>frontmatter.py</code> 的 <code>_ALIAS_MAP</code> 里即可读懂旧/新两套写法。</p>
 <div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-20</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/cli/cli-redesign.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">OpenProgram CLI / TUI Redesign</span></a><a class="pn-link pn-next" href="/docs/design/cli/slash-commands.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Slash Commands — Unified Design</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
 <a class="" href="#1-claude-code-leaked">1. claude-code-leaked</a>
 <a class="lvl-3" href="#来源-加载顺序">来源 / 加载顺序</a>
 <a class="lvl-3" href="#frontmatter-字段-srcutilsfrontmatterparserts10-59">Frontmatter 字段 (src/utils/frontmatterParser.ts:10-59)</a>
@@ -663,7 +664,8 @@ pi-mono      →  纯反例
 <a class="lvl-3" href="#来源-3">来源</a>
 <a class="lvl-3" href="#独有-4">独有</a>
 <a class="" href="#6-特性矩阵">6. 特性矩阵</a>
-<a class="" href="#7-同步流程">7. 同步流程</a></aside>
+<a class="" href="#7-同步流程">7. 同步流程</a>
+</div></aside>
 </div>
 
 <div class="search-overlay">

@@ -347,6 +347,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p>这套机制和 <code>tool-calling.md</code> 里 <code>agent_loop.py</code> 的 tool call 循环不冲突,是并列的两种&quot;让模型选下一步&quot;的实现。<code>@agentic_function</code> 既可以作为 <code>exec(tools=[...])</code> 的原生工具,也可以作为决策选项——同一个函数,两套调用路径。选哪套取决于:要不要依赖 provider tool use、要不要&quot;选项是个值而不是函数&quot;、要不要把每次决策和重试都作为可追溯的 DAG 节点。</p>
 <div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-20</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/multi-agent-revert-todo.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Multi-agent + per-turn revert: status</span></a><a class="pn-link pn-next" href="/docs/design/runtime/p3-three-surface-sync.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">P3 — 三端同步(补全)+ P1/P2 上三端</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
 <a class="" href="#和原生-tool-call-的区别">和原生 tool call 的区别</a>
 <a class="" href="#入口一decisionmake-纯决策">入口一:decision.make —— 纯决策</a>
 <a class="" href="#入口二runtimeexecchoices-先干活再决策">入口二:runtime.exec(choices=...) —— 先干活、再决策</a>
@@ -358,7 +359,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="lvl-3" href="#3-parse_args-解析与校验">3. parse_args 解析与校验</a>
 <a class="lvl-3" href="#4-解析失败重试">4. 解析失败重试</a>
 <a class="lvl-3" href="#5-resolve_decision-解析成结果">5. resolve_decision 解析成结果</a>
-<a class="" href="#与-tool-call-循环的关系">与 tool call 循环的关系</a></aside>
+<a class="" href="#与-tool-call-循环的关系">与 tool call 循环的关系</a>
+</div></aside>
 </div>
 
 <div class="search-overlay">

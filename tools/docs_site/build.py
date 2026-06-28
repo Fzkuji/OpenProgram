@@ -143,10 +143,12 @@ def extract_toc(body_html: str) -> str:
         items.append((level, hid, text))
     if not items:
         return ""
-    rows = ['<div class="toc-title" data-i18n="on_this_page">本页内容</div>']
+    rows = ['<div class="toc-title" data-i18n="on_this_page">本页内容</div>',
+            '<div class="toc-list">']
     for level, hid, text in items:
         cls = "lvl-3" if level == "3" else ""
         rows.append(f'<a class="{cls}" href="#{_html.escape(hid)}">{_html.escape(text)}</a>')
+    rows.append("</div>")
     return "\n".join(rows)
 
 

@@ -272,12 +272,14 @@ id,以便函数体内 LLM 调用有 frame 可参照)。</p>
 </ul>
 <div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/rewind.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Rewind — 回退到任意历史消息</span></a><a class="pn-link pn-next" href="/docs/design/runtime/session-dag.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
 <a class="" href="#1-runtime-1-session">1 runtime = 1 session</a>
 <a class="" href="#contextvar-自动注入-runtime">ContextVar 自动注入 runtime</a>
 <a class="" href="#session-provider-vs-api-provider-共用一套抽象">Session-provider vs API-provider 共用一套抽象</a>
 <a class="" href="#retry-在-runtime-层不在-provider-层">Retry 在 runtime 层,不在 provider 层</a>
 <a class="" href="#dag-写入进出函数都写-code-节点exec-写-llm-节点">DAG 写入:进出函数都写 code 节点,exec 写 llm 节点</a>
-<a class="" href="#相关实现文件">相关实现文件</a></aside>
+<a class="" href="#相关实现文件">相关实现文件</a>
+</div></aside>
 </div>
 
 <div class="search-overlay">
