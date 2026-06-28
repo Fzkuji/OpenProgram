@@ -33,7 +33,7 @@ from typing import Any, Optional
 
 _log = logging.getLogger(__name__)
 
-from openprogram.context.nodes import Call, ROLE_USER
+from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
 # tests covering edge cases (sub-call routing, extra_json roundtrip) still hold.
 from ._msg_adapter import (
@@ -910,7 +910,11 @@ class SessionStore:
         except Exception:
             pass
         for node in idx.all_nodes():
-            if node.called_by:
+            # Skip sub-call nodes (tool/code with a real caller).
+            # Don't skip user/assistant nodes — their called_by is
+            # a conv predecessor or ROOT, not a sub-call caller.
+            caller = _node_caller(node)
+            if caller and caller != "ROOT" and node.role not in (ROLE_USER, ROLE_LLM):
                 continue
             if (node.metadata or {}).get("display") == "root":
                 continue
