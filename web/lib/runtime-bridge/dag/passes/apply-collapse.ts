@@ -46,8 +46,12 @@ export function _applyCollapse(graph: GNode[]): {
     if (_lp) {
       (childrenOf[_lp] = childrenOf[_lp] || []).push(m.id);
     }
-    const ca = m.called_by || m.caller;
-    if (ca) {
+    // Only build caller-kids from the 'caller' field (sub-call
+    // relationship), not from called_by (conv predecessor). This
+    // prevents folding a user node from collapsing all subsequent
+    // turns in the conversation chain.
+    const ca = (m as Record<string, unknown>).caller as string | undefined;
+    if (ca && ca !== "ROOT") {
       (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m.id);
     }
   });
