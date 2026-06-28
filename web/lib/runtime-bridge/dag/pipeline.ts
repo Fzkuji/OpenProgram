@@ -305,52 +305,34 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     };
   }
 
-  // ── Tree-style edges: vertical trunk lines + horizontal branches ──
-  // For each parent with called_by children on the same lane: draw ONE
-  // continuous vertical line from the parent down to the last child's
-  // row, then a short horizontal line from the trunk to each child.
-  // Fork siblings (different lane, no called_by) get a horizontal
-  // dashed line to their first sibling.
+  // ── Tree-style edges ──
+  // Vertical trunk at the SMALLER tier (leftmost column between
+  // parent and child), then horizontal branch to the deeper node.
+  // When a conv-chain edge goes from tier=2 (llm) back to tier=1
+  // (next user), the trunk drops at tier=1 (not tier=2), avoiding
+  // the snake-shaped zigzag.
 
-  // Group children by their called_by parent (same lane only)
-  const trunkChildren: Record<string, string[]> = Object.create(null);
   const forkNodes: string[] = [];
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
-    const callerId = node.called_by;
-    if (callerId && tree.byId[callerId]) {
-      const parent = tree.byId[callerId];
-      if ((node._lane || 0) === (parent._lane || 0)) {
-        (trunkChildren[callerId] = trunkChildren[callerId] || []).push(id);
-        return;
-      }
-    }
-    // Different lane from parent = fork branch (retry/edit)
-    if (callerId && tree.byId[callerId]) {
+    const pid = node.called_by;
+    if (!pid || !tree.byId[pid]) return;
+    const parent = tree.byId[pid];
+    const sameLane = (node._lane || 0) === (parent._lane || 0);
+    if (!sameLane) {
       forkNodes.push(id);
+      return;
     }
-  });
-
-  // Draw trunk lines + horizontal branches
-  Object.keys(trunkChildren).forEach((callerId) => {
-    const parent = tree.byId[callerId];
-    if (!parent) return;
-    const kids = trunkChildren[callerId];
     const p = pos(parent);
+    const c = pos(node);
     const color = _branchColor(parent, stableLeafOfNode);
     const nr = NODE_R + 4;
-
-    // Find the last child's y position for the vertical trunk
-    let lastY = p.y;
-    for (const kid of kids) {
-      const kp = pos(tree.byId[kid]);
-      if (kp.y > lastY) lastY = kp.y;
-    }
-
-    // Vertical trunk line from parent down to last child's row
-    if (lastY > p.y) {
+    // Trunk drops at the leftmost x (smaller tier)
+    const trunkX = Math.min(p.x, c.x);
+    // Vertical trunk from parent row to child row
+    if (c.y > p.y) {
       edgeG.appendChild(_svg("line", {
-        x1: p.x, y1: p.y, x2: p.x, y2: lastY,
+        x1: trunkX, y1: p.y, x2: trunkX, y2: c.y,
         stroke: color,
         "stroke-width": 1.6,
         "stroke-linecap": "round",
@@ -358,22 +340,27 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
         class: "history-edge",
       }));
     }
-
-    // Horizontal branch from trunk to each child
-    for (const kid of kids) {
-      const kn = tree.byId[kid];
-      const kp = pos(kn);
-      if (kp.x !== p.x) {
-        const endX = kp.x > p.x ? kp.x - nr : kp.x + nr;
-        edgeG.appendChild(_svg("line", {
-          x1: p.x, y1: kp.y, x2: endX, y2: kp.y,
-          stroke: color,
-          "stroke-width": 1.6,
-          "stroke-linecap": "round",
-          "pointer-events": "none",
-          class: "history-edge",
-        }));
-      }
+    // Horizontal branch from trunk to the deeper node
+    // (parent or child, whichever is further right)
+    if (p.x !== trunkX) {
+      edgeG.appendChild(_svg("line", {
+        x1: trunkX, y1: p.y, x2: p.x - nr, y2: p.y,
+        stroke: color,
+        "stroke-width": 1.6,
+        "stroke-linecap": "round",
+        "pointer-events": "none",
+        class: "history-edge",
+      }));
+    }
+    if (c.x !== trunkX) {
+      edgeG.appendChild(_svg("line", {
+        x1: trunkX, y1: c.y, x2: c.x - nr, y2: c.y,
+        stroke: color,
+        "stroke-width": 1.6,
+        "stroke-linecap": "round",
+        "pointer-events": "none",
+        class: "history-edge",
+      }));
     }
   });
 
