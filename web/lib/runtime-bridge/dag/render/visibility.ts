@@ -50,7 +50,14 @@ export function _applyVisibility(nodeEl: Element, visible: boolean): void {
   }
   if (shape) {
     _applyShapeSize(shape);
-    shape.setAttribute("fill", visible ? "#ffffff" : "transparent");
+    if (visible) {
+      shape.setAttribute("fill", "#ffffff");
+    } else {
+      // On-head nodes get a subtle fill so they're visually distinct
+      // from off-head even when the chat hasn't scrolled to them.
+      const isOnHead = !nodeEl.classList.contains("off-head");
+      shape.setAttribute("fill", isOnHead ? "rgba(255,255,255,0.3)" : "transparent");
+    }
   }
 }
 
