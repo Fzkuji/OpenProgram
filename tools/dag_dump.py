@@ -64,38 +64,31 @@ def main() -> int:
             f"{n.get('_depth', '?'):>5}"
         )
 
-    # ASCII grid: x = lane-block-col + tier, y = depth. Mirrors the web
-    # viewport's pos() so the shape on screen matches this.
+    # ASCII grid: column = ``_lane`` (final column offset, computed by
+    # annotate_graph) + ``_tier`` (indent), row = ``_depth``. This is
+    # EXACTLY what the web viewport's pos() does — no re-mapping — so the
+    # ASCII matches the rendered DAG one-to-one.
     print()
-    print("layout grid (x = lane+tier column, y = depth row):")
-    # compute lane→col offset like pipeline.ts does
-    lane_tiers: dict[int, int] = {}
-    for n in graph:
-        ln = n.get("_lane", 0) or 0
-        t = n.get("_tier", 0) or 0
-        lane_tiers[ln] = max(lane_tiers.get(ln, 0), t)
-    lane_col: dict[int, int] = {}
-    col = 0
-    for ln in sorted(lane_tiers):
-        lane_col[ln] = col
-        col += lane_tiers[ln] + 2  # +1 tier width, +1 gap
-
+    print("layout grid (column = _lane + _tier, row = _depth):")
+    CW = 13  # cell width
     shape = {"user": "○", "assistant": "△", "llm": "△", "tool": "■", "code": "■"}
     rows: dict[int, dict[int, str]] = {}
-    width = col + 2
+    max_col = 0
     for n in graph:
         ln = n.get("_lane", 0) or 0
         t = n.get("_tier", 0) or 0
         d = n.get("_depth", 0) or 0
-        x = lane_col.get(ln, 0) + t
+        x = ln + t
+        max_col = max(max_col, x)
         disp = (n.get("display") or "")
         sym = "◇" if disp == "root" else shape.get(n.get("role") or "", "?")
-        rows.setdefault(d, {})[x] = sym + " " + (n.get("id") or "")[:8]
+        rows.setdefault(d, {})[x] = sym + " " + (n.get("id") or "")[:9]
+    width = max_col + 2
     for d in sorted(rows):
-        line = [" " * 12] * width
+        line = [" " * CW] * width
         for x, label in rows[d].items():
             if x < width:
-                line[x] = f"{label:12}"
+                line[x] = f"{label:{CW}}"
         print(f"  d{d:<2} " + "".join(line).rstrip())
     return 0
 
