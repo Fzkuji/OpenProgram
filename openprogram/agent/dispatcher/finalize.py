@@ -25,7 +25,10 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from openprogram.agent.dispatcher.titles import _maybe_auto_title
+from openprogram.agent.dispatcher.titles import (
+    _maybe_auto_title,
+    maybe_auto_name_branch,
+)
 
 
 def finalize_turn(
@@ -173,6 +176,15 @@ def finalize_turn(
     # 6.5. Auto-title: background LLM generation at turn thresholds.
     _assistant_text = assistant_msg.get("content") or ""
     _maybe_auto_title(db, req.session_id, session, req.user_text, _assistant_text)
+
+    # 6.5b. Auto-name the current branch (DAG badge). Bumps the branch's
+    # own turn counter and, at thresholds, spawns a background LLM rename
+    # unless the user locked the name. head_id was just set to
+    # assistant_msg_id above. Best-effort. See branch-naming.md.
+    try:
+        maybe_auto_name_branch(db, req.session_id, assistant_msg_id)
+    except Exception:
+        pass
 
     # 6.6. Compaction signal: when context is approaching the model's
     # window, surface a "compaction_recommended" event so the UI can

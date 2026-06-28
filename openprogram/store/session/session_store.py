@@ -933,20 +933,21 @@ class SessionStore:
                 continue
             label = named.get(node.id)
             name = label.get("name") if isinstance(label, dict) else label
-            # Fall back to "main" for the single tip that the lane-0
-            # primary walk ends at. Every other tip stays unnamed.
-            if not name and main_tip_id and node.id == main_tip_id:
-                name = "main"
+            # No "main" special-case: the trunk tip is named exactly like
+            # any other branch — its own name, or None (→ id short-hex in
+            # the badge). The trunk identity is separate from the name.
+            # See branch-naming.md 决策 3.
             tips.append({
                 "head_msg_id": node.id,
                 "name": name,
                 "created_at": (label or {}).get("created_at") if isinstance(label, dict) else node.created_at,
                 "updated_at": (label or {}).get("updated_at") if isinstance(label, dict) else node.created_at,
             })
-        # Main_tip may have children (the /task spawn it stopped at),
-        # so the leaf-only loop above won't include it. Push it in by
-        # hand with the "main" label so the right-rail Branches panel
-        # still lists the trunk you can checkout to "go back" to.
+        # Main_tip may have children (the /task spawn it stopped at), so
+        # the leaf-only loop above won't include it. Push it in by hand so
+        # the right-rail Branches panel still lists the trunk you can
+        # checkout to "go back" to — but with its own name (or None →
+        # short-hex), no "main" special-case. See branch-naming.md 决策 3.
         if main_tip_id and not any(t["head_msg_id"] == main_tip_id for t in tips):
             main_node = idx.nodes_by_id.get(main_tip_id)
             if main_node:
@@ -954,7 +955,7 @@ class SessionStore:
                 name = (
                     label.get("name") if isinstance(label, dict)
                     else label
-                ) or "main"
+                )
                 tips.append({
                     "head_msg_id": main_tip_id,
                     "name": name,
@@ -964,21 +965,64 @@ class SessionStore:
         tips.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
         return tips
 
-    def set_branch_name(self, session_id: str, head_msg_id: str, name: str) -> None:
+    def set_branch_name(
+        self,
+        session_id: str,
+        head_msg_id: str,
+        name: str,
+        **fields: Any,
+    ) -> None:
+        """Set a branch's name, merging (not replacing) its meta entry.
+
+        ``**fields`` writes auto-naming state alongside the name
+        (``auto_named`` / ``name_locked`` / ``name_gen_count`` / ``turns``;
+        see docs/design/runtime/branch-naming.md). Unspecified existing
+        fields are preserved — callers that only touch the name must not
+        wipe the lock or counters."""
         pair = self._open(session_id, create_if_missing=True)
         if pair is None:
             return
         git, idx = pair
         branches = dict(idx.meta.get("branches") or {})
         now = time.time()
-        existing = branches.get(head_msg_id) or {}
-        branches[head_msg_id] = {
+        existing = dict(branches.get(head_msg_id) or {})
+        existing.update({
             "name": name,
             "created_at": existing.get("created_at", now),
             "updated_at": now,
-        }
+        })
+        existing.update(fields)
+        branches[head_msg_id] = existing
         idx.set_meta(branches=branches)
         self._persist_meta(git, idx)
+
+    def get_branch_meta(self, session_id: str, head_msg_id: str) -> dict[str, Any]:
+        """Return a branch's full meta entry (name + auto-naming state),
+        or ``{}`` if the branch has no entry. Used by the auto-namer to
+        re-read the lock before writing back (see branch-naming.md
+        "优先级与锁")."""
+        pair = self._open(session_id)
+        if pair is None:
+            return {}
+        _git, idx = pair
+        return dict((idx.meta.get("branches") or {}).get(head_msg_id) or {})
+
+    def bump_branch_turns(self, session_id: str, head_msg_id: str) -> int:
+        """Increment a branch's per-branch turn counter and return the
+        new value. Used by finalize_turn to decide whether to trigger
+        Stage-2 auto-rename (counter, not a message count — see
+        branch-naming.md 第四节)."""
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return 0
+        git, idx = pair
+        branches = dict(idx.meta.get("branches") or {})
+        entry = dict(branches.get(head_msg_id) or {})
+        entry["turns"] = int(entry.get("turns", 0)) + 1
+        branches[head_msg_id] = entry
+        idx.set_meta(branches=branches)
+        self._persist_meta(git, idx)
+        return entry["turns"]
 
     def delete_branch_name(self, session_id: str, head_msg_id: str) -> None:
         pair = self._open(session_id)

@@ -70,10 +70,10 @@ def test_delete_branch_name(db):
     _append(db, "s1", "n1")
     db.set_branch_name("s1", "n1", "label")
     db.delete_branch_name("s1", "n1")
-    # After deletion the user-supplied name is gone. The branch
-    # descending from the session's earliest conv-root falls back to
-    # the default "main" label (see SessionStore.list_branches).
-    assert db.list_branches("s1")[0]["name"] == "main"
+    # After deletion the user-supplied name is gone. No "main" special-
+    # case anymore (branch-naming.md 决策 3): the trunk tip falls back to
+    # None, which the badge renders as the id short-hex.
+    assert db.list_branches("s1")[0]["name"] is None
 
 
 # delete_branch_tail
@@ -142,3 +142,55 @@ def test_message_exists(db):
     assert db.message_exists("s1", "n1") is True
     assert db.message_exists("s1", "ghost") is False
     assert db.message_exists("nope", "n1") is False
+
+
+# Auto-naming state (branch-naming.md): extra fields merge, lock survives,
+# per-branch turn counter.
+
+
+def test_set_branch_name_merges_extra_fields(db):
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "n1")
+    db.set_branch_name("s1", "n1", "auto", auto_named=True, name_gen_count=1)
+    meta = db.get_branch_meta("s1", "n1")
+    assert meta["name"] == "auto"
+    assert meta["auto_named"] is True
+    assert meta["name_gen_count"] == 1
+
+
+def test_set_branch_name_preserves_lock_on_rename(db):
+    # A name-only write must NOT wipe a previously set lock.
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "n1")
+    db.set_branch_name("s1", "n1", "user-name", name_locked=True)
+    db.set_branch_name("s1", "n1", "renamed-again")  # name only
+    meta = db.get_branch_meta("s1", "n1")
+    assert meta["name"] == "renamed-again"
+    assert meta["name_locked"] is True  # lock survived
+
+
+def test_get_branch_meta_missing_returns_empty(db):
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "n1")
+    assert db.get_branch_meta("s1", "n1") == {}
+    assert db.get_branch_meta("s1", "ghost") == {}
+
+
+def test_bump_branch_turns_increments(db):
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "n1")
+    assert db.bump_branch_turns("s1", "n1") == 1
+    assert db.bump_branch_turns("s1", "n1") == 2
+    assert db.get_branch_meta("s1", "n1")["turns"] == 2
+
+
+def test_bump_branch_turns_coexists_with_name(db):
+    # Bumping turns must not clobber the name, and naming must not reset turns.
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "n1")
+    db.set_branch_name("s1", "n1", "x")
+    db.bump_branch_turns("s1", "n1")
+    db.set_branch_name("s1", "n1", "y")
+    meta = db.get_branch_meta("s1", "n1")
+    assert meta["name"] == "y"
+    assert meta["turns"] == 1

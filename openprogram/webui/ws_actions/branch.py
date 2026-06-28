@@ -276,7 +276,10 @@ async def handle_rename_branch(ws, cmd: dict):
     else:
         try:
             from openprogram.agent.session_db import default_db
-            default_db().set_branch_name(session_id, head_msg_id, new_name)
+            # User typed a name → highest priority, lock it so auto-naming
+            # (Stage 2) never overwrites it (branch-naming.md 优先级与锁).
+            default_db().set_branch_name(
+                session_id, head_msg_id, new_name, name_locked=True)
             ok = True
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
@@ -307,19 +310,11 @@ async def handle_auto_name_branch(ws, cmd: dict):
         try:
             from openprogram.agent.session_db import default_db
             db = default_db()
-            chain = db.get_branch(session_id, head_msg_id) or []
-            recent = chain[-6:]
-            transcript = "\n\n".join(
-                f"[{m.get('role') or '?'}] {(m.get('content') or '').strip()}"
-                for m in recent if m.get("content")
-            )[:2000]
-            prompt = (
-                "Summarize the topic of this conversation as a "
-                "very short branch label. Reply with ONLY the label "
-                "itself — 2 to 6 words, no quotes, no trailing "
-                "punctuation, in the same language as the conversation.\n\n"
-                + transcript
+            from openprogram.agent.dispatcher.titles import (
+                build_branch_name_prompt,
             )
+            prompt = build_branch_name_prompt(
+                db.get_branch(session_id, head_msg_id) or [])
             from openprogram.webui import _runtime_management as rm
             rm._init_providers()
             rt = rm._chat_runtime
@@ -339,7 +334,11 @@ async def handle_auto_name_branch(ws, cmd: dict):
                 if cleaned:
                     if len(cleaned) > 40:
                         cleaned = cleaned[:40].rstrip() + "…"
-                    db.set_branch_name(session_id, head_msg_id, cleaned)
+                    # User clicked the button → user-initiated = highest
+                    # priority. Lock so Stage-2 auto-naming never overwrites
+                    # it (branch-naming.md 优先级与锁).
+                    db.set_branch_name(
+                        session_id, head_msg_id, cleaned, name_locked=True)
                     name = cleaned
                     ok = True
                 else:
