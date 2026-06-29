@@ -276,7 +276,8 @@ def flatten_pages(groups):
     out = []
 
     def walk(g, chain):
-        new_chain = chain if not g.title else chain + [g.title]
+        # each chain entry is (zh_title, en_title) so breadcrumbs can be bilingual
+        new_chain = chain if not g.title else chain + [(g.title, g.title_en or g.title)]
         for p in g.pages:
             out.append((p, new_chain))
         for sg in g.subgroups:
@@ -287,13 +288,21 @@ def flatten_pages(groups):
     return out
 
 
-def render_breadcrumb(chain, title):
+def _bc_span(zh, en, cls=""):
+    c = f' {cls}' if cls else ""
+    if en and en != zh:
+        return (f'<span class="bc-seg{c}" data-title-en="{_html.escape(en, quote=True)}"'
+                f' data-title-zh="{_html.escape(zh, quote=True)}">{_html.escape(zh)}</span>')
+    return f'<span class="bc-seg{c}">{_html.escape(zh)}</span>'
+
+
+def render_breadcrumb(chain, title, title_en=""):
     if not chain:
         return ""
-    parts = " <span class='bc-sep'>›</span> ".join(_html.escape(c) for c in chain)
-    return (f'<nav class="breadcrumb">{parts}'
-            f" <span class='bc-sep'>›</span> "
-            f'<span class="bc-current">{_html.escape(title)}</span></nav>')
+    sep = " <span class='bc-sep'>›</span> "
+    segs = [_bc_span(zh, en) for (zh, en) in chain]
+    segs.append(_bc_span(title, title_en or title, cls="bc-current"))
+    return f'<nav class="breadcrumb">{sep.join(segs)}</nav>'
 
 
 def render_prevnext(prev_p, next_p):
@@ -372,9 +381,12 @@ def render_nav(groups, current_out: Path, base: str) -> str:
         is_open = contains_current(g) or (is_synthetic and current_out == Path("index.html"))
         open_attr = " open" if is_open else ""
         i18n = f' data-i18n="{g.i18n_key}"' if g.i18n_key else ""
+        # real directory groups carry their English label so the toggle can
+        # switch the section header (synthetic groups use i18n_key instead).
+        ten = f' data-title-en="{_html.escape(g.title_en, quote=True)}"' if (g.title_en and not g.i18n_key) else ""
         return (
             f'<details class="group" data-key="{_html.escape(key)}"{open_attr}>'
-            f'<summary class="group-title"{i18n}>{_html.escape(g.title)}</summary>'
+            f'<summary class="group-title"{i18n}{ten}>{_html.escape(g.title)}</summary>'
             f'<div class="group-body">{render_pages_and_subs(g)}</div>'
             f"</details>"
         )
@@ -459,7 +471,7 @@ def build() -> int:
 
         # breadcrumb + prev/next + last-updated
         chain = chain_of.get(p.out, [])
-        breadcrumb = render_breadcrumb(chain, p.title)
+        breadcrumb = render_breadcrumb(chain, p.title, p.title_en)
         i = idx_of.get(p.out)
         prev_p = seq[i - 1] if i and i > 0 else None
         next_p = seq[i + 1] if i is not None and i + 1 < len(seq) else None
@@ -502,7 +514,7 @@ def build() -> int:
         search_records.append({
             "title": p.title,
             "url": str(p.out).replace("\\", "/"),
-            "group": " › ".join(chain) if chain else "",
+            "group": " › ".join(zh for (zh, _en) in chain) if chain else "",
             "text": searchmod.plain_text(body),
         })
 

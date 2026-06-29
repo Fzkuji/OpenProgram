@@ -69,19 +69,16 @@
     const btn = document.getElementById("lang-toggle");
     if (btn) btn.textContent = lang === "en" ? "EN" : "中";
 
-    // Sidebar entries that have an English version: switch their label + link
-    // to match the chosen language.
-    document.querySelectorAll("nav.sidebar a.navlink[data-title-en]").forEach((a) => {
-      if (a.dataset.titleZh == null) a.dataset.titleZh = a.textContent;  // capture once
-      const hrefZh = a.getAttribute("data-href-zh");
-      const hrefEn = a.getAttribute("data-href-en");
-      if (lang === "en") {
-        a.textContent = a.getAttribute("data-title-en");
-        if (hrefEn) a.setAttribute("href", hrefEn);
-      } else {
-        a.textContent = a.dataset.titleZh;
-        if (hrefZh) a.setAttribute("href", hrefZh);
-      }
+    // Any labelled-bilingual element (sidebar links, group headers, breadcrumb
+    // segments) switches its text to match the chosen language. Sidebar links
+    // also switch their href to the matching-language page.
+    document.querySelectorAll("[data-title-en]").forEach((el) => {
+      if (el.dataset.titleZh == null) el.dataset.titleZh = el.textContent;  // capture once
+      el.textContent = lang === "en" ? el.getAttribute("data-title-en") : el.dataset.titleZh;
+      const hrefZh = el.getAttribute("data-href-zh");
+      const hrefEn = el.getAttribute("data-href-en");
+      if (lang === "en" && hrefEn) el.setAttribute("href", hrefEn);
+      else if (lang !== "en" && hrefZh) el.setAttribute("href", hrefZh);
     });
   }
   let curLang = "zh";

@@ -68,6 +68,7 @@ class Group:
     pages: list[Page] = field(default_factory=list)
     subgroups: list["Group"] = field(default_factory=list)
     i18n_key: str = ""  # if set, group header switches with the UI language
+    title_en: str = ""  # English group label (from README.en.md H1), if any
 
 
 _H1_RE = re.compile(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", re.MULTILINE)
@@ -184,8 +185,10 @@ def build_tree(docs_root: Path, pages: list[Page]) -> list[Group]:
             g = Group(title="", rel_dir=Path("."))
         else:
             readme = docs_root / rel_dir / "README.md"
+            readme_en = docs_root / rel_dir / "README.en.md"
             title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
-            g = Group(title=title, rel_dir=rel_dir)
+            title_en = extract_title(readme_en) if readme_en.exists() else ""
+            g = Group(title=title, rel_dir=rel_dir, title_en=title_en)
         groups[rel_dir] = g
         # attach to parent
         if rel_dir != Path("."):
