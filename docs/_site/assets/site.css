@@ -140,6 +140,7 @@ main.content {
   margin-left: var(--nav-w); margin-right: var(--toc-w);
   flex: 1; min-width: 0; display: flex; justify-content: center;
   padding: 38px 48px 120px;
+  transition: margin-left .2s ease;
 }
 article { width: 100%; max-width: var(--maxw); }
 
