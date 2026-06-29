@@ -351,18 +351,19 @@ const SCENES=[
    {id:"u1b",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"问题(改写)"},
    {id:"l1b",role:"assistant",caller:"u1b",predecessor:"u1b",created_at:4,label:"回复B"},
    {id:"mg",role:"merge",caller:"l1",predecessor:"l1",created_at:5,label:"merge",sub:"合并A+B",mergeFrom:["l1b"]}]},
- {name:"分支间通信",desc:"A 的三角(llm)调 send_to_branch → A 这边出一个【正方形工具】节点 → 它连到 B，在 B 那边相当于另一个 agent 发来消息，生成一个【三角】，三角再 call 出 B 的应答(三角)。全程 caller 子调用链，不经过 ROOT。",nodes:()=>[R0,
+ {name:"分支间通信",desc:"异步：A 调 send_to_branch(正方形工具)给 B 发消息 → 工具瞬间返回，A【不阻塞】继续自己的事。B 在自己节奏处理(B收到=三角→B应答=三角，都在 B 分支)。B 答完，结果【异步送回】A 末尾，变成一个三角「B回复了」(agent 发来的=三角)。两条通信线：A→B 发、B→A 回；两条分支各自竖线都不停。",nodes:()=>[R0,
    // A 分支
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A回复"},
    // B 分支(独立,和 A 平行,从 ROOT 来)
    {id:"ub",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"B用户",independent:true},
    {id:"lb",role:"assistant",caller:"ub",predecessor:"ub",created_at:4,label:"B回复"},
-   // send 工具在 A 分支(caller=l1)。B收到/B应答 归 B 分支(接 B回复,绿,B竖线串)。
-   // send→B收到 用【通信线】(commFrom)跨分支连——发起在 A,消息进 B,节点属 B。
-   {id:"send",role:"code",caller:"l1",predecessor:"l1",created_at:5,label:"send_to_branch",sub:"A调的工具"},
+   // A 调 send 工具(瞬间返回,不阻塞)；B收到/B应答 归 B 分支。
+   {id:"send",role:"code",caller:"l1",predecessor:"l1",created_at:5,label:"send_to_branch",sub:"瞬间返回,A不阻塞"},
    {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",commFrom:"send",created_at:6,label:"B收到(另一agent)"},
-   {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"}]},
+   {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"},
+   // B应答 异步送回 A 末尾 → 三角「B回复了」(agent 发来的=△)，落在 A 分支。
+   {id:"aRecv",role:"assistant",caller:"u1",predecessor:"send",commFrom:"bAns",created_at:8,label:"B回复了",sub:"异步送回A,△"}]},
  {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A"},
