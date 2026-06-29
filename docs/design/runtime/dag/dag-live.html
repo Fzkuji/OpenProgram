@@ -86,6 +86,7 @@ function computeTier(byId, nodes){
     if(depth>200){tier[id]=0;return 0;}
     const m=byId[id];
     if(isRoot(m)){tier[id]=0;return 0;}
+    if(m.tierHint!=null){tier[id]=m.tierHint;return m.tierHint;}  // 强制 tier(如跨分支收到的消息紧贴目标竖线)
     const caller=m.caller||"";
     const pn=caller?byId[caller]:null;
     if(pn && !isRoot(pn)){ const v=t(caller,depth+1)+1; tier[id]=v; return v; }
@@ -372,7 +373,7 @@ const SCENES=[
    {id:"send",role:"code",caller:"l1",predecessor:"l1",created_at:5,label:"send_to_branch",sub:"A调的工具"},
    // send 之后是 B 分支的事：B收到/B应答 属于 B 分支(绿,接 B回复后面)。
    // caller=send 只用来画那条【跨分支通信线】(send→B收到)，归属仍是 B 分支。
-   {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",comm_from:"send",created_at:6,label:"B收到(另一agent)"},
+   {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",comm_from:"send",tierHint:1,created_at:6,label:"B收到(另一agent)"},
    {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"}]},
  {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
