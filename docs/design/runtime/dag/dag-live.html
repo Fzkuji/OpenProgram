@@ -486,7 +486,9 @@ const SCENES=[
    {id:"b1",role:"assistant",caller:"sp",spawn_from:"sp",tierHint:1,created_at:4,label:"子分支B",sub:"spawn当场新建的子agent"},
    {id:"b2",role:"assistant",caller:"b1",predecessor:"b1",created_at:5,label:"B干完"},
    // B 干完 → attach 回流嵌回 A → A 收到后继续(新一轮,挂 A 主干 user 级)。
-   {id:"a2",role:"assistant",caller:"ROOT",predecessor:"sp",attach_from:"b2",tierHint:1,created_at:6,label:"A(收到B)",sub:"attach回流,A收到后继续"}]},
+   {id:"a2",role:"assistant",caller:"ROOT",predecessor:"sp",attach_from:"b2",tierHint:1,created_at:6,label:"A(收到B)",sub:"attach回流,A收到后继续"},
+   // A 收到子分支结果后,继续处理/回应(A收到B=输入 → A回应=llm,缩进一级)
+   {id:"a3",role:"assistant",caller:"a2",predecessor:"a2",created_at:7,label:"A回应",sub:"A 对子分支结果的处理"}]},
 ];
 
 function show(i){
