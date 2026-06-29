@@ -243,8 +243,10 @@ function render(nodes){
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
     const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
+    // spawn vs retry：带 spawn_from(大模型派的子分支) = spawn；否则用户 retry。
+    const isSpawn=isFork && !!m.spawn_from && byId[m.spawn_from];
     let dash="";
-    if(isFork) dash = (m.role==="code"||m.role==="tool") ? "4 2 1 2" : "5 4"; // spawn / retry
+    if(isFork) dash = isSpawn ? "4 2 1 2" : "5 4"; // spawn / retry
     if(!isFork){
       // 同分支：父中心(p.x)竖下到子行，再横到子 —— spec 标准阶梯
       edgeG.appendChild(svgEl("path",{
@@ -255,10 +257,11 @@ function render(nodes){
       //   retry → 源 = 被 retry 的兄弟（同 predecessor 的首个节点），从它旁边衍生
       //   spawn → 源 = caller(spawn_branch 节点)
       const pred=predOf(byId,m);
-      let src=parent;  // 默认 caller(spawn 情形)
-      if(m.role!=="code"&&m.role!=="tool"&&pred){
+      let src=parent;
+      if(isSpawn){ src=byId[m.spawn_from]; }       // spawn: 源 = spawn_branch 节点
+      else if(pred){                                // retry: 源 = 被 retry 的兄弟
         const sibs=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id);
-        if(sibs.length && byId[sibs[0]]) src=byId[sibs[0]];   // 被 retry 的兄弟
+        if(sibs.length && byId[sibs[0]]) src=byId[sibs[0]];
       }
       const sp=pos(src);
       const trunkX = PADX + m._lane*COL;   // 子所在 lane 的竖线列（起始列）
@@ -353,7 +356,7 @@ const SCENES=[
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A"},
    {id:"sp",role:"code",caller:"l1",predecessor:"l1",created_at:3,label:"spawn_branch",sub:"派子分支"},
-   {id:"b1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:4,label:"子分支B"},
+   {id:"b1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:4,label:"子分支B",spawn_from:"sp"},
    {id:"b2",role:"assistant",caller:"b1",predecessor:"b1",created_at:5,label:"B干完"},
    {id:"a2",role:"assistant",caller:"l1",predecessor:"l1",created_at:6,label:"A(收到B)",sub:"attach回流",attach_from:"b2"}]},
 ];
