@@ -98,42 +98,36 @@ function computeTier(byId, nodes){
   return tier;
 }
 
-// depth.compute_depth — DFS by seq, fork siblings 对齐首兄弟
+// depth.compute_depth — 行 = 全局 created_at(seq) 时间序，所有分支按真实时间
+// 交错排（早发生的在上）。retry fork 兄弟对齐到首兄弟同行（同一时刻的两种可能）。
 function computeDepth(byId, nodes, maps){
-  const {callerCh,predCh,fork}=maps;
-  const depth={}; let counter=0;
-  const skip=new Set();
-  for(const pid in fork){ const k=fork[pid]; if(k.length>1) k.slice(1).forEach(x=>skip.add(x)); }
-  const kidsOf=id=>{ const a=(callerCh[id]||[]).slice(); for(const x of (predCh[id]||[]))if(!a.includes(x))a.push(x);
-    return a.sort((p,q)=>(byId[p].created_at||0)-(byId[q].created_at||0)); };
-  function dfs(id){ if(id in depth)return; depth[id]=counter++; for(const kid of kidsOf(id)){ if(skip.has(kid))continue; dfs(kid);} }
-  const bySeq=(a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0);
-  const roots=nodes.filter(m=>isRoot(m)).map(m=>m.id).sort(bySeq);
-  for(const r of roots)dfs(r);
-  // fork siblings + 剩余: 对齐到分叉点/首兄弟同行,然后各自往下
-  const remaining=nodes.map(m=>m.id).filter(id=>!(id in depth)).sort(bySeq);
-  for(const id of remaining){
-    if(id in depth)continue;
-    const pid=predOf(byId,byId[id]);
-    let start=0;
-    if(byId[id].independent){
-      // 独立分支(用户另开的并行对话)：不和兄弟对齐同行，像下一轮一样往下排。
-      start=counter;
-    }else if(pid && pid in depth){
-      // retry fork：对齐到首兄弟同行
-      let found=false;
-      for(const oid of nodes.map(m=>m.id)){
-        if(oid===id)continue;
-        if(predOf(byId,byId[oid])===pid && oid in depth){ start=depth[oid]; found=true; break; }
-      }
-      if(!found) start=depth[pid]+1;
+  const {fork}=maps;
+  // 1) 全局按 created_at 排出基础行号
+  const ordered=nodes.slice().sort((a,b)=>(a.created_at||0)-(b.created_at||0));
+  const depth={}; ordered.forEach((m,i)=>depth[m.id]=i);
+  // 2) retry fork 兄弟(非 independent)对齐到首兄弟同行——它们是同一时刻的平行可能
+  for(const pid in fork){
+    const k=fork[pid]; if(k.length<2)continue;
+    const first=k[0];
+    for(const sib of k.slice(1)){
+      if(byId[sib].independent)continue;          // 独立分支按自己时间排，不对齐
+      const shift=depth[first]-depth[sib];
+      if(shift===0)continue;
+      // 把 sib 及其子树整体平移到与 first 对齐
+      const sub=descendants(byId,nodes,sib);
+      for(const x of sub) depth[x]+=shift;
     }
-    // walk branch
-    (function walk(nid,s){ if(nid in depth)return; depth[nid]=s; let d=s+1;
-      for(const kid of kidsOf(nid)){ if(!(kid in depth)){ depth[kid]=d; d++; for(const gk of kidsOf(kid)) walk(gk,depth[kid]+1);} } })(id,start);
   }
-  for(const m of nodes)if(!(m.id in depth))depth[m.id]=counter++;
   return depth;
+}
+// 一个节点的 caller+predecessor 子树(含自己)
+function descendants(byId,nodes,rootId){
+  const out=new Set([rootId]); let grew=true;
+  while(grew){ grew=false;
+    for(const m of nodes){ if(out.has(m.id))continue;
+      const c=m.caller, p=m.predecessor;
+      if((c&&out.has(c))||(p&&out.has(p))){ out.add(m.id); grew=true; } } }
+  return [...out];
 }
 
 // lane.compute_lane — 数分支按序发号, 续聊跟 predecessor lane
@@ -403,7 +397,11 @@ function show(i){
 }
 const bar=document.getElementById("bar");
 SCENES.forEach((s,i)=>{ const b=document.createElement("button"); b.textContent=s.name; b.onclick=()=>show(i); bar.appendChild(b); });
-const _h=parseInt((location.hash||"#0").slice(1),10);
-show(Number.isInteger(_h)&&_h>=0&&_h<SCENES.length?_h:0);
+function _showFromHash(){
+  const h=parseInt((location.hash||"#0").slice(1),10);
+  show(Number.isInteger(h)&&h>=0&&h<SCENES.length?h:0);
+}
+window.addEventListener("hashchange",_showFromHash);
+_showFromHash();
 </script>
 </div></body></html>
