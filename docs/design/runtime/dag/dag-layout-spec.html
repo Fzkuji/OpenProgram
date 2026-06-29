@@ -21,6 +21,9 @@ svg{background:#141413;border-radius:8px;border:1px solid var(--bd)}
 .rule{font-size:13px;color:var(--tx2);margin-top:10px;border-left:3px solid var(--bd);padding-left:12px}
 code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
 text{font-family:-apple-system,sans-serif}
+/* 通信线默认隐藏，鼠标移到该场景的图上才显示（通信很多，常驻会糊） */
+.comm-line{opacity:0;transition:opacity .15s}
+svg:hover .comm-line{opacity:.9}
 </style></head>
 <body><div class="w">
 <h1>DAG 布局视觉规范</h1>
@@ -36,13 +39,16 @@ text{font-family:-apple-system,sans-serif}
 </div>
 
 <div class="rule" style="margin-bottom:18px">
-<b style="color:var(--acc)">连线线型（按"这条分支怎么来的"区分）：</b><br>
-&nbsp;&nbsp;━━ <b>同分支连线</b>：实线，分支 lane 色（父→子，正常对话/子调用）<br>
-&nbsp;&nbsp;┄┄ <b>retry 分叉</b>（用户手动 retry/改写消息）：<b>虚线 5 4</b>，分支 lane 色<br>
-&nbsp;&nbsp;┄·┄ <b>大模型主动建分支</b>（spawn_branch）：<b>灰色点划线 4 2 1 2</b><br>
-&nbsp;&nbsp;···· <b>分支间通信</b>（send_to_branch）：<b>金色点线 1 5</b><br>
-&nbsp;&nbsp;═━ <b>合并汇入</b>（merge）：<b>粗实线 2.4px</b>，peer 分支 lane 色<br>
-&nbsp;&nbsp;┈┈ <b>attach 回流</b>（子分支结果嵌回）：绿色虚线 4 4
+<b style="color:var(--acc)">颜色 = 分支身份，线型 = 连线类型（两者正交）：</b><br>
+<b>颜色永远跟着分支走</b>——每条 lane 一个颜色，一条线用它<b>所属/指向的那条分支</b>的颜色。
+<b>绝不</b>用颜色区分线的类型（那会和"颜色=分支"冲突）。线的类型只用<b>线型（dash 样式 / 粗细）</b>区分：<br>
+&nbsp;&nbsp;━━ <b>同分支连线</b>：实线（父→子，正常对话/子调用）<br>
+&nbsp;&nbsp;┄┄ <b>retry 分叉</b>（用户手动 retry/改写）：虚线 <code>5 4</code><br>
+&nbsp;&nbsp;┄·┄ <b>大模型主动建分支</b>（spawn_branch）：点划线 <code>4 2 1 2</code><br>
+&nbsp;&nbsp;···· <b>分支间通信</b>（send_to_branch）：点线 <code>1 5</code> ——<b>默认隐藏，hover 才显示</b>（通信很多，常驻会糊）<br>
+&nbsp;&nbsp;═━ <b>合并汇入</b>（merge）：粗实线 <code>2.4px</code><br>
+&nbsp;&nbsp;┈┈ <b>attach 回流</b>（子分支结果嵌回）：长虚线 <code>4 4</code><br>
+全部线型都用对应分支的 lane 颜色——同一种线型出现在不同分支上，颜色不同；同一条分支上的不同类型线，颜色相同、靠 dash 区分。
 </div>
 
 <div class="rule" style="margin-bottom:24px;border-left-color:var(--acc)">
@@ -295,16 +301,17 @@ scene(9,"分支间发消息（send_to_branch）",
   // B 末尾新 user (from A)
   s+=edge(4,2,4,3,C.green);
   // 通信线: A的llm(列2,行2) ┄·┄ B的新user(列4,行3) 点划线
-  s+=`<path d="M ${PADX+2*COL+R} ${PADY+2*ROW} C ${PADX+3.5*COL} ${PADY+2.5*ROW}, ${PADX+3.5*COL} ${PADY+3*ROW}, ${PADX+4*COL-R} ${PADY+3*ROW}" fill="none" stroke="#e0b020" stroke-width="1.8" stroke-dasharray="1 5" stroke-linecap="round" opacity="0.9"/>`;
+  // 通信线: 颜色用目标分支(B,绿)的 lane 色; 类型靠点线 1 5; 默认隐藏(class comm-line),hover 才显示
+  s+=`<path class="comm-line" d="M ${PADX+2*COL+R} ${PADY+2*ROW} C ${PADX+3.5*COL} ${PADY+2.5*ROW}, ${PADX+3.5*COL} ${PADY+3*ROW}, ${PADX+4*COL-R} ${PADY+3*ROW}" fill="none" stroke="${C.green}" stroke-width="1.8" stroke-dasharray="1 5" stroke-linecap="round"/>`;
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"问题");
   s+=node(null,2,2,'llm',C.blue,"A的回复","发消息给B");
   s+=node(null,4,1,'user',C.green,"B分支");
   s+=node(null,5,2,'llm',C.green,"B的回复");
-  s+=node(null,4,3,'user','#e0b020',"来自A的消息","from_branch");
+  s+=node(null,4,3,'user',C.green,"来自A的消息","from_branch");
   return s;
  },
- "通信线 = 金色点划线（区别 fork 虚线/attach 虚线）。目标分支末尾加 user 节点，metadata.from_branch 标来源。");
+ "通信线 = 目标分支 lane 色 + 点线 1 5（颜色跟分支、类型靠线型）。【默认隐藏，鼠标移到图上才显示】——通信很多，常驻会糊。目标分支末尾加 user 节点，metadata.from_branch 标来源。");
 
 // ---- 场景10：子分支为主分支服务（派活→回流）----
 scene(10,"子分支服务（spawn → attach 回流）",
@@ -316,7 +323,8 @@ scene(10,"子分支服务（spawn → attach 回流）",
   s+=edge(2,2,3,3,C.blue);   // A 调 spawn (code 节点, 列3 行3)
   // spawn 线（大模型主动建分支 = 灰点划线 4 2 1 2）: spawn_branch(列3,行3)
   // 水平拉到子分支B首节点(列5,行3) —— 同一行
-  s+=`<path d="M ${PADX+3*COL+R} ${PADY+3*ROW} L ${PADX+5*COL-R} ${PADY+3*ROW}" fill="none" stroke="#888" stroke-width="1.4" stroke-dasharray="4 2 1 2" opacity="0.8"/>`;
+  // spawn 线: 颜色用子分支(B,绿)的 lane 色; 类型靠点划线 4 2 1 2 区分(不用灰色)
+  s+=`<path d="M ${PADX+3*COL+R} ${PADY+3*ROW} L ${PADX+5*COL-R} ${PADY+3*ROW}" fill="none" stroke="${C.green}" stroke-width="1.4" stroke-dasharray="4 2 1 2" opacity="0.85"/>`;
   s+=edge(5,3,6,4,C.green);   // 子分支B(列5,行3) -> B干完(列6,行4)
   // attach 回流（绿虚线 4 4）: B干完(列6,行4) → A收到结果(列2,行5)
   s+=`<path d="M ${PADX+6*COL} ${PADY+4*ROW+R} C ${PADX+4*COL} ${PADY+5*ROW}, ${PADX+3*COL} ${PADY+5*ROW}, ${PADX+2*COL+R} ${PADY+5*ROW}" fill="none" stroke="${C.green}" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.8"/>`;
@@ -330,7 +338,7 @@ scene(10,"子分支服务（spawn → attach 回流）",
   s+=node(null,2,5,'llm',C.blue,"A(收到B结果)","attach回流");
   return s;
  },
- "子分支首节点和 spawn_branch 同一行（行3）。spawn 线=灰点划线(大模型主动建分支)，attach 回流=绿虚线。");
+ "子分支首节点和 spawn_branch 同一行（行3）。spawn 线用子分支的 lane 色 + 点划线 4 2 1 2（类型靠线型不靠颜色），attach 回流用长虚线 4 4。");
 
 </script>
 </div></body></html>
