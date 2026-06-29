@@ -63,6 +63,7 @@ function node(svg, x, y, shape, color, label, sub){
   else if(shape==='user') s=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
   else if(shape==='llm') s=`<polygon points="${cx},${cy-R} ${cx-R},${cy+R*0.8} ${cx+R},${cy+R*0.8}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
   else if(shape==='code') s=`<rect x="${cx-R*0.85}" y="${cy-R*0.85}" width="${R*1.7}" height="${R*1.7}" rx="2" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+  else if(shape==='merge') s=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="${color}" stroke="${color}" stroke-width="2.5"/><circle cx="${cx}" cy="${cy}" r="${R*0.45}" fill="#141413" stroke="none"/>`;
   const lbl=`<text x="${cx+R+8}" y="${cy+4}" fill="${color}" font-size="12">${label}</text>`;
   const subt = sub?`<text x="${cx+R+8}" y="${cy+18}" fill="#6b6a63" font-size="10">${sub}</text>`:"";
   return s+lbl+subt;
@@ -121,27 +122,29 @@ scene(2,"多轮对话",
 
 // ---- 场景3：retry 出多分支 ----
 scene(3,"retry 多分支",
- "对 user1 改写/重试 → 岔出第 2 条分支。lane0 占列 0~2（ROOT/user/llm，无工具）→ lane1 从列3 开始，紧贴不重叠。两条从同一点用虚线连。",
- 5,5,()=>{
+ "对 user1 改写/重试 → 岔出第 2 条分支。fork 分支占两列：列3 是它自己的竖线（和 ROOT 竖线对称），列4 才是 fork 的 user 节点。lane0 占列 0~2 → 留出列3 给 fork 竖线 → fork 节点在列4。中间那一格竖线让 fork 像主分支一样有自己的主干。",
+ 6,5,()=>{
   let s="";
   // branch 0 — 两个 user 都从 ROOT 列分出
   s+=edge(0,0,1,1,C.blue);   // ROOT -> user1
   s+=edge(1,1,2,2,C.blue);   // user1 -> llm1
   s+=edge(0,0,1,3,C.blue);   // ROOT -> user2
   s+=edge(1,3,2,4,C.blue);   // user2 -> llm2
-  // lane0 占列 0~2 → lane1 从列3 起。fork 虚线 user1(列1) -> user1'(列3)
-  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+3*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
-  s+=edge(3,1,4,2,C.purple);
+  // fork 虚线: 分叉点 user1(列1) ┄┄ 到 fork 竖线(列3)
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+3*COL} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  // fork 自己的竖线在列3（从 fork user 行垂直贯穿，和 ROOT 竖线同理）
+  s+=`<path d="M ${PADX+3*COL} ${PADY+1*ROW} L ${PADX+3*COL} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" fill="none" stroke="${C.purple}" stroke-width="1.6"/>`;
+  s+=edge(4,1,5,2,C.purple);  // fork user(列4) -> fork llm(列5)
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"你好");
   s+=node(null,2,2,'llm',C.blue,"回复1");
   s+=node(null,1,3,'user',C.blue,"天气");
   s+=node(null,2,4,'llm',C.blue,"回复2");
-  s+=node(null,3,1,'user',C.purple,"你好(改写)","lane1 从列3");
-  s+=node(null,4,2,'llm',C.purple,"回复1'");
+  s+=node(null,4,1,'user',C.purple,"你好(改写)","fork:竖线列3+节点列4");
+  s+=node(null,5,2,'llm',C.purple,"回复1'");
   return s;
  },
- "lane0 占列 0~2 → lane1 从列3 起（紧贴，不重叠）。retry 分支整块在原分支右边 + 虚线连分叉点。");
+ "fork 占两列：列3 竖线（自己的主干）+ 列4 节点。往右移两格，中间那格竖线和 ROOT 竖线对称——fork 像主分支一样挂在自己的竖线上。");
 
 // ---- 场景4：工具调用 ----
 scene(4,"AI 调用工具",
@@ -232,6 +235,86 @@ scene(7,"收起子调用 → 后面分支左移",
   return s;
  },
  "收起工具：横向 lane1 列4→列3，纵向 追问/回复2 上移一行。横竖都紧凑，空行空列都不保留。");
+
+// 汇入线：从 peer tip 斜拉到 merge 节点（peer lane 色）
+function mergeIn(px,py,mx,my,color){
+  const PX=PADX+px*COL, PY=PADY+py*ROW, MX=PADX+mx*COL, MY=PADY+my*ROW;
+  return `<path d="M ${PX} ${PY+R} L ${PX} ${MY} L ${MX-R-3} ${MY}" fill="none" stroke="${color}" stroke-width="2" opacity="0.85"/>`;
+}
+
+// ---- 场景8：分支合并（equal merge，多线汇聚）----
+scene(8,"分支合并（汇聚到 merge 节点）",
+ "两条分支各自聊完 → 合并。merge 节点（实心带孔的圆，一眼认出汇聚点）有多个父：base 分支主线延续 + peer 分支用「汇入线」（peer lane 色）斜拉汇入。这是 DAG 里唯一的多线汇聚。",
+ 6,7,()=>{
+  let s="";
+  // base 分支 lane0
+  s+=edge(0,0,1,1,C.blue);
+  s+=edge(1,1,2,2,C.blue);
+  // fork 分支 lane(列3竖线,列4节点)
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=edge(4,1,5,2,C.purple);
+  // merge 节点在 base lane(列1下方),两条父线汇入
+  s+=edge(1,1,1,4,C.blue);            // base 主线延续到 merge 行(竖)
+  s+=`<path d="M ${PADX+1*COL} ${PADY+2*ROW+R} L ${PADX+1*COL} ${PADY+4*ROW} L ${PADX+1*COL-R-3+2*R} ${PADY+4*ROW}" fill="none" stroke="${C.blue}" stroke-width="2" opacity="0.85"/>`;
+  s+=mergeIn(5,2,1,4,C.purple);       // peer tip 汇入 merge
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"问题");
+  s+=node(null,2,2,'llm',C.blue,"回复A");
+  s+=node(null,4,1,'user',C.purple,"问题(改写)");
+  s+=node(null,5,2,'llm',C.purple,"回复B");
+  s+=node(null,1,4,'merge',C.blue,"merge","合并A+B,多父");
+  return s;
+ },
+ "merge = 实心带孔圆（汇聚点）。base 分支主线延续 + peer 分支汇入线（紫，peer lane 色）。merge 落 base lane。");
+
+// ---- 场景9：分支间发消息（通信）----
+scene(9,"分支间发消息（send_to_branch）",
+ "分支 A 的 LLM 调 send_to_branch 给分支 B 发消息 → B 末尾出现一个 user 节点（来源标 from_branch）。用「通信线」（点划线，区别于 fork 虚线/attach 虚线）从 A 的 llm 连到 B 的新 user。",
+ 6,6,()=>{
+  let s="";
+  s+=edge(0,0,1,1,C.blue);
+  s+=edge(1,1,2,2,C.blue);
+  // 分支B (lane 列3竖线,列4)
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" stroke="${C.green}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=edge(4,1,5,2,C.green);
+  // B 末尾新 user (from A)
+  s+=edge(4,2,4,3,C.green);
+  // 通信线: A的llm(列2,行2) ┄·┄ B的新user(列4,行3) 点划线
+  s+=`<path d="M ${PADX+2*COL+R} ${PADY+2*ROW} C ${PADX+3.5*COL} ${PADY+2.5*ROW}, ${PADX+3.5*COL} ${PADY+3*ROW}, ${PADX+4*COL-R} ${PADY+3*ROW}" fill="none" stroke="#e0b020" stroke-width="1.8" stroke-dasharray="1 5" stroke-linecap="round" opacity="0.9"/>`;
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"问题");
+  s+=node(null,2,2,'llm',C.blue,"A的回复","发消息给B");
+  s+=node(null,4,1,'user',C.green,"B分支");
+  s+=node(null,5,2,'llm',C.green,"B的回复");
+  s+=node(null,4,3,'user','#e0b020',"来自A的消息","from_branch");
+  return s;
+ },
+ "通信线 = 金色点划线（区别 fork 虚线/attach 虚线）。目标分支末尾加 user 节点，metadata.from_branch 标来源。");
+
+// ---- 场景10：子分支为主分支服务（派活→回流）----
+scene(10,"子分支服务（spawn → attach 回流）",
+ "主分支 A 派子分支 B 干活（spawn，点划线）→ B 独立跑完 → 结果通过 attach 嵌回 A（attach 虚线，源 tip → attach 点）。复用现有 spawn/attach 机制。",
+ 6,6,()=>{
+  let s="";
+  s+=edge(0,0,1,1,C.blue);
+  s+=edge(1,1,2,2,C.blue);
+  s+=edge(2,2,3,3,C.blue);   // A 调 spawn (code 节点)
+  // 子分支B (lane 列4竖线,列5)
+  s+=`<path d="M ${PADX+3*COL} ${PADY+3*ROW} L ${PADX+3*COL} ${PADY+1*ROW} L ${PADX+5*COL-R} ${PADY+1*ROW}" fill="none" stroke="#888" stroke-width="1.2" stroke-dasharray="1 4" opacity="0.7"/>`;
+  s+=edge(5,1,6,2,C.green);
+  // attach 回流: B tip → A 的 attach 点(列2 行4)
+  s+=`<path d="M ${PADX+6*COL} ${PADY+2*ROW} C ${PADX+4*COL} ${PADY+3.5*ROW}, ${PADX+3*COL} ${PADY+4*ROW}, ${PADX+2*COL+R} ${PADY+4*ROW}" fill="none" stroke="${C.green}" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.8"/>`;
+  s+=edge(1,1,2,4,C.blue);  // A 继续
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"问题");
+  s+=node(null,2,2,'llm',C.blue,"A");
+  s+=node(null,3,3,'code',C.blue,"spawn_branch","派子分支");
+  s+=node(null,5,1,'user',C.green,"子分支B");
+  s+=node(null,6,2,'llm',C.green,"B干完");
+  s+=node(null,2,4,'llm',C.blue,"A(收到B结果)","attach回流");
+  return s;
+ },
+ "spawn 线=灰点划线(A派B)；attach 回流线=绿虚线(B结果嵌回A)。子分支独立 lane，复用现有机制。");
 
 </script>
 </div></body></html>

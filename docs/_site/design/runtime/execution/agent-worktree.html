@@ -131,7 +131,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
-<a class="navlink" href="/docs/design/runtime/dag/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a></div></details>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution" open><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink active" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html">Agent 调用流程（权威设计）</a>
 <a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
@@ -925,7 +926,7 @@ docker backend。</li>
 <li><strong>session 关闭时自动清理 active worktree</strong>：保留 active worktree 跨 session
 重启（重启后 list_worktrees 探测，仍 active 的标 kept 让用户手动处理）。</li>
 </ul>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/session-dag.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/agent-call-flow.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent 调用流程（权威设计）</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/branch-collaboration.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">分支协作设计文档（通信 · 服务 · 合并）</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/agent-call-flow.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent 调用流程（权威设计）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#part-1-设计需要考虑的维度">Part 1. 设计需要考虑的维度</a>

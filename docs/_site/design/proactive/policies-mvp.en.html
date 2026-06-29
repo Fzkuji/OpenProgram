@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/proactive/policies-mvp.html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三条样板规则 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
+<a class="navlink" href="/docs/design/usage-metering.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="/docs/design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive" open><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink active" href="/docs/design/proactive/policies-mvp.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Proactive Layer — 设计 <span class='bc-sep'>›</span> <span class="bc-current">三条样板规则</span></nav><h1 id="three-template-rules">Three Template Rules<a class="header-anchor" href="#three-template-rules">#</a></h1>
+<p>The previous docs covered the mechanism; this one gives three <strong>real rules</strong> and walks them end to end. They are both what the first version ships and a template for writing new rules later — just copy and adapt. Before reading this, finish <code>overview.md</code> and <code>execution-model.md</code>.</p>
+<h2 id="why-start-with-only-three">Why start with only three<a class="header-anchor" href="#why-start-with-only-three">#</a></h2>
+<p>Not because we're short on time — it's <strong>deliberate</strong>. The classic way a proactive-interruption system dies isn't &quot;too few features,&quot; it's &quot;too many rules, too many false positives, and within three days users learn to ignore every prompt&quot; (this is exactly how Clippy and UAC pop-ups died).</p>
+<p>So this layer does not offer a &quot;config file / DSL&quot; that lets someone write a rule in ten minutes — rules must be Python classes and must pass code review. We first ship three to get the mechanism working and polish each one until it's genuinely useful, then add a fourth. The three each validate a different way of stepping in: one blocks the path, two observe (one of which also demonstrates &quot;do your homework before speaking up&quot;).</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Type</th>
+<th>One line</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DangerousCommandGuard</td>
+<td>Block the path</td>
+<td>Catch a dangerous command before it runs and ask the user</td>
+</tr>
+<tr>
+<td>TestGapWatcher</td>
+<td>Observe (do homework first)</td>
+<td>Core code changed without tests; verify in the background, then remind</td>
+</tr>
+<tr>
+<td>UnvalidatedCompletionNudge</td>
+<td>Observe (nudge the model first)</td>
+<td>The model claims it's done but didn't verify; quietly let the model verify itself first</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-dangerouscommandguard-block-the-path">1. DangerousCommandGuard (block the path)<a class="header-anchor" href="#1-dangerouscommandguard-block-the-path">#</a></h2>
+<p><strong>What it does</strong>: when a tool is about to run, if it's a dangerous shell command, catch it and ask the user.</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">DangerousCommandGuard</span><span class="p">:</span>
+    <span class="n">on</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tool.before&quot;</span><span class="p">}</span>
+    <span class="n">lane</span> <span class="o">=</span> <span class="s2">&quot;gate&quot;</span>            <span class="c1"># block the path: intercept before the command actually runs</span>
+    <span class="n">cooldown_s</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">payload</span><span class="p">[</span><span class="s2">&quot;tool&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot;bash&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">payload</span><span class="p">[</span><span class="s2">&quot;command&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">is_dangerous_command</span><span class="p">(</span><span class="n">command</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">Gate</span><span class="o">.</span><span class="n">ask</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;This command is risky: </span><span class="si">{</span><span class="n">command</span><span class="si">}</span><span class="se">\n</span><span class="s2">Confirm execution?&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+</code></pre>
+<p><strong>Key: the judgment must see the arguments, not just match keywords.</strong> Otherwise false positives pile up until the user reflexively clicks &quot;confirm&quot; in a split second, and the guardrail is useless (this is precisely how UAC pop-ups die). You have to distinguish:</p>
+<table>
+<thead>
+<tr>
+<th>Dangerous</th>
+<th>Not dangerous (don't false-positive)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rm -rf /</code> <code>rm -rf ~/project</code></td>
+<td><code>rm -rf /tmp/xxx</code>, <code>rm -rf node_modules</code> (everyday operations)</td>
+</tr>
+<tr>
+<td><code>git push --force origin main</code> (pushing a protected branch)</td>
+<td><code>git push --force</code> to your own feature branch (very common)</td>
+</tr>
+<tr>
+<td><code>kubectl delete namespace</code> (deleting an entire namespace)</td>
+<td><code>kubectl delete pod xxx</code> (everyday)</td>
+</tr>
+</tbody>
+</table>
+<p>So <code>is_dangerous_command()</code> must parse a path allowlist, check the branch name, and distinguish resource types — not something as crude as <code>&quot;rm -rf&quot; in command</code>.</p>
+<p><strong>Be honest about how far it goes</strong>: it guards against <strong>slips and mistakes</strong>, not against a malicious adversary. Clever bypasses (base64-encoding the command, writing it into a script and then running that, using another tool instead of bash) it can't catch any of these. This version positions it as a &quot;guardrail against slips&quot; and doesn't pretend to be a security boundary. Actually defending against an adversary requires a sandbox, which is a separate matter (covered in the archived threat-model).</p>
+<p><strong>Relationship to the existing approval mechanism</strong>: OpenProgram already has a tool-approval pop-up. Don't end up popping twice for the same command — let this rule's judgment attach as a &quot;risk annotation&quot; onto the existing approval flow, merged into a single confirmation.</p>
+<hr />
+<h2 id="2-testgapwatcher-observe-do-homework-first">2. TestGapWatcher (observe + do homework first)<a class="header-anchor" href="#2-testgapwatcher-observe-do-homework-first">#</a></h2>
+<p><strong>What it does</strong>: when the user/model signals the round is wrapping up (about to commit, says it's done), if core code changed but tests didn't, give a reminder.</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">TestGapWatcher</span><span class="p">:</span>
+    <span class="n">on</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;model.response_completed&quot;</span><span class="p">}</span>    <span class="c1"># check when the model finishes a round of talking</span>
+    <span class="n">lane</span> <span class="o">=</span> <span class="s2">&quot;observer&quot;</span>                    <span class="c1"># observe: don&#39;t block the path</span>
+    <span class="n">cooldown_s</span> <span class="o">=</span> <span class="mi">1800</span>                    <span class="c1"># don&#39;t re-raise the same situation within half an hour</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+        <span class="c1"># only check when &quot;wrapping up&quot;, not on every file change</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_wrapup_signal</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">changed_core_code</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">state</span><span class="o">.</span><span class="n">touched_tests</span><span class="p">:</span>
+            <span class="c1"># don&#39;t remind directly — first dispatch a read-only background task to verify</span>
+            <span class="k">return</span> <span class="n">Prepare</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="s2">&quot;check whether this change really lacks tests and whether it&#39;s worth a reminder&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+</code></pre>
+<p><strong>Why &quot;do homework first&quot; (Prepare)</strong>: reminding the moment you see &quot;code changed without tests&quot; produces many false positives — a comment edit, a rename, a config change, a dependency bump, a frontend change (frontend directories often have no testing culture at all) would all trigger it. So instead of speaking up directly, it first spins up a <strong>read-only</strong> background task to actually look at whether the change really lacks tests and whether the gap is worth raising. That task returns a judgment, and <strong>only when it's confident enough does it Notify</strong>; if it's not confident, it swallows the reminder and doesn't bother the user.</p>
+<p>This is the rule most likely to turn into an annoying Clippy. Two constraints:</p>
+<ul>
+<li><strong>Narrow the trigger</strong>: only check when &quot;wrapping up&quot; (about to commit, says it's done), not on every file change.</li>
+<li><strong>Make the cost visible</strong>: background tasks cost money (they may call an LLM). Show a small bill in the UI — how many times this layer ran a background verification today, how much it spent, and how many times it ended up not reminding — so the user knows it's spending money and can turn it off.</li>
+</ul>
+<p><strong>Give a one-click action in the reminder</strong>: a Notify isn't just a sentence; include a &quot;write the tests for me&quot; button that, when clicked, spins up a task to draft the tests.</p>
+<hr />
+<h2 id="3-unvalidatedcompletionnudge-observe-nudge-the-model-first">3. UnvalidatedCompletionNudge (observe + nudge the model first)<a class="header-anchor" href="#3-unvalidatedcompletionnudge-observe-nudge-the-model-first">#</a></h2>
+<p><strong>What it does</strong>: the model says &quot;done,&quot; but this round never ran tests / never verified, which usually means it didn't actually verify.</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">UnvalidatedCompletionNudge</span><span class="p">:</span>
+    <span class="n">on</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;model.response_completed&quot;</span><span class="p">}</span>
+    <span class="n">lane</span> <span class="o">=</span> <span class="s2">&quot;observer&quot;</span>
+    <span class="n">cooldown_s</span> <span class="o">=</span> <span class="mi">900</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">payload</span><span class="p">[</span><span class="s2">&quot;claimed_done&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">state</span><span class="o">.</span><span class="n">round_had_file_changes</span> \
+                <span class="ow">and</span> <span class="ow">not</span> <span class="n">state</span><span class="o">.</span><span class="n">round_had_verification</span><span class="p">:</span>
+            <span class="c1"># default to not bothering the user — first quietly nudge the model to verify itself</span>
+            <span class="k">return</span> <span class="n">Inject</span><span class="p">(</span><span class="s2">&quot;You said it&#39;s done, but this round had no verification action. Verify first, then conclude.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+</code></pre>
+<p><strong>Why default to Inject (nudge the model) instead of Notify (notify the user)</strong>: this repo's conventions already require the model to verify its own work after a change. If the model follows the rules, this rule never fires; if the model cuts corners, <strong>the cheaper fix is to quietly nudge the model</strong> to go back and verify, rather than kicking the ball to the user to click confirm. Only when the model is nudged and still doesn't verify does it escalate to notifying the user. This also echoes the action table in the overview: Inject is &quot;inject a sentence into the model without bothering the user.&quot;</p>
+<p><strong>One detail of the judgment</strong>: &quot;this round had a verification action&quot; must be counted fully — running tests counts, and using the browser (MCP) to actually open the page and check the result also counts (frontend changes are often verified this way). Missing browser verification would frequently misjudge frontend changes as &quot;not verified.&quot;</p>
+<hr />
+<h2 id="look-back-at-these-three-when-writing-new-rules">Look back at these three when writing new rules<a class="header-anchor" href="#look-back-at-these-three-when-writing-new-rules">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>The rule you want to write</th>
+<th>Which one to copy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Block before some action happens</td>
+<td>DangerousCommandGuard (block the path, look at what's in front of you, be fast)</td>
+</tr>
+<tr>
+<td>Remind once conditions accumulate, but worried about false positives</td>
+<td>TestGapWatcher (observe, Prepare to do homework first, then Notify)</td>
+</tr>
+<tr>
+<td>Want to correct the model's behavior without bothering the user</td>
+<td>UnvalidatedCompletionNudge (observe, use Inject to nudge the model)</td>
+</tr>
+</tbody>
+</table>
+<p>Each one is: set <code>on</code>/<code>lane</code>/<code>cooldown_s</code> + write <code>evaluate</code>. Don't touch the framework core.</p>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-13</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/proactive/framework-evolution.viz.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">OpenProgram · 框架演进（可视化）</span></a><a class="pn-link pn-next" href="/docs/design/proactive/events-and-state.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">事件与状态（地基）</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#why-start-with-only-three">Why start with only three</a>
+<a class="" href="#1-dangerouscommandguard-block-the-path">1. DangerousCommandGuard (block the path)</a>
+<a class="" href="#2-testgapwatcher-observe-do-homework-first">2. TestGapWatcher (observe + do homework first)</a>
+<a class="" href="#3-unvalidatedcompletionnudge-observe-nudge-the-model-first">3. UnvalidatedCompletionNudge (observe + nudge the model first)</a>
+<a class="" href="#look-back-at-these-three-when-writing-new-rules">Look back at these three when writing new rules</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js"></script>
+</body>
+</html>
