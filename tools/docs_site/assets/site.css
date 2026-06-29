@@ -86,7 +86,7 @@ header.topbar {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .topbar button.icon:hover { background: var(--bg-side); color: var(--tx); }
-.topbar .hamburger { display: none; }
+.topbar button.hamburger { display: none; }
 
 /* ── layout ── */
 .layout { display: flex; padding-top: 56px; }
@@ -327,7 +327,7 @@ article:has(.viz-frame) { max-width: none; }
   main.content { margin-right: 0; }
 }
 @media (max-width: 860px) {
-  .topbar .hamburger { display: inline-flex; }
+  .topbar button.hamburger { display: inline-flex; }
   .topbar .search-trigger { min-width: 0; }
   .topbar .search-trigger .label { display: none; }
   nav.sidebar {
