@@ -362,8 +362,9 @@ const SCENES=[
    {id:"send",role:"code",caller:"l1",predecessor:"l1",created_at:5,label:"send_to_branch",sub:"瞬间返回,A不阻塞"},
    {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",commFrom:"send",created_at:6,label:"B收到(另一agent)"},
    {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"},
-   // B应答 异步送回 A 末尾 → 三角「B回复了」(agent 发来的=△)，落在 A 分支。
-   {id:"aRecv",role:"assistant",caller:"u1",predecessor:"send",commFrom:"bAns",created_at:8,label:"B回复了",sub:"异步送回A,△"}]},
+   // B应答 异步送回 A 末尾 → 三角「B回复了」。它是外部推回 A 的新一轮输入,
+   // 和「问题」同级(tierHint=1,挂 A 竖线 user 列),不是 send 的缩进子调用。
+   {id:"aRecv",role:"assistant",caller:"u1",predecessor:"send",commFrom:"bAns",tierHint:1,created_at:8,label:"B回复了",sub:"异步送回A,和问题同级"}]},
  {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A"},
