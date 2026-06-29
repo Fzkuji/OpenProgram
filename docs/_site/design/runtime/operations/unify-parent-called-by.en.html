@@ -274,9 +274,9 @@ Code: <code>store/session/_msg_adapter.py</code>, <code>webui/persistence.py</co
 <p><strong>Incremental unification</strong>: rather than deprecating <code>parent_id</code> all at once, gradually make the critical paths prefer <code>called_by</code>.</p>
 <p><code>parent_id</code> is referenced in 188 places, reaching deep into core modules such as the dispatcher, branch management, and sub_agent. Replacing it all at once is too risky. The current strategy is:</p>
 <ol>
-<li><strong>Aggregation layer</strong> (<a href="http://persistence.py">persistence.py</a>): prefer <code>called_by</code>, with <code>parent_id</code> as a fallback ✅ done</li>
-<li><strong>Render layer</strong> (<a href="http://session.py">session.py</a> _rebuild_runtime_cards): use <code>called_by</code> ✅ done</li>
-<li><strong>Load layer</strong> (<a href="http://session.py">session.py</a> handle_load_session): linear_history + get_branch fallback ✅ done</li>
+<li><strong>Aggregation layer</strong> (persistence.py): prefer <code>called_by</code>, with <code>parent_id</code> as a fallback ✅ done</li>
+<li><strong>Render layer</strong> (session.py _rebuild_runtime_cards): use <code>called_by</code> ✅ done</li>
+<li><strong>Load layer</strong> (session.py handle_load_session): linear_history + get_branch fallback ✅ done</li>
 <li><strong>_msg_adapter.py</strong>: keep copying called_by → parent_id (backward compatibility)</li>
 <li><strong>linear_history</strong>: keep using parent_id (covered by the fallback)</li>
 </ol>

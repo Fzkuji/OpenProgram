@@ -278,7 +278,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <tr>
 <td>GET</td>
 <td><code>/api/skills/{name}</code></td>
-<td><a href="http://SKILL.md">SKILL.md</a> 全文 + frontmatter + 资源文件树</td>
+<td>SKILL.md 全文 + frontmatter + 资源文件树</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -529,7 +529,7 @@ web/components/plugins/
 </ol>
 <hr />
 <h2 id="5-来自三家的能力清单覆盖确认">5. 来自三家的能力清单覆盖确认<a class="header-anchor" href="#5-来自三家的能力清单覆盖确认">#</a></h2>
-<p><strong>claude-code</strong>：bundled skills ✓、<a href="http://SKILL.md">SKILL.md</a> frontmatter ✓、SkillTool 工具调用 ✓、Marketplace / AddMarketplace / BrowseMarketplace / ManageMarketplaces ✓、ManagePlugins / DiscoverPlugins / ValidatePlugin / PluginErrors / PluginOptionsDialog / PluginTrustWarning / UnifiedInstalledCell ✓、ReloadPlugins ✓、commands/skills/agents/hooks/mcpServers 五入口 ✓</p>
+<p><strong>claude-code</strong>：bundled skills ✓、SKILL.md frontmatter ✓、SkillTool 工具调用 ✓、Marketplace / AddMarketplace / BrowseMarketplace / ManageMarketplaces ✓、ManagePlugins / DiscoverPlugins / ValidatePlugin / PluginErrors / PluginOptionsDialog / PluginTrustWarning / UnifiedInstalledCell ✓、ReloadPlugins ✓、commands/skills/agents/hooks/mcpServers 五入口 ✓</p>
 <p><strong>opencode</strong>：远端 skill discovery（IndexSkill schema）✓、npm 包形态 plugin ✓、Provider plugin ✓、PluginPackage / resolvePluginTarget / compatibility / deprecated 字段 ✓、Effect-style 并发与重试（换 httpx+tenacity）✓</p>
 <p><strong>hermes</strong>：按领域分组 skills ✓（category）、optional 区分 ✓（optional 字段）、<code>SKILL.md</code> + <code>references/</code> + <code>templates/</code> 资源布局 ✓、<code>plugin_api.py</code> 入口 ✓、<code>dashboard/dist/</code> 前端贡献 ✓（升级为 web entrypoint + sidebar 注册）</p>
 <hr />
@@ -539,7 +539,7 @@ web/components/plugins/
 <p><strong>M1 Skills 全量</strong>（覆盖三家 skill 能力）</p>
 <ul>
 <li>五来源 loader + watchdog + WS</li>
-<li><a href="http://SKILL.md">SKILL.md</a> 解析（含 triggers / category / optional）</li>
+<li>SKILL.md 解析（含 triggers / category / optional）</li>
 <li><code>/skills</code> 页面 + bundled 默认集</li>
 <li>SkillTool 内置工具 + invoke trace</li>
 <li>远端 discovery（opencode 等价物）</li>

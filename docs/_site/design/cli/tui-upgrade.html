@@ -199,7 +199,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <ol start="7">
 <li><strong>命令注册表作为唯一事实来源</strong>：每条命令一份声明（name/title/category/keybind/slash-name/enabled），驱动键位绑定、ctrl+k 面板、斜杠命令，以及页脚里的实时按键提示。修复现有的注册表/处理器漂移（<code>/branch</code> 等已实现但未列出；<code>/memory</code> 等已列出但是空壳）。</li>
 <li><strong>键位定义表 + 用户覆盖</strong>：默认值 + 描述只声明一次，由此生成配置 schema（契合现有的 schema 驱动设置设计）；未知按键报错；<code>&quot;none&quot;</code> 表示禁用。</li>
-<li><strong>问题/权限提示替换输入框</strong>（一个三选一的槽位：Prompt | QuestionPrompt | ApprovalPrompt），而非弹出模态框——会话记录保持可见且可滚动，esc 的语义保持清晰。这就是 <a href="http://user-input-requests.md">user-input-requests.md</a> 的 TUI 呈现层的落地点。</li>
+<li><strong>问题/权限提示替换输入框</strong>（一个三选一的槽位：Prompt | QuestionPrompt | ApprovalPrompt），而非弹出模态框——会话记录保持可见且可滚动，esc 的语义保持清晰。这就是 user-input-requests.md 的 TUI 呈现层的落地点。</li>
 <li><strong>行内危险确认</strong>（再按一次确认，该行变红），用于具破坏性的 picker 操作，取代嵌套的确认层。</li>
 </ol>
 <p>明确<strong>不</strong>采纳：更换渲染器（OpenTUI）。我们内置的 hermes-ink 已经有鼠标追踪和 ScrollBox；markdown 通过 marked-terminal 落地；diff 我们自己写。更换渲染器不在本次范围内。</p>
@@ -223,7 +223,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <ul>
 <li>服务端：在工具流事件中带上 <code>call_id</code>；TUI 按 id 匹配结果（修复并发同名的错误归属）。</li>
 <li>服务端：<code>conversation_loaded</code> 携带工具块；<code>/resume</code> 恢复工具历史。</li>
-<li>输入槽位里的问题/批准提示——实现 <a href="http://user-input-requests.md">user-input-requests.md</a> 的 TUI 侧（处理 <code>follow_up_question</code> 和 <code>approval_request</code>，让 <code>ask</code> permission mode 可触达）。</li>
+<li>输入槽位里的问题/批准提示——实现 user-input-requests.md 的 TUI 侧（处理 <code>follow_up_question</code> 和 <code>approval_request</code>，让 <code>ask</code> permission mode 可触达）。</li>
 <li>把 REPL 的 picker 从 <code>pickerKind</code> 枚举迁移到 ModalProvider/Form 套件（机械改动；按 picker 逐个择机进行）。</li>
 </ul>
 <h2 id="风险">风险<a class="header-anchor" href="#风险">#</a></h2>

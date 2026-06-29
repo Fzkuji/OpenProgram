@@ -183,10 +183,10 @@ the <code>~/.claude/.credentials.json</code> file).</li>
 <p><code>anthropic.py:245-261</code> has long supported direct subscription OAuth connections: when the token is
 <code>sk-ant-oat…</code>, it sends to the Messages API directly with <code>auth_token=&lt;token&gt;</code> +
 <code>anthropic-beta: claude-code-20250219,oauth-2025-04-20,…</code> +
-<code>user-agent: claude-cli/&lt;ver&gt;</code>. This is the same approach codex uses to connect directly to <a href="http://chatgpt.com">chatgpt.com</a>.
+<code>user-agent: claude-cli/&lt;ver&gt;</code>. This is the same approach codex uses to connect directly to chatgpt.com.
 The two reasons Meridian was originally chosen no longer hold:</p>
 <ul>
-<li>&quot;A Max account doesn't expose an <a href="http://api.anthropic.com">api.anthropic.com</a> key&quot; — true, but the subscription uses an
+<li>&quot;A Max account doesn't expose an api.anthropic.com key&quot; — true, but the subscription uses an
 <strong>OAuth token</strong>, not an api-key; the direct connection uses a Bearer token + beta header and needs
 no api-key.</li>
 <li>&quot;A third-party proxy mangled the image block into <code>[object Object]</code>&quot; — that was a bug in some
@@ -263,7 +263,7 @@ direct-connection path reuses this; nothing extra is built.</p>
 provider can resolve an <code>sk-ant-oat</code> token when only a cli_delegated credential is present; the
 registry resolves <code>claude-code</code> to the direct-connection Runtime rather than the Meridian Runtime.</li>
 <li>End-to-end: after <code>claude login</code> on the local machine, run claude-code once in OpenProgram and
-confirm it connects directly to <a href="http://api.anthropic.com">api.anthropic.com</a> (no Meridian process) and that multimodal image
+confirm it connects directly to api.anthropic.com (no Meridian process) and that multimodal image
 blocks work.</li>
 </ul>
 <h2 id="implementation-status-landed">Implementation status (landed)<a class="header-anchor" href="#implementation-status-landed">#</a></h2>

@@ -171,7 +171,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <blockquote>
 <p>调研文档（非设计文档）。基于源码逆向分析，记录 Claude Code 的压缩机制。</p>
 <p><strong>可靠度说明</strong>：5 级级联的描述来自第三方逆向分析，不是 Anthropic 官方文档确认的。
-官方 API 文档（<a href="http://platform.claude.com">platform.claude.com</a>）只描述了单一的 compact 机制（超 token 阈值 → LLM 摘要），
+官方 API 文档（platform.claude.com）只描述了单一的 compact 机制（超 token 阈值 → LLM 摘要），
 内部的 Microcompact / Snip / Context Collapse 分层是 Claude Code 客户端的实现细节。
 不同逆向分析来源对执行顺序的描述有细微差异。以下采用 Inside Claude Code 的版本（分析最详细）。
 阈值和参数在不同版本中有调整，以下数字可能不完全准确。</p>
@@ -447,7 +447,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <li>用 <code>getCompactPrompt()</code> 构造压缩提示（类似&quot;请把以下对话历史压缩成关键事实&quot;）</li>
 <li>把整个对话历史发给 LLM，生成摘要</li>
 <li>用 <code>buildPostCompactMessages()</code> 构建压缩后的消息</li>
-<li>system prompt 从 <a href="http://CLAUDE.md">CLAUDE.md</a> <strong>重新加载</strong>（不是从摘要来的，所以 <a href="http://CLAUDE.md">CLAUDE.md</a> 的内容永远不丢）</li>
+<li>system prompt 从 CLAUDE.md <strong>重新加载</strong>（不是从摘要来的，所以 CLAUDE.md 的内容永远不丢）</li>
 </ol>
 <p><strong><code>/compact</code> 手动命令</strong>：</p>
 <ul>
@@ -457,7 +457,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <li>官方建议在 <strong>60% 占用时手动 <code>/compact</code></strong></li>
 </ul>
 <p><strong>丢失的</strong>：早期指令、设计讨论、推理过程、50+ 轮前的代码片段、风格偏好。
-<strong>保留的</strong>：当前任务、最近修改的文件名、最近的错误和解决方案、<a href="http://CLAUDE.md">CLAUDE.md</a> 内容。</p>
+<strong>保留的</strong>：当前任务、最近修改的文件名、最近的错误和解决方案、CLAUDE.md 内容。</p>
 <p><strong>示例</strong>：</p>
 <pre><code>压缩前（35 轮，150K tokens）：
 [system prompt]
@@ -523,7 +523,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p><strong>对话消息不单独截断</strong>：user/assistant 消息要么整轮删（Snip），要么 LLM 摘要（Compact）。不对单条消息截断。</p>
 </li>
 <li>
-<p><strong><a href="http://CLAUDE.md">CLAUDE.md</a> 不参与压缩</strong>：从磁盘重新加载，永远不丢。</p>
+<p><strong>CLAUDE.md 不参与压缩</strong>：从磁盘重新加载，永远不丢。</p>
 </li>
 <li>
 <p><strong>用户控制</strong>：<code>/compact</code> + <code>/context</code> 让用户主导。自动是兜底。</p>

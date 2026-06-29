@@ -225,7 +225,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <h3 id="2-run">2. Run<a class="header-anchor" href="#2-run">#</a></h3>
 <pre><code class="language-bash">openprogram
 </code></pre>
-<p>First run sets up your provider, then asks which surface to open. Skip the prompt with <code>openprogram tui</code> (terminal) or <code>openprogram web</code> (browser → <a href="http://localhost:18100">http://localhost:18100</a>).</p>
+<p>First run sets up your provider, then asks which surface to open. Skip the prompt with <code>openprogram tui</code> (terminal) or <code>openprogram web</code> (browser → http://localhost:18100).</p>
 <h3 id="3-add-a-harness">3. Add a harness<a class="header-anchor" href="#3-add-a-harness">#</a></h3>
 <p>Harnesses are programs under <code>openprogram/functions/agentics/</code>. Anything cloned into that folder auto-registers on the next worker restart — that's the universal way any program (including your own) plugs into OpenProgram. Pure-Python harnesses also have a one-line shortcut, <code>openprogram programs install &lt;name&gt;</code>, which clones them there for you.</p>
 <table>
@@ -420,7 +420,7 @@ each under its own license. Enormous thanks to their authors.</p>
 <li><a href="https://github.com/openclaw/openclaw"><strong>OpenClaw</strong></a> (MIT) — layout of the
 tool registry (<code>name / description / parameters / execute</code>), provider
 abstraction with <code>check_fn</code> + <code>requires_env</code> gating, <code>TOOLSETS</code> presets,
-skill loading via <a href="http://SKILL.md">SKILL.md</a> frontmatter + late-bound <code>read</code>. Our full clone
+skill loading via SKILL.md frontmatter + late-bound <code>read</code>. Our full clone
 lives under <code>references/openclaw/</code> (gitignored) for browsing.</li>
 <li><a href="https://github.com/himanshuishere/hermes-agent"><strong>hermes-agent</strong></a>
 (MIT) — starting point for <code>execute_code</code> (we trimmed the

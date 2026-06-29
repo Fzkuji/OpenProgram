@@ -342,7 +342,7 @@ approval）→ FIFO 排队，一次一个。答完前一个，自动呈现下一
 若此刻是用户主动 mode（fn-form），清掉它再显示队首。实现简单，无栈、无快照。</p>
 <h2 id="后端审批合流到-questionregistry">后端：审批合流到 QuestionRegistry<a class="header-anchor" href="#后端审批合流到-questionregistry">#</a></h2>
 <p>为了让&quot;审批&quot;也走同一条事件路径 → 落到同一个 composer 承接点，后端把
-<code>_approval.py</code> 合流到 <code>QuestionRegistry</code>（<a href="http://user-input-requests.md">user-input-requests.md</a> 点 6）：</p>
+<code>_approval.py</code> 合流到 <code>QuestionRegistry</code>（user-input-requests.md 点 6）：</p>
 <ul>
 <li><code>await_user_approval</code> 不再用独立的 <code>ApprovalRegistry</code> + 自定义
 <code>approval_request</code> 信封，而是注册一个 <code>kind=&quot;approval&quot;</code> 的 PendingQuestion

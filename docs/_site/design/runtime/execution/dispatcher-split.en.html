@@ -168,7 +168,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
   </nav>
   <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg" data-title-en="Runtime" data-title-zh="运行时">运行时</span> <span class='bc-sep'>›</span> <span class="bc-seg">Execution</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="Splitting `agent/dispatcher.py` into a responsibility-scoped package" data-title-zh="将 `agent/dispatcher.py` 拆分为按职责划分的包">将 `agent/dispatcher.py` 拆分为按职责划分的包</span></nav><h1 id="splitting-agentdispatcherpy-into-a-responsibility-scoped-package">Splitting <code>agent/dispatcher.py</code> into a responsibility-scoped package<a class="header-anchor" href="#splitting-agentdispatcherpy-into-a-responsibility-scoped-package">#</a></h1>
-<p>Status: <strong>in progress</strong> · dead-code removed (1fab7479) · step 0 package · step 1 <a href="http://types.py">types.py</a> · step 2 <a href="http://titles.py">titles.py</a> + forced_tool.py · step 3a runtime_attach.py (<code>_wrap_agentic_runtime_block</code>) · step 4 <a href="http://finalize.py">finalize.py</a> (phase 6) · step 5a <a href="http://persistence.py">persistence.py</a> (phase 5 assistant persist) · <code>__init__.py</code> now &lt;1000 lines · Owner: agent/runtime · Created: 2026-06-04</p>
+<p>Status: <strong>in progress</strong> · dead-code removed (1fab7479) · step 0 package · step 1 types.py · step 2 titles.py + forced_tool.py · step 3a runtime_attach.py (<code>_wrap_agentic_runtime_block</code>) · step 4 finalize.py (phase 6) · step 5a persistence.py (phase 5 assistant persist) · <code>__init__.py</code> now &lt;1000 lines · Owner: agent/runtime · Created: 2026-06-04</p>
 <blockquote>
 <p><strong>Test seam note (discovered during step 3).</strong> The dispatcher unit tests
 monkeypatch <code>D._resolve_model</code> / <code>D._load_agent_profile</code> / <code>D._run_loop_blocking</code>
@@ -247,18 +247,18 @@ named call into the sibling modules. The error taxonomy classification (phase 4
 <p>Each step is its own commit, compiles + imports + worker-restart-healthz green
 before the next. Pure code-motion — no logic edits in the same commit as a move.</p>
 <ol>
-<li><strong><a href="http://types.py">types.py</a></strong> — move the three dataclasses + sentinel. Lowest risk: they have
+<li><strong>types.py</strong> — move the three dataclasses + sentinel. Lowest risk: they have
 no internal deps. <code>__init__</code> re-exports them.</li>
-<li><strong><a href="http://titles.py">titles.py</a> + forced_tool.py</strong> — leaf helpers, few callers.</li>
-<li><strong><a href="http://persistence.py">persistence.py</a></strong> — extract phases 2 &amp; 5 as <code>persist_user_turn(...)</code> /
+<li><strong>titles.py + forced_tool.py</strong> — leaf helpers, few callers.</li>
+<li><strong>persistence.py</strong> — extract phases 2 &amp; 5 as <code>persist_user_turn(...)</code> /
 <code>persist_assistant_message(...)</code> taking explicit args (no hidden closure
 over <code>process_user_turn</code> locals). This is where most care goes — the phases
 read/write many locals, so the function signatures must be drawn deliberately.</li>
-<li><strong><a href="http://finalize.py">finalize.py</a></strong> — extract phase 6 as <code>finalize_turn(...)</code>; it is the most
+<li><strong>finalize.py</strong> — extract phase 6 as <code>finalize_turn(...)</code>; it is the most
 self-contained block (bookkeeping only, already sub-numbered 6.1–6.95).</li>
 <li><strong>runtime_attach.py</strong> — phase 3 + <code>_wrap_agentic_runtime_block</code>.</li>
-<li><strong><a href="http://loop.py">loop.py</a></strong> — <code>_run_loop_blocking</code> + its error boundary.</li>
-<li><strong><a href="http://turn.py">turn.py</a></strong> — what remains of <code>process_user_turn</code> is the orchestrator.</li>
+<li><strong>loop.py</strong> — <code>_run_loop_blocking</code> + its error boundary.</li>
+<li><strong>turn.py</strong> — what remains of <code>process_user_turn</code> is the orchestrator.</li>
 </ol>
 <p>If any phase resists clean extraction (too many interdependent locals), stop and
 record why in this doc rather than forcing a leaky split.</p>

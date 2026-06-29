@@ -274,9 +274,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p><strong>渐进式统一</strong>：不一次性废弃 <code>parent_id</code>，而是逐步让关键路径优先使用 <code>called_by</code>。</p>
 <p><code>parent_id</code> 在 188 处被引用，深入 dispatcher、分支管理、sub_agent 等核心模块。一次性替换风险太高。当前策略：</p>
 <ol>
-<li><strong>聚合层</strong>（<a href="http://persistence.py">persistence.py</a>）：优先 <code>called_by</code>，<code>parent_id</code> 作 fallback ✅ 已完成</li>
-<li><strong>渲染层</strong>（<a href="http://session.py">session.py</a> _rebuild_runtime_cards）：用 <code>called_by</code> ✅ 已完成</li>
-<li><strong>加载层</strong>（<a href="http://session.py">session.py</a> handle_load_session）：linear_history + get_branch fallback ✅ 已完成</li>
+<li><strong>聚合层</strong>（persistence.py）：优先 <code>called_by</code>，<code>parent_id</code> 作 fallback ✅ 已完成</li>
+<li><strong>渲染层</strong>（session.py _rebuild_runtime_cards）：用 <code>called_by</code> ✅ 已完成</li>
+<li><strong>加载层</strong>（session.py handle_load_session）：linear_history + get_branch fallback ✅ 已完成</li>
 <li><strong>_msg_adapter.py</strong>：继续复制 called_by → parent_id（向后兼容）</li>
 <li><strong>linear_history</strong>：保持用 parent_id（有 fallback 兜底）</li>
 </ol>

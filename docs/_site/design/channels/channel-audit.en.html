@@ -185,7 +185,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 ├── telegram.py       111 lines  TelegramChannel adapter
 └── wechat.py         454 lines  WechatChannel adapter (with QR login / cursor persistence)
 </code></pre>
-<h3 id="12-abstraction-layer-basepy">1.2 Abstraction layer (<a href="http://base.py">base.py</a>)<a class="header-anchor" href="#12-abstraction-layer-basepy">#</a></h3>
+<h3 id="12-abstraction-layer-basepy">1.2 Abstraction layer (base.py)<a class="header-anchor" href="#12-abstraction-layer-basepy">#</a></h3>
 <pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">Channel</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">):</span>
     <span class="n">platform_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
 
@@ -246,7 +246,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
         <span class="n">captured_user_id</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 </code></pre>
 <p>But this callback only broadcasts to webui. The channel itself cannot get the streaming events.</p>
-<h3 id="15-outboundpy-cross-process-send">1.5 <a href="http://outbound.py">outbound.py</a> cross-process send<a class="header-anchor" href="#15-outboundpy-cross-process-send">#</a></h3>
+<h3 id="15-outboundpy-cross-process-send">1.5 outbound.py cross-process send<a class="header-anchor" href="#15-outboundpy-cross-process-send">#</a></h3>
 <pre><code class="language-python"><span class="n">outbound</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">channel</span><span class="p">,</span> <span class="n">account_id</span><span class="p">,</span> <span class="n">user_id</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span>
 </code></pre>
 <p>Does not go through an adapter instance. <code>_SENDERS</code> is a 4-entry dict, each entry independently using raw HTTP (the requests library) to call the platform API:</p>
@@ -609,7 +609,7 @@ Group: agent:main:{platform}:group:{chat_id}[:{thread_id}][:{user_id}]
 <tbody>
 <tr>
 <td>Plugin SDK (50+ contract files)</td>
-<td>all dropped — <a href="http://base.py">base.py</a> degenerated to 21 lines</td>
+<td>all dropped — base.py degenerated to 21 lines</td>
 </tr>
 <tr>
 <td>ChannelMessageLiveAdapterShape (streaming edit)</td>
@@ -675,7 +675,7 @@ Group: agent:main:{platform}:group:{chat_id}[:{thread_id}][:{user_id}]
 <p>The second item—<code>outbound.py</code>—deserves a separate note: from a fork perspective it is something <strong>we actively added</strong>, since OpenClaw's original design had cross-process send go through the adapter too. But OpenProgram is a dual-paradigm system (see 5.F), and <code>outbound.send</code>, a stateless, cron-friendly entry point, maps precisely to the agentic-programming paradigm (Python-driven synchronous calls), and should not be removed. The real problem is <strong>implementation-layer duplication</strong> (chunking duplicated 5 times, the HTTP call written out once per platform) rather than <strong>the existence of the entry point</strong>—the refactoring direction should be &quot;two entry points sharing one implementation layer&quot;, not &quot;remove one entry point&quot;.</p>
 <hr />
 <h2 id="4-current-structural-defects-sorted-by-severity">4. Current structural defects (sorted by severity)<a class="header-anchor" href="#4-current-structural-defects-sorted-by-severity">#</a></h2>
-<h3 id="defect-1-basepy-is-an-empty-shell">Defect 1: <a href="http://base.py">base.py</a> is an empty shell<a class="header-anchor" href="#defect-1-basepy-is-an-empty-shell">#</a></h3>
+<h3 id="defect-1-basepy-is-an-empty-shell">Defect 1: base.py is an empty shell<a class="header-anchor" href="#defect-1-basepy-is-an-empty-shell">#</a></h3>
 <p>It only mandates <code>run(stop)</code>, not send/edit/react/chunk. As a result each adapter &quot;does as it pleases&quot;, and there is no enforceable unified interface across platforms.</p>
 <p><strong>Symptoms</strong>: the 4 adapters differ in code style, error handling, and how they load credentials; the type checker cannot detect when an adapter fails to implement some capability.</p>
 <h3 id="defect-2-two-send-message-code-paths">Defect 2: two send-message code paths<a class="header-anchor" href="#defect-2-two-send-message-code-paths">#</a></h3>
@@ -731,7 +731,7 @@ wechat.py   → internal _send           outbound.py → raw HTTP
 <hr />
 <h2 id="5-a-few-inferences">5. A few inferences<a class="header-anchor" href="#5-a-few-inferences">#</a></h2>
 <p><strong>A. Progress streaming is not &quot;adding a feature&quot;, it's &quot;wiring an already-existing event stream to the channel&quot;</strong></p>
-<p>The dispatcher already emits <code>tool_use</code> / <code>stream_event</code> envelopes. <code>dispatch_inbound._on_event</code> is already subscribing. The only things missing are: (1) how the channel subscribes, and (2) how the channel edits a message it has already sent. The second requires <a href="http://base.py">base.py</a> to have <code>edit_message</code> and adapter.send to return a message_id—this is an <strong>abstraction-layer refactor</strong>, not a feature addition.</p>
+<p>The dispatcher already emits <code>tool_use</code> / <code>stream_event</code> envelopes. <code>dispatch_inbound._on_event</code> is already subscribing. The only things missing are: (1) how the channel subscribes, and (2) how the channel edits a message it has already sent. The second requires base.py to have <code>edit_message</code> and adapter.send to return a message_id—this is an <strong>abstraction-layer refactor</strong>, not a feature addition.</p>
 <p><strong>B. Adding <code>edit_message</code> to each of the 4 adapters directly would double Defect 2</strong></p>
 <p>Adding methods directly in the adapters without refactoring base: now 4 send implementations + 4 edit implementations + 4 react implementations = 12 copies of platform code, plus outbound's 12 = 24 copies. This is the disaster of stacking &quot;two sets of code&quot; times &quot;three operations&quot;.</p>
 <p><strong>C. Those &quot;advanced&quot; mechanisms in hermes (debounce / quick-command bypass / retryable) are not required to do now</strong></p>
@@ -741,7 +741,7 @@ wechat.py   → internal _send           outbound.py → raw HTTP
 <p><em>Layer one (shallowest): there is no Python implementation to copy-paste.</em> The whole of OpenClaw is TypeScript/Node.js (<code>pnpm-workspaces</code> + <code>tsdown</code> build), <code>src/bindings/</code> has only 1 TS file, and <code>packages/sdk/</code> and <code>packages/plugin-sdk/</code> are all TS. The only 5 <code>.py</code> files are CI scripts / skill tooling, unrelated to the channel subsystem. <strong>OpenClaw provides neither a Python binding nor a Python SDK.</strong> To reuse OpenClaw we would have to re-implement its design in Python from scratch; importing it is impossible.</p>
 <p>But language by itself is not a barrier to borrowing—TS interface → Python <code>Protocol</code> / <code>abc.ABC</code>, TS dataclass → <code>@dataclass</code>, TS async → asyncio, TS plugin manifest → <code>plugin.json</code> (which we are already doing in <code>openprogram/plugins/</code>). Design patterns are universal across languages.</p>
 <p><em>Layer two: static typing vs dynamic typing, which affects the value of &quot;50+ contract files&quot;.</em> OpenClaw writes 50+ <code>channel-*.ts</code> interface files in TS, where the compiler can enforce that a plugin implements them all and IDE hints are accurate too. The same split written in Python <code>Protocol</code>—not enforced at runtime, weak IDE hints (mypy is not on by default). So a split at &quot;the granularity of 50 contract files&quot; yields diminished returns in Python. This does not affect <strong>whether the interface shapes are worth learning</strong> (they are), only <strong>whether each interface should be split into a separate file</strong> (it isn't worth it).</p>
-<p><em>Layer three (deepest): async-first vs sync-with-threading paradigm.</em> OpenClaw is fully <code>async send/edit/typing/handoff</code>, with dispatch being a streaming pipeline (draft → live-preview → final). Hermes is async-first too. Our channel is currently synchronous + threading (one thread per adapter, <code>dispatch_inbound(...) -&gt; str</code> returning blockingly). If we copy OpenClaw's async design wholesale, the dispatch flow must be rewritten—not just changing method signatures in <a href="http://base.py">base.py</a>, but turning <code>dispatch_inbound</code> into an async generator and re-wiring all 4 adapters' event loops into asyncio. This is a real migration cost, not a simple rename at the abstraction layer.</p>
+<p><em>Layer three (deepest): async-first vs sync-with-threading paradigm.</em> OpenClaw is fully <code>async send/edit/typing/handoff</code>, with dispatch being a streaming pipeline (draft → live-preview → final). Hermes is async-first too. Our channel is currently synchronous + threading (one thread per adapter, <code>dispatch_inbound(...) -&gt; str</code> returning blockingly). If we copy OpenClaw's async design wholesale, the dispatch flow must be rewritten—not just changing method signatures in base.py, but turning <code>dispatch_inbound</code> into an async generator and re-wiring all 4 adapters' event loops into asyncio. This is a real migration cost, not a simple rename at the abstraction layer.</p>
 <p><strong>E. The dividing line between what to learn and what not to learn</strong></p>
 <pre><code>                          learn from OpenClaw   learn from hermes
 ─────────────────────────────────────────────────
@@ -803,8 +803,8 @@ implementation layer: _post_message(channel, account, target, text, *, edit_of=N
 <p>This way chunking is no longer in 5 copies and credentials are no longer loaded 8+ times, but the two entry-point paths are each retained, serving the two paradigms respectively.</p>
 </li>
 <li>
-<p><strong>The <a href="http://base.py">base.py</a> abstraction refactor must not &quot;monopolize&quot; the channel</strong></p>
-<p>If the channel is refactored into an async-first streaming pipeline the OpenClaw / hermes way, we must ensure <strong>Paradigm A can still send messages synchronously</strong>. Concretely: it is fine for <a href="http://base.py">base.py</a>'s abstract methods to be async, but a synchronous wrapper (<code>outbound.send_one_shot</code>) must be exposed at the module top level so that an agentic_function can call it without understanding asyncio.</p>
+<p><strong>The base.py abstraction refactor must not &quot;monopolize&quot; the channel</strong></p>
+<p>If the channel is refactored into an async-first streaming pipeline the OpenClaw / hermes way, we must ensure <strong>Paradigm A can still send messages synchronously</strong>. Concretely: it is fine for base.py's abstract methods to be async, but a synchronous wrapper (<code>outbound.send_one_shot</code>) must be exposed at the module top level so that an agentic_function can call it without understanding asyncio.</p>
 </li>
 <li>
 <p><strong>Streaming edit is compatible with agentic_function</strong></p>
@@ -812,12 +812,12 @@ implementation layer: _post_message(channel, account, target, text, *, edit_of=N
 </li>
 </ol>
 <p><strong>G. WeChat is the hardest to fit into the abstraction</strong></p>
-<p>The iLink API appears not to support edit_message (a sent message cannot be changed). This means that after <a href="http://base.py">base.py</a> adds an <code>edit_message</code> abstraction, the wechat adapter must either implement a fake <code>edit_message</code> (delete the old, send a new one) or raise NotImplementedError—the former changes the semantics, the latter breaks the unified interface. How hermes handles such a limitation needs further investigation (IRC has a similar problem).</p>
+<p>The iLink API appears not to support edit_message (a sent message cannot be changed). This means that after base.py adds an <code>edit_message</code> abstraction, the wechat adapter must either implement a fake <code>edit_message</code> (delete the old, send a new one) or raise NotImplementedError—the former changes the semantics, the latter breaks the unified interface. How hermes handles such a limitation needs further investigation (IRC has a similar problem).</p>
 <hr />
 <h2 id="6-open-questions">6. Open questions<a class="header-anchor" href="#6-open-questions">#</a></h2>
 <p>Things to decide at the next discussion:</p>
 <ol>
-<li>Should we do the <a href="http://base.py">base.py</a> abstraction refactor? It is 3-4h of work, no new feature, but it is the foundation for all subsequent features</li>
+<li>Should we do the base.py abstraction refactor? It is 3-4h of work, no new feature, but it is the foundation for all subsequent features</li>
 <li>Refactor granularity: abstract it to hermes's level (async send/edit/typing/draft, 5+ methods) or do the minimum first (send returns message_id + edit_message)?</li>
 <li>Add the neutral ChannelMessage structure now, or wait until the reply/quote need arises?</li>
 <li><code>outbound.send</code> stays (it serves Paradigm A), but should the implementation layer be merged with the adapter's send into a single <code>_post_message</code> function, removing the 5 duplicates?</li>

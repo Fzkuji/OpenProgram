@@ -235,7 +235,7 @@ image, model.input 不含 &quot;image&quot;（退化的 codex 配置）
 <ul>
 <li><strong>chip</strong>：解析 <code>[attachment: name (type, KB[, P pages|L lines]) @ /abs]</code> → 文件名 + 类型徽章 + 大小 + <strong>新增 scope 徽章</strong>（&quot;500 pages&quot;/&quot;200K lines&quot;）；<code>@ /abs</code> 后缀显示时剥掉。<code>&lt;attachment-preview&gt;…&lt;/…&gt;</code> 片段像提及一样从气泡里剥掉——用户看到 chip,不是 4KB 首部。</li>
 <li><strong>交付模式子标签</strong>（UX 诚实）：从 <code>delivery_mode</code> 派生&quot;read on demand&quot;/&quot;sent inline&quot;/&quot;previewed first N lines&quot;,让用户明确知道模型到底拿到了什么,不用猜&quot;它看见我的文件没&quot;。</li>
-<li><strong>乐观气泡时序</strong>（关键）：前端<strong>永远不知道</strong>落盘后的绝对路径(<code>@/abs</code> 是 <code>_persist_doc_attachments</code> 在 WS 消息处理后追加的)。所以乐观气泡的 chip 必须用<strong>客户端数据</strong>(<a href="http://file.name/size/type/b64">file.name/size/type/b64</a>)渲染,而非提及文本;重载时再用最终存储文本的提及解析。两者必须渲染成同一个 chip,对账键 = 客户端算的 sha8。因此前端发的 <code>[attachment: name (type, KB)]</code> 是<strong>故意无路径</strong>的,chip 解析器要对<strong>无路径(在途)和有路径(改写后)两种形式都渲染 chip</strong>。</li>
+<li><strong>乐观气泡时序</strong>（关键）：前端<strong>永远不知道</strong>落盘后的绝对路径(<code>@/abs</code> 是 <code>_persist_doc_attachments</code> 在 WS 消息处理后追加的)。所以乐观气泡的 chip 必须用<strong>客户端数据</strong>(file.name/size/type/b64)渲染,而非提及文本;重载时再用最终存储文本的提及解析。两者必须渲染成同一个 chip,对账键 = 客户端算的 sha8。因此前端发的 <code>[attachment: name (type, KB)]</code> 是<strong>故意无路径</strong>的,chip 解析器要对<strong>无路径(在途)和有路径(改写后)两种形式都渲染 chip</strong>。</li>
 <li><strong>预览弹窗</strong>:本地完整解码,永不发送。HUMAN 客户端滚完整文件,MODEL 只看了 4KB 首部——这就是回报。</li>
 <li><strong>侧边栏标题</strong>:<code>_title_from_text</code> 在 50 字截断前剥掉提及(不变);新增也剥掉 <code>&lt;attachment-preview&gt;</code>。</li>
 </ul>

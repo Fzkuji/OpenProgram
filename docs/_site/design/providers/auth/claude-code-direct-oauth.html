@@ -183,10 +183,10 @@ OAuth token 直连 <code>api.anthropic.com</code>」——与 <code>openai-codex
 <h2 id="背景为什么-meridian-不是技术必需">背景:为什么 Meridian 不是技术必需<a class="header-anchor" href="#背景为什么-meridian-不是技术必需">#</a></h2>
 <p><code>anthropic.py:245-261</code> 早已支持订阅 OAuth 直连:当 token 是 <code>sk-ant-oat…</code> 时,用
 <code>auth_token=&lt;token&gt;</code> + <code>anthropic-beta: claude-code-20250219,oauth-2025-04-20,…</code> +
-<code>user-agent: claude-cli/&lt;ver&gt;</code> 直发 Messages API。这跟 codex 直连 <a href="http://chatgpt.com">chatgpt.com</a>
+<code>user-agent: claude-cli/&lt;ver&gt;</code> 直发 Messages API。这跟 codex 直连 chatgpt.com
 是同一套思路。Meridian 当初被选中的两个理由现已不成立:</p>
 <ul>
-<li>「Max 账号不暴露 <a href="http://api.anthropic.com">api.anthropic.com</a> key」——对,但订阅用的是 <strong>OAuth token</strong>,不是
+<li>「Max 账号不暴露 api.anthropic.com key」——对,但订阅用的是 <strong>OAuth token</strong>,不是
 api-key;直连走 Bearer + beta header,不需要 api-key。</li>
 <li>「第三方代理把 image block 弄坏成 <code>[object Object]</code>」——那是某个代理的 bug;走官方
 <code>anthropic</code> SDK 直发 Messages API 原生支持 image block,多模态不丢。</li>
@@ -259,7 +259,7 @@ normalize 模型 alias(opus/sonnet/haiku)沿用。</p>
 只有 cli_delegated 凭证时能解析出 <code>sk-ant-oat</code> token;registry 解析 <code>claude-code</code>
 得到直连 Runtime 而非 Meridian Runtime。</li>
 <li>端到端:本机 <code>claude login</code> 后,OpenProgram 跑 claude-code 一次,确认直连
-<a href="http://api.anthropic.com">api.anthropic.com</a>(无 Meridian 进程),多模态 image block 正常。</li>
+api.anthropic.com(无 Meridian 进程),多模态 image block 正常。</li>
 </ul>
 <h2 id="实现状态已落地">实现状态(已落地)<a class="header-anchor" href="#实现状态已落地">#</a></h2>
 <ol>

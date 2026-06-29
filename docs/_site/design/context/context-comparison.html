@@ -176,8 +176,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 它叫 <code>stable / context / volatile</code>：</p>
 <ul>
 <li><code>stable</code>  = 身份 + 工具指导 + 技能 + 模型/平台/环境 hints  → 我们的 <strong>L0</strong></li>
-<li><code>context</code> = caller system_message + 上下文文件（<a href="http://AGENTS.md">AGENTS.md</a> 等） → 我们的 <strong>L1 项目层</strong></li>
-<li><code>volatile</code>= 记忆快照 + <a href="http://USER.md">USER.md</a> + 外部记忆 → 我们的 <strong>L1 项目记忆 / L2</strong></li>
+<li><code>context</code> = caller system_message + 上下文文件（AGENTS.md 等） → 我们的 <strong>L1 项目层</strong></li>
+<li><code>volatile</code>= 记忆快照 + USER.md + 外部记忆 → 我们的 <strong>L1 项目记忆 / L2</strong></li>
 </ul>
 <p>所以章法用三层即可。下面按 L0/L1/L2 分别对比，漏的成分直接落在它该在的层里。
 其余三个项目（opencode / claude-code / openclaw / pi-mono）上下文成分都比 Hermes
@@ -330,7 +330,7 @@ L0 除 computer-use 指导（低优先）外全部已实现。</p>
 <tbody>
 <tr>
 <td style="text-align:center">1</td>
-<td>项目身份（<a href="http://AGENTS.md">AGENTS.md</a> / .cursorrules）</td>
+<td>项目身份（AGENTS.md / .cursorrules）</td>
 <td style="text-align:center">✓</td>
 <td style="text-align:center">✓</td>
 <td style="text-align:center">oclaw ✓</td>
@@ -366,7 +366,7 @@ L0 除 computer-use 指导（低优先）外全部已实现。</p>
 </tr>
 <tr>
 <td style="text-align:center">5</td>
-<td><strong>用户档案 <a href="http://USER.md">USER.md</a></strong></td>
+<td><strong>用户档案 USER.md</strong></td>
 <td style="text-align:center">✓</td>
 <td style="text-align:center">-</td>
 <td style="text-align:center">-</td>
@@ -421,7 +421,7 @@ L0 除 computer-use 指导（低优先）外全部已实现。</p>
 </tbody>
 </table>
 <blockquote>
-<p>排序说明：项目固定信息（<a href="http://AGENTS.md">AGENTS.md</a> / 项目记忆 / <a href="http://USER.md">USER.md</a> / cwd / 绑定）换项目才变，
+<p>排序说明：项目固定信息（AGENTS.md / 项目记忆 / USER.md / cwd / 绑定）换项目才变，
 放前面；<strong>历史每轮都追加，最不稳，放 L1 最后</strong>——这正是你说的&quot;不断变的历史往后放&quot;。
 注入检测/截断策略紧挨它们守护的项目文件（2、3 紧跟 1）。
 L1 全部已实现。</p>
@@ -553,7 +553,7 @@ L2 剩余未实现：token 预算提示（低）。</p>
 <li>L0 环境信息（environment: OS/shell）</li>
 <li>L0 当前日期（current_date, 日粒度）</li>
 <li>L1 Prompt 注入检测（pi_shield + detect_injection_patterns）</li>
-<li>L1 <a href="http://USER.md">USER.md</a> 用户档案（user_profile, 由 workspace_files 加载 read_user_md）</li>
+<li>L1 USER.md 用户档案（user_profile, 由 workspace_files 加载 read_user_md）</li>
 <li>L1 git 仓库归位（git_repo_flag）</li>
 <li>L2 本次处境 situation + call_path（_situational_prefix + _compute_call_path）</li>
 <li>L2 todo 列表/进度（todo_progress, 读 _TODOS）</li>

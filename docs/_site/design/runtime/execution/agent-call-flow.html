@@ -520,13 +520,13 @@ exec 返回  → 回填 llm 节点 (output=最终回复, status=success)
 <tr>
 <td>dispatcher(聊天)</td>
 <td><code>insert_placeholder</code>(_turn_lifecycle.py:65)</td>
-<td><code>persist_assistant_message</code>(<a href="http://persistence.py">persistence.py</a>)</td>
+<td><code>persist_assistant_message</code>(persistence.py)</td>
 <td>旧机制</td>
 </tr>
 <tr>
 <td>exec(代码)</td>
-<td><code>_open_model_call_node</code>(<a href="http://runtime.py:631">runtime.py:631</a>)</td>
-<td><code>_close_model_call_node</code>(<a href="http://runtime.py:656">runtime.py:656</a>)</td>
+<td><code>_open_model_call_node</code>(runtime.py:631)</td>
+<td><code>_close_model_call_node</code>(runtime.py:656)</td>
 <td>新原语</td>
 </tr>
 </tbody>

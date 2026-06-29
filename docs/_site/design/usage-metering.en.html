@@ -183,7 +183,7 @@ Author: design and implementation driven together</p>
 <p>Three fundamental problems:</p>
 <ol>
 <li>
-<p><strong>The collection point is not unified.</strong> <code>stream.py</code> itself does no accounting; accounting happens in the dispatcher one layer up. Meanwhile <code>memory/llm_bridge.py</code> calls <code>api_provider.stream_simple()</code> directly and bypasses <a href="http://stream.py">stream.py</a> entirely. &quot;Went through stream_simple&quot; ≠ &quot;was accounted for&quot;.</p>
+<p><strong>The collection point is not unified.</strong> <code>stream.py</code> itself does no accounting; accounting happens in the dispatcher one layer up. Meanwhile <code>memory/llm_bridge.py</code> calls <code>api_provider.stream_simple()</code> directly and bypasses stream.py entirely. &quot;Went through stream_simple&quot; ≠ &quot;was accounted for&quot;.</p>
 </li>
 <li>
 <p><strong>Storage is a cumulative snapshot, not a stream of events.</strong> The session meta <code>_usage</code> cannot be aggregated across sessions, cannot be queried by time bucket, and has no per-model index.</p>
@@ -246,7 +246,7 @@ Provenance: <code>token_source</code> (&quot;provider_usage&quot;|&quot;anthropi
 <tr>
 <td><code>SimpleStreamOptions.metadata</code></td>
 <td>Field already exists</td>
-<td>Easy to miss in deep calls; also doesn't reach when memory bypasses <a href="http://stream.py">stream.py</a></td>
+<td>Easy to miss in deep calls; also doesn't reach when memory bypasses stream.py</td>
 </tr>
 <tr>
 <td><strong>contextvar</strong></td>
@@ -259,14 +259,14 @@ Provenance: <code>token_source</code> (&quot;provider_usage&quot;|&quot;anthropi
 <code>usage_scope(call_kind, call_label, parent_session_id, agent_id)</code> context manager, set/reset the contextvar, supports nested merge. <code>current_usage_context()</code> reads it. <code>snapshot()</code>/<code>apply_snapshot()</code> serialize across processes.</p>
 <p>Boundary notes: asyncio Tasks created by default use <code>copy_context()</code>, so stream_simple downstream of create_task can read the correct scope. Thread boundaries (run_in_executor/raw Thread) do not inherit → call apply_snapshot at the entry point. The process fork boundary copies the contextvar's current value (favorable for process_runner fork), but spawn does not → snapshot/apply_snapshot as the reliable path.</p>
 <p>recorder merge priority: <code>metadata.usage</code> &gt; contextvar &gt; default <code>unknown</code>.</p>
-<h2 id="6-collection-point-wrap-streampy-pull-memory-back-in">6. Collection Point: wrap <a href="http://stream.py">stream.py</a> + pull memory back in<a class="header-anchor" href="#6-collection-point-wrap-streampy-pull-memory-back-in">#</a></h2>
-<p>Wrap an accounting decorator around <code>stream.py</code>'s <code>stream()</code>/<code>stream_simple()</code>, and pull <code>memory/llm_bridge.py</code> back into <a href="http://stream.py">stream.py</a>.</p>
+<h2 id="6-collection-point-wrap-streampy-pull-memory-back-in">6. Collection Point: wrap stream.py + pull memory back in<a class="header-anchor" href="#6-collection-point-wrap-streampy-pull-memory-back-in">#</a></h2>
+<p>Wrap an accounting decorator around <code>stream.py</code>'s <code>stream()</code>/<code>stream_simple()</code>, and pull <code>memory/llm_bridge.py</code> back into stream.py.</p>
 <p>Rationale:</p>
 <ol>
-<li><a href="http://stream.py">stream.py</a> is the semantic boundary of &quot;one logical LLM call&quot;, already does api_key resolution / provider lookup, and can obtain the model (with cost) + the final AssistantMessage.usage.</li>
+<li>stream.py is the semantic boundary of &quot;one logical LLM call&quot;, already does api_key resolution / provider lookup, and can obtain the model (with cost) + the final AssistantMessage.usage.</li>
 <li>stream() is a generator, so the wrapping approach = when consuming done/error, extract final_message.usage → <code>calculate_cost</code> → read the contextvar → assemble a UsageEvent → recorder. Streaming is not blocked; accounting fires exactly once on the terminal event.</li>
-<li>Not the api_registry layer: ApiProvider is a Protocol, each implementation has its own stream_simple, so collecting there means either changing the Protocol (invasive to every provider) or wrapping the registry (scattered wrap points). <a href="http://stream.py">stream.py</a> is the single-function collection point.</li>
-<li>memory must be pulled back: currently <code>llm_bridge.py</code> connects directly to api_provider = unaccounted. Change it to call <code>providers.stream_simple</code> + <code>usage_scope(&quot;memory&quot;)</code>, which incidentally fixes the header inconsistency that a comment in <a href="http://stream.py">stream.py</a> worried about.</li>
+<li>Not the api_registry layer: ApiProvider is a Protocol, each implementation has its own stream_simple, so collecting there means either changing the Protocol (invasive to every provider) or wrapping the registry (scattered wrap points). stream.py is the single-function collection point.</li>
+<li>memory must be pulled back: currently <code>llm_bridge.py</code> connects directly to api_provider = unaccounted. Change it to call <code>providers.stream_simple</code> + <code>usage_scope(&quot;memory&quot;)</code>, which incidentally fixes the header inconsistency that a comment in stream.py worried about.</li>
 </ol>
 <p>Invariant: accounting failures must be best-effort (swallowed with try/except), and must never interrupt the LLM response.</p>
 <p>The dispatcher's existing <code>persist_assistant_message</code> (the messages columns) is <strong>left untouched</strong> — that is the data for the per-message pill. The ledger is a separate, second authoritative account: the message columns = &quot;how much did this message cost&quot;, the ledger = &quot;an aggregatable global stream&quot;.</p>
@@ -326,7 +326,7 @@ Provenance: <code>token_source</code> (&quot;provider_usage&quot;|&quot;anthropi
 <h2 id="11-phased-implementation-all-complete">11. Phased Implementation (all complete)<a class="header-anchor" href="#11-phased-implementation-all-complete">#</a></h2>
 <ul>
 <li><strong>Phase 0 ✅</strong>: metering foundation (event/context/ledger/recorder + unit tests), no behavior change.</li>
-<li><strong>Phase 1 ✅</strong>: <a href="http://stream.py">stream.py</a> collection point; dispatcher chat wrapped in usage_scope. Key fix: the consumer of the async generator (agent_loop) does a <code>return</code> directly upon receiving the done event, suspending the generator at the <code>yield</code> — so accounting after the loop never executes. Changed to <strong>account at the terminal event, before the yield</strong> (a <code>recorded</code> flag prevents double counting).</li>
+<li><strong>Phase 1 ✅</strong>: stream.py collection point; dispatcher chat wrapped in usage_scope. Key fix: the consumer of the async generator (agent_loop) does a <code>return</code> directly upon receiving the done event, suspending the generator at the <code>yield</code> — so accounting after the loop never executes. Changed to <strong>account at the terminal event, before the yield</strong> (a <code>recorded</code> flag prevents double counting).</li>
 <li><strong>Phase 2 ✅</strong>: summarize / mixture_of_agents(proposer+aggregator) wrapped in usage_scope; memory/llm_bridge pulled back from directly calling <code>api_provider.stream_simple</code> to going through <code>providers.stream_simple</code> (so the collection point takes effect) + wrapped in <code>usage_scope(call_kind=&quot;memory&quot;)</code>. (The compaction/branch path disappeared along with the deletion in §10.1, so no wrapping needed.)</li>
 <li><strong>Phase 3 ✅</strong>: UsageContext passthrough for spawn subprocesses (snapshot/apply_snapshot via parameter, see §8 implementation as landed); ledger pid re-check auto-reconnect. Did not implement sending result usage_summary back (the panel can already query it in real time).</li>
 <li><strong>Phase 4 ✅</strong>: deleted the <code>agent/compaction/</code> dead code; switched the usage route to the ledger. <strong>Did not split UsageTracker</strong> (see §10.2 revised plan).</li>

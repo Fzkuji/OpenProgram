@@ -224,7 +224,7 @@ openprogram/functions/
 <li>加载 agent 配置，取出 <code>skills</code> 块。</li>
 <li>调用 <code>gate(name=resolved.name, category=resolved.category, disabled=..., allowed=..., categories=...)</code>。</li>
 <li>若 <code>gate()</code> 返回了拒绝字符串，该聊天消息变为一条 <code>[error] skill X: &lt;reason&gt;</code> 系统消息，且不会展开 skill 正文。</li>
-<li>否则像以往一样将 <a href="http://SKILL.md">SKILL.md</a> 展开进用户回合。</li>
+<li>否则像以往一样将 SKILL.md 展开进用户回合。</li>
 </ol>
 <pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.agents.gating</span><span class="w"> </span><span class="kn">import</span> <span class="n">gate</span> <span class="k">as</span> <span class="n">_gate</span>
 <span class="n">gate_error</span> <span class="o">=</span> <span class="n">_gate</span><span class="p">(</span>
@@ -293,7 +293,7 @@ openprogram/functions/
 <tbody>
 <tr>
 <td>Skill</td>
-<td>当 <code>/skill X</code> 运行且 <a href="http://SKILL.md">SKILL.md</a> 被注入回合时</td>
+<td>当 <code>/skill X</code> 运行且 SKILL.md 被注入回合时</td>
 <td><code>chat.py</code> handler</td>
 </tr>
 <tr>

@@ -78,7 +78,10 @@ def _pyg_css(style: str) -> str:
 
 
 def make_md() -> MarkdownIt:
-    md = MarkdownIt("gfm-like", {"html": True, "linkify": True, "highlight": _highlight_code})
+    # linkify off: it turns bare code filenames like `branch.py` / `session.py:178`
+    # into bogus http://branch.py links (which the browser then tries to resolve).
+    # Real links are written explicitly with [](), so auto-linking is all downside.
+    md = MarkdownIt("gfm-like", {"html": True, "linkify": False, "highlight": _highlight_code})
     md.use(anchors_plugin, max_level=3, slug_func=_make_unique_slug,
            permalink=True, permalinkSymbol="#", permalinkSpace=False)
     md.use(deflist_plugin)

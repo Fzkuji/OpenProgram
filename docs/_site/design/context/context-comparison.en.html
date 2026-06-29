@@ -176,8 +176,8 @@ This document is comparison only; it does not change the design.</p>
 It calls them <code>stable / context / volatile</code>:</p>
 <ul>
 <li><code>stable</code>  = identity + tool guidance + skills + model/platform/environment hints  → our <strong>L0</strong></li>
-<li><code>context</code> = caller system_message + context files (<a href="http://AGENTS.md">AGENTS.md</a>, etc.) → our <strong>L1 project layer</strong></li>
-<li><code>volatile</code>= memory snapshot + <a href="http://USER.md">USER.md</a> + external memory → our <strong>L1 project memory / L2</strong></li>
+<li><code>context</code> = caller system_message + context files (AGENTS.md, etc.) → our <strong>L1 project layer</strong></li>
+<li><code>volatile</code>= memory snapshot + USER.md + external memory → our <strong>L1 project memory / L2</strong></li>
 </ul>
 <p>So three layers is the right organizing scheme. Below we compare per L0/L1/L2, dropping each missing component directly into the layer where it belongs.
 The other three projects (opencode / claude-code / openclaw / pi-mono) all have fewer context components than Hermes, on par with us or fewer; almost everything we are missing comes from Hermes.</p>
@@ -325,7 +325,7 @@ L0 is fully implemented except computer-use guidance (low priority).</p>
 <tbody>
 <tr>
 <td style="text-align:center">1</td>
-<td>project identity (<a href="http://AGENTS.md">AGENTS.md</a> / .cursorrules)</td>
+<td>project identity (AGENTS.md / .cursorrules)</td>
 <td style="text-align:center">✓</td>
 <td style="text-align:center">✓</td>
 <td style="text-align:center">oclaw ✓</td>
@@ -361,7 +361,7 @@ L0 is fully implemented except computer-use guidance (low priority).</p>
 </tr>
 <tr>
 <td style="text-align:center">5</td>
-<td><strong>user profile <a href="http://USER.md">USER.md</a></strong></td>
+<td><strong>user profile USER.md</strong></td>
 <td style="text-align:center">✓</td>
 <td style="text-align:center">-</td>
 <td style="text-align:center">-</td>
@@ -416,7 +416,7 @@ L0 is fully implemented except computer-use guidance (low priority).</p>
 </tbody>
 </table>
 <blockquote>
-<p>Ordering note: fixed project info (<a href="http://AGENTS.md">AGENTS.md</a> / project memory / <a href="http://USER.md">USER.md</a> / cwd / bindings) changes only when you switch projects, so it goes first; <strong>history is appended every turn, is the least stable, and goes at the end of L1</strong> — exactly the &quot;keep the constantly-changing history at the back&quot; you mentioned.
+<p>Ordering note: fixed project info (AGENTS.md / project memory / USER.md / cwd / bindings) changes only when you switch projects, so it goes first; <strong>history is appended every turn, is the least stable, and goes at the end of L1</strong> — exactly the &quot;keep the constantly-changing history at the back&quot; you mentioned.
 Injection detection / truncation policy sit right next to the project files they guard (2 and 3 follow 1).
 L1 is fully implemented.</p>
 </blockquote>
@@ -546,7 +546,7 @@ Remaining unimplemented in L2: token budget hint (low).</p>
 <li>L0 environment info (environment: OS/shell)</li>
 <li>L0 current date (current_date, day granularity)</li>
 <li>L1 prompt-injection detection (pi_shield + detect_injection_patterns)</li>
-<li>L1 <a href="http://USER.md">USER.md</a> user profile (user_profile, loaded by workspace_files via read_user_md)</li>
+<li>L1 USER.md user profile (user_profile, loaded by workspace_files via read_user_md)</li>
 <li>L1 git-repo flag (git_repo_flag)</li>
 <li>L2 this turn's situation + call_path (_situational_prefix + _compute_call_path)</li>
 <li>L2 todo list/progress (todo_progress, reads _TODOS)</li>

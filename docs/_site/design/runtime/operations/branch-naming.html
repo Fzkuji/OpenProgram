@@ -222,7 +222,7 @@ head_msg_id 前 8 位 hex —— 短号本身没问题（git 心智），问题�
 </tr>
 </tbody>
 </table>
-<p>关键常量（<a href="http://titles.py">titles.py</a>）：</p>
+<p>关键常量（titles.py）：</p>
 <ul>
 <li><code>_TRUNC_LEN = 50</code>（Stage 1 截断长度）</li>
 <li><code>_RETITLE_AT_TURNS = (1, 6, 16, 40)</code>（渐进重命名阈值）</li>
@@ -248,7 +248,7 @@ head_msg_id 前 8 位 hex —— 短号本身没问题（git 心智），问题�
 <td>用户手动改名</td>
 <td><code>rename_branch</code> WS action</td>
 <td>否</td>
-<td><a href="http://branch.py:259">branch.py:259</a></td>
+<td>branch.py:259</td>
 </tr>
 <tr>
 <td>spawn 自动命名</td>
@@ -266,13 +266,13 @@ head_msg_id 前 8 位 hex —— 短号本身没问题（git 心智），问题�
 <td>8 位 hex 兜底</td>
 <td>无名字时</td>
 <td>否</td>
-<td><a href="http://branch.py:207">branch.py:207</a>, badges.ts:31</td>
+<td>branch.py:207, badges.ts:31</td>
 </tr>
 <tr>
 <td><strong>on-demand LLM 命名</strong></td>
 <td><strong>仅 CLI <code>/branch rename</code> 空名</strong></td>
 <td><strong>是</strong></td>
-<td><strong><a href="http://branch.py:290">branch.py:290</a> <code>handle_auto_name_branch</code></strong></td>
+<td><strong>branch.py:290 <code>handle_auto_name_branch</code></strong></td>
 </tr>
 </tbody>
 </table>
@@ -420,8 +420,8 @@ assistant，且数的是全会话所有分支的回复）。分支改用计数�
 </tr>
 <tr>
 <td>LLM prompt</td>
-<td><code>_TITLE_SYSTEM_PROMPT</code>（<a href="http://titles.py">titles.py</a>，agent 核心层）</td>
-<td>branch 自己的 prompt（<a href="http://branch.py:317">branch.py:317</a>，web 接口层）</td>
+<td><code>_TITLE_SYSTEM_PROMPT</code>（titles.py，agent 核心层）</td>
+<td>branch 自己的 prompt（branch.py:317，web 接口层）</td>
 <td><strong>不统一</strong>：两个 prompt 在不同层、语义不同（会话标题 vs 分支标签），各自演化；只补齐分支缺的防注入（见下）</td>
 </tr>
 <tr>
@@ -432,7 +432,7 @@ assistant，且数的是全会话所有分支的回复）。分支改用计数�
 </tr>
 <tr>
 <td>后台线程</td>
-<td><a href="http://titles.py">titles.py</a> <code>_bg()</code></td>
+<td>titles.py <code>_bg()</code></td>
 <td>branch 自己写</td>
 <td><strong>不抽公共</strong>：写回逻辑各自不同（session 写 meta.json 顶层，branch 写 branches 子结构），抽公共反而绑死</td>
 </tr>

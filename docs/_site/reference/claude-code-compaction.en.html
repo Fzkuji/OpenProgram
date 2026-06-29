@@ -171,7 +171,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <blockquote>
 <p>Research document (not a design document). Reverse-engineered from source, documenting Claude Code's compaction mechanism.</p>
 <p><strong>Reliability note</strong>: The description of the 5-tier cascade comes from third-party reverse engineering, not confirmed by Anthropic's official documentation.
-The official API docs (<a href="http://platform.claude.com">platform.claude.com</a>) describe only a single compact mechanism (over token threshold → LLM summary);
+The official API docs (platform.claude.com) describe only a single compact mechanism (over token threshold → LLM summary);
 the internal Microcompact / Snip / Context Collapse layering is a Claude Code client implementation detail.
 Different reverse-engineering sources describe the execution order with slight variations. The version below follows Inside Claude Code (the most detailed analysis).
 Thresholds and parameters have been adjusted across versions; the numbers below may not be entirely accurate.</p>
@@ -447,7 +447,7 @@ After compaction:
 <li>Construct the compaction prompt with <code>getCompactPrompt()</code> (something like &quot;Please compress the following conversation history into key facts&quot;)</li>
 <li>Send the entire conversation history to the LLM to generate the summary</li>
 <li>Build the post-compaction messages with <code>buildPostCompactMessages()</code></li>
-<li>The system prompt is <strong>reloaded</strong> from <a href="http://CLAUDE.md">CLAUDE.md</a> (not derived from the summary, so the contents of <a href="http://CLAUDE.md">CLAUDE.md</a> are never lost)</li>
+<li>The system prompt is <strong>reloaded</strong> from CLAUDE.md (not derived from the summary, so the contents of CLAUDE.md are never lost)</li>
 </ol>
 <p><strong>The <code>/compact</code> manual command</strong>:</p>
 <ul>
@@ -457,7 +457,7 @@ After compaction:
 <li>The official recommendation is to manually <code>/compact</code> at <strong>60% usage</strong></li>
 </ul>
 <p><strong>Lost</strong>: early instructions, design discussions, reasoning processes, code snippets from 50+ turns ago, style preferences.
-<strong>Kept</strong>: the current task, recently modified filenames, recent errors and their solutions, the contents of <a href="http://CLAUDE.md">CLAUDE.md</a>.</p>
+<strong>Kept</strong>: the current task, recently modified filenames, recent errors and their solutions, the contents of CLAUDE.md.</p>
 <p><strong>Example</strong>:</p>
 <pre><code>Before compaction (35 turns, 150K tokens):
 [system prompt]
@@ -523,7 +523,7 @@ Modified files: src/utils.py, src/config.py, tests/test_utils.py&quot;
 <p><strong>Conversation messages are not truncated individually</strong>: user/assistant messages are either deleted by the whole turn (Snip) or LLM-summarized (Compact). Individual messages are not truncated.</p>
 </li>
 <li>
-<p><strong><a href="http://CLAUDE.md">CLAUDE.md</a> does not participate in compaction</strong>: It is reloaded from disk and never lost.</p>
+<p><strong>CLAUDE.md does not participate in compaction</strong>: It is reloaded from disk and never lost.</p>
 </li>
 <li>
 <p><strong>User control</strong>: <code>/compact</code> + <code>/context</code> let the user take the lead. Automatic is the fallback.</p>

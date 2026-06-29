@@ -222,7 +222,7 @@ Several points are deliberately not aligned; reasons are given in each section.<
 </tr>
 </tbody>
 </table>
-<p>Key constants (<a href="http://titles.py">titles.py</a>):</p>
+<p>Key constants (titles.py):</p>
 <ul>
 <li><code>_TRUNC_LEN = 50</code> (Stage 1 truncation length)</li>
 <li><code>_RETITLE_AT_TURNS = (1, 6, 16, 40)</code> (progressive rename thresholds)</li>
@@ -248,7 +248,7 @@ does not explicitly pass temperature (uses the provider default)</li>
 <td>User manual rename</td>
 <td><code>rename_branch</code> WS action</td>
 <td>No</td>
-<td><a href="http://branch.py:259">branch.py:259</a></td>
+<td>branch.py:259</td>
 </tr>
 <tr>
 <td>spawn auto-name</td>
@@ -266,13 +266,13 @@ does not explicitly pass temperature (uses the provider default)</li>
 <td>8-hex fallback</td>
 <td>When there is no name</td>
 <td>No</td>
-<td><a href="http://branch.py:207">branch.py:207</a>, badges.ts:31</td>
+<td>branch.py:207, badges.ts:31</td>
 </tr>
 <tr>
 <td><strong>on-demand LLM naming</strong></td>
 <td><strong>Only CLI <code>/branch rename</code> with an empty name</strong></td>
 <td><strong>Yes</strong></td>
-<td><strong><a href="http://branch.py:290">branch.py:290</a> <code>handle_auto_name_branch</code></strong></td>
+<td><strong>branch.py:290 <code>handle_auto_name_branch</code></strong></td>
 </tr>
 </tbody>
 </table>
@@ -420,8 +420,8 @@ other branches). This is a better approach for branches, not a defect; session's
 </tr>
 <tr>
 <td>LLM prompt</td>
-<td><code>_TITLE_SYSTEM_PROMPT</code> (<a href="http://titles.py">titles.py</a>, agent core layer)</td>
-<td>Branch's own prompt (<a href="http://branch.py:317">branch.py:317</a>, web interface layer)</td>
+<td><code>_TITLE_SYSTEM_PROMPT</code> (titles.py, agent core layer)</td>
+<td>Branch's own prompt (branch.py:317, web interface layer)</td>
 <td><strong>Not unified</strong>: the two prompts are at different layers and have different semantics (session title vs branch label) and evolve separately; only fill in the injection defense the branch lacks (see below)</td>
 </tr>
 <tr>
@@ -432,7 +432,7 @@ other branches). This is a better approach for branches, not a defect; session's
 </tr>
 <tr>
 <td>Background thread</td>
-<td><a href="http://titles.py">titles.py</a> <code>_bg()</code></td>
+<td>titles.py <code>_bg()</code></td>
 <td>Branch writes its own</td>
 <td><strong>No shared abstraction</strong>: the write-back logic differs (session writes top-level meta.json, branch writes the branches substructure); a shared abstraction would only couple them</td>
 </tr>

@@ -224,7 +224,7 @@ openprogram/functions/
 <li>Loads the agent profile, pulls the <code>skills</code> block.</li>
 <li>Calls <code>gate(name=resolved.name, category=resolved.category, disabled=..., allowed=..., categories=...)</code>.</li>
 <li>If <code>gate()</code> returned a rejection string, the chat message becomes a <code>[error] skill X: &lt;reason&gt;</code> system message and the skill body is NOT expanded.</li>
-<li>Otherwise expands <a href="http://SKILL.md">SKILL.md</a> into the user turn as before.</li>
+<li>Otherwise expands SKILL.md into the user turn as before.</li>
 </ol>
 <pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.agents.gating</span><span class="w"> </span><span class="kn">import</span> <span class="n">gate</span> <span class="k">as</span> <span class="n">_gate</span>
 <span class="n">gate_error</span> <span class="o">=</span> <span class="n">_gate</span><span class="p">(</span>
@@ -293,7 +293,7 @@ openprogram/functions/
 <tbody>
 <tr>
 <td>Skill</td>
-<td>When <code>/skill X</code> runs and <a href="http://SKILL.md">SKILL.md</a> gets injected into the turn</td>
+<td>When <code>/skill X</code> runs and SKILL.md gets injected into the turn</td>
 <td><code>chat.py</code> handler</td>
 </tr>
 <tr>

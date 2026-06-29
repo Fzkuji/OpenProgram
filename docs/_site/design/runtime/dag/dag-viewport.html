@@ -336,11 +336,11 @@ ws_actions/                            assign-lanes.ts
 <p><code>caller</code> 字段（不是 <code>called_by</code>）指向非 ROOT 父节点的节点。用于 collapse 计算（折叠只收 internal children）。</p>
 <p><strong>不用于 visibility 传播</strong>（删除 <code>_internalOwner</code> 对 visibility 的影响）。</p>
 <h2 id="五布局">五、布局<a class="header-anchor" href="#五布局">#</a></h2>
-<h3 id="tier水平列-tierpy">tier（水平列）— <a href="http://tier.py">tier.py</a><a class="header-anchor" href="#tier水平列-tierpy">#</a></h3>
+<h3 id="tier水平列-tierpy">tier（水平列）— tier.py<a class="header-anchor" href="#tier水平列-tierpy">#</a></h3>
 <p>按 role 固定：ROOT=0, user=1, llm=2, tool=3, 更深子调用=caller.tier+1。</p>
-<h3 id="depth垂直行-depthpy">depth（垂直行）— <a href="http://depth.py">depth.py</a><a class="header-anchor" href="#depth垂直行-depthpy">#</a></h3>
+<h3 id="depth垂直行-depthpy">depth（垂直行）— depth.py<a class="header-anchor" href="#depth垂直行-depthpy">#</a></h3>
 <p>DFS 序。fork siblings 跳过 DFS，对齐首个 sibling 的 depth。</p>
-<h3 id="lane分支列-lanepy">lane（分支列）— <a href="http://lane.py">lane.py</a><a class="header-anchor" href="#lane分支列-lanepy">#</a></h3>
+<h3 id="lane分支列-lanepy">lane（分支列）— lane.py<a class="header-anchor" href="#lane分支列-lanepy">#</a></h3>
 <p>主干 lane=0。fork 非首个 siblings 分配新 lane。lane 之间留 1 列间距给 fork 虚拟主干线。</p>
 <h3 id="pos-函数">pos 函数<a class="header-anchor" href="#pos-函数">#</a></h3>
 <pre><code class="language-typescript"><span class="kd">function</span><span class="w"> </span><span class="nx">pos</span><span class="p">(</span><span class="nx">n</span><span class="o">:</span><span class="w"> </span><span class="kt">GNode</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="nx">x</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">,</span><span class="w"> </span><span class="nx">y</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">}</span><span class="w"> </span><span class="p">{</span>
@@ -393,7 +393,7 @@ ws_actions/                            assign-lanes.ts
 <tbody>
 <tr>
 <td>1</td>
-<td>后端：抽 <code>graph_builder.py</code>，<a href="http://session.py">session.py</a> 和 <a href="http://branch.py">branch.py</a> 都调它</td>
+<td>后端：抽 <code>graph_builder.py</code>，session.py 和 branch.py 都调它</td>
 <td>graph 数据一致</td>
 </tr>
 <tr>

@@ -337,11 +337,11 @@ Output: adds a clickable badge beneath each branch tip node</p>
 <p>A node whose <code>caller</code> field (not <code>called_by</code>) points to a non-ROOT parent node. Used in collapse computation (collapsing only gathers internal children).</p>
 <p><strong>Not used for visibility propagation</strong> (the influence of <code>_internalOwner</code> on visibility is removed).</p>
 <h2 id="5-layout">5. Layout<a class="header-anchor" href="#5-layout">#</a></h2>
-<h3 id="tier-horizontal-column-tierpy">tier (horizontal column) — <a href="http://tier.py">tier.py</a><a class="header-anchor" href="#tier-horizontal-column-tierpy">#</a></h3>
+<h3 id="tier-horizontal-column-tierpy">tier (horizontal column) — tier.py<a class="header-anchor" href="#tier-horizontal-column-tierpy">#</a></h3>
 <p>Fixed by role: ROOT=0, user=1, llm=2, tool=3, deeper sub-calls=caller.tier+1.</p>
-<h3 id="depth-vertical-row-depthpy">depth (vertical row) — <a href="http://depth.py">depth.py</a><a class="header-anchor" href="#depth-vertical-row-depthpy">#</a></h3>
+<h3 id="depth-vertical-row-depthpy">depth (vertical row) — depth.py<a class="header-anchor" href="#depth-vertical-row-depthpy">#</a></h3>
 <p>DFS order. fork siblings skip DFS and align to the depth of the first sibling.</p>
-<h3 id="lane-branch-column-lanepy">lane (branch column) — <a href="http://lane.py">lane.py</a><a class="header-anchor" href="#lane-branch-column-lanepy">#</a></h3>
+<h3 id="lane-branch-column-lanepy">lane (branch column) — lane.py<a class="header-anchor" href="#lane-branch-column-lanepy">#</a></h3>
 <p>The trunk is lane=0. Non-first fork siblings are assigned a new lane. A 1-column gap is left between lanes for the fork virtual trunk line.</p>
 <h3 id="pos-function">pos function<a class="header-anchor" href="#pos-function">#</a></h3>
 <pre><code class="language-typescript"><span class="kd">function</span><span class="w"> </span><span class="nx">pos</span><span class="p">(</span><span class="nx">n</span><span class="o">:</span><span class="w"> </span><span class="kt">GNode</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="nx">x</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">,</span><span class="w"> </span><span class="nx">y</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">}</span><span class="w"> </span><span class="p">{</span>
@@ -394,7 +394,7 @@ Output: adds a clickable badge beneath each branch tip node</p>
 <tbody>
 <tr>
 <td>1</td>
-<td>Backend: extract <code>graph_builder.py</code>; both <a href="http://session.py">session.py</a> and <a href="http://branch.py">branch.py</a> call it</td>
+<td>Backend: extract <code>graph_builder.py</code>; both session.py and branch.py call it</td>
 <td>graph data is identical</td>
 </tr>
 <tr>

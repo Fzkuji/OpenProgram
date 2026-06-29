@@ -289,7 +289,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p>Effect: tools collapsed to read/search five, only research-tagged skills, only arxiv/scholar MCPs.</p>
 <hr />
 <h2 id="when-not-to-use-gating">When NOT to use gating<a class="header-anchor" href="#when-not-to-use-gating">#</a></h2>
-<p>Most users should never touch this. The Anthropic <a href="http://SKILL.md">SKILL.md</a> design philosophy is <strong>LLM-mediated selection</strong>: every skill has a <code>description</code> field, the model reads all of them and picks. Gating is an <strong>escape hatch</strong> for when:</p>
+<p>Most users should never touch this. The Anthropic SKILL.md design philosophy is <strong>LLM-mediated selection</strong>: every skill has a <code>description</code> field, the model reads all of them and picks. Gating is an <strong>escape hatch</strong> for when:</p>
 <ul>
 <li>A skill is dangerous and you want a hard wall (<code>prod-deploy</code> never runs in customer-service agent)</li>
 <li>An agent role is so narrow that listing the permitted set is shorter than the description-tuning argument (research agent only ever needs 5 tools)</li>

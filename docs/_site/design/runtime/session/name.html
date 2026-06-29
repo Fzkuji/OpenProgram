@@ -169,7 +169,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
   </nav>
   <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg" data-title-en="Runtime" data-title-zh="运行时">运行时</span> <span class='bc-sep'>›</span> <span class="bc-seg" data-title-en="Session Subsystem" data-title-zh="Session 子系统">Session 子系统</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="LLM Title Generation" data-title-zh="LLM 标题生成">LLM 标题生成</span></nav><h1 id="llm-标题生成">LLM 标题生成<a class="header-anchor" href="#llm-标题生成">#</a></h1>
 <p>命名的完整流程（首轮自动命名、用户主动重命名、竞态保护、锁标记）见 <a href="/docs/design/runtime/session/operations.html">operations.md</a> 的&quot;命名&quot;段。权威实现在 <code>openprogram/agent/dispatcher/titles.py</code>，是所有入口共用的唯一命名实现。本文件只描述 <code>_generate_llm_title()</code>（阶段 2）的实现细节。</p>
-<p>阶段 1 的截断（<code>_title_from_text</code> / <code>_default_title</code>）也在 <a href="http://titles.py">titles.py</a>：剥 <code>[attachment:]</code> / <code>&lt;attachment-preview&gt;</code> / <code>&lt;file&gt;</code> 标记 → 取首行 → 截 50 字（超出加 <code>…</code>）。</p>
+<p>阶段 1 的截断（<code>_title_from_text</code> / <code>_default_title</code>）也在 titles.py：剥 <code>[attachment:]</code> / <code>&lt;attachment-preview&gt;</code> / <code>&lt;file&gt;</code> 标记 → 取首行 → 截 50 字（超出加 <code>…</code>）。</p>
 <h2 id="输入">输入<a class="header-anchor" href="#输入">#</a></h2>
 <p>用户消息前 500 字符 + assistant 回复前 500 字符。包裹在 <code>&lt;session&gt;</code> 标签中。</p>
 <h2 id="prompt">Prompt<a class="header-anchor" href="#prompt">#</a></h2>

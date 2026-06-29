@@ -225,7 +225,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </tr>
 </tbody>
 </table>
-<p>The function name, parameter names / types / defaults, and the one-line summary are all read automatically from the function signature and docstring, not repeated in the decorator (see <a href="http://SKILL.md">SKILL.md</a> §3).</p>
+<p>The function name, parameter names / types / defaults, and the one-line summary are all read automatically from the function signature and docstring, not repeated in the decorator (see SKILL.md §3).</p>
 <h2 id="recording-to-the-dag">Recording to the DAG<a class="header-anchor" href="#recording-to-the-dag">#</a></h2>
 <ul>
 <li><strong>Entering the function</strong>: write a <code>code</code> node (<code>output=None</code>, <code>status=&quot;running&quot;</code>), and store the function docstring into that node's <code>metadata.doc</code>, which is prepended to <code>function_name(args)</code> when rendering context.</li>

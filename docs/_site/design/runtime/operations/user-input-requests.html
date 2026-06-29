@@ -285,7 +285,7 @@ resolve 子进程本地 registry）。父进程 <code>_drain</code> 拦截该 en
 有意跳过它）。</li>
 <li><strong>前端</strong>：web 在消息流里得到一张 React 问题卡片（取代旧式 DOM 注入），
 问题待答期间输入框兼作答案框；TUI 把问题渲染在输入槽位里
-（<a href="http://tui-upgrade.md">tui-upgrade.md</a> P2）。跨界面以第一个答案为准；<code>question.replied</code> 会撤回
+（tui-upgrade.md P2）。跨界面以第一个答案为准；<code>question.replied</code> 会撤回
 其他界面上的 UI。</li>
 <li><strong>审批合流（后续阶段）</strong>：<code>_approval.py</code> 迁移到同一个 registry，
 <code>kind=&quot;approval&quot;</code>，给那个形同虚设的 <code>ask</code> 权限模式一个真 UI，采用 opencode
@@ -326,7 +326,7 @@ _bridge_question_to_parent + _decline_bridged_question）。验证：
 </ul>
 </li>
 <li><strong>Phase 3 — TUI 界面</strong>：question/approval 提示放在输入槽位里
-（在 <a href="http://tui-upgrade.md">tui-upgrade.md</a> 中跟踪）。</li>
+（在 tui-upgrade.md 中跟踪）。</li>
 <li><strong>Phase 4 — 审批合流 + channels + <code>runtime.form</code></strong>。</li>
 </ul>
 <h2 id="待解问题">待解问题<a class="header-anchor" href="#待解问题">#</a></h2>

@@ -225,7 +225,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </tr>
 </tbody>
 </table>
-<p>函数名、参数名 / 类型 / 默认值、一句话摘要都从函数签名和 docstring 自动读取,不在装饰器里重复(见 <a href="http://SKILL.md">SKILL.md</a> §3)。</p>
+<p>函数名、参数名 / 类型 / 默认值、一句话摘要都从函数签名和 docstring 自动读取,不在装饰器里重复(见 SKILL.md §3)。</p>
 <h2 id="记录到-dag">记录到 DAG<a class="header-anchor" href="#记录到-dag">#</a></h2>
 <ul>
 <li><strong>进入函数</strong>:写一个 <code>code</code> 节点(<code>output=None</code>, <code>status=&quot;running&quot;</code>),函数 docstring 一并存进该节点的 <code>metadata.doc</code>,渲染上下文时拼在 <code>函数名(参数)</code> 前面。</li>

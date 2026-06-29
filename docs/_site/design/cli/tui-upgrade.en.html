@@ -240,7 +240,7 @@ schema-driven settings design); unknown keys error; <code>&quot;none&quot;</code
 <li><strong>Question/permission prompts replace the input box</strong> (a three-way slot:
 Prompt | QuestionPrompt | ApprovalPrompt) instead of a modal — the
 transcript stays visible and scrollable, esc semantics stay clear.
-This is the landing site for <a href="http://user-input-requests.md">user-input-requests.md</a>'s TUI surface.</li>
+This is the landing site for user-input-requests.md's TUI surface.</li>
 <li><strong>In-row danger confirmation</strong> (press again to confirm, row turns red)
 instead of nested confirm layers, for destructive picker actions.</li>
 </ol>
@@ -279,7 +279,7 @@ id (fixes concurrent same-name mis-attribution).</li>
 <li>Server: <code>conversation_loaded</code> carries tool blocks; <code>/resume</code> restores
 tool history.</li>
 <li>Question/approval prompts in the input slot — implements the TUI side of
-<a href="http://user-input-requests.md">user-input-requests.md</a> (handles <code>follow_up_question</code> and
+user-input-requests.md (handles <code>follow_up_question</code> and
 <code>approval_request</code>, makes the <code>ask</code> permission mode reachable).</li>
 <li>Migrate REPL pickers from <code>pickerKind</code> enum to ModalProvider/Form kit
 (mechanical; do opportunistically per picker).</li>

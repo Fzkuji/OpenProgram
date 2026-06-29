@@ -183,7 +183,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p>三个根本问题：</p>
 <ol>
 <li>
-<p><strong>收口点不统一</strong>。<code>stream.py</code> 本身不记账，记账在更上层的 dispatcher；而 <code>memory/llm_bridge.py</code> 直接调 <code>api_provider.stream_simple()</code> 连 <a href="http://stream.py">stream.py</a> 都绕过。&quot;过了 stream_simple&quot; ≠ &quot;被记账&quot;。</p>
+<p><strong>收口点不统一</strong>。<code>stream.py</code> 本身不记账，记账在更上层的 dispatcher；而 <code>memory/llm_bridge.py</code> 直接调 <code>api_provider.stream_simple()</code> 连 stream.py 都绕过。&quot;过了 stream_simple&quot; ≠ &quot;被记账&quot;。</p>
 </li>
 <li>
 <p><strong>存储是累积快照不是流水</strong>。session meta <code>_usage</code> 无法跨 session 聚合、无法按时间桶查询、无 per-model 索引。</p>
@@ -246,7 +246,7 @@ tokens（provider 权威值，缺失为 0）：<code>input_tokens</code>、<code
 <tr>
 <td><code>SimpleStreamOptions.metadata</code></td>
 <td>字段已有</td>
-<td>深层调用易漏；memory 绕过 <a href="http://stream.py">stream.py</a> 时也到不了</td>
+<td>深层调用易漏；memory 绕过 stream.py 时也到不了</td>
 </tr>
 <tr>
 <td><strong>contextvar</strong></td>
@@ -259,14 +259,14 @@ tokens（provider 权威值，缺失为 0）：<code>input_tokens</code>、<code
 <code>usage_scope(call_kind, call_label, parent_session_id, agent_id)</code> 上下文管理器，set/reset contextvar，支持嵌套 merge。<code>current_usage_context()</code> 读。<code>snapshot()</code>/<code>apply_snapshot()</code> 跨进程序列化。</p>
 <p>边界说明：asyncio 建 Task 默认 <code>copy_context()</code>，stream_simple 在 create_task 下游能读对 scope。线程边界（run_in_executor/裸 Thread）不继承 → 入口 apply_snapshot。进程边界 fork 拷贝 contextvar 当前值（对 process_runner fork 有利），但 spawn 不行 → snapshot/apply_snapshot 作可靠路径。</p>
 <p>recorder 合并优先级：<code>metadata.usage</code> &gt; contextvar &gt; 默认 <code>unknown</code>。</p>
-<h2 id="6-收口点streampy-包装-把-memory-拉回">6. 收口点：<a href="http://stream.py">stream.py</a> 包装 + 把 memory 拉回<a class="header-anchor" href="#6-收口点streampy-包装-把-memory-拉回">#</a></h2>
-<p>在 <code>stream.py</code> 的 <code>stream()</code>/<code>stream_simple()</code> 包记账装饰器，并把 <code>memory/llm_bridge.py</code> 拉回 <a href="http://stream.py">stream.py</a>。</p>
+<h2 id="6-收口点streampy-包装-把-memory-拉回">6. 收口点：stream.py 包装 + 把 memory 拉回<a class="header-anchor" href="#6-收口点streampy-包装-把-memory-拉回">#</a></h2>
+<p>在 <code>stream.py</code> 的 <code>stream()</code>/<code>stream_simple()</code> 包记账装饰器，并把 <code>memory/llm_bridge.py</code> 拉回 stream.py。</p>
 <p>理由：</p>
 <ol>
-<li><a href="http://stream.py">stream.py</a> 是&quot;一次逻辑 LLM 调用&quot;的语义边界，已做 api_key 解析/provider 查找，能拿到 model(含 cost)+最终 AssistantMessage.usage。</li>
+<li>stream.py 是&quot;一次逻辑 LLM 调用&quot;的语义边界，已做 api_key 解析/provider 查找，能拿到 model(含 cost)+最终 AssistantMessage.usage。</li>
 <li>stream() 是 generator，包装方式 = 消费 done/error 时提取 final_message.usage → <code>calculate_cost</code> → 读 contextvar → 组 UsageEvent → recorder。流式不阻塞，记账只在终止 event 触发一次。</li>
-<li>不选 api_registry 层：ApiProvider 是 Protocol，每实现各自 stream_simple，收口要么改 Protocol（侵入所有 provider）要么包 registry（包装点分散）。<a href="http://stream.py">stream.py</a> 是唯一单函数收口。</li>
-<li>memory 必须拉回：现 <code>llm_bridge.py</code> 直连 api_provider = 漏账。改调 <code>providers.stream_simple</code> + <code>usage_scope(&quot;memory&quot;)</code>，顺带修复 <a href="http://stream.py">stream.py</a> 注释担心的 header 不一致。</li>
+<li>不选 api_registry 层：ApiProvider 是 Protocol，每实现各自 stream_simple，收口要么改 Protocol（侵入所有 provider）要么包 registry（包装点分散）。stream.py 是唯一单函数收口。</li>
+<li>memory 必须拉回：现 <code>llm_bridge.py</code> 直连 api_provider = 漏账。改调 <code>providers.stream_simple</code> + <code>usage_scope(&quot;memory&quot;)</code>，顺带修复 stream.py 注释担心的 header 不一致。</li>
 </ol>
 <p>不变量：记账失败必须 best-effort（try/except 吞），绝不打断 LLM 响应。</p>
 <p>dispatcher 现有 <code>persist_assistant_message</code>（messages 列）<strong>保留不动</strong>——那是单条消息 pill 的数据。ledger 是独立第二份权威账：消息列=&quot;这条消息花多少&quot;，ledger=&quot;可聚合全局流水&quot;。</p>
@@ -326,7 +326,7 @@ tokens（provider 权威值，缺失为 0）：<code>input_tokens</code>、<code
 <h2 id="11-分阶段实施全部完成">11. 分阶段实施（全部完成）<a class="header-anchor" href="#11-分阶段实施全部完成">#</a></h2>
 <ul>
 <li><strong>Phase 0 ✅</strong>：metering 地基（event/context/ledger/recorder + 单测），无行为变更。</li>
-<li><strong>Phase 1 ✅</strong>：<a href="http://stream.py">stream.py</a> 收口；dispatcher chat 包 usage_scope。关键修复：async generator 的消费者（agent_loop）在收到 done event 时直接 <code>return</code>，把生成器挂起在 <code>yield</code> 处——循环后记账永不执行。改为<strong>在 terminal event 处、yield 之前就记账</strong>（<code>recorded</code> flag 防双计）。</li>
+<li><strong>Phase 1 ✅</strong>：stream.py 收口；dispatcher chat 包 usage_scope。关键修复：async generator 的消费者（agent_loop）在收到 done event 时直接 <code>return</code>，把生成器挂起在 <code>yield</code> 处——循环后记账永不执行。改为<strong>在 terminal event 处、yield 之前就记账</strong>（<code>recorded</code> flag 防双计）。</li>
 <li><strong>Phase 2 ✅</strong>：summarize / mixture_of_agents(proposer+aggregator) 包 usage_scope；memory/llm_bridge 从直调 <code>api_provider.stream_simple</code> 拉回经 <code>providers.stream_simple</code>（让收口生效）+ 包 <code>usage_scope(call_kind=&quot;memory&quot;)</code>。（compaction/branch 路径随 §10.1 删除而消失，无需包。）</li>
 <li><strong>Phase 3 ✅</strong>：spawn 子进程 UsageContext 透传（snapshot/apply_snapshot via 参数，见 §8 实施落地）；ledger pid 重检自动重连。未做 result usage_summary 回传（面板已能实时查到）。</li>
 <li><strong>Phase 4 ✅</strong>：删 <code>agent/compaction/</code> 死代码；usage 路由换 ledger。<strong>未拆 UsageTracker</strong>（见 §10.2 改方案）。</li>

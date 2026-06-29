@@ -200,7 +200,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <td>To be implemented in Phase 2</td>
 </tr>
 <tr>
-<td><a href="http://Core.md">Core.md</a></td>
+<td>Core.md</td>
 <td>The minimal snapshot the LLM reads on every call</td>
 <td><code>memory/core.md</code></td>
 <td>Exists in v1, to be rewritten in Phase 2</td>
@@ -254,7 +254,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <ul>
 <li>By time range: <code>memory_timeline(since, until)</code></li>
 <li>By associated entity: <code>memory_timeline(entity=&quot;project.openprogram&quot;)</code></li>
-<li>On recall, inject the most recent high-signal events into <a href="http://Core.md">Core.md</a></li>
+<li>On recall, inject the most recent high-signal events into Core.md</li>
 </ul>
 <h3 id="24-updating">2.4 Updating<a class="header-anchor" href="#24-updating">#</a></h3>
 <p>Append-only. When the same fact is re-distilled, the old record is tagged <code>superseded_by</code> pointing at the new record's ID; it is not deleted.</p>
@@ -319,7 +319,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 scope: &quot;project:openprogram&quot;     this project only
 scope: &quot;agent:research&quot;          this agent only
 </code></pre>
-<h2 id="4-coremd-injected-snapshot">4. <a href="http://Core.md">Core.md</a> (injected snapshot)<a class="header-anchor" href="#4-coremd-injected-snapshot">#</a></h2>
+<h2 id="4-coremd-injected-snapshot">4. Core.md (injected snapshot)<a class="header-anchor" href="#4-coremd-injected-snapshot">#</a></h2>
 <p>The minimal memory snapshot injected into the system prompt on every LLM call. ≤2KB.</p>
 <h3 id="41-creationupdate">4.1 Creation/update<a class="header-anchor" href="#41-creationupdate">#</a></h3>
 <p><strong>Trigger</strong>: regenerated on sleep::deep (daily 03:00).</p>
@@ -330,7 +330,7 @@ scope: &quot;agent:research&quot;          this agent only
 </ul>
 <p><strong>Every line carries a provenance pointer</strong> (<code>↪ session:&lt;id&gt;</code>), so once the LLM sees it, it can use the navigation tools to dig deeper.</p>
 <h3 id="42-reading">4.2 Reading<a class="header-anchor" href="#42-reading">#</a></h3>
-<p>On every LLM call, the contents of <a href="http://Core.md">Core.md</a> are injected into the system prompt:</p>
+<p>On every LLM call, the contents of Core.md are injected into the system prompt:</p>
 <pre><code>═══════════════════════════════════════════════
 OpenProgram Memory — project: OpenProgram, last consolidated 2026-06-18
 ═══════════════════════════════════════════════
@@ -355,7 +355,7 @@ For details: memory_open_session(&lt;id&gt;) / memory_git_log(&lt;project&gt;)
 <ul>
 <li><strong>short-term</strong>: at session-end, append 0–10 facts to the current day's file</li>
 <li><strong>wiki</strong>: sleep::deep promotes short-term facts into knowledge pages</li>
-<li><strong><a href="http://core.md">core.md</a></strong>: sleep::deep projects a minimal snapshot from the wiki</li>
+<li><strong>core.md</strong>: sleep::deep projects a minimal snapshot from the wiki</li>
 </ul>
 <h3 id="52-problems">5.2 Problems<a class="header-anchor" href="#52-problems">#</a></h3>
 <p>The v1 pipeline reads from the conversation text rendered by <code>get_branch()</code>, not from DAG nodes. It loses:</p>
@@ -420,7 +420,7 @@ Stage 5: Project    Re-project core.md / entity views / timeline shards
 <h3 id="71-injection-virtual-only">7.1 Injection (virtual only)<a class="header-anchor" href="#71-injection-virtual-only">#</a></h3>
 <p>Injected on every LLM call:</p>
 <ul>
-<li><a href="http://Core.md">Core.md</a> (≤2KB, always injected)</li>
+<li>Core.md (≤2KB, always injected)</li>
 <li>Optional: timeline/graph results recalled for the current query</li>
 </ul>
 <p>No raw chat is injected.</p>

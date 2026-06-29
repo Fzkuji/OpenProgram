@@ -278,7 +278,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <tr>
 <td>GET</td>
 <td><code>/api/skills/{name}</code></td>
-<td>Full <a href="http://SKILL.md">SKILL.md</a> text + frontmatter + resource file tree</td>
+<td>Full SKILL.md text + frontmatter + resource file tree</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -529,7 +529,7 @@ web/components/plugins/
 </ol>
 <hr />
 <h2 id="5-coverage-confirmation-of-capabilities-from-the-three-sources">5. Coverage confirmation of capabilities from the three sources<a class="header-anchor" href="#5-coverage-confirmation-of-capabilities-from-the-three-sources">#</a></h2>
-<p><strong>claude-code</strong>: bundled skills ✓, <a href="http://SKILL.md">SKILL.md</a> frontmatter ✓, SkillTool tool invocation ✓, Marketplace / AddMarketplace / BrowseMarketplace / ManageMarketplaces ✓, ManagePlugins / DiscoverPlugins / ValidatePlugin / PluginErrors / PluginOptionsDialog / PluginTrustWarning / UnifiedInstalledCell ✓, ReloadPlugins ✓, the five entrypoints commands/skills/agents/hooks/mcpServers ✓</p>
+<p><strong>claude-code</strong>: bundled skills ✓, SKILL.md frontmatter ✓, SkillTool tool invocation ✓, Marketplace / AddMarketplace / BrowseMarketplace / ManageMarketplaces ✓, ManagePlugins / DiscoverPlugins / ValidatePlugin / PluginErrors / PluginOptionsDialog / PluginTrustWarning / UnifiedInstalledCell ✓, ReloadPlugins ✓, the five entrypoints commands/skills/agents/hooks/mcpServers ✓</p>
 <p><strong>opencode</strong>: remote skill discovery (IndexSkill schema) ✓, npm-package-form plugins ✓, Provider plugin ✓, PluginPackage / resolvePluginTarget / compatibility / deprecated fields ✓, Effect-style concurrency and retry (swapped for httpx+tenacity) ✓</p>
 <p><strong>hermes</strong>: domain-grouped skills ✓ (category), optional distinction ✓ (optional field), the <code>SKILL.md</code> + <code>references/</code> + <code>templates/</code> resource layout ✓, <code>plugin_api.py</code> entrypoint ✓, <code>dashboard/dist/</code> frontend contribution ✓ (upgraded to web entrypoint + sidebar registration)</p>
 <hr />
@@ -539,7 +539,7 @@ web/components/plugins/
 <p><strong>M1 Skills, full</strong> (covering the skill capabilities of all three)</p>
 <ul>
 <li>Five-source loader + watchdog + WS</li>
-<li><a href="http://SKILL.md">SKILL.md</a> parsing (including triggers / category / optional)</li>
+<li>SKILL.md parsing (including triggers / category / optional)</li>
 <li><code>/skills</code> page + bundled default set</li>
 <li>SkillTool built-in tool + invoke trace</li>
 <li>Remote discovery (opencode equivalent)</li>

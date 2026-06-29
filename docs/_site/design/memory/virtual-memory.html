@@ -200,7 +200,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <td>Phase 2 待实现</td>
 </tr>
 <tr>
-<td><a href="http://Core.md">Core.md</a></td>
+<td>Core.md</td>
 <td>LLM 每次必看的最小快照</td>
 <td><code>memory/core.md</code></td>
 <td>v1 已有，Phase 2 重写</td>
@@ -254,7 +254,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <ul>
 <li>按时间范围：<code>memory_timeline(since, until)</code></li>
 <li>按关联实体：<code>memory_timeline(entity=&quot;project.openprogram&quot;)</code></li>
-<li>召回时注入最近高信号事件到 <a href="http://Core.md">Core.md</a></li>
+<li>召回时注入最近高信号事件到 Core.md</li>
 </ul>
 <h3 id="24-更新">2.4 更新<a class="header-anchor" href="#24-更新">#</a></h3>
 <p>Append-only。同一事实被重新提炼时，旧记录标 <code>superseded_by</code> 指向新记录 ID，不删除。</p>
@@ -319,7 +319,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 scope: &quot;project:openprogram&quot;     仅此项目
 scope: &quot;agent:research&quot;          仅此 agent
 </code></pre>
-<h2 id="4-coremd注入快照">4. <a href="http://Core.md">Core.md</a>（注入快照）<a class="header-anchor" href="#4-coremd注入快照">#</a></h2>
+<h2 id="4-coremd注入快照">4. Core.md（注入快照）<a class="header-anchor" href="#4-coremd注入快照">#</a></h2>
 <p>LLM 每次调用时注入 system prompt 的最小记忆快照。≤2KB。</p>
 <h3 id="41-创建更新">4.1 创建/更新<a class="header-anchor" href="#41-创建更新">#</a></h3>
 <p><strong>触发</strong>：sleep::deep（daily 03:00）重新生成。</p>
@@ -330,7 +330,7 @@ scope: &quot;agent:research&quot;          仅此 agent
 </ul>
 <p><strong>每一行都带 provenance 指针</strong>（<code>↪ session:&lt;id&gt;</code>），LLM 看到后可用导航工具深入。</p>
 <h3 id="42-读取">4.2 读取<a class="header-anchor" href="#42-读取">#</a></h3>
-<p>每次 LLM 调用时，<a href="http://Core.md">Core.md</a> 内容被注入 system prompt：</p>
+<p>每次 LLM 调用时，Core.md 内容被注入 system prompt：</p>
 <pre><code>═══════════════════════════════════════════════
 OpenProgram 记忆 — 项目: OpenProgram, 最后整理 2026-06-18
 ═══════════════════════════════════════════════
@@ -355,7 +355,7 @@ OpenProgram 记忆 — 项目: OpenProgram, 最后整理 2026-06-18
 <ul>
 <li><strong>short-term</strong>：session-end 时追加 0–10 条事实到当日文件</li>
 <li><strong>wiki</strong>：sleep::deep 把 short-term 事实提升为知识页面</li>
-<li><strong><a href="http://core.md">core.md</a></strong>：sleep::deep 从 wiki 投影最小快照</li>
+<li><strong>core.md</strong>：sleep::deep 从 wiki 投影最小快照</li>
 </ul>
 <h3 id="52-问题">5.2 问题<a class="header-anchor" href="#52-问题">#</a></h3>
 <p>v1 管道从 <code>get_branch()</code> 渲染的对话文本读取，不读 DAG 节点。丢失了：</p>
@@ -420,7 +420,7 @@ Stage 5: Project    重新投影 core.md / entity views / timeline 分片
 <h3 id="71-注入只给抽象">7.1 注入（只给抽象）<a class="header-anchor" href="#71-注入只给抽象">#</a></h3>
 <p>LLM 每次调用时注入：</p>
 <ul>
-<li><a href="http://Core.md">Core.md</a>（≤2KB，始终注入）</li>
+<li>Core.md（≤2KB，始终注入）</li>
 <li>可选：按当前 query 召回的 timeline/graph 结果</li>
 </ul>
 <p>不注入任何 raw chat。</p>

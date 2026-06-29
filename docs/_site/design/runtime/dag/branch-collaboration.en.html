@@ -383,7 +383,7 @@ col0   col2(fork vert) col3      col0        col3
 </ul>
 </li>
 <li><strong>convergence line</strong>: from each peer tip → merge node, taking a polyline that &quot;goes vertical to the merge row first, then enters horizontally/diagonally,&quot; colored with the peer branch's lane color (so you can see &quot;which branch this line comes from&quot;).</li>
-<li><strong>attach pointer node</strong>: the attach pointer used by a merge is a <code>display=runtime</code> temporary node (<code>merge_temp=true</code>), <strong>not drawn as a standalone node in the viewport</strong> (it would be noise) — the convergence line alone expresses &quot;this branch was merged in.&quot; <a href="http://filter.py">filter.py</a> already filters out <code>display=runtime</code>.</li>
+<li><strong>attach pointer node</strong>: the attach pointer used by a merge is a <code>display=runtime</code> temporary node (<code>merge_temp=true</code>), <strong>not drawn as a standalone node in the viewport</strong> (it would be noise) — the convergence line alone expresses &quot;this branch was merged in.&quot; filter.py already filters out <code>display=runtime</code>.</li>
 </ol>
 <p><strong>To confirm</strong>: which lane the merge node lands in after the merge —</p>
 <ul>

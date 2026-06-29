@@ -342,7 +342,7 @@ the input area. No stashing, no restoring.</li>
 if a user-active mode (fn-form) is showing at the moment, clear it and then show the head. Simple implementation, no stack, no snapshot.</p>
 <h2 id="backend-approval-merged-into-questionregistry">Backend: approval merged into QuestionRegistry<a class="header-anchor" href="#backend-approval-merged-into-questionregistry">#</a></h2>
 <p>So that &quot;approval&quot; also goes through the same event path → lands on the same composer catch point, the backend merges
-<code>_approval.py</code> into <code>QuestionRegistry</code> (<a href="http://user-input-requests.md">user-input-requests.md</a>, point 6):</p>
+<code>_approval.py</code> into <code>QuestionRegistry</code> (user-input-requests.md, point 6):</p>
 <ul>
 <li><code>await_user_approval</code> no longer uses a standalone <code>ApprovalRegistry</code> + a custom
 <code>approval_request</code> envelope, but registers a <code>kind=&quot;approval&quot;</code> PendingQuestion

@@ -289,7 +289,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p>效果：工具收缩为读取/检索五个，只看到标记为 research 的技能，只看到 arxiv/scholar 的 MCP。</p>
 <hr />
 <h2 id="何时不应使用门控">何时不应使用门控<a class="header-anchor" href="#何时不应使用门控">#</a></h2>
-<p>大多数用户永远都不该碰这个。Anthropic <a href="http://SKILL.md">SKILL.md</a> 的设计哲学是<strong>由 LLM 居中选择</strong>：每个技能都有 <code>description</code> 字段，模型读完全部后自行挑选。门控是一个<strong>逃生口</strong>，适用于以下情形：</p>
+<p>大多数用户永远都不该碰这个。Anthropic SKILL.md 的设计哲学是<strong>由 LLM 居中选择</strong>：每个技能都有 <code>description</code> 字段，模型读完全部后自行挑选。门控是一个<strong>逃生口</strong>，适用于以下情形：</p>
 <ul>
 <li>某个技能很危险，你想要一道硬墙（<code>prod-deploy</code> 在客服 agent 中永远不会运行）</li>
 <li>某个 agent 的角色极其狭窄，以至于直接列出允许集合比反复调教 description 还要简短（研究 agent 永远只需要 5 个工具）</li>

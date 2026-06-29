@@ -196,11 +196,11 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p><strong>When to revisit</strong>: if we ever support <strong>automatic</strong> plugin install (e.g. an LLM that decides to install a plugin mid-conversation), the threat model changes and a sandbox becomes worth the cost.</p>
 <hr />
 <h2 id="3-skill-requires-chain">3. Skill <code>requires</code> chain<a class="header-anchor" href="#3-skill-requires-chain">#</a></h2>
-<p><strong>Idea</strong>: a <a href="http://SKILL.md">SKILL.md</a> frontmatter <code>requires: [other-skill]</code> field — invoking <code>prod-deploy</code> automatically loads <code>kubectl-helpers</code> first.</p>
+<p><strong>Idea</strong>: a SKILL.md frontmatter <code>requires: [other-skill]</code> field — invoking <code>prod-deploy</code> automatically loads <code>kubectl-helpers</code> first.</p>
 <p><strong>Why proposed</strong>: skills sometimes depend on other skills' context. Today the user has to chain <code>/skill A /skill B</code> manually.</p>
 <p><strong>Why we didn't build it</strong>:</p>
 <ul>
-<li>Not in any reference framework. Anthropic's <a href="http://SKILL.md">SKILL.md</a> spec has no <code>requires</code> field.</li>
+<li>Not in any reference framework. Anthropic's SKILL.md spec has no <code>requires</code> field.</li>
 <li>The LLM-mediated selection model assumes the model reads all SKILL descriptions and picks. If skill A &quot;needs&quot; skill B, the right answer is usually &quot;merge them&quot; or &quot;make A's description say it works best together with B&quot; — not adding a dep graph the user has to maintain.</li>
 <li>Dep resolution introduces ordering questions (deps loaded before parent?), conflict questions (two skills require incompatible third skills?), and version questions we don't currently have anywhere else in the codebase.</li>
 </ul>

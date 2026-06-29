@@ -196,11 +196,11 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p><strong>何时重新考虑</strong>：如果我们哪天支持<strong>自动</strong>插件安装（例如让 LLM 在对话中途自行决定安装某个插件），威胁模型就变了，沙箱就值这份成本了。</p>
 <hr />
 <h2 id="3-skill-的-requires-链">3. Skill 的 <code>requires</code> 链<a class="header-anchor" href="#3-skill-的-requires-链">#</a></h2>
-<p><strong>点子</strong>：在 <a href="http://SKILL.md">SKILL.md</a> frontmatter 里加一个 <code>requires: [other-skill]</code> 字段 —— 调用 <code>prod-deploy</code> 时自动先加载 <code>kubectl-helpers</code>。</p>
+<p><strong>点子</strong>：在 SKILL.md frontmatter 里加一个 <code>requires: [other-skill]</code> 字段 —— 调用 <code>prod-deploy</code> 时自动先加载 <code>kubectl-helpers</code>。</p>
 <p><strong>提出的理由</strong>：skill 有时依赖其他 skill 的上下文。如今用户得手动串起 <code>/skill A /skill B</code>。</p>
 <p><strong>我们没做的理由</strong>：</p>
 <ul>
-<li>任何参考框架里都没有。Anthropic 的 <a href="http://SKILL.md">SKILL.md</a> 规范没有 <code>requires</code> 字段。</li>
+<li>任何参考框架里都没有。Anthropic 的 SKILL.md 规范没有 <code>requires</code> 字段。</li>
 <li>由 LLM 中介的选择模型假定模型会读取所有 SKILL 描述并自行挑选。如果 skill A “需要” skill B，正确答案通常是“把它们合并”或“在 A 的描述里写明它和 B 一起用效果最好”—— 而不是新增一张需要用户维护的依赖图。</li>
 <li>依赖解析会引入排序问题（依赖在父项之前加载吗？）、冲突问题（两个 skill 各自需要互不兼容的第三方 skill？），以及版本问题，而这些问题目前在代码库的其他任何地方都还不存在。</li>
 </ul>

@@ -185,7 +185,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 ├── telegram.py       111 行  TelegramChannel adapter
 └── wechat.py         454 行  WechatChannel adapter (含 QR 登录 / cursor 持久化)
 </code></pre>
-<h3 id="12-抽象层basepy">1.2 抽象层（<a href="http://base.py">base.py</a>）<a class="header-anchor" href="#12-抽象层basepy">#</a></h3>
+<h3 id="12-抽象层basepy">1.2 抽象层（base.py）<a class="header-anchor" href="#12-抽象层basepy">#</a></h3>
 <pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">Channel</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">):</span>
     <span class="n">platform_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
 
@@ -246,7 +246,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
         <span class="n">captured_user_id</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 </code></pre>
 <p>但这个 callback 只对 webui 广播。channel 自己拿不到流式事件。</p>
-<h3 id="15-outboundpy-跨进程发送">1.5 <a href="http://outbound.py">outbound.py</a> 跨进程发送<a class="header-anchor" href="#15-outboundpy-跨进程发送">#</a></h3>
+<h3 id="15-outboundpy-跨进程发送">1.5 outbound.py 跨进程发送<a class="header-anchor" href="#15-outboundpy-跨进程发送">#</a></h3>
 <pre><code class="language-python"><span class="n">outbound</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">channel</span><span class="p">,</span> <span class="n">account_id</span><span class="p">,</span> <span class="n">user_id</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span>
 </code></pre>
 <p>不走 adapter 实例。<code>_SENDERS</code> 是一个 4 项的 dict，每项独立用 raw HTTP（requests 库）调 platform API：</p>
@@ -609,7 +609,7 @@ Group: agent:main:{platform}:group:{chat_id}[:{thread_id}][:{user_id}]
 <tbody>
 <tr>
 <td>Plugin SDK (50+ contract 文件)</td>
-<td>全部丢 — <a href="http://base.py">base.py</a> 退化到 21 行</td>
+<td>全部丢 — base.py 退化到 21 行</td>
 </tr>
 <tr>
 <td>ChannelMessageLiveAdapterShape (streaming edit)</td>
@@ -675,7 +675,7 @@ Group: agent:main:{platform}:group:{chat_id}[:{thread_id}][:{user_id}]
 <p>第二项—— <code>outbound.py</code>——值得单独说：从 fork 视角看是我们<strong>主动加的</strong>，OpenClaw 当初设计是 cross-process send 也走 adapter。但 OpenProgram 是双范式系统（详见 5.F），<code>outbound.send</code> 这个无状态、cron-friendly 入口正好对应 agentic-programming 范式（Python 主控同步调用），不该删。真正的问题是<strong>实现层重复</strong>（chunking 5 份、HTTP 调用各写一遍）而不是<strong>入口存在性</strong>——重构方向应是&quot;两入口共享实现层&quot;，不是&quot;删一条入口&quot;。</p>
 <hr />
 <h2 id="4-当前的结构性缺陷按严重度排序">4. 当前的结构性缺陷（按严重度排序）<a class="header-anchor" href="#4-当前的结构性缺陷按严重度排序">#</a></h2>
-<h3 id="缺陷-1basepy-是空壳">缺陷 1：<a href="http://base.py">base.py</a> 是空壳<a class="header-anchor" href="#缺陷-1basepy-是空壳">#</a></h3>
+<h3 id="缺陷-1basepy-是空壳">缺陷 1：base.py 是空壳<a class="header-anchor" href="#缺陷-1basepy-是空壳">#</a></h3>
 <p>只规定 <code>run(stop)</code>，不规定 send/edit/react/chunk。导致每个 adapter &quot;自由发挥&quot;，平台间没有可强制的统一接口。</p>
 <p><strong>症状</strong>：4 个 adapter 的代码风格、错误处理、credentials 加载方式都不一样；type checker 没法发现 adapter 漏实现某个能力。</p>
 <h3 id="缺陷-2两套发消息代码路径">缺陷 2：两套发消息代码路径<a class="header-anchor" href="#缺陷-2两套发消息代码路径">#</a></h3>
@@ -731,7 +731,7 @@ wechat.py   → 内部 _send                outbound.py → raw HTTP
 <hr />
 <h2 id="5-几个推论">5. 几个推论<a class="header-anchor" href="#5-几个推论">#</a></h2>
 <p><strong>A. progress streaming 不是&quot;加一个 feature&quot;，是&quot;把已经存在的事件流接到 channel&quot;</strong></p>
-<p>Dispatcher 已经 emit <code>tool_use</code> / <code>stream_event</code> envelope。<code>dispatch_inbound._on_event</code> 已经在订阅。差的只是：(1) channel 怎么订阅、(2) channel 怎么 edit 已发出去的消息。第二点要求 <a href="http://base.py">base.py</a> 有 <code>edit_message</code>、adapter.send 要返回 message_id——这是 <strong>抽象层重构</strong>，不是 feature 加法。</p>
+<p>Dispatcher 已经 emit <code>tool_use</code> / <code>stream_event</code> envelope。<code>dispatch_inbound._on_event</code> 已经在订阅。差的只是：(1) channel 怎么订阅、(2) channel 怎么 edit 已发出去的消息。第二点要求 base.py 有 <code>edit_message</code>、adapter.send 要返回 message_id——这是 <strong>抽象层重构</strong>，不是 feature 加法。</p>
 <p><strong>B. 直接给 4 个 adapter 各加 <code>edit_message</code> 会让缺陷 2 翻倍</strong></p>
 <p>不重构 base 直接在 adapter 加方法：现在 4 个 send 实现 + 4 个 edit 实现 + 4 个 react 实现 = 12 份 platform code，再加 outbound 的 12 份 = 24 份。这是堆&quot;两套代码&quot;乘以&quot;三种操作&quot;的灾难。</p>
 <p><strong>C. hermes 那些&quot;高级&quot;机制（debounce / 快速命令绕路 / retryable）不是必须现在做的</strong></p>
@@ -741,7 +741,7 @@ wechat.py   → 内部 _send                outbound.py → raw HTTP
 <p><em>第一层（最浅）：没有 Python 实现可以 copy-paste。</em> 整个 OpenClaw 是 TypeScript/Node.js（<code>pnpm-workspaces</code> + <code>tsdown</code> build），<code>src/bindings/</code> 只有 1 个 TS 文件，<code>packages/sdk/</code> 和 <code>packages/plugin-sdk/</code> 全是 TS。仅有的 5 个 <code>.py</code> 是 CI 脚本 / skill 工具，跟 channel 子系统无关。<strong>OpenClaw 不提供 Python binding 也不提供 Python SDK。</strong> 要复用 OpenClaw 必须把它的设计用 Python 重新实现一遍，不可能 import 进来。</p>
 <p>但语言本身不构成借鉴障碍——TS interface → Python <code>Protocol</code> / <code>abc.ABC</code>，TS dataclass → <code>@dataclass</code>，TS async → asyncio，TS plugin manifest → <code>plugin.json</code>（我们 <code>openprogram/plugins/</code> 已经在做了）。设计模式跨语言通用。</p>
 <p><em>第二层：静态类型 vs 动态类型，影响&quot;50+ contract 文件&quot;的价值。</em> OpenClaw 在 TS 里写 50+ 个 <code>channel-*.ts</code> interface 文件，编译期能强制 plugin 实现完整，IDE 提示也准。同样的拆分用 Python <code>Protocol</code> 写出来——运行期不强制、IDE 提示弱（mypy 不是默认开的）。所以&quot;50 个 contract 文件那种粒度&quot;的拆分在 Python 里收益打折。这不影响<strong>接口形状是否值得学</strong>（值得），只影响<strong>是否把每个接口拆成独立文件</strong>（不值得）。</p>
-<p><em>第三层（最深）：async-first vs sync-with-threading 范式。</em> OpenClaw 全套 <code>async send/edit/typing/handoff</code>，dispatch 是 streaming pipeline（draft → live-preview → final）。Hermes 也是 async-first。我们 channel 当前是同步 + threading（每 adapter 一个 thread，<code>dispatch_inbound(...) -&gt; str</code> 阻塞返回）。如果照搬 OpenClaw 的 async 设计，dispatch 流程要重写——不只是 <a href="http://base.py">base.py</a> 改方法签名，而是 <code>dispatch_inbound</code> 改成 async generator，4 个 adapter 的事件循环要重新接入 asyncio。这是个真实的迁移成本，不是抽象层简单换名。</p>
+<p><em>第三层（最深）：async-first vs sync-with-threading 范式。</em> OpenClaw 全套 <code>async send/edit/typing/handoff</code>，dispatch 是 streaming pipeline（draft → live-preview → final）。Hermes 也是 async-first。我们 channel 当前是同步 + threading（每 adapter 一个 thread，<code>dispatch_inbound(...) -&gt; str</code> 阻塞返回）。如果照搬 OpenClaw 的 async 设计，dispatch 流程要重写——不只是 base.py 改方法签名，而是 <code>dispatch_inbound</code> 改成 async generator，4 个 adapter 的事件循环要重新接入 asyncio。这是个真实的迁移成本，不是抽象层简单换名。</p>
 <p><strong>E. 学什么、不学什么的分割线</strong></p>
 <pre><code>                          学 OpenClaw   学 hermes
 ─────────────────────────────────────────────────
@@ -803,8 +803,8 @@ pytest 测试                            无
 <p>这样 chunking 不再有 5 份、credentials 不再加载 8+ 次，但两条入口路径各自保留，分别服务两种范式。</p>
 </li>
 <li>
-<p><strong><a href="http://base.py">base.py</a> 抽象重构不能&quot;独占&quot; channel</strong></p>
-<p>如果按 OpenClaw / hermes 的方式把 channel 重构成 async-first streaming pipeline，要确保<strong>范式 A 仍然能用同步的方式发消息</strong>。具体：<a href="http://base.py">base.py</a> 的抽象方法是 async 没问题，但要在模块顶层暴露同步包装（<code>outbound.send_one_shot</code>），让 agentic_function 不必懂 asyncio 也能调。</p>
+<p><strong>base.py 抽象重构不能&quot;独占&quot; channel</strong></p>
+<p>如果按 OpenClaw / hermes 的方式把 channel 重构成 async-first streaming pipeline，要确保<strong>范式 A 仍然能用同步的方式发消息</strong>。具体：base.py 的抽象方法是 async 没问题，但要在模块顶层暴露同步包装（<code>outbound.send_one_shot</code>），让 agentic_function 不必懂 asyncio 也能调。</p>
 </li>
 <li>
 <p><strong>streaming edit 跟 agentic_function 兼容</strong></p>
@@ -812,12 +812,12 @@ pytest 测试                            无
 </li>
 </ol>
 <p><strong>G. WeChat 抽象适配最难</strong></p>
-<p>iLink API 看起来不支持 edit_message（消息发出去不能改）。这意味着 <a href="http://base.py">base.py</a> 加 <code>edit_message</code> 抽象后，wechat adapter 要么实现假的 <code>edit_message</code>（删旧发新）要么 raise NotImplementedError——前者改变语义，后者破坏统一接口。Hermes 怎么处理这种限制需要再调研（IRC 也有类似问题）。</p>
+<p>iLink API 看起来不支持 edit_message（消息发出去不能改）。这意味着 base.py 加 <code>edit_message</code> 抽象后，wechat adapter 要么实现假的 <code>edit_message</code>（删旧发新）要么 raise NotImplementedError——前者改变语义，后者破坏统一接口。Hermes 怎么处理这种限制需要再调研（IRC 也有类似问题）。</p>
 <hr />
 <h2 id="6-待定的问题">6. 待定的问题<a class="header-anchor" href="#6-待定的问题">#</a></h2>
 <p>下一步讨论时要决的事：</p>
 <ol>
-<li>要不要做 <a href="http://base.py">base.py</a> 抽象重构？工作量 3-4h，没新 feature，但是后续所有 feature 的地基</li>
+<li>要不要做 base.py 抽象重构？工作量 3-4h，没新 feature，但是后续所有 feature 的地基</li>
 <li>重构粒度：抽到 hermes 那样（async send/edit/typing/draft 5+ 方法）还是先做最小（send 返回 message_id + edit_message）？</li>
 <li>中性 ChannelMessage 结构现在加还是等 reply/quote 需求出现再加？</li>
 <li><code>outbound.send</code> 不删（它服务范式 A），但实现层要不要跟 adapter 的 send 合并到一个 <code>_post_message</code> 函数，去掉 5 处重复？</li>
