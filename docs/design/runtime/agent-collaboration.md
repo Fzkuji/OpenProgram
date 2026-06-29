@@ -57,27 +57,36 @@ DAG 画法已在 `dag/dag-live.html` 定稿（分支间通信场景：异步、s
 ```
 talk_to_branch(
     message: str,                       # 投给目标的内容/指令
-    target: str = "new",                # "new"=当场新建分支(派生)；"sid"或"sid:head"=已存在分支
+    target: str = "new",                # 见下方 target 取值
     sources: list[str] = [],            # 额外带上这些分支的内容一起投（综合多条时用）
     agent_id: str = "main",             # 目标用哪个 agent
     wait: bool = false,                 # false=异步(默认,瞬间返回)；true=同步等回复
 ) -> str
 ```
 
-一个工具覆盖三种用法（靠参数，不是三个工具）：
+**`target` 取值——创建分支和发消息是同一参数的不同取值：**
 
-- **派生子 agent**：`target="new"` → 当场新建一条分支，把 message 投给它，它跑完
-  自动回流。（想派几个，就调几次，各自异步并行。）
-- **发消息给已有分支/session**：`target="sid:head"` → 往那条已存在分支投 message，
-  触发它跑一轮，答完自动回送。跨 session 同一路径（target 是任意 session）。
-- **综合多条分支**：`sources=["s1:h1","s2:h2",...]` → 投递时把这几条分支的内容
-  一起带上，目标模型读完综合。数量任意。
+| target | 含义 |
+|---|---|
+| `"new"` | 从 ROOT 全新创建一条分支（新 session），投 message 让它跑 |
+| `"new:sid:msg_id"` | 从某节点 fork 出一条新分支，投 message 让它跑 |
+| `"sid:head"` | 往一条已存在分支投 message |
+
+**创建分支不是独立操作，就是 `target` 取 `new` / `new:…`**。三种用法：
+
+- **创建并跑（派生 / 开新会话 / fork）**：`target="new"` 或 `"new:sid:msg_id"` →
+  新建分支 + 投 message，它跑完自动回流。（想建几条，就调几次，各自异步并行。）
+- **发消息给已有分支/session**：`target="sid:head"` → 往那条分支投 message，触发它
+  跑一轮，答完自动回送。跨 session 同一路径（target 是任意 session）。
+- **综合多条分支**：`sources=["s1:h1","s2:h2",...]` → 投递时把这几条分支的内容一起
+  带上，目标模型读完综合。数量任意。可与任意 target 组合。
 
 **统一执行流程**（无论哪种用法）：
-1. 若 `target="new"`：新建分支；否则 `set_head` 切到 `target` 那条分支。
+1. 解析 `target`：`new` → 新建 session + 空 `branch_from`；`new:sid:msg_id` →
+   在 sid 里 `branch_from=msg_id` fork；`sid:head` → `set_head` 切到该分支。
 2. 组装投递内容：`message` +（若有 `sources`）把每条来源分支的内容附上。
-3. 投递 + 触发：`process_user_turn(TurnRequest(session_id=target, user_text=投递内容,
-   branch_from=target_head))` → 目标分支跑一轮，**模型读到投来的全部内容**。
+3. 投递 + 触发：`process_user_turn(TurnRequest(session_id=目标, user_text=投递内容,
+   branch_from=fork 起点))` → 目标分支跑一轮，**模型读到投来的全部内容**。
 4. **回送**：
    - `wait=false`（默认）：瞬间返回"已投递 + delivery_id"，发起方不阻塞继续；目标
      答完，`_dispatch_followup` **自动**把回复作为新消息喂回发起方 session + 触发它
