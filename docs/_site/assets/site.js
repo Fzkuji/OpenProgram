@@ -105,13 +105,25 @@
     });
   }
 
-  // ── mobile drawer ──
+  // ── sidebar toggle: wide screens collapse the sidebar; narrow screens
+  //    open it as an overlay drawer. ──
   const nav = document.querySelector("nav.sidebar");
   const scrim = document.querySelector(".scrim");
   const hamburger = document.querySelector(".hamburger");
   function closeDrawer() { nav && nav.classList.remove("open"); scrim && scrim.classList.remove("show"); }
+  // restore wide-screen collapsed state
+  try {
+    if (localStorage.getItem("op-docs-nav-collapsed") === "1")
+      ROOT.setAttribute("data-nav-collapsed", "1");
+  } catch (e) {}
   if (hamburger) hamburger.addEventListener("click", () => {
-    nav.classList.toggle("open"); scrim.classList.toggle("show");
+    if (window.innerWidth > 860) {
+      const next = ROOT.getAttribute("data-nav-collapsed") === "1" ? "0" : "1";
+      ROOT.setAttribute("data-nav-collapsed", next);
+      try { localStorage.setItem("op-docs-nav-collapsed", next); } catch (e) {}
+    } else {
+      nav.classList.toggle("open"); scrim.classList.toggle("show");
+    }
   });
   if (scrim) scrim.addEventListener("click", closeDrawer);
 

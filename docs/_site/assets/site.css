@@ -86,16 +86,20 @@ header.topbar {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .topbar button.icon:hover { background: var(--bg-side); color: var(--tx); }
-.topbar button.hamburger { display: none; }
+/* hamburger shows on all widths: wide = collapse the sidebar, narrow = drawer */
 
 /* ── layout ── */
 .layout { display: flex; padding-top: 56px; }
+
+/* wide-screen sidebar collapse (toggled by the hamburger) */
+html[data-nav-collapsed="1"] nav.sidebar { transform: translateX(-100%); }
+html[data-nav-collapsed="1"] main.content { margin-left: 0; }
 
 /* left nav */
 nav.sidebar {
   position: fixed; top: 56px; bottom: 0; left: 0; width: var(--nav-w);
   overflow-y: auto; padding: 20px 14px 60px; border-right: 1px solid var(--bd);
-  background: var(--bg-side);
+  background: var(--bg-side); transition: transform .2s ease;
 }
 nav.sidebar .nav-filter {
   width: 100%; margin-bottom: 12px; padding: 7px 11px; font-size: 13px;

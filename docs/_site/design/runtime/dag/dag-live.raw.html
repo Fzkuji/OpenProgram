@@ -86,6 +86,7 @@ function computeTier(byId, nodes){
     if(depth>200){tier[id]=0;return 0;}
     const m=byId[id];
     if(isRoot(m)){tier[id]=0;return 0;}
+    if(m.tierHint!=null){tier[id]=m.tierHint;return m.tierHint;}  // 强制 tier(如跨分支收到的消息紧贴目标竖线)
     const caller=m.caller||"";
     const pn=caller?byId[caller]:null;
     if(pn && !isRoot(pn)){ const v=t(caller,depth+1)+1; tier[id]=v; return v; }
@@ -240,10 +241,11 @@ function render(nodes){
     // predecessor 只用于 fork 判定 / depth，不决定画线父。
     // comm_from 节点(B 收到跨分支消息): 它归属 B 分支，结构线接 predecessor
     // (B 上一条)，跨分支那条由 comm_from 通信线单独画。其余: caller 优先。
+    // B 收到跨分支消息(comm_from)：它是 send 引出的【通信支】，不挂任何分支竖线，
+    // 唯一进来的线就是 send→它的通信线(由 comm_from 段单独画)。这里不画结构线。
+    if(m.comm_from)continue;
     const predId=m.predecessor, callerId=m.caller;
-    const parentId = m.comm_from
-      ? ((predId&&byId[predId])?predId:null)
-      : ((callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null));
+    const parentId = (callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
     const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
@@ -293,9 +295,11 @@ function render(nodes){
   for(const m of nodes){
     if(!m.comm_from)continue; const src=byId[m.comm_from]; if(!src)continue;
     const sp=pos(src), c=pos(m);
-    edgeG.appendChild(svgEl("path",{class:"comm-line",
-      d:`M ${sp.x} ${sp.y+R} C ${sp.x} ${(sp.y+c.y)/2}, ${c.x} ${(sp.y+c.y)/2}, ${c.x} ${c.y-R}`,
-      fill:"none",stroke:laneColor(m._laneNum),"stroke-width":1.8,"stroke-dasharray":"1 5","stroke-linecap":"round"}));
+    // send → B收到：通信支的主连接，常驻显示(点线区分类型,B分支色)。
+    // 走 send 右侧 → 竖到 B收到行 → 横入(L 形)。
+    edgeG.appendChild(svgEl("path",{
+      d:`M ${sp.x+R} ${sp.y} L ${c.x} ${sp.y} L ${c.x} ${c.y-R}`,
+      fill:"none",stroke:laneColor(m._laneNum),"stroke-width":1.8,"stroke-dasharray":"2 4","stroke-linecap":"round",opacity:0.9}));
   }
   // 旧 comm_to(保留兼容,当前场景未用)
   for(const m of nodes){
@@ -372,7 +376,7 @@ const SCENES=[
    {id:"send",role:"code",caller:"l1",predecessor:"l1",created_at:5,label:"send_to_branch",sub:"A调的工具"},
    // send 之后是 B 分支的事：B收到/B应答 属于 B 分支(绿,接 B回复后面)。
    // caller=send 只用来画那条【跨分支通信线】(send→B收到)，归属仍是 B 分支。
-   {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",comm_from:"send",created_at:6,label:"B收到(另一agent)"},
+   {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",comm_from:"send",tierHint:1,created_at:6,label:"B收到(另一agent)"},
    {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"}]},
  {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
