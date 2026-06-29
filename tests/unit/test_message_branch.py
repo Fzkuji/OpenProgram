@@ -60,13 +60,14 @@ def parent_turn(tmp_path, monkeypatch):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         s.append_message(session_id, {
             "id": "head_x", "role": "assistant",
-            "content": f"reply to: {prompt}",
+            "content": f"reply to: {prompt} (from={branch_from})",
             "predecessor": branch_from, "timestamp": 0,
         })
         s.commit_turn(session_id, "fake turn")
-        return AgentTurnResult(head_id="head_x",
-                               final_text=f"reply to: {prompt}",
-                               failed=False, error=None)
+        return AgentTurnResult(
+            head_id="head_x",
+            final_text=f"reply to: {prompt} (from={branch_from})",
+            failed=False, error=None)
 
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn", fake_run)
@@ -105,11 +106,6 @@ def test_no_active_turn_errors():
     assert "no active parent turn" in out
 
 
-def test_existing_target_not_yet(parent_turn):
-    out = _message_branch_impl("hi", target="p1:head_x", wait=True)
-    assert "not implemented yet" in out
-
-
 def test_spawn_new_sync_returns_reply(parent_turn):
     got, unsub = _collect_events()
     try:
@@ -121,6 +117,36 @@ def test_spawn_new_sync_returns_reply(parent_turn):
     types = [e.type for e in got]
     assert "branch.message_sent" in types
     assert "branch.message_replied" in types
+
+
+# --- C3: target = existing branch (same session) ---
+
+def test_existing_branch_continues_from_head(parent_turn):
+    """target=SID:HEAD runs one turn forked off that head (branch_from=HEAD)."""
+    out = _message_branch_impl("more", target="p1:a1", wait=True)
+    assert "reply to: more" in out
+    assert "(from=a1)" in out  # fake_run saw branch_from = the branch head
+
+
+def test_existing_branch_is_not_new_event(parent_turn):
+    got, unsub = _collect_events()
+    try:
+        _message_branch_impl("more", target="p1:a1", wait=True)
+    finally:
+        unsub()
+    sent = next(e for e in got if e.type == "branch.message_sent")
+    assert sent.payload["is_new"] is False
+    assert sent.payload["to"] == "p1:a1"
+
+
+def test_existing_missing_session_errors(parent_turn):
+    out = _message_branch_impl("hi", target="nope:a1", wait=True)
+    assert "not found" in out
+
+
+def test_existing_missing_head_errors(parent_turn):
+    out = _message_branch_impl("hi", target="p1", wait=True)
+    assert "needs the branch head" in out
 
 
 def test_spawn_sent_event_payload(parent_turn):

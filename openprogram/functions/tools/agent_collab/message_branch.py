@@ -113,17 +113,31 @@ def _message_branch_impl(
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
     kind, tgt_sid, fork_msg = _parse_target(target)
 
-    # C1: target="new" (fresh branch from ROOT) and "new:sid:msg" (fork).
-    # Existing-branch / cross-session land in C3/C4.
+    # Resolve target into (run_session, branch_from, is_new):
+    #   new      → fresh root in current session
+    #   fork     → fork off a node (inherit that chain)
+    #   existing → deliver onto an existing branch = run one more turn off
+    #              its head (the branch "continues" with the message)
     if kind == "existing":
-        return (
-            "[message_branch error] target=existing not implemented yet "
-            "(C3). Use target=\"new\" or \"new:SID:MSG_ID\" for now."
-        )
-
-    if kind == "fork":
+        run_session = tgt_sid or sid
+        branch_from = fork_msg  # the branch head to continue from
+        is_new = False
+        if not branch_from:
+            return (
+                "[message_branch error] target=\"SID:HEAD\" needs the branch "
+                "head after the colon (see list_branches for ready targets)."
+            )
+        # Target session must exist — don't silently create.
+        from openprogram.agent.session_db import default_db
+        if default_db().get_session(run_session) is None:
+            return (
+                f"[message_branch error] target session {run_session!r} not "
+                "found (see list_sessions)."
+            )
+    elif kind == "fork":
         run_session = tgt_sid or sid
         branch_from = fork_msg
+        is_new = True
         if not branch_from:
             return (
                 "[message_branch error] target=\"new:SID:MSG_ID\" needs a "
@@ -132,14 +146,15 @@ def _message_branch_impl(
     else:  # "new" — fresh branch in the current session repo (new root)
         run_session = sid
         branch_from = None
+        is_new = True
 
     emit_safe(
         "branch.message_sent",
         "agent",
         {
             "from": f"{sid}:{aid}",
-            "to": run_session,
-            "is_new": True,
+            "to": f"{run_session}:{branch_from}" if branch_from else run_session,
+            "is_new": is_new,
             "sources": sources or [],
         },
     )
