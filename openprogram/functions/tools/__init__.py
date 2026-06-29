@@ -12,6 +12,7 @@ doesn't matter; alphabetical for diff stability.
 """
 
 from . import agent_browser as _agent_browser_self_register  # noqa: F401
+from . import agent_collab as _agent_collab_self_register  # noqa: F401
 from . import apply_patch as _apply_patch_self_register  # noqa: F401
 from . import bash as _bash_self_register  # noqa: F401
 from . import browser as _browser_self_register  # noqa: F401
