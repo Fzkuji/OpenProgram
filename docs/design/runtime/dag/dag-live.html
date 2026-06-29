@@ -241,7 +241,7 @@ function computeLane(byId, nodes, maps, tier){
     const stack=[start];
     while(stack.length){
       const cur=stack.pop(); if(cur in lane)continue; lane[cur]=my;
-      for(const kid of (callerCh[cur]||[])){ if((kid in lane)||!sameLane(kid))continue; if(predOf(byId,byId[kid]))continue; stack.push(kid); }
+      for(const kid of (callerCh[cur]||[])){ if((kid in lane)||!sameLane(kid))continue; if(predOf(byId,byId[kid]))continue; if(byId[kid].spawn_from)continue; stack.push(kid); }
       for(const kid of (predCh[cur]||[])){ if(!(kid in lane)&&sameLane(kid))stack.push(kid); }
     }
   }
@@ -477,13 +477,16 @@ const SCENES=[
    {id:"aRecv",role:"assistant",caller:"ROOT",predecessor:"send",commFrom:"bAns",tierHint:1,created_at:8,label:"B回复了",sub:"A的新一轮,直连ROOT(和问题同级)"},
    // A 收到 B 的回复后,A 的 llm 对它作出回应(B回复了=输入 → A回应=llm,缩进一级)
    {id:"aAns",role:"assistant",caller:"aRecv",predecessor:"aRecv",created_at:9,label:"A回应",sub:"A 对 B回复的回应"}]},
- {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
+ {name:"子分支服务",desc:"A 的 llm 调 spawn_branch(□工具) → 当场【新建】一个临时子 agent 分支 B → B 在自己分支干活(△ 子agent → △ 干完) → 干完后结果【attach 回流】嵌回 A，A 收到后继续(△)。关键区别于通信：B 不是平行已存在的，是 spawn 当场生出来的，所以从 spawn 那行往下长，不和「问题」平行。spawn 线常驻(点划线)，attach 回流是软连接(hover 显示)。",nodes:()=>[R0,
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A"},
-   {id:"sp",role:"code",caller:"l1",predecessor:"l1",created_at:3,label:"spawn_branch",sub:"派子分支"},
-   {id:"b1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:4,label:"子分支B",spawn_from:"sp"},
+   {id:"sp",role:"code",caller:"l1",predecessor:"l1",created_at:3,label:"spawn_branch",sub:"A调的工具,当场派子分支"},
+   // B = spawn 当场新建的子 agent 分支。caller=sp(spawn 派的)、无 predecessor →
+   // 不被当独立分支对齐到问题行；从 spawn 那行往下长。首节点是 △ 子agent(非 user)。
+   {id:"b1",role:"assistant",caller:"sp",spawn_from:"sp",created_at:4,label:"子分支B",sub:"spawn当场新建的子agent"},
    {id:"b2",role:"assistant",caller:"b1",predecessor:"b1",created_at:5,label:"B干完"},
-   {id:"a2",role:"assistant",caller:"l1",predecessor:"l1",created_at:6,label:"A(收到B)",sub:"attach回流",attach_from:"b2"}]},
+   // B 干完 → attach 回流嵌回 A → A 收到后继续(新一轮,挂 A 主干 user 级)。
+   {id:"a2",role:"assistant",caller:"ROOT",predecessor:"sp",attach_from:"b2",tierHint:1,created_at:6,label:"A(收到B)",sub:"attach回流,A收到后继续"}]},
 ];
 
 function show(i){
