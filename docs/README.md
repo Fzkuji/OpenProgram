@@ -1,62 +1,59 @@
-# Documentation
+# 文档
 
-This directory is the documentation entry point for OpenProgram.
+本目录是 OpenProgram 的文档入口。
 
-## Start here
+## 从这里开始
 
-| File | Purpose |
+| 文件 | 用途 |
 |---|---|
-| [`GETTING_STARTED.md`](GETTING_STARTED.md) | Installation, provider setup, and runnable examples |
-| [`features.md`](features.md) | Detailed tour of the key features the README summarises |
-| [`install.md`](install.md) | What each pip extra adds + post-install steps |
-| [`installing-harnesses.md`](installing-harnesses.md) | Harnesses: install any (first/third-party) by one command, write your own |
-| [`troubleshooting.md`](troubleshooting.md) | "It doesn't work" cookbook (no provider, port in use, multi-repo install …) |
-| [`API.md`](API.md) | Public API index |
-| [`README_CN.md`](README_CN.md) | Chinese project overview |
-| [`philosophy/agentic-programming.md`](philosophy/agentic-programming.md) | Agentic Programming rationale |
+| [`GETTING_STARTED.md`](GETTING_STARTED.md) | 安装、provider 配置以及可运行的示例 |
+| [`features.md`](features.md) | 对 README 所概述的核心功能的详细介绍 |
+| [`install.md`](install.md) | 每个 pip extra 各自引入的内容 + 安装后步骤 |
+| [`installing-harnesses.md`](installing-harnesses.md) | Harness：用一条命令安装任意（一方/第三方）harness，或编写你自己的 |
+| [`troubleshooting.md`](troubleshooting.md) | “它跑不起来”手册（没有 provider、端口被占用、多仓库安装……） |
+| [`API.md`](API.md) | 公开 API 索引 |
+| [`README_CN.md`](README_CN.md) | 中文项目概览 |
+| [`philosophy/agentic-programming.md`](philosophy/agentic-programming.md) | Agentic Programming 的设计理念 |
 
-## Agentic programming guide
+## Agentic programming 指南
 
-OpenProgram's own programming model — the concepts a generic LLM-framework
-tutorial will not teach you. **Read this before writing functions.**
+OpenProgram 自有的编程模型——通用 LLM 框架教程不会教你的那些概念。**在编写函数之前请先阅读本节。**
 
-| File | Purpose |
+| 文件 | 用途 |
 |---|---|
-| [`agentic-programming/README.md`](agentic-programming/README.md) | Guide index + learning path |
-| [`agentic-programming/writing-functions/agentic-function.md`](agentic-programming/writing-functions/agentic-function.md) | `@agentic_function` usage patterns |
-| [`agentic-programming/writing-functions/function-metadata.md`](agentic-programming/writing-functions/function-metadata.md) | Function metadata — source of truth |
-| [`agentic-programming/choosing-the-next-step/fixed-order-calls.md`](agentic-programming/choosing-the-next-step/fixed-order-calls.md) | Fixed-order sub-function pipelines |
-| [`agentic-programming/choosing-the-next-step/tool-calling.md`](agentic-programming/choosing-the-next-step/tool-calling.md) | Provider-native tool-use loop |
-| [`agentic-programming/choosing-the-next-step/next-step-decision.md`](agentic-programming/choosing-the-next-step/next-step-decision.md) | `decision.make` / `exec(choices=)` — LLM picks the next step |
-| [`agentic-programming/writing-functions/pure-python.md`](agentic-programming/writing-functions/pure-python.md) | Plain Python helpers (no LLM) |
+| [`agentic-programming/README.md`](agentic-programming/README.md) | 指南索引 + 学习路径 |
+| [`agentic-programming/writing-functions/agentic-function.md`](agentic-programming/writing-functions/agentic-function.md) | `@agentic_function` 使用模式 |
+| [`agentic-programming/writing-functions/function-metadata.md`](agentic-programming/writing-functions/function-metadata.md) | 函数元数据——唯一可信来源 |
+| [`agentic-programming/choosing-the-next-step/fixed-order-calls.md`](agentic-programming/choosing-the-next-step/fixed-order-calls.md) | 固定顺序的子函数流水线 |
+| [`agentic-programming/choosing-the-next-step/tool-calling.md`](agentic-programming/choosing-the-next-step/tool-calling.md) | provider 原生的 tool-use 循环 |
+| [`agentic-programming/choosing-the-next-step/next-step-decision.md`](agentic-programming/choosing-the-next-step/next-step-decision.md) | `decision.make` / `exec(choices=)`——由 LLM 选择下一步 |
+| [`agentic-programming/writing-functions/pure-python.md`](agentic-programming/writing-functions/pure-python.md) | 纯 Python 辅助函数（不涉及 LLM） |
 
-## API reference
+## API 参考
 
-| File | Purpose |
+| 文件 | 用途 |
 |---|---|
-| [`api/agentic_function.md`](api/agentic-function.md) | `@agentic_function` decorator API |
-| [`api/runtime.md`](api/runtime.md) | `Runtime.exec()` and runtime behavior |
-| [`api/providers.md`](api/providers.md) | Provider/runtime classes and setup |
-| [`provider-token-tracking.md`](provider-token-tracking.md) | Provider usage accounting semantics |
+| [`api/agentic_function.md`](api/agentic-function.md) | `@agentic_function` 装饰器 API |
+| [`api/runtime.md`](api/runtime.md) | `Runtime.exec()` 及运行时行为 |
+| [`api/providers.md`](api/providers.md) | Provider/运行时类及其配置 |
+| [`provider-token-tracking.md`](provider-token-tracking.md) | provider 用量计费语义 |
 
-## Integration guides
+## 集成指南
 
-| File | Purpose |
+| 文件 | 用途 |
 |---|---|
-| [`INTEGRATION_CLAUDE_CODE.md`](INTEGRATION_CLAUDE_CODE.md) | Claude Code subscription/runtime integration |
-| [`INTEGRATION_OPENCLAW.md`](INTEGRATION_OPENCLAW.md) | OpenClaw integration patterns |
+| [`INTEGRATION_CLAUDE_CODE.md`](INTEGRATION_CLAUDE_CODE.md) | Claude Code 订阅/运行时集成 |
+| [`INTEGRATION_OPENCLAW.md`](INTEGRATION_OPENCLAW.md) | OpenClaw 集成模式 |
 
-## Design notes
+## 设计笔记
 
-Use [`design/README.md`](design/README.md) as the entry point. It separates
-current specs from archived audits and standalone demos.
+请以 [`design/README.md`](design/README.md) 作为入口。它将当前规范与归档的审查记录、独立 demo 区分开来。
 
-## Maintenance rules
+## 维护规则
 
-- Keep current API facts under `api/`; keep design rationale under `design/`;
-  keep function-authoring guides under `agentic-programming/`.
-- Prefer linking to a source document instead of repeating the same rules in
-  multiple files.
-- If a design note no longer defines current behavior, move it to
-  `design/archive/`.
-- Verify docs with a relative-link check after moving files.
+- 把当前的 API 事实放在 `api/` 下；把设计理由放在 `design/` 下；
+  把函数编写指南放在 `agentic-programming/` 下。
+- 优先链接到源文档，而不是在多个文件中重复同样的规则。
+- 如果某份设计笔记不再描述当前行为，就把它移到
+  `design/archive/`。
+- 移动文件后，用相对链接检查来校验文档。

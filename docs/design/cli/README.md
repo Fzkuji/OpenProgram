@@ -1,6 +1,6 @@
 # CLI / TUI
 
-The command surface — CLI/TUI redesign, slash commands, settings, and Web UI ports.
+命令交互层 —— CLI/TUI 重新设计、slash 命令、设置以及 Web UI 端口。
 
 - [`cli-naming.md`](cli-naming.md)
 - [`cli-redesign.md`](cli-redesign.md)
@@ -9,4 +9,4 @@ The command surface — CLI/TUI redesign, slash commands, settings, and Web UI p
 - [`ports.md`](ports.md)
 - [`slash-commands-references.md`](slash-commands-references.md)
 - [`slash-commands.md`](slash-commands.md)
-- [`tui-upgrade.md`](tui-upgrade.md) — transcript rendering & interaction upgrade (tool-call collapsing, ctrl+o transcript, diffs, queued input, keybind table)
+- [`tui-upgrade.md`](tui-upgrade.md) —— transcript 渲染与交互升级（tool-call 折叠、ctrl+o transcript、diff、排队输入、快捷键绑定表）

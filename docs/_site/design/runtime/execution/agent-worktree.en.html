@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/runtime/execution/agent-worktree.html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Worktree 工具 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=411d594f">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="Documentation" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn" data-title-en="Readme Cn.En" data-href-zh="/docs/README_CN.html" data-href-en="/docs/README_CN.en.html">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc" data-title-en="OpenClaw Integration | OpenClaw 集成指南" data-href-zh="/docs/INTEGRATION_OPENCLAW.html" data-href-en="/docs/INTEGRATION_OPENCLAW.en.html">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness" data-title-en="Harnesses: install, manage, write your own" data-href-zh="/docs/installing-harnesses.html" data-href-en="/docs/installing-harnesses.en.html">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token" data-title-en="Provider Token Tracking" data-href-zh="/docs/provider-token-tracking.html" data-href-en="/docs/provider-token-tracking.en.html">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble" data-title-en="Troubleshooting" data-href-zh="/docs/troubleshooting.html" data-href-en="/docs/troubleshooting.en.html">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming 指南</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html" data-title-en="Agentic Programming Guide" data-href-zh="/docs/agentic-programming/README.html" data-href-en="/docs/agentic-programming/README.en.html">Agentic Programming 指南</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-title-en="@agentic_function calling sub-functions in a fixed order" data-href-zh="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.en.html">@agentic_function 按固定顺序调用子函数</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-title-en="Next-step decision making (decision.make / exec(choices=))" data-href-zh="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/next-step-decision.en.html">下一步决策（decision.make / exec(choices=)）</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-title-en="How the model picks the next step (the tool-call loop)" data-href-zh="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/tool-calling.en.html">模型如何选择下一步（工具调用循环）</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/agentic-programming/writing-functions/agentic-function.html" data-href-en="/docs/agentic-programming/writing-functions/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/agentic-programming/writing-functions/function-metadata.html" data-href-en="/docs/agentic-programming/writing-functions/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html" data-title-en="Pure Python functions" data-href-zh="/docs/agentic-programming/writing-functions/pure-python.html" data-href-en="/docs/agentic-programming/writing-functions/pure-python.en.html">纯 Python 函数</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">设计文档</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html" data-title-en="Design Documents" data-href-zh="/docs/design/README.html" data-href-en="/docs/design/README.en.html">设计文档</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html" data-title-en="Channels" data-href-zh="/docs/design/channels/README.html" data-href-en="/docs/design/channels/README.en.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html" data-title-en="CLI / TUI" data-href-zh="/docs/design/cli/README.html" data-href-en="/docs/design/cli/README.en.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html" data-title-en="CLI Naming Convention" data-href-zh="/docs/design/cli/cli-naming.html" data-href-en="/docs/design/cli/cli-naming.en.html">CLI 命名规范</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html" data-title-en="OpenProgram CLI / TUI Redesign" data-href-zh="/docs/design/cli/cli-redesign.html" data-href-en="/docs/design/cli/cli-redesign.en.html">OpenProgram CLI / TUI 重新设计</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html" data-title-en="Slash Commands — Unified Design" data-href-zh="/docs/design/cli/slash-commands.html" data-href-en="/docs/design/cli/slash-commands.en.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html" data-title-en="TUI upgrade: transcript rendering &amp; interaction" data-href-zh="/docs/design/cli/tui-upgrade.html" data-href-en="/docs/design/cli/tui-upgrade.en.html">TUI 升级：会话记录渲染与交互</a>
+<a class="navlink" href="/docs/design/cli/ports.html" data-title-en="Web UI Ports — Architecture, Configuration, and Conflict Handling" data-href-zh="/docs/design/cli/ports.html" data-href-en="/docs/design/cli/ports.en.html">Web UI 端口 — 架构、配置与冲突处理</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html" data-title-en="Slash Commands — Reference Implementations Snapshot" data-href-zh="/docs/design/cli/slash-commands-references.html" data-href-en="/docs/design/cli/slash-commands-references.en.html">斜杠命令 — 参考实现快照</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html" data-title-en="统一 @agentic_function 执行路径" data-href-zh="/docs/design/cli/drop-run-command.html" data-href-en="/docs/design/cli/drop-run-command.en.html">统一 @agentic_function 执行路径</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html" data-title-en="Config write safety — atomic `update_config`" data-href-zh="/docs/design/cli/config-write-safety.html" data-href-en="/docs/design/cli/config-write-safety.en.html">配置写入安全 —— 原子化的 `update_config`</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html" data-title-en="Context" data-href-zh="/docs/design/context/README.html" data-href-en="/docs/design/context/README.en.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a>
+<a class="navlink" href="/docs/design/memory/memory.html" data-title-en="Memory subsystem" data-href-zh="/docs/design/memory/memory.html" data-href-en="/docs/design/memory/memory.en.html">记忆子系统</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html" data-title-en="Credential-validation unification" data-href-zh="/docs/design/providers/auth/credential-validation-unification.html" data-href-en="/docs/design/providers/auth/credential-validation-unification.en.html">凭证校验统一</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-title-en="Error-taxonomy propagation — structured LLM errors up to the UI" data-href-zh="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-href-en="/docs/design/providers/reliability/error-taxonomy-propagation.en.html">错误分类传播 —— 把结构化的 LLM 错误一路传到 UI</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html" data-title-en="Web UI" data-href-zh="/docs/design/ui/README.html" data-href-en="/docs/design/ui/README.en.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">函数设计</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html" data-title-en="Function Design" data-href-zh="/docs/design/function/README.html" data-href-en="/docs/design/function/README.en.html">函数设计</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/design/function/agentic-function.html" data-href-en="/docs/design/function/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html" data-title-en="Function calling" data-href-zh="/docs/design/function/function-calling-unification.html" data-href-en="/docs/design/function/function-calling-unification.en.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">扩展门控（Extension Gating）</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html" data-title-en="Extension Gating" data-href-zh="/docs/design/extension-gating/README.html" data-href-en="/docs/design/extension-gating/README.en.html">扩展门控（Extension Gating）</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html" data-title-en="Reference-implementation comparison" data-href-zh="/docs/design/extension-gating/reference-comparison.html" data-href-en="/docs/design/extension-gating/reference-comparison.en.html">参考实现对比</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html" data-title-en="Implementation map" data-href-zh="/docs/design/extension-gating/implementation.html" data-href-en="/docs/design/extension-gating/implementation.en.html">实现地图</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html" data-title-en="Future work — explicitly NOT built" data-href-zh="/docs/design/extension-gating/future-work.html" data-href-en="/docs/design/extension-gating/future-work.en.html">未来工作 —— 明确不做的部分</a></div></details>
+<details class="group" data-key="design/runtime" open><summary class="group-title">运行时</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html" data-title-en="Runtime" data-href-zh="/docs/design/runtime/README.html" data-href-en="/docs/design/runtime/README.en.html">运行时</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution" open><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink active" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html" data-title-en="Splitting `agent/dispatcher.py` into a responsibility-scoped package" data-href-zh="/docs/design/runtime/execution/dispatcher-split.html" data-href-en="/docs/design/runtime/execution/dispatcher-split.en.html">将 `agent/dispatcher.py` 拆分为按职责划分的包</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-title-en="Multi-agent + per-turn revert: status" data-href-zh="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-href-en="/docs/design/runtime/operations/multi-agent-revert-todo.en.html">多 agent + 逐 turn 回滚：进展</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html" data-title-en="User input requests: pausing a run to ask the user" data-href-zh="/docs/design/runtime/operations/user-input-requests.html" data-href-en="/docs/design/runtime/operations/user-input-requests.en.html">用户输入请求：暂停运行以向用户提问</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">集成</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html" data-title-en="Integrations" data-href-zh="/docs/design/integrations/README.html" data-href-en="/docs/design/integrations/README.en.html">集成</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html" data-title-en="Harness Standard — how an agentic program plugs into OpenProgram" data-href-zh="/docs/design/integrations/harness-standard.html" data-href-en="/docs/design/integrations/harness-standard.en.html">Harness 标准 —— agentic 程序如何接入 OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb">设计文档 <span class='bc-sep'>›</span> 运行时 <span class='bc-sep'>›</span> Execution <span class='bc-sep'>›</span> <span class="bc-current">Agent Worktree 工具</span></nav><h1 id="agent-worktree-tool">Agent Worktree Tool<a class="header-anchor" href="#agent-worktree-tool">#</a></h1>
+<blockquote>
+<p>When an agent runs high-risk changes inside the user's real code repository, it needs an isolated temporary working directory:
+if the changes are good, merge them back into the mainline; if they go wrong, discard them with a single wipe, and the main repo stays untouched.
+Under the hood this is just a wrapper around <code>git worktree add</code> / <code>git worktree remove</code>, but it must be kept strictly separate from
+OpenProgram's own session-git.</p>
+</blockquote>
+<p>Referencing Claude Code's <code>EnterWorktreeTool</code> / <code>ExitWorktreeTool</code>
+(<code>references/claude-code-leaked/src/tools/EnterWorktreeTool/</code>),
+this design copies its &quot;switch cwd + state machine + keep/discard on exit&quot; skeleton, but adapts it to
+OpenProgram's runtime / session model.</p>
+<hr />
+<h2 id="part-1-dimensions-the-design-must-consider">Part 1. Dimensions the Design Must Consider<a class="header-anchor" href="#part-1-dimensions-the-design-must-consider">#</a></h2>
+<h3 id="d1-what-a-worktree-entity-stores">D1. What a Worktree Entity Stores<a class="header-anchor" href="#d1-what-a-worktree-entity-stores">#</a></h3>
+<p>Each active worktree is one record, with fields:</p>
+<ul>
+<li><code>id</code>: short worktree id (hex, same style as commit ids)</li>
+<li><code>source_repo</code>: the user's real repository root (absolute path)</li>
+<li><code>worktree_path</code>: the directory created by <code>git worktree add</code> (absolute path)</li>
+<li><code>branch_name</code>: the branch name corresponding to the worktree (defaults to <code>op/wt/&lt;id&gt;</code>)</li>
+<li><code>base_ref</code>: the baseline ref at creation time (defaults to <code>HEAD</code>, can be set to origin/main / commit sha)</li>
+<li><code>created_at</code>: unix timestamp</li>
+<li><code>status</code>: <code>active</code> / <code>committing</code> / <code>merged</code> / <code>discarded</code> / <code>kept</code></li>
+<li><code>parent_session_id</code>: the associated OpenProgram session (one-to-one or one-to-many)</li>
+<li><code>parent_task_id</code>: the associated async task (if any)</li>
+<li><code>created_by_agent</code>: agent id (records which agent opened it, so it is visible in the UI)</li>
+</ul>
+<p>Records are persisted in the session-git repository at <code>worktrees/&lt;id&gt;.json</code>, stored alongside ContextCommit.
+They are not cleaned up automatically when the session closes; they wait for the agent or user to explicitly merge / discard.</p>
+<h3 id="d2-cwd-switching-mechanism">D2. cwd Switching Mechanism<a class="header-anchor" href="#d2-cwd-switching-mechanism">#</a></h3>
+<p>OpenProgram's tools fall into two categories:</p>
+<ol>
+<li><strong>Runtime-spawned subprocess</strong> (Codex CLI / Claude CLI, which take a <code>--cd</code> argument)
+controlled via <code>runtime.set_workdir(path)</code>.</li>
+<li><strong>In-process <code>@function</code> tools</strong> (bash / edit / write / read, etc.)
+bash goes through <code>get_active_backend().run(...)</code>; currently <code>LocalBackend.run</code> accepts
+a <code>cwd</code> argument but callers don't pass it; edit / write / read require absolute paths.</li>
+</ol>
+<p>Design: add a ContextVar <code>_current_worktree_path: Optional[str]</code> in <code>openprogram/agent/_runtime.py</code>.
+Each time the dispatcher enters a turn, if the session currently has an active worktree (read from session meta),
+it <code>set</code>s this var. Tool implementations consume it as needed:</p>
+<ul>
+<li>bash: <code>LocalBackend.run(cmd, cwd=_current_worktree_path.get())</code></li>
+<li>edit / write / read: resolve relative paths against <code>_current_worktree_path</code> as the root;
+absolute paths must be under the worktree (D6 security check).</li>
+<li>runtime subprocess: keep the existing <code>apply_default_workdir(runtime, session_id)</code>,
+but change it to prefer returning the worktree path (if any), otherwise session-git's <code>workdir/</code>.</li>
+</ul>
+<p>No &quot;explicit cwd argument&quot; is introduced. The worktree is session-level context; tools are unaware of it.</p>
+<h3 id="d3-state-machine">D3. State Machine<a class="header-anchor" href="#d3-state-machine">#</a></h3>
+<pre><code>            create
+              │
+              ▼
+        ┌─ active ─┐
+        │          │
+  merge │          │ discard
+        │          │
+        ▼          ▼
+     merged    discarded
+        │          │
+        └────┬─────┘
+             │ keep
+             ▼
+           kept (user decides to keep the branch but neither merge nor delete it)
+</code></pre>
+<ul>
+<li><code>active</code>: the agent is using it. Tools like bash / edit default their cwd here.</li>
+<li><code>committing</code>: a brief state, holding a lock during the merge operation to prevent concurrent file edits.</li>
+<li><code>merged</code>: <code>git merge</code> succeeded, the worktree directory has been <code>git worktree remove</code>d.</li>
+<li><code>discarded</code>: <code>git worktree remove --force</code> succeeded, the branch was deleted too.</li>
+<li><code>kept</code>: the user went through <code>worktree_keep</code> — the worktree directory is kept, OpenProgram
+unbinds this record but does not touch git. The user takes over from there.</li>
+</ul>
+<h3 id="d4-isolation-from-openprogram-session-git">D4. Isolation from OpenProgram session-git<a class="header-anchor" href="#d4-isolation-from-openprogram-session-git">#</a></h3>
+<p>OpenProgram has its own <code>~/.openprogram/sessions/&lt;sid&gt;/</code> (one git repo per session),
+storing the conversation memory's history / context / workdir. <strong>The agent worktree must never
+be created inside this directory tree</strong>:</p>
+<ul>
+<li>worktree_path must not be under any <code>~/.openprogram/sessions/*</code> (D14 check).</li>
+<li>source_repo must not equal a session-git repository path.</li>
+<li>session-git commits and worktree commits are managed independently; in the UI the ContextCommit
+timeline only looks at session-git, while the worktree timeline is shown in a separate panel.</li>
+</ul>
+<p>Historically OpenProgram tried sub-agent worktrees (commit <code>5ba13149</code>),
+created under <code>&lt;session-repo&gt;/_worktrees/&lt;branch&gt;/</code>, which was later refactored into &quot;sub-agent =
+peer session + attach&quot; (commit <code>75e430c0</code>). This design does not reuse that path —
+that one was &quot;open a branch inside session-git to run a sub-agent&quot;, whereas this design is &quot;open a worktree
+in the user's real code repository for the agent to run changes&quot;. Completely different purposes.</p>
+<h3 id="d5-where-source_repo-comes-from">D5. Where source_repo Comes From<a class="header-anchor" href="#d5-where-source_repo-comes-from">#</a></h3>
+<p>Three entry points, in descending priority:</p>
+<ol>
+<li><strong>Explicitly passed by the agent</strong>: the <code>source_repo</code> parameter of the worktree_create tool (absolute path).
+Suitable when a plan agent already knows the target repository while listing tasks.</li>
+<li><strong>The fn-form &quot;Working in a folder&quot;</strong>: the <code>_work_dir</code> the user supplies to the program in the web UI.
+Before entering a turn, if the dispatcher finds that this path is a git repo root,
+it treats it as the default source_repo (used when worktree_create is called without source_repo).</li>
+<li><strong>The ancestor git root of the session's current cwd</strong>: resolved via <code>git rev-parse --show-toplevel</code>.
+Usually the directory from which the user launched OpenProgram.</li>
+</ol>
+<p>If all entry points fail → worktree_create reports the error <code>source_repo_not_a_git_repo</code>.
+It will not automatically <code>git init</code> a repository for the user (too destructive).</p>
+<h3 id="d6-security-permissions">D6. Security / Permissions<a class="header-anchor" href="#d6-security-permissions">#</a></h3>
+<p>The core security constraint for agent tools inside a worktree: <strong>the bash command's cwd is locked, but the cmd
+itself can <code>cd ..</code> to run outside the worktree</strong>. This is not a true sandbox; it is a &quot;default direction&quot;.
+Two mitigations:</p>
+<ul>
+<li><strong>Absolute path check</strong>: when edit / write / read receive a <code>file_path</code> that falls outside
+worktree_path, log a warning into the ContextCommit metadata
+(<code>outside_worktree=true</code>), but do not block — the user may genuinely want to read a system config.</li>
+<li><strong>bash's cwd is always worktree_path</strong>: even if the LLM writes <code>cd /tmp &amp;&amp; rm -rf X</code>,
+the starting point is worktree_path, the shell session is not persistent (each bash is a fresh subprocess),
+and the next bash returns to worktree_path.</li>
+</ul>
+<p>Not doing: chroot / namespace isolation for bash commands. OpenProgram already supports a docker
+backend; for a hard sandbox, go that route.</p>
+<h3 id="d7-commits-inside-a-worktree">D7. Commits Inside a Worktree<a class="header-anchor" href="#d7-commits-inside-a-worktree">#</a></h3>
+<p>The agent writes files in the worktree → the worktree directory is dirty. Two semantics:</p>
+<ul>
+<li><strong>Auto commit</strong>: after each agent tool call (bash running git add / edit / write),
+the worktree tool does not auto-commit. It lets the agent run <code>git add -A &amp;&amp; git commit</code> via bash itself.
+This way the commit message is decided by the agent, consistent with git conventions.</li>
+<li><strong>Forced commit at merge time</strong>: when worktree_merge runs, if the worktree has uncommitted
+changes, it first reports the error <code>worktree_dirty</code> and lets the agent handle it explicitly (commit it /
+stash it / discard it). It does not auto-commit-and-merge.</li>
+</ul>
+<h3 id="d8-merge-strategy">D8. Merge Strategy<a class="header-anchor" href="#d8-merge-strategy">#</a></h3>
+<p><code>worktree_merge(worktree_id, mode=&quot;ff-only&quot; | &quot;squash&quot; | &quot;no-ff&quot;)</code>, defaults to ff-only.</p>
+<ul>
+<li><strong>ff-only</strong>: source_repo's HEAD is an ancestor of the worktree branch → fast-forward.
+Otherwise reports the error <code>not_fast_forward</code>, letting the agent decide whether to rebase or switch to squash.</li>
+<li><strong>squash</strong>: <code>git merge --squash &lt;branch&gt;</code> → multiple worktree commits squashed into one;
+suitable when the worktree contains many exploratory small commits.</li>
+<li><strong>no-ff</strong>: always creates a merge commit, preserving the worktree's commit history.</li>
+</ul>
+<p>After a merge, by default <code>git worktree remove &lt;path&gt;</code> deletes the worktree directory, but
+<strong>the branch is kept</strong> (so the user can <code>git log</code> to see the history of this change).
+Handling conflicts: on merge failure it does <strong>not</strong> auto-reset; the worktree status stays <code>committing</code>
+(effectively rolling back to active), letting the agent or user enter the worktree to resolve conflicts manually.</p>
+<h3 id="d9-discard-semantics">D9. Discard Semantics<a class="header-anchor" href="#d9-discard-semantics">#</a></h3>
+<p><code>worktree_discard(worktree_id, force=False)</code>:</p>
+<ul>
+<li><code>force=False</code> (default): the worktree must be clean (no uncommitted / untracked).
+Otherwise reports the error <code>worktree_dirty</code>, and the agent can decide whether to stash or force.</li>
+<li><code>force=True</code>: <code>git worktree remove --force &lt;path&gt;</code> + <code>git branch -D &lt;branch&gt;</code>.
+Uncommitted changes are dropped directly.</li>
+<li>The record in worktrees/<id>.json has its status changed to <code>discarded</code> + a timestamp. The file is not deleted,
+for auditing convenience — but worktree_path no longer exists.</li>
+</ul>
+<p>No &quot;auto-backup before discard&quot; is provided. There was discussion of tar-ing the discarded content into
+<code>~/.openprogram/discarded/</code>, but keeping this escape rope is not costly; it is left to Part 6 (future).</p>
+<h3 id="d10-relationship-between-worktree-and-task">D10. Relationship Between Worktree and Task<a class="header-anchor" href="#d10-relationship-between-worktree-and-task">#</a></h3>
+<p>The async task system (see <code>async-task-lifecycle.md</code>):</p>
+<ul>
+<li>A task can exclusively create and use a worktree (task_create → worktree_create).</li>
+<li>On task cancel, the worktree held by the task defaults to <code>discard force=True</code>.
+On task complete it does <strong>not</strong> auto-merge — after the task completes, the plan agent / user
+decides explicitly (the plan agent picks one to merge after looking at the output of 3 tasks).</li>
+<li>A task is not required to open a worktree. Lightweight tasks (reading files, running grep) just run
+directly on source_repo without opening a worktree.</li>
+</ul>
+<p>In implementation, the task lifecycle calls <code>worktree_manager.discard_for_task(task_id)</code> in the cancel hook.</p>
+<h3 id="d11-relationship-between-worktree-and-contextcommit">D11. Relationship Between Worktree and ContextCommit<a class="header-anchor" href="#d11-relationship-between-worktree-and-contextcommit">#</a></h3>
+<p>When the agent runs tools in a worktree, the tool results (bash stdout / edit confirmation)
+go into the ContextCommit items normally. <strong>The file diff inside the worktree does not go directly into ContextCommit
+content</strong> — file diffs are git's business; ContextCommit only records event-level facts like
+&quot;tool call X modified file Y&quot;.</p>
+<p>Add a lightweight metadata field: each tool item's metadata gets
+<code>worktree_id: Optional[str]</code>, indicating which worktree this tool call happened in
+(None means it ran directly in source_repo). When the UI renders, it adds a badge
+to tool calls inside a worktree.</p>
+<p>The worktree merge / discard operations themselves are also written into ContextCommit as system nodes
+(similar to an attach pointer marker), with content like &quot;Merged worktree wt_abc1234
+into source_repo (ff-only, 3 files changed)&quot;.</p>
+<h3 id="d12-agent-tool-surface">D12. Agent Tool Surface<a class="header-anchor" href="#d12-agent-tool-surface">#</a></h3>
+<p>Four tools:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Parameters</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>worktree_create</code></td>
+<td><code>source_repo: str?</code> <code>name: str?</code> <code>base_ref: str?</code></td>
+<td><code>{id, path, branch, base_sha}</code></td>
+</tr>
+<tr>
+<td><code>worktree_merge</code></td>
+<td><code>worktree_id: str</code> <code>mode: str = &quot;ff-only&quot;</code> <code>delete_branch: bool = False</code></td>
+<td><code>{merged_sha, files_changed: int, summary: str}</code></td>
+</tr>
+<tr>
+<td><code>worktree_discard</code></td>
+<td><code>worktree_id: str</code> <code>force: bool = False</code></td>
+<td><code>{status: &quot;discarded&quot;}</code></td>
+</tr>
+<tr>
+<td><code>worktree_list</code></td>
+<td><code>status_filter: str?</code></td>
+<td><code>[{id, path, branch, status, source_repo, age_seconds}]</code></td>
+</tr>
+</tbody>
+</table>
+<p>Error codes (prefix of the returned error string):</p>
+<ul>
+<li><code>not_a_git_repo</code>: source_repo is not a git repo</li>
+<li><code>worktree_dirty</code>: the worktree has uncommitted changes</li>
+<li><code>not_fast_forward</code>: cannot ff during merge</li>
+<li><code>merge_conflict</code>: conflict during merge</li>
+<li><code>worktree_in_sessions_dir</code>: source_repo falls inside the sessions tree (D4 isolation violation)</li>
+<li><code>worktree_exists</code>: a worktree with the same branch name already exists under the same source_repo</li>
+</ul>
+<p><code>worktree_create</code> / <code>worktree_merge</code> / <code>worktree_discard</code> default to
+<code>requires_approval=True</code>; only permission_mode=auto skips the approval prompt.</p>
+<p>No <code>worktree_switch</code> tool is exposed — a session has only one active worktree at a time
+(D2's ContextVar is single-valued), switching semantics are complex (do we write a switch marker?
+what happens to the old worktree after switching?), and the benefit does not outweigh the cost. Multiple
+worktrees are achieved through async tasks, one worktree per task.</p>
+<h3 id="d13-ui-representation">D13. UI Representation<a class="header-anchor" href="#d13-ui-representation">#</a></h3>
+<ul>
+<li><strong>Composer toolbar</strong>: when the current session has an active worktree, a chip
+<code>worktree: wt_abc1234 (3 files changed)</code> is shown above the PromptInput; hovering pops a panel
+showing worktree_path / branch / the list of changed files / Merge / Discard / Keep buttons.</li>
+<li><strong>The fn-form &quot;Working in a folder&quot;</strong>: kept as-is, only showing the source_repo path.
+The worktree is an internal detail and is not surfaced in the fn-form.</li>
+<li><strong>DAG timeline</strong>: worktree create / merge / discard marker nodes are rendered in a distinguishing color
+(same style as the attach marker).</li>
+<li><strong>Not doing</strong>: inline preview of worktree file diffs (the user can click &quot;open in editor&quot;
+/ use their own git GUI to view).</li>
+</ul>
+<h3 id="d14-errors-edge-cases">D14. Errors / Edge Cases<a class="header-anchor" href="#d14-errors-edge-cases">#</a></h3>
+<ul>
+<li><code>source_repo</code> is not a git repo → <code>not_a_git_repo</code> error, prompting the user to <code>git init</code> first.</li>
+<li><code>source_repo</code> has uncommitted changes but the worktree is a new branch → OK,
+the worktree is created from base_ref (defaults to HEAD), unaffected by the source_repo working tree state.</li>
+<li><code>worktree_path</code> already exists → <code>worktree_exists</code> error. The user is allowed to pass a name and retry.</li>
+<li><code>source_repo</code> is inside the sessions tree → <code>worktree_in_sessions_dir</code> rejection (D4).</li>
+<li><code>base_ref</code> does not exist → git reports the error itself, the tool passes through stderr.</li>
+<li>the agent accidentally deletes worktree_path (bypassing worktree_discard with a direct rm -rf) →
+next time worktree_list detects the path no longer exists, it automatically marks <code>status=discarded</code>
+and writes an &quot;auto-cleaned&quot; record.</li>
+</ul>
+<h3 id="d15-integration-with-async-task">D15. Integration with Async Task<a class="header-anchor" href="#d15-integration-with-async-task">#</a></h3>
+<p>worktree_create / merge / discard are themselves synchronous tools (git subprocesses); do not wrap
+them into async tasks. But <strong>long-running work inside a worktree</strong> (the agent running tests, running a build)
+is usually the work content of an async task:</p>
+<ul>
+<li>when an async task starts it can specify <code>worktree_id</code> (the task's cwd is locked to this worktree).</li>
+<li>the bash / edit run inside the task also goes through the D2 ContextVar path, with cwd being worktree_path.</li>
+<li>task cancel hook → calls <code>worktree_manager.on_task_cancel(task_id)</code>,
+which defaults to discard.</li>
+<li>task complete does not auto-merge (D10).</li>
+</ul>
+<hr />
+<h2 id="part-2-scenario-dimension">Part 2. Scenario × Dimension<a class="header-anchor" href="#part-2-scenario-dimension">#</a></h2>
+<h3 id="scenario-a-single-agent-single-worktree-basic-flow">Scenario A: Single agent, single worktree (basic flow)<a class="header-anchor" href="#scenario-a-single-agent-single-worktree-basic-flow">#</a></h3>
+<p>The agent receives the task &quot;modify <a href="http://foo.py">foo.py</a> to add logging&quot;, opens a worktree → modifies → runs tests → merges.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Design</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>D1 entity</strong></td>
+<td>one worktree record, <code>status=active</code>, bound to the current session</td>
+</tr>
+<tr>
+<td><strong>D2 cwd</strong></td>
+<td>when the dispatcher enters a turn it reads session.meta.active_worktree_id → sets the <code>_current_worktree_path</code> ContextVar; bash/edit/write/read all default cwd here</td>
+</tr>
+<tr>
+<td><strong>D3 status</strong></td>
+<td>active → committing (during merge) → merged</td>
+</tr>
+<tr>
+<td><strong>D4 isolation</strong></td>
+<td>worktree_path is not in the sessions tree: defaults to <code>~/.openprogram/worktrees/&lt;id&gt;-&lt;slug&gt;/</code> (an independent directory, sibling to source_repo)</td>
+</tr>
+<tr>
+<td><strong>D5 source</strong></td>
+<td>the <code>_work_dir</code> passed by the fn-form is the source_repo; the agent can also pass it explicitly</td>
+</tr>
+<tr>
+<td><strong>D6 security</strong></td>
+<td>bash's cwd starts at worktree_path; edit/write receiving an absolute path outside the worktree writes a warning but does not block</td>
+</tr>
+<tr>
+<td><strong>D7 commit</strong></td>
+<td>the agent runs <code>git add . &amp;&amp; git commit -m &quot;...&quot;</code> via bash itself; worktree_merge requires the worktree to be clean beforehand</td>
+</tr>
+<tr>
+<td><strong>D8 merge</strong></td>
+<td>ff-only default; ff succeeds since source_repo HEAD has not moved</td>
+</tr>
+<tr>
+<td><strong>D9 discard</strong></td>
+<td>not used</td>
+</tr>
+<tr>
+<td><strong>D10 task</strong></td>
+<td>no task (runs directly in the main turn)</td>
+</tr>
+<tr>
+<td><strong>D11 commit log</strong></td>
+<td>the bash/edit tool items are all tagged with <code>worktree_id</code>; merge writes a system marker</td>
+</tr>
+<tr>
+<td><strong>D12 tools</strong></td>
+<td>worktree_create → do the work → worktree_merge</td>
+</tr>
+<tr>
+<td><strong>D13 UI</strong></td>
+<td>composer shows chip &quot;wt_abc1234 (2 files changed)&quot;, the chip disappears after merge, the DAG adds a marker</td>
+</tr>
+<tr>
+<td><strong>D14 edge</strong></td>
+<td>worktree_create reports an error when source_repo is not a git repo; the user git inits first</td>
+</tr>
+<tr>
+<td><strong>D15 task</strong></td>
+<td>N/A</td>
+</tr>
+</tbody>
+</table>
+<h3 id="scenario-b-single-agent-multiple-worktrees-failed-exploration">Scenario B: Single agent, multiple worktrees (failed exploration)<a class="header-anchor" href="#scenario-b-single-agent-multiple-worktrees-failed-exploration">#</a></h3>
+<p>The agent tries approach A, tests fail → discard → tries approach B → passes → merge.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Design</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>D1 entity</strong></td>
+<td>two worktree records (different id / branch / path). The first has status=discarded, the second has status=merged</td>
+</tr>
+<tr>
+<td><strong>D2 cwd</strong></td>
+<td>only one is active at any moment: the second can be created only after discarding the first; the ContextVar switch is done by the dispatcher at the turn boundary</td>
+</tr>
+<tr>
+<td><strong>D3 status</strong></td>
+<td>wt1: active → discarded; wt2: active → merged</td>
+</tr>
+<tr>
+<td><strong>D4 isolation</strong></td>
+<td>the two worktrees each have an independent directory</td>
+</tr>
+<tr>
+<td><strong>D5 source</strong></td>
+<td>the same source_repo, reused twice</td>
+</tr>
+<tr>
+<td><strong>D6 security</strong></td>
+<td>same as A</td>
+</tr>
+<tr>
+<td><strong>D7 commit</strong></td>
+<td>in wt1 the agent may have run a few commits, deleted along with the branch on discard; wt2's commits go through a normal merge</td>
+</tr>
+<tr>
+<td><strong>D8 merge</strong></td>
+<td>wt2 goes through ff-only; if source_repo did not move during wt1 (only the worktree itself changed), ff succeeds</td>
+</tr>
+<tr>
+<td><strong>D9 discard</strong></td>
+<td>wt1 <code>force=True</code> (the agent decides to drop this line, including uncommitted experiments)</td>
+</tr>
+<tr>
+<td><strong>D10 task</strong></td>
+<td>not used</td>
+</tr>
+<tr>
+<td><strong>D11 commit log</strong></td>
+<td>on the DAG, wt1 markers (create + discard) + wt2 markers (create + merge)</td>
+</tr>
+<tr>
+<td><strong>D12 tools</strong></td>
+<td>create → discard → create → merge</td>
+</tr>
+<tr>
+<td><strong>D13 UI</strong></td>
+<td>the chip switches twice: wt1 shows then disappears, wt2 shows then disappears</td>
+</tr>
+<tr>
+<td><strong>D14 edge</strong></td>
+<td>when discarding wt1, force=True skips the dirty check</td>
+</tr>
+<tr>
+<td><strong>D15 task</strong></td>
+<td>N/A</td>
+</tr>
+</tbody>
+</table>
+<h3 id="scenario-c-concurrent-worktrees-plan-agent-dispatches-3-tasks">Scenario C: Concurrent worktrees (plan agent dispatches 3 tasks)<a class="header-anchor" href="#scenario-c-concurrent-worktrees-plan-agent-dispatches-3-tasks">#</a></h3>
+<p>The plan agent lists 3 independent changes → 3 async tasks, one worktree per task
+(independent copies of source_repo) → all complete → the plan agent looks at the results, picks one to merge, discards the rest.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Design</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>D1 entity</strong></td>
+<td>3 worktree records, each bound to a task_id; status evolves in sync</td>
+</tr>
+<tr>
+<td><strong>D2 cwd</strong></td>
+<td>when running inside each task, <strong>the task runtime's ContextVar</strong> independently sets <code>_current_worktree_path=task.worktree_path</code>; the main session's plan agent itself does not activate any worktree (the plan agent does not touch files)</td>
+</tr>
+<tr>
+<td><strong>D3 status</strong></td>
+<td>3 parallel active → all tasks complete → 2 discarded + 1 merged</td>
+</tr>
+<tr>
+<td><strong>D4 isolation</strong></td>
+<td>each worktree has an independent directory; source_repo all point to the same one, but git worktree add inherently supports multiple worktrees at once (different branches)</td>
+</tr>
+<tr>
+<td><strong>D5 source</strong></td>
+<td>all the same source_repo</td>
+</tr>
+<tr>
+<td><strong>D6 security</strong></td>
+<td>each task isolates its cwd, not affecting one another</td>
+</tr>
+<tr>
+<td><strong>D7 commit</strong></td>
+<td>each task commits itself</td>
+</tr>
+<tr>
+<td><strong>D8 merge</strong></td>
+<td>the chosen one goes through ff-only; if none of the other tasks merged, source_repo HEAD has not moved, ff succeeds</td>
+</tr>
+<tr>
+<td><strong>D9 discard</strong></td>
+<td>the remaining 2 go through force=True (the plan agent picked 1, the rest are no longer wanted)</td>
+</tr>
+<tr>
+<td><strong>D10 task</strong></td>
+<td>each task is assigned a worktree at creation; task complete does not auto-merge (D10), waiting for the plan agent's decision</td>
+</tr>
+<tr>
+<td><strong>D11 commit log</strong></td>
+<td>all 3 worktrees each produce markers; the plan agent writes an assistant explanation &quot;adopting approach 2&quot;</td>
+</tr>
+<tr>
+<td><strong>D12 tools</strong></td>
+<td>the plan agent calls worktree_list to see the 3; calls worktree_merge wt2 + worktree_discard wt1 wt3</td>
+</tr>
+<tr>
+<td><strong>D13 UI</strong></td>
+<td>the composer chip is the plan agent's own session, not showing sub-worktrees; in the task panel each task card shows its own worktree chip</td>
+</tr>
+<tr>
+<td><strong>D14 edge</strong></td>
+<td>when 3 worktrees are created at once, git worktree add mutex (git has its own lockfile)</td>
+</tr>
+<tr>
+<td><strong>D15 task</strong></td>
+<td>fully integrated: task creation → worktree assignment; task cancel → discard; task complete → wait for decision</td>
+</tr>
+</tbody>
+</table>
+<h3 id="scenario-d-long-running-worktree-user-takeover">Scenario D: Long-running worktree / user takeover<a class="header-anchor" href="#scenario-d-long-running-worktree-user-takeover">#</a></h3>
+<p>The agent is halfway through (5 patches committed in the worktree), the user decides to take over themselves.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Design</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>D1 entity</strong></td>
+<td>status goes from active → kept</td>
+</tr>
+<tr>
+<td><strong>D2 cwd</strong></td>
+<td>after the user clicks &quot;Keep &amp; detach&quot;, the session's active_worktree_id is cleared, the ContextVar is no longer set; subsequent agent turns return to source_repo as cwd</td>
+</tr>
+<tr>
+<td><strong>D3 status</strong></td>
+<td>active → kept</td>
+</tr>
+<tr>
+<td><strong>D4 isolation</strong></td>
+<td>unchanged</td>
+</tr>
+<tr>
+<td><strong>D5 source</strong></td>
+<td>unchanged</td>
+</tr>
+<tr>
+<td><strong>D6 security</strong></td>
+<td>the worktree is still on disk, but OpenProgram no longer writes to it; the user opens worktree_path in their own terminal / IDE to continue</td>
+</tr>
+<tr>
+<td><strong>D7 commit</strong></td>
+<td>the agent's earlier commits are all kept on the branch</td>
+</tr>
+<tr>
+<td><strong>D8 merge</strong></td>
+<td>not used (the user decides merge / rebase themselves)</td>
+</tr>
+<tr>
+<td><strong>D9 discard</strong></td>
+<td>not used</td>
+</tr>
+<tr>
+<td><strong>D10 task</strong></td>
+<td>if it is a worktree held by a task, the task also moves into the <code>kept</code> state in sync (the task no longer writes logs, but the record is kept)</td>
+</tr>
+<tr>
+<td><strong>D11 commit log</strong></td>
+<td>writes a system marker &quot;Worktree wt_xxx kept for manual handover at <path>&quot;, so the agent later looking at ContextCommit knows this happened</td>
+</tr>
+<tr>
+<td><strong>D12 tools</strong></td>
+<td>the UI directly calls the ws action (not an agent tool) <code>worktree_keep(worktree_id)</code>; the agent tool can also expose worktree_keep, but low priority</td>
+</tr>
+<tr>
+<td><strong>D13 UI</strong></td>
+<td>the chip changes to &quot;kept — open in editor&quot;, clicking copies the path</td>
+</tr>
+<tr>
+<td><strong>D14 edge</strong></td>
+<td>the user later deletes the worktree directory manually → next OpenProgram startup, list_worktrees detects the path no longer exists → marks discarded (D14)</td>
+</tr>
+<tr>
+<td><strong>D15 task</strong></td>
+<td>the task also enters a detached state, not affecting new tasks</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="part-3-current-state-vs-target">Part 3. Current State vs Target<a class="header-anchor" href="#part-3-current-state-vs-target">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Current State</th>
+<th>Target</th>
+<th>Gap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Worktree isolation in the user's real repo</td>
+<td>none</td>
+<td>full create/merge/discard</td>
+<td>large</td>
+</tr>
+<tr>
+<td>Agent cwd bound to worktree</td>
+<td>none (runtime uses session-git workdir/)</td>
+<td>ContextVar switching</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>Bash tool passing cwd</td>
+<td>LocalBackend accepts it but the bash function doesn't pass it</td>
+<td>go through ContextVar</td>
+<td>small</td>
+</tr>
+<tr>
+<td>Edit/Write/Read checking worktree boundary</td>
+<td>none (only checks absolute paths)</td>
+<td>warning without blocking</td>
+<td>small</td>
+</tr>
+<tr>
+<td>Worktree state machine persistence</td>
+<td>none</td>
+<td>worktrees/<id>.json in session-git</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>UI worktree chip</td>
+<td>none</td>
+<td>chip + panel at the top of the composer</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>Worktree × Task integration</td>
+<td>none (the task system itself is in design)</td>
+<td>task cancel auto-discard</td>
+<td>medium (depends on async-task)</td>
+</tr>
+<tr>
+<td>Sub-agent worktree legacy code</td>
+<td>already refactored away (commit <code>75e430c0</code>)</td>
+<td>not reused</td>
+<td>N/A</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="part-4-change-list">Part 4. Change List<a class="header-anchor" href="#part-4-change-list">#</a></h2>
+<p>In dependency order:</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>File</th>
+<th>Main change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>new <code>openprogram/worktree/types.py</code></td>
+<td><code>Worktree</code> dataclass + <code>WorktreeStatus</code> Enum + serialization</td>
+</tr>
+<tr>
+<td>2</td>
+<td>new <code>openprogram/worktree/manager.py</code></td>
+<td><code>WorktreeManager</code>: create / merge / discard / list / keep; underlying <code>subprocess.run([&quot;git&quot;, &quot;worktree&quot;, ...])</code>; persists to <code>&lt;session-repo&gt;/worktrees/&lt;id&gt;.json</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>new <code>openprogram/worktree/_paths.py</code></td>
+<td>worktree path policy: <code>~/.openprogram/worktrees/&lt;id&gt;-&lt;slug&gt;/</code>; isolation check (D4)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>edit <code>openprogram/agent/_workdir.py</code></td>
+<td><code>apply_default_workdir</code> prefers returning the active worktree path</td>
+</tr>
+<tr>
+<td>5</td>
+<td>edit <code>openprogram/agent/dispatcher.py</code></td>
+<td>at the start of a turn, read session.meta.active_worktree_id → set the <code>_current_worktree_path</code> ContextVar</td>
+</tr>
+<tr>
+<td>6</td>
+<td>edit <code>openprogram/functions/tools/bash/bash.py</code></td>
+<td>call <code>backend.run(cmd, cwd=_current_worktree_path.get())</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>edit <code>openprogram/functions/tools/edit/edit.py</code> + write/read</td>
+<td>warning when path outside worktree (D6)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>new <code>openprogram/functions/tools/worktree/</code></td>
+<td>4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager</td>
+</tr>
+<tr>
+<td>9</td>
+<td>edit <code>openprogram/store/session_store.py</code></td>
+<td>add an <code>active_worktree_id</code> field to session.meta; helpers <code>set_active_worktree</code> / <code>get_active_worktree</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>new <code>openprogram/webui/ws_actions/worktree.py</code></td>
+<td><code>list_worktrees</code> / <code>keep_worktree</code> / <code>discard_worktree</code> (user manual UI operations)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>new <code>web/components/chat/composer/worktree-chip.tsx</code></td>
+<td>chip component + hover panel + Merge/Discard/Keep buttons</td>
+</tr>
+<tr>
+<td>12</td>
+<td>edit <code>web/components/chat/composer/composer.tsx</code></td>
+<td>bring in the chip</td>
+</tr>
+<tr>
+<td>13</td>
+<td>edit ContextCommit item metadata rendering</td>
+<td>tool call items show a worktree_id badge</td>
+</tr>
+<tr>
+<td>14</td>
+<td>edit <code>openprogram/agent/dispatcher.py</code> to write markers</td>
+<td>worktree_create / merge / discard write system nodes into ContextCommit</td>
+</tr>
+<tr>
+<td>15</td>
+<td>(depends on async-task) hook into <code>openprogram/tasks/lifecycle.py</code></td>
+<td>task cancel → <code>WorktreeManager.on_task_cancel</code>; task create can optionally attach a worktree</td>
+</tr>
+<tr>
+<td>16</td>
+<td>Tests</td>
+<td>unit: WorktreeManager (create/merge/discard path checks, isolation check); integration: agent in worktree → merge full flow</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="part-5-key-invariants">Part 5. Key Invariants<a class="header-anchor" href="#part-5-key-invariants">#</a></h2>
+<p>Every one of these must be checked during implementation:</p>
+<ol>
+<li>
+<p><strong>worktree_path is never inside the <code>~/.openprogram/sessions/</code> subtree</strong>
+(isolating OpenProgram's own git; if violated, worktree_create rejects).</p>
+</li>
+<li>
+<p><strong>Zero changes to the main repo after discard</strong>
+<code>git worktree remove --force</code> + <code>git branch -D</code> do not touch source_repo's HEAD
+or working tree. Check: <code>git rev-parse HEAD</code> is identical before and after discard.</p>
+</li>
+<li>
+<p><strong>The worktree does not disappear automatically when a merge fails</strong>
+after a merge_conflict / not_fast_forward error, the worktree status returns to <code>active</code>,
+the directory is kept, letting the agent or user inspect it manually.</p>
+</li>
+<li>
+<p><strong>At most one active worktree per session at any moment</strong>
+session.meta.active_worktree_id is single-valued; if there is already an active worktree at worktree_create time,
+it reports the error <code>already_active</code>, prompting to merge/discard/keep first.</p>
+</li>
+<li>
+<p><strong>The starting cwd of a bash command is always the active worktree_path</strong> (if it exists)
+rather than session-git workdir/; shell state is not persistent across bash calls, each one
+is a fresh subprocess, with cwd reset back to worktree_path.</p>
+</li>
+<li>
+<p><strong>worktree_id appearing in a tool item's metadata = this tool call executed inside that worktree</strong>
+when ContextCommit reads it, it can distinguish &quot;where the change was made&quot; accordingly.</p>
+</li>
+<li>
+<p><strong>The branch of a kept worktree is not deleted</strong>
+only OpenProgram's reference is unbound; in the user's git repository they can still <code>git checkout</code> to this branch.</p>
+</li>
+</ol>
+<hr />
+<h2 id="part-6-out-of-scope-for-this-design">Part 6. Out of Scope for This Design<a class="header-anchor" href="#part-6-out-of-scope-for-this-design">#</a></h2>
+<ul>
+<li><strong>Remote push</strong>: the worktree is local-only; to push the worktree branch to origin, the agent runs
+<code>git push -u origin &lt;branch&gt;</code> via bash itself. worktree_merge does not push either.</li>
+<li><strong>cherry-pick / rebase between worktrees</strong>: complex semantics, left for the agent to handle via bash itself.</li>
+<li><strong>conflict resolution UI</strong>: on merge conflicts OpenProgram does not provide a visual mergetool;
+the agent uses edit to modify files / bash to run git mergetool.</li>
+<li><strong>worktrees across source_repos</strong>: one worktree necessarily corresponds to one source_repo; merging
+worktree changes into another repository is not supported (do it via a bash git patch flow if needed).</li>
+<li><strong>auto-backup before discard</strong>: the <code>~/.openprogram/discarded/</code> archiving mentioned in D9, left as a future enhancement.</li>
+<li><strong>chroot / namespace true sandbox</strong>: D6 is &quot;default cwd lock&quot;, not a sandbox; for hard isolation, go through the
+docker backend.</li>
+<li><strong>auto-cleanup of the active worktree when the session closes</strong>: the active worktree is kept across session
+restarts (after restart, list_worktrees probes, and ones still active are marked kept for the user to handle manually).</li>
+</ul>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/branch-collaboration.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">分支协作设计文档（通信 · 服务 · 合并）</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/agent-call-flow.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent 调用流程（权威设计）</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#part-1-dimensions-the-design-must-consider">Part 1. Dimensions the Design Must Consider</a>
+<a class="lvl-3" href="#d1-what-a-worktree-entity-stores">D1. What a Worktree Entity Stores</a>
+<a class="lvl-3" href="#d2-cwd-switching-mechanism">D2. cwd Switching Mechanism</a>
+<a class="lvl-3" href="#d3-state-machine">D3. State Machine</a>
+<a class="lvl-3" href="#d4-isolation-from-openprogram-session-git">D4. Isolation from OpenProgram session-git</a>
+<a class="lvl-3" href="#d5-where-source_repo-comes-from">D5. Where source_repo Comes From</a>
+<a class="lvl-3" href="#d6-security-permissions">D6. Security / Permissions</a>
+<a class="lvl-3" href="#d7-commits-inside-a-worktree">D7. Commits Inside a Worktree</a>
+<a class="lvl-3" href="#d8-merge-strategy">D8. Merge Strategy</a>
+<a class="lvl-3" href="#d9-discard-semantics">D9. Discard Semantics</a>
+<a class="lvl-3" href="#d10-relationship-between-worktree-and-task">D10. Relationship Between Worktree and Task</a>
+<a class="lvl-3" href="#d11-relationship-between-worktree-and-contextcommit">D11. Relationship Between Worktree and ContextCommit</a>
+<a class="lvl-3" href="#d12-agent-tool-surface">D12. Agent Tool Surface</a>
+<a class="lvl-3" href="#d13-ui-representation">D13. UI Representation</a>
+<a class="lvl-3" href="#d14-errors-edge-cases">D14. Errors / Edge Cases</a>
+<a class="lvl-3" href="#d15-integration-with-async-task">D15. Integration with Async Task</a>
+<a class="" href="#part-2-scenario-dimension">Part 2. Scenario × Dimension</a>
+<a class="lvl-3" href="#scenario-a-single-agent-single-worktree-basic-flow">Scenario A: Single agent, single worktree (basic flow)</a>
+<a class="lvl-3" href="#scenario-b-single-agent-multiple-worktrees-failed-exploration">Scenario B: Single agent, multiple worktrees (failed exploration)</a>
+<a class="lvl-3" href="#scenario-c-concurrent-worktrees-plan-agent-dispatches-3-tasks">Scenario C: Concurrent worktrees (plan agent dispatches 3 tasks)</a>
+<a class="lvl-3" href="#scenario-d-long-running-worktree-user-takeover">Scenario D: Long-running worktree / user takeover</a>
+<a class="" href="#part-3-current-state-vs-target">Part 3. Current State vs Target</a>
+<a class="" href="#part-4-change-list">Part 4. Change List</a>
+<a class="" href="#part-5-key-invariants">Part 5. Key Invariants</a>
+<a class="" href="#part-6-out-of-scope-for-this-design">Part 6. Out of Scope for This Design</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=411d594f"></script>
+</body>
+</html>

@@ -1,54 +1,54 @@
-# Troubleshooting
+# 故障排查
 
-Common gotchas. The full operator runbook for a fresh install /
-upgrade is in [`GETTING_STARTED.md`](GETTING_STARTED.md); this
-page collects the recurring "it doesn't work" cases.
+常见的坑。全新安装 / 升级的完整运维手册在
+[`GETTING_STARTED.md`](GETTING_STARTED.md) 中；本
+页汇总反复出现的"它不工作"场景。
 
 ## "No provider available"
 
-`openprogram providers` shows what's detected. Common causes:
+`openprogram providers` 会显示检测到了哪些 provider。常见原因：
 
-- forgot `claude login` / `codex auth` / `gemini auth login`
-- API key set in a different shell than the one running the worker
-- token expired — re-run the CLI login
+- 忘记执行 `claude login` / `codex auth` / `gemini auth login`
+- API key 设置在了与运行 worker 不同的 shell 中
+- token 过期 —— 重新运行 CLI 登录
 
 ## "command not found: openprogram"
 
-pip install dir not on PATH. Two options:
+pip 安装目录不在 PATH 中。两种方案：
 
 ```bash
-# call the module directly
+# 直接调用模块
 python3 -m openprogram <args>
 
-# or add the user-base bin to PATH (idempotent)
+# 或将 user-base 的 bin 加入 PATH（幂等）
 echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
 ```
 
-## Web UI port in use
+## Web UI 端口被占用
 
-Set one of these env vars before starting the worker:
+启动 worker 前设置以下环境变量之一：
 
 ```bash
-export OPENPROGRAM_WEB_PORT=8101         # frontend (defaults to 18100)
-export OPENPROGRAM_BACKEND_PORT=8102     # FastAPI (defaults to 18109)
+export OPENPROGRAM_WEB_PORT=8101         # 前端（默认 18100）
+export OPENPROGRAM_BACKEND_PORT=8102     # FastAPI（默认 18109）
 ```
 
-Or persist the preference: `openprogram config ui`.
+或持久化该偏好：`openprogram config ui`。
 
-## Local-development install (multi-repo)
+## 本地开发安装（多仓库）
 
-For working on [GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)
-/ [Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness)
-side-by-side with OpenProgram:
+如需在与 OpenProgram 并列的情况下开发
+[GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)
+/ [Research-Agent-Harness](https://github.com/Fzkuji/Research-Agent-Harness)：
 
 ```bash
-pip install -e "$OPENPROGRAM_DIR"                   # always first
-pip install -e "$GUI_HARNESS_DIR"                   # depends on openprogram
+pip install -e "$OPENPROGRAM_DIR"                   # 始终最先安装
+pip install -e "$GUI_HARNESS_DIR"                   # 依赖 openprogram
 pip install -e "$RESEARCH_HARNESS_DIR"
 ```
 
 `openprogram/functions/agentics/{GUI,Research}-Agent-Harness`
-are symlinks — recreate if a repo moves:
+是符号链接 —— 如果仓库移动了需要重新创建：
 
 ```bash
 cd openprogram/functions/agentics
@@ -56,25 +56,25 @@ rm -f GUI-Agent-Harness  && ln -s "$GUI_HARNESS_DIR"      GUI-Agent-Harness
 rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Harness
 ```
 
-`pip install -e` writes absolute paths — rerun it from the new
-location if you rename a parent folder.
+`pip install -e` 写入的是绝对路径 —— 如果你重命名了某个父目录，请
+从新位置重新运行它。
 
-## Worker doesn't start / starts on the wrong port
+## worker 无法启动 / 启动在了错误的端口
 
-`openprogram doctor` runs a fast end-to-end check: Python deps,
-Node bundle, providers, MCP, plugins, ports. Read its output
-before raising an issue.
+`openprogram doctor` 会运行一次快速的端到端检查：Python 依赖、
+Node bundle、provider、MCP、插件、端口。在提 issue 之前先读一遍
+它的输出。
 
-## `python -m openprogram._meta agentics_dir` returns nothing
+## `python -m openprogram._meta agentics_dir` 没有任何返回
 
-The package isn't installed in the active Python. Either run the installer
-(clone OpenProgram + `./scripts/install.sh`) or activate the venv where it is
-installed.
+该包没有安装在当前激活的 Python 中。要么运行安装程序
+（克隆 OpenProgram + `./scripts/install.sh`），要么激活安装了它的
+那个 venv。
 
-## CI says "tests pass" but Mac runs differently
+## CI 显示"tests pass"但 Mac 上表现不同
 
-A handful of tests are explicitly skipped on bare CI runners
-because they need a configured provider in `$HOME`. The skip
-list lives in the test files themselves — search for
-`pytest.mark.skipif`. Dev machines with credentials see the
-full suite.
+有少数测试在裸 CI runner 上被显式跳过，
+因为它们需要 `$HOME` 中配置好的 provider。跳过
+列表就写在测试文件本身中 —— 搜索
+`pytest.mark.skipif`。配有凭据的开发机器会看到
+完整的测试套件。

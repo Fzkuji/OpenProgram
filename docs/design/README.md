@@ -1,18 +1,15 @@
-# Design Documents
+# 设计文档
 
-Current design notes for OpenProgram, grouped by subsystem to mirror the code
-layout under `openprogram/`. Read this index first, then the doc you need.
+OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下的代码布局保持一致。先读本索引，再读你需要的那篇文档。
 
-Each subdirectory collects the designs for one area. Within a group, the doc
-that defines the *current* implementation is listed first; the rest are
-supporting notes / investigations that should not override it.
+每个子目录汇集某一领域的设计。在同一分组内，定义*当前*实现的文档排在最前；其余是支撑性的笔记 / 调研，不应覆盖前者。
 
-## context/ — context engine, commits, tool aging
+## context/ — context 引擎、commit、工具老化
 
 | Doc | Topic |
 |---|---|
-| [`context/context.md`](context/context.md) | Context layer: pipeline + DAG storage + ContextCommit + compaction/render + attach/merge + cross-turn tool + gaps |
-| [`context/context-composition.md`](context/context-composition.md) | Target state: per-call layering (L0/L1/L2) + situational context |
+| [`context/context.md`](context/context.md) | Context 层：pipeline + DAG 存储 + ContextCommit + compaction/render + attach/merge + 跨轮工具 + 缺口 |
+| [`context/context-composition.md`](context/context-composition.md) | 目标状态：按调用分层（L0/L1/L2）+ 情境上下文 |
 
 ## memory/ — 记忆系统（实体 + 抽象）
 
@@ -47,24 +44,24 @@ supporting notes / investigations that should not override it.
 > 论文/生产级内容（离线回放验证、对抗安全、评估骨架）已归档在
 > `proactive/_research_archive/`，以后做加固再取回。
 
-## runtime/ — agent execution, DAG, async, revert, controllability
+## runtime/ — agent 执行、DAG、异步、回退、可控性
 
 | Doc | Topic |
 |---|---|
-| [`runtime/runtime.md`](runtime/runtime.md) | Runtime API behaviour (see also [`../api/runtime.md`](../api/runtime.md)) |
+| [`runtime/runtime.md`](runtime/runtime.md) | Runtime API 行为（另见 [`../api/runtime.md`](../api/runtime.md)） |
 | [`runtime/user-input-requests.md`](runtime/operations/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
 | [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
-| [`runtime/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree behaviour |
-| [`runtime/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | Async task lifecycle |
-| [`runtime/streaming-resume.md`](runtime/operations/streaming-resume.md) | Streaming + resume |
-| [`runtime/file-management.md`](runtime/operations/file-management.md) | Revert layers (commit / worktree) |
-| [`runtime/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | Multi-agent revert TODO |
+| [`runtime/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree 行为 |
+| [`runtime/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | 异步任务生命周期 |
+| [`runtime/streaming-resume.md`](runtime/operations/streaming-resume.md) | 流式 + 恢复 |
+| [`runtime/file-management.md`](runtime/operations/file-management.md) | 回退层（commit / worktree） |
+| [`runtime/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | 多 agent 回退 TODO |
 | [`runtime/session-dag.md`](runtime/dag/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / render_context）+ 两路径合并设计（8 步全完成） |
-| [`runtime/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher split design |
+| [`runtime/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher 拆分设计 |
 
-## providers/ — LLM providers, credentials, model catalog, thinking/effort
+## providers/ — LLM provider、凭证、模型目录、thinking/effort
 
 | Doc | Topic |
 |---|---|
@@ -72,68 +69,68 @@ supporting notes / investigations that should not override it.
 | [`providers/models/models.md`](providers/models/models.md) | 模型目录最终设计 |
 | [`providers/models/thinking-effort.md`](providers/models/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
 | [`providers/auth/claude-code-direct-oauth.md`](providers/auth/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
-| [`providers/auth/credential-validation-unification.md`](providers/auth/credential-validation-unification.md) | Unified credential validation |
+| [`providers/auth/credential-validation-unification.md`](providers/auth/credential-validation-unification.md) | 统一凭证校验 |
 | [`providers/auth/unified-auth-storage.md`](providers/auth/unified-auth-storage.md) | 统一认证存储 |
 | [`providers/auth/unified-account-management.md`](providers/auth/unified-account-management.md) | 统一账号管理 + 轮换 |
 | [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | 凭证状态重设计 |
-| [`providers/auth/api-key-resolution-unification.md`](providers/auth/api-key-resolution-unification.md) | API key resolution unification |
-| [`providers/reliability/error-retry.md`](providers/reliability/error-retry.md) | Error + retry handling |
-| [`providers/reliability/error-taxonomy-propagation.md`](providers/reliability/error-taxonomy-propagation.md) | Error taxonomy + propagation |
-| [`providers/reliability/llm-fault-tolerance.md`](providers/reliability/llm-fault-tolerance.md) | LLM fault tolerance（调研） |
-| [`providers/reliability/error-and-timeout-mechanism.html`](providers/reliability/error-and-timeout-mechanism.html) | Error + timeout mechanism (rendered) |
+| [`providers/auth/api-key-resolution-unification.md`](providers/auth/api-key-resolution-unification.md) | API key 解析统一 |
+| [`providers/reliability/error-retry.md`](providers/reliability/error-retry.md) | 错误 + 重试处理 |
+| [`providers/reliability/error-taxonomy-propagation.md`](providers/reliability/error-taxonomy-propagation.md) | 错误分类 + 传播 |
+| [`providers/reliability/llm-fault-tolerance.md`](providers/reliability/llm-fault-tolerance.md) | LLM 容错（调研） |
+| [`providers/reliability/error-and-timeout-mechanism.html`](providers/reliability/error-and-timeout-mechanism.html) | 错误 + 超时机制（已渲染） |
 
-## function/ — function & tool calling
-
-| Doc | Topic |
-|---|---|
-| [`function/function-calling-unification.md`](function/function-calling-unification.md) | Tool/function calling framework (current) |
-
-> Authoring-facing docs (`@agentic_function` usage, function metadata,
-> tool-calling loop, next-step decision, pure-python helpers) moved to the
-> user guide at [`../agentic-programming/README.md`](../agentic-programming/README.md).
-
-## cli/ — CLI / TUI, slash commands, ports
+## function/ — function 与工具调用
 
 | Doc | Topic |
 |---|---|
-| [`cli/cli-redesign.md`](cli/cli-redesign.md) | CLI / TUI redesign (schema-driven settings, config panel) — current |
-| [`cli/ports.md`](cli/ports.md) | Web UI ports (architecture, config, conflict handling) |
-| [`cli/slash-commands.md`](cli/slash-commands.md) | Slash commands |
-| [`cli/slash-commands-references.md`](cli/slash-commands-references.md) | Slash-command reference snapshot |
-| [`cli/drop-run-command.md`](cli/drop-run-command.md) | Function execution path from the Web UI |
-| [`cli/cli-naming.md`](cli/cli-naming.md) | CLI naming |
+| [`function/function-calling-unification.md`](function/function-calling-unification.md) | 工具/函数调用框架（当前） |
 
-## channels/ — messaging channels
+> 面向 authoring 的文档（`@agentic_function` 用法、函数元数据、
+> 工具调用循环、下一步决策、纯 python 辅助）已移至
+> 用户指南 [`../agentic-programming/README.md`](../agentic-programming/README.md)。
 
-| Doc | Topic |
-|---|---|
-| [`channels/channel-design.md`](channels/channel-design.md) | Channel design (current) |
-| [`channels/channel-audit.md`](channels/channel-audit.md) | Channel audit / reference snapshot |
-
-## ui/ — surfaces, indicators, attachments, GUI agent
+## cli/ — CLI / TUI、斜杠命令、端口
 
 | Doc | Topic |
 |---|---|
-| [`ui/surface-system.md`](ui/surface-system.md) | Surface system |
-| [`ui/indicator-dots.md`](ui/indicator-dots.md) | Indicator dots |
-| [`ui/attachment-handling.md`](ui/attachment-handling.md) | Attachment handling ([rendered](ui/attachment-handling.html)) |
+| [`cli/cli-redesign.md`](cli/cli-redesign.md) | CLI / TUI 重设计（schema 驱动的设置、配置面板）—— 当前 |
+| [`cli/ports.md`](cli/ports.md) | Web UI 端口（架构、配置、冲突处理） |
+| [`cli/slash-commands.md`](cli/slash-commands.md) | 斜杠命令 |
+| [`cli/slash-commands-references.md`](cli/slash-commands-references.md) | 斜杠命令参考快照 |
+| [`cli/drop-run-command.md`](cli/drop-run-command.md) | 从 Web UI 触发的函数执行路径 |
+| [`cli/cli-naming.md`](cli/cli-naming.md) | CLI 命名 |
+
+## channels/ — 消息通道
+
+| Doc | Topic |
+|---|---|
+| [`channels/channel-design.md`](channels/channel-design.md) | 通道设计（当前） |
+| [`channels/channel-audit.md`](channels/channel-audit.md) | 通道审计 / 参考快照 |
+
+## ui/ — surface、指示点、附件、GUI agent
+
+| Doc | Topic |
+|---|---|
+| [`ui/surface-system.md`](ui/surface-system.md) | Surface 系统 |
+| [`ui/indicator-dots.md`](ui/indicator-dots.md) | 指示点 |
+| [`ui/attachment-handling.md`](ui/attachment-handling.md) | 附件处理（[已渲染](ui/attachment-handling.html)） |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer 交互模式 |
-| [`ui/gui-agent-context.md`](ui/gui-agent-context.md) | GUI agent context flow |
+| [`ui/gui-agent-context.md`](ui/gui-agent-context.md) | GUI agent 上下文流转 |
 
-## integrations/ — MCP, skills/plugins, harness standard
+## integrations/ — MCP、skills/plugins、harness 标准
 
 | Doc | Topic |
 |---|---|
-| [`integrations/harness-standard.md`](integrations/harness-standard.md) | Harness standard (plug-in + auto-detect); install: [`../installing-harnesses.md`](../installing-harnesses.md) |
-| [`integrations/mcp-integration.md`](integrations/mcp-integration.md) | MCP integration |
-| [`integrations/skills-and-plugins.md`](integrations/skills-and-plugins.md) | Skills and plugins |
+| [`integrations/harness-standard.md`](integrations/harness-standard.md) | Harness 标准（插件 + 自动探测）；安装：[`../installing-harnesses.md`](../installing-harnesses.md) |
+| [`integrations/mcp-integration.md`](integrations/mcp-integration.md) | MCP 集成 |
+| [`integrations/skills-and-plugins.md`](integrations/skills-and-plugins.md) | Skills 与 plugins |
 
 ## extension-gating/
 
-Extension gating design + reference comparison — see
-[`extension-gating/README.md`](extension-gating/README.md).
+扩展门控设计 + 参考对比 —— 见
+[`extension-gating/README.md`](extension-gating/README.md)。
 
-## Cross-cutting
+## 横切关注点
 
 | Doc | Topic |
 |---|---|
@@ -141,10 +138,10 @@ Extension gating design + reference comparison — see
 
 ## archive/
 
-Historical audits, demos, and superseded docs live in
-[`archive/`](archive/) for traceability, not as implementation guidance.
+历史审计、演示以及被取代的文档存放在
+[`archive/`](archive/) 中以便追溯，不作为实现指导。
 
-Recently archived:
+最近归档：
 - `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — 迭代草稿，被 `models.md` 取代
 - `claude-code-meridian-profile.md` — Meridian proxy 已砍，纯历史
 - `*-references.md` — 调研快照/原始研究笔记（slash-commands / tui-upgrade / user-input-requests）
@@ -153,15 +150,14 @@ Recently archived:
 
 [`TODO-doc-code-gaps.md`](TODO-doc-code-gaps.md) — 审计发现的文档与代码不对齐待修项，按优先级排列。修完一条删一条。
 
-## Conventions
+## 约定
 
-- One subdirectory per subsystem, mirroring `openprogram/`. New design docs go
-  into the matching group, not the flat root. Add a group when a topic grows
-  past a couple of files.
-- Each group lists the *current* source first; supporting notes follow.
-- API reference belongs under `docs/api/`; design rationale belongs here.
-- For function-authoring rules, `../agentic-programming/writing-functions/function-metadata.md` is
-  the source of truth — shorter files link to it rather than repeating it.
-- The decorator field is `render_range={"callers": N, "subcalls": M}` —
-  `callers` caps pre-frame nodes by seq, `subcalls` caps in-frame nodes by seq.
-  Both code and docs use these names exclusively.
+- 每个子系统一个子目录，与 `openprogram/` 对应。新设计文档放进匹配的分组，
+  而不是扁平的根目录。当某个主题增长到超过几个文件时，新建一个分组。
+- 每个分组先列*当前*的来源；支撑性笔记随后。
+- API 参考归在 `docs/api/` 下；设计依据归在这里。
+- 函数 authoring 规则以 `../agentic-programming/writing-functions/function-metadata.md` 为
+  准——较短的文件链接到它，而不是重复其内容。
+- 装饰器字段为 `render_range={"callers": N, "subcalls": M}` ——
+  `callers` 按 seq 限制帧前节点数，`subcalls` 按 seq 限制帧内节点数。
+  代码和文档都仅使用这两个名字。

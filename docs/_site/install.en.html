@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/install.html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>安装 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=411d594f">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__" open><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="Documentation" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn" data-title-en="Readme Cn.En" data-href-zh="/docs/README_CN.html" data-href-en="/docs/README_CN.en.html">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
+<a class="navlink active" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc" data-title-en="OpenClaw Integration | OpenClaw 集成指南" data-href-zh="/docs/INTEGRATION_OPENCLAW.html" data-href-en="/docs/INTEGRATION_OPENCLAW.en.html">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness" data-title-en="Harnesses: install, manage, write your own" data-href-zh="/docs/installing-harnesses.html" data-href-en="/docs/installing-harnesses.en.html">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token" data-title-en="Provider Token Tracking" data-href-zh="/docs/provider-token-tracking.html" data-href-en="/docs/provider-token-tracking.en.html">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble" data-title-en="Troubleshooting" data-href-zh="/docs/troubleshooting.html" data-href-en="/docs/troubleshooting.en.html">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming 指南</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html" data-title-en="Agentic Programming Guide" data-href-zh="/docs/agentic-programming/README.html" data-href-en="/docs/agentic-programming/README.en.html">Agentic Programming 指南</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-title-en="@agentic_function calling sub-functions in a fixed order" data-href-zh="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.en.html">@agentic_function 按固定顺序调用子函数</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-title-en="Next-step decision making (decision.make / exec(choices=))" data-href-zh="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/next-step-decision.en.html">下一步决策（decision.make / exec(choices=)）</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-title-en="How the model picks the next step (the tool-call loop)" data-href-zh="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/tool-calling.en.html">模型如何选择下一步（工具调用循环）</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/agentic-programming/writing-functions/agentic-function.html" data-href-en="/docs/agentic-programming/writing-functions/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/agentic-programming/writing-functions/function-metadata.html" data-href-en="/docs/agentic-programming/writing-functions/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html" data-title-en="Pure Python functions" data-href-zh="/docs/agentic-programming/writing-functions/pure-python.html" data-href-en="/docs/agentic-programming/writing-functions/pure-python.en.html">纯 Python 函数</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details>
+<details class="group" data-key="design"><summary class="group-title">设计文档</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html" data-title-en="Design Documents" data-href-zh="/docs/design/README.html" data-href-en="/docs/design/README.en.html">设计文档</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html" data-title-en="Channels" data-href-zh="/docs/design/channels/README.html" data-href-en="/docs/design/channels/README.en.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html" data-title-en="CLI / TUI" data-href-zh="/docs/design/cli/README.html" data-href-en="/docs/design/cli/README.en.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html" data-title-en="CLI Naming Convention" data-href-zh="/docs/design/cli/cli-naming.html" data-href-en="/docs/design/cli/cli-naming.en.html">CLI 命名规范</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html" data-title-en="OpenProgram CLI / TUI Redesign" data-href-zh="/docs/design/cli/cli-redesign.html" data-href-en="/docs/design/cli/cli-redesign.en.html">OpenProgram CLI / TUI 重新设计</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html" data-title-en="Slash Commands — Unified Design" data-href-zh="/docs/design/cli/slash-commands.html" data-href-en="/docs/design/cli/slash-commands.en.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html" data-title-en="TUI upgrade: transcript rendering &amp; interaction" data-href-zh="/docs/design/cli/tui-upgrade.html" data-href-en="/docs/design/cli/tui-upgrade.en.html">TUI 升级：会话记录渲染与交互</a>
+<a class="navlink" href="/docs/design/cli/ports.html" data-title-en="Web UI Ports — Architecture, Configuration, and Conflict Handling" data-href-zh="/docs/design/cli/ports.html" data-href-en="/docs/design/cli/ports.en.html">Web UI 端口 — 架构、配置与冲突处理</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html" data-title-en="Slash Commands — Reference Implementations Snapshot" data-href-zh="/docs/design/cli/slash-commands-references.html" data-href-en="/docs/design/cli/slash-commands-references.en.html">斜杠命令 — 参考实现快照</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html" data-title-en="统一 @agentic_function 执行路径" data-href-zh="/docs/design/cli/drop-run-command.html" data-href-en="/docs/design/cli/drop-run-command.en.html">统一 @agentic_function 执行路径</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html" data-title-en="Config write safety — atomic `update_config`" data-href-zh="/docs/design/cli/config-write-safety.html" data-href-en="/docs/design/cli/config-write-safety.en.html">配置写入安全 —— 原子化的 `update_config`</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html" data-title-en="Context" data-href-zh="/docs/design/context/README.html" data-href-en="/docs/design/context/README.en.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a>
+<a class="navlink" href="/docs/design/memory/memory.html" data-title-en="Memory subsystem" data-href-zh="/docs/design/memory/memory.html" data-href-en="/docs/design/memory/memory.en.html">记忆子系统</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html" data-title-en="Credential-validation unification" data-href-zh="/docs/design/providers/auth/credential-validation-unification.html" data-href-en="/docs/design/providers/auth/credential-validation-unification.en.html">凭证校验统一</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-title-en="Error-taxonomy propagation — structured LLM errors up to the UI" data-href-zh="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-href-en="/docs/design/providers/reliability/error-taxonomy-propagation.en.html">错误分类传播 —— 把结构化的 LLM 错误一路传到 UI</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html" data-title-en="Web UI" data-href-zh="/docs/design/ui/README.html" data-href-en="/docs/design/ui/README.en.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">函数设计</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html" data-title-en="Function Design" data-href-zh="/docs/design/function/README.html" data-href-en="/docs/design/function/README.en.html">函数设计</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/design/function/agentic-function.html" data-href-en="/docs/design/function/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html" data-title-en="Function calling" data-href-zh="/docs/design/function/function-calling-unification.html" data-href-en="/docs/design/function/function-calling-unification.en.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">扩展门控（Extension Gating）</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html" data-title-en="Extension Gating" data-href-zh="/docs/design/extension-gating/README.html" data-href-en="/docs/design/extension-gating/README.en.html">扩展门控（Extension Gating）</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html" data-title-en="Reference-implementation comparison" data-href-zh="/docs/design/extension-gating/reference-comparison.html" data-href-en="/docs/design/extension-gating/reference-comparison.en.html">参考实现对比</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html" data-title-en="Implementation map" data-href-zh="/docs/design/extension-gating/implementation.html" data-href-en="/docs/design/extension-gating/implementation.en.html">实现地图</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html" data-title-en="Future work — explicitly NOT built" data-href-zh="/docs/design/extension-gating/future-work.html" data-href-en="/docs/design/extension-gating/future-work.en.html">未来工作 —— 明确不做的部分</a></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">运行时</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html" data-title-en="Runtime" data-href-zh="/docs/design/runtime/README.html" data-href-en="/docs/design/runtime/README.en.html">运行时</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html" data-title-en="Splitting `agent/dispatcher.py` into a responsibility-scoped package" data-href-zh="/docs/design/runtime/execution/dispatcher-split.html" data-href-en="/docs/design/runtime/execution/dispatcher-split.en.html">将 `agent/dispatcher.py` 拆分为按职责划分的包</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-title-en="Multi-agent + per-turn revert: status" data-href-zh="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-href-en="/docs/design/runtime/operations/multi-agent-revert-todo.en.html">多 agent + 逐 turn 回滚：进展</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html" data-title-en="User input requests: pausing a run to ask the user" data-href-zh="/docs/design/runtime/operations/user-input-requests.html" data-href-en="/docs/design/runtime/operations/user-input-requests.en.html">用户输入请求：暂停运行以向用户提问</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">集成</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html" data-title-en="Integrations" data-href-zh="/docs/design/integrations/README.html" data-href-en="/docs/design/integrations/README.en.html">集成</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html" data-title-en="Harness Standard — how an agentic program plugs into OpenProgram" data-href-zh="/docs/design/integrations/harness-standard.html" data-href-en="/docs/design/integrations/harness-standard.en.html">Harness 标准 —— agentic 程序如何接入 OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb">快速上手 <span class='bc-sep'>›</span> <span class="bc-current">安装</span></nav><h1 id="installing-openprogram">Installing OpenProgram<a class="header-anchor" href="#installing-openprogram">#</a></h1>
+<h2 id="the-model-read-this-first">The model — read this first<a class="header-anchor" href="#the-model-read-this-first">#</a></h2>
+<p><strong>OpenProgram is the host. You install it once, then add agent <em>programs</em> into it.</strong></p>
+<pre><code>OpenProgram  (the host runtime — install this first, anywhere you like)
+└── openprogram/functions/agentics/      ← programs live here, auto-discovered
+    ├── GUI-Agent-Harness/               ← `gui_agent`      (clone in + run its installer)
+    ├── Research-Agent-Harness/          ← `research_agent` (openprogram programs install research)
+    └── Wiki-Agent-Harness/              ← `wiki_agent`     (openprogram programs install wiki)
+</code></pre>
+<p>A program dropped into <code>functions/agentics/</code> is <strong>auto-registered</strong> at launch
+(<code>import_installed_programs()</code> imports its <code>agentics</code> sub-package, firing the
+<code>@agentic_function</code> decorator) — so it shows up in the <strong>web UI</strong> and function
+list with no extra wiring. Install order is therefore always: <strong>OpenProgram
+first, then the program(s).</strong></p>
+<blockquote>
+<p>⚠️ Installing just the Python package is <strong>not</strong> the whole job — it doesn't
+build the web UI (needs <code>npm</code>), fetch the GUI agent's model weight, or warm the
+OCR models. <strong>The install script below is the source of truth</strong> — it does
+everything.</p>
+</blockquote>
+<hr />
+<h2 id="one-command-recommended">One command (recommended)<a class="header-anchor" href="#one-command-recommended">#</a></h2>
+<p>Clone the host wherever you want it to live, then run the installer. The default
+install brings up <strong>everything light</strong>: web UI (built), terminal UI, the Research
+and Wiki agent programs, browser tool + channels. The GUI agent is opt-in (it
+downloads PyTorch): <code>openprogram programs install gui</code>, or <code>openprogram setup</code> →
+programs. <code>--minimal</code> installs a bare host instead.</p>
+<p><strong>macOS / Linux</strong></p>
+<pre><code class="language-bash">git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Fzkuji/OpenProgram
+<span class="nb">cd</span><span class="w"> </span>OpenProgram
+./scripts/install.sh<span class="w">                  </span><span class="c1"># everything · bare host: --minimal</span>
+</code></pre>
+<p><strong>Windows (PowerShell)</strong></p>
+<pre><code class="language-powershell"><span class="n">git</span> <span class="n">clone</span> <span class="n">https</span><span class="p">://</span><span class="n">github</span><span class="p">.</span><span class="n">com</span><span class="p">/</span><span class="n">Fzkuji</span><span class="p">/</span><span class="n">OpenProgram</span>
+<span class="nb">cd </span><span class="n">OpenProgram</span>
+<span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span>                 <span class="c"># everything · bare host: -Minimal</span>
+</code></pre>
+<p>Then just start it — the <strong>first run walks you through provider setup</strong>, then
+opens the chat:</p>
+<pre><code class="language-bash">openprogram<span class="w">                                   </span><span class="c1"># first run = guided provider setup, then chat</span>
+openprogram<span class="w"> </span>web<span class="w">                               </span><span class="c1"># or the browser UI -&gt; http://localhost:18100</span>
+</code></pre>
+<p>The installer is <strong>idempotent</strong> — re-run it any time to repair or update.</p>
+<hr />
+<h2 id="what-the-installer-does">What the installer does<a class="header-anchor" href="#what-the-installer-does">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Action</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Verify / install <strong>Python 3.11+, Node 20+, git</strong></td>
+<td>macOS <code>brew</code> / Linux <code>apt</code>·<code>dnf</code>·<code>pacman</code> / Windows <code>winget</code>. Best-effort.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Python env</strong></td>
+<td>Active <code>venv</code>/conda if any, else creates <code>./.venv</code>. Override: <code>--python</code> / <code>-Python</code>. This is the &quot;wherever you want&quot; location.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>OpenProgram</strong> editable install (<code>pip install -e .</code>)</td>
+<td>The host + base deps.</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Web UI</strong> — <code>npm install &amp;&amp; npm run build</code> in <code>web/</code></td>
+<td>Next.js frontend on <strong>:18100</strong>, backend on <strong>:18109</strong>. <code>--minimal</code> skips the build (the worker builds on first start).</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Ink TUI</strong> — <code>npm install &amp;&amp; npm run build</code> in <code>cli/</code></td>
+<td>POSIX only; Windows uses the Rich REPL. <code>--minimal</code> skips.</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Bundled programs</strong> — <code>openprogram programs install research</code> + <code>wiki</code></td>
+<td>Clones the two light harnesses into <code>functions/agentics/</code> (editable, auto-register; no deps beyond openprogram). The GUI agent is <strong>opt-in</strong> — <code>openprogram programs install gui</code> pulls PyTorch (~300 MB; the CPU wheel is auto-selected on GPU-less Linux, ~3 GB only on CUDA boxes). <code>--minimal</code> skips.</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Browser tool + channels</strong></td>
+<td><code>pip install -e .[all]</code> + <code>playwright install chromium</code> (~150 MB). <code>--minimal</code> skips. Heavier stealth browsers / agent-browser stay opt-in — see <a href="#extras">Extras</a>.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="flags">Flags<a class="header-anchor" href="#flags">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Goal</th>
+<th><code>install.sh</code> (POSIX)</th>
+<th><code>install.ps1</code> (Windows)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bare host (skip web build / TUI / programs / extras)</td>
+<td><code>--minimal</code></td>
+<td><code>-Minimal</code></td>
+</tr>
+<tr>
+<td>Target a specific interpreter</td>
+<td><code>--python /path/python</code></td>
+<td><code>-Python C:\path\python.exe</code></td>
+</tr>
+<tr>
+<td>Stealth browsers (patchright + camoufox)</td>
+<td><code>--stealth</code></td>
+<td><code>-Stealth</code></td>
+</tr>
+<tr>
+<td><code>agent-browser</code> tool</td>
+<td><code>--agent-browser</code></td>
+<td><code>-AgentBrowser</code></td>
+</tr>
+</tbody>
+</table>
+<p>Explicit CUDA/CPU PyTorch for the GUI harness: run its own installer after the
+host install — <code>openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --cuda cu124</code>.</p>
+<hr />
+<h2 id="adding-agent-programs">Adding agent programs<a class="header-anchor" href="#adding-agent-programs">#</a></h2>
+<p>Programs always land in <code>functions/agentics/&lt;Repo&gt;/</code> and auto-register on the next
+start. The <strong>universal</strong> way — works for the catalogued harnesses <em>and your own</em> —
+is to clone a repo into that folder and run its installer:</p>
+<pre><code class="language-bash"><span class="nb">cd</span><span class="w"> </span>openprogram/functions/agentics
+git<span class="w"> </span>clone<span class="w"> </span>&lt;harness-repo&gt;
+<span class="nb">cd</span><span class="w"> </span>&lt;Harness&gt;
+./scripts/install.sh<span class="w">          </span><span class="c1"># if it ships one (Windows: .\scripts\install.ps1)</span>
+</code></pre>
+<p>The <strong>GUI agent</strong> has native deps (PyTorch, detector weight, OCR), so it ships its
+own per-platform installer — use it via the steps above; full guide in its
+<a href="/docs/../openprogram/functions/agentics/GUI-Agent-Harness#1-install">install section</a>.
+(The default <code>./scripts/install.sh</code> already clones it via <code>openprogram programs install all</code>; run the harness's own installer afterwards only if you need its asset setup or an explicit CUDA/CPU torch.)</p>
+<p>For <strong>pure-Python</strong> catalogued harnesses there's a one-line shortcut that clones,
+installs, and registers them for you:</p>
+<pre><code class="language-bash">openprogram<span class="w"> </span>programs<span class="w"> </span>install<span class="w"> </span>research<span class="w">     </span><span class="c1"># or: wiki / all</span>
+openprogram<span class="w"> </span>programs<span class="w"> </span>available<span class="w">            </span><span class="c1"># see install status</span>
+</code></pre>
+<p><code>programs install</code> does a <strong>non-editable</strong> install (deps to site-packages, code runs
+in-tree); it does <strong>not</strong> fetch native assets like the GUI's YOLO weight or OCR — so
+the GUI agent uses its own installer (above) instead.</p>
+<p>After any of these, restart the worker (or hit <strong>Refresh</strong> on the Functions page)
+and the program shows in the web UI. Third-party harnesses work the same way:
+<a href="/docs/installing-harnesses.html">installing-harnesses.md</a>.</p>
+<hr />
+<h2 id="extras">Extras<a class="header-anchor" href="#extras">#</a></h2>
+<p>The <strong>browser tool + chat channels install by default</strong> (the <code>[all]</code> extra), and
+the installer fetches the Playwright Chromium binary for you — nothing to opt into.
+Pass <code>--minimal</code> / <code>-Minimal</code> to skip them (e.g. CI / air-gapped / bandwidth-limited).</p>
+<table>
+<thead>
+<tr>
+<th>Default extra</th>
+<th>Installs</th>
+<th>Post-install (automated)</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>browser (<code>[browser]</code>)</td>
+<td><code>playwright</code></td>
+<td><code>playwright install chromium</code></td>
+<td>~150 MB</td>
+</tr>
+<tr>
+<td>channels (<code>[channels]</code>)</td>
+<td><code>discord.py</code>, <code>slack_sdk</code>, <code>qrcode</code></td>
+<td><em>(set tokens in <code>~/.openprogram/config.json</code>)</em></td>
+<td>small</td>
+</tr>
+</tbody>
+</table>
+<p>Heavier, still opt-in (add the flag):</p>
+<table>
+<thead>
+<tr>
+<th>Flag / extra</th>
+<th>Installs</th>
+<th>Post-install (automated)</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--stealth</code> · <code>[browser-stealth]</code></td>
+<td><code>patchright</code>, <code>camoufox</code></td>
+<td><code>patchright install chromium</code>, <code>camoufox fetch</code></td>
+<td>~350 MB</td>
+</tr>
+<tr>
+<td><code>--agent-browser</code> · <code>[agent-browser]</code></td>
+<td>global npm <code>agent-browser</code></td>
+<td><code>agent-browser install</code></td>
+<td>~150 MB</td>
+</tr>
+</tbody>
+</table>
+<p>Provider SDKs (<code>anthropic</code>, <code>openai</code>, <code>google-genai</code>) ship in the base install —
+no extra needed.</p>
+<hr />
+<h2 id="providers-credentials">Providers / credentials<a class="header-anchor" href="#providers-credentials">#</a></h2>
+<p>At least one provider is required before any chat turn:</p>
+<pre><code class="language-bash">openprogram<span class="w"> </span>providers<span class="w"> </span>login<span class="w"> </span>openai-codex<span class="w">      </span><span class="c1"># ChatGPT subscription (recommended)</span>
+openprogram<span class="w"> </span>providers<span class="w"> </span>login<span class="w"> </span>anthropic<span class="w">          </span><span class="c1"># Claude</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>sk-ant-...<span class="w">             </span><span class="c1"># …or an API key (Windows: $env:ANTHROPIC_API_KEY=&quot;...&quot;)</span>
+</code></pre>
+<p>Auto-adopts an installed Claude Code / Codex / Gemini CLI. Check with <code>openprogram doctor</code>.</p>
+<hr />
+<h2 id="ports">Ports<a class="header-anchor" href="#ports">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Service</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>18100</strong></td>
+<td>Next.js <strong>frontend</strong> — open this</td>
+<td><code>http://localhost:18100</code></td>
+</tr>
+<tr>
+<td><strong>18109</strong></td>
+<td>FastAPI <strong>backend</strong> (API + WebSocket)</td>
+<td>proxied by the frontend; no HTML pages</td>
+</tr>
+</tbody>
+</table>
+<p>Change with <code>openprogram ports --backend &lt;p&gt; --frontend &lt;p&gt;</code>.</p>
+<hr />
+<h2 id="full-dependency-matrix">Full dependency matrix<a class="header-anchor" href="#full-dependency-matrix">#</a></h2>
+<p>Everything beyond <code>pip</code>. The installer handles every &quot;auto&quot; row.</p>
+<h3 id="host-openprogram">Host (OpenProgram)<a class="header-anchor" href="#host-openprogram">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Required for</th>
+<th>How</th>
+<th>Platform</th>
+<th>Auto?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python ≥ 3.11</td>
+<td>everything</td>
+<td>system / pyenv / conda</td>
+<td>all</td>
+<td>check</td>
+</tr>
+<tr>
+<td>Node.js ≥ 20 + npm</td>
+<td>web UI, TUI</td>
+<td><a href="http://nodejs.org">nodejs.org</a> / pkg mgr</td>
+<td>all</td>
+<td>install</td>
+</tr>
+<tr>
+<td>git</td>
+<td>sessions are git repos</td>
+<td>pkg mgr</td>
+<td>all</td>
+<td>install</td>
+</tr>
+<tr>
+<td><code>web/node_modules</code></td>
+<td>web UI (:18100)</td>
+<td><code>npm install</code> in <code>web/</code></td>
+<td>all</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td><code>cli/</code> Ink bundle</td>
+<td>TUI</td>
+<td><code>npm install &amp;&amp; npm run build</code> in <code>cli/</code></td>
+<td>macOS/Linux</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td>provider credential</td>
+<td>any chat turn</td>
+<td><code>openprogram providers login</code> (or settings UI)</td>
+<td>all</td>
+<td>manual</td>
+</tr>
+<tr>
+<td>Playwright / patchright / camoufox / agent-browser</td>
+<td>browser tools</td>
+<td>flags above</td>
+<td>all</td>
+<td>flag</td>
+</tr>
+</tbody>
+</table>
+<h3 id="gui-agent-harness-program-installed-by-default-see-adding-agent-programs">GUI-Agent-Harness program (installed by default — see <a href="#adding-agent-programs">Adding agent programs</a>)<a class="header-anchor" href="#gui-agent-harness-program-installed-by-default-see-adding-agent-programs">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Required for</th>
+<th>How</th>
+<th>Platform</th>
+<th>Auto?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PyTorch (+ torchvision)</td>
+<td>YOLO / OCR</td>
+<td>pip resolves the default build; the harness's own installer auto-detects NVIDIA GPU → CUDA (<code>--cpu</code> / <code>--cuda cuXXX</code> to force)</td>
+<td>all</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td>harness Python deps</td>
+<td>core</td>
+<td><code>pip install -e .[ocr]</code> (ultralytics, opencv, pynput, easyocr)</td>
+<td>all</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td><strong>GPA YOLO weight</strong> <code>model.pt</code></td>
+<td>element detection</td>
+<td><code>Salesforce/GPA-GUI-Detector</code> → <code>~/GPA-GUI-Detector/model.pt</code></td>
+<td>all</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td>EasyOCR models (en + ch_sim)</td>
+<td>text detection</td>
+<td>pre-warmed (<code>~/.EasyOCR/model</code>, ~300 MB)</td>
+<td>Win/Linux</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td><code>xclip</code> (+ wmctrl/xdotool/scrot)</td>
+<td>clipboard, windows</td>
+<td><code>apt install …</code></td>
+<td>Linux</td>
+<td><strong>auto</strong></td>
+</tr>
+<tr>
+<td>Xcode CLT (Swift)</td>
+<td>Apple Vision OCR</td>
+<td><code>xcode-select --install</code></td>
+<td>macOS</td>
+<td>best-effort*</td>
+</tr>
+<tr>
+<td>Screen Recording + Accessibility</td>
+<td>screenshots, clicks</td>
+<td>System Settings → Privacy</td>
+<td>macOS</td>
+<td>manual</td>
+</tr>
+<tr>
+<td>Win32 + PowerShell clipboard</td>
+<td>everything</td>
+<td>built-in</td>
+<td>Windows</td>
+<td>n/a</td>
+</tr>
+</tbody>
+</table>
+<p>* EasyOCR is installed as a cross-platform fallback, so the GUI agent works on
+macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
+<a href="/docs/../openprogram/functions/agentics/GUI-Agent-Harness/docs/install.html">GUI-Agent-Harness/docs/install.md</a>.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting<a class="header-anchor" href="#troubleshooting">#</a></h2>
+<ul>
+<li><strong><code>openprogram web</code> showed a page that won't load / only the backend came up.</strong>
+The Next.js <code>node_modules</code> weren't installed. Re-run the installer, then open
+<strong><a href="http://localhost:18100">http://localhost:18100</a></strong> (not :18109).</li>
+<li><strong><code>pip</code> can't reinstall: <code>WinError 32 … openprogram.exe is being used</code>.</strong>
+Stop the running <code>openprogram web</code> / worker first, then re-run.</li>
+<li><strong><code>gui_agent</code> doesn't appear in the UI.</strong> Restart the worker (or Refresh the
+Functions page). Confirm it's registered: <code>openprogram programs available</code>.</li>
+<li><strong>NVIDIA GPU unused.</strong> The installer auto-detects it; if it picked CPU (no driver at install time, or you passed <code>--cpu</code>): <code>pip uninstall -y torch torchvision</code>, then re-run the installer.</li>
+<li><strong>GPA weight didn't download</strong> (offline): <code>hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector</code>.</li>
+</ul>
+<hr />
+<h2 id="manual-advanced">Manual / advanced<a class="header-anchor" href="#manual-advanced">#</a></h2>
+<pre><code class="language-bash">python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>.<span class="w"> </span>.venv/bin/activate<span class="w">      </span><span class="c1"># Windows: .venv\Scripts\activate</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">                                  </span><span class="c1"># host</span>
+<span class="o">(</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>web<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install<span class="w"> </span><span class="o">)</span><span class="w">                         </span><span class="c1"># web UI</span>
+<span class="o">(</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cli<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w"> </span><span class="o">)</span><span class="w">         </span><span class="c1"># TUI (POSIX)</span>
+<span class="c1"># GUI program (editable, in-tree → auto-registers):</span>
+pip<span class="w"> </span>install<span class="w"> </span>torch<span class="w"> </span>torchvision<span class="w"> </span>--index-url<span class="w"> </span>https://download.pytorch.org/whl/cpu
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;openprogram/functions/agentics/GUI-Agent-Harness[ocr]&quot;</span>
+hf<span class="w"> </span>download<span class="w"> </span>Salesforce/GPA-GUI-Detector<span class="w"> </span>model.pt<span class="w"> </span>--local-dir<span class="w"> </span>~/GPA-GUI-Detector
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import easyocr; easyocr.Reader([&#39;en&#39;,&#39;ch_sim&#39;], gpu=False)&quot;</span>
+</code></pre>
+<p>Multi-repo local development (editing several harnesses side-by-side):
+<a href="/docs/troubleshooting.html#local-development-install-multi-repo">troubleshooting.md → Local-development install</a>.</p>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-12</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/features.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">功能详解</span></a><a class="pn-link pn-next" href="/docs/INTEGRATION_CLAUDE_CODE.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">集成 Claude Code</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#the-model-read-this-first">The model — read this first</a>
+<a class="" href="#one-command-recommended">One command (recommended)</a>
+<a class="" href="#what-the-installer-does">What the installer does</a>
+<a class="" href="#flags">Flags</a>
+<a class="" href="#adding-agent-programs">Adding agent programs</a>
+<a class="" href="#extras">Extras</a>
+<a class="" href="#providers-credentials">Providers / credentials</a>
+<a class="" href="#ports">Ports</a>
+<a class="" href="#full-dependency-matrix">Full dependency matrix</a>
+<a class="lvl-3" href="#host-openprogram">Host (OpenProgram)</a>
+<a class="lvl-3" href="#gui-agent-harness-program-installed-by-default-see-adding-agent-programs">GUI-Agent-Harness program (installed by default — see Adding agent programs)</a>
+<a class="" href="#troubleshooting">Troubleshooting</a>
+<a class="" href="#manual-advanced">Manual / advanced</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=411d594f"></script>
+</body>
+</html>

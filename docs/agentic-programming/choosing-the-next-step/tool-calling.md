@@ -1,89 +1,69 @@
-# How the model picks the next step (the tool-call loop)
+# 模型如何选择下一步（工具调用循环）
 
-This document describes how, within one model call, the LLM "chooses" on
-every round — pick a function to run, or emit text and finish.
+本文描述在一次模型调用内，LLM 在每一轮如何"做出选择"——挑选一个函数去执行，或者输出文本并结束。
 
-> Companion doc: [`function-calling-unification.md`](../../design/function/function-calling-unification.md)
-> covers the design of the whole function-calling framework — the
-> `@function` / `@agentic_function` decorators, the shared registry, 6-layer
-> gating, deferred loading, etc. This page only covers the loop mechanics of
-> the "pick the next step" part.
+> 配套文档：[`function-calling-unification.md`](../../design/function/function-calling-unification.md)
+> 介绍了整个函数调用框架的设计——`@function` / `@agentic_function` 装饰器、共享注册表、6 层
+> 门控、延迟加载等。本页只涵盖"挑选下一步"这部分的循环机制。
 
-## One-sentence summary
+## 一句话总结
 
-Give the LLM a set of tools (`@agentic_function`s or tool dicts); each round
-it returns one assistant message. If the message content **contains a
-`ToolCall`, it picked a function** — the framework executes it, feeds the
-result back into the history, and lets it pick again. If the message is
-**text only, with no `ToolCall`, it picked "finish"** — the text is returned
-as the final reply. The loop runs in
-`openprogram/agent/agent_loop.py::_run_loop`.
+给 LLM 一组工具（`@agentic_function` 或工具 dict）；每一轮它返回一条 assistant 消息。如果消息内容
+**包含 `ToolCall`，说明它挑选了一个函数**——框架执行该函数，把结果回灌进历史，然后让它再次挑选。如果消息
+**只有文本、没有 `ToolCall`，说明它选择了"结束"**——这段文本作为最终回复返回。该循环运行在
+`openprogram/agent/agent_loop.py::_run_loop` 中。
 
-## Entry point: `runtime.exec`
+## 入口：`runtime.exec`
 
-Inside an `@agentic_function`, call
-`runtime.exec(content, tools=..., tool_choice=..., max_iterations=...)`:
+在 `@agentic_function` 内部，调用
+`runtime.exec(content, tools=..., tool_choice=..., max_iterations=...)`：
 
-- `tools` is the menu of functions the LLM may pick from. Each entry can be
-  an `@agentic_function`, a `{"spec":..., "execute":...}` dict, or an object
-  with `.spec` / `.execute`.
-- **Tools are opt-in.** With neither `tools=` nor `toolset=` passed, the LLM
-  gets `None` for tools — a pure reasoning call where the LLM has no function
-  to pick and can only emit text. To let it "pick a function", you must pass
-  `tools=[...]` or `toolset="default"` explicitly. One caveat: a nested
-  `exec` inside a tool body inherits the outer call's tools (via the
-  `_current_tools` contextvar), so it is not automatically tool-free.
-- To trim the tool menu, `exec` also takes the policy parameters
-  `tools_source`, `tools_allow`, and `tools_deny`.
-- With `tools` set, `exec` enters the tool loop until the model returns pure
-  text (or the loop's hard cap is hit — see [Termination](#termination)).
+- `tools` 是 LLM 可挑选的函数菜单。每一项可以是
+  `@agentic_function`、`{"spec":..., "execute":...}` dict，或带有
+  `.spec` / `.execute` 的对象。
+- **工具是按需启用的。** 如果既不传 `tools=` 也不传 `toolset=`，LLM
+  拿到的工具是 `None`——这是一次纯推理调用，LLM 没有函数可挑，只能输出文本。要让它"挑选一个函数"，你必须显式传入
+  `tools=[...]` 或 `toolset="default"`。一个需要注意的点：工具体内部嵌套的
+  `exec` 会继承外层调用的工具（通过
+  `_current_tools` contextvar），因此它不会自动处于无工具状态。
+- 要裁剪工具菜单，`exec` 还接受策略参数
+  `tools_source`、`tools_allow` 和 `tools_deny`。
+- 设置了 `tools` 后，`exec` 进入工具循环，直到模型返回纯文本（或触及循环的硬上限——见 [终止](#termination)）。
 
-`tool_choice` controls whether picking is allowed / required per round —
-`"auto"` (default: the model decides), `"required"` (must pick a function),
-`"none"` (text only), or `{"type": "function", "name": "X"}` to force one
-function. It is forwarded to the provider, which maps it onto its own
-protocol shape (OpenAI, Anthropic, Gemini, and Bedrock are covered).
-`parallel_tool_calls=False` forbids several picks in one round where the
-provider supports the knob. `max_iterations` caps the loop's rounds — the
-effective cap is `min(50, max_iterations)` (see
-[Termination](#termination)). For a forced, structured decision *ending*
-(rather than per-round control), `exec(choices=...)` remains the richer
-tool — see [next-step decision](./next-step-decision.md).
+`tool_choice` 控制每一轮是否允许 / 要求挑选——
+`"auto"`（默认：由模型决定）、`"required"`（必须挑选一个函数）、
+`"none"`（仅文本），或 `{"type": "function", "name": "X"}` 强制某个函数。它会被转发给 provider，由后者映射到自身的协议形态（已覆盖 OpenAI、Anthropic、Gemini 和 Bedrock）。
+在 provider 支持该开关的情况下，`parallel_tool_calls=False` 禁止在一轮内进行多次挑选。`max_iterations` 限制循环的轮数——实际上限是
+`min(50, max_iterations)`（见
+[终止](#termination)）。对于一次强制的、结构化的决策*结尾*（而非逐轮控制），`exec(choices=...)` 仍是更丰富的工具——见 [下一步决策](./next-step-decision.md)。
 
-## Loop body: `_run_loop`
+## 循环主体：`_run_loop`
 
-`_run_loop` has an inner `while has_more_tool_calls or pending_messages`;
-each round:
+`_run_loop` 有一个内层 `while has_more_tool_calls or pending_messages`；每一轮：
 
-1. **Get the model's output for this round** — `_stream_assistant_response`
-   streams from the provider and returns one `AssistantMessage`.
-2. **Check for terminal errors** — `message.stop_reason in ("error",
-   "aborted")` → end the stream immediately, no more looping.
-3. **See what the model picked** —
+1. **获取模型本轮的输出**——`_stream_assistant_response`
+   从 provider 流式读取并返回一条 `AssistantMessage`。
+2. **检查终止性错误**——`message.stop_reason in ("error",
+   "aborted")` → 立即结束流，不再循环。
+3. **查看模型挑选了什么**——
    ```python
    tool_calls = [c for c in message.content if isinstance(c, ToolCall)]
    has_more_tool_calls = len(tool_calls) > 0
    ```
-   - `tool_calls` non-empty → the model picked functions → go to step 4,
-     then back to the top of the loop to pick again.
-   - `tool_calls` empty → the model emitted only `TextContent` this round →
-     `has_more_tool_calls=False` → the inner while exits → that text is the
-     result.
-4. **Execute the picked functions** — `_execute_tool_calls` runs them one by
-   one, producing `ToolResultMessage`s appended to
-   `current_context.messages` and `new_messages`. The history the LLM sees
-   next round now carries the tool results, and it decides what to pick
-   next based on them.
+   - `tool_calls` 非空 → 模型挑选了函数 → 进入第 4 步，然后回到循环顶部再次挑选。
+   - `tool_calls` 为空 → 模型本轮只输出了 `TextContent` →
+     `has_more_tool_calls=False` → 内层 while 退出 → 这段文本就是结果。
+4. **执行被挑选的函数**——`_execute_tool_calls` 逐个执行它们，产出
+   `ToolResultMessage` 并追加到
+   `current_context.messages` 和 `new_messages`。LLM 下一轮看到的历史此时已带上工具结果，它据此决定下一步挑选什么。
 
-In other words: **"picking the next step" is not a separate decision module
-— it is the `ToolCall`-vs-`TextContent` dichotomy inside the assistant
-message the provider returns.** The framework never decides for the model;
-it only parses the output and branches on it.
+换句话说：**"挑选下一步"并不是一个独立的决策模块——它就是 provider 返回的 assistant 消息内部 `ToolCall`
+与 `TextContent` 的二选一。** 框架从不替模型做决定；它只解析输出并据此分支。
 
-## Function execution: `_execute_tool_calls`
+## 函数执行：`_execute_tool_calls`
 
-For each `ToolCall` the model picked, look up the tool in `tools` by
-`tool_call.name`:
+对模型挑选的每一个 `ToolCall`，按
+`tool_call.name` 在 `tools` 中查找该工具：
 
 ```
 tool not found                        → ValueError, produces an is_error result
@@ -92,18 +72,16 @@ tool.execute(...) raises              → caught; the exception text becomes an 
 success                               → result content wrapped in a ToolResultMessage
 ```
 
-Neither validation nor execution exceptions break the loop — they become an
-`is_error=True` tool result fed back to the model, so it can see "wrong
-function / wrong arguments" and correct itself.
+校验异常和执行异常都不会中断循环——它们会变成一个回灌给模型的
+`is_error=True` 工具结果，使模型能看到"函数错了 / 参数错了"并自行纠正。
 
-Parallel picks execute sequentially in order. If `get_steering_messages`
-returns user-queued messages mid-way, the remaining unexecuted `ToolCall`s
-are marked by `_skip_tool_call` as "Skipped due to queued user message" and
-the user messages take priority.
+并行挑选按顺序依次执行。如果中途 `get_steering_messages`
+返回了用户排队的消息，则剩余未执行的 `ToolCall`
+会被 `_skip_tool_call` 标记为 "Skipped due to queued user message"，用户消息优先处理。
 
-## Termination
+## 终止
 
-The inner picking loop stops on any of:
+内层挑选循环在以下任一情况下停止：
 
 ```
 model picked no function (pure text)   normal finish; the text is the result
@@ -112,19 +90,15 @@ inner_iterations > 50                  hard cap MAX_INNER_ITERATIONS against idl
                                        treated as a normal finish, returns what exists
 ```
 
-One continuation condition is easy to miss: the inner `while` also runs on
-`pending_messages`, so queued user (steering) messages keep the loop alive
-even after a pure-text reply.
+有一个容易忽略的延续条件：内层 `while` 也会因
+`pending_messages` 而继续运行，所以即便在一次纯文本回复之后，排队的用户（steering）消息仍会让循环存活。
 
-After the inner loop exits, `get_follow_up_messages` may supply follow-up
-messages which become `pending_messages` for another round; otherwise the
-run ends for good and pushes `AgentEventAgentEnd`.
+内层循环退出后，`get_follow_up_messages` 可能提供后续消息，这些消息成为下一轮的
+`pending_messages`；否则本次运行彻底结束并推送 `AgentEventAgentEnd`。
 
-## Relation to `@agentic_function`
+## 与 `@agentic_function` 的关系
 
-An `@agentic_function` passed as a tool to `exec(tools=[...])` is, in the
-model's eyes, just one pickable function. The model picks it →
-`_execute_tool_calls` invokes its `.execute` → if that function body calls
-`runtime.exec` again, another layer of the same picking loop opens.
-"Picking the next function to run" under nested agentic functions is the
-same mechanism unfolding recursively.
+作为工具传给 `exec(tools=[...])` 的 `@agentic_function`，在模型眼中只是一个可挑选的函数。模型挑选它 →
+`_execute_tool_calls` 调用其 `.execute` → 如果该函数体内又调用了
+`runtime.exec`，则同一挑选循环的又一层被打开。
+在嵌套的 agentic function 下，"挑选下一个要运行的函数"就是同一机制的递归展开。

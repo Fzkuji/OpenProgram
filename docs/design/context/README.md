@@ -1,6 +1,6 @@
 # Context
 
-Context engine — how the working context is assembled, committed, merged, and aged across turns.
+上下文引擎 —— 工作上下文如何在多轮之间被组装、提交、合并与老化。
 
 - [`context.md`](context.md) — 上下文层：pipeline + DAG 存储 + ContextCommit + 压缩/渲染 + attach/merge + 跨轮工具
 - [`context-composition.md`](context-composition.md) — 目标态：按调用分层（L0/L1/L2）+ 情境上下文

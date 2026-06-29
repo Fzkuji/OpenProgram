@@ -1,53 +1,47 @@
-# Getting Started | 快速上手
+# 快速上手
 
-[English](#english) | [中文](#中文)
+## 🚀 3 分钟快速上手
 
----
+### 第 1 步：安装
 
-<a id="english"></a>
-
-## 🚀 3-Minute Quick Start
-
-### Step 1: Install
-
-The one-command installer sets up everything — Python package + web UI + terminal UI + the GUI agent (with its model weight and OCR):
+一条命令的安装脚本会把一切都装好——Python 包 + 网页 UI + 终端 UI + GUI agent（含模型权重和 OCR）：
 
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-Requires Python ≥ 3.11, Node ≥ 20, git. The default install brings up everything light — web UI, TUI, the Research / Wiki agent programs, browser tool + channels; the GUI agent is opt-in (`openprogram programs install gui`, downloads PyTorch); `--minimal` installs a bare host. Full dependency matrix and flags: [docs/install.md](install.md).
+需要 Python ≥ 3.11、Node ≥ 20、git。默认安装会装齐所有轻量内容——网页 UI、TUI、Research / Wiki agent 程序、浏览器工具和 channels；GUI agent 按需安装（`openprogram programs install gui`，会下载 PyTorch）；`--minimal` 只装一个精简 host。完整依赖矩阵与参数见 [docs/install.md](install.md)。
 
-### Step 2: Connect a provider
+### 第 2 步：接入一个 provider
 
-No separate command needed — **the first time you run `openprogram`, it walks you through provider setup** (importing credentials from a logged-in Claude Code / Codex / Gemini CLI, or asking for an API key), then opens the chat. Re-run it any time with `openprogram setup`.
+无需单独执行命令——**第一次运行 `openprogram` 时，它会引导你完成 provider 配置**（从已登录的 Claude Code / Codex / Gemini CLI 导入凭据，或让你输入一个 API key），随后打开对话界面。随时可用 `openprogram setup` 重新运行。
 
-Or set a key manually and skip the wizard:
+也可以手动设置 key 跳过向导：
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...                 # Claude
 export OPENAI_API_KEY=sk-...                        # GPT
 export GOOGLE_API_KEY=...                           # Gemini
-# Or CLI-based (no API key, uses your existing subscription):
+# 或基于 CLI（无需 API key，使用你已有的订阅）：
 #   npm i -g @anthropic-ai/claude-code && claude login
 #   npm i -g @openai/codex && codex auth
 #   npm i -g @google/gemini-cli && gemini auth login
 ```
 
-Sanity-check: `openprogram providers` lists what's detected.
+确认检查：`openprogram providers` 会列出检测到的内容。
 
-### Step 3: Write your first agentic function
+### 第 3 步：写你的第一个 agentic function
 
 ```python
 from openprogram import agentic_function
 from openprogram.providers.registry import create_runtime
 
-runtime = create_runtime()                          # auto-picks the first available provider
+runtime = create_runtime()                          # 自动选用第一个可用的 provider
 
 @agentic_function
 def greet(name):
-    """Greet someone in a creative, fun way."""
+    """用有创意、有趣的方式跟人打招呼。"""
     return runtime.exec(content=[
         {"type": "text", "text": f"Say hello to {name} in a creative way. Keep it short (1-2 sentences)."},
     ])
@@ -59,309 +53,29 @@ print(greet(name="World"))
 python your_script.py
 ```
 
-That's it. Your function now **thinks**.
+就这样。你的函数现在**会思考**了。
 
 ---
 
-## Choose Your Provider
+## 选择你的 Provider
 
-Agentic Programming supports 6 built-in runtimes out of the box. Pick one:
+Agentic Programming 开箱内置 6 个 runtime。选一个：
 
-### Option A: Claude subscription via the Meridian proxy (Recommended for Getting Started)
+### 方案 A：通过 Meridian 代理使用 Claude 订阅（推荐新手上手使用）
 
-**No API key needed.** Uses your Claude Code subscription through a local
-HTTP bridge — the `claude-code` provider talks to a Meridian daemon (which
-routes through the official Claude Code SDK underneath), not a spawned CLI.
-
-**Prerequisites:**
-```bash
-# 1. The Claude Code SDK + login (Meridian routes through it)
-npm install -g @anthropic-ai/claude-code && claude login
-# 2. The Meridian proxy daemon — exposes a local OpenAI-compatible endpoint
-npm install -g @rynfar/meridian && meridian        # listens on :3456
-```
-
-(Override the port with `CLAUDE_MAX_PROXY_URL` if you ran Meridian elsewhere.)
-
-**Usage:**
-```python
-from openprogram.providers import ClaudeCodeRuntime
-
-runtime = ClaudeCodeRuntime(model="haiku")
-```
-
-**Pros:** Zero API-key setup, uses your existing subscription, full
-multimodal content (unlike the older `claude-max-api-proxy`).
-**Cons:** One extra local daemon; slightly slower than a direct API key.
-
----
-
-### Option B: Anthropic API (Claude)
-
-**Best for production.** Direct API access with prompt caching.
-
-**Setup:**
-```bash
-pip install -e .          # anthropic SDK is included by default
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-**Usage:**
-```python
-from openprogram.providers import AnthropicRuntime
-
-runtime = AnthropicRuntime(
-    model="claude-sonnet-4-6",
-    # api_key="sk-ant-..."  # or use ANTHROPIC_API_KEY env var
-)
-```
-
-**Supports:** Text, images (base64/URL/file), prompt caching, system prompts.
-
----
-
-### Option C: OpenAI API (GPT)
-
-**Setup:**
-```bash
-pip install -e .          # openai SDK is included by default
-export OPENAI_API_KEY="sk-..."
-```
-
-**Usage:**
-```python
-from openprogram.providers import OpenAIRuntime
-
-runtime = OpenAIRuntime(
-    model="gpt-4o",
-    # api_key="sk-..."  # or use OPENAI_API_KEY env var
-)
-```
-
-**Supports:** Text, images (base64/URL/file), response_format (JSON mode), system prompts.
-
----
-
-### Option D: Google Gemini API
-
-**Setup:**
-```bash
-pip install -e .          # google-genai SDK is included by default
-export GOOGLE_API_KEY="..."
-```
-
-**Usage:**
-```python
-from openprogram.providers import GeminiRuntime
-
-runtime = GeminiRuntime(
-    model="gemini-2.5-flash",
-    # api_key="..."  # or use GOOGLE_API_KEY env var
-)
-```
-
-**Supports:** Text, images (base64/URL/file), system instructions, JSON schema output.
-
----
-
-### Option E: Codex CLI
-
-**No Python API key needed.** Uses the Codex CLI you already signed into.
-
-**Prerequisites:**
-```bash
-# install Codex CLI first, then sign in
-codex login --device-auth
-```
-
-**Usage:**
-```python
-from openprogram.providers import OpenAICodexRuntime
-
-runtime = OpenAICodexRuntime(model="gpt-5.5")
-```
-
-**Pros:** Local CLI workflow, easy to reuse an existing Codex setup.
-**Cons:** Subprocess overhead, text-only.
-
----
-
-### Option F: Gemini CLI
-
-**No Python API key needed.** Uses the Gemini CLI session on your machine.
-
-**Prerequisites:**
-```bash
-# install Gemini CLI first, then sign in
-gemini
-```
-
-**Usage:**
-```python
-from openprogram.providers import GeminiCLIRuntime
-
-runtime = GeminiCLIRuntime()
-```
-
-**Pros:** Local CLI workflow, no Python-side SDK setup.
-**Cons:** Subprocess overhead, text-only.
-
----
-
-## Complete Working Example
-
-Here's a full script you can copy, paste, and run:
-
-```python
-"""
-Full working example: Task decomposition with Agentic Programming.
-Uses ClaudeCodeRuntime (no API key needed, just `claude` CLI).
-"""
-from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
-
-# Initialize runtime (no API key needed)
-runtime = ClaudeCodeRuntime(model="haiku")
-
-
-@agentic_function
-def analyze(topic):
-    """Analyze a topic and list 3 key points."""
-    return runtime.exec(content=[
-        {"type": "text", "text": f"List exactly 3 key points about: {topic}\nOne line per point, numbered 1-3."},
-    ])
-
-
-@agentic_function
-def elaborate(point):
-    """Elaborate on a single point with one insightful sentence."""
-    return runtime.exec(content=[
-        {"type": "text", "text": f"Elaborate on this point in exactly one insightful sentence:\n{point}"},
-    ])
-
-
-@agentic_function
-def research(topic):
-    """Analyze a topic, then elaborate on each point."""
-    # Step 1: Get key points (Python controls the flow)
-    points_text = analyze(topic=topic)
-    print(f"📋 Key points:\n{points_text}\n")
-
-    # Step 2: Elaborate on each point (Python controls the loop)
-    lines = [l.strip() for l in points_text.split("\n") if l.strip() and l.strip()[0].isdigit()]
-    for line in lines[:3]:
-        detail = elaborate(point=line)
-        print(f"  💡 {detail}\n")
-
-    # Step 3: Return summary (LLM sees full context automatically)
-    return runtime.exec(content=[
-        {"type": "text", "text": "Based on the analysis above, write a one-paragraph summary."},
-    ])
-
-
-if __name__ == "__main__":
-    result = research(topic="Why Rust is gaining popularity in systems programming")
-    print(f"\n📝 Summary:\n{result}")
-```
-
-Save this as `demo.py` and run with `python demo.py`.
-
----
-
-## Key Concepts
-
-| Concept | What It Is |
-|---------|-----------|
-| `@agentic_function` | Decorator. Records each call as a node in the session DAG |
-| `runtime.exec()` | Calls the LLM — context is computed from the DAG automatically |
-| Session DAG | Every user message / LLM call / function call is a node — see `openprogram/context/` |
-| Docstring | Documents the function; the per-call prompt lives in `runtime.exec(content=...)` |
-
-### The Core Pattern
-
-```python
-@agentic_function
-def my_function(param):
-    """This docstring IS the prompt. The LLM reads it."""
-
-    data = do_something_deterministic(param)   # Python: guaranteed execution
-    result = runtime.exec(content=[...])       # LLM: reasoning step
-    return result                              # Python: guaranteed return
-```
-
-**Python controls flow. LLM does reasoning. That's the whole idea.**
-
----
-
-## Next Steps
-
-- 📖 [API Reference](API.md)
-- 🔗 [Claude Code Integration](INTEGRATION_CLAUDE_CODE.md) — Use without any API key
-- 🔗 [OpenClaw Integration](INTEGRATION_OPENCLAW.md) — Use as OpenClaw skill/tool
-- 📂 [Examples](../examples/) — More runnable demos
-
----
-
----
-
-<a id="中文"></a>
-
-## 🚀 3 分钟快速上手
-
-### 第 1 步：安装
-
-一条命令装齐——Python 包 + 网页 UI + 终端 UI + GUI agent（含模型权重/OCR）：
-
-```bash
-git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
-./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
-```
-
-需要 Python ≥ 3.11、Node ≥ 20、git。默认安装包含全部轻量内容——web UI、TUI、Research / Wiki 两个 agent 程序、浏览器工具和 channels；GUI agent 按需安装（`openprogram programs install gui`，需下载 PyTorch）；`--minimal` 只装精简 host。完整依赖矩阵与参数见 [docs/install.md](install.md)。
-
-### 第 2 步：写你的第一个 Agentic Function
-
-```python
-from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
-
-# ClaudeCodeRuntime 使用 Claude Code CLI，不需要 API key
-runtime = ClaudeCodeRuntime(model="haiku")
-
-@agentic_function
-def greet(name):
-    """用创意的方式跟人打招呼。"""
-    return runtime.exec(content=[
-        {"type": "text", "text": f"用创意的方式跟 {name} 打招呼，简短一点（1-2 句话）。"},
-    ])
-
-result = greet(name="World")
-print(result)
-```
-
-### 第 3 步：运行
-
-```bash
-python your_script.py
-```
-
-完成。你的函数现在**会思考**了。
-
----
-
-## 选择 Provider
-
-Agentic Programming 内置 6 个 runtime / provider，选一个：
-
-### 方案 A：Claude Code CLI（推荐新手使用）
-
-**不需要 API key。** 使用你的 Claude Code 订阅。
+**不需要 API key。** 通过本地 HTTP 桥接使用你的 Claude Code 订阅——`claude-code`
+provider 与一个 Meridian daemon 通信（它在底层经由官方 Claude Code SDK 转发），
+而不是去启动一个 CLI 进程。
 
 **前置条件：**
 ```bash
-npm install -g @anthropic-ai/claude-code
-claude login
+# 1. Claude Code SDK + 登录（Meridian 经由它转发）
+npm install -g @anthropic-ai/claude-code && claude login
+# 2. Meridian 代理 daemon——暴露一个本地的 OpenAI 兼容端点
+npm install -g @rynfar/meridian && meridian        # 监听 :3456
 ```
+
+（如果你把 Meridian 跑在别处，用 `CLAUDE_MAX_PROXY_URL` 覆盖端口。）
 
 **用法：**
 ```python
@@ -370,14 +84,15 @@ from openprogram.providers import ClaudeCodeRuntime
 runtime = ClaudeCodeRuntime(model="haiku")
 ```
 
-**优点：** 零配置，用已有订阅。
-**缺点：** 比直接 API 慢（子进程开销），仅支持文本。
+**优点：** 零 API-key 配置，使用你已有的订阅，完整的多模态内容
+（不像旧的 `claude-max-api-proxy`）。
+**缺点：** 多了一个本地 daemon；比直接用 API key 略慢。
 
 ---
 
 ### 方案 B：Anthropic API（Claude）
 
-**适合生产环境。** 直接 API 访问，支持 prompt caching。
+**最适合生产环境。** 直接 API 访问，带 prompt caching。
 
 **配置：**
 ```bash
@@ -391,7 +106,7 @@ from openprogram.providers import AnthropicRuntime
 
 runtime = AnthropicRuntime(
     model="claude-sonnet-4-6",
-    # api_key="sk-ant-..."  # 或者用 ANTHROPIC_API_KEY 环境变量
+    # api_key="sk-ant-..."  # 或使用 ANTHROPIC_API_KEY 环境变量
 )
 ```
 
@@ -413,7 +128,7 @@ from openprogram.providers import OpenAIRuntime
 
 runtime = OpenAIRuntime(
     model="gpt-4o",
-    # api_key="sk-..."  # 或者用 OPENAI_API_KEY 环境变量
+    # api_key="sk-..."  # 或使用 OPENAI_API_KEY 环境变量
 )
 ```
 
@@ -435,7 +150,7 @@ from openprogram.providers import GeminiRuntime
 
 runtime = GeminiRuntime(
     model="gemini-2.5-flash",
-    # api_key="..."  # 或者用 GOOGLE_API_KEY 环境变量
+    # api_key="..."  # 或使用 GOOGLE_API_KEY 环境变量
 )
 ```
 
@@ -445,7 +160,7 @@ runtime = GeminiRuntime(
 
 ### 方案 E：Codex CLI
 
-**不需要在 Python 里配置 API key。** 直接复用你已经登录好的 Codex CLI。
+**不需要 Python 端的 API key。** 使用你已经登录过的 Codex CLI。
 
 **前置条件：**
 ```bash
@@ -460,14 +175,14 @@ from openprogram.providers import OpenAICodexRuntime
 runtime = OpenAICodexRuntime(model="gpt-5.5")
 ```
 
-**优点：** 本地 CLI 工作流友好，适合已经在用 Codex 的环境。
+**优点：** 本地 CLI 工作流，便于复用已有的 Codex 配置。
 **缺点：** 有子进程开销，仅支持文本。
 
 ---
 
 ### 方案 F：Gemini CLI
 
-**不需要在 Python 里配置 API key。** 直接使用你机器上的 Gemini CLI 会话。
+**不需要 Python 端的 API key。** 使用你机器上的 Gemini CLI 会话。
 
 **前置条件：**
 ```bash
@@ -482,19 +197,19 @@ from openprogram.providers import GeminiCLIRuntime
 runtime = GeminiCLIRuntime()
 ```
 
-**优点：** 本地 CLI 工作流友好，不需要额外装 Python SDK。
+**优点：** 本地 CLI 工作流，无需 Python 端的 SDK 配置。
 **缺点：** 有子进程开销，仅支持文本。
 
 ---
 
 ## 完整可运行示例
 
-把下面的脚本复制粘贴就能跑：
+下面是一个完整脚本，复制、粘贴即可运行：
 
 ```python
 """
-完整示例：用 Agentic Programming 做任务分解。
-使用 ClaudeCodeRuntime（不需要 API key，只需 claude CLI）。
+Full working example: Task decomposition with Agentic Programming.
+Uses ClaudeCodeRuntime (no API key needed, just `claude` CLI).
 """
 from openprogram import agentic_function
 from openprogram.providers import ClaudeCodeRuntime
@@ -505,17 +220,17 @@ runtime = ClaudeCodeRuntime(model="haiku")
 
 @agentic_function
 def analyze(topic):
-    """分析一个话题，列出 3 个关键点。"""
+    """分析一个话题并列出 3 个关键点。"""
     return runtime.exec(content=[
-        {"type": "text", "text": f"列出关于以下话题的 3 个关键点：{topic}\n每行一个，编号 1-3。"},
+        {"type": "text", "text": f"List exactly 3 key points about: {topic}\nOne line per point, numbered 1-3."},
     ])
 
 
 @agentic_function
 def elaborate(point):
-    """用一句有洞察力的话展开一个观点。"""
+    """用一句有洞察力的话展开单个观点。"""
     return runtime.exec(content=[
-        {"type": "text", "text": f"用一句有洞察力的话展开这个观点：\n{point}"},
+        {"type": "text", "text": f"Elaborate on this point in exactly one insightful sentence:\n{point}"},
     ])
 
 
@@ -524,7 +239,7 @@ def research(topic):
     """分析一个话题，然后展开每个要点。"""
     # 第 1 步：获取关键点（Python 控制流程）
     points_text = analyze(topic=topic)
-    print(f"📋 关键点：\n{points_text}\n")
+    print(f"📋 Key points:\n{points_text}\n")
 
     # 第 2 步：展开每个要点（Python 控制循环）
     lines = [l.strip() for l in points_text.split("\n") if l.strip() and l.strip()[0].isdigit()]
@@ -534,27 +249,27 @@ def research(topic):
 
     # 第 3 步：返回总结（LLM 自动看到完整上下文）
     return runtime.exec(content=[
-        {"type": "text", "text": "根据上面的分析，写一段总结。"},
+        {"type": "text", "text": "Based on the analysis above, write a one-paragraph summary."},
     ])
 
 
 if __name__ == "__main__":
-    result = research(topic="为什么 Rust 在系统编程领域越来越流行")
-    print(f"\n📝 总结：\n{result}")
+    result = research(topic="Why Rust is gaining popularity in systems programming")
+    print(f"\n📝 Summary:\n{result}")
 ```
 
-保存为 `demo.py`，运行 `python demo.py`。
+保存为 `demo.py`，用 `python demo.py` 运行。
 
 ---
 
 ## 核心概念
 
-| 概念 | 作用 |
-|------|------|
-| `@agentic_function` | 装饰器。每次调用记录为 session DAG 的一个节点 |
-| `runtime.exec()` | 调用 LLM,上下文从 DAG 自动算出 |
-| Session DAG | 每条用户消息 / LLM 调用 / 函数调用都是一个节点,见 `openprogram/context/` |
-| Docstring | 描述函数本身;本次调用的指令写在 `runtime.exec(content=...)` 里 |
+| 概念 | 它是什么 |
+|---------|-----------|
+| `@agentic_function` | 装饰器。将每次调用记录为 session DAG 中的一个节点 |
+| `runtime.exec()` | 调用 LLM——上下文从 DAG 自动算出 |
+| Session DAG | 每条用户消息 / LLM 调用 / 函数调用都是一个节点——见 `openprogram/context/` |
+| Docstring | 描述函数本身；本次调用的 prompt 写在 `runtime.exec(content=...)` 里 |
 
 ### 核心模式
 
@@ -568,13 +283,13 @@ def my_function(param):
     return result                              # Python：确定性返回
 ```
 
-**Python 控制流程。LLM 做推理。就这么简单。**
+**Python 控制流程。LLM 做推理。这就是全部思想。**
 
 ---
 
 ## 下一步
 
 - 📖 [API 参考](API.md)
-- 🔗 [Claude Code 集成指南](INTEGRATION_CLAUDE_CODE.md) — 不需要 API key
+- 🔗 [Claude Code 集成指南](INTEGRATION_CLAUDE_CODE.md) — 无需任何 API key 即可使用
 - 🔗 [OpenClaw 集成指南](INTEGRATION_OPENCLAW.md) — 作为 OpenClaw skill/tool 使用
 - 📂 [示例](../examples/) — 更多可运行的 demo

@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/function/function-calling-unification.html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Function calling · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=411d594f">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="Documentation" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn" data-title-en="Readme Cn.En" data-href-zh="/docs/README_CN.html" data-href-en="/docs/README_CN.en.html">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc" data-title-en="OpenClaw Integration | OpenClaw 集成指南" data-href-zh="/docs/INTEGRATION_OPENCLAW.html" data-href-en="/docs/INTEGRATION_OPENCLAW.en.html">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness" data-title-en="Harnesses: install, manage, write your own" data-href-zh="/docs/installing-harnesses.html" data-href-en="/docs/installing-harnesses.en.html">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token" data-title-en="Provider Token Tracking" data-href-zh="/docs/provider-token-tracking.html" data-href-en="/docs/provider-token-tracking.en.html">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble" data-title-en="Troubleshooting" data-href-zh="/docs/troubleshooting.html" data-href-en="/docs/troubleshooting.en.html">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming 指南</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html" data-title-en="Agentic Programming Guide" data-href-zh="/docs/agentic-programming/README.html" data-href-en="/docs/agentic-programming/README.en.html">Agentic Programming 指南</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-title-en="@agentic_function calling sub-functions in a fixed order" data-href-zh="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.en.html">@agentic_function 按固定顺序调用子函数</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-title-en="Next-step decision making (decision.make / exec(choices=))" data-href-zh="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/next-step-decision.en.html">下一步决策（decision.make / exec(choices=)）</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-title-en="How the model picks the next step (the tool-call loop)" data-href-zh="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/tool-calling.en.html">模型如何选择下一步（工具调用循环）</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/agentic-programming/writing-functions/agentic-function.html" data-href-en="/docs/agentic-programming/writing-functions/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/agentic-programming/writing-functions/function-metadata.html" data-href-en="/docs/agentic-programming/writing-functions/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html" data-title-en="Pure Python functions" data-href-zh="/docs/agentic-programming/writing-functions/pure-python.html" data-href-en="/docs/agentic-programming/writing-functions/pure-python.en.html">纯 Python 函数</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">设计文档</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html" data-title-en="Design Documents" data-href-zh="/docs/design/README.html" data-href-en="/docs/design/README.en.html">设计文档</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html" data-title-en="Channels" data-href-zh="/docs/design/channels/README.html" data-href-en="/docs/design/channels/README.en.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html" data-title-en="CLI / TUI" data-href-zh="/docs/design/cli/README.html" data-href-en="/docs/design/cli/README.en.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html" data-title-en="CLI Naming Convention" data-href-zh="/docs/design/cli/cli-naming.html" data-href-en="/docs/design/cli/cli-naming.en.html">CLI 命名规范</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html" data-title-en="OpenProgram CLI / TUI Redesign" data-href-zh="/docs/design/cli/cli-redesign.html" data-href-en="/docs/design/cli/cli-redesign.en.html">OpenProgram CLI / TUI 重新设计</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html" data-title-en="Slash Commands — Unified Design" data-href-zh="/docs/design/cli/slash-commands.html" data-href-en="/docs/design/cli/slash-commands.en.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html" data-title-en="TUI upgrade: transcript rendering &amp; interaction" data-href-zh="/docs/design/cli/tui-upgrade.html" data-href-en="/docs/design/cli/tui-upgrade.en.html">TUI 升级：会话记录渲染与交互</a>
+<a class="navlink" href="/docs/design/cli/ports.html" data-title-en="Web UI Ports — Architecture, Configuration, and Conflict Handling" data-href-zh="/docs/design/cli/ports.html" data-href-en="/docs/design/cli/ports.en.html">Web UI 端口 — 架构、配置与冲突处理</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html" data-title-en="Slash Commands — Reference Implementations Snapshot" data-href-zh="/docs/design/cli/slash-commands-references.html" data-href-en="/docs/design/cli/slash-commands-references.en.html">斜杠命令 — 参考实现快照</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html" data-title-en="统一 @agentic_function 执行路径" data-href-zh="/docs/design/cli/drop-run-command.html" data-href-en="/docs/design/cli/drop-run-command.en.html">统一 @agentic_function 执行路径</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html" data-title-en="Config write safety — atomic `update_config`" data-href-zh="/docs/design/cli/config-write-safety.html" data-href-en="/docs/design/cli/config-write-safety.en.html">配置写入安全 —— 原子化的 `update_config`</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html" data-title-en="Context" data-href-zh="/docs/design/context/README.html" data-href-en="/docs/design/context/README.en.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a>
+<a class="navlink" href="/docs/design/memory/memory.html" data-title-en="Memory subsystem" data-href-zh="/docs/design/memory/memory.html" data-href-en="/docs/design/memory/memory.en.html">记忆子系统</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html" data-title-en="Credential-validation unification" data-href-zh="/docs/design/providers/auth/credential-validation-unification.html" data-href-en="/docs/design/providers/auth/credential-validation-unification.en.html">凭证校验统一</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-title-en="Error-taxonomy propagation — structured LLM errors up to the UI" data-href-zh="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-href-en="/docs/design/providers/reliability/error-taxonomy-propagation.en.html">错误分类传播 —— 把结构化的 LLM 错误一路传到 UI</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html" data-title-en="Web UI" data-href-zh="/docs/design/ui/README.html" data-href-en="/docs/design/ui/README.en.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
+<details class="group" data-key="design/function" open><summary class="group-title">函数设计</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html" data-title-en="Function Design" data-href-zh="/docs/design/function/README.html" data-href-en="/docs/design/function/README.en.html">函数设计</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/design/function/agentic-function.html" data-href-en="/docs/design/function/agentic-function.en.html">@agentic_function</a>
+<a class="navlink active" href="/docs/design/function/function-calling-unification.html" data-title-en="Function calling" data-href-zh="/docs/design/function/function-calling-unification.html" data-href-en="/docs/design/function/function-calling-unification.en.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">扩展门控（Extension Gating）</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html" data-title-en="Extension Gating" data-href-zh="/docs/design/extension-gating/README.html" data-href-en="/docs/design/extension-gating/README.en.html">扩展门控（Extension Gating）</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html" data-title-en="Reference-implementation comparison" data-href-zh="/docs/design/extension-gating/reference-comparison.html" data-href-en="/docs/design/extension-gating/reference-comparison.en.html">参考实现对比</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html" data-title-en="Implementation map" data-href-zh="/docs/design/extension-gating/implementation.html" data-href-en="/docs/design/extension-gating/implementation.en.html">实现地图</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html" data-title-en="Future work — explicitly NOT built" data-href-zh="/docs/design/extension-gating/future-work.html" data-href-en="/docs/design/extension-gating/future-work.en.html">未来工作 —— 明确不做的部分</a></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">运行时</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html" data-title-en="Runtime" data-href-zh="/docs/design/runtime/README.html" data-href-en="/docs/design/runtime/README.en.html">运行时</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html" data-title-en="Splitting `agent/dispatcher.py` into a responsibility-scoped package" data-href-zh="/docs/design/runtime/execution/dispatcher-split.html" data-href-en="/docs/design/runtime/execution/dispatcher-split.en.html">将 `agent/dispatcher.py` 拆分为按职责划分的包</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-title-en="Multi-agent + per-turn revert: status" data-href-zh="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-href-en="/docs/design/runtime/operations/multi-agent-revert-todo.en.html">多 agent + 逐 turn 回滚：进展</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html" data-title-en="User input requests: pausing a run to ask the user" data-href-zh="/docs/design/runtime/operations/user-input-requests.html" data-href-en="/docs/design/runtime/operations/user-input-requests.en.html">用户输入请求：暂停运行以向用户提问</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">集成</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html" data-title-en="Integrations" data-href-zh="/docs/design/integrations/README.html" data-href-en="/docs/design/integrations/README.en.html">集成</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html" data-title-en="Harness Standard — how an agentic program plugs into OpenProgram" data-href-zh="/docs/design/integrations/harness-standard.html" data-href-en="/docs/design/integrations/harness-standard.en.html">Harness 标准 —— agentic 程序如何接入 OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb">设计文档 <span class='bc-sep'>›</span> 函数设计 <span class='bc-sep'>›</span> <span class="bc-current">Function calling</span></nav><h1 id="function-calling">Function calling<a class="header-anchor" href="#function-calling">#</a></h1>
+<p>How an LLM picks a function from a list, the framework runs it, and the
+result feeds back as the model's next-turn input. For the moment-by-moment
+loop mechanics (how the LLM picks the next tool inside one
+<code>runtime.exec</code> call), see <code>docs/agentic-programming/tool-calling.md</code>.</p>
+<p>The governing principle is <strong>default-on, user-curated</strong>: a registered
+tool is usable with zero configuration; the user narrows from there.
+Exposure is registration-driven (a registered tool is visible unless it
+opts out with <code>expose=False</code>), and a bare <code>runtime.exec</code> gets the full
+exposed set. Tool-call results live only in run history and never enter
+later prompt context, so broad exposure carries no context cost.</p>
+<h2 id="on-the-wire">On the wire<a class="header-anchor" href="#on-the-wire">#</a></h2>
+<p>Same concept the industry calls &quot;tool use&quot; (<code>tools=[]</code> /
+<code>tool_calls=[]</code> in the OpenAI / Anthropic / Gemini APIs). We call the
+<em>act</em> &quot;function calling&quot; (authors write a function, expose it to the
+LLM), but the <em>thing in the API request</em> stays <code>tool</code> to match SDK
+terminology.</p>
+<pre><code>我们(编写姿势)                       LLM API wire / providers/types.py
+─────────────────────────────────────────────────────────────────
+@function 装饰器                       Tool / ToolCall / ToolResultMessage
+@agentic_function 装饰器               tools=[...] 字段
+agent_tools() / get_agent_tool() …    tool_calls=[...] 字段
+</code></pre>
+<p>The boundary is <strong>the wire format</strong>: providers serialize each
+<code>AgentTool</code> in our registry into the API's <code>Tool</code> JSON shape; the
+model's <code>tool_calls</code> come back, get matched by name against our
+registry, and <code>AgentTool.execute(...)</code> runs. Our wrapping classes
+(<code>AgentTool</code> / <code>AgentToolResult</code>) carry runtime extras the wire
+format doesn't have (sidecar gating, sync→async, char-cap, etc.).</p>
+<h2 id="two-decorators-one-registry">Two decorators, one registry<a class="header-anchor" href="#two-decorators-one-registry">#</a></h2>
+<p>Authors get exactly two ways to register an LLM-callable function:</p>
+<pre><code>@function                             @agentic_function
+─────────────────────────────────────────────────────────────────
+Function-implemented decorator        Class-implemented decorator
+&quot;deterministic Python tool&quot;           &quot;tool whose body spawns an
+                                       inner agent loop&quot;
+
+bash, read, write, edit, glob,        research, gui_agent, idea-
+grep, list, todo_*, web_search,       generator, evaluate, the
+web_fetch, pdf, image_*,              memory_* family, the research
+execute_code, apply_patch, …          stages, …
+
+Decoration replaces the Python name   Decoration replaces the name
+with the AgentTool object itself.     with an agentic_function class
+Python code can't call `bash(&quot;ls&quot;)`   instance. Python code CAN call
+directly — the only entry is the     `research(&quot;topic&quot;)` directly
+LLM's tool_call dispatch.             (it triggers __call__ → wrapper);
+                                       LLM can ALSO call via dispatcher.
+                                       Both routes hit the same wrapper.
+</code></pre>
+<p>Both decorators ultimately produce one <code>AgentTool</code> entry in one
+shared registry (<code>openprogram.functions._runtime._registry</code>). The
+<code>_build_and_register_tool</code> helper is the single source of truth for
+&quot;build AgentTool + attach sidecars + register&quot;. Both decorators
+delegate to it; adding a new sidecar attribute or gating layer means
+editing one helper, both decorators pick it up.</p>
+<p>For the design rationale on why these are two decorators (not one)
+and why <code>@agentic_function</code> is a class (not a function), see
+&quot;Why two decorators&quot; below.</p>
+<h2 id="the-shared-kwargs-apply-to-both-decorators">The shared kwargs (apply to both decorators)<a class="header-anchor" href="#the-shared-kwargs-apply-to-both-decorators">#</a></h2>
+<pre><code>kwarg                       what it controls
+─────────────────────────────────────────────────────────────────
+name, description,          model-facing surface (the JSON the
+parameters, label           LLM sees)
+                            auto-derived from def signature +
+                            docstring if omitted (only @function;
+                            @agentic_function reuses
+                            _build_agentic_tool_spec)
+
+max_result_chars,           result truncation — head+tail with
+persist_full, head_ratio,   marker; persist-to-disk for full
+stream_capacity_chars       version; bounded tail accumulator
+                            for streamed on_update
+
+timeout,                    static + LLM-controllable timeout
+timeout_min, timeout_max    (clamp into range, used both as
+                            wait_for budget and passed-through
+                            to the fn body)
+
+cache, cache_ttl            memoize on (name, args)
+
+check_fn                    Layer 4 — process-level &quot;this tool
+                            can run now&quot; gate
+requires_env                Layer 4 — env vars that must be set
+can_use                     Layer 4 — session-level gate
+requires_approval           dispatcher consults before invoking
+
+expose                      Layer 2 — exposure opt-OUT. Default
+                            True: a registered tool is visible to
+                            the model. Set False for internal helpers
+                            that Python calls but the LLM must never
+                            see (e.g. _pick_stage, write_section, the
+                            _merge_* leaves).
+
+toolset                     Layer 2b — preset membership (Hermes-
+                            style: tool also goes into the &quot;research&quot;
+                            preset, etc.). A preset is a NAMED SUBSET
+                            for callers that want fewer than all
+                            exposed tools; it is not the visibility
+                            gate (expose is).
+unsafe_in                   Layer 3 — channel blacklist
+                            (OpenClaw-style: hide on Telegram)
+
+available_if                Layer 1 — registration-time gate.
+                            Decided once at import; False → tool
+                            never enters the registry.
+defer                       Layer 6 — schema-deferred. Tool is
+                            registered but its full JSON Schema is
+                            NOT shipped to the provider unless
+                            the LLM calls tool_search first.
+
+register_globally           If False, build AgentTool + attach
+                            sidecars but skip the global register.
+                            Useful for in-test isolation.
+</code></pre>
+<h2 id="the-gating-layers">The gating layers<a class="header-anchor" href="#the-gating-layers">#</a></h2>
+<p>Tool selection per turn passes through these filters (skeleton from
+Claude Code's <code>tools.ts</code>). Layer 2 is registration-driven exposure
+(matching Claude Code / Hermes).</p>
+<pre><code>Layer  When                  How configured                Effect when rejected
+─────────────────────────────────────────────────────────────────────────────────
+1   at import / decoration  @function(available_if=...)    tool never enters
+                            @agentic_function(             _registry → invisible
+                              available_if=...)            everywhere
+                                                            (Claude Code's
+                                                            `feature() ?
+                                                            require() : []`)
+
+2   exposure (DEFAULT ON)   @function(expose=False)        expose=False → Python-
+                  for internal helpers           callable but never in
+                            — everything else exposed       any LLM tools array.
+                            simply by being registered      DEFAULT is exposed;
+                            (plugins / MCP included).        no allowlist needed.
+
+2b  preset membership       @function(toolset=[...])       a named SUBSET for
+    (optional narrowing)    TOOLSETS / DEFAULT_TOOLS        callers who want fewer
+                            (Hermes includes chain)         than &quot;all exposed&quot;;
+                                                            not a visibility gate.
+
+3   per-session mode         agent_profile.toolset =       this session sees a
+                            &quot;safe&quot;/&quot;research&quot;/&lt;folder&gt;     narrower set than the
+                            (a Functions-page folder        full exposed set
+                             counts as a named subset)
+
+4   per-tool-list build      @function(check_fn=,         filtered out of this
+    isEnabled-style          requires_env=, can_use=)     session's tools list
+                            agent_tools(only_available=    when the runtime gate
+                              True)                         fails (missing key/env)
+
+5   user/policy filter       agent_tools(deny=, allow=)    explicit subtraction /
+                            agent_profile.disabled         intersection by name;
+                            Functions-page off-toggle      attended-mode denies
+                            (tools.disabled) ; attended    ask_user_question
+                              mode
+
+6   prompt construction      @function(defer=True)         schema NOT in provider
+    schema-deferred                                        request; name + 1-liner
+                                                          in deferred catalog;
+                                                          LLM calls tool_search
+                                                          to load schema first
+</code></pre>
+<p>Default behaviour, end to end: a registered tool is <strong>on</strong> (Layer 2
+exposed) unless its author set <code>expose=False</code>; a bare <code>runtime.exec</code>
+gets the <strong>full exposed set</strong>. The framework does not restrict per call —
+narrowing is the <strong>caller's</strong> choice: an agent profile (Layer 3),
+per-call allow/deny, the Functions-page off-toggle (Layer 5), or
+<code>toolset=&quot;none&quot;</code> when a specific call wants no tools at all. The default
+is always &quot;give tools&quot;; a caller that knows it needs none opts out.</p>
+<p>Layers 1–5 mean &quot;the LLM cannot see/use this tool&quot;. Layer 6 means &quot;the
+LLM sees the name in a catalog but must opt-in to load the schema&quot; — the
+only layer that lets the LLM itself choose what to pull in (used to keep
+large MCP/plugin tool sets out of the prompt until needed).</p>
+<h2 id="per-layer-default-policy">Per-layer default policy<a class="header-anchor" href="#per-layer-default-policy">#</a></h2>
+<p>The guiding principle is <strong>default-on, user-curated</strong>: a freshly
+registered tool is usable with zero configuration; every layer's
+default is &quot;don't restrict&quot;. Layers split into two kinds —</p>
+<ul>
+<li><strong>Active (selection) layers</strong> decide <em>what to use</em>. Default =
+&quot;everything exposed&quot;. The user/caller opts IN to a narrower set.
+These are the normal path.</li>
+<li><strong>Passive (veto) layers</strong> decide <em>what must not be used</em>. Default =
+&quot;veto nothing&quot;. They only ever subtract, as a safety/maintenance
+backstop, and stay dormant unless a condition fires.</li>
+</ul>
+<pre><code>Layer  Kind      Default (no config)                Who overrides &amp; when
+──────────────────────────────────────────────────────────────────────────────
+1      —         tool registers (available_if       author: only to gate a
+       gate      absent/True)                        tool behind a feature/env
+                                                     that makes it meaningless
+                                                     otherwise
+
+2      active    EXPOSED. Registered ⇒ visible to    author: expose=False for
+       (expose)  the LLM, including plugin/MCP.      an internal helper the LLM
+                 Bare runtime.exec ⇒ full exposed    must never see. That's the
+                 set. Nothing hidden by default.     ONLY reason to touch L2.
+
+2b     active    no preset forced. Caller gets the   caller/user: pass
+       (preset)  full exposed set unless it names    toolset=&quot;research&quot; / a
+                 a subset.                           Functions-page folder to
+                                                     work with fewer tools, or
+                                                     toolset=&quot;none&quot; when this
+                                                     call wants no tools.
+
+3      passive   no channel/mode restriction.        framework: a tool's
+       (channel) source=None ⇒ nothing filtered.    unsafe_in fires only on
+                                                     that channel (telegram/
+                                                     wechat/plan). profile
+                                                     toolset narrows a session.
+
+4      passive   tool assumed runnable. Only         framework: drops a tool
+       (avail)   checked when                        whose key/env/can_use is
+                 only_available=True (dispatcher     missing — so the LLM never
+                 path).                              sees a tool that would
+                                                     error on call.
+
+5      passive   veto nothing. allow=None,           user: Functions-page
+       (veto)    deny=None, no disabled, attended    off-toggle (persistent,
+                 unless set.                         tools.disabled). system:
+                                                     attended-mode denies
+                                                     ask_user_question;
+                                                     subagent/role caps via
+                                                     allow/deny. Pure subtraction.
+
+6      active*   not deferred. Schema ships in the   author / MCP wiring:
+       (defer)   request by default.                 defer=True for large MCP
+                                                     surfaces → name in catalog,
+                                                     LLM tool_search to load.
+                                                     *active by the LLM, not the
+                                                     user.
+</code></pre>
+<p><strong>L2b (active) vs L5 (passive) — why both exist, why not merged.</strong> They
+look like &quot;user touches tools&quot; twice but are opposite operations: L2b is
+the user/caller <em>choosing a set to use</em> (additive, a folder = &quot;today's
+toolbox&quot;); L5 is <em>blacklisting / capping</em> (subtractive, &quot;this tool is
+broken / this session may not use it&quot;). A veto must be independent of
+selection — e.g. attended-mode must withhold <code>ask_user_question</code> no
+matter which folder is active; you can't rely on the user remembering to
+leave it out of every folder. So the <strong>Functions page surfaces L2b as
+the primary action (organize &amp; pick folders) and L5 as the exception
+(a per-tool off switch)</strong>; the system's own L5 vetoes (attended,
+subagent caps) are code-only and invisible to the user.</p>
+<h2 id="plugins-and-mcp-servers">Plugins and MCP servers<a class="header-anchor" href="#plugins-and-mcp-servers">#</a></h2>
+<p>Because exposure is registration-driven (Layer 2), a plugin or MCP
+server makes its tools available <strong>just by registering them</strong> — same as
+Claude Code and Hermes. There is no second step of editing a central
+allowlist. Concretely:</p>
+<ul>
+<li>A plugin's tools register through the same <code>_build_and_register_tool</code>
+path as built-ins (a plugin calls <code>@function</code> / registers an
+<code>AgentTool</code>), so they land in <code>_registry</code> and are exposed by default.</li>
+<li>MCP-server tools are registered as <code>AgentTool</code> entries on connect and
+marked <code>defer=True</code> (Layer 6) by default, so their names appear in the
+deferred catalog and the LLM loads schemas on demand via
+<code>tool_search</code> — this keeps a large MCP surface out of every prompt
+without making the tools invisible.</li>
+<li>A plugin/MCP tool that should stay internal can still set
+<code>expose=False</code>; a user can still turn any of them off on the Functions
+page (Layer 5). The default, though, is &quot;registered = usable&quot;.</li>
+</ul>
+<h2 id="tool-profiles-functions-page">Tool profiles (Functions page)<a class="header-anchor" href="#tool-profiles-functions-page">#</a></h2>
+<p>A <strong>tool profile</strong> is a named configuration that says &quot;which tools are
+enabled for this conversation&quot;. The Functions page (<code>/functions</code>)
+manages profiles; the chat composer lets the user pick which profile to
+use.</p>
+<h3 id="concepts">Concepts<a class="header-anchor" href="#concepts">#</a></h3>
+<pre><code>tool catalog          all registered, exposed tools — a flat read-only
+(the shelf)           list on the Functions page. Shows every tool with
+                      its name + description. The catalog itself has no
+                      enable/disable controls; it just shows what exists.
+
+tool profile          a named set of tools to use — like a shopping cart
+(the cart)            built from the catalog. Each profile starts with
+                      ALL tools (default-on); the user removes what they
+                      don't want for this scenario.
+
+                      Operations on a profile:
+                        • remove a tool (take it out of this config)
+                        • add a tool (put it back — pick from &quot;not yet
+                          in this profile&quot; list)
+                        • rename / delete the profile
+
+default profile       the built-in &quot;all tools on&quot; profile. Always
+                      exists, cannot be deleted, contains every exposed
+                      tool. Used when no other profile is selected.
+</code></pre>
+<h3 id="user-flow">User flow<a class="header-anchor" href="#user-flow">#</a></h3>
+<ol>
+<li><strong>Functions page</strong> shows the catalog (all tools) and a sidebar of
+profiles. Clicking a profile shows which tools it includes; the
+user adds/removes tools from that profile.</li>
+<li><strong>Chat composer</strong> has a profile picker (e.g. a dropdown next to the
+model selector). Selecting a profile = this conversation uses that
+tool set. Default = &quot;all tools&quot;.</li>
+<li>A profile name resolves wherever <code>toolset=</code> is accepted (Layer
+2b). <code>agent_tools(toolset=&quot;research&quot;)</code> returns the tools in the
+&quot;research&quot; profile. Agent profiles (<code>agent.json</code>) can reference
+a tool profile by name in their <code>tools.toolset</code> field.</li>
+</ol>
+<h3 id="storage">Storage<a class="header-anchor" href="#storage">#</a></h3>
+<p>Profiles are persisted in <code>functions_meta.json</code> (same location as
+<code>programs_meta.json</code>), shape:</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;profiles&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;bash&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;read&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;write&quot;</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="p">],</span><span class="w">   </span><span class="c1">// immutable = all exposed</span>
+<span class="w">    </span><span class="nt">&quot;research&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;web_search&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;web_fetch&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;read&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;write&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;bash&quot;</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;safe&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;read&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;glob&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;grep&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;web_search&quot;</span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;active&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;default&quot;</span><span class="w">   </span><span class="c1">// which profile the chat composer is using</span>
+<span class="p">}</span>
+</code></pre>
+<p>Creating a new profile = copy of &quot;default&quot; (all tools). The user then
+removes tools they don't need for that scenario.</p>
+<h3 id="relationship-to-layer-5-global-disable">Relationship to Layer 5 (global disable)<a class="header-anchor" href="#relationship-to-layer-5-global-disable">#</a></h3>
+<p>A profile says &quot;this conversation uses these tools&quot; (L2b, active
+selection). The per-tool global disable (L5, <code>tools.disabled</code>)
+remains as a separate, rarely-used backstop: if a tool is globally
+disabled it is removed from EVERY profile automatically (the
+resolution pipeline applies L5 after L2b). But the primary user
+action is profile management, not per-tool global toggles.</p>
+<h2 id="user-editable-entry-points">User-editable entry points<a class="header-anchor" href="#user-editable-entry-points">#</a></h2>
+<pre><code>Entry point                     Controls                     Layer  State  Persisted in
+────────────────────────────────────────────────────────────────────────────────────────
+Functions page —                create / edit / delete tool  L2b    ⬜     functions_meta.json
+  tool profiles                 profiles (named tool sets).                 → profiles: {name:[...]}
+                                Add/remove tools to/from a
+                                profile. Default profile =
+                                all tools on.
+
+Chat composer —                 pick which tool profile to   L2b    ⬜     session state
+  profile picker                use for this conversation.                  (sent per-turn with
+  (Tools toggle → expand        Expand the &quot;Tools&quot; chip to                  tools_override)
+   → profile list)              see available profiles +
+                                select one. Default = all.
+
+Chat composer —                 per-turn toggles: Tools      L2b    ✅     per-message
+  &quot;+&quot; menu toggles              on/off + Web Search on/off   /L5           (tools_override)
+
+Agent profile                   per-agent toolset / enabled  L2b    ✅     ~/.openprogram/
+  (tools field)                 / disabled / allowed.        + L5          agents/&lt;id&gt;.json
+                                Can reference a tool profile                → tools: {...}
+                                by name (toolset=&quot;research&quot;)
+
+Attended / unattended           withhold ask_user_question   L5     ✅     session state
+  switch (CLI/TUI/web)          when no human is watching          (system  (attended.py)
+                                                                    auto)
+
+Global tool disable             blacklist a single tool      L5     ✅     config.json:
+  (Functions page / config)     everywhere — rarely used.                   tools.disabled
+                                Overrides any profile.
+
+Author decorator kwargs         expose / available_if /      L1/2/  ✅     in-code
+  @function(...)                defer / toolset / unsafe_in  3/6
+                                / check_fn
+</code></pre>
+<p>Daily use = <strong>tool profiles</strong> on the Functions page (create profiles,
+add/remove tools) + <strong>profile picker</strong> in the chat composer (choose
+which profile this conversation uses). Global disable = rarely-used
+backstop. Agent profile = per-agent override for advanced multi-agent
+setups. Author kwargs = framework internals.</p>
+<h2 id="four-knobs-none-of-the-reference-frameworks-have">Four knobs none of the reference frameworks have<a class="header-anchor" href="#four-knobs-none-of-the-reference-frameworks-have">#</a></h2>
+<p>Beyond the 6-layer cascade, the framework adds four runtime knobs
+neither Claude Code, Hermes, nor OpenClaw ship:</p>
+<pre><code>1. Dynamic per-call result ceiling          _effective_max_chars() +
+   min(per-tool max, 0.3 × ctx_window)      _current_context_window_chars
+   small-context models auto-shrink         ContextVar installed by
+                                            dispatcher per turn
+
+2. LLM-controllable timeout (clamp)         If fn declares `timeout`
+   LLM-passed value clamped into            param AND decorator sets
+   [timeout_min, timeout_max]; both used    timeout_min/max → clamped
+   as wait_for budget and fn param           and passed both places
+
+3. Streaming tail accumulator (bounded)     _TailAccumulator —
+   long-running tools writing through        capacity defaults to
+   on_update can't grow unbounded            max_result_chars, head
+                                            evicted on overflow
+
+4. can_use() session-level gate              Distinct from check_fn
+   process-level &quot;can it run&quot; (check_fn) +  (always-on installable)
+   channel-level &quot;is it allowed here&quot;        and unsafe_in (channel
+   (unsafe_in) + session-level &quot;is this      blacklist)
+   user / role allowed to use it&quot; (can_use)
+</code></pre>
+<h2 id="why-two-decorators-not-one">Why two decorators, not one<a class="header-anchor" href="#why-two-decorators-not-one">#</a></h2>
+<p>The two decorators wrap different <em>kinds of work</em>:</p>
+<ul>
+<li>
+<p><strong>@function</strong> wraps deterministic Python code. The body runs once
+per LLM tool_call and returns its result. No LLM rounds inside.
+Examples: <code>bash</code> runs subprocess, <code>web_search</code> calls an API,
+<code>read</code> reads a file. The decorated function is <strong>only</strong> called
+by the LLM via dispatcher — no Python code does <code>bash(&quot;ls&quot;)</code>
+directly. So it's safe for the decorator to REPLACE the Python
+name with the <code>AgentTool</code> object (the original function is
+gone from the module namespace after decoration).</p>
+</li>
+<li>
+<p><strong>@agentic_function</strong> wraps &quot;an inner agent loop&quot; — the body
+itself runs an LLM via <code>runtime.exec(...)</code> and may call other
+<code>@agentic_function</code>s recursively. These functions are called by
+the LLM <strong>and</strong> also called directly from Python — one
+<code>@agentic_function</code> typically composes several others, e.g.
+<code>research_pipeline</code> calls <code>survey_topic</code> → <code>generate_ideas</code>
+→ <code>rank_ideas</code> as plain Python. So the decorated name must
+<strong>remain a Python callable</strong>. We can't replace it with an
+<code>AgentTool</code> like @function does.</p>
+</li>
+</ul>
+<p>Hence: @agentic_function is a <strong>class decorator</strong>. The decorated
+name becomes a class instance that:</p>
+<ul>
+<li>Has <code>__call__</code> so <code>research(&quot;topic&quot;)</code> runs the wrapper
+(synchronously or as a coroutine, matching the original fn)</li>
+<li>Has a sidecar <code>_agent_tool</code> referencing an <code>AgentTool</code> that
+was registered in the shared registry</li>
+<li>Has methods (<code>.execute</code>, <code>.spec</code>) and attributes
+(<code>.expose</code>, <code>.render_range</code>, <code>._fn</code>, <code>._wrapper</code>) that
+other code (<code>spawn_program</code>, the webui, DAG visualizer) reads</li>
+</ul>
+<p>Both decorators contribute <code>AgentTool</code> entries to one shared
+registry, so the dispatcher / agent_loop / provider adapter only
+ever deal with <code>AgentTool</code> — they don't distinguish the two
+decorators. The split is invisible past the registry layer.</p>
+<p>The same logic could in principle be a single class decorator with
+a <code>mode=&quot;leaf&quot; | &quot;agentic&quot;</code> flag, but that hides the genuine
+semantic difference inside a flag. Two decorators makes the choice
+explicit at the call site: <code>@function</code> on a leaf, <code>@agentic_function</code>
+on an agentic body.</p>
+<h2 id="decoration-registration-trace">Decoration → registration trace<a class="header-anchor" href="#decoration-registration-trace">#</a></h2>
+<h3 id="function-leaf">@function (leaf)<a class="header-anchor" href="#function-leaf">#</a></h3>
+<pre><code>@function(name=&quot;bash&quot;, toolset=[&quot;core&quot;], unsafe_in=[&quot;wechat&quot;], ...)
+def bash(command: str) -&gt; str: ...
+
+→ function(name=&quot;bash&quot;, ...) is called with no fn → returns _inner
+
+→ _inner(bash) is called → re-enters function(bash, name=&quot;bash&quot;, ...)
+
+  Inside function():
+    - parse docstring + type hints (or use overrides)
+    - build _execute async closure that calls bash(**args)
+    - _build_and_register_tool(
+          name=&quot;bash&quot;, description=…, parameters=…, label=…,
+          execute=_execute, check_fn=…, defer=…, toolsets=[…],
+          unsafe_in=[…], register_globally=True)
+      → constructs AgentTool
+      → setattr sidecar attrs (_check_fn / _requires_env / _can_use /
+                                _defer / _requires_approval)
+      → register(agent_tool, toolsets=…, unsafe_in=…)
+        → _registry[&quot;bash&quot;] = agent_tool
+        → _toolset_membership[&quot;bash&quot;] = {&quot;core&quot;}
+        → _unsafe_in_channel[&quot;bash&quot;] = {&quot;wechat&quot;}
+      → returns AgentTool
+    - returns AgentTool
+
+→ module-level name `bash` now points at the AgentTool
+</code></pre>
+<h3 id="agentic_function-composite">@agentic_function (composite)<a class="header-anchor" href="#agentic_function-composite">#</a></h3>
+<pre><code>@agentic_function(name=&quot;research&quot;, toolset=[&quot;research&quot;], expose=&quot;io&quot;, ...)
+def research(topic: str) -&gt; str: ...
+
+→ agentic_function(name=&quot;research&quot;, ...) instantiates the class
+  with fn=None — __init__ stores config + leaves _fn / _wrapper unset
+
+→ Python passes `research` (the function) to the instance:
+  instance(research) → triggers __call__(research)
+
+  Inside __call__:
+    - _fn is None → this is the decorator entry path
+    - delegates to self._attach(research):
+        - Layer 1 (available_if) check
+        - self._fn = research
+        - self._wrapper = self._make_wrapper(research)
+              → wrapper does:
+                  pre-invocation hooks (cancel check),
+                  _inject_runtime (auto-fill the `runtime` kwarg),
+                  DAG entry node,
+                  call research(**args) (which probably runs
+                    runtime.exec(...) for an inner LLM round),
+                  DAG exit node,
+                  return value
+        - functools.update_wrapper(self, research)
+        - _registry[&quot;research&quot;] = self     ← local registry
+                                              (for spawn_program /
+                                               webui instance lookup)
+        - if as_tool=True:
+            self._register_as_tool()
+              → builds _execute closure that funnels through
+                self._wrapper
+              → _build_and_register_tool(
+                    name=&quot;research&quot;, description=…, parameters=…,
+                    label=…, execute=_execute, sidecar kwargs, …)
+              → AgentTool lands in the SAME shared _registry as
+                @function tools
+              → self._agent_tool = the returned AgentTool
+
+  Returns self (the instance, now fully attached).
+
+→ module-level name `research` now points at the agentic_function
+  instance. It's both:
+    - directly callable as Python (research(&quot;topic&quot;) → __call__ →
+      wrapper → fn body)
+    - present in the shared registry as an AgentTool (LLM can
+      tool_call it)
+</code></pre>
+<h2 id="resolution-path-dispatcher-provider">Resolution path (dispatcher → provider)<a class="header-anchor" href="#resolution-path-dispatcher-provider">#</a></h2>
+<pre><code>1. user message arrives → dispatcher.process_user_turn
+
+2. dispatcher seeds _loaded_deferred ContextVar (Layer 6) for this
+   session — starts as empty set
+
+3. dispatcher._resolve_tools(agent_profile, …) → list[AgentTool]
+   → agent_tools(toolset=…, source=req.source, only_available=True)
+     → walks Layers 2/3/4/5 (filter_for + sidecar gating)
+     → does NOT walk Layer 6 (defer is handled later, per provider
+       call)
+
+4. dispatcher computes deferred catalog text from the *initial* set
+   → injects &quot;deferred tools available via ToolSearch:&quot; block into
+     system prompt
+   → NOTE: the tools list passed to agent_loop is still the full
+     list including deferred tools — agent_loop does the per-call
+     split before each provider request
+
+5. agent_loop runs the inner tool-call loop. Each provider call:
+   → split_tools_for_dispatch(context.tools) → (provider_tools, _)
+     - non-deferred + deferred-already-loaded → provider_tools
+     - deferred-not-loaded → omitted from provider_tools
+   → provider receives provider_tools as its `tools=[]` field
+
+6. when LLM emits ToolCall(name=&quot;bash&quot;), agent_loop:
+   → looks up AgentTool by name from context.tools
+     (or via _registry if not found in current list)
+   → validates arguments against the schema
+   → await agent_tool.execute(call_id, args, cancel, on_update)
+
+7. if the LLM called tool_search(select=&quot;cron&quot;):
+   → tool_search.execute mutates _loaded_deferred (adds &quot;cron&quot;)
+   → next iteration of step 5 includes cron in provider_tools
+     → cron's full schema is now in the next request
+   → LLM can call cron normally
+</code></pre>
+<h2 id="where-each-piece-lives">Where each piece lives<a class="header-anchor" href="#where-each-piece-lives">#</a></h2>
+<pre><code>openprogram/functions/_runtime.py
+  AgentTool subclass (from openprogram.agent.types)
+  _registry                                            exposure source
+                                                       (Layer 2: exposed =
+                                                       registered &amp; not
+                                                       expose=False)
+  _toolset_membership, _unsafe_in_channel               Layer 2b/3 data
+  register / get / all_tools / filter_for / reset_registry
+  _build_and_register_tool                              shared helper
+  function decorator                                    user-facing
+  ToolReturn dataclass                                  optional return type
+  _normalize_result, _cap_result_text                   truncation
+  _persist_full_result                                  落盘
+  _effective_max_chars, _current_context_window_chars   dynamic ceiling
+  _TailAccumulator                                      streaming tail
+  _parse_docstring, _build_parameters_schema            schema autoderive
+  _evaluate_approval, tool_requires_approval           approval hook
+  _loaded_deferred (ContextVar)                        Layer 6 state
+  install_loaded_deferred, mark_deferred_loaded
+  split_tools_for_dispatch                              Layer 6 partition
+  deferred_catalog_text                                Layer 6 prompt block
+  tool_search (the AgentTool itself)                   Layer 6 loader
+
+openprogram/functions/_helpers.py
+  is_available (legacy dict, kept for older callers)
+  is_available_agent_tool                              consolidates the
+                                                       Layer 4 triad
+
+openprogram/functions/__init__.py
+  DEFAULT_TOOLS, TOOLSETS                              Layer 2 presets
+  agent_tools, apply_tool_policy                       resolution API
+  get_agent_tool, list_registered_agent_tools,
+  list_available
+  side-effect imports of every subpackage              @function tools register
+                                                       at import time
+
+openprogram/functions/&lt;name&gt;/&lt;name&gt;.py                  one per tool
+  @function on a plain def                             (for the 38 leaf
+                                                       tools shipped today)
+
+openprogram/agentic_programming/function.py
+  class agentic_function                               class decorator
+    __init__ / __call__ / _attach                      attach path
+    _register_as_tool                                  bridge to shared
+                                                       registry
+    _make_wrapper (sync + async variants)              DAG-aware wrapper
+  _build_agentic_tool_spec                              schema builder
+                                                       (filters runtime
+                                                       params, hidden
+                                                       input_meta)
+  _registry (file-local)                                instance-lookup
+                                                       table for
+                                                       spawn_program /
+                                                       webui
+
+openprogram/agent/dispatcher.py
+  install_loaded_deferred(...)                         called at session
+                                                       start
+  agent_tools(toolset=, source=, only_available=True)  Layer 2-5
+  split_tools_for_dispatch + deferred_catalog_text    Layer 6 prompt
+                                                       block
+
+openprogram/agent/agent_loop.py
+  per-provider-call split_tools_for_dispatch          Layer 6 enforcement
+                                                       (Mid-loop loaded
+                                                       schemas appear on
+                                                       the next call)
+
+openprogram/functions/agentics/*/__init__.py           @agentic_function
+                                                       modules (each its
+                                                       own directory).
+                                                       Includes harness
+                                                       symlinks
+                                                       GUI-Agent-Harness,
+                                                       Research-Agent-Harness,
+                                                       Wiki-Agent-Harness.
+</code></pre>
+<h2 id="test-invariants-what-the-suite-locks-down">Test invariants (what the suite locks down)<a class="header-anchor" href="#test-invariants-what-the-suite-locks-down">#</a></h2>
+<p>The unit suite (<code>tests/unit/test_tools_runtime.py</code>,
+<code>tests/unit/test_dispatcher_tools.py</code>) covers:</p>
+<ul>
+<li>Docstring + signature → parameters schema</li>
+<li>Sync / async fn dispatch</li>
+<li>Exception → AgentToolResult(is_error=True) wrap</li>
+<li>Char-cap truncation + persist_full</li>
+<li>on_update callback delivery + tail accumulator</li>
+<li>cancel event propagation</li>
+<li>timeout (asyncio.wait_for)</li>
+<li>requires_approval evaluation</li>
+<li>Registry filter (toolset, source, names)</li>
+<li>All shipped @function tools register at package import</li>
+<li>@function with overrides (name / description / toolset)</li>
+<li>Layer 1 (available_if) skips registration on False / exception</li>
+<li>Layer 6 defer sidecar + tool_search promotes to provider list +
+unknown name handling + catalog text format</li>
+<li>@agentic_function registers as AgentTool by default (as_tool=True)</li>
+<li>@agentic_function(as_tool=False) skips shared registry</li>
+<li>@agentic_function(register_globally=False) skips shared registry
+but still attaches <code>_agent_tool</code></li>
+<li>@agentic_function(available_if=lambda: False) returns raw fn</li>
+</ul>
+<h2 id="stable-boundary">Stable boundary<a class="header-anchor" href="#stable-boundary">#</a></h2>
+<p>The registry/decorator/dispatcher boundary is stable. Work that
+<strong>doesn't</strong> touch it:</p>
+<ul>
+<li>Adding new @function tools (write the function + decorate; it is
+exposed by default — no whitelist edit)</li>
+<li>Adding new @agentic_function harnesses (same)</li>
+<li>Hiding an internal helper from the LLM (<code>expose=False</code> kwarg only)</li>
+<li>Defining a named subset (TOOLSETS dict) or letting the user define one
+(Functions-page folder → functions_meta.json)</li>
+<li>Flagging tools defer / available_if (kwarg only)</li>
+<li>Wiring MCP servers / plugins — they register AgentTool entries the
+normal way and are exposed on registration (mark <code>defer=True</code> for
+large MCP surfaces)</li>
+</ul>
+<p>Future work that <strong>would</strong> require touching the boundary (defer unless
+necessary):</p>
+<ul>
+<li>Adding a new gating layer beyond the ones above</li>
+<li>Changing AgentTool.execute signature</li>
+<li>Splitting / merging the shared registry</li>
+<li>Replacing the deferred-loading mechanism with something other than
+ToolSearch</li>
+</ul>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-17</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/function/agentic-function.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">@agentic_function</span></a><a class="pn-link pn-next" href="/docs/design/function/function-metadata.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">函数元数据规范</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#on-the-wire">On the wire</a>
+<a class="" href="#two-decorators-one-registry">Two decorators, one registry</a>
+<a class="" href="#the-shared-kwargs-apply-to-both-decorators">The shared kwargs (apply to both decorators)</a>
+<a class="" href="#the-gating-layers">The gating layers</a>
+<a class="" href="#per-layer-default-policy">Per-layer default policy</a>
+<a class="" href="#plugins-and-mcp-servers">Plugins and MCP servers</a>
+<a class="" href="#tool-profiles-functions-page">Tool profiles (Functions page)</a>
+<a class="lvl-3" href="#concepts">Concepts</a>
+<a class="lvl-3" href="#user-flow">User flow</a>
+<a class="lvl-3" href="#storage">Storage</a>
+<a class="lvl-3" href="#relationship-to-layer-5-global-disable">Relationship to Layer 5 (global disable)</a>
+<a class="" href="#user-editable-entry-points">User-editable entry points</a>
+<a class="" href="#four-knobs-none-of-the-reference-frameworks-have">Four knobs none of the reference frameworks have</a>
+<a class="" href="#why-two-decorators-not-one">Why two decorators, not one</a>
+<a class="" href="#decoration-registration-trace">Decoration → registration trace</a>
+<a class="lvl-3" href="#function-leaf">@function (leaf)</a>
+<a class="lvl-3" href="#agentic_function-composite">@agentic_function (composite)</a>
+<a class="" href="#resolution-path-dispatcher-provider">Resolution path (dispatcher → provider)</a>
+<a class="" href="#where-each-piece-lives">Where each piece lives</a>
+<a class="" href="#test-invariants-what-the-suite-locks-down">Test invariants (what the suite locks down)</a>
+<a class="" href="#stable-boundary">Stable boundary</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=411d594f"></script>
+</body>
+</html>

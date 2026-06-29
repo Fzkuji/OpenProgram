@@ -1,22 +1,21 @@
-# Pure Python functions
+# 纯 Python 函数
 
-## When to use
+## 何时使用
 
-The task is pure deterministic logic with no need for LLM reasoning. For
-example:
-- Word counting
-- File reading / writing
-- Data format conversion
-- Math
+任务是纯确定性逻辑，不需要 LLM 推理。例如：
+- 字数统计
+- 文件读取 / 写入
+- 数据格式转换
+- 数学运算
 
-## Design points
+## 设计要点
 
-- Do **not** use the `@agentic_function` decorator
-- Do **not** call `runtime.exec()`
-- No `runtime` parameter needed
-- Use a standard Google-style docstring
+- **不要**使用 `@agentic_function` 装饰器
+- **不要**调用 `runtime.exec()`
+- 不需要 `runtime` 参数
+- 使用标准的 Google 风格 docstring
 
-## Examples
+## 示例
 
 ```python
 def word_count(text: str) -> int:
@@ -45,12 +44,11 @@ def extract_emails(text: str) -> list[str]:
     return re.findall(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
 ```
 
-## Context tree
+## 上下文树
 
-Pure Python functions do not appear in the context tree (unless decorated
-with `@traced`).
+纯 Python 函数不会出现在上下文树中（除非用 `@traced` 装饰）。
 
-If you want the call recorded in the execution tree, add `@traced`:
+如果你想把调用记录到执行树中，请加上 `@traced`：
 
 ```python
 from openprogram.agentic_programming.function import traced
@@ -61,14 +59,14 @@ def word_count(text: str) -> int:
     return len(text.split())
 ```
 
-The node records the function name, the bound arguments (with `self`/`cls`/`runtime`/`callback` stripped), and the return value, with `expose` fixed to `'io'`. `async def` functions are also supported.
+该节点会记录函数名、绑定的参数（已剥离 `self`/`cls`/`runtime`/`callback`）以及返回值，`expose` 固定为 `'io'`。`async def` 函数同样受支持。
 
-## Pure Python vs. @agentic_function
+## 纯 Python 与 @agentic_function 对比
 
-| Criterion | Pure Python | @agentic_function |
+| 判断标准 | 纯 Python | @agentic_function |
 |---------|----------|-------------------|
-| Fixed input → fixed output | ✓ | |
-| Needs semantic understanding | | ✓ |
-| Needs natural-language generation | | ✓ |
-| Needs classification / judgement / reasoning | | ✓ |
-| Has a clear algorithm / rule | ✓ | |
+| 固定输入 → 固定输出 | ✓ | |
+| 需要语义理解 | | ✓ |
+| 需要自然语言生成 | | ✓ |
+| 需要分类 / 判断 / 推理 | | ✓ |
+| 有明确的算法 / 规则 | ✓ | |

@@ -1,26 +1,25 @@
-# @agentic_function calling sub-functions in a fixed order
+# @agentic_function 按固定顺序调用子函数
 
-Call the LLM (optionally) while invoking multiple sub-functions in an order
-hard-coded in Python.
+在按 Python 中硬编码的顺序调用多个子函数的同时，（可选地）调用 LLM。
 
-## When to use
+## 适用场景
 
-- Research pipeline: survey → find gaps → generate ideas
-- Paper pipeline: draft → review → revise
-- Data pipeline: collect → clean → analyze
-- Any multi-step task whose step order is known ahead of time
+- 研究流水线：调研 → 找差距 → 生成想法
+- 论文流水线：起草 → 评审 → 修改
+- 数据流水线：采集 → 清洗 → 分析
+- 任何步骤顺序事先已知的多步任务
 
-## Design points
+## 设计要点
 
-- Use the `@agentic_function` decorator
-- Call multiple sub-`@agentic_function`s in a fixed order
-- `exec()` is optional: skip it (pure chaining), or call it multiple times
-  (each call creates one exec child node)
-- Data flows between sub-functions through plain Python variables
-- One function may call `exec()` multiple times AND call any number of other
-  `@agentic_function`s
+- 使用 `@agentic_function` 装饰器
+- 按固定顺序调用多个子 `@agentic_function`
+- `exec()` 是可选的：可以跳过它（纯链式调用），也可以多次调用它
+  （每次调用都会创建一个 exec 子节点）
+- 数据通过普通 Python 变量在子函数之间流动
+- 一个函数既可以多次调用 `exec()`，也可以调用任意多个其他
+  `@agentic_function`
 
-## Example: no exec, pure chaining
+## 示例：不用 exec，纯链式调用
 
 ```python
 from openprogram import agentic_function
@@ -44,7 +43,7 @@ def research_pipeline(task: str, runtime: Runtime) -> dict:
     return {"survey": survey, "gaps": gaps, "ideas": ideas}
 ```
 
-## Example: one exec call to summarise
+## 示例：用一次 exec 调用做汇总
 
 ```python
 @agentic_function
@@ -71,7 +70,7 @@ def research_pipeline(task: str, runtime: Runtime) -> str:
     ])
 ```
 
-## Context tree
+## 上下文树
 
 ```
 research_pipeline
@@ -80,36 +79,34 @@ research_pipeline
 └── generate_ideas     ← step 3
 ```
 
-## Passing data between steps
+## 在步骤之间传递数据
 
-Sub-functions hand data to each other through Python variables — no LLM
-involved:
+子函数通过 Python 变量彼此交接数据 —— 不涉及任何 LLM：
 
 ```python
 survey = survey_topic(topic=task, runtime=runtime)
 gaps = identify_gaps(survey=survey, runtime=runtime)
 ```
 
-The return value of `survey_topic` goes straight in as the input argument of
-`identify_gaps`.
+`survey_topic` 的返回值直接作为 `identify_gaps` 的输入参数传入。
 
-## Inserting Python processing between steps
+## 在步骤之间插入 Python 处理逻辑
 
 ```python
 survey = survey_topic(topic=task, runtime=runtime)
 
-# plain Python processing in between
+# 中间穿插普通的 Python 处理
 key_points = extract_key_points(survey)
 filtered = [p for p in key_points if p["relevance"] > 0.5]
 
 gaps = identify_gaps(survey="\n".join(filtered), runtime=runtime)
 ```
 
-## Error handling
+## 错误处理
 
-The primary mechanism is exception propagation: when a sub-function raises,
-its DAG node is recorded with `status='error'` and the exception re-raises
-into the orchestrator. Catch it there with a plain `try/except`:
+主要机制是异常传播：当子函数抛出异常时，其 DAG 节点会以
+`status='error'` 记录，异常重新抛回到编排器中。在那里用普通的
+`try/except` 捕获它：
 
 ```python
 try:
@@ -120,8 +117,8 @@ except Exception as e:
 gaps = identify_gaps(survey=survey, runtime=runtime)
 ```
 
-Optionally, if a sub-function reports failure in-band (returning an error
-string instead of raising), check the value:
+或者，如果子函数以带内方式上报失败（返回错误字符串而非抛出异常），
+则检查其返回值：
 
 ```python
 survey = survey_topic(topic=task, runtime=runtime)
@@ -131,10 +128,10 @@ if not survey or "error" in survey.lower():
 gaps = identify_gaps(survey=survey, runtime=runtime)
 ```
 
-## Versus "LLM-selected calls"
+## 与“由 LLM 选择调用”的对比
 
-| | Fixed-order calls | [Tool calling](tool-calling.md) / [next-step decision](next-step-decision.md) |
+| | 固定顺序调用 | [工具调用](tool-calling.md) / [下一步决策](next-step-decision.md) |
 |---|-----------|-------------|
-| Who decides the call order | Python code | The LLM |
-| How many sub-functions run | Several, all of them | Tool loop: many, across rounds; decision menu: one |
-| Flexibility | Fixed pipeline | Varies with the task |
+| 由谁决定调用顺序 | Python 代码 | LLM |
+| 运行多少个子函数 | 若干个，全部运行 | 工具循环：跨多轮运行多个；决策菜单：仅一个 |
+| 灵活性 | 固定流水线 | 随任务而变 |

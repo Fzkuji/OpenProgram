@@ -1,24 +1,24 @@
 # Function calling
 
-How an LLM picks a function from a list, the framework runs it, and the
-result feeds back as the model's next-turn input. For the moment-by-moment
-loop mechanics (how the LLM picks the next tool inside one
-``runtime.exec`` call), see ``docs/agentic-programming/tool-calling.md``.
+LLM 如何从列表中挑选一个函数、框架如何运行它，以及运行结果如何作为模型
+下一轮的输入回灌。关于逐步推进的循环机制（LLM 如何在一次
+``runtime.exec`` 调用内挑选下一个工具），参见
+``docs/agentic-programming/tool-calling.md``。
 
-The governing principle is **default-on, user-curated**: a registered
-tool is usable with zero configuration; the user narrows from there.
-Exposure is registration-driven (a registered tool is visible unless it
-opts out with `expose=False`), and a bare `runtime.exec` gets the full
-exposed set. Tool-call results live only in run history and never enter
-later prompt context, so broad exposure carries no context cost.
+主导原则是 **default-on, user-curated**（默认开启、由用户裁剪）：一个已注册的
+工具无需任何配置即可使用；用户从这里开始收窄范围。
+暴露由注册驱动（一个已注册的工具默认可见，除非它通过 `expose=False`
+选择退出），而一次裸 `runtime.exec` 会拿到完整的暴露集合。工具调用结果只
+存在于运行历史中，永远不会进入后续的 prompt 上下文，因此宽泛的暴露不带来
+上下文开销。
 
 ## On the wire
 
-Same concept the industry calls "tool use" (``tools=[]`` /
-``tool_calls=[]`` in the OpenAI / Anthropic / Gemini APIs). We call the
-*act* "function calling" (authors write a function, expose it to the
-LLM), but the *thing in the API request* stays ``tool`` to match SDK
-terminology.
+与业界所称的 "tool use"（OpenAI / Anthropic / Gemini API 中的 ``tools=[]`` /
+``tool_calls=[]``）是同一个概念。我们把这个*动作*称为
+"function calling"（作者编写一个函数，把它暴露给
+LLM），但 *API 请求里的那个东西*仍然叫 ``tool``，以与 SDK
+术语保持一致。
 
 ```
 我们(编写姿势)                       LLM API wire / providers/types.py
@@ -28,16 +28,16 @@ terminology.
 agent_tools() / get_agent_tool() …    tool_calls=[...] 字段
 ```
 
-The boundary is **the wire format**: providers serialize each
-``AgentTool`` in our registry into the API's ``Tool`` JSON shape; the
-model's ``tool_calls`` come back, get matched by name against our
-registry, and ``AgentTool.execute(...)`` runs. Our wrapping classes
-(``AgentTool`` / ``AgentToolResult``) carry runtime extras the wire
-format doesn't have (sidecar gating, sync→async, char-cap, etc.).
+边界就是 **the wire format**（线上格式）：providers 把注册表中的每个
+``AgentTool`` 序列化成 API 的 ``Tool`` JSON 形状；模型的
+``tool_calls`` 返回后，按名字与我们的
+注册表匹配，然后运行 ``AgentTool.execute(...)``。我们的包装类
+（``AgentTool`` / ``AgentToolResult``）携带了线上格式所没有的运行时附加项
+（sidecar 门控、sync→async、字符上限等）。
 
 ## Two decorators, one registry
 
-Authors get exactly two ways to register an LLM-callable function:
+作者注册一个 LLM 可调用函数恰好有两种方式：
 
 ```
 @function                             @agentic_function
@@ -60,16 +60,16 @@ LLM's tool_call dispatch.             (it triggers __call__ → wrapper);
                                        Both routes hit the same wrapper.
 ```
 
-Both decorators ultimately produce one ``AgentTool`` entry in one
-shared registry (``openprogram.functions._runtime._registry``). The
-``_build_and_register_tool`` helper is the single source of truth for
-"build AgentTool + attach sidecars + register". Both decorators
-delegate to it; adding a new sidecar attribute or gating layer means
-editing one helper, both decorators pick it up.
+两个装饰器最终都在同一个共享注册表
+（``openprogram.functions._runtime._registry``）中产生一个 ``AgentTool``
+条目。``_build_and_register_tool`` 辅助函数是
+"构建 AgentTool + 挂载 sidecar + 注册" 的单一事实来源。两个装饰器都
+委托给它；新增一个 sidecar 属性或门控层意味着
+只需修改这一个辅助函数，两个装饰器都会随之生效。
 
-For the design rationale on why these are two decorators (not one)
-and why ``@agentic_function`` is a class (not a function), see
-"Why two decorators" below.
+关于为什么是两个装饰器（而非一个）、以及为什么
+``@agentic_function`` 是一个类（而非函数）的设计理由，参见
+下文 "Why two decorators"。
 
 ## The shared kwargs (apply to both decorators)
 
@@ -132,9 +132,9 @@ register_globally           If False, build AgentTool + attach
 
 ## The gating layers
 
-Tool selection per turn passes through these filters (skeleton from
-Claude Code's `tools.ts`). Layer 2 is registration-driven exposure
-(matching Claude Code / Hermes).
+每一轮的工具选择都会经过这些过滤器（骨架取自
+Claude Code 的 `tools.ts`）。Layer 2 是由注册驱动的暴露
+（与 Claude Code / Hermes 一致）。
 
 ```
 Layer  When                  How configured                Effect when rejected
@@ -180,31 +180,31 @@ Layer  When                  How configured                Effect when rejected
                                                           to load schema first
 ```
 
-Default behaviour, end to end: a registered tool is **on** (Layer 2
-exposed) unless its author set `expose=False`; a bare `runtime.exec`
-gets the **full exposed set**. The framework does not restrict per call —
-narrowing is the **caller's** choice: an agent profile (Layer 3),
-per-call allow/deny, the Functions-page off-toggle (Layer 5), or
-`toolset="none"` when a specific call wants no tools at all. The default
-is always "give tools"; a caller that knows it needs none opts out.
+端到端的默认行为：一个已注册的工具是 **on** 的（Layer 2
+已暴露），除非其作者设置了 `expose=False`；一次裸 `runtime.exec`
+会拿到 **完整的暴露集合**。框架不会按调用做限制——
+收窄是 **调用方** 的选择：一个 agent profile（Layer 3）、
+按调用的 allow/deny、Functions 页的关闭开关（Layer 5），或者
+当某次具体调用完全不想要工具时使用 `toolset="none"`。默认
+始终是 "给工具"；明确知道自己不需要工具的调用方才选择退出。
 
-Layers 1–5 mean "the LLM cannot see/use this tool". Layer 6 means "the
-LLM sees the name in a catalog but must opt-in to load the schema" — the
-only layer that lets the LLM itself choose what to pull in (used to keep
-large MCP/plugin tool sets out of the prompt until needed).
+Layer 1–5 表示 "LLM 无法看到/使用这个工具"。Layer 6 表示
+"LLM 在 catalog 中看到名字，但必须选择性地加载 schema"——它是
+唯一让 LLM 自己选择拉取哪些工具的层（用于在需要前把
+庞大的 MCP/plugin 工具集挡在 prompt 之外）。
 
 ## Per-layer default policy
 
-The guiding principle is **default-on, user-curated**: a freshly
-registered tool is usable with zero configuration; every layer's
-default is "don't restrict". Layers split into two kinds —
+主导原则是 **default-on, user-curated**：一个刚
+注册的工具无需任何配置即可使用；每一层的
+默认都是 "不限制"。各层分为两类——
 
-- **Active (selection) layers** decide *what to use*. Default =
-  "everything exposed". The user/caller opts IN to a narrower set.
-  These are the normal path.
-- **Passive (veto) layers** decide *what must not be used*. Default =
-  "veto nothing". They only ever subtract, as a safety/maintenance
-  backstop, and stay dormant unless a condition fires.
+- **Active（选择）层** 决定 *用什么*。默认 =
+  "所有已暴露的"。用户/调用方主动选入一个更窄的集合。
+  这是常规路径。
+- **Passive（否决）层** 决定 *什么不能用*。默认 =
+  "什么都不否决"。它们只做减法，作为一种安全/维护
+  兜底，除非某个条件触发否则保持休眠。
 
 ```
 Layer  Kind      Default (no config)                Who overrides & when
@@ -254,43 +254,42 @@ Layer  Kind      Default (no config)                Who overrides & when
                                                      user.
 ```
 
-**L2b (active) vs L5 (passive) — why both exist, why not merged.** They
-look like "user touches tools" twice but are opposite operations: L2b is
-the user/caller *choosing a set to use* (additive, a folder = "today's
-toolbox"); L5 is *blacklisting / capping* (subtractive, "this tool is
-broken / this session may not use it"). A veto must be independent of
-selection — e.g. attended-mode must withhold `ask_user_question` no
-matter which folder is active; you can't rely on the user remembering to
-leave it out of every folder. So the **Functions page surfaces L2b as
-the primary action (organize & pick folders) and L5 as the exception
-(a per-tool off switch)**; the system's own L5 vetoes (attended,
-subagent caps) are code-only and invisible to the user.
+**L2b（active）对比 L5（passive）——为什么两者都存在、为什么不合并。** 它们
+看起来像是 "用户两次去碰工具"，但其实是相反的操作：L2b 是
+用户/调用方 *选择一个要用的集合*（加法，一个文件夹 = "今天的
+工具箱"）；L5 是 *拉黑/封顶*（减法，"这个工具
+坏了 / 这个会话不允许用它"）。否决必须独立于
+选择——例如，无论当前激活哪个文件夹，attended-mode 都必须扣下
+`ask_user_question`；你不能指望用户记得
+把它从每一个文件夹里都排除掉。因此 **Functions 页把 L2b 作为
+主操作呈现（组织并挑选文件夹），把 L5 作为例外
+（按工具的关闭开关）**；系统自身的 L5 否决（attended、
+subagent 上限）仅存在于代码中，对用户不可见。
 
 ## Plugins and MCP servers
 
-Because exposure is registration-driven (Layer 2), a plugin or MCP
-server makes its tools available **just by registering them** — same as
-Claude Code and Hermes. There is no second step of editing a central
-allowlist. Concretely:
+因为暴露由注册驱动（Layer 2），一个 plugin 或 MCP
+server 只需 **注册它的工具** 就能使工具可用——与
+Claude Code 和 Hermes 一致。不存在编辑某个中心
+allowlist 的第二步。具体来说：
 
-- A plugin's tools register through the same `_build_and_register_tool`
-  path as built-ins (a plugin calls `@function` / registers an
-  `AgentTool`), so they land in `_registry` and are exposed by default.
-- MCP-server tools are registered as `AgentTool` entries on connect and
-  marked `defer=True` (Layer 6) by default, so their names appear in the
-  deferred catalog and the LLM loads schemas on demand via
-  `tool_search` — this keeps a large MCP surface out of every prompt
-  without making the tools invisible.
-- A plugin/MCP tool that should stay internal can still set
-  `expose=False`; a user can still turn any of them off on the Functions
-  page (Layer 5). The default, though, is "registered = usable".
+- plugin 的工具通过与内置工具相同的 `_build_and_register_tool`
+  路径注册（plugin 调用 `@function` / 注册一个
+  `AgentTool`），因此它们落进 `_registry` 并默认被暴露。
+- MCP-server 的工具在连接时被注册为 `AgentTool` 条目，并默认
+  标记 `defer=True`（Layer 6），因此它们的名字出现在
+  deferred catalog 中，LLM 通过 `tool_search` 按需加载
+  schema——这在不让工具变得不可见的前提下，把
+  庞大的 MCP 面挡在每个 prompt 之外。
+- 应保持内部使用的 plugin/MCP 工具仍可设置
+  `expose=False`；用户仍可在 Functions
+  页（Layer 5）关闭其中任何一个。不过默认是 "注册即可用"。
 
 ## Tool profiles (Functions page)
 
-A **tool profile** is a named configuration that says "which tools are
-enabled for this conversation". The Functions page (`/functions`)
-manages profiles; the chat composer lets the user pick which profile to
-use.
+一个 **tool profile** 是一个命名配置，表示 "这次对话
+启用哪些工具"。Functions 页（`/functions`）
+管理 profiles；聊天输入框让用户挑选使用哪个 profile。
 
 ### Concepts
 
@@ -318,21 +317,21 @@ default profile       the built-in "all tools on" profile. Always
 
 ### User flow
 
-1. **Functions page** shows the catalog (all tools) and a sidebar of
-   profiles. Clicking a profile shows which tools it includes; the
-   user adds/removes tools from that profile.
-2. **Chat composer** has a profile picker (e.g. a dropdown next to the
-   model selector). Selecting a profile = this conversation uses that
-   tool set. Default = "all tools".
-3. A profile name resolves wherever ``toolset=`` is accepted (Layer
-   2b). ``agent_tools(toolset="research")`` returns the tools in the
-   "research" profile. Agent profiles (``agent.json``) can reference
-   a tool profile by name in their ``tools.toolset`` field.
+1. **Functions 页** 展示 catalog（所有工具）和一个
+   profiles 侧边栏。点击某个 profile 会显示它包含哪些工具；
+   用户从该 profile 中添加/移除工具。
+2. **聊天输入框** 有一个 profile 选择器（例如模型选择器旁边的
+   下拉菜单）。选择一个 profile = 这次对话使用该
+   工具集。默认 = "all tools"。
+3. profile 名在任何接受 ``toolset=`` 的地方都能解析（Layer
+   2b）。``agent_tools(toolset="research")`` 返回
+   "research" profile 中的工具。Agent profiles（``agent.json``）可在其
+   ``tools.toolset`` 字段中按名字引用一个 tool profile。
 
 ### Storage
 
-Profiles are persisted in ``functions_meta.json`` (same location as
-``programs_meta.json``), shape:
+Profiles 持久化在 ``functions_meta.json`` 中（与
+``programs_meta.json`` 同一位置），形状如下：
 
 ```json
 {
@@ -345,17 +344,17 @@ Profiles are persisted in ``functions_meta.json`` (same location as
 }
 ```
 
-Creating a new profile = copy of "default" (all tools). The user then
-removes tools they don't need for that scenario.
+新建一个 profile = 复制 "default"（所有工具）。用户随后
+移除该场景下不需要的工具。
 
 ### Relationship to Layer 5 (global disable)
 
-A profile says "this conversation uses these tools" (L2b, active
-selection). The per-tool global disable (L5, ``tools.disabled``)
-remains as a separate, rarely-used backstop: if a tool is globally
-disabled it is removed from EVERY profile automatically (the
-resolution pipeline applies L5 after L2b). But the primary user
-action is profile management, not per-tool global toggles.
+一个 profile 表示 "这次对话使用这些工具"（L2b，主动
+选择）。按工具的全局禁用（L5，``tools.disabled``）
+仍作为一个独立的、很少使用的兜底存在：如果一个工具被全局
+禁用，它会从每一个 profile 中自动移除（
+解析管道在 L2b 之后应用 L5）。但用户的
+主操作是 profile 管理，而非按工具的全局开关。
 
 ## User-editable entry points
 
@@ -395,16 +394,16 @@ Author decorator kwargs         expose / available_if /      L1/2/  ✅     in-c
                                 / check_fn
 ```
 
-Daily use = **tool profiles** on the Functions page (create profiles,
-add/remove tools) + **profile picker** in the chat composer (choose
-which profile this conversation uses). Global disable = rarely-used
-backstop. Agent profile = per-agent override for advanced multi-agent
-setups. Author kwargs = framework internals.
+日常使用 = Functions 页上的 **tool profiles**（创建 profiles，
+添加/移除工具）+ 聊天输入框里的 **profile 选择器**（选择
+这次对话使用哪个 profile）。全局禁用 = 很少使用的
+兜底。Agent profile = 面向高级多 agent 配置的按 agent 覆盖。
+Author kwargs = 框架内部机制。
 
 ## Four knobs none of the reference frameworks have
 
-Beyond the 6-layer cascade, the framework adds four runtime knobs
-neither Claude Code, Hermes, nor OpenClaw ship:
+在 6 层级联之外，框架还增加了四个运行时旋钮，
+Claude Code、Hermes、OpenClaw 都没有：
 
 ```
 1. Dynamic per-call result ceiling          _effective_max_chars() +
@@ -431,48 +430,47 @@ neither Claude Code, Hermes, nor OpenClaw ship:
 
 ## Why two decorators, not one
 
-The two decorators wrap different *kinds of work*:
+这两个装饰器包装的是不同 *种类的工作*：
 
-- **@function** wraps deterministic Python code. The body runs once
-  per LLM tool_call and returns its result. No LLM rounds inside.
-  Examples: ``bash`` runs subprocess, ``web_search`` calls an API,
-  ``read`` reads a file. The decorated function is **only** called
-  by the LLM via dispatcher — no Python code does ``bash("ls")``
-  directly. So it's safe for the decorator to REPLACE the Python
-  name with the ``AgentTool`` object (the original function is
-  gone from the module namespace after decoration).
+- **@function** 包装确定性的 Python 代码。其函数体在每次 LLM
+  tool_call 时运行一次并返回结果。内部没有 LLM 轮次。
+  示例：``bash`` 运行子进程，``web_search`` 调用一个 API，
+  ``read`` 读取一个文件。被装饰的函数 **只** 由 LLM
+  通过 dispatcher 调用——没有 Python 代码会直接
+  ``bash("ls")``。因此让装饰器把 Python
+  名字 **替换** 为 ``AgentTool`` 对象是安全的（装饰后
+  原函数从模块命名空间中消失）。
 
-- **@agentic_function** wraps "an inner agent loop" — the body
-  itself runs an LLM via ``runtime.exec(...)`` and may call other
-  ``@agentic_function``s recursively. These functions are called by
-  the LLM **and** also called directly from Python — one
-  ``@agentic_function`` typically composes several others, e.g.
-  ``research_pipeline`` calls ``survey_topic`` → ``generate_ideas``
-  → ``rank_ideas`` as plain Python. So the decorated name must
-  **remain a Python callable**. We can't replace it with an
-  ``AgentTool`` like @function does.
+- **@agentic_function** 包装 "一个内部 agent 循环"——其函数体
+  自己通过 ``runtime.exec(...)`` 运行一个 LLM，并可能递归调用其它
+  ``@agentic_function``。这些函数既由
+  LLM 调用，**也** 直接被 Python 调用——一个
+  ``@agentic_function`` 通常组合若干其它的，例如
+  ``research_pipeline`` 以普通 Python 调用 ``survey_topic`` →
+  ``generate_ideas`` → ``rank_ideas``。因此被装饰的名字必须
+  **仍是一个 Python 可调用对象**。我们不能像 @function 那样把它
+  替换为 ``AgentTool``。
 
-Hence: @agentic_function is a **class decorator**. The decorated
-name becomes a class instance that:
+因此：@agentic_function 是一个 **类装饰器**。被装饰的
+名字变成一个类实例，它：
 
-- Has ``__call__`` so ``research("topic")`` runs the wrapper
-  (synchronously or as a coroutine, matching the original fn)
-- Has a sidecar ``_agent_tool`` referencing an ``AgentTool`` that
-  was registered in the shared registry
-- Has methods (``.execute``, ``.spec``) and attributes
-  (``.expose``, ``.render_range``, ``._fn``, ``._wrapper``) that
-  other code (``spawn_program``, the webui, DAG visualizer) reads
+- 拥有 ``__call__``，使得 ``research("topic")`` 运行 wrapper
+  （同步地或作为协程，与原函数匹配）
+- 拥有一个 sidecar ``_agent_tool``，引用一个已在
+  共享注册表中注册的 ``AgentTool``
+- 拥有方法（``.execute``、``.spec``）和属性
+  （``.expose``、``.render_range``、``._fn``、``._wrapper``），供
+  其它代码（``spawn_program``、webui、DAG 可视化器）读取
 
-Both decorators contribute ``AgentTool`` entries to one shared
-registry, so the dispatcher / agent_loop / provider adapter only
-ever deal with ``AgentTool`` — they don't distinguish the two
-decorators. The split is invisible past the registry layer.
+两个装饰器都向同一个共享
+注册表贡献 ``AgentTool`` 条目，因此 dispatcher / agent_loop / provider adapter
+只跟 ``AgentTool`` 打交道——它们不区分这两个
+装饰器。这种拆分在注册表层之后是不可见的。
 
-The same logic could in principle be a single class decorator with
-a ``mode="leaf" | "agentic"`` flag, but that hides the genuine
-semantic difference inside a flag. Two decorators makes the choice
-explicit at the call site: ``@function`` on a leaf, ``@agentic_function``
-on an agentic body.
+原则上同样的逻辑也可以做成单个带
+``mode="leaf" | "agentic"`` 标志的类装饰器，但那会把真正的
+语义差异藏进一个标志里。两个装饰器让选择在
+调用点显式化：叶子上用 ``@function``，agentic 函数体上用 ``@agentic_function``。
 
 ## Decoration → registration trace
 
@@ -680,8 +678,8 @@ openprogram/functions/agentics/*/__init__.py           @agentic_function
 
 ## Test invariants (what the suite locks down)
 
-The unit suite (``tests/unit/test_tools_runtime.py``,
-``tests/unit/test_dispatcher_tools.py``) covers:
+单元测试套件（``tests/unit/test_tools_runtime.py``、
+``tests/unit/test_dispatcher_tools.py``）覆盖：
 
 - Docstring + signature → parameters schema
 - Sync / async fn dispatch
@@ -705,25 +703,23 @@ The unit suite (``tests/unit/test_tools_runtime.py``,
 
 ## Stable boundary
 
-The registry/decorator/dispatcher boundary is stable. Work that
-**doesn't** touch it:
+注册表/装饰器/dispatcher 边界是稳定的。**不会** 触及它的
+工作包括：
 
-- Adding new @function tools (write the function + decorate; it is
-  exposed by default — no whitelist edit)
-- Adding new @agentic_function harnesses (same)
-- Hiding an internal helper from the LLM (`expose=False` kwarg only)
-- Defining a named subset (TOOLSETS dict) or letting the user define one
-  (Functions-page folder → functions_meta.json)
-- Flagging tools defer / available_if (kwarg only)
-- Wiring MCP servers / plugins — they register AgentTool entries the
-  normal way and are exposed on registration (mark `defer=True` for
-  large MCP surfaces)
+- 新增 @function 工具（编写函数 + 装饰；它默认
+  被暴露——无需编辑白名单）
+- 新增 @agentic_function harness（同上）
+- 把一个内部 helper 对 LLM 隐藏（仅需 `expose=False` kwarg）
+- 定义一个命名子集（TOOLSETS dict），或让用户自行定义一个
+  （Functions 页文件夹 → functions_meta.json）
+- 给工具打上 defer / available_if 标记（仅需 kwarg）
+- 接入 MCP servers / plugins——它们以常规方式注册 AgentTool
+  条目，并在注册时被暴露（对庞大的 MCP 面标记
+  `defer=True`）
 
-Future work that **would** require touching the boundary (defer unless
-necessary):
+**会** 需要触及该边界的未来工作（除非必要否则推迟）：
 
-- Adding a new gating layer beyond the ones above
-- Changing AgentTool.execute signature
-- Splitting / merging the shared registry
-- Replacing the deferred-loading mechanism with something other than
-  ToolSearch
+- 在上述各层之外新增一个门控层
+- 修改 AgentTool.execute 的签名
+- 拆分 / 合并共享注册表
+- 用 ToolSearch 之外的其它机制替换 deferred-loading 机制
