@@ -23,8 +23,10 @@ h1{font-size:23px;border-bottom:2px solid var(--acc);padding-bottom:10px}
 .tbl td,.tbl th{border:1px solid var(--bd);padding:4px 8px;text-align:left}
 .tbl th{background:var(--pan);color:var(--acc)}
 code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
-.comm-line{opacity:.28;transition:opacity .15s}
-.canvas:hover .comm-line{opacity:.95}
+/* 软连接线(通信/合并/attach 回流): 默认隐藏; hover 它的任一端点节点才显示 + 流动动画 */
+.soft-link{opacity:0;transition:opacity .15s;pointer-events:none}
+.soft-link.active{opacity:.95;animation:flow 0.6s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-20}}
 text{font-family:-apple-system,sans-serif;pointer-events:none}
 .node{cursor:pointer}
 .principles{max-width:1000px;margin:32px auto 0;background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:24px 28px;line-height:1.75;font-size:14px}
@@ -116,8 +118,10 @@ text{font-family:-apple-system,sans-serif;pointer-events:none}
     <li><b>子分支服务</b>：A 调 spawn_branch 派子分支 B（-·- 点划线，B 的首节点和 spawn 节点同一行起）→ B 独立跑 → 结果 ┄ attach 回流嵌回 A。</li>
   </ul>
 
-  <h3>9. 默认显隐</h3>
-  <p>结构线（同分支 / retry / spawn / merge / attach）都常驻。<b>只有通信线默认隐藏，鼠标移到图上才显示</b>——通信会非常多，常驻会糊成一团。</p>
+  <h3>9. 软连接线：默认隐藏，hover 端点才显示 + 动画</h3>
+  <p><b>调用线</b>（同分支 / retry / spawn —— 结构骨架）常驻显示。<br>
+  <b>软连接线</b>（通信 send→收到、返回 应答→回复了、merge 汇入、attach 回流 —— 凡是跨分支的"谁连了谁"）<b>默认全部隐藏</b>：只有鼠标放到这条线<b>连接的两个端点节点中的任意一个</b>上时，这条线才显示出来，并带<b>流动动画</b>（虚线流动，表示方向）。移开就隐藏。<br>
+  理由：这类线会非常多，常驻会把图糊成一团；按需 hover 显示，既不挡视线又能查"这个节点连去了哪"。</p>
 
   <h3>10. 本图是什么</h3>
   <p>不是写死坐标的示意图。这里内置了和后端 <code>graph_layout</code> 一致的布局算法（lane/tier/depth + 占列规则），喂节点数据 → 算法自己算出每个节点的位置 → 画出来。上方切换场景看不同数据跑出来的真实布局。</p>
@@ -339,38 +343,58 @@ function render(nodes){
         fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:dash?0.8:1}));
     }
   }
-  // 合并汇入线: merge 节点的每个 peer(commit_parents 之外, 这里用 mergeFrom 数组)
+  // ===== 软连接线(非调用): merge 汇入 / attach 回流 / 通信。本质都是"谁连了谁"。
+  // 默认隐藏；鼠标放到它连接的【任一端点节点】上才显示 + 流动动画。=====
+  // merge 汇入线
   for(const m of nodes){
     if(m.role!=="merge"||!m.mergeFrom)continue;
     const c=pos(m);
     for(const pid of m.mergeFrom){ const peer=byId[pid]; if(!peer)continue; const pp=pos(peer);
-      edgeG.appendChild(svgEl("path",{d:`M ${pp.x} ${pp.y+R} L ${pp.x} ${c.y} L ${c.x+R+3} ${c.y}`,fill:"none",stroke:laneColor(peer._laneNum),"stroke-width":2.4,opacity:0.9})); }
+      edgeG.appendChild(svgEl("path",{class:"soft-link","data-from":pid,"data-to":m.id,
+        d:`M ${pp.x} ${pp.y+R} L ${pp.x} ${c.y} L ${c.x+R+3} ${c.y}`,fill:"none",stroke:laneColor(peer._laneNum),"stroke-width":2.4})); }
   }
-  // attach 回流: attach_from
+  // attach 回流线
   for(const m of nodes){
     if(!m.attach_from)continue; const dst=pos(m); const src=byId[m.attach_from]; if(!src)continue; const sp=pos(src);
-    edgeG.appendChild(svgEl("path",{d:`M ${sp.x} ${sp.y+R} C ${sp.x} ${dst.y+ROW}, ${dst.x} ${dst.y+ROW}, ${dst.x+R} ${dst.y}`,fill:"none",stroke:laneColor(src._laneNum),"stroke-width":1.5,"stroke-dasharray":"4 4",opacity:0.85}));
+    edgeG.appendChild(svgEl("path",{class:"soft-link","data-from":m.attach_from,"data-to":m.id,
+      d:`M ${sp.x} ${sp.y+R} C ${sp.x} ${dst.y+ROW}, ${dst.x} ${dst.y+ROW}, ${dst.x+R} ${dst.y}`,fill:"none",stroke:laneColor(src._laneNum),"stroke-width":1.5,"stroke-dasharray":"4 4"}));
   }
-  // 通信线: commFrom = send工具(A) → B收到(B分支)。跨分支,点线 1 5,B分支色。
-  // 发起在 A,消息进 B,所以节点在 B,这条线表示"从 A 发来"。
+  // 通信线: commFrom = send工具(A) → 本节点。
   for(const m of nodes){
     if(!m.commFrom)continue; const src=byId[m.commFrom]; if(!src)continue;
     const sp=pos(src), c=pos(m);
-    edgeG.appendChild(svgEl("path",{
+    edgeG.appendChild(svgEl("path",{class:"soft-link","data-from":m.commFrom,"data-to":m.id,
       d:`M ${sp.x+R} ${sp.y} C ${(sp.x+c.x)/2} ${sp.y}, ${(sp.x+c.x)/2} ${c.y}, ${c.x-R} ${c.y}`,
-      fill:"none",stroke:laneColor(m._laneNum),"stroke-width":1.8,"stroke-dasharray":"1 5","stroke-linecap":"round",opacity:0.9}));
+      fill:"none",stroke:laneColor(m._laneNum),"stroke-width":1.8,"stroke-dasharray":"6 4","stroke-linecap":"round"}));
   }
 
   // 节点
   for(const m of nodes){
     const c=pos(m), color=laneColor(m._laneNum);
-    const g=svgEl("g",{class:"node"});
+    const g=svgEl("g",{class:"node","data-id":m.id});
     for(const e of shapeEl(m,c.x,c.y,color))g.appendChild(e);
     const label=m.label||m.id;
     const t=svgEl("text",{x:c.x+R+7,y:c.y+4,fill:color,"font-size":12}); t.textContent=label; g.appendChild(t);
     if(m.sub){ const s=svgEl("text",{x:c.x+R+7,y:c.y+18,fill:"#6b6a63","font-size":10}); s.textContent=m.sub; g.appendChild(s); }
     nodeG.appendChild(g);
   }
+
+  // 软连接线 hover 交互: 鼠标放到节点上 → 显示与它相连(data-from/to 含它)的软连接线
+  // + 流动动画; 移开 → 隐藏。鼠标也可直接放到线上(端点的 hit 区)。
+  const softLinks=[...edgeG.querySelectorAll(".soft-link")];
+  function showLinksFor(id){
+    softLinks.forEach(l=>{
+      const on = l.getAttribute("data-from")===id || l.getAttribute("data-to")===id;
+      l.classList.toggle("active", on);
+    });
+  }
+  function clearLinks(){ softLinks.forEach(l=>l.classList.remove("active")); }
+  nodeG.querySelectorAll(".node").forEach(g=>{
+    const id=g.getAttribute("data-id");
+    g.style.pointerEvents="all";
+    g.addEventListener("mouseenter",()=>showLinksFor(id));
+    g.addEventListener("mouseleave",clearLinks);
+  });
 
   // 坐标表
   const tbl=document.getElementById("coords");
