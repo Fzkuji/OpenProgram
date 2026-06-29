@@ -34,8 +34,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
     <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
            placeholder="过滤目录…" autocomplete="off" spellcheck="false">
     <div class="nav-tree"><details class="group" data-key="__快速上手__" open><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
-<a class="navlink active" href="/docs/README.html" data-i18n="p_overview" data-title-en="Documentation" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
-<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn" data-title-en="Readme Cn.En" data-href-zh="/docs/README_CN.html" data-href-en="/docs/README_CN.en.html">项目总览（中文）</a>
+<a class="navlink active" href="/docs/README.html" data-i18n="p_overview" data-title-en="One-shot: send a prompt, print the answer, exit (redirect or pipe it)" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
 <a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
 <a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
 <details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
@@ -170,157 +169,372 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
 <a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg">快速上手</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="Documentation" data-title-zh="项目总览">项目总览</span></nav><h1 id="文档">文档<a class="header-anchor" href="#文档">#</a></h1>
-<p>本目录是 OpenProgram 的文档入口。</p>
-<h2 id="从这里开始">从这里开始<a class="header-anchor" href="#从这里开始">#</a></h2>
+  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg">快速上手</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="One-shot: send a prompt, print the answer, exit (redirect or pipe it)" data-title-zh="项目总览">项目总览</span></nav><p align="center">
+  <img src="images/logo.svg" alt="OpenProgram" width="300">
+</p>
+<p align="center">开源 Agent Harness 框架。支持任意 LLM 和平台。Agentic Programming 范式。</p>
+<p align="center">
+  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
+  <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Fzkuji/OpenProgram?style=flat-square"></a>
+</p>
+<p align="center">
+  <a href="/docs/GETTING_STARTED.html">快速上手</a> &middot;
+  <a href="/docs/README.html">文档入口</a> &middot;
+  <a href="/docs/API.html">API 参考</a> &middot;
+  <a href="/docs/philosophy/agentic-programming.html">设计哲学</a> &middot;
+  <a href="/docs/../README.html">English</a>
+</p>
+<hr />
+<blockquote>
+<p><strong>基于 Agentic Programming 范式。</strong> 当前的 LLM agent 框架让 LLM 控制一切——做什么、何时做、怎么做。结果？不可预测的执行、上下文爆炸、没有输出保证。OpenProgram 反转这一切：<strong>Python 控制流程，LLM 只在被要求时推理。</strong> 详见<a href="/docs/philosophy/agentic-programming.html">设计哲学</a>。</p>
+</blockquote>
+<p align="center">
+  <img src="images/code_hero.png" alt="OpenProgram 代码示例" width="800">
+</p>
+<h2 id="快速开始">快速开始<a class="header-anchor" href="#快速开始">#</a></h2>
+<h3 id="前置条件">前置条件<a class="header-anchor" href="#前置条件">#</a></h3>
+<p>OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：</p>
 <table>
 <thead>
 <tr>
-<th>文件</th>
-<th>用途</th>
+<th>提供方</th>
+<th>设置</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="/docs/GETTING_STARTED.html"><code>GETTING_STARTED.md</code></a></td>
-<td>安装、provider 配置以及可运行的示例</td>
+<td>Claude Code CLI</td>
+<td><code>npm i -g @anthropic-ai/claude-code &amp;&amp; claude login</code></td>
 </tr>
 <tr>
-<td><a href="/docs/features.html"><code>features.md</code></a></td>
-<td>对 README 所概述的核心功能的详细介绍</td>
+<td>Codex CLI</td>
+<td><code>npm i -g @openai/codex &amp;&amp; codex auth</code></td>
 </tr>
 <tr>
-<td><a href="/docs/install.html"><code>install.md</code></a></td>
-<td>每个 pip extra 各自引入的内容 + 安装后步骤</td>
+<td>Gemini CLI</td>
+<td><code>npm i -g @google/gemini-cli</code></td>
 </tr>
 <tr>
-<td><a href="/docs/installing-harnesses.html"><code>installing-harnesses.md</code></a></td>
-<td>Harness：用一条命令安装任意（一方/第三方）harness，或编写你自己的</td>
+<td>Anthropic API</td>
+<td><code>export ANTHROPIC_API_KEY=...</code></td>
 </tr>
 <tr>
-<td><a href="/docs/troubleshooting.html"><code>troubleshooting.md</code></a></td>
-<td>“它跑不起来”手册（没有 provider、端口被占用、多仓库安装……）</td>
+<td>OpenAI API</td>
+<td><code>export OPENAI_API_KEY=...</code></td>
 </tr>
 <tr>
-<td><a href="/docs/API.html"><code>API.md</code></a></td>
-<td>公开 API 索引</td>
-</tr>
-<tr>
-<td><a href="/docs/README_CN.html"><code>README_CN.md</code></a></td>
-<td>中文项目概览</td>
-</tr>
-<tr>
-<td><a href="/docs/philosophy/agentic-programming.html"><code>philosophy/agentic-programming.md</code></a></td>
-<td>Agentic Programming 的设计理念</td>
+<td>Gemini API</td>
+<td><code>export GOOGLE_API_KEY=...</code></td>
 </tr>
 </tbody>
 </table>
-<h2 id="agentic-programming-指南">Agentic programming 指南<a class="header-anchor" href="#agentic-programming-指南">#</a></h2>
-<p>OpenProgram 自有的编程模型——通用 LLM 框架教程不会教你的那些概念。<strong>在编写函数之前请先阅读本节。</strong></p>
+<p>然后选择你的使用方式：</p>
+<h3 id="方式-a-python-编写-agentic-代码">方式 A: Python — 编写 agentic 代码<a class="header-anchor" href="#方式-a-python-编写-agentic-代码">#</a></h3>
+<p>安装包后直接编码：</p>
+<p>一键安装 host（网页 UI + 终端 UI + 浏览器/渠道）：</p>
+<pre><code class="language-bash">git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Fzkuji/OpenProgram<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>OpenProgram
+./scripts/install.sh<span class="w">              </span><span class="c1"># macOS/Linux   ·   Windows:  .\scripts\install.ps1</span>
+</code></pre>
+<p>默认安装包含全部轻量内容——web UI、TUI、Research / Wiki 两个 agent 程序、浏览器工具和 channels；GUI agent 按需装（<code>openprogram programs install gui</code>，需下载 PyTorch）；<code>--minimal</code> 只装精简 host。provider SDK（anthropic / openai / google-genai）默认已装好。</p>
+<p>harness 作为 <strong>OpenProgram 程序</strong> 装进 <code>openprogram/functions/agentics/&lt;Harness&gt;/</code>
+并<strong>自动注册</strong>。通用做法（你自己写的也一样）是克隆进那个目录再跑它的安装脚本；
+纯 Python 的 Research / Wiki 另有一行快捷命令：</p>
+<pre><code class="language-bash">openprogram<span class="w"> </span>programs<span class="w"> </span>install<span class="w"> </span>research<span class="w">      </span><span class="c1"># 或 wiki（GUI agent 见其 README，需跑自带安装脚本）</span>
+</code></pre>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_runtime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">create_runtime</span><span class="p">()</span>
+
+<span class="nd">@agentic_function</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">login_flow</span><span class="p">(</span><span class="n">username</span><span class="p">,</span> <span class="n">password</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;完成登录流程。&quot;&quot;&quot;</span>
+    <span class="n">observe</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="s2">&quot;find login form&quot;</span><span class="p">)</span>       <span class="c1"># Python 决定做什么</span>
+    <span class="n">click</span><span class="p">(</span><span class="n">element</span><span class="o">=</span><span class="s2">&quot;login button&quot;</span><span class="p">)</span>         <span class="c1"># Python 决定顺序</span>
+    <span class="k">return</span> <span class="n">verify</span><span class="p">(</span><span class="n">expected</span><span class="o">=</span><span class="s2">&quot;dashboard&quot;</span><span class="p">)</span>   <span class="c1"># Python 决定何时停止</span>
+</code></pre>
+<h3 id="方式-b-skills-让你的-llm-agent-使用">方式 B: Skills — 让你的 LLM agent 使用<a class="header-anchor" href="#方式-b-skills-让你的-llm-agent-使用">#</a></h3>
+<p>按&quot;方式 A&quot;装好 OpenProgram 后，注册 skills：</p>
+<pre><code class="language-bash">openprogram<span class="w"> </span>install-skills<span class="w">                </span><span class="c1"># 自动检测 Claude Code / Gemini CLI</span>
+</code></pre>
+<p>或手动：</p>
+<pre><code class="language-bash">git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Fzkuji/OpenProgram.git
+cp<span class="w"> </span>-r<span class="w"> </span>OpenProgram/skills/*<span class="w"> </span>~/.claude/skills/<span class="w">    </span><span class="c1"># Claude Code</span>
+cp<span class="w"> </span>-r<span class="w"> </span>OpenProgram/skills/*<span class="w"> </span>~/.gemini/skills/<span class="w">    </span><span class="c1"># Gemini CLI</span>
+</code></pre>
+<p>然后与 agent 对话：<em>&quot;创建一个从文本中提取邮箱地址的函数&quot;</em></p>
+<p>Agent 会识别 skill，调用 <code>openprogram create</code>，生成的函数会处理后续所有操作。</p>
+<p>使用 <code>openprogram providers</code> 验证你的配置。</p>
+<p><strong>每个 provider 支持多账号</strong>（每个账号是一个命名 profile）：用 <code>openprogram providers use &lt;provider&gt; [profile]</code> 选择某个 provider 当前跑哪个账号，并在 CLI、Web（设置 → Providers）、TUI（<code>/login &lt;provider&gt;</code>）任一端用同一套面板管理（列出 / 添加 / 激活 / 改名 / 删除）。给一个账号添加<strong>多个 API key</strong> 即可自动轮询 —— 某个 key 被限流会自动冷却并切到下一个。详见 <a href="/docs/features.html#multi-account--key-rotation">docs/features.md</a>。</p>
+<h3 id="方式-c-web-ui">方式 C: Web UI<a class="header-anchor" href="#方式-c-web-ui">#</a></h3>
+<p>基于浏览器的界面，可实时运行函数、管理对话、查看执行树。安装器（方式 A）已经构建好网页 UI，直接启动：</p>
+<pre><code class="language-bash">openprogram<span class="w"> </span>web
+</code></pre>
+<p>访问 <code>http://localhost:18100</code>。Next.js 前端运行在 18100，FastAPI 后端默认运行在 18109。支持明暗主题（Settings → General）。</p>
+<hr />
+<h2 id="支持的项目">支持的项目<a class="header-anchor" href="#支持的项目">#</a></h2>
+<p>OpenProgram 自带三个 agent 应用,位于 <code>openprogram/functions/agentics/</code>——每个都是基于 <code>@agentic_function</code> 范式构建的完整 agent:</p>
 <table>
 <thead>
 <tr>
-<th>文件</th>
-<th>用途</th>
+<th>项目</th>
+<th>功能</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="/docs/agentic-programming/README.html"><code>agentic-programming/README.md</code></a></td>
-<td>指南索引 + 学习路径</td>
+<td><a href="https://github.com/Fzkuji/GUI-Agent-Harness">GUI Agent Harness</a></td>
+<td>自主 GUI agent——通过视觉操控桌面应用(及 OSWorld 虚拟机):observe → plan → act → verify。Python 控制循环,LLM 仅在被要求时推理。</td>
 </tr>
 <tr>
-<td><a href="/docs/agentic-programming/writing-functions/agentic-function.html"><code>agentic-programming/writing-functions/agentic-function.md</code></a></td>
-<td><code>@agentic_function</code> 使用模式</td>
+<td><a href="https://github.com/Fzkuji/Research-Agent-Harness">Research Agent Harness</a></td>
+<td>自主研究 agent——文献调研 → idea → 实验 → 论文写作 → 跨模型审稿。从选题到投稿全流程。</td>
 </tr>
 <tr>
-<td><a href="/docs/agentic-programming/writing-functions/function-metadata.html"><code>agentic-programming/writing-functions/function-metadata.md</code></a></td>
-<td>函数元数据——唯一可信来源</td>
-</tr>
-<tr>
-<td><a href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html"><code>agentic-programming/choosing-the-next-step/fixed-order-calls.md</code></a></td>
-<td>固定顺序的子函数流水线</td>
-</tr>
-<tr>
-<td><a href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html"><code>agentic-programming/choosing-the-next-step/tool-calling.md</code></a></td>
-<td>provider 原生的 tool-use 循环</td>
-</tr>
-<tr>
-<td><a href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html"><code>agentic-programming/choosing-the-next-step/next-step-decision.md</code></a></td>
-<td><code>decision.make</code> / <code>exec(choices=)</code>——由 LLM 选择下一步</td>
-</tr>
-<tr>
-<td><a href="/docs/agentic-programming/writing-functions/pure-python.html"><code>agentic-programming/writing-functions/pure-python.md</code></a></td>
-<td>纯 Python 辅助函数（不涉及 LLM）</td>
+<td><a href="https://github.com/Fzkuji/Wiki-Agent-Harness">Wiki Agent Harness</a></td>
+<td>自主 wiki 构建——把笔记、文档、对话整理成结构化的、兼容 Obsidian 的知识库,带 <code>[[wikilinks]]</code>。</td>
 </tr>
 </tbody>
 </table>
-<h2 id="api-参考">API 参考<a class="header-anchor" href="#api-参考">#</a></h2>
+<h2 id="为什么选择-agentic-programming">为什么选择 Agentic Programming?<a class="header-anchor" href="#为什么选择-agentic-programming">#</a></h2>
+<p align="center">
+  <img src="images/the_idea.png" alt="Python 控制流程，LLM 负责推理" width="800">
+</p>
 <table>
 <thead>
 <tr>
-<th>文件</th>
-<th>用途</th>
+<th>原则</th>
+<th>方式</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="/docs/api/agentic-function.html"><code>api/agentic_function.md</code></a></td>
-<td><code>@agentic_function</code> 装饰器 API</td>
+<td><strong>确定性流程</strong></td>
+<td>Python 控制 <code>if/else/for/while</code>。执行路径是保证的，不是建议的。</td>
 </tr>
 <tr>
-<td><a href="/docs/api/runtime.html"><code>api/runtime.md</code></a></td>
-<td><code>Runtime.exec()</code> 及运行时行为</td>
+<td><strong>最少 LLM 调用</strong></td>
+<td>只在需要推理时调用 LLM。2 次调用，不是 10 次。</td>
 </tr>
 <tr>
-<td><a href="/docs/api/providers.html"><code>api/providers.md</code></a></td>
-<td>Provider/运行时类及其配置</td>
+<td><strong>指令写在代码里</strong></td>
+<td>每次调用的 prompt 写在函数体的 <code>runtime.exec(content=...)</code> 里，不散落在单独的 prompt 文件中。</td>
 </tr>
 <tr>
-<td><a href="/docs/provider-token-tracking.html"><code>provider-token-tracking.md</code></a></td>
-<td>provider 用量计费语义</td>
+<td><strong>自我演化</strong></td>
+<td>函数由 agent 直接编写、修复、改进——遵循 <code>agentic-programming</code> skill。</td>
 </tr>
 </tbody>
 </table>
-<h2 id="集成指南">集成指南<a class="header-anchor" href="#集成指南">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>文件</th>
-<th>用途</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="/docs/INTEGRATION_CLAUDE_CODE.html"><code>INTEGRATION_CLAUDE_CODE.md</code></a></td>
-<td>Claude Code 订阅/运行时集成</td>
-</tr>
-<tr>
-<td><a href="/docs/INTEGRATION_OPENCLAW.html"><code>INTEGRATION_OPENCLAW.md</code></a></td>
-<td>OpenClaw 集成模式</td>
-</tr>
-</tbody>
-</table>
-<h2 id="设计笔记">设计笔记<a class="header-anchor" href="#设计笔记">#</a></h2>
-<p>请以 <a href="/docs/design/README.html"><code>design/README.md</code></a> 作为入口。它将当前规范与归档的审查记录、独立 demo 区分开来。</p>
-<h2 id="维护规则">维护规则<a class="header-anchor" href="#维护规则">#</a></h2>
+<details>
+<summary><strong>当前框架的问题</strong></summary>
+<p align="center">
+  <img src="images/the_problem.png" alt="LLM 作为调度器" width="800">
+</p>
+<p>当前的 LLM agent 框架将 LLM 置于中央调度器的位置。这带来了三个根本问题：</p>
 <ul>
-<li>把当前的 API 事实放在 <code>api/</code> 下；把设计理由放在 <code>design/</code> 下；
-把函数编写指南放在 <code>agentic-programming/</code> 下。</li>
-<li>优先链接到源文档，而不是在多个文件中重复同样的规则。</li>
-<li>如果某份设计笔记不再描述当前行为，就把它移到
-<code>design/archive/</code>。</li>
-<li>移动文件后，用相对链接检查来校验文档。</li>
+<li><strong>不可预测的执行</strong> — LLM 可能跳过、重复或自行发明步骤，无视预设的工作流</li>
+<li><strong>上下文爆炸</strong> — 每次工具调用往返都会累积历史记录</li>
+<li><strong>没有输出保证</strong> — LLM 是在&quot;理解&quot;指令，而非&quot;执行&quot;指令</li>
 </ul>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/GETTING_STARTED.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">快速上手</span></a><a class="pn-link pn-next" href="/docs/README_CN.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">项目总览（中文）</span></a></div></article></main>
+<p>核心问题：<strong>LLM 控制了流程，但没有任何东西能强制执行它。</strong> Skills、prompts 和系统消息只是建议，不是保证。</p>
+</details>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Tool-Calling / MCP</th>
+<th>Agentic Programming</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>谁调度？</strong></td>
+<td>LLM 决定</td>
+<td>Python 决定</td>
+</tr>
+<tr>
+<td><strong>函数包含</strong></td>
+<td>纯代码</td>
+<td>代码 + LLM 推理</td>
+</tr>
+<tr>
+<td><strong>上下文</strong></td>
+<td>扁平的对话</td>
+<td>结构化的树</td>
+</tr>
+<tr>
+<td><strong>Prompt</strong></td>
+<td>隐藏在 agent 配置中</td>
+<td>Docstring = prompt</td>
+</tr>
+<tr>
+<td><strong>自我改进</strong></td>
+<td>未内置</td>
+<td><code>create</code> → <code>fix</code> → 演化</td>
+</tr>
+</tbody>
+</table>
+<p>MCP 是<em>传输层</em>。Agentic Programming 是<em>执行模型</em>。两者正交。</p>
+<hr />
+<h2 id="核心特性">核心特性<a class="header-anchor" href="#核心特性">#</a></h2>
+<h3 id="自动上下文">自动上下文<a class="header-anchor" href="#自动上下文">#</a></h3>
+<p>每个 <code>@agentic_function</code> 调用创建<strong>函数节点</strong>，每次 <code>runtime.exec()</code> 创建 <strong>exec 节点</strong>。节点组成树，自动注入到 LLM 调用中：</p>
+<pre><code>login_flow ✓ 8.8s
+├── observe ✓ 3.1s
+│   └── _exec → &quot;found login form at (200, 300)&quot;
+├── click ✓ 2.5s
+│   └── _exec → &quot;clicked login button&quot;
+└── verify ✓ 3.2s
+    └── _exec → &quot;dashboard confirmed&quot;
+</code></pre>
+<p>当 <code>verify</code> 调用 LLM 时，它自动看到 <code>observe</code> 和 <code>click</code> 的返回结果。不需要手动管理上下文。</p>
+<h3 id="deep-work-自主质量循环">Deep Work — 自主质量循环<a class="header-anchor" href="#deep-work-自主质量循环">#</a></h3>
+<p>对于需要持续努力和高标准的复杂任务，<code>deep_work</code> 会运行一个自主的 计划-执行-评估 循环，直到输出达到指定的质量水平：</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.functions.agentics.deep_work</span><span class="w"> </span><span class="kn">import</span> <span class="n">deep_work</span>
+
+<span class="n">result</span> <span class="o">=</span> <span class="n">deep_work</span><span class="p">(</span>
+    <span class="n">task</span><span class="o">=</span><span class="s2">&quot;写一篇关于 LLM agent 中上下文管理的综述论文。&quot;</span><span class="p">,</span>
+    <span class="n">level</span><span class="o">=</span><span class="s2">&quot;phd&quot;</span><span class="p">,</span>        <span class="c1"># high_school → bachelor → master → phd → professor</span>
+    <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre>
+<p>Agent 先确认需求，然后完全自主工作——执行、自我评估、修订，直到通过质量审查。状态持久化到磁盘，中断的工作可以从断点恢复。</p>
+<h3 id="函数编写函数">函数编写函数<a class="header-anchor" href="#函数编写函数">#</a></h3>
+<p>编写、修复、搭建 <code>@agentic_function</code> 本身也是 agent 的工作——用普通文件编辑工具直接完成，遵循 <strong><code>agentic-programming</code> skill</strong>（<code>skills/agentic-programming/SKILL.md</code>）。没有专门的 <code>create()</code> / <code>fix()</code> 框架调用：它们以前也只是包了一次 LLM 调用加一次文件写入,agent 自己就能做。</p>
+<p>skill 是完整规范——文件放哪、装饰器元数据、docstring 与 <code>content</code> 的分工、校验清单、冒烟测试。<code>write → run → fail → fix</code> 循环依然意味着程序在使用中自我改进。</p>
+<h2 id="api-参考">API 参考<a class="header-anchor" href="#api-参考">#</a></h2>
+<h3 id="核心">核心<a class="header-anchor" href="#核心">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>导入</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>from openprogram import agentic_function</code></td>
+<td>装饰器。每次调用记录为 session DAG 的一个节点</td>
+</tr>
+<tr>
+<td><code>from openprogram.agentic_programming.runtime import Runtime</code></td>
+<td>LLM 运行时。<code>exec()</code> 调用 LLM，上下文从 DAG 自动算出</td>
+</tr>
+<tr>
+<td><code>from openprogram.providers.registry import create_runtime</code></td>
+<td>创建 Runtime，支持自动检测或指定提供方</td>
+</tr>
+</tbody>
+</table>
+<h3 id="编写函数">编写函数<a class="header-anchor" href="#编写函数">#</a></h3>
+<p>没有 <code>create()</code> / <code>fix()</code> 这类元函数——编写、修改、校验 <code>@agentic_function</code> 直接用普通文件编辑工具完成，遵循 <strong><code>agentic-programming</code> skill</strong>（<code>skills/agentic-programming/SKILL.md</code>）。该 skill 是完整规范:文件布局、装饰器元数据、docstring 与 <code>content</code> 的分工、校验清单。</p>
+<h3 id="内置函数">内置函数<a class="header-anchor" href="#内置函数">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>导入</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>from openprogram.functions.agentics.deep_work import deep_work</code></td>
+<td>自主计划-执行-评估循环，支持质量等级</td>
+</tr>
+<tr>
+<td><code>from openprogram.functions.agentics.ask_user import ask_user</code></td>
+<td>向用户提一个澄清问题并阻塞等待答复</td>
+</tr>
+</tbody>
+</table>
+<h3 id="提供方">提供方<a class="header-anchor" href="#提供方">#</a></h3>
+<p>六个内置提供方：Anthropic、OpenAI、Gemini (API)、Claude Code、Codex、Gemini (CLI)。所有 CLI 提供方在调用之间维持<strong>会话连续性</strong>。详见 <a href="/docs/api/providers.html">Provider 文档</a>。</p>
+<h2 id="集成">集成<a class="header-anchor" href="#集成">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>指南</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="/docs/GETTING_STARTED.html">Getting Started</a></td>
+<td>3 分钟上手及可运行示例</td>
+</tr>
+<tr>
+<td><a href="/docs/INTEGRATION_CLAUDE_CODE.html">Claude Code</a></td>
+<td>通过 Claude Code CLI 使用，无需 API key</td>
+</tr>
+<tr>
+<td><a href="/docs/INTEGRATION_OPENCLAW.html">OpenClaw</a></td>
+<td>作为 OpenClaw skill 使用</td>
+</tr>
+<tr>
+<td><a href="/docs/API.html">API Reference</a></td>
+<td>完整 API 文档</td>
+</tr>
+</tbody>
+</table>
+<details>
+<summary><strong>项目结构</strong></summary>
+<pre><code>openprogram/
+├── __init__.py                      # agentic_function 再导出
+├── cli.py                           # `openprogram` 命令入口
+├── agentic_programming/             # 范式引擎
+│   ├── function.py                  #   @agentic_function 装饰器
+│   ├── runtime.py                   #   Runtime（exec + retry + DAG 上下文）
+│   ├── session.py                   #   会话生命周期
+│   └── skills.py                    #   SKILL.md 发现
+├── context/                         # 扁平 DAG 上下文模型 — nodes / storage / render / render_context
+├── providers/                       # Anthropic、OpenAI、Gemini、Claude Code、Codex、Gemini CLI
+├── functions/
+│   ├── _registry.py                 #   tools + agentic functions 的统一注册表
+│   ├── tools/                       #   @function 叶子工具 — bash / read / edit / grep / semble_search / web_search 等
+│   └── agentics/                    #   @agentic_function 模块（每个一个目录，代码写在 __init__.py）
+│       ├── ask_user/                #     向用户提澄清问题
+│       ├── deep_work/               #     自主计划-执行-评估循环
+│       ├── extract_pdf_figures/     #     PDF 图表抽取
+│       ├── …                        #     其它 agentic functions …
+│       ├── GUI-Agent-Harness/       #     自主 GUI agent（独立仓库，符号链接）
+│       ├── Research-Agent-Harness/  #     自主研究 agent（独立仓库，符号链接）
+│       └── Wiki-Agent-Harness/      #     自主 wiki 构建 agent（独立仓库，符号链接）
+└── webui/                           # `openprogram web` 浏览器 UI
+skills/                              # 用于 agent 集成的 SKILL.md 文件
+examples/                            # 可运行的示例
+tests/                               # pytest 测试套件
+</code></pre>
+</details>
+<h2 id="贡献">贡献<a class="header-anchor" href="#贡献">#</a></h2>
+<p>这是一个<strong>范式提案</strong>，附带参考实现。欢迎讨论、其他语言的替代实现、验证或挑战此方法的用例，以及 bug 报告。</p>
+<p>详见 <a href="/docs/../CONTRIBUTING.html">CONTRIBUTING.md</a>。</p>
+<h2 id="许可证">许可证<a class="header-anchor" href="#许可证">#</a></h2>
+<p><a href="/docs/../LICENSE">AGPL-3.0</a> © 2026 Fzkuji。可自由使用、研究、修改、分发——但任何<strong>分发或作为联网服务运行</strong>的衍生作品也必须以 AGPL 开源,并保留署名。</p>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/GETTING_STARTED.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">快速上手</span></a><a class="pn-link pn-next" href="/docs/features.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">功能详解</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#从这里开始">从这里开始</a>
-<a class="" href="#agentic-programming-指南">Agentic programming 指南</a>
+<a class="" href="#快速开始">快速开始</a>
+<a class="lvl-3" href="#前置条件">前置条件</a>
+<a class="lvl-3" href="#方式-a-python-编写-agentic-代码">方式 A: Python — 编写 agentic 代码</a>
+<a class="lvl-3" href="#方式-b-skills-让你的-llm-agent-使用">方式 B: Skills — 让你的 LLM agent 使用</a>
+<a class="lvl-3" href="#方式-c-web-ui">方式 C: Web UI</a>
+<a class="" href="#支持的项目">支持的项目</a>
+<a class="" href="#为什么选择-agentic-programming">为什么选择 Agentic Programming?</a>
+<a class="" href="#核心特性">核心特性</a>
+<a class="lvl-3" href="#自动上下文">自动上下文</a>
+<a class="lvl-3" href="#deep-work-自主质量循环">Deep Work — 自主质量循环</a>
+<a class="lvl-3" href="#函数编写函数">函数编写函数</a>
 <a class="" href="#api-参考">API 参考</a>
-<a class="" href="#集成指南">集成指南</a>
-<a class="" href="#设计笔记">设计笔记</a>
-<a class="" href="#维护规则">维护规则</a>
+<a class="lvl-3" href="#核心">核心</a>
+<a class="lvl-3" href="#编写函数">编写函数</a>
+<a class="lvl-3" href="#内置函数">内置函数</a>
+<a class="lvl-3" href="#提供方">提供方</a>
+<a class="" href="#集成">集成</a>
+<a class="" href="#贡献">贡献</a>
+<a class="" href="#许可证">许可证</a>
 </div></aside>
 </div>
 

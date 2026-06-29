@@ -235,8 +235,11 @@ function render(nodes){
   for(const m of nodes){
     if(m.display==="root")continue;
     const c=pos(m), color=laneColor(m._laneNum);
+    // 画线父 = caller 优先（挂载/调用关系决定视觉父子）。user 的 caller=ROOT
+    // → 所有 user 都从 ROOT 竖线分出（和 spec 多轮一致，不从 predecessor 串）。
+    // predecessor 只用于 fork 判定 / depth，不决定画线父。
     const predId=m.predecessor, callerId=m.caller;
-    const parentId=(predId&&byId[predId])?predId:((callerId&&byId[callerId])?callerId:null);
+    const parentId=(callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
     const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
@@ -248,14 +251,24 @@ function render(nodes){
         d:`M ${p.x} ${p.y+R} L ${p.x} ${c.y} L ${c.x-R-3} ${c.y}`,
         fill:"none",stroke:color,"stroke-width":1.8}));
     }else{
-      // fork：竖线落在【子的 lane 竖线列】= 子列 - tier（即该 lane 的起始列）。
-      // 从父中心 dash 横拉到 fork 竖线顶，竖线下到子行，再实线横到子。
+      // fork：从【分叉源节点】拉 dash 到 fork 自己的竖线列，再竖下、横到子。
+      //   retry → 源 = 被 retry 的兄弟（同 predecessor 的首个节点），从它旁边衍生
+      //   spawn → 源 = caller(spawn_branch 节点)
+      const pred=predOf(byId,m);
+      let src=parent;  // 默认 caller(spawn 情形)
+      if(m.role!=="code"&&m.role!=="tool"&&pred){
+        const sibs=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id);
+        if(sibs.length && byId[sibs[0]]) src=byId[sibs[0]];   // 被 retry 的兄弟
+      }
+      const sp=pos(src);
       const trunkX = PADX + m._lane*COL;   // 子所在 lane 的竖线列（起始列）
+      // dash: 兄弟节点右侧 → fork 竖线列（横）
       edgeG.appendChild(svgEl("path",{
-        d:`M ${p.x} ${p.y} L ${trunkX} ${p.y}`,
+        d:`M ${sp.x+R} ${sp.y} L ${trunkX} ${sp.y}`,
         fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:0.8}));
+      // fork 竖线下到子行 + 实线横到子
       edgeG.appendChild(svgEl("path",{
-        d:`M ${trunkX} ${p.y} L ${trunkX} ${c.y} L ${c.x-R-3} ${c.y}`,
+        d:`M ${trunkX} ${sp.y} L ${trunkX} ${c.y} L ${c.x-R-3} ${c.y}`,
         fill:"none",stroke:color,"stroke-width":1.6}));
     }
   }
