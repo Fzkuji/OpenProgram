@@ -425,7 +425,7 @@ const SCENES=[
    {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"},
    // B应答 异步送回 A 末尾 → 三角「B回复了」。它是外部推回 A 的新一轮输入,
    // 和「问题」同级(tierHint=1,挂 A 竖线 user 列),不是 send 的缩进子调用。
-   {id:"aRecv",role:"assistant",caller:"u1",predecessor:"send",commFrom:"bAns",tierHint:1,created_at:8,label:"B回复了",sub:"异步送回A,和问题同级"},
+   {id:"aRecv",role:"assistant",caller:"ROOT",predecessor:"send",commFrom:"bAns",tierHint:1,created_at:8,label:"B回复了",sub:"A的新一轮,直连ROOT(和问题同级)"},
    // A 收到 B 的回复后,A 的 llm 对它作出回应(B回复了=输入 → A回应=llm,缩进一级)
    {id:"aAns",role:"assistant",caller:"aRecv",predecessor:"aRecv",created_at:9,label:"A回应",sub:"A 对 B回复的回应"}]},
  {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
