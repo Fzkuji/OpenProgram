@@ -1,29 +1,40 @@
-# Agent 协作：派生、列举、互发消息（跨 session）
+# Agent 协作：一个分支间通信原语
 
-一个 agent 能派生别的 agent（=新分支，想派几个派几个）、能列出系统里所有
-session / branch、能给别的分支或别的 session 发消息；两个 agent 同时跑时能互相
-看见、互相发消息。全部做成**工具调用**，全部建在**已有的事件层**上。
+整套 agent 协作收敛成**一个原语：分支间通信**。一个 agent 能派生别的 agent、能给
+别的分支/别的 session 发消息、能把几条分支的内容汇给一个模型综合——这些表面上不同
+的操作，**底层是同一件事**：往某条分支投递内容 → 触发那条分支跑一轮 → 结果自动回送
+发起方。全部做成工具调用，全部建在已有的事件层上。
 
 > 范围：本文是设计，不含代码。落地顺序见末节。
 
 ---
 
-## 0. 一句话定位
+## 0. 核心：只有一个原语
 
-**不是从零造，是补四个工具 + 一个广播能力。** 底层基础设施已经齐全：
+之前纠结过 派生 / send / attach / merge 是不是四五个并列操作——**不是**。把它们拆开
+看，本质都是同一个动作：
 
-- **派生子 agent**：`task` 工具 + `TaskRunner` 线程池已能异步派生、后台跑、完成
-  回流。缺的只是"一次派 N 个"。
-- **跨 session 读写**：`SessionStore` 的 `list_sessions / list_branches /
-  append_message / set_head / commit_turn / process_user_turn /
-  process_merge_turn` **全部接受任意 session_id，无权限限制**。缺的只是把它们
-  封成 agent 能调的工具。
-- **事件 + 前端通知**：`get_event_bus()` 单例总线 + `emit_safe(...)` +
-  `emit_ws_frame(frame)`（外部源经总线把 WS 帧推前端）已就绪。新功能每个动作
-  emit 事件，前端订阅。
+> **分支间通信** = 往一条分支（同 session 另一分支 / 跨 session / 当场新建的 /
+> 已存在的）**投递内容** → **触发**那条分支跑一轮（模型读到投来的内容）→ 结果
+> **自动回送**发起方（追加一条新消息 + 触发发起方跑一轮，发起方醒来读到、继续）。
 
-所以本设计 = 复用 Task 子系统 + 复用 SessionStore + 在事件层上补四个工具和它们
-的前端。
+所有协作操作都是这个原语的**参数化**：
+
+| 表面操作 | 其实是通信的哪种用法 |
+|---|---|
+| **派生子 agent**（旧 task/spawn） | 通信：**新建**一条分支 + 投消息 + 自动回 |
+| **发消息给某分支**（send_to_branch） | 通信：往**已存在**分支投消息 + 自动回 |
+| **综合多条分支**（旧 merge） | 通信：投递时**带多个来源**分支的内容，让目标模型综合 |
+| **attach** | **不是操作**，是通信结果在 DAG 上的"回流连线"画法 |
+
+**没有独立的 merge，没有"贴 vs 综合"的区分**（投来的内容一定被模型读取使用，不存在
+"光放着不读"）。**数量不是区分点**（派生能派 N 个、综合能合 N 条、send 也能群发）。
+唯一的原语就是上面那条。
+
+为什么能这么收敛（和 Claude Code 一致）：Claude Code 的异步子 agent 跑完，结果靠
+"完成通知作为新输入唤醒父"回去；它没有 merge，多个结果靠主 agent 自己读了综合。我们
+把这个推广——不分父子、不分同跨 session，**任意分支之间都能投递+自动回**，于是派生、
+send、综合都成了它的用法。
 
 ---
 
@@ -32,175 +43,152 @@ session / branch、能给别的分支或别的 session 发消息；两个 agent 
 | 概念 | 定义 | 来源 |
 |---|---|---|
 | **session** | 一个独立会话，有 `session_id`，对应一个 git 仓库 | `SessionStore` |
-| **branch（分支）** | `(session_id, head_id)` 对。同 session 不同 head = 同会话的两条分支；不同 session = 跨会话 | `merge.py` 已确立，同/跨 session 走同一路径 |
-| **派生子 agent** | 在某 session 里 fork 一条新分支跑一轮 agent | `run_agent_turn(session_id, prompt, branch_from=...)` |
-| **attach 回流** | 子分支跑完，结果作为 `function=attach` 指针嵌回父序列 | `write_attach_pointer_for_spawn` |
+| **branch（分支）** | `(session_id, head_id)` 对。同 session 不同 head = 同会话两条分支；不同 session = 跨会话 | `merge.py` 已确立，同/跨 session 走同一路径 |
+| **投递** | 往某分支追加一条消息节点 | `append_message`（任意 session_id，无权限限制） |
+| **触发** | 让某分支跑一轮 agent | `process_user_turn(TurnRequest(...))` |
+| **自动回送** | 目标答完，把回复作为新输入喂回发起方 + 触发它跑 | `TaskRunner._dispatch_followup`（已存在） |
+| **attach 连线** | DAG 上标记"结果从哪条分支回流来"的指针节点 | `write_attach_pointer_for_spawn`（只画图，不是操作） |
 
-DAG 画法已在 `dag/dag-live.html` 定稿：派生 = 子分支服务（spawn 点划线，从 spawn
-往下长，attach 回流软连接）；互发消息 = 分支间通信（异步，send 瞬间返回，回复异步
-送回，通信点线 hover 显示）。本文只管后端 + 工具 + 前端列表/交互，画法不再赘述。
+DAG 画法已在 `dag/dag-live.html` 定稿（分支间通信场景：异步、send 瞬间返回、回复异步
+回送、通信点线 hover 显示；派生=子分支服务场景；回流=软连接线）。
 
 ---
 
-## 2. 四个工具（agent 可调用）
+## 2. 原语的工具形态
 
-全部用 `@function(name=..., description=..., toolset=["core"])` 注册，和 `task`
-工具同款。每个工具执行时 `emit_safe(...)` 一个事件。
+把原语包成 agent 能调的工具。**一个核心工具 + 两个列举工具**。
 
-### 2.1 `spawn_agents` — 一次派生 N 个子 agent
+### 2.1 `talk_to_branch` — 分支间通信（核心，唯一的协作原语）
 
 ```
-spawn_agents(
-    tasks: list[{prompt: str, label?: str, agent_id?: str, context?: "clean"|"inherit"}],
-    wait: bool = false,     # false=全异步(默认), true=全部等完返回
+talk_to_branch(
+    message: str,                       # 投给目标的内容/指令
+    target: str = "new",                # "new"=当场新建分支(派生)；"sid"或"sid:head"=已存在分支
+    sources: list[str] = [],            # 额外带上这些分支的内容一起投（综合多条时用）
+    agent_id: str = "main",             # 目标用哪个 agent
+    wait: bool = false,                 # false=异步(默认,瞬间返回)；true=同步等回复
 ) -> str
 ```
 
-- 对 `tasks` 里每一项调一次现有的 `run_agent_turn_async`（异步）/
-  `run_agent_turn`（同步），即每项 = 一条新分支。**想派几个派几个**（1 个、几十个）。
-- `wait=false`（默认，对应你"派 agent + 还能继续聊"）：立刻返回每个的 `task_id`
-  列表；各子 agent 在 `TaskRunner` 线程池后台跑（池上限 `OPENPROGRAM_TASK_WORKERS`，
-  超出排队）；每个完成时各自 attach 回流 + 自动 followup 父 session。
-- `wait=true`：全部跑完，返回每个的最终文本汇总。
-- 事件：每派一个 emit `agent.spawned`；复用现有 `subagent.started/.ended`。
-- 单个 `task` 工具保留（一次派一个的快捷方式），`spawn_agents` 是它的批量版。
-- **并发**：N 个子 agent 真并行（线程池），这就是"两个/多个 agent 同时做事"的来源。
+一个工具覆盖三种用法（靠参数，不是三个工具）：
 
-### 2.2 `list_sessions` — 列出所有 session（跨 session 可见的基础）
+- **派生子 agent**：`target="new"` → 当场新建一条分支，把 message 投给它，它跑完
+  自动回流。（想派几个，就调几次，各自异步并行。）
+- **发消息给已有分支/session**：`target="sid:head"` → 往那条已存在分支投 message，
+  触发它跑一轮，答完自动回送。跨 session 同一路径（target 是任意 session）。
+- **综合多条分支**：`sources=["s1:h1","s2:h2",...]` → 投递时把这几条分支的内容
+  一起带上，目标模型读完综合。（替代旧 merge；数量任意。）
+
+**统一执行流程**（无论哪种用法）：
+1. 若 `target="new"`：新建分支；否则 `set_head` 切到 `target` 那条分支。
+2. 组装投递内容：`message` +（若有 `sources`）把每条来源分支的内容附上。
+3. 投递 + 触发：`process_user_turn(TurnRequest(session_id=target, user_text=投递内容,
+   branch_from=target_head))` → 目标分支跑一轮，**模型读到投来的全部内容**。
+4. **回送**：
+   - `wait=false`（默认）：瞬间返回"已投递 + delivery_id"，发起方不阻塞继续；目标
+     答完，`_dispatch_followup` **自动**把回复作为新消息喂回发起方 session + 触发它
+     跑一轮，发起方醒来读到。
+   - `wait=true`：阻塞等目标答完，直接返回回复文本。
+- 事件：投递 emit `branch.message_sent`；回送 emit `branch.message_replied`（见 §3）。
+
+### 2.2 多条来源喂多少内容（综合的关键，照 Claude Code）
+
+`sources` 里每条分支怎么喂给目标模型——**照 Claude Code：先让每条分支自我总结，再
+汇集总结**。Claude Code 子 agent 的 final message 本就是"给父看的总结"；我们的来源
+分支不一定以总结收尾，所以多一步：
+
+1. 对每条 source 分支，先让它产出一个**面向本次通信的总结**（"把你这条分支的结论
+   浓缩成要点"），复用 `branch_summarization`。
+2. 把这些总结拼成 `<branch label="...">总结</branch>` 块，连同 `message` 一起投给
+   目标模型。
+
+这样不爆 context、能带很多条、且每条交给模型的是浓缩要点而非原始长对话——和 Claude
+Code 主 agent 拿 N 段子 agent 总结再综合是同一思路。不需要"喂全文/喂摘要"的参数选择，
+统一走"自我总结"。
+
+### 2.3 `list_sessions` / `list_branches` — 看见对方（通信的前提）
 
 ```
-list_sessions(limit: int = 50, agent_id?: str, source?: str) -> str
+list_sessions(limit=50, agent_id?, source?) -> str      # db.list_sessions
+list_branches(session_id?) -> str                        # db.list_branches
 ```
 
-- 直接调 `db.list_sessions(...)`，返回每个 session 的 `id / title / agent_id /
-  updated_at / head_id`，格式化成 agent 易读的列表（id + 标题 + 活跃时间）。
-- 这是"agent 互相看见对方"的入口：A 想找 B，先 list 看有哪些 session/agent。
-- 事件：emit `sessions.listed`（轻量，主要给审计/前端刷新用）。
-
-### 2.3 `list_branches` — 列出某 session 的所有分支
-
-```
-list_branches(session_id?: str) -> str
-```
-
-- 调 `db.list_branches(session_id)`（默认当前 session），返回每条分支的
-  `head_id / name / created_at / updated_at`，标出活跃分支。
-- 配合 `list_sessions`：先列 session，再列某 session 的 branch，定位到要发消息的
-  那条 `(session_id, head_id)`。
-- 事件：emit `branches.listed`。
-
-### 2.4 `send_to_branch` — 给一条分支/一个 session 发消息（异步）
-
-```
-send_to_branch(
-    target_session_id: str,
-    message: str,
-    target_head_id?: str,      # 指定分支尖；省略=该 session 活跃分支
-    agent_id: str = "main",
-    wait: bool = false,        # false=投递即返回(默认), true=等对方答完拿回复
-) -> str
-```
-
-这是核心，**异步语义和 DAG 通信场景一致**：
-
-1. **投递**：往 `target_session_id` 追加一条消息节点（`append_message`），标记
-   来源是另一个 agent（DAG 里画成 △，不是真人 ○）。`target_head_id` 给定就先
-   `set_head` 切到那条分支再追加。
-2. **触发对方跑**：`process_user_turn(TurnRequest(session_id=target, agent_id,
-   user_text=message, branch_from=target_head_id))` —— 让目标分支跑一轮。
-3. **瞬间返回（`wait=false`，默认）**：发起方**不阻塞**，立刻拿到"已投递"的
-   确认 + 一个 `delivery_id`，继续干自己的事。目标 agent 在自己节奏处理。
-   答完后，**结果异步送回**发起方 session 末尾（追加一条"来自 B 的回复"节点，
-   △），发起方下一轮自然看到。
-4. **同步（`wait=true`）**：阻塞等目标答完，直接返回回复文本（像 Claude Code 的
-   同步 Task；仅当发起方明确要等结果时用，注意可能阻塞/死锁，默认不用）。
-- **跨 session 天然支持**：`target_session_id` 是任意 session id，数据层无限制。
-  同 session 另一分支、别的 session，同一个工具、同一条路径。
-- 事件：投递 emit `message.sent`（payload: from_session, to_session, to_head,
-  delivery_id）；对方答完回送 emit `message.replied`。两者都经 `emit_ws_frame`
-  让两边前端实时更新。
-
-> `send_to_branch` 和 `task`/`spawn_agents` 的区别：后者是**新建**子分支（派活），
-> 前者是**给已存在**的分支/ session 发消息（通信）。DAG 里前者画"分支间通信"
-> （平行已存在的 B），后者画"子分支服务"（spawn 当场新建的 B）。
+通信前要能指定 target/sources，所以得先列出有哪些 session、每个有哪些分支
+（`(session_id, head_id)` + name）。这是"两个 agent 互相看见"的入口。数据层 + WS
+handler 已有（`handle_list_sessions` / `handle_list_branches`），只缺包成工具。
 
 ---
 
 ## 3. 全部建在事件层上
 
-每个工具动作 → 一条 `Event`（type/origin/payload/metadata，metadata 自动带
-session/turn）。事件类型（新增）：
+每个动作 emit 一条 `Event`（type/origin/payload/metadata，metadata 自动带
+session/turn）。事件类型：
 
 | type | 何时 | origin | payload 关键字段 |
 |---|---|---|---|
-| `agent.spawned` | spawn_agents 派出一个子 agent | agent | task_id, label, target_session |
-| `sessions.listed` | 调 list_sessions | agent | count |
-| `branches.listed` | 调 list_branches | agent | session, count |
-| `message.sent` | send_to_branch 投递 | agent | from_session, to_session, to_head, delivery_id |
-| `message.replied` | 目标答完异步回送 | agent | from_session, to_session, delivery_id |
+| `branch.message_sent` | talk_to_branch 投递 | agent | from, to, sources, delivery_id, is_new |
+| `branch.message_replied` | 目标答完自动回送 | agent | from, to, delivery_id |
+| `sessions.listed` / `branches.listed` | 列举 | agent | count |
 
-复用已有：`subagent.started` / `subagent.ended`（Task runner 已 emit）。
+复用已有：`subagent.started` / `subagent.ended`（TaskRunner 已 emit，派生时照样用）。
 
-**前端通知统一走 `emit_ws_frame(frame)`**：跨 session 时，目标 session 的前端
-可能没订阅发起方——经总线 emit 一个 `ws.frame` 事件，webui 订阅后原样广播，两边
-前端都能收到"你收到一条来自 X 的消息""X 回复了"。前端零改动协议、外部源不认识
-webui（沿用事件层步 4 的解耦）。
+**前端通知统一走 `emit_ws_frame(frame)`**：跨 session 时，目标 session 的前端经总线
+emit 一个 `ws.frame` 事件、webui 订阅后原样广播，两边前端都实时看到"收到来自 X 的
+消息""X 回复了"。前端零改协议、外部源不认识 webui（沿用事件层步 4 解耦）。
 
-这样：**proactive / 审计 / 前端刷新 全是这条流的订阅者**，互不耦合。
+proactive / 审计 / 前端刷新 都是这条流的订阅者，互不耦合。
 
 ---
 
-## 4. 互相看见 + 互发消息（端到端）
+## 4. 端到端：两个 agent 互相看见 + 通信
 
-两个 agent A、B 同时在跑（可能同 session 不同分支，也可能不同 session）：
+A、B 同时在跑（同 session 不同分支，或不同 session）：
 
-1. **看见**：A 调 `list_sessions` → 看到 B 的 session；调 `list_branches` →
-   看到 B 的活跃分支 `(B_session, B_head)`。
-2. **发消息**：A 调 `send_to_branch(B_session, "...", target_head_id=B_head)`
-   → 瞬间返回，A 继续。
-3. **B 收到**：消息进 B 分支（B 那边一个 △"收到 A 的消息"），B 跑一轮答它
-   （△"B 应答"）。两边前端经 `ws.frame` 实时看到。
-4. **回送 A**：B 答完，结果异步追加到 A 末尾（△"A 收到 B 的回复"），A 下一轮
-   看到并可继续回应。
-5. **可循环**：A 再 `send_to_branch` 给 B……两条分支各自不阻塞、不串行。
+1. **看见**：A 调 `list_sessions` → 看到 B；`list_branches` → 看到 B 的活跃分支
+   `(B_session, B_head)`。
+2. **发**：A 调 `talk_to_branch("...", target="B_session:B_head")` → 瞬间返回，
+   A 继续。
+3. **B 收到**：消息进 B 分支（B 那边一个 △"收到 A 的消息"），B 跑一轮答它（△）。
+   两边前端经 ws.frame 实时看到。
+4. **回送 A**：B 答完，`_dispatch_followup` 自动把回复追加到 A 末尾（△）+ 触发 A
+   跑一轮，A 醒来读到、可继续。
+5. **可循环**：A 再 `talk_to_branch` 给 B……两条分支各自不阻塞、不串行。
 
-这就是 DAG"分支间通信"场景的真实后端。
+派生（target="new"）和综合（带 sources）是同一流程的另两种参数，不另列。
 
 ---
 
-## 5. 安全 / 值守（接事件层的拦截点）
+## 5. 安全 / 值守
 
-跨 session 写是副作用（往别人的会话写、触发别人跑），必须可拦：
+投递是副作用（往别人会话写、触发别人跑），必须可拦：
 
-- 事件层已有 `tool.before` 同步问询点（值守模式拦工具）。`send_to_branch` /
-  `spawn_agents` 走它：无人值守 + deny 策略时可拦下，要求确认。
-- `send_to_branch` 投递前校验 `target_session_id` 真实存在（`db.get_session`
-  非 None），不存在则报错，不静默新建。
-- 不在工具里做权限放行；沿用三层门控（check_fn / can_use / requires_approval）。
+- 走事件层已有的 `tool.before` 同步问询点：无人值守 + deny 策略时拦下 `talk_to_branch`
+  要求确认。
+- 投递前校验 `target`（非 "new" 时）真实存在（`db.get_session` 非 None），不存在报错、
+  不静默新建。
+- 沿用三层门控（check_fn / can_use / requires_approval），不在工具里自造放行。
 
 ---
 
 ## 6. 前后端清单
 
-**后端（工具，`openprogram/functions/tools/`）**
-- `agent_collab/spawn_agents.py` — 批量派生（复用 run_agent_turn_async）
-- `agent_collab/list_sessions.py`、`list_branches.py` — 复用 db.list_*
-- `agent_collab/send_to_branch.py` — append_message + process_user_turn + 异步回送
-- 各工具 `emit_safe(...)` 对应事件；跨 session 通知用 `emit_ws_frame`
+**后端（工具，`openprogram/functions/tools/agent_collab/`）**
+- `talk_to_branch.py` — 唯一核心：投递 + 触发 + 自动回送 + 多源自我总结
+- `list_sessions.py` / `list_branches.py` — 复用 db.list_*
+- 各工具 `emit_safe(...)`；跨 session 通知用 `emit_ws_frame`
 
-**后端（已有，直接用，不重写）**
-- `TaskRunner`（线程池、并发、await、cancel、attach 回流、followup）
+**后端（已有，直接复用，不重写）**
+- `TaskRunner`（线程池并发、await、cancel、_dispatch_followup 自动回送、attach 连线）
 - `SessionStore`（list/append/set_head/commit/get）
-- `dispatcher.process_user_turn`、`_merge.process_merge_turn`
-- `event_bus`（总线 + emit_safe + emit_ws_frame）
+- `dispatcher.process_user_turn`
+- `branch_summarization`（多源自我总结）
+- `event_bus`（emit_safe / emit_ws_frame）
 
 **前端（`web/`）**
-- session 列表 / branch 列表面板：已有 WS `handle_list_sessions` /
-  `handle_list_branches` 返回 `sessions_list` / `branches_list` 帧——前端加一个
-  "选择 session/分支 → 发消息"的交互入口（复用现有侧栏列表）。
-- 收到 `message.sent` / `message.replied`（经 ws.frame）→ 在对应 session 的
-  DAG / 消息流里渲染通信节点 + 软连接线（hover 显示，已在 dag-live 定稿）。
-- spawn / 多 agent 进度：复用现有 `task_status` 帧 + tasks 面板。
+- session / branch 列表面板（已有 WS handler）+ "选 target → 发消息"交互入口
+- 收到 `branch.message_sent` / `branch.message_replied`（经 ws.frame）→ 在对应
+  session 的 DAG / 消息流渲染通信节点 + 回流软连接线（hover 显示，dag-live 已定稿）
+- 派生进度复用现有 `task_status` 帧 + tasks 面板
 
 ---
 
@@ -208,16 +196,17 @@ webui（沿用事件层步 4 的解耦）。
 
 | 步 | 做什么 | 验证 |
 |---|---|---|
-| **C1** | `spawn_agents` 工具（批量包 run_agent_turn_async） | agent 一次派 3 个子任务，3 个 task_id 返回、3 个后台并行跑、各自 attach 回流 |
-| **C2** | `list_sessions` / `list_branches` 工具 | agent 调用，列出真实的多 session / 多分支 |
-| **C3** | `send_to_branch`（异步投递 + 触发 + 回送），同 session 两分支 | A 发给 B 分支，A 不阻塞；B 跑一轮；回复异步回到 A 末尾。事件 message.sent/replied 在事件日志可见 |
-| **C4** | `send_to_branch` 跨 session | A 的 session 发给 B 的另一个 session，同一条路径跑通；两边前端经 ws.frame 实时更新 |
-| **C5** | 值守拦截 + target 存在性校验 | deny 策略下 send_to_branch 被 tool.before 拦下要求确认；不存在的 target 报错不新建 |
-| **C6** | 前端交互：列表选择 → 发消息 + 通信节点渲染 | webui 里选一个 session/分支发消息，DAG 出现通信节点 + hover 软连接线 |
+| **C1** | `talk_to_branch` 核心：target="new"（派生）→ 投递 + 触发 + 自动回送 | agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；事件 message_sent/replied 在事件日志可见 |
+| **C2** | `list_sessions` / `list_branches` 工具 | agent 列出真实多 session / 多分支 |
+| **C3** | `talk_to_branch` target=已存在分支（同 session） | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
+| **C4** | 跨 session：target=别的 session | A 发给别的 session，同一路径跑通；两边前端经 ws.frame 实时更新 |
+| **C5** | `sources` 多源综合（自我总结 → 汇集 → 综合） | 带 2 条 source 分支，每条先自我总结，目标模型综合出新回答 |
+| **C6** | 值守拦截 + target 存在性校验 | deny 下被 tool.before 拦；不存在的 target 报错不新建 |
+| **C7** | 前端交互：列表选 target → 发消息 + 通信节点渲染 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
 
-C1–C2 是地基（派生 + 看见）；C3 是核心（异步互发 + 回送）；C4 把它推广到跨
-session；C5 补安全；C6 接前端。每步都能在 webui（`cd web && npm run build` +
-`openprogram worker restart`）或事件日志（`OPENPROGRAM_EVENT_LOG=1`）验证。
+C1 是核心原语（派生用法）；C3/C4 把 target 推广到已有分支/跨 session；C5 是综合用法；
+C6 安全；C7 前端。每步在 webui（`cd web && npm run build` + `openprogram worker
+restart`）或事件日志（`OPENPROGRAM_EVENT_LOG=1`）验证。
 
 ---
 
@@ -225,12 +214,15 @@ session；C5 补安全；C6 接前端。每步都能在 webui（`cd web && npm r
 
 | 事 | 位置 |
 |---|---|
-| 子 agent 同步/异步派生 | `openprogram/agent/sub_agent_run.py`（run_agent_turn / _async / write_attach_pointer_for_spawn） |
-| Task 工具范本 + 注册 | `openprogram/functions/tools/task/task.py`、`functions/_runtime.py`（@function / _build_and_register_tool） |
-| 线程池 / 并发 / await / cancel | `openprogram/agent/task/runner.py`（TaskRunner.spawn_task / await_task / _run_one） |
+| 子 agent 派生 + 自动回送 | `openprogram/agent/sub_agent_run.py`、`agent/task/runner.py`（spawn_task / _dispatch_followup） |
+| 工具范本 + 注册 | `openprogram/functions/tools/task/task.py`、`functions/_runtime.py`（@function） |
 | session/branch 数据层 | `openprogram/store/session/session_store.py`（list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455） |
 | 触发某 session 跑一轮 | `openprogram/agent/dispatcher/__init__.py`（process_user_turn:97） |
-| 跨 session 合并范本 | `openprogram/agent/internals/_merge.py`（process_merge_turn）、`webui/ws_actions/merge.py`（分支抽象定义） |
-| 列表 WS handler | `webui/ws_actions/session.py:825`（list_sessions）、`branch.py:221`（list_branches） |
-| 事件总线 | `openprogram/agent/event_bus.py`（emit_safe / emit_ws_frame / make_event / Event） |
-| Task 状态广播 + 事件 tap | `webui/ws_actions/task.py`（_broadcast_task_status → emit_safe subagent.*） |
+| 多源自我总结 | `openprogram/agent/compaction/branch_summarization.py` |
+| 列表 WS handler | `webui/ws_actions/session.py:825`、`branch.py:221` |
+| attach 连线（仅画图） | `openprogram/agent/sub_agent_run.py`（write_attach_pointer_for_spawn） |
+| 事件总线 | `openprogram/agent/event_bus.py`（emit_safe / emit_ws_frame） |
+
+> 注：旧的 `_merge.py` / `process_merge_turn` 不再作为独立"操作"暴露给 agent——
+> "综合多条"由 `talk_to_branch(sources=[...])` 覆盖。底层 merge 代码可保留（多父
+> ContextCommit 血缘记录仍有用），但不再是面向 agent 的独立工具。
