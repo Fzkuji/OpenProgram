@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/ui/attachment-handling.html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>附件处理设计（Web 聊天） · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=411d594f">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn" data-title-en="Readme Cn.En" data-href-zh="/docs/README_CN.html" data-href-en="/docs/README_CN.en.html">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="/docs/design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui" open><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink active" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Web UI <span class='bc-sep'>›</span> <span class="bc-current">附件处理设计（Web 聊天）</span></nav><h1 id="attachment-handling-design-web-chat">Attachment Handling Design (Web Chat)<a class="header-anchor" href="#attachment-handling-design-web-chat">#</a></h1>
+<p>A unified design that combines the approaches of Claude Code / opencode / openclaw with OpenProgram's own constraints.
+The current baseline is committed at <code>c29ef3dd</code> (image→vision, document→absolute-path reference, agent reads on demand); this document is its next step of evolution.</p>
+<h2 id="one-sentence-principle">One-Sentence Principle<a class="header-anchor" href="#one-sentence-principle">#</a></h2>
+<p><strong>materialize once to a path; deliver the best block the active model accepts plus a small head preview; let the agent page the rest with its bounded tools.</strong></p>
+<p>Attachment bytes hit disk at most once and are identified by <strong>a single absolute path</strong>; <strong>how</strong> their content reaches the model is recomputed every turn based on <code>(file kind × the input modalities the current model declares)</code>, degrading step by step through <code>native block → ≤4KB head preview → path + agent paged read</code>. <strong>The prompt cost per file is O(1), independent of file size.</strong> The same upload works on codex/gpt-5.5 today, and when you later switch to a PDF-native Claude/Gemini it just takes effect, with <strong>zero frontend changes</strong>.</p>
+<p>Three layers of judgment (the first two are baseline intuition, the third is new):</p>
+<ol>
+<li>Is it an image? → vision block.</li>
+<li>Is there an existing local path? Upload/remote channel = no → write to disk; <code>@</code>-mention/typed path = yes → reference in place.</li>
+<li>Capability overlay: only when the model declares support for <code>document</code> do we upgrade the PDF's delivery to a native document block.</li>
+</ol>
+<h2 id="decision-matrix-authoritative-plain-text-aligned-columns-not-a-markdown-table">Decision Matrix (authoritative; plain-text aligned columns, not a markdown table)<a class="header-anchor" href="#decision-matrix-authoritative-plain-text-aligned-columns-not-a-markdown-table">#</a></h2>
+<p><code>DELIVER (now)</code> is based on the default codex/gpt-5.5: <code>model.input=[&quot;text&quot;,&quot;image&quot;]</code>, no <code>document</code>.
+A row's delivery method flips <strong>only</strong> when <code>model.input</code> declares the corresponding modality.</p>
+<pre><code>source        file kind     write to disk?            DELIVER(now, codex/gpt-5.5)                  READ path
+------------  ------------  ------------------------  -------------------------------------------  ----------------------------
+upload        image         no (in-memory→b64 direct) ImageContent block (pixels)                  model vision native
+upload        text/code     yes attachments/&lt;safe&gt;    [attachment:..@/abs] + ≤4KB head preview     read tool 2000 lines/200KB paging
+upload        pdf           yes attachments/&lt;safe&gt;    [attachment:..(P pages)@/abs] + page1 head+outline   pdf tool 80KB/page window
+upload        other binary  yes attachments/&lt;safe&gt;    [attachment:..@/abs] mention only (no preview)       bash file/strings/xxd
+@-mention     image         no (re-read+b64)          ImageContent block                           model vision native
+@-mention     text/code     no (already on disk)      [attachment:..@/abs] + ≤4KB head             read paging
+@-mention     pdf           no (already on disk)      [attachment:..(P pages)@/abs] + page1 head    pdf paging
+@-mention     other binary  no (already on disk)      [attachment:..@/abs] mention only            bash
+typed path    any           = @-mention               file-resolve treats a bare path identically by its kind
+remote channel image         yes attachments/&lt;safe&gt;    ImageContent (re-read from on-disk bytes)    model vision native
+remote channel text/pdf      yes attachments/&lt;safe&gt;    [attachment:..@/abs] + head preview (same as upload)  read/pdf paging
+remote channel other binary  yes attachments/&lt;safe&gt;    [attachment:..@/abs] mention only            bash
+</code></pre>
+<p><strong>Cells that flip on more capable models (single rule, any source):</strong></p>
+<pre><code>pdf, model.input contains &quot;document&quot;, size ≤ NATIVE_DOC_INLINE_CAP(10MB and the provider's page-count cap)
+    → DELIVER becomes a native document content block (whole file base64, built by reading from the on-disk path);
+      the [attachment:..@/abs] mention is kept (drives the chip + lets the agent still read another slice);
+      the head preview is suppressed (the model already has the whole file).
+pdf, contains &quot;document&quot; but size &gt; NATIVE_DOC_INLINE_CAP
+    → stays in the &quot;now&quot; column (path + head preview); no native block is built (avoid blowing up the context).
+image, model.input does not contain &quot;image&quot; (a degraded codex config)
+    → store the png + [attachment:..@/abs — view with image_analyze]
+      (fixes the bug at providers/_shared/openai_responses.py:120-121 where input_image is silently dropped when image is not in model.input).
+</code></pre>
+<p><strong>Axis discipline</strong>: the <code>source</code> axis only decides <strong>where the bytes land</strong> (write to disk vs. reference in place); the <code>(file kind × capability)</code> pair is the <strong>only</strong> thing that decides DELIVER.</p>
+<h2 id="relationship-to-claude-codeopencodeopenclaw">Relationship to Claude Code/opencode/openclaw<a class="header-anchor" href="#relationship-to-claude-codeopencodeopenclaw">#</a></h2>
+<ul>
+<li><strong>Images go through vision</strong>: all three plus us agree.</li>
+<li><strong>PDF native document block</strong>: the preferred path for Claude Code/opencode/openclaw. OpenProgram's capability overlay makes this path <strong>take effect automatically</strong> when a doc-capable model is configured — this is the heart of &quot;borrowing the best&quot;: wiring in their best path without forcing it.</li>
+<li><strong>Path + paged tool read</strong>: everyone does this when the agent explores files <strong>mid-task on its own</strong>. OpenProgram routes <strong>user attachments</strong> through this path on codex too, because codex can't accept a document block — but with P0's head preview, the reliability gap is closed.</li>
+<li><strong>Write to a managed directory</strong>: openclaw's claim-check (inbound has only bytes, no path). We use a per-session git workdir rather than a global one + TTL, which suits agentic better (it is the agent's cwd, committed to git every turn, replayable).</li>
+<li><strong>Rejected approach</strong>: opencode/P3's &quot;synthesize a fake read() tool_use+tool_result at submit time to stuff the content in&quot; — rejected, because (a) mirroring the real read/pdf tool caps drifts, (b) once you switch to a native block it becomes dead weight, and (c) it adds sync latency at submit time. Instead we use a passive <code>&lt;attachment-preview&gt;</code> content snippet that gives the model a constant-cost first glance.</li>
+</ul>
+<h2 id="large-file-guarantee-no-context-blowup-invariant">Large-File Guarantee (no-context-blowup invariant)<a class="header-anchor" href="#large-file-guarantee-no-context-blowup-invariant">#</a></h2>
+<p>What the backend can possibly stuff into the prompt is <strong>only</strong>: (a) one image block, (b) a one-time ≤4KB head preview (first turn only), (c) an ~90-byte path mention, or (d) a native doc block double-gated by &quot;model capability + size≤10MB&quot;. Everything else enters the context page by page only through the agent's own <strong>bounded paging tools</strong>.</p>
+<p>Measured caps (verified against source): the <code>pdf</code> tool is 80KB of characters per call (offset/limit by page); the <code>read</code> tool is 2000 lines per call, with a 200KB result cap; <code>file_search.py</code>'s 256KB only feeds the preview, never the delivery.</p>
+<p>Drag in ten 30MB PDFs at once: that one turn is about <code>10×(90B mention + 4KB preview) ≈ 41KB</code>, and zero afterward — <strong>independent of size</strong>. A 500-page PDF on codex: written to disk once, the mention carries &quot;500 pages&quot;, the preview = page-1 text + the first line of each page as an outline (truncated to about 50 entries, then &quot;…(450 more pages)&quot;); at attach time the prompt cost is ≤4KB+90B, the 8MB body never enters the context; the agent uses a <code>pdf(offset=N,limit=20)</code> window and <strong>jumps directly</strong> to the relevant page range via the outline, rather than scanning sequentially.</p>
+<h2 id="storage-dedup-security-lifecycle">Storage / Dedup / Security / Lifecycle<a class="header-anchor" href="#storage-dedup-security-lifecycle">#</a></h2>
+<ul>
+<li><strong>Location</strong>: per-session <code>&lt;state_dir&gt;/sessions/&lt;id&gt;/workdir/attachments/&lt;safe-name&gt;</code> (unchanged). This is the agent's cwd, committed to git every turn — attachments become part of the session's replayable state. A global media store would break both of these invariants.</li>
+<li><strong>Who writes to disk</strong>: only path-less sources (browser upload, remote channel). <code>@</code>-mention/typed path is already on disk; reference in place, zero copy.</li>
+<li><strong>Naming</strong>: keep the baseline <code>_safe_attach_name()</code> — <code>os.path.basename</code> + replace non-<code>alnum._- space</code> with <code>_</code>, 120-char cap, never empty. Human-readable, so the agent's intuition about <code>./attachments/spec.pdf</code> holds. No sha-prefixed names.</li>
+<li><strong>Dedup (new)</strong>: sha256 the decoded bytes before writing, and maintain <code>attachments/.opdedup.json {sha256: relative name}</code>. On a hit, re-stat+hash to confirm it's the same file, then <strong>reuse</strong> it instead of writing a duplicate. Idempotent: re-dragging the same paper, or retrying a turn, is a no-op. <strong>Fixes a baseline bug</strong>: the current <code>-N</code> no-clobber loop has no byte comparison for same-named files, so re-dragging an identical file produces a second copy. Dedup is within-session only (the workdir is an isolated git repo; no cross-session dedup). The index is best-effort: losing/corrupting it only writes one extra copy (harmless) and never mis-maps (it always verifies before reuse).</li>
+<li><strong>Over-limit (new)</strong>: a hard cap of <code>MAX_ATTACH_BYTES=32MB</code>/file, checked <strong>both</strong> before <code>write_bytes</code> <strong>and</strong> at WS intake (before the base64 crosses the socket). Over the limit: skip saving, rewrite the mention to &quot;— too large (&gt;32MB), not stored&quot;, <strong>tell the model</strong>, never hand it a dead path. Images: 5MB/≤2000px (downsample first). Aggregate cap of 64MB per turn. Note that b64 inflates ~1.33×.</li>
+<li><strong>Security/escape</strong> (verified against source): upload/remote carry no source path at all (sandbox) + basename sanitization → structurally impossible to escape; <code>@</code>/typed path goes through <code>/api/file-resolve</code>'s <code>(cwd/path).resolve()</code> + <code>is_relative_to(cwd)</code> → out-of-bounds 400. <code>.resolve()</code> fully resolves symlinks, so &quot;a symlink inside the root pointing outside the root&quot; is <strong>already</strong> rejected — the symlink gap P1/P4 worried about does not exist in the current code.</li>
+<li><strong>GC</strong>: attachments are already committed to git, and deleting one would break replay — so GC is session-level lazy reclamation: delete the session → <code>rm -rf workdir</code> takes the attachments with it. No web-path TTL. On session load, clean up dedup-index entries whose target has gone missing. openclaw's 2-minute inbound TTL applies only to the staging area before a future remote channel writes to disk.</li>
+</ul>
+<h2 id="display-layer">Display Layer<a class="header-anchor" href="#display-layer">#</a></h2>
+<ul>
+<li><strong>chip</strong>: parse <code>[attachment: name (type, KB[, P pages|L lines]) @ /abs]</code> → file name + type badge + size + <strong>a new scope badge</strong> (&quot;500 pages&quot;/&quot;200K lines&quot;); strip the <code>@ /abs</code> suffix on display. The <code>&lt;attachment-preview&gt;…&lt;/…&gt;</code> snippet is stripped from the bubble like a mention — the user sees the chip, not the 4KB head.</li>
+<li><strong>delivery-mode sub-label</strong> (UX honesty): derive &quot;read on demand&quot;/&quot;sent inline&quot;/&quot;previewed first N lines&quot; from <code>delivery_mode</code>, so the user knows exactly what the model actually got and doesn't have to guess &quot;did it see my file&quot;.</li>
+<li><strong>optimistic-bubble timing</strong> (critical): the frontend <strong>never knows</strong> the post-disk absolute path (<code>@/abs</code> is appended by <code>_persist_doc_attachments</code> after WS message handling). So the optimistic bubble's chip must render from <strong>client-side data</strong> (<a href="http://file.name/size/type/b64">file.name/size/type/b64</a>), not the mention text; on reload it re-parses the mention from the final stored text. Both must render into the same chip, with the reconciliation key = the client-computed sha8. Therefore the <code>[attachment: name (type, KB)]</code> the frontend sends is <strong>intentionally path-less</strong>, and the chip parser must <strong>render the chip for both forms: path-less (in flight) and path-bearing (after rewrite)</strong>.</li>
+<li><strong>preview popup</strong>: decode the full file locally, never send it. The HUMAN client scrolls the whole file, the MODEL only saw the 4KB head — that's the payoff.</li>
+<li><strong>sidebar title</strong>: <code>_title_from_text</code> strips mentions before its 50-char truncation (unchanged); new: also strip <code>&lt;attachment-preview&gt;</code>.</li>
+</ul>
+<h2 id="diff-against-baseline-c29ef3dd">Diff Against Baseline c29ef3dd<a class="header-anchor" href="#diff-against-baseline-c29ef3dd">#</a></h2>
+<p><strong>Already done in the baseline (verified against source; do not rebuild)</strong>: upload bytes written to disk under workdir/attachments; <code>_safe_attach_name</code> sanitization + 120 cap; <code>-N</code> no-clobber; <code>[attachment: name (type, KB) @ /abs]</code> mention + backend-appended @path; first-turn workdir-race fallback; image→ImageContent; <code>@</code>/typed path zero-copy + file-resolve escape check (including symlink); <code>_title_from_text</code> strips mentions before truncation; <code>user_msg[&quot;extra&quot;]</code> attachment manifest; documents stripped from req.attachments before entering the dispatcher; validate only inspects user messages.</p>
+<p><strong>Net new</strong>:</p>
+<ol>
+<li><code>providers/types.py</code> Model.input Literal: add <code>&quot;document&quot;</code>.</li>
+<li><code>validate_modalities.py</code> <code>_MODALITY_TYPES</code>: add <code>&quot;document&quot;</code>.</li>
+<li>A new pure function <code>choose_delivery(file_kind, size, model) → &quot;native_image&quot;|&quot;native_document&quot;|&quot;path_preview&quot;|&quot;path_only&quot;</code>.</li>
+<li>dispatcher ~1888: replace the image-only loop with a per-attachment switch driven by <code>choose_delivery</code>.</li>
+<li><code>_persist_doc_attachments</code> adds: 32MB cap + &quot;too large&quot; rewrite; sha256 within-session dedup; page/line count <strong>injected into the parenthesized group captured by the rewrite regex</strong> (not appended outside the parentheses, preserving the single-token invariant + keeping the various strip regexes matching); a one-time <code>&lt;attachment-preview&gt;</code> (≤4KB head, truncated by bytes first then lines; binary → bash hint, no preview); image-on-incapable-model store+analyze hint.</li>
+<li><code>handle_chat</code> intake: add the 32MB/64MB caps.</li>
+<li><code>handle_chat</code> ~307: make &quot;strip documents before entering the dispatcher&quot; <strong>conditional on capability</strong> (keep them when the model supports document, so the downstream can build the native block).</li>
+<li><code>/api/file-resolve</code> returns: add page/line count + truncated head, so the <code>@</code>-mention preview and the upload preview are consistent (no symlink change needed).</li>
+<li><code>user-attachments.tsx</code>: parse count into a scope badge; strip <code>&lt;attachment-preview&gt;</code>; add the delivery-mode sub-label; render the chip for both path-less and path-bearing forms.</li>
+<li><code>use-composer-attachments.ts</code>/<code>file-tiles.tsx</code>: per-chip status/error badge + &quot;counting…&quot; optimistic placeholder + &quot;already attached&quot; dedup feedback (key = client sha8); popup &quot;the model previewed the first N lines&quot;.</li>
+<li><code>_title_from_text</code>: extend strip to also remove <code>&lt;attachment-preview&gt;</code>.</li>
+</ol>
+<p><strong>Stays identical on the wire</strong>: the <code>[attachment: … @ /abs]</code> token (with count optionally added only inside the parentheses). codex/gpt-5.5 behavior is byte-for-byte the same as today, <strong>plus</strong> the head preview + count; the native document branch stays dormant until a doc-capable model is configured.</p>
+<h2 id="phased-plan">Phased Plan<a class="header-anchor" href="#phased-plan">#</a></h2>
+<p><strong>P0 — Build now (end-to-end usable for the default codex/gpt-5.5; all net-new relative to the baseline)</strong></p>
+<ul>
+<li><code>_persist_doc_attachments</code>: 32MB cap + &quot;too large&quot;; sha256 within-session dedup; page/line count injected into the parenthesized group; a one-time <code>&lt;attachment-preview&gt;</code> (≤4KB, bytes first then lines; binary → bash hint); image-on-incapable store+analyze.</li>
+<li><code>handle_chat</code>: WS intake 32MB/64MB caps.</li>
+<li><code>choose_delivery()</code> pure function + wired into the dispatcher switch (native_image unchanged; path_preview/path_only are the live branches; native_document is a guarded stub that degrades to path_preview).</li>
+<li><code>types.py</code> + <code>validate_modalities.py</code>: add <code>&quot;document&quot;</code> (defines the seam; harmless on codex since no model declares it).</li>
+<li><code>/api/file-resolve</code>: return count + truncated head.</li>
+<li>frontend: scope badge + strip <code>&lt;attachment-preview&gt;</code> + per-chip status/error + &quot;counting…&quot; optimistic + &quot;already attached&quot; + path-less/path-bearing chip consistency.</li>
+<li><code>_title_from_text</code>: extend strip.</li>
+<li><strong>Value</strong>: small and medium documents get a free head preview (lower latency, the model has the gist); large files keep O(1) prompt cost via path + bounded tools; over-limit is reported, not stored; dedup fixes the baseline same-byte double copy; the capability seam is in place.</li>
+<li><strong>Verification</strong> (per the hard self-verify rule): restart the worker, curl healthz, then use the chrome MCP to walk a real WS on a fresh session: a small .txt (preview appears, chip clean), a 500-page PDF (count badge, page-1 outline, no context blowup), an over-limit file (&quot;too large&quot; chip), an <code>@</code>-mention (zero-copy, count+preview); confirm the sidebar title is clean and there is no 500/build overlay.</li>
+</ul>
+<p><strong>P1 — Deferred (requires a doc-capable model configured; the seam is built in P0)</strong></p>
+<ul>
+<li>Each provider's native document block builder (the Anthropic document / Gemini inline_data application/pdf wire format), hung after <code>choose_delivery==&quot;native_document&quot;</code> + the size guard.</li>
+<li>Make <code>chat.py:307</code>'s &quot;strip documents before entering the dispatcher&quot; conditional on capability.</li>
+<li>Reason for deferral: no configured model today has document in its input, so it can't be tested end-to-end against the real default; and it needs a per-provider request builder + verification of the native size cap.</li>
+</ul>
+<p><strong>P2 — Deferred (requires remote channels to ship)</strong></p>
+<ul>
+<li>openclaw-style remote inbound staging directory + 2-minute TTL GC + claim-check + <code>media://</code> indirection + channel adapters (discord download_attachment / wechat) wiring inbound bytes into the same <code>_persist</code> save call. The save+mention+preview representation can already accommodate &quot;bytes only&quot; sources; all that's missing is the inbound pipeline + staging lifecycle.</li>
+<li>Also deferred: a page-image fallback for scanned / image-only PDFs; xlsx/docx structured extraction (when binary → path); chunked/resumable uploads near 32MB + raising the WS max frame; a per-session attachment-quota hint UI; cross-session global dedup (intentionally never done — the per-session-workdir invariant).</li>
+</ul>
+<h2 id="open-questions-do-not-block-p0">Open Questions (do not block P0)<a class="header-anchor" href="#open-questions-do-not-block-p0">#</a></h2>
+<p>Two tunable constants, both with defensible defaults, both a single config knob rather than an architectural fork:</p>
+<ol>
+<li><code>PREVIEW_CAP</code> (suggested 4KB / ~60 lines). Too low gives just-over-the-limit small documents an extra read round-trip; too high leaks a bit more body on every attach. Start at 4KB, tunable.</li>
+<li><code>MAX_ATTACH_BYTES</code> (suggested 32MB). Curbing git-workdir blob bloat (a blob committed to git is permanent in history — a real cost) vs. accommodating larger real PDFs. Start at 32MB, tunable.</li>
+</ol>
+<p>The only genuinely product-facing question, deferrable until it actually fires: whether the permanent accumulation of large binaries in per-session git history (the cost of the &quot;workdir = self-contained committed state&quot; invariant) is acceptable, or whether a content store outside git is needed in the future — but that would sacrifice replay reproducibility, so the current design <strong>intentionally keeps</strong> this invariant, and it is not a P0 open item.</p>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/ui/surface-system.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Surface system (dark mode)</span></a><a class="pn-link pn-next" href="/docs/philosophy/agentic-programming.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agentic Programming — 设计哲学</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#one-sentence-principle">One-Sentence Principle</a>
+<a class="" href="#decision-matrix-authoritative-plain-text-aligned-columns-not-a-markdown-table">Decision Matrix (authoritative; plain-text aligned columns, not a markdown table)</a>
+<a class="" href="#relationship-to-claude-codeopencodeopenclaw">Relationship to Claude Code/opencode/openclaw</a>
+<a class="" href="#large-file-guarantee-no-context-blowup-invariant">Large-File Guarantee (no-context-blowup invariant)</a>
+<a class="" href="#storage-dedup-security-lifecycle">Storage / Dedup / Security / Lifecycle</a>
+<a class="" href="#display-layer">Display Layer</a>
+<a class="" href="#diff-against-baseline-c29ef3dd">Diff Against Baseline c29ef3dd</a>
+<a class="" href="#phased-plan">Phased Plan</a>
+<a class="" href="#open-questions-do-not-block-p0">Open Questions (do not block P0)</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=411d594f"></script>
+</body>
+</html>

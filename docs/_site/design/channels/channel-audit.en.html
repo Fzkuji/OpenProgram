@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/channels/channel-audit.html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel 子系统设计审计 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=411d594f">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn" data-title-en="Readme Cn.En" data-href-zh="/docs/README_CN.html" data-href-en="/docs/README_CN.en.html">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels" open><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink active" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="/docs/design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Channels <span class='bc-sep'>›</span> <span class="bc-current">Channel 子系统设计审计</span></nav><h1 id="channel-subsystem-design-audit">Channel Subsystem Design Audit<a class="header-anchor" href="#channel-subsystem-design-audit">#</a></h1>
+<p>Records the current state of the OpenProgram channel subsystem, the design gaps versus hermes (the primary benchmark), and the present structural defects. <strong>Describes only facts and judgments, no implementation plans</strong>—plans will be settled in later discussions.</p>
+<h2 id="1-our-current-design">1. Our current design<a class="header-anchor" href="#1-our-current-design">#</a></h2>
+<h3 id="11-file-layout">1.1 File layout<a class="header-anchor" href="#11-file-layout">#</a></h3>
+<pre><code>openprogram/channels/        2500 lines / 9 py files
+├── base.py            21 lines  Channel ABC, only one abstract method run(stop)
+├── _conversation.py  483 lines  dispatch_inbound + session routing + persistence + webui broadcast
+├── outbound.py       196 lines  cross-process send(channel, account, user, text) API
+├── _heartbeats.py     44 lines
+├── accounts.py       278 lines  per-platform credential storage
+├── bindings.py       274 lines  (channel, account, peer) → agent_id routing
+├── setup.py          289 lines  setup wizard
+├── worker.py          26 lines  shim → openprogram.worker
+├── discord.py        111 lines  DiscordChannel adapter
+├── slack.py          119 lines  SlackChannel adapter
+├── telegram.py       111 lines  TelegramChannel adapter
+└── wechat.py         454 lines  WechatChannel adapter (with QR login / cursor persistence)
+</code></pre>
+<h3 id="12-abstraction-layer-basepy">1.2 Abstraction layer (<a href="http://base.py">base.py</a>)<a class="header-anchor" href="#12-abstraction-layer-basepy">#</a></h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">Channel</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">):</span>
+    <span class="n">platform_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stop</span><span class="p">:</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+</code></pre>
+<p><strong>That's all of it</strong>. Channel only mandates &quot;must be able to run until stop is set&quot;—how to read messages, how to send messages, how to handle errors, whether edit / react is possible, base does not care at all. All platform-specific behavior is pushed down to each adapter to do as it pleases.</p>
+<h3 id="13-inbound-message-handling-inside-the-adapter">1.3 Inbound message handling (inside the adapter)<a class="header-anchor" href="#13-inbound-message-handling-inside-the-adapter">#</a></h3>
+<p>Each adapter runs the platform's native SDK event loop inside its own <code>run()</code>, gets a message → extracts <code>(chat_id, user, text)</code> → calls <code>dispatch_inbound(...)</code> → gets back a complete reply string → uses the SDK to send the reply back.</p>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Inbound read</th>
+<th>Outbound send-back</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Discord</td>
+<td><code>discord.py</code> SDK <code>on_message</code></td>
+<td><code>msg.channel.send(chunk)</code></td>
+</tr>
+<tr>
+<td>Slack</td>
+<td><code>slack_sdk</code> Socket Mode</td>
+<td><code>web.chat_postMessage()</code></td>
+</tr>
+<tr>
+<td>Telegram</td>
+<td>raw HTTP <code>getUpdates</code> long polling</td>
+<td>calls <code>outbound.send()</code></td>
+</tr>
+<tr>
+<td>WeChat</td>
+<td>iLink HTTP <code>getupdates</code> long polling</td>
+<td>calls internal <code>_send</code></td>
+</tr>
+</tbody>
+</table>
+<p>Note that Telegram and WeChat outbound do not go through their own adapter code, but instead indirectly call <code>outbound.send()</code>—this in itself is already an inconsistency.</p>
+<h3 id="14-dispatch_inbound-_conversationpy">1.4 dispatch_inbound (_conversation.py)<a class="header-anchor" href="#14-dispatch_inbound-_conversationpy">#</a></h3>
+<p>Signature: <code>dispatch_inbound(channel, account_id, peer_kind, peer_id, user_text, user_display) -&gt; str</code></p>
+<p>A one-shot blocking call that returns the complete reply. Flow:</p>
+<ol>
+<li>Look up <code>session_aliases</code> / <code>bindings</code> → decide agent_id</li>
+<li>Compute <code>session_key</code> per <code>agent.session_scope</code> (per-account-channel-peer / per-peer / main / etc.)</li>
+<li>Apply <code>daily_reset</code> / <code>idle_minutes</code> reset policy</li>
+<li><code>_load_or_init_session</code> writes SessionDB</li>
+<li>Build <code>TurnRequest</code> and call <code>process_user_turn</code> → complete turn</li>
+<li>Append the reply to SessionDB</li>
+<li>Broadcast <code>channel_turn</code> envelope to webui</li>
+</ol>
+<p>Inside there is an <code>_on_event(env)</code> callback that already subscribes to the dispatcher's stream envelopes:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">_on_event</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">srv</span><span class="o">.</span><span class="n">_broadcast</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">str</span><span class="p">))</span>   <span class="c1"># for webui to see</span>
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;chat_ack&quot;</span><span class="p">:</span>              <span class="c1"># capture user_msg_id</span>
+        <span class="n">captured_user_id</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+</code></pre>
+<p>But this callback only broadcasts to webui. The channel itself cannot get the streaming events.</p>
+<h3 id="15-outboundpy-cross-process-send">1.5 <a href="http://outbound.py">outbound.py</a> cross-process send<a class="header-anchor" href="#15-outboundpy-cross-process-send">#</a></h3>
+<pre><code class="language-python"><span class="n">outbound</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">channel</span><span class="p">,</span> <span class="n">account_id</span><span class="p">,</span> <span class="n">user_id</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span>
+</code></pre>
+<p>Does not go through an adapter instance. <code>_SENDERS</code> is a 4-entry dict, each entry independently using raw HTTP (the requests library) to call the platform API:</p>
+<ul>
+<li><code>_send_telegram</code> → <code>POST /bot{token}/sendMessage</code></li>
+<li><code>_send_discord</code>  → <code>POST /api/v10/channels/{ch}/messages</code></li>
+<li><code>_send_slack</code>    → <code>POST /api/chat.postMessage</code></li>
+<li><code>_send_wechat</code>   → <code>POST /ilink/bot/sendmessage</code></li>
+</ul>
+<p>Each sender loads credentials itself, assembles headers itself, and handles chunking itself.</p>
+<h3 id="16-message-chunking">1.6 Message chunking<a class="header-anchor" href="#16-message-chunking">#</a></h3>
+<p><code>MAX_MSG_CHARS</code> is defined independently in <strong>5 files</strong>:</p>
+<pre><code>discord.py    1800
+slack.py      3900
+telegram.py   4000
+wechat.py     1800
+outbound.py   1800   (duplicates discord/wechat, inconsistent with slack/telegram)
+</code></pre>
+<p>The same <code>_chunk(text, limit)</code> implementation is copied <strong>5 times</strong>.</p>
+<h3 id="17-neutral-message-structure">1.7 Neutral message structure<a class="header-anchor" href="#17-neutral-message-structure">#</a></h3>
+<p><strong>None</strong>. Each adapter directly handles the platform-native object:</p>
+<ul>
+<li>Discord: <code>discord.Message</code> object → extract <code>msg.content / msg.author.id / msg.channel.id</code></li>
+<li>Slack: events_api dict → extract <code>event[&quot;text&quot;] / event[&quot;user&quot;] / event[&quot;channel&quot;]</code></li>
+<li>Telegram: update dict → extract <code>msg[&quot;text&quot;] / msg[&quot;chat&quot;][&quot;id&quot;]</code></li>
+<li>WeChat: iLink msg dict → custom field paths</li>
+</ul>
+<p>There is no <code>ChannelMessage</code> / <code>MessageEvent</code> abstraction at all. There is no shared schema for supporting reply / quote / attachment.</p>
+<h3 id="18-reverse-dependency">1.8 Reverse dependency<a class="header-anchor" href="#18-reverse-dependency">#</a></h3>
+<p>In <code>outbound._send_wechat</code>:</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.channels.wechat</span><span class="w"> </span><span class="kn">import</span> <span class="n">_make_wechat_uin</span>
+</code></pre>
+<p>outbound (which should be the lower layer) reverse-imports a private function of the wechat adapter (which should be a leaf).</p>
+<hr />
+<h2 id="2-other-projects-designs">2. Other projects' designs<a class="header-anchor" href="#2-other-projects-designs">#</a></h2>
+<p>There are only two comparables: <strong>OpenClaw</strong> (the source we forked from, written in TS) and <strong>hermes</strong> (a dedicated chat-bot project, Python). Neither opencode nor claude-code has a channel subsystem—their surfaces are CLI/TUI/Web/IDE, interfacing with a human user sitting at the front end, not plugging into Discord/Slack groups.</p>
+<h3 id="21-openclaw-fork-source">2.1 OpenClaw (fork source)<a class="header-anchor" href="#21-openclaw-fork-source">#</a></h3>
+<p>Source: <code>references/openclaw/src/channels/</code> + <code>references/openclaw/extensions/{discord,slack,telegram}/</code>. TS/Node.js, enterprise-grade modular design.</p>
+<p><strong>Layout</strong>: the core <code>src/channels/</code> has a pile of fine-grained files (routing / account / approval / typing / draft-stream / health-check / thread-bindings-policy …), and each platform lives in its own directory under <code>extensions/{name}/</code>—discord alone has 70+ files, slack 40+, telegram 35+.</p>
+<p><strong>Plugin SDK</strong> (<code>src/plugin-sdk/channel-*.ts</code>, 50+ contract files) fully isolates the core from the platform implementations. Core only sees abstract interfaces:</p>
+<pre><code class="language-typescript"><span class="nx">ChannelMessageSendAdapter</span><span class="w">        </span><span class="c1">// send capability</span>
+<span class="nx">ChannelMessageLiveAdapterShape</span><span class="w">   </span><span class="c1">// live message editing (draft → live-preview → final)</span>
+<span class="nx">ChannelApprovalAdapter</span><span class="w">           </span><span class="c1">// reaction ✓/✗ confirmation + timeout/retry</span>
+<span class="nx">ChannelMessageActionAdapter</span><span class="w">      </span><span class="c1">// button/menu action handler</span>
+<span class="nx">ChannelOutboundAdapter</span><span class="w">           </span><span class="c1">// cross-process send also goes through the adapter, not bypassed</span>
+</code></pre>
+<p><strong>Streaming edit</strong> (<code>src/plugin-sdk/channel-streaming.ts</code> + <code>extensions/discord/src/draft-stream.*</code>): the message lifecycle has three states:</p>
+<pre><code>draft → live-preview (throttled edit) → final
+</code></pre>
+<p>Emit a draft → continuously edit the message while the tool runs → finalize at the end. The throttling policy is built into the pipeline.</p>
+<p><strong>Reaction approval</strong> (<code>src/channels/ack-reactions.ts</code> + <code>extensions/discord/src/approval-native.ts</code>):</p>
+<pre><code class="language-typescript"><span class="kr">type</span><span class="w"> </span><span class="nx">ChannelApprovalAdapter</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">onApprove</span><span class="p">,</span><span class="w"> </span><span class="nx">onDecline</span><span class="p">,</span><span class="w"> </span><span class="nx">onTimeout</span>
+<span class="p">}</span>
+</code></pre>
+<p>When a dangerous tool fires, the bot adds a ✓/✗ emoji reaction → the user clicks the reaction → the adapter notifies the dispatcher. Full lifecycle (timeout / retry / cancel).</p>
+<p><strong>DurableMessageSendResult</strong>: the send return value contains message_id, edited_ids, and a retry policy—supporting receipt tracking + delivery confirmation. On our side send returns only a <code>bool</code>.</p>
+<p><strong>Health check</strong> (<code>health-check-adapter.ts</code>): probes each adapter's availability at startup, with graceful degradation on failure—so one dead platform does not drag down the whole worker.</p>
+<p><strong>Registration</strong>: plugin manifest (each extension's <code>openclaw.plugin.json</code> declares <code>channels</code> capabilities), the core loader scans <code>extensions/*/</code> or npm packages, with dynamic loading + lazy instantiation.</p>
+<h3 id="22-hermes-dedicated-chat-bot-project">2.2 Hermes (dedicated chat-bot project)<a class="header-anchor" href="#22-hermes-dedicated-chat-bot-project">#</a></h3>
+<p>Written in Python, interfacing with 14+ platforms. Its design philosophy is simpler than OpenClaw's—no Plugin SDK abstraction layer, but a single file can hold a complete adapter (base is 1500 lines).</p>
+<p><strong>BasePlatformAdapter ABC</strong></p>
+<p><code>gateway/platforms/base.py</code>:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">BasePlatformAdapter</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chat_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                   <span class="n">reply_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                   <span class="n">metadata</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SendResult</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">edit_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chat_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">message_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                          <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">finalize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SendResult</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">send_draft</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chat_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">draft_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                        <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SendResult</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">send_typing</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chat_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                         <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">create_handoff_thread</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parent_chat_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                                   <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+</code></pre>
+<p>5+ async abstract methods. Uniformly returns a <code>SendResult</code> dataclass (with <code>message_id</code> / <code>retryable</code> flags).</p>
+<p><strong>Neutral message structure</strong></p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MessageEvent</span><span class="p">:</span>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">message_type</span><span class="p">:</span> <span class="n">MessageType</span> <span class="o">=</span> <span class="n">MessageType</span><span class="o">.</span><span class="n">TEXT</span>
+    <span class="n">source</span><span class="p">:</span> <span class="n">SessionSource</span>         <span class="c1"># platform, chat ID, user ID, thread_id</span>
+    <span class="n">media_urls</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>    <span class="c1"># cache paths downloaded to local</span>
+    <span class="n">reply_to_message_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">auto_skill</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">channel_prompt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SessionSource</span><span class="p">:</span>
+    <span class="n">platform</span><span class="p">:</span> <span class="n">Platform</span>
+    <span class="n">chat_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">chat_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;dm&quot;</span> <span class="o">|</span> <span class="s2">&quot;group&quot;</span> <span class="o">|</span> <span class="s2">&quot;channel&quot;</span> <span class="o">|</span> <span class="s2">&quot;thread&quot;</span>
+    <span class="n">user_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">thread_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">guild_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">parent_chat_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+</code></pre>
+<p><code>MessageEvent</code> is the neutral structure for all platforms' messages; the adapter is responsible for the platform-native → MessageEvent translation. The dispatcher only sees MessageEvent.</p>
+<p><strong>Two-dimensional session key isolation</strong></p>
+<p><code>build_session_key(source, group_sessions_per_user, thread_sessions_per_user)</code>:</p>
+<pre><code>DM:    agent:main:{platform}:dm:{chat_id}[:{thread_id}]
+Group: agent:main:{platform}:group:{chat_id}[:{thread_id}][:{user_id}]
+</code></pre>
+<p>Threads share all users by default, groups isolate per user by default, and both can be overridden by per-channel configuration.</p>
+<p><strong>Progress Streaming</strong></p>
+<p><code>gateway/run.py:_edit_progress_message()</code>:</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_edit_progress_message</span><span class="p">(</span><span class="n">message_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">adapter</span><span class="o">.</span><span class="n">edit_message</span><span class="p">(</span>
+        <span class="n">chat_id</span><span class="o">=</span><span class="n">source</span><span class="o">.</span><span class="n">chat_id</span><span class="p">,</span>
+        <span class="n">message_id</span><span class="o">=</span><span class="n">message_id</span><span class="p">,</span>
+        <span class="n">content</span><span class="o">=</span><span class="n">content</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre>
+<p>Tool starts → adapter.send a placeholder message → get the <code>message_id</code> → tool stream events trigger <code>_edit_progress_message(message_id, latest_text)</code> → finalize at the end with <code>finalize=True</code>.</p>
+<p><strong>Overflow handling</strong>: <code>_roll_progress_overflow_if_needed()</code>—when progress lines exceed the platform character limit, it automatically splits into groups: the first group edits the current bubble, subsequent groups send new bubbles.</p>
+<p><strong>Advanced mechanisms</strong> (this is where hermes genuinely leads)</p>
+<p><strong>Debounce to merge rapid text</strong> (<code>base.py:2812-2876</code>):</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">TextDebounceState</span><span class="p">:</span>
+    <span class="n">event</span><span class="p">:</span> <span class="n">MessageEvent</span>
+    <span class="n">task</span><span class="p">:</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Task</span> <span class="o">|</span> <span class="kc">None</span>
+    <span class="n">first_ts</span><span class="p">,</span> <span class="n">last_ts</span><span class="p">:</span> <span class="nb">float</span>
+
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_queue_text_debounce</span><span class="p">(</span><span class="n">session_key</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;merge consecutively arriving texts of the same session into one, delay 0.35s, hard cap 1.0s&quot;&quot;&quot;</span>
+</code></pre>
+<p>When a user sends 3 messages in a row (&quot;hi&quot;, &quot;you there&quot;, &quot;got a question&quot;), the agent receives a single merged turn instead of triggering 3 agent runs.</p>
+<p><strong>Quick-command bypass</strong> (<code>base.py:3205-3219</code>):</p>
+<pre><code class="language-python"><span class="k">if</span> <span class="n">should_bypass_active_session</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>   <span class="c1"># /stop, /new, /reset, /approve</span>
+    <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_active_session_command</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+</code></pre>
+<p>Commands like <code>/stop</code> and <code>/approve</code> go straight down a fast path, not entering the session queue and not waiting for the agent's current task to finish.</p>
+<p><strong>Retryable error classification</strong>:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SendResult</span><span class="p">:</span>
+    <span class="n">message_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">retryable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+</code></pre>
+<p>The adapter distinguishes transient (network / timeout, retryable) vs permanent (auth / permission, not retryable), handing a unified signal to the dispatcher to handle.</p>
+<p><strong>Attachment local caching</strong>:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">cache_document_from_bytes</span><span class="p">(</span><span class="n">data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span> <span class="n">filename</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;synchronously write to cache_dir, filename doc_{uuid12}_{original name}&quot;&quot;&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">cleanup_document_cache</span><span class="p">(</span><span class="n">max_age_hours</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">24</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;delete caches older than 24h&quot;&quot;&quot;</span>
+</code></pre>
+<p>Download Telegram URLs locally before their 1-hour expiry → the agent can read them repeatedly afterward → clean up after 24h.</p>
+<p><strong>DeliveryRouter (cross-process send)</strong></p>
+<p><code>gateway/delivery.py</code>:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">DeliveryTarget</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;origin | local | telegram:123 | slack:...&quot;&quot;&quot;</span>
+    <span class="n">platform</span><span class="p">:</span> <span class="n">Platform</span>
+    <span class="n">chat_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">DeliveryRouter</span><span class="p">:</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">deliver</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Route to all targets via adapter instances.&quot;&quot;&quot;</span>
+</code></pre>
+<p>The <code>outbound.send</code>-equivalent also goes through adapter instances, without writing a separate raw HTTP path.</p>
+<p><strong>Approval flow</strong></p>
+<p>Does not use reactions, uses <strong>text commands</strong>:</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_slash_approve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle /approve — unblock waiting agent thread(s).&quot;&quot;&quot;</span>
+
+<span class="n">_pending_approvals</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span>   <span class="c1"># session → pending</span>
+<span class="c1"># tool thread: Event.wait() blocks</span>
+<span class="c1"># /approve command: Event.set() wakes it up</span>
+</code></pre>
+<p>Simple and stable. Reactions do have a <code>send_reaction</code> implementation at the adapter layer but are not on the approval critical path.</p>
+<p><strong>Platform registration</strong></p>
+<p><code>gateway/platform_registry.py</code>:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PlatformEntry</span><span class="p">:</span>
+    <span class="n">name</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">adapter_factory</span><span class="p">,</span> <span class="n">check_fn</span><span class="p">,</span>
+    <span class="n">validate_config</span><span class="p">,</span> <span class="n">install_hint</span>
+
+<span class="n">platform_registry</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">PlatformEntry</span><span class="p">(</span><span class="o">...</span><span class="p">))</span>
+<span class="n">adapter</span> <span class="o">=</span> <span class="n">platform_registry</span><span class="o">.</span><span class="n">create_adapter</span><span class="p">(</span><span class="s2">&quot;slack&quot;</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+</code></pre>
+<p>Built-ins go down a hardcoded fast path, plugin platforms self-register through the registry.</p>
+<hr />
+<h2 id="3-three-way-comparison">3. Three-way comparison<a class="header-anchor" href="#3-three-way-comparison">#</a></h2>
+<h3 id="31-abstraction-level">3.1 Abstraction level<a class="header-anchor" href="#31-abstraction-level">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>OpenProgram</th>
+<th>OpenClaw (fork source)</th>
+<th>Hermes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Number of base abstract methods</td>
+<td>1 (<code>run</code>)</td>
+<td>5+ (multiple interfaces: SendAdapter / LiveAdapter / ApprovalAdapter etc.)</td>
+<td>5+ (<code>send/edit/draft/typing/handoff</code>)</td>
+</tr>
+<tr>
+<td>Neutral message structure</td>
+<td>none (platform-native obj)</td>
+<td><code>ChannelMeta</code> with media/richtext/components</td>
+<td><code>MessageEvent</code> + <code>SessionSource</code> dataclass</td>
+</tr>
+<tr>
+<td>Send return value</td>
+<td>bool</td>
+<td><code>DurableMessageSendResult</code> (with message_id/edited_ids/retry policy)</td>
+<td><code>SendResult</code> (with message_id + retryable)</td>
+</tr>
+<tr>
+<td>Dispatch signature</td>
+<td>sync → str</td>
+<td>async streaming pipeline (draft → live → final)</td>
+<td>async → streaming events</td>
+</tr>
+<tr>
+<td>Session isolation</td>
+<td><code>session_scope</code> 4 enums</td>
+<td><code>dmScope</code> hardcoded + thread-bindings-policy</td>
+<td>two-dimensional (chat × user × thread)</td>
+</tr>
+<tr>
+<td>Edit/Reaction interface</td>
+<td>none</td>
+<td>complete (ChannelMessageLiveAdapterShape + ApprovalAdapter)</td>
+<td>built-in</td>
+</tr>
+<tr>
+<td>Progress stream</td>
+<td>none</td>
+<td>three stages (draft → live-preview → final, throttling built in)</td>
+<td>edit_message + automatic overflow splitting</td>
+</tr>
+<tr>
+<td>Approval mechanism</td>
+<td>none</td>
+<td>reaction ✓/✗ + onApprove/onDecline/onTimeout lifecycle</td>
+<td><code>/approve</code> text command</td>
+</tr>
+<tr>
+<td>Debounce merging</td>
+<td>none</td>
+<td>unknown</td>
+<td>0.35s delay + 1s hard cap</td>
+</tr>
+<tr>
+<td>Retryable signal</td>
+<td>none</td>
+<td>DurableMessageSendResult with backoff policy</td>
+<td><code>SendResult.retryable</code></td>
+</tr>
+<tr>
+<td>Health check</td>
+<td>none</td>
+<td><code>health-check-adapter.ts</code> startup probe</td>
+<td>unknown</td>
+</tr>
+<tr>
+<td>Receipt tracking</td>
+<td>none</td>
+<td>yes (DurableMessageSendResult with delivery confirmation)</td>
+<td>unknown</td>
+</tr>
+<tr>
+<td>Structured replies</td>
+<td>text only</td>
+<td>embed/button/menu (ChannelMessageActionAdapter)</td>
+<td>partial</td>
+</tr>
+<tr>
+<td>Attachment caching</td>
+<td>none</td>
+<td>yes</td>
+<td>UUID-prefix + 24h cleanup</td>
+</tr>
+<tr>
+<td>Outbound API</td>
+<td><code>outbound.send</code> uses raw HTTP</td>
+<td>goes through adapter instances (ChannelOutboundAdapter)</td>
+<td><code>DeliveryRouter(adapters: dict)</code> goes through adapters</td>
+</tr>
+<tr>
+<td>Process model assumption</td>
+<td>multiple deployment forms (lib + worker + script)</td>
+<td>single daemon process</td>
+<td>single gateway process</td>
+</tr>
+<tr>
+<td>Chunking implementation</td>
+<td>5 duplicates</td>
+<td>unified within the platform plugin</td>
+<td>unified within the platform (<code>truncate_message</code>)</td>
+</tr>
+<tr>
+<td>Platform registration</td>
+<td>hardcoded dict</td>
+<td>Plugin SDK (manifest + dynamic loader)</td>
+<td>hybrid (built-in + registry)</td>
+</tr>
+<tr>
+<td>Language</td>
+<td>Python</td>
+<td>TypeScript</td>
+<td>Python</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-direct-consequences">3.2 Direct consequences<a class="header-anchor" href="#32-direct-consequences">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Feature we want to build</th>
+<th>Scope of change in OpenProgram</th>
+<th>Scope of change in hermes / OpenClaw</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Progress streaming</td>
+<td>change base + 4 adapters + outbound + <code>_conversation</code> = 6 places</td>
+<td>dispatcher calls <code>adapter.edit_message</code> in one place</td>
+</tr>
+<tr>
+<td>Reaction approval</td>
+<td>each of the 4 adapters adds a listener + an adapter ↔ approval bridge</td>
+<td>hermes: one <code>/approve</code> slash handler; OpenClaw: ApprovalAdapter lifecycle ready-made</td>
+</tr>
+<tr>
+<td>Edit message</td>
+<td>base + 4 adapters + outbound = 6 places</td>
+<td><code>adapter.edit_message</code> in one place (already exists)</td>
+</tr>
+<tr>
+<td>Add a new platform (whatsapp)</td>
+<td>adapter + <code>outbound._send_xx</code> + chunk + bindings + accounts</td>
+<td>hermes: adapter + registry.register; OpenClaw: new extension directory + plugin.json</td>
+</tr>
+<tr>
+<td>Fix a chunking bug</td>
+<td>change 5 files in sync</td>
+<td>1 utility function</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33-the-subtractions-and-additions-we-made-after-forking-openclaw">3.3 The &quot;subtractions&quot; and &quot;additions&quot; we made after forking OpenClaw<a class="header-anchor" href="#33-the-subtractions-and-additions-we-made-after-forking-openclaw">#</a></h3>
+<p><strong>Subtractions (what we dropped)</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>OpenClaw has</th>
+<th>What we lost when inheriting</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Plugin SDK (50+ contract files)</td>
+<td>all dropped — <a href="http://base.py">base.py</a> degenerated to 21 lines</td>
+</tr>
+<tr>
+<td>ChannelMessageLiveAdapterShape (streaming edit)</td>
+<td>dropped</td>
+</tr>
+<tr>
+<td>ChannelApprovalAdapter (reaction ✓/✗)</td>
+<td>dropped</td>
+</tr>
+<tr>
+<td>DurableMessageSendResult (with message_id + retry)</td>
+<td>degenerated to bool</td>
+</tr>
+<tr>
+<td>health-check-adapter</td>
+<td>dropped</td>
+</tr>
+<tr>
+<td>Reconnection + exponential backoff</td>
+<td>dropped</td>
+</tr>
+<tr>
+<td>Receipt tracking</td>
+<td>dropped</td>
+</tr>
+<tr>
+<td>Message actions (button/menu)</td>
+<td>dropped</td>
+</tr>
+<tr>
+<td>Thread binding policy</td>
+<td>degenerated to a peer_kind string</td>
+</tr>
+<tr>
+<td>Structured replies (embed)</td>
+<td>degenerated to text only</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Additions (what we introduced)</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>OpenProgram has</th>
+<th>OpenClaw counterpart</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session_scope</code> 4 configurable enums</td>
+<td><code>dmScope</code> hardcoded in the channel runtime</td>
+</tr>
+<tr>
+<td><code>outbound.py</code> stateless cross-process sender</td>
+<td>no separate outbound, goes through adapter instances</td>
+</tr>
+<tr>
+<td><code>setup.py</code> one-click interactive enrollment</td>
+<td>descriptor-driven setup plugin seam</td>
+</tr>
+</tbody>
+</table>
+<p>The second item—<code>outbound.py</code>—deserves a separate note: from a fork perspective it is something <strong>we actively added</strong>, since OpenClaw's original design had cross-process send go through the adapter too. But OpenProgram is a dual-paradigm system (see 5.F), and <code>outbound.send</code>, a stateless, cron-friendly entry point, maps precisely to the agentic-programming paradigm (Python-driven synchronous calls), and should not be removed. The real problem is <strong>implementation-layer duplication</strong> (chunking duplicated 5 times, the HTTP call written out once per platform) rather than <strong>the existence of the entry point</strong>—the refactoring direction should be &quot;two entry points sharing one implementation layer&quot;, not &quot;remove one entry point&quot;.</p>
+<hr />
+<h2 id="4-current-structural-defects-sorted-by-severity">4. Current structural defects (sorted by severity)<a class="header-anchor" href="#4-current-structural-defects-sorted-by-severity">#</a></h2>
+<h3 id="defect-1-basepy-is-an-empty-shell">Defect 1: <a href="http://base.py">base.py</a> is an empty shell<a class="header-anchor" href="#defect-1-basepy-is-an-empty-shell">#</a></h3>
+<p>It only mandates <code>run(stop)</code>, not send/edit/react/chunk. As a result each adapter &quot;does as it pleases&quot;, and there is no enforceable unified interface across platforms.</p>
+<p><strong>Symptoms</strong>: the 4 adapters differ in code style, error handling, and how they load credentials; the type checker cannot detect when an adapter fails to implement some capability.</p>
+<h3 id="defect-2-two-send-message-code-paths">Defect 2: two send-message code paths<a class="header-anchor" href="#defect-2-two-send-message-code-paths">#</a></h3>
+<pre><code>Path A (adapter on_message reply path)    Path B (cross-process outbound.send)
+─────────────────────────────────────────────────────────────
+discord.py  → discord.py SDK            outbound.py → raw HTTP
+slack.py    → slack_sdk SDK             outbound.py → raw HTTP
+telegram.py → outbound.send (HTTP)      outbound.py → raw HTTP  ← already goes through B
+wechat.py   → internal _send           outbound.py → raw HTTP
+</code></pre>
+<p><code>MAX_MSG_CHARS</code> 5 copies, <code>_chunk</code> function 5 copies, credential loading 8+ copies. Any change to &quot;how to get bytes to the platform&quot; must be made twice, once on each path.</p>
+<p>Note: <strong>the existence of two entry points is reasonable</strong> (see 5.F—they serve two paradigms: the adapter path for the dispatcher, the outbound path for the agentic-programming driver), the problem is not &quot;having two entry points&quot; but &quot;two independent implementations&quot;. The refactoring should let the two entry points share one implementation layer, not merge the entry points.</p>
+<h3 id="defect-3-dispatch_inbounds-synchronous-signature-blocks-streaming">Defect 3: dispatch_inbound's synchronous signature blocks streaming<a class="header-anchor" href="#defect-3-dispatch_inbounds-synchronous-signature-blocks-streaming">#</a></h3>
+<p><code>(...) -&gt; str</code> returns the complete reply in one shot. The adapter cannot get intermediate events, and therefore:</p>
+<ul>
+<li>Progress streaming is impossible (the adapter does not know a tool is running)</li>
+<li>A typing indicator is impossible (the adapter does not know the LLM is thinking)</li>
+<li>Real-time edit is impossible (the adapter cannot get the token stream)</li>
+</ul>
+<p>Ironically, the dispatcher's internal <code>_on_event</code> already emits <code>tool_use</code> / <code>stream_event</code> / <code>tool_result</code> envelopes (see <code>agent/_event_parsing.py</code>), they just are not fed back to the channel—only broadcast to webui.</p>
+<h3 id="defect-4-no-neutral-channelmessage-structure-fixed-commit-faaeb1ee">Defect 4: no neutral ChannelMessage structure (✓ fixed, commit faaeb1ee)<a class="header-anchor" href="#defect-4-no-neutral-channelmessage-structure-fixed-commit-faaeb1ee">#</a></h3>
+<p>Each adapter handles the platform-native object itself → passes the three strings <code>(chat_id, user, text)</code> straight to dispatch_inbound. There is no shared schema to hang reply / quote / thread / attachment support on.</p>
+<p>If in the future the agent wants to &quot;quote that earlier message&quot; or &quot;read an image attachment&quot;, each adapter would have to write it out separately.</p>
+<p><strong>Fix</strong>: add <code>_message.py:ChannelMessage</code>, a frozen dataclass with <code>text</code> / <code>chat_id</code> / <code>user_id</code> / <code>user_display</code> / <code>chat_type</code> / <code>ts</code> / <code>reply_to_id</code> / <code>thread_id</code> / <code>attachments</code> fields. All 4 adapter entry points parse out a ChannelMessage and then unpack it to pass to dispatch_inbound. The dispatch_inbound signature is unchanged (compatible with existing callers), and ChannelMessage is currently an adapter-internal tool—but <code>reply_to_id</code> / <code>thread_id</code> / <code>attachments</code> are already extracted in each adapter, so when dispatch_inbound consumes these fields in the future the parse step is already in place.</p>
+<h3 id="defect-5-_conversationpy-is-a-single-483-line-file-with-5-responsibilities">Defect 5: _conversation.py is a single 483-line file with 5 responsibilities<a class="header-anchor" href="#defect-5-_conversationpy-is-a-single-483-line-file-with-5-responsibilities">#</a></h3>
+<ul>
+<li>Routing (binding + alias lookup)</li>
+<li>session_key computation (scope + reset policy)</li>
+<li>session creation / loading / persistence</li>
+<li>dispatcher invocation</li>
+<li>webui broadcast</li>
+</ul>
+<p>Per OpenProgram's established &quot;hierarchical code structure&quot; preference, something of this size should be split. But it should wait until the abstraction layer is settled, otherwise splitting it now means reworking it afterward.</p>
+<h3 id="defect-6-account_id-passed-twice">Defect 6: account_id passed twice<a class="header-anchor" href="#defect-6-account_id-passed-twice">#</a></h3>
+<pre><code class="language-python"><span class="n">DiscordChannel</span><span class="p">(</span><span class="n">account_id</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">)</span>          <span class="c1"># constructor argument</span>
+<span class="o">...</span>
+<span class="n">dispatch_inbound</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">account_id</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">)</span>    <span class="c1"># call argument</span>
+</code></pre>
+<p>The same value is kept once in the adapter instance and once in the dispatch call. If we later want &quot;one adapter, multiple accounts per process&quot;, this design is a trip wire.</p>
+<h3 id="defect-7-reverse-dependency">Defect 7: reverse dependency<a class="header-anchor" href="#defect-7-reverse-dependency">#</a></h3>
+<p><code>outbound._send_wechat</code> reverse-imports <code>wechat._make_wechat_uin</code>. A lower-layer module depending on a leaf module's private function—any internal wechat refactor can break outbound.</p>
+<h3 id="defect-8-single-session-isolation-granularity">Defect 8: single session-isolation granularity<a class="header-anchor" href="#defect-8-single-session-isolation-granularity">#</a></h3>
+<pre><code class="language-python"><span class="n">peer_id</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{channel_id}</span><span class="s2">_</span><span class="si">{user_id}</span><span class="s2">&quot;</span>   <span class="c1"># discord / slack</span>
+<span class="n">peer_id</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{chat_id}</span><span class="s2">&quot;</span>                <span class="c1"># telegram</span>
+</code></pre>
+<p>Joining chat and user into a single peer_id string loses the two-dimensional information. <code>agent.session_scope</code> has only 4 enum values (main / per-peer / per-channel-peer / per-account-channel-peer), and does not support the &quot;share within a thread&quot; mode that hermes enables by default.</p>
+<h3 id="defect-9-error-signals-not-classified-fixed-commit-f4b7ca9f">Defect 9: error signals not classified (✓ fixed, commit f4b7ca9f)<a class="header-anchor" href="#defect-9-error-signals-not-classified-fixed-commit-f4b7ca9f">#</a></h3>
+<p>The adapter <code>send</code> returns a <code>bool</code>. The failure cause (transient network vs permanent auth vs rate limit) cannot be propagated up to the dispatcher. The dispatcher cannot retry intelligently, nor display the cause correctly in the UI.</p>
+<p><strong>Fix</strong>: add a <code>SendResult</code> dataclass (<code>_transport.py:SendResult</code>) with <code>ok</code> / <code>message_id</code> / <code>error_kind</code> / <code>error_detail</code> / <code>retryable</code> fields. <code>error_kind</code> enumerates <code>auth</code> / <code>rate_limit</code> / <code>bad_target</code> / <code>network</code> / <code>not_supported</code> / <code>unknown</code>. <code>_transport.post_message</code> / <code>patch_message</code> now return <code>SendResult</code>; <code>outbound.send</code> keeps the bool signature, with a new <code>outbound.send_full()</code> exposing the full result; <code>Channel.send_text</code> / <code>edit_text</code> likewise, adding <code>send_text_full</code> / <code>edit_text_full</code> variants. Telegram / Discord / Slack business-error descriptions have <code>_telegram_kind_from_description</code> / <code>_slack_kind_from_error</code> respectively to infer <code>error_kind</code>, and HTTP status codes go through <code>_classify_http_status</code>.</p>
+<h3 id="defect-10-platform-registration-hardcoded-fixed-commit-0cac6004">Defect 10: platform registration hardcoded (✓ fixed, commit 0cac6004)<a class="header-anchor" href="#defect-10-platform-registration-hardcoded-fixed-commit-0cac6004">#</a></h3>
+<p><code>channels/__init__.py:CHANNEL_CLASSES</code> is a hardcoded dict. Adding a new platform requires changing 4 places (channels/, accounts/, bindings/, setup/). Plugin-provided platforms are impossible.</p>
+<p><strong>Fix</strong>: split <code>CHANNEL_CLASSES</code> into <code>_BUILTIN_CHANNEL_CLASSES</code> (the 4 built-ins always present) + <code>_PLUGIN_CHANNEL_CLASSES</code> (externally registered). Plugins register in two ways: (1) declaring <code>[project.entry-points.&quot;openprogram.channels&quot;]</code> in <code>pyproject.toml</code> (scanned at startup via <code>importlib.metadata.entry_points</code>); (2) an imperative <code>register_channel(name, cls)</code> call (used inside plugin hooks). Built-ins take priority—a plugin with the same name is silently ignored, overriding a built-in is not allowed. <code>CHANNEL_CLASSES</code> is retained as a dict-like proxy (preserving compatibility with all existing callers).</p>
+<hr />
+<h2 id="5-a-few-inferences">5. A few inferences<a class="header-anchor" href="#5-a-few-inferences">#</a></h2>
+<p><strong>A. Progress streaming is not &quot;adding a feature&quot;, it's &quot;wiring an already-existing event stream to the channel&quot;</strong></p>
+<p>The dispatcher already emits <code>tool_use</code> / <code>stream_event</code> envelopes. <code>dispatch_inbound._on_event</code> is already subscribing. The only things missing are: (1) how the channel subscribes, and (2) how the channel edits a message it has already sent. The second requires <a href="http://base.py">base.py</a> to have <code>edit_message</code> and adapter.send to return a message_id—this is an <strong>abstraction-layer refactor</strong>, not a feature addition.</p>
+<p><strong>B. Adding <code>edit_message</code> to each of the 4 adapters directly would double Defect 2</strong></p>
+<p>Adding methods directly in the adapters without refactoring base: now 4 send implementations + 4 edit implementations + 4 react implementations = 12 copies of platform code, plus outbound's 12 = 24 copies. This is the disaster of stacking &quot;two sets of code&quot; times &quot;three operations&quot;.</p>
+<p><strong>C. Those &quot;advanced&quot; mechanisms in hermes (debounce / quick-command bypass / retryable) are not required to do now</strong></p>
+<p>They are optimizations hermes figured out after running large volumes of production traffic. OpenProgram does not have that QPS at this stage, so we can build the right abstraction first and add them when the problems show up.</p>
+<p><strong>D. Why OpenClaw cannot be copied wholesale—three real reasons, in layers</strong></p>
+<p>From least to most important:</p>
+<p><em>Layer one (shallowest): there is no Python implementation to copy-paste.</em> The whole of OpenClaw is TypeScript/Node.js (<code>pnpm-workspaces</code> + <code>tsdown</code> build), <code>src/bindings/</code> has only 1 TS file, and <code>packages/sdk/</code> and <code>packages/plugin-sdk/</code> are all TS. The only 5 <code>.py</code> files are CI scripts / skill tooling, unrelated to the channel subsystem. <strong>OpenClaw provides neither a Python binding nor a Python SDK.</strong> To reuse OpenClaw we would have to re-implement its design in Python from scratch; importing it is impossible.</p>
+<p>But language by itself is not a barrier to borrowing—TS interface → Python <code>Protocol</code> / <code>abc.ABC</code>, TS dataclass → <code>@dataclass</code>, TS async → asyncio, TS plugin manifest → <code>plugin.json</code> (which we are already doing in <code>openprogram/plugins/</code>). Design patterns are universal across languages.</p>
+<p><em>Layer two: static typing vs dynamic typing, which affects the value of &quot;50+ contract files&quot;.</em> OpenClaw writes 50+ <code>channel-*.ts</code> interface files in TS, where the compiler can enforce that a plugin implements them all and IDE hints are accurate too. The same split written in Python <code>Protocol</code>—not enforced at runtime, weak IDE hints (mypy is not on by default). So a split at &quot;the granularity of 50 contract files&quot; yields diminished returns in Python. This does not affect <strong>whether the interface shapes are worth learning</strong> (they are), only <strong>whether each interface should be split into a separate file</strong> (it isn't worth it).</p>
+<p><em>Layer three (deepest): async-first vs sync-with-threading paradigm.</em> OpenClaw is fully <code>async send/edit/typing/handoff</code>, with dispatch being a streaming pipeline (draft → live-preview → final). Hermes is async-first too. Our channel is currently synchronous + threading (one thread per adapter, <code>dispatch_inbound(...) -&gt; str</code> returning blockingly). If we copy OpenClaw's async design wholesale, the dispatch flow must be rewritten—not just changing method signatures in <a href="http://base.py">base.py</a>, but turning <code>dispatch_inbound</code> into an async generator and re-wiring all 4 adapters' event loops into asyncio. This is a real migration cost, not a simple rename at the abstraction layer.</p>
+<p><strong>E. The dividing line between what to learn and what not to learn</strong></p>
+<pre><code>                          learn from OpenClaw   learn from hermes
+─────────────────────────────────────────────────
+Interface design (what)
+  send/edit/typing/approve  ✓ (more complete)   ✓
+  SendResult with retry      ✓                   ✓
+  Streaming lifecycle        ✓ (three-state)     ✓ (single edit)
+  Approval lifecycle         ✓ (complete)        ✓ (/approve command)
+  Health check / probe       ✓                   —
+
+Code organization (how)
+  Plugin SDK 50+ contracts  ✗ overkill           —
+  70+ files per platform    ✗ overkill           —
+  single-file base + adapter —                   ✓ matches
+  async-first dispatch       ✓                   ✓
+</code></pre>
+<p>The two projects can be learned from at different levels. OpenClaw's interface shapes are more complete and more systematic, so copying its method signatures / lifecycles / return-value structures is fine. Hermes's code-organization scale matches ours—one file for the base ABC, one file per platform, no plugin manifest. These two do not conflict: taking the method signatures of OpenClaw's <code>ChannelApprovalAdapter</code> / <code>ChannelMessageLiveAdapterShape</code> and landing them in a hermes-style &quot;base + 4 adapter files&quot; organization is the most reasonable plan.</p>
+<p><strong>F. Compatibility—channel refactor vs OpenProgram's existing paradigms</strong></p>
+<p>This is the truly biggest design risk. OpenProgram already has two paradigms coexisting internally:</p>
+<pre><code>Paradigm A: agentic programming (the main pitch, the first paragraph of the README)
+  Python-driven → if/else/for/while control flow
+  @agentic_function creates a Context node
+  Runtime.exec requests the LLM only when explicitly called
+  entry point: Python code written by the programmer
+
+Paradigm B: agent loop (the actual path for channel/webui chat)
+  the LLM decides what tools to call and when
+  process_user_turn → agent_loop → tool streaming
+  Channel adapter receives a user message → dispatch_inbound → this path
+  entry point: external message
+</code></pre>
+<p>The channel currently <strong>hangs only off Paradigm B</strong>. This means:</p>
+<ol>
+<li>
+<p><strong><code>outbound.send</code> is not a &quot;misplaced addition&quot;</strong>—it is exactly the path Paradigm A needs. A cron-driven @agentic_function that wants to send the user &quot;good morning&quot; does not need to spin up an adapter instance, does not need to subscribe to stream events, does not need to bind to a session lifecycle—just send it directly over raw HTTP. OpenClaw's &quot;everything goes through the adapter&quot; and hermes's <code>DeliveryRouter(adapters: dict)</code> are both reasonable designs <strong>under a single-daemon-process model</strong>—they assume the cron scheduler + platform adapter + agent runtime all run in the same process, so a cron job can get the adapter dict from dependency injection.</p>
+<p>In Section 4 of my earlier audit, Defect 2 labeled <code>outbound.send</code> as a &quot;two sets of send code&quot; problem—that judgment is correct for <strong>implementation-layer duplication</strong> (chunking copied 5 times, the HTTP call written out per platform, credential loading in multiple copies), but <strong>keeping two entry points</strong> is itself a reasonable result of the paradigm division of labor, and should not be removed.</p>
+<p>OpenProgram's multiple deployment forms break this process-model assumption:</p>
+<pre><code>Deployment scenario                         where is the adapter instance
+──────────────────────────────────────────────────────────
+openprogram worker running               yes (the worker process holds it)
+user writes a Python script importing @agentic     no
+cron running in a separate process outside worker  no
+Jupyter notebook experiment              no
+pytest test                              no
+</code></pre>
+<p>Paradigm A is by design &quot;library mode&quot;—the user imports it in their own script, <strong>not assuming a worker process exists</strong>. So the hermes / OpenClaw style of &quot;all sends go through an adapter instance&quot; does not work under our multiple deployment forms. The outbound.send path must be kept.</p>
+</li>
+<li>
+<p><strong>The correct refactoring shape is: two entry points, one implementation</strong></p>
+<pre><code>Paradigm A entry: outbound.send_one_shot(channel, account, target, text)
+Paradigm B entry: adapter.send_text(target, text) -&gt; msg_handle
+             adapter.edit_text(msg_handle, text)
+
+                    ↓ both call
+
+implementation layer: _post_message(channel, account, target, text, *, edit_of=None)
+        HTTP call + chunking + credential loading, only one copy
+</code></pre>
+<p>This way chunking is no longer in 5 copies and credentials are no longer loaded 8+ times, but the two entry-point paths are each retained, serving the two paradigms respectively.</p>
+</li>
+<li>
+<p><strong>The <a href="http://base.py">base.py</a> abstraction refactor must not &quot;monopolize&quot; the channel</strong></p>
+<p>If the channel is refactored into an async-first streaming pipeline the OpenClaw / hermes way, we must ensure <strong>Paradigm A can still send messages synchronously</strong>. Concretely: it is fine for <a href="http://base.py">base.py</a>'s abstract methods to be async, but a synchronous wrapper (<code>outbound.send_one_shot</code>) must be exposed at the module top level so that an agentic_function can call it without understanding asyncio.</p>
+</li>
+<li>
+<p><strong>Streaming edit is compatible with agentic_function</strong></p>
+<p>In Paradigm A an @agentic_function may want to send the user intermediate progress (&quot;observed the login page&quot;, &quot;clicked the login button&quot;). There is currently no API for it to do so. After the refactor this capability should be made available—not locked to the dispatcher's stream pipeline, but with an agentic_function also able to get a msg_handle and edit it itself.</p>
+</li>
+</ol>
+<p><strong>G. WeChat is the hardest to fit into the abstraction</strong></p>
+<p>The iLink API appears not to support edit_message (a sent message cannot be changed). This means that after <a href="http://base.py">base.py</a> adds an <code>edit_message</code> abstraction, the wechat adapter must either implement a fake <code>edit_message</code> (delete the old, send a new one) or raise NotImplementedError—the former changes the semantics, the latter breaks the unified interface. How hermes handles such a limitation needs further investigation (IRC has a similar problem).</p>
+<hr />
+<h2 id="6-open-questions">6. Open questions<a class="header-anchor" href="#6-open-questions">#</a></h2>
+<p>Things to decide at the next discussion:</p>
+<ol>
+<li>Should we do the <a href="http://base.py">base.py</a> abstraction refactor? It is 3-4h of work, no new feature, but it is the foundation for all subsequent features</li>
+<li>Refactor granularity: abstract it to hermes's level (async send/edit/typing/draft, 5+ methods) or do the minimum first (send returns message_id + edit_message)?</li>
+<li>Add the neutral ChannelMessage structure now, or wait until the reply/quote need arises?</li>
+<li><code>outbound.send</code> stays (it serves Paradigm A), but should the implementation layer be merged with the adapter's send into a single <code>_post_message</code> function, removing the 5 duplicates?</li>
+<li>Should the approval mechanism use hermes's <code>/approve</code> command (simple and stable) or OpenClaw's reaction lifecycle (intuitive UX but complex state)?</li>
+<li>How to handle WeChat not supporting edit—<code>edit_message</code> raise vs fake implementation vs making the base interface itself optional?</li>
+<li>Should session_scope be expanded into hermes's two dimensions (chat × user × thread)? OpenClaw's thread-bindings-policy offers another line of thinking</li>
+</ol>
+<p>This document stops here. The concrete plan will be settled after you read it and give feedback.</p>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/channels/channel-design.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Channel 子系统设计</span></a><a class="pn-link pn-next" href="/docs/design/cli/README.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">CLI / TUI</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#1-our-current-design">1. Our current design</a>
+<a class="lvl-3" href="#11-file-layout">1.1 File layout</a>
+<a class="lvl-3" href="#12-abstraction-layer-basepy">1.2 Abstraction layer (base.py)</a>
+<a class="lvl-3" href="#13-inbound-message-handling-inside-the-adapter">1.3 Inbound message handling (inside the adapter)</a>
+<a class="lvl-3" href="#14-dispatch_inbound-_conversationpy">1.4 dispatch_inbound (_conversation.py)</a>
+<a class="lvl-3" href="#15-outboundpy-cross-process-send">1.5 outbound.py cross-process send</a>
+<a class="lvl-3" href="#16-message-chunking">1.6 Message chunking</a>
+<a class="lvl-3" href="#17-neutral-message-structure">1.7 Neutral message structure</a>
+<a class="lvl-3" href="#18-reverse-dependency">1.8 Reverse dependency</a>
+<a class="" href="#2-other-projects-designs">2. Other projects' designs</a>
+<a class="lvl-3" href="#21-openclaw-fork-source">2.1 OpenClaw (fork source)</a>
+<a class="lvl-3" href="#22-hermes-dedicated-chat-bot-project">2.2 Hermes (dedicated chat-bot project)</a>
+<a class="" href="#3-three-way-comparison">3. Three-way comparison</a>
+<a class="lvl-3" href="#31-abstraction-level">3.1 Abstraction level</a>
+<a class="lvl-3" href="#32-direct-consequences">3.2 Direct consequences</a>
+<a class="lvl-3" href="#33-the-subtractions-and-additions-we-made-after-forking-openclaw">3.3 The "subtractions" and "additions" we made after forking OpenClaw</a>
+<a class="" href="#4-current-structural-defects-sorted-by-severity">4. Current structural defects (sorted by severity)</a>
+<a class="lvl-3" href="#defect-1-basepy-is-an-empty-shell">Defect 1: base.py is an empty shell</a>
+<a class="lvl-3" href="#defect-2-two-send-message-code-paths">Defect 2: two send-message code paths</a>
+<a class="lvl-3" href="#defect-3-dispatch_inbounds-synchronous-signature-blocks-streaming">Defect 3: dispatch_inbound's synchronous signature blocks streaming</a>
+<a class="lvl-3" href="#defect-4-no-neutral-channelmessage-structure-fixed-commit-faaeb1ee">Defect 4: no neutral ChannelMessage structure (✓ fixed, commit faaeb1ee)</a>
+<a class="lvl-3" href="#defect-5-_conversationpy-is-a-single-483-line-file-with-5-responsibilities">Defect 5: _conversation.py is a single 483-line file with 5 responsibilities</a>
+<a class="lvl-3" href="#defect-6-account_id-passed-twice">Defect 6: account_id passed twice</a>
+<a class="lvl-3" href="#defect-7-reverse-dependency">Defect 7: reverse dependency</a>
+<a class="lvl-3" href="#defect-8-single-session-isolation-granularity">Defect 8: single session-isolation granularity</a>
+<a class="lvl-3" href="#defect-9-error-signals-not-classified-fixed-commit-f4b7ca9f">Defect 9: error signals not classified (✓ fixed, commit f4b7ca9f)</a>
+<a class="lvl-3" href="#defect-10-platform-registration-hardcoded-fixed-commit-0cac6004">Defect 10: platform registration hardcoded (✓ fixed, commit 0cac6004)</a>
+<a class="" href="#5-a-few-inferences">5. A few inferences</a>
+<a class="" href="#6-open-questions">6. Open questions</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=411d594f"></script>
+</body>
+</html>

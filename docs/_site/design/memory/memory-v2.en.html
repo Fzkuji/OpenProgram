@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/memory/memory-v2.html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory v2 — 实体/虚拟两级 + Provenance 导航召回 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=411d594f">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn" data-title-en="Readme Cn.En" data-href-zh="/docs/README_CN.html" data-href-en="/docs/README_CN.en.html">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="/docs/design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory" open><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory.html">Memory subsystem</a>
+<a class="navlink active" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Memory — 记忆系统设计 <span class='bc-sep'>›</span> <span class="bc-current">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</span></nav><h1 id="memory-v2-entityvirtual-two-tier-provenance-navigated-recall">Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall<a class="header-anchor" href="#memory-v2-entityvirtual-two-tier-provenance-navigated-recall">#</a></h1>
+<blockquote>
+<p>Status: design draft + under implementation. Supersedes the current linear summarization chain (<code>journal → wiki → core</code>).
+Prerequisite reading: <a href="/docs/design/memory/git-as-entity-memory.html"><code>git-as-entity-memory.md</code></a> (initial design of the entity tier),
+<a href="/docs/design/memory/memory.html"><code>memory.md</code></a> (v1 implementation).
+Path conventions: all state lives under <code>~/.openprogram/</code> (= <code>get_state_dir()</code>); named profiles use
+<code>~/.openprogram-&lt;profile&gt;/</code>. The <code>~/.agentic/</code> and <code>sessions-git/</code> from early docs are both deprecated
+(see the one-time migration in <code>openprogram/paths.py</code>).</p>
+</blockquote>
+<h2 id="0-in-one-sentence">0. In One Sentence<a class="header-anchor" href="#0-in-one-sentence">#</a></h2>
+<p>Memory is split into an <strong>entity tier</strong> (git-stored, immutable, the complete real history) and a <strong>virtual tier</strong> (a compact, pointer-bearing index distilled from the entity tier). When the LLM is called, <strong>only the virtual tier is injected</strong>; when raw detail is needed, the LLM follows the <strong>provenance pointers</strong> in the virtual tier and uses tools to navigate back to the entity tier itself.</p>
+<pre><code>        ┌──────────────────── Entity tier (raw, git, complete) ────────────────────┐
+        │   Session-Git                          Project-Git                          │
+        │   one repo per session                 binds user work dir (real code/docs) │
+        │   one commit per turn                  agent edits file → auto commit       │
+        │   · bound to project → &lt;project&gt;/.openprogram/sessions/&lt;id&gt;/                │
+        │   · casual chat      → &lt;state&gt;/sessions/&lt;id&gt;/  (default proj = label only)  │
+        └─────────────────────────────────┬──────────────────────────────────────────┘
+                                           │  continuous distillation, with provenance
+                          ┌────────────────┴────────────────┐
+                          ▼                                  ▼
+              ┌────────────────────┐          ┌────────────────────┐
+              │  Timeline (Journal) │          │  Knowledge Graph    │  ← Virtual tier (derived)
+              │  &quot;when did what     │          │  (Wiki)             │     every entry carries
+              │   happen&quot;           │          │  &quot;how entities      │     a pointer back to
+              │  bi-temporal        │          │   relate&quot;           │     the entity tier
+              │                     │          │  bi-temporal edges  │
+              └──────────┬──────────┘          └──────────┬──────────┘
+                         └──────────────┬─────────────────┘
+                                        ▼
+                              ┌──────────────────────────────────────────────┐
+                              │   Recall                                       │
+                              │   inject virtual tier only into LLM context;   │
+                              │   LLM sees pointers → navigates back to entity │
+                              └──────────────────────────────────────────────┘
+</code></pre>
+<h2 id="05-implementation-status-as-of-2026-05">0.5 Implementation Status (as of 2026-05)<a class="header-anchor" href="#05-implementation-status-as-of-2026-05">#</a></h2>
+<p>This document is the <strong>target design</strong>. Where the current code stands:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Content</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong></td>
+<td>baseline fixes (LLM bridge / watcher deferral / ingest reading the right fields)</td>
+<td>✅ done (see §9)</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td>entity-tier Project: schema + binding + project-git + sessions landing inside the project</td>
+<td>✅ done (<code>store/project_store.py</code> + <code>store/session_store.py</code>)</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>distillation pipeline rewrite: read the session-git DAG → timeline + graph (provenance, bi-temporal)</td>
+<td>❌ not started</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td>recall rewrite: inject virtual only + navigation tools</td>
+<td>❌ not started</td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td>materialized views + core rebuild + hybrid search (vectors)</td>
+<td>❌ not started</td>
+</tr>
+<tr>
+<td><strong>5</strong></td>
+<td>UI: Projects panel / timeline / <code>/memory</code></td>
+<td>⚠ partial (topbar project selector done, the rest not)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key gap (the core of Phase 2)</strong>: the entity tier (git) is built, but the virtual tier is <strong>still v1's journal/wiki/core, and it still does not actually read the entity tier</strong> — what <code>memory/wiki/ingest.py</code> feeds the LLM is the conversation text rendered by <code>get_branch()</code>, not the session-git <code>Call</code> DAG; the project-git commit history is never read at all. So the &quot;entity → virtual&quot; hop is not yet wired up, and the entity tier's contribution to memory quality is currently ≈ 0.</p>
+<p><strong>The &quot;default project&quot; in the §0 overview diagram</strong> has been simplified from the originally designed &quot;fallback git repo&quot; to a <strong>pure logical label</strong> (see §2.5); where the diagram and the prose disagree, §2.5 is authoritative.</p>
+<p><strong>Known to-fix (out of scope for this doc, at the code level)</strong>: after the <code>sessions-git → sessions</code> rename, the memory entity tier's <code>&lt;state&gt;/sessions/</code> collides with <code>agentic_programming</code>'s ask_user IPC directory (<code>paths.get_sessions_dir()</code> likewise points at <code>&lt;state&gt;/sessions/</code>) on the same directory; one of them needs renaming (e.g. ask_user switching to <code>&lt;state&gt;/followups/</code>).</p>
+<h2 id="1-design-motivation-difference-from-existing-approaches">1. Design Motivation / Difference from Existing Approaches<a class="header-anchor" href="#1-design-motivation-difference-from-existing-approaches">#</a></h2>
+<h3 id="problems-with-the-current-state">Problems with the Current State<a class="header-anchor" href="#problems-with-the-current-state">#</a></h3>
+<p>The v1 implementation (<code>memory.md</code>) is a <strong>linear lossy chain</strong>: <code>raw chat → extract 0-10 facts → journal → wiki → core</code>. Every layer drops information, and the abstraction layer (wiki) is built from the lossy summary of the layer above it, <strong>never reading the entity tier directly</strong>. The result: the entity tier (sessions/) and the abstraction layer (wiki) are two disconnected things, and the pipeline in between had even been broken (<code>build_default_llm</code> returned None, see §9, fixed).</p>
+<h3 id="comparison-with-mainstream-frameworks">Comparison with Mainstream Frameworks<a class="header-anchor" href="#comparison-with-mainstream-frameworks">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>Entity tier</th>
+<th>Abstraction tier</th>
+<th>Recall method</th>
+<th>Time dimension</th>
+<th>Knowledge graph</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Code</td>
+<td><a href="http://CLAUDE.md">CLAUDE.md</a> + sessions</td>
+<td>auto-memory <a href="http://MEMORY.md">MEMORY.md</a> (index + topic)</td>
+<td>inject index, read topics on demand</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>OpenClaw</td>
+<td><a href="http://MEMORY.md">MEMORY.md</a> + journal</td>
+<td>same as above + wiki plugin</td>
+<td>inject + semantic search</td>
+<td>❌</td>
+<td>⚠ weak</td>
+</tr>
+<tr>
+<td>mem0</td>
+<td>—</td>
+<td>vector DB</td>
+<td>RAG chunked injection</td>
+<td>⚠ write time</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Letta/MemGPT</td>
+<td>conversation history</td>
+<td>tiered (core/recall/archival)</td>
+<td>LLM tool shuttling</td>
+<td>⚠</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Zep/Graphiti</td>
+<td>—</td>
+<td>temporal knowledge graph</td>
+<td>graph queries</td>
+<td>✅ bi-temporal</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>This design</strong></td>
+<td><strong>git (session+project)</strong></td>
+<td><strong>timeline + knowledge graph</strong></td>
+<td><strong>inject virtual, LLM navigates back to entity</strong></td>
+<td><strong>✅ bi-temporal</strong></td>
+<td><strong>✅</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="four-novel-points-from-a-papers-perspective">Four Novel Points (from a Paper's Perspective)<a class="header-anchor" href="#four-novel-points-from-a-papers-perspective">#</a></h3>
+<ol>
+<li>
+<p><strong>Git as the substrate for episodic memory.</strong> Entity memory is not a home-grown store; it uses git directly: commits are immutable = truth that cannot be tampered with; log = timeline; checkout = time machine; branch = explored branches; and the agent can read it with standard tools (<code>git log</code> / <code>grep</code> / <code>diff</code>). Auditable, reproducible, traceable.</p>
+</li>
+<li>
+<p><strong>Provenance-pointer index, not a replacement.</strong> The virtual tier does not replace the entity tier; it builds it a <strong>coordinate-bearing navigation map</strong>. Every virtual memory carries a pointer <code>(project, session, commit, timestamp)</code> back to its origin in the entity tier. This solves the fundamental problem of &quot;lossy summaries dropping context&quot; — <strong>at any time you can follow the pointer back down to ground truth</strong>.</p>
+</li>
+<li>
+<p><strong>LLM-self-navigated recall (map → territory), not RAG chunk injection.</strong> Traditional RAG slices out relevant chunks and stuffs them into the context, polluting the context and losing structure. This design injects only a compact virtual map; the LLM reads &quot;in 2026-05, fixed a Windows bug in project X, full history in session local_13d5&quot;, and <strong>when it needs the detail it walks over and fetches it with tools itself</strong>. Small context, full fidelity, agent-driven retrieval.</p>
+</li>
+<li>
+<p><strong>Dual projection of timeline + knowledge graph, both bi-temporal.</strong> The same git substrate is projected into two orthogonal views: the timeline answers &quot;when&quot;, the knowledge graph answers &quot;what relationship&quot;. Both record two times — <code>event_time</code> (when the thing happened) and <code>ingestion_time</code> (when we wrote it down) — supporting time-travel queries and contradiction detection.</p>
+</li>
+</ol>
+<h2 id="2-entity-memory">2. Entity Memory<a class="header-anchor" href="#2-entity-memory">#</a></h2>
+<h3 id="21-mental-model-every-session-belongs-to-some-project">2.1 Mental Model: Every Session Belongs to Some Project<a class="header-anchor" href="#21-mental-model-every-session-belongs-to-some-project">#</a></h3>
+<p>Core simplification: <strong>there are no &quot;ownerless&quot; sessions</strong>. Every session belongs to a project; the only difference is whether that project is the user's real working directory.</p>
+<pre><code>when a session is created:
+  is a work-dir path specified? (the topbar work_dir selector)
+    yes → bind to that path's Project-Git (user's real code/doc repo),
+          session repo lands at &lt;project&gt;/.openprogram/sessions/&lt;id&gt;/
+    no  → default project (logical label project_id=&quot;default&quot;),
+          session repo lands at home root &lt;state&gt;/sessions/&lt;id&gt;/
+</code></pre>
+<p>This way the entity tier always has clear ownership, and the virtual tier can always be aggregated by project.</p>
+<h3 id="22-disk-layout">2.2 Disk Layout<a class="header-anchor" href="#22-disk-layout">#</a></h3>
+<pre><code>~/.openprogram/                          ← state root (get_state_dir())
+├── sessions/&lt;session_id&gt;/              ← Session-Git, casual chat (no bound project)
+│   ├── .git/                            one commit per turn
+│   ├── meta.json                        title / agent_id / project_id / head
+│   ├── history/NNNN-&lt;role&gt;-&lt;id&gt;.json    DAG nodes (user/llm/code)
+│   ├── context/                         materialized view for the LLM (messages.json + commits/)
+│   └── workdir/                         this session's temp working directory
+│
+├── sessions/locations.json            ← session location index: in-project sessions → real path
+│
+├── projects/
+│   └── projects.json                   project registry (id → {name, path, sessions, status})
+│                                        default project is just a logical label, no standalone repo
+│
+└── memory/                             ← virtual tier (see §3)
+
+&lt;user work dir&gt;/                         ← Project-Git (the real repo used when bound)
+├── .git/                               reuse existing; git init if none. agent edits file → auto commit
+└── .openprogram/sessions/&lt;id&gt;/         ← sessions bound to this project, repo lands in-project
+</code></pre>
+<h3 id="23-session-git-implemented-retained">2.3 Session-Git (implemented, retained)<a class="header-anchor" href="#23-session-git-implemented-retained">#</a></h3>
+<p>This is already in place; see <code>&lt;state&gt;/sessions/&lt;id&gt;/</code> (<code>store/git_session.py</code>). Each node is a <code>Call</code> (role = user / llm / code), and edges are <code>called_by</code> (the call chain) + <code>reads</code> (context references). <strong>v2 does not change Session-Git's storage; it only adds a <code>project_id</code> field to <code>meta.json</code></strong> (already added).</p>
+<p>For a session bound to a real project, its repo is not at the home root but at <code>&lt;project&gt;/.openprogram/sessions/&lt;id&gt;/</code>, indexed by the <code>sessions/locations.json</code> index (<code>SessionStore._record_location</code> / <code>_session_dir</code>). This way a project's &quot;code history (project-git) + conversation history (session-git)&quot; both stay inside the project directory and travel with the project.</p>
+<h3 id="24-project-git">2.4 Project-Git<a class="header-anchor" href="#24-project-git">#</a></h3>
+<p>A Project = a long-running unit of work, associated with:</p>
+<ul>
+<li>a <strong>filesystem directory</strong> (the user's real code repo / document repo)</li>
+<li><strong>multiple sessions</strong> (the multiple conversations on this project)</li>
+<li>a name / description / status</li>
+</ul>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Project</span><span class="p">:</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>                       <span class="c1"># proj_&lt;8hex of path&gt;, or &quot;default&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">path</span><span class="p">:</span> <span class="nb">str</span>                     <span class="c1"># absolute path; default project = &quot;&quot; (no repo)</span>
+    <span class="n">is_default</span><span class="p">:</span> <span class="nb">bool</span>              <span class="c1"># True means the default project (logical label)</span>
+    <span class="n">session_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>        <span class="c1"># reverse index</span>
+    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span>                   <span class="c1"># &quot;active&quot; | &quot;paused&quot; | &quot;done&quot;</span>
+    <span class="n">created_at</span><span class="p">:</span> <span class="nb">float</span>
+</code></pre>
+<p>The registry is at <code>&lt;state&gt;/projects/projects.json</code>, keyed by the path-derived <code>proj_&lt;8hex&gt;</code> (the same directory always maps to the same project). <code>resolve_project(path)</code> reuses the directory's existing <code>.git</code>, or <code>git init</code>s if there isn't one (<code>ProjectGit.ensure_init</code>).</p>
+<p><strong>Auto-commit (Strategy A, carried over from the original design)</strong>: at turn end, if the session is bound to a real project and the agent changed files:</p>
+<pre><code>if not is_dirty_before_agent_touched():     # work tree was originally clean
+    git add -A &amp;&amp; git -c user.name=&lt;agent&gt; commit -m &quot;[agent &lt;session&gt;] turn &lt;N&gt;: &lt;user msg&gt;&quot;
+else:
+    # user has uncommitted changes → don't pollute, skip + UI warning
+    skip + warn
+</code></pre>
+<p>The commit uses the agent's identity (<code>-c user.name/email</code> override), so even inside the user's own repo it stays distinguishable from the user's commits.</p>
+<h3 id="25-semantics-of-the-default-project">2.5 Semantics of the Default-Project<a class="header-anchor" href="#25-semantics-of-the-default-project">#</a></h3>
+<p>The default project is a <strong>pure logical label</strong>; it does not create a standalone git repo. The rationale: a casual chat is not bound to any directory, and the files it produces (if any) land in that session's own <code>workdir/</code>, so a &quot;default project repo&quot; would always be empty and purely redundant. Such sessions only carry <code>project_id=&quot;default&quot;</code> for grouping / scope filtering, and their <strong>entity memory is the session repo itself</strong> (landing at the home root <code>&lt;state&gt;/sessions/&lt;id&gt;/</code>).</p>
+<p>Only when a session is bound to a real working directory does an actual git repo appear (see §2.4). That is: <strong>real path → real repo; no path → label only</strong>. This avoids the meaningless bloat of &quot;a pile of empty default repos&quot; in the entity tier.</p>
+<h2 id="3-virtual-memory">3. Virtual Memory<a class="header-anchor" href="#3-virtual-memory">#</a></h2>
+<p>Two projections, both distilled from the entity tier, both carrying provenance pointers, both bi-temporal.</p>
+<blockquote>
+<p>Current state: the timeline/graph described in this section is <strong>not yet implemented</strong> (Phase 2). What is running now is v1's
+journal/wiki/core (see <code>memory.md</code>). Below is the target form.</p>
+</blockquote>
+<h3 id="31-provenance-pointer-the-core-data-structure">3.1 Provenance Pointer (the Core Data Structure)<a class="header-anchor" href="#31-provenance-pointer-the-core-data-structure">#</a></h3>
+<p>Every virtual memory carries a pointer back to its origin in the entity tier:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Provenance</span><span class="p">:</span>
+    <span class="n">project_id</span><span class="p">:</span> <span class="nb">str</span>               <span class="c1"># which project</span>
+    <span class="n">session_id</span><span class="p">:</span> <span class="nb">str</span>               <span class="c1"># which session</span>
+    <span class="n">commit</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span>            <span class="c1"># which session-git commit (optional)</span>
+    <span class="n">node_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>           <span class="c1"># which DAG nodes (optional, message-precise)</span>
+    <span class="n">event_time</span><span class="p">:</span> <span class="nb">float</span>             <span class="c1"># when the thing happened (wall clock)</span>
+    <span class="n">ingestion_time</span><span class="p">:</span> <span class="nb">float</span>         <span class="c1"># when we distilled and recorded it</span>
+</code></pre>
+<p><code>event_time</code> vs <code>ingestion_time</code> = the two axes of bi-temporal. They can answer:</p>
+<ul>
+<li>&quot;after that refactor last Wednesday, what did the code look like&quot; (by event_time)</li>
+<li>&quot;when did we even find out library X was unstable&quot; (by ingestion_time)</li>
+</ul>
+<h3 id="32-timeline-temporal-journal">3.2 Timeline (Temporal / Journal)<a class="header-anchor" href="#32-timeline-temporal-journal">#</a></h3>
+<p>An event stream organized by time. Answers &quot;when did what happen&quot;.</p>
+<pre><code>~/.openprogram/memory/timeline/
+├── 2026-05.jsonl               # sharded by month, append-only
+└── ...
+
+# one record
+{
+  &quot;id&quot;: &quot;ev_abc&quot;,
+  &quot;summary&quot;: &quot;fixed a Windows cp1252 encoding bug in OpenProgram, touched 38 files&quot;,
+  &quot;kind&quot;: &quot;work&quot;,               # work | decision | learning | event
+  &quot;provenance&quot;: {
+    &quot;project_id&quot;: &quot;proj_openprogram&quot;,
+    &quot;session_id&quot;: &quot;local_13d5&quot;,
+    &quot;commit&quot;: &quot;73bfc05&quot;,
+    &quot;event_time&quot;: 1779900000,
+    &quot;ingestion_time&quot;: 1779986400
+  },
+  &quot;entities&quot;: [&quot;project.openprogram&quot;, &quot;issue.cp1252&quot;]   # linked to graph nodes
+}
+</code></pre>
+<h3 id="33-knowledge-graph-graph-wiki">3.3 Knowledge Graph (Graph / Wiki)<a class="header-anchor" href="#33-knowledge-graph-graph-wiki">#</a></h3>
+<p>Entities + relationships. Answers &quot;what is related to what, and how&quot;. <strong>This upgrades v1's <code>wiki/&lt;kind&gt;/</code> into a real graph</strong> — right now there are only isolated entity pages; v2 adds edges and time.</p>
+<pre><code>~/.openprogram/memory/graph/
+├── entities.jsonl              # nodes
+├── edges.jsonl                 # edges (with bi-temporal + provenance)
+└── views/                      # materialized readable views
+    ├── entity/&lt;slug&gt;.md        # one page per entity (compatible with existing wiki reading habits)
+    └── ...
+
+# entity
+{&quot;id&quot;: &quot;project.openprogram&quot;, &quot;type&quot;: &quot;project&quot;, &quot;name&quot;: &quot;OpenProgram&quot;,
+ &quot;attrs&quot;: {&quot;path&quot;: &quot;C:\\Users\\fzkuji\\OpenProgram&quot;, &quot;lang&quot;: &quot;python&quot;}}
+
+# edge (with bi-temporal + provenance)
+{&quot;from&quot;: &quot;issue.cp1252&quot;, &quot;to&quot;: &quot;commit.73bfc05&quot;, &quot;relation&quot;: &quot;fixed-by&quot;,
+ &quot;event_time&quot;: 1779900000, &quot;ingestion_time&quot;: 1779986400,
+ &quot;provenance&quot;: {&quot;project_id&quot;: &quot;proj_openprogram&quot;, &quot;session_id&quot;: &quot;local_13d5&quot;},
+ &quot;confidence&quot;: 0.95, &quot;superseded_by&quot;: null}
+</code></pre>
+<p><strong>Contradiction handling</strong>: when a new edge conflicts with an old one, the old edge is not deleted; it is marked <code>superseded_by</code> pointing to the new edge. This preserves history and supports time-aware queries like &quot;we once thought X, then found out Y&quot;.</p>
+<h3 id="34-scope-labels-cross-project-isolation">3.4 Scope Labels (Cross-Project Isolation)<a class="header-anchor" href="#34-scope-labels-cross-project-isolation">#</a></h3>
+<p>Every entity / edge carries a scope, and queries filter by the current context:</p>
+<pre><code>scope: &quot;global&quot;                  # across all projects (e.g. user language preference)
+scope: &quot;project:openprogram&quot;     # this project only
+scope: &quot;agent:research&quot;          # this agent only
+</code></pre>
+<p>More flexible than both Claude Code (pure directory hierarchy) and OpenClaw (pure per-agent) — a graph naturally supports multi-dimensional label filtering, which a filesystem hierarchy cannot. When chatting in the OpenProgram project, only the <code>global</code> + <code>project:openprogram</code> subgraph is projected.</p>
+<h3 id="35-core-the-minimal-snapshot-always-injected">3.5 Core (the Minimal Snapshot Always Injected)<a class="header-anchor" href="#35-core-the-minimal-snapshot-always-injected">#</a></h3>
+<p>Not a separate tier, but the <strong>minimal projection</strong> of the virtual tier: take the most recent high-signal events from the timeline + the high-frequency/high-confidence entities from the graph, and assemble them into a ≤2KB snippet. Injected into every system prompt. <strong>Every line in core also carries a pointer</strong>, so when the LLM sees core it knows where to drill in.</p>
+<h2 id="4-recall-mechanism-the-two-links-wired-up">4. Recall Mechanism (the Two Links Wired Up)<a class="header-anchor" href="#4-recall-mechanism-the-two-links-wired-up">#</a></h2>
+<h3 id="41-injection-only-the-virtual-tier">4.1 Injection: Only the Virtual Tier<a class="header-anchor" href="#41-injection-only-the-virtual-tier">#</a></h3>
+<p>On every LLM call, what gets injected into the system prompt is:</p>
+<pre><code>═══════════════════════════════════════════════
+OpenProgram memory — project: OpenProgram, last organized 2026-05-29
+═══════════════════════════════════════════════
+[Timeline · recent]
+· 2026-05-28 fixed a batch of Windows-compat bugs (38 files)   ↪ session:local_13d5
+· 2026-05-29 refactored the CLI into a verb scheme, added rescue/logs  ↪ session:local_7cd1
+
+[Graph · current-project related]
+· OpenProgram at C:\Users\fzkuji\OpenProgram (python)
+· cp1252-bug ──fixed-by──► commit 73bfc05               ↪ session:local_13d5
+· worker ──listens-on──► :18109
+
+need detail: memory_open_session(&lt;id&gt;) / memory_git_log(&lt;project&gt;) / memory_timeline(&lt;entity&gt;)
+═══════════════════════════════════════════════
+</code></pre>
+<p><strong>No raw chat is stuffed in.</strong> It is all compact, pointer-bearing summaries.</p>
+<h3 id="42-navigation-the-llm-follows-pointers-to-fetch-for-itself">4.2 Navigation: the LLM Follows Pointers to Fetch for Itself<a class="header-anchor" href="#42-navigation-the-llm-follows-pointers-to-fetch-for-itself">#</a></h3>
+<p>When the LLM needs raw detail, it calls navigation tools to walk back to the entity tier (added in Phase 3):</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it does</th>
+<th>Where in the entity tier it lands</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>memory_open_session(session_id, [turn])</code></td>
+<td>read the raw messages of a session</td>
+<td><code>&lt;sessions&gt;/&lt;id&gt;/history/</code></td>
+</tr>
+<tr>
+<td><code>memory_git_log(project_id, [since])</code></td>
+<td>view a project's commit history</td>
+<td>Project-Git</td>
+</tr>
+<tr>
+<td><code>memory_git_show(project_id, commit)</code></td>
+<td>see what a given commit changed</td>
+<td>git show</td>
+</tr>
+<tr>
+<td><code>memory_timeline(entity|since|until)</code></td>
+<td>a slice of the timeline</td>
+<td>virtual timeline</td>
+</tr>
+<tr>
+<td><code>memory_graph_neighbors(entity, hops)</code></td>
+<td>a node's neighbors in the graph</td>
+<td>virtual graph</td>
+</tr>
+<tr>
+<td><code>memory_search(query)</code></td>
+<td>hybrid search across the virtual tier</td>
+<td>virtual (FTS + vectors)</td>
+</tr>
+</tbody>
+</table>
+<p>Example: the LLM reads &quot;cp1252-bug fixed-by 73bfc05 ↪ session:local_13d5&quot; in core and wants to know exactly how it was fixed → it calls <code>memory_git_show(&quot;proj_openprogram&quot;, &quot;73bfc05&quot;)</code> to get the diff, or <code>memory_open_session(&quot;local_13d5&quot;)</code> to read the conversation at the time. <strong>The virtual tier gives the coordinates, the entity tier gives the truth, and the LLM walks that path itself.</strong></p>
+<h2 id="5-distillation-pipeline-entity-virtual">5. Distillation Pipeline (Entity → Virtual)<a class="header-anchor" href="#5-distillation-pipeline-entity-virtual">#</a></h2>
+<h3 id="51-triggers">5.1 Triggers<a class="header-anchor" href="#51-triggers">#</a></h3>
+<ul>
+<li><strong>Incremental (session-end)</strong>: session goes idle → distill the new commits of this session</li>
+<li><strong>Batch (sleep, daily at 03:00)</strong>: re-organize, disambiguate, detect contradictions, rebuild core</li>
+<li><strong>Pre-compaction flush (borrowed from OpenClaw)</strong>: insert a round before context compaction so the agent flushes the key information still in the conversation down to the entity tier first</li>
+</ul>
+<h3 id="52-five-stages-read-the-entity-git-not-the-old-summary-chain">5.2 Five Stages (read the entity git, not the old summary chain)<a class="header-anchor" href="#52-five-stages-read-the-entity-git-not-the-old-summary-chain">#</a></h3>
+<pre><code>Stage 1: collect   — pull new commits from session-git + project-git since last distillation
+                     (read full DAG nodes: user/llm/code + reads edges, not just chat text)
+Stage 2: extract   — one LLM pass, extract timeline events + graph entities/relations, each tagged with provenance
+Stage 3: link      — alias-resolve new entities against the existing graph (&quot;worker&quot;/&quot;backend&quot;/&quot;daemon&quot; → same node)
+Stage 4: reconcile — contradiction detection, mark old edges superseded, don't delete
+Stage 5: project   — re-project core.md / entity views / timeline shards
+</code></pre>
+<p>Stage 2 is the most expensive and the most prompt-tuning-hungry (Graphiti iterated on this part for several months). It can start with a rule-based version (pattern match &quot;I prefer X&quot; → edge), with the prompt-based version gradually replacing it.</p>
+<h3 id="53-key-read-the-dag-directly-not-the-old-summaries">5.3 Key: Read the DAG Directly, Not the Old Summaries<a class="header-anchor" href="#53-key-read-the-dag-directly-not-the-old-summaries">#</a></h3>
+<p>The v1 pipeline read &quot;conversation text that had already been extracted&quot;. v2 <strong>reads the <code>Call</code> DAG in session-git directly</strong> — including <code>code</code> nodes (what tools the agent ran, with what arguments, with what results) and <code>reads</code> edges (what influenced a decision). These are exactly the gold mine for graph projection (<code>agent ──ran──► pytest ──produced──► 3 failures</code>), which v1 flattened into text and threw away.</p>
+<blockquote>
+<p>This is the biggest current gap (§0.5): the entity tier is built, but <code>memory/wiki/ingest.py</code> to this day still reads the
+rendered text from <code>db.get_branch()</code>, never the DAG, and never touches project-git. The first cut of Phase 2 is to connect this pipe.</p>
+</blockquote>
+<h2 id="6-schema-overview">6. Schema Overview<a class="header-anchor" href="#6-schema-overview">#</a></h2>
+<pre><code>~/.openprogram/
+├── sessions/&lt;id&gt;/               entity: session (implemented, meta carries project_id)
+│   └── (project-bound sessions land at &lt;project&gt;/.openprogram/sessions/&lt;id&gt;/, indexed by sessions/locations.json)
+├── projects/
+│   └── projects.json            project registry (default project = logical label, no default/.git)
+├── memory/                       virtual tier (timeline/graph added from Phase 2; currently v1 journal/wiki/core)
+│   ├── timeline/YYYY-MM.jsonl   virtual: timeline
+│   ├── graph/
+│   │   ├── entities.jsonl       virtual: graph nodes
+│   │   ├── edges.jsonl          virtual: graph edges (bi-temporal + provenance)
+│   │   └── views/entity/*.md    virtual: readable views
+│   ├── core.md                  virtual: minimal injected snapshot
+│   ├── index/
+│   │   ├── graph.sqlite         graph queries + FTS + time index
+│   │   └── embeddings.sqlite    vectors (hybrid search, optional)
+│   └── .state/                  distillation progress / locks
+&lt;user work dir&gt;/.git/             entity: real project (agent edits files, auto commit)
+</code></pre>
+<h2 id="7-implementation-phasing">7. Implementation Phasing<a class="header-anchor" href="#7-implementation-phasing">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Content</th>
+<th>Depends on</th>
+<th>Effort</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong></td>
+<td>fix baseline (LLM bridge / watcher / ingest fields), get v1 running</td>
+<td>—</td>
+<td>1d</td>
+<td>✅ done</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td>Project concept: schema + session.project_id + default project (label) + binding + project-git auto-commit</td>
+<td>Session-Git</td>
+<td>3-4d</td>
+<td>✅ done</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>distillation pipeline rewrite: read session-git DAG → timeline + graph (with provenance, bi-temporal)</td>
+<td>1</td>
+<td>5-7d</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td>recall rewrite: inject virtual only + navigation tools (memory_open_session / git_log / timeline / graph_neighbors)</td>
+<td>2</td>
+<td>3-4d</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td>materialized view projection + <a href="http://core.md">core.md</a> rebuild + hybrid search (vectors)</td>
+<td>2,3</td>
+<td>3-5d</td>
+<td>❌</td>
+</tr>
+<tr>
+<td><strong>5</strong></td>
+<td>UI: Projects panel + session-backtrack timeline + <code>/memory</code> slash command</td>
+<td>1</td>
+<td>3-5d</td>
+<td>⚠ partial</td>
+</tr>
+</tbody>
+</table>
+<p>~2-3 weeks remaining. Each phase is independently verifiable.</p>
+<p><strong>Suggested landing order for Phase 2</strong> (prove the pipeline first, then spend on tuning the most expensive Stage 2):</p>
+<ol>
+<li>First nail down the <code>Provenance</code> dataclass + the JSONL schema for timeline/graph + a thin read/write layer without any LLM;</li>
+<li>Wire the distillation trigger to <strong>read the session-git DAG (+ project-git log)</strong>, not <code>get_branch()</code> text — get the &quot;entity → virtual&quot; pipe connected first;</li>
+<li>Write a <strong>rule-based extractor</strong> (pattern match) first to get end-to-end working with real provenance attached, then swap in the LLM version;</li>
+<li>Add the navigation tools, so recall can actually shrink down to &quot;inject virtual only&quot;.</li>
+</ol>
+<h2 id="8-relationship-to-existing-code">8. Relationship to Existing Code<a class="header-anchor" href="#8-relationship-to-existing-code">#</a></h2>
+<p><strong>Reuse</strong>:</p>
+<ul>
+<li>Session-Git (<code>&lt;state&gt;/sessions/</code>, <code>store/git_session.py</code>) — the first piece of the entity tier, used directly</li>
+<li>Project-Git (<code>store/project_store.py</code>) — the second piece of the entity tier, already implemented</li>
+<li>the <code>Call</code> DAG (<code>context/nodes.py</code>) — the node model of the entity tier, used directly</li>
+<li>the <code>MemoryProvider</code> abstract interface (<code>memory/provider.py</code>) — the recall hook shape is retained</li>
+<li>the sleep scheduler skeleton (<code>memory/scheduler.py</code>, <code>sleep/runner.py</code>) — changed to read git</li>
+<li>the FTS index (<code>memory/index.py</code>) — expanded into graph.sqlite</li>
+</ul>
+<p><strong>Replace</strong>:</p>
+<ul>
+<li>the fact extraction in <code>memory/builtin/summarizer.py</code> / the rendered-text reading in <code>memory/wiki/ingest.py</code> → Stage 2's entity/relationship extraction that reads the DAG</li>
+<li>the isolated topic pages of <code>memory/wiki/</code> → <code>graph/</code> (nodes + edges + time)</li>
+<li>the linear <code>journal → wiki → core</code> chain → fan-out from git</li>
+</ul>
+<p><strong>Add</strong>:</p>
+<ul>
+<li><code>memory/graph/</code> (entities/edges/views)</li>
+<li><code>memory/timeline/</code></li>
+<li>navigation tools (expansion of <code>functions/tools/memory/</code>)</li>
+<li>bi-temporal + provenance fields</li>
+</ul>
+<p><strong>Remove</strong>:</p>
+<ul>
+<li>the <code>memory/journal/</code> journal layer (superseded by timeline; the raw truth already lives in session-git)</li>
+</ul>
+<h2 id="9-phase-0-baseline-bugs-fixed-2026-05">9. Phase 0 baseline bugs (fixed, 2026-05)<a class="header-anchor" href="#9-phase-0-baseline-bugs-fixed-2026-05">#</a></h2>
+<p>The baseline originally produced no memory at all (wiki/journal/core all empty). The root cause was a string of <strong>cascading bugs</strong>, now all fixed:</p>
+<ol>
+<li><strong><code>build_default_llm()</code> returned None</strong> (<code>memory/llm_bridge.py</code>) — <code>_read_default_model()</code> used to hand-read the <code>agents.json</code> index file, and on a freshly installed machine where the index does not exist it returned None → the entire memory subsystem was silently disabled. Changed to delegate to <code>agents.manager.get_default()</code> (the fallback chain of index → DEFAULT_AGENT_ID → first agent).</li>
+<li><strong>watcher silently dropped data</strong> (<code>memory/session_watcher.py</code>) — when it couldn't get an LLM it used to <code>return True</code> (mark as processed), which permanently discarded that session's memory. Changed to <code>return False</code> (defer and retry); the raw conversation lives permanently in session-git, so deferring loses nothing.</li>
+<li><strong>passed the wrong argument</strong> — <code>ingest_session</code> takes <code>runtime=</code> (a Runtime with <code>.exec</code>), not an <code>llm=</code> callable; the watcher now pre-checks with <code>_build_runtime()</code> before passing it in.</li>
+<li><strong>the generation step was given no tools</strong> (<code>memory/wiki/ingest.py</code>) — <code>runtime.exec</code> used to carry no tools and wrote 0 files. Added <code>tools_allow=[&quot;read&quot;,&quot;write&quot;,&quot;edit&quot;,&quot;list&quot;,&quot;glob&quot;,&quot;grep&quot;,&quot;apply_patch&quot;]</code> (avoiding bash's schema bug).</li>
+<li><strong><code>X | None</code> schema bug</strong> (<code>functions/_runtime.py</code>) — PEP 604 union-type parameters were missing the <code>type</code> key, causing codex HTTP 400 (global impact, not just memory). <code>_python_type_to_json_schema</code> now recognizes <code>types.UnionType</code>.</li>
+<li><strong>read the wrong field</strong> (<code>memory/wiki/ingest.py</code>) — <code>_render_conversation</code> used to read only <code>m[&quot;content&quot;]</code>, but DAG nodes store the body in <code>output</code>/<code>input</code>, so every real session rendered as empty and was judged an &quot;empty/test session&quot;. Changed to <code>content or output or input</code>.</li>
+</ol>
+<p>After the fix, wiki pages were verified to actually generate (<code>People/Fzkuji.md</code>, <code>Projects/OpenProgram/Architecture.md</code>), and the test data was cleaned up afterward. <strong>Note: this link fixes v1's journal/wiki/core pipeline; v2's Phase 2 will replace it with the new DAG-reading pipeline (see §5.3).</strong></p>
+<h2 id="10-paper-angle-contributions-memo">10. Paper-Angle Contributions (memo)<a class="header-anchor" href="#10-paper-angle-contributions-memo">#</a></h2>
+<ol>
+<li><strong>Git-native episodic memory for LLM agents</strong> — using a version control system as the immutable substrate for an agent's long-term memory, supporting backtracking / branching / standard-tool retrieval.</li>
+<li><strong>Provenance-linked virtual memory</strong> — the summary layer does not replace the source but indexes it with coordinates; resolves the fundamental tension of lossy summarization (compression vs fidelity).</li>
+<li><strong>LLM-navigated recall</strong> — the agent reads a compact map and navigates back to the source on demand, in contrast to RAG's blind chunked injection; smaller context, higher fidelity, agent-driven retrieval.</li>
+<li><strong>Dual bi-temporal projection</strong> — the same substrate projected into a timeline + knowledge graph, both bi-temporal, supporting time travel and contradiction tracking.</li>
+</ol>
+<p>Evaluation directions (memo): the trade-off of context footprint vs recall accuracy; long-range consistency across multiple sessions; contradiction-detection recall; comparison against RAG / Zep / mem0 baselines.</p>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-20</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/memory/memory.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Memory subsystem</span></a><a class="pn-link pn-next" href="/docs/design/memory/entity-memory.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">实体记忆 (Entity Memory)</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#0-in-one-sentence">0. In One Sentence</a>
+<a class="" href="#05-implementation-status-as-of-2026-05">0.5 Implementation Status (as of 2026-05)</a>
+<a class="" href="#1-design-motivation-difference-from-existing-approaches">1. Design Motivation / Difference from Existing Approaches</a>
+<a class="lvl-3" href="#problems-with-the-current-state">Problems with the Current State</a>
+<a class="lvl-3" href="#comparison-with-mainstream-frameworks">Comparison with Mainstream Frameworks</a>
+<a class="lvl-3" href="#four-novel-points-from-a-papers-perspective">Four Novel Points (from a Paper's Perspective)</a>
+<a class="" href="#2-entity-memory">2. Entity Memory</a>
+<a class="lvl-3" href="#21-mental-model-every-session-belongs-to-some-project">2.1 Mental Model: Every Session Belongs to Some Project</a>
+<a class="lvl-3" href="#22-disk-layout">2.2 Disk Layout</a>
+<a class="lvl-3" href="#23-session-git-implemented-retained">2.3 Session-Git (implemented, retained)</a>
+<a class="lvl-3" href="#24-project-git">2.4 Project-Git</a>
+<a class="lvl-3" href="#25-semantics-of-the-default-project">2.5 Semantics of the Default-Project</a>
+<a class="" href="#3-virtual-memory">3. Virtual Memory</a>
+<a class="lvl-3" href="#31-provenance-pointer-the-core-data-structure">3.1 Provenance Pointer (the Core Data Structure)</a>
+<a class="lvl-3" href="#32-timeline-temporal-journal">3.2 Timeline (Temporal / Journal)</a>
+<a class="lvl-3" href="#33-knowledge-graph-graph-wiki">3.3 Knowledge Graph (Graph / Wiki)</a>
+<a class="lvl-3" href="#34-scope-labels-cross-project-isolation">3.4 Scope Labels (Cross-Project Isolation)</a>
+<a class="lvl-3" href="#35-core-the-minimal-snapshot-always-injected">3.5 Core (the Minimal Snapshot Always Injected)</a>
+<a class="" href="#4-recall-mechanism-the-two-links-wired-up">4. Recall Mechanism (the Two Links Wired Up)</a>
+<a class="lvl-3" href="#41-injection-only-the-virtual-tier">4.1 Injection: Only the Virtual Tier</a>
+<a class="lvl-3" href="#42-navigation-the-llm-follows-pointers-to-fetch-for-itself">4.2 Navigation: the LLM Follows Pointers to Fetch for Itself</a>
+<a class="" href="#5-distillation-pipeline-entity-virtual">5. Distillation Pipeline (Entity → Virtual)</a>
+<a class="lvl-3" href="#51-triggers">5.1 Triggers</a>
+<a class="lvl-3" href="#52-five-stages-read-the-entity-git-not-the-old-summary-chain">5.2 Five Stages (read the entity git, not the old summary chain)</a>
+<a class="lvl-3" href="#53-key-read-the-dag-directly-not-the-old-summaries">5.3 Key: Read the DAG Directly, Not the Old Summaries</a>
+<a class="" href="#6-schema-overview">6. Schema Overview</a>
+<a class="" href="#7-implementation-phasing">7. Implementation Phasing</a>
+<a class="" href="#8-relationship-to-existing-code">8. Relationship to Existing Code</a>
+<a class="" href="#9-phase-0-baseline-bugs-fixed-2026-05">9. Phase 0 baseline bugs (fixed, 2026-05)</a>
+<a class="" href="#10-paper-angle-contributions-memo">10. Paper-Angle Contributions (memo)</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=411d594f"></script>
+</body>
+</html>

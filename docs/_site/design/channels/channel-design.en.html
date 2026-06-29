@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/channels/channel-design.html">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel 子系统设计 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=411d594f">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn" data-title-en="Readme Cn.En" data-href-zh="/docs/README_CN.html" data-href-en="/docs/README_CN.en.html">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title">Agentic Programming Guide</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html">Agentic Programming Guide</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html">@agentic_function calling sub-functions in a fixed order</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html">How the model picks the next step (the tool-call loop)</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html">Next-step decision making (decision.make / exec(choices=))</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html">Function Metadata Specification</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html">Pure Python functions</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="design" open><summary class="group-title">Design Documents</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html">Design Documents</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels" open><summary class="group-title">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html">Channels</a>
+<a class="navlink active" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html">CLI Naming Convention</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html">Config write safety — atomic `update_config`</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html">OpenProgram CLI / TUI Redesign</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html">Slash Commands — Reference Implementations Snapshot</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html">TUI upgrade: transcript rendering &amp; interaction</a>
+<a class="navlink" href="/docs/design/cli/ports.html">Web UI Ports — Architecture, Configuration, and Conflict Handling</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html">统一 @agentic_function 执行路径</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title">Extension Gating</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html">Extension Gating</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html">Future work — explicitly NOT built</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html">Implementation map</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html">Reference-implementation comparison</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title">Integrations</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html">Integrations</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html">Harness Standard — how an agentic program plugs into OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory.html">Memory subsystem</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html">Unified self-contained auth storage</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a></div></details></div></details>
+<details class="group" data-key="design/runtime"><summary class="group-title">Runtime</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html">Runtime</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html">Indicator dot system</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html">Surface system (dark mode)</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb">Design Documents <span class='bc-sep'>›</span> Channels <span class='bc-sep'>›</span> <span class="bc-current">Channel 子系统设计</span></nav><h1 id="channel-subsystem-design">Channel Subsystem Design<a class="header-anchor" href="#channel-subsystem-design">#</a></h1>
+<p>External chat platforms (Telegram / Discord / Slack / WeChat) communicate bidirectionally with OpenProgram through this subsystem: a user sends a message on a platform to trigger the agent, and the agent's reply is sent back through the same channel.</p>
+<p>This document describes <strong>the current shape after implementation is complete</strong>. For the design evolution history and the list of fixed defects, see <a href="/docs/design/channels/channel-audit.html"><code>channel-audit.md</code></a>.</p>
+<h2 id="1-overall-shape">1. Overall Shape<a class="header-anchor" href="#1-overall-shape">#</a></h2>
+<pre><code>┌─────────────────────┐       ┌──────────────────────┐
+│  External user/Telegram │   │  Your own Python     │
+│  Discord/Slack/WX   │       │  script/cron/jupyter │
+└──────────┬──────────┘       └──────────┬───────────┘
+           │ user message comes in         │ want to send someone a message
+           ▼                              ▼
+  ┌──────────────────┐            ┌────────────────────┐
+  │ telegram.py etc. │            │   outbound.py      │  ← entry A
+  │ 4 adapters       │            │   send(...)        │     one-shot send, no long-running process needed
+  │ - long poll/event loop│       └─────────┬──────────┘
+  │ - parse into unified  │                 │
+  │   ChannelMessage │                      │
+  └────────┬─────────┘                      │
+           │                                │
+           ▼                                │
+  ┌───────────────────────────┐             │
+  │   dispatch_inbound        │             │
+  │   (traffic hub, ties everything together) │
+  │                           │             │
+  │   ① route: decide which agent │         │
+  │   ② compute session_key   │             │
+  │   ③ load session state    │             │
+  │   ④ call agent to run this turn │        │
+  │   ⑤ progress streaming    │             │
+  │   ⑥ push to webui WS      │             │
+  └────────┬──────────────────┘             │
+           │                                │
+           │ edit placeholder / final reply as it runs │
+           ▼                                ▼
+  ┌─────────────────────────────────────────────────┐
+  │           _transport.py (unified low level)     │  ← the only place that sends bytes outward
+  │                                                 │
+  │   post_message(platform, account, recipient, text) │
+  │   patch_message(platform, account, recipient, msg_id, text) │
+  │                                                 │
+  │   returns SendResult {                          │
+  │     ok, message_id, error_kind, retryable       │
+  │   }                                             │
+  └────────┬────────────────────────────────────────┘
+           │ HTTPS POST/PATCH
+           ▼
+  Telegram API / Discord API / Slack API / WeChat iLink API
+</code></pre>
+<h2 id="2-end-to-end-use-case-user-message-comes-in-bot-replies">2. End-to-End Use Case: User Message Comes In → Bot Replies<a class="header-anchor" href="#2-end-to-end-use-case-user-message-comes-in-bot-replies">#</a></h2>
+<p><strong>Example</strong>: On Telegram you send the bot &quot;help me check what Python files are in the current directory&quot;.</p>
+<pre><code>1. The Telegram server pushes the message to the bot
+   → openprogram/channels/telegram.py is long-polling, receives the update dict
+
+2. Inside _handle_update(update):
+   a. extract text = &quot;help me check what Python files are in the current directory&quot;
+   b. construct ChannelMessage {
+        text=..., chat_id=&quot;123&quot;, user_id=&quot;456&quot;,
+        user_display=&quot;zhangsan&quot;, chat_type=&quot;direct&quot;,
+        ts=1716000000, reply_to_id=&quot;&quot;, thread_id=&quot;&quot;,
+      }
+   c. call dispatch_inbound(channel=&quot;telegram&quot;, account_id=&quot;default&quot;,
+                          peer_kind=&quot;direct&quot;, peer_id=&quot;123&quot;,
+                          user_text=text, user_display=&quot;zhangsan&quot;,
+                          progress_stream=True)
+
+3. Inside dispatch_inbound (in _conversation.py):
+   a. look up bindings → decide to use the &quot;main&quot; agent
+   b. compute session_key = &quot;default_direct_123&quot; (in _session_routing.py)
+   c. load / create session (in _session_store.py, calling SessionDB)
+   d. send placeholder message: _transport.post_message(&quot;telegram&quot;, &quot;default&quot;, &quot;123&quot;,
+                                          &quot;⏳ working...&quot;)
+      returns SendResult{ok=True, message_id=&quot;9001&quot;}
+      → MessageHandle{platform=&quot;telegram&quot;, account=&quot;default&quot;,
+                      target=&quot;123&quot;, message_id=&quot;9001&quot;}
+   e. call process_user_turn(req, on_event=_on_event) to run the agent
+
+4. The agent decides internally to call the bash tool to run `ls *.py`:
+   a. dispatcher emits a tool_use envelope → _on_event receives it
+   b. _on_event sees tool_use → progress_lines = [&quot;⚙ bash&quot;]
+   c. throttle satisfied (&gt;1s since last edit) → _transport.patch_message(
+        &quot;telegram&quot;, &quot;default&quot;, &quot;123&quot;, &quot;9001&quot;, &quot;⚙ bash&quot;)
+      → on Telegram that &quot;⏳ working...&quot; becomes &quot;⚙ bash&quot;
+
+5. bash finishes and returns &quot;a.py b.py c.py&quot;:
+   a. dispatcher emits a tool_result envelope → _on_event receives it
+   b. progress_lines = [&quot;✓ bash&quot;]  (swap ⚙ for ✓)
+   c. throttle satisfied → patch_message edits to &quot;✓ bash&quot;
+
+6. The agent combines the bash output and writes the final reply &quot;Found 3 Python files: a.py / b.py / c.py&quot;:
+   a. process_user_turn returns, result.final_text = this text
+   b. dispatch_inbound forces an edit (bypassing the throttle): _transport.patch_message
+      changes &quot;9001&quot; to the full reply
+   c. persist to SessionDB, broadcast to webui
+   d. dispatch_inbound returns None
+
+7. telegram.py gets None → does not send any reply (because it was already edited in)
+   In Telegram the user sees that &quot;⏳...&quot; placeholder has grown into the full reply
+</code></pre>
+<h2 id="3-use-case-b-cron-agentic_function-proactively-sends-a-message">3. Use Case B: cron / @agentic_function Proactively Sends a Message<a class="header-anchor" href="#3-use-case-b-cron-agentic_function-proactively-sends-a-message">#</a></h2>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.channels.outbound</span><span class="w"> </span><span class="kn">import</span> <span class="n">send</span>
+
+<span class="c1"># In any Python script, no worker needs to be running</span>
+<span class="n">send</span><span class="p">(</span><span class="s2">&quot;telegram&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="s2">&quot;1234&quot;</span><span class="p">,</span> <span class="s2">&quot;早上好&quot;</span><span class="p">)</span>
+</code></pre>
+<p>What happens:</p>
+<pre><code>1. outbound.send calls _transport.post_message
+2. _transport.post_message fetches credentials → HTTPS POST sendMessage
+3. SendResult returns → outbound.send returns True/False
+4. the script continues
+</code></pre>
+<p><strong>There is no</strong>: adapter instance, worker process, session, agent call, or webui broadcast. A single call fires and forgets.</p>
+<p>This is why outbound.send is a separate entry point instead of going through an adapter — a cron script simply has no adapter instance running.</p>
+<h2 id="4-five-core-design-principles">4. Five Core Design Principles<a class="header-anchor" href="#4-five-core-design-principles">#</a></h2>
+<h3 id="41-two-entry-points-one-implementation">4.1 Two Entry Points, One Implementation<a class="header-anchor" href="#41-two-entry-points-one-implementation">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Entry point</th>
+<th>Purpose</th>
+<th>State</th>
+<th>Caller</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>outbound.send</code></td>
+<td>one-shot send, no long-running process needed</td>
+<td>stateless</td>
+<td>cron script / jupyter / @agentic_function / webui (reply)</td>
+</tr>
+<tr>
+<td><code>Channel.send_text</code> + <code>edit_text</code></td>
+<td>holds message_id for subsequent edits</td>
+<td>stateful</td>
+<td>dispatch_inbound progress streaming</td>
+</tr>
+</tbody>
+</table>
+<p>Both call the same <code>_transport.post_message</code> / <code>patch_message</code> underneath. There is only one copy of the HTTP call / credential loading / chunking code.</p>
+<p>Why not merge the entry points: a cron script / jupyter ad-hoc call has no worker process running and needs a stateless raw HTTP interface; progress streaming needs to hold a message_id in order to edit and so needs a stateful interface. The two kinds of needs differ, but the low level is shared.</p>
+<h3 id="42-dispatch_inbound-is-the-traffic-hub">4.2 dispatch_inbound Is the Traffic Hub<a class="header-anchor" href="#42-dispatch_inbound-is-the-traffic-hub">#</a></h3>
+<p>Every message coming in from outside goes through it. It does no concrete work itself; it only ties the flow together:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">dispatch_inbound</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">channel</span><span class="p">,</span> <span class="n">account_id</span><span class="p">,</span> <span class="n">peer_kind</span><span class="p">,</span> <span class="n">peer_id</span><span class="p">,</span>
+                    <span class="n">user_text</span><span class="p">,</span> <span class="n">user_display</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">progress_stream</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="c1"># delegate to independent modules</span>
+    <span class="n">agent_id</span> <span class="o">=</span> <span class="n">bindings</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="o">...</span><span class="p">)</span> <span class="ow">or</span> <span class="n">session_aliases</span><span class="o">.</span><span class="n">lookup</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+    <span class="n">session_key</span> <span class="o">=</span> <span class="n">_session_routing</span><span class="o">.</span><span class="n">session_key_for_agent</span><span class="p">(</span><span class="o">...</span><span class="p">)</span> <span class="o">+</span> <span class="n">apply_reset_policy</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+    <span class="n">meta</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_session_store</span><span class="o">.</span><span class="n">load_or_init_session</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+
+    <span class="c1"># optional: send placeholder + subscribe to stream → progress edit</span>
+    <span class="k">if</span> <span class="n">progress_stream</span><span class="p">:</span>
+        <span class="n">placeholder_handle</span> <span class="o">=</span> <span class="n">_transport</span><span class="o">.</span><span class="n">post_message</span><span class="p">(</span><span class="o">...</span> <span class="s2">&quot;⏳ working...&quot;</span><span class="p">)</span>
+
+    <span class="c1"># run the agent</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_user_turn</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">on_event</span><span class="o">=...</span><span class="p">)</span>
+
+    <span class="c1"># persist + broadcast</span>
+    <span class="n">_broadcast</span><span class="o">.</span><span class="n">broadcast_channel_turn</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">final_text</span>  <span class="c1"># or None (progress mode)</span>
+</code></pre>
+<p><code>_conversation.py</code> itself is only 283 lines (previously a single file of 588 lines with 5 responsibilities).</p>
+<h3 id="43-platform-differences-sealed-in-the-low-level">4.3 Platform Differences Sealed in the Low Level<a class="header-anchor" href="#43-platform-differences-sealed-in-the-low-level">#</a></h3>
+<p><code>_transport.py</code> is the <strong>only</strong> place that calls HTTP to send outward. Telegram's <code>editMessageText</code>, Discord's <code>PATCH /messages/{id}</code>, Slack's <code>chat.update</code>, WeChat's iLink protocol — they all live here.</p>
+<p>The adapter classes (<code>telegram.py</code> etc.) are responsible only for: (a) the event loop that connects to the server, and (b) parsing platform-native objects into <code>ChannelMessage</code>. <strong>They are not responsible for sending messages</strong> — sending is done by dispatch_inbound through <code>_transport</code>.</p>
+<h3 id="44-structured-error-signals">4.4 Structured Error Signals<a class="header-anchor" href="#44-structured-error-signals">#</a></h3>
+<p><code>_transport.post_message</code> returns <code>SendResult</code>:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SendResult</span><span class="p">:</span>
+    <span class="n">ok</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">message_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">error_kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>          <span class="c1"># auth / rate_limit / bad_target / network / not_supported / unknown</span>
+    <span class="n">error_detail</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>        <span class="c1"># human-readable one line</span>
+    <span class="n">retryable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>       <span class="c1"># transient retryable vs permanent failure</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__bool__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">ok</span>
+</code></pre>
+<p>The caller can distinguish between &quot;token expired, please log in again&quot; vs &quot;wrong chat_id&quot; vs &quot;retry later&quot;.</p>
+<p><code>outbound.send</code> keeps its bool signature (for compatibility with old callers), and <code>outbound.send_full()</code> exposes the full SendResult. <code>Channel.send_text</code> / <code>edit_text</code> work the same way, each with a <code>_full</code> variant.</p>
+<h3 id="45-plugin-extension-point">4.5 Plugin Extension Point<a class="header-anchor" href="#45-plugin-extension-point">#</a></h3>
+<p>Adding a new platform (say WhatsApp) requires no source changes:</p>
+<p><strong>Option A</strong> — <code>pyproject.toml</code> entry_point (recommended):</p>
+<pre><code class="language-toml"><span class="k">[project.entry-points.</span><span class="s2">&quot;openprogram.channels&quot;</span><span class="k">]</span>
+<span class="n">whatsapp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my_pkg.whatsapp:WhatsAppChannel&quot;</span>
+</code></pre>
+<p>At startup <code>importlib.metadata.entry_points(group=&quot;openprogram.channels&quot;)</code> scans automatically.</p>
+<p><strong>Option B</strong> — <code>register_channel</code> imperative call:</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.channels</span><span class="w"> </span><span class="kn">import</span> <span class="n">register_channel</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">my_pkg.whatsapp</span><span class="w"> </span><span class="kn">import</span> <span class="n">WhatsAppChannel</span>
+
+<span class="n">register_channel</span><span class="p">(</span><span class="s2">&quot;whatsapp&quot;</span><span class="p">,</span> <span class="n">WhatsAppChannel</span><span class="p">)</span>
+</code></pre>
+<p>Suitable for a temporary mount in jupyter or dynamic registration in plugin hooks.</p>
+<p>The 4 built-in platforms take priority; a same-named plugin is silently ignored.</p>
+<h2 id="5-module-inventory">5. Module Inventory<a class="header-anchor" href="#5-module-inventory">#</a></h2>
+<pre><code>openprogram/channels/   14 files
+├── base.py              Channel ABC + MessageHandle + send_text/edit_text(_full)
+├── _transport.py        SendResult + 4 platforms' HTTP post/patch (unified low level)
+├── _message.py          ChannelMessage inbound neutral-structure dataclass
+├── outbound.py          entry A: send / send_full (thin wrapper)
+├── _conversation.py     dispatch_inbound main flow + progress streaming
+├── _session_store.py    session path / create / load / save
+├── _session_routing.py  session_key + reset policy
+├── _broadcast.py        webui WS push (channel_turn / session_updated)
+├── __init__.py          CHANNEL_CLASSES proxy + register_channel + entry_points
+├── telegram.py          Telegram bot long-poll inbound
+├── discord.py           Discord bot Gateway inbound
+├── slack.py             Slack Socket Mode inbound
+├── wechat.py            WeChat iLink long-poll inbound (incl. QR login)
+├── accounts.py          credential storage
+└── bindings.py          (channel, account, peer) → agent routing table
+</code></pre>
+<p>How to read it: each module deals only with the callers it declares; there are no circular dependencies.</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+<th>Typical caller</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_transport.py</code></td>
+<td>the only place that sends bytes outward, 4 platforms' HTTP</td>
+<td>outbound + base.send_text</td>
+</tr>
+<tr>
+<td><code>_message.py</code></td>
+<td>ChannelMessage parse neutral structure</td>
+<td>adapter entry</td>
+</tr>
+<tr>
+<td><code>base.py</code></td>
+<td>Channel ABC + MessageHandle</td>
+<td>adapter subclasses, dispatch_inbound</td>
+</tr>
+<tr>
+<td><code>outbound.py</code></td>
+<td>entry A (one-shot send)</td>
+<td>cron script, jupyter, @agentic_function</td>
+</tr>
+<tr>
+<td><code>_conversation.py</code></td>
+<td>dispatch_inbound main flow</td>
+<td>the 4 adapters' on_message</td>
+</tr>
+<tr>
+<td><code>_session_store.py</code></td>
+<td>session load/save</td>
+<td>dispatch_inbound</td>
+</tr>
+<tr>
+<td><code>_session_routing.py</code></td>
+<td>session_key computation</td>
+<td>dispatch_inbound</td>
+</tr>
+<tr>
+<td><code>_broadcast.py</code></td>
+<td>webui WS push</td>
+<td>dispatch_inbound</td>
+</tr>
+<tr>
+<td><code>telegram.py</code> etc.</td>
+<td>inbound event loop + parse</td>
+<td>instantiated at worker startup</td>
+</tr>
+<tr>
+<td><code>__init__.py</code></td>
+<td>CHANNEL_CLASSES + plugin registration</td>
+<td>webui list_status / worker</td>
+</tr>
+<tr>
+<td><code>accounts.py</code></td>
+<td>credential storage</td>
+<td>all _transport functions</td>
+</tr>
+<tr>
+<td><code>bindings.py</code></td>
+<td>inbound routing</td>
+<td>dispatch_inbound</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-supported-platforms">6. Supported Platforms<a class="header-anchor" href="#6-supported-platforms">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Inbound mechanism</th>
+<th>Outbound mechanism</th>
+<th>progress streaming</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Telegram</strong></td>
+<td>long-poll <code>getUpdates</code> (no webhook dependency)</td>
+<td>bot API <code>sendMessage</code> / <code>editMessageText</code></td>
+<td>✓</td>
+<td>bot token, public Bot API</td>
+</tr>
+<tr>
+<td><strong>Discord</strong></td>
+<td><a href="http://discord.py">discord.py</a> Gateway WS</td>
+<td>REST <code>POST /messages</code> / <code>PATCH /messages/{id}</code></td>
+<td>✓</td>
+<td>bot token, intents.message_content</td>
+</tr>
+<tr>
+<td><strong>Slack</strong></td>
+<td>Socket Mode (slack_sdk)</td>
+<td><code>chat.postMessage</code> / <code>chat.update</code></td>
+<td>✓</td>
+<td>bot_token (xoxb-) + app_token (xapp-)</td>
+</tr>
+<tr>
+<td><strong>WeChat</strong></td>
+<td>iLink <code>getupdates</code> long-poll</td>
+<td>iLink <code>sendmessage</code></td>
+<td>✗ (iLink does not support edit)</td>
+<td>personal WeChat QR login, no enterprise-verification barrier</td>
+</tr>
+</tbody>
+</table>
+<p>Platform differences are governed by this table and the docstring at the top of each adapter.</p>
+<h2 id="7-user-entry-points">7. User Entry Points<a class="header-anchor" href="#7-user-entry-points">#</a></h2>
+<h3 id="71-cli">7.1 CLI<a class="header-anchor" href="#71-cli">#</a></h3>
+<p>The full command tree (<code>openprogram channels</code>):</p>
+<pre><code>openprogram channels list                          show status of each platform/account
+openprogram channels setup                         interactive setup wizard
+
+openprogram channels accounts
+  ├── list                                         list all accounts
+  ├── add &lt;channel&gt; --id &lt;name&gt;                    create a new account slot
+  ├── login &lt;channel&gt; --id &lt;name&gt;                  interactively enter credentials
+  │     - telegram/discord/slack: getpass paste token
+  │     - wechat: start iLink QR login flow
+  └── rm &lt;channel&gt; &lt;account_id&gt;                    delete account + associated bindings
+
+openprogram channels bindings
+  ├── list                                         list all routing rules
+  ├── add &lt;agent_id&gt; --channel &lt;ch&gt; [--account &lt;acct&gt;] [--peer &lt;peer&gt; --peer-kind &lt;kind&gt;]
+  │                                                  route (channel, account, peer) to an agent
+  └── rm &lt;binding_id&gt;                              delete one route
+</code></pre>
+<h3 id="72-tui">7.2 TUI<a class="header-anchor" href="#72-tui">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Entry point</th>
+<th>Implementation</th>
+<th>Lines</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/channel</code> slash command</td>
+<td><code>cli/src/commands/handler.ts</code> triggers <code>pickers/channel.tsx</code></td>
+<td>374-line picker</td>
+</tr>
+<tr>
+<td>Channel real-time activity feed</td>
+<td><code>cli/src/components/ChannelActivityFeed.tsx</code></td>
+<td>66 lines</td>
+</tr>
+<tr>
+<td>WS handler that displays a channel turn</td>
+<td><code>cli/src/screens/repl/wsHandlers/handleChannelTurn.ts</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><code>/channel</code> workflow: pick a channel → pick an account → guide the user to use <code>/attach</code> to bind the current conversation to a channel peer.</p>
+<h3 id="73-web-ui">7.3 Web UI<a class="header-anchor" href="#73-web-ui">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>Entry point</th>
+<th>Implementation</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Topbar channel popover</td>
+<td><code>web/components/chat/top-bar/channel-menu.tsx</code> (168 lines)</td>
+<td>✓ complete</td>
+</tr>
+<tr>
+<td>Health badge status API</td>
+<td><code>/api/channels/{platform}/{account_id}/status</code> returns alive/stale/unknown</td>
+<td>✓ complete</td>
+</tr>
+<tr>
+<td>Standalone settings page</td>
+<td>—</td>
+<td><strong>⚠ missing</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The Web side currently <strong>has no <code>/settings/channels</code> config page</strong>. All account / bindings management can only go through the CLI. If a Web config UI is to be built later, the corresponding API should be added in <code>openprogram/webui/routes/channels.py</code>.</p>
+<h2 id="8-plugin-extension-future-work">8. Plugin / Extension Future Work<a class="header-anchor" href="#8-plugin-extension-future-work">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Current status</th>
+<th>If extension is needed later</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4 built-in platforms</td>
+<td>add WhatsApp / Signal / Matrix / LINE etc. — write a <code>Channel</code> subclass + entry_point registration</td>
+</tr>
+<tr>
+<td>ChannelMessage already contains <code>reply_to_id</code> / <code>thread_id</code> / <code>attachments</code> fields</td>
+<td>dispatch_inbound does not consume them yet; wire them up once a real need appears (reply quote / thread isolation / attachment reading)</td>
+</tr>
+<tr>
+<td>Reaction approval (✓/✗ to confirm a dangerous tool)</td>
+<td>not implemented; both hermes/OpenClaw have it; build it once a user asks</td>
+</tr>
+<tr>
+<td>Token-level text streaming</td>
+<td>currently only edits at tool boundaries; no real-time edit of reply text deltas (rate limit risk)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="9-references">9. References<a class="header-anchor" href="#9-references">#</a></h2>
+<ul>
+<li><a href="/docs/design/channels/channel-audit.html"><code>channel-audit.md</code></a> — design evolution history + fixed-defect list + comparison with OpenClaw / Hermes</li>
+<li>the docstring at the top of each adapter — platform-specific protocol details</li>
+</ul>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-04</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/channels/README.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Channels</span></a><a class="pn-link pn-next" href="/docs/design/channels/channel-audit.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Channel 子系统设计审计</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#1-overall-shape">1. Overall Shape</a>
+<a class="" href="#2-end-to-end-use-case-user-message-comes-in-bot-replies">2. End-to-End Use Case: User Message Comes In → Bot Replies</a>
+<a class="" href="#3-use-case-b-cron-agentic_function-proactively-sends-a-message">3. Use Case B: cron / @agentic_function Proactively Sends a Message</a>
+<a class="" href="#4-five-core-design-principles">4. Five Core Design Principles</a>
+<a class="lvl-3" href="#41-two-entry-points-one-implementation">4.1 Two Entry Points, One Implementation</a>
+<a class="lvl-3" href="#42-dispatch_inbound-is-the-traffic-hub">4.2 dispatch_inbound Is the Traffic Hub</a>
+<a class="lvl-3" href="#43-platform-differences-sealed-in-the-low-level">4.3 Platform Differences Sealed in the Low Level</a>
+<a class="lvl-3" href="#44-structured-error-signals">4.4 Structured Error Signals</a>
+<a class="lvl-3" href="#45-plugin-extension-point">4.5 Plugin Extension Point</a>
+<a class="" href="#5-module-inventory">5. Module Inventory</a>
+<a class="" href="#6-supported-platforms">6. Supported Platforms</a>
+<a class="" href="#7-user-entry-points">7. User Entry Points</a>
+<a class="lvl-3" href="#71-cli">7.1 CLI</a>
+<a class="lvl-3" href="#72-tui">7.2 TUI</a>
+<a class="lvl-3" href="#73-web-ui">7.3 Web UI</a>
+<a class="" href="#8-plugin-extension-future-work">8. Plugin / Extension Future Work</a>
+<a class="" href="#9-references">9. References</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=411d594f"></script>
+</body>
+</html>
