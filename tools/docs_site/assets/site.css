@@ -272,9 +272,11 @@ article strong { color: var(--tx); font-weight: 650; }
 }
 
 /* landing page card grid */
+/* landing page uses the full content width, not the 820px reading column */
+article:has(.home-grid) { max-width: none; }
 .home-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 14px; margin-top: 28px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px; margin-top: 28px;
 }
 .home-card {
   display: flex; flex-direction: column; gap: 6px;
