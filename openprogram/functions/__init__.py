@@ -133,7 +133,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "bash", "read", "write", "edit",
             "glob", "grep", "list",
             "apply_patch", "process", "execute_code",
-            "task", "message_branch",
+            "task", "message_branch", "list_sessions", "list_branches",
             "todo_read", "todo_write",
             "ask_user_question", "cron", "canvas",
             "spawn_program", "mixture_of_agents",
