@@ -116,8 +116,11 @@ function computeDepth(byId, nodes, maps){
     if(id in depth)continue;
     const pid=predOf(byId,byId[id]);
     let start=0;
-    if(pid && pid in depth){
-      // 找首兄弟的 depth
+    if(byId[id].independent){
+      // 独立分支(用户另开的并行对话)：不和兄弟对齐同行，像下一轮一样往下排。
+      start=counter;
+    }else if(pid && pid in depth){
+      // retry fork：对齐到首兄弟同行
       let found=false;
       for(const oid of nodes.map(m=>m.id)){
         if(oid===id)continue;
@@ -255,8 +258,9 @@ function render(nodes){
     const isSpawn=isFork && !!m.spawn_from && byId[m.spawn_from];
     let dash="";
     if(isFork) dash = isSpawn ? "4 2 1 2" : (m.independent ? "" : "5 4"); // spawn / 独立 / retry
-    if(!isFork){
-      // 同分支：父中心(p.x)竖下到子行，再横到子 —— spec 标准阶梯
+    if(!isFork || m.independent){
+      // 同分支 / 独立分支：父中心(p.x)竖下到子行，再横到子 —— spec 标准阶梯。
+      // 独立分支(B)的首节点 parent=ROOT，从 ROOT 竖线分出，和 A 分支对称。
       edgeG.appendChild(svgEl("path",{
         d:`M ${p.x} ${p.y+R} L ${p.x} ${c.y} L ${c.x-R-3} ${c.y}`,
         fill:"none",stroke:color,"stroke-width":1.8}));
