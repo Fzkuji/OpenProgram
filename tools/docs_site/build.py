@@ -345,7 +345,14 @@ def render_nav(groups, current_out: Path, base: str) -> str:
         href = base + str(p.out).replace("\\", "/")
         active = " active" if p.out == current_out else ""
         i18n = f' data-i18n="{p.i18n_key}"' if p.i18n_key else ""
-        return f'<a class="navlink{active}" href="{href}"{i18n}>{_html.escape(p.title)}</a>'
+        # If an English version exists, carry its label + URL so the language
+        # toggle can switch this sidebar entry to English.
+        extra = ""
+        if p.en_out is not None:
+            en_href = base + str(p.en_out).replace("\\", "/")
+            extra = (f' data-title-en="{_html.escape(p.title_en or p.title, quote=True)}"'
+                     f' data-href-zh="{href}" data-href-en="{en_href}"')
+        return f'<a class="navlink{active}" href="{href}"{i18n}{extra}>{_html.escape(p.title)}</a>'
 
     def render_pages_and_subs(g) -> str:
         out = [navlink(p) for p in g.pages]

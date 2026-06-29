@@ -2,7 +2,26 @@
 
 from __future__ import annotations
 
+import hashlib
 import html as _html
+from pathlib import Path
+
+
+def _asset_version() -> str:
+    """Short content hash of site.css + site.js, for cache-busting their URLs.
+    Same content → same version (stable diffs); any edit → new version (browsers
+    re-fetch instead of serving a stale cached copy)."""
+    h = hashlib.md5()
+    for name in ("site.css", "site.js"):
+        p = Path(__file__).parent / "assets" / name
+        try:
+            h.update(p.read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()[:8]
+
+
+ASSET_VER = _asset_version()
 
 # Inline head script: set theme before first paint to avoid a flash.
 _THEME_BOOT = """
@@ -43,7 +62,7 @@ def render_page(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{safe_title} · OpenProgram Docs</title>
 <script>{_THEME_BOOT}</script>
-<link rel="stylesheet" href="{base}assets/site.css">
+<link rel="stylesheet" href="{base}assets/site.css?v={ASSET_VER}">
 <link rel="stylesheet" href="{base}assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
 <link rel="stylesheet" href="{base}assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -80,7 +99,7 @@ def render_page(
   </div>
 </div>
 
-<script src="{base}assets/site.js"></script>
+<script src="{base}assets/site.js?v={ASSET_VER}"></script>
 </body>
 </html>
 """

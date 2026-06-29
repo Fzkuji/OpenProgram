@@ -68,9 +68,28 @@
     ROOT.setAttribute("lang", lang === "en" ? "en" : "zh");
     const btn = document.getElementById("lang-toggle");
     if (btn) btn.textContent = lang === "en" ? "EN" : "中";
+
+    // Sidebar entries that have an English version: switch their label + link
+    // to match the chosen language.
+    document.querySelectorAll("nav.sidebar a.navlink[data-title-en]").forEach((a) => {
+      if (a.dataset.titleZh == null) a.dataset.titleZh = a.textContent;  // capture once
+      const hrefZh = a.getAttribute("data-href-zh");
+      const hrefEn = a.getAttribute("data-href-en");
+      if (lang === "en") {
+        a.textContent = a.getAttribute("data-title-en");
+        if (hrefEn) a.setAttribute("href", hrefEn);
+      } else {
+        a.textContent = a.dataset.titleZh;
+        if (hrefZh) a.setAttribute("href", hrefZh);
+      }
+    });
   }
   let curLang = "zh";
   try { curLang = localStorage.getItem("op-docs-lang") || "zh"; } catch (e) {}
+  // The page's own content language wins: an .en page shows English UI, a zh
+  // page shows Chinese UI — so the chrome always matches the body you're reading.
+  const pageLang = ROOT.getAttribute("data-page-lang");
+  if (pageLang === "en" || pageLang === "zh") curLang = pageLang;
   applyLang(curLang);
   const langBtn = document.getElementById("lang-toggle");
   if (langBtn) {

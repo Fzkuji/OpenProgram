@@ -58,6 +58,7 @@ class Page:
     i18n_key: str = ""  # if set, sidebar label switches with the UI language
     en_src: Path | None = None   # English-version source (xxx.en.md), if any
     en_out: Path | None = None   # English-version output path, if any
+    title_en: str = ""  # English sidebar label (from the .en.md H1), if any
 
 
 @dataclass
@@ -132,6 +133,7 @@ def discover(docs_root: Path) -> list[Page]:
         title = override[0] if override else extract_title(path)
         en_src = en_sources.get(rel)
         en_out = (rel.with_name(rel.stem + ".en.html")) if en_src else None
+        title_en = extract_title(en_src) if en_src else ""
         pages.append(
             Page(
                 src=path,
@@ -143,6 +145,7 @@ def discover(docs_root: Path) -> list[Page]:
                 i18n_key=ROOT_PAGE_I18N.get(rel_str, ""),
                 en_src=en_src,
                 en_out=en_out,
+                title_en=title_en,
             )
         )
     return _dedupe_md_html(pages)

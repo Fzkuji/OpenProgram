@@ -9,7 +9,7 @@
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
-<link rel="stylesheet" href="/docs/assets/site.css">
+<link rel="stylesheet" href="/docs/assets/site.css?v=411d594f">
 <link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
 <link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -82,7 +82,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/function"><summary class="group-title">Function Design</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html">Function Design</a>
 <a class="navlink" href="/docs/design/function/agentic-function.html">@agentic_function</a>
 <a class="navlink" href="/docs/design/function/function-calling-unification.html">Function calling</a>
-<a class="navlink" href="/docs/design/function/function-metadata.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
 <a class="navlink" href="/docs/design/function/tool-calling.html">模型选择下一步的逻辑(工具调用循环)</a>
 <a class="navlink" href="/docs/design/function/pure-python.html">纯 Python 函数</a>
 <details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
@@ -96,17 +96,17 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/memory/entity-memory.html">实体记忆 (Entity Memory)</a>
 <a class="navlink" href="/docs/design/memory/git-as-entity-memory.html">实体记忆走 Git: Session-Git + Project-Git</a>
 <a class="navlink" href="/docs/design/memory/virtual-memory.html">抽象记忆 (Virtual Memory)</a></div></details>
-<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html">Proactive Layer — 设计</a>
+<details class="group" data-key="design/proactive"><summary class="group-title">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
 <a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
 <a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
 <a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
-<a class="navlink" href="/docs/design/proactive/policies-mvp.html">三条样板规则</a>
-<a class="navlink" href="/docs/design/proactive/events-and-state.html">事件与状态（地基）</a>
-<a class="navlink" href="/docs/design/proactive/event-layer.html">事件层</a>
-<a class="navlink" href="/docs/design/proactive/overview.html">总览：跟着一个场景走一遍</a>
-<a class="navlink" href="/docs/design/proactive/framework-evolution.html">框架演进：现状 → 目标</a>
-<a class="navlink" href="/docs/design/proactive/invariants.html">框架自己要守的底线</a>
-<a class="navlink" href="/docs/design/proactive/execution-model.html">规则怎么写、怎么跑</a></div></details>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
 <details class="group" data-key="design/providers"><summary class="group-title">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html">Providers</a>
 <a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
 <a class="navlink" href="/docs/design/providers/request-build.html">请求构建:Context → 各 provider 参数</a>
@@ -158,7 +158,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/session/comparison.html">Session 管理方案对比</a></div></details></div></details>
 <details class="group" data-key="design/ui"><summary class="group-title">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html">Web UI</a>
 <a class="navlink" href="/docs/design/ui/composer-interaction-modes.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
-<a class="navlink" href="/docs/design/ui/gui-agent-context.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
 <a class="navlink" href="/docs/design/ui/indicator-dots.html">Indicator dot system</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
 <a class="navlink" href="/docs/design/ui/surface-system.html">Surface system (dark mode)</a>
@@ -331,6 +331,6 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
   </div>
 </div>
 
-<script src="/docs/assets/site.js"></script>
+<script src="/docs/assets/site.js?v=411d594f"></script>
 </body>
 </html>
