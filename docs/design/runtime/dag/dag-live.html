@@ -234,30 +234,52 @@ function render(nodes){
   //   - 跨分支(fork/spawn/通信): 子在别的 lane, 从源到子用对应 dash 线型。
   const laneOfNum={};
   for(const m of nodes){ if(m.display==="root")continue; (laneOfNum[m._laneNum]=laneOfNum[m._laneNum]||[]).push(m); }
+  // 每个节点的"对话主干列" = lane 的 user 级列(lane + 1)。主干竖线就在这一列。
+  const trunkColX = ln => PADX + (ln+1)*COL;
+
+  // (1) 每条 lane 的【主干竖线】：只串 user 级(tier=1)节点 —— 聊天主干。
+  //     从 ROOT(lane0)或该 lane 第一个 user，连续竖到最后一个 user。
+  //     llm/tool(tier≥2)是子调用，不在这条竖线上(下面 caller 树单独画)。
+  for(const ln in laneOfNum){
+    const lnN=Number(ln), color=laneColor(lnN);
+    const users=laneOfNum[ln].filter(m=>(m._tier||0)===1).sort((a,b)=>pos(a).y-pos(b).y);
+    if(!users.length)continue;
+    const tx=trunkColX(lnN);
+    const rootNode=nodes.find(n=>n.display==="root");
+    const topY = (lnN===0&&rootNode)?pos(rootNode).y : pos(users[0]).y;
+    const botY = pos(users[users.length-1]).y;
+    edgeG.appendChild(svgEl("line",{x1:tx,y1:topY,x2:tx,y2:botY,stroke:color,"stroke-width":1.8,"stroke-linecap":"round"}));
+    // 每个 user 从主干竖线伸一小段横线到自己(user 就在该列,横段≈0,画节点连接点)
+  }
+
+  // (2) 子调用(tier≥2 的 llm/tool/code) + 跨分支线：caller 树,从父伸出。
   for(const m of nodes){
     if(m.display==="root")continue;
     const c=pos(m), color=laneColor(m._laneNum);
     const predId=m.predecessor, callerId=m.caller;
-    // 画线父 = caller 优先(挂载/调用关系)。user.caller=ROOT → user 都从 ROOT 分出。
     const parentId=(callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
     const isFork=(m._laneNum!==parent._laneNum);
+    const isUser=(m._tier||0)===1;
+    if(!isFork && isUser){
+      continue;   // 同 lane 的 user：已被主干竖线串起来，跳过
+    }
     if(!isFork){
-      // 同 lane(对话链/子调用): 父正下方竖到子行,再横到子 —— ├─/└─ 树形缩进
+      // 子调用(tier≥2)：父正下方竖到子行,再横到子 —— ├─/└─ 树形缩进
       edgeG.appendChild(svgEl("path",{
         d:`M ${p.x} ${p.y+R} L ${p.x} ${c.y} L ${c.x-R-3} ${c.y}`,
         fill:"none",stroke:color,"stroke-width":1.8}));
     }else{
-      // 跨分支: 从源(retry兄弟/spawn工具/通信源)到子 lane 的竖线列,对应 dash
+      // 跨分支: 从源到子 lane 主干列,对应 dash
       const isSpawn=!!m.spawn_from&&byId[m.spawn_from];
       const dash = isSpawn?"4 2 1 2":(m.commLine||m.commFrom?"1 5":(m.independent?"":"5 4"));
       let src=parent;
       if(isSpawn) src=byId[m.spawn_from];
       else if(m.commFrom&&byId[m.commFrom]) src=byId[m.commFrom];
       else { const pred=predOf(byId,m); if(pred){ const sib=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id)[0]; if(sib&&byId[sib]) src=byId[sib]; } }
-      const sp=pos(src); const trunkX=PADX+m._lane*COL;
-      edgeG.appendChild(svgEl("path",{d:`M ${sp.x+R} ${sp.y} L ${trunkX} ${sp.y} L ${trunkX} ${c.y} L ${c.x-R-3} ${c.y}`,
+      const sp=pos(src); const tx=trunkColX(m._laneNum);
+      edgeG.appendChild(svgEl("path",{d:`M ${sp.x+R} ${sp.y} L ${tx} ${sp.y} L ${tx} ${c.y} L ${c.x-R-3} ${c.y}`,
         fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:dash?0.8:1}));
     }
   }
