@@ -138,6 +138,7 @@ def extract_toc(body_html: str) -> str:
         level, hid, inner = m.group(1), m.group(2), m.group(3)
         inner = re.sub(r'<a class="header-anchor".*?</a>', "", inner, flags=re.DOTALL)
         text = re.sub(r"<[^>]+>", "", inner).strip()
+        text = _html.unescape(text)  # decode &quot; etc.; re-escaped on output
         if not text:
             continue
         items.append((level, hid, text))
@@ -147,7 +148,8 @@ def extract_toc(body_html: str) -> str:
             '<div class="toc-list">']
     for level, hid, text in items:
         cls = "lvl-3" if level == "3" else ""
-        rows.append(f'<a class="{cls}" href="#{_html.escape(hid)}">{_html.escape(text)}</a>')
+        # quote=False: this is element text, not an attribute — keep real quotes
+        rows.append(f'<a class="{cls}" href="#{_html.escape(hid)}">{_html.escape(text, quote=False)}</a>')
     rows.append("</div>")
     return "\n".join(rows)
 
@@ -394,6 +396,19 @@ def build() -> int:
         _pyg_css("default"), encoding="utf-8")
     (out_assets / "pygments-dark.css").write_text(
         _pyg_css("github-dark"), encoding="utf-8")
+
+    # copy image/static assets referenced by docs (svg/png/jpg/gif/webp),
+    # preserving their relative path so in-doc <img>/![] links resolve.
+    IMG_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"}
+    for path in DOCS_ROOT.rglob("*"):
+        if path.suffix.lower() not in IMG_EXT or not path.is_file():
+            continue
+        rel = path.relative_to(DOCS_ROOT)
+        if rel.parts and rel.parts[0] == "_site":
+            continue
+        dst = OUT_ROOT / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, dst)
 
     md = make_md()
     search_records: list[dict] = []

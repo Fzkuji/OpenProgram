@@ -1,0 +1,77 @@
+<svg viewBox="0 0 1040 420" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+<style>
+.mono{font-family:'JetBrains Mono','SF Mono',Menlo,Consolas,monospace}
+.box{fill:#101d31;stroke:rgba(154,178,204,.45);stroke-width:1.2}
+.bt{fill:#d9e5f1;font-size:14px;font-weight:600}
+.bs{fill:#8aa0b8;font-size:12px}
+.faint{fill:#5f7a90}
+.rd{fill:#f07a6a}.gn{fill:#6fd98f}.cy{fill:#56d9e9}
+.loopP{fill:none;stroke:#f07a6a;stroke-width:1.8;stroke-dasharray:6 7;animation:f .8s linear infinite}
+.okP{fill:none;stroke:#6fd98f;stroke-width:1.8;stroke-dasharray:6 7;animation:f 1.5s linear infinite}
+@keyframes f{to{stroke-dashoffset:-13}}
+.arrR{fill:#f07a6a}.arrG{fill:#6fd98f}
+.nbox{fill:rgba(240,122,106,.07);stroke:rgba(240,122,106,.5)}
+.gbox{fill:rgba(111,217,143,.07);stroke:rgba(111,217,143,.5)}
+</style>
+<rect x="0" y="0" width="1040" height="420" rx="16" fill="#0d1828"/>
+<g stroke="rgba(154,178,204,.05)"><path d="M0 60H1040M0 120H1040M0 180H1040M0 240H1040M0 300H1040M0 360H1040"/><path d="M60 0V420M120 0V420M180 0V420M240 0V420M300 0V420M360 0V420M420 0V420M480 0V420M520 0V420M580 0V420M640 0V420M700 0V420M760 0V420M820 0V420M880 0V420M940 0V420M1000 0V420"/></g>
+<line x1="520" y1="40" x2="520" y2="386" stroke="rgba(154,178,204,.18)" stroke-dasharray="3 6"/>
+
+<!-- ══ 左：禁止的死循环 ══ -->
+<text class="bs mono rd" x="48" y="48" style="letter-spacing:.16em">✕ 不守底线 · 自激死循环</text>
+
+<rect class="nbox" x="60" y="80" width="160" height="50" rx="8"/>
+<text class="bt" x="80" y="101">某条规则</text>
+<text class="bs faint" x="80" y="119">看到事件，决定做准备</text>
+
+<rect class="nbox" x="300" y="80" width="160" height="50" rx="8"/>
+<text class="bt" x="320" y="101">Prepare</text>
+<text class="bs faint" x="320" y="119">起后台任务（烧钱）</text>
+
+<rect class="nbox" x="300" y="240" width="160" height="50" rx="8"/>
+<text class="bt mono" x="320" y="261" font-size="12.5">"准备好了"事件</text>
+<text class="bs faint" x="320" y="279">框架自己产生的</text>
+
+<rect class="nbox" x="60" y="240" width="160" height="50" rx="8"/>
+<text class="bt" x="80" y="261">规则又看到它</text>
+<text class="bs faint" x="80" y="279">又决定 Prepare…</text>
+
+<path class="loopP" d="M220 105 L 296 105"/><polygon class="arrR" points="294,99 306,105 294,111"/>
+<path class="loopP" d="M380 130 L 380 236"/><polygon class="arrR" points="374,234 380,246 386,234"/>
+<path class="loopP" d="M300 265 L 224 265"/><polygon class="arrR" points="226,259 214,265 226,271"/>
+<path class="loopP" d="M140 240 L 140 134"/><polygon class="arrR" points="134,136 140,124 146,136"/>
+
+<text class="rd mono" x="260" y="190" text-anchor="middle" font-size="22">∞</text>
+<text class="bs rd" x="260" y="330" text-anchor="middle">每圈都 spawn 一个后台任务 → 无限烧钱、刷屏</text>
+<text class="bs faint" x="260" y="352" text-anchor="middle">只受单条规则 cooldown 节流 ≠ 防住</text>
+
+<!-- ══ 右：允许的唯一二跳 ══ -->
+<text class="bs mono gn" x="568" y="48" style="letter-spacing:.16em">✓ 守住底线 · 允许的唯一链条</text>
+
+<rect class="gbox" x="568" y="92" width="180" height="50" rx="8"/>
+<text class="bt" x="588" y="113">正常事件</text>
+<text class="bs faint" x="588" y="131">用户 / agent / 工具引起</text>
+
+<rect class="gbox" x="568" y="200" width="180" height="50" rx="8"/>
+<text class="bt" x="588" y="221">Prepare 做功课</text>
+<text class="bs faint" x="588" y="239">只读后台任务 · 第 1 跳</text>
+
+<rect class="gbox" x="568" y="308" width="180" height="50" rx="8"/>
+<text class="bt mono" x="588" y="329" font-size="12.5">"准备好了"事件</text>
+<text class="bs faint" x="588" y="347">结论够有把握吗？</text>
+
+<rect class="gbox" x="816" y="308" width="180" height="50" rx="8" stroke="rgba(111,217,143,.7)"/>
+<text class="bt" x="836" y="329">Notify 提醒一次</text>
+<text class="bs gn" x="836" y="347">第 2 跳 · 到此为止 ⏹</text>
+
+<path class="okP" d="M658 142 L 658 196"/><polygon class="arrG" points="652,194 658,206 664,194"/>
+<path class="okP" d="M658 250 L 658 304"/><polygon class="arrG" points="652,302 658,314 664,302"/>
+<path class="okP" d="M748 333 L 812 333"/><polygon class="arrG" points="810,327 822,333 810,339"/>
+
+<rect x="816" y="92" width="180" height="158" rx="8" fill="none" stroke="rgba(240,122,106,.4)" stroke-dasharray="4 5"/>
+<text class="bs rd" x="906" y="128" text-anchor="middle">框架自己产生的事件</text>
+<text class="bs rd" x="906" y="150" text-anchor="middle">不许再触发：</text>
+<text class="bs mono" x="906" y="180" text-anchor="middle" fill="#f07a6a">✕ Prepare</text>
+<text class="bs mono" x="906" y="204" text-anchor="middle" fill="#f07a6a">✕ 注入</text>
+<text class="bs mono" x="906" y="228" text-anchor="middle" fill="#f07a6a">✕ 更多可见动作</text>
+</svg>

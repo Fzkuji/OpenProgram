@@ -190,7 +190,7 @@ scene(5,"手动调用函数（如 gui_agent）",
 
 // ---- 场景6：综合（多轮 + retry + 工具）----
 scene(6,"综合：多轮 + retry + 工具",
- "所有规则一起。重点：lane0 用到了列 0~3（ROOT/问题/回复/工具）→ lane1 从列 4 开始，整条分支在 lane0 全部内容的右边，两条分支不重叠。",
+ "所有规则一起（坐标取自后端真实输出）。lane0 占列 0~3（ROOT/问题/回复/工具tier3）→ 留列4 给 fork 竖线 → fork 节点从列5 起。fork 整条在 lane0 全部内容右边、加一格竖线，两条分支不重叠。",
  7,7,()=>{
   let s="";
   s+=edge(0,0,1,1,C.blue);
@@ -198,43 +198,47 @@ scene(6,"综合：多轮 + retry + 工具",
   s+=edge(2,2,3,3,C.blue);     // llm调tool (子调用,列3)
   s+=edge(0,0,1,4,C.blue);     // 追问: 从 ROOT 连
   s+=edge(1,4,2,5,C.blue);
-  // lane0 占列 0~3 → lane1 从列4 开始，不重叠
-  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
-  s+=edge(4,1,5,2,C.purple);
+  // lane0 占列 0~3 → fork 竖线列4 → fork 节点列5
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+4*COL} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=`<path d="M ${PADX+4*COL} ${PADY+1*ROW} L ${PADX+5*COL-R} ${PADY+1*ROW}" fill="none" stroke="${C.purple}" stroke-width="1.6"/>`;
+  s+=edge(5,1,6,2,C.purple);
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"问题");
   s+=node(null,2,2,'llm',C.blue,"回复");
   s+=node(null,3,3,'code',C.blue,"工具","tier3");
   s+=node(null,1,4,'user',C.blue,"追问");
   s+=node(null,2,5,'llm',C.blue,"回复2");
-  s+=node(null,4,1,'user',C.purple,"问题(改写)","lane1 从列4起");
-  s+=node(null,5,2,'llm',C.purple,"回复'");
+  s+=node(null,5,1,'user',C.purple,"问题(改写)","fork:竖线列4+节点列5");
+  s+=node(null,6,2,'llm',C.purple,"回复'");
   return s;
  },
- "lane0 占列 0~3 → lane1 从列4 起，整条分支在 lane0 内容右侧，两条分支列范围不重叠。");
+ "lane0 占列 0~3 → fork 竖线列4 + fork 节点列5。fork 在 lane0 内容右边再留一格竖线，不重叠。");
 
 // ---- 场景7：收起 lane0 的工具 → lane1 左移一列 ----
 scene(7,"收起子调用 → 后面分支左移",
- "对比场景6（同一棵树，一个 ROOT）。把 lane0 的「工具」收起：① 横向——lane0 不占列3 了，lane1 从列4 左移到列3；② 纵向——工具原本占的那一行腾空，下面的「追问/回复2」整体上移一行。横竖都紧凑，空行空列都不保留。",
+ "对比场景6（同一棵树）。把 lane0 的「工具」收起：① 横向——lane0 不占列3 了（只 0~2），fork 竖线从列4 左移到列3、fork 节点从列5 左移到列4；② 纵向——工具腾出的行被下面的「追问/回复2」上移补上。横竖都紧凑，空行空列都不保留。",
  5,5,()=>{
   let s="";
   s+=edge(0,0,1,1,C.blue);
   s+=edge(1,1,2,2,C.blue);   // 回复(工具已收起,lane0 只到列2)
   s+=edge(0,0,1,3,C.blue);   // 追问 上移到行3(原行4,工具收起腾出行)
   s+=edge(1,3,2,4,C.blue);
-  // lane0 收起后占列 0~2 → lane1 从列3 起
-  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+3*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
-  s+=edge(3,1,4,2,C.purple);
+  // lane0 收起后占列 0~2 → fork 竖线列3 → fork 节点列4
+  // 虚线: 分叉点 问题(列1) ┄┄ fork 竖线(列3)
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+3*COL} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  // fork 竖线(列3) 横向到 fork 节点(列4)
+  s+=`<path d="M ${PADX+3*COL} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" fill="none" stroke="${C.purple}" stroke-width="1.6"/>`;
+  s+=edge(4,1,5,2,C.purple);
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"问题");
   s+=node(null,2,2,'llm',C.blue,"回复 +1","工具已收起");
   s+=node(null,1,3,'user',C.blue,"追问","上移一行");
   s+=node(null,2,4,'llm',C.blue,"回复2");
-  s+=node(null,3,1,'user',C.purple,"问题(改写)","左移到列3");
-  s+=node(null,4,2,'llm',C.purple,"回复'");
+  s+=node(null,4,1,'user',C.purple,"问题(改写)","左移:竖线列3+节点列4");
+  s+=node(null,5,2,'llm',C.purple,"回复'");
   return s;
  },
- "收起工具：横向 lane1 列4→列3，纵向 追问/回复2 上移一行。横竖都紧凑，空行空列都不保留。");
+ "收起工具：fork 竖线列4→列3、节点列5→列4（左移一格），追问/回复2 上移一行。横竖都紧凑。");
 
 // 汇入线：从 peer tip 斜拉到 merge 节点（peer lane 色）
 function mergeIn(px,py,mx,my,color){
@@ -250,8 +254,9 @@ scene(8,"分支合并（汇聚到 merge 节点）",
   // base 分支 lane0
   s+=edge(0,0,1,1,C.blue);
   s+=edge(1,1,2,2,C.blue);
-  // fork 分支 lane(列3竖线,列4节点)
-  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  // fork 分支: 竖线列3 + 节点列4。虚线 问题(列1) ┄ 竖线(列3), 竖线横到节点(列4)
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+3*COL} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=`<path d="M ${PADX+3*COL} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" fill="none" stroke="${C.purple}" stroke-width="1.6"/>`;
   s+=edge(4,1,5,2,C.purple);
   // merge 节点在 base lane(列1下方),两条父线汇入
   s+=edge(1,1,1,4,C.blue);            // base 主线延续到 merge 行(竖)
@@ -274,8 +279,9 @@ scene(9,"分支间发消息（send_to_branch）",
   let s="";
   s+=edge(0,0,1,1,C.blue);
   s+=edge(1,1,2,2,C.blue);
-  // 分支B (lane 列3竖线,列4)
-  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" stroke="${C.green}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  // 分支B: 竖线列3 + 节点列4。虚线 问题(列1) ┄ 竖线(列3), 竖线横到节点(列4)
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+3*COL} ${PADY+1*ROW}" stroke="${C.green}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=`<path d="M ${PADX+3*COL} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" fill="none" stroke="${C.green}" stroke-width="1.6"/>`;
   s+=edge(4,1,5,2,C.green);
   // B 末尾新 user (from A)
   s+=edge(4,2,4,3,C.green);
