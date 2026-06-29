@@ -47,7 +47,14 @@ def _newest_mtime(root: Path, *, skip: set[str]) -> float:
 
 
 def _rebuild() -> None:
-    from tools.docs_site import build as _build
+    # Reload the build modules from disk each time so edits to the build
+    # scripts take effect without restarting the worker (otherwise the worker
+    # keeps running — and re-emitting — the code it imported at startup, which
+    # would overwrite freshly hand-built output with stale logic).
+    import importlib
+    from tools.docs_site import nav, search, template, build as _build
+    for m in (nav, search, template, _build):
+        importlib.reload(m)
     _build.build()
 
 

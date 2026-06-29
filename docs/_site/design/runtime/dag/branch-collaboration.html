@@ -245,6 +245,94 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p><strong>结论</strong>：合并的&quot;引擎&quot;已经造好了（merge_branches + attach + 多父 commit）。本文
 主要做三件事：(A) 定义合并/attach 节点的 DAG 画法；(B) 新增分支间发消息工具；
 (C) 把&quot;子分支服务 → 结果合并回流&quot;串成完整链路。</p>
+<h2 id="一五连线视觉规则颜色-分支线型-类型正交">一·五、连线视觉规则（颜色 = 分支，线型 = 类型，正交）<a class="header-anchor" href="#一五连线视觉规则颜色-分支线型-类型正交">#</a></h2>
+<p><strong>铁律：颜色永远表示&quot;分支身份&quot;，不表示&quot;线的类型&quot;。</strong> 每条 lane 一个颜色
+（见 <code>dag/types.ts</code> <code>LANE_COLORS</code>），任何一条连线都用它<strong>所属 / 指向的那条
+分支</strong>的 lane 颜色。<strong>绝不</strong>给某种类型的线指定一个固定特殊颜色（如 spawn 用灰、
+通信用金）——那会和&quot;颜色=分支&quot;冲突，让人分不清是分支变了还是线的类型变了。</p>
+<p><strong>线的类型只用线型（dash 样式 / 粗细）区分：</strong></p>
+<table>
+<thead>
+<tr>
+<th>连线类型</th>
+<th>线型</th>
+<th>颜色</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同分支连线（父→子）</td>
+<td>实线</td>
+<td>该分支 lane 色</td>
+</tr>
+<tr>
+<td>retry 分叉（用户手动 retry/改写）</td>
+<td>虚线 <code>5 4</code></td>
+<td>该分支 lane 色</td>
+</tr>
+<tr>
+<td>大模型主动建分支（spawn_branch）</td>
+<td>点划线 <code>4 2 1 2</code></td>
+<td>子分支 lane 色</td>
+</tr>
+<tr>
+<td>分支间通信（send_to_branch）</td>
+<td>点线 <code>1 5</code></td>
+<td>目标分支 lane 色</td>
+</tr>
+<tr>
+<td>合并汇入（merge）</td>
+<td>粗实线 <code>2.4px</code></td>
+<td>peer 分支 lane 色</td>
+</tr>
+<tr>
+<td>attach 回流（结果嵌回）</td>
+<td>长虚线 <code>4 4</code></td>
+<td>源分支 lane 色</td>
+</tr>
+</tbody>
+</table>
+<p>效果：同一种线型出现在不同分支上颜色不同（颜色告诉你&quot;哪条分支&quot;）；同一条分支
+上不同类型的线颜色相同、靠 dash 区分（线型告诉你&quot;什么关系&quot;）。两个维度正交。</p>
+<h3 id="默认显隐只有通信线默认隐藏">默认显隐：只有通信线默认隐藏<a class="header-anchor" href="#默认显隐只有通信线默认隐藏">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>连线类型</th>
+<th>默认</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同分支调用（实线）</td>
+<td><strong>常驻显示</strong></td>
+</tr>
+<tr>
+<td>retry 分叉（虚线）</td>
+<td><strong>常驻显示</strong></td>
+</tr>
+<tr>
+<td>spawn_branch / create_branch 建分支（点划线）</td>
+<td><strong>常驻显示</strong></td>
+</tr>
+<tr>
+<td>merge 合并汇入（粗实线）</td>
+<td><strong>常驻显示</strong></td>
+</tr>
+<tr>
+<td>attach 回流（长虚线）</td>
+<td><strong>常驻显示</strong></td>
+</tr>
+<tr>
+<td><strong>send_to_branch 通信（点线）</strong></td>
+<td><strong>默认隐藏，鼠标 hover 节点/分支才显示</strong></td>
+</tr>
+</tbody>
+</table>
+<p>理由：结构线（这条分支怎么来的、合并/回流）数量有限、是骨架，常驻看得清。
+<strong>通信线会非常多</strong>（分支之间频繁发消息），全部常驻会糊成一团——所以默认隐藏，
+hover 到相关节点/分支时才浮现该节点的通信线。实现：通信线渲染时挂 hover 显隐
+（CSS class + 节点 hover 触发），结构线不受影响。</p>
 <h2 id="二三种协作模式">二、三种协作模式<a class="header-anchor" href="#二三种协作模式">#</a></h2>
 <h3 id="模式-1分支间发消息通信">模式 1：分支间发消息（通信）<a class="header-anchor" href="#模式-1分支间发消息通信">#</a></h3>
 <p><strong>场景</strong>：分支 A 的 LLM 想问分支 B 的 LLM 一句话，或把一条信息推给 B。</p>
@@ -257,8 +345,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <li>行为：在目标分支末尾追加一个 user 节点（<code>source=&quot;from_branch&quot;</code>，标注来源分支），
 目标分支的 LLM 下一轮看到它并回复；可选同步等待对方回复返回给调用方。</li>
 </ul>
-<p><strong>DAG 画法</strong>：从发起分支的 LLM 节点，画一条<strong>跨分支虚线</strong>（区别于 attach 的虚线，
-用不同颜色/线型，如点划线）指向目标分支新加的 user 节点。这条线是&quot;通信边&quot;，
+<p><strong>DAG 画法</strong>：从发起分支的 LLM 节点，画一条<strong>通信线</strong>（点线 <code>1 5</code>，区别于
+其它线型）指向目标分支新加的 user 节点。线的颜色用<strong>目标分支的 lane 色</strong>（见
+下方&quot;连线视觉规则&quot;——颜色永远=分支，类型只靠线型）。这条线是&quot;通信边&quot;，
 不是 caller/predecessor 结构边——只用于渲染，不进 lane/depth 计算。</p>
 <blockquote>
 <p>数据上：目标分支的新 user 节点 predecessor = 目标分支 tip（正常对话链），额外
@@ -449,6 +538,8 @@ pointer（<code>predecessor=target_head</code>，<code>attach.head_id=peer tip</
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#一现状盘点codegraph-实测">一、现状盘点（codegraph 实测）</a>
+<a class="" href="#一五连线视觉规则颜色-分支线型-类型正交">一·五、连线视觉规则（颜色 = 分支，线型 = 类型，正交）</a>
+<a class="lvl-3" href="#默认显隐只有通信线默认隐藏">默认显隐：只有通信线默认隐藏</a>
 <a class="" href="#二三种协作模式">二、三种协作模式</a>
 <a class="lvl-3" href="#模式-1分支间发消息通信">模式 1：分支间发消息（通信）</a>
 <a class="lvl-3" href="#模式-2子分支为主分支服务派活-回流">模式 2：子分支为主分支服务（派活 → 回流）</a>
