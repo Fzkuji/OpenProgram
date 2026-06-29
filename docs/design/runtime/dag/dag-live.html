@@ -182,12 +182,13 @@ function computeDepth(byId, nodes, maps){
   // 1) 全局按 created_at 排出基础行号
   const ordered=nodes.slice().sort((a,b)=>(a.created_at||0)-(b.created_at||0));
   const depth={}; ordered.forEach((m,i)=>depth[m.id]=i);
-  // 2) retry fork 兄弟(非 independent)对齐到首兄弟同行——它们是同一时刻的平行可能
+  // 2) fork 兄弟对齐到首兄弟同行——retry 是同一时刻的平行可能；独立分支(B)也是
+  //    和 base 分支平行存在的，所以它的首节点也对齐到首兄弟(问题)同一行，从 ROOT
+  //    往右平行延伸出来，而不是排在 base 分支下方。
   for(const pid in fork){
     const k=fork[pid]; if(k.length<2)continue;
     const first=k[0];
     for(const sib of k.slice(1)){
-      if(byId[sib].independent)continue;          // 独立分支按自己时间排，不对齐
       const shift=depth[first]-depth[sib];
       if(shift===0)continue;
       // 把 sib 及其子树整体平移到与 first 对齐
