@@ -45,8 +45,15 @@ LLM Context
 
 ## 子文档
 
-| 文档 | 内容 |
-|------|------|
-| [`entity-memory.md`](entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
-| [`virtual-memory.md`](virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
+> 版本说明：`memory.md` 描述**当前已落地**的线性总结链（`journal → wiki → core`，见
+> `openprogram/memory/`）；`memory-v2.md` 是**目标设计**（实体/虚拟两级 + provenance 召回），
+> 取代 v1，仍在实施中。本 README 描述的是 v2 架构。
+
+| 文档 | 内容 | 状态 |
+|------|------|------|
+| [`memory.md`](memory.md) | v1：线性总结链（journal/wiki/core） | ✅ 当前实现 |
+| [`memory-v2.md`](memory-v2.md) | v2：实体/虚拟两级 + provenance 召回（取代 v1） | 🚧 设计稿 + 实施中 |
+| [`git-as-entity-memory.md`](git-as-entity-memory.md) | 实体层最初设计（Session-Git + Project-Git 的由来） | 参考 |
+| [`entity-memory.md`](entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 | 子设计 |
+| [`virtual-memory.md`](virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 | 子设计 |
 

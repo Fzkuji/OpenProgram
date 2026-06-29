@@ -45,7 +45,16 @@ LLM Context
 
 ## Sub-documents
 
-| Document | Content |
-|------|------|
-| [`entity-memory.md`](entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle |
-| [`virtual-memory.md`](virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle |
+> Versioning: `memory.md` describes the **currently shipped** linear summary
+> chain (`journal → wiki → core`, see `openprogram/memory/`); `memory-v2.md`
+> is the **target design** (entity/virtual two layers + provenance recall) that
+> supersedes v1 and is still being implemented. This README describes the v2
+> architecture.
+
+| Document | Content | Status |
+|------|------|------|
+| [`memory.md`](memory.md) | v1: linear summary chain (journal/wiki/core) | ✅ current |
+| [`memory-v2.md`](memory-v2.md) | v2: entity/virtual two layers + provenance recall (supersedes v1) | 🚧 design + WIP |
+| [`git-as-entity-memory.md`](git-as-entity-memory.md) | Origin of the entity layer (Session-Git + Project-Git) | reference |
+| [`entity-memory.md`](entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle | sub-design |
+| [`virtual-memory.md`](virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle | sub-design |

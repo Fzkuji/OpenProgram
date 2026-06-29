@@ -237,21 +237,44 @@ LLM Context
 </tbody>
 </table>
 <h2 id="子文档">子文档<a class="header-anchor" href="#子文档">#</a></h2>
+<blockquote>
+<p>版本说明：<code>memory.md</code> 描述<strong>当前已落地</strong>的线性总结链（<code>journal → wiki → core</code>，见
+<code>openprogram/memory/</code>）；<code>memory-v2.md</code> 是<strong>目标设计</strong>（实体/虚拟两级 + provenance 召回），
+取代 v1，仍在实施中。本 README 描述的是 v2 架构。</p>
+</blockquote>
 <table>
 <thead>
 <tr>
 <th>文档</th>
 <th>内容</th>
+<th>状态</th>
 </tr>
 </thead>
 <tbody>
 <tr>
+<td><a href="/docs/design/memory/memory.html"><code>memory.md</code></a></td>
+<td>v1：线性总结链（journal/wiki/core）</td>
+<td>✅ 当前实现</td>
+</tr>
+<tr>
+<td><a href="/docs/design/memory/memory-v2.html"><code>memory-v2.md</code></a></td>
+<td>v2：实体/虚拟两级 + provenance 召回（取代 v1）</td>
+<td>🚧 设计稿 + 实施中</td>
+</tr>
+<tr>
+<td><a href="/docs/design/memory/git-as-entity-memory.html"><code>git-as-entity-memory.md</code></a></td>
+<td>实体层最初设计（Session-Git + Project-Git 的由来）</td>
+<td>参考</td>
+</tr>
+<tr>
 <td><a href="/docs/design/memory/entity-memory.html"><code>entity-memory.md</code></a></td>
 <td>实体记忆：Session-Git + Project-Git，按生命周期组织</td>
+<td>子设计</td>
 </tr>
 <tr>
 <td><a href="/docs/design/memory/virtual-memory.html"><code>virtual-memory.md</code></a></td>
 <td>抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织</td>
+<td>子设计</td>
 </tr>
 </tbody>
 </table>

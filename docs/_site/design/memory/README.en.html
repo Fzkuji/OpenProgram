@@ -237,21 +237,46 @@ LLM Context
 </tbody>
 </table>
 <h2 id="sub-documents">Sub-documents<a class="header-anchor" href="#sub-documents">#</a></h2>
+<blockquote>
+<p>Versioning: <code>memory.md</code> describes the <strong>currently shipped</strong> linear summary
+chain (<code>journal → wiki → core</code>, see <code>openprogram/memory/</code>); <code>memory-v2.md</code>
+is the <strong>target design</strong> (entity/virtual two layers + provenance recall) that
+supersedes v1 and is still being implemented. This README describes the v2
+architecture.</p>
+</blockquote>
 <table>
 <thead>
 <tr>
 <th>Document</th>
 <th>Content</th>
+<th>Status</th>
 </tr>
 </thead>
 <tbody>
 <tr>
+<td><a href="/docs/design/memory/memory.html"><code>memory.md</code></a></td>
+<td>v1: linear summary chain (journal/wiki/core)</td>
+<td>✅ current</td>
+</tr>
+<tr>
+<td><a href="/docs/design/memory/memory-v2.html"><code>memory-v2.md</code></a></td>
+<td>v2: entity/virtual two layers + provenance recall (supersedes v1)</td>
+<td>🚧 design + WIP</td>
+</tr>
+<tr>
+<td><a href="/docs/design/memory/git-as-entity-memory.html"><code>git-as-entity-memory.md</code></a></td>
+<td>Origin of the entity layer (Session-Git + Project-Git)</td>
+<td>reference</td>
+</tr>
+<tr>
 <td><a href="/docs/design/memory/entity-memory.html"><code>entity-memory.md</code></a></td>
 <td>Entity memory: Session-Git + Project-Git, organized by lifecycle</td>
+<td>sub-design</td>
 </tr>
 <tr>
 <td><a href="/docs/design/memory/virtual-memory.html"><code>virtual-memory.md</code></a></td>
 <td>Abstract memory: Timeline + Graph + Core, organized by type × lifecycle</td>
+<td>sub-design</td>
 </tr>
 </tbody>
 </table>
