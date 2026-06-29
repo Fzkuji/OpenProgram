@@ -238,11 +238,18 @@ function render(nodes){
     // predecessor 只用于 fork 判定 / depth，不决定画线父。
     // comm_from 节点(B 收到跨分支消息): 它归属 B 分支，结构线接 predecessor
     // (B 上一条)，跨分支那条由 comm_from 通信线单独画。其余: caller 优先。
-    // B 收到跨分支消息(comm_from)：它是 send 引出的【通信支】，不挂任何分支竖线，
-    // 唯一进来的线就是 send→它的通信线(由 comm_from 段单独画)。这里不画结构线。
-    if(m.comm_from)continue;
+    // B 收到跨分支消息(comm_from)：它仍是 B 分支的一部分，照常用 B 竖线串起来
+    // (结构线从 B lane 竖线根竖直下来)；send→它的通信线是【额外】的(comm_from 段画)。
     const predId=m.predecessor, callerId=m.caller;
-    const parentId = (callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
+    let parentId;
+    if(m.comm_from){
+      let root=null;
+      for(const n of nodes){ if(n._laneNum===m._laneNum && n.id!==m.id && (n._depth??0)<(m._depth??0)){
+        if(!root || (n._depth??0)<(root._depth??0)) root=n; } }
+      parentId = root?root.id : ((predId&&byId[predId])?predId:null);
+    }else{
+      parentId = (callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
+    }
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
     const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
