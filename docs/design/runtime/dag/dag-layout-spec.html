@@ -32,8 +32,17 @@ text{font-family:-apple-system,sans-serif}
   <span>● <b>user</b> 用户消息（圆）</span>
   <span>▲ <b>llm</b> AI回复（三角）</span>
   <span>■ <b>code</b> 工具/函数（方块）</span>
-  <span>—— 实线=同分支连线</span>
-  <span>┈┈ 虚线=fork分叉连线</span>
+  <span>◉ <b>merge</b> 合并节点（实心带孔圆）</span>
+</div>
+
+<div class="rule" style="margin-bottom:18px">
+<b style="color:var(--acc)">连线线型（按"这条分支怎么来的"区分）：</b><br>
+&nbsp;&nbsp;━━ <b>同分支连线</b>：实线，分支 lane 色（父→子，正常对话/子调用）<br>
+&nbsp;&nbsp;┄┄ <b>retry 分叉</b>（用户手动 retry/改写消息）：<b>虚线 5 4</b>，分支 lane 色<br>
+&nbsp;&nbsp;┄·┄ <b>大模型主动建分支</b>（spawn_branch）：<b>灰色点划线 4 2 1 2</b><br>
+&nbsp;&nbsp;···· <b>分支间通信</b>（send_to_branch）：<b>金色点线 1 5</b><br>
+&nbsp;&nbsp;═━ <b>合并汇入</b>（merge）：<b>粗实线 2.4px</b>，peer 分支 lane 色<br>
+&nbsp;&nbsp;┈┈ <b>attach 回流</b>（子分支结果嵌回）：绿色虚线 4 4
 </div>
 
 <div class="rule" style="margin-bottom:24px;border-left-color:var(--acc)">
@@ -240,10 +249,10 @@ scene(7,"收起子调用 → 后面分支左移",
  },
  "收起工具：fork 竖线列4→列3、节点列5→列4（左移一格），追问/回复2 上移一行。横竖都紧凑。");
 
-// 汇入线：从 peer tip 斜拉到 merge 节点（peer lane 色）
+// 合并汇入线：从 peer tip 斜拉到 merge 节点（peer lane 色，粗实线 2.4px）
 function mergeIn(px,py,mx,my,color){
   const PX=PADX+px*COL, PY=PADY+py*ROW, MX=PADX+mx*COL, MY=PADY+my*ROW;
-  return `<path d="M ${PX} ${PY+R} L ${PX} ${MY} L ${MX-R-3} ${MY}" fill="none" stroke="${color}" stroke-width="2" opacity="0.85"/>`;
+  return `<path d="M ${PX} ${PY+R} L ${PX} ${MY} L ${MX-R-3} ${MY}" fill="none" stroke="${color}" stroke-width="2.4" opacity="0.9"/>`;
 }
 
 // ---- 场景8：分支合并（equal merge，多线汇聚）----
@@ -260,7 +269,7 @@ scene(8,"分支合并（汇聚到 merge 节点）",
   s+=edge(4,1,5,2,C.purple);
   // merge 节点在 base lane(列1下方),两条父线汇入
   s+=edge(1,1,1,4,C.blue);            // base 主线延续到 merge 行(竖)
-  s+=`<path d="M ${PADX+1*COL} ${PADY+2*ROW+R} L ${PADX+1*COL} ${PADY+4*ROW} L ${PADX+1*COL-R-3+2*R} ${PADY+4*ROW}" fill="none" stroke="${C.blue}" stroke-width="2" opacity="0.85"/>`;
+  s+=`<path d="M ${PADX+1*COL} ${PADY+2*ROW+R} L ${PADX+1*COL} ${PADY+4*ROW} L ${PADX+1*COL-R-3+2*R} ${PADY+4*ROW}" fill="none" stroke="${C.blue}" stroke-width="2.4" opacity="0.9"/>`;
   s+=mergeIn(5,2,1,4,C.purple);       // peer tip 汇入 merge
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"问题");
@@ -299,28 +308,29 @@ scene(9,"分支间发消息（send_to_branch）",
 
 // ---- 场景10：子分支为主分支服务（派活→回流）----
 scene(10,"子分支服务（spawn → attach 回流）",
- "主分支 A 派子分支 B 干活（spawn，点划线）→ B 独立跑完 → 结果通过 attach 嵌回 A（attach 虚线，源 tip → attach 点）。复用现有 spawn/attach 机制。",
- 6,6,()=>{
+ "主分支 A 调 spawn_branch 派子分支 B 干活 → B 独立跑完 → 结果 attach 嵌回 A。关键：子分支 B 的首节点和 spawn_branch 节点【同一行】（spawn 在哪行，被派出的分支就从哪行起），用灰色点划线（大模型主动建分支）连过去。",
+ 7,6,()=>{
   let s="";
   s+=edge(0,0,1,1,C.blue);
   s+=edge(1,1,2,2,C.blue);
-  s+=edge(2,2,3,3,C.blue);   // A 调 spawn (code 节点)
-  // 子分支B (lane 列4竖线,列5)
-  s+=`<path d="M ${PADX+3*COL} ${PADY+3*ROW} L ${PADX+3*COL} ${PADY+1*ROW} L ${PADX+5*COL-R} ${PADY+1*ROW}" fill="none" stroke="#888" stroke-width="1.2" stroke-dasharray="1 4" opacity="0.7"/>`;
-  s+=edge(5,1,6,2,C.green);
-  // attach 回流: B tip → A 的 attach 点(列2 行4)
-  s+=`<path d="M ${PADX+6*COL} ${PADY+2*ROW} C ${PADX+4*COL} ${PADY+3.5*ROW}, ${PADX+3*COL} ${PADY+4*ROW}, ${PADX+2*COL+R} ${PADY+4*ROW}" fill="none" stroke="${C.green}" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.8"/>`;
-  s+=edge(1,1,2,4,C.blue);  // A 继续
+  s+=edge(2,2,3,3,C.blue);   // A 调 spawn (code 节点, 列3 行3)
+  // spawn 线（大模型主动建分支 = 灰点划线 4 2 1 2）: spawn_branch(列3,行3)
+  // 水平拉到子分支B首节点(列5,行3) —— 同一行
+  s+=`<path d="M ${PADX+3*COL+R} ${PADY+3*ROW} L ${PADX+5*COL-R} ${PADY+3*ROW}" fill="none" stroke="#888" stroke-width="1.4" stroke-dasharray="4 2 1 2" opacity="0.8"/>`;
+  s+=edge(5,3,6,4,C.green);   // 子分支B(列5,行3) -> B干完(列6,行4)
+  // attach 回流（绿虚线 4 4）: B干完(列6,行4) → A收到结果(列2,行5)
+  s+=`<path d="M ${PADX+6*COL} ${PADY+4*ROW+R} C ${PADX+4*COL} ${PADY+5*ROW}, ${PADX+3*COL} ${PADY+5*ROW}, ${PADX+2*COL+R} ${PADY+5*ROW}" fill="none" stroke="${C.green}" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.8"/>`;
+  s+=edge(1,1,2,5,C.blue);  // A 继续(收到结果)
   s+=node(null,0,0,'root',C.blue,"ROOT");
   s+=node(null,1,1,'user',C.blue,"问题");
   s+=node(null,2,2,'llm',C.blue,"A");
   s+=node(null,3,3,'code',C.blue,"spawn_branch","派子分支");
-  s+=node(null,5,1,'user',C.green,"子分支B");
-  s+=node(null,6,2,'llm',C.green,"B干完");
-  s+=node(null,2,4,'llm',C.blue,"A(收到B结果)","attach回流");
+  s+=node(null,5,3,'user',C.green,"子分支B","和spawn同行");
+  s+=node(null,6,4,'llm',C.green,"B干完");
+  s+=node(null,2,5,'llm',C.blue,"A(收到B结果)","attach回流");
   return s;
  },
- "spawn 线=灰点划线(A派B)；attach 回流线=绿虚线(B结果嵌回A)。子分支独立 lane，复用现有机制。");
+ "子分支首节点和 spawn_branch 同一行（行3）。spawn 线=灰点划线(大模型主动建分支)，attach 回流=绿虚线。");
 
 </script>
 </div></body></html>
