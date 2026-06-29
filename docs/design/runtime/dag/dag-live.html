@@ -229,7 +229,9 @@ function render(nodes){
   const edgeG=svgEl("g",{}), nodeG=svgEl("g",{});
   svg.appendChild(edgeG); svg.appendChild(nodeG);
 
-  // 连线: 每个节点画到它的父(predecessor||caller)
+  // 连线 — 和 spec.html 同一套画法：父中心竖线下到子的行，再横到子。
+  // 同 lane = 实线；fork（落在别的 lane）= 整条 dash（retry 5 4 / spawn 4 2 1 2）。
+  // fork 的竖线落在【子自己的 lane 列】上（子已经在它那条 lane 的列里）。
   for(const m of nodes){
     if(m.display==="root")continue;
     const c=pos(m), color=laneColor(m._laneNum);
@@ -237,33 +239,25 @@ function render(nodes){
     const parentId=(predId&&byId[predId])?predId:((callerId&&byId[callerId])?callerId:null);
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
-    const nr=R+4;
-    const sameLane=(m._lane===parent._lane);
-    // 线型判定
-    let dash="", w=1.8, cls="", lineColor=color;
-    const pred=predOf(byId,m), fk=pred?(buildMapsCache.fork[pred]||[]):[];
-    const isFork=!sameLane;  // 落在不同 lane = fork 出来的
-    if(m.role==="merge"){ /* merge 的父线下面单独处理 */ }
-    if(isFork){
-      // retry 还是 spawn? code 节点的 fork = spawn; user 的 fork = retry
-      if(m.role==="code"||m.role==="tool"){ dash="4 2 1 2"; }   // spawn
-      else { dash="5 4"; }                                       // retry
+    const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
+    let dash="";
+    if(isFork) dash = (m.role==="code"||m.role==="tool") ? "4 2 1 2" : "5 4"; // spawn / retry
+    if(!isFork){
+      // 同分支：父中心(p.x)竖下到子行，再横到子 —— spec 标准阶梯
+      edgeG.appendChild(svgEl("path",{
+        d:`M ${p.x} ${p.y+R} L ${p.x} ${c.y} L ${c.x-R-3} ${c.y}`,
+        fill:"none",stroke:color,"stroke-width":1.8}));
+    }else{
+      // fork：竖线落在【子的 lane 竖线列】= 子列 - tier（即该 lane 的起始列）。
+      // 从父中心 dash 横拉到 fork 竖线顶，竖线下到子行，再实线横到子。
+      const trunkX = PADX + m._lane*COL;   // 子所在 lane 的竖线列（起始列）
+      edgeG.appendChild(svgEl("path",{
+        d:`M ${p.x} ${p.y} L ${trunkX} ${p.y}`,
+        fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:0.8}));
+      edgeG.appendChild(svgEl("path",{
+        d:`M ${trunkX} ${p.y} L ${trunkX} ${c.y} L ${c.x-R-3} ${c.y}`,
+        fill:"none",stroke:color,"stroke-width":1.6}));
     }
-    // 画: fork 有竖线列(parent列 +? ) — 这里用 parent.x 到 c.x 的 L 形
-    let trunkX=p.x, fromY=p.y+nr;
-    if(isFork){
-      // fork 竖线列 = c 的列 - 1
-      trunkX = c.x - COL;
-      fromY = p.y;
-      // 虚线: parent → fork竖线
-      edgeG.appendChild(svgEl("path",{d:`M ${p.x+nr} ${p.y} L ${trunkX} ${c.y}`,fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:0.75}));
-      // 竖线 → 节点(实线)
-      edgeG.appendChild(svgEl("line",{x1:trunkX,y1:c.y,x2:c.x-nr,y2:c.y,stroke:color,"stroke-width":1.6}));
-      continue;
-    }
-    // 同 lane: 实线 L 形(从父底边)
-    if(c.y>fromY) edgeG.appendChild(svgEl("line",{x1:trunkX,y1:fromY,x2:trunkX,y2:c.y,stroke:color,"stroke-width":1.6}));
-    if(c.x!==trunkX) edgeG.appendChild(svgEl("line",{x1:trunkX,y1:c.y,x2:c.x-nr,y2:c.y,stroke:color,"stroke-width":1.6}));
   }
   // 合并汇入线: merge 节点的每个 peer(commit_parents 之外, 这里用 mergeFrom 数组)
   for(const m of nodes){
