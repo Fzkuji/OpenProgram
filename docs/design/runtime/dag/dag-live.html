@@ -175,26 +175,48 @@ function computeTier(byId, nodes){
   return tier;
 }
 
-// depth.compute_depth — 行 = 全局 created_at(seq) 时间序，所有分支按真实时间
-// 交错排（早发生的在上）。retry fork 兄弟对齐到首兄弟同行（同一时刻的两种可能）。
+// depth.compute_depth — 行号 = 主干 DFS pre-order(沿 caller 子树紧贴：子调用
+// 紧跟它的父，不被平行分支的节点隔开)。fork/独立分支在 remaining pass 对齐到
+// 首兄弟同行、其子树独立向下生长(所以 send 紧贴 A回复，B 平行对齐问题)。
+// 1:1 移植自后端 depth.py。
 function computeDepth(byId, nodes, maps){
-  const {fork}=maps;
-  // 1) 全局按 created_at 排出基础行号
-  const ordered=nodes.slice().sort((a,b)=>(a.created_at||0)-(b.created_at||0));
-  const depth={}; ordered.forEach((m,i)=>depth[m.id]=i);
-  // 2) fork 兄弟对齐到首兄弟同行——retry 是同一时刻的平行可能；独立分支(B)也是
-  //    和 base 分支平行存在的，所以它的首节点也对齐到首兄弟(问题)同一行，从 ROOT
-  //    往右平行延伸出来，而不是排在 base 分支下方。
-  for(const pid in fork){
-    const k=fork[pid]; if(k.length<2)continue;
-    const first=k[0];
-    for(const sib of k.slice(1)){
-      const shift=depth[first]-depth[sib];
-      if(shift===0)continue;
-      // 把 sib 及其子树整体平移到与 first 对齐
-      const sub=descendants(byId,nodes,sib);
-      for(const x of sub) depth[x]+=shift;
+  const {callerCh,fork}=maps;
+  const depth={}; const counter=[0];
+  // 非首 fork 兄弟：DFS 时跳过，留到 remaining pass 与首兄弟对齐
+  const skip=new Set();
+  for(const pid in fork){ const k=fork[pid]; if(k.length>1) k.slice(1).forEach(x=>skip.add(x)); }
+  function walkDfs(id){
+    if(id in depth)return;
+    depth[id]=counter[0]++;
+    for(const kid of (callerCh[id]||[])){ if(skip.has(kid))continue; walkDfs(kid); }
+  }
+  function walkBranch(id,start){
+    if(id in depth)return;
+    depth[id]=start; let d=start+1;
+    for(const kid of (callerCh[id]||[])){
+      if(kid in depth)continue;
+      depth[kid]=d++;
+      for(const gk of (callerCh[kid]||[])) walkBranch(gk, depth[kid]+1);
     }
+  }
+  // 主干：从 root DFS
+  const roots=nodes.filter(isRoot).map(m=>m.id).sort((a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0));
+  for(const r of roots) walkDfs(r);
+  // fork/独立分支：对齐到首兄弟行，子树独立下长
+  const remaining=nodes.filter(m=>!(m.id in depth)).map(m=>m.id).sort((a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0));
+  for(const id of remaining){
+    if(id in depth)continue;
+    const pid=predOf(byId,byId[id]); let start=0;
+    if(pid && pid in depth){
+      // 找同 predecessor 的首兄弟的行，对齐过去
+      let aligned=false;
+      for(const m of nodes){
+        if(m.id===id)continue;
+        if(predOf(byId,m)===pid && m.id in depth){ start=depth[m.id]; aligned=true; break; }
+      }
+      if(!aligned) start=depth[pid]+1;
+    }
+    walkBranch(id,start);
   }
   return depth;
 }
