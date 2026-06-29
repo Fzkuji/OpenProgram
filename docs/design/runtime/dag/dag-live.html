@@ -328,10 +328,12 @@ function render(nodes){
       // 跨分支：源(retry兄弟/spawn工具/通信源) 先下后右到子，线型 dash 区分类型。
       const isSpawn=!!m.spawn_from&&byId[m.spawn_from];
       const dash = isSpawn?"4 2 1 2":(m.commLine||m.commFrom?"1 5":(m.independent?"":"5 4"));
-      let src=parent;
+      let src=parent;   // 默认从 caller(独立分支 = ROOT) 引出
       if(isSpawn) src=byId[m.spawn_from];
       else if(m.commFrom&&byId[m.commFrom]) src=byId[m.commFrom];
-      else { const pred=predOf(byId,m); if(pred){ const sib=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id)[0]; if(sib&&byId[sib]) src=byId[sib]; } }
+      else if(!m.independent){   // retry: 从被 retry 的兄弟引出；独立分支: 保持从 ROOT 引出
+        const pred=predOf(byId,m); if(pred){ const sib=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id)[0]; if(sib&&byId[sib]) src=byId[sib]; }
+      }
       const sp=pos(src);
       edgeG.appendChild(svgEl("path",{d:`M ${sp.x} ${sp.y+R} L ${sp.x} ${c.y} L ${c.x-R-3} ${c.y}`,
         fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:dash?0.8:1}));
