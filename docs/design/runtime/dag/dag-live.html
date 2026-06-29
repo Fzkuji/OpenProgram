@@ -243,10 +243,12 @@ function render(nodes){
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
     const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
-    // spawn vs retry：带 spawn_from(大模型派的子分支) = spawn；否则用户 retry。
+    // spawn vs retry vs 独立分支：
+    //   spawn_from → 大模型派的(点划线)；independent → 用户另开的独立对话(实线,不画虚线分叉)；
+    //   其余 fork → 用户 retry(虚线)。
     const isSpawn=isFork && !!m.spawn_from && byId[m.spawn_from];
     let dash="";
-    if(isFork) dash = isSpawn ? "4 2 1 2" : "5 4"; // spawn / retry
+    if(isFork) dash = isSpawn ? "4 2 1 2" : (m.independent ? "" : "5 4"); // spawn / 独立 / retry
     if(!isFork){
       // 同分支：父中心(p.x)竖下到子行，再横到子 —— spec 标准阶梯
       edgeG.appendChild(svgEl("path",{
@@ -346,12 +348,17 @@ const SCENES=[
    {id:"u1b",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"问题(改写)"},
    {id:"l1b",role:"assistant",caller:"u1b",predecessor:"u1b",created_at:4,label:"回复B"},
    {id:"mg",role:"merge",caller:"l1",predecessor:"l1",created_at:5,label:"merge",sub:"合并A+B",mergeFrom:["l1b"]}]},
- {name:"分支间通信",desc:"A 发消息给 B(send_to_branch)。通信线默认隐藏 — 鼠标移到图上才显示。",nodes:()=>[R0,
+ {name:"分支间通信",desc:"A 的三角(llm)调 send_to_branch → A 这边出一个【正方形工具】节点 → 它连到 B，在 B 那边相当于另一个 agent 发来消息，生成一个【三角】，三角再 call 出 B 的应答(三角)。全程 caller 子调用链，不经过 ROOT。",nodes:()=>[R0,
+   // A 分支
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
-   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A回复",comm_to:"bm"},
-   {id:"ub",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"B分支"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A回复"},
+   // B 分支(独立)
+   {id:"ub",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"B用户",independent:true},
    {id:"lb",role:"assistant",caller:"ub",predecessor:"ub",created_at:4,label:"B回复"},
-   {id:"bm",role:"user",caller:"ROOT",predecessor:"lb",created_at:5,label:"来自A的消息",sub:"from_branch"}]},
+   // 通信链: A三角 → 正方形工具 → B三角(收到) → B三角(应答), 全 caller 子调用
+   {id:"send",role:"code",caller:"l1",created_at:5,label:"send_to_branch",sub:"A调的工具"},
+   {id:"bRecv",role:"assistant",caller:"send",comm_in:true,created_at:6,label:"B收到(另一agent)"},
+   {id:"bAns",role:"assistant",caller:"bRecv",created_at:7,label:"B应答"}]},
  {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A"},
@@ -369,9 +376,11 @@ function show(i){
   document.getElementById("desc").textContent=sc.desc;
   [...document.querySelectorAll("#bar button")].forEach((b,j)=>b.classList.toggle("on",j===i));
   render(nodes);
+  try{ history.replaceState(null,"","#"+i); }catch(e){}
 }
 const bar=document.getElementById("bar");
 SCENES.forEach((s,i)=>{ const b=document.createElement("button"); b.textContent=s.name; b.onclick=()=>show(i); bar.appendChild(b); });
-show(0);
+const _h=parseInt((location.hash||"#0").slice(1),10);
+show(Number.isInteger(_h)&&_h>=0&&_h<SCENES.length?_h:0);
 </script>
 </div></body></html>
