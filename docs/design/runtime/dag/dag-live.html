@@ -483,7 +483,7 @@ const SCENES=[
    {id:"sp",role:"code",caller:"l1",predecessor:"l1",created_at:3,label:"spawn_branch",sub:"A调的工具,当场派子分支"},
    // B = spawn 当场新建的子 agent 分支。caller=sp(spawn 派的)、无 predecessor →
    // 不被当独立分支对齐到问题行；从 spawn 那行往下长。首节点是 △ 子agent(非 user)。
-   {id:"b1",role:"assistant",caller:"sp",spawn_from:"sp",created_at:4,label:"子分支B",sub:"spawn当场新建的子agent"},
+   {id:"b1",role:"assistant",caller:"sp",spawn_from:"sp",tierHint:1,created_at:4,label:"子分支B",sub:"spawn当场新建的子agent"},
    {id:"b2",role:"assistant",caller:"b1",predecessor:"b1",created_at:5,label:"B干完"},
    // B 干完 → attach 回流嵌回 A → A 收到后继续(新一轮,挂 A 主干 user 级)。
    {id:"a2",role:"assistant",caller:"ROOT",predecessor:"sp",attach_from:"b2",tierHint:1,created_at:6,label:"A(收到B)",sub:"attach回流,A收到后继续"}]},
