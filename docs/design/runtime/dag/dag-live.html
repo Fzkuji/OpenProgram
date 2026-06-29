@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DAG 实时布局（真算法）</title>
+<style>
+:root{--bg:#1a1a18;--pan:#232320;--bd:#3a3a36;--tx:#d8d6cc;--tx2:#9a988e;--acc:#d19a66;--cb:#15140f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.6 -apple-system,'Segoe UI',sans-serif}
+.w{max-width:1100px;margin:0 auto;padding:32px 28px 80px}
+h1{font-size:23px;border-bottom:2px solid var(--acc);padding-bottom:10px}
+.sub{color:var(--tx2);font-size:13.5px;margin:8px 0 20px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.bar button{background:var(--pan);color:var(--tx);border:1px solid var(--bd);border-radius:7px;padding:7px 13px;cursor:pointer;font-size:13.5px}
+.bar button.on{background:var(--acc);color:#1a1a19;border-color:var(--acc);font-weight:600}
+.bar button:hover:not(.on){border-color:var(--acc)}
+.stage{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.canvas{background:#141413;border:1px solid var(--bd);border-radius:10px;min-width:480px;min-height:360px}
+.side{flex:1;min-width:260px}
+.desc{background:var(--pan);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;font-size:13.5px;color:var(--tx);margin-bottom:14px}
+.legend{font-size:12.5px;color:var(--tx2);line-height:1.9}
+.legend b{color:var(--tx)}
+.tbl{font-size:12px;border-collapse:collapse;margin-top:12px;width:100%}
+.tbl td,.tbl th{border:1px solid var(--bd);padding:4px 8px;text-align:left}
+.tbl th{background:var(--pan);color:var(--acc)}
+code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+.comm-line{opacity:0;transition:opacity .15s}
+.canvas:hover .comm-line{opacity:.9}
+text{font-family:-apple-system,sans-serif;pointer-events:none}
+.node{cursor:pointer}
+</style></head>
+<body><div class="w">
+<h1>DAG 实时布局（真算法）</h1>
+<p class="sub">不是写死坐标的示意图。这里内置了和后端 <code>graph_layout</code> 一致的布局算法
+（lane / tier / depth + 占列规则），喂节点数据 → <b>算法自己算出每个节点的位置</b> → 画出来。
+切换下面的场景看不同数据跑出来的布局。通信线默认隐藏，鼠标移到图上才显示。</p>
+
+<div class="bar" id="bar"></div>
+<div class="stage">
+  <div><svg id="svg" class="canvas"></svg></div>
+  <div class="side">
+    <div class="desc" id="desc"></div>
+    <div class="legend">
+      <b>节点</b>：◇ ROOT&nbsp;&nbsp;○ user&nbsp;&nbsp;△ llm&nbsp;&nbsp;□ code&nbsp;&nbsp;◉ merge<br>
+      <b>颜色</b> = 分支身份（每条 lane 一色）<br>
+      <b>线型</b> = 连线类型：<br>
+      &nbsp;━ 同分支&nbsp;&nbsp;- - retry&nbsp;&nbsp;-·- spawn&nbsp;&nbsp;··· 通信(hover)&nbsp;&nbsp;═ 合并&nbsp;&nbsp;┄ attach<br>
+      <b>列规则</b>：fork 占两列（竖线列 + 节点列）
+    </div>
+    <table class="tbl" id="coords"></table>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   真实布局算法 — 1:1 移植自后端 openprogram/webui/graph_layout/
+   （lane.py / topology.py / tier.py / depth.py / __init__.py）
+   输入: nodes [{id, role, caller, predecessor, display, created_at, comm_to?}]
+   输出: 每个 node 带 _lane(列偏移) / _tier(缩进) / _depth(行)
+   ============================================================ */
+
+const LANE_COLORS = ["#4f8ef7","#5aad4e","#d4843a","#9d6fe0","#e0445a","#2db3d5","#e0b020","#35b89a"];
+
+function isRoot(m){ return m.display === "root"; }
+function predOf(byId, m){ const p=m.predecessor; return (p && byId[p] && p!==m.id) ? p : null; }
+function callerOf(byId, m){ const c=m.caller; return (c && byId[c] && c!==m.id) ? c : null; }
+
+// topology.build_maps
+function buildMaps(byId, nodes){
+  const callerCh={}, predCh={}, fork={};
+  for(const m of nodes){
+    const c=callerOf(byId,m); if(c){(callerCh[c]=callerCh[c]||[]).push(m.id);}
+    const p=predOf(byId,m); if(p){(predCh[p]=predCh[p]||[]).push(m.id);(fork[p]=fork[p]||[]).push(m.id);}
+  }
+  const bySeq=(a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0);
+  for(const k in callerCh)callerCh[k].sort(bySeq);
+  for(const k in predCh)predCh[k].sort(bySeq);
+  for(const k in fork)fork[k].sort(bySeq);
+  return {callerCh,predCh,fork};
+}
+
+// tier.compute_tier — 按 role/caller 链
+function computeTier(byId, nodes){
+  const tier={};
+  function t(id,depth){
+    if(id in tier)return tier[id];
+    if(depth>200){tier[id]=0;return 0;}
+    const m=byId[id];
+    if(isRoot(m)){tier[id]=0;return 0;}
+    const caller=m.caller||"";
+    const pn=caller?byId[caller]:null;
+    if(pn && !isRoot(pn)){ const v=t(caller,depth+1)+1; tier[id]=v; return v; }
+    const r=m.role||"";
+    tier[id] = r==="user"?1 : (r==="assistant"||r==="llm")?2 : (r==="tool"||r==="code")?3 : 1;
+    return tier[id];
+  }
+  for(const m of nodes)t(m.id,0);
+  return tier;
+}
+
+// depth.compute_depth — DFS by seq, fork siblings 对齐首兄弟
+function computeDepth(byId, nodes, maps){
+  const {callerCh,predCh,fork}=maps;
+  const depth={}; let counter=0;
+  const skip=new Set();
+  for(const pid in fork){ const k=fork[pid]; if(k.length>1) k.slice(1).forEach(x=>skip.add(x)); }
+  const kidsOf=id=>{ const a=(callerCh[id]||[]).slice(); for(const x of (predCh[id]||[]))if(!a.includes(x))a.push(x);
+    return a.sort((p,q)=>(byId[p].created_at||0)-(byId[q].created_at||0)); };
+  function dfs(id){ if(id in depth)return; depth[id]=counter++; for(const kid of kidsOf(id)){ if(skip.has(kid))continue; dfs(kid);} }
+  const bySeq=(a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0);
+  const roots=nodes.filter(m=>isRoot(m)).map(m=>m.id).sort(bySeq);
+  for(const r of roots)dfs(r);
+  // fork siblings + 剩余: 对齐到分叉点/首兄弟同行,然后各自往下
+  const remaining=nodes.map(m=>m.id).filter(id=>!(id in depth)).sort(bySeq);
+  for(const id of remaining){
+    if(id in depth)continue;
+    const pid=predOf(byId,byId[id]);
+    let start=0;
+    if(pid && pid in depth){
+      // 找首兄弟的 depth
+      let found=false;
+      for(const oid of nodes.map(m=>m.id)){
+        if(oid===id)continue;
+        if(predOf(byId,byId[oid])===pid && oid in depth){ start=depth[oid]; found=true; break; }
+      }
+      if(!found) start=depth[pid]+1;
+    }
+    // walk branch
+    (function walk(nid,s){ if(nid in depth)return; depth[nid]=s; let d=s+1;
+      for(const kid of kidsOf(nid)){ if(!(kid in depth)){ depth[kid]=d; d++; for(const gk of kidsOf(kid)) walk(gk,depth[kid]+1);} } })(id,start);
+  }
+  for(const m of nodes)if(!(m.id in depth))depth[m.id]=counter++;
+  return depth;
+}
+
+// lane.compute_lane — 数分支按序发号, 续聊跟 predecessor lane
+function computeLane(byId, nodes, maps, tier){
+  const {callerCh,predCh,fork}=maps;
+  const lane={}; let next=0;
+  const isForkCont={};
+  for(const pid in fork){ const k=fork[pid]; if(k.length>1) k.forEach((x,i)=>isForkCont[x]=(i===0)); }
+  const sameLane=id=> (id in isForkCont)?isForkCont[id]:true;
+  function claim(start,my){
+    const stack=[start];
+    while(stack.length){
+      const cur=stack.pop(); if(cur in lane)continue; lane[cur]=my;
+      for(const kid of (callerCh[cur]||[])){ if((kid in lane)||!sameLane(kid))continue; if(predOf(byId,byId[kid]))continue; stack.push(kid); }
+      for(const kid of (predCh[cur]||[])){ if(!(kid in lane)&&sameLane(kid))stack.push(kid); }
+    }
+  }
+  const bySeq=(a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0);
+  const roots=nodes.filter(m=>isRoot(m)).map(m=>m.id).sort(bySeq);
+  for(const r of roots)if(!(r in lane))claim(r,next++);
+  for(const id of nodes.map(m=>m.id).sort(bySeq)){
+    if(id in lane)continue;
+    const pred=predOf(byId,byId[id]);
+    if(pred && (pred in lane) && sameLane(id)) claim(id,lane[pred]);
+    else claim(id,next++);
+  }
+  return lane;
+}
+
+// __init__.annotate_graph — 把 lane(分支号) 转成列偏移, fork 占两列
+function annotate(nodes){
+  const byId={}; for(const m of nodes)byId[m.id]=m;
+  const maps=buildMaps(byId,nodes);
+  const tier=computeTier(byId,nodes);
+  const depth=computeDepth(byId,nodes,maps);
+  const laneNum=computeLane(byId,nodes,maps,tier);
+
+  // 每条 lane 的节点 + 首节点(最小 depth)
+  const laneNodes={}, laneFirst={};
+  for(const m of nodes){ const ln=laneNum[m.id]; (laneNodes[ln]=laneNodes[ln]||[]).push(m.id);
+    if(laneFirst[ln]===undefined || depth[m.id]<depth[laneFirst[ln]]) laneFirst[ln]=m.id; }
+  const rightmost=ln=>{ const off=offset(ln); let mx=0; for(const n of (laneNodes[ln]||[]))mx=Math.max(mx,tier[n]||0); return off+mx; };
+  const laneOff={};
+  function offset(ln){
+    if(ln in laneOff)return laneOff[ln];
+    if(ln===0){laneOff[ln]=0;return 0;}
+    const first=laneFirst[ln];
+    const forkedFrom=first?predOf(byId,byId[first]):null;
+    const baseLane=forkedFrom?laneNum[forkedFrom]:undefined;
+    const firstTier=first?(tier[first]||0):0;
+    let off;
+    if(baseLane!==undefined){
+      const baseRight=rightmost(baseLane);
+      let placedRight=baseRight;
+      for(const pl in laneOff)placedRight=Math.max(placedRight,rightmost(Number(pl)));
+      off=Math.max(baseRight,placedRight)+2-firstTier;  // fork 占两列: +1竖线 +1节点
+    }else{
+      let mx=-1; for(const pl in laneOff)mx=Math.max(mx,rightmost(Number(pl))); off=mx+2;
+    }
+    laneOff[ln]=off; return off;
+  }
+  const allLanes=[...new Set(Object.values(laneNum))].sort((a,b)=>a-b);
+  for(const ln of allLanes)offset(ln);
+
+  for(const m of nodes){ m._lane=laneOff[laneNum[m.id]]||0; m._tier=tier[m.id]||0; m._depth=depth[m.id]||0; m._laneNum=laneNum[m.id]; }
+  return nodes;
+}
+
+/* ============================================================
+   渲染 — 网格 + 节点形状 + 6 种线型
+   ============================================================ */
+const COL=58, ROW=58, PADX=44, PADY=40, R=11;
+function svgEl(tag,attrs){ const e=document.createElementNS("http://www.w3.org/2000/svg",tag); for(const k in attrs)e.setAttribute(k,attrs[k]); return e; }
+function laneColor(ln){ return LANE_COLORS[(ln||0)%LANE_COLORS.length]; }
+
+function shapeEl(m,cx,cy,color){
+  const r=R, role=m.role||"";
+  if(m.display==="root"){ const e=svgEl("rect",{x:cx-r,y:cy-r,width:2*r,height:2*r,rx:3,transform:`rotate(45 ${cx} ${cy})`,fill:"#fff",stroke:color,"stroke-width":2.5}); return [e]; }
+  if(role==="user")return [svgEl("circle",{cx,cy,r,fill:"none",stroke:color,"stroke-width":2.5})];
+  if(role==="assistant"||role==="llm")return [svgEl("polygon",{points:`${cx},${cy-r} ${cx-r},${cy+r*0.8} ${cx+r},${cy+r*0.8}`,fill:"none",stroke:color,"stroke-width":2.5})];
+  if(role==="tool"||role==="code")return [svgEl("rect",{x:cx-r*0.85,y:cy-r*0.85,width:r*1.7,height:r*1.7,rx:2,fill:"none",stroke:color,"stroke-width":2.5})];
+  if(role==="merge")return [svgEl("circle",{cx,cy,r,fill:color,stroke:color,"stroke-width":2.5}),svgEl("circle",{cx,cy,r:r*0.45,fill:"#141413"})];
+  return [svgEl("circle",{cx,cy,r,fill:"none",stroke:color,"stroke-width":2})];
+}
+
+// 行紧凑: depth → 连续行号
+function render(nodes){
+  annotate(nodes);
+  const byId={}; for(const m of nodes)byId[m.id]=m;
+  const depths=[...new Set(nodes.map(m=>m._depth))].sort((a,b)=>a-b);
+  const depthRow={}; depths.forEach((d,i)=>depthRow[d]=i);
+  const pos=m=>({x:PADX+(m._lane+m._tier)*COL, y:PADY+depthRow[m._depth]*ROW});
+  let maxX=0,maxY=0; for(const m of nodes){const p=pos(m);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}
+
+  const svg=document.getElementById("svg");
+  svg.innerHTML=""; svg.setAttribute("width",maxX+PADX+60); svg.setAttribute("height",maxY+PADY);
+  const edgeG=svgEl("g",{}), nodeG=svgEl("g",{});
+  svg.appendChild(edgeG); svg.appendChild(nodeG);
+
+  // 连线: 每个节点画到它的父(predecessor||caller)
+  for(const m of nodes){
+    if(m.display==="root")continue;
+    const c=pos(m), color=laneColor(m._laneNum);
+    const predId=m.predecessor, callerId=m.caller;
+    const parentId=(predId&&byId[predId])?predId:((callerId&&byId[callerId])?callerId:null);
+    if(!parentId)continue;
+    const parent=byId[parentId], p=pos(parent);
+    const nr=R+4;
+    const sameLane=(m._lane===parent._lane);
+    // 线型判定
+    let dash="", w=1.8, cls="", lineColor=color;
+    const pred=predOf(byId,m), fk=pred?(buildMapsCache.fork[pred]||[]):[];
+    const isFork=!sameLane;  // 落在不同 lane = fork 出来的
+    if(m.role==="merge"){ /* merge 的父线下面单独处理 */ }
+    if(isFork){
+      // retry 还是 spawn? code 节点的 fork = spawn; user 的 fork = retry
+      if(m.role==="code"||m.role==="tool"){ dash="4 2 1 2"; }   // spawn
+      else { dash="5 4"; }                                       // retry
+    }
+    // 画: fork 有竖线列(parent列 +? ) — 这里用 parent.x 到 c.x 的 L 形
+    let trunkX=p.x, fromY=p.y+nr;
+    if(isFork){
+      // fork 竖线列 = c 的列 - 1
+      trunkX = c.x - COL;
+      fromY = p.y;
+      // 虚线: parent → fork竖线
+      edgeG.appendChild(svgEl("path",{d:`M ${p.x+nr} ${p.y} L ${trunkX} ${c.y}`,fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:0.75}));
+      // 竖线 → 节点(实线)
+      edgeG.appendChild(svgEl("line",{x1:trunkX,y1:c.y,x2:c.x-nr,y2:c.y,stroke:color,"stroke-width":1.6}));
+      continue;
+    }
+    // 同 lane: 实线 L 形(从父底边)
+    if(c.y>fromY) edgeG.appendChild(svgEl("line",{x1:trunkX,y1:fromY,x2:trunkX,y2:c.y,stroke:color,"stroke-width":1.6}));
+    if(c.x!==trunkX) edgeG.appendChild(svgEl("line",{x1:trunkX,y1:c.y,x2:c.x-nr,y2:c.y,stroke:color,"stroke-width":1.6}));
+  }
+  // 合并汇入线: merge 节点的每个 peer(commit_parents 之外, 这里用 mergeFrom 数组)
+  for(const m of nodes){
+    if(m.role!=="merge"||!m.mergeFrom)continue;
+    const c=pos(m);
+    for(const pid of m.mergeFrom){ const peer=byId[pid]; if(!peer)continue; const pp=pos(peer);
+      edgeG.appendChild(svgEl("path",{d:`M ${pp.x} ${pp.y+R} L ${pp.x} ${c.y} L ${c.x+R+3} ${c.y}`,fill:"none",stroke:laneColor(peer._laneNum),"stroke-width":2.4,opacity:0.9})); }
+  }
+  // 通信线(默认隐藏): comm_to
+  for(const m of nodes){
+    if(!m.comm_to)continue; const src=pos(m); const tgt=byId[m.comm_to]; if(!tgt)continue; const tp=pos(tgt);
+    edgeG.appendChild(svgEl("path",{class:"comm-line",d:`M ${src.x+R} ${src.y} C ${(src.x+tp.x)/2} ${src.y}, ${(src.x+tp.x)/2} ${tp.y}, ${tp.x-R} ${tp.y}`,fill:"none",stroke:laneColor(tgt._laneNum),"stroke-width":1.8,"stroke-dasharray":"1 5","stroke-linecap":"round"}));
+  }
+  // attach 回流: attach_from
+  for(const m of nodes){
+    if(!m.attach_from)continue; const dst=pos(m); const src=byId[m.attach_from]; if(!src)continue; const sp=pos(src);
+    edgeG.appendChild(svgEl("path",{d:`M ${sp.x} ${sp.y+R} C ${sp.x} ${dst.y+ROW}, ${dst.x} ${dst.y+ROW}, ${dst.x+R} ${dst.y}`,fill:"none",stroke:laneColor(src._laneNum),"stroke-width":1.5,"stroke-dasharray":"4 4",opacity:0.85}));
+  }
+
+  // 节点
+  for(const m of nodes){
+    const c=pos(m), color=laneColor(m._laneNum);
+    const g=svgEl("g",{class:"node"});
+    for(const e of shapeEl(m,c.x,c.y,color))g.appendChild(e);
+    const label=m.label||m.id;
+    const t=svgEl("text",{x:c.x+R+7,y:c.y+4,fill:color,"font-size":12}); t.textContent=label; g.appendChild(t);
+    if(m.sub){ const s=svgEl("text",{x:c.x+R+7,y:c.y+18,fill:"#6b6a63","font-size":10}); s.textContent=m.sub; g.appendChild(s); }
+    nodeG.appendChild(g);
+  }
+
+  // 坐标表
+  const tbl=document.getElementById("coords");
+  tbl.innerHTML="<tr><th>id</th><th>lane</th><th>tier</th><th>列</th><th>行</th></tr>"+
+    nodes.map(m=>`<tr><td>${m.label||m.id}</td><td>${m._laneNum}</td><td>${m._tier}</td><td>${m._lane+m._tier}</td><td>${depthRow[m._depth]}</td></tr>`).join("");
+}
+let buildMapsCache={fork:{}};
+
+/* ============================================================
+   场景数据（我自己编的，不是真会话）
+   ============================================================ */
+const R0={id:"ROOT",role:"user",display:"root",created_at:0};
+const SCENES=[
+ {name:"单轮对话",desc:"发一句话。算法应给全 lane 0，tier 0/1/2 阶梯。",nodes:()=>[R0,
+   {id:"u1",role:"user",caller:"ROOT",predecessor:null,created_at:1,label:"你好"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"AI回复"}]},
+ {name:"多轮对话",desc:"两轮。所有 user 都挂 ROOT(tier1)，全 lane 0。",nodes:()=>[R0,
+   {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"你好"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"回复1"},
+   {id:"u2",role:"user",caller:"ROOT",predecessor:"l1",created_at:3,label:"再问"},
+   {id:"l2",role:"assistant",caller:"u2",predecessor:"u2",created_at:4,label:"回复2"}]},
+ {name:"retry 分叉",desc:"对第一句 retry → 第2条分支。fork 占两列(竖线+节点)，虚线分叉。",nodes:()=>[R0,
+   {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"你好"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"回复1"},
+   {id:"u1b",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"你好(改写)"},
+   {id:"l1b",role:"assistant",caller:"u1b",predecessor:"u1b",created_at:4,label:"回复1'"}]},
+ {name:"工具调用",desc:"AI 调工具 → 工具 tier3 缩进，不另开 lane。",nodes:()=>[R0,
+   {id:"u1",role:"user",caller:"ROOT",predecessor:null,created_at:1,label:"北京天气"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"AI回复"},
+   {id:"t1",role:"tool",caller:"l1",created_at:3,label:"web_search",sub:"tier3"}]},
+ {name:"多 fork(retry 3次)",desc:"同一点 retry 三次 → 三条分支各占独立列，不重叠。",nodes:()=>[R0,
+   {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"v1"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"r1"},
+   {id:"u2",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"v2"},
+   {id:"l2",role:"assistant",caller:"u2",predecessor:"u2",created_at:4,label:"r2"},
+   {id:"u3",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:5,label:"v3"},
+   {id:"l3",role:"assistant",caller:"u3",predecessor:"u3",created_at:6,label:"r3"}]},
+ {name:"分支合并",desc:"两条分支 → merge 节点(◉)汇聚。base 主线 + peer 粗汇入线 ═。",nodes:()=>[R0,
+   {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"回复A"},
+   {id:"u1b",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"问题(改写)"},
+   {id:"l1b",role:"assistant",caller:"u1b",predecessor:"u1b",created_at:4,label:"回复B"},
+   {id:"mg",role:"merge",caller:"l1",predecessor:"l1",created_at:5,label:"merge",sub:"合并A+B",mergeFrom:["l1b"]}]},
+ {name:"分支间通信",desc:"A 发消息给 B(send_to_branch)。通信线默认隐藏 — 鼠标移到图上才显示。",nodes:()=>[R0,
+   {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A回复",comm_to:"bm"},
+   {id:"ub",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"B分支"},
+   {id:"lb",role:"assistant",caller:"ub",predecessor:"ub",created_at:4,label:"B回复"},
+   {id:"bm",role:"user",caller:"ROOT",predecessor:"lb",created_at:5,label:"来自A的消息",sub:"from_branch"}]},
+ {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
+   {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
+   {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A"},
+   {id:"sp",role:"code",caller:"l1",predecessor:"l1",created_at:3,label:"spawn_branch",sub:"派子分支"},
+   {id:"b1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:4,label:"子分支B"},
+   {id:"b2",role:"assistant",caller:"b1",predecessor:"b1",created_at:5,label:"B干完"},
+   {id:"a2",role:"assistant",caller:"l1",predecessor:"l1",created_at:6,label:"A(收到B)",sub:"attach回流",attach_from:"b2"}]},
+];
+
+function show(i){
+  const sc=SCENES[i];
+  const nodes=sc.nodes();
+  const byId={}; for(const m of nodes)byId[m.id]=m;
+  buildMapsCache=buildMaps(byId,nodes);  // 供渲染线型判定用
+  document.getElementById("desc").textContent=sc.desc;
+  [...document.querySelectorAll("#bar button")].forEach((b,j)=>b.classList.toggle("on",j===i));
+  render(nodes);
+}
+const bar=document.getElementById("bar");
+SCENES.forEach((s,i)=>{ const b=document.createElement("button"); b.textContent=s.name; b.onclick=()=>show(i); bar.appendChild(b); });
+show(0);
+</script>
+</div></body></html>
