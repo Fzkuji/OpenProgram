@@ -233,32 +233,20 @@ function render(nodes){
   for(const m of nodes){
     if(m.display==="root")continue;
     const c=pos(m), color=laneColor(m._laneNum);
-    // 画线父 = caller 优先（挂载/调用关系决定视觉父子）。user 的 caller=ROOT
-    // → 所有 user 都从 ROOT 竖线分出（和 spec 多轮一致，不从 predecessor 串）。
-    // predecessor 只用于 fork 判定 / depth，不决定画线父。
-    // comm_from 节点(B 收到跨分支消息): 它归属 B 分支，结构线接 predecessor
-    // (B 上一条)，跨分支那条由 comm_from 通信线单独画。其余: caller 优先。
-    // B 收到跨分支消息(comm_from)：它仍是 B 分支的一部分，照常用 B 竖线串起来
-    // (结构线从 B lane 竖线根竖直下来)；send→它的通信线是【额外】的(comm_from 段画)。
+    // 统一画法：每个节点连它的 caller(父)，自然形成树。所有图都这么画。
     const predId=m.predecessor, callerId=m.caller;
-    let parentId;
-    if(m.comm_from){
-      let root=null;
-      for(const n of nodes){ if(n._laneNum===m._laneNum && n.id!==m.id && (n._depth??0)<(m._depth??0)){
-        if(!root || (n._depth??0)<(root._depth??0)) root=n; } }
-      parentId = root?root.id : ((predId&&byId[predId])?predId:null);
-    }else{
-      parentId = (callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
-    }
+    const parentId = (callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
     const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
-    // spawn vs retry vs 独立分支：
-    //   spawn_from → 大模型派的(点划线)；independent → 用户另开的独立对话(实线,不画虚线分叉)；
-    //   其余 fork → 用户 retry(虚线)。
+    // fork 的线型(只区分"这条分支怎么来的"):
+    //   spawn_from → 大模型派的(点划线 4 2 1 2)
+    //   commLine   → send_to_branch 跨分支通信(点线 1 5)
+    //   independent→ 用户另开的独立对话(实线)
+    //   其余       → 用户 retry(虚线 5 4)
     const isSpawn=isFork && !!m.spawn_from && byId[m.spawn_from];
     let dash="";
-    if(isFork) dash = isSpawn ? "4 2 1 2" : (m.independent ? "" : "5 4"); // spawn / 独立 / retry
+    if(isFork) dash = isSpawn ? "4 2 1 2" : (m.commLine ? "1 5" : (m.independent ? "" : "5 4"));
     if(!isFork || m.independent){
       // 同分支 / 独立分支：父中心(p.x)竖下到子行，再横到子 —— spec 标准阶梯。
       // 独立分支(B)的首节点 parent=ROOT，从 ROOT 竖线分出，和 A 分支对称。
@@ -294,22 +282,6 @@ function render(nodes){
     const c=pos(m);
     for(const pid of m.mergeFrom){ const peer=byId[pid]; if(!peer)continue; const pp=pos(peer);
       edgeG.appendChild(svgEl("path",{d:`M ${pp.x} ${pp.y+R} L ${pp.x} ${c.y} L ${c.x+R+3} ${c.y}`,fill:"none",stroke:laneColor(peer._laneNum),"stroke-width":2.4,opacity:0.9})); }
-  }
-  // 通信线: comm_from = 从【源(send_to_branch 工具)】跨分支连到本节点(B 收到)。
-  // 点线，颜色用目标分支(B)的 lane 色。这条线表示"消息从 A 的工具发到了 B"。
-  for(const m of nodes){
-    if(!m.comm_from)continue; const src=byId[m.comm_from]; if(!src)continue;
-    const sp=pos(src), c=pos(m);
-    // send → B收到：通信支的主连接，常驻显示(点线区分类型,B分支色)。
-    // 走 send 右侧 → 竖到 B收到行 → 横入(L 形)。
-    edgeG.appendChild(svgEl("path",{
-      d:`M ${sp.x+R} ${sp.y} L ${c.x} ${sp.y} L ${c.x} ${c.y-R}`,
-      fill:"none",stroke:laneColor(m._laneNum),"stroke-width":1.8,"stroke-dasharray":"2 4","stroke-linecap":"round",opacity:0.9}));
-  }
-  // 旧 comm_to(保留兼容,当前场景未用)
-  for(const m of nodes){
-    if(!m.comm_to)continue; const src=pos(m); const tgt=byId[m.comm_to]; if(!tgt)continue; const tp=pos(tgt);
-    edgeG.appendChild(svgEl("path",{class:"comm-line",d:`M ${src.x+R} ${src.y} C ${(src.x+tp.x)/2} ${src.y}, ${(src.x+tp.x)/2} ${tp.y}, ${tp.x-R} ${tp.y}`,fill:"none",stroke:laneColor(tgt._laneNum),"stroke-width":1.8,"stroke-dasharray":"1 5","stroke-linecap":"round"}));
   }
   // attach 回流: attach_from
   for(const m of nodes){
@@ -374,14 +346,13 @@ const SCENES=[
    // A 分支
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A回复"},
-   // B 分支(独立)
+   // B 分支(独立,和 A 平行,从 ROOT 来)
    {id:"ub",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"B用户",independent:true},
    {id:"lb",role:"assistant",caller:"ub",predecessor:"ub",created_at:4,label:"B回复"},
-   // 通信链: A三角 → 正方形工具 → B三角(收到) → B三角(应答), 全 caller 子调用
+   // 通信链 — 纯 caller 树: A三角 →(caller) send工具 →(caller) B收到 →(caller) B应答。
+   // 每个节点连自己的 caller,自然成树。send→B收到 跨 lane(commLine 点线=通信)。
    {id:"send",role:"code",caller:"l1",predecessor:"l1",created_at:5,label:"send_to_branch",sub:"A调的工具"},
-   // send 之后是 B 分支的事：B收到/B应答 属于 B 分支(绿,接 B回复后面)。
-   // caller=send 只用来画那条【跨分支通信线】(send→B收到)，归属仍是 B 分支。
-   {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",comm_from:"send",tierHint:1,created_at:6,label:"B收到(另一agent)"},
+   {id:"bRecv",role:"assistant",caller:"send",commLine:true,created_at:6,label:"B收到(另一agent)"},
    {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"}]},
  {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
