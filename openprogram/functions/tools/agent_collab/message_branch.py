@@ -175,6 +175,7 @@ def _message_branch_impl(
                 subject=message[:60],
                 description=message,
                 caller_msg_id=aid,
+                caller_session_id=sid,  # reply returns to the sender
             )
         except Exception as e:  # noqa: BLE001
             return f"[message_branch error] {type(e).__name__}: {e}"

@@ -103,6 +103,13 @@ class Task:
     # turn, so the follow-up commit sees the attach pointer in its
     # parent items rather than the sub-agent's own commit.
     caller_msg_id: Optional[str] = None
+    # The session that INITIATED this task. Usually == parent_session_id
+    # (the task runs in the caller's own session). For cross-session
+    # messaging (message_branch to another session) the task runs in the
+    # TARGET session (parent_session_id) but its reply must be delivered
+    # back to the INITIATOR's session — that's caller_session_id. None
+    # means "same as parent_session_id" (the common case).
+    caller_session_id: Optional[str] = None
     label: Optional[str] = None
     # Branch tip we *expect* this task to produce when it commits.
     # Filled in by the runner immediately so the UI can stitch

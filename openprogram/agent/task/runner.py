@@ -186,12 +186,17 @@ class TaskRunner:
         worktree_id: Optional[str] = None,
         wait: bool = True,
         caller_msg_id: Optional[str] = None,
+        caller_session_id: Optional[str] = None,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
         Returns ``task_id`` immediately. The task pickup happens on
         a worker thread and walks through the state machine. The
         caller can ``await_task(task_id)`` to block on completion.
+
+        ``caller_session_id`` (cross-session messaging): the session the
+        reply should be delivered back to. Defaults to ``session_id``
+        (the task runs and replies in the caller's own session).
         """
         task = Task(
             id=mint_task_id(),
@@ -209,6 +214,7 @@ class TaskRunner:
             worktree_id=worktree_id,
             wait=wait,
             caller_msg_id=caller_msg_id,
+            caller_session_id=caller_session_id,
             status=TaskStatus.PENDING,
             created_at=time.time(),
         )
@@ -846,23 +852,30 @@ class TaskRunner:
             return
         label = task.label or task.subject or task.id[:8]
         sub_prompt = (task.prompt or task.description or "").strip()
+        # Deliver the reply back to the INITIATOR's session. Same-session
+        # spawn: caller_session_id is None → deliver to parent_session_id.
+        # Cross-session message_branch: deliver to caller_session_id (the
+        # sender), NOT the target session the task ran in.
+        deliver_session = task.caller_session_id or task.parent_session_id
+        cross = bool(
+            task.caller_session_id
+            and task.caller_session_id != task.parent_session_id
+        )
 
         def _go():
             try:
                 from openprogram.agent.dispatcher import (
                     TurnRequest, process_user_turn,
                 )
-                # CRITICAL: reset session head back to the spawn
-                # user msg (on the caller / main lane) before the
-                # follow-up runs. The sub-agent finished by setting
-                # session head to its OWN reply (on the fox lane),
-                # so without this reset the follow-up turn writes
-                # on the fox branch — and its ContextCommit
-                # inherits the sub-agent's commit as parent, never
-                # seeing the attach pointer on main where the
-                # spawned-from user msg lives.
+                # CRITICAL (same-session): reset session head back to the
+                # spawn user msg (on the caller / main lane) before the
+                # follow-up runs, so the follow-up commit sees the attach
+                # pointer on main. Cross-session: the attach pointer lives
+                # in the TARGET session, not here — there's nothing on the
+                # caller lane to reset to, and the reply text is carried in
+                # the prompt instead (see below).
                 head_to_reset = task.caller_msg_id or task.parent_msg_id
-                if head_to_reset:
+                if head_to_reset and not cross:
                     try:
                         from openprogram.agent.session_db import default_db
                         default_db().set_head(
@@ -870,21 +883,32 @@ class TaskRunner:
                         )
                     except Exception:
                         pass
-                # Followup prompt — push the parent agent to actually
-                # synthesize a reply for the user, not just echo the
-                # sub-agent's last line. The sub-agent's full transcript
-                # is already in context via the attach expansion above;
-                # this prompt lives in the same turn as a user-role
-                # message (display=runtime, hidden from chat panel),
-                # so the parent agent treats it as instructions, not a
-                # second user message.
+                # Followup prompt — push the parent agent to synthesize a
+                # reply, not echo the sub-agent's last line. Same-session:
+                # the sub-agent transcript is in context via the attach
+                # expansion. Cross-session: the attach pointer is in the
+                # other session and won't expand here, so carry the reply
+                # text inline.
                 sub_request_line = (
                     f"用户原本让子 agent 做的事是：{sub_prompt}\n"
                     if sub_prompt else ""
                 )
-                req = TurnRequest(
-                    session_id=task.parent_session_id,
-                    user_text=(
+                cross_reply = ""
+                if cross:
+                    reply_text = (task.result_text or "").strip() or "(无输出)"
+                    cross_reply = (
+                        f"分支 {task.parent_session_id}:"
+                        f"{task.head_id or '?'} 的回复是：\n{reply_text}\n\n"
+                    )
+                if cross:
+                    followup_text = (
+                        f"[系统消息] 你之前发消息给的另一个分支 \"{label}\" "
+                        f"回复了。\n{sub_request_line}{cross_reply}"
+                        f"请基于这条回复继续——做总结、解读，或决定下一步"
+                        f"（继续追问可再调 message_branch）。"
+                    )
+                else:
+                    followup_text = (
                         f"[系统消息] 你派发的子 agent \"{label}\" "
                         f"已经跑完了，它完整的对话记录作为附加内容嵌在上面。\n"
                         f"{sub_request_line}"
@@ -894,7 +918,10 @@ class TaskRunner:
                         f"一句话。如果子 agent 的输出已经直接回答"
                         f"了用户问题，用你自己的话重新组织一遍，"
                         f"并补充必要的背景或上下文。"
-                    ),
+                    )
+                req = TurnRequest(
+                    session_id=deliver_session,
+                    user_text=followup_text,
                     agent_id=task.agent_id or "main",
                     source="task_followup",
                 )
