@@ -230,51 +230,55 @@ function render(nodes){
   // 连线 — 和 spec.html 同一套画法：父中心竖线下到子的行，再横到子。
   // 同 lane = 实线；fork（落在别的 lane）= 整条 dash（retry 5 4 / spawn 4 2 1 2）。
   // fork 的竖线落在【子自己的 lane 列】上（子已经在它那条 lane 的列里）。
+  // ===== 画法：每条 lane 一条贯穿竖线(在 lane 的竖线列)，lane 里每个节点从
+  // 竖线横向接出一条短横线。节点之间【不直接相连】——都挂在同一条竖线上。=====
+  // lane 竖线列 = PADX + lane*COL(lane 起始列，比该 lane 节点最左还左)。
+  const laneOfNum={};   // laneNum → 该 lane 的节点列表
+  for(const m of nodes){ if(m.display==="root")continue; (laneOfNum[m._laneNum]=laneOfNum[m._laneNum]||[]).push(m); }
+  // 1) 每条 lane 一条竖线：从 ROOT(或竖线列顶)到该 lane 最深节点
+  for(const ln in laneOfNum){
+    const ms=laneOfNum[ln]; const color=laneColor(Number(ln));
+    const trunkX=PADX+Number(ln)*COL;
+    // 竖线顶 = ROOT 行(lane0 从 ROOT 下来) 或 该 lane 最浅节点行；底 = 最深节点行
+    let topY=Infinity, botY=-Infinity;
+    for(const m of ms){ const p=pos(m); topY=Math.min(topY,p.y); botY=Math.max(botY,p.y); }
+    // lane0 的竖线从 ROOT 起；其它 lane 从自己最浅节点起
+    const rootNode=nodes.find(n=>n.display==="root");
+    if(Number(ln)===0 && rootNode){ topY=pos(rootNode).y; }
+    edgeG.appendChild(svgEl("line",{x1:trunkX,y1:topY,x2:trunkX,y2:botY,stroke:color,"stroke-width":1.8,"stroke-linecap":"round"}));
+  }
+  // 2) 每个节点：从它 lane 的竖线横向接出一条短横线到节点
   for(const m of nodes){
     if(m.display==="root")continue;
     const c=pos(m), color=laneColor(m._laneNum);
-    // 统一画法：每个节点连它的 caller(父)，自然形成树。所有图都这么画。
-    const predId=m.predecessor, callerId=m.caller;
-    const parentId = (callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
-    if(!parentId)continue;
-    const parent=byId[parentId], p=pos(parent);
-    const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
-    // fork 的线型(只区分"这条分支怎么来的"):
-    //   spawn_from → 大模型派的(点划线 4 2 1 2)
-    //   commLine   → send_to_branch 跨分支通信(点线 1 5)
-    //   independent→ 用户另开的独立对话(实线)
-    //   其余       → 用户 retry(虚线 5 4)
-    const isSpawn=isFork && !!m.spawn_from && byId[m.spawn_from];
-    let dash="";
-    if(isFork) dash = isSpawn ? "4 2 1 2" : (m.commLine ? "1 5" : (m.independent ? "" : "5 4"));
-    if(!isFork || m.independent){
-      // 同分支 / 独立分支：父中心(p.x)竖下到子行，再横到子 —— spec 标准阶梯。
-      // 独立分支(B)的首节点 parent=ROOT，从 ROOT 竖线分出，和 A 分支对称。
-      edgeG.appendChild(svgEl("path",{
-        d:`M ${p.x} ${p.y+R} L ${p.x} ${c.y} L ${c.x-R-3} ${c.y}`,
-        fill:"none",stroke:color,"stroke-width":1.8}));
-    }else{
-      // fork：从【分叉源节点】拉 dash 到 fork 自己的竖线列，再竖下、横到子。
-      //   retry → 源 = 被 retry 的兄弟（同 predecessor 的首个节点），从它旁边衍生
-      //   spawn → 源 = caller(spawn_branch 节点)
-      const pred=predOf(byId,m);
-      let src=parent;
-      if(isSpawn){ src=byId[m.spawn_from]; }       // spawn: 源 = spawn_branch 节点
-      else if(pred){                                // retry: 源 = 被 retry 的兄弟
-        const sibs=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id);
-        if(sibs.length && byId[sibs[0]]) src=byId[sibs[0]];
-      }
-      const sp=pos(src);
-      const trunkX = PADX + m._lane*COL;   // 子所在 lane 的竖线列（起始列）
-      // dash: 兄弟节点右侧 → fork 竖线列（横）
-      edgeG.appendChild(svgEl("path",{
-        d:`M ${sp.x+R} ${sp.y} L ${trunkX} ${sp.y}`,
-        fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:0.8}));
-      // fork 竖线下到子行 + 实线横到子
-      edgeG.appendChild(svgEl("path",{
-        d:`M ${trunkX} ${sp.y} L ${trunkX} ${c.y} L ${c.x-R-3} ${c.y}`,
-        fill:"none",stroke:color,"stroke-width":1.6}));
+    const trunkX=PADX+m._lane*COL;
+    if(c.x-R-3>trunkX){
+      edgeG.appendChild(svgEl("line",{x1:trunkX,y1:c.y,x2:c.x-R-3,y2:c.y,stroke:color,"stroke-width":1.8,"stroke-linecap":"round"}));
     }
+  }
+  // 3) fork/spawn/通信：从【源节点】到【新 lane 的竖线顶】，用对应线型连过去
+  //    (这是"这条分支怎么来的"的那一根线，区别于分支内部的横挂线)
+  for(const m of nodes){
+    if(m.display==="root")continue;
+    const predId=m.predecessor, callerId=m.caller;
+    const parentId=(callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
+    if(!parentId)continue;
+    const parent=byId[parentId];
+    if(m._laneNum===parent._laneNum)continue;   // 同 lane:已由竖线+横挂处理
+    // 只在该 lane 的【第一个节点】画"分支怎么来的"线(连到竖线顶)
+    const ms=laneOfNum[m._laneNum]||[];
+    const first=ms.reduce((a,b)=>(pos(a).y<=pos(b).y?a:b),ms[0]);
+    if(m.id!==first.id)continue;
+    const color=laneColor(m._laneNum);
+    const isSpawn=!!m.spawn_from&&byId[m.spawn_from];
+    const dash = isSpawn?"4 2 1 2":(m.commLine?"1 5":(m.independent?"":"5 4"));
+    let src=parent;
+    if(isSpawn) src=byId[m.spawn_from];
+    else if(m.commFrom&&byId[m.commFrom]) src=byId[m.commFrom];
+    else { const pred=predOf(byId,m); if(pred){ const sib=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id)[0]; if(sib&&byId[sib]) src=byId[sib]; } }
+    const sp=pos(src); const trunkX=PADX+m._lane*COL; const c=pos(m);
+    edgeG.appendChild(svgEl("path",{d:`M ${sp.x+R} ${sp.y} L ${trunkX} ${sp.y} L ${trunkX} ${c.y}`,
+      fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:dash?0.8:1}));
   }
   // 合并汇入线: merge 节点的每个 peer(commit_parents 之外, 这里用 mergeFrom 数组)
   for(const m of nodes){
