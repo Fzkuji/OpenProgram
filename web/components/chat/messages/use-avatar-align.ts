@@ -46,13 +46,16 @@ export function useAvatarAlign(deps: unknown): {
       range.selectNodeContents(tn);
       const rects = range.getClientRects();
       if (!rects.length) return;
-      const lineTop = rects[0].top;
+      const lineRect = rects[0];
       const rootTop = root.getBoundingClientRect().top;
-      // Center the avatar's first-text line a touch: align avatar top to the
-      // text line top (avatars read best slightly above the cap height, so
-      // we keep it flush with the line box top).
-      const top = Math.round(lineTop - rootTop);
-      if (top > 0) setAvatarTop(top);
+      // CENTER-align: the avatar's vertical center sits on the first text
+      // line's vertical center (the avatar is taller than one line, so its
+      // top moves up by half the height difference). Not top-aligned.
+      const avatar = root.querySelector(".message-avatar") as HTMLElement | null;
+      const avatarH = avatar ? avatar.getBoundingClientRect().height : 28;
+      const lineCenter = lineRect.top + lineRect.height / 2;
+      const top = Math.round(lineCenter - avatarH / 2 - rootTop);
+      if (top !== null && Number.isFinite(top)) setAvatarTop(Math.max(0, top));
     }
 
     measure();
