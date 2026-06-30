@@ -17,6 +17,7 @@ import { Avatar } from "@/components/avatar";
 import { useUserProfile } from "@/lib/prefs/user-profile";
 
 import { MessageActions } from "./message-actions";
+import { useAvatarAlign } from "./use-avatar-align";
 import { UserAttachments, parseUserAttachments } from "./user-attachments";
 
 function EditBox({
@@ -124,12 +125,18 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
   // text. msg.content itself is untouched — this is display-only.
   const { attachments, text: cleanText } = parseUserAttachments(msg.content);
 
+  // Align the side avatar to the first line of text inside the bubble.
+  const { containerRef, avatarTop } = useAvatarAlign(
+    `${msg.id}:${msg.content?.length || 0}:${editing}`,
+  );
+
   return (
     <div
+      ref={containerRef}
       className={"message user" + (editing ? " is-editing" : "")}
       data-msg-id={msg.id}
     >
-      <div className="message-header">
+      <div className="message-header" style={{ top: avatarTop }}>
         {/* "You" avatar + name — from the local user profile
             (/settings/general → You), the counterpart to the agent
             profile. Defaults to a DiceBear glyph seeded "you" so it

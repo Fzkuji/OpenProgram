@@ -19,6 +19,7 @@ import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 
 import { MessageActions } from "./message-actions";
+import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { RuntimeBlock } from "./runtime-block";
 import { ThinkingBlock } from "./thinking-block";
@@ -94,6 +95,11 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   // /settings/general → Agent without a reload.
   const profile = useAgentProfile();
   const { text } = useTranslation();
+  // Align the side avatar to the first line of text (re-measures as the
+  // message grows / blocks expand).
+  const { containerRef, avatarTop } = useAvatarAlign(
+    `${msg.id}:${msg.content?.length || 0}:${msg.blocks?.length || 0}:${msg.status}`,
+  );
   const streaming =
     msg.status === "streaming" ||
     msg.status === "pending" ||
@@ -165,11 +171,12 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   const sender = agentDisplayName(msg.agentId);
   return (
     <div
+      ref={containerRef}
       className="message assistant"
       data-msg-id={msg.id}
       data-agent-id={msg.agentId || undefined}
     >
-      <div className="message-header">
+      <div className="message-header" style={{ top: avatarTop }}>
         {/* Per-message agent avatar. Seeded on the sender's display
             name (not the volatile agent_id) so the "Agent" / named
             agent always renders the same glyph across sessions. Falls
