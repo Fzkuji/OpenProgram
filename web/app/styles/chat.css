@@ -1255,6 +1255,9 @@
   padding: 12px;
   margin: 8px 0;
   margin-left: 36px;
+  /* Right edge lines up with the user bubble's right edge (same 36px inset),
+     not jammed against the message's own padding. */
+  margin-right: 36px;
   color: var(--accent-red);
   font-size: 14px;
   font-family: var(--font-mono);

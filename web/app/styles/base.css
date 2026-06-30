@@ -78,7 +78,8 @@
   */
   --composer-button-size: 32px;       /* every corner button — outer diameter */
   --composer-button-offset: 16px;     /* edge distance: corner − size/2     */
-  --composer-corner: 32px;            /* wrapper border-radius = button size */
+  --composer-corner: 32px;            /* circular button size (keep — buttons are concentric to this) */
+  --composer-wrapper-corner: 999px;   /* the input box itself: fully rounded ends (pill / half-circle on one line) */
   --composer-bottom-row-pad: 16px;    /* bottom-row padding all around      */
   --composer-bottom-row-h: 64px;      /* size + 2 × pad = 32 + 32           */
   --composer-wrapper-pad-x: 16px;     /* wrapper left/right padding         */
