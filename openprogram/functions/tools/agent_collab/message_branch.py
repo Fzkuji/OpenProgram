@@ -72,8 +72,14 @@ _DESCRIPTION = (
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
-    """Current (session_id, turn_id, agent_id) from the dispatcher's
-    ContextVars — same resolution the ``task`` tool uses."""
+    """Current (session_id, turn_id, agent_id) for anchoring the spawn.
+
+    Reads the dispatcher's ContextVars first (same as the ``task`` tool).
+    ``_current_turn_id`` isn't always bound on every execution path (e.g.
+    a followup turn, or some sub-call stacks), so when it's missing we
+    fall back to the session's current head — that head IS a valid parent
+    anchor for the new branch, which is what callers actually need. This
+    is what fixes the "no active parent turn" the model sometimes hit."""
     try:
         from openprogram.webui._pause_stop import _current_session_id
         sid = _current_session_id.get(None)
@@ -90,6 +96,9 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
             from openprogram.agent.session_db import default_db
             sess = default_db().get_session(sid) or {}
             agent_id = sess.get("agent_id")
+            if not aid:
+                # Fall back to the session head as the parent anchor.
+                aid = sess.get("head_id")
         except Exception:
             agent_id = None
     return sid, aid, agent_id

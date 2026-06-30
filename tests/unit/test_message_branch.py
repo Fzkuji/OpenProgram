@@ -31,6 +31,38 @@ def test_parse_target_existing():
     assert _parse_target("sess1:head7") == ("existing", "sess1", "head7")
 
 
+def test_resolve_parent_falls_back_to_head(tmp_path, monkeypatch):
+    """When _current_turn_id is unbound but a session is active, the parent
+    anchor falls back to the session head (fixes 'no active parent turn')."""
+    from openprogram.store.session.session_store import SessionStore
+    from openprogram.agent import session_db as sdb_mod
+    from openprogram.functions.tools.agent_collab.message_branch import _resolve_parent
+
+    s = SessionStore(tmp_path / "g")
+    monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
+    monkeypatch.setattr("openprogram.store.session_store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.store.default_store", lambda: s)
+    s.create_session("px", "main", title="t")
+    s.append_message("px", {"id": "ux", "role": "user", "content": "hi",
+                            "timestamp": 0, "predecessor": None})
+    s.append_message("px", {"id": "ax", "role": "assistant", "content": "ok",
+                            "timestamp": 0, "predecessor": "ux"})
+    s.commit_turn("px", "init")
+
+    from openprogram.webui import _pause_stop
+    from openprogram import store as store_mod
+    sid_tok = _pause_stop._current_session_id.set("px")
+    turn_tok = store_mod._current_turn_id.set(None)  # turn id NOT bound
+    try:
+        sid, aid, agent = _resolve_parent()
+    finally:
+        _pause_stop._current_session_id.reset(sid_tok)
+        store_mod._current_turn_id.reset(turn_tok)
+    assert sid == "px"
+    assert aid is not None  # fell back to the session head, not None
+    assert agent == "main"
+
+
 @pytest.fixture
 def parent_turn(tmp_path, monkeypatch):
     """Isolated store + a parent session/turn bound on the ContextVars,
