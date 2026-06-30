@@ -142,7 +142,6 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
           config={profile.avatar}
         />
         <div className="message-sender">{profile.name || text("User", "用户")}</div>
-        <MessageActions msg={msg} onEdit={() => setEditing(true)} />
       </div>
       <div className="message-content">
         {editing ? (
@@ -154,6 +153,13 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
           </>
         )}
       </div>
+      {/* Action row at the bottom-right of the user bubble (mirrors the
+          assistant's bottom-left). */}
+      {!editing ? (
+        <div className="message-actions-footer">
+          <MessageActions msg={msg} onEdit={() => setEditing(true)} />
+        </div>
+      ) : null}
     </div>
   );
 }

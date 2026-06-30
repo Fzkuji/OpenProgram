@@ -356,12 +356,24 @@
 .message-actions:focus-within {
   opacity: 1;
 }
-/* Bottom-right action row: the copy/retry/branch buttons live at the
-   END of an assistant message, where the eye lands after reading. */
+/* Bottom action row: copy/retry/branch buttons live at the END of a
+   message. They follow the message's side — user (right bubble) → bottom
+   RIGHT; assistant (left) → bottom LEFT. The eye lands where the message's
+   own edge is. */
 .message-actions-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-end;   /* default: right (user) */
   margin-top: 4px;
+}
+.message.assistant .message-actions-footer {
+  justify-content: flex-start; /* assistant: bottom-left */
+  padding-left: 36px;          /* align under the assistant text column */
+}
+/* In the footer, the action bar must not keep its header-era
+   margin-left:auto (which would jam it to the right regardless of the
+   footer's justify-content). Let the footer's flex alignment decide. */
+.message-actions-footer .message-actions {
+  margin-left: 0;
 }
 .message-action-btn {
   display: inline-flex;
@@ -531,29 +543,37 @@
                   blocks / tool-call cards rendered as standalone
                   cards with their own border, NOT as message
                   bubbles, so they read as overlays). */
-/* GPT/Claude-style layout: user messages = a right-aligned bubble with a
-   clear background; assistant messages = left, no bubble, full-width. The
-   "one side has a bubble, the other doesn't" + left/right + avatar is what
-   makes the boundary between turns obvious. */
+/* GPT/Claude-style layout: user = right-aligned bubble with a clear
+   background; assistant = left, no bubble. The avatar/name header is
+   hidden in the stream (it only takes vertical space and pushes content
+   apart — the identity lives in the sidebar). The "one side has a bubble,
+   the other doesn't" + left/right makes the turn boundary obvious. */
+
+/* Header (avatar + name) no longer occupies message height. */
+.message.user .message-header,
+.message.assistant .message-header {
+  display: none;
+}
+
 .message.user {
-  background: transparent;          /* no full-row tint — the bubble carries the colour */
+  background: transparent;          /* the bubble carries the colour, not the row */
   display: flex;
   flex-direction: column;
-  align-items: flex-end;            /* push the bubble + header to the right */
-}
-.message.user .message-header {
-  flex-direction: row-reverse;      /* avatar + name on the right */
+  align-items: flex-end;            /* bubble sits on the right */
 }
 .message.user .message-content {
-  /* The bubble: rounded like the composer, clear background, hugs its
-     content (a one-liner becomes a pill; long text wraps within max-width). */
+  /* Bubble: rounded like the composer, clear background, hugs its content
+     (a one-liner becomes a pill; long text wraps). The right edge lines up
+     with where the assistant text ends (same 36px content inset), so the
+     bubble shares the assistant's content column — just right-aligned, not
+     jammed against the viewport edge. */
   background: var(--user-msg-bg);
   border-radius: 18px;
   padding: 10px 16px;
   width: fit-content;
-  max-width: min(680px, 80%);
-  margin-left: auto;                /* right-align the bubble itself */
-  text-align: left;                 /* text inside stays left-to-right */
+  max-width: 80%;
+  margin-right: 36px;               /* align right edge to assistant text's right edge */
+  text-align: left;
 }
 
 .message.assistant {
