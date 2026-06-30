@@ -153,6 +153,11 @@ def convert_responses_messages(
                         msg_id = f"msg_{msg_index}"
                     elif len(msg_id) > 64:
                         msg_id = f"msg_{_short_hash(msg_id)}"
+                    # NOTE: no "status" field here. `status` is an OUTPUT-only
+                    # field; some Responses endpoints (notably openai-codex's
+                    # /responses) reject it on an INPUT item with
+                    # "Unknown parameter: input[N].status". An input
+                    # message item never needs it.
                     output.append({
                         "type": "message",
                         "role": "assistant",
@@ -161,7 +166,6 @@ def convert_responses_messages(
                             "text": sanitize_surrogates(getattr(block, "text", "")),
                             "annotations": [],
                         }],
-                        "status": "completed",
                         "id": msg_id,
                     })
                 elif block_type == "toolCall":
