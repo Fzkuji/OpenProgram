@@ -187,6 +187,7 @@ class TaskRunner:
         wait: bool = True,
         caller_msg_id: Optional[str] = None,
         caller_session_id: Optional[str] = None,
+        spawn_depth: int = 0,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
@@ -215,6 +216,7 @@ class TaskRunner:
             wait=wait,
             caller_msg_id=caller_msg_id,
             caller_session_id=caller_session_id,
+            spawn_depth=spawn_depth,
             status=TaskStatus.PENDING,
             created_at=time.time(),
         )
@@ -510,13 +512,31 @@ class TaskRunner:
                     branch_from = None
                 else:
                     branch_from = task.parent_msg_id
-                result = run_agent_turn(
-                    session_id=session_id,
-                    prompt=task.prompt,
-                    agent_id=task.agent_id,
-                    branch_from=branch_from,
-                    label=task.label,
-                )
+                # Bind the spawn-chain depth so message_branch calls made
+                # INSIDE this child turn see the right depth and the loop
+                # guard can trip (message_branch §5.1).
+                _depth_tok = None
+                try:
+                    from openprogram.functions.tools.agent_collab.message_branch import (
+                        set_spawn_depth, _spawn_depth,
+                    )
+                    _depth_tok = set_spawn_depth(int(task.spawn_depth or 0))
+                except Exception:
+                    _depth_tok = None
+                try:
+                    result = run_agent_turn(
+                        session_id=session_id,
+                        prompt=task.prompt,
+                        agent_id=task.agent_id,
+                        branch_from=branch_from,
+                        label=task.label,
+                    )
+                finally:
+                    if _depth_tok is not None:
+                        try:
+                            _spawn_depth.reset(_depth_tok)
+                        except Exception:
+                            pass
             except Exception as exc:  # noqa: BLE001
                 err = f"{type(exc).__name__}: {exc}"
                 try:

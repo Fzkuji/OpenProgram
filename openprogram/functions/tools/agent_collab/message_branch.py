@@ -19,7 +19,30 @@ cross-session / synthesis / robustness land in later steps.
 """
 from __future__ import annotations
 
+import contextvars
+
 from openprogram.functions._runtime import function
+
+
+# Depth of the current spawn chain (A→B→C…). Each message_branch that
+# spawns increments it for the child turn; when it reaches MAX_SPAWN_DEPTH
+# further spawns are refused — the guard against A↔B / runaway recursion
+# (design §5.1). Set by the runner on the child turn (cross-thread) and by
+# the sync path inline.
+_spawn_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "message_branch_spawn_depth", default=0,
+)
+MAX_SPAWN_DEPTH = 8
+
+
+def current_spawn_depth() -> int:
+    return _spawn_depth.get()
+
+
+def set_spawn_depth(depth: int):
+    """Bind the spawn depth for the current execution context (used by the
+    task runner when starting a spawned child turn). Returns the token."""
+    return _spawn_depth.set(depth)
 
 
 _DESCRIPTION = (
@@ -149,8 +172,26 @@ def _message_branch_impl(
             "+ turn ContextVars on entry)."
         )
 
+    # Depth guard (§5.1): refuse spawning past MAX_SPAWN_DEPTH so A↔B /
+    # runaway recursion can't blow up. The reply-followup inherits the
+    # same depth, so back-and-forth also counts toward it.
+    depth = current_spawn_depth()
+    if depth >= MAX_SPAWN_DEPTH:
+        return (
+            f"[message_branch refused] spawn depth {depth} reached the max "
+            f"({MAX_SPAWN_DEPTH}). This chain is too deep — finish the work "
+            "here instead of delegating further."
+        )
+
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
     kind, tgt_sid, fork_msg = _parse_target(target)
+
+    # Self-target guard: messaging your own current turn is a direct loop.
+    if kind == "existing" and (tgt_sid or sid) == sid and fork_msg == aid:
+        return (
+            "[message_branch refused] target is your own current turn — "
+            "that's a direct loop. Pick a different branch or use target=new."
+        )
 
     # Resolve target into (run_session, branch_from, is_new):
     #   new      → fresh root in current session
@@ -219,6 +260,7 @@ def _message_branch_impl(
                 description=delivery_message,
                 caller_msg_id=aid,
                 caller_session_id=sid,  # reply returns to the sender
+                spawn_depth=depth + 1,  # child inherits depth+1 (loop guard)
             )
         except Exception as e:  # noqa: BLE001
             return f"[message_branch error] {type(e).__name__}: {e}"
@@ -229,6 +271,8 @@ def _message_branch_impl(
         )
 
     # Sync: run inline, write the attach pointer, return the reply text.
+    # Bind depth+1 for the inline child turn (same execution context).
+    _tok = set_spawn_depth(depth + 1)
     try:
         from openprogram.agent.sub_agent_run import (
             run_agent_turn,
@@ -242,6 +286,8 @@ def _message_branch_impl(
         )
     except Exception as e:  # noqa: BLE001
         return f"[message_branch error] {type(e).__name__}: {e}"
+    finally:
+        _spawn_depth.reset(_tok)
 
     try:
         write_attach_pointer_for_spawn(
@@ -267,10 +313,36 @@ def _message_branch_impl(
 
     if result.error and not result.final_text:
         return f"[message_branch error: head={result.head_id}] {result.error}"
-    out = result.final_text or "(target branch returned no text)"
+    out = _clip_result(result.final_text or "(target branch returned no text)")
     if result.error:
         out = f"{out}\n\n[message_branch warning] {result.error}"
     return f"{out}\n\n[branch {run_session}:{result.head_id or '?'}]"
+
+
+_MAX_RESULT_CHARS = 30_000
+
+
+def _clip_result(text: str) -> str:
+    """Truncate an oversized reply head+tail and save the full text to a
+    file, returning a path the caller can read (§5.6) — so a huge branch
+    reply doesn't blow up the sender's context."""
+    s = text or ""
+    if len(s) <= _MAX_RESULT_CHARS:
+        return s
+    import tempfile
+    import os
+    head = s[: _MAX_RESULT_CHARS // 2]
+    tail = s[-_MAX_RESULT_CHARS // 2:]
+    try:
+        fd, path = tempfile.mkstemp(prefix="branch_reply_", suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(s)
+    except Exception:
+        path = "(could not write file)"
+    return (
+        f"{head}\n\n... [truncated {len(s)} chars; full reply saved to "
+        f"{path}] ...\n\n{tail}"
+    )
 
 
 @function(

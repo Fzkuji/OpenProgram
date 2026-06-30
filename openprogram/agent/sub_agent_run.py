@@ -228,6 +228,7 @@ def run_agent_turn_async(
     target_branch_head_id: Optional[str] = None,
     caller_msg_id: Optional[str] = None,
     caller_session_id: Optional[str] = None,
+    spawn_depth: int = 0,
 ) -> str:
     """Submit an agent turn to the task runner, return ``task_id``.
 
@@ -255,4 +256,5 @@ def run_agent_turn_async(
         wait=False,
         caller_msg_id=caller_msg_id,
         caller_session_id=caller_session_id,
+        spawn_depth=spawn_depth,
     )

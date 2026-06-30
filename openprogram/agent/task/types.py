@@ -110,6 +110,10 @@ class Task:
     # back to the INITIATOR's session — that's caller_session_id. None
     # means "same as parent_session_id" (the common case).
     caller_session_id: Optional[str] = None
+    # Spawn-chain depth for the loop guard (message_branch §5.1). The
+    # child turn this task runs is at this depth; further spawns from it
+    # increment again. 0 = a top-level (user-initiated) turn.
+    spawn_depth: int = 0
     label: Optional[str] = None
     # Branch tip we *expect* this task to produce when it commits.
     # Filled in by the runner immediately so the UI can stitch

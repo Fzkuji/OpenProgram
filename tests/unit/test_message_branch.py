@@ -47,6 +47,12 @@ def parent_turn(tmp_path, monkeypatch):
                             "timestamp": 0, "predecessor": None})
     s.append_message("p1", {"id": "a1", "role": "assistant", "content": "ok",
                             "timestamp": 0, "predecessor": "u1"})
+    # A second, earlier branch tip (not the current turn) for existing-target
+    # tests — messaging the current turn (a1) trips the self-target guard.
+    s.append_message("p1", {"id": "u0", "role": "user", "content": "older",
+                            "timestamp": 0, "predecessor": None})
+    s.append_message("p1", {"id": "a0", "role": "assistant", "content": "older reply",
+                            "timestamp": 0, "predecessor": "u0"})
     s.commit_turn("p1", "init")
 
     # Bind parent session + turn on the ContextVars message_branch reads.
@@ -123,20 +129,20 @@ def test_spawn_new_sync_returns_reply(parent_turn):
 
 def test_existing_branch_continues_from_head(parent_turn):
     """target=SID:HEAD runs one turn forked off that head (branch_from=HEAD)."""
-    out = _message_branch_impl("more", target="p1:a1", wait=True)
+    out = _message_branch_impl("more", target="p1:a0", wait=True)
     assert "reply to: more" in out
-    assert "(from=a1)" in out  # fake_run saw branch_from = the branch head
+    assert "(from=a0)" in out  # fake_run saw branch_from = the branch head
 
 
 def test_existing_branch_is_not_new_event(parent_turn):
     got, unsub = _collect_events()
     try:
-        _message_branch_impl("more", target="p1:a1", wait=True)
+        _message_branch_impl("more", target="p1:a0", wait=True)
     finally:
         unsub()
     sent = next(e for e in got if e.type == "branch.message_sent")
     assert sent.payload["is_new"] is False
-    assert sent.payload["to"] == "p1:a1"
+    assert sent.payload["to"] == "p1:a0"
 
 
 def test_existing_missing_session_errors(parent_turn):
@@ -174,6 +180,43 @@ def test_sources_event_records_them(parent_turn):
 def test_no_sources_no_block(parent_turn):
     out = _message_branch_impl("plain", target="new", wait=True)
     assert "<branch source" not in out
+
+
+# --- C6: robustness ---
+
+def test_depth_guard_refuses(parent_turn):
+    from openprogram.functions.tools.agent_collab.message_branch import (
+        set_spawn_depth, _spawn_depth, MAX_SPAWN_DEPTH,
+    )
+    tok = set_spawn_depth(MAX_SPAWN_DEPTH)
+    try:
+        out = _message_branch_impl("go deeper", target="new", wait=True)
+    finally:
+        _spawn_depth.reset(tok)
+    assert "spawn depth" in out and "max" in out
+
+
+def test_self_target_refused(parent_turn):
+    # parent turn is p1:a1 — messaging it is a direct loop
+    out = _message_branch_impl("loop me", target="p1:a1", wait=True)
+    # note: a1 is the parent turn id (aid) in the fixture
+    # (the fixture binds _current_turn_id = "a1")
+    assert "your own current turn" in out
+
+
+def test_result_truncated_when_huge(parent_turn, monkeypatch):
+    from openprogram.agent.sub_agent_run import AgentTurnResult
+    big = "x" * 40_000
+
+    def fake_big(*, session_id, prompt, agent_id, branch_from=None, label=None):
+        return AgentTurnResult(head_id="h", final_text=big,
+                               failed=False, error=None)
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.run_agent_turn", fake_big)
+    out = _message_branch_impl("big", target="new", wait=True)
+    assert "truncated" in out
+    assert "full reply saved to" in out
+    assert len(out) < 40_000
 
 
 def test_spawn_sent_event_payload(parent_turn):
