@@ -531,12 +531,33 @@
                   blocks / tool-call cards rendered as standalone
                   cards with their own border, NOT as message
                   bubbles, so they read as overlays). */
+/* GPT/Claude-style layout: user messages = a right-aligned bubble with a
+   clear background; assistant messages = left, no bubble, full-width. The
+   "one side has a bubble, the other doesn't" + left/right + avatar is what
+   makes the boundary between turns obvious. */
 .message.user {
+  background: transparent;          /* no full-row tint — the bubble carries the colour */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;            /* push the bubble + header to the right */
+}
+.message.user .message-header {
+  flex-direction: row-reverse;      /* avatar + name on the right */
+}
+.message.user .message-content {
+  /* The bubble: rounded like the composer, clear background, hugs its
+     content (a one-liner becomes a pill; long text wraps within max-width). */
   background: var(--user-msg-bg);
+  border-radius: 18px;
+  padding: 10px 16px;
+  width: fit-content;
+  max-width: min(680px, 80%);
+  margin-left: auto;                /* right-align the bubble itself */
+  text-align: left;                 /* text inside stays left-to-right */
 }
 
 .message.assistant {
-  background: var(--assistant-msg-bg);
+  background: transparent;          /* no bubble — assistant text flows on the left */
 }
 
 .message.system {
