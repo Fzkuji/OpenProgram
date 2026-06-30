@@ -565,7 +565,9 @@
   gap: 0;
 }
 .message.assistant .message-header { left: 24px; }   /* left margin, before the 36px text inset */
-.message.user .message-header { right: 24px; }       /* right margin, outside the bubble */
+/* User avatar aligns to the FIRST LINE OF TEXT inside the bubble, not the
+   bubble's top border: .message padding-top(16) + bubble padding-top(10) = 26. */
+.message.user .message-header { right: 24px; top: 26px; }
 .message-sender { display: none; }                    /* no name line */
 
 .message.user {
