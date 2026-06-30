@@ -121,10 +121,14 @@ dict-override 分支（`_model_tools.py:397-421`）当前只认 `enabled/disable
 **关键认知：仅凭 `tools_override` 列的内容，事后无法区分"快照物化" vs "用户真实子集"**——写入路径丢了意图，两者落库都是 list[str]。所以只能基于**集合等价匹配到已知物化产物**：
 
 对每条 `tools_override` 为非空 list 的行：
-- `set(override)` 等于 `set(agent_tools(toolset=ts))`（遍历 TOOLSETS 每个 ts）或 `set(DEFAULT_TOOLS)`，**允许 ±web_search 一个元素**：
+- `set(override)` 等于 `set(agent_tools(toolset=ts))`（遍历 TOOLSETS 每个 ts）或
+  `set(DEFAULT_TOOLS)`，**允许 ±web_search**；**或**是 DEFAULT_TOOLS 的**旧版全量
+  快照**（严格子集、覆盖≥70% 且差≤5 个——差的就是后来新增的工具，这是关键：不能
+  要求精确等于当前 DEFAULT_TOOLS，否则任何在新增工具之前存的快照永远冻结，正是本
+  bug）：
   - 命中某 toolset → 改写为 `{"toolset": ts}` + web_search 位
-  - 命中 DEFAULT_TOOLS → 改写为 `tools_enabled=True, tools_override=NULL` + web_search 位
-  - **都不命中** → 大概率是用户真实精选/历史版本 preset → **保守保留原样**
+  - 命中 DEFAULT_TOOLS（精确或旧版子集）→ 改写为 `tools_enabled=True, tools_override=NULL` + web_search 位
+  - **都不命中**（少数几个工具的精选远低于覆盖阈值）→ 用户真实精选 → **保守保留原样**
 - 因 DEFAULT_TOOLS/TOOLSETS 随版本变，纯 set 等价仍可能假阴；更稳是给脚本喂"物化发生时的常量快照"（从 git 历史取当时定义）按时间分段比对——成本高，**先 dry-run 出分类统计再决定**。
 
 **读时归一兜底**（`session_config.py:85-86`）：读到等价于 DEFAULT_TOOLS 快照的 override 当场降级为 `enabled=True` 意图（即便迁移漏跑也自愈）。toolset 等价行靠一次性脚本（每 turn 对所有 toolset 做 set 比对开销大，兜底只覆盖最常见的 DEFAULT_TOOLS）。

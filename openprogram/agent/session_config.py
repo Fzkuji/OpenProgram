@@ -195,10 +195,26 @@ def _heal_snapshot(names: list[str]) -> Optional[dict]:
         return None
 
     target = set(n for n in names if n != "web_search")
+    default_set = set(DEFAULT_TOOLS)
 
-    # DEFAULT_TOOLS equivalence → {enabled: True}
-    if target == set(DEFAULT_TOOLS):
+    # DEFAULT_TOOLS full-snapshot — exact OR an older-version snapshot.
+    # A snapshot frozen before tools were added is a STRICT SUBSET of the
+    # current DEFAULT_TOOLS that still covers most of it (the only diff is
+    # the newly-added tools the old snapshot couldn't know about). We must
+    # NOT require exact equality, or every snapshot taken before any tool
+    # was added stays frozen forever (that's the very bug). Distinguish
+    # "old full snapshot" from "user picked a few tools" by coverage: a
+    # genuine hand-pick is a small handful, a stale full snapshot covers
+    # the large majority of today's defaults.
+    if target == default_set:
         return {"enabled": True}
+    if target and target <= default_set:
+        coverage = len(target) / max(1, len(default_set))
+        # ≥70% of current defaults AND within 5 of full → treat as a stale
+        # full snapshot (the gap = recently-added tools). A real selection
+        # of a few tools falls well below this.
+        if coverage >= 0.70 and (len(default_set) - len(target)) <= 5:
+            return {"enabled": True}
 
     # toolset equivalence → {toolset: name}
     for preset in TOOLSETS:

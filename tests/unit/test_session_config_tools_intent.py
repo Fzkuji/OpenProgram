@@ -72,6 +72,21 @@ def test_legacy_default_snapshot_heals_via_config():
     assert out == {"enabled": True}
 
 
+def test_heal_older_version_full_snapshot():
+    # A snapshot taken BEFORE tools were added is a strict subset of the
+    # current DEFAULT_TOOLS (the gap = the newly-added tools). It must still
+    # heal — otherwise pre-existing sessions stay frozen forever (the bug).
+    older_full = [t for t in DEFAULT_TOOLS
+                  if t not in ("message_branch", "list_sessions", "list_branches")]
+    assert _heal_snapshot(older_full) == {"enabled": True}
+
+
+def test_genuine_few_picks_not_healed():
+    # A real hand-pick of a few tools is far below the coverage threshold,
+    # so it is NOT mistaken for a stale full snapshot.
+    assert _heal_snapshot(["read", "write", "bash", "grep", "glob"]) is None
+
+
 def test_genuine_user_selection_kept():
     # A list that matches NO known preset is a real selection → kept as-is.
     picks = ["read", "write"]  # not equal to DEFAULT_TOOLS or any toolset
