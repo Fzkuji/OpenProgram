@@ -369,6 +369,11 @@
   justify-content: flex-start; /* assistant: bottom-left */
   padding-left: 36px;          /* align under the assistant text column */
 }
+/* User footer's right edge must line up with the bubble's right edge
+   (same 36px inset the bubble uses), not jut further right. */
+.message.user .message-actions-footer {
+  margin-right: 36px;
+}
 /* In the footer, the action bar must not keep its header-era
    margin-left:auto (which would jam it to the right regardless of the
    footer's justify-content). Let the footer's flex alignment decide. */
@@ -549,11 +554,19 @@
    apart — the identity lives in the sidebar). The "one side has a bubble,
    the other doesn't" + left/right makes the turn boundary obvious. */
 
-/* Header (avatar + name) no longer occupies message height. */
+/* Avatar sits in the side margin, top-aligned with the message content,
+   taking NO vertical height of its own. The name text is dropped — only
+   the avatar glyph distinguishes the side. */
 .message.user .message-header,
 .message.assistant .message-header {
-  display: none;
+  position: absolute;
+  top: 16px;                /* line up with the content's top (matches .message padding-top) */
+  margin: 0;
+  gap: 0;
 }
+.message.assistant .message-header { left: 24px; }   /* left margin, before the 36px text inset */
+.message.user .message-header { right: 24px; }       /* right margin, outside the bubble */
+.message-sender { display: none; }                    /* no name line */
 
 .message.user {
   background: transparent;          /* the bubble carries the colour, not the row */
