@@ -5,8 +5,6 @@
 
 .inputArea {
   padding: 12px 24px 24px;
-  /* No background fill — the composer floats over the chat with no
-     black band beneath it. */
   background: transparent;
   /* Anchored to the bottom of `#chatView` and floated OVER the chat
      area, not pushed into the flex flow — so growing the fn-form
@@ -17,6 +15,23 @@
   right: 0;
   bottom: 0;
   z-index: 5;
+}
+/* Bottom fade mask: solid at the bottom (hides chat content scrolling
+   behind the composer) fading to transparent at the top — so there's no
+   hard black band, but content doesn't leak out around/under the input
+   box. Sits behind the composer wrapper (z-index 5 > this). */
+.inputArea::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    var(--bg-primary) 0%,
+    var(--bg-primary) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: -1;
 }
 
 /* Wrapper — the rounded rectangle the textarea sits inside.
