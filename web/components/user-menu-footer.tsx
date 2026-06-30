@@ -161,7 +161,6 @@ export function UserMenuFooter() {
               <SettingsIcon ref={settingsIconRef} size={18} />
               {t("user.settings")}
             </button>
-            <div className={styles.sep} />
             <a
               className={styles.item}
               href="/docs"
