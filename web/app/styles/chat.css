@@ -356,6 +356,13 @@
 .message-actions:focus-within {
   opacity: 1;
 }
+/* Bottom-right action row: the copy/retry/branch buttons live at the
+   END of an assistant message, where the eye lands after reading. */
+.message-actions-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
 .message-action-btn {
   display: inline-flex;
   align-items: center;

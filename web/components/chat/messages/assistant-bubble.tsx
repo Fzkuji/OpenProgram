@@ -202,7 +202,6 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
           }
         />
         <div className="message-sender">{sender}</div>
-        {!streaming ? <MessageActions msg={msg} /> : null}
       </div>
 
       {msg.status === "error" ? (
@@ -327,6 +326,14 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
           ) : null}
         </div>
       )}
+      {/* Action row at the BOTTOM-RIGHT of the message — you finish
+          reading, then reach for copy/retry/branch right where your
+          eyes land, instead of back up at the header. */}
+      {!streaming ? (
+        <div className="message-actions-footer">
+          <MessageActions msg={msg} />
+        </div>
+      ) : null}
     </div>
   );
 }
