@@ -72,6 +72,45 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     return sid, aid, agent_id
 
 
+def _gather_sources(sources: list[str] | None) -> str:
+    """Pull each source branch's tip text and wrap it in a labelled block,
+    so the target model reads them and synthesizes. Each source is
+    ``"SID:HEAD"`` (or ``"SID"`` → that session's current head).
+
+    Returns the assembled block string (empty if no usable sources).
+    """
+    if not sources:
+        return ""
+    from openprogram.agent.session_db import default_db
+    from openprogram.agent.internals._merge import _peer_final_text
+    store = default_db()
+    blocks: list[str] = []
+    for raw in sources:
+        s = (raw or "").strip()
+        if not s:
+            continue
+        ssid, _, shead = s.partition(":")
+        ssid = ssid.strip()
+        shead = shead.strip() or None
+        if not ssid:
+            continue
+        try:
+            text, _hid = _peer_final_text(store, ssid, shead)
+        except Exception:
+            text = ""
+        text = (text or "").strip()
+        if not text:
+            text = "(this branch has no readable content)"
+        blocks.append(f'<branch source="{s}">\n{text}\n</branch>')
+    if not blocks:
+        return ""
+    return (
+        "下面是几条分支的内容，请阅读后综合，再回应本条消息：\n\n"
+        + "\n\n".join(blocks)
+        + "\n\n---\n\n"
+    )
+
+
 def _parse_target(target: str) -> tuple[str, str | None, str | None]:
     """Parse the ``target`` arg into (kind, session_id, fork_msg_id).
 
@@ -148,6 +187,10 @@ def _message_branch_impl(
         branch_from = None
         is_new = True
 
+    # Synthesis: prepend each source branch's content as a labelled block,
+    # so the target model reads them and synthesizes (C5).
+    delivery_message = _gather_sources(sources) + message
+
     emit_safe(
         "branch.message_sent",
         "agent",
@@ -168,12 +211,12 @@ def _message_branch_impl(
             from openprogram.agent.sub_agent_run import run_agent_turn_async
             task_id = run_agent_turn_async(
                 session_id=run_session,
-                prompt=message,
+                prompt=delivery_message,
                 agent_id=chosen_agent,
                 branch_from=branch_from,
                 context_mode="inherit" if branch_from else "clean",
                 subject=message[:60],
-                description=message,
+                description=delivery_message,
                 caller_msg_id=aid,
                 caller_session_id=sid,  # reply returns to the sender
             )
@@ -193,7 +236,7 @@ def _message_branch_impl(
         )
         result = run_agent_turn(
             session_id=run_session,
-            prompt=message,
+            prompt=delivery_message,
             agent_id=chosen_agent,
             branch_from=branch_from,
         )

@@ -149,6 +149,33 @@ def test_existing_missing_head_errors(parent_turn):
     assert "needs the branch head" in out
 
 
+# --- C5: sources synthesis ---
+
+def test_sources_prepended_to_delivery(parent_turn):
+    """sources branch content is wrapped in a block and prepended to the
+    message delivered to the target model."""
+    out = _message_branch_impl(
+        "synthesize these", target="new", sources=["p1:a1"], wait=True)
+    # fake_run echoes the prompt it received, so the source block shows up
+    assert "<branch source=\"p1:a1\">" in out
+    assert "synthesize these" in out
+
+
+def test_sources_event_records_them(parent_turn):
+    got, unsub = _collect_events()
+    try:
+        _message_branch_impl("go", target="new", sources=["p1:a1"], wait=True)
+    finally:
+        unsub()
+    sent = next(e for e in got if e.type == "branch.message_sent")
+    assert sent.payload["sources"] == ["p1:a1"]
+
+
+def test_no_sources_no_block(parent_turn):
+    out = _message_branch_impl("plain", target="new", wait=True)
+    assert "<branch source" not in out
+
+
 def test_spawn_sent_event_payload(parent_turn):
     got, unsub = _collect_events()
     try:
