@@ -315,45 +315,29 @@ async def handle_chat(ws, cmd: dict):
     # payload each turn (client remembers via localStorage like the
     # thinking pill) — no server-side persistence / DB column needed.
     service_tier = cmd.get("service_tier") or None
-    # Tool profile override: when the user picked a non-"full" profile in
-    # the composer, resolve it to the profile's tool name list so the
-    # dispatcher only gives the model those tools.
-    if tools_profile and tools_flag is True:
-        try:
-            from openprogram.functions import agent_tools as _at
-            resolved = _at(toolset=tools_profile, only_available=True)
-            if resolved is not None:
-                tools_flag = [t.name for t in resolved]
-        except Exception:
-            pass
-    # "Web Search" plus-menu toggle: layer ``web_search`` on top of
-    # whatever the Tools toggle resolves to. Three useful states:
-    #   * tools=False, web_search=False → tools_override=[]  (no tools)
-    #   * tools=False, web_search=True  → tools_override=["web_search"]
-    #   * tools=True,  web_search=*     → DEFAULT_TOOLS [+web_search]
-    #   * tools=None (defer to agent profile), web_search=True
-    #       → agent's tools list with "web_search" guaranteed
-    if web_search_flag:
-        try:
-            from openprogram.functions import DEFAULT_TOOLS as _DEFAULT_TOOLS
-        except Exception:
-            _DEFAULT_TOOLS = []
-        if isinstance(tools_flag, list):
-            base = list(tools_flag)
-        elif tools_flag is True:
-            base = list(_DEFAULT_TOOLS)
-        elif tools_flag is False:
-            base = []
-        else:
-            # tools_flag is None — caller wants "use the agent profile's
-            # configured tools". We don't have those resolved here, so
-            # fall back to DEFAULT_TOOLS for the explicit override list
-            # the dispatcher will see. Better to be slightly broader
-            # than to drop the agent's other tools entirely.
-            base = list(_DEFAULT_TOOLS)
-        if "web_search" not in base:
-            base.append("web_search")
-        tools_flag = base
+    # INTENT, not snapshot. We do NOT expand the toolset / DEFAULT_TOOLS into
+    # a tool-name list here — that materialization is exactly what froze old
+    # sessions to a stale tool set (they never saw newly-added tools). The
+    # profile name and the web_search flag are persisted as INTENT and
+    # expanded live each turn by the dispatcher. See
+    # docs/design/runtime/tool-toggle-management.md §5.1.
+    #
+    # ``tools_profile`` (non-"full" preset chosen in the composer) is passed
+    # straight to save_session_run_config(toolset=...) below — kept here only
+    # so a False/None tools toggle still composes with it correctly.
+    #
+    # web_search states, expressed as intent:
+    #   * tools=False, web_search=False → tools off → tools_override=[]
+    #   * tools=False, web_search=True  → only web_search → ["web_search"]
+    #     (a one-element explicit list, not a full snapshot)
+    #   * tools=True/None, web_search=* → web_search rides as an intent flag
+    #     on top of the live-expanded set (handled in session_config + the
+    #     dispatcher's dict-override branch).
+    if web_search_flag and tools_flag is False:
+        # "tools off but web search on" → the only tool is web_search.
+        tools_flag = ["web_search"]
+    # Otherwise leave tools_flag as True / None / False / explicit-list
+    # untouched; web_search_flag and tools_profile are persisted as intent.
     raw_attachments = cmd.get("attachments") or None
     attachments = None
     if isinstance(raw_attachments, list) and raw_attachments:
@@ -483,11 +467,17 @@ async def handle_chat(ws, cmd: dict):
         session_id,
         agent_id=_db_agent_id(session_id),
         tools=tools_flag,
+        # web_search / toolset stored as INTENT (not expanded into a list) so
+        # the session always follows the live tool set.
+        web_search=web_search_flag,
+        toolset=tools_profile,
         thinking_effort=thinking_effort,
         permission_mode=permission_mode,
     )
     conv["tools_enabled"] = run_cfg.tools_enabled
     conv["tools_override"] = run_cfg.tools_override
+    conv["web_search"] = run_cfg.web_search
+    conv["toolset"] = run_cfg.toolset
     conv["thinking_effort"] = run_cfg.thinking_effort
     conv["permission_mode"] = run_cfg.permission_mode
     msg_id = str(uuid.uuid4())[:8]

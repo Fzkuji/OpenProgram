@@ -154,3 +154,51 @@ dict-override 分支（`_model_tools.py:397-421`）当前只认 `enabled/disable
 - **存量坏行判别阈值**：需看真实 DB 分布，脚本先 dry-run 分类统计再执行。
 - **dict-override 的 `allowed` 语义**：当前 `allowed`（`_model_tools.py:406`）是对 DEFAULT_TOOLS 过滤、不是 full 全集；本次不扩这块。
 - **工具数组的精确 token 数**属服务端口径，本仓库静态测不出，仅确认"计费且在缓存前缀"。
+
+---
+
+## 8. 实现留痕（治本已落地 — 改了什么、为什么）
+
+> 这一节记录**实际改了哪些代码、每处的理由、怎么验证**，方便以后重新修改 / 扩展时
+> 看懂当前是怎么做的。落地范围 = 第 5.1 治本 + 第 6 步 1-7（治本 + 自愈兜底）；
+> 一次性迁移脚本（第 6 步 8、§5.2 后半）按"读时归一已覆盖最常见情况"暂缓，列为后续。
+
+### 8.1 改了哪些文件
+
+| 文件 | 改了什么 | 为什么 |
+|---|---|---|
+| `openprogram/agent/session_config.py` | `SessionRunConfig` 加 `web_search` / `toolset` 意图字段；`save/load` 读写它们（存 git session meta，无需改 DB schema——`update_session(**fields)` 任意 key 透传）；`tools_override_from_config` 改为**输出 dict 意图**（`{enabled, toolset, web_search}`）而非 `list(DEFAULT_TOOLS)` 快照；新增 `_heal_snapshot`（读时归一）+ `_with_web_search`（叠加）；`_normalize_tools_value` 支持 dict | 核心：会话存意图、运行时实时展开。`_heal_snapshot` 让老快照会话自愈 |
+| `openprogram/webui/ws_actions/chat.py` | 删两条物化路径：profile 不再 `[t.name for t in resolved]`、web_search 不再 `list(DEFAULT_TOOLS)`；改成把 `tools_profile`/`web_search_flag` 作为**意图**透传给 `save_session_run_config(toolset=, web_search=)`；保留 "tools=False + web_search=True → `["web_search"]`" 这一单元素 list（不是快照） | 病根在这——写入时就把意图物化成列表存死了 |
+| `openprogram/agent/_model_tools.py` | dict-override 分支（`resolve_tools`，~397-421）新增 `web_search` 叠加：`_overlay_web_search` 在 toolset / names 两条路径展开后，若意图含 web_search 且结果缺它则补上 | 改 C，必需前置——否则 web_search 改成意图后会在展开时丢失 |
+
+### 8.2 关键设计点（别破坏）
+
+- **展开必须确定性**：工具数组在 prompt 缓存前缀根部，顺序一抖整段缓存 miss。当前
+  `agent_tools` 按 names/registry 顺序返回，天然稳定——`tests/unit/test_tool_expansion_deterministic.py`
+  锁住它。**以后改 `agent_tools` / `_filter_agent_tools` 切勿引入 `set()` 迭代 /
+  dict churn 破坏顺序**，否则缓存会无声失效（不报错，只是悄悄变贵）。
+- **list[str] 分支保留**（`_model_tools.py` 末尾）：存量未迁移行 + 第三方数据仍喂
+  list[str]，分支不能删。
+- **`_heal_snapshot` 是保守的**：只把"集合等价于已知 preset 展开（DEFAULT_TOOLS /
+  任一 toolset，±web_search）"的 list 归一成意图；认不出的（用户真实精选）原样保留，
+  绝不误伤。
+- **不改历史**：工具开关只控制"接下来能调什么"，不过滤/重写历史 tool_use（会破坏
+  tool_use↔tool_result 配对 → provider 400）。
+
+### 8.3 测试（回归保护）
+
+- `tests/unit/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
+- `tests/unit/test_session_config_tools_intent.py` — 意图往返、`_heal_snapshot` 归一、
+  真实精选保留、**端到端：意图展开含新工具（message_branch/list_sessions）+ web_search 叠加生效**（bug 的反例）
+- `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
+  `tools=True` 现在产出 `{enabled:True}` 意图而非 list 快照
+
+### 8.4 后续（未做，留给将来）
+
+- **一次性迁移脚本**（§5.2）：扫存量 `tools_override` 为 list 的行，按集合等价归一。
+  目前靠读时 `_heal_snapshot` 覆盖最常见的 DEFAULT_TOOLS 快照；toolset 快照行下一 turn
+  也会被读时归一（`_heal_snapshot` 遍历 TOOLSETS）。脚本只是"提前批量做"，非必需。
+- **provider 内建 web_search**（§7）：现在 web_search 走"工具名叠加"稳妥路径；将来若确认
+  各 provider 支持内建 web_search，可在 `_overlay_web_search` 处二选一切换。
+- **扩展新意图维度**（如按 channel 限工具）：往 dict 意图加键 + 在 `resolve_tools` dict
+  分支处理，不要回到"存展开列表"的老路。

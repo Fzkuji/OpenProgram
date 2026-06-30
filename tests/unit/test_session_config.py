@@ -43,10 +43,14 @@ def test_session_run_config_round_trip(tmp_db: SessionDB) -> None:
     assert loaded.permission_mode == "bypass"
 
 
-def test_tools_enabled_uses_default_tool_names(
+def test_tools_enabled_yields_live_intent_not_snapshot(
     tmp_db: SessionDB,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # tools=True now stores INTENT and yields {enabled: True}, expanded live
+    # against the registry each turn — NOT a frozen list(DEFAULT_TOOLS) snapshot.
+    # This is the fix for "old sessions can't see newly-added tools".
+    # See docs/design/runtime/tool-toggle-management.md.
     import openprogram.functions as tools_pkg
 
     monkeypatch.setattr(tools_pkg, "DEFAULT_TOOLS", ["read", "list"])
@@ -60,7 +64,7 @@ def test_tools_enabled_uses_default_tool_names(
         permission_mode="auto",
     )
 
-    assert tools_override_from_config(cfg) == ["read", "list"]
+    assert tools_override_from_config(cfg) == {"enabled": True}
     assert reasoning_from_config(cfg) == "high"
     assert permission_from_config(cfg, default="bypass") == "auto"
 

@@ -398,6 +398,21 @@ def resolve_tools(
             enabled = wanted.get("enabled")
             disabled_patterns = list(wanted.get("disabled") or [])
             allowed_patterns = list(wanted.get("allowed") or [])
+            # web_search overlay: the intent may ask for web_search ON TOP of
+            # whatever the enabled/toolset resolves to (it isn't in
+            # DEFAULT_TOOLS, so it must be added explicitly). Required for the
+            # "store intent, not snapshot" design — see
+            # docs/design/runtime/tool-toggle-management.md §5.1 改 C.
+            want_web_search = bool(wanted.get("web_search"))
+
+            def _overlay_web_search(tools):
+                if not want_web_search:
+                    return tools
+                if any(t.name == "web_search" for t in tools):
+                    return tools
+                extra = agent_tools(names=["web_search"], source=source, only_available=True)
+                return [*tools, *extra]
+
             if isinstance(enabled, list):
                 names = [str(n) for n in enabled]
             else:
@@ -417,8 +432,9 @@ def resolve_tools(
                         if not match_any(t.name, disabled_patterns)
                         and (not allowed_patterns or match_any(t.name, allowed_patterns))
                     ]
-                return _apply_mcp_gate(resolved)
-            return _apply_mcp_gate(agent_tools(names=names, source=source, only_available=True))
+                return _apply_mcp_gate(_overlay_web_search(resolved))
+            return _apply_mcp_gate(_overlay_web_search(
+                agent_tools(names=names, source=source, only_available=True)))
 
         if isinstance(wanted, list) and wanted and isinstance(wanted[0], str):
             return _apply_mcp_gate(agent_tools(
