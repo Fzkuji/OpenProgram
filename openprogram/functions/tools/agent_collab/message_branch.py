@@ -95,6 +95,27 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     return sid, aid, agent_id
 
 
+def _emit_branch_ui(session_id: str, kind: str, peer: str, text: str) -> None:
+    """Push a UI frame so the given session's chat stream shows a branch
+    communication line. kind ∈ {"sent","replied"}. Best-effort."""
+    try:
+        from openprogram.agent.event_bus import emit_ws_frame
+        summary = (text or "").replace("\n", " ").strip()
+        if len(summary) > 120:
+            summary = summary[:119] + "…"
+        emit_ws_frame({
+            "type": "branch_message",
+            "data": {
+                "session_id": session_id,
+                "kind": kind,        # "sent" → 我发给X；"replied" → X回复了
+                "peer": peer,        # 对端分支标识
+                "summary": summary,
+            },
+        })
+    except Exception:
+        pass
+
+
 def _gather_sources(sources: list[str] | None) -> str:
     """Pull each source branch's tip text and wrap it in a labelled block,
     so the target model reads them and synthesizes. Each source is
@@ -242,6 +263,10 @@ def _message_branch_impl(
             "sources": sources or [],
         },
     )
+    # Also push a UI frame so the sender's session shows a "message sent"
+    # line in its chat stream (front-end useWS handles `branch_message`).
+    _to_label = f"{run_session}:{branch_from}" if branch_from else f"{run_session} (new branch)"
+    _emit_branch_ui(sid, "sent", _to_label, message)
 
     # Async (default): submit to the task runner. It runs the new branch
     # on a worker thread, writes the attach pointer, and dispatches a
@@ -310,6 +335,7 @@ def _message_branch_impl(
             "is_error": bool(result.failed or result.error),
         },
     )
+    _emit_branch_ui(sid, "replied", run_session, result.final_text or "")
 
     if result.error and not result.final_text:
         return f"[message_branch error: head={result.head_id}] {result.error}"

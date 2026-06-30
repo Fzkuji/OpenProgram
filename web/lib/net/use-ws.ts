@@ -112,6 +112,31 @@ export function useWS(): void {
           }
           return true;
         }
+        case "branch_message": {
+          // Branch-to-branch communication: show a line in the sender's
+          // chat stream. kind: "sent" (我发给X) | "replied" (X回复了).
+          const sid = d?.session_id as string | undefined;
+          if (sid && sid === w.currentSessionId) {
+            const kind = (d?.kind as string) || "sent";
+            const peer = (d?.peer as string) || "?";
+            const summary = (d?.summary as string) || "";
+            const label =
+              kind === "replied"
+                ? `📥 分支 ${peer} 回复了：${summary}`
+                : `📤 已发消息给分支 ${peer}：${summary}`;
+            import("@/lib/session-store").then(({ useSessionStore }) => {
+              useSessionStore.getState().appendMessage(sid, {
+                id: "branchmsg_" + Math.random().toString(36).slice(2, 10),
+                role: "system",
+                content: label,
+                source: "branch_message",
+              } as unknown as Parameters<
+                ReturnType<typeof useSessionStore.getState>["appendMessage"]
+              >[1]);
+            }).catch(() => { /* best-effort UI line */ });
+          }
+          return true;
+        }
         case "branch_renamed":
         case "branch_name_deleted":
         case "branch_deleted": {
