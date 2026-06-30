@@ -55,7 +55,7 @@
   margin: 0 auto;
   background: var(--bg-tertiary);
   border: none;
-  border-radius: var(--composer-wrapper-corner);
+  border-radius: var(--composer-corner);
   padding: 0 0 var(--composer-bottom-row-h);
   /* Keep the edge transparent until the textarea or an inner control
      receives focus. Using box-shadow avoids layout shifts from a real
@@ -85,7 +85,7 @@
   pointer-events: none;
   z-index: 1;
   background: var(--bg-tertiary);
-  border-radius: var(--composer-wrapper-corner) var(--composer-wrapper-corner) 0 0;
+  border-radius: var(--composer-corner) var(--composer-corner) 0 0;
   animation: outgoingLayerFade var(--composer-fade-duration) ease forwards;
 }
 /* Suppress the cloned header/body's own fadeIn animation — we want
@@ -357,7 +357,7 @@
      content shows through the row. Bottom corners match the wrapper's
      radius so they don't poke past it. */
   background: var(--bg-tertiary);
-  border-radius: 0 0 var(--composer-wrapper-corner) var(--composer-wrapper-corner);
+  border-radius: 0 0 var(--composer-corner) var(--composer-corner);
   z-index: 1;
   /* The container declaration lives in chat.css under the global
      `.composer-bottom-row` class (also applied in composer/index.tsx).

@@ -583,8 +583,12 @@
      bubble shares the assistant's content column — just right-aligned, not
      jammed against the viewport edge. */
   background: var(--user-msg-bg);
-  border-radius: 18px;
-  padding: 10px 16px;
+  /* Fixed corner radius (not height-dependent): a single-line bubble is
+     ~38px tall, so 19px makes its ends exact half-circles (a pill); a
+     multi-line bubble keeps the SAME radius and reads as a rounded
+     rectangle with the same curve. */
+  border-radius: 19px;
+  padding: 8px 16px;
   width: fit-content;
   max-width: 80%;
   margin-right: 36px;               /* align right edge to assistant text's right edge */
