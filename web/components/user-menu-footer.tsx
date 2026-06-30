@@ -21,6 +21,7 @@ import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 import {
   type AnimatedNavIconHandle,
+  BookTextIcon,
   ChevronsUpDownIcon,
   CircleHelpIcon,
   SettingsIcon,
@@ -38,6 +39,7 @@ export function UserMenuFooter() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const settingsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const docsIconRef = useRef<AnimatedNavIconHandle>(null);
   const aboutIconRef = useRef<AnimatedNavIconHandle>(null);
   const chevronIconRef = useRef<AnimatedNavIconHandle>(null);
   // Viewport coords for the floating menu — recomputed when opening.
@@ -159,6 +161,19 @@ export function UserMenuFooter() {
               <SettingsIcon ref={settingsIconRef} size={18} />
               {t("user.settings")}
             </button>
+            <div className={styles.sep} />
+            <a
+              className={styles.item}
+              href="/docs"
+              target="_blank"
+              rel="noopener"
+              onClick={() => setOpen(false)}
+              onMouseEnter={() => docsIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => docsIconRef.current?.stopAnimation?.()}
+            >
+              <BookTextIcon ref={docsIconRef} size={18} />
+              Docs
+            </a>
             <div className={styles.sep} />
             <a
               className={styles.item}
