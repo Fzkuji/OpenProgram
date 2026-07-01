@@ -4,17 +4,14 @@
 **会话只存"开关意图"，绝不存"展开后的工具名列表快照"。** 工具表每次运行时
 由 registry 实时展开，所以新增/删除工具对所有历史会话自动生效。
 
-历史上有一个 bug：webui 开 Web Search 或选非 full 工具 profile 时，会把当时
-展开的工具名列表物化进 ``tools_override``（list[str]），把会话钉死在那批工具上
-——之后新增的工具（如 list_sessions/message_branch）这些会话永远看不到。
-
-现在的形态：
-- ``tools_override`` 优先存 **dict 意图**（``{enabled, toolset, disabled, web_search}``），
-  运行时经 ``_model_tools`` 的 dict 分支实时展开。
-- ``tools_enabled``（bool）+ ``web_search``/``toolset`` 意图列，组合成 dict 意图。
-- 仍接受 ``list[str]``（存量 / 第三方数据）——但读时若发现它等价于某个已知
-  preset 的展开产物（DEFAULT_TOOLS / toolset，允许 ±web_search），就**当场归一**
-  降级成意图，让老会话自愈、跟上工具集演进。区分不出的（用户真实精选）原样保留。
+存储形态：
+- ``tools_enabled``（bool）+ ``web_search`` / ``toolset`` 意图列 →
+  ``tools_override_from_config`` 组合成一个 **dict 意图**
+  （``{enabled, toolset, disabled, web_search}``），运行时经 ``_model_tools``
+  的 dict 分支实时展开。
+- ``tools_override`` 也可直接存一个 dict 意图。
+- ``list[str]`` 只用于用户显式精选的少数工具（如 web-search-only 的
+  ``["web_search"]``），原样透传。绝不把"全部工具"物化成 list。
 """
 from __future__ import annotations
 
@@ -25,14 +22,14 @@ from typing import Any, Optional, Union
 VALID_THINKING = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 VALID_PERMISSION = {"ask", "auto", "bypass"}
 
-# 工具意图的统一类型：dict（意图）/ list[str]（存量快照）/ None
+# 工具意图的统一类型：dict（意图）/ list[str]（用户显式精选）/ None
 ToolsOverride = Union[dict, list, None]
 
 
 @dataclass
 class SessionRunConfig:
     tools_enabled: Optional[bool] = None
-    # dict（意图，推荐）或 list[str]（存量）。见模块 docstring。
+    # dict（意图，推荐）或 list[str]（用户显式精选）。见模块 docstring。
     tools_override: ToolsOverride = None
     # 叠加意图：在主开关结果之上加一个 web_search 工具。
     web_search: Optional[bool] = None
@@ -119,7 +116,7 @@ def tools_override_from_config(cfg: SessionRunConfig) -> ToolsOverride:
       * ``[]``    — all tools off
       * ``dict``  — an intent (enabled / toolset / disabled / web_search),
                     expanded live by ``_model_tools`` against the registry
-      * ``list``  — a legacy snapshot we couldn't normalize (kept as-is)
+      * ``list``  — an explicit user selection of tool names (kept as-is)
       * ``None``  — no session-level override; fall back to the agent profile
 
     Never returns a freshly-materialized full tool-name list — that's the
@@ -128,14 +125,9 @@ def tools_override_from_config(cfg: SessionRunConfig) -> ToolsOverride:
     if cfg.tools_enabled is False:
         return []
 
-    # Legacy snapshot path: try to heal it back into an intent so the
-    # session follows the live tool set again.
+    # Explicit name list = a genuine user selection (e.g. web-search-only
+    # ``["web_search"]``). Passed through verbatim + web_search overlay.
     if isinstance(cfg.tools_override, list) and cfg.tools_override:
-        healed = _heal_snapshot(cfg.tools_override)
-        if healed is not None:
-            return _with_web_search(healed, cfg.web_search)
-        # Couldn't recognize it as a known-preset expansion → it's most
-        # likely a genuine user selection; keep the explicit list.
         return _with_web_search(list(cfg.tools_override), cfg.web_search)
 
     # Dict intent stored directly → pass through (+ web_search overlay).
@@ -178,54 +170,6 @@ def _with_web_search(override: ToolsOverride, web_search: Optional[bool]) -> Too
     if isinstance(override, list):
         return override if "web_search" in override else [*override, "web_search"]
     return override
-
-
-def _heal_snapshot(names: list[str]) -> Optional[dict]:
-    """If ``names`` is set-equal to a known preset's expansion (DEFAULT_TOOLS
-    or any toolset, allowing ±web_search), return the equivalent dict intent;
-    else None. This is how a legacy materialized snapshot self-heals back
-    into an intent that follows the live registry.
-
-    Conservative by construction: anything that doesn't set-match a known
-    preset is treated as a real user selection and NOT healed (returns None
-    → caller keeps the explicit list)."""
-    try:
-        from openprogram.functions import DEFAULT_TOOLS, TOOLSETS, agent_tools
-    except Exception:
-        return None
-
-    target = set(n for n in names if n != "web_search")
-    default_set = set(DEFAULT_TOOLS)
-
-    # DEFAULT_TOOLS full-snapshot — exact OR an older-version snapshot.
-    # A snapshot frozen before tools were added is a STRICT SUBSET of the
-    # current DEFAULT_TOOLS that still covers most of it (the only diff is
-    # the newly-added tools the old snapshot couldn't know about). We must
-    # NOT require exact equality, or every snapshot taken before any tool
-    # was added stays frozen forever (that's the very bug). Distinguish
-    # "old full snapshot" from "user picked a few tools" by coverage: a
-    # genuine hand-pick is a small handful, a stale full snapshot covers
-    # the large majority of today's defaults.
-    if target == default_set:
-        return {"enabled": True}
-    if target and target <= default_set:
-        coverage = len(target) / max(1, len(default_set))
-        # ≥70% of current defaults AND within 5 of full → treat as a stale
-        # full snapshot (the gap = recently-added tools). A real selection
-        # of a few tools falls well below this.
-        if coverage >= 0.70 and (len(default_set) - len(target)) <= 5:
-            return {"enabled": True}
-
-    # toolset equivalence → {toolset: name}
-    for preset in TOOLSETS:
-        try:
-            expanded = {t.name for t in agent_tools(toolset=preset)}
-        except Exception:
-            continue
-        if target == expanded:
-            return {"enabled": True, "toolset": preset}
-
-    return None
 
 
 def _normalize_tools_value(value: Any) -> tuple[Optional[bool], ToolsOverride]:

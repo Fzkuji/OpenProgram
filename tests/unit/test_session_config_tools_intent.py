@@ -9,9 +9,8 @@ from __future__ import annotations
 from openprogram.agent.session_config import (
     SessionRunConfig,
     tools_override_from_config,
-    _heal_snapshot,
 )
-from openprogram.functions import DEFAULT_TOOLS, agent_tools
+from openprogram.functions import DEFAULT_TOOLS
 
 
 # ── tools_override_from_config: intent in → intent out ──
@@ -51,48 +50,23 @@ def test_dict_override_passthrough():
     assert out == {"enabled": True, "toolset": "research"}
 
 
-# ── legacy snapshot healing ──
+# ── explicit user selection (list) passed through verbatim ──
 
-def test_heal_default_tools_snapshot():
-    # A snapshot equal to DEFAULT_TOOLS heals back to {enabled: True}.
-    assert _heal_snapshot(list(DEFAULT_TOOLS)) == {"enabled": True}
-
-
-def test_heal_default_tools_with_web_search():
-    # ±web_search is tolerated; web_search overlay handled separately.
-    healed = _heal_snapshot([*DEFAULT_TOOLS, "web_search"])
-    assert healed == {"enabled": True}
-
-
-def test_legacy_default_snapshot_heals_via_config():
-    # The whole path: a session whose tools_override is a DEFAULT_TOOLS
-    # snapshot now yields a live intent, not the frozen list.
-    cfg = SessionRunConfig(tools_enabled=True, tools_override=list(DEFAULT_TOOLS))
-    out = tools_override_from_config(cfg)
-    assert out == {"enabled": True}
-
-
-def test_heal_older_version_full_snapshot():
-    # A snapshot taken BEFORE tools were added is a strict subset of the
-    # current DEFAULT_TOOLS (the gap = the newly-added tools). It must still
-    # heal — otherwise pre-existing sessions stay frozen forever (the bug).
-    older_full = [t for t in DEFAULT_TOOLS
-                  if t not in ("message_branch", "list_sessions", "list_branches")]
-    assert _heal_snapshot(older_full) == {"enabled": True}
-
-
-def test_genuine_few_picks_not_healed():
-    # A real hand-pick of a few tools is far below the coverage threshold,
-    # so it is NOT mistaken for a stale full snapshot.
-    assert _heal_snapshot(["read", "write", "bash", "grep", "glob"]) is None
-
-
-def test_genuine_user_selection_kept():
-    # A list that matches NO known preset is a real selection → kept as-is.
-    picks = ["read", "write"]  # not equal to DEFAULT_TOOLS or any toolset
+def test_explicit_selection_kept():
+    # An explicit tool-name list (a genuine user selection, e.g. web-search
+    # only) is passed through as-is — never materialized/expanded, never
+    # rewritten.
+    picks = ["read", "write"]
     cfg = SessionRunConfig(tools_enabled=True, tools_override=picks)
     out = tools_override_from_config(cfg)
-    assert out == picks  # not healed, not dropped
+    assert out == picks
+
+
+def test_web_search_only_selection():
+    # tools off + web_search on → the one-element ["web_search"] selection.
+    cfg = SessionRunConfig(tools_enabled=True, tools_override=["web_search"])
+    out = tools_override_from_config(cfg)
+    assert out == ["web_search"]
 
 
 # ── end-to-end: the bug's reproduction, now fixed ──
