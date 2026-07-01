@@ -20,12 +20,13 @@ export interface PermissionModeOption {
 
 // 常规档（批准强度，按危险度递增）+ plan 单列（只读，另一维度）。
 // 专业术语，双语随界面语言切换。
+// 名称对齐 Claude Code 官方（英文原名 + 官方中文，code.claude.com/docs）。
 const MODE_LABELS: { value: PermissionMode; en: string; zh: string }[] = [
-  { value: "ask", en: "Confirm each action", zh: "逐次确认" },
-  { value: "acceptEdits", en: "Auto-accept edits", zh: "自动批准编辑" },
-  { value: "dontAsk", en: "Never prompt · deny risky", zh: "免确认（高危拒绝）" },
-  { value: "bypass", en: "Bypass all", zh: "全部放行" },
-  { value: "plan", en: "Plan · read-only", zh: "计划模式（只读）" },
+  { value: "ask", en: "Default", zh: "默认" },
+  { value: "acceptEdits", en: "Accept Edits", zh: "接受编辑" },
+  { value: "dontAsk", en: "Don't Ask", zh: "不再询问" },
+  { value: "bypass", en: "Bypass Permissions", zh: "绕过权限" },
+  { value: "plan", en: "Plan Mode", zh: "计划模式" },
 ];
 
 const DEFAULT_MODE: PermissionMode = "ask";
