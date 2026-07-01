@@ -101,24 +101,39 @@ def load_merged_rules(session_id: str):
     """合并各来源的权限规则，返回 PermissionRules（低→高：global < session）。
     见 docs/design/runtime/permission-model.md §2.3。
 
-    当前落地两层真实载体——全局配置 + 会话；project/local/cliArg 层等有对应
-    交互入口时再加（不空造）。合并只是拼接三 list：deny/ask/allow 的总序由
-    _match_rule 保证（命中即返回），来源顺序只影响同一 behavior 内的先后。"""
+    落地三层真实载体——全局配置 < 项目（主要载体）< 会话（临时覆盖）。
+    权限规则跟着**项目**走（<project>/.openprogram/settings.json），所以切会话
+    规则还在、"总是允许"能长期记住。会话层保留作最高优先的一次性覆盖。
+    合并只是拼接三 list：deny/ask/allow 的总序由 _match_rule 保证（命中即返回），
+    来源顺序只影响同一 behavior 内的先后。见 permission-model.md §2.3。"""
     from openprogram.agent.session_config import PermissionRules, load_session_run_config
 
     merged = PermissionRules()
 
-    # 全局层
+    def _extend(src: dict | None):
+        if not src:
+            return
+        for k in ("allow", "deny", "ask"):
+            getattr(merged, k).extend(str(v) for v in (src.get(k) or []) if str(v))
+
+    # 全局层（最低）
     try:
         from openprogram.webui import _setup
         cfg = _setup._read_config() or {}
-        g = ((cfg.get("tools") or {}).get("permission_rules")) or {}
-        for k in ("allow", "deny", "ask"):
-            getattr(merged, k).extend(str(v) for v in (g.get(k) or []) if str(v))
+        _extend(((cfg.get("tools") or {}).get("permission_rules")) or {})
     except Exception:
         pass
 
-    # 会话层（最高优先）
+    # 项目层（主要载体）——session → project → project settings 的 permission_rules
+    try:
+        from openprogram.store import project_store as _projects
+        proj = _projects.project_for_session(session_id)
+        if proj is not None:
+            _extend(_projects.load_project_settings(proj.id).get("permission_rules"))
+    except Exception:
+        pass
+
+    # 会话层（最高优先，一次性覆盖）
     try:
         sess = load_session_run_config(session_id).permission_rules
         if sess is not None:

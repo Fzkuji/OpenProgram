@@ -712,59 +712,75 @@ async def handle_question_reject(ws, cmd: dict):
         _resolve_question(qid, "declined", reason)
 
 
-def _broadcast_permission_rules(session_id: str) -> None:
-    """把某 session 当前的权限规则广播给前端（settings 面板刷新）。"""
-    from openprogram.agent.session_config import load_session_run_config, PermissionRules
+# 权限规则跟着**项目**走（见 permission-model.md §2.3）。请求可直接带
+# project_id（Projects 页知道项目）；只带 session_id 时反查项目（composer 路径）。
+
+def _resolve_project_id(cmd: dict) -> str | None:
+    pid = (cmd.get("project_id") or "").strip()
+    if pid:
+        return pid
+    sid = (cmd.get("session_id") or "").strip()
+    if not sid:
+        return None
+    try:
+        from openprogram.store import project_store as _projects
+        proj = _projects.project_for_session(sid) or _projects.get_default_project()
+        return proj.id if proj else None
+    except Exception:
+        return None
+
+
+def _project_rules(project_id: str) -> dict:
+    from openprogram.store import project_store as _projects
+    settings = _projects.load_project_settings(project_id)
+    r = settings.get("permission_rules") or {}
+    return {"allow": list(r.get("allow") or []),
+            "deny": list(r.get("deny") or []),
+            "ask": list(r.get("ask") or [])}
+
+
+def _broadcast_permission_rules(project_id: str) -> None:
+    """把某项目当前的权限规则广播给前端（规则面板刷新）。"""
     from openprogram.webui import server as _s
-    rules = load_session_run_config(session_id).permission_rules or PermissionRules()
+    r = _project_rules(project_id)
     _s._broadcast(json.dumps({"type": "permission_rules", "data": {
-        "session_id": session_id,
-        "allow": rules.allow, "deny": rules.deny, "ask": rules.ask,
+        "project_id": project_id, **r,
     }}))
 
 
 async def handle_list_permission_rules(ws, cmd: dict):
-    sid = cmd.get("session_id") or ""
-    if sid:
-        _broadcast_permission_rules(sid)
+    pid = _resolve_project_id(cmd)
+    if pid:
+        _broadcast_permission_rules(pid)
+
+
+def _mutate_project_rule(cmd: dict, *, add: bool) -> None:
+    pid = _resolve_project_id(cmd)
+    behavior = cmd.get("behavior")     # "allow" | "deny" | "ask"
+    rule = (cmd.get("rule") or "").strip()
+    if not (pid and behavior in ("allow", "deny", "ask") and rule):
+        return
+    from openprogram.store import project_store as _projects
+    settings = _projects.load_project_settings(pid)
+    rules = settings.get("permission_rules") or {"allow": [], "deny": [], "ask": []}
+    lst = rules.setdefault(behavior, [])
+    if add and rule not in lst:
+        lst.append(rule)
+    elif not add and rule in lst:
+        lst.remove(rule)
+    settings["permission_rules"] = rules
+    _projects.save_project_settings(pid, settings)
+    _broadcast_permission_rules(pid)
 
 
 async def handle_add_permission_rule(ws, cmd: dict):
-    """加一条规则到 session 层的 allow/deny/ask 列表。"""
-    sid = cmd.get("session_id") or ""
-    behavior = cmd.get("behavior")     # "allow" | "deny" | "ask"
-    rule = (cmd.get("rule") or "").strip()
-    if not (sid and behavior in ("allow", "deny", "ask") and rule):
-        return
-    from openprogram.agent.session_config import (
-        load_session_run_config, save_session_run_config, PermissionRules)
-    cfg = load_session_run_config(sid)
-    rules = cfg.permission_rules or PermissionRules()
-    lst = getattr(rules, behavior)
-    if rule not in lst:
-        lst.append(rule)
-    save_session_run_config(sid, agent_id=cfg.__dict__.get("agent_id", "main"),
-                            permission_rules=rules)
-    _broadcast_permission_rules(sid)
+    """加一条规则到项目层的 allow/deny/ask 列表。"""
+    _mutate_project_rule(cmd, add=True)
 
 
 async def handle_remove_permission_rule(ws, cmd: dict):
-    """从 session 层移除一条规则。"""
-    sid = cmd.get("session_id") or ""
-    behavior = cmd.get("behavior")
-    rule = (cmd.get("rule") or "").strip()
-    if not (sid and behavior in ("allow", "deny", "ask") and rule):
-        return
-    from openprogram.agent.session_config import (
-        load_session_run_config, save_session_run_config, PermissionRules)
-    cfg = load_session_run_config(sid)
-    rules = cfg.permission_rules or PermissionRules()
-    lst = getattr(rules, behavior)
-    if rule in lst:
-        lst.remove(rule)
-    save_session_run_config(sid, agent_id=cfg.__dict__.get("agent_id", "main"),
-                            permission_rules=rules)
-    _broadcast_permission_rules(sid)
+    """从项目层移除一条规则。"""
+    _mutate_project_rule(cmd, add=False)
 
 
 async def handle_search_messages(ws, cmd: dict):

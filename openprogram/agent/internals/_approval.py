@@ -87,20 +87,24 @@ def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
     return check_path_safety(path, work_dirs)["safe"]
 
 
-def _persist_always_allow_rule(session_id: str, tool_name: str,
-                               destination: str = "session") -> None:
-    """把 "总是允许" 写成一条 per-tool allow 规则并落盘。
-    destination="session"（默认）→ 落 session meta（schemaless）。"""
-    if not session_id or destination != "session":
+def _persist_always_allow_rule(session_id: str, tool_name: str) -> None:
+    """把 "总是允许" 写成一条 per-tool allow 规则，落到**项目**层
+    （<project>/.openprogram/settings.json 的 permission_rules.allow）。
+    规则跟项目走——切会话仍生效、长期记住。见 permission-model.md §2.3。"""
+    if not session_id:
         return
-    from openprogram.agent.session_config import (
-        load_session_run_config, save_session_run_config, PermissionRules)
-    cfg = load_session_run_config(session_id)
-    rules = cfg.permission_rules or PermissionRules()
-    if tool_name not in rules.allow:
-        rules.allow.append(tool_name)
-    save_session_run_config(session_id, agent_id=cfg.__dict__.get("agent_id", "main"),
-                            permission_rules=rules)
+    try:
+        from openprogram.store import project_store as _projects
+        proj = _projects.project_for_session(session_id) or _projects.get_default_project()
+        settings = _projects.load_project_settings(proj.id)
+        rules = settings.get("permission_rules") or {"allow": [], "deny": [], "ask": []}
+        allow = rules.setdefault("allow", [])
+        if tool_name not in allow:
+            allow.append(tool_name)
+        settings["permission_rules"] = rules
+        _projects.save_project_settings(proj.id, settings)
+    except Exception:
+        pass
 
 
 def wrap_with_approval(
