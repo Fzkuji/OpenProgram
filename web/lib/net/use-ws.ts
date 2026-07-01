@@ -148,6 +148,13 @@ export function useWS(): void {
           }
           return true;
         }
+        case "permission_rules": {
+          // 权限规则面板刷新：把 session 层规则派给 PermissionsSection。
+          window.dispatchEvent(
+            new CustomEvent("op:permission-rules", { detail: d }),
+          );
+          return true;
+        }
         case "skills:changed": {
           // File-system watcher fired — refresh the skills list so the
           // /skills page, Discovery counts, and slash menu reflect the

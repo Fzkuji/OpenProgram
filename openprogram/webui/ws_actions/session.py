@@ -712,6 +712,61 @@ async def handle_question_reject(ws, cmd: dict):
         _resolve_question(qid, "declined", reason)
 
 
+def _broadcast_permission_rules(session_id: str) -> None:
+    """把某 session 当前的权限规则广播给前端（settings 面板刷新）。"""
+    from openprogram.agent.session_config import load_session_run_config, PermissionRules
+    from openprogram.webui import server as _s
+    rules = load_session_run_config(session_id).permission_rules or PermissionRules()
+    _s._broadcast(json.dumps({"type": "permission_rules", "data": {
+        "session_id": session_id,
+        "allow": rules.allow, "deny": rules.deny, "ask": rules.ask,
+    }}))
+
+
+async def handle_list_permission_rules(ws, cmd: dict):
+    sid = cmd.get("session_id") or ""
+    if sid:
+        _broadcast_permission_rules(sid)
+
+
+async def handle_add_permission_rule(ws, cmd: dict):
+    """加一条规则到 session 层的 allow/deny/ask 列表。"""
+    sid = cmd.get("session_id") or ""
+    behavior = cmd.get("behavior")     # "allow" | "deny" | "ask"
+    rule = (cmd.get("rule") or "").strip()
+    if not (sid and behavior in ("allow", "deny", "ask") and rule):
+        return
+    from openprogram.agent.session_config import (
+        load_session_run_config, save_session_run_config, PermissionRules)
+    cfg = load_session_run_config(sid)
+    rules = cfg.permission_rules or PermissionRules()
+    lst = getattr(rules, behavior)
+    if rule not in lst:
+        lst.append(rule)
+    save_session_run_config(sid, agent_id=cfg.__dict__.get("agent_id", "main"),
+                            permission_rules=rules)
+    _broadcast_permission_rules(sid)
+
+
+async def handle_remove_permission_rule(ws, cmd: dict):
+    """从 session 层移除一条规则。"""
+    sid = cmd.get("session_id") or ""
+    behavior = cmd.get("behavior")
+    rule = (cmd.get("rule") or "").strip()
+    if not (sid and behavior in ("allow", "deny", "ask") and rule):
+        return
+    from openprogram.agent.session_config import (
+        load_session_run_config, save_session_run_config, PermissionRules)
+    cfg = load_session_run_config(sid)
+    rules = cfg.permission_rules or PermissionRules()
+    lst = getattr(rules, behavior)
+    if rule in lst:
+        lst.remove(rule)
+    save_session_run_config(sid, agent_id=cfg.__dict__.get("agent_id", "main"),
+                            permission_rules=rules)
+    _broadcast_permission_rules(sid)
+
+
 async def handle_search_messages(ws, cmd: dict):
     """FTS-backed search across past sessions."""
     from openprogram.webui import server as _s
@@ -876,4 +931,7 @@ ACTIONS = {
     "question_reject": handle_question_reject,
     "search_messages": handle_search_messages,
     "list_sessions": handle_list_sessions,
+    "list_permission_rules": handle_list_permission_rules,
+    "add_permission_rule": handle_add_permission_rule,
+    "remove_permission_rule": handle_remove_permission_rule,
 }

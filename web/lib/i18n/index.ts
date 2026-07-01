@@ -83,6 +83,7 @@ const DICT = {
   "settings.tab.usage": { en: "Token Usage", zh: "Token 用量" },
   "settings.tab.search": { en: "Web Search", zh: "网页搜索" },
   "settings.tab.channels": { en: "Channels", zh: "消息渠道" },
+  "settings.tab.permissions": { en: "Permissions", zh: "权限" },
   "settings.tab.general": { en: "General", zh: "通用" },
   "settings.tab.system": { en: "System", zh: "系统" },
 
