@@ -75,18 +75,16 @@ def _would_need_approval(tool_name: str, per_tool_required: bool) -> bool:
 
 
 def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
-    """acceptEdits 档下判断写目标是否在安全工作目录内。
-    完整危险文件/Windows 绕过检测在 file_safety.py（S13）；这里先只判"路径在
-    工作目录集内"这一必要条件。"""
+    """acceptEdits 档下判断写目标是否安全（工作目录内 + 非危险文件/目录 +
+    无 Windows 绕过）。完整规则集在 file_safety.check_path_safety。"""
     import os
     from openprogram.functions.permission_rule import parse_command
+    from openprogram.functions.tools.file_safety import check_path_safety
     path = parse_command(tool_name, args)
     if not path:
         return True  # 无路径参数（如 glob/grep）视为安全
     work_dirs = [os.getcwd(), *getattr(req, "additional_working_dirs", [])]
-    ap = os.path.realpath(path)
-    return any(ap == os.path.realpath(d) or ap.startswith(os.path.realpath(d) + os.sep)
-               for d in work_dirs)
+    return check_path_safety(path, work_dirs)["safe"]
 
 
 def _persist_always_allow_rule(session_id: str, tool_name: str,

@@ -207,6 +207,49 @@ def test_acceptedits_command_still_asks():
     assert not ran["called"]
 
 
+# ── path safety (file_safety.py) ──
+
+def test_path_safety(tmp_path):
+    from openprogram.functions.tools.file_safety import check_path_safety
+    import os
+    d = str(tmp_path)
+    assert check_path_safety(os.path.join(d, "a.txt"), [d])["safe"]
+    assert not check_path_safety(os.path.join(d, ".bashrc"), [d])["safe"]      # dangerous file
+    assert not check_path_safety(os.path.join(d, ".git", "config"), [d])["safe"]  # dangerous dir
+    assert not check_path_safety("/etc/passwd", [d])["safe"]                    # outside cwd
+    assert not check_path_safety(os.path.join(d, "a.txt::$DATA"), [d])["safe"]  # NTFS stream
+    assert not check_path_safety("CON", [d])["safe"]                           # DOS device
+
+
+def test_is_dangerous_allow_rule():
+    from openprogram.functions.tools.file_safety import is_dangerous_allow_rule
+    assert is_dangerous_allow_rule("bash", "python:*")   # interpreter
+    assert not is_dangerous_allow_rule("bash", "git:*")  # ordinary
+    assert is_dangerous_allow_rule("bash", None)         # whole bash tool
+
+
+def test_acceptedits_denies_dangerous_path(tmp_path, monkeypatch):
+    # acceptEdits: writing to .bashrc (dangerous file) is NOT auto-allowed → asks.
+    monkeypatch.chdir(tmp_path)
+    tool, ran = _make_tool("write_file")
+    tool._accept_edits_safe = True
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="acceptEdits")
+    result = _run_with_args(tool, req, {"path": str(tmp_path / ".bashrc")}, approve=False)
+    assert _denied(result)         # unsafe path → falls through to approval → denied
+    assert not ran["called"]
+
+
+def _run_with_args(tool, req, args, approve=True, scope="once"):
+    import asyncio
+    import openprogram.agent.internals._approval as _ap
+    async def _fake(*a, **k): return (approve, None, scope)
+    wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_ap, "await_user_approval", _fake)
+        return asyncio.run(wrapped.execute("c", args, None, None))
+
+
 def test_ask_denies_when_user_declines():
     tool, ran = _make_tool("bash")
     req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
