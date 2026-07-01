@@ -101,3 +101,103 @@ def test_all_six_modes_registered():
 
 def test_invalid_mode():
     assert _normalize_permission("bogus") is None
+
+
+# ── _gated_execute decision branches (end-to-end via wrap_with_approval) ──
+
+import asyncio
+import pytest
+from openprogram.agent.types import AgentTool, AgentToolResult
+from openprogram.agent.dispatcher.types import TurnRequest
+from openprogram.agent.internals import _approval
+
+
+def _make_tool(name: str):
+    """A tool whose execute records that it ran and returns a marker."""
+    ran = {"called": False}
+
+    async def _exec(call_id, args, cancel, on_update):
+        ran["called"] = True
+        return AgentToolResult(content=[], details={"ok": True})
+
+    tool = AgentTool(name=name, description="", parameters={}, label=name, execute=_exec)
+    return tool, ran
+
+
+def _run(tool, req, approve=True, scope="once"):
+    """Wrap tool with approval under req, run its execute, return (result, ran)."""
+    async def _fake_approval(*, req, tool_name, args, on_event, timeout=300.0):
+        return (approve, None, scope)
+
+    wrapped = _approval.wrap_with_approval(tool, req, on_event=lambda e: None)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_approval, "await_user_approval", _fake_approval)
+        result = asyncio.run(wrapped.execute("c1", {"command": "x"}, None, None))
+    return result
+
+
+def _denied(result) -> bool:
+    return bool(result.details.get("denied"))
+
+
+def test_bypass_runs_without_approval():
+    tool, ran = _make_tool("bash")
+    req = TurnRequest(session_id="s", user_text="", agent_id="main",
+                      source="web", permission_mode="bypass")
+    _run(tool, req)
+    assert ran["called"]
+
+
+def test_deny_rule_blocks_even_under_bypass():
+    # THE key safety property: deny beats bypass.
+    tool, ran = _make_tool("bash")
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="bypass",
+                      permission_rules=PermissionRules(deny=["bash"]))
+    result = _run(tool, req)
+    assert _denied(result)
+    assert not ran["called"]
+
+
+def test_allow_rule_runs_without_approval_in_ask():
+    tool, ran = _make_tool("bash")
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="ask",
+                      permission_rules=PermissionRules(allow=["bash"]))
+    # even if approval would deny, allow rule short-circuits to run
+    _run(tool, req, approve=False)
+    assert ran["called"]
+
+
+def test_dontask_denies_risky():
+    tool, ran = _make_tool("bash")   # bash is in _RISKY_TOOLS
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="dontAsk")
+    result = _run(tool, req)
+    assert _denied(result)
+    assert not ran["called"]
+
+
+def test_auto_runs_low_risk():
+    tool, ran = _make_tool("read_file")   # not risky, no requires_approval
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="auto")
+    _run(tool, req)
+    assert ran["called"]
+
+
+def test_ask_denies_when_user_declines():
+    tool, ran = _make_tool("bash")
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="ask")
+    result = _run(tool, req, approve=False)
+    assert _denied(result)
+    assert not ran["called"]
+
+
+def test_ask_runs_when_user_approves():
+    tool, ran = _make_tool("bash")
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="ask")
+    _run(tool, req, approve=True)
+    assert ran["called"]
