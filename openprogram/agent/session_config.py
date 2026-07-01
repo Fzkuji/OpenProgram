@@ -55,8 +55,6 @@ class SessionRunConfig:
     permission_mode: Optional[str] = None
     # ── 权限规则（见 permission-model.md §2.2）──
     permission_rules: Optional[PermissionRules] = None
-    # plan 模式进入前的档位，退出 plan 时恢复（§3.7）。
-    pre_plan_permission_mode: Optional[str] = None
     # 路径安全的额外工作目录集（§3.5）。
     additional_working_dirs: list[str] = field(default_factory=list)
 
@@ -76,7 +74,6 @@ def load_session_run_config(session_id: str) -> SessionRunConfig:
         thinking_effort=_normalize_thinking(row.get("thinking_effort")),
         permission_mode=_normalize_permission(row.get("permission_mode")),
         permission_rules=_as_permission_rules(row.get("permission_rules")),
-        pre_plan_permission_mode=_normalize_permission(row.get("pre_plan_permission_mode")),
         additional_working_dirs=_as_str_list(row.get("additional_working_dirs")),
     )
 
@@ -91,7 +88,6 @@ def save_session_run_config(
     thinking_effort: Any = None,
     permission_mode: Any = None,
     permission_rules: Any = None,
-    pre_plan_permission_mode: Any = None,
     additional_working_dirs: Any = None,
 ) -> SessionRunConfig:
     fields: dict[str, Any] = {}
@@ -125,9 +121,6 @@ def save_session_run_config(
             if rules is not None else None
         )
 
-    pre_plan = _normalize_permission(pre_plan_permission_mode)
-    if pre_plan is not None:
-        fields["pre_plan_permission_mode"] = pre_plan
 
     if additional_working_dirs is not None:
         fields["additional_working_dirs"] = _as_str_list(additional_working_dirs)

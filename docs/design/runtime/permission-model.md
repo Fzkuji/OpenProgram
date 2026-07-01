@@ -91,7 +91,7 @@ VALID_PERMISSION = {"ask", "acceptEdits", "plan", "dontAsk", "bypass"}
 |---|---|
 | `ask` | 每个工具调用都弹审批卡片阻塞等答（除非规则 allow 或 per-tool 声明不需审批）。逐次问。 |
 | `acceptEdits` | 对**写类且路径安全**的工具（read/write/edit/glob/grep/list，且目标在工作目录内、非危险文件）自动放行；bash/exec/shell 等命令类**仍走完整审批**。 |
-| `plan` | 计划态。写类工具在此模式对模型不可见（`apply_tool_policy(source="plan")`），且记录进入前的档位到 `pre_plan_mode`，退出（`exit_plan_mode`）时恢复。 |
+| `plan` | 计划态。写类工具在此模式对模型不可见（`apply_tool_policy(source="plan")`）——纯**可见性**控制，与 `permission_mode` 正交，不占用档位槽。 |
 | `dontAsk` | 本该弹卡片的调用直接返回 `[denied]`，绝不打断用户。等价"全拒需要人工确认的操作"。 |
 | `bypass` | 全部直接放行，不弹审批。**例外**：`exit_plan_mode` 强制审批（`_force_approval_tools`，`internals/_approval.py:72`）；规则层 deny/ask 仍生效。 |
 
@@ -251,7 +251,7 @@ async def _do_approval(call_id, args, cancel, on_update):
 对应 3.2 伪代码编号：
 
 - **acceptEdits（⑥）**：三件事——① `@function` 加 `accept_edits_safe: bool = False`（`functions/_runtime.py`），给 read/write/edit/glob/grep/list 标 `True`，bash/exec/shell 保持 `False`；② `_path_is_safe` 复用 3.5 的 `check_path_safety`（路径不在危险清单、无 Windows 绕过、在工作目录集内）；③ 命令类（bash/exec/shell）即使有宽 allow 也 fall-through 到 ⑦ 强制审批。
-- **plan（可见性 + 联动）**：两层含义。可见性——`apply_tool_policy(tools, source="plan")`（`dispatcher/__init__.py:779-781`）滤掉 `unsafe_in` 含 `"plan"` 的写类工具，根本不进模型工具列表；档位联动——进 plan 记 `pre_plan_permission_mode`、退出恢复（3.6）。`_gated_execute` 无 plan 专属分支（写类已被滤掉，只读工具按 ask 常规走）。
+- **plan（可见性控制）**：`apply_tool_policy(tools, source="plan")`（`dispatcher/__init__.py:779-781`）滤掉 `unsafe_in` 含 `"plan"` 的写类工具，根本不进模型工具列表。plan 状态存布尔集（`agent/plan_mode.py` 的 `_active`），**不切 `permission_mode`**——与档位正交。`_gated_execute` 无 plan 专属分支（写类已被滤掉，只读工具按当前档常规走）。与 Claude Code 不同：CC 的 plan 是权限档、需记 prePlanMode 恢复；我们 plan 不占档位槽，无需记录/恢复。
 - **dontAsk（④）**：ask → deny。`_would_need_approval(agent_tool, args, mode)` 复用 ⑦ 判定（per-tool required / 高风险 / ask 全量）判断这次在非 dontAsk 下会不会需要审批；会 → `[denied]`；不会 → 直接执行。规则层 deny/ask（①）仍在其前生效，allow（⑤）不受影响。
 - **ask**：不命中 allow、per-tool 不免审的工具全部落 ⑦。
 - **bypass（③）**：deny/ask/force 之后全部直接执行。
@@ -375,7 +375,6 @@ class SessionRunConfig:
     permission_mode: Optional[str] = None
     # ── 新增（本设计）──
     permission_rules: Optional[PermissionRules] = None          # 2.2
-    pre_plan_permission_mode: Optional[str] = None              # 3.7 plan 联动
     additional_working_dirs: list[str] = field(default_factory=list)  # 3.5 路径安全
 
 # :154-156
@@ -393,15 +392,9 @@ def permission_from_config(cfg, *, default: str) -> str:
 
 子 agent 固定 `bypass`（`sub_agent_run.py:89`）：子 agent 的 lane 上没有 UI 订阅审批事件，ask 会让每工具超时 `[denied]`；且"派生子 agent"本身已是用户显式动作。
 
-### 3.7 plan 联动（prePlanMode 记录恢复）
+### 3.7 plan 与 permission_mode 的关系（不做 prePlanMode）
 
-进 plan 记录当前档位、退出恢复。用 in-memory per-session 上下文（plan 中间态不该持久化）或 `SessionRunConfig.pre_plan_permission_mode`。
-
-- **进 plan**：`pre_plan = 当前 permission_mode`；`permission_mode = "plan"`。写类工具经 `apply_tool_policy(source="plan")` 滤掉。
-- **退 plan**（`exit_plan_mode` 批准回调——已是 `_force_approval_tools`，bypass 也强制审批）：`permission_mode = pre_plan or "ask"`；清 `pre_plan`。含降级保护：恢复目标档不可用则降到 `ask`。
-- **bypass 可用性**：记进 plan 前是否为 bypass，退出时据此决定是否允许恢复到 bypass。
-
-可选新文件 `openprogram/agent/permission_context.py` 持有 plan 期 `pre_plan_mode`（per-session in-memory）。
+我们的 plan 是**可见性控制**（藏写工具，`agent/plan_mode.py` 布尔集），不切 `permission_mode`。所以不像 Claude Code 那样需要"进 plan 记住旧档、退出恢复"（CC 的 plan 是权限档，占用档位槽才需要 prePlanMode）。我们进/退 plan 只翻 `plan_mode._active` 的开关，当前的 `permission_mode`（ask/acceptEdits/bypass…）始终不变、退出即原样生效——无需记录、无需恢复。因此 `pre_plan_permission_mode` 字段与 `permission_context.py` **不需要**。
 
 ---
 
@@ -547,7 +540,7 @@ settings 权限页挂点（`web/components/settings/settings-tabs-layout.tsx:10-
 
 | 步 | 内容 | 依赖 | 验证 |
 |---|---|---|---|
-| S1 | `SessionRunConfig` 加 `permission_rules` + `pre_plan_permission_mode` + `additional_working_dirs` + load/save（`session_config.py:29-39,:60-76,:78-109`）。schemaless 无 migration | 无 | 写规则→重载 session 字段还在；旧会话读回不报错 |
+| S1 | `SessionRunConfig` 加 `permission_rules` + `additional_working_dirs` + load/save（`session_config.py:29-39,:60-76,:78-109`）。schemaless 无 migration | 无 | 写规则→重载 session 字段还在；旧会话读回不报错 |
 | S2 | `TurnRequest` 加 `permission_rules` + 各构造点填充（`dispatcher/types.py` + web/channel/CLI） | S1 | 规则从 session 流到 dispatcher |
 | S3 | `permission_rule.py`（`parse_rule`/`rule_to_string`/`parse_command`）+ `_match_rule` + `_gated_execute` 两段插：deny/ask 在 bypass 前、allow 在后（`internals/_approval.py:74-102`） | S2 | 手塞 allow→不弹；deny→即使 bypass 也 `[denied]`；ask→即使 bypass 也弹 |
 | S4 | `await_user_approval` 返回加 `scope` + `_persist_always_allow_rule` 写回 session allow（`internals/_approval.py:135-200`） | S3 | 点"总是允许"→下次同工具不弹 |
@@ -555,7 +548,7 @@ settings 权限页挂点（`web/components/settings/settings-tabs-layout.tsx:10-
 | S6 | 多层来源：全局 `config_schema.py`、project/local `.openprogram/settings*.json`、cliArg 标志 + `_merge_permission_rules`（`dispatcher/__init__.py`） | S1、S3 | 各层写 deny→按 session>cli>local>project>user 生效 |
 | S7 | 加 `acceptEdits`/`dontAsk`/`plan` 档 + `_normalize_permission` 大小写修正（`session_config.py:23,:235-239` + `dispatcher/types.py:19`） | 默认值三处（3.6）确认 | 三档能存取、驼峰不被误判非法 |
 | S8 | `@function` 加 `accept_edits_safe` + 文件类工具标记 + `_gated_execute` acceptEdits 分支（含 bash 强制审批）（`functions/_runtime.py` + `functions/tools/*` + `internals/_approval.py`） | S7、S13 | acceptEdits 下写文件不弹、bash 仍弹 |
-| S9 | plan 联动：进 plan 记 `pre_plan_mode`、`exit_plan_mode` 回调恢复（`dispatcher/__init__.py:779-781` + exit_plan_mode 回调 + `permission_context.py`） | S7 | ask→plan→退出回 ask；bypass 进的 plan 退出可回 bypass |
+| S9 | plan 联动：**不做**——我们 plan 是可见性控制（藏写工具），不占 `permission_mode` 槽，无需记录/恢复档位（§3.7） | — | — |
 | S10 | per-pattern：`parse_command` + `_match_rule` 支持 `tool(pattern)`（`permission_rule.py` + `internals/_approval.py`） | S3 | `bash(git:*)` allow 放行 `git status`、不放行 `rm -rf` |
 | S11 | 权限模式 pill：`permission-mode-pill.tsx` + `use-permission-mode.ts` + composer 塞 payload（4.5） | S7 | 前端能选 6 档、随会话隔离、后端收到（自查） |
 | S12 | 危险分级 `_risk_level` + detail 结构化 + `risk_level` 入帧 + 前端高亮（`internals/_approval.py:122-132,:173-181` + `question-mode.tsx` + CSS） | 无 | `rm -rf` 卡片标红、只读标绿（自查） |
