@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import fx from "@/components/functions/functions-page.module.css";
 import styles from "./projects-page.module.css";
 import { useTranslation } from "@/lib/i18n";
 import { FoldersIcon, FolderPlusIcon } from "@/components/animated-icons";
@@ -116,41 +117,41 @@ export function ProjectsPage() {
 
   return (
     <div className="main">
-      <div className={styles.view}>
-        <div className={styles.topbar}>
-          <span className={styles.title}>{text("Projects", "项目")}</span>
+      <div className={fx.view}>
+        <div className={fx.topbar}>
+          <span className={fx.title}>{text("Projects", "项目")}</span>
         </div>
 
         {error && <div className={styles.errorBar}>{error}</div>}
 
-        <div className={styles.body}>
-          {/* 左栏：项目列表 */}
-          <div className={styles.nav}>
+        <div className={fx.body}>
+          {/* 左栏：项目列表（复用 Functions 的 profilesNav） */}
+          <div className={fx.profilesNav}>
             {projects.map((p) => (
               <div
                 key={p.id}
-                className={cls(styles.navItem, p.id === selectedId && styles.active)}
+                className={cls(fx.profileItem, p.id === selectedId && fx.active)}
                 onClick={() => setSelectedId(p.id)}
               >
-                <span className={styles.navIcon}><FoldersIcon size={16} /></span>
-                <span className={styles.navName}>{p.name}</span>
+                <span className={fx.profileIcon}><FoldersIcon size={16} /></span>
+                <span className={fx.profileName}>{p.name}</span>
                 {p.is_default && <span className={styles.badge}>{text("Default", "默认")}</span>}
               </div>
             ))}
-            <div className={styles.navSep} />
+            <div className={fx.profileSep} />
             <div
-              className={cls(styles.navItem, styles.navNew)}
+              className={cls(fx.profileItem, fx.profileNew)}
               onClick={addProject}
             >
-              <span className={styles.navIcon}><FolderPlusIcon size={16} /></span>
-              <span className={styles.navName}>{text("Open folder…", "打开文件夹…")}</span>
+              <span className={fx.profileIcon}><FolderPlusIcon size={16} /></span>
+              <span className={fx.profileName}>{text("Open folder…", "打开文件夹…")}</span>
             </div>
           </div>
 
           {/* 右栏：选中项目的内容 */}
-          <div className={styles.content}>
+          <div className={fx.content}>
             {!selected ? (
-              <div className={styles.empty}>{text("Select a project.", "选择一个项目。")}</div>
+              <div className={fx.empty}>{text("Select a project.", "选择一个项目。")}</div>
             ) : (
               <>
                 <div className={styles.detailHead}>
@@ -197,7 +198,7 @@ export function ProjectsPage() {
                 {tab === "sessions" && (
                   <div className={styles.tabBody}>
                     {sessions.length === 0 ? (
-                      <div className={styles.empty}>{text("No chats in this project.", "该项目还没有会话。")}</div>
+                      <div className={fx.empty}>{text("No chats in this project.", "该项目还没有会话。")}</div>
                     ) : (
                       <ul className={styles.sessionList}>
                         {sessions.map((s) => (
