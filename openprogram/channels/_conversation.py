@@ -235,7 +235,7 @@ def dispatch_inbound(
         source=channel,
         peer_display=user_display or str(peer_id),
         peer_id=str(peer_id),
-        permission_mode=permission_from_config(run_cfg, default="auto"),
+        permission_mode=permission_from_config(run_cfg, default="ask"),
         permission_rules=_load_merged_rules(session_key),
         additional_working_dirs=run_cfg.additional_working_dirs,
         tools_override=tools_override_from_config(run_cfg),

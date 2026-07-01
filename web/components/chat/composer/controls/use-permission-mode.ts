@@ -11,7 +11,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 
 export type PermissionMode =
-  | "ask" | "auto" | "acceptEdits" | "plan" | "dontAsk" | "bypass";
+  | "ask" | "acceptEdits" | "plan" | "dontAsk" | "bypass";
 
 export interface PermissionModeOption {
   value: PermissionMode;
@@ -22,7 +22,6 @@ export interface PermissionModeOption {
 // 专业术语，双语随界面语言切换。
 const MODE_LABELS: { value: PermissionMode; en: string; zh: string }[] = [
   { value: "ask", en: "Confirm each action", zh: "逐次确认" },
-  { value: "auto", en: "Auto · confirm risky", zh: "自动（高危时确认）" },
   { value: "acceptEdits", en: "Auto-accept edits", zh: "自动批准编辑" },
   { value: "dontAsk", en: "Never prompt · deny risky", zh: "免确认（高危拒绝）" },
   { value: "bypass", en: "Bypass all", zh: "全部放行" },

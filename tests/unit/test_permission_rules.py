@@ -96,7 +96,7 @@ def test_camel_modes_valid():
 
 
 def test_all_six_modes_registered():
-    assert VALID_PERMISSION == {"ask", "auto", "acceptEdits", "plan", "dontAsk", "bypass"}
+    assert VALID_PERMISSION == {"ask", "acceptEdits", "plan", "dontAsk", "bypass"}
 
 
 def test_invalid_mode():
@@ -176,14 +176,6 @@ def test_dontask_denies_risky():
     result = _run(tool, req)
     assert _denied(result)
     assert not ran["called"]
-
-
-def test_auto_runs_low_risk():
-    tool, ran = _make_tool("read_file")   # not risky, no requires_approval
-    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
-                      permission_mode="auto")
-    _run(tool, req)
-    assert ran["called"]
 
 
 def test_ask_denies_when_user_declines():

@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Optional
 
-PermissionMode = Literal["ask", "auto", "bypass"]
+PermissionMode = Literal["ask", "acceptEdits", "plan", "dontAsk", "bypass"]
 EventCallback = Callable[[dict], None]
 
 

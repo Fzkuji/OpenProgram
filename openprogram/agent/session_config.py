@@ -22,7 +22,7 @@ from typing import Any, Optional, Union
 VALID_THINKING = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 # 权限模式规范值（保留驼峰）。见 docs/design/runtime/permission-model.md §2.1。
 # _normalize_permission 做大小写不敏感匹配，所以 "acceptedits" 也能规回 "acceptEdits"。
-VALID_PERMISSION = {"ask", "auto", "acceptEdits", "plan", "dontAsk", "bypass"}
+VALID_PERMISSION = {"ask", "acceptEdits", "plan", "dontAsk", "bypass"}
 _PERMISSION_BY_LOWER = {m.lower(): m for m in VALID_PERMISSION}
 
 # 工具意图的统一类型：dict（意图）/ list[str]（用户显式精选）/ None

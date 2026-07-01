@@ -96,7 +96,6 @@ const noop = () => {};
 const PERM_COLOR: Record<string, string> = {
   ask: "var(--success, #3a9d5a)",
   plan: "var(--success, #3a9d5a)",
-  auto: "var(--warning, #d78a18)",
   acceptEdits: "var(--warning, #d78a18)",
   dontAsk: "#e06c1f",
   bypass: "var(--danger, #d72518)",
@@ -1358,21 +1357,14 @@ export function Composer() {
                               () => setToolProfileSubOpen(false), 300,
                             );
                           }}
+                          className={styles.plusMenu}
                           style={{
-                            position: "absolute",
                             left: "100%",
+                            right: "auto",
                             bottom: 0,
+                            marginBottom: 0,
                             marginLeft: 4,
                             minWidth: 160,
-                            zIndex: 10,
-                            background: "var(--bg-secondary)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 12,
-                            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                            padding: 6,
-                            display: "flex",
-                            flexDirection: "column" as const,
-                            gap: 1,
                           }}
                         >
                           <div style={{ padding: "4px 12px", fontSize: "11px",
@@ -1446,21 +1438,14 @@ export function Composer() {
                               () => setPermSubOpen(false), 300,
                             );
                           }}
+                          className={styles.plusMenu}
                           style={{
-                            position: "absolute",
                             left: "100%",
+                            right: "auto",
                             bottom: 0,
+                            marginBottom: 0,
                             marginLeft: 4,
                             minWidth: 180,
-                            zIndex: 10,
-                            background: "var(--bg-secondary)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 12,
-                            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                            padding: 6,
-                            display: "flex",
-                            flexDirection: "column" as const,
-                            gap: 1,
                           }}
                         >
                           {permOptions.map((o) => (

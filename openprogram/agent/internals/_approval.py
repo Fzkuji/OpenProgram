@@ -182,11 +182,7 @@ def wrap_with_approval(
                 and _path_is_safe(name, args, req):
             return await orig_execute(call_id, args, cancel, on_update)
 
-        # ⑦ auto：低风险直接放
-        if mode == "auto" and not per_tool_required and name not in _RISKY_TOOLS:
-            return await orig_execute(call_id, args, cancel, on_update)
-
-        # ⑧ 弹卡片阻塞等答
+        # ⑦ 弹卡片阻塞等答（default / acceptEdits 的命令类都落这里）
         return await _approve_then_run(call_id, args, cancel, on_update)
 
     wrapped = AgentTool(

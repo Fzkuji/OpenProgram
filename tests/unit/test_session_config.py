@@ -61,12 +61,12 @@ def test_tools_enabled_yields_live_intent_not_snapshot(
         agent_id="main",
         tools=True,
         thinking_effort="high",
-        permission_mode="auto",
+        permission_mode="acceptEdits",
     )
 
     assert tools_override_from_config(cfg) == {"enabled": True}
     assert reasoning_from_config(cfg) == "high"
-    assert permission_from_config(cfg, default="bypass") == "auto"
+    assert permission_from_config(cfg, default="bypass") == "acceptEdits"
 
 
 def test_thinking_aliases_normalize(tmp_db: SessionDB) -> None:
