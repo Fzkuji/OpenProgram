@@ -104,6 +104,12 @@ class TurnRequest:
     # sibling branch and the chat view flattens all branches into one.
     # See docs/design/runtime/dag/session-dag.md §2.3.
     spawn_caller: Optional[str] = None
+    # 用户配的权限规则（allow/deny/ask，各来源合并后），供 _gated_execute 的
+    # _match_rule 判定。见 docs/design/runtime/permission-model.md §3.4。
+    # 类型是 session_config.PermissionRules，这里用 Any 避免循环 import。
+    permission_rules: Any = None
+    # 路径安全的额外工作目录集（acceptEdits / safetyCheck 用，§3.5）。
+    additional_working_dirs: list = field(default_factory=list)
 
 
 @dataclass

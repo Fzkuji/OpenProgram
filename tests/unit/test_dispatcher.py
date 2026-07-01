@@ -300,7 +300,7 @@ def test_await_user_approval_emits_question_and_resolves() -> None:
             on_event=lambda e: None, timeout=5.0,
         )
     try:
-        approved, reason = asyncio.run(_drive())
+        approved, reason, scope = asyncio.run(_drive())
     finally:
         unsub()
 

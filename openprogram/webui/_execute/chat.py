@@ -254,6 +254,8 @@ def run_query(
         agent_id=agent_id,
         source="web",
         permission_mode=effective_permission,
+        permission_rules=run_cfg.permission_rules,
+        additional_working_dirs=run_cfg.additional_working_dirs,
         tools_override=resolved_tools_override,
         thinking_effort=effective_thinking,
         service_tier=service_tier,
