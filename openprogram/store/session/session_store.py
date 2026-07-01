@@ -196,20 +196,29 @@ class SessionStore:
         except (OSError, json.JSONDecodeError):
             return {}
 
+    def _save_locations(self) -> None:
+        tmp = self._locations_path().with_suffix(".json.tmp")
+        try:
+            tmp.write_text(
+                json.dumps(self._locations, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            tmp.replace(self._locations_path())
+        except OSError:
+            pass
+
     def _record_location(self, session_id: str, repo_dir: Path) -> None:
         """Persist that ``session_id``'s repo lives at ``repo_dir`` (an
         absolute path outside the home root). Idempotent."""
         with self._lock:
             self._locations[session_id] = str(repo_dir)
-            tmp = self._locations_path().with_suffix(".json.tmp")
-            try:
-                tmp.write_text(
-                    json.dumps(self._locations, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-                tmp.replace(self._locations_path())
-            except OSError:
-                pass
+            self._save_locations()
+
+    def _forget_location(self, session_id: str) -> None:
+        """删会话时移除位置映射（配对 _record_location）。"""
+        with self._lock:
+            if self._locations.pop(session_id, None) is not None:
+                self._save_locations()
 
     # Registry (index.json)
 
@@ -654,6 +663,8 @@ class SessionStore:
                 GitSession(self._session_dir(session_id)).destroy()
             self._index.pop(session_id, None)
         self._save_index()
+        # 位置映射（配对 _record_location）。
+        self._forget_location(session_id)
         # 从项目反向索引解绑（配对 bind_session），避免 session_ids 只增不减。
         try:
             from openprogram.store import project_store as _projects
