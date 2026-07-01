@@ -102,12 +102,21 @@ export function UserMenuFooter() {
     };
   }, [open]);
 
-  // Keep the label in sync when the user leaves fullscreen by pressing Esc
-  // (the browser exits without going through our button).
+  // Keep the label in sync however fullscreen is left — our button, Esc, or
+  // the browser exiting on its own. Read the live state on mount (not just on
+  // events) so a remount lands on the correct label, and listen with the
+  // webkit-prefixed event too (Safari).
   useEffect(() => {
-    const sync = () => setIsFullscreen(!!document.fullscreenElement);
+    const d = document as Document & { webkitFullscreenElement?: Element };
+    const sync = () =>
+      setIsFullscreen(!!(document.fullscreenElement || d.webkitFullscreenElement));
+    sync();
     document.addEventListener("fullscreenchange", sync);
-    return () => document.removeEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("webkitfullscreenchange", sync);
+    };
   }, []);
 
   function goSettings() {
@@ -184,16 +193,6 @@ export function UserMenuFooter() {
               <SettingsIcon ref={settingsIconRef} size={18} />
               {t("user.settings")}
             </button>
-            <button
-              type="button"
-              className={styles.item}
-              onClick={toggleFullscreen}
-              onMouseEnter={() => fsIconRef.current?.startAnimation?.()}
-              onMouseLeave={() => fsIconRef.current?.stopAnimation?.()}
-            >
-              <MonitorIcon ref={fsIconRef} size={18} />
-              {isFullscreen ? "退出全屏" : "全屏"}
-            </button>
             <a
               className={styles.item}
               href="/docs"
@@ -206,6 +205,16 @@ export function UserMenuFooter() {
               <BookTextIcon ref={docsIconRef} size={18} />
               Docs
             </a>
+            <button
+              type="button"
+              className={styles.item}
+              onClick={toggleFullscreen}
+              onMouseEnter={() => fsIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => fsIconRef.current?.stopAnimation?.()}
+            >
+              <MonitorIcon ref={fsIconRef} size={18} />
+              {isFullscreen ? "退出全屏" : "全屏"}
+            </button>
             <div className={styles.sep} />
             <a
               className={styles.item}

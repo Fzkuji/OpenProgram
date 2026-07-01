@@ -6,7 +6,7 @@
  * card in a message uses the same frame + height + toggle position.
  * Header script glyph: 𝓣  Thinking.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 
@@ -17,14 +17,21 @@ export function ThinkingBlock({
   text: string;
   streaming?: boolean;
 }) {
-  // Default expanded so the user sees thinking content stream in
-  // live. Click the header to collapse manually. Without this the
-  // block looks "still" while content actually fills underneath —
-  // users couldn't tell streaming from a single end-of-reply dump.
-  const [collapsed, setCollapsed] = useState(false);
+  // Expanded WHILE streaming so the user sees thinking fill in live, then
+  // auto-collapse once it's done (thinking is verbose; a finished reply
+  // shouldn't be buried under it). The user can still toggle manually — once
+  // they do, we stop auto-collapsing so we don't fight their choice.
+  const [collapsed, setCollapsed] = useState(!streaming);
   const [copied, setCopied] = useState(false);
+  const userToggled = useRef(false);
   const { text: tr } = useTranslation();
   useMarkdownReady();
+
+  // Auto-collapse when streaming ends (unless the user took control).
+  useEffect(() => {
+    if (!streaming && !userToggled.current) setCollapsed(true);
+  }, [streaming]);
+
   if (!text) return null;
 
   function copy(e: React.MouseEvent) {
@@ -41,7 +48,7 @@ export function ThinkingBlock({
     <div className="inline-tree" data-collapsed={collapsed ? "1" : "0"}>
       <div
         className="inline-tree-header"
-        onClick={() => setCollapsed((c) => !c)}
+        onClick={() => { userToggled.current = true; setCollapsed((c) => !c); }}
       >
         <span>
           <span className="inline-tree-script" title="thinking">{"𝓣"}</span>
