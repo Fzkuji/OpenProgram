@@ -64,14 +64,14 @@ interface QuestionModeProps {
 /** 一步（一道题）的统一形状。kind 决定 body 怎么渲染、答案怎么收集。 */
 type Step =
   | { kind: "choice"; prompt: string; options: string[]; multi: boolean; allowCustom: boolean }
-  | { kind: "approval"; prompt: string; detail?: string }
+  | { kind: "approval"; prompt: string; detail?: string; risk?: "low" | "medium" | "high" }
   | { kind: "form"; prompt: string; detail?: string; schema: Record<string, FormFieldSchema> };
 
-/** 一步的工作答案。choice → 选中集 + 自由文本；approval → allow/deny；
+/** 一步的工作答案。choice → 选中集 + 自由文本；approval → 允许一次/总是允许/拒绝；
  *  form → 字段值对象。 */
 type Answer =
   | { picked: Set<string>; custom: string }
-  | { pick: "allow" | "deny" | null }
+  | { pick: "once" | "always" | "deny" | null }
   | { fields: Record<string, string | number | boolean> };
 
 /** 把一个 decision 拍平成统一的 steps 数组。单题 → 1 步；ask_many → N 步。 */
@@ -80,7 +80,7 @@ function toSteps(q: PendingDecision): Step[] {
     return [{ kind: "form", prompt: q.prompt, detail: q.detail, schema: q.schema ?? {} }];
   }
   if (q.kind === "approval") {
-    return [{ kind: "approval", prompt: q.prompt, detail: q.detail }];
+    return [{ kind: "approval", prompt: q.prompt, detail: q.detail, risk: q.risk_level }];
   }
   if (q.kind === "ask_many") {
     const qs: AskOne[] = q.questions ?? [];
@@ -160,8 +160,9 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
       return;
     }
     if (q.kind === "approval") {
-      const pick = (answers[0] as { pick: "allow" | "deny" | null }).pick;
-      if (pick === "allow") wsSend({ action: "question_reply", id: q.id, answer: "允许" });
+      const pick = (answers[0] as { pick: "once" | "always" | "deny" | null }).pick;
+      if (pick === "once") wsSend({ action: "question_reply", id: q.id, answer: "允许", scope: "once" });
+      else if (pick === "always") wsSend({ action: "question_reply", id: q.id, answer: "允许", scope: "always" });
       else if (pick === "deny") wsSend({ action: "question_reject", id: q.id });
       else return;
       onResolve(q.id);
@@ -306,20 +307,26 @@ function StepBody({
   }
 
   if (step.kind === "approval") {
-    const pick = (answer as { pick: "allow" | "deny" | null }).pick;
+    const pick = (answer as { pick: "once" | "always" | "deny" | null }).pick;
+    const risk = step.risk ?? "low";
+    const label = { once: "允许一次", always: "总是允许", deny: "拒绝" } as const;
     return (
       <>
         <div className={styles.prompt}>{withColon(step.prompt)}</div>
-        {step.detail ? <pre className={approvalStyles.summary}>{step.detail}</pre> : null}
+        {step.detail ? (
+          <pre className={approvalStyles.summary + " " + (approvalStyles["risk_" + risk] ?? "")}>
+            {step.detail}
+          </pre>
+        ) : null}
         <div className={styles.options}>
-          {(["allow", "deny"] as const).map((p) => (
+          {(["once", "always", "deny"] as const).map((p) => (
             <button
               key={p}
               type="button"
               className={styles.opt + (pick === p ? " " + styles.optPicked : "")}
               onClick={() => onChange({ pick: pick === p ? null : p })}
             >
-              {pick === p ? "✓ " : ""}{p === "allow" ? "允许" : "拒绝"}
+              {pick === p ? "✓ " : ""}{label[p]}
             </button>
           ))}
         </div>

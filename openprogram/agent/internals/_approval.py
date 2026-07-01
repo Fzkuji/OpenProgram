@@ -207,6 +207,20 @@ def wrap_with_approval(
     return wrapped
 
 
+def _risk_level(tool_name: str, args: dict) -> str:
+    """审批卡片的危险分级 "low"|"medium"|"high"，驱动前端高亮。
+    完整规则集见 file_safety.py（S13）；这里是基础判定。"""
+    name = tool_name.lower()
+    if name in _RISKY_TOOLS:
+        cmd = str((args or {}).get("command", "")).lower()
+        if any(p in cmd for p in ("rm -rf", "sudo", "mkfs", ":(){", "| sh", "| bash", "curl", "wget")):
+            return "high"
+        return "medium"
+    if any(k in name for k in ("write", "edit", "apply_patch", "delete", "remove")):
+        return "medium"
+    return "low"
+
+
 def _approval_detail(tool_name: str, args: dict) -> str:
     """批准卡片的危险摘要：工具名 + 参数全文（超长截断，首尾保留）。
     第一版不做危险 token 高亮（docs/design/ui/composer-interaction-modes.md 决策）。"""
@@ -265,8 +279,8 @@ async def await_user_approval(
             "prompt": q.prompt, "options": q.options, "multi": q.multi,
             "allow_custom": q.allow_custom, "detail": q.detail,
             "expires_at": q.expires_at,
-            # approval 专属：工具名 + 参数，给 approval mode 画危险摘要。
-            "tool": tool_name, "args": args,
+            # approval 专属：工具名 + 参数 + 危险分级，给 approval mode 画危险摘要。
+            "tool": tool_name, "args": args, "risk_level": _risk_level(tool_name, args),
         }, transport)
 
     q, ev = open_question(

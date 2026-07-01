@@ -691,11 +691,15 @@ def _resolve_question(qid: str, outcome: str, value=None) -> None:
 
 
 async def handle_question_reply(ws, cmd: dict):
-    """用户回答了 runtime.ask 的问题（user-input-requests.md Phase 1）。"""
+    """用户回答了 runtime.ask 的问题（user-input-requests.md Phase 1）。
+    approval 的"总是允许"带 scope="always"——打包进 value，await_user_approval
+    会拆出 scope 决定是否写回持久 allow 规则（permission-model.md §6.3）。"""
     qid = cmd.get("id") or ""
     answer = cmd.get("answer")
+    scope = cmd.get("scope")
     if qid:
-        _resolve_question(qid, "answered", answer)
+        value = {"answer": answer, "scope": scope} if scope else answer
+        _resolve_question(qid, "answered", value)
 
 
 async def handle_question_reject(ws, cmd: dict):

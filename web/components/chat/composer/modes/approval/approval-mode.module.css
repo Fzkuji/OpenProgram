@@ -16,4 +16,16 @@
   border-radius: 8px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
+  border-left-width: 3px;
+}
+
+/* 危险分级：只改左边框色（不抢眼但一眼可辨），配合审批卡片。 */
+.risk_high {
+  border-left-color: var(--danger, #d72518);
+}
+.risk_medium {
+  border-left-color: var(--warning, #d78a18);
+}
+.risk_low {
+  border-left-color: var(--success, #3a9d5a);
 }

@@ -308,6 +308,7 @@ export function useWS(): void {
               detail: dd.detail ? String(dd.detail) : undefined,
               tool: dd.tool ? String(dd.tool) : undefined,
               args: (dd.args as Record<string, unknown>) || undefined,
+              risk_level: (dd.risk_level as "low" | "medium" | "high") || undefined,
               schema:
                 dd.schema && typeof dd.schema === "object"
                   ? (dd.schema as PendingDecision["schema"])
@@ -374,6 +375,7 @@ export function useWS(): void {
                         detail: dd.detail ? String(dd.detail) : undefined,
                         tool: dd.tool ? String(dd.tool) : undefined,
                         args: (dd.args as Record<string, unknown>) || undefined,
+              risk_level: (dd.risk_level as "low" | "medium" | "high") || undefined,
                         schema:
                           dd.schema && typeof dd.schema === "object"
                             ? (dd.schema as PendingDecision["schema"])
