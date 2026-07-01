@@ -15,15 +15,31 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
 
 VALID_THINKING = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
-VALID_PERMISSION = {"ask", "auto", "bypass"}
+# 权限模式规范值（保留驼峰）。见 docs/design/runtime/permission-model.md §2.1。
+# _normalize_permission 做大小写不敏感匹配，所以 "acceptedits" 也能规回 "acceptEdits"。
+VALID_PERMISSION = {"ask", "auto", "acceptEdits", "plan", "dontAsk", "bypass"}
+_PERMISSION_BY_LOWER = {m.lower(): m for m in VALID_PERMISSION}
 
 # 工具意图的统一类型：dict（意图）/ list[str]（用户显式精选）/ None
 ToolsOverride = Union[dict, list, None]
+
+
+@dataclass
+class PermissionRules:
+    """用户在运行时叠加的 allow/deny/ask 规则。三个平行 list，behavior 由
+    规则住在哪个 list 决定。规则字符串语法见 permission_rule.py。
+    见 docs/design/runtime/permission-model.md §2.2。"""
+    allow: list[str] = field(default_factory=list)
+    deny: list[str] = field(default_factory=list)
+    ask: list[str] = field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not (self.allow or self.deny or self.ask)
 
 
 @dataclass
@@ -37,6 +53,12 @@ class SessionRunConfig:
     toolset: Optional[str] = None
     thinking_effort: Optional[str] = None
     permission_mode: Optional[str] = None
+    # ── 权限规则（见 permission-model.md §2.2）──
+    permission_rules: Optional[PermissionRules] = None
+    # plan 模式进入前的档位，退出 plan 时恢复（§3.7）。
+    pre_plan_permission_mode: Optional[str] = None
+    # 路径安全的额外工作目录集（§3.5）。
+    additional_working_dirs: list[str] = field(default_factory=list)
 
 
 def load_session_run_config(session_id: str) -> SessionRunConfig:
@@ -53,6 +75,9 @@ def load_session_run_config(session_id: str) -> SessionRunConfig:
         toolset=_as_nonempty_str(row.get("toolset")),
         thinking_effort=_normalize_thinking(row.get("thinking_effort")),
         permission_mode=_normalize_permission(row.get("permission_mode")),
+        permission_rules=_as_permission_rules(row.get("permission_rules")),
+        pre_plan_permission_mode=_normalize_permission(row.get("pre_plan_permission_mode")),
+        additional_working_dirs=_as_str_list(row.get("additional_working_dirs")),
     )
 
 
@@ -65,6 +90,9 @@ def save_session_run_config(
     toolset: Any = None,
     thinking_effort: Any = None,
     permission_mode: Any = None,
+    permission_rules: Any = None,
+    pre_plan_permission_mode: Any = None,
+    additional_working_dirs: Any = None,
 ) -> SessionRunConfig:
     fields: dict[str, Any] = {}
 
@@ -88,6 +116,21 @@ def save_session_run_config(
     permission = _normalize_permission(permission_mode)
     if permission is not None:
         fields["permission_mode"] = permission
+
+    if permission_rules is not None:
+        rules = _as_permission_rules(permission_rules)
+        # 存成 dict（schemaless meta 里放纯数据结构）。空规则也存（用于清空）。
+        fields["permission_rules"] = (
+            {"allow": rules.allow, "deny": rules.deny, "ask": rules.ask}
+            if rules is not None else None
+        )
+
+    pre_plan = _normalize_permission(pre_plan_permission_mode)
+    if pre_plan is not None:
+        fields["pre_plan_permission_mode"] = pre_plan
+
+    if additional_working_dirs is not None:
+        fields["additional_working_dirs"] = _as_str_list(additional_working_dirs)
 
     if fields:
         try:
@@ -235,5 +278,24 @@ def _normalize_thinking(value: Any) -> Optional[str]:
 def _normalize_permission(value: Any) -> Optional[str]:
     if value is None:
         return None
-    mode = str(value).strip().lower()
-    return mode if mode in VALID_PERMISSION else None
+    # 大小写不敏感：驼峰档 acceptEdits/dontAsk 传入任意大小写都规回规范值。
+    return _PERMISSION_BY_LOWER.get(str(value).strip().lower())
+
+
+def _as_permission_rules(value: Any) -> Optional[PermissionRules]:
+    """dict / PermissionRules → PermissionRules；其余 → None。"""
+    if isinstance(value, PermissionRules):
+        return value
+    if isinstance(value, dict):
+        return PermissionRules(
+            allow=_as_str_list(value.get("allow")),
+            deny=_as_str_list(value.get("deny")),
+            ask=_as_str_list(value.get("ask")),
+        )
+    return None
+
+
+def _as_str_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(v) for v in value if str(v)]
+    return []
