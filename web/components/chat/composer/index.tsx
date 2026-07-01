@@ -1464,22 +1464,25 @@ export function Composer() {
                           }}
                         >
                           {permOptions.map((o) => (
-                            <PlusMenuItem
-                              key={o.value}
-                              active={permMode === o.value}
-                              onClick={() => { setPermMode(o.value); setPermSubOpen(false); }}
-                              icon={
-                                <span
-                                  aria-hidden="true"
-                                  style={{
-                                    display: "inline-block",
-                                    width: 8, height: 8, borderRadius: "50%",
-                                    background: PERM_COLOR[o.value],
-                                  }}
-                                />
-                              }
-                              label={o.label}
-                            />
+                            <React.Fragment key={o.value}>
+                              {/* plan 是"只读规划"特殊模式，与常规批准档不同维度，分隔线分开 */}
+                              {o.value === "plan" && <div className={styles.plusMenuDivider} />}
+                              <PlusMenuItem
+                                active={permMode === o.value}
+                                onClick={() => { setPermMode(o.value); setPermSubOpen(false); }}
+                                icon={
+                                  <span
+                                    aria-hidden="true"
+                                    style={{
+                                      display: "inline-block",
+                                      width: 8, height: 8, borderRadius: "50%",
+                                      background: PERM_COLOR[o.value],
+                                    }}
+                                  />
+                                }
+                                label={o.label}
+                              />
+                            </React.Fragment>
                           ))}
                         </div>
                       )}

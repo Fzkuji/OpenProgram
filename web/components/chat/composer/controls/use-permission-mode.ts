@@ -17,13 +17,14 @@ export interface PermissionModeOption {
   label: string;
 }
 
+// 常规档（"要不要批准"维度，按危险度递增）+ plan 单列（只读规划，另一维度）。
 export const PERMISSION_MODE_OPTIONS: PermissionModeOption[] = [
-  { value: "ask", label: "逐次确认" },
-  { value: "auto", label: "自动（危险才问）" },
-  { value: "acceptEdits", label: "自动批改文件" },
-  { value: "plan", label: "计划（只读）" },
-  { value: "dontAsk", label: "不打断（拒绝需确认的）" },
-  { value: "bypass", label: "全部放行" },
+  { value: "ask", label: "每步都问我" },
+  { value: "auto", label: "只有危险操作才问" },
+  { value: "acceptEdits", label: "改文件不用问" },
+  { value: "dontAsk", label: "别打扰我（危险操作直接跳过）" },
+  { value: "bypass", label: "全部自动执行" },
+  { value: "plan", label: "只读规划（不改任何东西）" },  // 特殊模式，UI 里用分隔线分开
 ];
 
 const DEFAULT_MODE: PermissionMode = "ask";
