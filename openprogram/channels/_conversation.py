@@ -140,6 +140,7 @@ def dispatch_inbound(
         permission_from_config,
         tools_override_from_config,
     )
+    from openprogram.functions.permission_rule import load_merged_rules as _load_merged_rules
     run_cfg = load_session_run_config(session_key)
 
     # ---- progress streaming state ---------------------------------------
@@ -235,7 +236,7 @@ def dispatch_inbound(
         peer_display=user_display or str(peer_id),
         peer_id=str(peer_id),
         permission_mode=permission_from_config(run_cfg, default="auto"),
-        permission_rules=run_cfg.permission_rules,
+        permission_rules=_load_merged_rules(session_key),
         additional_working_dirs=run_cfg.additional_working_dirs,
         tools_override=tools_override_from_config(run_cfg),
         thinking_effort=run_cfg.thinking_effort,

@@ -97,6 +97,40 @@ def parse_command(tool_name: str, args: dict) -> Optional[str]:
     return None
 
 
+def load_merged_rules(session_id: str):
+    """合并各来源的权限规则，返回 PermissionRules（低→高：global < session）。
+    见 docs/design/runtime/permission-model.md §2.3。
+
+    当前落地两层真实载体——全局配置 + 会话；project/local/cliArg 层等有对应
+    交互入口时再加（不空造）。合并只是拼接三 list：deny/ask/allow 的总序由
+    _match_rule 保证（命中即返回），来源顺序只影响同一 behavior 内的先后。"""
+    from openprogram.agent.session_config import PermissionRules, load_session_run_config
+
+    merged = PermissionRules()
+
+    # 全局层
+    try:
+        from openprogram.webui import _setup
+        cfg = _setup._read_config() or {}
+        g = ((cfg.get("tools") or {}).get("permission_rules")) or {}
+        for k in ("allow", "deny", "ask"):
+            getattr(merged, k).extend(str(v) for v in (g.get(k) or []) if str(v))
+    except Exception:
+        pass
+
+    # 会话层（最高优先）
+    try:
+        sess = load_session_run_config(session_id).permission_rules
+        if sess is not None:
+            merged.allow.extend(sess.allow)
+            merged.deny.extend(sess.deny)
+            merged.ask.extend(sess.ask)
+    except Exception:
+        pass
+
+    return merged
+
+
 def pattern_matches(pattern: str, value: str) -> bool:
     """per-pattern 匹配规则：
     - ``prefix:*`` → 前缀匹配（``git:*`` 匹配 "git status"、不匹配 "github"）。

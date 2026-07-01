@@ -317,6 +317,7 @@ const DEFAULT_COMPOSER_SETTINGS: ComposerSettings = {
   webSearch: false,
   fast: false,
   unattended: false,  // web default: attended (a human is watching, may be asked)
+  permission_mode: "",  // "" → backend default (web = bypass)
 };
 
 function readComposerSettingsMap(): Record<string, ComposerSettings> {
@@ -346,7 +347,8 @@ function persistComposerSettingsMap(map: Record<string, ComposerSettings>) {
     for (const k in map) {
       const s = map[k];
       if (s.thinking !== d.thinking || s.tools !== d.tools
-          || s.webSearch !== d.webSearch || s.fast !== d.fast) {
+          || s.webSearch !== d.webSearch || s.fast !== d.fast
+          || s.permission_mode !== d.permission_mode) {
         compact[k] = s;
       }
     }

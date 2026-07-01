@@ -95,6 +95,10 @@ export interface ComposerSettings {
   tools: boolean;
   webSearch: boolean;
   fast: boolean;
+  /** Permission mode for this session's tool calls: ask/auto/acceptEdits/
+   *  plan/dontAsk/bypass. "" means fall through to the backend default.
+   *  See docs/design/runtime/permission-model.md. */
+  permission_mode: string;
   /** Unattended: nobody watching → the agent's user-question tool is
    *  withheld so it never blocks on a prompt no one can answer. Web default
    *  is attended (false); toggled from the composer "+" menu, mirrored to

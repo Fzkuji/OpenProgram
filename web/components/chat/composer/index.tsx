@@ -64,10 +64,12 @@ import { useComposerAttachments } from "./attach/use-composer-attachments";
 import { useFileMention } from "./attach/use-file-mention";
 import { ImageAttachStrip } from "./attach/image-attach-strip";
 import { ThinkingEffortPill } from "./controls/thinking-effort-pill";
+import { PermissionModePill } from "./controls/permission-mode-pill";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
 import { useSlashMenu } from "./slash/use-slash-menu";
 import { useThinkingEffort } from "./controls/use-thinking-effort";
+import { usePermissionMode } from "./controls/use-permission-mode";
 import { useToolsToggles } from "./controls/use-tools-toggles";
 import styles from "./composer.module.css";
 
@@ -327,6 +329,11 @@ export function Composer() {
     setMenuOpen: setThinkingMenuOpen,
     set: setThinking,
   } = useThinkingEffort();
+  const {
+    mode: permMode,
+    options: permOptions,
+    set: setPermMode,
+  } = usePermissionMode();
   // The effort picker only appears once a chat model is actually
   // selected at the top; with no model picked it stays hidden.
   const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
@@ -677,6 +684,7 @@ export function Composer() {
         thinking_effort: thinking,
         tools: toolsEnabled,
         web_search: webSearchEnabled,
+        ...(permMode ? { permission_mode: permMode } : {}),
         ...(fastEnabled ? { service_tier: "priority" } : {}),
       });
       if (!ok) return;
@@ -1421,6 +1429,13 @@ export function Composer() {
                 />
               </HoverTip>
             ) : null}
+            <HoverTip label={text("Permission mode", "权限模式")}>
+              <PermissionModePill
+                mode={permMode}
+                options={permOptions}
+                onChange={setPermMode}
+              />
+            </HoverTip>
           </div>
           <div className={styles.inputBottomRight}>
             <ContextBadge />

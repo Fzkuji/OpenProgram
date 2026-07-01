@@ -116,6 +116,7 @@ def run_query(
         TurnRequest as _TurnRequest,
         process_user_turn as _process_user_turn,
     )
+    from openprogram.functions.permission_rule import load_merged_rules as _load_merged_rules
 
     _s._register_active_runtime(session_id, runtime)
     _chat_cancel_event = threading.Event()
@@ -254,7 +255,7 @@ def run_query(
         agent_id=agent_id,
         source="web",
         permission_mode=effective_permission,
-        permission_rules=run_cfg.permission_rules,
+        permission_rules=_load_merged_rules(session_id),
         additional_working_dirs=run_cfg.additional_working_dirs,
         tools_override=resolved_tools_override,
         thinking_effort=effective_thinking,
