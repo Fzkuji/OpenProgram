@@ -117,6 +117,44 @@ list_branches(session_id?) -> str                        # db.list_branches
 （`(session_id, head_id)` + name）。这是"两个 agent 互相看见"的入口。数据层 + WS
 handler 已有（`handle_list_sessions` / `handle_list_branches`），只缺包成工具。
 
+### 2.4 新建分支要有名字
+
+`message_branch` 每次 `target="new"` / `"new:…"` 创建分支，**都必须给分支一个名字**
+——否则 web 端只能显示 8 位 hex 短号，一堆分支分不清谁是谁。
+
+- **立刻有名（Stage 1）**：创建时把一个简短 label 传给 `run_agent_turn(... label=…)`
+  → `store.set_branch_name`。label 从投递的 `message` 摘一句（截断到 ~24 字），或让
+  模型在调用时显式带一个名字。这样分支一出生就有可读名，不用等 LLM。
+- **后台自动改好名（Stage 2）**：分支正常聊起来后，由 `finalize_turn` 在 `turns`
+  命中阈值 `{1,6,16,40}` 时，后台线程用 LLM 依据分支内容生成更贴切的标题，覆盖
+  Stage 1 的临时名。规则见 [branch-naming](operations/branch-naming.md)——那里定义
+  了命名的分级、锁、触发点；本节只强调：**message_branch 派生的分支和用户手动
+  fork 的分支，走同一套命名（都要 Stage 1 占位名 + Stage 2 自动改名），不能漏。**
+
+> 现状缺口：`message_branch` 调 `run_agent_turn` 时**没传 label**，Stage 2 的
+> finalize_turn 自动触发**也没接线**——所以派生分支现在没名字。这是要补的实现。
+
+### 2.5 回送节点落在哪：续接发起方分支，不拼主线
+
+异步回送（`wait=false`）时，`_dispatch_followup` 把目标分支的回复作为一个
+**synthetic user-role turn** 喂回发起方 session。**关键规则：这个回送节点的
+`predecessor` 必须指向"发起 message_branch 的那个节点"（caller），不是发起方
+session 当前的 `head_id`。**
+
+为什么：
+- 用 `head_id` 当 predecessor → 回送被**拼到主线尾巴**。如果发起方在等待期间又聊了
+  别的，回送会莫名其妙接在那后面，DAG 上看不出这是"某次派生的回流"。
+- 用 caller 当 predecessor → 回送**从当初发起的那个点续接**，在 DAG 上是发起方分支
+  的自然延续（和 attach 指针的落位一致：attach 也挂 `predecessor = caller_msg_id`）。
+
+DAG 形状：`发起节点 ──caller──> 子分支(点划线 spawn edge)`，子分支跑完，回送 user
+节点 `──predecessor──> 发起节点`，续在发起节点之后。发起方读到回送、再回应，继续这条
+链。子分支本身是并列的独立一支（从发起点 fork 出去），**不并回主线**。
+
+> 现状缺口：`_dispatch_followup` 构造 `TurnRequest` 时没指定 `branch_from`，
+> `process_user_turn` 默认拿 session `head_id` 当 predecessor → 回送拼到主线。
+> 修法：回送的 `TurnRequest` 显式带上发起点（caller_msg_id）作为 `branch_from`。
+
 ---
 
 ## 3. 底座：事件层（整个设计，自包含）

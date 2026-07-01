@@ -10,9 +10,14 @@ Status: **decided（四条决策已定，可实现）** · Created: 2026-06-28
 
 分支当前只在两种情况有名字：① 用户手动重命名；② /task spawn 用 task.label。
 （此外主干现在还硬合成 "main"，本设计去掉这个特例——见第八节决策 3，主干与
-其他分支一视同仁。）普通交互式 fork（用户 retry / edit 产生的分支）一直停在
-head_msg_id 前 8 位 hex —— 短号本身没问题（git 心智），问题是它**永远不会
-自动升级**成描述性标签，除非用户手动点一次自动命名。
+其他分支一视同仁。）普通交互式 fork（用户 retry / edit 产生的分支）**和
+`message_branch` 派生的分支**都一直停在 head_msg_id 前 8 位 hex —— 短号本身
+没问题（git 心智），问题是它**永远不会自动升级**成描述性标签，除非用户手动
+点一次自动命名。
+
+> `message_branch`（agent 间通信派生分支，见 [agent-collaboration](../agent-collaboration.md) §2.4）
+> 应和 task 一样在创建时带一个 Stage 1 占位 label（从投递 message 摘一句），
+> 之后走本文档的 Stage 2 自动改名——现状是它连 label 都没传，属实现缺口。
 
 目标：普通 fork 分支也能自动命名 —— 沿用现状的 id 短号占位，叠加后台 LLM
 渐进重命名 + 用户起名锁。借 session 的"两阶段 + 渐进阈值"骨架；但占位走 git
