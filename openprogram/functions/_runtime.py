@@ -329,12 +329,37 @@ def _allow_null(schema: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _has_object_type(schema: dict[str, Any]) -> bool:
+    t = schema.get("type")
+    return t == "object" or (isinstance(t, list) and "object" in t)
+
+
+def _close_objects(schema: Any) -> Any:
+    """Recursively add ``additionalProperties: false`` to every object-typed
+    schema that lacks it. OpenAI strict mode rejects an object schema without
+    it (observed: get_mcp_prompt.arguments → 400 "additionalProperties is
+    required to be supplied and to be false"). Idempotent."""
+    if not isinstance(schema, dict):
+        return schema
+    out = dict(schema)
+    if isinstance(out.get("properties"), dict):
+        out["properties"] = {k: _close_objects(v) for k, v in out["properties"].items()}
+    if isinstance(out.get("items"), dict):
+        out["items"] = _close_objects(out["items"])
+    for key in ("oneOf", "anyOf", "allOf"):
+        if isinstance(out.get(key), list):
+            out[key] = [_close_objects(v) for v in out[key]]
+    if _has_object_type(out) and "additionalProperties" not in out:
+        out["additionalProperties"] = False
+    return out
+
+
 def _widen_optionals_to_null(params: Any) -> Any:
     """Given a tool's top-level ``parameters`` object schema, widen every
     OPTIONAL property (one not listed in ``required``) so it also accepts
-    ``null``. The model passes null to mean "unspecified"; without this a bare
-    ``{"type":"string"}`` optional param makes the validator reject the whole
-    call (observed: task.agent_id → "None is not of type 'string'").
+    ``null``, and close every object type with ``additionalProperties: false``.
+    Both are OpenAI strict-mode requirements (null: task.agent_id → "None is
+    not of type 'string'"; closed objects: get_mcp_prompt.arguments → 400).
 
     One central place, applied to both generated and hand-written schemas.
     Idempotent; leaves non-object / malformed schemas untouched."""
@@ -346,8 +371,9 @@ def _widen_optionals_to_null(params: Any) -> Any:
     required = set(params.get("required") or [])
     out = dict(params)
     out["properties"] = {
-        name: (sch if name in required or not isinstance(sch, dict)
-               else _allow_null(sch))
+        name: _close_objects(
+            sch if name in required or not isinstance(sch, dict)
+            else _allow_null(sch))
         for name, sch in props.items()
     }
     return out

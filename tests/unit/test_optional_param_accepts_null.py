@@ -14,6 +14,7 @@ from openprogram.functions._runtime import (
     _build_parameters_schema,
     _allow_null,
     _widen_optionals_to_null,
+    _close_objects,
 )
 
 
@@ -105,6 +106,46 @@ def test_allow_null_empty_schema_untouched():
 def test_allow_null_oneof_adds_null_variant():
     out = _allow_null({"oneOf": [{"type": "string"}, {"type": "integer"}]})
     assert any(v.get("type") == "null" for v in out["oneOf"])
+
+
+# ── object schemas get additionalProperties:false (OpenAI strict) ──
+
+def test_object_type_closed():
+    out = _close_objects({"type": "object", "properties": {}})
+    assert out["additionalProperties"] is False
+
+
+def test_object_or_null_closed():
+    # get_mcp_prompt.arguments is ["object","null"] — must still be closed.
+    out = _close_objects({"type": ["object", "null"]})
+    assert out["additionalProperties"] is False
+
+
+def test_nested_object_closed():
+    out = _close_objects({
+        "type": "object",
+        "properties": {"cfg": {"type": "object", "properties": {}}},
+    })
+    assert out["additionalProperties"] is False
+    assert out["properties"]["cfg"]["additionalProperties"] is False
+
+
+def test_non_object_untouched():
+    out = _close_objects({"type": "string"})
+    assert "additionalProperties" not in out
+
+
+def test_close_objects_idempotent():
+    once = _close_objects({"type": "object", "properties": {}})
+    assert _close_objects(once) == once
+
+
+def test_get_mcp_prompt_arguments_closed():
+    from openprogram.functions import agent_tools
+    t = next((x for x in agent_tools(toolset="full") if x.name == "get_mcp_prompt"), None)
+    assert t is not None
+    args = t.parameters["properties"]["arguments"]
+    assert args.get("additionalProperties") is False
 
 
 # ── the actual bug: the task tool's agent_id ──
