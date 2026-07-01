@@ -43,7 +43,7 @@ import {
   UnattendedIcon,
   WebSearchIcon,
 } from "./icons";
-import type { AnimatedNavIconHandle } from "@/components/animated-icons";
+import { ShieldCheckIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { PlusMenuItem, ToolChip } from "./controls/menu-pieces";
 import { type SlashCommand } from "./slash/slash-commands";
 import { sendChatMessage } from "./legacy-send";
@@ -64,7 +64,6 @@ import { useComposerAttachments } from "./attach/use-composer-attachments";
 import { useFileMention } from "./attach/use-file-mention";
 import { ImageAttachStrip } from "./attach/image-attach-strip";
 import { ThinkingEffortPill } from "./controls/thinking-effort-pill";
-import { PermissionModePill } from "./controls/permission-mode-pill";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
 import { useSlashMenu } from "./slash/use-slash-menu";
@@ -92,6 +91,16 @@ function wsSend(payload: unknown): boolean {
 }
 
 const noop = () => {};
+
+// 权限档危险度配色：绿=安全、黄=需留意、橙/红=危险。
+const PERM_COLOR: Record<string, string> = {
+  ask: "var(--success, #3a9d5a)",
+  plan: "var(--success, #3a9d5a)",
+  auto: "var(--warning, #d78a18)",
+  acceptEdits: "var(--warning, #d78a18)",
+  dontAsk: "#e06c1f",
+  bypass: "var(--danger, #d72518)",
+};
 
 export function Composer() {
   const { text } = useTranslation();
@@ -371,6 +380,8 @@ export function Composer() {
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [toolProfileSubOpen, setToolProfileSubOpen] = useState(false);
   const toolProfileHideTimer = useRef<NodeJS.Timeout | null>(null);
+  const [permSubOpen, setPermSubOpen] = useState(false);
+  const permHideTimer = useRef<NodeJS.Timeout | null>(null);
   const {
     tools: toolsEnabled,
     webSearch: webSearchEnabled,
@@ -1374,7 +1385,7 @@ export function Composer() {
                               key={pName}
                               active={activeProfile === pName}
                               onClick={() => switchProfile(pName)}
-                              icon={<ToolsIcon />}
+                              icon={<span aria-hidden="true" style={{ display: "inline-block", width: 20 }} />}
                               label={pName === "full"
                                 ? text("All Tools", "全部工具")
                                 : pName}
@@ -1402,6 +1413,77 @@ export function Composer() {
                       icon={<UnattendedIcon />}
                       label={text("Unattended", "无人值守")}
                     />
+                    <div style={{ position: "relative" }}
+                      onMouseEnter={() => {
+                        if (permHideTimer.current) {
+                          clearTimeout(permHideTimer.current);
+                          permHideTimer.current = null;
+                        }
+                        setPermSubOpen(true);
+                      }}
+                      onMouseLeave={() => {
+                        permHideTimer.current = setTimeout(
+                          () => setPermSubOpen(false), 300,
+                        );
+                      }}
+                    >
+                      <PlusMenuItem
+                        active={!!permMode && permMode !== "ask"}
+                        onClick={() => setPermSubOpen(true)}
+                        icon={<ShieldCheckIcon size={20} />}
+                        label={text("Permission", "权限模式")}
+                      />
+                      {permSubOpen && (
+                        <div
+                          onMouseEnter={() => {
+                            if (permHideTimer.current) {
+                              clearTimeout(permHideTimer.current);
+                              permHideTimer.current = null;
+                            }
+                          }}
+                          onMouseLeave={() => {
+                            permHideTimer.current = setTimeout(
+                              () => setPermSubOpen(false), 300,
+                            );
+                          }}
+                          style={{
+                            position: "absolute",
+                            left: "100%",
+                            bottom: 0,
+                            marginLeft: 4,
+                            minWidth: 180,
+                            zIndex: 10,
+                            background: "var(--bg-secondary)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 12,
+                            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                            padding: 6,
+                            display: "flex",
+                            flexDirection: "column" as const,
+                            gap: 1,
+                          }}
+                        >
+                          {permOptions.map((o) => (
+                            <PlusMenuItem
+                              key={o.value}
+                              active={permMode === o.value}
+                              onClick={() => { setPermMode(o.value); setPermSubOpen(false); }}
+                              icon={
+                                <span
+                                  aria-hidden="true"
+                                  style={{
+                                    display: "inline-block",
+                                    width: 8, height: 8, borderRadius: "50%",
+                                    background: PERM_COLOR[o.value],
+                                  }}
+                                />
+                              }
+                              label={o.label}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>,
                   document.body,
                 )
@@ -1429,13 +1511,6 @@ export function Composer() {
                 />
               </HoverTip>
             ) : null}
-            <HoverTip label={text("Permission mode", "权限模式")}>
-              <PermissionModePill
-                mode={permMode}
-                options={permOptions}
-                onChange={setPermMode}
-              />
-            </HoverTip>
           </div>
           <div className={styles.inputBottomRight}>
             <ContextBadge />
