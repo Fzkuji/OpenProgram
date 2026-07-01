@@ -30,6 +30,7 @@ import {
 import { HoverTip } from "@/components/ui/tooltip";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { wsRequest } from "@/lib/net/ws-request";
 import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
 
 /** Fired whenever the conversation's project changes so the topbar chip
@@ -44,49 +45,6 @@ interface Project {
   path: string;
   is_default: boolean;
   session_count: number;
-}
-
-interface WsWindow {
-  ws?: WebSocket;
-}
-
-/** One-shot WS request: send ``action`` + payload, resolve with the
- * ``data`` of the next message whose ``type`` matches. Null on timeout
- * or no socket. */
-function wsRequest<T = unknown>(
-  action: string,
-  payload: Record<string, unknown>,
-  responseType: string,
-  timeoutMs = 4000,
-): Promise<T | null> {
-  const ws = (window as unknown as WsWindow).ws;
-  return new Promise((resolve) => {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      resolve(null);
-      return;
-    }
-    let done = false;
-    const onMsg = (e: MessageEvent) => {
-      try {
-        const m = JSON.parse(e.data as string);
-        if (m && m.type === responseType) {
-          done = true;
-          ws.removeEventListener("message", onMsg);
-          resolve(m.data as T);
-        }
-      } catch {
-        /* ignore non-JSON frames */
-      }
-    };
-    ws.addEventListener("message", onMsg);
-    ws.send(JSON.stringify({ action, ...payload }));
-    setTimeout(() => {
-      if (!done) {
-        ws.removeEventListener("message", onMsg);
-        resolve(null);
-      }
-    }, timeoutMs);
-  });
 }
 
 export function ProjectMenu({ onClose }: { onClose: () => void }) {

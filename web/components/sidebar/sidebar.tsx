@@ -51,6 +51,7 @@ import {
   type AnimatedNavIconHandle,
   BoxesIcon,
   BrainIcon,
+  FoldersIcon,
   GraduationCapIcon,
   LayersIcon,
   MessageCircleIcon,
@@ -108,6 +109,7 @@ export function Sidebar() {
   const functionsIconRef = useRef<AnimatedNavIconHandle>(null);
   const programsIconRef = useRef<AnimatedNavIconHandle>(null);
   const skillsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const projectsIconRef = useRef<AnimatedNavIconHandle>(null);
   const mcpIconRef = useRef<AnimatedNavIconHandle>(null);
   const pluginsIconRef = useRef<AnimatedNavIconHandle>(null);
   const memoryIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -240,6 +242,7 @@ export function Sidebar() {
     chats: pathname.startsWith("/chats"),
     skills: pathname.startsWith("/skills"),
     plugins: pathname.startsWith("/plugins") || pathname.startsWith("/plugin/"),
+    projects: pathname.startsWith("/projects"),
   };
 
   return (
@@ -415,6 +418,22 @@ export function Sidebar() {
             <GraduationCapIcon ref={skillsIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.skills")}</span>
+        </Link>
+
+        <Link
+          href="/projects"
+          className={
+            sidebarNavItemClass +
+            (navActive.projects ? " " + sidebarNavItemActiveClass : "")
+          }
+          id="navProjects"
+          onMouseEnter={() => projectsIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => projectsIconRef.current?.stopAnimation?.()}
+        >
+          <span className={sidebarNavIconClass}>
+            <FoldersIcon ref={projectsIconRef} size={20} />
+          </span>
+          <span className={sidebarNavLabelClass}>{t("nav.projects")}</span>
         </Link>
 
         <Link
