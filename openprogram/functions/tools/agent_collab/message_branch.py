@@ -290,6 +290,7 @@ def _message_branch_impl(
                 agent_id=chosen_agent,
                 branch_from=branch_from,
                 context_mode="inherit" if branch_from else "clean",
+                label=message[:60],  # Stage-1 placeholder name (Stage-2 LLM refines later)
                 subject=message[:60],
                 description=delivery_message,
                 caller_msg_id=aid,
@@ -317,6 +318,7 @@ def _message_branch_impl(
             prompt=delivery_message,
             agent_id=chosen_agent,
             branch_from=branch_from,
+            label=message[:60],  # Stage-1 placeholder name
         )
     except Exception as e:  # noqa: BLE001
         return f"[message_branch error] {type(e).__name__}: {e}"
@@ -328,7 +330,7 @@ def _message_branch_impl(
             session_id=run_session,
             caller_msg_id=aid,
             result=result,
-            label=None,
+            label=message[:60],  # match the branch's Stage-1 placeholder name
             prompt=message,
             chosen_agent=chosen_agent,
         )

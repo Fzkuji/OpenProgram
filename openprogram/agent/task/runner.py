@@ -944,6 +944,12 @@ class TaskRunner:
                     user_text=followup_text,
                     agent_id=task.agent_id or "main",
                     source="task_followup",
+                    # Land the reply as a continuation of the spawning node,
+                    # not the deliver-session's main-line tip. Without this,
+                    # a cross-session reply gets stapled to the end of the
+                    # caller's main line instead of the point that spawned it.
+                    # (Same expression the same-session head-reset uses above.)
+                    branch_from=task.caller_msg_id or task.parent_msg_id,
                 )
                 process_user_turn(req)
             except Exception:
