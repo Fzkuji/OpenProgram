@@ -94,7 +94,7 @@ def parent_turn(tmp_path, monkeypatch):
     turn_tok = store_mod._current_turn_id.set("a1")
 
     # Fake run_agent_turn — deterministic reply, no LLM.
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None):
+    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         s.append_message(session_id, {
             "id": "head_x", "role": "assistant",
@@ -240,7 +240,7 @@ def test_result_truncated_when_huge(parent_turn, monkeypatch):
     from openprogram.agent.sub_agent_run import AgentTurnResult
     big = "x" * 40_000
 
-    def fake_big(*, session_id, prompt, agent_id, branch_from=None, label=None):
+    def fake_big(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None):
         return AgentTurnResult(head_id="h", final_text=big,
                                failed=False, error=None)
     monkeypatch.setattr(

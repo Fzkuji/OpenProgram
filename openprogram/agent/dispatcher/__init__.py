@@ -290,12 +290,19 @@ def process_user_turn(
                     _user_meta.update(_decoded)
                 except (json.JSONDecodeError, TypeError):
                     _user_meta["extra"] = _raw_extra
+            # A spawned new-branch root points its caller at the spawning
+            # node (not ROOT), so get_branch stops there instead of
+            # seq-stitching this branch into a sibling. Only for root-level
+            # forks (branch_from is None); normal turns stay caller=ROOT.
+            _user_caller = _ROOT_ID
+            if req.branch_from is None and req.spawn_caller:
+                _user_caller = req.spawn_caller
             _user_node = Call(
                 id=user_msg_id,
                 created_at=user_msg.get("timestamp") or time.time(),
                 role=ROLE_USER,
                 output=req.user_text,
-                caller=_ROOT_ID,
+                caller=_user_caller,
                 metadata=_user_meta,
             )
             _shim.append(_user_node)

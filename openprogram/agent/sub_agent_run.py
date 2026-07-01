@@ -45,6 +45,7 @@ def run_agent_turn(
     *,
     branch_from: Optional[str] = None,
     label: Optional[str] = None,
+    spawn_caller: Optional[str] = None,
 ) -> AgentTurnResult:
     """Run one agent turn inside ``session_id``.
 
@@ -86,6 +87,10 @@ def run_agent_turn(
         branch_from=branch_from,
         history_override=[] if branch_from is None else None,
         permission_mode="bypass",
+        # New-branch (branch_from=None) root points its caller at the
+        # spawning node, so the branch is an explicit spawn (see
+        # session-dag.md §2.3). No-op for inherit forks.
+        spawn_caller=spawn_caller,
     )
     try:
         turn = process_user_turn(req)

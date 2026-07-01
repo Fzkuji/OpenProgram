@@ -530,6 +530,10 @@ class TaskRunner:
                         agent_id=task.agent_id,
                         branch_from=branch_from,
                         label=task.label,
+                        # clean mode = new branch → its root's caller = the
+                        # spawning node, so it's an explicit spawn (not
+                        # seq-stitched into a sibling). session-dag.md §2.3.
+                        spawn_caller=task.caller_msg_id if branch_from is None else None,
                     )
                 finally:
                     if _depth_tok is not None:

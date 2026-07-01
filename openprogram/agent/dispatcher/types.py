@@ -96,6 +96,14 @@ class TurnRequest:
     # Providers that don't support vision will reject; the dispatcher
     # surfaces that as an error envelope, not a crash.
     attachments: Optional[list[dict]] = None
+    # Spawn caller: when this turn STARTS a new branch that was spawned by
+    # another node (message_branch target="new"), this is the id of the
+    # spawning node. The dispatcher sets the new branch-root's ``caller`` to
+    # it (instead of ROOT), so the branch is an explicit spawn — otherwise a
+    # ROOT-parented branch root with no predecessor gets seq-stitched into a
+    # sibling branch and the chat view flattens all branches into one.
+    # See docs/design/runtime/dag/session-dag.md §2.3.
+    spawn_caller: Optional[str] = None
 
 
 @dataclass

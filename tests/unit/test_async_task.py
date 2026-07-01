@@ -162,7 +162,7 @@ def fake_worker(monkeypatch):
     cancel_seen = threading.Event()  # set inside fake when ev fires
     entered = threading.Event()  # set once the worker is INSIDE fake_run
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None):
+    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         from openprogram.webui._pause_stop import is_cancelled
         calls.append({

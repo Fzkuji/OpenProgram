@@ -1,395 +1,247 @@
-# Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)
+# Agent 执行的 DAG 模型
 
-Status: **decided（最终模型，开始实现）** · Created: 2026-06-19 · Finalized: 2026-06-20
+Status: **decided** · Created: 2026-06-19
 
-> 本文是 agent 执行记录的**权威设计**:① 数据结构(一整张图存什么)② 上下文怎么从图中检索 ③ 怎么画 ④ 现状两套调用路径(聊天 / 函数)怎么合并成一套。
-> 模型选型理由见 `docs/research/execution-trace-model-selection.md`(span 概念 + 创新点)。
-> 调用流程图见 `agent-call-flow.svg`(统一后的完整运行流程,含重试/审批/嵌套)。
+> 一次 agent 会话里发生的每件事——用户提问、模型回复、函数调用、分支——如何记成
+> 一张统一的图，以及这张图怎么用。
 >
-> **可视化**:`session-dag.svg`(① 一整张图真实会话 ② 上下文检索:聊天累加 vs 函数弹出 ③ 两种视图)。
+> 一个 session 就是**一整张有向无环图**：每个动作是一个节点，两条边把它们连起来。
+> 这张图既是执行记录，也是喂给模型的上下文来源，还是界面上画出来的那棵树——
+> 同一份数据，三种用途。
+>
+> 可视化见 `session-dag.svg`；调用流程见 `agent-call-flow.svg`。
 
 ![模型可视化](session-dag.svg)
 
-## 一、最终结论(一整张图)
+---
 
-整个 session = **一整张 DAG,有唯一的根**(不切成多个独立 trace,也不让多轮悬空)。
+## 第一部分 · 模型是什么
 
-- **根节点(session 根)**:每个会话一个根,代表"这个会话 / 这个用户"(它是 main)。**所有顶层 user 节点的 `caller` 都指向它**——这就是把多轮连成一整张图的汇总点。没有它,多轮各自孤立、就断成多张图了。
-- **节点(span)**:user / llm / code 三种 role。一种数据结构,大模型调用永远是同一种 llm 节点,不因"被用户触发"还是"被函数触发"分裂。(根节点本身可看作一个特殊的 session 节点,无 input/output。)
-- **两条边**(见 §二·边):
-  - `caller`(谁调出我)——子调用边。LLM 调工具、函数内调子函数;顶层节点的 caller 是 ROOT。
-  - `predecessor`(聊天里我前面是谁)——对话链边。区分 fork 分支靠它。
-  - 两条都有向、无环。**之前的设计把这俩混成一个 `called_by`,是错的**(见 §二)。
-- **共享 seq**:整张图一套单调递增 seq(全局时间序)。
-- **顶层多轮**:每轮的 user 的 `caller` 都是**根**(挂在 ROOT 下,兄弟);`predecessor` 指向**上一轮的回复**(对话顺序)。靠 predecessor 区分分支,靠 seq 排时间。
-- **轮内嵌套**:函数调用是 `caller` 子树。
-- **上下文**:在这**一整张图**上,按 `seq + frame + expose` 检索(`render_context`)。
+### 1.1 一张有根的图
 
-### 为什么必须是一整张图、且有根(不是独立 trace + session)
+整个 session = **一整张 DAG，有唯一的根**。不切成多个独立片段，也不让任何一轮悬空。
 
-业界(LangSmith/Datadog)把每次请求切成独立 trace、用 session 标签归类——因为它们是**事后观测**,上下文不读回。我们不行:**我们的 `render_context` 靠"同一张图、同一套 seq"检索历史**。一旦切成独立图,第 N 轮的 llm 就看不到前面几轮(跨图检索不到),顶层对话连贯性断裂。
+- **根节点（ROOT）**：每个会话一个根，代表"这个会话"。所有顶层 user 节点都挂在它
+  下面——这是把多轮连成一整张图的汇总点。
+- **共享 seq**：整张图一套单调递增的 `seq`（全局时间序），排序的唯一依据。
+- **顶层多轮**：每轮 user 挂在 ROOT 下（互为兄弟），并用一条边指向上一轮的回复，
+  表达对话先后。
+- **轮内嵌套**：函数调用是子树，挂在调用它的节点下。
 
-而要让多轮真正成为"一整张图"、不悬空,就需要一个**根**把每轮挂上去(每轮 user 的 `caller=根`)。否则多轮 user 各自 `caller` 为空 = 多个孤立的根 = 多张图,又断了。**根 + 共享 seq,是"一整张图"的硬约束。**
+#### 为什么必须是"一张图"且"有根"
 
-### 关键区分:挂在同一个根 ≠ 串成链
+上下文检索（[3.1](#31-喂模型上下文检索)）靠"同一张图、同一套 seq"取历史。
+如果把每轮切成独立的图，第 N 轮的模型就看不到前面几轮（跨图检索不到），对话连贯性
+断裂。而要让多轮真正是"一张图"、不悬空，就需要一个根把每轮挂上去——否则每轮各自
+成根 = 多张孤立的图，又断了。**根 + 共享 seq 是"一张图"的硬约束。**
 
-这两件事之前被混淆,其实正交:
+> 业界做法（LangSmith / Datadog）把每次请求切成独立 trace、用 session 标签归类——
+> 因为它们是事后观测，上下文不读回。我们要读回，所以不能切。
 
-区分两个概念(用两条边各管一件事):
+### 1.2 节点
 
-| | 含义 | 哪条边 |
-|---|---|---|
-| **挂在同一个根** | 每轮 user 的 `caller=ROOT`,多轮是根下兄弟(不悬空) | `caller` |
-| **对话顺序** | 第2轮 user 的 `predecessor` 指第1轮回复(聊天先后) | `predecessor` |
+所有节点只有**三种 role**，一种数据结构。同一个大模型调用永远是同一种 llm 节点，
+不因"被用户触发"还是"被函数触发"而分裂。
 
-`caller` 让所有顶层节点都汇到 ROOT(一整张图);`predecessor` 表达聊天先后 +
-区分分支。两件事正交,各用一条边,互不干扰。
+| role | 是什么 |
+|---|---|
+| `user` | 用户输入 |
+| `llm` | 一次大模型调用 |
+| `code` | 一次函数 / 工具调用 |
 
-```
-一张图(共享 seq,唯一根)。每个节点两条边: caller(C) / predecessor(P)
-ROOT          session 根
-├ user1  seq0  C=ROOT  P=空      ┐ 顶层 user 的 caller 都是 ROOT(挂根)
-│  └ llm1 seq1 C=user1 P=user1    │ 对话顺序靠 predecessor 串:
-├ user2  seq2  C=ROOT  P=llm1     │   user2.P=llm1(接在第1轮回复后)
-│  └ llm2 seq3 C=user2 P=user2    │   user3.P=llm2
-├ user3  seq4  C=ROOT  P=llm2     ┘
-│  └ llm3 seq5 C=user3 P=user3
-   render_context(frame=-1) → 取所有 seq<5 的节点 → 前两轮全可见 ✓
-```
-
-> 注:沿 `caller` 从 ROOT 能走到任何节点(一整张连通图);沿 `predecessor` 能
-> 还原聊天顺序 + 区分分支。fork = 同一个 predecessor 有多个孩子。
-
-## 二、节点结构
+（ROOT 是一个特殊的 session 容器节点，无 input/output。）
 
 ```
-Node(span):
+Node:
   id           唯一编号
-  seq          单调递增整数,全局时间序(排序唯一依据)
-  created_at   wall-clock(给人看,不排序)
+  seq          单调递增整数，全局时间序（排序唯一依据）
+  created_at   wall-clock（给人看，不用于排序）
 
-  role         "user" | "llm" | "code"   ← 只决定渲染,不分裂本质
+  role         user | llm | code   ← 只决定渲染，不改变本质
   name         模型 id / 函数名 / 用户名
-
   input        prompt / 函数参数 / None
   output       回复 / 返回值 / 用户文本
   status       running | success | error | cancelled
 
-  caller       谁调出我(子调用父 id)。顶层节点 = ROOT。
-  predecessor  聊天里我前面是谁(对话链父 id)。首条 user 为空。
-  attributes   元信息(token/model/source/expose…);LLM 叶子字段对齐 gen_ai.*
-  reads        这次 LLM 调用读了哪些节点(引用,渲染上下文用;不是结构边)
+  caller       谁调出我（子调用父 id）；顶层节点 = ROOT
+  predecessor  聊天里我前面是谁（对话链父 id）；首条 user 为空
+  attributes   元信息（token / model / source / expose …）
+  reads        这次调用读了哪些节点（渲染上下文用，不是结构边）
 ```
 
-### 边:两条,别再混成一条
+### 1.3 两条边
 
-一个节点有**两种父关系**,过去都叫 `called_by`(一个在节点顶层、一个塞在
-metadata 里),名字撞了 → 代码反复分不清在读哪个 → 一连串分支/渲染 bug 的
-根源。**现已拆成两个明确字段**:
+一个节点有**两种父关系**，各用一条边，互不干扰：
 
 | 边 | 字段 | 含义 | 谁有它 |
 |---|---|---|---|
-| **子调用边** | `caller` | 谁调用了我执行 | 所有节点(顶层 = ROOT) |
-| **对话链边** | `predecessor` | 聊天顺序上我接在谁后面 | user / llm(首条 user 为空) |
+| **子调用边** | `caller` | 谁调用了我执行 | 所有节点（顶层 = ROOT） |
+| **对话链边** | `predecessor` | 聊天顺序上我接在谁后面 | user / llm（首条 user 为空） |
 
-为什么两条都要:**fork(分支)必须靠 `predecessor` 区分**。用户 retry 一句话,
-同一位置冒出两个孩子,光靠 seq(时间)排不出"哪个孩子接哪条分支线",必须有一条
-明确的"我接在谁后面"的边。单边模型(只有 caller + seq)做分支时绕不过去。
+**为什么两条都要——分支必须靠 `predecessor` 区分。** 用户 retry 一句话，同一位置
+冒出两个孩子，光靠 seq（时间）排不出"哪个孩子接哪条分支线"，必须有一条明确的
+"我接在谁后面"的边。只有 caller + seq 的单边模型做不了分支。
 
-> 命名理由 / 重构落地见 `docs/design/runtime/edge-field-rename.md`。
+- 沿 `caller` 从 ROOT 能走到任何节点（一整张连通图）。
+- 沿 `predecessor` 能还原聊天顺序、区分分支（fork = 同一个 predecessor 有多个孩子）。
 
-### 三种 role 的两条边
+**这两件事正交：** "挂在同一个根"（caller=ROOT，不悬空）和"对话先后"（predecessor
+串顺序）各管各的。挂同一个根 ≠ 串成一条链。
 
-| role | caller(子调用父) | predecessor(对话链父) | input | output |
+#### 三种 role 各自的两条边
+
+| role | caller（子调用父） | predecessor（对话链父） | input | output |
 |---|---|---|---|---|
-| (root) | 空(唯一真正的根) | 空 | None | None(session 容器) |
-| user | **ROOT** | 上一轮的 llm 回复(首条为空) | None | 用户文本 |
-| llm | 触发它的节点(顶层=本轮 user;函数内=那个 code 节点) | 本轮 user | system(可选) | 模型回复 |
-| code | 调它的节点(模型 tool_use → 那个 llm;手动调=ROOT) | 当前分支 head(手动调时) | 函数参数 | 返回值 |
+| (ROOT) | 空 | 空 | None | None（容器） |
+| user | ROOT | 上一轮的 llm 回复（首条为空） | None | 用户文本 |
+| llm | 触发它的节点（顶层=本轮 user；函数内=那个 code 节点） | 本轮 user | system（可选） | 模型回复 |
+| code | 调它的节点（模型 tool_use=那个 llm；手动调=ROOT） | 当前分支 head（手动调时） | 函数参数 | 返回值 |
 
-## 三、循环不是节点
+> 循环（for/while）不占节点——执行轨迹不记代码结构。循环跑 N 次 = 同一父下 N 个
+> 兄弟（按 seq 排）；可视化时折叠成 ×N（纯显示，数据仍是 N 个节点）。
 
-for/while 循环**不占节点**(执行轨迹不记代码结构)。循环跑 N 次 = 同一个父下 N 个兄弟(按 seq 排)。可视化时重复多了折叠成 ×N(纯显示,数据仍是 N 个节点)。
+---
 
-- 顶层多轮(聊天 while)= 顶层 N 个平级 user/llm
-- 函数内 for = 那个 code 节点下 N 个子
+## 第二部分 · 边怎么用
 
-## 四、上下文检索(已实现,沿用)
+多轮、分支、跨分支协作，都是**上面那两条边的不同用法**——没有第三条边、没有特殊结构。
 
-`render_context(graph, head_seq, frame_entry_seq, render_range)` —— 在**一整张图**上选 reads:
+### 2.1 多轮对话
 
-- **顶层聊天**(frame=-1):所有节点 in-frame,**全可见**(累加)→ 前面所有轮的对话都喂进去。
-- **轮内函数**(frame=该 code 节点的 seq):pre-frame(到根的历史)+ in-frame(自己内部进展)可见;别的函数内部按 `expose` 弹出(io 默认只露输入输出)。
+每轮 user 的 `caller` 都是 ROOT（挂根，互为兄弟）；`predecessor` 指向上一轮的回复
+（对话顺序）。靠 predecessor 还原先后，靠 seq 排时间。
 
-**顶层 = 全加(无层级选择,本来就该平);轮内 = frame+expose 层级选择。** 同一个 render_context,两层各取所需。这套机制**现状已支持**,不用改。
+```
+ROOT
+├ user1  seq0  caller=ROOT  pred=空
+│  └ llm1 seq1 caller=user1 pred=user1
+├ user2  seq2  caller=ROOT  pred=llm1      user2 接在第1轮回复后
+│  └ llm2 seq3 caller=user2 pred=user2
+├ user3  seq4  caller=ROOT  pred=llm2
+│  └ llm3 seq5 caller=user3 pred=user3
+```
 
-## 五、完整节点体系
+### 2.2 分支（fork）
 
-### 节点类型
+分支 = 同一个位置的另一种可能（平行世界）。**分支节点的 predecessor 和被替换的
+节点完全一样**——同一个 predecessor 有了多个孩子，就是 fork。
 
-| 场景 | 节点 | role | caller | DAG 形状 |
-|---|---|---|---|---|
-| 会话根 | ROOT | user | 空 | 菱形 |
-| 用户发消息 | user | user | ROOT | 圆形 |
-| LLM 回复 | llm | llm | user | 三角形 |
-| LLM 调用工具 | code | code | llm | 方形 |
-| 用户手动调用函数 | code | code | ROOT | 方形 |
-| 函数内部调 LLM | llm | llm | code | 三角形 |
-| 函数内部调子函数 | code | code | code | 方形 |
-
-所有节点只有三种 role：user、llm、code。两条边：`caller`(子调用) + `predecessor`(对话链)。ROOT 是唯一的根。
-
-**函数调用节点原则**：调用了什么函数,那个函数就是 DAG 里唯一的节点。绝对不要 anchor、placeholder 或任何辅助节点(持久化/实时/刷新三条数据流见 §六)。
-
-### 分支(fork)
-
-分支 = 同一个位置的另一种可能(平行世界)。**分支节点的 `predecessor` 跟被替换的节点完全一样**——同一个 predecessor 有了多个孩子,就是 fork。
-
-| 场景 | 被替换节点 | 分支节点 | 共享的 predecessor |
+| 场景 | 被替换节点 | 分支节点 | 共享的边 |
 |---|---|---|---|
-| 用户重发消息 | user2 (predecessor=llm1) | user2' (predecessor=llm1) | llm1 |
-| LLM 重试 | llm1 (predecessor=user1) | llm1' (predecessor=user1) | user1 |
-| 工具重试 | code search (caller=llm1) | code search' (caller=llm1) | llm1(caller) |
+| 用户重发消息 | user2（pred=llm1） | user2'（pred=llm1） | predecessor=llm1 |
+| LLM 重试 | llm1（pred=user1） | llm1'（pred=user1） | predecessor=user1 |
+| 工具重试 | code（caller=llm1） | code'（caller=llm1） | caller=llm1 |
 
-不需要特殊处理——分支节点就是一个普通节点,跟被替换的节点共享同一个 `predecessor`(工具重试是共享 `caller`)。区分哪个是当前活跃的靠 HEAD 指针。在 DAG 图中,分支用虚线连到同级兄弟,往右偏移到独立列。
+不需要特殊处理——分支节点就是普通节点，跟被替换的节点共享同一个 predecessor
+（工具重试共享 caller）。哪个是当前活跃的，靠 HEAD 指针。可视化里分支往右偏移到
+独立列，虚线连到兄弟。
 
-### 跨分支通信（message_branch 派生 + 回送）
+### 2.3 跨分支协作（message_branch）
 
-模型用 `message_branch` 派一条子分支去干活、跑完回送结果（见
-[agent-collaboration](../agent-collaboration.md) §2.5）。它在 DAG 里的形状：
+模型用 `message_branch` 派一条子分支去干活、跑完把结果回送。子分支是一条**并列的
+独立分支**，不并回主线。它靠的还是那两条边：
 
-| 节点 | 边 | 落在哪 |
+#### 派生子分支的根节点
+
+派生分支的**第一个节点**必须标出"我从哪岔出来的"：
+
+| 边 | 设什么 | 语义 |
 |---|---|---|
-| 派生子分支的第一个节点 | `caller` = 发起 message_branch 的那个 llm 节点 | 从发起节点 fork 出去，独立一支（点划线 spawn edge，右偏独立列） |
-| 子分支后续 turn | `predecessor` = 子分支内前一节点 | 就在这条子分支里往下长 |
-| **回送节点**（子分支答完喂回发起方） | `predecessor` = **发起 message_branch 的节点**（caller），**不是**发起方 session 的 `head_id` | 续接在发起节点之后（和 attach 指针同一落位） |
+| `caller` | 发起 message_branch 的那个节点 | 这条分支被那个节点派生（spawn edge） |
+| `predecessor` | 空 | 它是新链的头；分支内后续节点才用 predecessor 往下接 |
 
-**红线：回送节点的 predecessor 必须是发起点，绝不能是主线 `head_id`。** 用
-`head_id` 会把整条子分支的回流拼到主线尾巴——如果发起方在等待期间又聊了别的，回送
-会莫名接在那后面，看不出这是某次派生的回流。用发起点，回送就是发起方分支的自然
-延续，子分支本身并列独立、不并回主线。
+**caller 不能空。** `get_branch` 从某个 head 往回走时用 `predecessor || caller` 找
+上一个节点；走到分支根、两者都空，它只能靠 seq 猜"上一个顶层节点"并硬缝过去，于是
+把两条并列的独立分支**缝成一条链**，界面就把所有分支的消息全铺出来（乱套）。给分支
+根设上 caller=发起点，回走到它、发现 caller 指向的是另一条分支 → 就地停住，这条分支
+自成一链。
 
-### Viewport 布局规则
+**caller 由框架自动填，模型不碰。** message_branch 派分支时把发起节点 id 传进
+`TurnRequest`，dispatcher 建分支根节点时 `caller = 该 id`。模型只调
+`message_branch(message, target="new")`。
 
-DAG viewport（右侧面板的小地图）按 tree-indent 方式渲染节点。核心规则：
+#### 回送节点
 
-1. **tier（水平列位置）按 role 固定**，不递归走 caller 链：
-   - ROOT: tier=0
-   - user: tier=1
-   - llm/assistant: tier=2
-   - tool/code（直接子调用）: tier=3
-   - 更深子调用: tier=caller's tier + 1
+子分支答完，回复作为一个 user 节点喂回发起方。**回送节点的 predecessor 必须是
+发起点（caller），不是发起方 session 的 head_id。**
 
-2. **depth（垂直行位置）按 seq DFS 排**，fork siblings 对齐到同一行。
+用 head_id 会把回流拼到主线尾巴——发起方等待期间若又聊了别的，回送会莫名接在那后面，
+看不出这是某次派生的回流。用发起点，回送就是发起方分支的自然延续（和函数调用的
+attach 指针同一落位）。
 
+---
+
+## 第三部分 · 这张图怎么用
+
+同一张图，三个操作：喂给模型、存下来、画出来。
+
+### 3.1 喂模型（上下文检索）
+
+`render_context(graph, head_seq, frame_entry_seq, render_range)` 在整张图上按
+`seq + frame + expose` 选出这次调用能看到哪些节点：
+
+- **顶层聊天**（frame=-1）：所有 in-frame 节点全可见（累加）——前面所有轮的对话都
+  喂进去。
+- **轮内函数**（frame=该 code 节点的 seq）：pre-frame（到根的历史）+ in-frame（自己
+  内部进展）可见；别的函数内部按 `expose` 弹出（默认只露输入输出）。
+
+**顶层 = 全加（本来就该平），轮内 = frame+expose 层级选择。** 同一个 render_context，
+两层各取所需。
+
+### 3.2 存（持久化）
+
+一次函数调用在存储里**只有** code 节点（及其内部 llm/code 子节点），没有任何
+placeholder / anchor / 辅助行。**SessionStore 里的 code 子树是唯一真相源**，三条数据
+流都是它的投影：
+
+| 数据流 | 怎么走 |
+|---|---|
+| **持久化（权威）** | `@agentic_function` 执行返回时写成 code 节点，caller 指向真实调用者 |
+| **实时（投影）** | 执行期间 `live_progress` 每 ~1.2s 从 SessionStore 重建子树、广播 `tree_update` 驱动前端卡片 |
+| **刷新（投影）** | 刷新时 `handle_load_session` + `conv-mapper` 从同一份 code 节点重建同一张卡片 |
+
+三者对同一次调用必须产出一致的视图（同 id、同形状、同输出）。
+
+**caller 由调用方决定：** 用户手动调 → caller=ROOT；模型 tool_use → caller=该 llm
+节点；函数内部调 → caller=外层 code 节点（`_call_id` ContextVar 透传）。
+
+**head_id 永不悬空：** 函数调用完成后 head 推进到真实的 code 节点 id，绝不指向
+不存在的 placeholder，否则刷新渲染空白。
+
+> 函数体在独立子进程里跑（spawn 全新解释器，非 fork——父 worker 已加载 PyTorch，
+> fork 会 SIGSEGV）。含义：改完函数调用相关代码，`openprogram worker restart` 是
+> 充分且必要的（父 worker 长驻，不重启用旧模块）。
+
+### 3.3 画（可视化）
+
+DAG viewport（右侧小地图）按 tree-indent 渲染：
+
+1. **tier（水平列）按 role 固定**：ROOT=0，user=1，llm=2，code=3，更深子调用
+   = caller's tier + 1。
+2. **depth（垂直行）按 seq DFS 排**，fork siblings 对齐到同一行。
 3. **lane（分支列）**：主干 lane=0，fork siblings 各占独立 lane。
-
-4. **连线**：
-   - 主干 user 节点从 ROOT 列画边（tier=0 的垂直主干 + tier=1 的水平分支）
-   - llm 从 user 画边（tier=1 垂直 + tier=2 水平）
-   - tool 从 llm 画边（tier=2 垂直 + tier=3 水平）
-   - fork siblings 之间用虚线动画连接
-   - fork 分支内部按正常 parent→child 画边
-
+4. **连线**：user 从 ROOT 列画、llm 从 user 画、code 从 llm 画；fork siblings 之间
+   虚线动画；分支内部按 parent→child 画。
 5. **折叠**只收子调用（caller 关系），不收对话链后续 turn。
 
 ```
-正常两轮对话:
-◇ ROOT (tier=0)
-├─ ○ user1 (tier=1)
-│  └─ △ llm1 (tier=2)
-├─ ○ user2 (tier=1)    ← 回到同一列
-│  └─ △ llm2 (tier=2)
-
-有 fork/retry:
-◇ ROOT
-├─ ○ user1          ┈┈┈  ○ user1'（虚线动画连接）
-│  └─ △ llm1              └─ △ llm1'
-├─ ○ user2
-│  └─ △ llm2
-
-有工具调用:
-◇ ROOT
-├─ ○ user1
-│  └─ △ llm1
-│     └─ ■ code(web_search) (tier=3)
-
-有手动函数调用:
-◇ ROOT
-├─ ○ user1
-│  └─ △ llm1
-├─ ■ gui_agent (tier=1, 挂 ROOT)
-│  ├─ ■ gui_step (tier=2)
-│  │  └─ △ llm(内部) (tier=3)
-│  └─ ■ conclusion (tier=2)
-│     └─ △ llm(内部) (tier=3)
-├─ ○ user2
-│  └─ △ llm2
+两轮对话：              有 fork/retry：           有工具调用：
+◇ ROOT                 ◇ ROOT                    ◇ ROOT
+├ ○ user1              ├ ○ user1 ┈┈ ○ user1'    ├ ○ user1
+│ └ △ llm1             │ └ △ llm1    └ △ llm1'   │ └ △ llm1
+├ ○ user2              ├ ○ user2                 │   └ ■ code(web_search)
+│ └ △ llm2             │ └ △ llm2
 ```
 
-### 两种视图(同一份数据)
+**两种视图，同一份数据：** 聊天流（顶层 user+llm 按 seq，函数嵌套折叠）/ 调用树
+（沿 caller 全展开，循环兄弟折叠 ×N）。
 
-| 视图 | 怎么走 |
-|---|---|
-| 聊天流 | 顶层 user + 其 llm,按 seq 排,函数嵌套折叠 |
-| 调用树 | 沿 caller 全展开;循环兄弟折叠 ×N |
+---
 
-## 六、函数调用持久化(三条数据流)
+### 相关文件
 
-> 本节合并自已删除的 `fn-call-persist-redesign.md`(内容并入此处)。它把 §五「函数调用节点原则」落到实现:一次函数调用在「持久化 / 实时 WS / 刷新加载」三条数据流上各自怎么走,谁是单一真相源。
-
-### 唯一真相源:SessionStore 里的 code 节点子树
-
-一次函数调用在存储里**只有** code 节点(及其内部 llm/code 子节点),没有 anchor、没有 placeholder、没有任何 `display=runtime` 辅助行。三条数据流都是这棵 code 子树的投影:
-
-- **持久化态(权威)**:`@agentic_function` 装饰器在执行返回时把这次调用写成一个 code 节点(`openprogram/agentic_programming/function.py`),其 `caller` 指向真实调用者。子节点(函数内调的 LLM / 子函数)`caller` 指向它。这棵子树是唯一真相源。
-- **实时态(投影)**:函数执行期间,`live_progress`(`openprogram/webui/_exec_dag.py`)每 ~1.2s 用 `build_exec_dag` 从 SessionStore 重建子树,广播 `tree_update` 帧驱动前端卡片填充。**实时态读的也是 SessionStore,不是另一套内存数据。** 函数跑完 flush 一次终态(`status=completed` + 最终输出),前端同一张卡片翻完成。
-- **刷新态(投影)**:页面刷新时 `handle_load_session`(`openprogram/webui/ws_actions/session.py`)+ `conv-mapper`(前端)从 SessionStore 的 code 节点重建同一张卡片。**刷新态必须和实时态产出同一张卡片**(同 id、同形状、同输出),只是少了中间动画。
-
-裁定:**SessionStore 的 code 子树是唯一真相源;实时 WS 帧和刷新加载都是它的投影。** 三者对同一次调用必须产出一致的视图(一张卡片、一个方形节点、caller 一致)。
-
-### caller 由调用方决定(两种 code 节点)
-
-| 触发方式 | code 节点 caller | 怎么定 |
-|---|---|---|
-| 用户手动调函数(fn-form / Functions 面板) | `ROOT` | 无 LLM reply 作父;直接挂 ROOT |
-| LLM 调函数(tool_use) | 该 LLM reply 的节点 id | 模型回复触发了它 |
-| 函数内部调子函数 / 调 LLM | 外层 code 节点 id | `_call_id` ContextVar 透传当前帧 |
-
-实现上,装饰器读 `_call_id` ContextVar 决定 `caller`;调用入口(`runtime_attach.py` 的 wrapper)在执行前 set 这个 ContextVar 为真实调用者(用户手动调 = `"ROOT"`,LLM 调 = LLM reply id),执行后 reset。
-
-### head_id 永不悬空
-
-一次函数调用完成后,会话 `head_id` 推进到**真实的 code 节点 id**,绝不指向某个已不存在的 placeholder/anchor id。用户手动调函数的路径(`dispatch_forced_tool_call`)和 LLM 调函数的路径(`process_user_turn` finalize)都必须把 head 推进到 code 节点。否则 HEAD 悬空 → `linear_history` 走不到、刷新渲染空 Welcome。
-
-### 子进程执行(spawn,不是 fork)
-
-`@agentic_function` 工具体在独立子进程里跑(`openprogram/agent/process_runner.py`),让停止按钮能 SIGKILL 整个进程组毫秒级中止。**子进程是 `spawn`(全新解释器),不是 `fork`** —— 因为父 worker 已加载 PyTorch/libomp,fork 会让子进程首次 BLAS 调用 SIGSEGV。spawn 的含义:
-
-- 子进程**重新 import 磁盘代码**(不继承父进程内存里的模块对象),所以改完代码后,子进程一定用新代码。
-- 但父 worker 是**长驻进程**:它先跑外层 wrapper + 启动 `live_progress` poller,这些在父 worker 内存里用的是旧模块对象。**必须 `openprogram worker restart` 让父 worker 也重新 import 新代码**,否则「改了没生效」。
-- 子进程写 code 子树用它自己的 SessionStore;父 worker 缓存看不到,执行后须 `invalidate_cache` 让父 worker 读到磁盘真相。
-- `.pyc` 缓存按源 mtime 失效,正常不是「改了没生效」的根因;真凶是没重启长驻父 worker。
-
-**确定结论:改完函数调用相关代码后,`openprogram worker restart` 是充分且必要的;不需要 `PYTHONDONTWRITEBYTECODE`。**
-
-## 七、创新点(护城河,别 claim 零件)
-
-**可 claim 的是融合**:记录的调用树**本身就是运行时上下文**,每次调用按"帧作用域 + per-function expose"查询它,节点全部保留(供 fork/replay)。无框架做全(LangGraph 有保留图+fork 但无读回作上下文/无 pop;StackMemory 有栈作用域但靠搜索+丢摘要)。**别单独 claim "ContextVar 调用栈追踪""图 fork"——那是常见的。** 详见调研文档。
-
-## 八、实现:两套合并(分步,带决策定论)
-
-现状两套并存:
-- **聊天**:`process_user_turn` → `engine.prepare`(`_assemble_messages`,真 ToolCall/ToolResult 链 + aging + 附件 + 压缩)→ `agent_loop`;记录 `insert_placeholder`/`persist_assistant_message`(写 token 列 + blocks + parent_id)。
-- **exec**:`_open_model_call_node` → `render_context` + `render_dag_messages` → `_close_model_call_node`。
-
-目标:统一成一套——都走"一张图 + render_context + 统一记录原语"。
-
-### 关键决策(动手前必须定的,已查实)
-
-**决策 0:parent_id 链不删 —— 存储有链,检索不看链。**
-之前想"顶层改平级、删 parent_id 链"会崩:`get_branch`(session_store.py:742)沿 parent_id 取分支,**fork/rewind/主干遍历(session_store.py:800)/压缩(engine.py:314)/删分支(branch.py:443)全依赖它**;branch.py 没有 forked_from,fork 就是新节点 parent_id 指向岔点。
-**定论**:存储层**保留 parent_id 链**(分支骨架,不动);"顶层平级可见"在**检索层**实现——`render_context` 本来就不看 parent_id、只按 seq(nodes.py:586)。同一张图 + seq 检索(平级)与 parent_id 分支骨架共存,正交。**这正是"同一张图 ≠ 串成链":存储可有链(给分支),检索不看链(按 seq 平级)。**
-
-**决策 1:两种 code 节点必须区分渲染(合并第一坑)。**
-- 模型 tool_use 的 code 节点:有 tool_call_id(现藏在合成 id `{assistant_msg_id}_t_{tid}` 里,dispatcher:462)→ **必须** ToolCall/ToolResult(否则 provider 拒孤儿 tool_use)。
-- 代码直调 @agentic_function 的 code 节点(function.py:132):**无** tool_call_id → user/assistant 文本对(现状 render.py:100 对的)。
-**定论**:给节点加显式 `metadata.tool_call_id`(模型 tool_use 才有);`render_dag_messages` 按它分两路。ToolCall 必须**挂在所属 llm 节点的 AssistantMessage.content 里**(现状 render 每节点独立 emit,对 ToolCall 是错的——要按 called_by 把 tool 节点归到其 llm 节点内)。旧 session 兼容:`{id}_t_{tid}` 仍可读出 tid。
-
-**决策 2:统一 status 词汇。** 聊天用 completed/cancelled/error,exec 用 success/error。统一成一套(completed/error/cancelled),否则 `_node_to_msg`(_msg_adapter.py:117)默认 + 流式恢复 UI 会误判 exec 节点。
-
-**决策 3:统一记录原语 —— 每个 llm 节点都填全部字段,不分聊天/函数。**
-`open_call_node(role, name, system, content, called_by, reads, parent_id=None, tool_call_id=None, source=None, status="running") -> id`
-`close_call_node(id, output, status, usage=None, blocks=None)`
-
-**关键:字段对所有 llm 节点一视同仁,不存在"聊天字段"和"函数字段"之分。** 现状两套各填各的、互相缺对方的(聊天有 token/blocks/parent_id/source、缺 called_by/reads;函数有 called_by/reads、缺 token/blocks)——这是**实现欠债,不是设计**。统一后**两边都填全**:
-
-| 字段 | 干什么 | 现状缺口 → 统一后 |
-|---|---|---|
-| token 列(usage) | 计量/成本 | 函数节点缺(`_close_model_call_node` 没写)→ **补**:函数内调模型一样花钱,必须记 |
-| blocks + tool_calls | 前端气泡 thinking/text/tool 顺序 + 回看 | 函数节点缺 → **补**:函数内回复也有结构 |
-| called_by | 调用者(谁调出这个 llm) | 聊天节点缺(用 parent_id 凑)→ **补**:聊天的 llm 也有调用者(本轮 user/ROOT) |
-| reads | 这次读了哪些历史节点 | 聊天节点缺 → **补**:聊天调模型也读了历史 |
-| parent_id | 分支/fork 骨架 | 都要 |
-| source / status | 来源 / 终态 | 都要(status 见决策2 统一词汇) |
-
-不是"按需填"(那等于默许它们就该不一样);是**填全 + 补上各自现状的缺口**。`_close_model_call_node` 现在丢了 usage/blocks,统一时补上。
-
-**决策 4:聊天换 render_context 前,render 的缺口(经核实,只 1 项是真 blocker)。**
-原以为 5 项,核代码后:
-- (a) ToolCall/ToolResult 链 + (b) ToolResultMessage 类型 → **已做**(步1)。
-- (c) 图片/附件 → **不是缺口**:`_assemble_messages` 自己也只发 TextContent、不渲染历史图片(两边一致)。当前轮图片在 dispatcher 外层注入(`__init__.py:892`),两个 renderer 都不碰。历史图片渲染需决策7 的节点图片引用,**推迟**(带文档说明)。
-- (d) 工具结果 aging → **真 blocker,已做**(步3):render 外层 `_aged_code_ids` 预处理,最后 TAIL_TURNS=3 个 llm 节点之后保全、更早的 code 节点收成 `[aged]` 桩(复用 tool_aging.summarize),无存储改动。
-- (e) 压缩/摘要节点 → **不是 blocker,推迟**:render_context 不产生摘要 id,且 LLM 摘要现在是 `None`(engine.py:623 "phase5 再加")。重新启用压缩时再在 render 外层 prepend 活跃摘要(`AssistantMessage("[Summary]…")`),不给 DAG 加第4种 role。
-
-**决策 5:自动重试抽成包住 `run_once` 的策略函数。** `_run_with_retry`(session.py:178)依赖 Agent 对象;dispatcher 调的是裸 agent_loop(dispatcher:917)+ asyncio.Event 取消。抽出"重试策略(可重试判定+退避+重跑+丢上次 assistant)"包住一个 `run_once()→final AssistantMessage`,dispatcher 的 `_drain`(dispatcher:870)当 run_once。坑:重跑会重发 prompt → 第二次须 continue-from-context(仿 session.py:230);placeholder/persist 须在重试循环**之后**跑一次,不是每次。
-
-**决策 6:system prompt 全项目统一,是主干的一部分,不是聊天专属。**
-现状两边 system 不一致:聊天用 dispatcher 组装的(身份 + 项目记忆 + 工具目录 + plan 模式),exec 用 `self.system`(runtime.py:1451,常为空)+ skills。**这会:① 前缀不一致 → KV 缓存命不中 → 成本爆;② 函数内的大模型缺项目记忆/指令 → 丢背景。**
-**定论:整个项目一个统一的 system prompt(身份 + 项目记忆 + 统一工具列表 + skills),所有大模型调用(聊天 / 函数体内)共用,默认从头到尾不变。** 前缀恒定 → 缓存最大化命中;函数内大模型也有完整背景。
-- **不分开**(不是聊天一个、函数一个)。
-- **不拆"可变尾段"**(工具列表也统一,不按调用点变——一变前缀就变,长上下文后全不命中)。
-- **例外靠自定义**:个别 agent 调用只做极简活、不需要完整上下文,可在该调用点显式声明用精简 system。这是用户主动选择并自担"不命中缓存"的代价,属**使用层**,本数据模型/调用流程层不展开。
-- **"函数内别调错工具"(如 wiki_agent 自递归)与本决策解耦**——用**处境引导 + 递归深度上限兜底**解(模型据处境自主不调 + 同名超 5 层抛 `RecursionError`),**不靠改 system 的工具列表**(那会破坏统一前缀)。关键一致点:处境提示放在 **user turn 开头**(逐函数变化的内容),system 前缀保持恒定,正好符合本决策。详见 `runtime/agentic-self-recursion.md`。(旧版用 deny 屏蔽工具,已废。)
-- 含义修正:此前把 system prompt 画成"聊天专属钩子"是**错的**;它属于主干。压缩(预算把关)同理是**共享**外层步骤,非聊天专属。
-
-**决策 7:节点内容是多模态的(文本 / 图片 / 文件统称"内容"),图片不特殊、不是钩子。**
-此前把"图片注入"画成一个钩子是**错的**——图片就是用户输入,跟文本没有区别,都是 user 节点的内容。不存在"文本进节点、图片走钩子"的分裂。render_context 取到一个节点 = 取到它的全部内容(含图)。
-- 现状代码为省 FTS5 搜索索引,把图片 base64 不存进节点、只留"[N images]"清单(dispatcher:241)→ 导致**历史轮的图片 render_context 取不回**(节点里没有图本体)。这是存储妥协,**不是模型该有的样子**。
-- **正确做法**:节点内容里图片存成**引用/路径**(图片本体放附件目录,节点存路径)。这样节点内容完整(文本 + 图片引用)、又不撑爆索引(索引里是路径不是 base64);render_context 取节点 → render 按引用加载图。
-- **模型层:图片 = 节点内容,无任何特殊处理、无钩子。** "图片本体放哪"是存储优化,与模型解耦。(此项可后续单独做;它不阻塞文本上下文的统一。)
-
-### 两套差异全清单(经代码核实 · 实现 checklist)
-
-合并前必须逐项处理。⚠ = 会埋雷(不处理会在运行时炸:取消失灵 / 重试翻倍 / 副作用丢失)。**统一原则:不对称几乎都是实现欠债,默认全部补平到"两边一致",除非确有理由专属。**
-
-| # | 差异项 | 聊天(dispatcher) | 函数(runtime.exec) | 统一方向 | 险 |
-|---|---|---|---|---|---|
-| 1 | 读上下文 | get_branch 扁平 list | render_context + render_dag_messages | 都走 render_context(聊天=frame=-1) | |
-| 2 | 工具节点渲染 | 真 ToolCall/ToolResult(有 tool_call_id) | 文本对(无 id) | render 按 tool_call_id 分两路(决策1) | ⚠ |
-| 3 | system prompt | profile.system_prompt + 工具块 + deferred + plan(记忆是 agent_loop 每次注入) | self.system(常空)+ skills | 全项目统一一个,共用(决策6) | ⚠ |
-| 4 | 记录字段 | token列/blocks/parent_id/source | called_by/reads | 统一原语填全,补齐各自缺口(决策3) | ⚠ |
-| 5 | status 词汇 | completed/cancelled/error/**failed** | success/error | 统一一套(决策2) | |
-| 6 | 引擎入口 | 直接 agent_loop | AgentSession(retry/replace_messages 包装)→ agent_loop | 都走 agent_loop;包装抽公共 | |
-| 7 | 自动重试 | 无(仅 turn 级) | AgentSession loop 级 | 抽出包住统一 loop(决策5) | ⚠ |
-| 8 | 压缩/预算 | 有(engine.prepare + 调用前 inline) | 无 | 提到共享外层 | ⚠ |
-| 9 | 附件/图片 | ImageContent 注入 | 通常无 | 图片=节点内容存引用(决策7) | |
-| 10 | 流式通道 | on_event→WebSocket 信封 | on_stream 回调 | 都有流式,通道桥接统一 | |
-| 11 | 自动标题 | finalize 有 | 无 | 见 #H(finalize 副作用) | |
-| A | **取消机制** | threading.Event→asyncio,协作中止不抛 | 轮询全局 flag + **抛** ExecInterrupt | 统一驱动两种(且聊天路径要 arm exec 取消) | ⚠ |
-| B | **重试层数** | 0 层 + 无 deadline | AgentSession + exec 第二层 + 墙钟 timeout/Retry-After | 统一成一层带 deadline,别叠加 | ⚠ |
-| C | **错误处理** | 吞进 AssistantMessage 再 fold | **抛**结构化错误往上传 | 统一一种(close(status=error)) | ⚠ |
-| D | **ContextVar 谁设** | 设 _store/_turn_id/_runtime/plan/deferred | 只设工具/stream/policy,**继承**前者 | 统一入口设全,exec 继承不变 | ⚠ |
-| E | 计量 scope | 开 UsageContext(call_kind=chat) | 继承调用方,不开 | 统一在入口开,exec 继承 | |
-| F | **工具过滤** | channel+MCP+plan 过滤 + 审批包装 + agentic-block 包装 + deferred 目录 | 默认全开,只 deny;无审批/plan/block 包装 | 统一过滤链;函数内防调错工具(如 wiki_agent 递归)用此解,不靠改 system | ⚠ |
-| G | steering/中途注入 | agent_loop 接了 | AgentSession 没接,哑的 | 若要 exec 可干预则统一接 | |
-| H | **finalize 副作用** | head 推进 + context-commit 回填+工具拼接 + usage 反馈 + git commit + 项目自动提交 + 备份清理 | 只 _close_model_call_node | 拆成共享主干 + 入口钩子,别丢副作用 | ⚠ |
-| I | 自动压缩位置 | 调用前 inline(独立于 #8 prepare) | 无 | 并入 #8 共享外层 | |
-| J | 中途工具行持久化 | 写 role=tool DB 行(刷新可见) | 内存攒 last_blocks | 统一中途落盘 | |
-| K | session 状态 | 管 running→done + 注册 active runtime | 不碰 | 入口钩子保留 | |
-
-> 本质:**底层(agent_loop 引擎 + 存储 + render_context)早已共享;全部差异在外围(读/记/取消/重试/错误/finalize/工具过滤/善后)。** 这些外围差异比想象的多且深——A/B/C/H/F 几项最要命,naive 合并会炸。
-
-### 落地顺序(依赖排序,每步独立验证)
-
-| 步 | 做什么 | 独立性 | 验证 |
-|---|---|---|---|
-| 1 | 节点加 `tool_call_id` 判别 + render 分两路(ToolCall 归到 llm 节点内) | **独立**·加性 | ✅ 已做 |
-| 2 | 统一 status 词汇 + close_call_node 补 usage/blocks 字段(决策3 填全) | 独立 | ✅ 已做 |
-| 3 | render 补 5 缺口(工具链/ToolResult/图片/aging/摘要) | 依赖 1+2 | ✅ 已做 |
-| 4 | 聊天上下文换 render_context(flag-gated,default OFF) | 依赖 3 | ✅ 已做 — `context.render=dag` 开启 |
-| 5 | 统一记录:聊天 persist 改写 Call 对象(跳过 _msg_to_node) | 依赖 2 | ✅ 已做 — 5 处 persist 点全改,带 except 回退 |
-| 6 | 统一错误 metadata + cancelled 状态 | 高风险 | ✅ 已做 — error 带 type/trace;cancel 写 cancelled 不写 error |
-| 7 | finalize 拆共享主干 + 工具过滤统一 | 高风险 | ✅ 经调研不需要改: finalize 是 chat 专属(title/git/status),exec 在 chat turn 内被覆盖; metering 已在 stream.py chokepoint 统一; 工具过滤策略本质不同(用户权限 vs 开发者定义) |
-| 8 | 可视化按新模型画(ROOT + 顶层平级 + 轮内嵌套 + 循环折叠 ×N) | 独立·纯前端 | 待做 |
-
-步 1/2/8 可独立发;3→4、2→5 是耦合主线;6/7 是高风险区(取消/重试/错误/finalize/工具过滤),动 dispatcher 持久化与控制流,单独专注做、充分回归。
-fork 现状靠 parent_id(决策0 保留),**不需要为本次合并改 fork**;forked_from 是更远期的概念清理,本次不做。
-
-## 相关文件
-- `openprogram/context/nodes.py` — Call + render_context(检索,已支持一张图)
-- `openprogram/context/render.py` — render_dag_messages(S1 改这里)
-- `openprogram/agent/dispatcher/__init__.py` — get_branch / agent_loop 入口(S2/S3)
-- `openprogram/agent/dispatcher/persistence.py`、`agent/internals/_turn_lifecycle.py` — 聊天记录(S4)
-- `openprogram/agentic_programming/runtime.py` — exec / _open/_close_model_call_node(S1/S4)
-- `openprogram/store/session/session_store.py` — get_branch / 存储(S2)
+- `openprogram/context/nodes.py` — Node + render_context（图的检索）
+- `openprogram/context/render.py` — render_dag_messages（图 → 模型消息）
+- `openprogram/agent/dispatcher/__init__.py` — 写节点入口（caller / predecessor 落地）
+- `openprogram/store/session/session_store.py` — get_branch / 存储
+- `openprogram/agentic_programming/function.py` — 函数调用写 code 节点

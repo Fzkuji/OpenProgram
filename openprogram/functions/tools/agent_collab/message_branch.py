@@ -319,6 +319,9 @@ def _message_branch_impl(
             agent_id=chosen_agent,
             branch_from=branch_from,
             label=message[:60],  # Stage-1 placeholder name
+            # New branch (branch_from=None) → root's caller = spawning node,
+            # so it's an explicit spawn, not seq-stitched into a sibling.
+            spawn_caller=aid if branch_from is None else None,
         )
     except Exception as e:  # noqa: BLE001
         return f"[message_branch error] {type(e).__name__}: {e}"
