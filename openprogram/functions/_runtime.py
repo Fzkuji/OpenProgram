@@ -300,6 +300,59 @@ def _python_type_to_json_schema(tp: Any) -> dict[str, Any]:
     return {}
 
 
+def _allow_null(schema: dict[str, Any]) -> dict[str, Any]:
+    """Widen a JSON schema so it also accepts ``null``. Used for optional
+    params (those with a Python default) — the model may pass null to mean
+    "unspecified", and the impl already handles None/""; rejecting null at
+    the validator would make the whole tool call fail. Idempotent."""
+    if not schema:
+        # Bare {} already accepts anything (incl. null) — nothing to do.
+        return schema
+    out = dict(schema)
+    t = out.get("type")
+    if t is None:
+        if "oneOf" in out:
+            variants = list(out["oneOf"])
+            if not any(v.get("type") == "null" for v in variants):
+                variants.append({"type": "null"})
+            out["oneOf"] = variants
+        elif "enum" in out:
+            if None not in out["enum"]:
+                out["enum"] = [*out["enum"], None]
+        # else: no type/oneOf/enum — treat as free-form, accepts null.
+        return out
+    if isinstance(t, list):
+        if "null" not in t:
+            out["type"] = [*t, "null"]
+    elif t != "null":
+        out["type"] = [t, "null"]
+    return out
+
+
+def _widen_optionals_to_null(params: Any) -> Any:
+    """Given a tool's top-level ``parameters`` object schema, widen every
+    OPTIONAL property (one not listed in ``required``) so it also accepts
+    ``null``. The model passes null to mean "unspecified"; without this a bare
+    ``{"type":"string"}`` optional param makes the validator reject the whole
+    call (observed: task.agent_id → "None is not of type 'string'").
+
+    One central place, applied to both generated and hand-written schemas.
+    Idempotent; leaves non-object / malformed schemas untouched."""
+    if not isinstance(params, dict):
+        return params
+    props = params.get("properties")
+    if not isinstance(props, dict):
+        return params
+    required = set(params.get("required") or [])
+    out = dict(params)
+    out["properties"] = {
+        name: (sch if name in required or not isinstance(sch, dict)
+               else _allow_null(sch))
+        for name, sch in props.items()
+    }
+    return out
+
+
 def _build_parameters_schema(fn: Callable) -> dict[str, Any]:
     """Inspect fn's signature + docstring → JSON schema for `parameters`.
 
@@ -335,6 +388,9 @@ def _build_parameters_schema(fn: Callable) -> dict[str, Any]:
         if name in arg_docs:
             schema["description"] = arg_docs[name]
         properties[name] = schema
+        # A param with a Python default is optional → not in ``required``.
+        # (Widening optionals to accept null happens once, centrally, at the
+        # schema exit point in ``function()`` — see _widen_optionals_to_null.)
         if param.default is inspect.Parameter.empty:
             required.append(name)
 
@@ -764,7 +820,16 @@ def function(
     sig = inspect.signature(fn)
     doc_desc, _ = _parse_docstring(fn.__doc__ or "")
     actual_description = description or doc_desc or fn.__name__
-    actual_parameters = parameters or _build_parameters_schema(fn)
+    # Single exit point for a tool's parameter schema — whether hand-written
+    # (``parameters=``) or generated from the signature. Widen every optional
+    # param (one not in ``required``) to also accept null, so the model can
+    # pass ``null`` for "unspecified" without the validator rejecting the whole
+    # call. This matches the OpenAI strict / Structured-Outputs convention
+    # ("all fields required, optionality via a null type") and covers ALL
+    # tools uniformly — including the ~80 hand-written-schema params that the
+    # generator path never touched.
+    actual_parameters = _widen_optionals_to_null(
+        parameters or _build_parameters_schema(fn))
     is_async_fn = inspect.iscoroutinefunction(fn)
     accepts_cancel = "cancel" in sig.parameters
     accepts_on_update = "on_update" in sig.parameters
