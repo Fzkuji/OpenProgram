@@ -550,6 +550,48 @@ def _upsert(project: Project) -> Project:
     return project
 
 
+# ── project-level settings ──────────────────────────────────────────────
+# 项目级配置（权限规则、以后的项目级工具/模型偏好等）。
+# 非默认项目落在 <project>/.openprogram/settings.json（跟项目走，可进版本库
+# 由 .openprogram/.gitignore 决定）。默认项目（家目录）落全局
+# <state>/projects/default-settings.json，绝不往家目录塞配置。
+
+def _settings_path_for(project: Project) -> Path:
+    if project.is_default or not project.path:
+        return projects_dir() / "default-settings.json"
+    return Path(project.path).expanduser() / ".openprogram" / "settings.json"
+
+
+def load_project_settings(project_id: str) -> dict:
+    """读项目级配置 dict。项目不存在 / 无配置 → {}。"""
+    proj = get_project(project_id)
+    if proj is None:
+        return {}
+    p = _settings_path_for(proj)
+    try:
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def save_project_settings(project_id: str, settings: dict) -> None:
+    """写项目级配置 dict（整体覆盖）。项目不存在则忽略。"""
+    proj = get_project(project_id)
+    if proj is None:
+        return
+    p = _settings_path_for(proj)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(
+            json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
 def get_default_project() -> Project:
     """The catch-all project for ad-hoc chats with no bound directory.
 
