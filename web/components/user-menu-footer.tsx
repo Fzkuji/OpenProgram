@@ -24,6 +24,7 @@ import {
   BookTextIcon,
   ChevronsUpDownIcon,
   CircleHelpIcon,
+  MonitorIcon,
   SettingsIcon,
 } from "@/components/animated-icons";
 import styles from "./user-menu-footer.module.css";
@@ -40,8 +41,13 @@ export function UserMenuFooter() {
   const menuRef = useRef<HTMLDivElement>(null);
   const settingsIconRef = useRef<AnimatedNavIconHandle>(null);
   const docsIconRef = useRef<AnimatedNavIconHandle>(null);
+  const fsIconRef = useRef<AnimatedNavIconHandle>(null);
   const aboutIconRef = useRef<AnimatedNavIconHandle>(null);
   const chevronIconRef = useRef<AnimatedNavIconHandle>(null);
+  // Real (F11-style) fullscreen state — the Fullscreen API. Separate from the
+  // PWA "install as app" path (manifest.ts); this is an on-demand toggle for
+  // users who don't install. Must be user-gesture-triggered.
+  const [isFullscreen, setIsFullscreen] = useState(false);
   // Viewport coords for the floating menu — recomputed when opening.
   // Used in collapsed sidebar so the menu can escape the sidebar's
   // ``overflow: hidden`` ancestor via a portal + ``position: fixed``.
@@ -96,9 +102,26 @@ export function UserMenuFooter() {
     };
   }, [open]);
 
+  // Keep the label in sync when the user leaves fullscreen by pressing Esc
+  // (the browser exits without going through our button).
+  useEffect(() => {
+    const sync = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
   function goSettings() {
     setOpen(false);
     router.push("/settings");
+  }
+
+  function toggleFullscreen() {
+    setOpen(false);
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+    } else {
+      document.documentElement.requestFullscreen?.();
+    }
   }
 
   return (
@@ -160,6 +183,16 @@ export function UserMenuFooter() {
             >
               <SettingsIcon ref={settingsIconRef} size={18} />
               {t("user.settings")}
+            </button>
+            <button
+              type="button"
+              className={styles.item}
+              onClick={toggleFullscreen}
+              onMouseEnter={() => fsIconRef.current?.startAnimation?.()}
+              onMouseLeave={() => fsIconRef.current?.stopAnimation?.()}
+            >
+              <MonitorIcon ref={fsIconRef} size={18} />
+              {isFullscreen ? "退出全屏" : "全屏"}
             </button>
             <a
               className={styles.item}
