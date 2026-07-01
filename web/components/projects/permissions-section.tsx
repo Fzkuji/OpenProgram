@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * Settings → Permissions：管理当前会话的权限规则（allow / deny / ask）。
- * 列出已记住的规则、手动加、逐条删。规则语法见 permission_rule.py
- * （ToolName 或 ToolName(pattern)）。见 permission-model.md §4.6。
+ * 权限规则管理（按项目）。列出某项目的 allow / deny / ask 规则、手动加、
+ * 逐条删。规则跟项目走（<project>/.openprogram/settings.json）。
+ * 规则语法见 permission_rule.py（ToolName 或 ToolName(pattern)）。
+ * 见 permission-model.md §2.2 / §4.6。
  */
 import { useEffect, useState, useCallback } from "react";
 
-import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import styles from "./settings-page.module.css";
+import { wsRequest } from "@/lib/net/ws-request";
 
 type Behavior = "deny" | "ask" | "allow";
 type Rules = Record<Behavior, string[]>;
@@ -29,62 +29,57 @@ const BEHAVIORS: { key: Behavior; en: string; zh: string; color: string }[] = [
   { key: "allow", en: "Allow", zh: "允许", color: "var(--success, #3a9d5a)" },
 ];
 
-export function PermissionsSection() {
+export function PermissionsSection({ projectId }: { projectId: string }) {
   const { text } = useTranslation();
-  const sessionId = useSessionStore((s) => s.currentSessionId);
   const [rules, setRules] = useState<Rules>(EMPTY);
   const [draft, setDraft] = useState<Record<Behavior, string>>({
     deny: "", ask: "", allow: "",
   });
 
-  // 收后端广播的 permission_rules 帧（只认当前会话的）。
+  const refresh = useCallback(async () => {
+    if (!projectId) return;
+    const d = await wsRequest<{ project_id: string } & Rules>(
+      "list_permission_rules", { project_id: projectId }, "permission_rules",
+    );
+    if (d) setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
+  }, [projectId]);
+
+  // 收后端广播的 permission_rules 帧（只认本项目）。
   useEffect(() => {
     function onRules(e: Event) {
-      const d = (e as CustomEvent).detail?.data ?? (e as CustomEvent).detail;
-      if (!d || (sessionId && d.session_id !== sessionId)) return;
-      setRules({
-        deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [],
-      });
+      const ws = (e as MessageEvent).data;
+      try {
+        const m = JSON.parse(ws);
+        if (m?.type !== "permission_rules") return;
+        const d = m.data;
+        if (d?.project_id !== projectId) return;
+        setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
+      } catch { /* ignore */ }
     }
-    window.addEventListener("op:permission-rules", onRules as EventListener);
-    return () => window.removeEventListener("op:permission-rules", onRules as EventListener);
-  }, [sessionId]);
-
-  // 进入页面时拉一次当前会话的规则。
-  useEffect(() => {
-    if (sessionId) wsSend({ action: "list_permission_rules", session_id: sessionId });
-  }, [sessionId]);
+    const sock = (window as unknown as { ws?: WebSocket }).ws;
+    sock?.addEventListener("message", onRules as EventListener);
+    refresh();
+    return () => sock?.removeEventListener("message", onRules as EventListener);
+  }, [projectId, refresh]);
 
   const add = useCallback((behavior: Behavior) => {
     const rule = draft[behavior].trim();
-    if (!rule || !sessionId) return;
-    wsSend({ action: "add_permission_rule", session_id: sessionId, behavior, rule });
+    if (!rule || !projectId) return;
+    wsSend({ action: "add_permission_rule", project_id: projectId, behavior, rule });
     setDraft((d) => ({ ...d, [behavior]: "" }));
-  }, [draft, sessionId]);
+  }, [draft, projectId]);
 
   const remove = useCallback((behavior: Behavior, rule: string) => {
-    if (!sessionId) return;
-    wsSend({ action: "remove_permission_rule", session_id: sessionId, behavior, rule });
-  }, [sessionId]);
-
-  if (!sessionId) {
-    return (
-      <div className={styles.section}>
-        <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-          {text("Open a chat to manage its permission rules.",
-                "打开一个会话后可管理它的权限规则。")}
-        </p>
-      </div>
-    );
-  }
+    if (!projectId) return;
+    wsSend({ action: "remove_permission_rule", project_id: projectId, behavior, rule });
+  }, [projectId]);
 
   return (
-    <div className={styles.section}>
-      <h2 className={styles.sectionTitle}>{text("Permission Rules", "权限规则")}</h2>
-      <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+    <div>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
         {text(
-          "Per-session allow / deny / ask rules. Syntax: ToolName or ToolName(pattern), e.g. bash(git:*).",
-          "当前会话的允许 / 拒绝 / 询问规则。语法：工具名 或 工具名(模式)，如 bash(git:*)。",
+          "Rules travel with the project. Syntax: ToolName or ToolName(pattern), e.g. bash(git:*).",
+          "规则跟随项目保存。语法：工具名 或 工具名(模式)，如 bash(git:*)。",
         )}
       </p>
 

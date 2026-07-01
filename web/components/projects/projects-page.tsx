@@ -12,6 +12,7 @@ import styles from "./projects-page.module.css";
 import { useTranslation } from "@/lib/i18n";
 import { FoldersIcon } from "@/components/animated-icons";
 import { wsRequest } from "@/lib/net/ws-request";
+import { PermissionsSection } from "./permissions-section";
 
 interface Project {
   id: string;
@@ -27,6 +28,7 @@ export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     // 全局 WS 可能还没连上，重试几次。
@@ -108,27 +110,43 @@ export function ProjectsPage() {
             <ul className={styles.list}>
               {filtered.map((p) => (
                 <li key={p.id} className={styles.card}>
-                  <span className={styles.cardIcon}><FoldersIcon size={22} /></span>
-                  <div className={styles.cardMain}>
-                    <div className={styles.cardName}>
-                      {p.name}
-                      {p.is_default && (
-                        <span className={styles.badge}>{text("Default", "默认")}</span>
-                      )}
+                  <div
+                    className={styles.cardHead}
+                    onClick={() => setExpanded((e) => (e === p.id ? null : p.id))}
+                  >
+                    <span className={styles.cardIcon}><FoldersIcon size={22} /></span>
+                    <div className={styles.cardMain}>
+                      <div className={styles.cardName}>
+                        {p.name}
+                        {p.is_default && (
+                          <span className={styles.badge}>{text("Default", "默认")}</span>
+                        )}
+                      </div>
+                      <div className={styles.cardPath}>{p.path}</div>
                     </div>
-                    <div className={styles.cardPath}>{p.path}</div>
+                    <div className={styles.cardMeta}>
+                      {p.session_count} {text("chats", "会话")}
+                    </div>
+                    <span className={styles.chevron}>
+                      {expanded === p.id ? "▾" : "▸"}
+                    </span>
+                    {!p.is_default && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeProject(p.id); }}
+                        className={styles.removeBtn}
+                        aria-label={text("Remove", "移除")}
+                        title={text("Remove from list (files kept)", "从列表移除（不删文件）")}
+                      >×</button>
+                    )}
                   </div>
-                  <div className={styles.cardMeta}>
-                    {p.session_count} {text("chats", "会话")}
-                  </div>
-                  {!p.is_default && (
-                    <button
-                      type="button"
-                      onClick={() => removeProject(p.id)}
-                      className={styles.removeBtn}
-                      aria-label={text("Remove", "移除")}
-                      title={text("Remove from list (files kept)", "从列表移除（不删文件）")}
-                    >×</button>
+                  {expanded === p.id && (
+                    <div className={styles.cardBody}>
+                      <div className={styles.sectionTitle}>
+                        {text("Permission Rules", "权限规则")}
+                      </div>
+                      <PermissionsSection projectId={p.id} />
+                    </div>
                   )}
                 </li>
               ))}
