@@ -654,6 +654,12 @@ class SessionStore:
                 GitSession(self._session_dir(session_id)).destroy()
             self._index.pop(session_id, None)
         self._save_index()
+        # 从项目反向索引解绑（配对 bind_session），避免 session_ids 只增不减。
+        try:
+            from openprogram.store import project_store as _projects
+            _projects.unbind_session(session_id)
+        except Exception:
+            pass
 
     def list_sessions(
         self,

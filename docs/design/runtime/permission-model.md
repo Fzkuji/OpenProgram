@@ -1,8 +1,8 @@
 # 权限系统设计（Permission System Design）
 
-本文是 OpenProgram 权限系统的**实现级设计文档**：一个不了解代码的人读完，就知道权限系统是什么、有哪些权限、后端怎么写、前端怎么写、代码写在哪些文件。每个数据结构给字段定义，每个关键函数给签名，每个 WS 帧给字段，每个前端改动给组件结构。所有引用带 `file:line`，指向当前 `main` 工作区。
+本文是 OpenProgram 权限系统的**实现级设计文档**，描述当前 `main` 的真实实现：一个不了解代码的人读完，就知道权限系统是什么、有哪些权限、后端怎么写、前端怎么写、代码写在哪些文件。每个数据结构给字段定义，每个关键函数给签名，每个 WS 帧给字段，每个前端组件给结构。所有引用带 `file:line`，指向当前 `main` 工作区。
 
-阅读顺序：**① 概览**（是什么、怎么运作）→ **② 有哪些权限**（模式与规则的定义）→ **③ 后端怎么实现**（判定、匹配、存储）→ **④ 前端怎么实现**（审批卡片、模式开关、规则管理）→ **⑤ 值守**（一个正交机制）→ **⑥ 落地分步** → **⑦ 不做的边界**。
+阅读顺序：**① 概览**（是什么、怎么运作）→ **② 有哪些权限**（模式与规则的定义）→ **③ 后端怎么实现**（判定、匹配、存储）→ **④ 前端怎么实现**（审批卡片、模式选择、规则管理）→ **⑤ 值守**（一个正交机制）→ **⑥ 关键约束与代码地图** → **⑦ 不做的边界**。
 
 ---
 
@@ -19,9 +19,9 @@
 | 部分 | 管什么 | 能否被 bypass 关掉 | 位置 |
 |---|---|---|---|
 | **gate（硬拦截）** | 策略层的绝对禁止（proactive policy 的 deny/ask） | 否，永远生效 | `openprogram/agent/tool_gate.py` |
-| **规则层** | 用户配的 allow / deny / ask 规则（per-tool + per-pattern，多来源分层） | deny/ask 否；allow 是 | `openprogram/agent/internals/_approval.py`（`_match_rule`）+ `openprogram/functions/permission_rule.py`（新） |
-| **权限模式** | 全局档位：ask / acceptEdits / plan / dontAsk / bypass（对齐 Claude Code 5 档） | 档位本身就是这个开关 | `_gated_execute`（`internals/_approval.py:74-102`） |
-| **审批流** | 需要点头时的前后端交互（弹卡片、阻塞等答、写回记忆） | 否（弹出即阻塞） | `await_user_approval`（`internals/_approval.py:135-200`）+ 前端 QuestionMode |
+| **规则层** | 用户配的 allow / deny / ask 规则（per-tool + per-pattern，**项目级**为主，多来源分层） | deny/ask 否；allow 是 | `openprogram/agent/internals/_approval.py:50-69`（`_match_rule`）+ `openprogram/functions/permission_rule.py` |
+| **权限模式（会话级）** | 会话档位：ask / acceptEdits / dontAsk / bypass / plan（对齐 Claude Code 官方名，5 档） | 档位本身就是这个开关 | `_gated_execute`（`internals/_approval.py:151-188`） |
+| **审批流** | 需要点头时的前后端交互（弹卡片、阻塞等答、写回项目规则） | 否（弹出即阻塞） | `await_user_approval`（`internals/_approval.py:235-305`）+ 前端 approval mode |
 
 关键安全约束贯穿全文：**决策优先级是 deny > ask > allow，且 deny/ask 判定早于 bypass 短路。** 因为 web 入口默认就是 bypass（`webui/_execute/__init__.py:557`），如果把 deny 规则匹配放在 bypass 之后，用户设的"禁止 rm -rf"会在默认下被静默忽略——那是安全缺陷。第 3 节的判定伪代码严格保证这一点。
 
@@ -39,7 +39,7 @@ LLM 发起工具调用
         │ 放行
         ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ _gated_execute (internals/_approval.py:74-102)                 │
+│ _gated_execute (internals/_approval.py:151-188)                │
 │                                                                │
 │  ① 规则层 deny/ask（bypass 之前）                                │
 │     _match_rule → "deny" → 返回 [denied]（任何模式含 bypass）    │
@@ -57,12 +57,12 @@ LLM 发起工具调用
 ┌──────────────────────────────────────────────────────────────┐
 │ await_user_approval → open_question(kind="approval")           │
 │   → emit_question_asked → 事件层 → WS question.asked 帧          │
-│   → 前端 QuestionMode 渲染审批卡片                               │
+│   → 前端 approval mode 渲染审批卡片                              │
 │   → 用户点 允许一次 / 总是允许 / 拒绝                             │
 │   → question_reply/question_reject → _resolve_question          │
 │   → threading.Event 唤醒 → consume_or_timeout → (approved,      │
 │      reason, scope)                                             │
-│   scope=="always" → 写回 allow 规则落盘                         │
+│   scope=="always" → _persist_always_allow_rule → 写回项目规则   │
 └──────────────────────────────────────────────────────────────┘
         │
         ▼
@@ -75,38 +75,45 @@ LLM 发起工具调用
 
 这一节只讲"是什么"——权限模式和规则的定义。怎么实现在第 3、4 节。
 
-### 2.1 权限模式（5 档）
+### 2.1 权限模式（5 档，Claude Code 官方名）
 
-权限模式定义在 `openprogram/agent/dispatcher/types.py:19`，合法值集在 `openprogram/agent/session_config.py:23`（对齐 Claude Code 5 档；本设计新增 `acceptEdits`/`plan`/`dontAsk`，无 `auto`）：
+权限模式是**会话级**的：存 `SessionRunConfig.permission_mode`，前端在 composer 的 plus-menu 里选、session-store 按会话隔离。定义在 `openprogram/agent/dispatcher/types.py:19`，合法值集在 `openprogram/agent/session_config.py:25`（对齐 Claude Code 官方 5 档；**无 `auto`** —— auto 是 Claude Code 内部 LLM 分类器档，不作对外档，已删）：
 
 ```python
 # openprogram/agent/dispatcher/types.py:19
 PermissionMode = Literal["ask", "acceptEdits", "plan", "dontAsk", "bypass"]
 
-# openprogram/agent/session_config.py:23
+# openprogram/agent/session_config.py:25
 VALID_PERMISSION = {"ask", "acceptEdits", "plan", "dontAsk", "bypass"}
+_PERMISSION_BY_LOWER = {m.lower(): m for m in VALID_PERMISSION}  # 大小写不敏感规范化
 ```
 
-| 模式 | 行为 |
-|---|---|
-| `ask` | 每个工具调用都弹审批卡片阻塞等答（除非规则 allow 或 per-tool 声明不需审批）。逐次问。 |
-| `acceptEdits` | 对**写类且路径安全**的工具（read/write/edit/glob/grep/list，且目标在工作目录内、非危险文件）自动放行；bash/exec/shell 等命令类**仍走完整审批**。 |
-| `plan` | 计划态。写类工具在此模式对模型不可见（`apply_tool_policy(source="plan")`）——纯**可见性**控制，与 `permission_mode` 正交，不占用档位槽。 |
-| `dontAsk` | 本该弹卡片的调用直接返回 `[denied]`，绝不打断用户。等价"全拒需要人工确认的操作"。 |
-| `bypass` | 全部直接放行，不弹审批。**例外**：`exit_plan_mode` 强制审批（`_force_approval_tools`，`internals/_approval.py:72`）；规则层 deny/ask 仍生效。 |
+档位内部值用官方英文原名，前端标签对齐 Claude Code 官方中英文（`use-permission-mode.ts` 的 `MODE_LABELS`）：
 
-> 大小写坑：`acceptEdits` / `dontAsk` 是驼峰，`_normalize_permission`（`session_config.py:235-239`）现在做 `.lower()` 会把它们规成 `acceptedits` / `dontask`。新增这两档时须把 `VALID_PERMISSION` 也存驼峰并改比较为大小写不敏感（`mode in {m.lower() for m in VALID_PERMISSION}` 后映射回规范值），否则驼峰档永远被判非法。这是新增档位的第一个必改点。
+| 模式（内部值） | 前端标签（EN / 中文） | 行为 |
+|---|---|---|
+| `ask` | Default / 默认 | 每个工具调用都弹审批卡片阻塞等答（除非规则 allow 或 per-tool 声明不需审批）。逐次问。 |
+| `acceptEdits` | Accept Edits / 接受编辑 | 对**写类且路径安全**的工具（read/write/edit/glob/grep/list，且目标在工作目录内、非危险文件）自动放行；bash/exec/shell 等命令类**仍走完整审批**。 |
+| `dontAsk` | Don't Ask / 不再询问 | 本该弹卡片的调用直接返回 `[denied]`，绝不打断用户。等价"全拒需要人工确认的操作"。 |
+| `bypass` | Bypass / 绕过权限 | 全部直接放行，不弹审批。**例外**：`exit_plan_mode` 强制审批（`_FORCE_APPROVAL_TOOLS`，`internals/_approval.py:34`）；规则层 deny/ask 仍生效。 |
+| `plan` | Plan Mode / 计划模式 | 计划态。写类工具在此模式对模型不可见（`apply_tool_policy(source="plan")`）——纯**可见性**控制，与批准强度正交（见 §3.7）。 |
+
+> 大小写规范化：`acceptEdits` / `dontAsk` 是驼峰。`VALID_PERMISSION` 存的是驼峰规范值，`_PERMISSION_BY_LOWER` 建一张 `小写 → 规范值` 表；`_normalize_permission`（`session_config.py:271-275`）用 `_PERMISSION_BY_LOWER.get(value.lower())` 做大小写不敏感匹配，所以前端传 `"acceptedits"` 也能规回 `"acceptEdits"`，非法值返回 `None`。
 
 ### 2.2 规则（allow / deny / ask 三平行）
 
-规则是用户在运行时叠加的覆盖，与档位正交。三个平行 list，规则的 behavior 由它住在哪个 list 决定，不由字符串自带字段：
+规则是用户配的覆盖，与档位正交，**主要载体是项目**（见 §2.3）。三个平行 list，规则的 behavior 由它住在哪个 list 决定，不由字符串自带字段：
 
 ```python
+# openprogram/agent/session_config.py:32-42
 @dataclass
 class PermissionRules:
     allow: list[str] = field(default_factory=list)
     deny:  list[str] = field(default_factory=list)
     ask:   list[str] = field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not (self.allow or self.deny or self.ask)
 ```
 
 **规则字符串语法**：
@@ -123,23 +130,26 @@ ToolName(content)        命令级，per-pattern。例：bash(git:*) / read_file
 - 转义：pattern 内的 `(` `)` `\` 需转义（`\( \) \\`），它们是语法定界符。序列化/反序列化对偶。
 
 ```python
+# openprogram/functions/permission_rule.py:19-22
 @dataclass(frozen=True)
 class PermissionRuleValue:
     tool_name: str
     pattern: str | None = None   # None = per-tool；非 None = per-pattern
 ```
 
-### 2.3 规则来源（5 层）
+### 2.3 规则来源（3 层，项目是主要载体）
 
-规则可来自多个来源，低优先级在前、高优先级在后，后进覆盖前进。只映射真实存在的载体（无企业策略后台/特性开关，见第 7 节边界）：
+规则可来自多个来源，低优先级在前、高优先级在后，后进覆盖前进。合并在 `load_merged_rules(session_id)`（`openprogram/functions/permission_rule.py:100-146`）。**项目层是规则的主要载体**——规则跟项目走，切会话仍在、"总是允许"能长期记住。只映射真实存在的载体（无 local/cliArg/企业策略后台，见第 7 节边界）：
 
 | 层 | 优先级 | 载体 | 可写 |
 |---|---|---|---|
-| user（全局） | 最低 | 全局 settings.json 的 `tools.permission_rules`（`config_schema.py` 加 `SettingSpec`） | 是 |
-| project（团队共享，进版本库） | ↑ | `.openprogram/settings.json` 的 `tools.permission_rules` | 是 |
-| local（项目本地，不进版本库） | ↑ | `.openprogram/settings.local.json` 的 `tools.permission_rules` | 是 |
-| cliArg（本次进程） | ↑ | CLI `--allow-tool` / `--deny-tool` / `--ask-tool`，只内存 | 是（内存） |
-| session（本会话） | 最高 | `SessionRunConfig.permission_rules`，随会话落 SessionDB | 是 |
+| global（全局配置） | 最低 | 全局 config 的 `tools.permission_rules`（`webui._setup._read_config()`） | 是 |
+| **project（主要载体）** | ↑ | `<project>/.openprogram/settings.json` 的 `permission_rules`；默认项目落 `<state>/projects/default-settings.json`。经 `project_for_session(session_id)` 反查项目 | 是 |
+| session（本会话，一次性覆盖） | 最高 | `SessionRunConfig.permission_rules`，随会话落 session meta（schemaless） | 是 |
+
+- 读写项目层：`openprogram/store/project/project_store.py` 的 `load_project_settings` / `save_project_settings`（`:565-592`）；载体路径由 `_settings_path_for`（`:559-562`）决定——非默认项目落 `<project>/.openprogram/settings.json`，默认项目落 `<state>/projects/default-settings.json`（绝不往家目录塞配置）。
+- 合并只是拼接三 list：deny/ask/allow 的总序由 `_match_rule` 保证（命中即返回，deny > ask > allow），来源顺序只影响同一 behavior 内的先后。
+- "总是允许"（scope=`always`）写回**项目** settings（`_persist_always_allow_rule`，`internals/_approval.py:90-107`），不再是 session meta。
 
 ### 2.4 审批帧的数据载体 PendingQuestion
 
@@ -184,89 +194,91 @@ def decide_tool_gate(event: Event) -> str | None:
     gate 抛异常 → fail-open（stderr 打印），继续问下一个。"""
 ```
 
-关键性质：**gate 在权限审批包装之外，`bypass` 关不掉它**（`tool_gate.py:14-15`），对 subagent 同样生效。gate 是策略层（proactive policy 的 Gate allow/deny/ask）的硬拦截点，必须快（同步热路径，不许 LLM / 慢 IO）。
+关键性质：**gate 在权限审批包装之外，`bypass` 关不掉它**（`tool_gate.py:15`），对 subagent 同样生效。gate 是策略层（proactive policy 的 Gate allow/deny/ask）的硬拦截点，必须快（同步热路径，不许 LLM / 慢 IO）。
 
 ### 3.2 审批包装（关卡 B）与决策伪代码
 
-工具进入 dispatcher 时被逐个包一层审批（`dispatcher/__init__.py:784`）：`tools = [_wrap_with_approval(t, req, on_event) for t in tools]`。包在工具协程**内部**，因为 agent_loop 急切调度 `tool.execute`，从外面拦有竞态（`internals/_approval.py:56-60`）。`_gated_execute` 是被替换进去的 execute。改造后完整判定顺序：
+工具进入 dispatcher 时被逐个包一层审批（`dispatcher/__init__.py:784`：`tools = [_wrap_with_approval(t, req, on_event) for t in tools]`）。包在工具协程**内部**，因为 agent_loop 急切调度 `tool.execute`，从外面拦有竞态（`internals/_approval.py:120-125`）。`_gated_execute` 是被替换进去的 execute（`internals/_approval.py:151-188`），完整判定顺序（7 分支）：
 
 ```python
-# openprogram/agent/internals/_approval.py:74-102（改造后）
-_force_approval_tools = {"exit_plan_mode"}  # :72
+# openprogram/agent/internals/_approval.py:34, 151-188
+_FORCE_APPROVAL_TOOLS = {"exit_plan_mode"}  # :34
 
 async def _gated_execute(call_id, args, cancel, on_update):
-    name = agent_tool.name
-    force_ask = name in _force_approval_tools
+    mode = req.permission_mode
+    force_ask = name in _FORCE_APPROVAL_TOOLS
 
-    # ── ① 规则层 deny/ask —— bypass 之前，最高安全优先级 ──
-    verdict = _match_rule(req.permission_rules, name, args)   # 3.4
+    # ① 规则层 deny/ask —— bypass 之前，最高安全优先级
+    verdict = _match_rule(getattr(req, "permission_rules", None), name, args)  # 3.4
     if verdict == "deny":
-        return _denied_result(f"[denied] blocked by deny rule: {name}")
+        return _denied(f"[denied] blocked by deny rule: {name}")
     if verdict == "ask":
-        return await _do_approval(call_id, args, cancel, on_update)  # 即使 bypass 也弹
+        return await _approve_then_run(call_id, args, cancel, on_update)  # 即使 bypass 也弹
 
-    # ── ② force_ask（exit_plan_mode），bypass 也不能跳 ──
+    # ② force_ask（exit_plan_mode），bypass 也不能跳
     if force_ask:
-        return await _do_approval(call_id, args, cancel, on_update)
+        return await _approve_then_run(call_id, args, cancel, on_update)
 
-    # ── ③ bypass 短路（deny/ask/force 之后）──
-    if req.permission_mode == "bypass":
+    # ③ bypass 短路（deny/ask/force 之后）
+    if mode == "bypass":
         return await orig_execute(call_id, args, cancel, on_update)
 
-    # ── ④ dontAsk：本该问的直接拒 ──
-    if req.permission_mode == "dontAsk":
-        if _would_need_approval(agent_tool, args, req.permission_mode):
-            return _denied_result("[denied] dontAsk mode: approval required")
+    per_tool_required, _reason = tool_requires_approval(agent_tool, args)
+
+    # ④ dontAsk：本该问的直接拒
+    if mode == "dontAsk":
+        if _would_need_approval(name, per_tool_required):
+            return _denied(f"[denied] dontAsk mode: approval required for {name}")
         return await orig_execute(call_id, args, cancel, on_update)
 
-    # ── ⑤ 规则层 allow —— bypass 之后 ──
+    # ⑤ 规则层 allow —— bypass 之后
     if verdict == "allow":
         return await orig_execute(call_id, args, cancel, on_update)
 
-    # ── ⑥ acceptEdits：写安全工具自动放行 ──
-    if req.permission_mode == "acceptEdits":
-        if getattr(agent_tool, "_accept_edits_safe", False) \
-           and _path_is_safe(name, args, req):        # 3.3 / 3.5
-            return await orig_execute(call_id, args, cancel, on_update)
-        # 命令类工具（bash 等）在 acceptEdits 下不自动放行 → 落 ⑦
+    # ⑥ acceptEdits：写安全工具自动放行；命令类落审批
+    if mode == "acceptEdits" and getattr(agent_tool, "_accept_edits_safe", False) \
+            and _path_is_safe(name, args, req):        # 3.3 / 3.5
+        return await orig_execute(call_id, args, cancel, on_update)
 
+    # ⑦ 弹卡片阻塞等答（default / acceptEdits 的命令类都落这里）
+    return await _approve_then_run(call_id, args, cancel, on_update)
 
-    # ── ⑦ 弹卡片阻塞等答 ──
-    return await _do_approval(call_id, args, cancel, on_update)
-
-async def _do_approval(call_id, args, cancel, on_update):
+# internals/_approval.py:140-149
+async def _approve_then_run(call_id, args, cancel, on_update):
     approved, reason, scope = await await_user_approval(
-        req=req, tool_name=agent_tool.name, args=args, on_event=on_event)
+        req=req, tool_name=name, args=args, on_event=on_event)
     if not approved:
-        return _denied_result(reason or f"user did not approve {agent_tool.name}")
+        return _denied(reason_or_default(reason, name))
     if scope == "always":
-        _persist_always_allow_rule(req.session_id, agent_tool.name)  # 4.4
+        _persist_always_allow_rule(req.session_id, name)  # 写回项目规则，见 §4.4
     return await orig_execute(call_id, args, cancel, on_update)
 ```
 
-**deny 早于 bypass 的安全约束（全设计最关键）**：deny/ask 规则匹配（① ②）必须在 bypass 短路（③）之前。反例：若把规则整块插在 bypass 之后，则 web 默认 bypass（`_execute/__init__.py:557`）下，用户配的 `deny: ["bash(rm -rf:*)"]` 永远不被查到——rm -rf 被静默执行。所以 deny/ask 查在 bypass 之前、allow 查在 bypass 之后。现状 `_gated_execute` 是 bypass 短路在最前，改造把 deny/ask 提前、allow 放后，并加 dontAsk/acceptEdits 分支。
+**deny 早于 bypass 的安全约束（全设计最关键，务必保留）**：deny/ask 规则匹配（① ②）必须在 bypass 短路（③）之前。反例：若把规则整块插在 bypass 之后，则 web 默认 bypass（`_execute/__init__.py:557`）下，用户配的 `deny: ["bash(rm -rf:*)"]` 永远不被查到——rm -rf 被静默执行。所以 deny/ask 查在 bypass 之前、allow 查在 bypass 之后。这个先后是安全性质，改动 `_gated_execute` 时不可打乱。
 
 ### 3.3 各权限模式的分支实现
 
 对应 3.2 伪代码编号：
 
-- **acceptEdits（⑥）**：三件事——① `@function` 加 `accept_edits_safe: bool = False`（`functions/_runtime.py`），给 read/write/edit/glob/grep/list 标 `True`，bash/exec/shell 保持 `False`；② `_path_is_safe` 复用 3.5 的 `check_path_safety`（路径不在危险清单、无 Windows 绕过、在工作目录集内）；③ 命令类（bash/exec/shell）即使有宽 allow 也 fall-through 到 ⑦ 强制审批。
-- **plan（可见性控制）**：`apply_tool_policy(tools, source="plan")`（`dispatcher/__init__.py:779-781`）滤掉 `unsafe_in` 含 `"plan"` 的写类工具，根本不进模型工具列表。plan 状态存布尔集（`agent/plan_mode.py` 的 `_active`），**不切 `permission_mode`**——与档位正交。`_gated_execute` 无 plan 专属分支（写类已被滤掉，只读工具按当前档常规走）。与 Claude Code 不同：CC 的 plan 是权限档、需记 prePlanMode 恢复；我们 plan 不占档位槽，无需记录/恢复。
-- **dontAsk（④）**：ask → deny。`_would_need_approval(agent_tool, args, mode)` 复用 ⑦ 判定（per-tool required / 高风险 / ask 全量）判断这次在非 dontAsk 下会不会需要审批；会 → `[denied]`；不会 → 直接执行。规则层 deny/ask（①）仍在其前生效，allow（⑤）不受影响。
+- **acceptEdits（⑥）**：三部分——① `@function` 有 `accept_edits_safe: bool = False` 参数（`functions/_runtime.py:723`），落到工具对象的 `_accept_edits_safe`（`:1030`）；read/write/edit/glob/grep/list 各自的 `@function` 标 `True`（如 `functions/tools/write/write.py:24`、`edit/edit.py:25`、`read/read.py:28`、`grep/grep.py:101`、`list/list.py:30`、`glob/glob.py:43`），bash/exec/execute_code 不标（默认 `False`）；② `_path_is_safe`（`internals/_approval.py:77-87`）复用 3.5 的 `check_path_safety`（路径在工作目录集内、非危险文件/目录、无 Windows 绕过）；③ 命令类工具即使有宽 allow 也 fall-through 到 ⑦ 强制审批。
+- **plan（可见性控制）**：`apply_tool_policy(tools, source="plan")`（`dispatcher/__init__.py`）滤掉写类工具，根本不进模型工具列表。plan 状态存布尔集（`agent/plan_mode.py` 的 `_active`），**不切批准强度**——与批准档正交（详见 §3.7）。`_gated_execute` 无 plan 专属分支（写类已被滤掉，只读工具按当前档常规走）。
+- **dontAsk（④）**：ask → deny。`_would_need_approval(tool_name, per_tool_required)`（`internals/_approval.py:72-74`）判断这次在非 dontAsk 下会不会需要审批（`per_tool_required` 或工具属高风险集 `_RISKY_TOOLS`）；会 → `[denied]`；不会 → 直接执行。规则层 deny/ask（①）仍在其前生效，allow（⑤）不受影响。
 - **ask**：不命中 allow、per-tool 不免审的工具全部落 ⑦。
 - **bypass（③）**：deny/ask/force 之后全部直接执行。
 
 ### 3.4 规则匹配 `_match_rule`
 
 ```python
-# openprogram/agent/internals/_approval.py（新增）
-def _match_rule(rules: "PermissionRules | None", tool_name: str, args: dict) -> "str | None":
+# openprogram/agent/internals/_approval.py:50-69
+def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
     """返回 "deny" | "ask" | "allow" | None（未命中）。
     优先级固定 deny > ask > allow：先扫 deny 命中即返回，再 ask，再 allow。
     每档内部：先试 per-tool（rule.pattern is None 且 tool_name 相等），
     再试 per-pattern（rule.pattern 对 parse_command(tool_name, args) 前缀/glob 匹配）。"""
     if rules is None:
         return None
+    from openprogram.functions.permission_rule import parse_rule, parse_command, pattern_matches
+    cmd = None  # 惰性求值：只在遇到 per-pattern 规则时才解析命令
     for behavior, ruleset in (("deny", rules.deny), ("ask", rules.ask), ("allow", rules.allow)):
         for raw in ruleset:
             rv = parse_rule(raw)
@@ -274,97 +286,98 @@ def _match_rule(rules: "PermissionRules | None", tool_name: str, args: dict) -> 
                 continue
             if rv.pattern is None:                      # per-tool
                 return behavior
-            cmd = parse_command(tool_name, args)        # 见下
-            if cmd is not None and _pattern_matches(rv.pattern, cmd):
+            if cmd is None:
+                cmd = parse_command(tool_name, args)    # 见下
+            if cmd is not None and pattern_matches(rv.pattern, cmd):
                 return behavior
     return None
 ```
 
 - **per-tool**（`rv.pattern is None`）：`rv.tool_name == tool_name` 命中整工具。例 `deny: ["bash"]` 拦所有 bash。
-- **per-pattern**（`rv.pattern` 非空）：先取可比命令串 `cmd = parse_command(...)`，再 `_pattern_matches`：`:*` 结尾→前缀匹配（`git:*` 匹配 `git status`、不匹配 `github`）；含 glob→`fnmatch`（`/etc/**` 匹配 `/etc/passwd`）；否则精确相等。
+- **per-pattern**（`rv.pattern` 非空）：先取可比命令串 `cmd = parse_command(...)`，再 `pattern_matches`（`permission_rule.py:149-159`）：`:*` 结尾→前缀匹配（`git:*` 匹配 `git status`、不匹配 `github`）；含 glob（`*?[`）→`fnmatch`（`/etc/**` 匹配 `/etc/passwd`）；否则精确相等。
 
-命令解析器 + 规则解析（新文件 `openprogram/functions/permission_rule.py`）：
+命令解析器 + 规则解析（`openprogram/functions/permission_rule.py`）：
 
 ```python
-def parse_rule(s: str) -> PermissionRuleValue: ...
-def rule_to_string(v: PermissionRuleValue) -> str: ...   # 与 parse_rule 对偶
+# permission_rule.py:43, 77, 83-97
+def parse_rule(s: str) -> PermissionRuleValue: ...        # "bash(git:*)" → (bash, "git:*")
+def rule_to_string(v: PermissionRuleValue) -> str: ...    # 与 parse_rule 对偶
 def parse_command(tool_name: str, args: dict) -> str | None:
     """把工具参数归约成可比字符串（per-pattern 匹配用）。
-    bash/exec/shell → args["command"]；read/write/edit → args["path"]；
+    bash/exec/shell/execute_code/process → args["command"]；
+    read*/write*/edit*/apply_patch/list → args["path"] 或 args["file_path"]；
     其余无可比字段 → None（per-pattern 对其不生效，只 per-tool 可拦）。"""
 ```
 
-各层规则合并（`dispatcher/__init__.py`，构造 TurnRequest 前调）：
+各层规则合并（`load_merged_rules(session_id)`，`permission_rule.py:100-146`）——按优先级 global < project < session 拼接三 list，供 `_gated_execute` 用（真正跑判定时 `req.permission_rules` 由构造 TurnRequest 时填入）：
 
 ```python
-def _merge_permission_rules(user, project, local, cli, session) -> PermissionRules:
-    """按优先级 user < project < local < cli < session 顺序拼接三 list。
-    来源顺序只影响同一 behavior 内先后；因 _match_rule 命中即返回，
-    deny 永远整体先于 ask 先于 allow，不受来源顺序干扰。这 5 层都可写。"""
-    merged = PermissionRules()
-    for layer in (user, project, local, cli, session):
-        if layer:
-            merged.allow += layer.allow; merged.deny += layer.deny; merged.ask += layer.ask
-    return merged
+# openprogram/functions/permission_rule.py:100-146
+def load_merged_rules(session_id: str) -> PermissionRules:
+    """合并三层真实载体：全局配置 < 项目（主要载体）< 会话（一次性覆盖）。
+    项目层经 project_for_session(session_id) 反查 → load_project_settings。
+    合并只是拼接三 list；deny/ask/allow 的总序由 _match_rule 保证（命中即返回），
+    来源顺序只影响同一 behavior 内的先后。"""
 ```
 
-合并结果填进 `TurnRequest.permission_rules`（`dispatcher/types.py` 新增字段），各构造点（web `_execute/__init__.py`、channel `_conversation.py`、CLI）各加一行填充。
-
-**与 per-tool `requires_approval` 的关系**：两层并存互补。`@function(requires_approval=...)`（`functions/_runtime.py:722, :772`）是工具作者写死的声明（`True`/`False`/`None`/`callable(**args)->bool|str`），求值在 `_evaluate_approval`（`:543-568`，callable 抛异常保守要求审批），dispatcher 经 `tool_requires_approval`（`:1043-1047`）读。规则层是用户运行时覆盖，跑在 per-tool 之前（① ⑤ 在 ⑦ 之前）。
+**与 per-tool `requires_approval` 的关系**：两层并存互补。`@function(requires_approval=...)`（`functions/_runtime.py`）是工具作者写死的声明（`True`/`False`/`None`/`callable(**args)->bool|str`），dispatcher 经 `tool_requires_approval`（`_gated_execute` 在 `:170` 取其 `per_tool_required`）读。规则层是用户运行时覆盖，跑在 per-tool 之前（① ⑤ 在 ⑦ 之前）。
 
 ### 3.5 危险检测与路径安全
 
-**RiskLevel + 卡片高亮**：
+**RiskLevel + 卡片高亮**（`internals/_approval.py:208-232`）：
 
 ```python
-# openprogram/agent/internals/_approval.py（新）
+# openprogram/agent/internals/_approval.py:208-219
 def _risk_level(tool_name: str, args: dict) -> str:
-    """返回 "low"|"medium"|"high"。
-    high：bash 含 rm -rf / sudo / 管道到 shell / Bash(*) 泛匹配；写危险文件。
-    medium：写工作目录外；git push。 low：只读工具。"""
+    """审批卡片的危险分级 "low"|"medium"|"high"，驱动前端高亮。
+    high：命令类工具（_RISKY_TOOLS）且命令含 rm -rf / sudo / mkfs /
+          fork bomb / 管道到 shell / curl / wget。
+    medium：其余命令类工具；写/编辑/删除类工具。 low：只读工具。"""
 ```
 
-`_approval_detail`（`internals/_approval.py:122-132`，现状生成"工具名 + 参数全文，超长首尾截断"）扩成携带 `risk_level`，`_on_asked`（`:173-181`）的 `question.asked` 帧带上它，前端据此上色（4.2）。
+`_approval_detail`（`internals/_approval.py:222-232`，生成"工具名 + 参数全文，超长首尾截断"）给审批卡片一段可读摘要（第一版不做危险 token 高亮）。`_on_asked`（`:274-282`）的 `question.asked` 帧带上 `tool`/`args`/`risk_level`，前端据此上色（§4.2）。
 
-**路径安全**（新文件 `openprogram/functions/tools/file_safety.py`）：
+**路径安全**（`openprogram/functions/tools/file_safety.py`）：
 
 ```python
-DANGEROUS_FILES = [".gitconfig", ".gitmodules", ".bashrc", ".bash_profile",
-                   ".zshrc", ".zprofile", ".profile", ".mcp.json", ".claude.json"]
-DANGEROUS_DIRECTORIES = [".git", ".vscode", ".idea", ".openprogram"]
-DANGEROUS_BASH_PATTERNS = ["python","python3","node","deno","ruby","perl",
-                           "php","sh","bash","eval","exec","sudo","ssh","npx"]
+# file_safety.py:20-50
+DANGEROUS_FILES = {".bashrc", ".bash_profile", ".bash_login", ".profile",
+                   ".zshrc", ".zprofile", ".zshenv", ".gitconfig", ".gitmodules",
+                   ".git-credentials", ".npmrc", ".pypirc", ".netrc",
+                   ".mcp.json", ".claude.json", ".env"}
+DANGEROUS_DIRECTORIES = {".git", ".hg", ".svn", ".vscode", ".idea",
+                         ".openprogram", ".claude", ".ssh", ".gnupg"}
+DANGEROUS_BASH_PATTERNS = {"python","python3","node","deno","bun","ruby","perl",
+                           "php","sh","bash","zsh","eval","exec","source",
+                           "sudo","ssh","npx"}
 
-def check_path_safety(path: str, working_dirs: list[str]) -> dict:
-    """返回 {safe, message, classifier_approvable}。
-    不安全：命中 DANGEROUS_FILES / 段命中 DANGEROUS_DIRECTORIES / 目标在
-    working_dirs 之外 / Windows 绕过（NTFS 流 ::$DATA、8.3 短名 ~1、UNC \\、
-    尾部点空格、DOS 设备名 CON/PRN、三连点 .../）。工作目录集 = cwd +
-    req.additional_working_dirs（3.5 额外目录）。"""
+def check_path_safety(path: str, working_dirs=None) -> dict:
+    """返回 {"safe": bool, "message": str}。不安全：命中 DANGEROUS_FILES（按
+    basename）/ 段命中 DANGEROUS_DIRECTORIES / 目标在 working_dirs 之外 /
+    Windows 绕过（NTFS 流 ::$DATA、8.3 短名 ~1、UNC \\、尾部点空格、
+    DOS 设备名 CON/PRN、三连点 .../）。working_dirs 缺省 = [cwd]。"""
 ```
 
-**safetyCheck（bypass 免疫）**：`tool_requires_approval`（`functions/_runtime.py:1043-1047`）返回从 `(bool, reason)` 扩成 `(bool, reason, classifier_approvable)`。write/edit/bash 集成 `check_path_safety`，不安全路径即使 bypass 也强制审批——在 3.2 中通过"path 不安全时把 verdict 视为 ask"实现（插在 ① 处），保证 bypass 免疫。
+`check_path_safety` 目前只被 acceptEdits 分支的 `_path_is_safe`（`internals/_approval.py:77-87`）消费：路径不安全 → acceptEdits 不自动放行、fall-through 到 ⑦ 审批。
 
-**危险模式剥离**：进 `acceptEdits` 档时（`session_config.py:155` 档切换处）扫 allow 规则，把危险的（如 `bash(python:*)`）临时剥离、退出恢复，防止过宽 allow 规则在 acceptEdits 下绕过审批。`is_dangerous_allow_rule(tool_name, pattern)` 用 `DANGEROUS_BASH_PATTERNS` 判定。
+**额外工作目录**：`SessionRunConfig.additional_working_dirs`（§3.6）扩展路径安全的工作目录集。`_path_is_safe` 组装 `work_dirs = [os.getcwd(), *req.additional_working_dirs]`（`:86`）传给 `check_path_safety`。该字段从 session meta 经 `TurnRequest.additional_working_dirs`（`dispatcher/types.py:112`）流下，填充点在 `webui/_execute/chat.py:259`、`channels/_conversation.py:240`。用户可加"这个目录也算安全区"；缺它则只认 cwd。
 
-**额外工作目录**：`SessionRunConfig.additional_working_dirs`（3.6）是路径安全的工作目录集扩展，`check_path_safety` 的 `working_dirs = [cwd] + req.additional_working_dirs`。用户可加"这个目录也算安全区"，acceptEdits 与路径安全都读它；缺它则只认死一个 cwd。
+**尚未接线**：`is_dangerous_allow_rule(tool_name, pattern)`（`file_safety.py:94-100`，用 `DANGEROUS_BASH_PATTERNS` 判一条 allow 规则在 acceptEdits 下会不会放过危险命令）已实现但**无调用方**——"进 acceptEdits 时临时剥离危险 allow 规则"目前不启用。当前也**没有** bypass 免疫的 safetyCheck 强制审批（`tool_requires_approval` 仍是 `(bool, reason)` 二元组，不带 `classifier_approvable`）：路径安全只在 acceptEdits 分支起作用，bypass 下写危险文件不会被强制拦。若要补，见 §7 末尾。
 
 ### 3.6 存储：session meta schemaless + SessionRunConfig
 
-**session 层是 schemaless 的**——这是全部权限持久化不需要 DB migration 的原因。`SessionDB.update_session(session_id, **fields)`（`store/session/session_store.py:602-639`）把 `head_id` 特殊路由到 `idx.set_head()`，其余任意字段（`permission_mode`/新增的 `permission_rules`/`pre_plan_permission_mode`/`additional_working_dirs`）全部经 `idx.set_meta(**clean)` 落进 session meta。所以加权限字段只改 `session_config.py` 的 load/save，旧会话读回不报错。
+存储分两处，各管一半：**权限模式在会话（session meta），权限规则在项目（settings.json）**。
+
+**会话层（模式）是 schemaless 的**——这是权限模式持久化不需要 DB migration 的原因。`SessionDB.update_session(session_id, **fields)`（`store/session/session_store.py:602-639`）把 `head_id` 特殊路由到 `idx.set_head()`，其余任意字段（`permission_mode` / `additional_working_dirs`，以及一次性覆盖用的 `permission_rules`）全部经 `idx.set_meta(**clean)` 落进 session meta。所以加会话级权限字段只改 `session_config.py` 的 load/save，旧会话读回不报错。
 
 ```python
 # openprogram/store/session/session_store.py:602-639
 def update_session(self, session_id, **fields):
     """head_id → set_head()；其余字段 → set_meta(**clean)。schemaless。"""
-def get_session(self, session_id):
-    """行形 dict：固定键 id/title/agent_id/source/model/created_at/updated_at/
-    last_node_id(=idx.head_id，无独立 head_id 键)；其余 meta 序列化进 extra_json，
-    经 _row_to_session 二次成形（_msg_adapter.py:232-233 setdefault 直通）。"""
 ```
 
 ```python
-# openprogram/agent/session_config.py:29-39（新增字段）
+# openprogram/agent/session_config.py:45-59
 @dataclass
 class SessionRunConfig:
     tools_enabled: Optional[bool] = None
@@ -373,14 +386,16 @@ class SessionRunConfig:
     toolset: Optional[str] = None
     thinking_effort: Optional[str] = None
     permission_mode: Optional[str] = None
-    # ── 新增（本设计）──
-    permission_rules: Optional[PermissionRules] = None          # 2.2
-    additional_working_dirs: list[str] = field(default_factory=list)  # 3.5 路径安全
+    # ── 权限规则（会话层作最高优先的一次性覆盖；主要载体是项目，见 §2.3）──
+    permission_rules: Optional[PermissionRules] = None          # §2.2
+    additional_working_dirs: list[str] = field(default_factory=list)  # §3.5 路径安全
 
-# :154-156
+# session_config.py:190-191
 def permission_from_config(cfg, *, default: str) -> str:
     return _normalize_permission(cfg.permission_mode) or default
 ```
+
+**项目层（规则）**落在 `<project>/.openprogram/settings.json`（默认项目落 `<state>/projects/default-settings.json`）的 `permission_rules` 键，读写经 `project_store.load_project_settings` / `save_project_settings`（`store/project/project_store.py:565-592`）。这是规则的主要载体，跟项目走。会话层 `permission_rules` 仅作最高优先的一次性覆盖。合并见 `load_merged_rules`（§3.4）。
 
 **默认值三处**（`permission_from_config` 的 default 决定 session 未设置时落哪）：
 
@@ -388,25 +403,25 @@ def permission_from_config(cfg, *, default: str) -> str:
 |---|---|---|
 | TurnRequest 数据类字段 | `ask` | `dispatcher/types.py:53` |
 | Web 执行路径 | `bypass` | `webui/_execute/__init__.py:557` |
-| 渠道（channels） | `ask` | `channels/_conversation.py:237` |
+| 渠道（channels） | `ask` | `channels/_conversation.py:238` |
 
 子 agent 固定 `bypass`（`sub_agent_run.py:89`）：子 agent 的 lane 上没有 UI 订阅审批事件，ask 会让每工具超时 `[denied]`；且"派生子 agent"本身已是用户显式动作。
 
 ### 3.7 plan 与 permission_mode 的关系（不做 prePlanMode）
 
-我们的 plan 是**可见性控制**（藏写工具，`agent/plan_mode.py` 布尔集），不切 `permission_mode`。所以不像 Claude Code 那样需要"进 plan 记住旧档、退出恢复"（CC 的 plan 是权限档，占用档位槽才需要 prePlanMode）。我们进/退 plan 只翻 `plan_mode._active` 的开关，当前的 `permission_mode`（ask/acceptEdits/bypass…）始终不变、退出即原样生效——无需记录、无需恢复。因此 `pre_plan_permission_mode` 字段与 `permission_context.py` **不需要**。
+plan 是**可见性控制**（藏写工具，`agent/plan_mode.py` 布尔集），不切 `permission_mode`——两者正交。所以不像 Claude Code 那样需要"进 plan 记住旧档、退出恢复"（CC 的 plan 是权限档，占用档位槽才需要 prePlanMode）。进/退 plan 只翻 `plan_mode._active` 的开关，当前的 `permission_mode`（ask/acceptEdits/dontAsk/bypass）始终不变、退出即原样生效——不记录、不恢复。代码里**没有** `pre_plan_permission_mode` 字段，**没有** `permission_context.py`。
 
 ---
 
 ## 4. 前端怎么实现
 
-前端三件事：审批卡片（收 question.asked、渲染三选一）、权限模式开关（composer pill）、规则管理面板（settings 页删规则）。
+前端三件事：审批卡片（收 question.asked、渲染三选一）、权限模式选择（composer plus-menu，会话级）、规则管理面板（**Projects 页**，项目级）。
 
 ### 4.1 审批卡片入口
 
-唯一入口组件是 `QuestionMode`（`web/components/chat/composer/modes/question/question-mode.tsx:129-232`），按 `kind` 分支。收到 `question.asked` 帧（字段见下）后进入 approval 分支渲染卡片。
+审批合流进统一的问题渲染（approval 是 `kind="approval"` 的问题，和 `runtime.ask` 走同一条链路）。入口组件 `QuestionMode`（`web/components/chat/composer/modes/question/question-mode.tsx`）按 `kind` 分支：approval 分支（`:82-83, :309-334`）把帧的 `prompt`/`detail`/`risk_level` 归一成一个 approval step 后渲染卡片。
 
-`question.asked` 帧字段（后端 `emit_question_asked` 发，`internals/_approval.py:173-181`）：
+`question.asked` 帧字段（后端 `emit_question_asked` 发，`internals/_approval.py:274-282`）：
 
 ```json
 {
@@ -422,22 +437,23 @@ def permission_from_config(cfg, *, default: str) -> str:
 }
 ```
 
-`tool`/`args` 是 approval 专属（`:179-180`），给前端画危险摘要；`risk_level` 本设计新增，驱动高亮。
+`tool`/`args`/`risk_level` 是 approval 专属（`:281`），给前端画危险摘要、驱动高亮。
 
 ### 4.2 审批卡片三选一 + 危险高亮
 
-approval 分支现状渲染两颗按钮（允许/拒绝，`question-mode.tsx:308-327`；点击提交发 WS 在 `submit()` `:162-169`）。本设计改成三选一（允许一次 / 总是允许 / 拒绝）+ 危险高亮：
+approval 分支渲染三颗按钮（允许一次 / 总是允许 / 拒绝）+ 危险高亮（`question-mode.tsx:309-334`）：
 
 ```tsx
-// question-mode.tsx:308-327（目标）
+// question-mode.tsx:309-334
 if (step.kind === "approval") {
   const pick = (answer as { pick: "once" | "always" | "deny" | null }).pick;
-  const risk = step.risk_level ?? "low";   // "low" | "medium" | "high"
+  const risk = step.risk ?? "low";   // "low" | "medium" | "high"
+  const label = { once: "允许一次", always: "总是允许", deny: "拒绝" } as const;
   return (
     <>
       <div className={styles.prompt}>{withColon(step.prompt)}</div>
       {step.detail ? (
-        <pre className={approvalStyles.summary + " " + approvalStyles["risk_" + risk]}>
+        <pre className={approvalStyles.summary + " " + (approvalStyles["risk_" + risk] ?? "")}>
           {step.detail}
         </pre>
       ) : null}
@@ -445,8 +461,7 @@ if (step.kind === "approval") {
         {(["once", "always", "deny"] as const).map((p) => (
           <button className={styles.opt + (pick === p ? " " + styles.optPicked : "")}
             onClick={() => onChange({ pick: pick === p ? null : p })}>
-            {pick === p ? "✓ " : ""}
-            {p === "once" ? "允许一次" : p === "always" ? "总是允许" : "拒绝"}
+            {pick === p ? "✓ " : ""}{label[p]}
           </button>
         ))}
       </div>
@@ -455,67 +470,70 @@ if (step.kind === "approval") {
 }
 ```
 
-`Answer` 类型（`question-mode.tsx:72-75`）approval 分支从 `{pick:"allow"|"deny"|null}` 改为 `{pick:"once"|"always"|"deny"|null}`。危险高亮：CSS module 加 `.risk_high`（红边/红底）、`.risk_medium`（橙）、`.risk_low`（绿），套在现有 `.summary` 上。按钮沿用 `.opt`/`.optPicked`（30px pill，选中 `color-mix(accent-blue @ 18%)` + 蓝字 + `✓`）。
+`Answer` 类型 approval 分支是 `{pick:"once"|"always"|"deny"|null}`（`question-mode.tsx:74`）。危险高亮由 `approval-mode.module.css` 的 `.risk_high`/`.risk_medium`/`.risk_low` 套在 `.summary` 上；按钮用 `.opt`/`.optPicked`（选中态加 `✓`）。
 
 ### 4.3 回传 WS payload
 
-前端 `wsSend`（`question-mode.tsx:30-35`），`submit()` 按 pick 发（`:162-169`）：
+前端 `submit()` 按 pick 发（`question-mode.tsx:162-166`）：
 
 ```js
 wsSend({ action: "question_reply", id: q.id, answer: "允许", scope: "once" })   // 允许一次
 wsSend({ action: "question_reply", id: q.id, answer: "允许", scope: "always" }) // 总是允许
-wsSend({ action: "question_reject", id: q.id, reason: "<可选理由>" })            // 拒绝
+wsSend({ action: "question_reject", id: q.id })                                 // 拒绝
 ```
 
-后端处理（`webui/ws_actions/session.py:693-708`）：
+后端处理（`webui/ws_actions/session.py:693-712`）——`scope` 存在时把 `{answer, scope}` 打包成 value，`await_user_approval` 消费时拆出 scope：
 
 ```python
-async def handle_question_reply(ws, cmd):          # :693-698
-    qid = cmd.get("id") or ""; answer = cmd.get("answer")
-    scope = cmd.get("scope", "once")               # 新增
-    if qid: _resolve_question(qid, "answered", answer, scope=scope)
+# webui/ws_actions/session.py:693-712
+async def handle_question_reply(ws, cmd):
+    qid = cmd.get("id") or ""; answer = cmd.get("answer"); scope = cmd.get("scope")
+    if qid:
+        value = {"answer": answer, "scope": scope} if scope else answer
+        _resolve_question(qid, "answered", value)
 
-async def handle_question_reject(ws, cmd):         # :701-708
+async def handle_question_reject(ws, cmd):
     qid = cmd.get("id") or ""; reason = cmd.get("reason")
-    if qid: _resolve_question(qid, "declined", reason)
+    if qid:
+        _resolve_question(qid, "declined", reason)
 ```
 
-`_resolve_question`（`session.py:686-708` + REST 收口 `webui/routes/questions.py:19-55`）是 WS/REST/channel `/answer` 的共享 claim-once 路径：resolve registry + 广播 `question.replied`/`question.rejected` 收回别处 UI。`scope` 作为 value 附带信息传回 `await_user_approval`（value 携带 `{"answer":..., "scope":...}`，消费时拆出 scope）。REST：`GET /api/questions` 列 pending；`POST /api/questions/{qid}/reply` body `{answer, scope?}`；`POST /api/questions/{qid}/reject`。
+`_resolve_question`（`session.py:686-690`）薄封装 `resolve_question_and_broadcast`（`questions.py`）——WS/REST/channel `/answer` 的共享 claim-once 路径：resolve registry + 广播收回别处 UI。
 
-后端 `await_user_approval` 返回从 `(approved, reason)` 扩成 `(approved, reason, scope)`（`internals/_approval.py:135-200`），`scope ∈ {"once","always"}`。流程不变：`open_question(kind="approval",...)` → `await asyncio.to_thread(ev.wait, timeout)`（不阻塞 asyncio loop，默认 300s）→ `consume_or_timeout`：answered 且 value ∈ `{"允许","approve","yes","y","true","ok","是"}` → `(True, None, scope)`；declined → `(False, reason, "once")`；timeout → `retract_question` 收回卡片 → `(False, None, "once")`。
+后端 `await_user_approval` 返回 `(approved, reason, scope)`（`internals/_approval.py:235-305`），`scope ∈ {"once","always"}`。流程：`open_question(kind="approval",...)` → `await asyncio.to_thread(ev.wait, timeout)`（不阻塞 asyncio loop，默认 300s）→ `consume_or_timeout`：answered 时拆出 `answer`/`scope`，`answer ∈ {"允许","approve","yes","y","true","ok","是"}` → `(True, None, scope)`；declined → `(False, reason, "once")`；timeout → `retract_question` 收回卡片 → `(False, None, "once")`。
 
-### 4.4 allow-always 写回 / 删规则
+### 4.4 allow-always 写回项目规则
 
-`_gated_execute` 拿到 `approved=True and scope=="always"` → 写回 allow 规则：
+`_approve_then_run` 拿到 `approved=True and scope=="always"` → 写回一条 per-tool allow 规则到**项目**层：
 
 ```python
-def _persist_always_allow_rule(session_id, tool_name, destination="session"):
-    """把 rule_to_string(PermissionRuleValue(tool_name)) 追加进目标层 allow。
-    destination="session"（默认）→ load/save_session_run_config → 落 session meta。
-    destination="local" → 写 .openprogram/settings.local.json 的 tools.permission_rules.allow。"""
-def _remove_always_rule(session_id, rule, destination):
-    """从目标层 allow/deny/ask 移除一条规则字符串（撤回误点的"总是允许"）。"""
+# openprogram/agent/internals/_approval.py:90-107
+def _persist_always_allow_rule(session_id: str, tool_name: str) -> None:
+    """把 tool_name 作为一条 per-tool allow 规则，落到项目层
+    (<project>/.openprogram/settings.json 的 permission_rules.allow)。
+    经 project_for_session(session_id) 反查项目，缺则用 get_default_project()。
+    规则跟项目走——切会话仍生效、长期记住。"""
 ```
 
-默认写 session 层；卡片可选"记住到本项目"→ 写 local 层。下次同工具 `_match_rule` 命中 allow → 不再弹。删规则面板在 settings 权限页（4.6）列各层已记住规则、逐条删 → `wsSend({action:"remove_permission_rule", rule, destination})` → `ws_actions` 新 handler 调 `_remove_always_rule`。
+写完下次同工具 `_match_rule` 命中 allow → 不再弹。撤回误点的"总是允许"：在 Projects 页规则面板（§4.6）逐条删除。
 
-### 4.5 权限模式开关（composer pill）
+### 4.5 权限模式选择（composer plus-menu，会话级）
 
-前端加权限模式 pill，仿 thinking-effort pill（`composer/controls/thinking-effort-pill.tsx` + `use-thinking-effort.ts`）。现状 composer 无权限控件——协议层已支持带 `permission_mode`（`ws_actions/chat.py:312`），但前端总走后端默认（web=bypass）。
+权限模式选择由 `usePermissionMode` hook 驱动（`web/components/chat/composer/controls/use-permission-mode.ts`），状态存 session-store 的 `composerSettings.permission_mode`（**按会话隔离**）。5 档标签用 Claude Code 官方名（`MODE_LABELS`）：Default/默认、Accept Edits/接受编辑、Don't Ask/不再询问、Bypass/绕过权限、Plan Mode/计划模式。hook 返回 `{mode, options, menuOpen, setMenuOpen, set}`，`set()` 调 `setComposerSettings({permission_mode})`。选择项挂在 composer 的 plus-menu 里（`composer/index.tsx:344` 用该 hook）。
 
-```
-web/components/chat/composer/controls/
-  permission-mode-pill.tsx     ← 仿 thinking-effort-pill.tsx
-  use-permission-mode.ts       ← 仿 use-thinking-effort.ts
-```
+发送时（`composer/index.tsx:697`）把 mode 加进帧：`{action:"chat", ..., permission_mode: mode}`（仅当非空）。后端 `ws_actions/chat.py` 读 `cmd.get("permission_mode")`、存进 run config 并回填 `conv["permission_mode"]`，回给前端（session-store `index.ts:320,351` 同步）。下游 dispatcher `effective_permission = permission_from_config(run_cfg, default="bypass")`（`_execute/__init__.py:557`）塞进 TurnRequest。
 
-`PermissionModePill` props `{expanded, onToggle, value, onChange}`，展开列 6 档（中文标签"逐次问/自动/自动批写/计划/不打断/全通过"）。`usePermissionMode` 返回 `{mode, options, menuOpen, setMenuOpen, set}`，`set()` 调 `setComposerSettings({permission_mode: mode})`（session-store 按会话隔离）。
+### 4.6 规则管理面板（Projects 页，项目级）
 
-发送时（`composer/index.tsx:663-681`）把 mode 加进帧：`send({action:"chat", ..., permission_mode: mode})`。后端 `ws_actions/chat.py:312` 已读 `cmd.get("permission_mode")`，`:475-482` 存进 run config 并回填 `conv["permission_mode"]`，回给前端的 `chat_ack`/消息帧带 `permission_mode`，前端据此同步 pill。下游 dispatcher `effective_permission = permission_from_config(run_cfg, default="bypass")`（`_execute/__init__.py:557`）塞进 TurnRequest。CLI/TUI 同理加 `--permission` 标志 + `/permission` 命令。
+规则管理 UI 在 **Projects 页**（`web/components/projects/projects-page.tsx:146-148`）：点开一个项目展开其规则面板。面板组件 `PermissionsSection`（`web/components/projects/permissions-section.tsx`）按 `projectId` 工作：
 
-### 4.6 规则管理面板（settings 页）
+- 列出该项目的 deny / ask / allow 三组规则，每组可手动新增、逐条删除。
+- 拉取/刷新走 WS：`list_permission_rules` / `add_permission_rule` / `remove_permission_rule`，请求都带 `project_id`；后端广播 `permission_rules` 帧（`session.py:742-748`）刷新面板。
+- 规则字符串语法 `ToolName` 或 `ToolName(pattern)`（如 `bash(git:*)`），见 §2.2。
 
-settings 权限页挂点（`web/components/settings/settings-tabs-layout.tsx:10-118`）：新建 `app/(shell)/settings/permissions/page.tsx`，`SettingsTab` union 加 `"permissions"`，导航加 `<Link href="/settings/permissions">`，active 判定加 `pathname.startsWith("/settings/permissions")`。页面列各层（session/local/project/user）已记住的 allow/deny/ask 规则，支持逐条删除（4.4）和手动新增。
+后端 WS handler（`webui/ws_actions/session.py:751-783`）都是**项目级**：`_resolve_project_id`（`:718-730`）支持请求直接带 `project_id`（Projects 页知道项目），或只带 `session_id` 时经 `project_for_session` 反查项目（composer 路径）；`_mutate_project_rule` 增删后 `save_project_settings` + 广播。
+
+> 已删除：settings 的 Permissions tab、chat composer 里的 "Manage rules…" modal。规则不再在会话/全局 settings 里管，统一落项目 + Projects 页。
 
 ---
 
@@ -534,26 +552,35 @@ settings 权限页挂点（`web/components/settings/settings-tabs-layout.tsx:10-
 
 ---
 
-## 6. 落地分步
+## 6. 关键约束与代码地图
 
-每步可独立验证，标依赖。主线 S1→S5 先整体交付（三平行规则 + allow-always + 前端三选一）；其余并行。
+### 6.1 改动权限代码时必须守住的性质
 
-| 步 | 内容 | 依赖 | 验证 |
-|---|---|---|---|
-| S1 | `SessionRunConfig` 加 `permission_rules` + `additional_working_dirs` + load/save（`session_config.py:29-39,:60-76,:78-109`）。schemaless 无 migration | 无 | 写规则→重载 session 字段还在；旧会话读回不报错 |
-| S2 | `TurnRequest` 加 `permission_rules` + 各构造点填充（`dispatcher/types.py` + web/channel/CLI） | S1 | 规则从 session 流到 dispatcher |
-| S3 | `permission_rule.py`（`parse_rule`/`rule_to_string`/`parse_command`）+ `_match_rule` + `_gated_execute` 两段插：deny/ask 在 bypass 前、allow 在后（`internals/_approval.py:74-102`） | S2 | 手塞 allow→不弹；deny→即使 bypass 也 `[denied]`；ask→即使 bypass 也弹 |
-| S4 | `await_user_approval` 返回加 `scope` + `_persist_always_allow_rule` 写回 session allow（`internals/_approval.py:135-200`） | S3 | 点"总是允许"→下次同工具不弹 |
-| S5 | 前端三选一按钮 + `scope`/destination 回传 + `handle_question_reply` 读 scope（`question-mode.tsx:308-327,:162-168` + `ws_actions/session.py:693-698`） | S4 | 浏览器点三按钮各自行为正确（自查）；"记住到本项目"写 local |
-| S6 | 多层来源：全局 `config_schema.py`、project/local `.openprogram/settings*.json`、cliArg 标志 + `_merge_permission_rules`（`dispatcher/__init__.py`） | S1、S3 | 各层写 deny→按 session>cli>local>project>user 生效 |
-| S7 | 加 `acceptEdits`/`dontAsk`/`plan` 档 + `_normalize_permission` 大小写修正（`session_config.py:23,:235-239` + `dispatcher/types.py:19`） | 默认值三处（3.6）确认 | 三档能存取、驼峰不被误判非法 |
-| S8 | `@function` 加 `accept_edits_safe` + 文件类工具标记 + `_gated_execute` acceptEdits 分支（含 bash 强制审批）（`functions/_runtime.py` + `functions/tools/*` + `internals/_approval.py`） | S7、S13 | acceptEdits 下写文件不弹、bash 仍弹 |
-| S9 | plan 联动：**不做**——我们 plan 是可见性控制（藏写工具），不占 `permission_mode` 槽，无需记录/恢复档位（§3.7） | — | — |
-| S10 | per-pattern：`parse_command` + `_match_rule` 支持 `tool(pattern)`（`permission_rule.py` + `internals/_approval.py`） | S3 | `bash(git:*)` allow 放行 `git status`、不放行 `rm -rf` |
-| S11 | 权限模式 pill：`permission-mode-pill.tsx` + `use-permission-mode.ts` + composer 塞 payload（4.5） | S7 | 前端能选 6 档、随会话隔离、后端收到（自查） |
-| S12 | 危险分级 `_risk_level` + detail 结构化 + `risk_level` 入帧 + 前端高亮（`internals/_approval.py:122-132,:173-181` + `question-mode.tsx` + CSS） | 无 | `rm -rf` 卡片标红、只读标绿（自查） |
-| S13 | 路径安全 `file_safety.py`（`check_path_safety` + Windows 绕过 + `DANGEROUS_*`）+ `tool_requires_approval` 返回加 `classifier_approvable` + 集成 write/edit/bash + 危险规则剥离（`functions/tools/file_safety.py` + `functions/_runtime.py:1043-1047` + `session_config.py:155`） | S3 | 写 `.git/`/`.bashrc` 即使 bypass 也强制审批；acceptEdits 下 `bash(python:*)` allow 被剥离 |
-| S14 | removeRules 面板：settings 权限页列规则 + 逐条删 + `_remove_always_rule` + WS handler（4.4、4.6） | S5、S6 | 误点"总是允许"后能在面板删掉、下次重新弹 |
+- **deny/ask 早于 bypass**：`_gated_execute`（`internals/_approval.py:151-188`）里规则层 deny/ask（① ②）必须在 bypass 短路（③）之前。web 默认就是 bypass，把 deny/ask 挪到 bypass 之后会让"禁止 rm -rf"被静默忽略——安全缺陷。
+- **exit_plan_mode 强制审批**：`_FORCE_APPROVAL_TOOLS`（`:34`）在 bypass 下也弹卡片；提交计划要用户签字。
+- **模式 vs 规则的作用域**：权限模式是**会话级**（session meta），权限规则是**项目级**为主（`<project>/.openprogram/settings.json`）。别把两者的存储混起来。
+- **驼峰规范化**：`acceptEdits`/`dontAsk` 是驼峰规范值，一切比较走 `_normalize_permission` 的大小写不敏感表（`session_config.py:271-275`），不要直接 `.lower()` 后当规范值用。
+- **acceptEdits 只放路径安全的写工具**：命令类（bash/exec/execute_code）无论如何 fall-through 到审批（⑥ 只对 `_accept_edits_safe=True` 且 `_path_is_safe` 的工具放行）。
+
+### 6.2 代码地图
+
+| 关注点 | 代码位置 |
+|---|---|
+| 判定链 `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
+| 规则字符串解析、匹配、多层合并 | `openprogram/functions/permission_rule.py`（`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`） |
+| 路径安全 / 危险文件目录 / Windows 绕过 | `openprogram/functions/tools/file_safety.py` |
+| gate 硬拦截 | `openprogram/agent/tool_gate.py` |
+| 权限模式合法值 + 规范化 + SessionRunConfig 字段 | `openprogram/agent/session_config.py` |
+| `PermissionMode` 类型 + TurnRequest 字段/默认 | `openprogram/agent/dispatcher/types.py` |
+| 会话 meta schemaless 存储 | `openprogram/store/session/session_store.py` |
+| 项目级 settings 读写 + `project_for_session` | `openprogram/store/project/project_store.py` |
+| `accept_edits_safe` 声明 + per-tool `requires_approval` | `openprogram/functions/_runtime.py`；工具标记在 `openprogram/functions/tools/{read,write,edit,glob,grep,list}/` |
+| web 默认 bypass + effective_permission | `openprogram/webui/_execute/__init__.py`；`additional_working_dirs` 填充在 `_execute/chat.py`、`channels/_conversation.py` |
+| WS：审批应答 + 项目规则 list/add/remove | `openprogram/webui/ws_actions/session.py`、`chat.py` |
+| 值守（正交机制） | `openprogram/agent/attended.py`、`openprogram/webui/ws_actions/runtime.py` |
+| 前端审批卡片（approval mode） | `web/components/chat/composer/modes/question/question-mode.tsx` + `../approval/approval-mode.module.css` |
+| 前端权限模式选择（会话级 hook） | `web/components/chat/composer/controls/use-permission-mode.ts` + `composer/index.tsx` |
+| 前端规则面板（项目级） | `web/components/projects/projects-page.tsx` + `web/components/projects/permissions-section.tsx` |
 
 ---
 
@@ -561,12 +588,9 @@ settings 权限页挂点（`web/components/settings/settings-tabs-layout.tsx:10-
 
 只列真没有物理载体、或加了必然冲突无法消解的。不是"为省事不做"。
 
-- **企业策略层（policy/flag 来源）**：无 GrowthBook 特性开关、无企业 MDM/策略下发后台。第 2.3 的来源分层结构全部落地，唯独这两层无载体承接。未来接企业部署可补。
-- **实时 command 来源层**：无"斜杠命令实时改权限上下文"的机制；等价能力由 session 层 + cliArg 层覆盖。
-- **LLM 分类器审批档**：一套独立分类器判定引擎（模型 API 调用 + transcript 准备 + denial 累计限流）。我们的 `auto` 是硬编码高风险集启发式，语义不同。分类器是判定引擎替换，不是权限规则，属独立工作线。
-- **外部审批委托（permissionPromptTool）**：把审批决策委托给外部 MCP 工具。我们统一走 QuestionRegistry + 前端卡片，无此机制与需求。未来接自定义审批后端可补。
-- **沙箱隔离（安全边界）**：权限系统是决策与知情层，不是安全边界，不做进程/文件隔离。真正隔离是独立 sandbox 工作线。注意区分：3.5 的 safetyCheck 强制提示（bypass 免疫）是审批层的强制问，属本设计；sandbox 另说。
-
----
-
-相关代码：`openprogram/agent/tool_gate.py`、`openprogram/agent/internals/_approval.py`、`openprogram/agent/questions.py`、`openprogram/agent/attended.py`、`openprogram/agent/session_config.py`、`openprogram/agent/dispatcher/types.py`、`openprogram/agent/dispatcher/__init__.py`、`openprogram/agent/agent_loop.py`、`openprogram/agent/sub_agent_run.py`、`openprogram/functions/_runtime.py`、`openprogram/functions/__init__.py`、`openprogram/store/session/session_store.py`、`openprogram/webui/_execute/__init__.py`、`openprogram/webui/ws_actions/chat.py`、`openprogram/webui/ws_actions/session.py`、`openprogram/webui/routes/questions.py`、`openprogram/channels/_conversation.py`、`web/components/chat/composer/modes/question/question-mode.tsx`、`web/components/chat/composer/controls/`、`web/lib/net/use-ws.ts`、`web/components/settings/settings-tabs-layout.tsx`。新增文件：`openprogram/functions/permission_rule.py`、`openprogram/functions/tools/file_safety.py`、`openprogram/agent/permission_context.py`、`web/components/chat/composer/controls/permission-mode-pill.tsx`、`web/components/chat/composer/controls/use-permission-mode.ts`。
+- **企业策略层（policy/flag 来源）**：无特性开关、无企业 MDM/策略下发后台。§2.3 的三层来源全部落地，唯独企业层无载体承接。未来接企业部署可补。
+- **local / cliArg 规则层**：无 `.openprogram/settings.local.json`、无 `--allow-tool` 之类的 CLI 标志。等价能力由项目层 + 会话层覆盖。
+- **LLM 分类器审批档（旧 `auto`）**：一套独立分类器判定引擎（模型 API 调用 + transcript 准备 + denial 累计限流）。`auto` 档已从对外档删除——它是判定引擎替换，不是权限规则，属独立工作线。
+- **外部审批委托（permissionPromptTool）**：把审批决策委托给外部 MCP 工具。统一走 QuestionRegistry + 前端卡片，无此机制。未来接自定义审批后端可补。
+- **沙箱隔离（安全边界）**：权限系统是决策与知情层，不是安全边界，不做进程/文件隔离。真正隔离是独立 sandbox 工作线。
+- **bypass 免疫的 safetyCheck 强制审批**：`tool_requires_approval` 仍是 `(bool, reason)`，无 `classifier_approvable`；路径安全只在 acceptEdits 分支起作用，bypass 下写危险文件不会被强制拦。`is_dangerous_allow_rule`（`file_safety.py:94-100`）已实现但未接线。若要补 bypass 免疫，需把 `tool_requires_approval` 扩成三元组、在 `_gated_execute` ① 处把"路径不安全"视为 ask。

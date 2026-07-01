@@ -33,15 +33,27 @@ import json
 import os
 
 
-def _project_dict(p) -> dict:
+def _project_dict(p, alive: set[str] | None = None) -> dict:
+    # session_count 只数**存活**会话，不裸信可能含孤立引用的 session_ids。
+    sids = p.session_ids or []
+    count = len([s for s in sids if s in alive]) if alive is not None else len(sids)
     return {
         "id": p.id,
         "name": p.name,
         "path": p.path,
         "is_default": p.is_default,
-        "session_count": len(p.session_ids),
+        "session_count": count,
         "status": p.status,
     }
+
+
+def _alive_session_ids() -> set[str]:
+    """当前真实存在的会话 id 集（SessionDB 有内容的）。"""
+    try:
+        from openprogram.agent.session_db import default_db
+        return {r.get("id") for r in default_db().list_sessions(limit=100_000) if r.get("id")}
+    except Exception:
+        return set()
 
 
 def _session_meta(session_id: str) -> dict:
@@ -62,7 +74,9 @@ async def handle_list_projects(ws, cmd: dict):
     try:
         from openprogram.store import project_store as _projects
         _projects.get_default_project()  # ensure the default label exists
-        projects = [_project_dict(p) for p in _projects.list_projects()]
+        alive = _alive_session_ids()
+        _projects.prune_sessions(alive)   # 清孤立引用（修 882-bug），只增不减的历史遗留
+        projects = [_project_dict(p, alive) for p in _projects.list_projects()]
         if session_id:
             cur = _projects.project_for_session(session_id)
             current_project_id = cur.id if cur else None
@@ -233,8 +247,83 @@ async def handle_remove_session_workdir(ws, cmd: dict):
         await handle_list_session_workdirs(ws, {"session_id": session_id})
 
 
+_PROJECT_CONFIG_KEYS = ("permission_mode", "toolset", "thinking_effort", "tools_enabled")
+
+
+async def handle_get_project_config(ws, cmd: dict):
+    """返回项目级默认配置（作为新会话默认值）。存 project settings.json。"""
+    project_id = (cmd.get("project_id") or "").strip()
+    cfg: dict = {}
+    try:
+        from openprogram.store import project_store as _projects
+        s = _projects.load_project_settings(project_id)
+        cfg = {k: s.get(k) for k in _PROJECT_CONFIG_KEYS if s.get(k) is not None}
+    except Exception:
+        cfg = {}
+    await ws.send_text(json.dumps({
+        "type": "project_config",
+        "data": {"project_id": project_id, "config": cfg},
+    }, default=str))
+
+
+async def handle_set_project_config(ws, cmd: dict):
+    """设一个项目级配置字段（key ∈ _PROJECT_CONFIG_KEYS）。value=None 清除。"""
+    project_id = (cmd.get("project_id") or "").strip()
+    key = cmd.get("key")
+    value = cmd.get("value")
+    if project_id and key in _PROJECT_CONFIG_KEYS:
+        try:
+            from openprogram.store import project_store as _projects
+            s = _projects.load_project_settings(project_id)
+            if value in (None, "", "inherit"):
+                s.pop(key, None)
+            else:
+                s[key] = value
+            _projects.save_project_settings(project_id, s)
+        except Exception:
+            pass
+    await handle_get_project_config(ws, {"project_id": project_id})
+
+
+async def handle_list_project_sessions(ws, cmd: dict):
+    """返回某项目下的**存活**会话摘要（id/title/created_at），供项目详情页
+    的 Sessions tab 列出并跳转。孤立引用（已删会话）自动过滤。"""
+    project_id = (cmd.get("project_id") or "").strip()
+    sessions: list[dict] = []
+    try:
+        from openprogram.store import project_store as _projects
+        from openprogram.agent.session_db import default_db
+        proj = _projects.get_project(project_id)
+        db = default_db()
+        rows = {r.get("id"): r for r in db.list_sessions(limit=100_000)}
+        for sid in (proj.session_ids if proj else []):
+            row = rows.get(sid)
+            if not row:
+                continue  # 孤立引用，跳过
+            title = (row.get("title") or "").strip()
+            preview = (row.get("preview") or "").strip()
+            if title in ("", "New conversation", "Untitled"):
+                title = preview or sid
+            sessions.append({
+                "id": sid,
+                "title": title,
+                "created_at": row.get("created_at") or 0,
+                "preview": preview or None,
+            })
+        sessions.sort(key=lambda s: s.get("created_at") or 0, reverse=True)
+    except Exception:
+        sessions = []
+    await ws.send_text(json.dumps({
+        "type": "project_sessions",
+        "data": {"project_id": project_id, "sessions": sessions},
+    }, default=str))
+
+
 ACTIONS = {
     "list_projects": handle_list_projects,
+    "list_project_sessions": handle_list_project_sessions,
+    "get_project_config": handle_get_project_config,
+    "set_project_config": handle_set_project_config,
     "create_project": handle_create_project,
     "remove_project": handle_remove_project,
     "set_session_project": handle_set_session_project,

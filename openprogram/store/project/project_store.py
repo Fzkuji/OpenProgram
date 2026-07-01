@@ -684,6 +684,43 @@ def bind_session(session_id: str, project_id: str) -> None:
             _write_registry(reg)
 
 
+def unbind_session(session_id: str, project_id: Optional[str] = None) -> None:
+    """从项目的反向索引里移除一个 session（删会话时调用，配对 bind_session）。
+    project_id=None → 从所有项目移除（不必知道它归哪个项目）。"""
+    with _reg_lock:
+        reg = _read_registry()
+        changed = False
+        for pid, d in reg.items():
+            if project_id is not None and pid != project_id:
+                continue
+            sids = list(d.get("session_ids", []) or [])
+            if session_id in sids:
+                sids.remove(session_id)
+                d["session_ids"] = sids
+                changed = True
+        if changed:
+            _write_registry(reg)
+
+
+def prune_sessions(alive_ids: set[str]) -> int:
+    """把所有项目 session_ids 里不在 alive_ids 的孤立记录清掉，返回清理条数。
+    修 882-bug：session_ids 曾只增不减，累积了大量已删会话的死引用。"""
+    removed = 0
+    with _reg_lock:
+        reg = _read_registry()
+        changed = False
+        for d in reg.values():
+            sids = list(d.get("session_ids", []) or [])
+            kept = [s for s in sids if s in alive_ids]
+            if len(kept) != len(sids):
+                removed += len(sids) - len(kept)
+                d["session_ids"] = kept
+                changed = True
+        if changed:
+            _write_registry(reg)
+    return removed
+
+
 def project_for_session(session_id: str) -> Optional[Project]:
     """Reverse lookup: which project owns this session, if any."""
     with _reg_lock:
@@ -704,6 +741,10 @@ __all__ = [
     "get_default_project",
     "resolve_project",
     "bind_session",
+    "unbind_session",
+    "prune_sessions",
     "project_for_session",
+    "load_project_settings",
+    "save_project_settings",
     "ensure_footprint_ignored",
 ]

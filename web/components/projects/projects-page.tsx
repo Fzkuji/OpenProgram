@@ -9,10 +9,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import styles from "./projects-page.module.css";
+import { useRouter } from "next/navigation";
+
 import { useTranslation } from "@/lib/i18n";
 import { FoldersIcon } from "@/components/animated-icons";
 import { wsRequest } from "@/lib/net/ws-request";
-import { PermissionsSection } from "./permissions-section";
 
 interface Project {
   id: string;
@@ -25,10 +26,10 @@ interface Project {
 
 export function ProjectsPage() {
   const { t, text } = useTranslation();
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     // 全局 WS 可能还没连上，重试几次。
@@ -112,7 +113,7 @@ export function ProjectsPage() {
                 <li key={p.id} className={styles.card}>
                   <div
                     className={styles.cardHead}
-                    onClick={() => setExpanded((e) => (e === p.id ? null : p.id))}
+                    onClick={() => router.push("/projects/" + p.id)}
                   >
                     <span className={styles.cardIcon}><FoldersIcon size={22} /></span>
                     <div className={styles.cardMain}>
@@ -127,9 +128,7 @@ export function ProjectsPage() {
                     <div className={styles.cardMeta}>
                       {p.session_count} {text("chats", "会话")}
                     </div>
-                    <span className={styles.chevron}>
-                      {expanded === p.id ? "▾" : "▸"}
-                    </span>
+                    <span className={styles.chevron}>▸</span>
                     {!p.is_default && (
                       <button
                         type="button"
@@ -140,14 +139,6 @@ export function ProjectsPage() {
                       >×</button>
                     )}
                   </div>
-                  {expanded === p.id && (
-                    <div className={styles.cardBody}>
-                      <div className={styles.sectionTitle}>
-                        {text("Permission Rules", "权限规则")}
-                      </div>
-                      <PermissionsSection projectId={p.id} />
-                    </div>
-                  )}
                 </li>
               ))}
             </ul>
