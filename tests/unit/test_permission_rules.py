@@ -178,6 +178,35 @@ def test_dontask_denies_risky():
     assert not ran["called"]
 
 
+def test_acceptedits_auto_allows_safe_file_tool(tmp_path, monkeypatch):
+    # acceptEdits: a write-safe tool whose path is inside cwd runs without asking.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "f.txt").write_text("x")
+    tool, ran = _make_tool("write_file")
+    tool._accept_edits_safe = True
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="acceptEdits")
+    # path inside cwd → safe → auto-allow
+    async def _fake(*a, **k): return (False, None, "once")  # would deny if asked
+    import openprogram.agent.internals._approval as _ap
+    wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
+    import asyncio
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_ap, "await_user_approval", _fake)
+        asyncio.run(wrapped.execute("c", {"path": str(tmp_path / "f.txt")}, None, None))
+    assert ran["called"]   # auto-allowed, never asked
+
+
+def test_acceptedits_command_still_asks():
+    # acceptEdits: bash (not accept_edits_safe) still goes through approval.
+    tool, ran = _make_tool("bash")   # _accept_edits_safe defaults False
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="acceptEdits")
+    result = _run(tool, req, approve=False)
+    assert _denied(result)
+    assert not ran["called"]
+
+
 def test_ask_denies_when_user_declines():
     tool, ran = _make_tool("bash")
     req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",

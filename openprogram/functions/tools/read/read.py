@@ -25,6 +25,7 @@ _DESCRIPTION = (
 
 @function(
     name="read",
+    accept_edits_safe=True,   # 只读，acceptEdits 档下自动放行
     description=_DESCRIPTION,
     # The tool already self-bounds via offset/limit, so we don't need
     # framework persist-to-disk on top — the LLM controls page size.

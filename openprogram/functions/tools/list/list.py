@@ -27,6 +27,7 @@ def _fmt_size(n: int) -> str:
 
 @function(
     name="list",
+    accept_edits_safe=True,   # acceptEdits 档下自动放行（只读）
     description=_DESCRIPTION,
     toolset=["core", "research"],
 )

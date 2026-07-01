@@ -21,6 +21,7 @@ _DESCRIPTION = (
 
 @function(
     name="write",
+    accept_edits_safe=True,   # acceptEdits 档下自动放行（写文件——acceptEdits 档正是要自动批这类）
     description=_DESCRIPTION,
     toolset=["core"],
     unsafe_in=["wechat", "telegram", "plan"],

@@ -22,6 +22,7 @@ _DESCRIPTION = (
 
 @function(
     name="edit",
+    accept_edits_safe=True,   # acceptEdits 档下自动放行（改文件——acceptEdits 自动批）
     description=_DESCRIPTION,
     toolset=["core"],
     unsafe_in=["wechat", "telegram", "plan"],

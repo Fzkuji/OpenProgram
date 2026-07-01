@@ -40,6 +40,7 @@ def _is_dangerous_root(root: str) -> bool:
 
 @function(
     name="glob",
+    accept_edits_safe=True,   # acceptEdits 档下自动放行（只读）
     description=_DESCRIPTION,
     toolset=["core", "research"],
 )

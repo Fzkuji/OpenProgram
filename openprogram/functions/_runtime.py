@@ -720,6 +720,7 @@ def function(
     requires_env: tuple = (),
     can_use: Optional[Callable[[], bool]] = None,
     requires_approval: Union[bool, Callable[..., Any], None] = None,
+    accept_edits_safe: bool = False,   # acceptEdits 档下自动放行（写安全工具）
     # Selection metadata
     toolset: list[str] = (),               # Hermes — TOOLSETS membership
     unsafe_in: list[str] = (),              # OpenClaw — channel blacklist
@@ -822,6 +823,7 @@ def function(
                 check_fn=check_fn, requires_env=requires_env,
                 can_use=can_use,
                 requires_approval=requires_approval,
+                accept_edits_safe=accept_edits_safe,
                 toolset=toolset, unsafe_in=unsafe_in, expose=expose,
                 available_if=available_if, defer=defer,
                 register_globally=register_globally,
@@ -971,6 +973,7 @@ def function(
         label=label,
         execute=_execute,
         requires_approval=requires_approval,
+        accept_edits_safe=accept_edits_safe,
         check_fn=check_fn,
         requires_env=requires_env,
         can_use=can_use,
@@ -990,6 +993,7 @@ def _build_and_register_tool(
     label: Optional[str],
     execute: Callable,
     requires_approval: Any = None,
+    accept_edits_safe: bool = False,
     check_fn: Optional[Callable[[], bool]] = None,
     requires_env: Any = (),
     can_use: Optional[Callable[[], bool]] = None,
@@ -1021,6 +1025,9 @@ def _build_and_register_tool(
     # the gating triad (_check_fn / _requires_env / _can_use) is read by
     # ``is_available_agent_tool`` for the 4th of the 6 selection layers.
     setattr(agent_tool, "_requires_approval", requires_approval)
+    # acceptEdits 档下自动放行的"写安全"工具（read/write/edit 等）。命令类
+    # （bash/exec）保持 False，acceptEdits 下仍审批。见 permission-model.md §3.3。
+    setattr(agent_tool, "_accept_edits_safe", bool(accept_edits_safe))
     setattr(agent_tool, "_check_fn", check_fn)
     setattr(agent_tool, "_requires_env", tuple(requires_env))
     setattr(agent_tool, "_can_use", can_use)

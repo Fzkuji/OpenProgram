@@ -98,6 +98,7 @@ def _run_python_fallback(pattern: str, path: str, glob: str | None,
 
 @function(
     name="grep",
+    accept_edits_safe=True,   # acceptEdits 档下自动放行（只读）
     description=_DESCRIPTION,
     max_result_chars=20_000,    # Claude Code default for grep
     toolset=["core", "research"],
