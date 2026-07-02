@@ -59,13 +59,15 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
     {
       key: "thinking_effort",
       label: text("Default thinking", "默认思考力度"),
-      fallback: "",   // thinking 的"内置默认"跟模型走，保留"不设"
+      fallback: "high",   // 默认 high；运行时若当前模型不支持会自动降级到它支持的档
       opts: [
-        { v: "", label: text("Not set", "不设") },
         { v: "off", label: "off" },
+        { v: "minimal", label: "minimal" },
         { v: "low", label: "low" },
         { v: "medium", label: "medium" },
         { v: "high", label: "high" },
+        { v: "xhigh", label: "xhigh" },
+        { v: "max", label: "max" },
       ],
     },
   ];

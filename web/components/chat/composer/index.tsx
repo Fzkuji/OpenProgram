@@ -1331,10 +1331,10 @@ export function Composer() {
                         }
                       }}
                       onMouseLeave={() => {
-                        // Delay hide so the user can move the mouse to the
-                        // sub-panel without it vanishing instantly.
+                        // Short delay so the user can cross the gap to the
+                        // sub-panel without it vanishing.
                         toolProfileHideTimer.current = setTimeout(
-                          () => setToolProfileSubOpen(false), 300,
+                          () => setToolProfileSubOpen(false), 120,
                         );
                       }}
                     >
@@ -1355,16 +1355,17 @@ export function Composer() {
                           }}
                           onMouseLeave={() => {
                             toolProfileHideTimer.current = setTimeout(
-                              () => setToolProfileSubOpen(false), 300,
+                              () => setToolProfileSubOpen(false), 120,
                             );
                           }}
                           className={styles.plusMenu}
                           style={{
-                            left: "100%",
+                            left: "calc(100% + 12px)",
                             right: "auto",
-                            bottom: 0,
+                            top: 0,
+                            bottom: "auto",
                             marginBottom: 0,
-                            marginLeft: 4,
+                            marginLeft: 0,
                             minWidth: 160,
                           }}
                         >
@@ -1416,7 +1417,7 @@ export function Composer() {
                       }}
                       onMouseLeave={() => {
                         permHideTimer.current = setTimeout(
-                          () => setPermSubOpen(false), 300,
+                          () => setPermSubOpen(false), 120,
                         );
                       }}
                     >
@@ -1436,16 +1437,17 @@ export function Composer() {
                           }}
                           onMouseLeave={() => {
                             permHideTimer.current = setTimeout(
-                              () => setPermSubOpen(false), 300,
+                              () => setPermSubOpen(false), 120,
                             );
                           }}
                           className={styles.plusMenu}
                           style={{
-                            left: "100%",
+                            left: "calc(100% + 12px)",
                             right: "auto",
-                            bottom: 0,
+                            top: 0,
+                            bottom: "auto",
                             marginBottom: 0,
-                            marginLeft: 4,
+                            marginLeft: 0,
                             minWidth: 200,
                             whiteSpace: "nowrap",
                           }}
