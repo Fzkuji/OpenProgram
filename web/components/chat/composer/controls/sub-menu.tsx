@@ -53,10 +53,11 @@ export function SubMenu({
     const a = anchor.getBoundingClientRect();
     const left = a.right + GAP;
     const bridge = a.right;          // 桥从触发行右边缘一直到子面板左边
-    // 高度自适应：默认顶对齐触发行；放不下就向上，让底部离视口底 8px。
+    // 默认顶对齐触发行、向下展开；若向下放不下，则底部对齐触发行底部、向上
+    // 展开（紧挨触发行，不飘到屏幕顶）。
     let top = a.top;
     if (panelH && top + panelH > window.innerHeight - 8) {
-      top = Math.max(8, window.innerHeight - 8 - panelH);
+      top = Math.max(8, a.bottom - panelH);
     }
     setPos({ left, top, bridge });
   }, [open, anchorRef, panelH]);
