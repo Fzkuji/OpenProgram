@@ -40,13 +40,15 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
   };
 
   const rows: {
-    key: keyof Config; label: string; opts: { v: string; label: string }[];
+    key: keyof Config; label: string; fallback: string;
+    opts: { v: string; label: string }[];
   }[] = [
     {
       key: "permission_mode",
       label: text("Default permission mode", "默认权限模式"),
+      // 无 "Not set"——没设就是内置默认档 Ask permissions（对齐 Claude Code）。
+      fallback: "ask",
       opts: [
-        { v: "", label: text("Not set", "不设") },
         { v: "ask", label: text("Ask permissions", "逐次确认") },
         { v: "acceptEdits", label: text("Accept edits", "接受编辑") },
         { v: "plan", label: text("Plan mode", "计划模式") },
@@ -57,6 +59,7 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
     {
       key: "thinking_effort",
       label: text("Default thinking", "默认思考力度"),
+      fallback: "",   // thinking 的"内置默认"跟模型走，保留"不设"
       opts: [
         { v: "", label: text("Not set", "不设") },
         { v: "off", label: "off" },
@@ -71,8 +74,8 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
     <div>
       <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
         {text(
-          "New chats in this project start with these. \"Not set\" leaves it at the built-in default.",
-          "该项目的新会话默认用这些设置。“不设”= 用内置默认。",
+          "New chats in this project start with these.",
+          "该项目的新会话默认用这些设置。",
         )}
       </p>
       {rows.map((r) => (
@@ -82,7 +85,7 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
         }}>
           <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{r.label}</span>
           <select
-            value={cfg[r.key] || ""}
+            value={cfg[r.key] || r.fallback}
             onChange={(e) => setField(r.key, e.target.value)}
             style={{
               padding: "6px 10px", borderRadius: 8,
