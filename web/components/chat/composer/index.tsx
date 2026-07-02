@@ -44,7 +44,7 @@ import {
   UnattendedIcon,
   WebSearchIcon,
 } from "./icons";
-import { ShieldCheckIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
+import { type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { PlusMenuItem, ToolChip } from "./controls/menu-pieces";
 import { type SlashCommand } from "./slash/slash-commands";
 import { sendChatMessage } from "./legacy-send";
@@ -92,15 +92,6 @@ function wsSend(payload: unknown): boolean {
 }
 
 const noop = () => {};
-
-// 权限档危险度配色：绿=安全、黄=需留意、橙/红=危险。
-const PERM_COLOR: Record<string, string> = {
-  ask: "var(--success, #3a9d5a)",
-  plan: "var(--success, #3a9d5a)",
-  acceptEdits: "var(--warning, #d78a18)",
-  auto: "#e06c1f",
-  bypass: "var(--danger, #d72518)",
-};
 
 // `.plusMenu` was written for the old hand-rolled portal — it carries
 // `position:absolute; bottom:100%; left:0; margin-bottom:4px` to sit
@@ -353,11 +344,11 @@ export function Composer() {
     setMenuOpen: setThinkingMenuOpen,
     set: setThinking,
   } = useThinkingEffort();
-  const {
-    mode: permMode,
-    options: permOptions,
-    set: setPermMode,
-  } = usePermissionMode();
+  // Permission mode is now owned by the top-bar <PermissionBadge> chip;
+  // the composer only needs the current value to tag the outgoing turn's
+  // ``permission_mode`` (submit fallback). Reading the same per-session
+  // store means the chip's switch is reflected here immediately.
+  const { mode: permMode } = usePermissionMode();
   // The effort picker only appears once a chat model is actually
   // selected at the top; with no model picked it stays hidden.
   const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
@@ -393,7 +384,6 @@ export function Composer() {
     );
   }, [text]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [bypassConfirm, setBypassConfirm] = useState(false);
   const {
     tools: toolsEnabled,
     webSearch: webSearchEnabled,
@@ -1335,72 +1325,6 @@ export function Composer() {
                         label={text("Unattended", "无人值守")}
                       />
                     </Menu.Item>
-
-                    {/* Permission — a cascading submenu of permission tiers,
-                        flying UP (side="top"). Picking a tier closes the menu;
-                        picking bypass (when not already bypass) opens the
-                        confirm dialog instead and keeps the menu open. */}
-                    <Menu.SubmenuRoot>
-                      <Menu.SubmenuTrigger className={styles.plusMenuRow}>
-                        <PlusMenuItem
-                          active={!!permMode && permMode !== "ask"}
-                          onClick={noop}
-                          icon={<ShieldCheckIcon size={20} />}
-                          label={text("Permission", "权限模式")}
-                        />
-                      </Menu.SubmenuTrigger>
-                      <Menu.Portal>
-                        <Menu.Positioner side="right" align="end" sideOffset={6} style={{ zIndex: 200 }}>
-                          <Menu.Popup
-                            className={styles.plusMenu}
-                            style={POPUP_STATIC_RESET}
-                          >
-                            {permOptions.map((o) => {
-                              // bypass 高危档：不直接切，先弹确认框，且别关菜单。
-                              const isBypassGuard = o.value === "bypass" && permMode !== "bypass";
-                              return (
-                                <React.Fragment key={o.value}>
-                                  {/* bypass 是高危档（CC 里走 Enable 确认），分隔线分开 */}
-                                  {o.value === "bypass" && (
-                                    <Menu.Separator className={styles.plusMenuDivider} />
-                                  )}
-                                  <Menu.Item
-                                    className={styles.plusMenuRow}
-                                    closeOnClick={!isBypassGuard}
-                                    onClick={() => {
-                                      if (isBypassGuard) {
-                                        setBypassConfirm(true);  // 高危：先确认
-                                        return;
-                                      }
-                                      setPermMode(o.value);
-                                    }}
-                                  >
-                                    <PlusMenuItem
-                                      active={permMode === o.value}
-                                      onClick={noop}
-                                      icon={
-                                        <span
-                                          aria-hidden="true"
-                                          style={{
-                                            display: "inline-block",
-                                            width: 8, height: 8, borderRadius: "50%",
-                                            background: PERM_COLOR[o.value],
-                                          }}
-                                        />
-                                      }
-                                      label={o.label}
-                                      trailing={o.value === "bypass"
-                                        ? text("Enable", "启用")
-                                        : o.key}
-                                    />
-                                  </Menu.Item>
-                                </React.Fragment>
-                              );
-                            })}
-                          </Menu.Popup>
-                        </Menu.Positioner>
-                      </Menu.Portal>
-                    </Menu.SubmenuRoot>
                   </Menu.Popup>
                 </Menu.Positioner>
               </Menu.Portal>
@@ -1455,67 +1379,6 @@ export function Composer() {
                 </HoverTip>
               )}
             </div>
-
-            {bypassConfirm && typeof document !== "undefined"
-              ? createPortal(
-                  <div
-                    onClick={() => setBypassConfirm(false)}
-                    style={{
-                      position: "fixed", inset: 0, zIndex: 300,
-                      background: "rgba(0,0,0,0.45)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}
-                  >
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        width: "min(440px, 92vw)",
-                        background: "var(--bg-secondary)", border: "1px solid var(--border)",
-                        borderRadius: 14, padding: "20px 24px",
-                        boxShadow: "var(--shadow-popover)",
-                      }}
-                    >
-                      <div style={{
-                        fontSize: 15, fontWeight: 600, color: "var(--danger, #d72518)",
-                        marginBottom: 8,
-                      }}>
-                        {text("Enable Bypass Permissions?", "启用绕过权限？")}
-                      </div>
-                      <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
-                        {text(
-                          "Every tool runs without asking — including commands that can change or delete files. Only use this in a sandbox / disposable environment.",
-                          "所有工具都直接执行、不再询问——包括可改动或删除文件的命令。仅在沙箱 / 一次性环境里使用。",
-                        )}
-                      </div>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button
-                          type="button"
-                          onClick={() => setBypassConfirm(false)}
-                          style={{
-                            padding: "6px 14px", borderRadius: 8,
-                            border: "1px solid var(--border)", background: "none",
-                            color: "var(--text-primary)", cursor: "pointer",
-                          }}
-                        >{text("Cancel", "取消")}</button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPermMode("bypass");
-                            setBypassConfirm(false);
-                            setPlusMenuOpen(false);
-                          }}
-                          style={{
-                            padding: "6px 14px", borderRadius: 8, border: "none",
-                            background: "var(--danger, #d72518)", color: "#fff",
-                            cursor: "pointer",
-                          }}
-                        >{text("Enable", "启用")}</button>
-                      </div>
-                    </div>
-                  </div>,
-                  document.body,
-                )
-              : null}
 
             {/* Effort picker only shows when a chat model is selected at
                 the top; hidden otherwise. The `thinking` value still flows

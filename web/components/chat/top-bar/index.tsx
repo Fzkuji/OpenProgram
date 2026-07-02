@@ -38,6 +38,7 @@ import { AgentSelector } from "./agent-selector";
 import { BranchMenu } from "./branch-menu";
 import { ChannelMenu } from "./channel-menu";
 import { ProjectBadge } from "./project-menu";
+import { PermissionBadge } from "./permission-menu";
 import { installLegacyWrappers, legacyTopbarReady } from "./window-bridge";
 import styles from "./top-bar.module.css";
 
@@ -135,7 +136,9 @@ export function TopBar() {
         />
       </div>
 
-      <div className={`topbar-right ${styles.right}`} />
+      <div className={`topbar-right ${styles.right}`}>
+        <PermissionBadge />
+      </div>
     </div>
   );
 }

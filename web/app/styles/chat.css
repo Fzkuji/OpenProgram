@@ -1085,6 +1085,24 @@
   background: inherit;
   border-color: inherit;
 }
+/* Permission chip (top-bar `.right`). Neutral slate look so it reads as
+   a distinct role from the green status / orange branch+agent chips; the
+   danger-tier colour lives inside the dropdown rows, not on the chip.
+   The `.runtime-badge` qualifier keeps this from tying with the plain
+   `.runtime-badge` green default later in the file. */
+.runtime-badge.permission-badge {
+  cursor: pointer;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-secondary);
+  border-color: color-mix(in srgb, var(--text-muted) 28%, transparent);
+}
+.runtime-badge.permission-badge:hover,
+.runtime-badge.permission-badge[data-state="open"] {
+  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+  border-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
+  color: var(--text-bright);
+}
 /* The topbar agent / channel / branch dropdowns are React popovers
    (shadcn <Popover> + Tailwind) now — the `.agent-selector` and
    `.model-dropdown` chrome rules were removed. */
