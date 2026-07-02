@@ -42,7 +42,11 @@ export function SubMenu({
           side="right"
           align="end"
           sideOffset={6}
+          // align="end" 让子面板底边对齐触发行底边；子面板有 6px 内边距，
+          // 正 alignOffset 把面板下移这点，使最后一行与触发行水平对齐。
+          alignOffset={6}
           collisionPadding={8}
+          updatePositionStrategy="always"
           onOpenAutoFocus={(e) => e.preventDefault()}
           onMouseEnter={onMouseEnter}
           onMouseLeave={onMouseLeave}
