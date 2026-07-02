@@ -34,6 +34,17 @@ export function SubMenu({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; bridge: number; maxH: number } | null>(null);
+  const [panelH, setPanelH] = useState(0);
+
+  // 面板挂载后测高（首帧未知），拿到真高再重算定位（决定向下还是向上）。
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!open || !panel) return;
+    const ro = new ResizeObserver(() => setPanelH(panel.offsetHeight));
+    ro.observe(panel);
+    setPanelH(panel.offsetHeight);
+    return () => ro.disconnect();
+  }, [open]);
 
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
@@ -41,13 +52,22 @@ export function SubMenu({
     if (!anchor) return;
     const a = anchor.getBoundingClientRect();
     const left = a.right + GAP;
-    const bridge = a.right;          // 桥从触发行右边缘一直到子面板左边
-    // 始终顶部对齐触发行（子面板从这一行往右、往下长）。放不下就限高滚动，
-    // 绝不上移错位——保证子面板顶边永远和触发行对齐。
-    const top = Math.max(8, a.top);
-    const maxH = window.innerHeight - top - 8;
+    const bridge = a.right;
+    const vh = window.innerHeight;
+    const h = panelH || 0;
+    // 优先顶对齐触发行、向下长；向下放不下就底对齐触发行底、向上长。
+    // 两种都贴着触发行的一条边，不会飘。仍放不下（面板比视口还高）→ 限高滚动。
+    let top: number;
+    if (a.top + h <= vh - 8) {
+      top = a.top;                       // 向下够放：顶对齐触发行
+    } else if (a.bottom - h >= 8) {
+      top = a.bottom - h;                // 向上够放：底对齐触发行底
+    } else {
+      top = 8;                           // 都放不下：贴顶 + 下面 maxH 滚动
+    }
+    const maxH = vh - top - 8;
     setPos({ left, top, bridge, maxH });
-  }, [open, anchorRef]);
+  }, [open, anchorRef, panelH]);
 
   if (!open || typeof document === "undefined") return null;
 
