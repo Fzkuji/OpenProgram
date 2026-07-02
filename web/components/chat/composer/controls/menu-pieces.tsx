@@ -136,7 +136,7 @@ export function PlusMenuItem({
       title={title}
     >
       <div className={styles.plusMenuLeft}>
-        <span className={styles.plusMenuIcon}>{node}</span>
+        {icon != null && <span className={styles.plusMenuIcon}>{node}</span>}
         <span className={styles.plusMenuLabel}>{label}</span>
       </div>
       <div className={styles.plusMenuRight}>

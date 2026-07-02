@@ -45,6 +45,7 @@ import {
 } from "./icons";
 import { ShieldCheckIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { PlusMenuItem, ToolChip } from "./controls/menu-pieces";
+import { SubMenu } from "./controls/sub-menu";
 import { type SlashCommand } from "./slash/slash-commands";
 import { sendChatMessage } from "./legacy-send";
 import {
@@ -381,6 +382,8 @@ export function Composer() {
   const toolProfileHideTimer = useRef<NodeJS.Timeout | null>(null);
   const [permSubOpen, setPermSubOpen] = useState(false);
   const permHideTimer = useRef<NodeJS.Timeout | null>(null);
+  const permAnchorRef = useRef<HTMLDivElement>(null);
+  const toolProfileAnchorRef = useRef<HTMLDivElement>(null);
   const [bypassConfirm, setBypassConfirm] = useState(false);
   const {
     tools: toolsEnabled,
@@ -1318,7 +1321,8 @@ export function Composer() {
                       label={text("Attach file", "添加照片和文件")}
                     />
                     <div className={styles.plusMenuDivider} />
-                    <div style={{ position: "relative" }}
+                    <div
+                      ref={toolProfileAnchorRef}
                       onMouseEnter={() => {
                         // Only show sub-panel when tools are enabled AND
                         // there are multiple profiles to pick from.
@@ -1344,31 +1348,23 @@ export function Composer() {
                         icon={<ToolsIcon />}
                         label={text("Tools", "工具")}
                       />
-                      {toolProfileSubOpen && (
-                        <div
-                          onMouseEnter={() => {
-                            // Keep sub-panel alive while the mouse is inside it.
-                            if (toolProfileHideTimer.current) {
-                              clearTimeout(toolProfileHideTimer.current);
-                              toolProfileHideTimer.current = null;
-                            }
-                          }}
-                          onMouseLeave={() => {
-                            toolProfileHideTimer.current = setTimeout(
-                              () => setToolProfileSubOpen(false), 120,
-                            );
-                          }}
-                          className={styles.plusMenu}
-                          style={{
-                            left: "calc(100% + 12px)",
-                            right: "auto",
-                            top: 0,
-                            bottom: "auto",
-                            marginBottom: 0,
-                            marginLeft: 0,
-                            minWidth: 160,
-                          }}
-                        >
+                      <SubMenu
+                        open={toolProfileSubOpen}
+                        anchorRef={toolProfileAnchorRef}
+                        className={styles.plusMenu}
+                        minWidth={160}
+                        onMouseEnter={() => {
+                          if (toolProfileHideTimer.current) {
+                            clearTimeout(toolProfileHideTimer.current);
+                            toolProfileHideTimer.current = null;
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          toolProfileHideTimer.current = setTimeout(
+                            () => setToolProfileSubOpen(false), 120,
+                          );
+                        }}
+                      >
                           <div style={{ padding: "4px 12px", fontSize: "11px",
                             color: "var(--text-muted)", textTransform: "uppercase",
                             letterSpacing: "0.05em" }}>
@@ -1379,14 +1375,13 @@ export function Composer() {
                               key={pName}
                               active={activeProfile === pName}
                               onClick={() => switchProfile(pName)}
-                              icon={<span aria-hidden="true" style={{ display: "inline-block", width: 20 }} />}
+                              icon={null}
                               label={pName === "full"
                                 ? text("All Tools", "全部工具")
                                 : pName}
                             />
                           ))}
-                        </div>
-                      )}
+                      </SubMenu>
                     </div>
                     <PlusMenuItem
                       active={webSearchEnabled}
@@ -1407,7 +1402,8 @@ export function Composer() {
                       icon={<UnattendedIcon />}
                       label={text("Unattended", "无人值守")}
                     />
-                    <div style={{ position: "relative" }}
+                    <div
+                      ref={permAnchorRef}
                       onMouseEnter={() => {
                         if (permHideTimer.current) {
                           clearTimeout(permHideTimer.current);
@@ -1427,31 +1423,23 @@ export function Composer() {
                         icon={<ShieldCheckIcon size={20} />}
                         label={text("Permission", "权限模式")}
                       />
-                      {permSubOpen && (
-                        <div
-                          onMouseEnter={() => {
-                            if (permHideTimer.current) {
-                              clearTimeout(permHideTimer.current);
-                              permHideTimer.current = null;
-                            }
-                          }}
-                          onMouseLeave={() => {
-                            permHideTimer.current = setTimeout(
-                              () => setPermSubOpen(false), 120,
-                            );
-                          }}
-                          className={styles.plusMenu}
-                          style={{
-                            left: "calc(100% + 12px)",
-                            right: "auto",
-                            top: 0,
-                            bottom: "auto",
-                            marginBottom: 0,
-                            marginLeft: 0,
-                            minWidth: 200,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                      <SubMenu
+                        open={permSubOpen}
+                        anchorRef={permAnchorRef}
+                        className={styles.plusMenu}
+                        minWidth={200}
+                        onMouseEnter={() => {
+                          if (permHideTimer.current) {
+                            clearTimeout(permHideTimer.current);
+                            permHideTimer.current = null;
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          permHideTimer.current = setTimeout(
+                            () => setPermSubOpen(false), 120,
+                          );
+                        }}
+                      >
                           {permOptions.map((o) => (
                             <React.Fragment key={o.value}>
                               {/* bypass 是高危档（CC 里走 Enable 确认），分隔线分开 */}
@@ -1483,8 +1471,7 @@ export function Composer() {
                               />
                             </React.Fragment>
                           ))}
-                        </div>
-                      )}
+                      </SubMenu>
                     </div>
                   </div>,
                   document.body,
