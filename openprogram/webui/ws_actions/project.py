@@ -247,7 +247,9 @@ async def handle_remove_session_workdir(ws, cmd: dict):
         await handle_list_session_workdirs(ws, {"session_id": session_id})
 
 
-_PROJECT_CONFIG_KEYS = ("permission_mode", "toolset", "thinking_effort", "tools_enabled")
+# 项目级默认设置（新会话回落值）。只留已接通生效的键——见
+# session_config.project_defaults 的读取方。
+_PROJECT_CONFIG_KEYS = ("permission_mode", "thinking_effort")
 
 
 async def handle_get_project_config(ws, cmd: dict):

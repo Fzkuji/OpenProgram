@@ -139,9 +139,11 @@ def dispatch_inbound(
         load_session_run_config,
         permission_from_config,
         tools_override_from_config,
+        project_defaults,
     )
     from openprogram.functions.permission_rule import load_merged_rules as _load_merged_rules
     run_cfg = load_session_run_config(session_key)
+    _pdef = project_defaults(session_key)
 
     # ---- progress streaming state ---------------------------------------
     # 仅在 progress_stream=True 且占位发送成功后激活. progress_handle 为
@@ -235,11 +237,12 @@ def dispatch_inbound(
         source=channel,
         peer_display=user_display or str(peer_id),
         peer_id=str(peer_id),
-        permission_mode=permission_from_config(run_cfg, default="ask"),
+        permission_mode=permission_from_config(
+            run_cfg, default=_pdef.get("permission_mode") or "ask"),
         permission_rules=_load_merged_rules(session_key),
         additional_working_dirs=run_cfg.additional_working_dirs,
         tools_override=tools_override_from_config(run_cfg),
-        thinking_effort=run_cfg.thinking_effort,
+        thinking_effort=run_cfg.thinking_effort or _pdef.get("thinking_effort"),
     )
     # 让本 turn 期间的 runtime.ask 知道"有前端能答"（can_ask=True）且
     # question.asked 带上正确的 channel session_id —— 否则裸 runtime.ask

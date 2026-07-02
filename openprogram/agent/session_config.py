@@ -191,6 +191,22 @@ def permission_from_config(cfg: SessionRunConfig, *, default: str) -> str:
     return _normalize_permission(cfg.permission_mode) or default
 
 
+def project_defaults(session_id: str) -> dict:
+    """会话所属项目的默认设置（permission_mode / toolset / thinking_effort）。
+    新会话没自己设这些时的回落值。规则见 permission-model.md §2.3；这里是
+    档位默认（非规则）。项目没设 → {}。"""
+    try:
+        from openprogram.store import project_store as _projects
+        proj = _projects.project_for_session(session_id) or _projects.get_default_project()
+        s = _projects.load_project_settings(proj.id)
+        return {
+            k: s[k] for k in ("permission_mode", "toolset", "thinking_effort")
+            if s.get(k)
+        }
+    except Exception:
+        return {}
+
+
 # ── intent helpers ──
 
 def _with_web_search(override: ToolsOverride, web_search: Optional[bool]) -> ToolsOverride:

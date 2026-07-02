@@ -541,6 +541,7 @@ def execute_in_context(
             load_session_run_config,
             permission_from_config,
             save_session_run_config,
+            project_defaults,
         )
         if tools_flag is not None or thinking_effort is not None \
                 or permission_mode is not None:
@@ -553,8 +554,11 @@ def execute_in_context(
             )
         else:
             run_cfg = load_session_run_config(session_id)
-        effective_thinking = run_cfg.thinking_effort
-        effective_permission = permission_from_config(run_cfg, default="bypass")
+        # 会话没自己设时，回落到项目默认（Projects 页的 Default Settings）。
+        _pdef = project_defaults(session_id)
+        effective_thinking = run_cfg.thinking_effort or _pdef.get("thinking_effort")
+        effective_permission = permission_from_config(
+            run_cfg, default=_pdef.get("permission_mode") or "bypass")
 
         # Apply thinking effort to chat runtime
         _s._apply_thinking_effort(runtime, effective_thinking)
