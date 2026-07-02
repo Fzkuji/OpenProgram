@@ -747,6 +747,21 @@
   gap: 1px;
   z-index: 100;
 }
+/* Wrapper for a base-ui Menu.Item / SubmenuTrigger. It carries no
+   visuals of its own — the inner <PlusMenuItem> paints the row — it just
+   strips the default focus outline and lets the item stretch full
+   width. Keyboard / hover navigation sets data-highlighted on THIS
+   element (not the inner div, which only reacts to real CSS :hover), and
+   an open submenu trigger gets data-popup-open — so mirror the hover
+   background onto the inner .plusMenuItem for both. */
+.plusMenuRow {
+  outline: none;
+  cursor: pointer;
+}
+.plusMenuRow[data-highlighted] .plusMenuItem,
+.plusMenuRow[data-popup-open] .plusMenuItem {
+  background: var(--bg-hover);
+}
 .plusMenuItem {
   display: flex;
   align-items: center;

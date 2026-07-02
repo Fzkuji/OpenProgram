@@ -20,6 +20,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Menu } from "@base-ui-components/react/menu";
 import { FileTextIcon } from "@/components/animated-icons";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useRouter } from "next/navigation";
@@ -45,7 +46,6 @@ import {
 } from "./icons";
 import { ShieldCheckIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { PlusMenuItem, ToolChip } from "./controls/menu-pieces";
-import { SubMenu } from "./controls/sub-menu";
 import { type SlashCommand } from "./slash/slash-commands";
 import { sendChatMessage } from "./legacy-send";
 import {
@@ -100,6 +100,21 @@ const PERM_COLOR: Record<string, string> = {
   acceptEdits: "var(--warning, #d78a18)",
   auto: "#e06c1f",
   bypass: "var(--danger, #d72518)",
+};
+
+// `.plusMenu` was written for the old hand-rolled portal — it carries
+// `position:absolute; bottom:100%; left:0; margin-bottom:4px` to sit
+// above the trigger. base-ui's Menu positions the *Positioner* wrapper
+// and we apply `.plusMenu` to the inner Popup panel, so those absolute
+// props would fight the Positioner's transform. Neutralize them here
+// (visuals — bg/border/radius/shadow/padding — stay untouched) so the
+// menu reads identically while base-ui's Positioner owns placement,
+// flip, and alignment (including the submenus' side="top").
+const POPUP_STATIC_RESET: React.CSSProperties = {
+  position: "static",
+  bottom: "auto",
+  left: "auto",
+  marginBottom: 0,
 };
 
 export function Composer() {
@@ -378,24 +393,13 @@ export function Composer() {
     );
   }, [text]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [toolProfileSubOpen, setToolProfileSubOpen] = useState(false);
-  const toolProfileHideTimer = useRef<NodeJS.Timeout | null>(null);
-  const [permSubOpen, setPermSubOpen] = useState(false);
-  const permHideTimer = useRef<NodeJS.Timeout | null>(null);
   const [bypassConfirm, setBypassConfirm] = useState(false);
   const {
     tools: toolsEnabled,
     webSearch: webSearchEnabled,
-    toggleTools: _rawToggleTools,
+    toggleTools,
     toggleWebSearch,
   } = useToolsToggles();
-  // Sync sub-panel: enable → open, disable → close.
-  const toggleTools = () => {
-    _rawToggleTools();
-    // After toggle, toolsEnabled is the OLD value (pre-toggle).
-    // So !toolsEnabled = the NEW state after toggle.
-    setToolProfileSubOpen(!toolsEnabled && Object.keys(toolProfiles).length > 1);
-  };
   // Per-turn "Fast" speed tier → sent as service_tier:"priority". Now
   // per-session (store's composerSettings.fast, persisted + isolated per
   // chat like the other toggles). The backend forwards it to the provider
@@ -465,22 +469,13 @@ export function Composer() {
   const [decisionAction, setDecisionAction] = useState<DecisionAction | null>(null);
   // Drives the animated send arrow from the whole button's hover.
   const sendIconRef = useRef<AnimatedNavIconHandle>(null);
-  // Refs:
-  //  - `plusTriggerRef` / `plusMenuRef`: the plus menu is still portal'd
-  //    into `document.body` to escape `.inputWrapper { overflow: hidden }`.
-  //    We measure the trigger to place the popover and use the menu ref
-  //    so the click-outside handler treats clicks inside the menu as
-  //    "still inside the composer".
-  //  - `thinkingTriggerRef`: the effort pill expands inline (no portal).
-  //    Since it lives inside `.inputWrapper`, the wrapper-contains check
-  //    already covers clicks on it — no separate menu ref needed.
+  // `thinkingTriggerRef`: the effort pill expands inline (no portal).
+  // Since it lives inside `.inputWrapper`, the wrapper-contains check
+  // already covers clicks on it. The plus menu is now a base-ui Menu,
+  // which owns its own placement + outside-click close — no trigger/menu
+  // refs or measured position needed.
   const thinkingTriggerRef = useRef<HTMLDivElement>(null);
-  const plusTriggerRef = useRef<HTMLButtonElement>(null);
   const plusIconRef = useRef<AnimatedNavIconHandle>(null);
-  const plusMenuRef = useRef<HTMLDivElement>(null);
-  const [plusMenuPos, setPlusMenuPos] = useState<
-    { left: number; bottom: number } | null
-  >(null);
 
   // Wrapper height transition (open / close / A→B switch crossfade)
   // is all in one hook — see `./use-fn-form-wrapper`. `outgoingFn`
@@ -523,19 +518,14 @@ export function Composer() {
     textareaRef.current?.focus();
   }, [focusTick]);
 
-  // Close popovers on outside click — but the two popovers have
-  // different "what counts as outside" rules:
+  // Close the effort pill on outside click. It's INLINE inside the
+  // composer wrapper, so a click in the textarea or on any other
+  // composer control should collapse it (otherwise the expanded state
+  // lingers as the user keeps typing). We check `thinkingTriggerRef`
+  // directly — anything outside the pill itself counts as outside.
   //
-  // - Effort pill is INLINE inside the composer wrapper. A click in
-  //   the textarea or on any other composer control should collapse
-  //   it (otherwise expanded state lingers as the user keeps typing).
-  //   So we check `thinkingTriggerRef.contains` directly — anything
-  //   outside the pill itself counts as outside.
-  //
-  // - Plus menu is PORTAL'D into `document.body` to escape
-  //   `.inputWrapper { overflow: hidden }`. Its trigger is in the
-  //   wrapper but its menu lives at the document root, so the "stays
-  //   open" set is `wrapper ∪ plusMenuRef`. Anywhere else closes it.
+  // The plus menu no longer needs a handler here: it's a base-ui Menu
+  // now, which owns its own outside-click / Escape close.
   useEffect(() => {
     function onDoc(ev: MouseEvent) {
       const t = ev.target as Node | null;
@@ -549,30 +539,10 @@ export function Composer() {
       ) {
         setThinkingMenuOpen(false);
       }
-      if (
-        !plusTriggerRef.current?.contains(t) &&
-        !plusMenuRef.current?.contains(t)
-      ) {
-        setPlusMenuOpen(false);
-      }
     }
     document.addEventListener("click", onDoc);
     return () => document.removeEventListener("click", onDoc);
   }, [setThinkingMenuOpen]);
-
-  useLayoutEffect(() => {
-    if (!plusMenuOpen) {
-      setPlusMenuPos(null);
-      return;
-    }
-    const trigger = plusTriggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    setPlusMenuPos({
-      left: rect.left,
-      bottom: window.innerHeight - rect.top + 4,
-    });
-  }, [plusMenuOpen]);
 
   // Slash menu (state + open/close timing + command dispatch).
   const slash = useSlashMenu({ input, textareaRef, send });
@@ -1228,22 +1198,213 @@ export function Composer() {
 
         <div key="bottom-row" className={`${styles.inputBottomRow} composer-bottom-row`}>
           <div className={styles.inputOptions}>
-            <button
-              ref={plusTriggerRef}
-              className={`${styles.plusBtn} ${anyToolActive ? styles.hasActive : ""}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setPlusMenuOpen((v) => !v);
-                setThinkingMenuOpen(false);
+            <Menu.Root
+              open={plusMenuOpen}
+              onOpenChange={(o) => {
+                setPlusMenuOpen(o);
+                // Opening the plus menu collapses the effort pill (they
+                // shared the bottom row and shouldn't be open at once).
+                if (o) setThinkingMenuOpen(false);
               }}
-              onMouseEnter={() => plusIconRef.current?.startAnimation?.()}
-              onMouseLeave={() => plusIconRef.current?.stopAnimation?.()}
-              title={text("Add tools, files, and more", "添加工具、文件等")}
-              aria-label={text("More options", "更多选项")}
-              type="button"
             >
-              <OptionsIcon ref={plusIconRef} />
-            </button>
+              <Menu.Trigger
+                render={
+                  <button
+                    className={`${styles.plusBtn} ${anyToolActive ? styles.hasActive : ""}`}
+                    onMouseEnter={() => plusIconRef.current?.startAnimation?.()}
+                    onMouseLeave={() => plusIconRef.current?.stopAnimation?.()}
+                    title={text("Add tools, files, and more", "添加工具、文件等")}
+                    aria-label={text("More options", "更多选项")}
+                    type="button"
+                  >
+                    <OptionsIcon ref={plusIconRef} />
+                  </button>
+                }
+              />
+
+              <Menu.Portal>
+                {/* Positioner owns placement (side/align/offset + flip);
+                    Popup is the actual panel that wears `.plusMenu`. The
+                    static reset stops the old absolute props from fighting
+                    the Positioner. */}
+                <Menu.Positioner side="top" align="start" sideOffset={10} style={{ zIndex: 200 }}>
+                  <Menu.Popup
+                    className={styles.plusMenu}
+                    style={POPUP_STATIC_RESET}
+                  >
+                    {/* Attach file — a plain action; clicking it closes the
+                        menu (default Menu.Item closeOnClick behaviour). */}
+                    <Menu.Item className={styles.plusMenuRow} onClick={() => onPickImages()}>
+                      <PlusMenuItem
+                        active={pendingImages.length > 0 || pendingDocs.length > 0}
+                        onClick={noop}
+                        icon={<FileTextIcon size={20} />}
+                        label={text("Attach file", "添加照片和文件")}
+                      />
+                    </Menu.Item>
+
+                    <Menu.Separator className={styles.plusMenuDivider} />
+
+                    {/* Tools — a toggle row that ALSO opens a cascading
+                        "Tool Profile" submenu. base-ui SubmenuRoot owns the
+                        hover-open + flip; the submenu's Positioner uses
+                        side="top" so it flies UP (space permitting, else it
+                        flips). The row click toggles tools (via PlusMenuItem's
+                        onClick, which bubbles) — the SubmenuTrigger itself
+                        doesn't close the outer menu. */}
+                    <Menu.SubmenuRoot>
+                      <Menu.SubmenuTrigger className={styles.plusMenuRow}>
+                        <PlusMenuItem
+                          active={toolsEnabled}
+                          onClick={toggleTools}
+                          icon={<ToolsIcon />}
+                          label={text("Tools", "工具")}
+                        />
+                      </Menu.SubmenuTrigger>
+                      <Menu.Portal>
+                        <Menu.Positioner side="right" align="end" sideOffset={6} style={{ zIndex: 200 }}>
+                          <Menu.Popup
+                            className={styles.plusMenu}
+                            style={POPUP_STATIC_RESET}
+                          >
+                            <div style={{ padding: "4px 8px", fontSize: "11px",
+                              color: "var(--text-muted)", textTransform: "uppercase",
+                              letterSpacing: "0.05em" }}>
+                              {text("Tool Profile", "工具配置")}
+                            </div>
+                            {Object.keys(toolProfiles).sort().map((pName) => (
+                              <Menu.Item
+                                key={pName}
+                                className={styles.plusMenuRow}
+                                onClick={() => switchProfile(pName)}
+                              >
+                                <PlusMenuItem
+                                  active={activeProfile === pName}
+                                  onClick={noop}
+                                  icon={null}
+                                  label={pName === "full"
+                                    ? text("All Tools", "全部工具")
+                                    : pName}
+                                />
+                              </Menu.Item>
+                            ))}
+                          </Menu.Popup>
+                        </Menu.Positioner>
+                      </Menu.Portal>
+                    </Menu.SubmenuRoot>
+
+                    {/* Web Search / Fast — toggles that must NOT close the
+                        menu, so closeOnClick={false}. */}
+                    <Menu.Item
+                      className={styles.plusMenuRow}
+                      closeOnClick={false}
+                      onClick={() => toggleWebSearch()}
+                    >
+                      <PlusMenuItem
+                        active={webSearchEnabled}
+                        onClick={noop}
+                        icon={<WebSearchIcon />}
+                        label={text("Web Search", "网页搜索")}
+                      />
+                    </Menu.Item>
+                    <Menu.Item
+                      className={styles.plusMenuRow}
+                      closeOnClick={false}
+                      onClick={() => toggleFast()}
+                    >
+                      <PlusMenuItem
+                        active={fastEnabled}
+                        onClick={noop}
+                        icon={<FastIcon />}
+                        label={text("Fast", "高速")}
+                      />
+                    </Menu.Item>
+
+                    <Menu.Separator className={styles.plusMenuDivider} />
+
+                    {/* Unattended — a toggle; keep the menu open. */}
+                    <Menu.Item
+                      className={styles.plusMenuRow}
+                      closeOnClick={false}
+                      onClick={() => toggleUnattended()}
+                    >
+                      <PlusMenuItem
+                        active={unattended}
+                        onClick={noop}
+                        icon={<UnattendedIcon />}
+                        label={text("Unattended", "无人值守")}
+                      />
+                    </Menu.Item>
+
+                    {/* Permission — a cascading submenu of permission tiers,
+                        flying UP (side="top"). Picking a tier closes the menu;
+                        picking bypass (when not already bypass) opens the
+                        confirm dialog instead and keeps the menu open. */}
+                    <Menu.SubmenuRoot>
+                      <Menu.SubmenuTrigger className={styles.plusMenuRow}>
+                        <PlusMenuItem
+                          active={!!permMode && permMode !== "ask"}
+                          onClick={noop}
+                          icon={<ShieldCheckIcon size={20} />}
+                          label={text("Permission", "权限模式")}
+                        />
+                      </Menu.SubmenuTrigger>
+                      <Menu.Portal>
+                        <Menu.Positioner side="right" align="end" sideOffset={6} style={{ zIndex: 200 }}>
+                          <Menu.Popup
+                            className={styles.plusMenu}
+                            style={POPUP_STATIC_RESET}
+                          >
+                            {permOptions.map((o) => {
+                              // bypass 高危档：不直接切，先弹确认框，且别关菜单。
+                              const isBypassGuard = o.value === "bypass" && permMode !== "bypass";
+                              return (
+                                <React.Fragment key={o.value}>
+                                  {/* bypass 是高危档（CC 里走 Enable 确认），分隔线分开 */}
+                                  {o.value === "bypass" && (
+                                    <Menu.Separator className={styles.plusMenuDivider} />
+                                  )}
+                                  <Menu.Item
+                                    className={styles.plusMenuRow}
+                                    closeOnClick={!isBypassGuard}
+                                    onClick={() => {
+                                      if (isBypassGuard) {
+                                        setBypassConfirm(true);  // 高危：先确认
+                                        return;
+                                      }
+                                      setPermMode(o.value);
+                                    }}
+                                  >
+                                    <PlusMenuItem
+                                      active={permMode === o.value}
+                                      onClick={noop}
+                                      icon={
+                                        <span
+                                          aria-hidden="true"
+                                          style={{
+                                            display: "inline-block",
+                                            width: 8, height: 8, borderRadius: "50%",
+                                            background: PERM_COLOR[o.value],
+                                          }}
+                                        />
+                                      }
+                                      label={o.label}
+                                      trailing={o.value === "bypass"
+                                        ? text("Enable", "启用")
+                                        : o.key}
+                                    />
+                                  </Menu.Item>
+                                </React.Fragment>
+                              );
+                            })}
+                          </Menu.Popup>
+                        </Menu.Positioner>
+                      </Menu.Portal>
+                    </Menu.SubmenuRoot>
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
 
             <div className={styles.activeToolChips}>
               {/* Only ENABLED tools show as a chip here. The off ones are
@@ -1295,157 +1456,6 @@ export function Composer() {
               )}
             </div>
 
-            {plusMenuOpen && plusMenuPos && typeof document !== "undefined"
-              ? createPortal(
-                  <div
-                    ref={plusMenuRef}
-                    className={styles.plusMenu}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      position: "fixed",
-                      left: plusMenuPos.left,
-                      bottom: plusMenuPos.bottom,
-                      top: "auto",
-                      marginBottom: 0,
-                    }}
-                  >
-                    <PlusMenuItem
-                      active={pendingImages.length > 0 || pendingDocs.length > 0}
-                      onClick={() => {
-                        setPlusMenuOpen(false);
-                        onPickImages();
-                      }}
-                      icon={<FileTextIcon size={20} />}
-                      label={text("Attach file", "添加照片和文件")}
-                    />
-                    <div className={styles.plusMenuDivider} />
-                    <SubMenu
-                      open={toolProfileSubOpen}
-                      className={styles.plusMenu}
-                      minWidth={160}
-                      onMouseEnter={() => {
-                        // Only show sub-panel when tools are enabled AND
-                        // there are multiple profiles to pick from.
-                        if (toolProfileHideTimer.current) {
-                          clearTimeout(toolProfileHideTimer.current);
-                          toolProfileHideTimer.current = null;
-                        }
-                        if (toolsEnabled && Object.keys(toolProfiles).length > 1) {
-                          setToolProfileSubOpen(true);
-                        }
-                      }}
-                      onMouseLeave={() => {
-                        toolProfileHideTimer.current = setTimeout(
-                          () => setToolProfileSubOpen(false), 120,
-                        );
-                      }}
-                      anchor={
-                        <PlusMenuItem
-                          active={toolsEnabled}
-                          onClick={toggleTools}
-                          icon={<ToolsIcon />}
-                          label={text("Tools", "工具")}
-                        />
-                      }
-                    >
-                          <div style={{ padding: "4px 8px", fontSize: "11px",
-                            color: "var(--text-muted)", textTransform: "uppercase",
-                            letterSpacing: "0.05em" }}>
-                            {text("Tool Profile", "工具配置")}
-                          </div>
-                          {Object.keys(toolProfiles).sort().map((pName) => (
-                            <PlusMenuItem
-                              key={pName}
-                              active={activeProfile === pName}
-                              onClick={() => switchProfile(pName)}
-                              icon={null}
-                              label={pName === "full"
-                                ? text("All Tools", "全部工具")
-                                : pName}
-                            />
-                          ))}
-                      </SubMenu>
-                    <PlusMenuItem
-                      active={webSearchEnabled}
-                      onClick={toggleWebSearch}
-                      icon={<WebSearchIcon />}
-                      label={text("Web Search", "网页搜索")}
-                    />
-                    <PlusMenuItem
-                      active={fastEnabled}
-                      onClick={toggleFast}
-                      icon={<FastIcon />}
-                      label={text("Fast", "高速")}
-                    />
-                    <div className={styles.plusMenuDivider} />
-                    <PlusMenuItem
-                      active={unattended}
-                      onClick={toggleUnattended}
-                      icon={<UnattendedIcon />}
-                      label={text("Unattended", "无人值守")}
-                    />
-                    <SubMenu
-                      open={permSubOpen}
-                      className={styles.plusMenu}
-                      minWidth={200}
-                      onMouseEnter={() => {
-                        if (permHideTimer.current) {
-                          clearTimeout(permHideTimer.current);
-                          permHideTimer.current = null;
-                        }
-                        setPermSubOpen(true);
-                      }}
-                      onMouseLeave={() => {
-                        permHideTimer.current = setTimeout(
-                          () => setPermSubOpen(false), 120,
-                        );
-                      }}
-                      anchor={
-                        <PlusMenuItem
-                          active={!!permMode && permMode !== "ask"}
-                          onClick={() => setPermSubOpen(true)}
-                          icon={<ShieldCheckIcon size={20} />}
-                          label={text("Permission", "权限模式")}
-                        />
-                      }
-                    >
-                          {permOptions.map((o) => (
-                            <React.Fragment key={o.value}>
-                              {/* bypass 是高危档（CC 里走 Enable 确认），分隔线分开 */}
-                              {o.value === "bypass" && <div className={styles.plusMenuDivider} />}
-                              <PlusMenuItem
-                                active={permMode === o.value}
-                                onClick={() => {
-                                  if (o.value === "bypass" && permMode !== "bypass") {
-                                    setBypassConfirm(true);   // 高危：先确认
-                                    return;
-                                  }
-                                  setPermMode(o.value);
-                                  setPermSubOpen(false);
-                                }}
-                                icon={
-                                  <span
-                                    aria-hidden="true"
-                                    style={{
-                                      display: "inline-block",
-                                      width: 8, height: 8, borderRadius: "50%",
-                                      background: PERM_COLOR[o.value],
-                                    }}
-                                  />
-                                }
-                                label={o.label}
-                                trailing={o.value === "bypass"
-                                  ? text("Enable", "启用")
-                                  : o.key}
-                              />
-                            </React.Fragment>
-                          ))}
-                      </SubMenu>
-                  </div>,
-                  document.body,
-                )
-              : null}
-
             {bypassConfirm && typeof document !== "undefined"
               ? createPortal(
                   <div
@@ -1492,7 +1502,7 @@ export function Composer() {
                           onClick={() => {
                             setPermMode("bypass");
                             setBypassConfirm(false);
-                            setPermSubOpen(false);
+                            setPlusMenuOpen(false);
                           }}
                           style={{
                             padding: "6px 14px", borderRadius: 8, border: "none",

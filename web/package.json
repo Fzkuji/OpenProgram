@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@base-ui-components/react": "1.0.0-rc.0",
     "@dicebear/adventurer": "^9.4.2",
     "@dicebear/avataaars": "^9.4.2",
     "@dicebear/big-smile": "^9.4.2",
