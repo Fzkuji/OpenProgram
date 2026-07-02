@@ -559,6 +559,11 @@ def execute_in_context(
         effective_thinking = run_cfg.thinking_effort or _pdef.get("thinking_effort")
         effective_permission = permission_from_config(
             run_cfg, default=_pdef.get("permission_mode") or "bypass")
+        # permission_mode == "plan" 桥接到 plan_mode 会话旗标：选了 Plan mode
+        # 档就等价于 enter_plan_mode（dispatcher 藏写工具 + plan 系统提示）；
+        # 档位离开 plan 只收回由档位设置的旗标，LLM 自己 enter 的不受影响。
+        from openprogram.agent import plan_mode as _plan_mode
+        _plan_mode.sync_tier(session_id, effective_permission == "plan")
 
         # Apply thinking effort to chat runtime
         _s._apply_thinking_effort(runtime, effective_thinking)

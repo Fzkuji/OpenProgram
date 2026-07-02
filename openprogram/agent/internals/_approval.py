@@ -121,7 +121,6 @@ def wrap_with_approval(
     """
     from openprogram.agent.types import AgentTool, AgentToolResult
     from openprogram.providers.types import TextContent
-    from openprogram.functions._runtime import tool_requires_approval
 
     orig_execute = agent_tool.execute
     name = agent_tool.name
@@ -162,25 +161,27 @@ def wrap_with_approval(
         if mode == "bypass":
             return await orig_execute(call_id, args, cancel, on_update)
 
-        per_tool_required, _reason = tool_requires_approval(agent_tool, args)
-
         # ④ 规则层 allow —— bypass 之后
         if verdict == "allow":
             return await orig_execute(call_id, args, cancel, on_update)
 
-        # ⑤ acceptEdits：写安全工具自动放行；命令类落审批
+        # ⑤ 只读安全工具全模式放行（对齐 CC：Ask / Accept edits / Plan 下
+        #    read/grep/glob 这类只读调用不弹卡，审批只留给会改状态的）。
+        #    复用 auto 分类器的白名单；deny/ask 规则在 ① 已优先兜住。
+        from openprogram.agent.internals._auto_classifier import (
+            auto_classify_tool, SAFE_AUTO_ALLOWLIST, RISKY_AUTO_DENYLIST,
+        )
+        if name in SAFE_AUTO_ALLOWLIST:
+            return await orig_execute(call_id, args, cancel, on_update)
+
+        # ⑥ acceptEdits：写安全工具自动放行；命令类落审批
         if mode == "acceptEdits" and getattr(agent_tool, "_accept_edits_safe", False) \
                 and _path_is_safe(name, args, req):
             return await orig_execute(call_id, args, cancel, on_update)
 
-        # ⑥ auto：LLM 分类器判定（对齐 CC "Auto mode"）。三级过滤省调用：
-        #    明显安全→放行；明显危险→拒；拿不准→问一次 haiku。
+        # ⑦ auto：LLM 分类器判定（对齐 CC "Auto mode"）。三级过滤省调用：
+        #    明显安全在 ⑤ 已放行；明显危险→拒；拿不准→问一次 haiku。
         if mode == "auto":
-            from openprogram.agent.internals._auto_classifier import (
-                auto_classify_tool, SAFE_AUTO_ALLOWLIST, RISKY_AUTO_DENYLIST,
-            )
-            if name in SAFE_AUTO_ALLOWLIST:
-                return await orig_execute(call_id, args, cancel, on_update)
             if name in RISKY_AUTO_DENYLIST:
                 return _denied(f"[denied] auto mode: risky tool blocked: {name}")
             should_block, reason = await auto_classify_tool(name, args)
@@ -188,7 +189,7 @@ def wrap_with_approval(
                 return _denied(f"[denied] auto classifier: {reason}")
             return await orig_execute(call_id, args, cancel, on_update)
 
-        # ⑦ 弹卡片阻塞等答（default / acceptEdits 的命令类都落这里）
+        # ⑧ 弹卡片阻塞等答（ask / plan / acceptEdits 的命令类都落这里）
         return await _approve_then_run(call_id, args, cancel, on_update)
 
     wrapped = AgentTool(
