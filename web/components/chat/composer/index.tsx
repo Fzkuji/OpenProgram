@@ -382,8 +382,6 @@ export function Composer() {
   const toolProfileHideTimer = useRef<NodeJS.Timeout | null>(null);
   const [permSubOpen, setPermSubOpen] = useState(false);
   const permHideTimer = useRef<NodeJS.Timeout | null>(null);
-  const permAnchorRef = useRef<HTMLDivElement>(null);
-  const toolProfileAnchorRef = useRef<HTMLDivElement>(null);
   const [bypassConfirm, setBypassConfirm] = useState(false);
   const {
     tools: toolsEnabled,
@@ -1321,50 +1319,35 @@ export function Composer() {
                       label={text("Attach file", "添加照片和文件")}
                     />
                     <div className={styles.plusMenuDivider} />
-                    <div
-                      ref={toolProfileAnchorRef}
+                    <SubMenu
+                      open={toolProfileSubOpen}
+                      className={styles.plusMenu}
+                      minWidth={160}
                       onMouseEnter={() => {
                         // Only show sub-panel when tools are enabled AND
                         // there are multiple profiles to pick from.
+                        if (toolProfileHideTimer.current) {
+                          clearTimeout(toolProfileHideTimer.current);
+                          toolProfileHideTimer.current = null;
+                        }
                         if (toolsEnabled && Object.keys(toolProfiles).length > 1) {
-                          if (toolProfileHideTimer.current) {
-                            clearTimeout(toolProfileHideTimer.current);
-                            toolProfileHideTimer.current = null;
-                          }
                           setToolProfileSubOpen(true);
                         }
                       }}
                       onMouseLeave={() => {
-                        // Short delay so the user can cross the gap to the
-                        // sub-panel without it vanishing.
                         toolProfileHideTimer.current = setTimeout(
                           () => setToolProfileSubOpen(false), 120,
                         );
                       }}
+                      anchor={
+                        <PlusMenuItem
+                          active={toolsEnabled}
+                          onClick={toggleTools}
+                          icon={<ToolsIcon />}
+                          label={text("Tools", "工具")}
+                        />
+                      }
                     >
-                      <PlusMenuItem
-                        active={toolsEnabled}
-                        onClick={toggleTools}
-                        icon={<ToolsIcon />}
-                        label={text("Tools", "工具")}
-                      />
-                      <SubMenu
-                        open={toolProfileSubOpen}
-                        anchorRef={toolProfileAnchorRef}
-                        className={styles.plusMenu}
-                        minWidth={160}
-                        onMouseEnter={() => {
-                          if (toolProfileHideTimer.current) {
-                            clearTimeout(toolProfileHideTimer.current);
-                            toolProfileHideTimer.current = null;
-                          }
-                        }}
-                        onMouseLeave={() => {
-                          toolProfileHideTimer.current = setTimeout(
-                            () => setToolProfileSubOpen(false), 120,
-                          );
-                        }}
-                      >
                           <div style={{ padding: "4px 8px", fontSize: "11px",
                             color: "var(--text-muted)", textTransform: "uppercase",
                             letterSpacing: "0.05em" }}>
@@ -1382,7 +1365,6 @@ export function Composer() {
                             />
                           ))}
                       </SubMenu>
-                    </div>
                     <PlusMenuItem
                       active={webSearchEnabled}
                       onClick={toggleWebSearch}
@@ -1402,8 +1384,10 @@ export function Composer() {
                       icon={<UnattendedIcon />}
                       label={text("Unattended", "无人值守")}
                     />
-                    <div
-                      ref={permAnchorRef}
+                    <SubMenu
+                      open={permSubOpen}
+                      className={styles.plusMenu}
+                      minWidth={200}
                       onMouseEnter={() => {
                         if (permHideTimer.current) {
                           clearTimeout(permHideTimer.current);
@@ -1416,30 +1400,15 @@ export function Composer() {
                           () => setPermSubOpen(false), 120,
                         );
                       }}
+                      anchor={
+                        <PlusMenuItem
+                          active={!!permMode && permMode !== "ask"}
+                          onClick={() => setPermSubOpen(true)}
+                          icon={<ShieldCheckIcon size={20} />}
+                          label={text("Permission", "权限模式")}
+                        />
+                      }
                     >
-                      <PlusMenuItem
-                        active={!!permMode && permMode !== "ask"}
-                        onClick={() => setPermSubOpen(true)}
-                        icon={<ShieldCheckIcon size={20} />}
-                        label={text("Permission", "权限模式")}
-                      />
-                      <SubMenu
-                        open={permSubOpen}
-                        anchorRef={permAnchorRef}
-                        className={styles.plusMenu}
-                        minWidth={200}
-                        onMouseEnter={() => {
-                          if (permHideTimer.current) {
-                            clearTimeout(permHideTimer.current);
-                            permHideTimer.current = null;
-                          }
-                        }}
-                        onMouseLeave={() => {
-                          permHideTimer.current = setTimeout(
-                            () => setPermSubOpen(false), 120,
-                          );
-                        }}
-                      >
                           {permOptions.map((o) => (
                             <React.Fragment key={o.value}>
                               {/* bypass 是高危档（CC 里走 Enable 确认），分隔线分开 */}
@@ -1472,7 +1441,6 @@ export function Composer() {
                             </React.Fragment>
                           ))}
                       </SubMenu>
-                    </div>
                   </div>,
                   document.body,
                 )
