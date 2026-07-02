@@ -240,7 +240,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         setFileIndex((i) => (i + 1) % fileMatches.length);
         return;
       }
-      if (key.tab || key.return) {
+      if ((key.tab && !key.shift) || key.return) {
         const pick = fileMatches[fileIndex]!;
         const before = value.slice(0, atToken.start);
         const after = value.slice(cursor);
@@ -270,7 +270,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         setMenuIndex((i) => (i + 1) % matches.length);
         return;
       }
-      if (key.tab) {
+      if (key.tab && !key.shift) {
         const cmd = matches[menuIndex]!;
         const next = `/${cmd.name} `;
         setValue(next);

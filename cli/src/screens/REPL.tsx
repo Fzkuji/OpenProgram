@@ -31,7 +31,9 @@ import type {
   RegisterForm,
   SearchResultRow,
   ThinkingEffort,
+  PermissionMode,
 } from './repl/types.js';
+import { PERMISSION_CYCLE } from './repl/types.js';
 import { ChannelActivityFeed } from '../components/ChannelActivityFeed.js';
 import type { SettingRow } from '../components/SettingsPanel.js';
 import { randomLocalId, renderModel } from './repl/helpers.js';
@@ -52,8 +54,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [activity, setActivity] = useState<Activity | null>(null);
   const [stats, setStats] = useState<StatsEnvelope['data'] | undefined>(undefined);
   const [tick, setTick] = useState(0);
-  // Per-conversation token + context-window tracking. We key by conv_id
-  // so switching branches (resume / new / load_conversation) flips the
+  // Per-conversation token + context-window tracking. We key by session_id
+  // so switching branches (resume / new / load_session) flips the
   // BottomBar indicator to that branch's own usage.
   const [tokensByConv, setTokensByConv] = useState<
     Record<string, { input?: number; output?: number }>
@@ -136,8 +138,10 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [qrStatus, setQrStatus] = useState<string | undefined>(undefined);
   const [agentsList, setAgentsList] = useState<AgentInfo[]>([]);
   const [toolsOn, setToolsOn] = useState(true);
-  // Permission cycle: auto-approve safe tools or bypass approval.
-  const [permissionMode, setPermissionMode] = useState<'ask' | 'auto' | 'bypass'>('bypass');
+  // Permission tier for tool calls — the 5 modes shared with the web
+  // Mode menu. Default ask (approval cards), matching web + Claude Code;
+  // a resumed session restores its saved tier via session_loaded.
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
   // Thinking effort cycle: off → minimal → low → medium → high → xhigh → off.
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort>('xhigh');
   const [connState, setConnState] = useState<ConnectionState>(client.getState());
@@ -241,7 +245,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           }, 1500);
         } else if (stage === 1) {
           stopStageRef.current = 2;
-          client.send({ action: 'stop', conv_id: conversationId });
+          client.send({ action: 'stop', session_id: conversationId });
           pushSystem('Stopping gracefully — finishing the current step. '
             + 'Press Ctrl-C again to force-stop.');
           // Keep exitPending so the hint stays; reset stage after a window.
@@ -253,7 +257,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         } else {
           stopStageRef.current = 0;
           setExitPending(false);
-          client.send({ action: 'stop', conv_id: conversationId, mode: 'force' });
+          client.send({ action: 'stop', session_id: conversationId, mode: 'force' });
           setStreaming(null);
           finishTurn();
           pushSystem('Force-stopped.');
@@ -280,10 +284,16 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       }, 800);
       return;
     }
-    // shift+tab cycles the modes that are usable without a separate
-    // approval prompt UI.
-    if (key.shift && key.tab) {
-      setPermissionMode((m) => (m === 'bypass' ? 'auto' : 'bypass'));
+    // shift+tab cycles the safe permission tiers (ask → acceptEdits →
+    // plan → auto), like Claude Code. bypass never enters the cycle —
+    // it's only reachable via /permissions + confirm — and pressing
+    // shift+tab while in bypass exits back to ask. Skipped while a
+    // picker owns the input (multi-ask uses shift+tab to go back).
+    if (key.shift && key.tab && !pickerKind) {
+      setPermissionMode((m) => {
+        const i = PERMISSION_CYCLE.indexOf(m);
+        return i < 0 ? 'ask' : PERMISSION_CYCLE[(i + 1) % PERMISSION_CYCLE.length]!;
+      });
       return;
     }
     // Ctrl+K — command palette over the slash registry (opencode's
@@ -351,6 +361,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         toggleTools: () => setToolsOn((on) => !on),
         currentThinkingEffort: thinkingEffort,
         setThinkingEffort,
+        currentPermissionMode: permissionMode,
+        setPermissionMode,
         toggleBell: () => {
           let next = bellEnabled;
           setBellEnabled((b) => {
@@ -438,7 +450,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     startTurn('Thinking');
     client.send({
       action: 'chat',
-      conv_id: conversationId,
+      session_id: conversationId,
       agent_id: agent,
       text,
       tools: toolsOn,
@@ -449,7 +461,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   const onCancel = () => {
     if (!conversationId) return;
-    client.send({ action: 'stop', conv_id: conversationId });
+    client.send({ action: 'stop', session_id: conversationId });
     setStreaming(null);
     finishTurn();
     pushSystem('Stopped.');
@@ -481,13 +493,13 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     settingsRows,
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft,
-    thinkingEffort,
+    thinkingEffort, permissionMode,
     accountsProviderId, accountsState, accountSelected, accountPendingAdd, accountLogin,
     setPickerKind, setPendingAttach, setPendingDecisions,
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft,
-    setThinkingEffort,
+    setThinkingEffort, setPermissionMode,
     setAccountsProviderId, setAccountsState, setAccountSelected,
     setAccountPendingAdd, setAccountLogin,
     onSubmit,

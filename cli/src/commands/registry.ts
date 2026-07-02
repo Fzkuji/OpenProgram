@@ -10,6 +10,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'model', description: 'Change the model' },
   { name: 'fetch-models', description: 'Auto-discover models from a provider (e.g. /fetch-models anthropic)' },
   { name: 'effort', description: 'Set thinking effort (off/minimal/low/medium/high/xhigh)' },
+  { name: 'permissions', description: 'Set permission mode (ask/acceptEdits/plan/auto/bypass); shift+tab cycles' },
   { name: 'session', description: 'Show current session info' },
   { name: 'sessions', description: 'List sessions' },
   { name: 'new', description: 'Start a new session' },

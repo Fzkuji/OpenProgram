@@ -42,9 +42,15 @@ export function enqueueDecision(
   return queue.some((p) => p.id === decision.id) ? queue : [...queue, decision];
 }
 
-/** The WS reply for an answered question. */
-export function replyAction(id: string, answer: string | string[]): WsRequest {
-  return { action: 'question_reply', id, answer };
+/** The WS reply for an answered question. For approvals, scope='always'
+ *  also persists a project-level allow rule for the tool server-side
+ *  (mirrors the web's 总是允许; permission-model.md §6.3). */
+export function replyAction(
+  id: string, answer: string | string[], scope?: 'always',
+): WsRequest {
+  return scope
+    ? { action: 'question_reply', id, answer, scope }
+    : { action: 'question_reply', id, answer };
 }
 
 /** The WS reject for a declined question. */

@@ -14,7 +14,7 @@ import {
 } from '../../ws/client.js';
 import { Turn } from '../../components/Turn.js';
 import { trimHistoryFile } from '../../utils/history.js';
-import { randomLocalId, renderModel } from './helpers.js';
+import { randomLocalId, renderModel, stripProviderPrefix } from './helpers.js';
 import { handleChatResponse } from './wsHandlers/handleChatResponse.js';
 import { handleChannelTurn } from './wsHandlers/handleChannelTurn.js';
 import { decisionFromFrame, enqueueDecision } from './questionDecision.js';
@@ -28,11 +28,13 @@ import type {
   PastConversation,
   PendingAttach,
   PendingDecision,
+  PermissionMode,
   PickerKind,
   SearchResultRow,
   SessionAliasRow,
   ThinkingEffort,
 } from './types.js';
+import { PERMISSION_MODES } from './types.js';
 
 export interface WsEventsCtx {
   client: BackendClient;
@@ -80,7 +82,7 @@ export interface WsEventsCtx {
   setConnState: React.Dispatch<React.SetStateAction<ConnectionState>>;
   setToolsOn: React.Dispatch<React.SetStateAction<boolean>>;
   setThinkingEffort: React.Dispatch<React.SetStateAction<ThinkingEffort>>;
-  setPermissionMode: React.Dispatch<React.SetStateAction<'ask' | 'auto' | 'bypass'>>;
+  setPermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
   setSearchResults: React.Dispatch<React.SetStateAction<SearchResultRow[]>>;
   setContextSearchQuery: React.Dispatch<React.SetStateAction<string>>;
   setSessionLiveByConv: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
@@ -112,7 +114,7 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         c.setSessionLiveByConv((m) => ({ ...m, [convId]: true }));
       };
       if (ev.type === 'chat_ack') {
-        c.setConversationId(ev.data.conv_id);
+        c.setConversationId(ev.data.session_id);
       } else if (ev.type === 'chat_response') {
         handleChatResponse(ev.data, c, markSessionLive);
       } else if (ev.type === 'stats') {
@@ -177,16 +179,11 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         } else {
           c.pushSystem(`Failed to add account: ${data?.error ?? 'unknown error'}`);
         }
-      } else if (ev.type === 'history_list') {
-        // Initial list at WS connect — only in-memory webui
-        // sessions. /resume sends list_conversations to refresh
-        // with disk-based (channel-bound) sessions too.
-        c.setPastConversations(ev.data ?? []);
-      } else if (ev.type === 'conversations_list') {
-        // Richer list including channel-bound sessions on disk.
-        // Each entry may carry `source` ("wechat"/"telegram"/…)
-        // and `peer_display` (the WeChat nickname etc.) so /resume
-        // can tag the picker rows.
+      } else if (ev.type === 'sessions_list') {
+        // Reply to {action:'list_sessions'} (also broadcast when a
+        // session is created elsewhere). Rows carry id/title/created_at
+        // plus `source` ("wechat"/"telegram"/…) and `peer_display` so
+        // /resume can tag channel-bound rows.
         c.setPastConversations(ev.data ?? []);
       } else if (ev.type === 'qr_login') {
         // Server-driven QR-login state machine. Server pushes:
@@ -301,7 +298,9 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         // stay accurate. Server doesn't push the full list on
         // attach.
         client.send({ action: 'list_session_aliases' } as never);
-      } else if (ev.type === 'conversation_loaded') {
+      } else if (ev.type === 'session_loaded') {
+        // Server reply to {action:'load_session'} — transcript + the
+        // per-session settings (tools/effort/permission) to restore.
         const data = ev.data as {
           id?: string;
           title?: string;
@@ -310,7 +309,7 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           settings?: {
             tools_enabled?: boolean | null;
             thinking_effort?: ThinkingEffort | null;
-            permission_mode?: 'ask' | 'auto' | 'bypass' | null;
+            permission_mode?: PermissionMode | null;
           };
         };
         if (data.id) c.setConversationId(data.id);
@@ -334,7 +333,7 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           c.setThinkingEffort(effort);
         }
         const mode = data.settings?.permission_mode;
-        if (mode === 'ask' || mode === 'auto' || mode === 'bypass') {
+        if (mode && PERMISSION_MODES.includes(mode)) {
           c.setPermissionMode(mode);
         }
         const turns = (data.messages ?? [])

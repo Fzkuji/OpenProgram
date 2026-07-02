@@ -76,10 +76,12 @@ export function MultiAskPicker({ client, decision: q, onResolve }: MultiAskPicke
       if (allAnswered) submit();
       return;
     }
-    // Switch questions: ←/→ or Tab.
+    // Switch questions: ←/→ or Tab (shift+tab goes back). The REPL's
+    // global permission-cycle skips shift+tab while a picker is open,
+    // so there's no double-fire here.
     const nq = Math.max(1, questions.length);
-    if (key.leftArrow) { setQi((i) => (i - 1 + nq) % nq); setOi(0); return; }
-    if (key.rightArrow || key.tab) { setQi((i) => (i + 1) % nq); setOi(0); return; }
+    if (key.leftArrow || (key.tab && key.shift)) { setQi((i) => (i - 1 + nq) % nq); setOi(0); return; }
+    if (key.rightArrow || (key.tab && !key.shift)) { setQi((i) => (i + 1) % nq); setOi(0); return; }
 
     if (!cur) return;
     const opts = cur.options;

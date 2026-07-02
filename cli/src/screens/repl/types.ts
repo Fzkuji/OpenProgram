@@ -22,6 +22,31 @@ export type ThinkingEffort =
   | 'high'
   | 'xhigh';
 
+/**
+ * The five permission tiers — must match the backend VALID_PERMISSION
+ * (agent/session_config.py) and the web Mode menu (use-permission-mode.ts):
+ * 1 ask · 2 acceptEdits · 3 plan · 4 auto · 5 bypass.
+ */
+export type PermissionMode = 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
+
+export const PERMISSION_MODES: PermissionMode[] =
+  ['ask', 'acceptEdits', 'plan', 'auto', 'bypass'];
+
+export const PERMISSION_LABELS: Record<PermissionMode, string> = {
+  ask: 'Ask permissions',
+  acceptEdits: 'Accept edits',
+  plan: 'Plan mode',
+  auto: 'Auto mode',
+  bypass: 'Bypass permissions',
+};
+
+/** Shift+Tab quick-cycle order. bypass is deliberately NOT in the cycle
+ *  (same as Claude Code's Shift+Tab): it's only reachable through
+ *  /permissions with an explicit confirm, so a stray key can't land on
+ *  run-everything. Pressing Shift+Tab while in bypass exits to ask. */
+export const PERMISSION_CYCLE: PermissionMode[] =
+  ['ask', 'acceptEdits', 'plan', 'auto'];
+
 export interface Activity {
   /** Verb shown next to the spinner — "Thinking", "Calling Bash", etc. */
   verb: string;
@@ -52,6 +77,9 @@ export interface Activity {
 export type PickerKind =
   | null
   | 'model' | 'resume' | 'agent' | 'channel' | 'channel_account' | 'theme' | 'effort'
+  // Permission tier picker (the 5 modes, numbered like the web menu) and
+  // the bypass safety confirm it detours through.
+  | 'permission' | 'permission_bypass_confirm'
   | 'branch'
   | 'settings'
   | 'commands'

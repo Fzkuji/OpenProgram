@@ -2,6 +2,7 @@ import { BackendClient } from '../ws/client.js';
 import { SLASH_COMMANDS } from './registry.js';
 
 type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type PermissionMode = 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
 
 export interface SlashContext {
   client: BackendClient;
@@ -11,7 +12,8 @@ export interface SlashContext {
   newSession: () => void;
   exit: () => void;
   /** Open an interactive picker (model / resume / agent / channel / theme / effort / settings). */
-  openPicker: (kind: 'model' | 'resume' | 'agent' | 'channel' | 'theme' | 'effort' | 'settings') => void;
+  openPicker: (kind: 'model' | 'resume' | 'agent' | 'channel' | 'theme' | 'effort' | 'settings'
+    | 'permission' | 'permission_bypass_confirm') => void;
   /** Open the in-TUI Claude-account panel (claude-code provider): add /
    *  activate / deactivate / rename / remove, all without leaving the TUI. */
   openClaudeAccounts: () => void;
@@ -26,6 +28,11 @@ export interface SlashContext {
   currentThinkingEffort?: ThinkingEffort;
   /** Set the thinking budget for subsequent chat turns. */
   setThinkingEffort?: (effort: ThinkingEffort) => void;
+  /** Current permission tier shown on the bottom bar and sent with chat turns. */
+  currentPermissionMode?: PermissionMode;
+  /** Set the permission tier. handleSlash routes bypass through the
+   *  confirm picker instead of calling this directly. */
+  setPermissionMode?: (mode: PermissionMode) => void;
   /** Toggle the terminal-bell-on-long-turn-complete flag. */
   toggleBell: () => boolean;
   /** Re-show the Welcome banner as a system note. */
@@ -91,6 +98,8 @@ const ALIASES: Record<string, string> = {
   t: 'tools',
   c: 'clear',
   w: 'welcome',
+  perm: 'permissions',
+  permission: 'permissions',
 };
 
 const THINKING_EFFORTS: ThinkingEffort[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
@@ -101,6 +110,15 @@ const normalizeThinkingEffort = (raw: string): ThinkingEffort | null => {
   if (v === 'med') return 'medium';
   if (v === 'xhi' || v === 'x-high' || v === 'extra-high') return 'xhigh';
   if ((THINKING_EFFORTS as string[]).includes(v)) return v as ThinkingEffort;
+  return null;
+};
+
+const PERMISSION_MODES: PermissionMode[] = ['ask', 'acceptEdits', 'plan', 'auto', 'bypass'];
+
+const normalizePermissionMode = (raw: string): PermissionMode | null => {
+  const v = raw.toLowerCase();
+  if (v === 'acceptedits' || v === 'accept-edits' || v === 'accept' || v === 'edits') return 'acceptEdits';
+  if (v === 'ask' || v === 'plan' || v === 'auto' || v === 'bypass') return v;
   return null;
 };
 
@@ -190,7 +208,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         ctx.requestAliasesPrint?.();
       }
       ctx.client.send({
-        action: cmd === 'aliases' ? 'list_session_aliases' : 'list_conversations',
+        action: cmd === 'aliases' ? 'list_session_aliases' : 'list_sessions',
       });
       ctx.pushSystem(`Requested ${cmd}.`);
       return true;
@@ -260,7 +278,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         ctx.openPicker('model');
         return true;
       }
-      ctx.client.send({ action: 'switch_model', model: args[0]!, conv_id: ctx.currentConversation });
+      ctx.client.send({ action: 'switch_model', model: args[0]!, session_id: ctx.currentConversation });
       return true;
     }
 
@@ -317,14 +335,39 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
+    case 'permissions': {
+      if (!ctx.setPermissionMode) {
+        ctx.pushSystem('/permissions is not available in this screen.');
+        return true;
+      }
+      if (args.length < 1) {
+        ctx.openPicker('permission');
+        return true;
+      }
+      const mode = normalizePermissionMode(args[0]!);
+      if (!mode) {
+        ctx.pushSystem(`Unknown permission mode '${args[0]}'. Use one of: ${PERMISSION_MODES.join(', ')}`);
+        return true;
+      }
+      if (mode === 'bypass') {
+        // bypass never lands silently — route through the same confirm
+        // the picker uses.
+        ctx.openPicker('permission_bypass_confirm');
+        return true;
+      }
+      ctx.setPermissionMode(mode);
+      ctx.pushSystem(`Permission mode set to ${mode}.`);
+      return true;
+    }
+
     case 'resume': {
       // Refresh the conversation list before opening the picker — the
-      // server's list_conversations action returns BOTH in-memory webui
+      // server's list_sessions action returns BOTH in-memory webui
       // sessions AND on-disk per-agent sessions (where channel-bound
       // chats live). Without this refresh the picker only shows the
       // history_list captured at connect time, which omits any
       // wechat / telegram sessions started by the channels worker.
-      ctx.client.send({ action: 'list_conversations' });
+      ctx.client.send({ action: 'list_sessions' });
       ctx.openPicker('resume');
       return true;
     }
@@ -372,7 +415,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       //                              picker is opened with those rows
       const query = args.join(' ').trim();
       if (!query) {
-        ctx.client.send({ action: 'list_conversations' });
+        ctx.client.send({ action: 'list_sessions' });
         ctx.openPicker('resume');
         return true;
       }
@@ -495,7 +538,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
 
     case 'cost': {
       // Token + cost stats live in the BottomBar; surface the latest here.
-      ctx.client.send({ action: 'sync', conv_id: ctx.currentConversation } as never);
+      ctx.client.send({ action: 'sync', session_id: ctx.currentConversation } as never);
       ctx.pushSystem(
         'Current token usage is shown on the bottom bar. ↓ input, ↑ output.',
       );

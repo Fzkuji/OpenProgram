@@ -2,11 +2,11 @@ import WebSocket from 'ws';
 
 export type ChatRequest = {
   action: 'chat';
-  conv_id?: string;
+  session_id?: string;
   agent_id?: string;
   text: string;
   thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-  permission_mode?: 'ask' | 'auto' | 'bypass';
+  permission_mode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
   tools?: boolean;
 };
 
@@ -14,19 +14,19 @@ export type WsRequest =
   | ChatRequest
   | { action: 'sync' }
   | { action: 'stats' }
-  | { action: 'stop'; conv_id: string; mode?: 'graceful' | 'force' }
+  | { action: 'stop'; session_id: string; mode?: 'graceful' | 'force' }
   | { action: 'steer'; session_id: string; message: string }
   | { action: 'set_attended'; session_id: string; attended: boolean }
   | { action: 'browser'; verb: string; args?: Record<string, unknown> }
   | { action: 'list_models' }
-  | { action: 'switch_model'; model: string; provider?: string; conv_id?: string }
+  | { action: 'switch_model'; model: string; provider?: string; session_id?: string }
   | { action: 'list_agents' }
   | { action: 'add_agent'; agent: Record<string, unknown> }
   | { action: 'delete_agent'; id: string }
   | { action: 'set_default_agent'; id: string }
-  | { action: 'list_conversations' }
-  | { action: 'load_conversation'; conv_id: string }
-  | { action: 'delete_conversation'; id: string }
+  | { action: 'list_sessions' }
+  | { action: 'load_session'; session_id: string }
+  | { action: 'delete_session'; session_id: string }
   | { action: 'search_messages'; query: string; limit?: number; agent_id?: string }
   | { action: 'list_channel_accounts' }
   | { action: 'add_channel_account'; channel: string; account_id: string; token: string }
@@ -56,7 +56,7 @@ export type WsRequest =
   // choice / confirm / free text) or string[] (multi). Mirrors the web
   // composer's question_reply / question_reject (question-mode.tsx) so
   // both surfaces resolve through the same backend _resolve_question.
-  | { action: 'question_reply'; id: string; answer: string | string[] }
+  | { action: 'question_reply'; id: string; answer: string | string[]; scope?: 'always' }
   | { action: 'question_reject'; id: string; reason?: string }
   | { action: 'sandbox'; session_id?: string }
   | { action: 'context'; session_id?: string }
@@ -64,7 +64,7 @@ export type WsRequest =
 
 export interface ChatAck {
   type: 'chat_ack';
-  data: { conv_id: string; msg_id: string };
+  data: { session_id: string; msg_id: string };
 }
 
 export interface ChatResponse {
@@ -72,7 +72,7 @@ export interface ChatResponse {
   data: {
     type: 'status' | 'stream_event' | 'result' | 'error' | 'follow_up_question' | 'cancelled' | 'tree_update' | 'context_stats' | string;
     content?: string;
-    conv_id?: string;
+    session_id?: string;
     msg_id?: string;
     [k: string]: unknown;
   };
@@ -89,9 +89,12 @@ export interface AgentsListEnvelope {
   data: Array<{ id: string; name: string; model?: string; default?: boolean; [k: string]: unknown }>;
 }
 
-export interface ConversationsListEnvelope {
-  type: 'conversations_list';
-  data: Array<{ id: string; title?: string; agent_id?: string; updated_at?: number; [k: string]: unknown }>;
+export interface SessionsListEnvelope {
+  type: 'sessions_list';
+  data: Array<{
+    id: string; title?: string; agent_id?: string; created_at?: number;
+    source?: string; peer_display?: string; [k: string]: unknown;
+  }>;
 }
 
 export interface ChannelBindingsEnvelope {
@@ -159,8 +162,8 @@ export interface BrowserResultEnvelope {
   data: { verb: string; result: string };
 }
 
-export interface ConversationLoadedEnvelope {
-  type: 'conversation_loaded';
+export interface SessionLoadedEnvelope {
+  type: 'session_loaded';
   data: {
     id: string;
     messages: Array<{ role: string; content: string; [k: string]: unknown }>;
@@ -168,7 +171,7 @@ export interface ConversationLoadedEnvelope {
       tools_enabled?: boolean | null;
       tools_override?: string[] | null;
       thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null;
-      permission_mode?: 'ask' | 'auto' | 'bypass' | null;
+      permission_mode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass' | null;
     };
     [k: string]: unknown;
   };
@@ -182,11 +185,6 @@ export interface ModelsListEnvelope {
 export interface ModelSwitchedEnvelope {
   type: 'model_switched';
   data: { provider?: string; model?: string };
-}
-
-export interface HistoryListEnvelope {
-  type: 'history_list';
-  data: Array<{ id?: string; title?: string; created_at?: number; agent_id?: string }>;
 }
 
 export interface StatsEnvelope {
@@ -227,13 +225,13 @@ export interface ErrorEnvelope {
 /**
  * A complete inbound channel turn (user message + assistant reply) just
  * landed for some session. Emitted by the channels worker after it
- * persists the turn so any TUI / web client viewing that conv_id can
+ * persists the turn so any TUI / web client viewing that session_id can
  * append both messages to its transcript live, no /resume refresh.
  */
 export interface ChannelTurnEnvelope {
   type: 'channel_turn';
   data: {
-    conv_id: string;
+    session_id: string;
     agent_id?: string;
     user: { id?: string; text?: string; peer_display?: string; source?: string };
     assistant: { id?: string; text?: string; source?: string };
@@ -326,12 +324,11 @@ export type WsEnvelope =
   | QuestionAskedEnvelope
   | QuestionClosedEnvelope
   | AgentsListEnvelope
-  | ConversationsListEnvelope
-  | ConversationLoadedEnvelope
+  | SessionsListEnvelope
+  | SessionLoadedEnvelope
   | StatsEnvelope
   | ModelsListEnvelope
   | ModelSwitchedEnvelope
-  | HistoryListEnvelope
   | ChannelBindingsEnvelope
   | SessionAliasesEnvelope
   | SessionAliasChangedEnvelope

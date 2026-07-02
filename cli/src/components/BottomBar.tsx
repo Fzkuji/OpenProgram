@@ -14,8 +14,9 @@ export interface BottomBarProps {
   tokens?: { input?: number; output?: number };
   /** Tools available for next turn. */
   toolsOn?: boolean;
-  /** Permission mode for tool calls: ask / auto / bypass. */
-  permissionMode?: 'ask' | 'auto' | 'bypass';
+  /** Permission tier for tool calls (the 5 modes, shift+tab cycles the
+   *  safe four; /permissions reaches all five). */
+  permissionMode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
   /** Thinking budget cycle: off / minimal / low / medium / high / xhigh. */
   thinkingEffort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   /** ws connection state. */
@@ -179,11 +180,14 @@ export const BottomBar: React.FC<BottomBarProps> = ({
       <Box flexShrink={1}>
         <Text color={
           permissionMode === 'bypass' ? colors.error
-          : permissionMode === 'auto' ? colors.warning
+          : permissionMode === 'auto' || permissionMode === 'acceptEdits' ? colors.warning
+          : permissionMode === 'plan' ? colors.primary
           : colors.muted
         }>
           {permissionMode === 'bypass' ? '▸▸ bypass'
             : permissionMode === 'auto' ? '▸▸ auto'
+            : permissionMode === 'acceptEdits' ? '▸▸ accept edits'
+            : permissionMode === 'plan' ? '⏸ plan'
             : '▸▸ ask'}
         </Text>
         <Text color={colors.border}> · </Text>

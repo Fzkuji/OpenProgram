@@ -15,7 +15,7 @@ import { Turn } from '../../../components/Turn.js';
 import type { WsEventsCtx } from '../useWsEvents.js';
 
 export interface ChannelTurnPayload {
-  conv_id: string;
+  session_id: string;
   user?: { id?: string; text?: string; source?: string; peer_display?: string };
   assistant?: { id?: string; text?: string };
 }
@@ -25,18 +25,18 @@ export function handleChannelTurn(
   c: WsEventsCtx,
   markSessionLive: (convId?: string) => void,
 ): void {
-  if (d.conv_id !== c.conversationId) {
-    if (d.conv_id) {
+  if (d.session_id !== c.conversationId) {
+    if (d.session_id) {
       c.setChannelActivityByConv((m) => {
-        const prev = m[d.conv_id] ?? {
-          convId: d.conv_id,
+        const prev = m[d.session_id] ?? {
+          convId: d.session_id,
           streamingText: '',
           streaming: false,
           lastUpdate: Date.now(),
         };
         return {
           ...m,
-          [d.conv_id]: {
+          [d.session_id]: {
             ...prev,
             source: d.user?.source ?? prev.source,
             peerDisplay: d.user?.peer_display ?? prev.peerDisplay,
@@ -47,7 +47,7 @@ export function handleChannelTurn(
           },
         };
       });
-      markSessionLive(d.conv_id);
+      markSessionLive(d.session_id);
     }
     return;
   }
@@ -72,6 +72,6 @@ export function handleChannelTurn(
   }
   if (newTurns.length > 0) {
     c.setCommitted((m) => [...m, ...newTurns]);
-    markSessionLive(d.conv_id);
+    markSessionLive(d.session_id);
   }
 }

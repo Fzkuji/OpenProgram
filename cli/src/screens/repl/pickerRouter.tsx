@@ -41,11 +41,14 @@ import type {
   PendingAttach,
   PendingDecision,
   PickerKind,
+  PermissionMode,
   RegisterForm,
   SearchResultRow,
   SessionAliasRow,
   ThinkingEffort,
 } from './types.js';
+import { PERMISSION_MODES, PERMISSION_LABELS } from './types.js';
+import { Confirm } from '../../ui/Confirm.js';
 
 const THINKING_EFFORTS: ThinkingEffort[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
@@ -77,6 +80,7 @@ export interface PickerCtx {
   searchResults: SearchResultRow[];
   searchBaseDraft: string;
   thinkingEffort: ThinkingEffort;
+  permissionMode: PermissionMode;
 
   /** Per-provider account panel state (the in-TUI account manager). The
    *  provider it currently manages, the fetched list, the account picked for the
@@ -104,6 +108,7 @@ export interface PickerCtx {
   setSearchResults: React.Dispatch<React.SetStateAction<SearchResultRow[]>>;
   setPromptDraft: React.Dispatch<React.SetStateAction<string | undefined>>;
   setThinkingEffort: React.Dispatch<React.SetStateAction<ThinkingEffort>>;
+  setPermissionMode: React.Dispatch<React.SetStateAction<PermissionMode>>;
   setAccountsProviderId: React.Dispatch<React.SetStateAction<string>>;
   setAccountsState: React.Dispatch<React.SetStateAction<AccountsState>>;
   setAccountSelected: React.Dispatch<React.SetStateAction<string | null>>;
@@ -123,10 +128,12 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     modelsList, settingsRows, model, agentsList, channelAccounts,
     registerForm, qrAscii, qrStatus, pastConversations,
     contextSearchQuery, searchResults, searchBaseDraft, thinkingEffort,
+    permissionMode,
     setPickerKind, setPendingAttach,
     setChosenChannel, setChosenAccount, setConversationId, setAgent,
     setQrAscii, setQrStatus, setCommitted, setStreaming, setRegisterForm,
     setContextSearchQuery, setSearchResults, setPromptDraft, setThinkingEffort,
+    setPermissionMode,
     onSubmit,
     sessionAliasesRef,
   } = ctx;
@@ -152,6 +159,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
         actions={[
           { label: 'Model', command: '/model', hint: 'switch model' },
           { label: 'Thinking effort', command: '/effort', hint: 'off … xhigh' },
+          { label: 'Permission mode', command: '/permissions', hint: 'ask … bypass' },
           { label: 'Theme', command: '/theme', hint: 'live preview' },
           { label: 'Claude accounts', command: '/login', hint: 'add · switch · rename · remove' },
         ]}
@@ -195,7 +203,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
           client.send({
             action: 'switch_model',
             model: it.value,
-            conv_id: conversationId,
+            session_id: conversationId,
           });
           setPickerKind(null);
         }}
@@ -266,6 +274,58 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
           setPickerKind(null);
         }}
         onCancel={() => setPickerKind(null)}
+      />
+    );
+  }
+
+  if (pickerKind === 'permission') {
+    // The five permission tiers, numbered like the web Mode menu (1-5).
+    // Picking bypass detours through the explicit confirm below — same
+    // as the web's Enable-Bypass dialog — unless it's already active.
+    const items: PickerItem<PermissionMode>[] = PERMISSION_MODES.map((m, i) => ({
+      label: `${i + 1}. ${PERMISSION_LABELS[m]}`,
+      description: m === permissionMode ? 'current' : undefined,
+      value: m,
+    }));
+    return (
+      <Picker
+        title="Set permission mode"
+        items={items}
+        onSelect={(it) => {
+          if (it.value === 'bypass' && permissionMode !== 'bypass') {
+            // The Confirm title is one terminal row — push the full
+            // warning (same copy as the web dialog) to the transcript
+            // where it wraps, so it's readable at any width.
+            pushSystem('Bypass permissions: every tool runs without asking — '
+              + 'including commands that can change or delete files. '
+              + 'Only use this in a sandbox / disposable environment.');
+            setPickerKind('permission_bypass_confirm');
+            return;
+          }
+          setPermissionMode(it.value);
+          pushSystem(`Permission mode set to ${it.value}.`);
+          setPickerKind(null);
+        }}
+        onCancel={() => setPickerKind(null)}
+      />
+    );
+  }
+
+  if (pickerKind === 'permission_bypass_confirm') {
+    // defaultYes false so a stray Enter cancels instead of enabling;
+    // cancel returns to the tier list rather than closing outright.
+    return (
+      <Confirm
+        title="Enable bypass permissions?"
+        defaultYes={false}
+        yesLabel="Enable"
+        noLabel="Cancel"
+        onConfirm={() => {
+          setPermissionMode('bypass');
+          pushSystem('Permission mode set to bypass.');
+          setPickerKind(null);
+        }}
+        onCancel={() => setPickerKind('permission')}
       />
     );
   }
@@ -400,7 +460,11 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
         title="Resume a session"
         items={items}
         onSelect={(it) => {
-          client.send({ action: 'load_conversation', conv_id: it.value });
+          // load_session — the server replies with a session_loaded
+          // frame that repaints the transcript and restores the saved
+          // tools/effort/permission settings (useWsEvents). The old
+          // 'load_conversation' action no longer exists server-side.
+          client.send({ action: 'load_session', session_id: it.value });
           setConversationId(it.value);
           setCommitted([]);
           setStreaming(null);

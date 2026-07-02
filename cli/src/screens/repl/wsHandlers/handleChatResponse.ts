@@ -5,7 +5,7 @@
  * — text deltas, tool start/end, status, the final result, and
  * context_stats. We split routing into two paths:
  *
- *   1. Foreign conv (data.conv_id !== current TUI conv): redirect
+ *   1. Foreign conv (data.session_id !== current TUI conv): redirect
  *      the activity into setChannelActivityByConv so the bottom
  *      ChannelActivityFeed shows live "wechat:bot42 → main:
  *      streaming…" updates without polluting the user's current
@@ -27,7 +27,7 @@ import type { WsEventsCtx } from '../useWsEvents.js';
 
 interface ChatResponseData {
   type?: string;
-  conv_id?: string;
+  session_id?: string;
   content?: string;
   event?: { type?: string; text?: string; tool?: string; input?: string; result?: string; is_error?: boolean };
   chat?: { input_tokens?: number; output_tokens?: number };
@@ -46,11 +46,11 @@ export function handleChatResponse(
     d.type === 'result' ||
     d.type === 'context_stats'
   ) {
-    markSessionLive(d.conv_id ?? c.conversationId);
+    markSessionLive(d.session_id ?? c.conversationId);
   }
 
   // Foreign conv routing.
-  const dConvId = d.conv_id;
+  const dConvId = d.session_id;
   if (dConvId && c.conversationId && dConvId !== c.conversationId) {
     routeForeignConv(d, dConvId, c);
     return;
@@ -237,10 +237,10 @@ function handleResult(text: string, c: WsEventsCtx): void {
 }
 
 function handleContextStats(d: ChatResponseData, c: WsEventsCtx): void {
-  // Server tags every context_stats with the conv_id it belongs to.
+  // Server tags every context_stats with the session_id it belongs to.
   // Stash by id so switching branches flips the displayed numbers
   // without losing the others.
-  const cid = d.conv_id ?? c.conversationId;
+  const cid = d.session_id ?? c.conversationId;
   if (cid && d.chat) {
     c.setTokensByConv((m) => ({
       ...m,

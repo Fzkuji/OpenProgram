@@ -116,11 +116,14 @@ function parseKey(keypress: ParsedKey): [Key, string] {
       // so the raw "[57358u" doesn't leak into the prompt. See #38781.
       input = ''
     } else {
-      // 'space' → ' '; 'escape' → '' (key.escape carries it;
-      // processedAsSpecialSequence bypasses the nonAlphanumericKeys
-      // clear below, so we must handle it explicitly here);
-      // otherwise use key name.
-      input = keypress.name === 'space' ? ' ' : keypress.name === 'escape' ? '' : keypress.name
+      // 'space' → ' '; any functional key ('escape', 'tab', arrows, …)
+      // → '' (the key flags carry it; processedAsSpecialSequence
+      // bypasses the nonAlphanumericKeys clear below, so without this
+      // shift+tab on Kitty-protocol terminals typed the literal word
+      // "tab" into the prompt); otherwise use the key name.
+      input = keypress.name === 'space' ? ' '
+        : nonAlphanumericKeys.includes(keypress.name) ? ''
+        : keypress.name
     }
 
     processedAsSpecialSequence = true
@@ -138,7 +141,9 @@ function parseKey(keypress: ParsedKey): [Key, string] {
       // guards against future terminal behavior.
       input = ''
     } else {
-      input = keypress.name === 'space' ? ' ' : keypress.name === 'escape' ? '' : keypress.name
+      input = keypress.name === 'space' ? ' '
+        : nonAlphanumericKeys.includes(keypress.name) ? ''
+        : keypress.name
     }
 
     processedAsSpecialSequence = true
