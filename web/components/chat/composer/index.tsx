@@ -97,7 +97,7 @@ const PERM_COLOR: Record<string, string> = {
   ask: "var(--success, #3a9d5a)",
   plan: "var(--success, #3a9d5a)",
   acceptEdits: "var(--warning, #d78a18)",
-  dontAsk: "#e06c1f",
+  auto: "#e06c1f",
   bypass: "var(--danger, #d72518)",
 };
 
@@ -381,6 +381,7 @@ export function Composer() {
   const toolProfileHideTimer = useRef<NodeJS.Timeout | null>(null);
   const [permSubOpen, setPermSubOpen] = useState(false);
   const permHideTimer = useRef<NodeJS.Timeout | null>(null);
+  const [bypassConfirm, setBypassConfirm] = useState(false);
   const {
     tools: toolsEnabled,
     webSearch: webSearchEnabled,
@@ -1451,11 +1452,18 @@ export function Composer() {
                         >
                           {permOptions.map((o) => (
                             <React.Fragment key={o.value}>
-                              {/* plan 是"只读规划"特殊模式，与常规批准档不同维度，分隔线分开 */}
-                              {o.value === "plan" && <div className={styles.plusMenuDivider} />}
+                              {/* bypass 是高危档（CC 里走 Enable 确认），分隔线分开 */}
+                              {o.value === "bypass" && <div className={styles.plusMenuDivider} />}
                               <PlusMenuItem
                                 active={permMode === o.value}
-                                onClick={() => { setPermMode(o.value); setPermSubOpen(false); }}
+                                onClick={() => {
+                                  if (o.value === "bypass" && permMode !== "bypass") {
+                                    setBypassConfirm(true);   // 高危：先确认
+                                    return;
+                                  }
+                                  setPermMode(o.value);
+                                  setPermSubOpen(false);
+                                }}
                                 icon={
                                   <span
                                     aria-hidden="true"
@@ -1467,11 +1475,75 @@ export function Composer() {
                                   />
                                 }
                                 label={o.label}
+                                trailing={o.value === "bypass"
+                                  ? text("Enable", "启用")
+                                  : o.key}
                               />
                             </React.Fragment>
                           ))}
                         </div>
                       )}
+                    </div>
+                  </div>,
+                  document.body,
+                )
+              : null}
+
+            {bypassConfirm && typeof document !== "undefined"
+              ? createPortal(
+                  <div
+                    onClick={() => setBypassConfirm(false)}
+                    style={{
+                      position: "fixed", inset: 0, zIndex: 300,
+                      background: "rgba(0,0,0,0.45)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        width: "min(440px, 92vw)",
+                        background: "var(--bg-secondary)", border: "1px solid var(--border)",
+                        borderRadius: 14, padding: "20px 24px",
+                        boxShadow: "var(--shadow-popover)",
+                      }}
+                    >
+                      <div style={{
+                        fontSize: 15, fontWeight: 600, color: "var(--danger, #d72518)",
+                        marginBottom: 8,
+                      }}>
+                        {text("Enable Bypass Permissions?", "启用绕过权限？")}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
+                        {text(
+                          "Every tool runs without asking — including commands that can change or delete files. Only use this in a sandbox / disposable environment.",
+                          "所有工具都直接执行、不再询问——包括可改动或删除文件的命令。仅在沙箱 / 一次性环境里使用。",
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          onClick={() => setBypassConfirm(false)}
+                          style={{
+                            padding: "6px 14px", borderRadius: 8,
+                            border: "1px solid var(--border)", background: "none",
+                            color: "var(--text-primary)", cursor: "pointer",
+                          }}
+                        >{text("Cancel", "取消")}</button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPermMode("bypass");
+                            setBypassConfirm(false);
+                            setPermSubOpen(false);
+                          }}
+                          style={{
+                            padding: "6px 14px", borderRadius: 8, border: "none",
+                            background: "var(--danger, #d72518)", color: "#fff",
+                            cursor: "pointer",
+                          }}
+                        >{text("Enable", "启用")}</button>
+                      </div>
                     </div>
                   </div>,
                   document.body,

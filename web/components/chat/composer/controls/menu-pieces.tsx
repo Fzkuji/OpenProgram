@@ -101,12 +101,14 @@ export function PlusMenuItem({
   icon,
   label,
   title,
+  trailing,
 }: {
   active: boolean;
   onClick: () => void;
   icon: ReactNode;
   label: string;
   title?: string;
+  trailing?: ReactNode;   // 右侧附加（未勾选时显示，如数字快捷键 / "Enable"）
 }) {
   const { node, onMouseEnter, onMouseLeave } = useHoverDrivenIcon(icon);
   // The ✓ plays its draw-in animation exactly once — at the moment the
@@ -138,7 +140,11 @@ export function PlusMenuItem({
         <span className={styles.plusMenuLabel}>{label}</span>
       </div>
       <div className={styles.plusMenuRight}>
-        {active && <CheckIcon ref={checkRef} size={18} />}
+        {active
+          ? <CheckIcon ref={checkRef} size={18} />
+          : (trailing != null
+              ? <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{trailing}</span>
+              : null)}
       </div>
     </div>
   );

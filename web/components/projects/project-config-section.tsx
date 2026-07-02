@@ -47,11 +47,11 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
       label: text("Default permission mode", "默认权限模式"),
       opts: [
         { v: "", label: text("Not set", "不设") },
-        { v: "ask", label: text("Default", "默认（逐次确认）") },
+        { v: "ask", label: text("Ask permissions", "逐次确认") },
         { v: "acceptEdits", label: text("Accept edits", "接受编辑") },
-        { v: "dontAsk", label: text("Don't Ask", "不再询问") },
-        { v: "bypass", label: text("Bypass Permissions", "绕过权限") },
-        { v: "plan", label: text("Plan Mode", "计划模式") },
+        { v: "plan", label: text("Plan mode", "计划模式") },
+        { v: "auto", label: text("Auto mode", "自动判定") },
+        { v: "bypass", label: text("Bypass permissions", "绕过权限") },
       ],
     },
     {
