@@ -69,11 +69,6 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
     return None
 
 
-def _would_need_approval(tool_name: str, per_tool_required: bool) -> bool:
-    """dontAsk 档判定：这次调用在非 dontAsk 下会不会需要审批。"""
-    return per_tool_required or tool_name in _RISKY_TOOLS
-
-
 def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
     """acceptEdits 档下判断写目标是否安全（工作目录内 + 非危险文件/目录 +
     无 Windows 绕过）。完整规则集在 file_safety.check_path_safety。"""
@@ -169,19 +164,28 @@ def wrap_with_approval(
 
         per_tool_required, _reason = tool_requires_approval(agent_tool, args)
 
-        # ④ dontAsk：本该问的直接拒
-        if mode == "dontAsk":
-            if _would_need_approval(name, per_tool_required):
-                return _denied(f"[denied] dontAsk mode: approval required for {name}")
-            return await orig_execute(call_id, args, cancel, on_update)
-
-        # ⑤ 规则层 allow —— bypass 之后
+        # ④ 规则层 allow —— bypass 之后
         if verdict == "allow":
             return await orig_execute(call_id, args, cancel, on_update)
 
-        # ⑥ acceptEdits：写安全工具自动放行；命令类落审批
+        # ⑤ acceptEdits：写安全工具自动放行；命令类落审批
         if mode == "acceptEdits" and getattr(agent_tool, "_accept_edits_safe", False) \
                 and _path_is_safe(name, args, req):
+            return await orig_execute(call_id, args, cancel, on_update)
+
+        # ⑥ auto：LLM 分类器判定（对齐 CC "Auto mode"）。三级过滤省调用：
+        #    明显安全→放行；明显危险→拒；拿不准→问一次 haiku。
+        if mode == "auto":
+            from openprogram.agent.internals._auto_classifier import (
+                auto_classify_tool, SAFE_AUTO_ALLOWLIST, RISKY_AUTO_DENYLIST,
+            )
+            if name in SAFE_AUTO_ALLOWLIST:
+                return await orig_execute(call_id, args, cancel, on_update)
+            if name in RISKY_AUTO_DENYLIST:
+                return _denied(f"[denied] auto mode: risky tool blocked: {name}")
+            should_block, reason = await auto_classify_tool(name, args)
+            if should_block:
+                return _denied(f"[denied] auto classifier: {reason}")
             return await orig_execute(call_id, args, cancel, on_update)
 
         # ⑦ 弹卡片阻塞等答（default / acceptEdits 的命令类都落这里）

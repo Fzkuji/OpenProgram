@@ -22,7 +22,9 @@ from typing import Any, Optional, Union
 VALID_THINKING = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 # 权限模式规范值（保留驼峰）。见 docs/design/runtime/permission-model.md §2.1。
 # _normalize_permission 做大小写不敏感匹配，所以 "acceptedits" 也能规回 "acceptEdits"。
-VALID_PERMISSION = {"ask", "acceptEdits", "plan", "dontAsk", "bypass"}
+# 对齐 Claude Code 网页端 Mode 菜单：Ask permissions / Accept edits / Plan mode /
+# Auto mode / Bypass permissions。内部值 ask=default档、auto=LLM分类器档。
+VALID_PERMISSION = {"ask", "acceptEdits", "plan", "auto", "bypass"}
 _PERMISSION_BY_LOWER = {m.lower(): m for m in VALID_PERMISSION}
 
 # 工具意图的统一类型：dict（意图）/ list[str]（用户显式精选）/ None
@@ -287,7 +289,7 @@ def _normalize_thinking(value: Any) -> Optional[str]:
 def _normalize_permission(value: Any) -> Optional[str]:
     if value is None:
         return None
-    # 大小写不敏感：驼峰档 acceptEdits/dontAsk 传入任意大小写都规回规范值。
+    # 大小写不敏感：驼峰档 acceptEdits 传入任意大小写都规回规范值。
     return _PERMISSION_BY_LOWER.get(str(value).strip().lower())
 
 

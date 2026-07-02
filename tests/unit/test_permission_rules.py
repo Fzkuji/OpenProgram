@@ -92,11 +92,12 @@ def test_ask_beats_allow():
 def test_camel_modes_valid():
     assert _normalize_permission("acceptEdits") == "acceptEdits"
     assert _normalize_permission("ACCEPTEDITS") == "acceptEdits"
-    assert _normalize_permission("dontask") == "dontAsk"
+    assert _normalize_permission("AUTO") == "auto"
 
 
-def test_all_six_modes_registered():
-    assert VALID_PERMISSION == {"ask", "acceptEdits", "plan", "dontAsk", "bypass"}
+def test_all_modes_registered():
+    # 对齐 Claude Code 网页端 Mode 菜单 5 档。
+    assert VALID_PERMISSION == {"ask", "acceptEdits", "plan", "auto", "bypass"}
 
 
 def test_invalid_mode():
@@ -169,13 +170,23 @@ def test_allow_rule_runs_without_approval_in_ask():
     assert ran["called"]
 
 
-def test_dontask_denies_risky():
-    tool, ran = _make_tool("bash")   # bash is in _RISKY_TOOLS
+def test_auto_denies_risky_without_llm():
+    # auto 档：bash 在 RISKY_AUTO_DENYLIST → 硬规则直接拒，不调 LLM。
+    tool, ran = _make_tool("bash")
     req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
-                      permission_mode="dontAsk")
+                      permission_mode="auto")
     result = _run(tool, req)
     assert _denied(result)
     assert not ran["called"]
+
+
+def test_auto_allows_safe_without_llm():
+    # auto 档：read 在 SAFE_AUTO_ALLOWLIST → 硬规则直接放行，不调 LLM。
+    tool, ran = _make_tool("read")
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      permission_mode="auto")
+    _run(tool, req)
+    assert ran["called"]
 
 
 def test_acceptedits_auto_allows_safe_file_tool(tmp_path, monkeypatch):
