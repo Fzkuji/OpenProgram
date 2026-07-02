@@ -251,3 +251,33 @@ export function highlightPython(code: string): string {
     })
     .join("\n");
 }
+
+/** Relative time like "3m ago" / "3 分钟前". Shared by the Chats and
+ *  Projects pages. `ts` is a unix seconds timestamp. */
+export function formatRelativeTime(ts: number, locale: "en" | "zh"): string {
+  if (!ts) return "";
+  const now = Date.now() / 1000;
+  const diff = Math.max(0, now - ts);
+  if (locale === "zh") {
+    if (diff < 60) return "刚刚";
+    if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+    if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} 天前`;
+    return `${Math.floor(diff / (86400 * 30))} 个月前`;
+  }
+  if (diff < 60) return "just now";
+  if (diff < 3600) {
+    const m = Math.floor(diff / 60);
+    return m === 1 ? "1m ago" : `${m}m ago`;
+  }
+  if (diff < 86400) {
+    const h = Math.floor(diff / 3600);
+    return h === 1 ? "1h ago" : `${h}h ago`;
+  }
+  if (diff < 86400 * 30) {
+    const d = Math.floor(diff / 86400);
+    return d === 1 ? "1d ago" : `${d}d ago`;
+  }
+  const mo = Math.floor(diff / (86400 * 30));
+  return mo === 1 ? "1mo ago" : `${mo}mo ago`;
+}

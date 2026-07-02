@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./chats-page.module.css";
 import { useTranslation, type Locale } from "@/lib/i18n";
+import { formatRelativeTime } from "@/lib/format-utils/format";
 import {
   type AnimatedNavIconHandle,
   ClockIcon,
@@ -408,33 +409,6 @@ function CustomSelect<T extends string>({
   );
 }
 
-function formatRelativeTime(ts: number, locale: Locale): string {
-  if (!ts) return "";
-  const now = Date.now() / 1000;
-  const diff = Math.max(0, now - ts);
-  if (locale === "zh") {
-    if (diff < 60) return "刚刚";
-    if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
-    if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} 天前`;
-    return `${Math.floor(diff / (86400 * 30))} 个月前`;
-  }
-  if (diff < 60) return "just now";
-  if (diff < 3600) {
-    const m = Math.floor(diff / 60);
-    return m === 1 ? "1m ago" : `${m}m ago`;
-  }
-  if (diff < 86400) {
-    const h = Math.floor(diff / 3600);
-    return h === 1 ? "1h ago" : `${h}h ago`;
-  }
-  if (diff < 86400 * 30) {
-    const d = Math.floor(diff / 86400);
-    return d === 1 ? "1d ago" : `${d}d ago`;
-  }
-  const mo = Math.floor(diff / (86400 * 30));
-  return mo === 1 ? "1mo ago" : `${mo}mo ago`;
-}
 
 /** One left-rail filter row. "All chats" shows the chat-bubble glyph; the
  *  "by recency" buckets share the clock. The animated icon is driven from

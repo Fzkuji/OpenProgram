@@ -13,6 +13,7 @@ import styles from "./projects-page.module.css";
 import { useTranslation } from "@/lib/i18n";
 import { FoldersIcon, FolderPlusIcon } from "@/components/animated-icons";
 import { wsRequest } from "@/lib/net/ws-request";
+import { formatRelativeTime } from "@/lib/format-utils/format";
 import { PermissionsSection } from "./permissions-section";
 import { ProjectConfigSection } from "./project-config-section";
 
@@ -39,13 +40,14 @@ function cls(...xs: (string | false | undefined)[]) {
 }
 
 export function ProjectsPage() {
-  const { text } = useTranslation();
+  const { text, locale } = useTranslation();
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("settings");
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const refresh = useCallback(async () => {
     for (let i = 0; i < 10; i++) {
@@ -73,6 +75,14 @@ export function ProjectsPage() {
     () => projects.find((p) => p.id === selectedId) || null,
     [projects, selectedId],
   );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter(
+      (p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q),
+    );
+  }, [projects, query]);
 
   const loadSessions = useCallback(async (pid: string) => {
     const d = await wsRequest<{ sessions: SessionSummary[] }>(
@@ -108,18 +118,20 @@ export function ProjectsPage() {
     refresh();
   }, [refresh]);
 
-  const relTime = (ts?: number) => {
-    if (!ts) return "";
-    const d = new Date(ts * 1000);
-    return d.toLocaleDateString() + " " +
-      d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  };
-
   return (
     <div className="main">
       <div className={fx.view}>
         <div className={fx.topbar}>
           <span className={fx.title}>{text("Projects", "项目")}</span>
+          <div className={fx.toolbar}>
+            <input
+              type="text"
+              className={fx.search}
+              placeholder={text("Search projects...", "搜索项目...")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
         </div>
 
         {error && <div className={styles.errorBar}>{error}</div>}
@@ -127,7 +139,7 @@ export function ProjectsPage() {
         <div className={fx.body}>
           {/* 左栏：项目列表（复用 Functions 的 profilesNav） */}
           <div className={fx.profilesNav}>
-            {projects.map((p) => (
+            {filtered.map((p) => (
               <div
                 key={p.id}
                 className={cls(fx.profileItem, p.id === selectedId && fx.active)}
@@ -201,16 +213,26 @@ export function ProjectsPage() {
                       <div className={fx.empty}>{text("No chats in this project.", "该项目还没有会话。")}</div>
                     ) : (
                       <ul className={styles.sessionList}>
-                        {sessions.map((s) => (
-                          <li
-                            key={s.id}
-                            className={styles.sessionRow}
-                            onClick={() => router.push("/s/" + s.id)}
-                          >
-                            <span className={styles.sessionTitle}>{s.title}</span>
-                            <span className={styles.sessionMeta}>{relTime(s.created_at)}</span>
-                          </li>
-                        ))}
+                        {sessions.map((s) => {
+                          const title = s.title || s.id;
+                          const initial = title.replace(/^\s+/, "").slice(0, 1).toUpperCase() || "?";
+                          return (
+                            <li
+                              key={s.id}
+                              className={styles.sessionRow}
+                              onClick={() => router.push("/s/" + s.id)}
+                            >
+                              <span className={styles.sessionAvatar}>{initial}</span>
+                              <div className={styles.sessionBody}>
+                                <div className={styles.sessionTitle}>{title}</div>
+                                <div className={styles.sessionMeta}>{s.id.slice(0, 12)}</div>
+                              </div>
+                              <span className={styles.sessionTime}>
+                                {formatRelativeTime(s.created_at ?? 0, locale)}
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
                   </div>
