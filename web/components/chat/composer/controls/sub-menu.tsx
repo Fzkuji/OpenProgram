@@ -33,18 +33,7 @@ export function SubMenu({
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number; bridge: number } | null>(null);
-  const [panelH, setPanelH] = useState(0);
-
-  // 面板挂载/尺寸变化后测高，触发重定位（首帧高度未知，这里补上）。
-  useLayoutEffect(() => {
-    const panel = panelRef.current;
-    if (!open || !panel) return;
-    const ro = new ResizeObserver(() => setPanelH(panel.offsetHeight));
-    ro.observe(panel);
-    setPanelH(panel.offsetHeight);
-    return () => ro.disconnect();
-  }, [open]);
+  const [pos, setPos] = useState<{ left: number; top: number; bridge: number; maxH: number } | null>(null);
 
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
@@ -53,14 +42,12 @@ export function SubMenu({
     const a = anchor.getBoundingClientRect();
     const left = a.right + GAP;
     const bridge = a.right;          // 桥从触发行右边缘一直到子面板左边
-    // 默认顶对齐触发行、向下展开；若向下放不下，则底部对齐触发行底部、向上
-    // 展开（紧挨触发行，不飘到屏幕顶）。
-    let top = a.top;
-    if (panelH && top + panelH > window.innerHeight - 8) {
-      top = Math.max(8, a.bottom - panelH);
-    }
-    setPos({ left, top, bridge });
-  }, [open, anchorRef, panelH]);
+    // 始终顶部对齐触发行（子面板从这一行往右、往下长）。放不下就限高滚动，
+    // 绝不上移错位——保证子面板顶边永远和触发行对齐。
+    const top = Math.max(8, a.top);
+    const maxH = window.innerHeight - top - 8;
+    setPos({ left, top, bridge, maxH });
+  }, [open, anchorRef]);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -86,7 +73,16 @@ export function SubMenu({
           }}
         />
       )}
-      <div ref={panelRef} className={className} style={{ minWidth, whiteSpace: "nowrap" }}>
+      <div
+        ref={panelRef}
+        className={className}
+        style={{
+          minWidth,
+          whiteSpace: "nowrap",
+          maxHeight: ready ? pos.maxH : undefined,
+          overflowY: "auto",
+        }}
+      >
         {children}
       </div>
     </div>,

@@ -1365,7 +1365,7 @@ export function Composer() {
                           );
                         }}
                       >
-                          <div style={{ padding: "4px 12px", fontSize: "11px",
+                          <div style={{ padding: "4px 8px", fontSize: "11px",
                             color: "var(--text-muted)", textTransform: "uppercase",
                             letterSpacing: "0.05em" }}>
                             {text("Tool Profile", "工具配置")}
