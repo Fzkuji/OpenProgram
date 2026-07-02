@@ -46,8 +46,8 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
       key: "permission_mode",
       label: text("Default permission mode", "默认权限模式"),
       opts: [
-        { v: "", label: text("Use global default", "跟随全局默认") },
-        { v: "ask", label: text("Default", "默认") },
+        { v: "", label: text("Not set", "不设") },
+        { v: "ask", label: text("Ask each step", "逐次确认") },
         { v: "acceptEdits", label: text("Accept Edits", "接受编辑") },
         { v: "dontAsk", label: text("Don't Ask", "不再询问") },
         { v: "bypass", label: text("Bypass", "绕过权限") },
@@ -58,7 +58,7 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
       key: "thinking_effort",
       label: text("Default thinking", "默认思考力度"),
       opts: [
-        { v: "", label: text("Use global default", "跟随全局默认") },
+        { v: "", label: text("Not set", "不设") },
         { v: "off", label: "off" },
         { v: "low", label: "low" },
         { v: "medium", label: "medium" },
@@ -71,8 +71,8 @@ export function ProjectConfigSection({ projectId }: { projectId: string }) {
     <div>
       <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
         {text(
-          "New chats in this project start with these. \"Use global default\" means fall back to the app-wide setting.",
-          "该项目的新会话默认用这些设置。“跟随全局默认”= 用应用的全局设置。",
+          "New chats in this project start with these. \"Not set\" leaves it at the built-in default.",
+          "该项目的新会话默认用这些设置。“不设”= 用内置默认。",
         )}
       </p>
       {rows.map((r) => (
