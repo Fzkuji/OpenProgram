@@ -27,7 +27,7 @@ const MODE_LABELS: { value: PermissionMode; en: string; zh: string; key?: string
   { value: "acceptEdits", en: "Accept edits", zh: "接受编辑", key: "2" },
   { value: "plan", en: "Plan mode", zh: "计划模式", key: "3" },
   { value: "auto", en: "Auto mode", zh: "自动判定", key: "4" },
-  { value: "bypass", en: "Bypass permissions", zh: "绕过权限" },
+  { value: "bypass", en: "Bypass permissions", zh: "绕过权限", key: "5" },
 ];
 
 const DEFAULT_MODE: PermissionMode = "ask";
