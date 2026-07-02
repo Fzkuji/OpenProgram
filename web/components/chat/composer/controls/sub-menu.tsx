@@ -40,7 +40,7 @@ export function SubMenu({
       <Popover.Portal>
         <Popover.Content
           side="right"
-          align="center"
+          align="end"
           sideOffset={6}
           collisionPadding={8}
           onOpenAutoFocus={(e) => e.preventDefault()}
