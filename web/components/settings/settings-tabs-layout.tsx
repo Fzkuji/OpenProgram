@@ -7,7 +7,7 @@ import styles from "./settings-page.module.css";
 import { prefetchSettings } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 
-export type SettingsTab = "providers" | "usage" | "search" | "channels" | "permissions" | "general" | "system";
+export type SettingsTab = "providers" | "usage" | "search" | "channels" | "general" | "system";
 
 /**
  * Shell for the Settings tabs — topbar, sticky nav column, content
@@ -39,7 +39,6 @@ export function SettingsTabsLayout({
     if (pathname.startsWith("/settings/usage")) return "usage";
     if (pathname.startsWith("/settings/search")) return "search";
     if (pathname.startsWith("/settings/channels")) return "channels";
-    if (pathname.startsWith("/settings/permissions")) return "permissions";
     if (pathname.startsWith("/settings/general")) return "general";
     if (pathname.startsWith("/settings/system")) return "system";
     return "providers";
@@ -92,15 +91,6 @@ export function SettingsTabsLayout({
               }
             >
               {t("settings.tab.channels")}
-            </Link>
-            <Link
-              href="/settings/permissions"
-              className={
-                styles.navItem +
-                (active === "permissions" ? " " + styles.active : "")
-              }
-            >
-              {t("settings.tab.permissions")}
             </Link>
             <Link
               href="/settings/general"
