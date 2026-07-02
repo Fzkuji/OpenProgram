@@ -19,12 +19,13 @@ export interface PermissionModeOption {
 }
 
 // 常规档（批准强度，按危险度递增）+ plan 单列（只读，另一维度）。
-// 每档直接说清它做什么（不用 Claude Code 的 "Default" 这种指不明的名）。
+// 英文名照抄 Claude Code 的 title（PermissionMode.ts，含它自身不统一的大小写：
+// "Accept edits" 是小写 e）。中文取能看懂的意译。
 const MODE_LABELS: { value: PermissionMode; en: string; zh: string }[] = [
-  { value: "ask", en: "Ask Each Step", zh: "逐次确认" },
-  { value: "acceptEdits", en: "Accept Edits", zh: "接受编辑" },
+  { value: "ask", en: "Default", zh: "默认（逐次确认）" },
+  { value: "acceptEdits", en: "Accept edits", zh: "接受编辑" },
   { value: "dontAsk", en: "Don't Ask", zh: "不再询问" },
-  { value: "bypass", en: "Bypass", zh: "绕过权限" },
+  { value: "bypass", en: "Bypass Permissions", zh: "绕过权限" },
   { value: "plan", en: "Plan Mode", zh: "计划模式" },
 ];
 

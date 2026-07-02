@@ -1445,7 +1445,8 @@ export function Composer() {
                             bottom: 0,
                             marginBottom: 0,
                             marginLeft: 4,
-                            minWidth: 180,
+                            minWidth: 200,
+                            whiteSpace: "nowrap",
                           }}
                         >
                           {permOptions.map((o) => (
