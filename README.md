@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="docs/images/logo.svg" alt="OpenProgram" width="300">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-lockup-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/logo-lockup-light.png">
+    <img src="docs/images/logo-lockup-dark.png" alt="OpenProgram" width="440">
+  </picture>
 </p>
 
 <p align="center">

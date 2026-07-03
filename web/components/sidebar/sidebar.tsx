@@ -279,10 +279,22 @@ export function Sidebar() {
           }
         >
           <img
-            src="/images/logo.svg"
-            alt="OpenProgram"
-            className="block h-[32px] w-auto"
+            src="/images/logo-mark.svg"
+            alt=""
+            aria-hidden="true"
+            className="block h-[30px] w-[30px] shrink-0"
           />
+          <span
+            className="ml-[9px] text-[19px] font-bold tracking-[-0.01em] whitespace-nowrap"
+            style={{
+              background: "linear-gradient(90deg, #E8EAED 0%, #E8EAED 42%, #3B9EFF 52%, #A855F7 100%)",
+              WebkitBackgroundClip: "text",
+              backgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            OpenProgram
+          </span>
         </div>
         <button
           className={sidebarToggleClass}
