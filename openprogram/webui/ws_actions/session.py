@@ -363,9 +363,9 @@ async def handle_load_session(ws, cmd: dict):
             conv = _s._get_or_create_session(session_id)
     if conv:
         from openprogram.contextgit import (
+            active_branch_chain,
             deepest_leaf,
             head_or_tip,
-            linear_history,
             sibling_index,
             siblings as _siblings,
         )
@@ -392,9 +392,9 @@ async def handle_load_session(ws, cmd: dict):
         # turn never reached step 6's ``update_session(head_id=...)``
         # — common after a worker restart mid-turn), walk up the raw
         # predecessor chain until we hit a row that survived
-        # aggregation. Without this the linear_history call below
-        # returns [] and the page renders the empty Welcome screen
-        # despite the DAG clearly having history.
+        # aggregation. Without this the get_branch(head) walk below
+        # anchors on a folded-away id and returns [], so the page
+        # renders the empty Welcome screen despite real history.
         if head:
             agg_ids = {m.get("id") for m in all_msgs}
             if head not in agg_ids:
@@ -410,53 +410,21 @@ async def handle_load_session(ws, cmd: dict):
                     hops += 1
                 if cur and cur in agg_ids:
                     head = cur
-        chain = linear_history(all_msgs, head) if head else list(all_msgs)
-        # linear_history walks predecessor pointers. Sessions created
-        # via the DAG store (predecessor edges, no predecessor) produce
-        # nodes with caller=None, so linear_history returns only
-        # the head node. Fall back to get_branch which traverses
-        # predecessor and handles ROOT-parented nodes correctly.
-        if len(chain) < len(all_msgs):
-            try:
-                branch_msgs = _db_load.get_branch(session_id)
-                if len(branch_msgs) > len(chain):
-                    chain = branch_msgs
-            except Exception:
-                pass
-        # get_branch may still be incomplete when the conv chain has
-        # gaps (e.g. a manual function call whose code node has no
-        # conv predecessor — chat → fn-call → chat). Fill gaps by
-        # prepending conversation turns (user + assistant reply) that
-        # precede the chain's earliest entry but were missed.
-        if chain:
-            chain_ids = {m.get("id") for m in chain}
-            earliest_ts = min(
-                (m.get("timestamp") or 0) for m in chain
-            )
-            by_id = {m.get("id"): m for m in all_msgs}
-            # Start with ROOT-parented user/assistant messages
-            roots = [
-                m for m in all_msgs
-                if m.get("id") not in chain_ids
-                and (m.get("timestamp") or 0) < earliest_ts
-                and m.get("role") in ("user", "assistant")
-                and (m.get("predecessor") or "ROOT") in ("", "ROOT")
-            ]
-            # Include their conv children (e.g. assistant reply to a
-            # user message) so complete turns are prepended.
-            missing_ids = {m.get("id") for m in roots}
-            missing = list(roots)
-            for m in all_msgs:
-                mid = m.get("id")
-                if mid in chain_ids or mid in missing_ids:
-                    continue
-                cb = m.get("predecessor") or ""
-                if cb in missing_ids and m.get("role") in ("user", "assistant"):
-                    missing.append(m)
-                    missing_ids.add(mid)
-            if missing:
-                missing.sort(key=lambda m: m.get("timestamp") or 0)
-                chain = missing + chain
+        # The active branch is authoritative: get_branch(head) walks
+        # predecessor + caller + ROOT-seq edges (handling fn-call gaps a
+        # pure predecessor walk misses) and yields exactly this branch's
+        # node ids. active_branch_chain keeps only those ids out of the
+        # full, tool-aggregated all_msgs — so the chat shows one branch,
+        # oldest-first, with each assistant's folded tool_calls intact,
+        # and sibling turns from OTHER branches never leak in. Falls back
+        # to a predecessor walk (or all_msgs) if the head is stale/None.
+        try:
+            branch_ids = {
+                m.get("id") for m in (_db_load.get_branch(session_id, head) or [])
+            }
+        except Exception:
+            branch_ids = set()
+        chain = active_branch_chain(all_msgs, branch_ids, head)
         # Splice attach pointer rows (function="attach") into the
         # displayed chain. They hang off a parent message via
         # predecessor — not on the conv chain itself — so

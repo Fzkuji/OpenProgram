@@ -111,6 +111,45 @@ def linear_history(msgs: list[MessageLike], head_id: str) -> list[MessageLike]:
     return chain
 
 
+def active_branch_chain(
+    all_msgs: list[MessageLike],
+    branch_ids: set[str],
+    head: Optional[str],
+) -> list[MessageLike]:
+    """The chat display list for ONE branch: only the active branch's
+    nodes, oldest-first, with tool_calls already folded onto parents.
+
+    ``all_msgs`` is the full, tool-aggregated node set (every branch).
+    ``branch_ids`` is the id set of the active branch as computed by
+    ``SessionDB.get_branch(head)`` — the authoritative "which nodes are
+    on this branch" answer (it walks predecessor + caller + ROOT-seq
+    edges, so it handles fn-call gaps that a pure ``predecessor`` walk
+    misses).
+
+    Why filter ``all_msgs`` by ``branch_ids`` rather than return
+    ``get_branch`` directly: ``get_branch`` walks parent-ward from the
+    head (an assistant/user node) and never descends into tool nodes
+    (which hang off ``caller``, not the conv path), so its rows carry no
+    folded ``tool_calls``. ``all_msgs`` has already folded each tool row
+    into its parent assistant, and that assistant is on the branch — so
+    keeping ``all_msgs`` rows whose id is in ``branch_ids`` yields the
+    branch path WITH its tool calls intact, in seq order (``all_msgs``
+    is seq-sorted).
+
+    Fallbacks (never blank the page):
+    - ``branch_ids`` empty (stale/None head after a mid-turn crash) →
+      walk ``head``'s predecessor chain over ``all_msgs``.
+    - no ``head`` at all → return ``all_msgs`` unchanged.
+    """
+    if branch_ids:
+        filtered = [m for m in all_msgs if m.get("id") in branch_ids]
+        if filtered:
+            return filtered
+    if head:
+        return linear_history(all_msgs, head)
+    return list(all_msgs)
+
+
 def is_ancestor(
     msgs: list[MessageLike], anc_id: str, desc_id: str,
 ) -> bool:

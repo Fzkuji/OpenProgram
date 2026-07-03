@@ -96,8 +96,17 @@ def load_session(agent_id: str, session_id: str) -> Optional[dict]:
     Messages are *aggregated* before returning: each ``role="tool"``
     message is attached to its parent assistant under a ``tool_calls``
     array. ``legacy-conv-map.ts`` renders that shape directly.
+
+    Only the ACTIVE branch is returned. A session's DAG can hold several
+    sibling branches (retries / edits / forks); the head marks which one
+    is current. Returning every node would leak abandoned branches into
+    whatever consumes ``messages`` — the CLI turn history fed to the
+    model, ``/copy``'s "last assistant", the restored ``_sessions``
+    cache. We filter the aggregated set to the head's branch so all
+    surfaces agree on "this conversation" the way the web chat does.
     """
     from openprogram.agent.session_db import default_db
+    from openprogram.contextgit import active_branch_chain, head_or_tip
     db = default_db()
     sess = db.get_session(session_id)
     if sess is None:
@@ -105,6 +114,14 @@ def load_session(agent_id: str, session_id: str) -> Optional[dict]:
 
     raw_messages = db.get_messages(session_id)
     messages = aggregate_tool_messages(raw_messages)
+    head = sess.get("head_id") or head_or_tip(sess, messages)
+    try:
+        branch_ids = {
+            m.get("id") for m in (db.get_branch(session_id, head) or [])
+        }
+    except Exception:
+        branch_ids = set()
+    messages = active_branch_chain(messages, branch_ids, head)
     result = dict(sess)
     result["id"] = session_id
     result["messages"] = messages
