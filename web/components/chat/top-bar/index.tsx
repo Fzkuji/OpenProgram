@@ -13,10 +13,12 @@
  */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
+import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,
@@ -290,18 +292,29 @@ function BranchBadge({
   );
 }
 
-/** Topbar agent-chip label. Normalises to a consistent `provider:model`
- *  form so the chat and exec chips read the same way. The chat model often
- *  arrives already provider-qualified ("openai-codex:gpt-5.5") while the
- *  exec model is bare ("gpt-5.5"); without this the exec chip would drop
- *  the provider that the chat chip shows. */
-function fmtAgentLabel(provider?: string, model?: string): string {
+/** Strip a leading `provider:` qualifier from a model string. The chat
+ *  model often arrives provider-qualified ("openai-codex:gpt-5.5") while
+ *  the exec model is bare ("gpt-5.5"); this reduces both to the bare id. */
+function bareModelId(provider?: string, model?: string): string {
   if (!model) return "";
-  const bare =
-    provider && model.startsWith(provider + ":")
-      ? model.slice(provider.length + 1)
-      : model;
-  return provider ? `${provider}:${bare}` : bare;
+  return provider && model.startsWith(provider + ":")
+    ? model.slice(provider.length + 1)
+    : model;
+}
+
+/** Topbar agent-chip label: the model's display name (e.g. "GPT-5.5",
+ *  "Claude Opus 4.8") — NOT the provider prefix or the lowercase id.
+ *  Looks the bare id up in the enabled-models list (which carries each
+ *  model's `name`); falls back to the bare id when the model isn't in
+ *  that list (custom / not-yet-enabled). */
+function fmtAgentLabel(
+  provider: string | undefined,
+  model: string | undefined,
+  nameById: Map<string, string>,
+): string {
+  const bare = bareModelId(provider, model);
+  if (!bare) return "";
+  return nameById.get(`${provider ?? ""}:${bare}`) ?? nameById.get(bare) ?? bare;
 }
 
 function AgentBadge({
@@ -337,6 +350,24 @@ function AgentBadge({
     setOpen(next);
   }
 
+  // Enabled-models list (shared cache with the AgentSelector dropdown —
+  // same queryKey, so this adds no extra fetch) → id-to-display-name map
+  // so the chip shows "GPT-5.5" instead of "openai-codex:gpt-5.5". Keyed
+  // both by "provider:id" and bare "id" for whichever form the chip has.
+  const { data: enabledModels } = useQuery({
+    queryKey: ["models-enabled"],
+    queryFn: api.listEnabledModels,
+  });
+  const nameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const mdl of enabledModels ?? []) {
+      if (!mdl.name) continue;
+      m.set(`${mdl.provider}:${mdl.id}`, mdl.name);
+      m.set(mdl.id, mdl.name);
+    }
+    return m;
+  }, [enabledModels]);
+
   // Tooltip carries the "what is this chip" intro, so the chip itself
   // shows only a glyph — plus the model name when one is set.
   const iconRef = useRef<AnimatedNavIconHandle>(null);
@@ -344,7 +375,7 @@ function AgentBadge({
   // Distinct glyph per role: message bubble = chat model, terminal =
   // execution / tool-running model. Both animated (pqoqubbw set).
   const Icon = kind === "chat" ? MessageCircleIcon : TerminalIcon;
-  const label = fmtAgentLabel(provider, model);
+  const label = fmtAgentLabel(provider, model, nameById);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <HoverTip label={tooltip}>
