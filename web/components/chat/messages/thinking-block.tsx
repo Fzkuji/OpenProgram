@@ -45,7 +45,7 @@ export function ThinkingBlock({
     } else { done(); }
   }
   return (
-    <div className="inline-tree" data-collapsed={collapsed ? "1" : "0"}>
+    <div className="inline-tree is-thinking" data-collapsed={collapsed ? "1" : "0"}>
       <div
         className="inline-tree-header"
         onClick={() => { userToggled.current = true; setCollapsed((c) => !c); }}

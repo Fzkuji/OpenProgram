@@ -2044,14 +2044,24 @@
 
 /* Thinking body — paragraph of text the model produced while
  * reasoning. Slightly muted vs the chat-text content. */
+/* The .inline-tree shell sets font-family: var(--font-mono) because it
+   was built for the execution/tool/DAG cards, whose headers are tool
+   and function NAMES and whose bodies are JSON / file paths — mono is
+   right there. The Thinking card reuses the same shell but is natural
+   language (both the "Thinking" header and the reasoning prose), so it
+   should read as sans. `.is-thinking` is added only to the Thinking
+   card (thinking-block.tsx), never to tool/runtime/DAG cards, so this
+   override is scoped to Thinking and leaves the mono shell intact
+   everywhere else. */
+.inline-tree.is-thinking,
+.inline-tree.is-thinking .inline-tree-header,
+.inline-tree.is-thinking .inline-tree-script {
+  font-family: var(--font-sans);
+}
+
 .inline-tree-body .thinking-text {
   word-wrap: break-word;
   color: var(--text-secondary);
-  /* The .inline-tree shell sets font-family: var(--font-mono) because
-     it was built for the execution/tool tree (tool names, file paths).
-     Thinking is prose reasoning, not code — override back to the sans
-     body font so it reads like normal text, matching the assistant's
-     reply below it. */
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.55;
