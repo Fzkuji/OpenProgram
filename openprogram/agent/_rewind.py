@@ -38,6 +38,13 @@ def list_rewind_points(session_id: str, limit: int = 10) -> list[dict[str, Any]]
         if node.role != "user":
             continue
         meta = node.metadata or {}
+        # ROOT is a synthetic user node (empty output), not a real turn —
+        # never a rewind target. Offering it let a user rewind "to the
+        # beginning", which marks ROOT itself rewound and leaves head
+        # pointing at a dead node (rewind_to's new_head loop finds no
+        # earlier seq).
+        if meta.get("display") == "root":
+            continue
         if meta.get("rewound"):
             continue
         if len(points) >= limit:
@@ -144,9 +151,14 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
             except Exception:
                 pass
 
-    if new_head is not None:
-        idx.set_head(new_head)
-        store._persist_meta(git, idx)
+    # Unconditional: new_head is None only when the target had no earlier
+    # node (rewind-to-the-very-start). Head must then become None (empty
+    # session) rather than staying on a now-rewound node — a stale head on
+    # a rewound node would make the next turn anchor its predecessor to a
+    # dead node. set_head accepts None. list_rewind_points no longer
+    # offers ROOT, so this is defence-in-depth for any other caller.
+    idx.set_head(new_head)
+    store._persist_meta(git, idx)
 
     try:
         store.commit_turn(session_id, "rewind")
