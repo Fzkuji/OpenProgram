@@ -147,7 +147,7 @@ function PendingReplyIndicator() {
         className="pending-body"
         style={{ paddingLeft: 36 }}
       >
-        <span className="indicator-dot pulse-scale" aria-hidden="true" />
+        <span className="thinking-spinner" aria-hidden="true" />
         <span className="pending-label">{text("thinking…", "思考中…")}</span>
       </div>
     </div>

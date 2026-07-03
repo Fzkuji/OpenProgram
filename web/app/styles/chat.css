@@ -1019,6 +1019,52 @@
   0%, 100% { transform: scale(0.85); opacity: 0.9; }
   50%      { transform: scale(1.15); }
 }
+/* ===== thinking-spinner — "a bubble orbiting inside a fixed ring" =====
+ * Replaces the old orange pulsing dot on the "thinking…" line. The
+ * outer ring is a FIXED blue→purple gradient — it does NOT breathe or
+ * change size (calm and tidy). A small solid bubble orbits along the
+ * inside of the ring to signal work in progress. Echoes the logo. */
+.thinking-spinner {
+  display: inline-block;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+/* fixed gradient ring */
+.thinking-spinner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 180deg, #3B9EFF, #A855F7, #3B9EFF);
+  -webkit-mask: radial-gradient(circle, transparent 6.2px, #000 6.6px);
+  mask: radial-gradient(circle, transparent 6.2px, #000 6.6px);
+}
+/* the orbiting bubble: a small solid disc pinned to the top of the
+   spinner, rotated about the spinner's center so it travels around the
+   inside of the ring. transform-origin is the geometric center of the
+   18x18 box relative to the 5x5 bubble that sits at the top. */
+.thinking-spinner::after {
+  content: "";
+  position: absolute;
+  top: 1.5px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #C6A6F7, #8A46D8);
+  /* center of the 18px box is 7.5px below this dot's center (1.5+2.5=4 -> 9) */
+  transform-origin: 2.5px 7.5px;
+  animation: thinkingOrbit 1.15s linear infinite;
+}
+@keyframes thinkingOrbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 .typing-indicator .dot {
   width: 8px;
   height: 8px;
