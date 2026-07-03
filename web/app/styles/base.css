@@ -34,10 +34,20 @@
      differentiates the two without competing on height. */
   --ui-button-h: 30px;
   --ui-button-radius: 8px;
-  --font-mono: var(--font-jetbrains-mono), 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
-  /* SSR default = OS-native (system). Runtime inline script in
-     layout.tsx overrides per agentic_font in localStorage. */
-  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  /* No `var(--font-jetbrains-mono)` lead: that var is never defined
+     (next/font was removed, see layout.tsx). A `var()` with no
+     fallback that resolves to nothing makes the WHOLE declaration
+     invalid-at-computed-value-time, collapsing --font-mono to empty
+     and dropping every mono column to the browser default. Start the
+     chain at real, always-present font names. */
+  --font-mono: 'JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', ui-monospace, monospace;
+  /* SSR default. The runtime inline script in layout.tsx overrides
+     this per agentic_font in localStorage, but it can lose the race
+     with first paint on a cold load — so this SSR value must already
+     be a valid font stack, NOT `var(--font-inter), ...`. That var is
+     never defined; leading with it invalidated the whole declaration
+     and first paint fell back to Times before the script caught up. */
+  --font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
 
   /* Accent colors (shared)
      ---------------------------------------------------------------
