@@ -1,0 +1,98 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B9EFF"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3B9EFF"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3B9EFF" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#3B9EFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#A855F7" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#A855F7" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="1600" height="640" rx="28" fill="#141416"/>
+  <rect x="1" y="1" width="1598" height="638" rx="27" fill="none" stroke="#2A2A30" stroke-width="1.5"/>
+  <ellipse cx="1150" cy="250" rx="430" ry="330" fill="url(#glow)"/>
+  <ellipse cx="1300" cy="470" rx="360" ry="300" fill="url(#glow2)"/>
+
+  <!-- index marker -->
+  <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">01 / 03</text>
+
+  <!-- title -->
+  <text x="78" y="196" font-family="Instrument Sans" font-weight="700" font-size="72" fill="#F5F5F7">DAG Context</text>
+
+  <!-- mechanism -> capability -->
+  <text x="80" y="258" font-family="Geist Mono" font-size="23" fill="#8A8A96">the shared context model that unlocks</text>
+  <text x="80" y="312" font-family="Instrument Sans" font-weight="700" font-size="40" fill="url(#bp)">Native Multi-agent Systems</text>
+
+  <!-- body copy -->
+  <text x="80" y="392" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">Every user, LLM, and function call is one node on a single flat</text>
+  <text x="80" y="428" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">DAG. Each <tspan font-family="Geist Mono" font-size="22" fill="#7FC4FF">@agentic_function</tspan> declares in one line what</text>
+  <text x="80" y="464" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">context it pulls in and what it exposes back out.</text>
+
+  <text x="80" y="528" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">Context is an addressable node, not a private buffer — so fork,</text>
+  <text x="80" y="564" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">spawn, cross-session messaging, and worktree isolation all</text>
+  <text x="80" y="600" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">fall out for free.</text>
+
+  <!-- ===== DAG diagram on the right ===== -->
+  <g transform="translate(1000,150)">
+    <!-- edges: clean down-then-curve trunk with two spawns -->
+    <g stroke="url(#edge)" stroke-width="3.5" fill="none">
+      <!-- trunk root -> t1 -> t2 -->
+      <path d="M40 44 L40 119"/>
+      <path d="M40 141 L40 229"/>
+      <!-- spawn A off t1 -->
+      <path d="M40 130 C130 130, 150 200, 250 200"/>
+      <!-- spawn B off t2 -->
+      <path d="M40 240 C200 240, 300 330, 430 330"/>
+      <!-- sub-call under A -->
+      <path d="M250 200 C250 270, 320 290, 360 330"/>
+    </g>
+    <!-- cross-branch async message A -> B -->
+    <path d="M262 190 C360 130, 430 240, 428 316" stroke="#C9A6FF" stroke-width="2.4" stroke-dasharray="7 8" fill="none" opacity="0.8"/>
+    <text x="470" y="150" font-family="Geist Mono" font-size="16" fill="#C9A6FF" text-anchor="end" opacity="0.95">message_branch</text>
+
+    <!-- node glows -->
+    <g filter="url(#soft)" opacity="0.6">
+      <circle cx="40" cy="30" r="16" fill="#3B9EFF"/>
+      <circle cx="250" cy="200" r="14" fill="#6AB0FF"/>
+      <circle cx="430" cy="330" r="15" fill="#A855F7"/>
+    </g>
+
+    <!-- nodes -->
+    <circle cx="40" cy="30" r="14" fill="#141416" stroke="url(#bp)" stroke-width="4"/>
+    <text x="66" y="26" font-family="Geist Mono" font-size="15" fill="#8A8A96">root</text>
+
+    <circle cx="40" cy="130" r="11" fill="#3B9EFF"/>
+    <circle cx="40" cy="240" r="11" fill="#3B9EFF"/>
+
+    <circle cx="250" cy="200" r="13" fill="#6AB0FF"/>
+    <text x="250" y="178" font-family="Geist Mono" font-size="15" fill="#9A9AA6" text-anchor="middle">agent A</text>
+
+    <circle cx="360" cy="330" r="10" fill="#8FCBFF"/>
+    <text x="360" y="362" font-family="Geist Mono" font-size="14" fill="#6E6E7A" text-anchor="middle">sub-call</text>
+
+    <circle cx="430" cy="330" r="13" fill="#A855F7"/>
+    <text x="456" y="326" font-family="Geist Mono" font-size="15" fill="#9A9AA6">agent B</text>
+
+    <!-- expose / render_range annotation card -->
+    <g transform="translate(70,398)">
+      <rect x="0" y="0" width="360" height="88" rx="12" fill="#1C1C22" stroke="#33333B" stroke-width="1.5"/>
+      <text x="20" y="34" font-family="Geist Mono" font-size="17" fill="#7FC4FF">expose = "io"</text>
+      <text x="20" y="62" font-family="Geist Mono" font-size="17" fill="#C9A6FF">render_range = {"callers": 0}</text>
+      <text x="340" y="80" font-family="Instrument Sans" font-size="13" fill="#6E6E7A" font-style="italic" text-anchor="end">one line in · one line out</text>
+    </g>
+  </g>
+</svg>

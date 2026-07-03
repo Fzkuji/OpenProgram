@@ -1,0 +1,94 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B9EFF"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <linearGradient id="bus" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3B9EFF"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3B9EFF" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#3B9EFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#A855F7" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#A855F7" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="640" rx="28" fill="#141416"/>
+  <rect x="1" y="1" width="1598" height="638" rx="27" fill="none" stroke="#2A2A30" stroke-width="1.5"/>
+  <ellipse cx="1150" cy="250" rx="430" ry="330" fill="url(#glow)"/>
+  <ellipse cx="1300" cy="470" rx="360" ry="300" fill="url(#glow2)"/>
+
+  <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">03 / 03</text>
+
+  <text x="78" y="196" font-family="Instrument Sans" font-weight="700" font-size="66" fill="#F5F5F7">Event Infrastructure</text>
+
+  <text x="80" y="258" font-family="Geist Mono" font-size="23" fill="#8A8A96">a unified event bus — the foundation for</text>
+  <text x="80" y="312" font-family="Instrument Sans" font-weight="700" font-size="40" fill="url(#bp)">Proactive Agents</text>
+
+  <text x="80" y="392" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">One process-wide bus. The agent loop, auth, context,</text>
+  <text x="80" y="428" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">channels, and memory all emit onto it; anything can</text>
+  <text x="80" y="464" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">subscribe by event type.</text>
+
+  <text x="80" y="528" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">It's the substrate to build on: a proactive policy layer that</text>
+  <text x="80" y="564" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">watches the stream and acts is the bus's first consumer —</text>
+  <text x="80" y="600" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">the foundation is in place for you to build proactivity on.</text>
+
+  <!-- ===== event bus diagram ===== -->
+  <g transform="translate(980,120)">
+    <!-- sources (left column) emitting into the bus -->
+    <g font-family="Geist Mono" font-size="15" fill="#9A9AA6">
+      <text x="0" y="30" text-anchor="start">agent loop</text>
+      <text x="0" y="90" text-anchor="start">auth</text>
+      <text x="0" y="150" text-anchor="start">context</text>
+      <text x="0" y="210" text-anchor="start">channels</text>
+      <text x="0" y="270" text-anchor="start">memory</text>
+    </g>
+    <!-- source nodes -->
+    <g>
+      <circle cx="130" cy="25" r="8" fill="#3B9EFF"/>
+      <circle cx="130" cy="85" r="8" fill="#4FA8FF"/>
+      <circle cx="130" cy="145" r="8" fill="#6E9AF7"/>
+      <circle cx="130" cy="205" r="8" fill="#8C86F0"/>
+      <circle cx="130" cy="265" r="8" fill="#A855F7"/>
+    </g>
+    <!-- emit lines converging to the bus spine at x=300 -->
+    <g stroke="url(#bus)" stroke-width="2.6" fill="none" opacity="0.85">
+      <path d="M138 25 C220 25, 240 145, 300 145"/>
+      <path d="M138 85 C220 85, 250 145, 300 145"/>
+      <path d="M138 145 L300 145"/>
+      <path d="M138 205 C220 205, 250 145, 300 145"/>
+      <path d="M138 265 C220 265, 240 145, 300 145"/>
+    </g>
+
+    <!-- the bus spine (vertical bar) -->
+    <g filter="url(#soft)" opacity="0.5"><rect x="296" y="20" width="10" height="250" rx="5" fill="#7F88FF"/></g>
+    <rect x="298" y="20" width="6" height="250" rx="3" fill="url(#bp)"/>
+    <text x="301" y="300" font-family="Geist Mono" font-size="15" fill="#8A8A96" text-anchor="middle">event bus</text>
+
+    <!-- Event envelope callout -->
+    <g transform="translate(240,330)">
+      <rect x="0" y="0" width="360" height="86" rx="12" fill="#1C1C22" stroke="#33333B" stroke-width="1.5"/>
+      <text x="20" y="32" font-family="Geist Mono" font-size="16" fill="#7FC4FF">Event(type, payload, ts)</text>
+      <text x="20" y="60" font-family="Geist Mono" font-size="15" fill="#9A9AA6">+ id · origin · metadata</text>
+    </g>
+
+    <!-- subscriber: proactive policy (dashed = pending activation) -->
+    <g stroke="#C9A6FF" stroke-width="2.6" stroke-dasharray="7 8" fill="none" opacity="0.85">
+      <path d="M304 145 C400 145, 420 110, 470 110"/>
+    </g>
+    <g transform="translate(470,78)">
+      <rect x="0" y="0" width="150" height="64" rx="12" fill="#1C1C22" stroke="#4A3A6B" stroke-width="1.5"/>
+      <text x="75" y="30" font-family="Instrument Sans" font-weight="700" font-size="17" fill="#C9A6FF" text-anchor="middle">proactive</text>
+      <text x="75" y="52" font-family="Instrument Sans" font-size="14" fill="#8A8A96" text-anchor="middle">your policy layer</text>
+    </g>
+    <text x="545" y="162" font-family="Geist Mono" font-size="13" fill="#6E6E7A" text-anchor="middle" font-style="italic">subscribe &amp; act</text>
+  </g>
+</svg>

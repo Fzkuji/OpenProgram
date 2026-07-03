@@ -1,0 +1,85 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B9EFF"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3B9EFF" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#3B9EFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#A855F7" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#A855F7" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="640" rx="28" fill="#141416"/>
+  <rect x="1" y="1" width="1598" height="638" rx="27" fill="none" stroke="#2A2A30" stroke-width="1.5"/>
+  <ellipse cx="1150" cy="250" rx="430" ry="330" fill="url(#glow)"/>
+  <ellipse cx="1300" cy="470" rx="360" ry="300" fill="url(#glow2)"/>
+
+  <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">02 / 03</text>
+
+  <text x="78" y="196" font-family="Instrument Sans" font-weight="700" font-size="72" fill="#F5F5F7">Agentic Workflow</text>
+
+  <text x="80" y="258" font-family="Geist Mono" font-size="23" fill="#8A8A96">code orchestrates the LLM to build</text>
+  <text x="80" y="312" font-family="Instrument Sans" font-weight="700" font-size="40" fill="url(#bp)">Trustworthy &amp; Self-evolving Agents</text>
+
+  <text x="80" y="392" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">Python drives the flow; the LLM reasons only when asked.</text>
+  <text x="80" y="428" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">Code gates enforce the critical steps — a failed check makes</text>
+  <text x="80" y="464" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">the model re-decide, so it can't skip validation.</text>
+
+  <text x="80" y="528" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">The agent writes and fixes its own <tspan font-family="Geist Mono" font-size="22" fill="#7FC4FF">@agentic_function</tspan>s</text>
+  <text x="80" y="564" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">with ordinary file edits — a watcher hot-loads them, so new</text>
+  <text x="80" y="600" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">tools are live on the next turn. No create() / fix() calls.</text>
+
+  <!-- ===== workflow diagram: vertical pipeline with a gate ===== -->
+  <g transform="translate(1030,120)">
+    <!-- connecting spine -->
+    <g stroke="url(#bp)" stroke-width="3.5" fill="none">
+      <path d="M180 44 L180 108"/>
+      <path d="M180 152 L180 216"/>
+      <path d="M180 260 L180 324"/>
+      <path d="M180 368 L180 432"/>
+    </g>
+
+    <!-- step 1: LLM invoke -->
+    <g transform="translate(60,0)">
+      <rect x="0" y="0" width="240" height="44" rx="10" fill="#1C1C22" stroke="#33333B" stroke-width="1.5"/>
+      <circle cx="26" cy="22" r="7" fill="#3B9EFF"/>
+      <text x="46" y="28" font-family="Geist Mono" font-size="17" fill="#D2D2DA">agent.search()</text>
+    </g>
+    <!-- step 2: LLM invoke -->
+    <g transform="translate(60,108)">
+      <rect x="0" y="0" width="240" height="44" rx="10" fill="#1C1C22" stroke="#33333B" stroke-width="1.5"/>
+      <circle cx="26" cy="22" r="7" fill="#3B9EFF"/>
+      <text x="46" y="28" font-family="Geist Mono" font-size="17" fill="#D2D2DA">agent.select()</text>
+    </g>
+    <!-- step 3: CODE GATE (highlighted) -->
+    <g transform="translate(30,216)">
+      <rect x="0" y="0" width="300" height="44" rx="10" fill="#17241C" stroke="#2E7D5B" stroke-width="2"/>
+      <path d="M20 22 l6 7 l11 -14" stroke="#37D399" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="50" y="28" font-family="Geist Mono" font-size="16" fill="#7FE3B8">code gate: validate</text>
+    </g>
+    <!-- retry loop back to step 1 -->
+    <path d="M30 238 C-30 238, -30 22, 55 22" stroke="#E0A93B" stroke-width="2.4" stroke-dasharray="6 7" fill="none" opacity="0.85"/>
+    <text x="-40" y="135" font-family="Geist Mono" font-size="15" fill="#E0A93B" text-anchor="middle" transform="rotate(-90,-40,135)">fail &#8594; re-decide</text>
+
+    <!-- step 4: LLM invoke confirm -->
+    <g transform="translate(60,324)">
+      <rect x="0" y="0" width="240" height="44" rx="10" fill="#1C1C22" stroke="#33333B" stroke-width="1.5"/>
+      <circle cx="26" cy="22" r="7" fill="#3B9EFF"/>
+      <text x="46" y="28" font-family="Geist Mono" font-size="17" fill="#D2D2DA">agent.confirm()</text>
+    </g>
+    <!-- step 5: return -->
+    <g transform="translate(60,432)">
+      <rect x="0" y="0" width="240" height="44" rx="10" fill="#1C1C22" stroke="#3A2E52" stroke-width="1.5"/>
+      <circle cx="26" cy="22" r="7" fill="#A855F7"/>
+      <text x="46" y="28" font-family="Geist Mono" font-size="17" fill="#D2D2DA">return result</text>
+    </g>
+  </g>
+</svg>
