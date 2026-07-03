@@ -57,9 +57,7 @@ Because context is an **addressable node rather than a per-agent buffer**, multi
 
 **Python drives the flow; the LLM reasons only when asked.** Critical steps become **code gates** — the model's choice is parsed and validated by code, and a failed check makes it *re-decide* instead of quietly moving on, so validation can't be skipped. Every call is a retryable, observable DAG node. That's what makes execution *trustworthy*: the guarantees live in code, not in the model's goodwill.
 
-*Self-evolving* is a mechanism, not a black box: the agent writes and fixes its own `@agentic_function`s with **ordinary file-edit tools**, a file watcher hot-loads them, and the new tool is live on the next turn — no dedicated `create()` / `fix()` machinery. The example below shows the reliability gap this closes.
-
-![Skills vs Agentic Workflow on the same task: Skills let the LLM decide the next step and skip a critical check; an agentic workflow has code orchestrate the agent and enforce the validation gate, so the constraint is actually met.](docs/images/why-agentic-workflows-matter.png)
+*Self-evolving* is a mechanism, not a black box: the agent writes and fixes its own `@agentic_function`s with **ordinary file-edit tools**, a file watcher hot-loads them, and the new tool is live on the next turn — no dedicated `create()` / `fix()` machinery.
 
 ### ③ Event Infrastructure — for proactive agents
 
