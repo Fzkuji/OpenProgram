@@ -2047,6 +2047,12 @@
 .inline-tree-body .thinking-text {
   word-wrap: break-word;
   color: var(--text-secondary);
+  /* The .inline-tree shell sets font-family: var(--font-mono) because
+     it was built for the execution/tool tree (tool names, file paths).
+     Thinking is prose reasoning, not code — override back to the sans
+     body font so it reads like normal text, matching the assistant's
+     reply below it. */
+  font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.55;
   /* No own max-height/overflow: the shared .inline-tree-body already scrolls
