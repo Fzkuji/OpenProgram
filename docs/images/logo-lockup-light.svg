@@ -16,7 +16,7 @@
     <clipPath id="op-in"><circle cx="120" cy="120" r="60"/></clipPath>
   </defs>
 
-  <circle cx="120" cy="120" r="63" fill="none" stroke="url(#op-ring)" stroke-width="9"/>
+  <circle cx="120" cy="120" r="63" fill="none" stroke="url(#op-ring)" stroke-width="7"/>
   <g clip-path="url(#op-in)">
     <circle cx="101" cy="103" r="30" fill="url(#op-bA)"/>
     <circle cx="141" cy="131" r="23" fill="url(#op-bB)"/>
@@ -24,6 +24,6 @@
     <circle cx="145" cy="97" r="13" fill="url(#op-bD)"/>
   </g>
 
-  <text x="228" y="122" font-family="Instrument Sans, -apple-system, sans-serif" font-weight="700" font-size="72" fill="url(#op-wm)">OpenProgram</text>
-  <text x="231" y="158" font-family="Geist Mono, ui-monospace, monospace" font-size="20" letter-spacing="4" fill="#5B6472">FINAL SOLUTION TO AGENT</text>
+  <text x="228" y="128" font-family="Instrument Sans, -apple-system, sans-serif" font-weight="700" font-size="72" fill="url(#op-wm)">OpenProgram</text>
+  <text x="231" y="164" font-family="Geist Mono, ui-monospace, monospace" font-size="20" letter-spacing="4" fill="#5B6472">FINAL SOLUTION TO AGENT</text>
 </svg>
