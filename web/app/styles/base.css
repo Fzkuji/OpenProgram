@@ -147,6 +147,12 @@
      pill — pure white on the warm brand colour has too much chroma
      in dark mode. */
   --primary-foreground: #1a1a19;
+  /* Soft danger-tier accents — used for the permission chip + menu so
+     the tier colour reads calm (a step lighter than a saturated
+     success/warning/danger) on the dark surface. */
+  --success-soft: #57b47a;
+  --warning-soft: #e0a54a;
+  --danger-soft: #e05b52;
   color-scheme: dark;
 }
 
@@ -186,6 +192,11 @@
   /* Light mode keeps the white-on-brand convention — the deeper
      burnt orange above is dark enough that white still reads. */
   --primary-foreground: #ffffff;
+  /* Soft danger-tier accents — a touch deeper than the dark-theme set
+     so they hold contrast against the cream light background. */
+  --success-soft: #3f9b64;
+  --warning-soft: #c2841f;
+  --danger-soft: #cc4a41;
   color-scheme: light;
 }
 

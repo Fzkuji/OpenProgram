@@ -43,13 +43,15 @@ import {
 } from "../composer/controls/use-permission-mode";
 import { CHECK, MENU_PANEL, SHORTCUT, itemCls } from "./menu-styles";
 
-// 权限档危险度配色：绿=安全、橙=需留意、红=危险。整行文字用对应颜色。
+// 权限档危险度配色：绿=安全、橙=需留意、红=危险。用柔和的浅色调
+// （比原始 --success/--warning/--danger 淡一档），既当下拉行文字色、
+// 也当顶栏芯片选中态的文字/图标/边框色，所以选完能一眼看出当前档。
 const PERM_COLOR: Record<PermissionMode, string> = {
-  ask: "var(--success, #3a9d5a)",
-  plan: "var(--success, #3a9d5a)",
-  acceptEdits: "var(--warning, #d78a18)",
-  auto: "var(--warning, #d78a18)",
-  bypass: "var(--danger, #d72518)",
+  ask: "var(--success-soft, #57b47a)",
+  plan: "var(--success-soft, #57b47a)",
+  acceptEdits: "var(--warning-soft, #e0a54a)",
+  auto: "var(--warning-soft, #e0a54a)",
+  bypass: "var(--danger-soft, #e05b52)",
 };
 
 export function PermissionBadge() {
@@ -98,6 +100,12 @@ export function PermissionBadge() {
             <span
               id="permissionBadge"
               className="runtime-badge permission-badge"
+              // 芯片文字/图标/边框跟着当前档的柔和色（图标用 currentColor
+              // 继承），选完档一眼可辨；hover/open 态的加深由 CSS 处理。
+              style={{
+                color: PERM_COLOR[mode],
+                borderColor: `color-mix(in srgb, ${PERM_COLOR[mode]} 45%, transparent)`,
+              }}
               onMouseEnter={() => iconRef.current?.startAnimation?.()}
               onMouseLeave={() => iconRef.current?.stopAnimation?.()}
             >
