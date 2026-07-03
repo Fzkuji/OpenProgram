@@ -5,22 +5,19 @@
       <stop offset="1" stop-color="#A855F7"/>
     </linearGradient>
     <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#3B9EFF" stop-opacity="0.26"/>
+      <stop offset="0" stop-color="#3B9EFF" stop-opacity="0.20"/>
       <stop offset="1" stop-color="#3B9EFF" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#A855F7" stop-opacity="0.22"/>
+      <stop offset="0" stop-color="#A855F7" stop-opacity="0.16"/>
       <stop offset="1" stop-color="#A855F7" stop-opacity="0"/>
     </radialGradient>
-    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="6"/>
-    </filter>
   </defs>
 
   <rect width="1600" height="640" rx="28" fill="#141416"/>
   <rect x="1" y="1" width="1598" height="638" rx="27" fill="none" stroke="#2A2A30" stroke-width="1.5"/>
-  <ellipse cx="1150" cy="250" rx="430" ry="330" fill="url(#glow)"/>
-  <ellipse cx="1300" cy="470" rx="360" ry="300" fill="url(#glow2)"/>
+  <ellipse cx="1120" cy="200" rx="430" ry="300" fill="url(#glow)"/>
+  <ellipse cx="1200" cy="500" rx="380" ry="260" fill="url(#glow2)"/>
 
   <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">02 / 03</text>
 
@@ -29,57 +26,110 @@
   <text x="80" y="258" font-family="Geist Mono" font-size="23" fill="#8A8A96">code orchestrates the LLM to build</text>
   <text x="80" y="312" font-family="Instrument Sans" font-weight="700" font-size="40" fill="url(#bp)">Trustworthy &amp; Self-evolving Agents</text>
 
-  <text x="80" y="392" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">Python drives the flow; the LLM reasons only when asked.</text>
-  <text x="80" y="428" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">Code gates enforce the critical steps — a failed check makes</text>
-  <text x="80" y="464" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">the model re-decide, so it can't skip validation.</text>
+  <text x="80" y="392" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">The LLM doesn't free-run — it <tspan font-weight="700" fill="#D2D2DA">proposes a choice</tspan>, and code</text>
+  <text x="80" y="428" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">validates it. A bad pick is bounced back to <tspan font-family="Geist Mono" font-size="22" fill="#E0A93B">re-decide</tspan>, so a</text>
+  <text x="80" y="464" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">workflow can't skip its own checks.</text>
 
-  <text x="80" y="528" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">The agent writes and fixes its own <tspan font-family="Geist Mono" font-size="22" fill="#7FC4FF">@agentic_function</tspan>s</text>
-  <text x="80" y="564" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">with ordinary file edits — a watcher hot-loads them, so new</text>
-  <text x="80" y="600" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">tools are live on the next turn. No create() / fix() calls.</text>
+  <text x="80" y="528" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">And it grows itself: the agent writes an <tspan font-family="Geist Mono" font-size="21" fill="#7FC4FF">@agentic_function</tspan></text>
+  <text x="80" y="564" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">with plain file edits, a watcher hot-loads it, and it's a live</text>
+  <text x="80" y="600" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">tool on the next turn — no create() / fix() machinery.</text>
 
-  <!-- ===== workflow diagram: vertical pipeline with a gate ===== -->
-  <g transform="translate(1030,120)">
-    <!-- connecting spine -->
-    <g stroke="url(#bp)" stroke-width="3.5" fill="none">
-      <path d="M180 44 L180 108"/>
-      <path d="M180 152 L180 216"/>
-      <path d="M180 260 L180 324"/>
-      <path d="M180 368 L180 432"/>
+  <!-- ===== RIGHT: two stacked diagrams ===== -->
+
+  <!-- ==== TOP: trustworthy — LLM proposes, code gate validates, re-decide ==== -->
+  <g transform="translate(892,116)">
+    <text x="0" y="0" font-family="Geist Mono" font-size="14" fill="#3B9EFF" letter-spacing="1.5">TRUSTWORTHY · CODE VALIDATES THE CHOICE</text>
+
+    <!-- step 1: decision.make -->
+    <g>
+      <rect x="0" y="16" width="230" height="44" rx="10" fill="#182430" stroke="#2E4258" stroke-width="1.3"/>
+      <text x="16" y="43" font-family="Geist Mono" font-size="15" fill="#D2D8E0">decision.make(options)</text>
+    </g>
+    <!-- arrow down -->
+    <path d="M115 60 L115 78" stroke="url(#bp)" stroke-width="2.4" fill="none"/>
+    <polygon points="115,86 110,76 120,76" fill="#7A6FE0"/>
+
+    <!-- step 2: LLM proposes a JSON pick -->
+    <g>
+      <rect x="0" y="88" width="230" height="46" rx="10" fill="#1B2233" stroke="#4A5A7A" stroke-width="1.3"/>
+      <circle cx="24" cy="111" r="7" fill="#3B9EFF"/>
+      <text x="42" y="108" font-family="Instrument Sans" font-weight="700" font-size="14" fill="#D2D8E0">LLM proposes</text>
+      <text x="42" y="126" font-family="Geist Mono" font-size="13" fill="#8A8A96">{"call": ..., "args": ...}</text>
+    </g>
+    <path d="M115 134 L115 152" stroke="url(#bp)" stroke-width="2.4" fill="none"/>
+    <polygon points="115,160 110,150 120,150" fill="#7A6FE0"/>
+
+    <!-- step 3: CODE GATE -->
+    <g>
+      <rect x="-14" y="162" width="258" height="70" rx="10" fill="#17241C" stroke="#2E7D5B" stroke-width="2"/>
+      <path d="M8 190 l6 7 l11 -14" stroke="#37D399" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="34" y="188" font-family="Geist Mono" font-size="15" fill="#7FE3B8">code gate: validate</text>
+      <text x="34" y="212" font-family="Geist Mono" font-size="12" fill="#6E9E82">unknown_call · missing · type · enum</text>
     </g>
 
-    <!-- step 1: LLM invoke -->
-    <g transform="translate(60,0)">
-      <rect x="0" y="0" width="240" height="44" rx="10" fill="#1C1C22" stroke="#33333B" stroke-width="1.5"/>
-      <circle cx="26" cy="22" r="7" fill="#3B9EFF"/>
-      <text x="46" y="28" font-family="Geist Mono" font-size="17" fill="#D2D2DA">agent.search()</text>
-    </g>
-    <!-- step 2: LLM invoke -->
-    <g transform="translate(60,108)">
-      <rect x="0" y="0" width="240" height="44" rx="10" fill="#1C1C22" stroke="#33333B" stroke-width="1.5"/>
-      <circle cx="26" cy="22" r="7" fill="#3B9EFF"/>
-      <text x="46" y="28" font-family="Geist Mono" font-size="17" fill="#D2D2DA">agent.select()</text>
-    </g>
-    <!-- step 3: CODE GATE (highlighted) -->
-    <g transform="translate(30,216)">
-      <rect x="0" y="0" width="300" height="44" rx="10" fill="#17241C" stroke="#2E7D5B" stroke-width="2"/>
-      <path d="M20 22 l6 7 l11 -14" stroke="#37D399" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="50" y="28" font-family="Geist Mono" font-size="16" fill="#7FE3B8">code gate: validate</text>
-    </g>
-    <!-- retry loop back to step 1 -->
-    <path d="M30 238 C-30 238, -30 22, 55 22" stroke="#E0A93B" stroke-width="2.4" stroke-dasharray="6 7" fill="none" opacity="0.85"/>
-    <text x="-40" y="135" font-family="Geist Mono" font-size="15" fill="#E0A93B" text-anchor="middle" transform="rotate(-90,-40,135)">fail &#8594; re-decide</text>
+    <!-- fail -> re-decide loop (back up to LLM) -->
+    <path d="M-14 197 C -64 197, -64 111, -6 111" fill="none" stroke="#E0A93B" stroke-width="2.2" stroke-dasharray="6 5"/>
+    <polygon points="-6,111 -16,106 -16,116" fill="#E0A93B"/>
+    <text x="-40" y="160" font-family="Geist Mono" font-size="13" fill="#E0A93B" text-anchor="middle" transform="rotate(-90,-40,160)">fail &#8594; re-decide</text>
 
-    <!-- step 4: LLM invoke confirm -->
-    <g transform="translate(60,324)">
-      <rect x="0" y="0" width="240" height="44" rx="10" fill="#1C1C22" stroke="#33333B" stroke-width="1.5"/>
-      <circle cx="26" cy="22" r="7" fill="#3B9EFF"/>
-      <text x="46" y="28" font-family="Geist Mono" font-size="17" fill="#D2D2DA">agent.confirm()</text>
+    <!-- pass -> resolve -->
+    <path d="M244 197 L286 197" stroke="#37D399" stroke-width="2.4" fill="none"/>
+    <polygon points="294,197 284,192 284,202" fill="#37D399"/>
+    <g>
+      <rect x="298" y="174" width="196" height="46" rx="10" fill="#182430" stroke="#2E4258" stroke-width="1.3"/>
+      <text x="316" y="194" font-family="Instrument Sans" font-weight="700" font-size="14" fill="#D2D8E0">resolve</text>
+      <text x="316" y="211" font-family="Geist Mono" font-size="12" fill="#8A8A96">run fn · or return value</text>
     </g>
-    <!-- step 5: return -->
-    <g transform="translate(60,432)">
-      <rect x="0" y="0" width="240" height="44" rx="10" fill="#1C1C22" stroke="#3A2E52" stroke-width="1.5"/>
-      <circle cx="26" cy="22" r="7" fill="#A855F7"/>
-      <text x="46" y="28" font-family="Geist Mono" font-size="17" fill="#D2D2DA">return result</text>
+    <text x="360" y="168" font-family="Geist Mono" font-size="12" fill="#37D399">pass</text>
+  </g>
+
+  <!-- ==== BOTTOM: self-evolving hot-load loop ==== -->
+  <g transform="translate(892,388)">
+    <text x="0" y="0" font-family="Geist Mono" font-size="14" fill="#A855F7" letter-spacing="1.5">SELF-EVOLVING · HOT-LOAD LOOP</text>
+
+    <!-- 4 stages in a row, then loop back -->
+    <!-- s1 agent writes -->
+    <g>
+      <rect x="0" y="16" width="140" height="60" rx="10" fill="#1F1A2E" stroke="#463A5E" stroke-width="1.3"/>
+      <text x="13" y="40" font-family="Instrument Sans" font-weight="700" font-size="14" fill="#C9A6FF">agent writes</text>
+      <text x="13" y="57" font-family="Geist Mono" font-size="11.5" fill="#8A8A96">Write / Edit</text>
+      <text x="13" y="71" font-family="Geist Mono" font-size="10.5" fill="#6E6E7A">@agentic_function</text>
     </g>
+    <path d="M140 46 L166 46" stroke="#8A7AB8" stroke-width="2.2" fill="none"/>
+    <polygon points="174,46 164,41 164,51" fill="#8A7AB8"/>
+
+    <!-- s2 watcher -->
+    <g>
+      <rect x="176" y="16" width="140" height="60" rx="10" fill="#182430" stroke="#2E4258" stroke-width="1.3"/>
+      <text x="189" y="40" font-family="Instrument Sans" font-weight="700" font-size="14" fill="#9FD0FF">watcher</text>
+      <text x="189" y="57" font-family="Geist Mono" font-size="11.5" fill="#8A8A96">2s poll</text>
+      <text x="189" y="71" font-family="Geist Mono" font-size="10.5" fill="#6E6E7A">fingerprint change</text>
+    </g>
+    <path d="M316 46 L342 46" stroke="#5A7A9A" stroke-width="2.2" fill="none"/>
+    <polygon points="350,46 340,41 340,51" fill="#5A7A9A"/>
+
+    <!-- s3 rescan -->
+    <g>
+      <rect x="352" y="16" width="140" height="60" rx="10" fill="#182430" stroke="#2E4258" stroke-width="1.3"/>
+      <text x="365" y="40" font-family="Instrument Sans" font-weight="700" font-size="14" fill="#9FD0FF">rescan</text>
+      <text x="365" y="57" font-family="Geist Mono" font-size="11.5" fill="#8A8A96">import → register</text>
+      <text x="365" y="71" font-family="Geist Mono" font-size="10.5" fill="#6E6E7A">additions only</text>
+    </g>
+    <path d="M492 46 L518 46" stroke="#5A7A9A" stroke-width="2.2" fill="none"/>
+    <polygon points="526,46 516,41 516,51" fill="#5A7A9A"/>
+
+    <!-- s4 live -->
+    <g>
+      <rect x="528" y="16" width="126" height="60" rx="10" fill="#17241C" stroke="#2E7D5B" stroke-width="1.6"/>
+      <text x="541" y="40" font-family="Instrument Sans" font-weight="700" font-size="14" fill="#7FE3B8">live tool</text>
+      <text x="541" y="57" font-family="Geist Mono" font-size="11.5" fill="#6E9E82">next turn,</text>
+      <text x="541" y="71" font-family="Geist Mono" font-size="11.5" fill="#6E9E82">callable</text>
+    </g>
+
+    <!-- loop back: live -> agent writes -->
+    <path d="M591 76 C 591 116, 70 116, 70 82" fill="none" stroke="#5AAD4E" stroke-width="2" stroke-dasharray="6 5" opacity="0.8"/>
+    <polygon points="70,82 65,92 75,92" fill="#5AAD4E"/>
+    <rect x="238" y="98" width="186" height="20" rx="4" fill="#141416"/>
+    <text x="331" y="112" font-family="Geist Mono" font-size="12" fill="#6FA463" text-anchor="middle">agent keeps extending itself</text>
   </g>
 </svg>
