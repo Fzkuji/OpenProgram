@@ -278,14 +278,8 @@ export function Sidebar() {
             (open ? "opacity-100 pl-[8px]" : "opacity-0 pl-0")
           }
         >
-          <img
-            src="/images/logo-mark.svg"
-            alt=""
-            aria-hidden="true"
-            className="block h-[30px] w-[30px] shrink-0"
-          />
           <span
-            className="ml-[9px] text-[19px] font-bold tracking-[-0.01em] whitespace-nowrap"
+            className="pl-[2px] text-[20px] font-bold tracking-[-0.01em] whitespace-nowrap"
             style={{
               background: "linear-gradient(90deg, #E8EAED 0%, #E8EAED 42%, #3B9EFF 52%, #A855F7 100%)",
               WebkitBackgroundClip: "text",
