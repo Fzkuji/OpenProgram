@@ -1049,15 +1049,17 @@
 .thinking-spinner::after {
   content: "";
   position: absolute;
-  top: 1.5px;
+  top: 4px;                 /* pulled inward so the orbit clears the ring */
   left: 50%;
-  width: 5px;
-  height: 5px;
-  margin-left: -2.5px;
+  width: 4.4px;
+  height: 4.4px;
+  margin-left: -2.2px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #C6A6F7, #8A46D8);
-  /* center of the 18px box is 7.5px below this dot's center (1.5+2.5=4 -> 9) */
-  transform-origin: 2.5px 7.5px;
+  background: transparent;  /* hollow */
+  border: 1.4px solid #B98CF5;
+  box-sizing: border-box;
+  /* box center (9,9) is (4 + 2.2 = 6.2)px below this dot's center */
+  transform-origin: 2.2px 6.8px;
   animation: thinkingOrbit 1.15s linear infinite;
 }
 @keyframes thinkingOrbit {

@@ -1,4 +1,4 @@
-<svg width="776" height="240" viewBox="0 0 776 240" xmlns="http://www.w3.org/2000/svg">
+<svg width="776" height="174" viewBox="0 33 776 174" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="op-ring" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#3B9EFF"/><stop offset="1" stop-color="#A855F7"/>
@@ -26,6 +26,6 @@
   </g>
 
   <!-- wordmark -->
-  <text x="228" y="124" font-family="Instrument Sans, -apple-system, sans-serif" font-weight="700" font-size="72" fill="url(#op-wm)">OpenProgram</text>
-  <text x="228" y="176" font-family="Geist Mono, ui-monospace, monospace" font-size="23" textLength="492" lengthAdjust="spacing" fill="#8A8A96">FINAL SOLUTION TO AGENT</text>
+  <text x="228" y="140" font-family="Instrument Sans, -apple-system, sans-serif" font-weight="700" font-size="72" fill="url(#op-wm)">OpenProgram</text>
+  <text x="228" y="180" font-family="Geist Mono, ui-monospace, monospace" font-size="23" textLength="492" lengthAdjust="spacing" fill="#8A8A96">FINAL SOLUTION TO AGENT</text>
 </svg>
