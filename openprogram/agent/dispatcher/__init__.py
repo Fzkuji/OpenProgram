@@ -277,6 +277,7 @@ def process_user_turn(
             from openprogram.context.nodes import Call, ROLE_USER
             from openprogram.store import GraphStoreShim as _GShim
 
+            _shim = _GShim(db, req.session_id)
             _user_meta = {
                 k: v for k, v in user_msg.items()
                 if k not in {"id", "role", "content", "timestamp", "extra"}

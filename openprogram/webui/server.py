@@ -836,14 +836,36 @@ def _append_msg(conv: dict, msg: dict) -> None:
                         id=_ROOT_ID, role=_RU, output="",
                         metadata={"display": "root"},
                     ))
+                # Conv predecessor = the previous turn's assistant reply.
+                # Every user turn keeps caller=ROOT; the predecessor edge
+                # is what chains turn N to turn N-1. Resolve it from the
+                # AUTHORITATIVE store head at write time — the last
+                # persisted leaf, which is still the prior reply because
+                # set_head to this user node happens below. Relying on
+                # advance_head's side effect / the in-memory conv mirror
+                # instead left every 2nd+ webui turn with an empty
+                # predecessor (disconnected pseudo-root → the DAG split
+                # into a tree per turn). Turn 1: head is None → no
+                # predecessor → the node hangs off ROOT via caller, which
+                # is correct for a first turn.
+                _pred = msg.get("predecessor")
+                if not _pred:
+                    _sess_now = db.get_session(cid) or {}
+                    _pred = _sess_now.get("head_id") or ""
+                _umeta = {k: v for k, v in msg.items()
+                          if k not in {"id", "role", "content", "timestamp"}
+                          and v is not None}
+                # ROOT is the caller, never the conv predecessor — a first
+                # turn just hangs off ROOT via caller. Only a real prior
+                # turn (reply id) becomes a predecessor edge.
+                if _pred and _pred != _ROOT_ID:
+                    _umeta["predecessor"] = _pred
                 _GS(db, cid).append(_C(
                     id=msg_id,
                     role=_RU,
                     output=msg.get("content") or "",
                     caller=_ROOT_ID,
-                    metadata={k: v for k, v in msg.items()
-                              if k not in {"id", "role", "content", "timestamp"}
-                              and v is not None},
+                    metadata=_umeta,
                 ))
             except Exception:
                 db.append_message(cid, msg)
