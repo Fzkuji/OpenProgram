@@ -1,17 +1,14 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
+import { FONT_COOKIE, FONT_STACKS, coerceFontKey } from "@/lib/prefs/font-stacks";
 
 // Google Fonts (next/font/google) was hitting fonts.googleapis.com at
 // build/request time. When that domain is unreachable (locally proxied,
-// offline, GFW), Next.js falls back to a default serif and the chat
-// header / mono columns render in an ugly system serif instead of the
-// monospace we wanted. Drop the network-dependent fetch entirely and
-// rely on the CSS fallback chain in styles/base.css
-// (Menlo / Monaco / Consolas for mono, system-ui for sans). The
-// --font-inter / --font-jetbrains-mono vars stay undefined; CSS's
-// font-family list resolves to the next named fallback, which is what
-// users have on macOS / Windows anyway.
+// offline, GFW), Next.js falls back to a default serif. We dropped the
+// network fetch and bundle Inter Variable locally (see globals.css);
+// font selection is a runtime CSS-variable override, not next/font.
 
 export const metadata: Metadata = {
   title: "OpenProgram",
@@ -27,19 +24,31 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Read the font preference from the cookie DURING SSR and inline the
+  // resolved stack onto <html>. This is what makes the very first
+  // painted frame already show the user's chosen font — no default
+  // flash, no dependency on a client script winning the race with
+  // first paint. localStorage can't do this: the server can't see it.
+  const cookieStore = await cookies();
+  const fontKey = coerceFontKey(cookieStore.get(FONT_COOKIE)?.value);
+  const ssrFontSans = FONT_STACKS[fontKey];
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      style={{ ["--font-sans" as string]: ssrFontSans }}
+    >
       <head>
         {/*
-          Apply persisted theme before React hydrates so the page
-          paints in the correct mode. Without this, every route
-          renders as dark (CSS default) until a component that
-          imports applyTheme mounts — which only happens on the
-          Settings page. The listener also keeps `auto` reactive to
-          system color-scheme changes app-wide, not just in settings.
+          Apply persisted theme + language before React hydrates so the
+          page paints in the correct mode/locale. Font is already set
+          server-side via the inline style above; this script only
+          re-syncs it from the cookie (source of truth) as defence in
+          depth and to pick up a change made in another tab.
         */}
         <script
           dangerouslySetInnerHTML={{
@@ -59,22 +68,29 @@ export default function RootLayout({
                   if ((localStorage.getItem('agentic_theme') || 'auto') === 'auto') apply('auto');
                 });
 
-                // Apply persisted font + language before hydrate so the first
-                // paint already shows the user's choice (otherwise the page
-                // flashes in the default font/locale for ~200ms while React
-                // mounts useFontPref / useTranslation).
-                // Inter Variable is bundled locally (see globals.css).
-                // Default is 'inter' so first paint matches Claude's
-                // Anthropic-Sans-style high-x-height look. 'system' stays
-                // pure OS-native for users who prefer that.
+                // Font is already inlined by SSR from the cookie. Re-read
+                // the cookie (source of truth) and re-apply only if it
+                // differs — covers a font changed in another tab since
+                // this document was served. Cookie first, localStorage
+                // as a legacy fallback.
                 var FONTS = {
                   system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
                   inter:  "'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
                   serif:  "'Source Serif Pro', 'Iowan Old Style', Georgia, 'Times New Roman', 'Songti SC', SimSun, 'Noto Serif CJK SC', serif",
                   mono:   "'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace"
                 };
-                var f = localStorage.getItem('agentic_font') || 'inter';
+                var cm = document.cookie.match(/(?:^|;\\s*)agentic_font=([^;]+)/);
+                var cookieFont = cm && cm[1];
+                var f = cookieFont || localStorage.getItem('agentic_font') || 'inter';
                 if (FONTS[f]) document.documentElement.style.setProperty('--font-sans', FONTS[f]);
+                // Migrate/heal: if the cookie is missing (legacy user with
+                // only localStorage, or first load after this change), write
+                // it now so the NEXT SSR paint is already correct. This runs
+                // on every page — useFontPref only mounts on Settings, so it
+                // can't be relied on to seed the cookie.
+                if (!cookieFont && FONTS[f]) {
+                  document.cookie = 'agentic_font=' + f + '; path=/; max-age=31536000; samesite=lax';
+                }
 
                 var lang = localStorage.getItem('agentic_locale') || 'en';
                 document.documentElement.setAttribute('lang', lang === 'zh' ? 'zh-CN' : 'en');

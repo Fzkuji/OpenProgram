@@ -1,77 +1,31 @@
 /**
- * Global font preference. Mirrors the theme helper: read on mount,
- * persist to localStorage, apply by overriding the `--font-sans` CSS
- * variable on `<html>`. Base CSS (`web/app/styles/base.css`) already
- * binds `body { font-family: var(--font-sans); }`, so changing the
- * variable cascades through the whole UI.
+ * Global font preference (client side). The stacks + cookie key live in
+ * the framework-neutral `font-stacks.ts` so the SSR root layout can read
+ * the same data and paint the correct font on the FIRST frame.
  *
- * Each stack ends with a CJK fallback (PingFang SC / Microsoft YaHei /
- * etc.) so Chinese text picks up a matching weight even when the
- * primary Latin face has no CJK glyphs of its own.
+ * Persistence: the cookie is the source of truth (server reads it during
+ * SSR). We also mirror to localStorage and broadcast to subscribers so
+ * open tabs update live. Base CSS binds `body { font-family:
+ * var(--font-sans); }`, so overriding that variable on <html> cascades
+ * through the whole UI.
  */
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  FONT_STACKS,
+  FONT_STORAGE_KEY,
+  FONT_COOKIE,
+  DEFAULT_FONT,
+  coerceFontKey,
+  type FontKey,
+} from "./font-stacks";
 
-export type FontKey = "system" | "inter" | "serif" | "mono";
-
-const STORAGE_KEY = "agentic_font";
-
-// Latin face + CJK fallback per option.
-const FONT_STACKS: Record<FontKey, string> = {
-  // OS-native stack (pure system look). No Inter — picks up SF on
-  // macOS, Segoe on Windows, etc.
-  system: [
-    "system-ui",
-    "-apple-system",
-    "BlinkMacSystemFont",
-    "'Segoe UI'",
-    // CJK
-    "'PingFang SC'",
-    "'Microsoft YaHei'",
-    "'Hiragino Sans GB'",
-    "sans-serif",
-  ].join(", "),
-  // Inter Variable is bundled locally (see app/globals.css). High
-  // x-height + tight rhythm — visually matches Claude's Anthropic
-  // Sans. Fall back to any system-installed Inter, then to OS native.
-  inter: [
-    "'Inter Variable'",
-    "'Inter'",
-    "-apple-system",
-    "BlinkMacSystemFont",
-    "'Segoe UI'",
-    "'PingFang SC'",
-    "'Microsoft YaHei'",
-    "'Hiragino Sans GB'",
-    "sans-serif",
-  ].join(", "),
-  serif: [
-    "'Source Serif Pro'",
-    "'Iowan Old Style'",
-    "Georgia",
-    "'Times New Roman'",
-    "'Songti SC'",
-    "SimSun",
-    "'Noto Serif CJK SC'",
-    "serif",
-  ].join(", "),
-  mono: [
-    "'JetBrains Mono'",
-    "ui-monospace",
-    "Menlo",
-    "Monaco",
-    "Consolas",
-    "'PingFang SC'",
-    "'Microsoft YaHei'",
-    "monospace",
-  ].join(", "),
-};
+export type { FontKey };
+export { fontStack } from "./font-stacks";
 
 /** Display labels — shown using their OWN font in the picker so the
- *  user sees what they'll get. Names match what most users recognise
- *  rather than CSS jargon ("Serif" not "Source Serif Pro"; "Inter"
- *  because the typeface itself is widely known). */
+ *  user sees what they'll get. */
 export const FONT_LABELS: Record<FontKey, string> = {
   system: "System",
   inter: "Inter",
@@ -79,16 +33,29 @@ export const FONT_LABELS: Record<FontKey, string> = {
   mono: "JetBrains Mono",
 };
 
-export function fontStack(key: FontKey): string {
-  return FONT_STACKS[key];
-}
-
 const subscribers = new Set<(f: FontKey) => void>();
 
+function writeCookie(font: FontKey): void {
+  if (typeof document === "undefined") return;
+  // 1 year, root path, Lax so it rides the top-level navigation that
+  // SSR reads. Not HttpOnly — the client needs to read/write it too.
+  document.cookie =
+    `${FONT_COOKIE}=${font}; path=/; max-age=31536000; samesite=lax`;
+}
+
+function readCookie(): FontKey | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(
+    new RegExp(`(?:^|;\\s*)${FONT_COOKIE}=([^;]+)`),
+  );
+  return m ? coerceFontKey(m[1]) : null;
+}
+
 function readStored(): FontKey {
-  if (typeof window === "undefined") return "inter";
-  const v = localStorage.getItem(STORAGE_KEY);
-  return (v as FontKey) in FONT_STACKS ? (v as FontKey) : "inter";
+  if (typeof window === "undefined") return DEFAULT_FONT;
+  // Cookie first (matches what SSR used); fall back to legacy
+  // localStorage, then default.
+  return readCookie() ?? coerceFontKey(localStorage.getItem(FONT_STORAGE_KEY));
 }
 
 function applyFont(font: FontKey): void {
@@ -96,13 +63,14 @@ function applyFont(font: FontKey): void {
   document.documentElement.style.setProperty("--font-sans", FONT_STACKS[font]);
 }
 
-let current: FontKey = "inter";
+let current: FontKey = DEFAULT_FONT;
 
 export function setFont(next: FontKey): void {
   if (!(next in FONT_STACKS)) return;
   current = next;
   if (typeof window !== "undefined") {
-    localStorage.setItem(STORAGE_KEY, next);
+    writeCookie(next);
+    localStorage.setItem(FONT_STORAGE_KEY, next);
     applyFont(next);
   }
   subscribers.forEach((s) => s(next));
@@ -119,9 +87,14 @@ export function useFontPref() {
     current = stored;
     applyFont(stored);
     setFontState(stored);
+    // Heal a missing cookie (e.g. a user who only ever had localStorage
+    // from before this change) so the NEXT SSR paint is already correct.
+    if (readCookie() == null) writeCookie(stored);
     const sub = (v: FontKey) => setFontState(v);
     subscribers.add(sub);
-    return () => { subscribers.delete(sub); };
+    return () => {
+      subscribers.delete(sub);
+    };
   }, []);
   return { font, setFont };
 }
