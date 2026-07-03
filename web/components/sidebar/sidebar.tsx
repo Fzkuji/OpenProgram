@@ -278,16 +278,18 @@ export function Sidebar() {
             (open ? "opacity-100 pl-[8px]" : "opacity-0 pl-0")
           }
         >
-          <span
-            className="pl-[2px] text-[20px] font-bold tracking-[-0.01em] whitespace-nowrap"
-            style={{
-              background: "linear-gradient(90deg, #E8EAED 0%, #E8EAED 42%, #3B9EFF 52%, #A855F7 100%)",
-              WebkitBackgroundClip: "text",
-              backgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}
-          >
-            OpenProgram
+          <span className="text-[20px] font-bold tracking-[-0.01em] whitespace-nowrap">
+            <span style={{ color: "var(--text-bright)" }}>Open</span>
+            <span
+              style={{
+                background: "linear-gradient(90deg, #3B9EFF 0%, #A855F7 100%)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              Program
+            </span>
           </span>
         </div>
         <button

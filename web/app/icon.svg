@@ -1,18 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="OpenProgram">
   <defs>
-    <linearGradient id="op-ring" x1="14" y1="14" x2="50" y2="50" gradientUnits="userSpaceOnUse">
+    <linearGradient id="op-ring" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#3B9EFF"/><stop offset="1" stop-color="#A855F7"/>
     </linearGradient>
     <radialGradient id="op-bA" cx="0.35" cy="0.3" r="0.85"><stop offset="0" stop-color="#7FC0FF"/><stop offset="1" stop-color="#2F7FE0"/></radialGradient>
     <radialGradient id="op-bB" cx="0.35" cy="0.3" r="0.85"><stop offset="0" stop-color="#C09BF7"/><stop offset="1" stop-color="#8A46D8"/></radialGradient>
     <radialGradient id="op-bC" cx="0.35" cy="0.3" r="0.85"><stop offset="0" stop-color="#8FA6F2"/><stop offset="1" stop-color="#5A5FD0"/></radialGradient>
-    <clipPath id="op-in"><circle cx="32" cy="32" r="20"/></clipPath>
+    <clipPath id="op-in"><circle cx="32" cy="32" r="26.5"/></clipPath>
   </defs>
-  <rect width="64" height="64" rx="15" fill="#17171B"/>
-  <circle cx="32" cy="32" r="21" fill="none" stroke="url(#op-ring)" stroke-width="4.6"/>
+  <circle cx="32" cy="32" r="29.5" fill="none" stroke="url(#op-ring)" stroke-width="5"/>
   <g clip-path="url(#op-in)">
-    <circle cx="26" cy="27" r="10.5" fill="url(#op-bA)"/>
-    <circle cx="40" cy="38" r="8" fill="url(#op-bB)"/>
-    <circle cx="28" cy="43" r="5" fill="url(#op-bC)"/>
+    <circle cx="24.5" cy="24.5" r="14.5" fill="url(#op-bA)"/>
+    <circle cx="43" cy="41" r="11" fill="url(#op-bB)"/>
+    <circle cx="27" cy="47" r="7" fill="url(#op-bC)"/>
   </g>
 </svg>
