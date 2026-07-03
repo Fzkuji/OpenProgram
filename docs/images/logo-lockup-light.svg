@@ -25,5 +25,5 @@
   </g>
 
   <text x="228" y="124" font-family="Instrument Sans, -apple-system, sans-serif" font-weight="700" font-size="72" fill="url(#op-wm)">OpenProgram</text>
-  <text x="231" y="172" font-family="Geist Mono, ui-monospace, monospace" font-size="20" letter-spacing="4" fill="#5B6472">FINAL SOLUTION TO AGENT</text>
+  <text x="228" y="176" font-family="Geist Mono, ui-monospace, monospace" font-size="23" textLength="492" lengthAdjust="spacing" fill="#5B6472">FINAL SOLUTION TO AGENT</text>
 </svg>
