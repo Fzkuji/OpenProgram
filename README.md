@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-lockup-dark.png">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-lockup.gif">
     <source media="(prefers-color-scheme: light)" srcset="docs/images/logo-lockup-light.png">
-    <img src="docs/images/logo-lockup-dark.png" alt="OpenProgram" width="440">
+    <img src="docs/images/logo-lockup.gif" alt="OpenProgram" width="440">
   </picture>
 </p>
 
