@@ -76,6 +76,11 @@ DEFAULT_TOOLS: list[str] = [
     "grep",
     "list",
     "task",
+    # Branch-to-branch communication — agent can see other sessions/
+    # branches and message them (docs/design/runtime/agent-collaboration.md).
+    "message_branch",
+    "list_sessions",
+    "list_branches",
     "todo_read",
     "todo_write",
     # Plan-mode gate — the LLM is allowed to enter plan mode on its
