@@ -29,6 +29,8 @@ from openprogram.functions._runtime import (
     get,
     register,
     reset_registry,
+    restore_registry,
+    snapshot_registry,
     function,
     tool_requires_approval,
 )
@@ -36,11 +38,21 @@ from openprogram.functions._runtime import (
 
 @pytest.fixture(autouse=True)
 def _isolate_registry():
-    """Each test gets a fresh registry so @tool registrations don't leak."""
+    """Each test gets a fresh registry so @tool registrations don't leak.
+
+    Snapshot the real (fully-populated) registry first, wipe it for the
+    test's own registrations, then RESTORE it afterwards. A bare
+    reset_registry() in teardown would leave the shared process-wide
+    registry empty — and because the real tool modules are already imported
+    (cached in sys.modules) their @function decorators won't re-fire — so
+    every later-running test (e.g. test_session_config_tools_intent) would
+    see an empty registry. Collection order is filesystem-dependent, so that
+    only bit on Linux CI, not macOS. Restore keeps the isolation local."""
+    saved = snapshot_registry()
     R._cache.clear()
     reset_registry()
     yield
-    reset_registry()
+    restore_registry(saved)
     R._cache.clear()
 
 

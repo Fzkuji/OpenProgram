@@ -197,6 +197,36 @@ def reset_registry() -> None:
     _unsafe_in_channel.clear()
 
 
+def snapshot_registry() -> dict:
+    """Test-only — capture the full registry state (deep copy) so it can be
+    restored later via :func:`restore_registry`. Use this instead of a bare
+    :func:`reset_registry` in teardown: reset_registry() empties the shared
+    process-wide registry, and since the real tool modules are already
+    imported (cached in sys.modules) their ``@function`` decorators won't
+    re-fire — leaving every *later*-running test to see an empty registry.
+    Snapshot before, restore after, and the isolation stays local."""
+    return {
+        "registry": dict(_registry),
+        "toolset_membership": {k: set(v) for k, v in _toolset_membership.items()},
+        "unsafe_in_channel": {k: set(v) for k, v in _unsafe_in_channel.items()},
+        "unexposed": set(_unexposed),
+    }
+
+
+def restore_registry(snapshot: dict) -> None:
+    """Test-only — put the registry back to a :func:`snapshot_registry` state."""
+    _registry.clear()
+    _registry.update(snapshot["registry"])
+    _toolset_membership.clear()
+    _toolset_membership.update(
+        {k: set(v) for k, v in snapshot["toolset_membership"].items()})
+    _unsafe_in_channel.clear()
+    _unsafe_in_channel.update(
+        {k: set(v) for k, v in snapshot["unsafe_in_channel"].items()})
+    _unexposed.clear()
+    _unexposed.update(snapshot["unexposed"])
+
+
 # ---------------------------------------------------------------------------
 # Schema generation from type hints + docstring
 # ---------------------------------------------------------------------------
