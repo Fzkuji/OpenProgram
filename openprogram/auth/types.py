@@ -161,7 +161,7 @@ class Credential:
     last_used_at_ms: int = 0
     use_count: int = 0
     last_error: Optional[str] = None
-    # Marks credentials that come from a :class:`CliDelegatedPayload` source
+    # Marks credentials that come from a ``kind="cli_delegated"`` source
     # or an external-import profile. Write operations (refresh, rotate) on
     # read-only credentials either no-op or raise AuthReadOnlyError
     # depending on the call site — the manager enforces the rule, not
