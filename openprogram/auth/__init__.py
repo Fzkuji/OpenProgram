@@ -15,22 +15,21 @@ intentionally minimal so they can be exercised in tests without
 mocking the network.
 """
 from .types import (
-    ApiKeyPayload, AuthBillingBlockedError, AuthConfigError,
+    AuthBillingBlockedError, AuthConfigError,
     AuthCorruptCredentialError, AuthError, AuthEvent, AuthEventListener,
     AuthEventType, AuthExpiredError, AuthNeedsReauthError,
     AuthPoolExhaustedError, AuthRateLimitedError, AuthReadOnlyError,
     AuthRefreshError, AuthRevokedError, AuthRotationConsumedError,
-    CliDelegatedPayload, Credential, CredentialKind, CredentialPayload,
-    CredentialPool, CredentialSource, CredentialStatus, DeviceCodePayload,
-    ExternalProcessPayload, LoginMethod, LoginUi, OAuthPayload,
-    PoolStrategy, Profile, RemovalStep, SsoPayload,
+    Credential, CredentialData, CredentialKind, CredentialPayload,
+    CredentialPool, CredentialSource, CredentialStatus,
+    LoginMethod, LoginUi,
+    PoolStrategy, Profile, RemovalStep,
 )
 from .store import AuthStore, get_store, set_store_for_testing
 
 __all__ = [
     # types
-    "ApiKeyPayload", "OAuthPayload", "CliDelegatedPayload",
-    "DeviceCodePayload", "ExternalProcessPayload", "SsoPayload",
+    "CredentialData",
     "CredentialPayload", "Credential", "CredentialKind", "CredentialStatus",
     "PoolStrategy", "CredentialPool", "Profile",
     "AuthEventType", "AuthEvent", "AuthEventListener",
