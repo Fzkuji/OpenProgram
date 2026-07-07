@@ -194,6 +194,11 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     )
     p_aliases.add_argument("--json", action="store_true", help="Output JSON")
 
+    # migrate — one-shot rewrite of old-format credential JSON
+    auth_sub.add_parser(
+        "migrate", help="Migrate stored credentials to the current format",
+    )
+
     # profiles (plural noun, per CLI naming convention — see
     # docs/design/cli/cli-naming.md). Verbs follow: list/create/delete.
     p_profiles = auth_sub.add_parser("profiles", help="Profile management")
@@ -259,13 +264,15 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_setup()
     if cmd == "aliases":
         return _cmd_aliases(args.json)
+    if cmd == "migrate":
+        return _cmd_migrate()
     if cmd == "profiles":
         return _dispatch_profiles(args)
     # No subcommand — print the help hint.
     print("Usage: openprogram providers <verb>\n"
           "Verbs: available (list/search the catalogue), login, logout, "
           "list (configured pools), status, discover, adopt, doctor, "
-          "setup, aliases, profiles",
+          "setup, aliases, migrate, profiles",
           file=sys.stderr)
     return 2
 
@@ -1172,6 +1179,17 @@ def _cmd_aliases(as_json: bool) -> int:
         print(f"{alias:24s}  {table[alias]}")
     print("\nUse either form: `openprogram providers login codex` and "
           "`openprogram providers login openai-codex` do the same thing.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# migrate — one-shot rewrite of old-format credential JSON
+# ---------------------------------------------------------------------------
+
+def _cmd_migrate() -> int:
+    from ._migrate_payload import migrate_store
+    n = migrate_store()
+    print(f"Migrated {n} credential file(s).")
     return 0
 
 

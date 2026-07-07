@@ -153,6 +153,16 @@ class AuthStore:
         profile: Optional[Profile] = None,
     ) -> None:
         self._root = root or DEFAULT_ROOT
+        # One-shot: migrate any old-format payload JSON under this root to the
+        # new CredentialData structure before we read pools. Idempotent; the
+        # migrator no-ops when everything is already new.
+        try:
+            from ._migrate_payload import migrate_store
+            migrate_store(root=self._root)
+        except Exception:
+            # Migration must never block store startup; a genuinely corrupt
+            # file surfaces later via from_dict's AuthCorruptCredentialError.
+            pass
         self._profile = profile
         self._pools: dict[tuple[str, str], CredentialPool] = {}
         # Per-pool asyncio lock for in-process serialization. sync paths

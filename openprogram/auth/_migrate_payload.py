@@ -12,6 +12,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from .types import CREDENTIAL_SCHEMA_VERSION
+
 _TYPE_TO_KIND = {
     "ApiKeyPayload": "api_key",
     "OAuthPayload": "oauth",
@@ -63,6 +65,12 @@ def _migrate_file(path: Path) -> bool:
         p = c.get("payload")
         if isinstance(p, dict) and "__type__" in p:
             c["payload"] = migrate_payload_dict(p)
+            changed = True
+        # An old-format credential also carries the pre-CredentialData
+        # schema version; bump it so Credential.from_dict (which requires
+        # v == CREDENTIAL_SCHEMA_VERSION) accepts the rewritten dict.
+        if c.get("v") != CREDENTIAL_SCHEMA_VERSION:
+            c["v"] = CREDENTIAL_SCHEMA_VERSION
             changed = True
     # Some stores mirror a top-level "payload" too; migrate if present.
     top = doc.get("payload")
