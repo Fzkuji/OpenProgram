@@ -217,10 +217,19 @@ def _build_client(
     api_key: str,
     interleaved_thinking: bool = True,
     options_headers: dict[str, str] | None = None,
+    is_oauth_override: bool | None = None,
+    base_url_override: str | None = None,
 ) -> tuple[_anthropic.AsyncAnthropic, bool]:
     """
     Build the Anthropic async client with appropriate headers.
     Mirrors createClient() in TypeScript.
+
+    ``is_oauth_override`` / ``base_url_override``: when the caller already
+    resolved a :class:`~openprogram.auth.resolver.ResolvedConnection`, it
+    knows definitively whether this is oauth/device_code/cli_delegated and
+    what base_url the credential carries — pass those through instead of
+    re-deriving them here (sniffing the ``sk-ant-oat`` prefix is a fallback
+    for callers that haven't gone through the resolver).
 
     Returns (client, is_oauth_token).
     """
@@ -230,8 +239,9 @@ def _build_client(
             "provider. Install it with `pip install anthropic` (or, when "
             "installing OpenProgram, `pip install 'openprogram[anthropic]'`)."
         )
-    is_oauth = _is_oauth_token(api_key)
-    base_url = getattr(model, "base_url", None) or getattr(model, "baseUrl", None)
+    is_oauth = is_oauth_override if is_oauth_override is not None else _is_oauth_token(api_key)
+    base_url = base_url_override \
+        or getattr(model, "base_url", None) or getattr(model, "baseUrl", None)
     model_headers = model.headers or {}
 
     # Adaptive thinking models don't use the interleaved-thinking beta (it's deprecated for them)
@@ -553,19 +563,30 @@ async def stream_simple(
 
     validate_input_modalities(model, context)
 
-    api_key = opts.api_key or ""
+    # claude-code is an alias for the anthropic credential pool — its
+    # subscription OAuth token lives under provider_id="anthropic", so
+    # resolve there (a claude-code/<id> model otherwise hits an empty
+    # claude-code pool and 401s with "no API key").
+    _pool = "anthropic" if model.provider == "claude-code" else model.provider
+
+    # Per-request credential from an AuthStore pool — enables multi-key
+    # rotation/cooldown and lets a stored credential's own base_url/headers/
+    # kind override the catalog default (e.g. an api_key hitting a
+    # third-party Anthropic-compatible endpoint). No-op (returns None) if
+    # the provider has no AuthStore pool.
+    from ...auth import usage as _auth_usage
+    _pooled = _auth_usage.acquire_pooled(_pool)
+    _conn = _pooled[0] if _pooled else None
+
+    api_key = opts.api_key or (_conn.auth_value if _conn else None) or ""
     if not api_key:
-        # Unified resolution: covers a plain api-key AND a subscription OAuth
-        # token (sk-ant-oat, kind=oauth/cli_delegated) from the AuthStore.
-        # _build_client below sniffs the sk-ant-oat prefix and switches to
-        # Bearer + Claude Code beta headers, so claude-code subscriptions
-        # connect direct to api.anthropic.com (no Meridian daemon).
+        # Fallback path when acquire_pooled found nothing (e.g. a
+        # test/DI credential override — layer 1 of resolve_api_key_sync).
+        # Covers a plain api-key AND a subscription OAuth token
+        # (sk-ant-oat, kind=oauth/cli_delegated) from the AuthStore, so
+        # claude-code subscriptions still connect direct to
+        # api.anthropic.com (no Meridian daemon) even off this path.
         from openprogram.auth.resolver import resolve_api_key_sync
-        # claude-code is an alias for the anthropic credential pool — its
-        # subscription OAuth token lives under provider_id="anthropic", so
-        # resolve there (a claude-code/<id> model otherwise hits an empty
-        # claude-code pool and 401s with "no API key").
-        _pool = "anthropic" if model.provider == "claude-code" else model.provider
         api_key = resolve_api_key_sync(_pool) or ""
     if not api_key:
         # No credential anywhere — fail precisely instead of sending an
@@ -583,14 +604,21 @@ async def stream_simple(
             model=model.id,
         )
 
-    is_oauth = _is_oauth_token(api_key)
-    base_url = getattr(model, "base_url", None) or getattr(model, "baseUrl", None)
+    # Prefer the pooled credential's own kind/base_url over sniffing the
+    # bearer string — a conn tells us definitively whether this is
+    # oauth/device_code, rather than pattern-matching "sk-ant-oat".
+    is_oauth = (_conn.kind in ("oauth", "device_code", "cli_delegated")) if _conn else _is_oauth_token(api_key)
+    base_url = (_conn.base_url if _conn and _conn.base_url else None) \
+        or getattr(model, "base_url", None) or getattr(model, "baseUrl", None)
     cache_control = _get_cache_control(base_url, getattr(opts, "cache_retention", None))
 
+    _merged_headers = {**(getattr(opts, "headers", None) or {}), **(_conn.headers if _conn else {})}
     client, is_oauth = _build_client(
         model, api_key,
         interleaved_thinking=True,
-        options_headers=getattr(opts, "headers", None),
+        options_headers=_merged_headers or None,
+        is_oauth_override=is_oauth,
+        base_url_override=base_url,
     )
 
     # Transform messages for cross-provider compatibility

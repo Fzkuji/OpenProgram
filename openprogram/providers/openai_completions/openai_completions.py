@@ -208,8 +208,6 @@ async def stream_simple(
 
     validate_input_modalities(model, context)
 
-    base_url = model.base_url if model.base_url != "https://api.openai.com/v1" else None
-    extra_headers = opts.headers or {}
     # (Removed: Meridian profile-header injection for claude-code. claude-code
     # now connects DIRECT via the anthropic-messages wire, so it never reaches
     # openai_completions — this branch was dead.)
@@ -230,9 +228,19 @@ async def stream_simple(
     _pooled = _auth_usage.acquire_pooled(model.provider)
     _cred_profile: str | None = None
     _cred_id: str | None = None
+    _conn = None
     _client_api_key = opts.api_key
     if _pooled:
-        _client_api_key, _cred_profile, _cred_id = _pooled
+        _conn, _cred_profile, _cred_id = _pooled
+        _client_api_key = _conn.auth_value
+
+    # The credential's own base_url wins (e.g. an Aliyun Bailian api_key
+    # carries its own endpoint) — else the catalog default, unless that
+    # default is just the stock OpenAI endpoint (None lets the SDK use its
+    # own default rather than us hardcoding it here).
+    base_url = (_conn.base_url if _conn and _conn.base_url else None) \
+        or (model.base_url if model.base_url != "https://api.openai.com/v1" else None)
+    extra_headers = {**(opts.headers or {}), **(_conn.headers if _conn else {})}
 
     if not _client_api_key:
         if model.provider == "claude-code":

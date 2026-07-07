@@ -64,8 +64,23 @@ def stream_openai_responses(
         )
 
         try:
-            api_key = opts.get("api_key") or resolve_provider_key(model.provider) or ""
-            client = _create_client(model, context, api_key, opts.get("headers"))
+            # Per-request credential from an AuthStore pool — lets a stored
+            # api-key carry its own base_url/headers (e.g. Aliyun Bailian)
+            # that override the catalog default. No-op (returns None) for
+            # OAuth / claude-code providers, which fall back to
+            # resolve_provider_key / opts.api_key below.
+            from openprogram.auth import usage as _auth_usage
+            _pooled = _auth_usage.acquire_pooled(model.provider)
+            _conn = _pooled[0] if _pooled else None
+
+            api_key = opts.get("api_key") or (_conn.auth_value if _conn else None) \
+                or resolve_provider_key(model.provider) or ""
+            conn_base_url = _conn.base_url if _conn and _conn.base_url else None
+            conn_headers = _conn.headers if _conn else {}
+            client = _create_client(
+                model, context, api_key, opts.get("headers"),
+                conn_base_url=conn_base_url, conn_headers=conn_headers,
+            )
             params = _build_params(model, context, opts)
 
             if opts.get("on_payload"):
@@ -141,18 +156,25 @@ def _create_client(
     context: "Context",
     api_key: str,
     options_headers: dict[str, str] | None = None,
+    conn_base_url: str | None = None,
+    conn_headers: dict[str, str] | None = None,
 ) -> Any:
     import openai
 
-    headers: dict[str, str] = {**(getattr(model, "headers", None) or {}), **(options_headers or {})}
+    headers: dict[str, str] = {
+        **(getattr(model, "headers", None) or {}),
+        **(options_headers or {}),
+        **(conn_headers or {}),
+    }
 
     # GitHub Copilot needs dynamic headers
     messages = context.messages
     has_images = has_copilot_vision_input(messages)
     copilot_headers = build_copilot_dynamic_headers(messages, has_images)
 
-    # Merge copilot headers if this looks like a copilot endpoint
-    base_url = getattr(model, "base_url", None) or ""
+    # The credential's own base_url wins (e.g. an Aliyun Bailian api-key
+    # carries its own endpoint) — else the catalog default.
+    base_url = conn_base_url or getattr(model, "base_url", None) or ""
     if "copilot" in base_url.lower() or "githubcopilot" in base_url.lower():
         headers.update(copilot_headers)
 

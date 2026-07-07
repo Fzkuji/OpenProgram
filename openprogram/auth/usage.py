@@ -17,19 +17,26 @@ errors.
 """
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .resolver import ResolvedConnection
 
 
 def acquire_pooled(
     provider_id: str,
     profile_id: Optional[str] = None,
-) -> Optional[Tuple[str, str, str]]:
+) -> Optional[Tuple["ResolvedConnection", str, str]]:
     """Pick a credential from the provider's pool for THIS request.
 
-    Returns ``(token, profile_id, credential_id)`` so the caller can report the
-    outcome against the exact credential it used — or ``None`` when the provider
-    has no AuthStore pool (the caller then falls back to its own key resolution,
-    e.g. ``opts.api_key`` / an env var / a Meridian token).
+    Returns ``(conn, profile_id, credential_id)`` — ``conn`` is a
+    :class:`~openprogram.auth.resolver.ResolvedConnection` carrying the bearer
+    value plus any credential-specific ``base_url``/``headers`` — so the
+    caller can report the outcome against the exact credential it used, and
+    can let the credential's own connection info override the catalog
+    default. Returns ``None`` when the provider has no AuthStore pool (the
+    caller then falls back to its own key resolution, e.g. ``opts.api_key`` /
+    an env var / a Meridian token).
 
     Normally the provider's ACTIVE account (profile, ``auth/active.py``) is used.
     When rotation is ON for the provider (``auth/rotation.py``), a request instead
@@ -42,12 +49,12 @@ def acquire_pooled(
     from .active import get_active_profile
     from .manager import get_manager
     from .types import AuthError, AuthConfigError
-    from .resolver import _extract_token
+    from .resolver import resolve_connection
 
     store = get_store()
     mgr = get_manager()
 
-    def _resolve(prof: str) -> Optional[Tuple[str, str, str]]:
+    def _resolve(prof: str) -> Optional[Tuple["ResolvedConnection", str, str]]:
         pool = store.find_pool(provider_id, prof)
         if pool is None or not pool.credentials:
             return None
@@ -55,8 +62,8 @@ def acquire_pooled(
             cred = mgr.acquire_sync(provider_id, prof)
         except (AuthError, AuthConfigError):
             return None
-        token = _extract_token(cred)
-        return (token, cred.profile_id, cred.credential_id) if token else None
+        conn = resolve_connection(cred)
+        return (conn, cred.profile_id, cred.credential_id) if conn else None
 
     # Explicit profile pins one account (no rotation).
     if profile_id is not None:
