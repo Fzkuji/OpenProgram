@@ -169,8 +169,37 @@ async def aclose_shared_clients() -> None:
             pass
 
 
+async def aclose_current_loop_clients() -> None:
+    """Close + evict every shared client bound to the *currently running* loop.
+
+    The cache is keyed by ``(name, loop_id)``. A client's connection pool /
+    sockets belong to the loop it was built on and can only be torn down from
+    that loop — so this closes exactly the entries whose ``loop_id`` matches
+    ``asyncio.get_running_loop()`` and leaves other loops' clients untouched
+    (closing those from here is unsafe and would raise).
+
+    Call this right before a short-lived loop is destroyed. ``Runtime.exec``'s
+    sync bridge runs each provider call under a throwaway ``asyncio.run`` loop;
+    without this eviction the client (and its open sockets) would linger in
+    ``_shared`` forever, never reusable (httpx forbids cross-loop use) and
+    never collected — one leaked connection pool per exec(), so the process's
+    memory + fd count climb monotonically with call volume.
+    """
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        return  # No running loop — nothing bound to it to close.
+    for k in [k for k in _shared if k[1] == loop_id]:
+        client = _shared.pop(k)
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+
+
 __all__ = [
     "build_async_client",
     "get_shared_async_client",
     "aclose_shared_clients",
+    "aclose_current_loop_clients",
 ]

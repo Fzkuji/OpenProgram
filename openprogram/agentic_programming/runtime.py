@@ -760,6 +760,11 @@ class Runtime:
                 meta["usage"] = _usage
             if _blocks:
                 meta["blocks"] = _blocks
+            # 工具名单（论文仓库 spec §5 ①）：供事后 compute_breakdown_from_node
+            # 重算这次调用的 tools schema / per-tool，得 context 增长时间序列。
+            _tools = getattr(self, "_pending_tool_names", None)
+            if _tools:
+                meta["tools_available"] = _tools
             if error is not None:
                 import traceback as _tb
                 meta["error"] = str(error)
@@ -1598,6 +1603,28 @@ class Runtime:
         if skills_block:
             system_prompt = (system_prompt + skills_block) if system_prompt else skills_block.lstrip("\n")
 
+        # 现算输入分类分解 + 采集工具名单（论文仓库 spec §5 ①③）。best-effort，
+        # 算失败置 None/[]，绝不影响 LLM 调用。breakdown 挂 last_usage（见下），
+        # 工具名单跟着 exec 收尾的 usage→DAG 节点通道进 history.metadata。
+        self._pending_breakdown = None
+        self._pending_tool_names = []
+        try:
+            from openprogram.context.breakdown import compute_call_breakdown
+            from openprogram.context.tokens import real_context_window
+            _hist_for_bd = list(history) + [current]
+            self._pending_breakdown = compute_call_breakdown(
+                system_prompt=system_prompt,
+                history=_hist_for_bd,
+                tools=agent_tools,
+                context_window=real_context_window(self.api_model),
+            )
+            self._pending_tool_names = [
+                getattr(t, "name", "") for t in (agent_tools or [])
+            ]
+        except Exception:
+            self._pending_breakdown = None
+            self._pending_tool_names = []
+
         loop_opts = _current_loop_opts.get(None) or {}
         # stream_fn injection: a per-call override (set by exec via the
         # _current_stream_fn contextvar, used by the dispatcher / tests) wins;
@@ -1757,6 +1784,7 @@ class Runtime:
                 "total_tokens": final.usage.total_tokens,
                 "cache_read": getattr(final.usage, "cache_read", 0) or 0,
                 "cache_create": getattr(final.usage, "cache_write", 0) or 0,
+                "breakdown": getattr(self, "_pending_breakdown", None),
             }
         return _assistant_text(final)
 
@@ -1799,7 +1827,7 @@ def _run_async(coro):
     except RuntimeError:
         running = None
     if running is None:
-        return asyncio.run(coro)
+        return asyncio.run(_run_and_reap(coro))
     import concurrent.futures
     # Carry the caller's ContextVars (the published exec deadline, the
     # active tool policy, …) into the worker thread — a bare pool.submit
@@ -1807,7 +1835,36 @@ def _run_async(coro):
     # the inner stream-retry loop would never see the deadline.
     ctx = contextvars.copy_context()
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(ctx.run, asyncio.run, coro).result()
+        return pool.submit(ctx.run, asyncio.run, _run_and_reap(coro)).result()
+
+
+async def _reap_loop_clients() -> None:
+    """Close shared httpx clients bound to the running loop (best-effort)."""
+    try:
+        from openprogram.providers.utils.http_client import (
+            aclose_current_loop_clients,
+        )
+        await aclose_current_loop_clients()
+    except Exception:
+        pass
+
+
+async def _run_and_reap(coro):
+    """Await ``coro``, then close any shared httpx client this throwaway loop
+    built, *before* ``asyncio.run`` tears the loop down.
+
+    Every ``Runtime.exec`` provider call reaches here via ``asyncio.run`` on a
+    fresh loop. Providers that keep-alive-cache their client
+    (``get_shared_async_client``) key it by ``(name, loop_id)``; once this loop
+    dies the entry is dead weight — unusable (httpx forbids cross-loop reuse)
+    and never evicted, leaking one connection pool + its sockets per call.
+    Reaping here, while still inside the loop, closes it cleanly and keeps the
+    cache from growing without bound. Best-effort: never mask the real result.
+    """
+    try:
+        return await coro
+    finally:
+        await _reap_loop_clients()
 
 
 def _guess_mime(path: str) -> str:
