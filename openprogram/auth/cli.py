@@ -58,15 +58,11 @@ from .profiles import (
 )
 from .store import AuthStore, get_store
 from .types import (
-    ApiKeyPayload,
     AuthConfigError,
     AuthError,
-    CliDelegatedPayload,
     Credential,
+    CredentialData,
     CredentialPool,
-    DeviceCodePayload,
-    ExternalProcessPayload,
-    OAuthPayload,
     RemovalStep,
 )
 
@@ -304,18 +300,18 @@ def _mask(secret: str, keep_prefix: int = 6, keep_suffix: int = 4) -> str:
 
 def _payload_summary(cred: Credential) -> str:
     p = cred.payload
-    if isinstance(p, ApiKeyPayload):
-        return f"api_key {_mask(p.api_key)}"
-    if isinstance(p, OAuthPayload):
-        extra = " (+refresh)" if p.refresh_token else ""
-        expiry = _fmt_expiry(p.expires_at_ms)
-        return f"oauth {_mask(p.access_token)}{extra} exp={expiry}"
-    if isinstance(p, DeviceCodePayload):
-        return f"device_code {_mask(p.access_token)} exp={_fmt_expiry(p.expires_at_ms)}"
-    if isinstance(p, CliDelegatedPayload):
-        return f"cli_delegated → {p.store_path}"
-    if isinstance(p, ExternalProcessPayload):
-        return f"external_process {' '.join(p.command)}"
+    if p.kind == "api_key":
+        return f"api_key {_mask(p.auth_value)}"
+    if p.kind == "oauth":
+        extra = " (+refresh)" if p.data.get("refresh_token") else ""
+        expiry = _fmt_expiry(p.data.get("expires_at_ms", 0))
+        return f"oauth {_mask(p.auth_value)}{extra} exp={expiry}"
+    if p.kind == "device_code":
+        return f"device_code {_mask(p.auth_value)} exp={_fmt_expiry(p.data.get('expires_at_ms', 0))}"
+    if p.kind == "cli_delegated":
+        return f"cli_delegated → {p.data.get('store_path')}"
+    if p.kind == "external_process":
+        return f"external_process {' '.join(p.data.get('command', []))}"
     return cred.kind
 
 
@@ -616,7 +612,7 @@ def _login_paste_api_key(provider: str, profile: str, *,
         provider_id=store_provider,
         profile_id=profile,
         kind="api_key",
-        payload=ApiKeyPayload(api_key=key),
+        payload=CredentialData(kind="api_key", auth_value=key),
         source="cli_paste",
         metadata={},
     )
@@ -1313,7 +1309,7 @@ def run_doctor() -> dict[str, Any]:
 
             # Expiry on oauth/device_code.
             if c.kind in ("oauth", "device_code"):
-                exp = getattr(c.payload, "expires_at_ms", 0) or 0
+                exp = c.payload.data.get("expires_at_ms", 0) or 0
                 if exp and exp <= now_ms:
                     if refresh_available or c.read_only:
                         # Read-only: external CLI owns refresh; surface

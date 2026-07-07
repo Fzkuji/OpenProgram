@@ -211,7 +211,6 @@ def _probe_credential_freshness() -> Finding:
     try:
         from openprogram.auth.store import get_store
         from openprogram.auth.manager import get_provider_config
-        from openprogram.auth.types import OAuthPayload
         import time as _time
         pools = get_store().list_pools()
     except Exception as e:  # noqa: BLE001
@@ -228,8 +227,9 @@ def _probe_credential_freshness() -> Finding:
             if not has_refresh and not c.read_only:
                 no_refresh.append(pool.provider_id)
             payload = c.payload
-            if isinstance(payload, OAuthPayload) and payload.expires_at_ms:
-                left_s = payload.expires_at_ms / 1000 - _time.time()
+            expires_at_ms = payload.data.get("expires_at_ms") if payload.kind == "oauth" else None
+            if expires_at_ms:
+                left_s = expires_at_ms / 1000 - _time.time()
                 if 0 < left_s < 7 * 86400:  # < 1 week
                     expiring.append(f"{pool.provider_id} ({int(left_s // 86400)}d)")
 
