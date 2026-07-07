@@ -21,7 +21,7 @@ from typing import Optional
 
 from ..types import (
     Credential,
-    DeviceCodePayload,
+    CredentialData,
     LoginMethod,
     LoginUi,
 )
@@ -132,13 +132,16 @@ class DeviceCodeMethod(LoginMethod):
                         provider_id=self.provider_id,
                         profile_id=self._profile_id,
                         kind="device_code",
-                        payload=DeviceCodePayload(
-                            access_token=tokens["access_token"],
-                            refresh_token=tokens.get("refresh_token", ""),
-                            expires_at_ms=expires_at_ms,
-                            device_code_flow_id=device_code,
-                            extra={k: v for k, v in tokens.items()
-                                   if k not in ("access_token", "refresh_token", "expires_in")},
+                        payload=CredentialData(
+                            kind="device_code",
+                            auth_value=tokens["access_token"],
+                            data={
+                                "refresh_token": tokens.get("refresh_token", ""),
+                                "expires_at_ms": expires_at_ms,
+                                "device_code_flow_id": device_code,
+                                "extra": {k: v for k, v in tokens.items()
+                                          if k not in ("access_token", "refresh_token", "expires_in")},
+                            },
                         ),
                         source=f"{self.method_id}:{self.provider_id}",
                         metadata=self._metadata,

@@ -31,7 +31,7 @@ from typing import Literal
 
 from ..types import (
     Credential,
-    ExternalProcessPayload,
+    CredentialData,
     LoginMethod,
     LoginUi,
 )
@@ -62,7 +62,7 @@ class ExternalProcessMethod(LoginMethod):
 
     The login flow doesn't actually persist a cached token — it just
     records the helper invocation shape. Every API call later re-runs
-    the helper (via :class:`ExternalProcessPayload`), subject to
+    the helper (via ``CredentialData(kind="external_process")``), subject to
     ``cache_seconds`` de-dup in the manager.
     """
 
@@ -98,11 +98,14 @@ class ExternalProcessMethod(LoginMethod):
             provider_id=self.provider_id,
             profile_id=self._profile_id,
             kind="external_process",
-            payload=ExternalProcessPayload(
-                command=list(self._cfg.command),
-                parses=self._cfg.parses,
-                json_key_path=list(self._cfg.json_key_path),
-                cache_seconds=self._cfg.cache_seconds,
+            payload=CredentialData(
+                kind="external_process",
+                data={
+                    "command": list(self._cfg.command),
+                    "parses": self._cfg.parses,
+                    "json_key_path": list(self._cfg.json_key_path),
+                    "cache_seconds": self._cfg.cache_seconds,
+                },
             ),
             source=f"{self.method_id}:{self.provider_id}",
             metadata=self._metadata,

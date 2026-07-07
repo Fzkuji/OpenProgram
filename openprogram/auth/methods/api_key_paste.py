@@ -16,8 +16,8 @@ the API itself is authoritative.
 from __future__ import annotations
 
 from ..types import (
-    ApiKeyPayload,
     Credential,
+    CredentialData,
     LoginMethod,
     LoginUi,
 )
@@ -64,7 +64,7 @@ class ApiKeyPasteMethod(LoginMethod):
             provider_id=self.provider_id,
             profile_id=self._profile_id,
             kind="api_key",
-            payload=ApiKeyPayload(api_key=key),
+            payload=CredentialData(kind="api_key", auth_value=key),
             source=f"{self.method_id}:{self.provider_id}",
             metadata=self._metadata,
         )

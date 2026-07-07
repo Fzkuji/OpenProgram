@@ -18,8 +18,9 @@ automatically propagate, but the user's ``gh auth status`` will warn
 them and a re-import takes one click.
 
 (If a provider needed ``gh`` rotation to propagate automatically, a
-``CliDelegatedPayload`` with a YAML path walker would be the replacement.
-The shape is forward-compat — we can upgrade without breaking consumers.)
+``CredentialData(kind="cli_delegated")`` with a YAML path walker would be
+the replacement. The shape is forward-compat — we can upgrade without
+breaking consumers.)
 """
 from __future__ import annotations
 
@@ -30,8 +31,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..types import (
-    ApiKeyPayload,
     Credential,
+    CredentialData,
     CredentialSource,
     RemovalStep,
 )
@@ -87,7 +88,7 @@ class GhCliSource:
                     provider_id=self.provider_id,
                     profile_id=profile_id,
                     kind="api_key",
-                    payload=ApiKeyPayload(api_key=token),
+                    payload=CredentialData(kind="api_key", auth_value=token),
                     source=self.source_id,
                     metadata=metadata,
                     # One-shot copy — rotations by `gh` don't propagate,

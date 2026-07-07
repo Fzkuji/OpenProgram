@@ -2,7 +2,8 @@
 
 The Codex CLI stores OAuth tokens at ``~/.codex/auth.json`` (or
 ``$CODEX_HOME/auth.json`` when set). We read the file non-destructively
-and register a :class:`CliDelegatedPayload` credential that points at it.
+and register a ``CredentialData(kind="cli_delegated")`` credential that
+points at it.
 "Delegated" mode means we never copy the secret bytes into our own
 store — every API call re-reads the file — so Codex CLI's own rotations
 propagate to us for free.
@@ -33,10 +34,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..types import (
-    CliDelegatedPayload,
     Credential,
+    CredentialData,
     CredentialSource,
-    OAuthPayload,
     RemovalStep,
 )
 
@@ -118,12 +118,15 @@ class CodexCliSource:
                     provider_id=self.provider_id,
                     profile_id=self.profile_id,
                     kind="cli_delegated",
-                    payload=CliDelegatedPayload(
-                        store_path=str(path),
-                        access_key_path=["tokens", "access_token"],
-                        refresh_key_path=["tokens", "refresh_token"],
-                        # No expires_at in Codex's file — intentionally empty.
-                        expires_key_path=[],
+                    payload=CredentialData(
+                        kind="cli_delegated",
+                        data={
+                            "store_path": str(path),
+                            "access_key_path": ["tokens", "access_token"],
+                            "refresh_key_path": ["tokens", "refresh_token"],
+                            # No expires_at in Codex's file — intentionally empty.
+                            "expires_key_path": [],
+                        },
                     ),
                     source=self.source_id,
                     metadata=metadata,
@@ -145,15 +148,18 @@ class CodexCliSource:
                 provider_id=self.provider_id,
                 profile_id=self.profile_id,
                 kind="oauth",
-                payload=OAuthPayload(
-                    access_token=access_token,
-                    refresh_token=refresh_token,
-                    expires_at_ms=0,  # Codex CLI's file doesn't carry expiry
-                    scope=["openid", "profile", "email", "offline_access"],
-                    client_id="app_EMoamEEZ73f0CkXaXp7hrann",
-                    token_endpoint="https://auth.openai.com/oauth/token",
-                    id_token=tokens.get("id_token") or "",
-                    extra={"account_id": tokens.get("account_id") or ""},
+                payload=CredentialData(
+                    kind="oauth",
+                    auth_value=access_token,
+                    data={
+                        "refresh_token": refresh_token,
+                        "expires_at_ms": 0,  # Codex CLI's file doesn't carry expiry
+                        "scope": ["openid", "profile", "email", "offline_access"],
+                        "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+                        "token_endpoint": "https://auth.openai.com/oauth/token",
+                        "id_token": tokens.get("id_token") or "",
+                        "extra": {"account_id": tokens.get("account_id") or ""},
+                    },
                 ),
                 source=self.source_id,
                 metadata=metadata,
@@ -165,7 +171,7 @@ class CodexCliSource:
         # to run `codex logout` themselves — anything else risks destroying
         # credentials the Codex CLI still wants.
         path = (
-            cred.payload.store_path
+            cred.payload.data.get("store_path")
             if cred.kind == "cli_delegated"
             else str(self._resolve_path())
         )

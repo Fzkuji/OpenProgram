@@ -13,8 +13,8 @@ Two behaviours the method supports, configurable per source:
     CLI rotations don't propagate to us. Useful when we want to pin
     a specific frozen state or when the external CLI is about to be
     uninstalled.
-  * ``link`` — create a :class:`CliDelegatedPayload` pointing at the
-    external file. Every API call re-reads the file. Any rotation the
+  * ``link`` — create a ``CredentialData(kind="cli_delegated")`` pointing
+    at the external file. Every API call re-reads the file. Any rotation the
     external CLI does is picked up automatically. Downside: expiry
     becomes the external tool's responsibility — if they mess up, we
     see stale tokens.
@@ -31,11 +31,10 @@ from pathlib import Path
 from typing import Literal
 
 from ..types import (
-    CliDelegatedPayload,
     Credential,
+    CredentialData,
     LoginMethod,
     LoginUi,
-    OAuthPayload,
 )
 
 
@@ -113,11 +112,14 @@ class CliImportMethod(LoginMethod):
                 provider_id=self.provider_id,
                 profile_id=self._profile_id,
                 kind="cli_delegated",
-                payload=CliDelegatedPayload(
-                    store_path=str(path),
-                    access_key_path=list(self._cfg.access_path),
-                    refresh_key_path=list(self._cfg.refresh_path),
-                    expires_key_path=list(self._cfg.expires_path),
+                payload=CredentialData(
+                    kind="cli_delegated",
+                    data={
+                        "store_path": str(path),
+                        "access_key_path": list(self._cfg.access_path),
+                        "refresh_key_path": list(self._cfg.refresh_path),
+                        "expires_key_path": list(self._cfg.expires_path),
+                    },
                 ),
                 source=f"{self.method_id}:{self._cfg.source_id}",
                 metadata=metadata,
@@ -137,11 +139,14 @@ class CliImportMethod(LoginMethod):
             provider_id=self.provider_id,
             profile_id=self._profile_id,
             kind="oauth",
-            payload=OAuthPayload(
-                access_token=str(access or ""),
-                refresh_token=str(refresh or ""),
-                expires_at_ms=expires_at_ms,
-                client_id=self._cfg.client_id_hint,
+            payload=CredentialData(
+                kind="oauth",
+                auth_value=str(access or ""),
+                data={
+                    "refresh_token": str(refresh or ""),
+                    "expires_at_ms": expires_at_ms,
+                    "client_id": self._cfg.client_id_hint,
+                },
             ),
             source=f"{self.method_id}:{self._cfg.source_id}",
             metadata=metadata,

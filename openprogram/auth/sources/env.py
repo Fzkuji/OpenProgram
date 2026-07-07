@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..types import (
-    ApiKeyPayload,
     Credential,
+    CredentialData,
     CredentialSource,
     RemovalStep,
 )
@@ -60,7 +60,7 @@ class EnvApiKeySource:
                 provider_id=self.provider_id,
                 profile_id=self.profile_id,
                 kind="api_key",
-                payload=ApiKeyPayload(api_key=value),
+                payload=CredentialData(kind="api_key", auth_value=value),
                 source=self.source_id,
                 metadata={"env_var": self.env_var},
                 # Env-sourced keys are not read-only per se — nothing

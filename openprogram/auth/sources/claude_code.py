@@ -21,8 +21,8 @@ Both surfaces land in the same shape once read:
 We prefer the file when it exists (covers Linux+Windows and the debug
 case where users dump the Keychain entry to a file); we fall back to
 invoking ``security find-generic-password`` on macOS. Both read paths
-produce the same :class:`CliDelegatedPayload` shape pointing at a
-temp-materialized file — the manager then reads it back every call.
+produce the same ``CredentialData(kind="cli_delegated")`` shape pointing
+at a temp-materialized file — the manager then reads it back every call.
 
 For simplicity, this source only handles the *file* path today. Keychain
 adoption is a follow-up: it needs an ``external_process`` payload
@@ -37,8 +37,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..types import (
-    CliDelegatedPayload,
     Credential,
+    CredentialData,
     CredentialSource,
     RemovalStep,
 )
@@ -94,11 +94,14 @@ class ClaudeCodeSource:
                 provider_id=self.provider_id,
                 profile_id=self.profile_id,
                 kind="cli_delegated",
-                payload=CliDelegatedPayload(
-                    store_path=str(path),
-                    access_key_path=["claudeAiOauth", "accessToken"],
-                    refresh_key_path=["claudeAiOauth", "refreshToken"],
-                    expires_key_path=["claudeAiOauth", "expiresAt"],
+                payload=CredentialData(
+                    kind="cli_delegated",
+                    data={
+                        "store_path": str(path),
+                        "access_key_path": ["claudeAiOauth", "accessToken"],
+                        "refresh_key_path": ["claudeAiOauth", "refreshToken"],
+                        "expires_key_path": ["claudeAiOauth", "expiresAt"],
+                    },
                 ),
                 source=self.source_id,
                 metadata=metadata,
@@ -108,7 +111,7 @@ class ClaudeCodeSource:
 
     def removal_steps(self, cred: Credential) -> list[RemovalStep]:
         path = (
-            cred.payload.store_path
+            cred.payload.data.get("store_path")
             if cred.kind == "cli_delegated"
             else str(self._resolve_path())
         )
