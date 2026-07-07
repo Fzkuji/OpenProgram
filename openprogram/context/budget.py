@@ -110,4 +110,26 @@ class BudgetAllocator:
         return total
 
 
+def estimate_tools_breakdown(tools: list[Any]) -> list[dict]:
+    """Per-tool token 明细。口径与 BudgetAllocator._estimate_tools 完全一致：
+    每个工具 = estimate_message_tokens({"role":"tool","content":<schema json>}) + 5；
+    schema 缺失记 20。返回 [{"name","tokens","deferred"}, ...]，顺序同入参。"""
+    import json as _json
+    out: list[dict] = []
+    for t in tools:
+        name = getattr(t, "name", "") or ""
+        deferred = bool(getattr(t, "_defer", False))
+        schema = getattr(t, "schema", None) or getattr(t, "spec", None)
+        if schema is None:
+            out.append({"name": name, "tokens": 20, "deferred": deferred})
+            continue
+        try:
+            text = _json.dumps(schema, default=str, ensure_ascii=False)
+        except Exception:
+            text = str(schema)
+        tokens = estimate_message_tokens({"role": "tool", "content": text}) + 5
+        out.append({"name": name, "tokens": tokens, "deferred": deferred})
+    return out
+
+
 default_allocator = BudgetAllocator()

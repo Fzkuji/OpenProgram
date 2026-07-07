@@ -109,6 +109,12 @@ DEFAULT_TOOLS: list[str] = [
 ]
 
 
+# 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 的安全常用集
+# + tool_search 引导器。full 里其余工具默认 defer，用到时 tool_search 加载。
+# 这是治「exec 默认全塞 ~14000 token」的唯一旋钮 —— 保守取，宁多勿缺。
+RESIDENT_TOOLS: set = set(DEFAULT_TOOLS) | {"tool_search"}
+
+
 # Hermes-style named presets. ``default`` is the always-on minimal
 # safe set above; ``full`` is the *exposure whitelist* — the universe
 # of every tool name that may ever appear in any LLM's tools array.
@@ -535,4 +541,31 @@ __all__ = [
     "mark_deferred_loaded",
     "split_tools_for_dispatch",
     "tool_search",
+    # Layer 6 — default deferral of cold full-toolset tools
+    "RESIDENT_TOOLS",
+    "apply_default_deferral",
 ]
+
+
+def apply_default_deferral() -> None:
+    """把 full 白名单里不在 RESIDENT_TOOLS 的工具标 _defer=True。幂等。
+    在本模块 import 末尾调一次（所有工具已注册）。best-effort：失败不影响 import。
+
+    效果：split_tools_for_dispatch 后，只有常驻工具带完整 schema（~2000 token），
+    其余退到 deferred catalog（每个一行描述）。治 exec 默认全塞 ~14000 的问题。"""
+    try:
+        for t in agent_tools(toolset="full", include_disabled=True):
+            name = getattr(t, "name", "")
+            should_defer = name not in RESIDENT_TOOLS
+            if name == "tool_search":
+                should_defer = False  # 引导器永不 defer 自己（双保险）
+            try:
+                setattr(t, "_defer", should_defer)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+# 冷门工具默认 defer —— 见 RESIDENT_TOOLS / 论文仓库 spec §5 ④。
+apply_default_deferral()
