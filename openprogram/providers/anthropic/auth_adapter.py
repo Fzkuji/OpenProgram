@@ -42,10 +42,8 @@ from openprogram.auth.manager import (
     register_provider_config,
 )
 from openprogram.auth.types import (
-    ApiKeyPayload,
-    CliDelegatedPayload,
     Credential,
-    OAuthPayload,
+    CredentialData,
 )
 
 
@@ -115,9 +113,9 @@ def import_from_claude_code(
     Returns ``None`` if the file is missing or unusable — callers decide
     whether that's a "please log in" error or just "skip this route".
 
-    The resulting credential is :class:`CliDelegatedPayload`, read-only.
-    The Claude Code CLI owns rotation; every API call re-reads the file
-    through AuthManager, so rotations propagate automatically.
+    The resulting credential is a ``cli_delegated`` :class:`CredentialData`,
+    read-only. The Claude Code CLI owns rotation; every API call re-reads
+    the file through AuthManager, so rotations propagate automatically.
     """
     target = Path(path) if path else claude_code_credentials_path()
     if not target.exists():
@@ -144,11 +142,14 @@ def import_from_claude_code(
         provider_id=PROVIDER_ID,
         profile_id=profile_id,
         kind="cli_delegated",
-        payload=CliDelegatedPayload(
-            store_path=str(target),
-            access_key_path=["claudeAiOauth", "accessToken"],
-            refresh_key_path=["claudeAiOauth", "refreshToken"],
-            expires_key_path=["claudeAiOauth", "expiresAt"],
+        payload=CredentialData(
+            kind="cli_delegated",
+            data={
+                "store_path": str(target),
+                "access_key_path": ["claudeAiOauth", "accessToken"],
+                "refresh_key_path": ["claudeAiOauth", "refreshToken"],
+                "expires_key_path": ["claudeAiOauth", "expiresAt"],
+            },
         ),
         source="claude_code_import",
         metadata=metadata,
@@ -174,7 +175,7 @@ def import_api_key(
         provider_id=PROVIDER_ID,
         profile_id=profile_id,
         kind="api_key",
-        payload=ApiKeyPayload(api_key=api_key.strip()),
+        payload=CredentialData(kind="api_key", auth_value=api_key.strip()),
         source="anthropic_paste",
         metadata=md,
         read_only=False,
@@ -190,8 +191,9 @@ def import_setup_token(
     """Wrap a pasted ``claude setup-token`` (sk-ant-oat…) as an OAuth credential.
 
     Setup-tokens carry NO refresh_token (≈1-year lifetime, no rotation),
-    so we store an OAuthPayload with an empty refresh_token and a far-out
-    expiry — _anthropic_refresh no-ops on it (it guards on refresh_token).
+    so we store an ``oauth`` :class:`CredentialData` with an empty
+    refresh_token and a far-out expiry — _anthropic_refresh no-ops on it
+    (it guards on refresh_token).
     The anthropic wire still routes it as a Bearer/Claude-Code request via
     the sk-ant-oat prefix sniff. Caller persists via AuthStore.
     """
@@ -204,13 +206,16 @@ def import_setup_token(
         provider_id=PROVIDER_ID,
         profile_id=profile_id,
         kind="oauth",
-        payload=OAuthPayload(
-            access_token=tok,
-            refresh_token="",
-            expires_at_ms=far_future_ms,
-            scope=list(OAUTH_SCOPES),
-            client_id=OAUTH_CLIENT_ID,
-            token_endpoint=OAUTH_TOKEN_URL,
+        payload=CredentialData(
+            kind="oauth",
+            auth_value=tok,
+            data={
+                "refresh_token": "",
+                "expires_at_ms": far_future_ms,
+                "scope": list(OAUTH_SCOPES),
+                "client_id": OAUTH_CLIENT_ID,
+                "token_endpoint": OAUTH_TOKEN_URL,
+            },
         ),
         source="anthropic_setup_token",
         metadata=md,
@@ -231,17 +236,18 @@ def _anthropic_refresh(cred: Credential) -> Credential:
     return a fresh credential with the same credential_id.
     """
     payload = cred.payload
-    if not isinstance(payload, OAuthPayload) or not payload.refresh_token:
+    refresh_token = payload.data.get("refresh_token", "") if payload.kind == "oauth" else ""
+    if payload.kind != "oauth" or not refresh_token:
         # Nothing to rotate — hand the credential back unchanged.
         return cred
 
     import httpx
     resp = httpx.post(
-        payload.token_endpoint or OAUTH_TOKEN_URL,
+        payload.data.get("token_endpoint") or OAUTH_TOKEN_URL,
         json={
             "grant_type": "refresh_token",
-            "refresh_token": payload.refresh_token,
-            "client_id": payload.client_id or OAUTH_CLIENT_ID,
+            "refresh_token": refresh_token,
+            "client_id": payload.data.get("client_id") or OAUTH_CLIENT_ID,
         },
         timeout=30.0,
     )
@@ -255,17 +261,20 @@ def _anthropic_refresh(cred: Credential) -> Credential:
             raise RuntimeError(f"Anthropic OAuth refresh response missing {k!r}")
 
     expires_at_ms = int(time.time() * 1000) + int(data["expires_in"]) * 1000
-    new_payload = OAuthPayload(
-        access_token=data["access_token"],
-        # Anthropic rotates the refresh_token; keep the old one if the
-        # response omits it (some token endpoints reuse it).
-        refresh_token=data.get("refresh_token") or payload.refresh_token,
-        expires_at_ms=expires_at_ms,
-        scope=payload.scope,
-        client_id=payload.client_id or OAUTH_CLIENT_ID,
-        token_endpoint=payload.token_endpoint or OAUTH_TOKEN_URL,
-        id_token=data.get("id_token", payload.id_token),
-        extra=dict(payload.extra),
+    new_payload = CredentialData(
+        kind="oauth",
+        auth_value=data["access_token"],
+        data={
+            # Anthropic rotates the refresh_token; keep the old one if the
+            # response omits it (some token endpoints reuse it).
+            "refresh_token": data.get("refresh_token") or refresh_token,
+            "expires_at_ms": expires_at_ms,
+            "scope": payload.data.get("scope"),
+            "client_id": payload.data.get("client_id") or OAUTH_CLIENT_ID,
+            "token_endpoint": payload.data.get("token_endpoint") or OAUTH_TOKEN_URL,
+            "id_token": data.get("id_token", payload.data.get("id_token")),
+            "extra": dict(payload.data.get("extra") or {}),
+        },
     )
     return Credential(
         provider_id=cred.provider_id,

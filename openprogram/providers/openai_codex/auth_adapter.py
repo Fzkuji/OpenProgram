@@ -38,7 +38,7 @@ from openprogram.auth.manager import (
 )
 from openprogram.auth.types import (
     Credential,
-    OAuthPayload,
+    CredentialData,
 )
 
 
@@ -140,11 +140,12 @@ def _codex_refresh(cred: Credential) -> Credential:
     3. Return a fresh :class:`Credential` with the same ``credential_id``.
     """
     payload = cred.payload
-    if not isinstance(payload, OAuthPayload):
+    if payload.kind != "oauth":
         raise RuntimeError(
-            f"codex refresh called with non-OAuth payload: {type(payload).__name__}"
+            f"codex refresh called with non-OAuth payload kind: {payload.kind!r}"
         )
-    if not payload.refresh_token:
+    refresh_token = payload.data.get("refresh_token", "")
+    if not refresh_token:
         raise RuntimeError("codex credential has no refresh_token")
 
     response = httpx.post(
@@ -152,7 +153,7 @@ def _codex_refresh(cred: Credential) -> Credential:
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         data={
             "grant_type": "refresh_token",
-            "refresh_token": payload.refresh_token,
+            "refresh_token": refresh_token,
             "client_id": OAUTH_CLIENT_ID,
         },
         timeout=30.0,
@@ -173,15 +174,18 @@ def _codex_refresh(cred: Credential) -> Credential:
             raise RuntimeError(f"OAuth refresh response missing {k!r}")
 
     expires_at_ms = int(time.time() * 1000) + int(data["expires_in"]) * 1000
-    new_payload = OAuthPayload(
-        access_token=data["access_token"],
-        refresh_token=data["refresh_token"],
-        expires_at_ms=expires_at_ms,
-        scope=payload.scope,
-        client_id=payload.client_id or OAUTH_CLIENT_ID,
-        token_endpoint=OAUTH_TOKEN_URL,
-        id_token=data.get("id_token", payload.id_token),
-        extra=dict(payload.extra),
+    new_payload = CredentialData(
+        kind="oauth",
+        auth_value=data["access_token"],
+        data={
+            "refresh_token": data["refresh_token"],
+            "expires_at_ms": expires_at_ms,
+            "scope": payload.data.get("scope"),
+            "client_id": payload.data.get("client_id") or OAUTH_CLIENT_ID,
+            "token_endpoint": OAUTH_TOKEN_URL,
+            "id_token": data.get("id_token", payload.data.get("id_token")),
+            "extra": dict(payload.data.get("extra") or {}),
+        },
     )
     # Mirror back to ~/.codex/auth.json so Codex CLI sees rotated tokens.
     _write_back_to_codex_file(new_payload)
@@ -205,7 +209,7 @@ def _codex_refresh(cred: Credential) -> Credential:
     )
 
 
-def _write_back_to_codex_file(payload: OAuthPayload) -> None:
+def _write_back_to_codex_file(payload: CredentialData) -> None:
     """Keep ``~/.codex/auth.json`` in sync after we rotate.
 
     Non-fatal on failure: if the file is gone or permission-denied, we
@@ -222,10 +226,10 @@ def _write_back_to_codex_file(payload: OAuthPayload) -> None:
         existing = {}
     existing.setdefault("auth_mode", "chatgpt")
     tokens = existing.setdefault("tokens", {})
-    tokens["access_token"] = payload.access_token
-    tokens["refresh_token"] = payload.refresh_token
-    if payload.id_token:
-        tokens["id_token"] = payload.id_token
+    tokens["access_token"] = payload.auth_value
+    tokens["refresh_token"] = payload.data.get("refresh_token", "")
+    if payload.data.get("id_token"):
+        tokens["id_token"] = payload.data.get("id_token")
     # Codex's own file doesn't store expires_at_ms — the CLI decodes the
     # JWT at read time. We leave it out for shape-compatibility.
     existing["last_refresh"] = _iso_now()
@@ -316,13 +320,16 @@ def import_from_codex_file(
         provider_id=PROVIDER_ID,
         profile_id=profile_id,
         kind="oauth",
-        payload=OAuthPayload(
-            access_token=access,
-            refresh_token=refresh,
-            expires_at_ms=expires_at_ms,
-            client_id=OAUTH_CLIENT_ID,
-            token_endpoint=OAUTH_TOKEN_URL,
-            id_token=tokens.get("id_token", ""),
+        payload=CredentialData(
+            kind="oauth",
+            auth_value=access,
+            data={
+                "refresh_token": refresh,
+                "expires_at_ms": expires_at_ms,
+                "client_id": OAUTH_CLIENT_ID,
+                "token_endpoint": OAUTH_TOKEN_URL,
+                "id_token": tokens.get("id_token", ""),
+            },
         ),
         source="codex_cli_import",
         metadata=metadata,

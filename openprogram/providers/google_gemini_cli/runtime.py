@@ -29,10 +29,8 @@ from openprogram.auth.context import get_active_profile_id
 from openprogram.auth.manager import AuthManager, get_manager
 from openprogram.auth.types import (
     AuthConfigError,
-    CliDelegatedPayload,
     Credential,
     CredentialPool,
-    OAuthPayload,
 )
 
 from . import auth_adapter
@@ -73,23 +71,24 @@ def _ensure_credential(manager: AuthManager, profile_id: str) -> Credential:
 def _access_token_for(cred: Credential) -> str:
     """Pull the current access token out of whatever payload shape was returned.
 
-    The credential can be either a first-class ``OAuthPayload`` (after
-    AuthManager refreshed it) or a ``CliDelegatedPayload`` that still
+    The credential can be either a first-class ``oauth`` kind (after
+    AuthManager refreshed it) or a ``cli_delegated`` kind that still
     points at the on-disk JSON. Both carry an access token; the store
     path just differs.
     """
     payload = cred.payload
-    if isinstance(payload, OAuthPayload):
-        return payload.access_token
-    if isinstance(payload, CliDelegatedPayload):
+    if payload.kind == "oauth":
+        return payload.auth_value
+    if payload.kind == "cli_delegated":
         import json
         from pathlib import Path
-        data = json.loads(Path(payload.store_path).read_text(encoding="utf-8"))
-        for key in payload.access_key_path:
+        store_path = payload.data.get("store_path")
+        data = json.loads(Path(store_path).read_text(encoding="utf-8"))
+        for key in payload.data.get("access_key_path", []):
             data = data[key]
         return str(data)
     raise AuthConfigError(
-        f"gemini-subscription credential payload {type(payload).__name__} "
+        f"gemini-subscription credential payload kind {payload.kind!r} "
         "has no access token path this runtime understands.",
         provider_id=auth_adapter.PROVIDER_ID,
         profile_id=cred.profile_id,

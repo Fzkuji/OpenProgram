@@ -34,8 +34,8 @@ from openprogram.auth.manager import (
     register_provider_config,
 )
 from openprogram.auth.types import (
-    CliDelegatedPayload,
     Credential,
+    CredentialData,
 )
 
 
@@ -75,11 +75,14 @@ def import_from_gemini_cli(
         provider_id=PROVIDER_ID,
         profile_id=profile_id,
         kind="cli_delegated",
-        payload=CliDelegatedPayload(
-            store_path=str(target),
-            access_key_path=["access_token"],
-            refresh_key_path=["refresh_token"],
-            expires_key_path=["expiry_date"],
+        payload=CredentialData(
+            kind="cli_delegated",
+            data={
+                "store_path": str(target),
+                "access_key_path": ["access_token"],
+                "refresh_key_path": ["refresh_token"],
+                "expires_key_path": ["expiry_date"],
+            },
         ),
         source="gemini_cli_import",
         metadata=metadata,

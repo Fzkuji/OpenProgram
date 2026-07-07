@@ -85,7 +85,7 @@ def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
          covers users on a bare API key with no OAuth flow.
       3. AuthManager's OAuth credential pool — covers users who ran
          ``codex login`` (or the OpenProgram OAuth wizard) so the
-         pool has an ``OAuthPayload.access_token`` ready.
+         pool has a ``CredentialData(kind="oauth").auth_value`` ready.
 
     Returns ``""`` when nothing yields a usable token, so the caller
     can raise the same "No API key for provider" error as before.
