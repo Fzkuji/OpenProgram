@@ -313,6 +313,69 @@ def register(app):
             "count": len(node_ids),
         })
 
+    @app.get("/api/sessions/{session_id}/context")
+    async def get_session_context(session_id: str):
+        """当前会话的 input-token 分类分解（Claude Code /context 式）。
+
+        存储铁律：不存结果、现算。读会话分支的消息（原料）+ 最近一次
+        LLM 调用记下的 tools_available，用 compute_breakdown_for_branch
+        重算出 messages / system_prompt / tools(loaded+deferred) / per-tool。
+        """
+        try:
+            from openprogram.agent.session_db import default_db
+            from openprogram.context.breakdown import (
+                compute_breakdown_for_branch,
+            )
+            from openprogram.context.tokens import real_context_window
+
+            db = default_db()
+            branch = db.get_branch(session_id) or []
+            sess = db.get_session(session_id) or {}
+
+            # 分支消息转成 breakdown 期望的形状：content + metadata。
+            # get_branch 的行把 tools_available 放在 extra(JSON)里；解出来。
+            msgs = []
+            for m in branch:
+                meta = {}
+                extra = m.get("extra")
+                if extra:
+                    try:
+                        ex = json.loads(extra) if isinstance(extra, str) else extra
+                        if isinstance(ex, dict) and ex.get("tools_available"):
+                            meta["tools_available"] = ex["tools_available"]
+                    except Exception:
+                        pass
+                msgs.append({
+                    "role": m.get("role") or "",
+                    "content": m.get("content") or "",
+                    "metadata": meta,
+                })
+
+            # system_prompt：会话没直接存 system，用空串（system 类占 0，
+            # 不影响 tools/messages 的主信号）。model → context_window。
+            model_id = sess.get("model") or ""
+            try:
+                from openprogram.providers.models import get_model as _get_model
+                model_obj = _get_model(model_id) if model_id else None
+            except Exception:
+                model_obj = None
+            ctx_window = real_context_window(model_obj)
+
+            bd = compute_breakdown_for_branch(
+                msgs,
+                system_prompt="",
+                context_window=ctx_window,
+            )
+            bd["session_id"] = session_id
+            bd["model"] = model_id
+            bd["context_window"] = ctx_window
+            return JSONResponse(content=bd)
+        except Exception as e:
+            return JSONResponse(
+                status_code=200,
+                content={"error": f"{type(e).__name__}: {e}", "tools": []},
+            )
+
     @app.get("/api/sessions/{session_id}/dag")
     async def get_session_dag(session_id: str):
         """Full session session DAG as a TNode tree (step 8)."""

@@ -94,3 +94,32 @@ def compute_breakdown_from_node(
         tools=tools,
         context_window=context_window,
     )
+
+
+def compute_breakdown_for_branch(
+    branch: list[dict],
+    *,
+    system_prompt: str,
+    context_window: int,
+    tool_resolver=None,
+) -> dict:
+    """给一整条会话分支（消息列表），算这条分支下一次调用的 breakdown。
+
+    工具集取分支里最近一个带 metadata.tools_available 的节点（最近一次
+    LLM 调用挂了哪些工具）；整条分支当 history。供 web /context 端点直接
+    消费——「随时看当前会话的 context 构成」。见论文仓库 spec §5。"""
+    latest_tools: list[str] = []
+    for msg in reversed(branch or []):
+        meta = msg.get("metadata") or {}
+        ta = meta.get("tools_available")
+        if ta:
+            latest_tools = list(ta)
+            break
+    resolver = tool_resolver or _default_tool_resolver
+    tools = resolver(latest_tools)
+    return compute_call_breakdown(
+        system_prompt=system_prompt,
+        history=branch or [],
+        tools=tools,
+        context_window=context_window,
+    )

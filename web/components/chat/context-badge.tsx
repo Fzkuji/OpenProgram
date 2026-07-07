@@ -18,8 +18,10 @@
  * whenever the active session has no usage yet, matching the legacy
  * `:empty { display:none }` behavior with one fewer reflow.
  */
+import { useState } from "react";
 import { buildUsageText } from "@/lib/format-utils/format";
 import { useSessionStore } from "@/lib/session-store";
+import { ContextBreakdownPanel } from "./context-breakdown-panel";
 
 interface ContextBadgeProps {
   /** Active conversation id. The component is keyed on this so a
@@ -36,6 +38,9 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   // store's current conversation id.
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const sid = sessionId ?? currentSessionId;
+
+  // 点 badge 弹出 /context 分类分解面板（随时看当前会话 context 构成）
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const usage = useSessionStore((s) => (sid ? s.tokens[sid] : undefined));
   const fallbackProvider = useSessionStore((s) => s.agentSettings.chat?.provider);
@@ -65,8 +70,29 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
     : text.tooltip;
 
   return (
-    <span className="context-stats-label" title={tooltip}>
-      {text.text}
-    </span>
+    <>
+      <span
+        className="context-stats-label"
+        title={tooltip}
+        style={{ cursor: "pointer" }}
+        onClick={() => setPanelOpen(true)}
+      >
+        {text.text}
+      </span>
+      {panelOpen && (
+        <div
+          className="fixed inset-0 z-50 flex justify-end"
+          style={{ background: "rgba(0,0,0,0.3)" }}
+          onClick={() => setPanelOpen(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <ContextBreakdownPanel
+              sessionId={sid}
+              onClose={() => setPanelOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+    </>
   );
 }

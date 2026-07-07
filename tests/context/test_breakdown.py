@@ -62,3 +62,43 @@ def test_recompute_from_node_matches_direct():
         tool_resolver=lambda names: [_T(n) for n in names],
     )
     assert recomputed["tools_schema"] == direct["tools_schema"]
+
+
+def test_breakdown_for_branch_uses_latest_tools_available():
+    """从一串分支消息里，取最近带 tools_available 的节点还原工具集，
+    整条分支当 history。供 web /context 端点直接消费。"""
+    from openprogram.context.breakdown import compute_breakdown_for_branch
+
+    class _T:
+        def __init__(self, n):
+            self.name = n
+            self.schema = {"name": n, "description": "d" * 20, "parameters": {}}
+            self._defer = False
+
+    # 分支：user → assistant(带早期工具) → user → assistant(最近工具)
+    branch = [
+        {"role": "user", "content": "hi", "metadata": {}},
+        {"role": "llm", "content": "a1", "metadata": {"tools_available": ["bash"]}},
+        {"role": "user", "content": "more", "metadata": {}},
+        {"role": "llm", "content": "a2",
+         "metadata": {"tools_available": ["bash", "read", "grep"]}},
+    ]
+    b = compute_breakdown_for_branch(
+        branch, system_prompt="sys", context_window=128_000,
+        tool_resolver=lambda names: [_T(n) for n in names],
+    )
+    # 应取最近那条（3 个工具），不是早期那条（1 个）
+    assert {t["name"] for t in b["tools"]} == {"bash", "read", "grep"}
+    # messages 用整条分支
+    assert b["messages"] > 0
+
+
+def test_breakdown_for_branch_empty_when_no_tools():
+    from openprogram.context.breakdown import compute_breakdown_for_branch
+    branch = [{"role": "user", "content": "hi", "metadata": {}}]
+    b = compute_breakdown_for_branch(
+        branch, system_prompt="s", context_window=128_000,
+        tool_resolver=lambda names: [],
+    )
+    assert b["tools"] == []
+    assert b["tools_schema"] == 0
