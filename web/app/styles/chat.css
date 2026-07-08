@@ -1058,8 +1058,10 @@
   background: transparent;  /* hollow */
   border: 2px solid #B98CF5; /* 加粗：1.4 -> 2 */
   box-sizing: border-box;
-  /* 小圈中心 (9,5)，box 中心 (9,9)，垂直差 4px → transform-origin y=4 */
-  transform-origin: 3px 4px;
+  /* transform-origin 相对小圈自身左上角(6,2)。要绕 box 中心(9,9)转，
+     即 (9-6, 9-2) = (3, 7)。之前写 (3,4) 导致绕自身偏上一点转、
+     像在原地打转。 */
+  transform-origin: 3px 7px;
   animation: thinkingOrbit 1.15s linear infinite;
 }
 @keyframes thinkingOrbit {
@@ -1625,7 +1627,7 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;       /* 圆角方形（非圆形）——与底部 pill 一致 */
   transition: background 0.15s;
 }
 .context-ring-badge:hover {
