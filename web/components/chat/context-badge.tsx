@@ -44,6 +44,8 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   // open 状态放 store，好让 /context slash 命令也能切它。
   const panelOpen = useSessionStore((s) => s.contextPanelOpen);
   const setPanelOpen = useSessionStore((s) => s.setContextPanelOpen);
+  // 当前分支头：切分支时 store.heads 会更新，弹窗据此重取该分支的上下文。
+  const headId = useSessionStore((s) => (sid ? s.heads[sid] : undefined));
 
   // 圆环 DOM ref —— 用它的屏幕坐标把弹窗 portal 到 body 并 fixed 定位，
   // 彻底脱离输入框的圆角/overflow 裁切，真正置顶。
@@ -174,6 +176,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
             >
               <ContextBreakdownPanel
                 sessionId={sid}
+                headId={headId ?? null}
                 onClose={() => setPanelOpen(false)}
               />
             </div>

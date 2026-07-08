@@ -1,6 +1,6 @@
 """Read-only catalog endpoints: DAG tree, token stats, programs meta.
 
-These routes are mostly thin DB wrappers (SessionDB + MODELS registry)
+These routes are mostly thin DB wrappers (SessionDB + MODEL_REGISTRY registry)
 plus a ``_discover_functions`` server-helper call.
 """
 from __future__ import annotations
@@ -221,7 +221,7 @@ def register(app):
     async def get_branches_tokens(session_id: str):
         """Lightweight token summary for every branch tip in this session."""
         from openprogram.agent.session_db import default_db
-        from openprogram.providers.models_generated import MODELS
+        from openprogram.providers.models_generated import MODEL_REGISTRY
 
         db = default_db()
         branches = db.list_branches(session_id)
@@ -234,9 +234,9 @@ def register(app):
             window = stats.get("context_window") or 0
             mid = stats.get("model")
             if not window and mid:
-                cands = [v for v in MODELS.values() if v.id == mid]
-                if mid in MODELS:
-                    cands.insert(0, MODELS[mid])
+                cands = [v for v in MODEL_REGISTRY.values() if v.id == mid]
+                if mid in MODEL_REGISTRY:
+                    cands.insert(0, MODEL_REGISTRY[mid])
                 if cands:
                     window = max(
                         int(getattr(c, "context_window", 0) or 0)
@@ -259,14 +259,14 @@ def register(app):
                                  model: str | None = None,
                                  provider: str | None = None):
         from openprogram.agent.session_db import default_db
-        from openprogram.providers.models_generated import MODELS
+        from openprogram.providers.models_generated import MODEL_REGISTRY
 
         model_obj = None
         if model:
             key = f"{provider}/{model}" if provider else None
-            model_obj = (MODELS.get(key) if key else None) or MODELS.get(model)
+            model_obj = (MODEL_REGISTRY.get(key) if key else None) or MODEL_REGISTRY.get(model)
             if model_obj is None:
-                for v in MODELS.values():
+                for v in MODEL_REGISTRY.values():
                     if v.id == model:
                         model_obj = v
                         break
@@ -277,8 +277,8 @@ def register(app):
 
         if not stats["context_window"] and stats.get("model"):
             mid = stats["model"]
-            candidates = [MODELS.get(mid)] if mid in MODELS else []
-            candidates.extend(v for v in MODELS.values() if v.id == mid)
+            candidates = [MODEL_REGISTRY.get(mid)] if mid in MODEL_REGISTRY else []
+            candidates.extend(v for v in MODEL_REGISTRY.values() if v.id == mid)
             candidates = [c for c in candidates if c is not None]
             if candidates:
                 m = max(
@@ -314,12 +314,16 @@ def register(app):
         })
 
     @app.get("/api/sessions/{session_id}/context")
-    async def get_session_context(session_id: str):
+    async def get_session_context(session_id: str, head_id: str | None = None):
         """当前会话的 input-token 分类分解（Claude Code /context 式）。
 
         存储铁律：不存结果、现算。读会话分支的消息（原料）+ 最近一次
         LLM 调用记下的 tools_available，用 compute_breakdown_for_branch
         重算出 messages / system_prompt / tools(loaded+deferred) / per-tool。
+
+        head_id：DAG 上选中的分支头。一个 session 可有多条分支，切分支时
+        前端把当前 head 带上来，这样 /context 算的是那条分支的上下文，而非
+        会话全局 head。缺省（None）时 get_branch 回退全局 head。
         """
         try:
             from openprogram.agent.session_db import default_db
@@ -327,7 +331,7 @@ def register(app):
             from openprogram.context.tokens import real_context_window
 
             db = default_db()
-            branch = db.get_branch(session_id) or []
+            branch = db.get_branch(session_id, head_id) or []
             sess = db.get_session(session_id) or {}
 
             # 分支消息 + 从 extra(JSON) 里挖最近一次调用记下的原料

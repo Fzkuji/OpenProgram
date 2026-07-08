@@ -54,6 +54,9 @@ interface Breakdown {
 
 interface Props {
   sessionId: string | null;
+  /** 当前分支头（DAG 选中的分支）。传入则按该分支算上下文；切分支时变化
+   *  会触发重新拉取。缺省时后端回退会话全局 head。*/
+  headId?: string | null;
   /** 保留兼容旧调用；面板本身不再渲染关闭按钮（点外面即关）。*/
   onClose?: () => void;
 }
@@ -136,7 +139,7 @@ function Section({
   );
 }
 
-export function ContextBreakdownPanel({ sessionId }: Props) {
+export function ContextBreakdownPanel({ sessionId, headId }: Props) {
   const { text } = useTranslation();
   const [data, setData] = useState<Breakdown | null>(null);
   const [loading, setLoading] = useState(true);
@@ -145,12 +148,13 @@ export function ContextBreakdownPanel({ sessionId }: Props) {
   useEffect(() => {
     if (!sessionId) return;
     setLoading(true);
-    fetch(`/api/sessions/${encodeURIComponent(sessionId)}/context`)
+    const qs = headId ? `?head_id=${encodeURIComponent(headId)}` : "";
+    fetch(`/api/sessions/${encodeURIComponent(sessionId)}/context${qs}`)
       .then((r) => r.json())
       .then((d) => setData(d))
       .catch((e) => setData({ error: String(e) }))
       .finally(() => setLoading(false));
-  }, [sessionId]);
+  }, [sessionId, headId]);
 
   const win = data?.context_window || 0;
   const pct = (v: number) => (win > 0 ? (v / win) * 100 : 0);

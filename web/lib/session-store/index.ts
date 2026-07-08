@@ -95,6 +95,10 @@ interface ConvState {
   }>;
   /** Per-conversation context window size (model-dependent). */
   contextWindow: Record<string, number>;
+  /** Per-conversation active DAG head (selected branch tip).切分支时更新，
+   *  让 /context 等按分支取上下文的读取方能订阅式感知当前分支。 */
+  heads: Record<string, string | null>;
+  setHead: (sessionId: string, headId: string | null) => void;
   setContextStats: (
     sessionId: string,
     chat: {
@@ -398,6 +402,13 @@ export const useSessionStore = create<ConvState>((set) => ({
 
   tokens: {},
   contextWindow: {},
+  heads: {},
+  setHead: (sessionId, headId) =>
+    set((s) =>
+      s.heads[sessionId] === headId
+        ? s
+        : { heads: { ...s.heads, [sessionId]: headId } },
+    ),
   setContextStats: (sessionId, chat, ctxWindow) =>
     set((s) => {
       const next: Partial<ConvState> = {};

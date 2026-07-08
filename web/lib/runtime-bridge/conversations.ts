@@ -80,7 +80,12 @@ interface ConvWindow {
   _allMessages?: LegacyMessage[];
   _branchesByConv?: Record<string, BranchRow[]>;
   __navigate?: (path: string) => void;
-  __sessionStore?: { getState: () => { setCurrentConv: (id: string | null) => void } };
+  __sessionStore?: {
+    getState: () => {
+      setCurrentConv: (id: string | null) => void;
+      setHead?: (sessionId: string, headId: string | null) => void;
+    };
+  };
   __feedStoreFromConv?: (conv: LegacyConv) => void;
   // Bridges to still-legacy modules.
   setStatusDotHealth?: (state: string) => void;
@@ -314,6 +319,9 @@ export function onBranchesListMessage(payload: BranchesListPayload): void {
         conv.graph = payload.graph;
         if (payload.active) conv.head_id = payload.active;
       }
+      // 把当前分支头镜像进 Zustand，让订阅 store 的 React 组件（如 /context
+      // 弹窗）在切分支时自动感知并重取当前分支的上下文。
+      W.__sessionStore?.getState().setHead?.(sid, payload.active || null);
     }
   }
 }
