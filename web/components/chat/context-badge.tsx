@@ -18,6 +18,8 @@
  * whenever the active session has no usage yet, matching the legacy
  * `:empty { display:none }` behavior with one fewer reflow.
  */
+import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { buildUsageText } from "@/lib/format-utils/format";
 import { useSessionStore } from "@/lib/session-store";
 import { ContextBreakdownPanel } from "./context-breakdown-panel";
@@ -42,6 +44,31 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   // open 状态放 store，好让 /context slash 命令也能切它。
   const panelOpen = useSessionStore((s) => s.contextPanelOpen);
   const setPanelOpen = useSessionStore((s) => s.setContextPanelOpen);
+
+  // 圆环 DOM ref —— 用它的屏幕坐标把弹窗 portal 到 body 并 fixed 定位，
+  // 彻底脱离输入框的圆角/overflow 裁切，真正置顶。
+  const ringRef = useRef<HTMLButtonElement>(null);
+  const [anchor, setAnchor] = useState<{ right: number; bottom: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!panelOpen) return;
+    const measure = () => {
+      const el = ringRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      // 卡片右下角对齐圆环右下角 → 卡片盖住圆环。
+      setAnchor({
+        right: window.innerWidth - r.right,
+        bottom: window.innerHeight - r.bottom,
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [panelOpen]);
 
   const usage = useSessionStore((s) => (sid ? s.tokens[sid] : undefined));
   const ctxWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
@@ -91,6 +118,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
       <button
+        ref={ringRef}
         className="context-ring-badge"
         title={ringTooltip}
         onClick={() => setPanelOpen(!panelOpen)}
@@ -119,28 +147,39 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
           />
         </svg>
       </button>
-      {panelOpen && (
-        <>
-          {/* 透明全屏遮罩：点圆环外关闭（不压暗背景，纯 click-catcher）*/}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setPanelOpen(false)}
-          />
-          {/* 浮动卡片：锚定圆环、向上展开。卡片底缘下探到圆环中部，
-              让 rounded-xl 的右下圆角弧覆盖圆环上半（下半露出仍可点关闭）。
-              badge 高 32、圆环居中，bottom≈14 使卡底落在圆环中线略上方。*/}
-          <div
-            className="absolute z-50"
-            style={{ bottom: 14, right: -1 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ContextBreakdownPanel
-              sessionId={sid}
-              onClose={() => setPanelOpen(false)}
+      {panelOpen &&
+        anchor &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            {/* 透明全屏遮罩：点圆环外关闭（不压暗背景，纯 click-catcher）*/}
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 9998,
+              }}
+              onClick={() => setPanelOpen(false)}
             />
-          </div>
-        </>
-      )}
+            {/* 浮动卡片：fixed 定位，右下角对齐圆环右下角 → 卡片盖住圆环，
+                向上、向左展开。portal 到 body，彻底脱离输入框裁切并置顶。*/}
+            <div
+              style={{
+                position: "fixed",
+                right: anchor.right,
+                bottom: anchor.bottom,
+                zIndex: 9999,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ContextBreakdownPanel
+                sessionId={sid}
+                onClose={() => setPanelOpen(false)}
+              />
+            </div>
+          </>,
+          document.body,
+        )}
     </span>
   );
 }

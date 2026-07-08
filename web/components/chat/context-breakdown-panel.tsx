@@ -7,8 +7,8 @@
  *
  * 数据来自 GET /api/sessions/{id}/context（后端现算，不落库 —— 存储铁律）。
  */
-import { useEffect, useMemo, useState } from "react";
-import { X, ChevronRight, ChevronDown } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { ChevronRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 
 interface ToolItem {
@@ -54,7 +54,8 @@ interface Breakdown {
 
 interface Props {
   sessionId: string | null;
-  onClose: () => void;
+  /** 保留兼容旧调用；面板本身不再渲染关闭按钮（点外面即关）。*/
+  onClose?: () => void;
 }
 
 function fmt(n: number): string {
@@ -73,7 +74,69 @@ const CAT_COLORS: Record<string, string> = {
   free: "#3a3f47",
 };
 
-export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
+// Row / Section 提到模块级（不再定义在组件体内）—— 否则每次组件 render 都会
+// 把它们当成全新组件类型，导致 59+54+24 个子行整棵子树卸载重挂而非 diff 更新，
+// 这正是"弹出时卡"的根因。这里它们只依赖 props，纯函数组件，可安全上提。
+const Row = React.memo(function Row({
+  name,
+  tokens,
+  dim,
+}: {
+  name: string;
+  tokens?: number;
+  dim?: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between py-0.5 text-[11px] font-mono"
+      style={{ color: dim ? "var(--text-muted)" : "var(--text-primary)" }}
+    >
+      <span className="truncate">{name}</span>
+      {tokens != null && (
+        <span className="ml-2 shrink-0" style={{ color: "var(--text-muted)" }}>
+          {fmt(tokens)}
+        </span>
+      )}
+    </div>
+  );
+});
+
+function Section({
+  title,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  if (count <= 0) return null;
+  return (
+    <div className="mt-3">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center gap-1 text-[12px] font-semibold"
+        style={{ color: "var(--text-primary)" }}
+      >
+        {open ? (
+          <ChevronDown className="h-3 w-3" />
+        ) : (
+          <ChevronRight className="h-3 w-3" />
+        )}
+        <span>
+          {title} ({count})
+        </span>
+      </button>
+      {open && <div className="mt-1 pl-4">{children}</div>}
+    </div>
+  );
+}
+
+export function ContextBreakdownPanel({ sessionId }: Props) {
   const { text } = useTranslation();
   const [data, setData] = useState<Breakdown | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,73 +192,20 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
 
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
-  function Section({
-    id,
-    title,
-    count,
-    children,
-  }: {
-    id: string;
-    title: string;
-    count: number;
-    children: React.ReactNode;
-  }) {
-    if (count <= 0) return null;
-    return (
-      <div className="mt-3">
-        <button
-          onClick={() => toggle(id)}
-          className="flex w-full items-center gap-1 text-[12px] font-semibold"
-          style={{ color: "var(--text-bright)" }}
-        >
-          {open[id] ? (
-            <ChevronDown className="h-3 w-3" />
-          ) : (
-            <ChevronRight className="h-3 w-3" />
-          )}
-          <span>
-            {title} ({count})
-          </span>
-        </button>
-        {open[id] && <div className="mt-1 pl-4">{children}</div>}
-      </div>
-    );
-  }
-
-  function Row({ name, tokens, dim }: { name: string; tokens?: number; dim?: boolean }) {
-    return (
-      <div
-        className="flex items-center justify-between py-0.5 text-[11px] font-mono"
-        style={{ color: dim ? "var(--text-muted)" : "var(--text-primary)" }}
-      >
-        <span className="truncate">{name}</span>
-        {tokens != null && (
-          <span className="ml-2 shrink-0" style={{ color: "var(--text-muted)" }}>
-            {fmt(tokens)}
-          </span>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div
-      className="flex max-h-[70vh] w-[380px] flex-col overflow-hidden rounded-xl border shadow-2xl"
-      style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
+      className="flex max-h-[70vh] w-[380px] flex-col overflow-hidden border"
+      style={{
+        // 背景用 --bg-tertiary（比页面背景亮一点的灰，对齐左侧 plus 菜单）。
+        // 圆角 16px = 底部圆形按钮的半径（--composer-button-size 32 / 2），
+        // 让卡片右下圆角弧度与那排圆形按钮/圆环一致。阴影用统一 popover 阴影。
+        background: "var(--bg-tertiary)",
+        borderColor: "var(--border)",
+        borderRadius: 16,
+        boxShadow: "var(--shadow-popover)",
+      }}
     >
-      <div
-        className="flex h-11 shrink-0 items-center justify-between border-b px-4"
-        style={{ borderColor: "var(--border)" }}
-      >
-        <h3 className="text-[13px] font-semibold" style={{ color: "var(--text-bright)" }}>
-          {text("Context", "上下文构成")}
-        </h3>
-        <button onClick={onClose}>
-          <X className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto" style={{ padding: "16px 16px 16px" }}>
         {loading ? (
           <div className="p-6 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
             {text("Loading…", "加载中…")}
@@ -206,10 +216,16 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
           </div>
         ) : (
           <>
-            {/* 顶部总用量 */}
-            <div className="mb-1 flex justify-between text-[12px]" style={{ color: "var(--text-primary)" }}>
-              <span>{text("Context window", "上下文窗口")}</span>
-              <span>
+            {/* 顶部总用量 —— 作为唯一的标题行（去掉了单独的 Context 标题），
+                字号加大以充当标题。*/}
+            <div className="mb-1.5 flex items-baseline justify-between">
+              <span
+                className="text-[13px] font-semibold"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {text("Context window", "上下文窗口")}
+              </span>
+              <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
                 {fmt(totalUsed)} / {fmt(win)} ({(usedPct * 100).toFixed(1)}%)
               </span>
             </div>
@@ -243,7 +259,12 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
             <div className="my-3 border-t" style={{ borderColor: "var(--border)" }} />
 
             {/* Per-tool */}
-            <Section id="tools" title={text("Per-tool", "各工具")} count={data?.tools?.length || 0}>
+            <Section
+              open={!!open["tools"]}
+              onToggle={() => toggle("tools")}
+              title={text("Per-tool", "各工具")}
+              count={data?.tools?.length || 0}
+            >
               {[...(data?.tools || [])]
                 .sort((a, b) => b.tokens - a.tokens)
                 .map((t) => (
@@ -252,7 +273,12 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
             </Section>
 
             {/* MCP tools */}
-            <Section id="mcp" title={text("MCP tools", "MCP 工具")} count={data?.mcp_detail?.length || 0}>
+            <Section
+              open={!!open["mcp"]}
+              onToggle={() => toggle("mcp")}
+              title={text("MCP tools", "MCP 工具")}
+              count={data?.mcp_detail?.length || 0}
+            >
               {[...(data?.mcp_detail || [])]
                 .sort((a, b) => b.tokens - a.tokens)
                 .map((m) => (
@@ -266,14 +292,24 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
             </Section>
 
             {/* Memory */}
-            <Section id="memory" title={text("Memory files", "记忆文件")} count={data?.memory_detail?.length || 0}>
+            <Section
+              open={!!open["memory"]}
+              onToggle={() => toggle("memory")}
+              title={text("Memory files", "记忆文件")}
+              count={data?.memory_detail?.length || 0}
+            >
               {(data?.memory_detail || []).map((m) => (
                 <Row key={m.path} name={m.path} tokens={m.tokens} />
               ))}
             </Section>
 
             {/* Skills */}
-            <Section id="skills" title={text("Skills", "技能")} count={data?.skills_detail?.length || 0}>
+            <Section
+              open={!!open["skills"]}
+              onToggle={() => toggle("skills")}
+              title={text("Skills", "技能")}
+              count={data?.skills_detail?.length || 0}
+            >
               {[...(data?.skills_detail || [])]
                 .sort((a, b) => b.tokens - a.tokens)
                 .map((s) => (

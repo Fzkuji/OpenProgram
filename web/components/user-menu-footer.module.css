@@ -139,16 +139,16 @@
 .item {
   display: flex;
   align-items: center;
-  /* Compact popover rows (like Claude's account menu): tighter than the
-     32px chat-list rows — 28px, 4px/8px padding — so the menu reads denser
-     than the nav/recents items. */
+  /* Match `.conv-item` in the Recents list above so the menu's rows
+     are the same visual rhythm as the chat list: 32px row, 6px/8px
+     padding, 14px text, 12px gap, no oversized line-height. */
   gap: 12px;
-  padding: 4px 8px;
-  height: 28px;
-  min-height: 28px;
-  max-height: 28px;
+  padding: 6px 8px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
   box-sizing: border-box;
-  line-height: 18px;
+  line-height: 20px;
   border-radius: var(--ui-list-radius);
   font-size: 14px;
   color: var(--text-primary);
