@@ -1,4 +1,4 @@
-"""Task 3: runtime MODEL_REGISTRY loads from config spec rows, not the
+"""Task 3: runtime ENABLED_MODELS loads from config spec rows, not the
 git-tracked providers/<p>/models.json catalog.
 
 The registry now contains ONLY user-enabled models (config
@@ -17,7 +17,7 @@ at runtime (claude-code seed, custom-model side-effect). These tests pin:
 from __future__ import annotations
 
 import openprogram.providers._config_read as cr
-import openprogram.providers.models_generated as mg
+import openprogram.providers.enabled_models as mg
 from openprogram.providers.types import Model
 
 
@@ -143,7 +143,7 @@ def test_claude_code_dynamic_registration_lands_in_registry():
     # The claude-code seed writes into the SAME dict object at import time.
     from openprogram.providers.anthropic import _claude_code_registry as ccr
     ccr._seed_claude_code_models()
-    assert "claude-code/claude-opus-4-8" in mg.MODEL_REGISTRY
+    assert "claude-code/claude-opus-4-8" in mg.ENABLED_MODELS
 
 
 def test_get_model_alias_fallback_still_works(monkeypatch):
@@ -155,8 +155,8 @@ def test_get_model_alias_fallback_still_works(monkeypatch):
         {"id": "claude-opus-4-8", "name": "Opus", "api": "anthropic-messages"},
     ]}}
     reg = _reload(monkeypatch, cfg)
-    monkeypatch.setattr(mg, "MODEL_REGISTRY", reg)
-    monkeypatch.setattr(pm, "MODEL_REGISTRY", reg)
+    monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
+    monkeypatch.setattr(pm, "ENABLED_MODELS", reg)
     # sanity: direct lookup works
     assert pm.get_model("anthropic", "claude-opus-4-8") is not None
 

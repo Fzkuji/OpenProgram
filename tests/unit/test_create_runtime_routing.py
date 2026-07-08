@@ -16,7 +16,7 @@ from openprogram.providers.registry import PROVIDERS, create_runtime
 
 import openprogram.providers._config_read as cr
 import openprogram.providers.models as pm
-import openprogram.providers.models_generated as mg
+import openprogram.providers.enabled_models as mg
 
 
 @pytest.fixture(autouse=True)
@@ -30,13 +30,13 @@ def _enable_routed_models(monkeypatch):
     }
     monkeypatch.setattr(cr, "read_providers_config", lambda: cfg)
     reg = mg._load()
-    monkeypatch.setattr(mg, "MODEL_REGISTRY", reg)
-    monkeypatch.setattr(pm, "MODEL_REGISTRY", reg)
+    monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
+    monkeypatch.setattr(pm, "ENABLED_MODELS", reg)
 
 
 def test_providers_table_is_only_the_bespoke_runtime_classes():
     # If this set grows, that's fine — but it is NOT the list of supported
-    # providers, which is models_generated + the api_registry.
+    # providers, which is enabled_models + the api_registry.
     assert set(PROVIDERS) == {
         "claude-code", "openai-codex", "gemini-cli",
         "anthropic", "openai", "gemini",

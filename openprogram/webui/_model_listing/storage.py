@@ -255,7 +255,7 @@ def replace_fetched_models(provider_id: str, models: list[dict[str, Any]]) -> di
     builtin-registry rows that upstream's fresh answer doesn't endorse
     — otherwise the legacy ``claude-opus-4`` row keeps showing up even
     after a successful fetch, since it comes from
-    ``providers/models_generated.py`` not config.
+    ``providers/enabled_models.py`` not config.
 
     Side-effect on the enabled spec rows: ids that no longer correspond to
     a visible row are pruned. After a rename like
@@ -337,9 +337,9 @@ def _resolve_base_url(provider_id: str) -> str | None:
         base = pcfg["base_url"]
     else:
         # Static registry baked-in base URL. Prefer the self-contained
-        # providers/<p>/provider.json metadata (no MODEL_REGISTRY read, breaks the
+        # providers/<p>/provider.json metadata (no ENABLED_MODELS read, breaks the
         # providers<->webui circular dep); fall back to the legacy
-        # models_generated-backed get_models() while both sources coexist.
+        # enabled_models-backed get_models() while both sources coexist.
         from openprogram.providers._provider_meta import provider_base_url
         meta_base = provider_base_url(provider_id)
         if meta_base:

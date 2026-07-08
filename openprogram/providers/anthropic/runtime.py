@@ -56,7 +56,7 @@ class AnthropicRuntime(Runtime):
 
     def list_models(self) -> list[str]:
         """Return Anthropic model ids known to the pi-ai registry."""
-        from openprogram.providers.models_generated import MODEL_REGISTRY
+        from openprogram.providers.enabled_models import ENABLED_MODELS
         return sorted(
-            m.id for m in MODEL_REGISTRY.values() if m.provider == "anthropic"
+            m.id for m in ENABLED_MODELS.values() if m.provider == "anthropic"
         )

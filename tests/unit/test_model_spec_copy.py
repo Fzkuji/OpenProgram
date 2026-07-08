@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.webui._model_catalog import storage as st
-from openprogram.webui._model_catalog import toggle as tg
+from openprogram.webui._model_listing import storage as st
+from openprogram.webui._model_listing import toggle as tg
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def stub_listing(monkeypatch):
     def _list(provider_id):
         return [dict(row)] if provider_id == "acme" else []
 
-    import openprogram.webui._model_catalog.listing as listing
+    import openprogram.webui._model_listing.listing as listing
     monkeypatch.setattr(listing, "list_models_for_provider", _list)
     return row
 

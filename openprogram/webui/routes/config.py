@@ -18,7 +18,7 @@ def _validate_api_key(env_var: str, value: str) -> str | None:
     invoking a model. See docs/design/providers/credential-validation-unification.md.
     """
     try:
-        from openprogram.webui._model_catalog import (
+        from openprogram.webui._model_listing import (
             provider_id_for_env_var,
             validate_credential,
         )

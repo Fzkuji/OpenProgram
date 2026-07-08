@@ -145,7 +145,9 @@ The webui presentation layer (`_model_listing/`) does no merging or derivation �
 
 > Recorded 2026-07-08. Full problem description: [../PROBLEM-models-and-bailian.md](../PROBLEM-models-and-bailian.md).
 
-### 8.1 Deviations
+### 8.1 Deviations (migration complete ✅)
+
+> Migration steps 1–7 have all landed; every deviation below is resolved. The registry is renamed `ENABLED_MODELS` with its definition in `enabled_models.py`, `_model_catalog/` became `_model_listing/`, and `models_generated.py` / `thinking_catalog.py` / `_catalog_new.py` are retired — no "catalog" left in the code.
 
 1. **Persisting what shouldn't be persisted**: 752 hand-written `models.json` rows (22 providers, already rotted) + `models.fetched.json` (Fetch persisted into the installed package, papered over with .gitignore). Neither exists in the target state.
 2. **Two data chains**: the settings page goes through webui's `combined_models` (fetched + models.dev) while the runtime registry reads only hand-written `models.json` — the settings page can select `deepseek-v4-flash`, `get_model` cannot find it. The target state needs no merge pipeline at all: config is the only copy.
@@ -155,15 +157,15 @@ The webui presentation layer (`_model_listing/`) does no merging or derivation �
 6. **The registry holds 755 models**, named `MODELS` then `MODEL_REGISTRY`. The target holds enabled models only, renamed `ENABLED_MODELS` — **the name follows the semantics; no rename before the semantics change**.
 7. **Non-standard bailian naming**: models.dev calls the same-base_url provider `alibaba-token-plan-cn`; the reserved empty directory exists; the user asked for the standard name and deletion of `bailian/`.
 
-### 8.2 Migration order (each step commits independently, nothing breaks)
+### 8.2 Migration order (each step commits independently, nothing breaks) — all complete ✅
 
-1. **bailian → alibaba_token_plan_cn**: rename directory + id. Small and independent — first.
-2. **Enable = copy the spec**: checking a model writes the full spec (browse row ⊕ overrides ⊕ endpoints ⊕ thinking derivation) into config `providers.<p>.models`, unified with `custom_models` into one list. Existing users' `enabled_models` id lists migrate once: resolve each id against the current registry and write full specs.
-3. **Runtime switches to config**: the registry loads from "config specs + provider.json fill"; `get_model` semantics unchanged. **The two chains become one here** — the 752-row `models.json` files and the fetched-file machinery become dead code.
-4. **Browsing goes live**: `list_models_for_provider` splits into "available" (live browse) and "enabled" (read config); Fetch persistence is deleted (a short-TTL memory cache may remain).
-5. **Delete dead data**: `git rm` the 22 `models.json` files, the fetched-file machinery, and the `.gitignore` line.
-6. **Unify config**: fold `thinking.json` and `cache.json` into `provider.json`; `thinking_spec`/`cache_spec` read the new location; `_default_api_for`/`_resolve_base_url` read endpoints (cycle dissolves).
-7. **Naming finish**: rename the registry to `ENABLED_MODELS` (semantics now true), definition in `enabled_models.py`; retire `models_generated.py`, `thinking_catalog.py`, `_catalog_new.py`, `_model_catalog/` (→ `_model_listing/`). No "catalog" left in the code.
+1. **bailian → alibaba_token_plan_cn**: rename directory + id. Small and independent — first. ✅
+2. **Enable = copy the spec**: checking a model writes the full spec (browse row ⊕ overrides ⊕ endpoints ⊕ thinking derivation) into config `providers.<p>.models`, unified with `custom_models` into one list. Existing users' `enabled_models` id lists migrate once: resolve each id against the current registry and write full specs. ✅
+3. **Runtime switches to config**: the registry loads from "config specs + provider.json fill"; `get_model` semantics unchanged. **The two chains become one here** — the 752-row `models.json` files and the fetched-file machinery become dead code. ✅
+4. **Browsing goes live**: `list_models_for_provider` splits into "available" (live browse) and "enabled" (read config); Fetch persistence is deleted (a short-TTL memory cache may remain). ✅
+5. **Delete dead data**: `git rm` the 22 `models.json` files, the fetched-file machinery, and the `.gitignore` line. ✅
+6. **Unify config**: fold `thinking.json` and `cache.json` into `provider.json`; `thinking_spec`/`cache_spec` read the new location; `_default_api_for`/`_resolve_base_url` read endpoints (cycle dissolves). ✅
+7. **Naming finish**: rename the registry to `ENABLED_MODELS` (semantics now true), definition in `enabled_models.py`; retire `models_generated.py`, `thinking_catalog.py` (folded into `thinking_spec.py`), `_catalog_new.py`, `_model_catalog/` (→ `_model_listing/`). No "catalog" left in the code. ✅
 
 ### 8.3 What the migration must preserve (from prior reviews)
 

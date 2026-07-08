@@ -1,13 +1,13 @@
-"""Unified provider + model catalog for the webui.
+"""Unified provider + model listing for the webui.
 
 Refactored from a 1388-line monolith into per-concern modules. The
-``__init__`` re-exports every name external code consumed off the old
-``openprogram.webui._model_catalog`` module so the existing imports
-keep working unchanged.
+``__init__`` re-exports every name external code consumes off the
+``openprogram.webui._model_listing`` package so callers import from one
+place.
 
 Layout::
 
-    _model_catalog/
+    _model_listing/
       __init__.py        # this file — public API re-exports
       providers.py       # static metadata + _is_configured
       setup_hints.py     # SETUP_HINTS dict + _setup_hint
@@ -29,8 +29,8 @@ Layout::
 Adding a new provider: usually NOTHING. The credential kind, fetch
 fetcher, chat api-stamp, and base convention are all DERIVED from the
 provider's wire ``api`` (``providers._default_api_for`` reads it from the
-static ``models_generated`` rows, or detects an Anthropic ``…/anthropic``
-endpoint for community providers). A provider that's in ``models_generated``
+static ``enabled_models`` rows, or detects an Anthropic ``…/anthropic``
+endpoint for community providers). A provider that's in ``enabled_models``
 or whose models.dev base reveals its wire needs no per-provider code.
 
 The optional touch-points, only when something can't be derived:
@@ -40,7 +40,7 @@ The optional touch-points, only when something can't be derived:
      /v1/models lister not already covered.
   2. Map its env var in ``providers._ENV_API_KEYS``.
   3. Add to ``providers._PROVIDER_DEFAULT_API`` ONLY to correct a
-     ``models_generated`` mislabel or pin a multi-api provider's route —
+     ``enabled_models`` mislabel or pin a multi-api provider's route —
      it is normally empty.
   4. (Optional) Add a ``setup_hints._SETUP_HINTS`` entry for
      non-paste-a-key flows.
@@ -48,7 +48,7 @@ The optional touch-points, only when something can't be derived:
      register it in ``fetchers.__init__._FETCHERS`` if /v1/models
      needs custom handling.
   6. Add at least one Model row in
-     ``providers/models_generated.py`` (auto-registers the provider
+     ``providers/enabled_models.py`` (auto-registers the provider
      id with ``get_providers()``).
 """
 from __future__ import annotations

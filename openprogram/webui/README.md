@@ -35,7 +35,7 @@ Or from CLI:
 ## Sub-packages
 
 - **`_execute/`** — execute_in_context
-- **`_model_catalog/`** — Unified provider + model catalog for the webui
+- **`_model_listing/`** — Unified provider + model listing for the webui
 - **`graph_layout/`** — DAG layout pipeline
 - **`routes/`** — FastAPI route registrations split out from server.py by topic
 - **`static/`**

@@ -1,6 +1,6 @@
 """Read-only catalog endpoints: DAG tree, token stats, programs meta.
 
-These routes are mostly thin DB wrappers (SessionDB + MODEL_REGISTRY registry)
+These routes are mostly thin DB wrappers (SessionDB + ENABLED_MODELS registry)
 plus a ``_discover_functions`` server-helper call.
 """
 from __future__ import annotations
@@ -221,7 +221,7 @@ def register(app):
     async def get_branches_tokens(session_id: str):
         """Lightweight token summary for every branch tip in this session."""
         from openprogram.agent.session_db import default_db
-        from openprogram.providers.models_generated import MODEL_REGISTRY
+        from openprogram.providers.enabled_models import ENABLED_MODELS
 
         db = default_db()
         branches = db.list_branches(session_id)
@@ -234,9 +234,9 @@ def register(app):
             window = stats.get("context_window") or 0
             mid = stats.get("model")
             if not window and mid:
-                cands = [v for v in MODEL_REGISTRY.values() if v.id == mid]
-                if mid in MODEL_REGISTRY:
-                    cands.insert(0, MODEL_REGISTRY[mid])
+                cands = [v for v in ENABLED_MODELS.values() if v.id == mid]
+                if mid in ENABLED_MODELS:
+                    cands.insert(0, ENABLED_MODELS[mid])
                 if cands:
                     window = max(
                         int(getattr(c, "context_window", 0) or 0)
@@ -259,14 +259,14 @@ def register(app):
                                  model: str | None = None,
                                  provider: str | None = None):
         from openprogram.agent.session_db import default_db
-        from openprogram.providers.models_generated import MODEL_REGISTRY
+        from openprogram.providers.enabled_models import ENABLED_MODELS
 
         model_obj = None
         if model:
             key = f"{provider}/{model}" if provider else None
-            model_obj = (MODEL_REGISTRY.get(key) if key else None) or MODEL_REGISTRY.get(model)
+            model_obj = (ENABLED_MODELS.get(key) if key else None) or ENABLED_MODELS.get(model)
             if model_obj is None:
-                for v in MODEL_REGISTRY.values():
+                for v in ENABLED_MODELS.values():
                     if v.id == model:
                         model_obj = v
                         break
@@ -277,8 +277,8 @@ def register(app):
 
         if not stats["context_window"] and stats.get("model"):
             mid = stats["model"]
-            candidates = [MODEL_REGISTRY.get(mid)] if mid in MODEL_REGISTRY else []
-            candidates.extend(v for v in MODEL_REGISTRY.values() if v.id == mid)
+            candidates = [ENABLED_MODELS.get(mid)] if mid in ENABLED_MODELS else []
+            candidates.extend(v for v in ENABLED_MODELS.values() if v.id == mid)
             candidates = [c for c in candidates if c is not None]
             if candidates:
                 m = max(

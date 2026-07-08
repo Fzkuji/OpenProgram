@@ -150,7 +150,7 @@ def _preferred_default_model(provider: str) -> str | None:
       3. ``None`` — caller uses its hardcoded fallback.
     """
     try:
-        from openprogram.webui._model_catalog import _read_providers_cfg
+        from openprogram.webui._model_listing import _read_providers_cfg
         from openprogram.paths import get_config_path
         import json
         try:
@@ -212,7 +212,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
         # rule that drives the Settings model table. Legacy ``custom_models``
         # is a fallback for a not-yet-migrated config.
         if not models:
-            from openprogram.webui._model_catalog import _read_providers_cfg
+            from openprogram.webui._model_listing import _read_providers_cfg
             pcfg = _read_providers_cfg().get(provider, {})
             customs = (pcfg.get("models") or []) or (pcfg.get("custom_models") or [])
             if not customs:
@@ -223,8 +223,8 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
         else:
             model = models[0].id
     # ``custom_models`` (fetched + manual) are valid runtime targets
-    # too. ``get_model`` only looks at the static MODEL_REGISTRY dict baked
-    # into ``providers/models_generated.py``; without this side-effect
+    # too. ``get_model`` only looks at the static ENABLED_MODELS dict baked
+    # into ``providers/enabled_models.py``; without this side-effect
     # registration, every model the user pulled via Fetch
     # (DeepSeek V4, claude-sonnet-4-6, …) trips the
     # ``raise ValueError("Unknown model ...")`` inside Runtime.__init__
@@ -239,7 +239,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
 def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     """Look ``model_id`` up in the user's enabled spec rows
     (``providers.<p>.models``) for ``provider`` and, if present, insert a
-    ``Model`` row into the global ``MODEL_REGISTRY`` dict so
+    ``Model`` row into the global ``ENABLED_MODELS`` dict so
     ``providers.get_model`` finds it. Falls back to the legacy
     ``custom_models`` key for a not-yet-migrated config.
 
@@ -254,12 +254,12 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     model wasn't found (genuine unknown id → caller re-raises).
     """
     try:
-        from openprogram.webui._model_catalog import (
+        from openprogram.webui._model_listing import (
             _read_providers_cfg,
             _default_api_for,
         )
-        from openprogram.providers.models_generated import (
-            MODEL_REGISTRY,
+        from openprogram.providers.enabled_models import (
+            ENABLED_MODELS,
             _build_model_from_row,
         )
         from openprogram.providers._provider_meta import provider_endpoints
@@ -281,7 +281,7 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
         except Exception:
             return False
         prefix = spec.get("key_prefix") or provider
-        MODEL_REGISTRY[f"{prefix}/{m.id}"] = m
+        ENABLED_MODELS[f"{prefix}/{m.id}"] = m
         return True
 
     # Legacy custom_models (flat shape) — fallback for a not-yet-migrated config.
@@ -309,7 +309,7 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     # ``…/anthropic/v1`` base, which the anthropic-messages layer then
     # doubled into ``…/v1/v1/messages`` → 404, so the model registered but
     # was unusable.
-    from ._model_catalog import _resolve_base_url
+    from ._model_listing import _resolve_base_url
     base_url = _resolve_base_url(provider) or ""
 
     try:
@@ -327,7 +327,7 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
         )
     except Exception:
         return False
-    MODEL_REGISTRY[f"{provider}/{model_id}"] = m
+    ENABLED_MODELS[f"{provider}/{model_id}"] = m
     return True
 
 
@@ -338,15 +338,15 @@ _CLI_BINS = {"openai-codex": "codex", "gemini-cli": "gemini"}
 def _build_model_caps(provider_name: str, model_ids: list[str]) -> dict[str, dict]:
     """Return {model_id: {vision, video, audio, reasoning, tools}} for each model."""
     try:
-        from openprogram.providers.models_generated import MODEL_REGISTRY
+        from openprogram.providers.enabled_models import ENABLED_MODELS
         caps: dict[str, dict] = {}
         for mid in model_ids:
             # Try provider-qualified key first, then bare id
             key = f"{provider_name}/{mid}"
-            m = MODEL_REGISTRY.get(key) or MODEL_REGISTRY.get(mid)
+            m = ENABLED_MODELS.get(key) or ENABLED_MODELS.get(mid)
             if m is None:
                 # Fallback: scan for any key whose model.id matches
-                for k, v in MODEL_REGISTRY.items():
+                for k, v in ENABLED_MODELS.items():
                     if v.id == mid and (v.provider == provider_name or v.api == provider_name):
                         m = v
                         break
@@ -384,7 +384,7 @@ def _probe_one_provider(p_name: str):
     answering on its port).
     """
     try:
-        from openprogram.webui._model_catalog import _is_configured
+        from openprogram.webui._model_listing import _is_configured
         if not _is_configured(p_name):
             raise RuntimeError(f"{p_name} not configured")
         if p_name in _CLI_PROVIDERS:
@@ -602,7 +602,7 @@ def _enabled_model_keys() -> set[tuple[str, str]]:
     shows no default" stay in lockstep.
     """
     try:
-        from openprogram.webui._model_catalog.listing import list_enabled_models
+        from openprogram.webui._model_listing.listing import list_enabled_models
         keys: set[tuple[str, str]] = set()
         for m in list_enabled_models():
             pid, mid = m.get("provider"), m.get("id")

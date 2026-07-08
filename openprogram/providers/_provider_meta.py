@@ -1,4 +1,4 @@
-"""Provider-level api/base_url from providers/<p>/provider.json — no MODEL_REGISTRY,
+"""Provider-level api/base_url from providers/<p>/provider.json — no ENABLED_MODELS,
 no webui import. Breaks the providers<->webui circular dep for the derivation
 helpers (_default_api_for / _resolve_base_url)."""
 from __future__ import annotations

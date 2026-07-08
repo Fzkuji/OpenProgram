@@ -9,7 +9,7 @@ or the provider half-works in confusing ways:
   * that fetcher must hit the provider's OWN base_url, not
     api.anthropic.com;
   * ``_PROVIDER_DEFAULT_API`` must stamp fetched/custom rows
-    ``anthropic-messages`` (matching models_generated) so chat routes to
+    ``anthropic-messages`` (matching enabled_models) so chat routes to
     the right stream function instead of POST /chat/completions.
 
 No network: httpx + storage resolvers are stubbed.
@@ -18,23 +18,23 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.webui._model_catalog import fetchers as F
-from openprogram.webui._model_catalog import providers as P
-from openprogram.webui._model_catalog import storage as st
-from openprogram.webui._model_catalog.fetchers import anthropic as A
+from openprogram.webui._model_listing import fetchers as F
+from openprogram.webui._model_listing import providers as P
+from openprogram.webui._model_listing import storage as st
+from openprogram.webui._model_listing.fetchers import anthropic as A
 
 
 # api-stamp consistency (drift guard)
 
 @pytest.mark.parametrize("pid", ["minimax", "minimax-cn"])
-def test_default_api_matches_models_generated(pid, monkeypatch):
+def test_default_api_matches_enabled_models(pid, monkeypatch):
     # Post-Task-3 the registry holds only enabled rows, so enable one
     # MiniMax model (which inherits its anthropic-messages wire from
     # provider.json) and rebuild the registry. The row's api must then
     # agree with the catalog's derived stamp — otherwise a fetched row
     # would route to the wrong stream function.
     import openprogram.providers._config_read as cr
-    import openprogram.providers.models_generated as mg
+    import openprogram.providers.enabled_models as mg
     monkeypatch.setattr(
         cr, "read_providers_config",
         lambda: {pid: {"models": [{"id": "MiniMax-M2", "name": "MiniMax M2"}]}},
@@ -58,9 +58,9 @@ def test_community_anthropic_wire_derived_and_base_normalized(monkeypatch, md_ba
     # any trailing /v1 stripped — no per-provider table entry. This is the
     # general mechanism that replaced the MiniMax-specific override.
     pid = "some-community-plan"
-    from openprogram.webui._model_catalog import providers as cat
-    from openprogram.webui._model_catalog import storage as st
-    from openprogram.webui._model_catalog.credentials import _kind_for
+    from openprogram.webui._model_listing import providers as cat
+    from openprogram.webui._model_listing import storage as st
+    from openprogram.webui._model_listing.credentials import _kind_for
     import openprogram.providers as PR
 
     monkeypatch.setattr(cat, "_default_base_url_for", lambda p: md_base)
@@ -75,7 +75,7 @@ def test_community_anthropic_wire_derived_and_base_normalized(monkeypatch, md_ba
 def test_provider_default_api_table_is_empty_by_default():
     # Everything derives — the manual override table must stay empty so no
     # one re-introduces per-provider drift. (Add entries only to override a
-    # models_generated mislabel; if you do, document why here.)
+    # enabled_models mislabel; if you do, document why here.)
     assert P._PROVIDER_DEFAULT_API == {}
 
 
@@ -94,7 +94,7 @@ def test_fetch_dispatch_routes_anthropic_wire_to_anthropic_fetcher(monkeypatch):
 
     monkeypatch.setattr(F, "_fetch_anthropic", fake_anthropic)
     monkeypatch.setattr(F, "_fetch_openai_compat", fake_openai)
-    from openprogram.webui._model_catalog import sources as S
+    from openprogram.webui._model_listing import sources as S
     monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
 
     # Routing + normalize now live in fetch_and_normalize (no persistence).

@@ -144,7 +144,9 @@ webui 展示层（`_model_listing/`）不做任何合并推导——浏览合并
 
 > 记录日期 2026-07-08。问题现象的完整描述见 [../PROBLEM-models-and-bailian.md](../PROBLEM-models-and-bailian.md)。
 
-### 8.1 偏离
+### 8.1 偏离（迁移已完成 ✅）
+
+> 迁移步骤 1–7 已全部落地：以下偏离均已消除。注册表改名 `ENABLED_MODELS`、定义移入 `enabled_models.py`、`_model_catalog/` → `_model_listing/`、`models_generated.py` / `thinking_catalog.py` / `_catalog_new.py` 退役，代码里不再有「catalog」。
 
 1. **持久化了不该持久化的**：752 行手写 `models.json`（22 个 provider，已腐烂）+ `models.fetched.json`（Fetch 落盘在安装包目录，靠 .gitignore 遮掩）。目标态里两者都不存在。
 2. **两条数据链**：设置页走 webui 的 `combined_models`（fetched + models.dev），运行时注册表只读手写 `models.json`——设置页能选 `deepseek-v4-flash`，`get_model` 查不到。目标态里连合并管线都不需要：只有 config 一份。
@@ -154,15 +156,15 @@ webui 展示层（`_model_listing/`）不做任何合并推导——浏览合并
 6. **注册表装了 755 个模型**，名字先后叫过 `MODELS` / `MODEL_REGISTRY`。目标态只装启用的，改名 `ENABLED_MODELS`——**名字跟着语义走，语义没改完之前不换名**。
 7. **bailian 命名不标准**：models.dev 同 base_url 的 provider 叫 `alibaba-token-plan-cn`，已有预留空目录；用户已要求改标准名、删 `bailian/`。
 
-### 8.2 迁移顺序（每步独立提交、系统不瘫）
+### 8.2 迁移顺序（每步独立提交、系统不瘫）——全部完成 ✅
 
-1. **bailian → alibaba_token_plan_cn**：目录改名 + id 改 `alibaba-token-plan-cn`。独立小改，先做。
-2. **启用即复制规格**：设置页勾选模型时把完整规格（浏览行 ⊕ override ⊕ endpoints ⊕ thinking 推导）写进 config `providers.<p>.models`，与 `custom_models` 统一为一个列表。存量用户的 `enabled_models` id 列表一次性迁移：按当前注册表把 id 解析成完整规格写入。
-3. **运行时切换到 config**：注册表加载源改为「config 规格 + provider.json 填充」，`get_model` 语义不变。**两条链在这一步合一**——此后 752 行 `models.json` 和 `models.fetched.json` 机制成为死代码。
-4. **浏览改实时**：`list_models_for_provider` 拆成「available（实时浏览）」和「enabled（读 config）」两条路；Fetch 落盘逻辑删除（可留短 TTL 内存缓存）。
-5. **删除死数据**：`git rm` 22 份 `models.json`、fetched 文件机制、`.gitignore` 相关行。
-6. **配置合一**：`thinking.json`、`cache.json` 并入 `provider.json`；`thinking_spec`/`cache_spec` 改读新位置；`_default_api_for`/`_resolve_base_url` 改读 endpoints（循环依赖解除）。
-7. **命名收尾**：注册表改名 `ENABLED_MODELS`（此时语义已成立），定义移入 `enabled_models.py`；退役 `models_generated.py`、`thinking_catalog.py`、`_catalog_new.py`、`_model_catalog/`（→ `_model_listing/`）。至此代码里不再有「catalog」。
+1. **bailian → alibaba_token_plan_cn**：目录改名 + id 改 `alibaba-token-plan-cn`。独立小改，先做。✅
+2. **启用即复制规格**：设置页勾选模型时把完整规格（浏览行 ⊕ override ⊕ endpoints ⊕ thinking 推导）写进 config `providers.<p>.models`，与 `custom_models` 统一为一个列表。存量用户的 `enabled_models` id 列表一次性迁移：按当前注册表把 id 解析成完整规格写入。✅
+3. **运行时切换到 config**：注册表加载源改为「config 规格 + provider.json 填充」，`get_model` 语义不变。**两条链在这一步合一**——此后 752 行 `models.json` 和 `models.fetched.json` 机制成为死代码。✅
+4. **浏览改实时**：`list_models_for_provider` 拆成「available（实时浏览）」和「enabled（读 config）」两条路；Fetch 落盘逻辑删除（可留短 TTL 内存缓存）。✅
+5. **删除死数据**：`git rm` 22 份 `models.json`、fetched 文件机制、`.gitignore` 相关行。✅
+6. **配置合一**：`thinking.json`、`cache.json` 并入 `provider.json`；`thinking_spec`/`cache_spec` 改读新位置；`_default_api_for`/`_resolve_base_url` 改读 endpoints（循环依赖解除）。✅
+7. **命名收尾**：注册表改名 `ENABLED_MODELS`（此时语义已成立），定义移入 `enabled_models.py`；退役 `models_generated.py`、`thinking_catalog.py`（并入 `thinking_spec.py`）、`_catalog_new.py`、`_model_catalog/`（→ `_model_listing/`）。至此代码里不再有「catalog」。✅
 
 ### 8.3 迁移必须保住的点（历史审查所得）
 

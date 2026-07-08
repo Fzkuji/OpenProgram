@@ -1,7 +1,7 @@
 """Read-only access to the ``providers`` section of ~/.openprogram/config.json,
 importable from ``openprogram.providers`` without pulling in webui.
 
-The runtime registry (``models_generated._load``) loads user-enabled model
+The runtime registry (``enabled_models._load``) loads user-enabled model
 spec rows from config, so it needs the config's providers dict — but
 ``openprogram.providers`` must NOT import ``openprogram.webui`` (circular).
 This is the same three-line read the webui/CLI use (via ``setup._read_config``),

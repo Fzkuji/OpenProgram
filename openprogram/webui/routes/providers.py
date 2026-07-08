@@ -1,6 +1,6 @@
 """Provider catalog routes — list/toggle/configure/fetch-models/test.
 
-Pure dispatch to ``openprogram.webui._model_catalog`` and
+Pure dispatch to ``openprogram.webui._model_listing`` and
 ``openprogram.providers.configuration``. Plus the web-search provider
 catalog and per-env-var API-key reveal endpoint.
 
@@ -144,12 +144,12 @@ def register(app):
 
     @app.get("/api/providers/list")
     async def api_providers_list():
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         return JSONResponse(content={"providers": _mc.list_providers()})
 
     @app.get("/api/providers/{name}/models")
     async def api_provider_models(name: str):
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         return JSONResponse(content={
             "provider": name,
             "models": _mc.list_models_for_provider(name),
@@ -157,13 +157,13 @@ def register(app):
 
     @app.post("/api/providers/{name}/toggle")
     async def api_toggle_provider(name: str, body: dict = None):
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         enabled = bool((body or {}).get("enabled", False))
         return JSONResponse(content=_mc.toggle_provider(name, enabled))
 
     @app.post("/api/providers/{name}/models/{model_id:path}/toggle")
     async def api_toggle_model(name: str, model_id: str, body: dict = None):
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         enabled = bool((body or {}).get("enabled", False))
         return JSONResponse(content=_mc.toggle_model(name, model_id, enabled))
 
@@ -187,22 +187,22 @@ def register(app):
 
     @app.get("/api/models/enabled")
     async def api_enabled_models():
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         return JSONResponse(content={"models": _mc.list_enabled_models()})
 
     @app.get("/api/providers/{name}/config")
     async def api_provider_config(name: str):
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         return JSONResponse(content=_mc.get_provider_config(name))
 
     @app.post("/api/providers/{name}/config")
     async def api_set_provider_config(name: str, body: dict = None):
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         return JSONResponse(content=_mc.set_provider_config(name, body or {}))
 
     @app.post("/api/providers/{name}/fetch-models")
     async def api_fetch_models(name: str):
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         return JSONResponse(content=_mc.fetch_models_remote(name))
 
     # claude-code account management is now served by the UNIFIED
@@ -217,7 +217,7 @@ def register(app):
     # blocking the event loop for the ~1s probe.
     @app.post("/api/providers/{name}/test")
     def api_test_provider(name: str, body: dict = None):
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         model = (body or {}).get("model")
         return JSONResponse(content=_mc.test_provider(name, model=model))
 
@@ -226,7 +226,7 @@ def register(app):
         # Unified credential validator — model-independent unless {model} given.
         # Returns the rich CredentialResult shape (status / kind / via / detail);
         # /test stays as the legacy-shaped alias the React component reads.
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         model = (body or {}).get("model")
         return JSONResponse(
             content=_mc.validate_credential(name, model=model, use_cache=False).to_dict()
@@ -238,14 +238,14 @@ def register(app):
         # ?names=a,b,c to scope it; ?refresh=true bypasses the 60s cache. The
         # async variant probes every provider concurrently in worker threads so
         # the event loop isn't blocked on a sequential chain of network calls.
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         ids = [n for n in (names or "").split(",") if n] or None
         providers = await _mc.provider_auth_status_async(provider_ids=ids, refresh=refresh)
         return JSONResponse(content={"providers": providers})
 
     @app.delete("/api/providers/{name}/models/{model_id:path}")
     async def api_delete_custom_model(name: str, model_id: str):
-        from openprogram.webui import _model_catalog as _mc
+        from openprogram.webui import _model_listing as _mc
         return JSONResponse(content=_mc.remove_custom_model(name, model_id))
 
     @app.get("/api/providers/{name}/configure")

@@ -73,7 +73,7 @@ def _validate_account(provider: str, name: str) -> dict:
         return {"status": "missing", "detail": "no credential on this account"}
     kind = getattr(cred, "kind", "")
     if kind == "api_key":
-        from openprogram.webui._model_catalog.credentials import validate_credential
+        from openprogram.webui._model_listing.credentials import validate_credential
         try:
             result = validate_credential(provider, api_key=_api_key_of(cred), use_cache=False).to_dict()
         except Exception as e:
@@ -346,7 +346,7 @@ def register(app):
         validation = None
         if b.get("validate"):
             try:
-                from openprogram.webui._model_catalog.credentials import validate_credential, INVALID_CREDENTIAL
+                from openprogram.webui._model_listing.credentials import validate_credential, INVALID_CREDENTIAL
                 res = validate_credential(provider, api_key=key, use_cache=False)
                 validation = res.to_dict()
                 if res.status == INVALID_CREDENTIAL:
@@ -395,7 +395,7 @@ def register(app):
         validation = None
         if b.get("validate", True):
             try:
-                from openprogram.webui._model_catalog.credentials import validate_credential, INVALID_CREDENTIAL
+                from openprogram.webui._model_listing.credentials import validate_credential, INVALID_CREDENTIAL
                 res = validate_credential(provider, api_key=key, use_cache=False)
                 validation = res.to_dict()
                 if res.status == INVALID_CREDENTIAL:

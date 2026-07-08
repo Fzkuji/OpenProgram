@@ -86,7 +86,7 @@ def _seed_default_agent(_A, agent_id: str) -> dict | None:
         from openprogram.agents.manager import (
             AgentSpec, AgentModelRef, _write_agent,
         )
-        from openprogram.webui._model_catalog import _read_providers_cfg
+        from openprogram.webui._model_listing import _read_providers_cfg
         from openprogram.paths import get_config_path
         import json as _json
     except Exception:
@@ -223,7 +223,7 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             m = get_model(provider, model_id_only)
             if m:
                 return m
-            # Community / fetched custom model (no static models_generated
+            # Community / fetched custom model (no static enabled_models
             # row, e.g. minimax-cn-coding-plan/MiniMax-M3): resolve it from
             # the provider's config custom_models — derived api + the
             # normalised (Anthropic /v1-stripped) base — so the chat path

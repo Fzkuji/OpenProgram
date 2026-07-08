@@ -32,7 +32,7 @@ def run_providers_section() -> int:
 def run_model_section() -> int:
     """Pick the default agent's chat model across enabled providers."""
     from openprogram.setup import _choose_one
-    from openprogram.webui import _model_catalog as mc
+    from openprogram.webui import _model_listing as mc
     from openprogram.agent.management import manager as _agents
     from openprogram.agent.management import runtime_registry as _runtimes
     enabled = mc.list_enabled_models()

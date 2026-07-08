@@ -134,15 +134,15 @@ _ENV_API_KEYS: dict[str, str | None] = {
 # Manual override for the ``api`` (wire / stream-function id) a
 # provider's fetched/custom models route through. **Normally empty.**
 # ``_default_api_for`` derives the api from the provider's own static
-# models (``models_generated``), which always WINS for a single-api
+# models (``enabled_models``), which always WINS for a single-api
 # provider — so a fetched row matches the static catalogue and a stale
 # entry here can't re-introduce drift. This table is therefore consulted
 # ONLY when derivation is impossible:
-#   * a multi-api provider (models_generated lists several wires) that
+#   * a multi-api provider (enabled_models lists several wires) that
 #     needs a deliberate default routing choice; or
 #   * a community provider with no static row AND no ``…/anthropic``
 #     base for the heuristic to catch.
-# To fix a single-api provider that's mislabelled, fix ``models_generated``
+# To fix a single-api provider that's mislabelled, fix ``enabled_models``
 # (regenerate) — an entry here would be ignored. Values must match a
 # string registered in ``providers/register.py::register_builtins`` (a
 # "custom" stamp has no stream function and drops the model from chat).
@@ -200,8 +200,8 @@ def _static_apis_for(provider_id: str) -> set[str]:
     models declare (``{}`` for a community-only provider).
 
     Prefers the self-contained ``providers/<p>/provider.json`` metadata
-    (no ``MODEL_REGISTRY`` read, breaks the providers<->webui circular dep);
-    falls back to the legacy ``models_generated.MODEL_REGISTRY`` scan while both
+    (no ``ENABLED_MODELS`` read, breaks the providers<->webui circular dep);
+    falls back to the legacy ``enabled_models.ENABLED_MODELS`` scan while both
     sources coexist during the migration.
     """
     try:
@@ -212,8 +212,8 @@ def _static_apis_for(provider_id: str) -> set[str]:
     except Exception:
         pass
     try:
-        from openprogram.providers.models_generated import MODEL_REGISTRY
-        return {m.api for m in MODEL_REGISTRY.values() if m.provider == provider_id}
+        from openprogram.providers.enabled_models import ENABLED_MODELS
+        return {m.api for m in ENABLED_MODELS.values() if m.provider == provider_id}
     except Exception:
         return set()
 
@@ -225,7 +225,7 @@ def _default_api_for(provider_id: str) -> str | None:
     can't drift:
 
       1. The provider's OWN static models' wire api, when unambiguous —
-         the source of truth (``models_generated``). This means a fetched
+         the source of truth (``enabled_models``). This means a fetched
          model is stamped the SAME ``api`` as the static catalogue, so it
          can't route worse than the rows that already work.
       2. A manual override (``_PROVIDER_DEFAULT_API``) — kept only for

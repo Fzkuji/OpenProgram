@@ -5,7 +5,7 @@
   * no-key / offline degradation falls back to models.dev then empty, never
     raising;
   * a short-TTL browse cache; force_refresh bypasses it;
-  * list_enabled_models reads MODEL_REGISTRY directly (config spec rows), no
+  * list_enabled_models reads ENABLED_MODELS directly (config spec rows), no
     network;
   * the Fetch button (fetch_models_remote) = force-refresh browse + overwrite
     the spec rows of enabled models present in the fresh result, no file
@@ -20,11 +20,11 @@ import copy
 
 import pytest
 
-from openprogram.webui._model_catalog import listing
-from openprogram.webui._model_catalog import fetchers as F
-from openprogram.webui._model_catalog import storage as st
-from openprogram.webui._model_catalog import provider_models as pm
-from openprogram.webui._model_catalog import providers as cat
+from openprogram.webui._model_listing import listing
+from openprogram.webui._model_listing import fetchers as F
+from openprogram.webui._model_listing import storage as st
+from openprogram.webui._model_listing import provider_models as pm
+from openprogram.webui._model_listing import providers as cat
 
 
 @pytest.fixture(autouse=True)
@@ -145,10 +145,10 @@ def test_browse_cache_ttl_and_force_refresh(monkeypatch, mem_cfg):
 # ---------------------------------------------------------------------------
 
 def test_enabled_models_reads_registry(monkeypatch):
-    import openprogram.providers.models_generated as mg
+    import openprogram.providers.enabled_models as mg
     from openprogram.providers.types import Model
     monkeypatch.setattr(cat, "_label", lambda pid: pid.upper())
-    monkeypatch.setattr(mg, "MODEL_REGISTRY", {
+    monkeypatch.setattr(mg, "ENABLED_MODELS", {
         "openai/gpt-x": Model.model_validate({
             "id": "gpt-x", "name": "GPT-X", "provider": "openai",
             "api": "openai-responses", "base_url": "https://api.openai.com/v1",
@@ -186,7 +186,7 @@ def test_refresh_overwrites_enabled_specs(monkeypatch, mem_cfg):
         ],
     })
     reloads = {"n": 0}
-    import openprogram.providers.models_generated as mg
+    import openprogram.providers.enabled_models as mg
     monkeypatch.setattr(mg, "reload", lambda: reloads.__setitem__("n", reloads["n"] + 1))
 
     res = F.fetch_models_remote("acme")
@@ -211,7 +211,7 @@ def test_refresh_keeps_enabled_model_absent_upstream(monkeypatch, mem_cfg):
     monkeypatch.setattr(F, "fetch_and_normalize", lambda pid, timeout=15.0: {
         "models": [{"id": "other", "name": "Other"}],
     })
-    import openprogram.providers.models_generated as mg
+    import openprogram.providers.enabled_models as mg
     monkeypatch.setattr(mg, "reload", lambda: None)
 
     res = F.fetch_models_remote("acme")

@@ -11,7 +11,7 @@ Three public listing functions:
   credentialed) ⊕ models.dev, merged in memory and never persisted, with
   the enabled flag read off the config spec rows. See ``_browse_models``.
 * ``list_enabled_models`` — flat picker for the chat composer. Reshapes
-  the runtime registry (``MODEL_REGISTRY`` = the enabled config spec rows)
+  the runtime registry (``ENABLED_MODELS`` = the enabled config spec rows)
   directly — no browse, no network.
 
 Plus the small ``_model_to_dict`` helper that produces the per-model
@@ -118,7 +118,7 @@ def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
         "video": "video" in inputs,
         "audio": "audio" in inputs,
         "reasoning": bool(getattr(model, "reasoning", False)),
-        # Thinking UX capability (see providers/thinking_catalog.py).
+        # Thinking UX capability (see providers/thinking_spec.py).
         # Empty `thinking_levels` → UI hides the menu for this model.
         "thinking_levels": list(getattr(model, "thinking_levels", []) or []),
         "default_thinking_level": getattr(model, "default_thinking_level", None),
@@ -135,7 +135,7 @@ def list_providers() -> list[dict[str, Any]]:
     Two source-of-truth tiers merged:
 
       1. **Static registry** — providers with at least one ``Model``
-         row in ``providers/models_generated.py``. These have a baked-
+         row in ``providers/enabled_models.py``. These have a baked-
          in ``Model.base_url`` and known model ids the runtime can
          dispatch against on day one.
 
@@ -289,7 +289,7 @@ def list_models_for_provider(
     ``enabled_models`` id list. ``force_refresh`` bypasses the browse TTL
     cache (the Fetch button).
     """
-    from openprogram.providers.thinking_catalog import derive_thinking_fields
+    from openprogram.providers.thinking_spec import derive_thinking_fields
 
     from .providers import _default_api_for
     from .storage import _read_providers_cfg
@@ -356,20 +356,20 @@ def list_enabled_models() -> list[dict[str, Any]]:
     """Flat list of all enabled models across enabled providers — used
     by the chat page model picker.
 
-    Reads the runtime registry (``MODEL_REGISTRY`` = the config spec rows
+    Reads the runtime registry (``ENABLED_MODELS`` = the config spec rows
     the user enabled) DIRECTLY — no live browse, no network. The registry
     is already exactly "the enabled models", so the picker just reshapes
     each ``Model`` into the row dict the composer consumes and stamps the
     provider label. Providers whose toggle is off are excluded.
     """
-    from openprogram.providers.models_generated import MODEL_REGISTRY
+    from openprogram.providers.enabled_models import ENABLED_MODELS
 
     from .providers import _label
     from .storage import _read_providers_cfg
 
     cfg = _read_providers_cfg()
     out: list[dict[str, Any]] = []
-    for key, model in MODEL_REGISTRY.items():
+    for key, model in ENABLED_MODELS.items():
         provider = getattr(model, "provider", None) or (
             key.split("/", 1)[0] if "/" in key else key
         )

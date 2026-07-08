@@ -1,6 +1,6 @@
 """Runtime model registry — built from the user's enabled models in config.
 
-``MODEL_REGISTRY`` holds ONLY the models the user has enabled (the full spec
+``ENABLED_MODELS`` holds ONLY the models the user has enabled (the full spec
 rows persisted under config ``providers.<p>.models``) plus anything registered
 dynamically at runtime (the claude-code seed, and custom-model side-effect
 registration in the webui). ``_load()`` reads those config spec rows, fills
@@ -8,8 +8,8 @@ each row's missing api/base_url from the provider's ``providers/<p>/provider.jso
 endpoints (row values win), and keys them ``"<key_prefix or provider>/<id>"``.
 
 The dict object is MUTABLE and shared: dynamic writers do
-``MODEL_REGISTRY[k] = m`` in place. Public interface is unchanged
-(``from openprogram.providers.models_generated import MODEL_REGISTRY``).
+``ENABLED_MODELS[k] = m`` in place. Public interface:
+``from openprogram.providers.enabled_models import ENABLED_MODELS``.
 
 An empty/missing config is a legal fresh-install state → empty registry.
 """
@@ -57,15 +57,15 @@ def _load() -> dict[str, Model]:
     return merged
 
 
-MODEL_REGISTRY: dict[str, Model] = _load()
+ENABLED_MODELS: dict[str, Model] = _load()
 
 
 def reload() -> dict[str, Model]:
     """Rebuild the registry from the current config spec rows, in place.
 
-    Clears and repopulates the SAME ``MODEL_REGISTRY`` dict object (never
+    Clears and repopulates the SAME ``ENABLED_MODELS`` dict object (never
     rebinds the name) so every module that did
-    ``from ...models_generated import MODEL_REGISTRY`` sees the update —
+    ``from ...enabled_models import ENABLED_MODELS`` sees the update —
     and dynamic writers' entries survive only if config still carries them.
     Called after a config write that changes enabled model specs (e.g. the
     Fetch/Refresh button).
@@ -73,6 +73,6 @@ def reload() -> dict[str, Model]:
     Returns the same dict for convenience.
     """
     fresh = _load()
-    MODEL_REGISTRY.clear()
-    MODEL_REGISTRY.update(fresh)
-    return MODEL_REGISTRY
+    ENABLED_MODELS.clear()
+    ENABLED_MODELS.update(fresh)
+    return ENABLED_MODELS

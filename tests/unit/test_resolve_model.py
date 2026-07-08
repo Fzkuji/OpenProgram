@@ -72,7 +72,7 @@ def test_codex_55_exposes_full_thinking_levels() -> None:
     """Runtime-injected Codex models keep the abstract picker set.
 
     gpt-5.5 dropped ``minimal`` (the API 400s on it), so its picker is
-    low/medium/high/xhigh/max — see ``thinking_catalog.supports_minimal_effort``.
+    low/medium/high/xhigh/max — see ``thinking_spec.supports_minimal_effort``.
     """
     import openprogram.providers.openai_codex.runtime  # noqa: F401
 

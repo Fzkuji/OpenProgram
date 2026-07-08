@@ -1,7 +1,7 @@
 """models.dev enrichment lookup for the live browse path."""
 from __future__ import annotations
 
-from openprogram.webui._model_catalog import provider_models as pm
+from openprogram.webui._model_listing import provider_models as pm
 
 
 def test_subscription_borrows_sibling(monkeypatch):
@@ -12,7 +12,7 @@ def test_subscription_borrows_sibling(monkeypatch):
         seen["src"] = src
         return {"claude-opus-4-8": {"input_cost": 5.0}}
 
-    from openprogram.webui._model_catalog.sources import models_dev
+    from openprogram.webui._model_listing.sources import models_dev
     monkeypatch.setattr(models_dev, "list_models", _fake_list)
     out = pm._models_dev_for("claude-code")
     assert seen["src"] == "anthropic"

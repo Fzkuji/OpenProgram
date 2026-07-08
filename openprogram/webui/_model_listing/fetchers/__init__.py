@@ -17,7 +17,7 @@ function) and the ``fetch_models_remote`` orchestrator that:
    ``replace_fetched_models`` wants — pulling out
    ``context_window`` / ``max_tokens`` from the several spellings
    different upstreams use, lifting cost hints, deriving thinking
-   capability via ``thinking_catalog.derive_thinking_fields``.
+   capability via ``thinking_spec.derive_thinking_fields``.
 3. Calls ``storage.replace_fetched_models`` to rotate the
    ``_source: "fetched"`` rows (preserving manual additions) and
    prune enabled spec rows whose id is now dead.
@@ -87,7 +87,7 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
     Returns ``{"models": [...]}`` on success or ``{"error": "..."}`` on
     failure. Never persists.
     """
-    from openprogram.providers.thinking_catalog import derive_thinking_fields
+    from openprogram.providers.thinking_spec import derive_thinking_fields
 
     from ..providers import _FETCH_MODELS_PROVIDERS, _default_api_for, _label
     from ..sources import enrich as _enrich_from_community
@@ -253,7 +253,7 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     if changed:
         # Config spec rows changed → rebuild the runtime registry in place
         # so the chat picker / runtime see the healed specs immediately.
-        from openprogram.providers import models_generated as _mg
+        from openprogram.providers import enabled_models as _mg
         _mg.reload()
 
     return {

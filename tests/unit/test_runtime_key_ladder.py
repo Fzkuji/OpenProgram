@@ -38,7 +38,7 @@ def _enable_default_models(monkeypatch):
     # the machine's real config.
     import openprogram.providers._config_read as cr
     import openprogram.providers.models as pm
-    import openprogram.providers.models_generated as mg
+    import openprogram.providers.enabled_models as mg
     monkeypatch.setattr(cr, "read_providers_config", lambda: {
         "google": {"models": [
             {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
@@ -51,8 +51,8 @@ def _enable_default_models(monkeypatch):
         ]},
     })
     reg = mg._load()
-    monkeypatch.setattr(mg, "MODEL_REGISTRY", reg)
-    monkeypatch.setattr(pm, "MODEL_REGISTRY", reg)
+    monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
+    monkeypatch.setattr(pm, "ENABLED_MODELS", reg)
 
 
 def _store_returns(monkeypatch, value):

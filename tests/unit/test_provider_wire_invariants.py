@@ -14,7 +14,7 @@ Post-Task-3 the runtime registry holds ONLY the user's enabled models
 A module fixture injects a config covering the full wire matrix
 (openai-completions / anthropic-messages / google-generative-ai /
 openai-responses, plus a headers/compat row and a key_prefix dual-key
-row) and rebuilds ``MODEL_REGISTRY`` from it — the invariants then run over
+row) and rebuilds ``ENABLED_MODELS`` from it — the invariants then run over
 every one of those rows exactly as they did over the static catalogue.
 """
 from __future__ import annotations
@@ -23,9 +23,9 @@ import pytest
 
 import openprogram.providers._config_read as cr
 import openprogram.providers.models as pm
-import openprogram.providers.models_generated as mg
-from openprogram.webui._model_catalog import providers as cat
-from openprogram.webui._model_catalog.credentials import _kind_for, _provider_api
+import openprogram.providers.enabled_models as mg
+from openprogram.webui._model_listing import providers as cat
+from openprogram.webui._model_listing.credentials import _kind_for, _provider_api
 
 
 # A config covering every wire in the matrix, one enabled row per provider,
@@ -62,15 +62,15 @@ _WIRE_MATRIX_CFG = {
 
 @pytest.fixture(autouse=True)
 def _wire_matrix_registry(monkeypatch):
-    """Inject the wire-matrix config and rebuild MODEL_REGISTRY from it, so
+    """Inject the wire-matrix config and rebuild ENABLED_MODELS from it, so
     the invariants run over a controlled, wire-complete set of rows instead
     of the (now enabled-only) runtime registry. Patched at every binding so
     ``get_providers()`` and the test-module import both see the same dict."""
     monkeypatch.setattr(cr, "read_providers_config", lambda: _WIRE_MATRIX_CFG)
     reg = mg._load()
     assert reg, "fixture must build a non-empty registry"
-    monkeypatch.setattr(mg, "MODEL_REGISTRY", reg)
-    monkeypatch.setattr(pm, "MODEL_REGISTRY", reg)
+    monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
+    monkeypatch.setattr(pm, "ENABLED_MODELS", reg)
     return reg
 
 

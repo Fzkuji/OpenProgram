@@ -137,7 +137,7 @@ def env_vars_for(provider_id: str) -> list[str]:
     if names:
         return names
     try:
-        from openprogram.webui._model_catalog.providers import _env_var_for
+        from openprogram.webui._model_listing.providers import _env_var_for
         ev = _env_var_for(provider_id)
         if ev:
             return [ev]

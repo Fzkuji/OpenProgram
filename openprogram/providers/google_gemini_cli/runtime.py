@@ -11,7 +11,7 @@ Mirrors :class:`openprogram.providers.openai_codex.runtime.OpenAICodexRuntime`:
 - AuthManager-first credential acquisition with one-shot import from
   ``~/.gemini/oauth_creds.json`` if no pool exists yet
 - model id resolved via the ``gemini-subscription/<id>`` registry entries
-  already populated in ``providers/models_generated.py``
+  already populated in ``providers/enabled_models.py``
 - streaming + tool-loop + exec-tree recording flow through the default
   ``Runtime`` → ``AgentSession`` → provider path
 

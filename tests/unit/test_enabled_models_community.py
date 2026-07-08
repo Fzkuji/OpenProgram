@@ -1,11 +1,11 @@
 """list_enabled_models reads the runtime registry (config spec rows).
 
 Post enabled-models-redesign the chat composer picker no longer iterates
-config ``custom_models`` — it reshapes ``MODEL_REGISTRY`` (which is built
+config ``custom_models`` — it reshapes ``ENABLED_MODELS`` (which is built
 from the user's enabled ``providers.<p>.models`` spec rows) directly. These
 tests pin:
 
-  * a community-only provider (no static models_generated row) whose enabled
+  * a community-only provider (no static enabled_models row) whose enabled
     spec row lands in the registry is surfaced in the picker;
   * a provider whose ``enabled`` toggle is off is excluded;
   * the registry key's provider carries through as the row's provider id.
@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import pytest
 
-import openprogram.providers.models_generated as mg
+import openprogram.providers.enabled_models as mg
 from openprogram.providers.types import Model
-from openprogram.webui._model_catalog import listing
-from openprogram.webui._model_catalog import storage as st
-from openprogram.webui._model_catalog import providers as cat
+from openprogram.webui._model_listing import listing
+from openprogram.webui._model_listing import storage as st
+from openprogram.webui._model_listing import providers as cat
 
 
 def _model(mid, provider, api="anthropic-messages", ctx=200000):
@@ -34,7 +34,7 @@ def stub_labels(monkeypatch):
 
 
 def test_community_only_enabled_model_is_surfaced(monkeypatch, stub_labels):
-    monkeypatch.setattr(mg, "MODEL_REGISTRY", {
+    monkeypatch.setattr(mg, "ENABLED_MODELS", {
         "foo-coding-plan/Foo-1": _model("Foo-1", "foo-coding-plan"),
     })
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
@@ -49,7 +49,7 @@ def test_community_only_enabled_model_is_surfaced(monkeypatch, stub_labels):
 
 
 def test_disabled_community_provider_not_surfaced(monkeypatch, stub_labels):
-    monkeypatch.setattr(mg, "MODEL_REGISTRY", {
+    monkeypatch.setattr(mg, "ENABLED_MODELS", {
         "foo-coding-plan/Foo-1": _model("Foo-1", "foo-coding-plan"),
     })
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
