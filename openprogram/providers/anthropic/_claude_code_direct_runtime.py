@@ -84,7 +84,7 @@ def _normalize_model(model: str) -> str:
 
 
 def ensure_anthropic_model_registered(mid: str) -> str:
-    """Make sure ``anthropic/<mid>`` exists in the MODELS registry, so the
+    """Make sure ``anthropic/<mid>`` exists in the MODEL_REGISTRY registry, so the
     runtime can resolve it even when the local catalog lags a new release
     (4.7 / 4.8 / fable-5 aren't in models_generated yet). Mirrors codex's
     ``ensure_codex_model_registered``. Idempotent. Returns ``mid``.
@@ -93,13 +93,13 @@ def ensure_anthropic_model_registered(mid: str) -> str:
     base_url, modalities) and overrides id/name. Context window defaults to
     the family's known size — the catalog enrichment refines it later.
     """
-    from openprogram.providers.models_generated import MODELS
+    from openprogram.providers.models_generated import MODEL_REGISTRY
 
     key = f"anthropic/{mid}"
-    if key in MODELS:
+    if key in MODEL_REGISTRY:
         return mid
     template = next(
-        (m for m in MODELS.values()
+        (m for m in MODEL_REGISTRY.values()
          if m.provider == "anthropic" and m.api == "anthropic-messages"
          and m.id.startswith("claude")),
         None,
@@ -118,7 +118,7 @@ def ensure_anthropic_model_registered(mid: str) -> str:
     levels, default, variant = derive_thinking_fields(
         "anthropic", mid, True, True,
     )
-    MODELS[key] = template.model_copy(update={
+    MODEL_REGISTRY[key] = template.model_copy(update={
         "id": mid,
         "name": mid,
         "context_window": ctx,

@@ -4,9 +4,9 @@ Model catalog — self-contained ``providers/<p>/`` dirs.
 The model definitions live as data (not 9000 lines of ``Model(...)``
 calls). Each provider is a self-contained ``providers/<p>/provider.json``
 + ``providers/<p>/models.json`` pair (see ``_catalog_new.load_new_catalog``).
-``_load()`` builds the ``MODELS`` dict, keyed ``"<provider>/<id>"`` exactly
+``_load()`` builds the ``MODEL_REGISTRY`` dict, keyed ``"<provider>/<id>"`` exactly
 as before, so the public interface (``from
-openprogram.providers.models_generated import MODELS``) is unchanged
+openprogram.providers.models_generated import MODEL_REGISTRY``) is unchanged
 for every call site.
 
 A Fetch (webui model catalog) rewrites the relevant per-provider
@@ -32,4 +32,4 @@ def _load() -> dict[str, Model]:
     return merged
 
 
-MODELS: dict[str, Model] = _load()
+MODEL_REGISTRY: dict[str, Model] = _load()

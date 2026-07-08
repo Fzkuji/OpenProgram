@@ -206,7 +206,7 @@ Fetch 只写 `models.fetched.json`，永远不碰 git 内的 `models.json`——
 1. **两条数据链。** 合并管线只在 webui 实现了一半：`webui/_model_catalog/provider_models.combined_models`（fetched + models.dev）喂设置页；而运行时 `MODELS`（`models_generated._load` → `_catalog_new.load_new_catalog`）只读 git 的 `models.json`，从不看 fetched 数据和 models.dev。结果：设置页能选 `deepseek-v4-flash`，`get_model` 查不到。
 2. **models.json 是全量富规格**，含 `thinking_levels`、`cost`、`context_window` 等派生/可获取字段（22 个 provider、752 条），没有更新机制，已经腐烂（deepseek 只剩旧型号）。
 3. **层次倒置**：models.dev 数据源和合并逻辑长在 `webui/_model_catalog/`，providers 层的 `_default_api_for`/`_resolve_base_url` 反过来读 `MODELS` 补 api/base_url，构成 providers→webui→providers 循环。
-4. **`MODELS` 名字太泛**（用户已要求改名）。
+4. ~~**`MODELS` 名字太泛**~~ 已改名 `MODEL_REGISTRY`（2026-07-08，20 个文件机械替换）。定义暂留 `models_generated.py`，移入 `model_registry/__init__.py` 在 8.2 步 6。
 5. **bailian 命名不标准**：models.dev 里同一 base_url 的 provider 叫 `alibaba-token-plan-cn`，项目里已有预留空目录 `alibaba_token_plan_cn/`；用户已明确要求改用标准名、删 `bailian/`。
 
 ### 8.2 迁移顺序（每步可独立提交、系统不瘫）
@@ -216,7 +216,7 @@ Fetch 只写 `models.fetched.json`，永远不碰 git 内的 `models.json`——
 3. **注册表接管线**：`_load()` 改为跑完整合并（第 3 节的五层），fetched 数据和 models.dev 进注册表；`_catalog_new.py` 并入 `model_registry/loader.py`。此时两条链事实合一。
 4. **listing 改薄**：`list_models_for_provider` 删掉自己那套 combined + thinking 合并，直接读注册表加展示字段；包改名 `_model_catalog/` → `_model_listing/`。
 5. **models.json 瘦身**：脚本删除全部可派生/可获取字段，逐 provider 校验合并结果与瘦身前等价（字段级 diff）。
-6. **命名收尾**：`MODELS` → `MODEL_REGISTRY`（定义移入 `model_registry/__init__.py`，退役 `models_generated.py`）；`thinking_catalog.py` 的推导并入 `thinking_spec.py`。至此代码里不再有「catalog」一词。
+6. **命名收尾**：`MODEL_REGISTRY` 定义移入 `model_registry/__init__.py`（退役 `models_generated.py`；变量改名已提前完成）；`thinking_catalog.py` 的推导并入 `thinking_spec.py`。至此代码里不再有「catalog」一词。
 
 ### 8.3 迁移必须保住的点（历史审查所得）
 

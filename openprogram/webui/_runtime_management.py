@@ -219,7 +219,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
         else:
             model = models[0].id
     # ``custom_models`` (fetched + manual) are valid runtime targets
-    # too. ``get_model`` only looks at the static MODELS dict baked
+    # too. ``get_model`` only looks at the static MODEL_REGISTRY dict baked
     # into ``providers/models_generated.py``; without this side-effect
     # registration, every model the user pulled via Fetch
     # (DeepSeek V4, claude-sonnet-4-6, …) trips the
@@ -235,7 +235,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
 def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     """Look ``model_id`` up in the user's ``custom_models`` for
     ``provider`` and, if present, insert a ``Model`` row into the
-    global ``MODELS`` dict so ``providers.get_model`` finds it.
+    global ``MODEL_REGISTRY`` dict so ``providers.get_model`` finds it.
 
     Side-effect on the module-level registry — deliberate. The
     alternative is plumbing custom-model metadata through every
@@ -253,7 +253,7 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
             _read_providers_cfg,
             _default_api_for,
         )
-        from openprogram.providers.models_generated import MODELS
+        from openprogram.providers.models_generated import MODEL_REGISTRY
         from openprogram.providers.types import Model, ModelCost
     except Exception:
         return False
@@ -301,7 +301,7 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
         )
     except Exception:
         return False
-    MODELS[f"{provider}/{model_id}"] = m
+    MODEL_REGISTRY[f"{provider}/{model_id}"] = m
     return True
 
 
@@ -312,15 +312,15 @@ _CLI_BINS = {"openai-codex": "codex", "gemini-cli": "gemini"}
 def _build_model_caps(provider_name: str, model_ids: list[str]) -> dict[str, dict]:
     """Return {model_id: {vision, video, audio, reasoning, tools}} for each model."""
     try:
-        from openprogram.providers.models_generated import MODELS
+        from openprogram.providers.models_generated import MODEL_REGISTRY
         caps: dict[str, dict] = {}
         for mid in model_ids:
             # Try provider-qualified key first, then bare id
             key = f"{provider_name}/{mid}"
-            m = MODELS.get(key) or MODELS.get(mid)
+            m = MODEL_REGISTRY.get(key) or MODEL_REGISTRY.get(mid)
             if m is None:
                 # Fallback: scan for any key whose model.id matches
-                for k, v in MODELS.items():
+                for k, v in MODEL_REGISTRY.items():
                     if v.id == mid and (v.provider == provider_name or v.api == provider_name):
                         m = v
                         break

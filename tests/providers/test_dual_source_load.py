@@ -1,9 +1,9 @@
-from openprogram.providers.models_generated import MODELS, _load
+from openprogram.providers.models_generated import MODEL_REGISTRY, _load
 from openprogram.providers.models import get_model, get_providers
 
 
 def test_models_still_populated():
-    assert len(MODELS) > 700  # 752 keys pre-migration; new source reproduces them
+    assert len(MODEL_REGISTRY) > 700  # 752 keys pre-migration; new source reproduces them
     # spot-check across providers/wires
     assert get_model("openai", "gpt-4o") is not None
     assert get_model("opencode", "gpt-5.1-codex-max") is not None
@@ -13,11 +13,11 @@ def test_models_still_populated():
 
 
 def test_models_is_mutable_same_object():
-    # _register_custom_model_in_registry writes MODELS[k]=m in place
-    before = id(MODELS)
-    MODELS["__test__/x"] = MODELS["openai/gpt-4o"]
-    assert id(MODELS) == before
-    del MODELS["__test__/x"]
+    # _register_custom_model_in_registry writes MODEL_REGISTRY[k]=m in place
+    before = id(MODEL_REGISTRY)
+    MODEL_REGISTRY["__test__/x"] = MODEL_REGISTRY["openai/gpt-4o"]
+    assert id(MODEL_REGISTRY) == before
+    del MODEL_REGISTRY["__test__/x"]
 
 
 def test_load_reads_new_source(monkeypatch):

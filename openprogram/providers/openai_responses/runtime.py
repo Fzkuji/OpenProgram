@@ -51,7 +51,7 @@ class OpenAIRuntime(Runtime):
 
     def list_models(self) -> list[str]:
         """Return OpenAI model ids known to the pi-ai registry."""
-        from openprogram.providers.models_generated import MODELS
+        from openprogram.providers.models_generated import MODEL_REGISTRY
         return sorted(
-            m.id for m in MODELS.values() if m.provider == "openai"
+            m.id for m in MODEL_REGISTRY.values() if m.provider == "openai"
         )

@@ -200,8 +200,8 @@ def _static_apis_for(provider_id: str) -> set[str]:
     models declare (``{}`` for a community-only provider).
 
     Prefers the self-contained ``providers/<p>/provider.json`` metadata
-    (no ``MODELS`` read, breaks the providers<->webui circular dep);
-    falls back to the legacy ``models_generated.MODELS`` scan while both
+    (no ``MODEL_REGISTRY`` read, breaks the providers<->webui circular dep);
+    falls back to the legacy ``models_generated.MODEL_REGISTRY`` scan while both
     sources coexist during the migration.
     """
     try:
@@ -212,8 +212,8 @@ def _static_apis_for(provider_id: str) -> set[str]:
     except Exception:
         pass
     try:
-        from openprogram.providers.models_generated import MODELS
-        return {m.api for m in MODELS.values() if m.provider == provider_id}
+        from openprogram.providers.models_generated import MODEL_REGISTRY
+        return {m.api for m in MODEL_REGISTRY.values() if m.provider == provider_id}
     except Exception:
         return set()
 

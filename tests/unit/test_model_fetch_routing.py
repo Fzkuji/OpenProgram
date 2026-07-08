@@ -28,8 +28,8 @@ from openprogram.webui._model_catalog.fetchers import anthropic as A
 
 @pytest.mark.parametrize("pid", ["minimax", "minimax-cn"])
 def test_default_api_matches_models_generated(pid):
-    from openprogram.providers.models_generated import MODELS
-    apis = {m.api for m in MODELS.values() if m.provider == pid}
+    from openprogram.providers.models_generated import MODEL_REGISTRY
+    apis = {m.api for m in MODEL_REGISTRY.values() if m.provider == pid}
     assert apis == {"anthropic-messages"}, f"{pid} models: {apis}"
     # The catalog's stamp map must agree with the static registry, or
     # fetched rows route to the wrong stream function.

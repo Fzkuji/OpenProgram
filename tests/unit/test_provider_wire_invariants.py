@@ -12,14 +12,14 @@ instead of silently breaking one provider's chat.
 from __future__ import annotations
 
 from openprogram.providers import get_providers
-from openprogram.providers.models_generated import MODELS
+from openprogram.providers.models_generated import MODEL_REGISTRY
 from openprogram.webui._model_catalog import providers as cat
 from openprogram.webui._model_catalog.credentials import _kind_for, _provider_api
 
 
 def _static_apis():
     out: dict[str, set[str]] = {}
-    for m in MODELS.values():
+    for m in MODEL_REGISTRY.values():
         out.setdefault(m.provider, set()).add(m.api)
     return out
 

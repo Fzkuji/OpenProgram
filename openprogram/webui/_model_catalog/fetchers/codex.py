@@ -79,7 +79,7 @@ def _fetch_codex_live(provider_id: str, timeout: float) -> Any:
         if not _is_codex_runnable(mid, info):
             continue
         # A listed id must also be dispatchable — register it in the static
-        # MODELS registry (idempotent) so OpenAICodexRuntime can resolve it.
+        # MODEL_REGISTRY registry (idempotent) so OpenAICodexRuntime can resolve it.
         ensure_codex_model_registered(mid)
         out.append({
             "id": mid,

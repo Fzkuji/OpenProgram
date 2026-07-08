@@ -73,6 +73,6 @@
 - 当前 `MODELS` = 755 个模型（752 来自 22 个 provider 的 models.json + 3 个 claude-code 动态注册）。
 
 **未完成 / 卡住：**
-- `MODELS` 改名（用户要求，未做）。
+- ~~`MODELS` 改名~~ 已完成：2026-07-08 改为 `MODEL_REGISTRY`（不用 ENABLED_MODELS，因与 config 的 `enabled_models`「用户启用子集」语义冲突）。
 - 两条数据链合一 / MODELS 自动化（第二节的核心问题，方向有争议，未做）。
 - 百炼 → alibaba-token-plan-cn（第三节，诉求未最终确认，未做）。

@@ -206,7 +206,7 @@ No step involves "another list", so nothing can disagree.
 1. **Two data chains.** The merge pipeline is only half-implemented, inside webui: `webui/_model_catalog/provider_models.combined_models` (fetched + models.dev) feeds the settings page, while the runtime `MODELS` (`models_generated._load` → `_catalog_new.load_new_catalog`) reads only the git `models.json` and never looks at the fetched data or models.dev. Result: the settings page can select `deepseek-v4-flash` while `get_model` cannot find it.
 2. **models.json is a full rich spec** with derived/obtainable fields (`thinking_levels`, `cost`, `context_window`, …; 22 providers, 752 rows), has no update mechanism, and has already rotted (deepseek only lists old models).
 3. **Inverted layering**: the models.dev source and merge logic live in `webui/_model_catalog/`, while the providers layer's `_default_api_for`/`_resolve_base_url` read `MODELS` back to fill api/base_url — a providers→webui→providers cycle.
-4. **`MODELS` is too generic a name** (rename already requested by the user).
+4. ~~**`MODELS` is too generic a name**~~ renamed to `MODEL_REGISTRY` (2026-07-08, mechanical replacement across 20 files). The definition stays in `models_generated.py` for now; it moves into `model_registry/__init__.py` in step 6 of 8.2.
 5. **Non-standard bailian naming**: models.dev calls the provider with the same base_url `alibaba-token-plan-cn`; the repository already has the reserved empty directory `alibaba_token_plan_cn/`; the user has explicitly asked to adopt the standard name and delete `bailian/`.
 
 ### 8.2 Migration order (each step commits independently, nothing breaks)
@@ -216,7 +216,7 @@ No step involves "another list", so nothing can disagree.
 3. **Connect the registry to the pipeline**: `_load()` runs the full merge (the five layers of section 3); fetched data and models.dev enter the registry; `_catalog_new.py` folds into `model_registry/loader.py`. The two chains become one at this point.
 4. **Thin out listing**: `list_models_for_provider` drops its own combined + thinking merge and just reads the registry plus presentation fields; the package renames `_model_catalog/` → `_model_listing/`.
 5. **Slim models.json**: a script deletes all derivable/obtainable fields, verifying per provider that the merged result is field-identical to before slimming.
-6. **Naming cleanup**: `MODELS` → `MODEL_REGISTRY` (definition moves into `model_registry/__init__.py`, retiring `models_generated.py`); `thinking_catalog.py`'s derivation folds into `thinking_spec.py`. After this the word "catalog" no longer exists in the code.
+6. **Naming cleanup**: the `MODEL_REGISTRY` definition moves into `model_registry/__init__.py` (retiring `models_generated.py`; the variable rename itself is already done); `thinking_catalog.py`'s derivation folds into `thinking_spec.py`. After this the word "catalog" no longer exists in the code.
 
 ### 8.3 What the migration must preserve (from prior reviews)
 
