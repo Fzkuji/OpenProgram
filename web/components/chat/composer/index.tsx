@@ -32,7 +32,6 @@ import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
-import { ContextBreakdownPanel } from "../context-breakdown-panel";
 import { FunctionForm, visibleParams } from "./modes/fn-form/fn-form";
 import { QuestionMode, type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -535,15 +534,16 @@ export function Composer() {
     return () => document.removeEventListener("click", onDoc);
   }, [setThinkingMenuOpen]);
 
-  // /context 面板开关（/context 命令 或 点 token pill 都能开）。
-  const [contextPanelOpen, setContextPanelOpen] = useState(false);
+  // /context 面板开关放 store —— badge（右下角圆环）负责渲染浮动弹窗，
+  // /context slash 命令只需把它打开，弹窗即锚定圆环向上展开。
+  const openContextPanel = useSessionStore((s) => s.setContextPanelOpen);
 
   // Slash menu (state + open/close timing + command dispatch).
   const slash = useSlashMenu({
     input,
     textareaRef,
     send,
-    openContextPanel: () => setContextPanelOpen(true),
+    openContextPanel: () => openContextPanel(true),
   });
 
   /* ---- Submit -------------------------------------------------------- */
@@ -1093,27 +1093,6 @@ export function Composer() {
           onPick={onMenuItemClick}
         />
       </div>
-
-      {contextPanelOpen && (
-        <>
-          {/* 透明遮罩：点外关闭，不压暗背景 */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setContextPanelOpen(false)}
-          />
-          {/* 浮动卡片：锚定右下角上下文圆环上方 */}
-          <div
-            className="fixed z-50"
-            style={{ bottom: 52, right: 16 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ContextBreakdownPanel
-              sessionId={currentSessionId}
-              onClose={() => setContextPanelOpen(false)}
-            />
-          </div>
-        </>
-      )}
 
       <div
         ref={(el) => {

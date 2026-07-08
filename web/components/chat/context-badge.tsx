@@ -18,7 +18,6 @@
  * whenever the active session has no usage yet, matching the legacy
  * `:empty { display:none }` behavior with one fewer reflow.
  */
-import { useState } from "react";
 import { buildUsageText } from "@/lib/format-utils/format";
 import { useSessionStore } from "@/lib/session-store";
 import { ContextBreakdownPanel } from "./context-breakdown-panel";
@@ -39,8 +38,10 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const sid = sessionId ?? currentSessionId;
 
-  // 点 badge 弹出 /context 分类分解面板（随时看当前会话 context 构成）
-  const [panelOpen, setPanelOpen] = useState(false);
+  // 点 badge 弹出 /context 分类分解面板（随时看当前会话 context 构成）。
+  // open 状态放 store，好让 /context slash 命令也能切它。
+  const panelOpen = useSessionStore((s) => s.contextPanelOpen);
+  const setPanelOpen = useSessionStore((s) => s.setContextPanelOpen);
 
   const usage = useSessionStore((s) => (sid ? s.tokens[sid] : undefined));
   const ctxWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
@@ -92,7 +93,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
       <button
         className="context-ring-badge"
         title={ringTooltip}
-        onClick={() => setPanelOpen((v) => !v)}
+        onClick={() => setPanelOpen(!panelOpen)}
         aria-label="Context usage"
       >
         <svg width="22" height="22" viewBox="0 0 22 22">
@@ -125,10 +126,12 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
             className="fixed inset-0 z-40"
             onClick={() => setPanelOpen(false)}
           />
-          {/* 浮动卡片：锚定圆环，向上、向左展开 */}
+          {/* 浮动卡片：锚定圆环、向上展开。卡片底缘下探到圆环中部，
+              让 rounded-xl 的右下圆角弧覆盖圆环上半（下半露出仍可点关闭）。
+              badge 高 32、圆环居中，bottom≈14 使卡底落在圆环中线略上方。*/}
           <div
             className="absolute z-50"
-            style={{ bottom: "calc(100% + 8px)", right: 0 }}
+            style={{ bottom: 14, right: -1 }}
             onClick={(e) => e.stopPropagation()}
           >
             <ContextBreakdownPanel

@@ -159,6 +159,10 @@ interface ConvState {
   composerFocusTick: number;
   focusComposer: () => void;
 
+  /** /context 浮动弹窗开关（由右下角圆环 badge 渲染，/context slash 也切它）。*/
+  contextPanelOpen: boolean;
+  setContextPanelOpen: (open: boolean) => void;
+
   /** When non-null, the Composer swaps its textarea for a parameter
    *  form for this function. Submit builds a `run <name> ...` command
    *  and sends it through the chat WS channel, then clears this. */
@@ -622,6 +626,9 @@ export const useSessionStore = create<ConvState>((set) => ({
   composerFocusTick: 0,
   focusComposer: () =>
     set((state) => ({ composerFocusTick: state.composerFocusTick + 1 })),
+
+  contextPanelOpen: false,
+  setContextPanelOpen: (open) => set({ contextPanelOpen: open }),
 
   fnFormFunction: null,
   openFnForm: (fn) => set({ fnFormFunction: fn, fnFormClosing: false }),
