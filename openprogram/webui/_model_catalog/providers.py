@@ -197,7 +197,20 @@ def _env_var_for(provider_id: str) -> str | None:
 
 def _static_apis_for(provider_id: str) -> set[str]:
     """The set of wire ``api`` ids the provider's OWN static-registry
-    models declare (``{}`` for a community-only provider)."""
+    models declare (``{}`` for a community-only provider).
+
+    Prefers the self-contained ``providers/<p>/provider.json`` metadata
+    (no ``MODELS`` read, breaks the providers<->webui circular dep);
+    falls back to the legacy ``models_generated.MODELS`` scan while both
+    sources coexist during the migration.
+    """
+    try:
+        from openprogram.providers._provider_meta import provider_apis
+        apis = provider_apis(provider_id)
+        if apis:
+            return apis
+    except Exception:
+        pass
     try:
         from openprogram.providers.models_generated import MODELS
         return {m.api for m in MODELS.values() if m.provider == provider_id}

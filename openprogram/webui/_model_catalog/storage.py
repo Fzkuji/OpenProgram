@@ -208,14 +208,22 @@ def _resolve_base_url(provider_id: str) -> str | None:
     if pcfg.get("base_url"):
         base = pcfg["base_url"]
     else:
-        # Static registry baked-in base URL.
-        from openprogram.providers import get_models
-        ms = get_models(provider_id)
-        if ms and ms[0].base_url:
-            base = ms[0].base_url
+        # Static registry baked-in base URL. Prefer the self-contained
+        # providers/<p>/provider.json metadata (no MODELS read, breaks the
+        # providers<->webui circular dep); fall back to the legacy
+        # models_generated-backed get_models() while both sources coexist.
+        from openprogram.providers._provider_meta import provider_base_url
+        meta_base = provider_base_url(provider_id)
+        if meta_base:
+            base = meta_base
         else:
-            # Community catalogue.
-            base = _default_base_url_for(provider_id)
+            from openprogram.providers import get_models
+            ms = get_models(provider_id)
+            if ms and ms[0].base_url:
+                base = ms[0].base_url
+            else:
+                # Community catalogue.
+                base = _default_base_url_for(provider_id)
     if not base:
         return None
     base = base.rstrip("/")
