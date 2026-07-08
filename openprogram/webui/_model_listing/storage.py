@@ -56,6 +56,14 @@ def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
     cfg = _load_config()
     cfg["providers"] = providers_cfg
     _save_config(cfg)
+    # Every mutation of ``providers.<p>.models`` (toggle enable/disable, custom-
+    # model add/remove, fetch replace, migration backfill) routes through here.
+    # Rebuild the in-memory registry in place so the chat picker
+    # (``list_enabled_models`` → ``ENABLED_MODELS``) reflects the change without
+    # a process restart. ``reload()`` reads config from disk directly (not via
+    # ``_read_providers_cfg``), so it never re-enters the migration guard.
+    from openprogram.providers import enabled_models as _mg
+    _mg.reload()
 
 
 # ---------------------------------------------------------------------------
