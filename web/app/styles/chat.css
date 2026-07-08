@@ -1630,7 +1630,7 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 6px;       /* 圆角方形（非圆形）——与底部 pill 一致 */
+  border-radius: 50%;       /* 圆形 hover 背景，与圆环同心 */
   transition: background 0.15s;
 }
 .context-ring-badge:hover {
