@@ -36,7 +36,9 @@ _cache_lock = threading.Lock()
 
 def _read_providers_cfg() -> dict[str, dict[str, Any]]:
     from openprogram.webui.server import _load_config
-    return _load_config().get("providers", {})
+    providers = _load_config().get("providers", {})
+    _run_spec_migration_once(providers)
+    return providers
 
 
 def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
@@ -44,6 +46,130 @@ def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
     cfg = _load_config()
     cfg["providers"] = providers_cfg
     _save_config(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Full-spec model rows (config.providers.<p>.models) — write path + migration
+#
+# The target design persists the FULL spec of each user-enabled model under
+# ``providers.<p>.models`` (list[dict]). ``spec_row_for`` is the single source
+# of truth for that shape: whatever ``list_models_for_provider`` produces,
+# minus the UI-only ``enabled`` flag. Nested ``cost`` (and headers/compat/
+# key_prefix) ride along untouched — do NOT flatten cost.
+#
+# Read paths are NOT switched yet (Task 2 is behaviour-neutral for readers):
+# ``enabled_models`` and ``custom_models`` stay maintained in parallel.
+# ---------------------------------------------------------------------------
+
+def spec_row_for(provider_id: str, model_id: str) -> dict[str, Any] | None:
+    """Full spec row for one model, as ``providers.<p>.models`` stores it.
+
+    Copied verbatim from ``list_models_for_provider`` (the canonical row
+    shape, nested cost included) with the UI-only ``enabled`` flag stripped.
+    Returns ``None`` if the provider/listing can't resolve the id.
+    """
+    # Lazy import: listing imports storage, so a module-level import cycles.
+    from .listing import list_models_for_provider
+    for row in list_models_for_provider(provider_id):
+        if row.get("id") == model_id:
+            spec = {k: v for k, v in row.items() if k != "enabled"}
+            return spec
+    return None
+
+
+def _upsert_spec_row(pcfg: dict[str, Any], spec: dict[str, Any]) -> None:
+    rows = pcfg.setdefault("models", [])
+    mid = spec.get("id")
+    for i, r in enumerate(rows):
+        if r.get("id") == mid:
+            rows[i] = spec
+            return
+    rows.append(spec)
+
+
+def _remove_spec_row(pcfg: dict[str, Any], model_id: str) -> None:
+    if "models" in pcfg:
+        pcfg["models"] = [r for r in pcfg["models"] if r.get("id") != model_id]
+
+
+# One-time storage migration ------------------------------------------------
+# Runs on the first ``_read_providers_cfg`` of the process. Reentrancy guard:
+# the migration calls ``list_models_for_provider`` (→ ``_read_providers_cfg``),
+# so without the guard it would recurse infinitely. ``_reset_spec_migration``
+# is a test hook.
+_spec_migration_done = False
+_spec_migration_running = False
+
+
+def _reset_spec_migration() -> None:
+    global _spec_migration_done, _spec_migration_running
+    _spec_migration_done = False
+    _spec_migration_running = False
+
+
+def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
+    global _spec_migration_done, _spec_migration_running
+    if _spec_migration_done or _spec_migration_running:
+        return
+    _spec_migration_running = True
+    try:
+        changed = _migrate_specs(providers)
+    finally:
+        _spec_migration_running = False
+        _spec_migration_done = True
+    if changed:
+        # Persist the backfill. ``_write_providers_cfg`` re-reads the whole
+        # config; the guard above keeps that read from re-entering migration.
+        _write_providers_cfg(providers)
+
+
+def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
+    """Backfill ``providers.<p>.models`` from existing config, once.
+
+    For each provider:
+      * every ``enabled_models`` id missing a spec row gets one from the
+        current registry/listing; ids that can't resolve stay in
+        ``enabled_models`` (never dropped) and a warning is logged;
+      * ``custom_models`` rows are merged in tagged ``source: "manual"``,
+        the original ``custom_models`` key left untouched.
+
+    Returns True if anything changed (caller persists).
+    """
+    changed = False
+    for pid, pcfg in providers.items():
+        if not isinstance(pcfg, dict):
+            continue
+        rows = pcfg.get("models") or []
+        have = {r.get("id") for r in rows if r.get("id")}
+        new_rows = list(rows)
+
+        for mid in (pcfg.get("enabled_models") or []):
+            if mid in have:
+                continue
+            spec = spec_row_for(pid, mid)
+            if spec is None:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "spec migration: provider %s enabled model %r has no "
+                    "resolvable spec — kept in enabled_models, no spec row",
+                    pid, mid,
+                )
+                continue
+            new_rows.append(spec)
+            have.add(mid)
+            changed = True
+
+        for cm in (pcfg.get("custom_models") or []):
+            cmid = cm.get("id")
+            if not cmid or cmid in have:
+                continue
+            new_rows.append({**cm, "source": "manual"})
+            have.add(cmid)
+            changed = True
+
+        if changed and new_rows != rows:
+            pcfg["models"] = new_rows
+    return changed
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +283,9 @@ def replace_fetched_models(provider_id: str, models: list[dict[str, Any]]) -> di
         prior_enabled = list(pcfg.get("enabled_models") or [])
         pcfg["enabled_models"] = [mid for mid in prior_enabled if mid in visible_ids]
         dropped_enabled = [mid for mid in prior_enabled if mid not in visible_ids]
+        # Keep the new-shape spec rows in step: drop any whose id is now dead.
+        for mid in dropped_enabled:
+            _remove_spec_row(pcfg, mid)
         pcfg["models_fetched"] = True
         _write_providers_cfg(cfg)
         return {
@@ -180,6 +309,8 @@ def remove_custom_model(provider_id: str, model_id: str) -> dict[str, Any]:
             pcfg["enabled_models"] = [
                 mid for mid in pcfg["enabled_models"] if mid != model_id
             ]
+        # And drop the new-shape spec row (dual-write coherence).
+        _remove_spec_row(pcfg, model_id)
         _write_providers_cfg(cfg)
     return {"provider": provider_id, "model": model_id, "removed": True}
 
