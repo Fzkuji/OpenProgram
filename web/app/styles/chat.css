@@ -1039,8 +1039,9 @@
   inset: 0;
   border-radius: 50%;
   background: conic-gradient(from 180deg, #3B9EFF, #A855F7, #3B9EFF);
-  -webkit-mask: radial-gradient(circle, transparent 6.2px, #000 6.6px);
-  mask: radial-gradient(circle, transparent 6.2px, #000 6.6px);
+  /* 外环更细：内壁半径 6.2→7.2px，环宽从 ~2.8 收到 ~1.4px */
+  -webkit-mask: radial-gradient(circle, transparent 7.2px, #000 7.6px);
+  mask: radial-gradient(circle, transparent 7.2px, #000 7.6px);
 }
 /* the orbiting bubble: a small solid disc pinned to the top of the
    spinner, rotated about the spinner's center so it travels around the
@@ -1049,21 +1050,20 @@
 .thinking-spinner::after {
   content: "";
   position: absolute;
-  /* 小圈轨道往圆心收，和外环留空隙、不重叠：
-     外环内壁半径 ~6.6px；小圈半径 3px，轨道半径设 2px →
-     小圈外缘到圆心 5px < 6.6px，中间约 1.6px 空隙。
-     轨道半径 2px → 小圈中心 y=9-2=7 → top = 7-3 = 4px。 */
-  top: 4px;
+  /* 小圈放大到 8px（半径 4）；外环内壁 ~7.4px，轨道半径设 2px →
+     小圈外缘到圆心 6px < 7.4px，留约 1.4px 空隙、不重叠。
+     轨道半径 2 → 小圈中心 y=9-2=7 → top = 7-4 = 3px。 */
+  top: 3px;
   left: 50%;
-  width: 6px;               /* 放大：4.4 -> 6 */
-  height: 6px;
-  margin-left: -3px;
+  width: 8px;               /* 放大：6 -> 8 */
+  height: 8px;
+  margin-left: -4px;
   border-radius: 50%;
   background: transparent;  /* hollow */
-  border: 2px solid #B98CF5; /* 加粗：1.4 -> 2 */
+  border: 2px solid #B98CF5;
   box-sizing: border-box;
-  /* 绕 box 中心(9,9) 转：相对小圈自身左上角(6,4) → (9-6, 9-4) = (3, 5) */
-  transform-origin: 3px 5px;
+  /* 绕 box 中心(9,9) 转：相对小圈自身左上角(5,3) → (9-5, 9-3) = (4, 6) */
+  transform-origin: 4px 6px;
   animation: thinkingOrbit 1.15s linear infinite;
 }
 @keyframes thinkingOrbit {
