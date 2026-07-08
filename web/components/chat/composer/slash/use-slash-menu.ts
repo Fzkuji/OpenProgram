@@ -55,6 +55,8 @@ interface UseSlashMenuArgs {
   input: string;
   textareaRef: RefObject<HTMLTextAreaElement>;
   send: (payload: unknown) => boolean;
+  /** /context 命令触发：打开 token breakdown 面板。 */
+  openContextPanel?: () => void;
 }
 
 export interface SlashMenuHook {
@@ -74,7 +76,7 @@ export interface SlashMenuHook {
   runCommand: (text: string) => boolean;
 }
 
-export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): SlashMenuHook {
+export function useSlashMenu({ input, textareaRef, send, openContextPanel }: UseSlashMenuArgs): SlashMenuHook {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   const setComposerInput = useSessionStore((s) => s.setComposerInput);
@@ -288,8 +290,9 @@ export function useSlashMenu({ input, textareaRef, send }: UseSlashMenuArgs): Sl
           requestAnimationFrame(() => textareaRef.current?.focus());
         }
       },
+      openContextPanel,
     }),
-    [currentSessionId, send, setCurrentConv, setComposerInput, textareaRef],
+    [currentSessionId, send, setCurrentConv, setComposerInput, textareaRef, openContextPanel],
   );
 
   const runCommand = useCallback(

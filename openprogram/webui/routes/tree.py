@@ -323,29 +323,26 @@ def register(app):
         """
         try:
             from openprogram.agent.session_db import default_db
-            from openprogram.context.breakdown import (
-                compute_breakdown_for_branch,
-            )
+            from openprogram.context.breakdown import compute_call_breakdown
             from openprogram.context.tokens import real_context_window
 
             db = default_db()
             branch = db.get_branch(session_id) or []
             sess = db.get_session(session_id) or {}
 
-            # 分支消息转成 breakdown 期望的形状：content + metadata。
-            # get_branch 的行把 tools_available / system_prompt 放在
-            # extra(JSON)里；解出来。同时记下最近一次调用的 system_prompt。
+            # 分支消息 + 从 extra(JSON) 里挖最近一次调用记下的原料
+            # （tools_available / system_prompt）。
             msgs = []
+            latest_tools = []
             latest_system = ""
             for m in branch:
-                meta = {}
                 extra = m.get("extra")
                 if extra:
                     try:
                         ex = json.loads(extra) if isinstance(extra, str) else extra
                         if isinstance(ex, dict):
                             if ex.get("tools_available"):
-                                meta["tools_available"] = ex["tools_available"]
+                                latest_tools = ex["tools_available"]
                             if ex.get("system_prompt"):
                                 latest_system = ex["system_prompt"]
                     except Exception:
@@ -353,11 +350,9 @@ def register(app):
                 msgs.append({
                     "role": m.get("role") or "",
                     "content": m.get("content") or "",
-                    "metadata": meta,
+                    "metadata": {},
                 })
 
-            # system_prompt：取最近一次 LLM 调用真实发出的 system（存在节点原料里）。
-            # model → context_window。
             model_id = sess.get("model") or ""
             try:
                 from openprogram.providers.models import get_model as _get_model
@@ -366,14 +361,30 @@ def register(app):
                 model_obj = None
             ctx_window = real_context_window(model_obj)
 
-            bd = compute_breakdown_for_branch(
-                msgs,
+            # 工具集：优先用节点存的原料（精确）；没有（如 codex 等自带
+            # runtime 的 provider 没走采集路径）就回退到会话当前 toolset，
+            # 这样 /context 对所有 provider 都能显示 tools/per-tool。
+            try:
+                from openprogram.functions import agent_tools as _agent_tools
+                if latest_tools:
+                    tools = _agent_tools(names=list(latest_tools))
+                elif sess.get("tools_enabled", True):
+                    tools = _agent_tools(toolset="full")
+                else:
+                    tools = []
+            except Exception:
+                tools = []
+
+            bd = compute_call_breakdown(
                 system_prompt=latest_system,
+                history=msgs,
+                tools=tools,
                 context_window=ctx_window,
             )
             bd["session_id"] = session_id
             bd["model"] = model_id
             bd["context_window"] = ctx_window
+            bd["tools_source"] = "recorded" if latest_tools else "session_default"
             return JSONResponse(content=bd)
         except Exception as e:
             return JSONResponse(

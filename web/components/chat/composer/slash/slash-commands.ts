@@ -13,6 +13,8 @@ export interface SlashContext {
   send: (payload: unknown) => boolean;
   newConversation: () => void;
   setInput: (value: string, focus?: boolean) => void;
+  /** 打开 /context 分类分解面板（token breakdown）。 */
+  openContextPanel?: () => void;
 }
 
 export interface SlashCommand {
@@ -36,6 +38,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
         session_id: sessionId,
         ...(Number.isFinite(n) && n > 0 ? { keep_recent_tokens: n } : {}),
       });
+      return true;
+    },
+  },
+  {
+    name: "/context",
+    description:
+      "Show this conversation's input-token breakdown (messages / system / tools / per-tool)",
+    run(_rest, { openContextPanel }) {
+      openContextPanel?.();
       return true;
     },
   },

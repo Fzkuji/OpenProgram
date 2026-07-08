@@ -32,6 +32,7 @@ import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
+import { ContextBreakdownPanel } from "../context-breakdown-panel";
 import { FunctionForm, visibleParams } from "./modes/fn-form/fn-form";
 import { QuestionMode, type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -534,8 +535,16 @@ export function Composer() {
     return () => document.removeEventListener("click", onDoc);
   }, [setThinkingMenuOpen]);
 
+  // /context 面板开关（/context 命令 或 点 token pill 都能开）。
+  const [contextPanelOpen, setContextPanelOpen] = useState(false);
+
   // Slash menu (state + open/close timing + command dispatch).
-  const slash = useSlashMenu({ input, textareaRef, send });
+  const slash = useSlashMenu({
+    input,
+    textareaRef,
+    send,
+    openContextPanel: () => setContextPanelOpen(true),
+  });
 
   /* ---- Submit -------------------------------------------------------- */
 
@@ -1084,6 +1093,21 @@ export function Composer() {
           onPick={onMenuItemClick}
         />
       </div>
+
+      {contextPanelOpen && (
+        <div
+          className="fixed inset-0 z-50 flex justify-end"
+          style={{ background: "rgba(0,0,0,0.3)" }}
+          onClick={() => setContextPanelOpen(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <ContextBreakdownPanel
+              sessionId={currentSessionId}
+              onClose={() => setContextPanelOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       <div
         ref={(el) => {
