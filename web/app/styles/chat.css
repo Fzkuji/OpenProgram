@@ -1039,9 +1039,10 @@
   inset: 0;
   border-radius: 50%;
   background: conic-gradient(from 180deg, #3B9EFF, #A855F7, #3B9EFF);
-  /* 外环更细：内壁半径 6.2→7.2px，环宽从 ~2.8 收到 ~1.4px */
-  -webkit-mask: radial-gradient(circle, transparent 7.2px, #000 7.6px);
-  mask: radial-gradient(circle, transparent 7.2px, #000 7.6px);
+  /* 外环环宽 ~2px，和内圈 border(2px) 一样粗：内壁半径 6.8px，
+     环从 ~7.2 到 9(box边) ≈ 2px。 */
+  -webkit-mask: radial-gradient(circle, transparent 6.8px, #000 7.2px);
+  mask: radial-gradient(circle, transparent 6.8px, #000 7.2px);
 }
 /* the orbiting bubble: a small solid disc pinned to the top of the
    spinner, rotated about the spinner's center so it travels around the
