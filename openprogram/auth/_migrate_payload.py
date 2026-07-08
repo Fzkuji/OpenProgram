@@ -63,13 +63,15 @@ def _migrate_file(path: Path) -> bool:
     changed = False
     for c in creds:
         p = c.get("payload")
+        # Only an old-format payload (the ``__type__`` discriminator) is ours
+        # to migrate. Rewrite it AND bump its schema version together, so
+        # Credential.from_dict (which requires v == CREDENTIAL_SCHEMA_VERSION)
+        # accepts the rewritten dict. A credential WITHOUT ``__type__`` is left
+        # entirely alone — including its ``v`` — so a genuinely corrupt or
+        # future-versioned file still fails loudly in from_dict instead of
+        # being silently "upgraded" here.
         if isinstance(p, dict) and "__type__" in p:
             c["payload"] = migrate_payload_dict(p)
-            changed = True
-        # An old-format credential also carries the pre-CredentialData
-        # schema version; bump it so Credential.from_dict (which requires
-        # v == CREDENTIAL_SCHEMA_VERSION) accepts the rewritten dict.
-        if c.get("v") != CREDENTIAL_SCHEMA_VERSION:
             c["v"] = CREDENTIAL_SCHEMA_VERSION
             changed = True
     # Some stores mirror a top-level "payload" too; migrate if present.

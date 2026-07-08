@@ -63,3 +63,28 @@ def test_migrate_store_rewrites_files_and_skips_admin(tmp_path):
     assert "__type__" not in got["credentials"][0]["payload"]
     # admin file untouched
     assert json.loads((auth / "_rotation.json").read_text()) == {"enabled": {}}
+
+
+def test_migrate_store_leaves_corrupt_version_alone(tmp_path):
+    """A credential whose payload is already new-format (no __type__) but
+    carries an unknown/future schema version must NOT be touched — the
+    migrator only upgrades genuine old-format payloads. Otherwise it would
+    silently mask corruption that Credential.from_dict is meant to reject."""
+    auth = tmp_path / "auth" / "openai"
+    auth.mkdir(parents=True)
+    cred_file = auth / "default.json"
+    cred_file.write_text(json.dumps({
+        "v": 2, "provider_id": "openai", "profile_id": "default",
+        "kind": "api_key", "credential_id": "cred_1",
+        "credentials": [{
+            "v": 99, "provider_id": "openai", "profile_id": "default",
+            "kind": "api_key", "credential_id": "cred_1",
+            # already new-format payload, no __type__
+            "payload": {"kind": "api_key", "auth_value": "k",
+                        "base_url": "", "headers": {}, "data": {}},
+        }],
+    }))
+    n = migrate_store(root=tmp_path)
+    assert n == 0, "must not rewrite a file with no old-format payload"
+    got = json.loads(cred_file.read_text())
+    assert got["credentials"][0]["v"] == 99, "corrupt version must be left intact"
