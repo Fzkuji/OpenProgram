@@ -123,14 +123,28 @@ export function drawEdges(
     if (!node) continue;
     const myLane = node._lane || 0;
     if (forkRoots[myLane]?.id !== id) continue;
-    const pid = node.predecessor;
+    // 分叉点：对话前驱优先，没有则用 caller（每轮/每分支的首节点靠
+    // caller="ROOT" 挂根、predecessor 为空）。只认 predecessor 会让这些
+    // 从 ROOT 分出的兄弟分支画不出 fork 桥接线、看着悬空脱离主干。
+    const pid = node.predecessor || node.caller;
     if (!pid) continue;
+    // 兄弟分支的首节点之间用虚线**逐级串联**：选同一分叉点(同 pid)下、
+    // lane 比自己小且最接近的那个分支根作为 sibling，虚线从它连到本分支。
+    // 于是分支1→分支2→分支3 依次串起来（对齐用户期望的 fork 连法），而不是
+    // 所有分支都连回同一个基准节点。
     let sibling: GNode | null = null;
+    let siblingLane = -1;
     Object.keys(tree.byId).forEach((sid) => {
       if (sid === id) return;
       const sn = tree.byId[sid];
-      if (sn.predecessor === pid && (sn._lane || 0) !== myLane) {
-        if (!sibling) sibling = sn;
+      const spid = sn.predecessor || sn.caller;
+      const snLane = sn._lane || 0;
+      // 只在同分叉点的分支根之间连；取 lane < myLane 里最大的（紧邻前驱）。
+      if (spid === pid && snLane < myLane && (forkRoots[snLane]?.id === sid || snLane === 0)) {
+        if (snLane > siblingLane) {
+          siblingLane = snLane;
+          sibling = sn;
+        }
       }
     });
     if (!sibling) continue;

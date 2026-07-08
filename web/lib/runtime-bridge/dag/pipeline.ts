@@ -246,20 +246,30 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     laneArea + subForkMargin + PAD_X,
     maxX + xPad,
   );
-  const width = Math.max(panelW - 4, right - left);
+  // 内容宽（坐标系宽度，进 viewBox）与画布宽（SVG 渲染像素宽）分开：
+  // 多条分支横向铺开时内容宽可能远超侧栏容器宽（如 708 > 287），若 SVG
+  // 渲染宽也取内容宽就会 1:1 溢出被裁，只看得到左边一截。做 fit-to-width：
+  // viewBox 保持内容宽，SVG 渲染宽收进容器宽，浏览器自动把宽内容等比缩放
+  // 进可视区。内容比容器窄时不放大（取内容宽，1:1）。
+  const contentWidth = Math.max(right - left, 40);
+  const canvasWidth = Math.min(contentWidth, Math.max(panelW - 4, 40));
   const height = Math.max(
     PAD_Y * 2 + ROW_H * maxDepth + 24,
     maxYpx + ROW_H + PAD_Y,
   );
+  // 缩放后高度也要按同比例收，否则纵向会被拉长/留白。
+  const scale = canvasWidth / contentWidth;
+  const vbHeight = Math.max(height, 40);
 
   const svg = _svg("svg", {
     class: "history-svg",
     // viewBox starts at ``left`` (negative if d3 produced left-side
     // children) so off-origin geometry stays inside the visible
     // canvas without re-translating every node.
-    viewBox: `${left} 0 ${Math.max(width, 40)} ${Math.max(height, 40)}`,
-    width: Math.max(width, 40),
-    height: Math.max(height, 40),
+    viewBox: `${left} 0 ${contentWidth} ${vbHeight}`,
+    width: canvasWidth,
+    height: vbHeight * scale,
+    preserveAspectRatio: "xMinYMin meet",
   });
 
   const edgeG = _svg("g", { class: "history-edges" });
