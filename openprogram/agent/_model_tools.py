@@ -86,7 +86,7 @@ def _seed_default_agent(_A, agent_id: str) -> dict | None:
         from openprogram.agents.manager import (
             AgentSpec, AgentModelRef, _write_agent,
         )
-        from openprogram.webui._model_catalog import _read_providers_cfg
+        from openprogram.webui._model_listing import _read_providers_cfg
         from openprogram.paths import get_config_path
         import json as _json
     except Exception:
@@ -106,14 +106,18 @@ def _seed_default_agent(_A, agent_id: str) -> dict | None:
     except Exception:
         root_cfg = {}
 
-    # 2. Walk enabled providers for the first one with enabled_models
+    # 2. Walk enabled providers for the first one with an enabled model.
+    #    Enabled = the spec rows under ``providers.<p>.models`` (source of
+    #    truth), falling back to the legacy ``enabled_models`` id list for a
+    #    not-yet-migrated config.
     if not (provider_id and model_id):
         try:
             providers_cfg = _read_providers_cfg()
             for pid, pcfg in providers_cfg.items():
                 if not pcfg.get("enabled"):
                     continue
-                enabled_models = pcfg.get("enabled_models") or []
+                spec_ids = [r.get("id") for r in (pcfg.get("models") or []) if r.get("id")]
+                enabled_models = spec_ids or list(pcfg.get("enabled_models") or [])
                 if enabled_models:
                     provider_id, model_id = pid, enabled_models[0]
                     break
@@ -219,7 +223,7 @@ def resolve_model(profile: dict, override: Optional[str] = None):
             m = get_model(provider, model_id_only)
             if m:
                 return m
-            # Community / fetched custom model (no static models_generated
+            # Community / fetched custom model (no static enabled_models
             # row, e.g. minimax-cn-coding-plan/MiniMax-M3): resolve it from
             # the provider's config custom_models — derived api + the
             # normalised (Anthropic /v1-stripped) base — so the chat path

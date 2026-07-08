@@ -1,9 +1,9 @@
-"""Seed the claude-code provider into the global MODEL_REGISTRY registry.
+"""Seed the claude-code provider into the global ENABLED_MODELS registry.
 
 claude-code connects DIRECT to api.anthropic.com on a Claude subscription
 (OAuth). It has no list-models call baked in like HTTP providers, but the
 provider must still appear in the registry — ``get_providers()`` derives the
-provider list from MODEL_REGISTRY, so with zero entries the provider would vanish
+provider list from ENABLED_MODELS, so with zero entries the provider would vanish
 from the settings UI entirely.
 
 So we register a small, CURRENT seed (the live model list comes from a Fetch
@@ -26,14 +26,14 @@ _SEED = [
 
 
 def _seed_claude_code_models() -> None:
-    from openprogram.providers.models_generated import MODEL_REGISTRY
+    from openprogram.providers.enabled_models import ENABLED_MODELS
     from openprogram.providers.types import Model, ModelCost
 
     for mid, display, ctx, max_out, reasoning in _SEED:
         key = f"claude-code/{mid}"
-        if key in MODEL_REGISTRY:
+        if key in ENABLED_MODELS:
             continue
-        MODEL_REGISTRY[key] = Model(
+        ENABLED_MODELS[key] = Model(
             id=mid,
             name=display,
             api="anthropic-messages",

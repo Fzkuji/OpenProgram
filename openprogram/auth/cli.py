@@ -457,7 +457,7 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
     # only meaningful for providers that expose a /v1/models listing;
     # OAuth / static-only providers just no-op silently.
     try:
-        from openprogram.webui._model_catalog import fetch_models_remote
+        from openprogram.webui._model_listing import fetch_models_remote
         res = fetch_models_remote(saved_provider)
         if isinstance(res, dict) and res.get("fetched"):
             print(f"  ↻ fetched {res['fetched']} models for {saved_provider}")
@@ -677,7 +677,7 @@ def _cmd_available(
     The ``PROVIDER`` id column is exactly what you pass to
     ``openprogram providers login <id>``."""
     try:
-        from openprogram.webui._model_catalog import list_providers
+        from openprogram.webui._model_listing import list_providers
         rows = list(list_providers() or [])
     except Exception as e:  # noqa: BLE001
         print(f"Could not load the provider catalogue: {e}", file=sys.stderr)

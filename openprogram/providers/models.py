@@ -3,7 +3,7 @@ Model registry and utilities — mirrors packages/ai/src/models.ts
 """
 from __future__ import annotations
 
-from .models_generated import MODEL_REGISTRY
+from .enabled_models import ENABLED_MODELS
 from .types import Model, Usage
 
 
@@ -14,10 +14,10 @@ def get_model(provider: str, model_id: str) -> Model | None:
     keys are historical (e.g. ``openai-codex/gpt-5.5``) while the
     canonical provider id from the runtime side is different (e.g.
     ``openai-codex``). Alias-aware lookup keeps both spellings
-    working without duplicating thousands of MODEL_REGISTRY rows.
+    working without duplicating thousands of ENABLED_MODELS rows.
     """
     key = f"{provider}/{model_id}"
-    m = MODEL_REGISTRY.get(key)
+    m = ENABLED_MODELS.get(key)
     if m is not None:
         return m
     # Try alias-equivalent provider names: anything that resolves to
@@ -34,7 +34,7 @@ def get_model(provider: str, model_id: str) -> Model | None:
                 if alias != provider:
                     candidates.add(alias)
         for alt in candidates:
-            m = MODEL_REGISTRY.get(f"{alt}/{model_id}")
+            m = ENABLED_MODELS.get(f"{alt}/{model_id}")
             if m is not None:
                 return m
     except Exception:
@@ -46,7 +46,7 @@ def get_providers() -> list[str]:
     """Return list of all registered providers."""
     seen: set[str] = set()
     result: list[str] = []
-    for model in MODEL_REGISTRY.values():
+    for model in ENABLED_MODELS.values():
         if model.provider not in seen:
             seen.add(model.provider)
             result.append(model.provider)
@@ -55,7 +55,7 @@ def get_providers() -> list[str]:
 
 def get_models(provider: str | None = None) -> list[Model]:
     """Return all models, optionally filtered by provider."""
-    models = list(MODEL_REGISTRY.values())
+    models = list(ENABLED_MODELS.values())
     if provider is not None:
         models = [m for m in models if m.provider == provider]
     return models
@@ -101,5 +101,5 @@ def models_are_equal(a: Model | None, b: Model | None) -> bool:
 # Model from the overrides + default rules. Done once at import so downstream
 # consumers (API endpoints, Runtime.thinking_level defaulting) see accurate
 # capability data without re-computing per request.
-from .thinking_catalog import apply_thinking_catalog as _apply_thinking_catalog  # noqa: E402
-_apply_thinking_catalog(MODEL_REGISTRY)
+from .thinking_spec import apply_thinking_fields as _apply_thinking_fields  # noqa: E402
+_apply_thinking_fields(ENABLED_MODELS)

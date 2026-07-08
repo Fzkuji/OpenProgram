@@ -5,5 +5,17 @@
    "api": "google-generative-ai",
    "base_url": "https://generativelanguage.googleapis.com/v1beta"
   }
+ },
+ "thinking": {
+  "wire_format": "budget_tokens",
+  "budget_map": {
+   "minimal": 512,
+   "low": 2048,
+   "medium": 8192,
+   "high": 24576,
+   "xhigh": 32768,
+   "max": 65536
+  },
+  "default_effort": "medium"
  }
 }

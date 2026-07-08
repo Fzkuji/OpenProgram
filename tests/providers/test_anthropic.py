@@ -16,6 +16,18 @@ import pytest
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.anthropic.runtime import AnthropicRuntime
 
+from ._registry_fixture import install_registry
+
+
+@pytest.fixture(autouse=True)
+def _enable_anthropic(monkeypatch):
+    # The runtime registry now holds only the user's enabled models. Seed the
+    # one Anthropic model these wiring tests resolve so the runtime can find it
+    # regardless of what's in the dev's ~/.openprogram/config.json (empty in CI).
+    install_registry(monkeypatch, {"anthropic": {"models": [
+        {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
+    ]}})
+
 
 class TestAnthropicRuntime:
     def test_no_api_key_raises(self, monkeypatch):

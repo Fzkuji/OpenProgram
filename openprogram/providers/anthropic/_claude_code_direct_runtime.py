@@ -84,22 +84,22 @@ def _normalize_model(model: str) -> str:
 
 
 def ensure_anthropic_model_registered(mid: str) -> str:
-    """Make sure ``anthropic/<mid>`` exists in the MODEL_REGISTRY registry, so the
+    """Make sure ``anthropic/<mid>`` exists in the ENABLED_MODELS registry, so the
     runtime can resolve it even when the local catalog lags a new release
-    (4.7 / 4.8 / fable-5 aren't in models_generated yet). Mirrors codex's
+    (4.7 / 4.8 / fable-5 aren't in enabled_models yet). Mirrors codex's
     ``ensure_codex_model_registered``. Idempotent. Returns ``mid``.
 
     Copies an existing anthropic Claude entry as the template (same wire,
     base_url, modalities) and overrides id/name. Context window defaults to
     the family's known size — the catalog enrichment refines it later.
     """
-    from openprogram.providers.models_generated import MODEL_REGISTRY
+    from openprogram.providers.enabled_models import ENABLED_MODELS
 
     key = f"anthropic/{mid}"
-    if key in MODEL_REGISTRY:
+    if key in ENABLED_MODELS:
         return mid
     template = next(
-        (m for m in MODEL_REGISTRY.values()
+        (m for m in ENABLED_MODELS.values()
          if m.provider == "anthropic" and m.api == "anthropic-messages"
          and m.id.startswith("claude")),
         None,
@@ -114,11 +114,11 @@ def ensure_anthropic_model_registered(mid: str) -> str:
         ctx = 1_000_000
     else:
         ctx = template.context_window
-    from openprogram.providers.thinking_catalog import derive_thinking_fields
+    from openprogram.providers.thinking_spec import derive_thinking_fields
     levels, default, variant = derive_thinking_fields(
         "anthropic", mid, True, True,
     )
-    MODEL_REGISTRY[key] = template.model_copy(update={
+    ENABLED_MODELS[key] = template.model_copy(update={
         "id": mid,
         "name": mid,
         "context_window": ctx,
@@ -164,7 +164,7 @@ class ClaudeCodeRuntime(Runtime):
                 )
         resolved = _normalize_model(model)
         # Register the id if the local catalog doesn't have it yet (new
-        # releases the direct subscription serves but models_generated lags).
+        # releases the direct subscription serves but enabled_models lags).
         ensure_anthropic_model_registered(resolved)
         super().__init__(
             model=f"anthropic:{resolved}",

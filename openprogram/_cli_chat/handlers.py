@@ -485,7 +485,7 @@ def _handle_login(args: list[str], console, agent) -> bool:
 
 def _handle_model(args: list[str], console, agent) -> bool:
     """``/model`` lists every enabled model; ``/model <id>`` switches."""
-    from openprogram.webui import _model_catalog as mc
+    from openprogram.webui import _model_listing as mc
     from openprogram.agent.management import manager as _A
     from openprogram.agent.management import runtime_registry as _R
     enabled = mc.list_enabled_models()

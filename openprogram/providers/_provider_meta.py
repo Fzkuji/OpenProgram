@@ -1,4 +1,4 @@
-"""Provider-level api/base_url from providers/<p>/provider.json — no MODEL_REGISTRY,
+"""Provider-level api/base_url from providers/<p>/provider.json — no ENABLED_MODELS,
 no webui import. Breaks the providers<->webui circular dep for the derivation
 helpers (_default_api_for / _resolve_base_url)."""
 from __future__ import annotations
@@ -28,6 +28,11 @@ def _endpoints(provider_id: str) -> dict:
         return (json.loads((d / "provider.json").read_text(encoding="utf-8")).get("endpoints") or {})
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def provider_endpoints(provider_id: str) -> dict:
+    """Full endpoint map {name: {api, base_url}} from provider.json, or {}."""
+    return _endpoints(provider_id)
 
 
 def provider_apis(provider_id: str) -> set[str]:

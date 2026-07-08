@@ -5,5 +5,17 @@
    "api": "azure-openai-responses",
    "base_url": ""
   }
+ },
+ "thinking": {
+  "wire_format": "effort_string",
+  "effort_map": {
+   "minimal": "minimal",
+   "low": "low",
+   "medium": "medium",
+   "high": "high",
+   "xhigh": "xhigh",
+   "max": "xhigh"
+  },
+  "default_effort": "xhigh"
  }
 }

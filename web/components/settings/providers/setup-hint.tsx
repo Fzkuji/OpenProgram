@@ -96,7 +96,7 @@ function CommandRow({ text }: { text: string }) {
  *      paragraph that reflows at the container width;
  *    - blank lines separate paragraphs.
  *  The "collapse" rule matters: hint strings in
- *  ``openprogram/webui/_model_catalog.py`` are hard-wrapped to ~72
+ *  ``openprogram/webui/_model_listing/setup_hints.py`` are hard-wrapped to ~72
  *  chars for Python source readability. Without collapse every
  *  source-line ends up as its own <div>, producing the ragged column
  *  the user complained about. */

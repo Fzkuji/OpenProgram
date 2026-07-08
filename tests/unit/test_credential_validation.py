@@ -1,6 +1,6 @@
 """Unit tests for the unified credential validator.
 
-``openprogram/webui/_model_catalog/credentials.py`` is the single entry point
+``openprogram/webui/_model_listing/credentials.py`` is the single entry point
 for "is this provider key valid?" across every surface (save-key verify, the
 connectivity button, the batch status rows). It maps HTTP status codes to a
 closed status enum per provider KIND, with a 60s cache and a layer-1 (auth-only)
@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.webui._model_catalog import credentials as cr
-from openprogram.webui._model_catalog import storage as st
+from openprogram.webui._model_listing import credentials as cr
+from openprogram.webui._model_listing import storage as st
 
 
 # pure classifiers

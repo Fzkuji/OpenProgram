@@ -17,11 +17,11 @@ surface alive, so existing imports like ``detect_provider`` or
 - **`configuration.py`** — Shared provider configuration framework
 - **`env_api_keys.py`** — Environment variable API key resolution
 - **`models.py`** — Model registry and utilities
-- **`models_generated.py`** — Auto-generated model definitions
+- **`enabled_models.py`** — Runtime registry of the user's enabled models (built from config)
 - **`register.py`** — Register all built-in API providers
 - **`registry.py`** — openprogram.providers.registry
 - **`stream.py`** — Unified streaming functions
-- **`thinking_catalog.py`** — Thinking-capability overrides
+- **`thinking_spec.py`** — Per-provider thinking.json specs + thinking-capability derivation
 - **`types.py`** — Core type definitions
 
 ## Sub-packages

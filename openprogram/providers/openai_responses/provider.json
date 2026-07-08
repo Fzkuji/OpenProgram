@@ -1,0 +1,19 @@
+{
+ "id": "openai-responses",
+ "thinking": {
+  "wire_format": "effort_string",
+  "effort_map": {
+   "minimal": "minimal",
+   "low": "low",
+   "medium": "medium",
+   "high": "high",
+   "xhigh": "xhigh",
+   "max": "xhigh"
+  },
+  "default_effort": "xhigh"
+ },
+ "cache": {
+  "mode": "auto",
+  "cache_key_param": "prompt_cache_key"
+ }
+}

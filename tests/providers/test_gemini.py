@@ -16,6 +16,18 @@ import pytest
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.google.runtime import GeminiRuntime
 
+from ._registry_fixture import install_registry
+
+
+@pytest.fixture(autouse=True)
+def _enable_gemini(monkeypatch):
+    # The registry now holds only enabled models; enable the Google model
+    # these wiring tests resolve so the runtime can find it in the registry.
+    install_registry(monkeypatch, {"google": {"models": [
+        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},  # default when no model= passed
+    ]}})
+
 
 class TestGeminiRuntime:
     def test_no_api_key_raises(self, monkeypatch):

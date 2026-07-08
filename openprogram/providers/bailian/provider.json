@@ -1,9 +1,0 @@
-{
- "id": "bailian",
- "endpoints": {
-  "default": {
-   "api": "openai-completions",
-   "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
-  }
- }
-}

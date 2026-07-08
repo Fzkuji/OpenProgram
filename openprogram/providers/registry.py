@@ -227,10 +227,10 @@ def _api_routed_runtime(provider: str, model: str = None, **kwargs):
     provider, the same path the chat dispatcher uses."""
     from openprogram.agentic_programming.runtime import Runtime
     from openprogram.providers.models import get_model
-    from openprogram.providers.models_generated import MODEL_REGISTRY
+    from openprogram.providers.enabled_models import ENABLED_MODELS
 
     if not model:
-        cands = [m for m in MODEL_REGISTRY.values() if m.provider == provider]
+        cands = [m for m in ENABLED_MODELS.values() if m.provider == provider]
         if cands:
             model = cands[0].id
     if not model:

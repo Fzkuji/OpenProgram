@@ -11,11 +11,39 @@ files once and exposes helpers the rest of the codebase uses:
 from __future__ import annotations
 
 import json
+import warnings
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
 _PROVIDERS_DIR = Path(__file__).parent
+
+
+def _load_folded(dir_name: str, key: str, legacy_file: str) -> Optional[dict[str, Any]]:
+    """Read provider.json's ``key`` block; fall back to the standalone
+    ``legacy_file`` (with a DeprecationWarning) for un-migrated / out-of-tree
+    provider dirs. Returns None when neither source has data."""
+    prov = _PROVIDERS_DIR / dir_name / "provider.json"
+    if prov.is_file():
+        try:
+            block = json.loads(prov.read_text(encoding="utf-8")).get(key)
+            if block is not None:
+                return block
+        except (OSError, json.JSONDecodeError):
+            pass
+    legacy = _PROVIDERS_DIR / dir_name / legacy_file
+    if legacy.is_file():
+        warnings.warn(
+            f"{dir_name}/{legacy_file} is deprecated; move it under the "
+            f"'{key}' key of provider.json.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        try:
+            return json.loads(legacy.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+    return None
 
 # Fallback for providers without thinking.json — most OpenAI-compatible
 # providers accept reasoning_effort as a pass-through string.
@@ -53,13 +81,9 @@ def get_thinking_spec(provider_id: str) -> dict[str, Any]:
         return _OPENAI_COMPAT_FALLBACK
     resolved = _THINKING_ALIASES.get(provider_id, provider_id)
     for dir_name in (resolved, resolved.replace("-", "_")):
-        path = _PROVIDERS_DIR / dir_name / "thinking.json"
-        if path.is_file():
-            try:
-                with path.open(encoding="utf-8") as f:
-                    return json.load(f)
-            except (OSError, json.JSONDecodeError):
-                return _OPENAI_COMPAT_FALLBACK
+        spec = _load_folded(dir_name, "thinking", "thinking.json")
+        if spec is not None:
+            return spec
     return _OPENAI_COMPAT_FALLBACK
 
 
@@ -145,3 +169,62 @@ def get_default_effort(provider_id: str) -> Optional[str]:
 def invalidate_cache() -> None:
     """Clear the cached specs (for tests or hot reload)."""
     get_thinking_spec.cache_clear()
+
+
+def supports_minimal_effort(model_id: str) -> bool:
+    """Whether a model accepts the ``minimal`` reasoning-effort level."""
+    return "gpt-5.5" not in model_id
+
+
+def derive_thinking_fields(
+    provider_id: str,
+    model_id: str,
+    reasoning: bool,
+    supports_xhigh: bool = False,
+) -> tuple[list[str], str | None, str | None]:
+    """Compute (thinking_levels, default_thinking_level, thinking_variant).
+
+    Primary source: thinking.json via the spec helpers above. Falls back to
+    the old hardcoded logic only if thinking.json yields nothing.
+    """
+    levels = derive_thinking_levels(provider_id, model_id, reasoning)
+    if levels:
+        return levels, get_default_effort(provider_id), get_model_variant(provider_id, model_id)
+
+    # Fallback: old logic for providers without thinking.json
+    if not reasoning:
+        return [], None, None
+
+    minimal = ["minimal"] if supports_minimal_effort(model_id) else []
+    if supports_xhigh:
+        levels = minimal + ["low", "medium", "high", "xhigh", "max"]
+    else:
+        levels = minimal + ["low", "medium", "high", "max"]
+
+    default = "xhigh" if "xhigh" in levels else (
+        "medium" if "medium" in levels else levels[len(levels) // 2]
+    )
+    return levels, default, None
+
+
+def apply_thinking_fields(models: dict) -> None:
+    """Fill thinking_levels / default_thinking_level / thinking_variant on each
+    Model in `models`. Called once at module load (see models.py).
+
+    Respects existing thinking_levels: if a model already declared exact
+    levels (e.g. DeepSeek only 4), don't overwrite them with auto-generated
+    defaults.
+    """
+    from .models import supports_xhigh
+
+    for key, model in list(models.items()):
+        if getattr(model, "thinking_levels", None):
+            continue  # already declared exact levels
+        levels, default, variant = derive_thinking_fields(
+            model.provider, model.id, model.reasoning, supports_xhigh(model)
+        )
+        models[key] = model.model_copy(update={
+            "thinking_levels": levels,
+            "default_thinking_level": default,
+            "thinking_variant": variant,
+        })

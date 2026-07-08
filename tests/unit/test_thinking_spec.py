@@ -1,6 +1,17 @@
-"""Test thinking_spec — loading thinking.json and translating levels."""
+"""Test thinking_spec — loading thinking config and translating levels.
+
+Since Task 6 the config lives under provider.json's ``thinking`` key
+(folded from the old standalone thinking.json). These tests exercise the
+primary in-tree path; the legacy standalone fallback + DeprecationWarning
+is covered by ``test_legacy_standalone_fallback``.
+"""
+import json
+import warnings
+
 import pytest
 
+from openprogram.providers import thinking_spec
+from openprogram.providers import cache_spec
 from openprogram.providers.thinking_spec import (
     derive_thinking_levels,
     get_default_effort,
@@ -111,3 +122,31 @@ def test_default_effort():
     assert get_default_effort("openai-codex") == "xhigh"
     assert get_default_effort("google") == "medium"
     assert get_default_effort("github-copilot") is None
+
+
+def test_reads_from_provider_json_no_deprecation():
+    """In-tree providers read the folded provider.json['thinking'] block —
+    the legacy standalone fallback must NOT fire (no DeprecationWarning)."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        assert get_thinking_spec("anthropic")["wire_format"] == "effort_string"
+        assert cache_spec.get_cache_spec("anthropic")["mode"] == "explicit"
+
+
+def test_legacy_standalone_fallback(tmp_path, monkeypatch):
+    """An out-of-tree provider dir with only a standalone thinking.json still
+    loads, and hitting the fallback emits a DeprecationWarning (kept one
+    version for community dirs not yet folded into provider.json)."""
+    pdir = tmp_path / "community_x"
+    pdir.mkdir()
+    (pdir / "thinking.json").write_text(
+        json.dumps({"wire_format": "effort_string", "effort_map": {"low": "low"}})
+    )
+    (pdir / "cache.json").write_text(json.dumps({"mode": "auto"}))
+    monkeypatch.setattr(thinking_spec, "_PROVIDERS_DIR", tmp_path)
+    invalidate_cache()
+    cache_spec.invalidate_cache()
+    with pytest.warns(DeprecationWarning):
+        assert get_thinking_spec("community-x")["effort_map"] == {"low": "low"}
+    with pytest.warns(DeprecationWarning):
+        assert cache_spec.get_cache_spec("community-x")["mode"] == "auto"
