@@ -27,7 +27,8 @@ interface MemItem {
 }
 interface McpItem {
   server: string;
-  enabled?: boolean;
+  name: string;
+  tokens: number;
 }
 
 interface Breakdown {
@@ -239,11 +240,13 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
                 ))}
             </Section>
 
-            {/* MCP */}
-            <Section id="mcp" title={text("MCP servers", "MCP 服务")} count={data?.mcp_detail?.length || 0}>
-              {(data?.mcp_detail || []).map((m) => (
-                <Row key={m.server} name={m.enabled === false ? `${m.server} (disabled)` : m.server} dim={m.enabled === false} />
-              ))}
+            {/* MCP tools */}
+            <Section id="mcp" title={text("MCP tools", "MCP 工具")} count={data?.mcp_detail?.length || 0}>
+              {[...(data?.mcp_detail || [])]
+                .sort((a, b) => b.tokens - a.tokens)
+                .map((m) => (
+                  <Row key={m.name} name={m.name} tokens={m.tokens} />
+                ))}
             </Section>
 
             {/* Memory */}

@@ -458,16 +458,41 @@ def register(app):
             except Exception:
                 bd["memory_detail"] = []
 
-            # MCP tools：列已配置 MCP server（名字 + 该 server 的工具数）
+            # MCP tools：像 System tools 一样，把每个 MCP 工具的 schema
+            # 当 context 占用统计（名字 + token + 归属 server），不是只列
+            # server 名。MCP client 是运行时状态（只在本 webui 进程连着），
+            # 从 list_clients() 拿每个 client 的 .tools（含 inputSchema）。
             try:
-                from openprogram.mcp.config import load_configs as _lcfg
+                import json as _json
+                from openprogram.mcp.registry import list_clients as _lc
                 mcp_items = []
-                for cfg_obj in _lcfg(include_disabled=True):
-                    mcp_items.append({
-                        "server": getattr(cfg_obj, "name", "") or "",
-                        "enabled": bool(getattr(cfg_obj, "enabled", True)),
-                    })
+                mcp_total = 0
+                for client in (_lc() or []):
+                    server = getattr(
+                        getattr(client, "config", None), "name", "",
+                    ) or ""
+                    for tool in (getattr(client, "tools", None) or []):
+                        tname = getattr(tool, "name", "") or ""
+                        schema = getattr(tool, "inputSchema", None) or {}
+                        desc = getattr(tool, "description", "") or ""
+                        try:
+                            body = _json.dumps(
+                                {"name": tname, "description": desc,
+                                 "parameters": schema},
+                                default=str, ensure_ascii=False,
+                            )
+                        except Exception:
+                            body = tname + desc
+                        tk = _t(body) + 5
+                        mcp_total += tk
+                        mcp_items.append({
+                            "server": server,
+                            "name": f"{server}__{tname}" if server else tname,
+                            "tokens": tk,
+                        })
+                mcp_items.sort(key=lambda x: -x["tokens"])
                 bd["mcp_detail"] = mcp_items
+                bd["mcp_tools"] = mcp_total
             except Exception:
                 bd["mcp_detail"] = []
 
