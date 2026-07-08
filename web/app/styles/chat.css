@@ -1049,7 +1049,11 @@
 .thinking-spinner::after {
   content: "";
   position: absolute;
-  top: 2px;                 /* 更靠圆心：小圈轨道半径 ~4px，离环内壁更远 */
+  /* 小圈轨道往圆心收，和外环留空隙、不重叠：
+     外环内壁半径 ~6.6px；小圈半径 3px，轨道半径设 2px →
+     小圈外缘到圆心 5px < 6.6px，中间约 1.6px 空隙。
+     轨道半径 2px → 小圈中心 y=9-2=7 → top = 7-3 = 4px。 */
+  top: 4px;
   left: 50%;
   width: 6px;               /* 放大：4.4 -> 6 */
   height: 6px;
@@ -1058,10 +1062,8 @@
   background: transparent;  /* hollow */
   border: 2px solid #B98CF5; /* 加粗：1.4 -> 2 */
   box-sizing: border-box;
-  /* transform-origin 相对小圈自身左上角(6,2)。要绕 box 中心(9,9)转，
-     即 (9-6, 9-2) = (3, 7)。之前写 (3,4) 导致绕自身偏上一点转、
-     像在原地打转。 */
-  transform-origin: 3px 7px;
+  /* 绕 box 中心(9,9) 转：相对小圈自身左上角(6,4) → (9-6, 9-4) = (3, 5) */
+  transform-origin: 3px 5px;
   animation: thinkingOrbit 1.15s linear infinite;
 }
 @keyframes thinkingOrbit {
