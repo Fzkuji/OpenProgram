@@ -11,6 +11,23 @@
 import { type GNode, HGW } from "../types";
 import { _branchColor, _svg } from "../shapes";
 
+// 量文字实际像素宽（复用一个 canvas）。标签字号 9px。原来按
+// label.length*6 估，对中文（字宽≈字号）严重低估，导致背景比文字短、
+// 文字溢出。实测才能中英文都贴合。
+let _measureCtx: CanvasRenderingContext2D | null = null;
+function _textWidth(s: string): number {
+  if (!_measureCtx) {
+    const c = document.createElement("canvas");
+    _measureCtx = c.getContext("2d");
+    if (_measureCtx) {
+      _measureCtx.font =
+        "500 9px var(--font-sans, -apple-system, sans-serif)";
+    }
+  }
+  if (!_measureCtx) return s.length * 8; // 拿不到 canvas 时保守按 8px/字
+  return _measureCtx.measureText(s).width;
+}
+
 export function drawBadges(
   svg: SVGElement,
   tree: { byId: Record<string, GNode> },
@@ -38,7 +55,8 @@ export function drawBadges(
       "data-head": hid,
     });
     (tg as SVGGraphicsElement).style.cursor = isActive ? "default" : "pointer";
-    const bw = Math.max(label.length * 6 + 12, 40);
+    // 背景宽 = 实测文字宽 + 左右各 6px 内边距，下限 40。
+    const bw = Math.max(Math.ceil(_textWidth(label)) + 12, 40);
     const bh = 18;
     const rect = _svg("rect", {
       x: String(-bw / 2),
