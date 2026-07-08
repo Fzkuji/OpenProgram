@@ -6,10 +6,11 @@ model, stored under config.providers.<p>.models (list[dict])". This pins:
   * toggle_model(enable) copies the FULL listing row into providers.<p>.models
     (nested `cost` preserved, not flattened);
   * toggle_model(disable) removes that row;
-  * enabled_models (old id list) is still maintained in parallel (双写);
+  * enabled_models (old id list) is NO LONGER maintained — spec rows are the
+    single source of truth (Task 5 retired the dual-write);
   * the storage-layer migration backfills spec rows from enabled_models for
     existing configs, merges custom_models with source="manual", and keeps
-    ids it can't resolve.
+    ids it can't resolve (read-side compat for old configs — still there).
 """
 from __future__ import annotations
 
@@ -88,15 +89,15 @@ def test_enable_writes_full_spec_row(mem_cfg, stub_listing):
     assert spec["headers"] == {"x-acme": "1"}
     assert spec["key_prefix"] == "acme-plan"
     assert "enabled" not in spec  # UI-only flag stripped
-    # 双写: old id list still maintained.
-    assert mem_cfg["acme"]["enabled_models"] == ["acme-1"]
+    # Single-write: the legacy id list is no longer maintained.
+    assert "enabled_models" not in mem_cfg["acme"]
 
 
 def test_disable_removes_spec_row(mem_cfg, stub_listing):
     tg.toggle_model("acme", "acme-1", True)
     tg.toggle_model("acme", "acme-1", False)
     assert mem_cfg["acme"].get("models", []) == []
-    assert mem_cfg["acme"]["enabled_models"] == []
+    assert "enabled_models" not in mem_cfg["acme"]
 
 
 def test_enable_is_idempotent(mem_cfg, stub_listing):

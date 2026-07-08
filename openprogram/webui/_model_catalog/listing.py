@@ -39,6 +39,16 @@ def _reset_browse_cache() -> None:
         _browse_cache.clear()
 
 
+def _enabled_ids(pcfg: dict[str, Any]) -> set[str]:
+    """Ids the user has enabled for a provider.
+
+    Spec rows (``providers.<p>.models``) are the source of truth; the legacy
+    ``enabled_models`` id list is a fallback for a not-yet-migrated config.
+    """
+    spec_ids = {r.get("id") for r in (pcfg.get("models") or []) if r.get("id")}
+    return spec_ids or set(pcfg.get("enabled_models") or [])
+
+
 def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[str, Any]]:
     """Live model list for a provider: official-API list (when credentialed)
     ⊕ models.dev rows, merged in memory — NEVER persisted.
@@ -166,7 +176,7 @@ def list_providers() -> list[dict[str, Any]]:
         pcfg = cfg.get(pid, {})
         models = get_models(pid)
         custom = pcfg.get("custom_models") or []
-        enabled_ids = set(pcfg.get("enabled_models") or [])
+        enabled_ids = _enabled_ids(pcfg)
         all_ids = {m.id for m in models} | {c.get("id") for c in custom if c.get("id")}
         default_base = models[0].base_url if models and models[0].base_url else ""
         entry = {
@@ -211,7 +221,7 @@ def list_providers() -> list[dict[str, Any]]:
         seen.add(pid)
         pcfg = cfg.get(pid, {})
         custom = pcfg.get("custom_models") or []
-        enabled_ids = set(pcfg.get("enabled_models") or [])
+        enabled_ids = _enabled_ids(pcfg)
         community_ids = set(md_prov.get("model_ids") or [])
         custom_ids = {c.get("id") for c in custom if c.get("id")}
         result.append({
@@ -288,8 +298,7 @@ def list_models_for_provider(
     pcfg = cfg.get(provider_id, {})
     # Enabled = ids with a stored spec row (new source of truth); fall back to
     # the legacy id whitelist so a not-yet-migrated config still reads right.
-    spec_ids = {r.get("id") for r in (pcfg.get("models") or []) if r.get("id")}
-    enabled_ids = spec_ids or set(pcfg.get("enabled_models") or [])
+    enabled_ids = _enabled_ids(pcfg)
     default_api = _default_api_for(provider_id) or "openai-completions"
 
     out: list[dict[str, Any]] = []

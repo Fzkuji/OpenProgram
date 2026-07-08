@@ -30,14 +30,13 @@ def toggle_provider(provider_id: str, enabled: bool) -> dict[str, Any]:
 def toggle_model(provider_id: str, model_id: str, enabled: bool) -> dict[str, Any]:
     """Enable/disable ``model_id`` for a provider.
 
-    Dual-writes both persistence layers (transition period):
-      * the full spec row into ``providers.<p>.models`` (new source of truth
-        the runtime will switch to) — copied from the current registry/listing
-        via ``spec_row_for``;
-      * the ``enabled_models`` id whitelist (old shape, still read everywhere).
+    The full spec row under ``providers.<p>.models`` is the single source of
+    truth: enable copies the current registry/listing row (via ``spec_row_for``)
+    in, disable removes it. The legacy ``enabled_models`` id list is no longer
+    maintained — readers derive enablement from the spec rows.
 
     Idempotent both ways. If the spec can't be resolved (e.g. an id that isn't
-    in the listing), the id-list write still happens so behaviour is unchanged.
+    in the listing), enable is a no-op for that id.
     """
     # spec_row_for reads config → keep it OUTSIDE the lock (the lock is not
     # reentrant; _read_providers_cfg inside would deadlock).
@@ -45,15 +44,10 @@ def toggle_model(provider_id: str, model_id: str, enabled: bool) -> dict[str, An
     with _cache_lock:
         cfg = _read_providers_cfg()
         pcfg = cfg.setdefault(provider_id, {})
-        lst = pcfg.setdefault("enabled_models", [])
         if enabled:
-            if model_id not in lst:
-                lst.append(model_id)
             if spec is not None:
                 _upsert_spec_row(pcfg, spec)
         else:
-            if model_id in lst:
-                lst.remove(model_id)
             _remove_spec_row(pcfg, model_id)
         _write_providers_cfg(cfg)
     return {"provider": provider_id, "model": model_id, "enabled": bool(enabled)}

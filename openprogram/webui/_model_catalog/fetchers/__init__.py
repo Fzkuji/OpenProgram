@@ -20,7 +20,7 @@ function) and the ``fetch_models_remote`` orchestrator that:
    capability via ``thinking_catalog.derive_thinking_fields``.
 3. Calls ``storage.replace_fetched_models`` to rotate the
    ``_source: "fetched"`` rows (preserving manual additions) and
-   prune dead ids from ``enabled_models``.
+   prune enabled spec rows whose id is now dead.
 """
 from __future__ import annotations
 

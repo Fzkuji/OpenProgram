@@ -144,8 +144,9 @@ def _preferred_default_model(provider: str) -> str | None:
     Priority:
       1. Top-level ``default_model`` in ``~/.openprogram/config.json``
          (only when ``default_provider`` matches or is unset).
-      2. First id in ``providers.<provider>.enabled_models`` if the user
-         has any models enabled for this provider.
+      2. First id in ``providers.<provider>.models`` (spec rows) if the user
+         has any models enabled for this provider — falling back to the legacy
+         ``enabled_models`` id list for a not-yet-migrated config.
       3. ``None`` — caller uses its hardcoded fallback.
     """
     try:
@@ -161,8 +162,9 @@ def _preferred_default_model(provider: str) -> str | None:
         default_model = root_cfg.get("default_model")
         if default_model and (not default_provider or default_provider == provider):
             return default_model
-        providers_cfg = _read_providers_cfg()
-        enabled = (providers_cfg.get(provider, {}).get("enabled_models") or [])
+        pcfg = _read_providers_cfg().get(provider, {})
+        spec_ids = [r.get("id") for r in (pcfg.get("models") or []) if r.get("id")]
+        enabled = spec_ids or list(pcfg.get("enabled_models") or [])
         if enabled:
             return enabled[0]
     except Exception:
@@ -205,12 +207,14 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     from openprogram.providers import get_model as _get_model, get_models as _get_models
     if model is None:
         models = _get_models(provider)
-        # Static registry empty? Fall back to the user's custom_models
+        # Static registry empty? Fall back to the user's enabled spec rows
         # (post-Fetch rows or hand-pinned ones) before giving up — same
-        # rule that drives the Settings model table.
+        # rule that drives the Settings model table. Legacy ``custom_models``
+        # is a fallback for a not-yet-migrated config.
         if not models:
             from openprogram.webui._model_catalog import _read_providers_cfg
-            customs = (_read_providers_cfg().get(provider, {}).get("custom_models") or [])
+            pcfg = _read_providers_cfg().get(provider, {})
+            customs = (pcfg.get("models") or []) or (pcfg.get("custom_models") or [])
             if not customs:
                 raise RuntimeError(f"Provider {provider!r} has no models registered")
             model = customs[0].get("id")
@@ -233,9 +237,11 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
 
 
 def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
-    """Look ``model_id`` up in the user's ``custom_models`` for
-    ``provider`` and, if present, insert a ``Model`` row into the
-    global ``MODEL_REGISTRY`` dict so ``providers.get_model`` finds it.
+    """Look ``model_id`` up in the user's enabled spec rows
+    (``providers.<p>.models``) for ``provider`` and, if present, insert a
+    ``Model`` row into the global ``MODEL_REGISTRY`` dict so
+    ``providers.get_model`` finds it. Falls back to the legacy
+    ``custom_models`` key for a not-yet-migrated config.
 
     Side-effect on the module-level registry — deliberate. The
     alternative is plumbing custom-model metadata through every
@@ -245,20 +251,40 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     source of truth.
 
     Returns ``True`` when a registration happened, ``False`` when the
-    model wasn't in custom_models either (genuine unknown id → caller
-    re-raises).
+    model wasn't found (genuine unknown id → caller re-raises).
     """
     try:
         from openprogram.webui._model_catalog import (
             _read_providers_cfg,
             _default_api_for,
         )
-        from openprogram.providers.models_generated import MODEL_REGISTRY
+        from openprogram.providers.models_generated import (
+            MODEL_REGISTRY,
+            _build_model_from_row,
+        )
+        from openprogram.providers._provider_meta import provider_endpoints
         from openprogram.providers.types import Model, ModelCost
     except Exception:
         return False
 
     cfg_pcfg = _read_providers_cfg().get(provider, {})
+
+    # Enabled spec rows are full Model specs (same shape ``_load`` consumes) —
+    # validate one directly if present.
+    spec = next(
+        (r for r in (cfg_pcfg.get("models") or []) if r.get("id") == model_id),
+        None,
+    )
+    if spec is not None:
+        try:
+            m = _build_model_from_row(spec, provider, provider_endpoints(provider))
+        except Exception:
+            return False
+        prefix = spec.get("key_prefix") or provider
+        MODEL_REGISTRY[f"{prefix}/{m.id}"] = m
+        return True
+
+    # Legacy custom_models (flat shape) — fallback for a not-yet-migrated config.
     raw = next(
         (c for c in (cfg_pcfg.get("custom_models") or []) if c.get("id") == model_id),
         None,

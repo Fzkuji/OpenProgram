@@ -13,7 +13,7 @@ The interesting domain logic lives here:
 * ``replace_fetched_models`` — rotate-and-replace semantics. Used by
   the Fetch Models flow. Rows tagged ``_source: "fetched"`` are owned
   by this function and rotate on each fetch; rows the user added by
-  hand are left alone. Also prunes ``enabled_models`` of dead ids on
+  hand are left alone. Also prunes enabled spec rows of dead ids on
   rotation so the picker doesn't try to instantiate a model the
   runtime can no longer find.
 
@@ -57,8 +57,10 @@ def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
 # minus the UI-only ``enabled`` flag. Nested ``cost`` (and headers/compat/
 # key_prefix) ride along untouched — do NOT flatten cost.
 #
-# Read paths are NOT switched yet (Task 2 is behaviour-neutral for readers):
-# ``enabled_models`` and ``custom_models`` stay maintained in parallel.
+# Spec rows are the single source of truth: ``toggle_model`` no longer writes
+# the legacy ``enabled_models`` id list. The one-time migration below still
+# READS legacy ``enabled_models``/``custom_models`` to backfill spec rows for
+# existing configs (read-side compat).
 # ---------------------------------------------------------------------------
 
 def spec_row_for(provider_id: str, model_id: str) -> dict[str, Any] | None:
@@ -255,11 +257,11 @@ def replace_fetched_models(provider_id: str, models: list[dict[str, Any]]) -> di
     after a successful fetch, since it comes from
     ``providers/models_generated.py`` not config.
 
-    Side-effect on ``enabled_models``: ids that no longer correspond to
+    Side-effect on the enabled spec rows: ids that no longer correspond to
     a visible row are pruned. After a rename like
-    ``claude-opus-4`` → ``claude-opus-4-7`` the old id is dead — leaving
-    it in ``enabled_models`` means the picker tries to instantiate a
-    model the runtime can't resolve.
+    ``claude-opus-4`` → ``claude-opus-4-7`` the old id is dead — leaving its
+    spec row means the picker tries to instantiate a model the runtime can't
+    resolve.
     """
     with _cache_lock:
         cfg = _read_providers_cfg()
@@ -280,10 +282,10 @@ def replace_fetched_models(provider_id: str, models: list[dict[str, Any]]) -> di
             new_rows.append(row)
         pcfg["custom_models"] = kept_manual + new_rows
         visible_ids = {r["id"] for r in (new_rows + kept_manual) if r.get("id")}
-        prior_enabled = list(pcfg.get("enabled_models") or [])
-        pcfg["enabled_models"] = [mid for mid in prior_enabled if mid in visible_ids]
-        dropped_enabled = [mid for mid in prior_enabled if mid not in visible_ids]
-        # Keep the new-shape spec rows in step: drop any whose id is now dead.
+        # Drop any enabled spec row whose id is now dead (gone from the fresh
+        # fetch and not a kept manual row).
+        enabled_spec_ids = [r.get("id") for r in (pcfg.get("models") or []) if r.get("id")]
+        dropped_enabled = [mid for mid in enabled_spec_ids if mid not in visible_ids]
         for mid in dropped_enabled:
             _remove_spec_row(pcfg, mid)
         pcfg["models_fetched"] = True
@@ -304,12 +306,7 @@ def remove_custom_model(provider_id: str, model_id: str) -> dict[str, Any]:
         pcfg["custom_models"] = [
             m for m in pcfg.get("custom_models", []) if m.get("id") != model_id
         ]
-        # Also drop from enabled list, if present.
-        if "enabled_models" in pcfg:
-            pcfg["enabled_models"] = [
-                mid for mid in pcfg["enabled_models"] if mid != model_id
-            ]
-        # And drop the new-shape spec row (dual-write coherence).
+        # Drop the enabled spec row (the single source of truth).
         _remove_spec_row(pcfg, model_id)
         _write_providers_cfg(cfg)
     return {"provider": provider_id, "model": model_id, "removed": True}
