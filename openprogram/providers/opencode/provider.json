@@ -1,0 +1,21 @@
+{
+ "id": "opencode",
+ "endpoints": {
+  "default": {
+   "api": "openai-completions",
+   "base_url": "https://opencode.ai/zen/v1"
+  },
+  "openai-responses": {
+   "api": "openai-responses",
+   "base_url": "https://opencode.ai/zen/v1"
+  },
+  "anthropic-messages": {
+   "api": "anthropic-messages",
+   "base_url": "https://opencode.ai/zen"
+  },
+  "google-generative-ai": {
+   "api": "google-generative-ai",
+   "base_url": "https://opencode.ai/zen/v1"
+  }
+ }
+}

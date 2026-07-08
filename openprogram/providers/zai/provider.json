@@ -1,0 +1,9 @@
+{
+ "id": "zai",
+ "endpoints": {
+  "default": {
+   "api": "openai-completions",
+   "base_url": "https://api.z.ai/api/coding/paas/v4"
+  }
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "id": "amazon-bedrock",
+ "endpoints": {
+  "default": {
+   "api": "bedrock-converse-stream",
+   "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com"
+  }
+ }
+}

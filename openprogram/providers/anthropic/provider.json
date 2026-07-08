@@ -1,0 +1,9 @@
+{
+ "id": "anthropic",
+ "endpoints": {
+  "default": {
+   "api": "anthropic-messages",
+   "base_url": "https://api.anthropic.com"
+  }
+ }
+}

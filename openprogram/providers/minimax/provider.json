@@ -1,0 +1,9 @@
+{
+ "id": "minimax",
+ "endpoints": {
+  "default": {
+   "api": "anthropic-messages",
+   "base_url": "https://api.minimax.io/anthropic"
+  }
+ }
+}

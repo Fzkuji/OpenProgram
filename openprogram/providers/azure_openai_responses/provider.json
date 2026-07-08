@@ -1,0 +1,9 @@
+{
+ "id": "azure-openai-responses",
+ "endpoints": {
+  "default": {
+   "api": "azure-openai-responses",
+   "base_url": ""
+  }
+ }
+}

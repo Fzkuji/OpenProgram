@@ -1,0 +1,9 @@
+{
+ "id": "openrouter",
+ "endpoints": {
+  "default": {
+   "api": "openai-completions",
+   "base_url": "https://openrouter.ai/api/v1"
+  }
+ }
+}

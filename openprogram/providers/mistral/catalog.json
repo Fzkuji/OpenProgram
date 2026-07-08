@@ -1,0 +1,549 @@
+{
+ "models": [
+  {
+   "id": "codestral-latest",
+   "name": "Codestral",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.3,
+    "output": 0.9,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 256000,
+   "max_tokens": 4096,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "devstral-2512",
+   "name": "Devstral 2",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.4,
+    "output": 2.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 262144,
+   "max_tokens": 262144,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "devstral-medium-2507",
+   "name": "Devstral Medium",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.4,
+    "output": 2.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "devstral-medium-latest",
+   "name": "Devstral 2",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.4,
+    "output": 2.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 262144,
+   "max_tokens": 262144,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "devstral-small-2505",
+   "name": "Devstral Small 2505",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.1,
+    "output": 0.3,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "devstral-small-2507",
+   "name": "Devstral Small",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.1,
+    "output": 0.3,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "labs-devstral-small-2512",
+   "name": "Devstral Small 2",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 256000,
+   "max_tokens": 256000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "magistral-medium-latest",
+   "name": "Magistral Medium",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 2.0,
+    "output": 5.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 16384,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "magistral-small",
+   "name": "Magistral Small",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.5,
+    "output": 1.5,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "ministral-3b-latest",
+   "name": "Ministral 3B",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.04,
+    "output": 0.04,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "ministral-8b-latest",
+   "name": "Ministral 8B",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.1,
+    "output": 0.1,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-large-2411",
+   "name": "Mistral Large 2.1",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 2.0,
+    "output": 6.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 131072,
+   "max_tokens": 16384,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-large-2512",
+   "name": "Mistral Large 3",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.5,
+    "output": 1.5,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 262144,
+   "max_tokens": 262144,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-large-latest",
+   "name": "Mistral Large",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.5,
+    "output": 1.5,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 262144,
+   "max_tokens": 262144,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-medium-2505",
+   "name": "Mistral Medium 3",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.4,
+    "output": 2.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 131072,
+   "max_tokens": 131072,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-medium-2508",
+   "name": "Mistral Medium 3.1",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.4,
+    "output": 2.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 262144,
+   "max_tokens": 262144,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-medium-latest",
+   "name": "Mistral Medium",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.4,
+    "output": 2.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 16384,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-nemo",
+   "name": "Mistral Nemo",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.15,
+    "output": 0.15,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-small-2506",
+   "name": "Mistral Small 3.2",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.1,
+    "output": 0.3,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 16384,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "mistral-small-latest",
+   "name": "Mistral Small",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.1,
+    "output": 0.3,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 16384,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "open-mistral-7b",
+   "name": "Mistral 7B",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.25,
+    "output": 0.25,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 8000,
+   "max_tokens": 8000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "open-mixtral-8x22b",
+   "name": "Mixtral 8x22B",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 2.0,
+    "output": 6.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 64000,
+   "max_tokens": 64000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "open-mixtral-8x7b",
+   "name": "Mixtral 8x7B",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.7,
+    "output": 0.7,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 32000,
+   "max_tokens": 32000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "pixtral-12b",
+   "name": "Pixtral 12B",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.15,
+    "output": 0.15,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "pixtral-large-latest",
+   "name": "Pixtral Large",
+   "reasoning": false,
+   "thinking_levels": [],
+   "default_thinking_level": null,
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 2.0,
+    "output": 6.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 128000,
+   "headers": null,
+   "compat": null
+  }
+ ]
+}

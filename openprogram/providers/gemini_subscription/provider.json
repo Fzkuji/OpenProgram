@@ -1,0 +1,9 @@
+{
+ "id": "gemini-subscription",
+ "endpoints": {
+  "default": {
+   "api": "gemini-subscription",
+   "base_url": "https://cloudcode-pa.googleapis.com"
+  }
+ }
+}

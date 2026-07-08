@@ -1,0 +1,374 @@
+{
+ "models": [
+  {
+   "id": "MiniMax-M2.5",
+   "name": "MiniMax-M2.5 (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "deepseek-v3.2",
+   "name": "DeepSeek-V3.2 (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "deepseek-v4-flash",
+   "name": "DeepSeek-V4 Flash (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "deepseek-v4-pro",
+   "name": "DeepSeek-V4 Pro (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "glm-5",
+   "name": "GLM-5 (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "glm-5.1",
+   "name": "GLM-5.1 (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "glm-5.2",
+   "name": "GLM-5.2 (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "kimi-k2.5",
+   "name": "Kimi K2.5 (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 256000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "kimi-k2.6",
+   "name": "Kimi K2.6 (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 256000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "kimi-k2.7-code",
+   "name": "Kimi K2.7 Code (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 256000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "qwen3.6-flash",
+   "name": "Qwen3.6 Flash (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "qwen3.6-plus",
+   "name": "Qwen3.6 Plus (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "qwen3.7-max",
+   "name": "Qwen3.7 Max (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  },
+  {
+   "id": "qwen3.7-plus",
+   "name": "Qwen3.7 Plus (Bailian)",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 8192,
+   "headers": null,
+   "compat": null
+  }
+ ]
+}

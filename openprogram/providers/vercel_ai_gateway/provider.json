@@ -1,0 +1,9 @@
+{
+ "id": "vercel-ai-gateway",
+ "endpoints": {
+  "default": {
+   "api": "anthropic-messages",
+   "base_url": "https://ai-gateway.vercel.sh"
+  }
+ }
+}

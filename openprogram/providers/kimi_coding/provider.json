@@ -1,0 +1,9 @@
+{
+ "id": "kimi-coding",
+ "endpoints": {
+  "default": {
+   "api": "anthropic-messages",
+   "base_url": "https://api.kimi.com/coding"
+  }
+ }
+}

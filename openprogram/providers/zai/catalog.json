@@ -1,0 +1,285 @@
+{
+ "models": [
+  {
+   "id": "glm-4.5",
+   "name": "GLM-4.5",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.6,
+    "output": 2.2,
+    "cache_read": 0.11,
+    "cache_write": 0.0
+   },
+   "context_window": 131072,
+   "max_tokens": 98304,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  },
+  {
+   "id": "glm-4.5-air",
+   "name": "GLM-4.5-Air",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.2,
+    "output": 1.1,
+    "cache_read": 0.03,
+    "cache_write": 0.0
+   },
+   "context_window": 131072,
+   "max_tokens": 98304,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  },
+  {
+   "id": "glm-4.5-flash",
+   "name": "GLM-4.5-Flash",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 131072,
+   "max_tokens": 98304,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  },
+  {
+   "id": "glm-4.5v",
+   "name": "GLM-4.5V",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.6,
+    "output": 1.8,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 64000,
+   "max_tokens": 16384,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  },
+  {
+   "id": "glm-4.6",
+   "name": "GLM-4.6",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.6,
+    "output": 2.2,
+    "cache_read": 0.11,
+    "cache_write": 0.0
+   },
+   "context_window": 204800,
+   "max_tokens": 131072,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  },
+  {
+   "id": "glm-4.6v",
+   "name": "GLM-4.6V",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text",
+    "image"
+   ],
+   "cost": {
+    "input": 0.3,
+    "output": 0.9,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 128000,
+   "max_tokens": 32768,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  },
+  {
+   "id": "glm-4.7",
+   "name": "GLM-4.7",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.6,
+    "output": 2.2,
+    "cache_read": 0.11,
+    "cache_write": 0.0
+   },
+   "context_window": 204800,
+   "max_tokens": 131072,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  },
+  {
+   "id": "glm-4.7-flash",
+   "name": "GLM-4.7-Flash",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0.0,
+    "output": 0.0,
+    "cache_read": 0.0,
+    "cache_write": 0.0
+   },
+   "context_window": 200000,
+   "max_tokens": 131072,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  },
+  {
+   "id": "glm-5",
+   "name": "GLM-5",
+   "reasoning": true,
+   "thinking_levels": [
+    "minimal",
+    "low",
+    "medium",
+    "high"
+   ],
+   "default_thinking_level": "medium",
+   "thinking_variant": null,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 1.0,
+    "output": 3.2,
+    "cache_read": 0.2,
+    "cache_write": 0.0
+   },
+   "context_window": 204800,
+   "max_tokens": 131072,
+   "headers": null,
+   "compat": {
+    "supports_store": false,
+    "supports_developer_role": false,
+    "reasoning_effort_map": null,
+    "supports_usage_in_streaming": false
+   }
+  }
+ ]
+}

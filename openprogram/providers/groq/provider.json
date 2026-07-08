@@ -1,0 +1,9 @@
+{
+ "id": "groq",
+ "endpoints": {
+  "default": {
+   "api": "openai-completions",
+   "base_url": "https://api.groq.com/openai/v1"
+  }
+ }
+}

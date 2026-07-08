@@ -1,0 +1,9 @@
+{
+ "id": "deepseek",
+ "endpoints": {
+  "default": {
+   "api": "openai-completions",
+   "base_url": "https://api.deepseek.com/v1"
+  }
+ }
+}
