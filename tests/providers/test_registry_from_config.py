@@ -139,30 +139,30 @@ def test_bad_row_skipped_others_survive(monkeypatch):
     assert list(reg) == ["openai/good"]
 
 
-def test_claude_code_dynamic_registration_lands_in_registry():
-    # The claude-code seed writes into the SAME dict object at import time.
-    from openprogram.providers.anthropic import _claude_code_registry as ccr
-    ccr._seed_claude_code_models()
-    assert "claude-code/claude-opus-4-8" in mg.ENABLED_MODELS
+def test_claude_code_rows_come_from_config_not_import_seed(monkeypatch):
+    # No import-time dict seed: an empty config → no claude-code rows. The
+    # claude-code default set now reaches the registry only via a config spec
+    # row (written by login_enable at login).
+    reg = _reload(monkeypatch, {})
+    assert not any(k.startswith("claude-code/") for k in reg)
+    reg = _reload(monkeypatch, {"claude-code": {"models": [
+        {"id": "claude-opus-4-8", "name": "Claude Opus 4.8",
+         "api": "anthropic-messages", "source": "subscription-login"}]}})
+    assert "claude-code/claude-opus-4-8" in reg
 
 
-def test_reload_reapplies_claude_code_seed(monkeypatch):
-    # C1 regression: reload() clears + repopulates ENABLED_MODELS from config
-    # only. The claude-code seed rows (registered dynamically at import, NOT in
-    # config) must survive a reload — else any Refresh silently deletes them.
-    # Uses the REAL reload(), not a monkeypatched no-op.
-    from openprogram.providers.anthropic import _claude_code_registry as ccr
-    ccr._seed_claude_code_models()
-    # config carries no claude-code models
+def test_reload_has_no_seed_resurrection(monkeypatch):
+    # C1 rewrite: reload() clears + repopulates ENABLED_MODELS from config spec
+    # rows ONLY. A config with no claude-code rows must NOT resurrect a deleted
+    # import-time seed after reload. Config rows (incl. openai/gpt-x) survive;
+    # phantom claude-code rows do not appear. Uses the REAL reload().
     monkeypatch.setattr(cr, "read_providers_config",
                         lambda: {"openai": {"models": [
                             {"id": "gpt-x", "name": "GPT-X",
                              "api": "openai-completions"}]}})
     mg.reload()
-    for mid in ("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"):
-        assert f"claude-code/{mid}" in mg.ENABLED_MODELS
-    # and the config-driven row is present too
     assert "openai/gpt-x" in mg.ENABLED_MODELS
+    assert not any(k.startswith("claude-code/") for k in mg.ENABLED_MODELS)
 
 
 def test_get_model_alias_fallback_still_works(monkeypatch):

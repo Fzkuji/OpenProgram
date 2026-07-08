@@ -2,8 +2,11 @@
 
 ``ENABLED_MODELS`` holds ONLY the models the user has enabled (the full spec
 rows persisted under config ``providers.<p>.models``) plus anything registered
-dynamically at runtime (the claude-code seed, and custom-model side-effect
-registration in the webui). ``_load()`` reads those config spec rows, fills
+dynamically at runtime (custom-model side-effect registration in the webui,
+and the codex runtime-registration helper). Subscription providers no longer
+seed rows at import — their default set is written to config as an enable at
+login (``openprogram.auth.login_enable``). ``_load()`` reads those config spec
+rows, fills
 each row's missing api/base_url from the provider's ``providers/<p>/provider.json``
 endpoints (row values win), and keys them ``"<key_prefix or provider>/<id>"``.
 
@@ -75,22 +78,4 @@ def reload() -> dict[str, Model]:
     fresh = _load()
     ENABLED_MODELS.clear()
     ENABLED_MODELS.update(fresh)
-    _reapply_dynamic_seeds()
     return ENABLED_MODELS
-
-
-def _reapply_dynamic_seeds() -> None:
-    """Re-add models registered dynamically at import time (not from config).
-
-    ``reload()`` clears the dict, so any provider that seeded rows at import
-    (currently just claude-code — it has no list-models API and would vanish
-    from the settings UI with zero registry entries) must re-seed after a
-    reload. The seeders are idempotent, so calling them again is safe.
-    Guarded/lazy so this module stays import-cheap and never hard-depends on
-    anthropic. Best-effort: a missing seeder must not break reload().
-    """
-    try:
-        from .anthropic._claude_code_registry import _seed_claude_code_models
-        _seed_claude_code_models()
-    except Exception:
-        pass

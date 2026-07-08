@@ -170,6 +170,16 @@ def register(app):
             try:
                 cred = await run_login(name, profile, method, _RemoteLoginUi(sess), api_key=api_key)
                 persist(cred)
+                # Subscription providers have no list-models API; enable their
+                # default model set into config on first login (no-op if the
+                # provider already has spec rows) — see login_enable.
+                try:
+                    from openprogram.auth.login_enable import (
+                        enable_default_models_on_login,
+                    )
+                    enable_default_models_on_login(name)
+                except Exception:
+                    pass
                 sess.name = getattr(cred, "profile_id", profile)
                 sess.ok = True
             except asyncio.CancelledError:
