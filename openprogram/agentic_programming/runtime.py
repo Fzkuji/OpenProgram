@@ -765,6 +765,10 @@ class Runtime:
             _tools = getattr(self, "_pending_tool_names", None)
             if _tools:
                 meta["tools_available"] = _tools
+            # system prompt 原料：供 web /context 算 system 类真实 token。
+            _sysp = getattr(self, "_pending_system_prompt", None)
+            if _sysp:
+                meta["system_prompt"] = _sysp
             if error is not None:
                 import traceback as _tb
                 meta["error"] = str(error)
@@ -1608,6 +1612,7 @@ class Runtime:
         # 工具名单跟着 exec 收尾的 usage→DAG 节点通道进 history.metadata。
         self._pending_breakdown = None
         self._pending_tool_names = []
+        self._pending_system_prompt = ""
         try:
             from openprogram.context.breakdown import compute_call_breakdown
             from openprogram.context.tokens import real_context_window
@@ -1621,9 +1626,13 @@ class Runtime:
             self._pending_tool_names = [
                 getattr(t, "name", "") for t in (agent_tools or [])
             ]
+            # 这次调用真实的 system prompt —— 和工具名单、content 一样是输入原料，
+            # 存进节点供 web /context 重算 system 类 token（截断同 prompt_text）。
+            self._pending_system_prompt = (system_prompt or "")[:8000]
         except Exception:
             self._pending_breakdown = None
             self._pending_tool_names = []
+            self._pending_system_prompt = ""
 
         loop_opts = _current_loop_opts.get(None) or {}
         # stream_fn injection: a per-call override (set by exec via the

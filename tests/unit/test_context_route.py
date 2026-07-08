@@ -23,6 +23,7 @@ class _FakeDB:
                     "tool_calls": [],
                     "blocks": [],
                     "tools_available": ["bash", "read", "web_search"],
+                    "system_prompt": "You are a research agent. Be thorough and cite sources.",
                 }),
             },
         ]
@@ -52,6 +53,7 @@ def test_context_endpoint_returns_breakdown(client):
     assert names == {"bash", "read", "web_search"}
     # 分类字段齐、总量为正
     assert d["messages"] > 0
+    assert d["system_prompt"] > 0   # system 类真实值（存了原料，不再是假 0）
     assert d["input_used"] > 0
     assert d["session_id"] == "s1"
 
