@@ -64,7 +64,7 @@ def test_runtime_targets_anthropic_namespace(monkeypatch):
 
 def test_resolver_reads_cli_delegated_token(tmp_path):
     """A cli_delegated credential resolves by re-reading the CLI's file."""
-    from openprogram.auth.types import Credential, CliDelegatedPayload
+    from openprogram.auth.types import Credential, CredentialData
     from openprogram.auth.resolver import _extract_token
 
     cred_file = tmp_path / ".credentials.json"
@@ -76,10 +76,13 @@ def test_resolver_reads_cli_delegated_token(tmp_path):
         provider_id="anthropic",
         profile_id="default",
         kind="cli_delegated",
-        payload=CliDelegatedPayload(
-            store_path=str(cred_file),
-            access_key_path=["claudeAiOauth", "accessToken"],
-            refresh_key_path=["claudeAiOauth", "refreshToken"],
+        payload=CredentialData(
+            kind="cli_delegated",
+            data={
+                "store_path": str(cred_file),
+                "access_key_path": ["claudeAiOauth", "accessToken"],
+                "refresh_key_path": ["claudeAiOauth", "refreshToken"],
+            },
         ),
         source="claude_code",
     )
@@ -87,16 +90,19 @@ def test_resolver_reads_cli_delegated_token(tmp_path):
 
 
 def test_resolver_cli_delegated_missing_file_is_none(tmp_path):
-    from openprogram.auth.types import Credential, CliDelegatedPayload
+    from openprogram.auth.types import Credential, CredentialData
     from openprogram.auth.resolver import _extract_token
 
     cred = Credential(
         provider_id="anthropic",
         profile_id="default",
         kind="cli_delegated",
-        payload=CliDelegatedPayload(
-            store_path=str(tmp_path / "nope.json"),
-            access_key_path=["claudeAiOauth", "accessToken"],
+        payload=CredentialData(
+            kind="cli_delegated",
+            data={
+                "store_path": str(tmp_path / "nope.json"),
+                "access_key_path": ["claudeAiOauth", "accessToken"],
+            },
         ),
         source="claude_code",
     )

@@ -19,8 +19,8 @@ from openprogram.auth.profiles import (
 )
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
-    ApiKeyPayload,
     Credential,
+    CredentialData,
     CredentialPool,
 )
 
@@ -79,7 +79,7 @@ def test_list_json_emits_array(isolated):
         provider_id="openai", profile_id="default",
         credentials=[Credential(
             provider_id="openai", profile_id="default", kind="api_key",
-            payload=ApiKeyPayload(api_key="sk-deadbeef1234"),
+            payload=CredentialData(kind="api_key", auth_value="sk-deadbeef1234"),
             source="cli_paste",
         )],
     ))
@@ -101,7 +101,7 @@ def test_list_respects_profile_filter(isolated):
             provider_id="openai", profile_id=prof,
             credentials=[Credential(
                 provider_id="openai", profile_id=prof, kind="api_key",
-                payload=ApiKeyPayload(api_key=f"sk-{tag}-11112222"),
+                payload=CredentialData(kind="api_key", auth_value=f"sk-{tag}-11112222"),
             )],
         ))
     rc = dispatch(_parse(["list", "--profile", "work", "--json"]))
@@ -136,7 +136,7 @@ def test_adopt_env_var(isolated, monkeypatch):
     pool = store.find_pool("openai", "default")
     assert pool is not None
     assert len(pool.credentials) == 1
-    assert pool.credentials[0].payload.api_key == "sk-adopt-me-please-123"
+    assert pool.credentials[0].payload.auth_value == "sk-adopt-me-please-123"
 
 
 def _clear_provider_env(monkeypatch):
@@ -210,7 +210,7 @@ def test_logout_removes_pool(isolated, monkeypatch):
         provider_id="openai", profile_id="default",
         credentials=[Credential(
             provider_id="openai", profile_id="default", kind="api_key",
-            payload=ApiKeyPayload(api_key="sk-goodbye-12345"),
+            payload=CredentialData(kind="api_key", auth_value="sk-goodbye-12345"),
         )],
     ))
     # --yes skips confirmation.
@@ -245,7 +245,7 @@ def test_status_reports_valid_credential(isolated):
         provider_id="openai", profile_id="default",
         credentials=[Credential(
             provider_id="openai", profile_id="default", kind="api_key",
-            payload=ApiKeyPayload(api_key="sk-working-key-555"),
+            payload=CredentialData(kind="api_key", auth_value="sk-working-key-555"),
             source="cli_paste",
         )],
     ))
@@ -266,7 +266,7 @@ def test_login_paste_api_key(isolated, monkeypatch):
     rc = dispatch(_parse(["login", "openai", "--method", "api_key"]))
     assert rc == 0
     pool = store.find_pool("openai", "default")
-    assert pool and pool.credentials[0].payload.api_key == "sk-pasted-from-cli"
+    assert pool and pool.credentials[0].payload.auth_value == "sk-pasted-from-cli"
 
 
 def test_login_paste_empty_fails(isolated, monkeypatch):
@@ -302,7 +302,7 @@ def test_login_api_key_flag_is_non_interactive(isolated, monkeypatch):
     rc = dispatch(_parse(["login", "openai", "--api-key", "sk-flag-AAA"]))
     assert rc == 0
     pool = store.find_pool("openai", "default")
-    assert pool and pool.credentials[0].payload.api_key == "sk-flag-AAA"
+    assert pool and pool.credentials[0].payload.auth_value == "sk-flag-AAA"
 
 
 def test_login_api_key_stdin(isolated, monkeypatch):
@@ -312,7 +312,7 @@ def test_login_api_key_stdin(isolated, monkeypatch):
     rc = dispatch(_parse(["login", "openai", "--api-key-stdin"]))
     assert rc == 0
     pool = store.find_pool("openai", "default")
-    assert pool and pool.credentials[0].payload.api_key == "sk-stdin-BBB"
+    assert pool and pool.credentials[0].payload.auth_value == "sk-stdin-BBB"
 
 
 def test_login_bare_pipe_reads_stdin_when_no_tty(isolated, monkeypatch):
@@ -325,7 +325,7 @@ def test_login_bare_pipe_reads_stdin_when_no_tty(isolated, monkeypatch):
     rc = dispatch(_parse(["login", "openai"]))
     assert rc == 0
     pool = store.find_pool("openai", "default")
-    assert pool and pool.credentials[0].payload.api_key == "sk-piped-CCC"
+    assert pool and pool.credentials[0].payload.auth_value == "sk-piped-CCC"
 
 
 def test_login_empty_stdin_fails_clearly(isolated, monkeypatch):
@@ -428,7 +428,7 @@ def test_login_resolves_alias(isolated, monkeypatch):
     assert store.find_pool("claude", "default") is None
     pool = store.find_pool("anthropic", "default")
     assert pool is not None
-    assert pool.credentials[0].payload.access_token == "sk-ant-oat-from-alias"
+    assert pool.credentials[0].payload.auth_value == "sk-ant-oat-from-alias"
 
 
 def test_status_resolves_alias(isolated):
@@ -437,7 +437,7 @@ def test_status_resolves_alias(isolated):
         provider_id="anthropic", profile_id="default",
         credentials=[Credential(
             provider_id="anthropic", profile_id="default", kind="api_key",
-            payload=ApiKeyPayload(api_key="sk-ant-abc12345678"),
+            payload=CredentialData(kind="api_key", auth_value="sk-ant-abc12345678"),
             source="cli_paste",
         )],
     ))
@@ -471,15 +471,14 @@ def test_doctor_json_has_findings_list(isolated):
 def test_doctor_flags_expired_oauth_without_refresh(isolated):
     store, _, _, cap = isolated
     # Provider with no refresh registered → expired oauth must be ERROR.
-    from openprogram.auth.types import OAuthPayload
     store.put_pool(CredentialPool(
         provider_id="random-oauth-provider", profile_id="default",
         credentials=[Credential(
             provider_id="random-oauth-provider", profile_id="default",
             kind="oauth",
-            payload=OAuthPayload(
-                access_token="tok-expired", refresh_token="r-abc",
-                expires_at_ms=1,  # epoch — definitely expired
+            payload=CredentialData(
+                kind="oauth", auth_value="tok-expired",
+                data={"refresh_token": "r-abc", "expires_at_ms": 1},  # epoch — definitely expired
             ),
             source="cli_paste",
         )],
@@ -499,7 +498,7 @@ def test_doctor_flags_missing_source_file(isolated, tmp_path):
         provider_id="openai-codex", profile_id="default",
         credentials=[Credential(
             provider_id="openai-codex", profile_id="default", kind="api_key",
-            payload=ApiKeyPayload(api_key="sk-orphaned-123456"),
+            payload=CredentialData(kind="api_key", auth_value="sk-orphaned-123456"),
             source="codex_cli_import",
             metadata={"source_path": str(ghost), "imported_from": "codex_cli"},
         )],
@@ -518,7 +517,7 @@ def test_doctor_healthy_api_key_pool_passes(isolated):
         provider_id="openai", profile_id="default",
         credentials=[Credential(
             provider_id="openai", profile_id="default", kind="api_key",
-            payload=ApiKeyPayload(api_key="sk-healthy-key-12345"),
+            payload=CredentialData(kind="api_key", auth_value="sk-healthy-key-12345"),
             source="cli_paste",
         )],
     ))
@@ -552,4 +551,4 @@ def test_setup_wizard_adopts_detected_env_var(isolated, monkeypatch):
     assert rc == 0, cap.readouterr()
     pool = store.find_pool("openai", "default")
     assert pool is not None
-    assert pool.credentials[0].payload.api_key == "sk-wizard-adopted-12345"
+    assert pool.credentials[0].payload.auth_value == "sk-wizard-adopted-12345"

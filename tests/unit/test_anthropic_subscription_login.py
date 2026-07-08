@@ -35,8 +35,8 @@ def test_import_setup_token_lands_oauth_in_anthropic_pool():
     assert cred.provider_id == "anthropic"   # not claude-code
     assert cred.profile_id == "work"
     assert cred.kind == "oauth"
-    assert cred.payload.access_token == "sk-ant-oat-FAKE"   # trimmed
-    assert cred.payload.refresh_token == ""                  # setup-token has none
+    assert cred.payload.auth_value == "sk-ant-oat-FAKE"   # trimmed
+    assert cred.payload.data.get("refresh_token", "") == ""  # setup-token has none
     assert cred.read_only is False
 
 
@@ -51,7 +51,7 @@ def test_refresh_is_noop_without_refresh_token():
 
 def test_refresh_posts_refresh_token(monkeypatch):
     from openprogram.providers.anthropic import auth_adapter as a
-    from openprogram.auth.types import Credential, OAuthPayload
+    from openprogram.auth.types import Credential, CredentialData
 
     captured = {}
 
@@ -70,10 +70,13 @@ def test_refresh_posts_refresh_token(monkeypatch):
 
     cred = Credential(
         provider_id="anthropic", profile_id="default", kind="oauth",
-        payload=OAuthPayload(
-            access_token="sk-ant-oat-OLD", refresh_token="rt-OLD",
-            expires_at_ms=0, scope=a.OAUTH_SCOPES,
-            client_id=a.OAUTH_CLIENT_ID, token_endpoint=a.OAUTH_TOKEN_URL,
+        payload=CredentialData(
+            kind="oauth", auth_value="sk-ant-oat-OLD",
+            data={
+                "refresh_token": "rt-OLD",
+                "expires_at_ms": 0, "scope": a.OAUTH_SCOPES,
+                "client_id": a.OAUTH_CLIENT_ID, "token_endpoint": a.OAUTH_TOKEN_URL,
+            },
         ),
         source="pkce_oauth:anthropic",
     )
@@ -81,8 +84,8 @@ def test_refresh_posts_refresh_token(monkeypatch):
     assert captured["url"] == a.OAUTH_TOKEN_URL
     assert captured["body"]["grant_type"] == "refresh_token"
     assert captured["body"]["refresh_token"] == "rt-OLD"
-    assert new.payload.access_token == "sk-ant-oat-NEW"
-    assert new.payload.refresh_token == "rt-NEW"
+    assert new.payload.auth_value == "sk-ant-oat-NEW"
+    assert new.payload.data["refresh_token"] == "rt-NEW"
     assert new.credential_id == cred.credential_id  # same row
 
 
@@ -124,7 +127,7 @@ def test_setup_token_method_stores_under_anthropic():
     cred = asyncio.run(run_login("claude-code", "acct2", "setup_token", _Ui()))
     assert cred.provider_id == "anthropic"
     assert cred.profile_id == "acct2"
-    assert cred.payload.access_token == "sk-ant-oat-PASTED"
+    assert cred.payload.auth_value == "sk-ant-oat-PASTED"
 
 
 # --- PKCE framework: manual-paste mode --------------------------------------
@@ -159,5 +162,5 @@ def test_pkce_manual_paste_flow(monkeypatch):
     cred = asyncio.run(PkceLoginMethod("anthropic", cfg, profile_id="default").run(_Ui()))
     assert captured["code"] == "THECODE"  # split on '#'
     assert captured["redirect_uri"] == "https://console.anthropic.com/oauth/code/callback"
-    assert cred.payload.access_token == "sk-ant-oat-X"
+    assert cred.payload.auth_value == "sk-ant-oat-X"
     assert "code=true" in opened["url"]

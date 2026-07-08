@@ -24,8 +24,8 @@ from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
     AuthConfigError,
     Credential,
+    CredentialData,
     CredentialPool,
-    OAuthPayload,
 )
 from openprogram.providers.openai_codex import auth_adapter
 from openprogram.providers.openai_codex.runtime import (
@@ -76,7 +76,7 @@ def test_ensure_credential_imports_from_codex_file_when_pool_absent(isolated):
     mgr = AuthManager(store=store)
 
     cred = _ensure_credential(mgr, "default")
-    assert cred.payload.access_token == access
+    assert cred.payload.auth_value == access
     assert cred.metadata["account_id"] == "acc_fromfile"
     # The import should have created a pool, so a second call returns
     # the same thing without re-importing.
@@ -102,11 +102,13 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
         provider_id=auth_adapter.PROVIDER_ID,
         profile_id="default",
         kind="oauth",
-        payload=OAuthPayload(
-            access_token=expired_access,
-            refresh_token="R-old",
-            expires_at_ms=int(time.time() * 1000) - 60_000,
-            client_id=auth_adapter.OAUTH_CLIENT_ID,
+        payload=CredentialData(
+            kind="oauth", auth_value=expired_access,
+            data={
+                "refresh_token": "R-old",
+                "expires_at_ms": int(time.time() * 1000) - 60_000,
+                "client_id": auth_adapter.OAUTH_CLIENT_ID,
+            },
         ),
     )
     store.put_pool(CredentialPool(
@@ -123,11 +125,13 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
             provider_id=c.provider_id,
             profile_id=c.profile_id,
             kind="oauth",
-            payload=OAuthPayload(
-                access_token=new_access,
-                refresh_token="R-new",
-                expires_at_ms=int(time.time() * 1000) + 3600_000,
-                client_id=auth_adapter.OAUTH_CLIENT_ID,
+            payload=CredentialData(
+                kind="oauth", auth_value=new_access,
+                data={
+                    "refresh_token": "R-new",
+                    "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                    "client_id": auth_adapter.OAUTH_CLIENT_ID,
+                },
             ),
             metadata=dict(c.metadata),
             credential_id=c.credential_id,
@@ -141,7 +145,7 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
 
     mgr = AuthManager(store=store)
     result = _ensure_credential(mgr, "default")
-    assert result.payload.access_token == new_access
+    assert result.payload.auth_value == new_access
 
 
 def test_account_id_prefers_metadata_over_jwt():
@@ -149,11 +153,13 @@ def test_account_id_prefers_metadata_over_jwt():
         provider_id=auth_adapter.PROVIDER_ID,
         profile_id="default",
         kind="oauth",
-        payload=OAuthPayload(
-            access_token=_jwt(int(time.time()) + 60, account_id="acc_from_jwt"),
-            refresh_token="R",
-            expires_at_ms=int(time.time() * 1000) + 60_000,
-            client_id=auth_adapter.OAUTH_CLIENT_ID,
+        payload=CredentialData(
+            kind="oauth", auth_value=_jwt(int(time.time()) + 60, account_id="acc_from_jwt"),
+            data={
+                "refresh_token": "R",
+                "expires_at_ms": int(time.time() * 1000) + 60_000,
+                "client_id": auth_adapter.OAUTH_CLIENT_ID,
+            },
         ),
         metadata={"account_id": "acc_from_metadata"},
     )
@@ -165,11 +171,13 @@ def test_account_id_falls_back_to_jwt():
         provider_id=auth_adapter.PROVIDER_ID,
         profile_id="default",
         kind="oauth",
-        payload=OAuthPayload(
-            access_token=_jwt(int(time.time()) + 60, account_id="acc_jwt_only"),
-            refresh_token="R",
-            expires_at_ms=int(time.time() * 1000) + 60_000,
-            client_id=auth_adapter.OAUTH_CLIENT_ID,
+        payload=CredentialData(
+            kind="oauth", auth_value=_jwt(int(time.time()) + 60, account_id="acc_jwt_only"),
+            data={
+                "refresh_token": "R",
+                "expires_at_ms": int(time.time() * 1000) + 60_000,
+                "client_id": auth_adapter.OAUTH_CLIENT_ID,
+            },
         ),
     )
     assert _account_id_for(cred) == "acc_jwt_only"
@@ -187,10 +195,13 @@ def test_profile_isolation(isolated):
                 provider_id=auth_adapter.PROVIDER_ID,
                 profile_id=profile_id,
                 kind="oauth",
-                payload=OAuthPayload(
-                    access_token=token, refresh_token="R",
-                    expires_at_ms=int(time.time() * 1000) + 3600_000,
-                    client_id=auth_adapter.OAUTH_CLIENT_ID,
+                payload=CredentialData(
+                    kind="oauth", auth_value=token,
+                    data={
+                        "refresh_token": "R",
+                        "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                        "client_id": auth_adapter.OAUTH_CLIENT_ID,
+                    },
                 ),
             )],
         ))
