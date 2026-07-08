@@ -230,6 +230,60 @@ def test_repair_is_one_shot_via_version_marker():
     assert len(providers["p"]["models"]) == 5
 
 
+# --- Toggle refreshes the runtime registry in place (no process restart) ----
+
+
+@pytest.fixture
+def live_cfg(monkeypatch):
+    """Persistent in-memory config wired through the REAL _write_providers_cfg
+    (so its reload() side-effect fires) and the REAL enabled_models registry
+    (so we prove the chat picker sees the toggle without a restart)."""
+    import copy
+    import openprogram.providers._config_read as cr
+    import openprogram.providers.enabled_models as mg
+
+    store: dict = {}
+    _read = lambda: copy.deepcopy(store)
+
+    def _save(cfg):
+        store.clear()
+        store.update(copy.deepcopy(cfg.get("providers", cfg)))
+
+    # storage._write_providers_cfg goes through server._load_config/_save_config,
+    # then calls enabled_models.reload(); reload() reads via cr.read_providers_config.
+    import openprogram.webui.server as server
+    monkeypatch.setattr(server, "_load_config", lambda: {"providers": copy.deepcopy(store)})
+    monkeypatch.setattr(server, "_save_config", _save)
+    monkeypatch.setattr(cr, "read_providers_config", lambda: copy.deepcopy(store))
+    monkeypatch.setattr(st, "_read_providers_cfg", _read)
+    monkeypatch.setattr(tg, "_read_providers_cfg", _read)
+    st._reset_spec_migration()
+    mg.reload()
+    yield store
+    mg.reload()  # leave the shared registry clean for the next test
+
+
+def test_toggle_enable_refreshes_registry_without_restart(live_cfg, stub_listing):
+    import openprogram.providers.enabled_models as mg
+    from openprogram.providers.models import get_model
+    from openprogram.webui._model_listing.listing import list_enabled_models
+
+    live_cfg["acme"] = {"enabled": True}
+    st._reset_spec_migration()
+    mg.reload()
+    assert get_model("acme-plan", "acme-1") is None  # key_prefix in stub row
+
+    tg.toggle_model("acme", "acme-1", True)
+
+    # Registry + picker reflect the enable immediately — no reload() call here.
+    assert get_model("acme-plan", "acme-1") is not None
+    assert any(r["id"] == "acme-1" for r in list_enabled_models())
+
+    tg.toggle_model("acme", "acme-1", False)
+    assert get_model("acme-plan", "acme-1") is None
+    assert not any(r["id"] == "acme-1" for r in list_enabled_models())
+
+
 def test_repair_pass_runs_through_run_once(monkeypatch):
     """End-to-end: _run_spec_migration_once fires the repair, bumps the marker,
     and persists the pruned providers."""
