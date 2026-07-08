@@ -447,6 +447,18 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
     if pruned:
         print(f"  retired {len(pruned)} superseded OAuth credential(s): "
               f"{', '.join(pruned)}")
+    # Subscription providers (claude-code, openai-codex) have no list-models
+    # API; enable their default model set into config on first login. Keyed on
+    # the USER-facing provider (claude-code credentials route to the anthropic
+    # pool, but the models belong under claude-code). No-op when the provider
+    # already has spec rows — a disabled default never resurrects.
+    try:
+        from openprogram.auth.login_enable import enable_default_models_on_login
+        written = enable_default_models_on_login(provider)
+        if written:
+            print(f"  enabled default models: {', '.join(written)}")
+    except Exception:
+        pass
     if saved_provider != provider:
         print(f"\n  Note: routed to {saved_provider!r} (not {provider!r}) "
               f"because that's where this credential shape belongs.")

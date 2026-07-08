@@ -6,8 +6,9 @@ the git-tracked ``providers/<p>/models.json`` catalogue. These tests pin:
 
   * ``_load`` reads the config source and populates the registry from it;
   * the registry is one MUTABLE dict object — dynamic writers
-    (``_register_custom_model_in_registry``, the claude-code seed) do
-    ``ENABLED_MODELS[k] = m`` in place and must land in the same dict.
+    (``_register_custom_model_in_registry``, the codex runtime-registration
+    helper) do ``ENABLED_MODELS[k] = m`` in place and must land in the same
+    dict.
 """
 from openprogram.providers.models import get_model
 

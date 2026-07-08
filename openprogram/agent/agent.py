@@ -103,11 +103,13 @@ class Agent:
             opts = AgentOptions.from_dict(opts)
         opts = opts or AgentOptions()
 
-        default_model = get_model("google", "gemini-2.5-flash-lite-preview-06-17")
-
+        # No hardcoded seed model: it would crash construction whenever that
+        # provider has no enabled rows (post enabled-models migration). The
+        # real model is applied from ``opts.initial_state`` just below;
+        # AgentSession always supplies one.
         self._state = AgentState(
             system_prompt="",
-            model=default_model,
+            model=None,
             thinking_level="off",
             tools=[],
             messages=[],

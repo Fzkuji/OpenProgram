@@ -119,6 +119,12 @@ def _reset_spec_migration() -> None:
     _spec_migration_running = False
 
 
+# Versioned second pass (config marker ``spec_migration_version``). Bump this
+# whenever a new one-shot repair of already-migrated configs is needed; the
+# pass runs once per machine (persisted marker), not once per process.
+_SPEC_MIGRATION_VERSION = 2
+
+
 def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
     global _spec_migration_done, _spec_migration_running
     if _spec_migration_done or _spec_migration_running:
@@ -126,13 +132,76 @@ def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
     _spec_migration_running = True
     try:
         changed = _migrate_specs(providers)
+        repaired = _repair_over_merged_specs(providers)
     finally:
         _spec_migration_running = False
         _spec_migration_done = True
-    if changed:
-        # Persist the backfill. ``_write_providers_cfg`` re-reads the whole
-        # config; the guard above keeps that read from re-entering migration.
+    if changed or repaired:
+        # Persist the backfill + repair. ``_write_*`` re-reads the whole config;
+        # the guard above keeps that read from re-entering migration. The repair
+        # bumps the persisted ``spec_migration_version`` marker so it's one-shot
+        # per machine (see ``_repair_over_merged_specs``).
+        if repaired:
+            _bump_spec_migration_version()
         _write_providers_cfg(providers)
+
+
+def _spec_migration_version() -> int:
+    from openprogram.webui.server import _load_config
+    try:
+        return int(_load_config().get("spec_migration_version", 0) or 0)
+    except Exception:
+        return 0
+
+
+def _bump_spec_migration_version() -> None:
+    from openprogram.webui.server import _load_config, _save_config
+    cfg = _load_config()
+    cfg["spec_migration_version"] = _SPEC_MIGRATION_VERSION
+    _save_config(cfg)
+
+
+def _repair_over_merged_specs(providers: dict[str, dict[str, Any]]) -> bool:
+    """One-shot repair of configs the v1 bulk-merge over-populated.
+
+    The v1 ``_migrate_specs`` merged EVERY ``custom_models`` row into
+    ``providers.<p>.models`` tagged ``source: "manual"``. But for community
+    providers ``custom_models`` was the whole upstream catalogue (an
+    availability cache), not the user's enabled set — so the enabled-only
+    registry/picker ballooned (openrouter: 399 rows for 3 enabled).
+
+    Precise reversal: for each provider, DROP every row with
+    ``source == "manual"`` whose id is NOT in that provider's legacy
+    ``enabled_models``. This is exact because the only writer of a manual-
+    tagged row is the v1 merge (``toggle_model`` enable writes a spec row with
+    NO ``source`` key — see ``spec_row_for``, which strips only ``enabled``).
+    So a manual row not in ``enabled_models`` can only be a bulk-merge artefact,
+    never a genuine user action. Rows without ``source`` (toggled since
+    migration) and rows with id in ``enabled_models`` stay untouched. Rows
+    tagged ``source: "migration-minimal"`` keep their semantics (id is in
+    ``enabled_models`` by construction, so this pass never touches them).
+
+    Runs once per machine, guarded by the persisted ``spec_migration_version``
+    marker. Returns True if it pruned anything.
+    """
+    if _spec_migration_version() >= _SPEC_MIGRATION_VERSION:
+        return False
+    repaired = False
+    for pcfg in providers.values():
+        if not isinstance(pcfg, dict):
+            continue
+        rows = pcfg.get("models") or []
+        if not rows:
+            continue
+        enabled = set(pcfg.get("enabled_models") or [])
+        kept = [
+            r for r in rows
+            if r.get("source") != "manual" or r.get("id") in enabled
+        ]
+        if len(kept) != len(rows):
+            pcfg["models"] = kept
+            repaired = True
+    return repaired
 
 
 def _minimal_spec_row(pid: str, mid: str, pcfg: dict[str, Any]) -> dict[str, Any]:
@@ -181,8 +250,14 @@ def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
         offline row (``_minimal_spec_row``) so the id still resolves without
         network; only ids for which even a minimal row can't be built stay in
         ``enabled_models`` (never dropped) with a warning;
-      * ``custom_models`` rows are merged in tagged ``source: "manual"``,
-        the original ``custom_models`` key left untouched.
+      * a ``custom_models`` row is merged in tagged ``source: "manual"`` ONLY
+        if its id is in this provider's legacy ``enabled_models``. The old
+        Fetch flow cached a community provider's ENTIRE upstream catalogue in
+        ``custom_models`` (openrouter: 399 rows for 3 enabled) — that key was
+        an availability cache, never a "user enabled these" list, so merging
+        all of it floods the enabled-only registry. Non-enabled custom rows
+        stay put in the untouched ``custom_models`` key (rediscoverable via
+        live browse); nothing is lost.
 
     Returns True if anything changed (caller persists).
     """
@@ -193,8 +268,9 @@ def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
         rows = pcfg.get("models") or []
         have = {r.get("id") for r in rows if r.get("id")}
         new_rows = list(rows)
+        enabled = set(pcfg.get("enabled_models") or [])
 
-        for mid in (pcfg.get("enabled_models") or []):
+        for mid in enabled:
             if mid in have:
                 continue
             spec = spec_row_for(pid, mid)
@@ -219,7 +295,10 @@ def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
 
         for cm in (pcfg.get("custom_models") or []):
             cmid = cm.get("id")
-            if not cmid or cmid in have:
+            # Only genuinely-enabled custom rows enter the registry. The rest
+            # are an availability cache, not user enablement — leave them in
+            # custom_models.
+            if not cmid or cmid in have or cmid not in enabled:
                 continue
             new_rows.append({**cm, "source": "manual"})
             have.add(cmid)

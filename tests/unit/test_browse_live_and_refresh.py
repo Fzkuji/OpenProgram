@@ -205,8 +205,9 @@ def test_refresh_overwrites_enabled_specs(monkeypatch, mem_cfg):
     # REAL reload ran: the healed spec is now in the live runtime registry with
     # the corrected context window.
     assert mg.ENABLED_MODELS["acme/keep"].context_window == 999999
-    # The dynamic claude-code seed survives the reload (C1).
-    assert "claude-code/claude-opus-4-8" in mg.ENABLED_MODELS
+    # reload() rebuilds from config spec rows only — no import-time seed
+    # resurrection. The mem_cfg here carries no claude-code rows, so none appear.
+    assert not any(k.startswith("claude-code/") for k in mg.ENABLED_MODELS)
 
 
 # ---------------------------------------------------------------------------

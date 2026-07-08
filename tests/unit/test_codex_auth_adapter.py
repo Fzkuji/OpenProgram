@@ -288,3 +288,42 @@ def test_write_back_silent_when_path_unwritable(tmp_path, monkeypatch):
     )
     # Should NOT raise — write-back is best-effort.
     adapter._write_back_to_codex_file(new_payload)
+
+
+def test_resolve_codex_bearer_reads_auth_value_not_access_token(monkeypatch):
+    # F3 credential seam: OAuth credentials carry the live bearer in
+    # ``auth_value`` — ``payload.access_token`` is not a field and is None.
+    # ``_resolve_codex_bearer_token`` must read ``auth_value`` (via the
+    # canonical resolver), else codex AND chatgpt-subscription (which routes
+    # through this same resolver) fail with "No API key" despite a valid
+    # stored OAuth credential.
+    #
+    # Hermetic: patch the two lookups the resolver consults so it never
+    # touches this machine's real openai-codex OAuth pool (which would leak a
+    # live token and mask the attribute-vs-auth_value distinction).
+    import openprogram.providers.openai_codex.openai_codex as ocx
+    import openprogram.providers.env_api_keys as eak
+
+    monkeypatch.setattr(eak, "resolve_provider_key", lambda p: None)
+
+    cred = Credential(
+        provider_id=adapter.PROVIDER_ID,
+        profile_id="default",
+        kind="oauth",
+        payload=CredentialData(
+            kind="oauth", auth_value="THE-BEARER-1952",
+            data={
+                "refresh_token": "R",
+                "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                "client_id": adapter.OAUTH_CLIENT_ID,
+            },
+        ),
+    )
+    assert not hasattr(cred.payload, "access_token")  # the wrong attribute
+
+    class _Mgr:
+        def acquire_sync(self, provider_id, *a, **k):
+            return cred
+    monkeypatch.setattr("openprogram.auth.manager.get_manager", lambda: _Mgr())
+
+    assert ocx._resolve_codex_bearer_token(None) == "THE-BEARER-1952"

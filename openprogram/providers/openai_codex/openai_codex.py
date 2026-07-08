@@ -103,13 +103,18 @@ def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
 
     # Try the OAuth pool. acquire_sync auto-refreshes if the token is
     # within the skew window, so we never serve a stale access_token.
+    # Read the bearer via the canonical resolver (``auth_value``), NOT the
+    # raw ``payload.access_token`` attribute: OAuth credentials carry the
+    # live bearer in ``auth_value`` (``access_token`` is often None after a
+    # refresh/re-login rewrites the payload), which silently broke codex —
+    # and chatgpt-subscription, which routes through this same resolver.
     try:
         from openprogram.auth.manager import get_manager
+        from openprogram.auth.resolver import resolve_connection
         cred = get_manager().acquire_sync("openai-codex")
-        payload = getattr(cred, "payload", None)
-        token = getattr(payload, "access_token", None)
-        if token:
-            return token
+        conn = resolve_connection(cred)
+        if conn and conn.auth_value:
+            return conn.auth_value
     except Exception:
         # AuthManager raises when no provider config is registered or
         # no credentials exist. Both are recoverable — fall through to

@@ -95,18 +95,13 @@ def ensure_codex_model_registered(mid: str) -> None:
     })
 
 
-def _augment_registry_with_codex_models() -> None:
-    """Seed the registry with the known Codex ids at import so they resolve
-    offline and before the first Fetch. The live Fetch supplements this with
-    whatever models.dev currently lists; see ``ensure_codex_model_registered``.
-
-    (``_KNOWN_CODEX_MODELS`` is kept as the offline seed for now; the live
-    Fetch is the authoritative source once it runs.)"""
-    for mid in _KNOWN_CODEX_MODELS:
-        ensure_codex_model_registered(mid)
-
-
-_augment_registry_with_codex_models()
+# No import-time registry seeding. The registry is built from config spec
+# rows only (docs/design/providers/models/models.md §4.2). The default Codex
+# model set is written to config as an *enable* on the user's behalf at login
+# — see ``openprogram.auth.login_enable``. ``ensure_codex_model_registered``
+# below stays as the runtime-registration helper the live Fetch and the
+# runtime miss-path use once a config-backed codex template exists.
+# ``_KNOWN_CODEX_MODELS`` remains the offline hand-list for ``list_models``.
 
 
 # ---------------------------------------------------------------------------

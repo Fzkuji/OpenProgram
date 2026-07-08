@@ -304,6 +304,15 @@ def _action_scan_and_import() -> None:
         adopted += 1
         _say(f"  + {cred.provider_id}/{cred.profile_id}: {_preview(cred)}")
     _say(f"  Imported {adopted}.")
+    # First-run convenience: subscription providers have no list-models API, so
+    # adopting their credentials should also enable their default model set
+    # into config (no-op if the provider already has spec rows).
+    if adopted:
+        from .login_enable import seed_default_models_if_logged_in
+        for pid in ("claude-code", "openai-codex"):
+            written = seed_default_models_if_logged_in(pid)
+            if written:
+                _say(f"  enabled default {pid} models: {', '.join(written)}")
 
 
 def _action_pick_provider_and_login() -> None:
