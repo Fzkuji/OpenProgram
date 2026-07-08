@@ -21,15 +21,15 @@ openprogram/providers/
 │   ├── thinking.json              ← git: thinking-effort mapping
 │   ├── probe_thinking.py          ← probe script auto-run during Fetch (optional)
 │   └── deepseek.py                ← wire/stream implementation (only for providers with a dedicated protocol)
-├── catalog/                       ← merge pipeline (the single data outlet)
+├── model_registry/                ← merge pipeline (the single data outlet), defines MODEL_REGISTRY
 │   ├── loader.py                  ← reads provider.json + models.json + models.cache.json
 │   ├── models_dev.py              ← models.dev source (in-memory cache, TTL 24h)
 │   └── merge.py                   ← layered overlay, produces Model objects
-├── thinking_spec.py               ← reads thinking.json + effort translation
-├── thinking_catalog.py            ← derive_thinking_fields (thinking-field derivation)
-├── models_generated.py            ← MODEL_REGISTRY definition (filled by the catalog pipeline)
+├── thinking_spec.py               ← reads thinking.json + effort translation + thinking-field derivation
 └── models.py                      ← get_model / get_providers / get_models
 ```
+
+**Naming rule: the word "catalog" is retired entirely.** Historically `_catalog/`, `catalog.json`, `_catalog_new.py`, `thinking_catalog.py`, and webui's `_model_catalog/` used one word for five different things — the root of the naming confusion. The word does not appear in the target state: the merge pipeline is called `model_registry` (its product is `MODEL_REGISTRY`), thinking derivation folds into `thinking_spec.py`, and the webui presentation layer becomes `_model_listing/`. `models_generated.py` retires with it — it hasn't been "generated" for a long time.
 
 One table for every file's role:
 
@@ -47,10 +47,22 @@ One table for every file's role:
 - `api` / `base_url` → `provider.json` endpoints (bound in pairs, see 2.1)
 - "which models exist" → `models.cache.json` if fetched, else the `models.json` baseline, else models.dev
 - price, context, capabilities → models.dev (official Fetch data wins)
-- thinking levels → derived from `thinking.json` (`thinking_catalog.derive_thinking_fields`)
+- thinking levels → derived from `thinking.json` (`thinking_spec.derive_thinking_fields`)
 - "which models the user enabled" → `config.json` (`enabled` / `enabled_models`) — user state, never mixed into catalog data
 
-`models.json` is therefore thin: `id`, `name`, `endpoint` (when not default), `key_prefix` (dual-key cases), `headers`, `compat`, plus inline spec fields only when models.dev doesn't cover the provider. **Any field that models.dev or the official API can supply is never hand-written** — hand-written data has no update mechanism and inevitably rots.
+`models.json` is therefore thin: `id`, `name`, `endpoint` (when not default), `key_prefix` (dual-key cases), `headers`, `compat`, plus inline spec fields only when models.dev doesn't cover the provider. **Any field that models.dev or the official API can supply is never hand-written** — hand-written data has no update mechanism and inevitably rots. For most providers this file may not exist at all (the model list falls back to models.dev).
+
+### 2.0 Why models.json and models.cache.json are two files
+
+Their contents look similar but their **lifecycles are entirely different**; merging them into one file breaks either way:
+
+| | `models.json` | `models.cache.json` |
+|---|---|---|
+| Nature | factory defaults: repository-maintained models + hand-written overrides | live state on the user's machine: the official list pulled by Fetch |
+| Changed by | humans, via git commits | the program, overwritten on every Fetch |
+| Without it | offline + never fetched → the provider has no models | just not fetched yet; baseline + models.dev cover it |
+
+As one file: either it is git-tracked — then a single Fetch click dirties the repository (a pip-installed package directory may even be read-only, so the write fails) — or it is not — then the project ships with no factory models and an offline install is empty. Hence "the repository's data stays in the repository, the machine's stays on the machine", overlaid at read time by the merge pipeline.
 
 ### 2.1 provider.json: endpoint groups
 
@@ -86,7 +98,7 @@ Adding a builtin provider = create the directory + write `provider.json` (a few 
 
 ## 3. The merge pipeline (single data outlet)
 
-`catalog.merge` overlays layers per provider, bottom-up; non-empty fields from higher layers win:
+`model_registry.merge` overlays layers per provider, bottom-up; non-empty fields from higher layers win:
 
 ```
 layer 4  thinking.json derivation      → thinking_levels / default / variant
@@ -107,7 +119,7 @@ Rules:
 The pipeline's result is simply:
 
 ```python
-# openprogram/providers/models_generated.py
+# openprogram/providers/model_registry/__init__.py
 MODEL_REGISTRY: dict[str, Model]   # the one and only runtime model registry
 ```
 
@@ -146,7 +158,7 @@ User-added models live in `config.json` under `custom_models`; `_register_custom
 
 ## 5. How the frontend uses it
 
-The frontend has no model data of its own; everything goes through three listing functions that read **the same registry** (`webui/_model_catalog/listing.py`, a pure presentation layer: labels, enabled flags, setup hints):
+The frontend has no model data of its own; everything goes through three listing functions that read **the same registry** (`webui/_model_listing/listing.py`, currently named `_model_catalog/`, a pure presentation layer: labels, enabled flags, setup hints):
 
 | Frontend surface | API route | Listing function | Content |
 |---|---|---|---|
@@ -157,7 +169,7 @@ The frontend has no model data of its own; everything goes through three listing
 
 - **Enabled state** lives only in `config.json` (`providers.<id>.enabled` / `enabled_models`); listing reads it to set flags; checking/unchecking only edits config, never catalog data.
 - The community tier of `list_providers` (all models.dev providers) lets users enable fireworks/together-class providers without waiting for a code release — enter a key, click Fetch, and the auto-created-directory path of 2.2 kicks in.
-- Listing is a thin shell: **no field merging, no thinking derivation** — all of that is finished inside the `providers/catalog` pipeline. webui imports providers; providers never import webui.
+- Listing is a thin shell: **no field merging, no thinking derivation** — all of that is finished inside the `providers/model_registry` pipeline. webui imports providers; providers never import webui.
 
 ## 6. End-to-end sequence (one typical interaction)
 
@@ -200,11 +212,11 @@ No step involves "another list", so nothing can disagree.
 ### 8.2 Migration order (each step commits independently, nothing breaks)
 
 1. **bailian → alibaba_token_plan_cn**: rename the directory + change `provider.json`'s id to `alibaba-token-plan-cn`, models carried over as-is; once the pipeline lands it auto-aligns with models.dev's 18 models. Small and independent — do it first.
-2. **Sink the data layer**: move `provider_models.py` (cache read/write + combined merge) and `sources/models_dev.py` from `webui/_model_catalog/` into `openprogram/providers/catalog/`; change `_default_api_for`/`_resolve_base_url` to read `provider.json` endpoints. The dependency cycle dissolves here.
-3. **Connect the registry to the pipeline**: `_load()` runs the full merge (the five layers of section 3); cache and models.dev enter the registry. The two chains become one at this point.
-4. **Thin out listing**: `list_models_for_provider` drops its own combined + thinking merge and just reads the registry plus presentation fields.
+2. **Sink the data layer**: move `provider_models.py` (cache read/write + combined merge) and `sources/models_dev.py` from `webui/_model_catalog/` into `openprogram/providers/model_registry/`; change `_default_api_for`/`_resolve_base_url` to read `provider.json` endpoints. The dependency cycle dissolves here.
+3. **Connect the registry to the pipeline**: `_load()` runs the full merge (the five layers of section 3); cache and models.dev enter the registry; `_catalog_new.py` folds into `model_registry/loader.py`. The two chains become one at this point.
+4. **Thin out listing**: `list_models_for_provider` drops its own combined + thinking merge and just reads the registry plus presentation fields; the package renames `_model_catalog/` → `_model_listing/`.
 5. **Slim models.json**: a script deletes all derivable/obtainable fields, verifying per provider that the merged result is field-identical to before slimming.
-6. **Rename `MODELS` → `MODEL_REGISTRY`**: purely mechanical replacement across 20+ call sites, last step.
+6. **Naming cleanup**: `MODELS` → `MODEL_REGISTRY` (definition moves into `model_registry/__init__.py`, retiring `models_generated.py`); `thinking_catalog.py`'s derivation folds into `thinking_spec.py`. After this the word "catalog" no longer exists in the code.
 
 ### 8.3 What the migration must preserve (from prior reviews)
 

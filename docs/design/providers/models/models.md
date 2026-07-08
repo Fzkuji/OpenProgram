@@ -21,15 +21,15 @@ openprogram/providers/
 │   ├── thinking.json              ← git：thinking effort 映射
 │   ├── probe_thinking.py          ← Fetch 时自动运行的探测脚本（可选）
 │   └── deepseek.py                ← wire/stream 实现（仅专属协议的 provider 有）
-├── catalog/                       ← 合并管线（唯一数据出口）
+├── model_registry/                ← 合并管线（唯一数据出口），定义 MODEL_REGISTRY
 │   ├── loader.py                  ← 读 provider.json + models.json + models.cache.json
 │   ├── models_dev.py              ← models.dev 数据源（内存缓存，TTL 24h）
 │   └── merge.py                   ← 分层叠加，产出 Model 对象
-├── thinking_spec.py               ← 读 thinking.json + effort 翻译
-├── thinking_catalog.py            ← derive_thinking_fields（thinking 字段推导）
-├── models_generated.py            ← MODEL_REGISTRY 定义（调 catalog 管线填充）
+├── thinking_spec.py               ← 读 thinking.json + effort 翻译 + thinking 字段推导
 └── models.py                      ← get_model / get_providers / get_models
 ```
+
+**命名规则：「catalog」一词整体退役。** 历史上 `_catalog/`、`catalog.json`、`_catalog_new.py`、`thinking_catalog.py`、webui 的 `_model_catalog/` 用同一个词指五种不同的东西，是命名混乱的根源。目标态里这个词不再出现：合并管线叫 `model_registry`（因为它的产物就是 `MODEL_REGISTRY`），thinking 推导并入 `thinking_spec.py`，webui 展示层改叫 `_model_listing/`。`models_generated.py` 同时退役——它早就不是「generated」的了。
 
 每份文件的角色，一张表说清：
 
@@ -47,10 +47,22 @@ openprogram/providers/
 - `api` / `base_url` → `provider.json` 的 endpoints（成对绑定，见 2.1）
 - 「有哪些模型」→ Fetch 过用 `models.cache.json`，没 Fetch 过用 `models.json` 基线，再兜底 models.dev
 - 价格、context、能力 → models.dev（官方 Fetch 数据优先）
-- thinking 档位 → `thinking.json` 推导（`thinking_catalog.derive_thinking_fields`）
+- thinking 档位 → `thinking.json` 推导（`thinking_spec.derive_thinking_fields`）
 - 「用户启用了哪些」→ `config.json`（`enabled` / `enabled_models`），是用户状态，永远不混进目录数据
 
-`models.json` 因此很瘦：`id`、`name`、`endpoint`（非 default 时）、`key_prefix`（双 key 场景）、`headers`、`compat`，以及 models.dev 没收录时才内联的规格字段。**凡是 models.dev 或官方 API 能给的字段，一律不手写**——手写数据没有更新机制，必然腐烂。
+`models.json` 因此很瘦：`id`、`name`、`endpoint`（非 default 时）、`key_prefix`（双 key 场景）、`headers`、`compat`，以及 models.dev 没收录时才内联的规格字段。**凡是 models.dev 或官方 API 能给的字段，一律不手写**——手写数据没有更新机制，必然腐烂。对多数 provider 这个文件甚至可以不存在（模型列表由 models.dev 兜底）。
+
+### 2.0 为什么 models.json 和 models.cache.json 是两个文件
+
+它们内容相似但**生命周期完全不同**，合成一个文件必出事：
+
+| | `models.json` | `models.cache.json` |
+|---|---|---|
+| 本质 | 出厂预装：仓库维护的默认模型 + 手写 override | 用户机器上的实时状态：Fetch 拉到的官方列表 |
+| 谁改 | 人，走 git 提交 | 程序，每次 Fetch 覆写 |
+| 没有它 | 断网 + 没 Fetch 过时该 provider 没模型 | 只是还没 Fetch，用基线 + models.dev |
+
+如果合成一个文件：要么它进 git——用户点一次 Fetch 就弄脏仓库（pip 安装的包目录甚至只读，直接写失败）；要么它不进 git——项目就没有任何出厂模型，断网装机即空。所以是「仓库的归仓库，机器的归机器」，读取时由合并管线叠加。
 
 ### 2.1 provider.json：endpoint 分组
 
@@ -86,7 +98,7 @@ openprogram/providers/
 
 ## 3. 合并管线（唯一数据出口）
 
-`catalog.merge` 对每个 provider 做分层叠加，从下往上、高层的非空字段覆盖低层：
+`model_registry.merge` 对每个 provider 做分层叠加，从下往上、高层的非空字段覆盖低层：
 
 ```
 第 4 层  thinking.json 推导        → thinking_levels / default / variant
@@ -107,7 +119,7 @@ openprogram/providers/
 管线跑完的结果就是：
 
 ```python
-# openprogram/providers/models_generated.py
+# openprogram/providers/model_registry/__init__.py
 MODEL_REGISTRY: dict[str, Model]   # 唯一的运行时模型注册表
 ```
 
@@ -146,7 +158,7 @@ Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基
 
 ## 5. 前端怎么用
 
-前端没有自己的模型数据，全部经三个 listing 函数读**同一份注册表**（`webui/_model_catalog/listing.py`，纯展示层：加 label、enabled 标记、setup hint）：
+前端没有自己的模型数据，全部经三个 listing 函数读**同一份注册表**（`webui/_model_listing/listing.py`，现名 `_model_catalog/`，纯展示层：加 label、enabled 标记、setup hint）：
 
 | 前端位置 | API 路由 | listing 函数 | 内容 |
 |---|---|---|---|
@@ -157,7 +169,7 @@ Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基
 
 - **enabled 状态**只存 `config.json`（`providers.<id>.enabled` / `enabled_models`），listing 读出来打标记；勾选/取消只改 config，不动目录数据。
 - `list_providers` 的社区层（models.dev 全量 provider）让用户不等代码发版就能启用 fireworks/together 这类 provider——填 key、点 Fetch，走 2.2 的自动建目录路径。
-- listing 是薄壳：**不做字段合并、不做 thinking 推导**，那些全在 `providers/catalog` 管线里做完了。webui 只 import providers，providers 永远不 import webui。
+- listing 是薄壳：**不做字段合并、不做 thinking 推导**，那些全在 `providers/model_registry` 管线里做完了。webui 只 import providers，providers 永远不 import webui。
 
 ## 6. 端到端时序（一次典型交互）
 
@@ -200,11 +212,11 @@ Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基
 ### 8.2 迁移顺序（每步可独立提交、系统不瘫）
 
 1. **bailian → alibaba_token_plan_cn**：目录改名 + `provider.json` 的 id 改 `alibaba-token-plan-cn`，模型内容照搬；管线打通后自动对齐 models.dev 的 18 个模型。独立小改，先做。
-2. **下沉数据层**：把 `provider_models.py`（cache 读写 + combined 合并）和 `sources/models_dev.py` 从 `webui/_model_catalog/` 移到 `openprogram/providers/catalog/`；`_default_api_for`/`_resolve_base_url` 改读 `provider.json` endpoints。循环依赖至此解除。
-3. **注册表接管线**：`_load()` 改为跑完整合并（第 3 节的五层），cache 和 models.dev 进注册表。此时两条链事实合一。
-4. **listing 改薄**：`list_models_for_provider` 删掉自己那套 combined + thinking 合并，直接读注册表加展示字段。
+2. **下沉数据层**：把 `provider_models.py`（cache 读写 + combined 合并）和 `sources/models_dev.py` 从 `webui/_model_catalog/` 移到 `openprogram/providers/model_registry/`；`_default_api_for`/`_resolve_base_url` 改读 `provider.json` endpoints。循环依赖至此解除。
+3. **注册表接管线**：`_load()` 改为跑完整合并（第 3 节的五层），cache 和 models.dev 进注册表；`_catalog_new.py` 并入 `model_registry/loader.py`。此时两条链事实合一。
+4. **listing 改薄**：`list_models_for_provider` 删掉自己那套 combined + thinking 合并，直接读注册表加展示字段；包改名 `_model_catalog/` → `_model_listing/`。
 5. **models.json 瘦身**：脚本删除全部可派生/可获取字段，逐 provider 校验合并结果与瘦身前等价（字段级 diff）。
-6. **改名 `MODELS` → `MODEL_REGISTRY`**：纯机械替换 20+ 调用点，放最后一步。
+6. **命名收尾**：`MODELS` → `MODEL_REGISTRY`（定义移入 `model_registry/__init__.py`，退役 `models_generated.py`）；`thinking_catalog.py` 的推导并入 `thinking_spec.py`。至此代码里不再有「catalog」一词。
 
 ### 8.3 迁移必须保住的点（历史审查所得）
 
