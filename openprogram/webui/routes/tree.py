@@ -375,6 +375,28 @@ def register(app):
             except Exception:
                 tools = []
 
+            # system_prompt：优先节点原料；没有就按会话 agent 重建（identity +
+            # tool_use 指引 + skills…），让所有 provider 的 /context 都能显示
+            # System 类真实 token，而非缺省 0。
+            if not latest_system:
+                try:
+                    from openprogram.agent._model_tools import (
+                        load_agent_profile,
+                    )
+                    from openprogram.context.components import (
+                        build_system_prompt,
+                    )
+
+                    class _AgentView:
+                        def __init__(self, d):
+                            self.__dict__.update(d)
+
+                    prof = load_agent_profile(sess.get("agent_id") or "main")
+                    if isinstance(prof, dict):
+                        latest_system = build_system_prompt(_AgentView(prof))
+                except Exception:
+                    latest_system = ""
+
             bd = compute_call_breakdown(
                 system_prompt=latest_system,
                 history=msgs,
