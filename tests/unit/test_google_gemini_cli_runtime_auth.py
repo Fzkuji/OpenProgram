@@ -17,10 +17,9 @@ from openprogram.auth.manager import AuthManager
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
     AuthConfigError,
-    CliDelegatedPayload,
     Credential,
+    CredentialData,
     CredentialPool,
-    OAuthPayload,
 )
 from openprogram.providers.google_gemini_cli import auth_adapter
 from openprogram.providers.google_gemini_cli.runtime import (
@@ -84,11 +83,14 @@ def test_access_token_reads_live_file_for_cli_delegated(isolated):
         provider_id=auth_adapter.PROVIDER_ID,
         profile_id="default",
         kind="cli_delegated",
-        payload=CliDelegatedPayload(
-            store_path=str(creds_path),
-            access_key_path=["access_token"],
-            refresh_key_path=["refresh_token"],
-            expires_key_path=["expiry_date"],
+        payload=CredentialData(
+            kind="cli_delegated",
+            data={
+                "store_path": str(creds_path),
+                "access_key_path": ["access_token"],
+                "refresh_key_path": ["refresh_token"],
+                "expires_key_path": ["expiry_date"],
+            },
         ),
     )
     assert _access_token_for(cred) == "ya29.original"
@@ -103,11 +105,13 @@ def test_access_token_reads_oauth_payload_directly():
         provider_id=auth_adapter.PROVIDER_ID,
         profile_id="default",
         kind="oauth",
-        payload=OAuthPayload(
-            access_token="ya29.oauth_direct",
-            refresh_token="1//ref",
-            expires_at_ms=int(time.time() * 1000) + 3600_000,
-            client_id="fake",
+        payload=CredentialData(
+            kind="oauth", auth_value="ya29.oauth_direct",
+            data={
+                "refresh_token": "1//ref",
+                "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                "client_id": "fake",
+            },
         ),
     )
     assert _access_token_for(cred) == "ya29.oauth_direct"
@@ -124,10 +128,13 @@ def test_profile_isolation(isolated):
                 provider_id=auth_adapter.PROVIDER_ID,
                 profile_id=profile_id,
                 kind="oauth",
-                payload=OAuthPayload(
-                    access_token=token, refresh_token="R",
-                    expires_at_ms=int(time.time() * 1000) + 3600_000,
-                    client_id="fake",
+                payload=CredentialData(
+                    kind="oauth", auth_value=token,
+                    data={
+                        "refresh_token": "R",
+                        "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                        "client_id": "fake",
+                    },
                 ),
             )],
         ))

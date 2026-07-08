@@ -9,7 +9,6 @@ from typing import Awaitable
 import pytest
 
 from openprogram.auth import (
-    ApiKeyPayload,
     AuthConfigError,
     AuthEventType,
     AuthNeedsReauthError,
@@ -17,7 +16,7 @@ from openprogram.auth import (
     AuthReadOnlyError,
     AuthStore,
     Credential,
-    OAuthPayload,
+    CredentialData,
 )
 from openprogram.auth.manager import (
     AuthManager,
@@ -38,9 +37,9 @@ def _oauth(
         expires_at_ms = int(time.time() * 1000) + 3600_000
     return Credential(
         provider_id=provider, profile_id=profile, kind="oauth",
-        payload=OAuthPayload(
-            access_token=access, refresh_token=refresh,
-            expires_at_ms=expires_at_ms, client_id="cid",
+        payload=CredentialData(
+            kind="oauth", auth_value=access,
+            data={"refresh_token": refresh, "expires_at_ms": expires_at_ms, "client_id": "cid"},
         ),
     )
 
@@ -48,7 +47,7 @@ def _oauth(
 def _api(provider="openai", profile="default", key="k") -> Credential:
     return Credential(
         provider_id=provider, profile_id=profile, kind="api_key",
-        payload=ApiKeyPayload(api_key=key),
+        payload=CredentialData(kind="api_key", auth_value=key),
     )
 
 
@@ -63,7 +62,7 @@ def test_acquire_returns_api_key_credential(tmp_path: Path):
     m, store = _manager(tmp_path)
     store.add_credential(_api())
     cred = asyncio.run(m.acquire("openai"))
-    assert cred.payload.api_key == "k"
+    assert cred.payload.auth_value == "k"
 
 
 def test_acquire_unknown_provider_raises_config_error(tmp_path: Path):
@@ -78,7 +77,7 @@ def test_acquire_picks_healthy_from_pool(tmp_path: Path):
     store.add_credential(_api(key="b"))
     cred = asyncio.run(m.acquire("openai"))
     # fill_first default → picks "a"
-    assert cred.payload.api_key == "a"
+    assert cred.payload.auth_value == "a"
 
 
 # ---- OAuth expiry + refresh -----------------------------------------------
@@ -96,7 +95,7 @@ def test_fresh_oauth_is_not_refreshed(tmp_path: Path):
         provider_id="openai-codex", refresh=refresh,
     ))
     cred = asyncio.run(m.acquire("openai-codex"))
-    assert cred.payload.access_token == "A"
+    assert cred.payload.auth_value == "A"
     assert calls == []
 
 
@@ -109,11 +108,13 @@ def test_expired_oauth_triggers_refresh(tmp_path: Path):
         return Credential(
             provider_id=c.provider_id, profile_id=c.profile_id,
             kind="oauth", credential_id=c.credential_id,
-            payload=OAuthPayload(
-                access_token="new",
-                refresh_token=c.payload.refresh_token,
-                expires_at_ms=int(time.time() * 1000) + 3600_000,
-                client_id=c.payload.client_id,
+            payload=CredentialData(
+                kind="oauth", auth_value="new",
+                data={
+                    "refresh_token": c.payload.data["refresh_token"],
+                    "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                    "client_id": c.payload.data["client_id"],
+                },
             ),
         )
 
@@ -121,10 +122,10 @@ def test_expired_oauth_triggers_refresh(tmp_path: Path):
         provider_id="openai-codex", refresh=refresh,
     ))
     cred = asyncio.run(m.acquire("openai-codex"))
-    assert cred.payload.access_token == "new"
+    assert cred.payload.auth_value == "new"
     # Persisted back
     stored = store.get_pool("openai-codex", "default").credentials[0]
-    assert stored.payload.access_token == "new"
+    assert stored.payload.auth_value == "new"
 
 
 def test_missing_refresh_fn_raises_needs_reauth(tmp_path: Path):
@@ -205,11 +206,13 @@ def test_concurrent_refresh_is_deduped(tmp_path: Path):
         return Credential(
             provider_id=c.provider_id, profile_id=c.profile_id,
             kind="oauth", credential_id=c.credential_id,
-            payload=OAuthPayload(
-                access_token=f"new-{call_count['n']}",
-                refresh_token="R2",
-                expires_at_ms=int(time.time() * 1000) + 3600_000,
-                client_id="cid",
+            payload=CredentialData(
+                kind="oauth", auth_value=f"new-{call_count['n']}",
+                data={
+                    "refresh_token": "R2",
+                    "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                    "client_id": "cid",
+                },
             ),
         )
 
@@ -223,7 +226,7 @@ def test_concurrent_refresh_is_deduped(tmp_path: Path):
     results = asyncio.run(run())
     # Every caller got the same result from a single refresh.
     assert call_count["n"] == 1
-    assert all(r.payload.access_token == "new-1" for r in results)
+    assert all(r.payload.auth_value == "new-1" for r in results)
 
 
 # ---- read-only -------------------------------------------------------------
@@ -248,7 +251,7 @@ def test_read_only_fresh_credential_is_returned_asis(tmp_path: Path):
     store.add_credential(cred)
     register_provider_config(ProviderAuthConfig(provider_id="openai-codex"))
     out = asyncio.run(m.acquire("openai-codex"))
-    assert out.payload.access_token == "fresh"
+    assert out.payload.auth_value == "fresh"
 
 
 # ---- fallback chain --------------------------------------------------------
@@ -262,7 +265,7 @@ def test_fallback_chain_takes_over_when_primary_missing(tmp_path: Path):
     ))
     cred = asyncio.run(m.acquire("openai-codex"))
     assert cred.provider_id == "anthropic"
-    assert cred.payload.api_key == "ant"
+    assert cred.payload.auth_value == "ant"
 
 
 def test_fallback_chain_cycle_is_broken(tmp_path: Path):
@@ -337,10 +340,13 @@ def test_refresh_emits_started_and_succeeded(tmp_path: Path):
         refresh=lambda c: Credential(
             provider_id=c.provider_id, profile_id=c.profile_id,
             kind="oauth", credential_id=c.credential_id,
-            payload=OAuthPayload(
-                access_token="new", refresh_token="r",
-                expires_at_ms=int(time.time() * 1000) + 3600_000,
-                client_id="cid",
+            payload=CredentialData(
+                kind="oauth", auth_value="new",
+                data={
+                    "refresh_token": "r",
+                    "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                    "client_id": "cid",
+                },
             ),
         ),
     ))

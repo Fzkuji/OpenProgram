@@ -34,7 +34,7 @@ from typing import Any, Callable, Literal, Optional, Protocol
 # Schema version for on-disk credential files. Every write stamps this;
 # every read checks it. Mismatches are treated as corrupt rather than
 # silently migrated — callers escalate to "re-auth this profile".
-CREDENTIAL_SCHEMA_VERSION = 1
+CREDENTIAL_SCHEMA_VERSION = 2
 
 
 # ---------------------------------------------------------------------------
@@ -66,102 +66,20 @@ CredentialStatus = Literal[
 
 
 @dataclass
-class ApiKeyPayload:
-    """Static key — what 90 % of the world calls ``OPENAI_API_KEY``."""
+class CredentialData:
+    """One credential's connection info. Replaces the 6 payload classes.
 
-    api_key: str
-
-
-@dataclass
-class OAuthPayload:
-    """OAuth 2.0 access + refresh tokens plus enough provenance to refresh
-    against the right endpoint without guessing.
-
-    ``client_id`` is stored so a credential obtained via one OAuth client
-    (e.g. Codex CLI's ``app_EMoamEEZ…``) can't accidentally be refreshed
-    via a different one (e.g. the web flow's). Token-endpoint URL is
-    stored so providers that relocate their OAuth endpoints don't invalidate
-    persisted creds.
+    Common fields answer "what to send" uniformly; ``data`` holds whatever
+    is specific to this ``kind`` (refresh tokens, external-file paths, ...).
     """
-
-    access_token: str
-    refresh_token: str
-    expires_at_ms: int          # unix ms; 0 if unknown
-    scope: list[str] = field(default_factory=list)
-    client_id: str = ""
-    token_endpoint: str = ""
-    id_token: str = ""          # openid id_token if present
-    extra: dict = field(default_factory=dict)  # account_id, email, etc
+    kind: str
+    auth_value: str = ""
+    base_url: str = ""
+    headers: dict = field(default_factory=dict)
+    data: dict = field(default_factory=dict)
 
 
-@dataclass
-class CliDelegatedPayload:
-    """Pointer into another tool's on-disk auth store.
-
-    We never duplicate their bytes — we re-read the file every time we need
-    the credential, so the external CLI owning the store stays authoritative.
-    This is how a user who runs ``codex login`` in their terminal sees the
-    result reflected here without a re-import step.
-    """
-
-    store_path: str                # absolute path to the external store file
-    access_key_path: list[str]     # JSON path to access token inside the file
-    refresh_key_path: list[str] = field(default_factory=list)
-    expires_key_path: list[str] = field(default_factory=list)
-
-
-@dataclass
-class DeviceCodePayload:
-    """Same runtime shape as :class:`OAuthPayload`; distinguished for
-    telemetry. Device-code flow tokens tend to have different lifetimes
-    and rate limits than PKCE ones so separate stats matter."""
-
-    access_token: str
-    refresh_token: str
-    expires_at_ms: int
-    device_code_flow_id: str = ""   # which device-flow session minted this
-    extra: dict = field(default_factory=dict)
-
-
-@dataclass
-class ExternalProcessPayload:
-    """Credential is produced on-demand by running a helper command.
-
-    Used by providers whose auth model is "shell out to the vendor CLI and
-    read its stdout". The command runs under the current :class:`Profile`'s
-    subprocess HOME so it doesn't leak between profiles.
-    """
-
-    command: list[str]              # argv for the helper
-    parses: Literal["json", "text"] = "json"
-    json_key_path: list[str] = field(default_factory=list)
-    cache_seconds: int = 300        # cache the extracted value for this long
-
-
-@dataclass
-class SsoPayload:
-    """Placeholder for enterprise SSO (SAML / OIDC broker).
-
-    Reserved shape — the union needs a valid variant so call sites can
-    switch on ``kind == "sso"`` today without a ``NotImplementedError``
-    escape hatch. Fields will flesh out when an enterprise customer needs
-    it; until then :class:`Credential` with this payload is rejected by
-    the manager.
-    """
-
-    broker: str = ""
-    subject: str = ""
-    extra: dict = field(default_factory=dict)
-
-
-CredentialPayload = (
-    ApiKeyPayload
-    | OAuthPayload
-    | CliDelegatedPayload
-    | DeviceCodePayload
-    | ExternalProcessPayload
-    | SsoPayload
-)
+CredentialPayload = CredentialData  # kept as an alias so annotations still resolve
 
 
 @dataclass(frozen=True)
@@ -243,7 +161,7 @@ class Credential:
     last_used_at_ms: int = 0
     use_count: int = 0
     last_error: Optional[str] = None
-    # Marks credentials that come from a :class:`CliDelegatedPayload` source
+    # Marks credentials that come from a ``kind="cli_delegated"`` source
     # or an external-import profile. Write operations (refresh, rotate) on
     # read-only credentials either no-op or raise AuthReadOnlyError
     # depending on the call site — the manager enforces the rule, not
@@ -298,34 +216,26 @@ class Credential:
         )
 
 
-def _payload_to_dict(p: CredentialPayload) -> dict:
-    # dataclass asdict() is safe here because every payload class is a
-    # flat dataclass with JSON-compatible field types.
-    d = asdict(p)
-    d["__type__"] = type(p).__name__
-    return d
-
-
-def _payload_from_dict(kind: CredentialKind, d: dict) -> CredentialPayload:
-    # We key on the outer `kind` rather than the `__type__` discriminator
-    # because the payload class and the kind string are required to agree
-    # (enforced here); if they disagree, the file has been tampered with.
-    data = {k: v for k, v in d.items() if k != "__type__"}
-    mapping: dict[CredentialKind, type] = {
-        "api_key": ApiKeyPayload,
-        "oauth": OAuthPayload,
-        "cli_delegated": CliDelegatedPayload,
-        "device_code": DeviceCodePayload,
-        "external_process": ExternalProcessPayload,
-        "sso": SsoPayload,
+def _payload_to_dict(p: CredentialData) -> dict:
+    return {
+        "kind": p.kind,
+        "auth_value": p.auth_value,
+        "base_url": p.base_url,
+        "headers": dict(p.headers),
+        "data": dict(p.data),
     }
-    cls = mapping.get(kind)
-    if cls is None:
-        raise AuthCorruptCredentialError(f"unknown credential kind: {kind!r}")
-    try:
-        return cls(**data)
-    except TypeError as e:
-        raise AuthCorruptCredentialError(f"bad payload for kind={kind!r}: {e}") from e
+
+
+def _payload_from_dict(kind: CredentialKind, d: dict) -> CredentialData:
+    # New structure only. Old 6-payload JSON (has "__type__", no top-level
+    # "kind" inside payload) is migrated out-of-band by _migrate_payload.py.
+    return CredentialData(
+        kind=d.get("kind", kind),
+        auth_value=d.get("auth_value", ""),
+        base_url=d.get("base_url", ""),
+        headers=dict(d.get("headers") or {}),
+        data=dict(d.get("data") or {}),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -659,8 +569,7 @@ def _new_id(prefix: str) -> str:
 __all__ = [
     "CREDENTIAL_SCHEMA_VERSION",
     "CredentialKind", "CredentialStatus",
-    "ApiKeyPayload", "OAuthPayload", "CliDelegatedPayload",
-    "DeviceCodePayload", "ExternalProcessPayload", "SsoPayload",
+    "CredentialData",
     "CredentialPayload", "Credential",
     "AuthReference",
     "PoolStrategy", "CredentialPool",

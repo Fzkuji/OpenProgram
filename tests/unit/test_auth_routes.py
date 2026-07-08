@@ -22,12 +22,11 @@ from openprogram.auth.profiles import (
 )
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
-    ApiKeyPayload,
     AuthEvent,
     AuthEventType,
     Credential,
+    CredentialData,
     CredentialPool,
-    OAuthPayload,
 )
 from openprogram.webui import _auth_routes
 from openprogram.webui._auth_routes import router
@@ -206,14 +205,14 @@ def test_list_pools_filtered_by_profile(client):
         provider_id="openai", profile_id="work",
         credentials=[Credential(
             provider_id="openai", profile_id="work", kind="api_key",
-            payload=ApiKeyPayload(api_key="work-key"),
+            payload=CredentialData(kind="api_key", auth_value="work-key"),
         )],
     ))
     store.put_pool(CredentialPool(
         provider_id="openai", profile_id="default",
         credentials=[Credential(
             provider_id="openai", profile_id="default", kind="api_key",
-            payload=ApiKeyPayload(api_key="default-key"),
+            payload=CredentialData(kind="api_key", auth_value="default-key"),
         )],
     ))
     r = c.get("/api/providers/pools?profile=work")
@@ -340,9 +339,9 @@ def test_doctor_route_flags_expired_oauth(client):
         credentials=[Credential(
             provider_id="random-oauth-provider", profile_id="default",
             kind="oauth",
-            payload=OAuthPayload(
-                access_token="t-expired", refresh_token="r-abc",
-                expires_at_ms=1,
+            payload=CredentialData(
+                kind="oauth", auth_value="t-expired",
+                data={"refresh_token": "r-abc", "expires_at_ms": 1},
             ),
             source="cli_paste",
         )],

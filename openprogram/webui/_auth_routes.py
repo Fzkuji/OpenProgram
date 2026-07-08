@@ -41,17 +41,12 @@ from openprogram.auth.profiles import (
 )
 from openprogram.auth.store import get_store
 from openprogram.auth.types import (
-    ApiKeyPayload,
     AuthConfigError,
     AuthEvent,
     AuthEventListener,
-    CliDelegatedPayload,
     Credential,
+    CredentialData,
     CredentialPool,
-    DeviceCodePayload,
-    ExternalProcessPayload,
-    OAuthPayload,
-    SsoPayload,
 )
 
 
@@ -81,38 +76,38 @@ def _payload_preview(cred: Credential) -> dict[str, Any]:
     like field and adds a ``masked`` marker so UI code can show a copy
     button only if the underlying payload isn't delegated / external."""
     payload = cred.payload
-    if isinstance(payload, ApiKeyPayload):
-        return {"type": "api_key", "api_key_preview": _mask(payload.api_key)}
-    if isinstance(payload, OAuthPayload):
+    if payload.kind == "api_key":
+        return {"type": "api_key", "api_key_preview": _mask(payload.auth_value)}
+    if payload.kind == "oauth":
         return {
             "type": "oauth",
-            "access_token_preview": _mask(payload.access_token),
-            "has_refresh_token": bool(payload.refresh_token),
-            "expires_at_ms": payload.expires_at_ms,
-            "client_id": payload.client_id,
-            "scope": payload.scope,
+            "access_token_preview": _mask(payload.auth_value),
+            "has_refresh_token": bool(payload.data.get("refresh_token")),
+            "expires_at_ms": payload.data.get("expires_at_ms", 0),
+            "client_id": payload.data.get("client_id"),
+            "scope": payload.data.get("scope"),
         }
-    if isinstance(payload, DeviceCodePayload):
+    if payload.kind == "device_code":
         return {
             "type": "device_code",
-            "access_token_preview": _mask(payload.access_token),
-            "has_refresh_token": bool(payload.refresh_token),
-            "expires_at_ms": payload.expires_at_ms,
+            "access_token_preview": _mask(payload.auth_value),
+            "has_refresh_token": bool(payload.data.get("refresh_token")),
+            "expires_at_ms": payload.data.get("expires_at_ms", 0),
         }
-    if isinstance(payload, CliDelegatedPayload):
+    if payload.kind == "cli_delegated":
         return {
             "type": "cli_delegated",
-            "store_path": payload.store_path,
-            "access_key_path": payload.access_key_path,
+            "store_path": payload.data.get("store_path"),
+            "access_key_path": payload.data.get("access_key_path"),
         }
-    if isinstance(payload, ExternalProcessPayload):
+    if payload.kind == "external_process":
         return {
             "type": "external_process",
-            "command": payload.command,
-            "cache_seconds": payload.cache_seconds,
+            "command": payload.data.get("command"),
+            "cache_seconds": payload.data.get("cache_seconds"),
         }
-    if isinstance(payload, SsoPayload):
-        return {"type": "sso", "broker": payload.broker}
+    if payload.kind == "sso":
+        return {"type": "sso", "broker": payload.data.get("broker")}
     return {"type": cred.kind, "unknown": True}
 
 
@@ -299,7 +294,7 @@ def _build_credential(
             provider_id=provider_id,
             profile_id=profile_id,
             kind="api_key",
-            payload=ApiKeyPayload(api_key=body.api_key.strip()),
+            payload=CredentialData(kind="api_key", auth_value=body.api_key.strip()),
             source="webui_paste",
             metadata=dict(body.metadata),
         )
@@ -310,11 +305,14 @@ def _build_credential(
             provider_id=provider_id,
             profile_id=profile_id,
             kind="oauth",
-            payload=OAuthPayload(
-                access_token=body.access_token.strip(),
-                refresh_token=(body.refresh_token or "").strip(),
-                expires_at_ms=body.expires_at_ms or 0,
-                client_id=(body.client_id or "").strip(),
+            payload=CredentialData(
+                kind="oauth",
+                auth_value=body.access_token.strip(),
+                data={
+                    "refresh_token": (body.refresh_token or "").strip(),
+                    "expires_at_ms": body.expires_at_ms or 0,
+                    "client_id": (body.client_id or "").strip(),
+                },
             ),
             source="webui_paste",
             metadata=dict(body.metadata),
@@ -326,7 +324,7 @@ def _build_credential(
             provider_id=provider_id,
             profile_id=profile_id,
             kind="external_process",
-            payload=ExternalProcessPayload(command=list(body.command)),
+            payload=CredentialData(kind="external_process", data={"command": list(body.command)}),
             source="webui_paste",
             metadata=dict(body.metadata),
         )

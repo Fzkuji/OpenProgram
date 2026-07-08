@@ -11,9 +11,10 @@ Qwen Code (Alibaba's Claude-Code analogue) stores OAuth tokens at
     "expiry_date": 1712345678901    # unix ms
   }
 
-The shape matches ``OAuthPayload`` more naturally than Claude/Codex do —
-expiry is present — but we still adopt it as delegated (``read_only``)
-so rotations performed by Qwen CLI propagate without our store drifting.
+The shape matches ``CredentialData(kind="oauth")`` more naturally than
+Claude/Codex do — expiry is present — but we still adopt it as delegated
+(``read_only``) so rotations performed by Qwen CLI propagate without our
+store drifting.
 """
 from __future__ import annotations
 
@@ -22,8 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..types import (
-    CliDelegatedPayload,
     Credential,
+    CredentialData,
     CredentialSource,
     RemovalStep,
 )
@@ -69,11 +70,14 @@ class QwenCliSource:
                 provider_id=self.provider_id,
                 profile_id=self.profile_id,
                 kind="cli_delegated",
-                payload=CliDelegatedPayload(
-                    store_path=str(path),
-                    access_key_path=["access_token"],
-                    refresh_key_path=["refresh_token"],
-                    expires_key_path=["expiry_date"],
+                payload=CredentialData(
+                    kind="cli_delegated",
+                    data={
+                        "store_path": str(path),
+                        "access_key_path": ["access_token"],
+                        "refresh_key_path": ["refresh_token"],
+                        "expires_key_path": ["expiry_date"],
+                    },
                 ),
                 source=self.source_id,
                 metadata=metadata,
@@ -83,7 +87,7 @@ class QwenCliSource:
 
     def removal_steps(self, cred: Credential) -> list[RemovalStep]:
         path = (
-            cred.payload.store_path
+            cred.payload.data.get("store_path")
             if cred.kind == "cli_delegated"
             else str(self._resolve_path())
         )

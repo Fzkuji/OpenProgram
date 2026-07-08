@@ -28,6 +28,7 @@ dependencies, CLI entry points). Async callers should call
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 from .active import get_active_profile
@@ -37,14 +38,47 @@ from .context import (
 )
 from .manager import get_manager
 from .types import (
-    ApiKeyPayload,
     AuthConfigError,
     AuthError,
-    CliDelegatedPayload,
     Credential,
-    OAuthPayload,
-    DeviceCodePayload,
 )
+
+
+@dataclass
+class ResolvedConnection:
+    """What one request needs, translated from a Credential.
+
+    ``kind`` is the credential kind carried through so wire code can
+    still branch on it if needed; ``auth_value`` is always the bearer
+    string to use (never a raw payload attribute name); ``base_url``
+    is ``None`` (not empty string) when unset, so wire code's
+    catalog-default fallback triggers correctly.
+    """
+
+    kind: str
+    auth_value: str
+    base_url: Optional[str]
+    headers: dict
+
+
+def resolve_connection(cred: "Credential") -> "ResolvedConnection | None":
+    """Translate a Credential into what one request needs.
+
+    cli_delegated reads its external file here for the freshest token.
+    external_process / sso are not wired → None (caller falls back).
+    """
+    p = cred.payload
+    kind = getattr(p, "kind", "")
+    auth_value = p.auth_value
+    if kind == "cli_delegated":
+        auth_value = _read_delegated_token(p) or ""
+    if not auth_value:
+        return None
+    base_url = p.base_url or None
+    return ResolvedConnection(
+        kind=kind, auth_value=auth_value,
+        base_url=base_url, headers=dict(p.headers or {}),
+    )
 
 
 def resolve_api_key_sync(
@@ -109,8 +143,8 @@ def resolve_store_api_key_sync(
     override = get_credential_override(provider_id)
     if override is not None:
         payload = getattr(override, "payload", None)
-        if isinstance(payload, ApiKeyPayload):
-            return payload.api_key or None
+        if payload is not None and getattr(payload, "kind", "") == "api_key":
+            return payload.auth_value or None
         return None
 
     try:
@@ -118,53 +152,49 @@ def resolve_store_api_key_sync(
     except (AuthConfigError, AuthError, RuntimeError):
         return None
     payload = getattr(cred, "payload", None)
-    if isinstance(payload, ApiKeyPayload):
-        return payload.api_key or None
+    if payload is not None and getattr(payload, "kind", "") == "api_key":
+        return payload.auth_value or None
     return None
 
 
 def _extract_token(cred: Credential) -> Optional[str]:
     """Pull the bearer value out of whichever payload shape we got."""
-    payload = cred.payload
-    if isinstance(payload, ApiKeyPayload):
-        return payload.api_key or None
-    if isinstance(payload, (OAuthPayload, DeviceCodePayload)):
-        return payload.access_token or None
-    if isinstance(payload, CliDelegatedPayload):
-        # Delegated mode: re-read the external CLI's store file every call
-        # so its own rotations propagate for free (the codex/claude-code
-        # pattern). Returns the freshest access_token at access_key_path.
-        return _read_delegated_token(payload)
-    # Other payload kinds (external_process, sso) need specialized
-    # resolution that the caller-side code must perform. Returning None
-    # here tells the resolver to fall through to the next layer rather
-    # than blindly returning a stale token from metadata.
-    return None
+    conn = resolve_connection(cred)
+    return conn.auth_value if conn else None
 
 
-def _read_delegated_token(payload: "CliDelegatedPayload") -> Optional[str]:
+def _read_delegated_token(payload) -> Optional[str]:
     """Read the access token out of a delegated CLI's on-disk store.
 
-    ``store_path`` points at the external CLI's auth file (e.g. codex's
-    ``~/.codex/auth.json`` or Claude Code's ``~/.claude/.credentials.json``);
-    ``access_key_path`` is the JSON key path to the access token inside it.
-    Any read/parse failure yields None so the resolver falls through rather
-    than raising — the caller then surfaces the actionable "no credential"
-    error or re-login prompt.
+    ``payload.data["store_path"]`` points at the external CLI's auth file
+    (e.g. codex's ``~/.codex/auth.json`` or Claude Code's
+    ``~/.claude/.credentials.json``); ``payload.data["access_key_path"]``
+    is the JSON key path to the access token inside it. Any read/parse
+    failure yields None so the resolver falls through rather than raising —
+    the caller then surfaces the actionable "no credential" error or
+    re-login prompt.
     """
     import json
     from pathlib import Path
 
+    store_path = payload.data.get("store_path")
+    if not store_path:
+        return None
     try:
-        data = json.loads(Path(payload.store_path).expanduser().read_text(encoding="utf-8"))
+        data = json.loads(Path(store_path).expanduser().read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     node: object = data
-    for key in payload.access_key_path:
+    for key in payload.data.get("access_key_path", []):
         if not isinstance(node, dict):
             return None
         node = node.get(key)
     return node if isinstance(node, str) and node else None
 
 
-__all__ = ["resolve_api_key_sync", "resolve_store_api_key_sync"]
+__all__ = [
+    "resolve_api_key_sync",
+    "resolve_store_api_key_sync",
+    "resolve_connection",
+    "ResolvedConnection",
+]

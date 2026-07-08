@@ -39,9 +39,9 @@ from urllib.parse import urlencode, urlparse, parse_qs
 
 from ..types import (
     Credential,
+    CredentialData,
     LoginMethod,
     LoginUi,
-    OAuthPayload,
 )
 
 
@@ -243,15 +243,18 @@ class PkceLoginMethod(LoginMethod):
             provider_id=self.provider_id,
             profile_id=self._profile_id,
             kind="oauth",
-            payload=OAuthPayload(
-                access_token=tokens.access_token,
-                refresh_token=tokens.refresh_token,
-                expires_at_ms=expires_at_ms,
-                scope=list(self._cfg.scopes),
-                client_id=self._cfg.client_id,
-                token_endpoint=self._cfg.token_url,
-                id_token=tokens.id_token,
-                extra=tokens.extra,
+            payload=CredentialData(
+                kind="oauth",
+                auth_value=tokens.access_token,
+                data={
+                    "refresh_token": tokens.refresh_token,
+                    "expires_at_ms": expires_at_ms,
+                    "scope": list(self._cfg.scopes),
+                    "client_id": self._cfg.client_id,
+                    "token_endpoint": self._cfg.token_url,
+                    "id_token": tokens.id_token,
+                    "extra": tokens.extra,
+                },
             ),
             source=f"{self.method_id}:{self.provider_id}",
             metadata=metadata,

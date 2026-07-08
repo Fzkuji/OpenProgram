@@ -55,7 +55,7 @@ def _primary_cred(pool):
 
 
 def _api_key_of(cred) -> str:
-    return getattr(getattr(cred, "payload", None), "api_key", "") or ""
+    return getattr(getattr(cred, "payload", None), "auth_value", "") or ""
 
 
 def _validate_account(provider: str, name: str) -> dict:
@@ -116,11 +116,12 @@ def _oauth_email(cred) -> str:
     # Anthropic's token response nests the email under
     # extra.account.email_address (org name carries it too). Codex/Gemini
     # instead ship an id_token with an `email` claim — try both.
-    extra = getattr(getattr(cred, "payload", None), "extra", None) or {}
+    payload_data = getattr(getattr(cred, "payload", None), "data", None) or {}
+    extra = payload_data.get("extra") or {}
     acct = extra.get("account") if isinstance(extra, dict) else None
     if isinstance(acct, dict) and acct.get("email_address"):
         return acct["email_address"]
-    idt = getattr(getattr(cred, "payload", None), "id_token", "") or ""
+    idt = payload_data.get("id_token", "") or ""
     if idt:
         try:
             from openprogram.providers.openai_codex.auth_adapter import _decode_jwt_payload
@@ -354,7 +355,7 @@ def register(app):
                 pass
         from openprogram.auth.store import get_store
         from openprogram.auth.active import get_active_pin, set_active_profile
-        from openprogram.auth.types import Credential, ApiKeyPayload
+        from openprogram.auth.types import Credential, CredentialData
         store = get_store()
         existing = {p.profile_id for p in store.list_pools() if p.provider_id == provider}
         name = (b.get("name") or "").strip()
@@ -365,7 +366,7 @@ def register(app):
             return JSONResponse(content={"ok": False, "error": f"account '{name}' already exists \u2014 pick another name"})
         store.add_credential(Credential(
             provider_id=provider, profile_id=name, kind="api_key",
-            payload=ApiKeyPayload(api_key=key), source="webui_add",
+            payload=CredentialData(kind="api_key", auth_value=key), source="webui_add",
         ))
         if not existing and not get_active_pin(provider):
             set_active_profile(provider, name)   # first account becomes active
@@ -402,13 +403,13 @@ def register(app):
             except Exception:
                 pass
         from openprogram.auth.store import get_store
-        from openprogram.auth.types import ApiKeyPayload
+        from openprogram.auth.types import CredentialData
         store = get_store()
         pool = store.find_pool(provider, name)
         cred = _primary_cred(pool)
         if cred is None or cred.kind != "api_key":
             return JSONResponse(content={"ok": False, "error": "no API key on this account"})
-        cred.payload = ApiKeyPayload(api_key=key)
+        cred.payload = CredentialData(kind="api_key", auth_value=key)
         cred.status = "valid"
         cred.cooldown_until_ms = 0
         cred.last_error = None

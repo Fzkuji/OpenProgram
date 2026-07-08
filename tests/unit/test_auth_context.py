@@ -15,7 +15,7 @@ from openprogram.auth.context import (
     get_credential_override,
     get_subprocess_env,
 )
-from openprogram.auth.types import ApiKeyPayload, Credential
+from openprogram.auth.types import Credential, CredentialData
 
 
 def _fake_cred(provider_id: str) -> Credential:
@@ -23,7 +23,7 @@ def _fake_cred(provider_id: str) -> Credential:
         provider_id=provider_id,
         profile_id="default",
         kind="api_key",
-        payload=ApiKeyPayload(api_key="k"),
+        payload=CredentialData(kind="api_key", auth_value="k"),
     )
 
 

@@ -33,9 +33,8 @@ from openprogram.auth.manager import (
     register_provider_config,
 )
 from openprogram.auth.types import (
-    ApiKeyPayload,
     Credential,
-    OAuthPayload,
+    CredentialData,
 )
 
 
@@ -64,7 +63,7 @@ def import_from_env_tokens(
                 provider_id=PROVIDER_ID,
                 profile_id=profile_id,
                 kind="api_key",
-                payload=ApiKeyPayload(api_key=value),
+                payload=CredentialData(kind="api_key", auth_value=value),
                 source=f"env:{var}",
                 metadata={"env_var": var},
                 # Env-owned: we never rewrite the user's shell; refresh
@@ -95,11 +94,14 @@ def import_oauth_credential(
         provider_id=PROVIDER_ID,
         profile_id=profile_id,
         kind="oauth",
-        payload=OAuthPayload(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_at_ms=expires_at_ms,
-            client_id="Iv1.b507a08c87ecfe98",
+        payload=CredentialData(
+            kind="oauth",
+            auth_value=access_token,
+            data={
+                "refresh_token": refresh_token,
+                "expires_at_ms": expires_at_ms,
+                "client_id": "Iv1.b507a08c87ecfe98",
+            },
         ),
         source="github_copilot_device_code",
         metadata=md,

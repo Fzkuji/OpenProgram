@@ -36,7 +36,7 @@ def test_env_source_returns_credential_when_set(monkeypatch, tmp_path):
     c = creds[0]
     assert c.provider_id == "openai"
     assert c.kind == "api_key"
-    assert c.payload.api_key == "sk-xyz"
+    assert c.payload.auth_value == "sk-xyz"
     assert c.metadata["env_var"] == "OPEN_TEST_KEY"
     assert c.read_only is True
 
@@ -45,7 +45,7 @@ def test_env_source_strips_bearer_prefix(monkeypatch, tmp_path):
     monkeypatch.setenv("OPEN_TEST_KEY", "Bearer  sk-zzz")
     src = EnvApiKeySource(provider_id="openai", env_var="OPEN_TEST_KEY")
     creds = src.try_import(tmp_path)
-    assert creds[0].payload.api_key == "sk-zzz"
+    assert creds[0].payload.auth_value == "sk-zzz"
 
 
 def test_env_source_returns_empty_when_unset(monkeypatch, tmp_path):
@@ -97,9 +97,9 @@ def test_codex_source_imports_from_file(tmp_path: Path, monkeypatch):
     src = CodexCliSource(override_path=str(path))
     [cred] = src.try_import(tmp_path)
     assert cred.kind == "cli_delegated"
-    assert cred.payload.store_path == str(path)
-    assert cred.payload.access_key_path == ["tokens", "access_token"]
-    assert cred.payload.expires_key_path == []
+    assert cred.payload.data["store_path"] == str(path)
+    assert cred.payload.data["access_key_path"] == ["tokens", "access_token"]
+    assert cred.payload.data.get("expires_key_path", []) == []
     assert cred.metadata["account_id"] == "acc_1"
     assert cred.read_only is True
 
@@ -151,8 +151,8 @@ def test_claude_source_imports_oauth_shape(tmp_path: Path):
     src = ClaudeCodeSource(override_path=str(path))
     [cred] = src.try_import(tmp_path)
     assert cred.kind == "cli_delegated"
-    assert cred.payload.access_key_path == ["claudeAiOauth", "accessToken"]
-    assert cred.payload.expires_key_path == ["claudeAiOauth", "expiresAt"]
+    assert cred.payload.data["access_key_path"] == ["claudeAiOauth", "accessToken"]
+    assert cred.payload.data["expires_key_path"] == ["claudeAiOauth", "expiresAt"]
     assert cred.metadata["subscription_type"] == "pro"
     assert cred.metadata["scopes"] == ["user:inference"]
 
@@ -182,7 +182,7 @@ def test_qwen_source_imports_fields(tmp_path: Path):
     src = QwenCliSource(override_path=str(path))
     [cred] = src.try_import(tmp_path)
     assert cred.kind == "cli_delegated"
-    assert cred.payload.expires_key_path == ["expiry_date"]
+    assert cred.payload.data["expires_key_path"] == ["expiry_date"]
     assert cred.metadata["resource_url"] == "portal.qwen.ai"
     assert cred.read_only is True
 
@@ -218,9 +218,9 @@ def test_gh_source_parses_two_hosts(tmp_path: Path):
     creds = src.try_import(tmp_path)
     assert len(creds) == 2
     by_host = {c.metadata["host"]: c for c in creds}
-    assert by_host["github.com"].payload.api_key == "gho_abc123"
+    assert by_host["github.com"].payload.auth_value == "gho_abc123"
     assert by_host["github.com"].profile_id == "default"
-    assert by_host["github.enterprise.example"].payload.api_key == "gho_zzz999"
+    assert by_host["github.enterprise.example"].payload.auth_value == "gho_zzz999"
     assert by_host["github.enterprise.example"].profile_id == "github.enterprise.example"
 
 

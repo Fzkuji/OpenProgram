@@ -7,7 +7,7 @@ import pytest
 from openprogram.auth import usage
 from openprogram.auth.manager import AuthManager, set_manager_for_testing
 from openprogram.auth.store import AuthStore, set_store_for_testing
-from openprogram.auth.types import ApiKeyPayload, Credential
+from openprogram.auth.types import Credential, CredentialData
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def _seed(store, provider, profile, keys):
     for k in keys:
         store.add_credential(Credential(
             provider_id=provider, profile_id=profile, kind="api_key",
-            payload=ApiKeyPayload(api_key=k), source="test",
+            payload=CredentialData(kind="api_key", auth_value=k), source="test",
         ))
 
 
@@ -37,7 +37,7 @@ def test_acquire_pooled_returns_token_profile_credid(store):
     got = usage.acquire_pooled("rot")
     assert got is not None
     token, profile, cred_id = got
-    assert token == "KEY-A"
+    assert token.auth_value == "KEY-A"
     assert profile == "default"
     assert cred_id  # non-empty
 
@@ -46,12 +46,12 @@ def test_report_failure_cools_down_and_rotates(store):
     _seed(store, "rot", "default", ["KEY-A", "KEY-B"])
     # fill_first → first acquire is KEY-A
     tok1, prof1, id1 = usage.acquire_pooled("rot")
-    assert tok1 == "KEY-A"
+    assert tok1.auth_value == "KEY-A"
     # a 429 on KEY-A cools it down …
     usage.report_failure("rot", prof1, id1, status=429, error_text="429 Too Many Requests")
     # … so the next acquire rotates to KEY-B
     tok2, _, id2 = usage.acquire_pooled("rot")
-    assert tok2 == "KEY-B"
+    assert tok2.auth_value == "KEY-B"
     assert id2 != id1
     # both cooled → no healthy credential left → None (caller falls back)
     usage.report_failure("rot", "default", id2, status=402, error_text="billing")
@@ -67,12 +67,12 @@ def test_fixed_uses_active_key_and_does_not_failover(store):
     pool.active_credential_id = ids[1]
     store.put_pool(pool)
     tok, _, cid = usage.acquire_pooled("fx")
-    assert tok == "KEY-B"
+    assert tok.auth_value == "KEY-B"
     assert cid == ids[1]
     # cooling the pinned key changes nothing — "fixed" means fixed (no failover)
     usage.report_failure("fx", "default", ids[1], status=429)
     tok2, _, _ = usage.acquire_pooled("fx")
-    assert tok2 == "KEY-B"
+    assert tok2.auth_value == "KEY-B"
 
 
 def test_rotation_on_fails_over_from_the_active_key(store):
@@ -82,9 +82,9 @@ def test_rotation_on_fails_over_from_the_active_key(store):
     pool.strategy = "fill_first"
     pool.active_credential_id = ids[1]  # KEY-B is the default/first try
     store.put_pool(pool)
-    assert usage.acquire_pooled("fx2")[0] == "KEY-B"          # active tried first
+    assert usage.acquire_pooled("fx2")[0].auth_value == "KEY-B"          # active tried first
     usage.report_failure("fx2", "default", ids[1], status=429)
-    assert usage.acquire_pooled("fx2")[0] == "KEY-A"          # cooled → fail over
+    assert usage.acquire_pooled("fx2")[0].auth_value == "KEY-A"          # cooled → fail over
 
 
 def test_pick_account_rotates_and_skips_cooled(store):

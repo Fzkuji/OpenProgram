@@ -47,7 +47,6 @@ from .types import (
     AuthRotationConsumedError,
     Credential,
     CredentialPool,
-    OAuthPayload,
 )
 
 
@@ -585,9 +584,9 @@ def _oauth_stale(cred: Credential, skew_seconds: int) -> bool:
     """Return True iff ``cred``'s access token is past (or close to)
     expiry. Applies to OAuth + device_code payloads; other kinds return
     False (they never expire)."""
-    if not isinstance(cred.payload, OAuthPayload) and getattr(cred.payload, "expires_at_ms", None) is None:
+    if cred.payload.kind not in ("oauth", "device_code") and cred.payload.data.get("expires_at_ms") is None:
         return False
-    expires = getattr(cred.payload, "expires_at_ms", 0)
+    expires = cred.payload.data.get("expires_at_ms", 0)
     if not expires:
         # 0 means "unknown"; play safe and refresh.
         return True

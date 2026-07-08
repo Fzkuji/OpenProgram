@@ -10,15 +10,14 @@ from pathlib import Path
 import pytest
 
 from openprogram.auth import (
-    ApiKeyPayload,
     AuthConfigError,
     AuthCorruptCredentialError,
     AuthEvent,
     AuthEventType,
     AuthStore,
     Credential,
+    CredentialData,
     CredentialPool,
-    OAuthPayload,
     set_store_for_testing,
 )
 
@@ -26,9 +25,9 @@ from openprogram.auth import (
 def _oauth_cred(provider="openai-codex", profile="default", access="A", refresh="R") -> Credential:
     return Credential(
         provider_id=provider, profile_id=profile, kind="oauth",
-        payload=OAuthPayload(
-            access_token=access, refresh_token=refresh,
-            expires_at_ms=0, client_id="cid",
+        payload=CredentialData(
+            kind="oauth", auth_value=access,
+            data={"refresh_token": refresh, "expires_at_ms": 0, "client_id": "cid"},
         ),
     )
 
@@ -36,7 +35,7 @@ def _oauth_cred(provider="openai-codex", profile="default", access="A", refresh=
 def _api_cred(provider="openai", profile="default", key="sk-xxx") -> Credential:
     return Credential(
         provider_id=provider, profile_id=profile, kind="api_key",
-        payload=ApiKeyPayload(api_key=key), source="env_OPENAI_API_KEY",
+        payload=CredentialData(kind="api_key", auth_value=key), source="env_OPENAI_API_KEY",
     )
 
 
@@ -47,7 +46,7 @@ def test_put_and_get_pool(tmp_path: Path):
     s.add_credential(_oauth_cred())
     pool = s.get_pool("openai-codex", "default")
     assert len(pool.credentials) == 1
-    assert pool.credentials[0].payload.access_token == "A"
+    assert pool.credentials[0].payload.auth_value == "A"
 
 
 def test_get_missing_raises_config_error(tmp_path: Path):
@@ -66,7 +65,7 @@ def test_add_multiple_credentials_same_pool(tmp_path: Path):
     s.add_credential(_api_cred(key="k1"))
     s.add_credential(_api_cred(key="k2"))
     pool = s.get_pool("openai", "default")
-    assert [c.payload.api_key for c in pool.credentials] == ["k1", "k2"]
+    assert [c.payload.auth_value for c in pool.credentials] == ["k1", "k2"]
 
 
 def test_remove_credential(tmp_path: Path):
@@ -75,7 +74,7 @@ def test_remove_credential(tmp_path: Path):
     s.add_credential(c1); s.add_credential(c2)
     s.remove_credential("openai", "default", c1.credential_id)
     pool = s.get_pool("openai", "default")
-    assert [c.payload.api_key for c in pool.credentials] == ["b"]
+    assert [c.payload.auth_value for c in pool.credentials] == ["b"]
 
 
 def test_delete_pool_removes_file(tmp_path: Path):
@@ -95,7 +94,7 @@ def test_reload_after_restart(tmp_path: Path):
     s1.add_credential(_oauth_cred(access="secret123"))
     s2 = AuthStore(root=tmp_path)
     pool = s2.get_pool("openai-codex", "default")
-    assert pool.credentials[0].payload.access_token == "secret123"
+    assert pool.credentials[0].payload.auth_value == "secret123"
 
 
 def test_file_permissions_are_0600(tmp_path: Path):
@@ -136,19 +135,19 @@ def test_mtime_watch_reloads_on_external_write(tmp_path: Path):
     s1 = AuthStore(root=tmp_path)
     s1.add_credential(_oauth_cred(access="v1"))
     # Read once so s1 caches it.
-    assert s1.get_pool("openai-codex", "default").credentials[0].payload.access_token == "v1"
+    assert s1.get_pool("openai-codex", "default").credentials[0].payload.auth_value == "v1"
 
     # A "different process" writes a new version by hand. Bump mtime to
     # make sure the watch notices even on filesystems with 1s resolution.
     path = tmp_path / "auth" / "openai-codex" / "default.json"
     d = json.loads(path.read_text())
-    d["credentials"][0]["payload"]["access_token"] = "v2"
+    d["credentials"][0]["payload"]["auth_value"] = "v2"
     path.write_text(json.dumps(d))
     future = path.stat().st_mtime + 5
     os.utime(path, (future, future))
 
     pool = s1.get_pool("openai-codex", "default")
-    assert pool.credentials[0].payload.access_token == "v2"
+    assert pool.credentials[0].payload.auth_value == "v2"
 
 
 def test_mtime_watch_handles_file_deletion(tmp_path: Path):

@@ -27,7 +27,6 @@ from openprogram.auth.types import (
     AuthConfigError,
     Credential,
     CredentialPool,
-    OAuthPayload,
 )
 
 from . import auth_adapter
@@ -153,8 +152,8 @@ def _account_id_for(cred: Credential) -> str:
     if isinstance(account_id, str) and account_id.strip():
         return account_id.strip()
     payload = cred.payload
-    assert isinstance(payload, OAuthPayload)
-    return auth_adapter.extract_account_id(payload.access_token)
+    assert payload.kind in ("oauth", "device_code")
+    return auth_adapter.extract_account_id(payload.auth_value)
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +204,7 @@ class OpenAICodexRuntime(Runtime):
                 provider_id=auth_adapter.PROVIDER_ID,
                 profile_id=self._profile_id,
             )
-        access = cred.payload.access_token
+        access = cred.payload.auth_value
         account_id = _account_id_for(cred)
         self._cached_access_token = access
 
@@ -241,7 +240,7 @@ class OpenAICodexRuntime(Runtime):
         # refreshes. If the cred pointer is unchanged we skip the header
         # update to keep this cheap.
         cred = self._manager.acquire_sync(auth_adapter.PROVIDER_ID, self._profile_id)
-        access = cred.payload.access_token
+        access = cred.payload.auth_value
         if access != self._cached_access_token:
             self.api_key = access
             self._cached_access_token = access

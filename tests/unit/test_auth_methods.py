@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.auth import OAuthPayload, CliDelegatedPayload
 from openprogram.auth.methods import (
     ApiKeyPasteMethod,
     CliImportMethod,
@@ -61,7 +60,7 @@ def test_api_key_paste_returns_credential():
     cred = asyncio.run(m.run(ui))
     assert cred.provider_id == "openai"
     assert cred.kind == "api_key"
-    assert cred.payload.api_key == "sk-xxx"
+    assert cred.payload.auth_value == "sk-xxx"
     assert cred.metadata["display_name"] == "personal"
     assert ui.prompts[0][1] is True   # secret=True
 
@@ -197,8 +196,8 @@ def test_cli_import_link_mode_creates_delegated_payload(tmp_path: Path):
     m = CliImportMethod("openai-codex", cfg)
     cred = asyncio.run(m.run(FakeUi()))
     assert cred.kind == "cli_delegated"
-    assert isinstance(cred.payload, CliDelegatedPayload)
-    assert cred.payload.store_path == str(store)
+    assert cred.payload.kind == "cli_delegated"
+    assert cred.payload.data["store_path"] == str(store)
     assert cred.metadata["account_id"] == "acc_1"
     assert cred.read_only is True
 
@@ -225,10 +224,10 @@ def test_cli_import_copy_mode_creates_oauth_payload(tmp_path: Path):
     m = CliImportMethod("openai-codex", cfg)
     cred = asyncio.run(m.run(FakeUi()))
     assert cred.kind == "oauth"
-    assert isinstance(cred.payload, OAuthPayload)
-    assert cred.payload.access_token == "A"
-    assert cred.payload.refresh_token == "R"
-    assert cred.payload.client_id == "app_EMoamEEZ73f0CkXaXp7hrann"
+    assert cred.payload.kind == "oauth"
+    assert cred.payload.auth_value == "A"
+    assert cred.payload.data["refresh_token"] == "R"
+    assert cred.payload.data["client_id"] == "app_EMoamEEZ73f0CkXaXp7hrann"
     assert cred.read_only is False
 
 

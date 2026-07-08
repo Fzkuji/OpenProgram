@@ -24,8 +24,8 @@ from openprogram.auth.manager import (
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
     Credential,
+    CredentialData,
     CredentialPool,
-    OAuthPayload,
 )
 from openprogram.providers.openai_codex import auth_adapter as adapter
 
@@ -94,10 +94,10 @@ def test_import_from_codex_file_happy_path(tmp_path: Path):
     assert cred is not None
     assert cred.provider_id == adapter.PROVIDER_ID
     assert cred.kind == "oauth"
-    assert cred.payload.access_token == access
-    assert cred.payload.refresh_token == "R-abc"
-    assert cred.payload.client_id == adapter.OAUTH_CLIENT_ID
-    assert cred.payload.expires_at_ms > int(time.time() * 1000)
+    assert cred.payload.auth_value == access
+    assert cred.payload.data["refresh_token"] == "R-abc"
+    assert cred.payload.data["client_id"] == adapter.OAUTH_CLIENT_ID
+    assert cred.payload.data["expires_at_ms"] > int(time.time() * 1000)
     assert cred.metadata["account_id"] == "acc_xyz"
     assert cred.read_only is False
 
@@ -139,11 +139,13 @@ def test_manager_refreshes_expired_codex_credential(store):
         provider_id=adapter.PROVIDER_ID,
         profile_id="default",
         kind="oauth",
-        payload=OAuthPayload(
-            access_token="old",
-            refresh_token="R-old",
-            expires_at_ms=int(time.time() * 1000) - 60_000,
-            client_id=adapter.OAUTH_CLIENT_ID,
+        payload=CredentialData(
+            kind="oauth", auth_value="old",
+            data={
+                "refresh_token": "R-old",
+                "expires_at_ms": int(time.time() * 1000) - 60_000,
+                "client_id": adapter.OAUTH_CLIENT_ID,
+            },
         ),
     )
     pool = CredentialPool(
@@ -154,16 +156,18 @@ def test_manager_refreshes_expired_codex_credential(store):
     store.put_pool(pool)
 
     def fake_refresh(cred):
-        assert cred.payload.refresh_token == "R-old"
+        assert cred.payload.data["refresh_token"] == "R-old"
         return Credential(
             provider_id=cred.provider_id,
             profile_id=cred.profile_id,
             kind="oauth",
-            payload=OAuthPayload(
-                access_token="NEW-ACCESS",
-                refresh_token="R-new",
-                expires_at_ms=int(time.time() * 1000) + 3600_000,
-                client_id=adapter.OAUTH_CLIENT_ID,
+            payload=CredentialData(
+                kind="oauth", auth_value="NEW-ACCESS",
+                data={
+                    "refresh_token": "R-new",
+                    "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                    "client_id": adapter.OAUTH_CLIENT_ID,
+                },
             ),
             credential_id=cred.credential_id,
         )
@@ -176,10 +180,10 @@ def test_manager_refreshes_expired_codex_credential(store):
 
     mgr = AuthManager(store=store)
     result = asyncio.run(mgr.acquire(adapter.PROVIDER_ID, "default"))
-    assert result.payload.access_token == "NEW-ACCESS"
+    assert result.payload.auth_value == "NEW-ACCESS"
     # Verify persistence: disk copy is rotated too.
     persisted = store.find_pool(adapter.PROVIDER_ID, "default")
-    assert persisted.credentials[0].payload.access_token == "NEW-ACCESS"
+    assert persisted.credentials[0].payload.auth_value == "NEW-ACCESS"
 
     # Re-register the real refresh so later tests are unaffected.
     adapter.register_codex_auth()
@@ -191,11 +195,13 @@ def test_acquire_sync_from_non_async_caller(store):
         provider_id=adapter.PROVIDER_ID,
         profile_id="default",
         kind="oauth",
-        payload=OAuthPayload(
-            access_token="A",
-            refresh_token="R",
-            expires_at_ms=int(time.time() * 1000) + 3600_000,
-            client_id=adapter.OAUTH_CLIENT_ID,
+        payload=CredentialData(
+            kind="oauth", auth_value="A",
+            data={
+                "refresh_token": "R",
+                "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                "client_id": adapter.OAUTH_CLIENT_ID,
+            },
         ),
     )
     store.put_pool(CredentialPool(
@@ -206,7 +212,7 @@ def test_acquire_sync_from_non_async_caller(store):
 
     mgr = AuthManager(store=store)
     cred = mgr.acquire_sync(adapter.PROVIDER_ID, "default")
-    assert cred.payload.access_token == "A"
+    assert cred.payload.auth_value == "A"
 
 
 def test_acquire_sync_works_inside_running_loop(store):
@@ -214,10 +220,13 @@ def test_acquire_sync_works_inside_running_loop(store):
         provider_id=adapter.PROVIDER_ID,
         profile_id="default",
         kind="oauth",
-        payload=OAuthPayload(
-            access_token="A", refresh_token="R",
-            expires_at_ms=int(time.time() * 1000) + 3600_000,
-            client_id=adapter.OAUTH_CLIENT_ID,
+        payload=CredentialData(
+            kind="oauth", auth_value="A",
+            data={
+                "refresh_token": "R",
+                "expires_at_ms": int(time.time() * 1000) + 3600_000,
+                "client_id": adapter.OAUTH_CLIENT_ID,
+            },
         ),
     )
     store.put_pool(CredentialPool(
@@ -230,7 +239,7 @@ def test_acquire_sync_works_inside_running_loop(store):
         # Direct call from a running event loop should still work via the
         # manager's private background-thread fallback.
         cred = mgr.acquire_sync(adapter.PROVIDER_ID, "default")
-        assert cred.payload.access_token == "A"
+        assert cred.payload.auth_value == "A"
 
     asyncio.run(inside())
 
@@ -247,11 +256,14 @@ def test_write_back_updates_codex_file(tmp_path, monkeypatch):
     }))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
 
-    new_payload = OAuthPayload(
-        access_token="NEW", refresh_token="R-NEW",
-        expires_at_ms=int(time.time() * 1000) + 3600_000,
-        client_id=adapter.OAUTH_CLIENT_ID,
-        id_token="idtok",
+    new_payload = CredentialData(
+        kind="oauth", auth_value="NEW",
+        data={
+            "refresh_token": "R-NEW",
+            "expires_at_ms": int(time.time() * 1000) + 3600_000,
+            "client_id": adapter.OAUTH_CLIENT_ID,
+            "id_token": "idtok",
+        },
     )
     adapter._write_back_to_codex_file(new_payload)
 
@@ -270,9 +282,9 @@ def test_write_back_silent_when_path_unwritable(tmp_path, monkeypatch):
     parent_is_file.write_text("hi")
     monkeypatch.setenv("CODEX_HOME", str(parent_is_file))
 
-    new_payload = OAuthPayload(
-        access_token="N", refresh_token="R",
-        expires_at_ms=0, client_id=adapter.OAUTH_CLIENT_ID,
+    new_payload = CredentialData(
+        kind="oauth", auth_value="N",
+        data={"refresh_token": "R", "expires_at_ms": 0, "client_id": adapter.OAUTH_CLIENT_ID},
     )
     # Should NOT raise — write-back is best-effort.
     adapter._write_back_to_codex_file(new_payload)
