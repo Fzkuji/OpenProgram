@@ -75,4 +75,22 @@ def reload() -> dict[str, Model]:
     fresh = _load()
     ENABLED_MODELS.clear()
     ENABLED_MODELS.update(fresh)
+    _reapply_dynamic_seeds()
     return ENABLED_MODELS
+
+
+def _reapply_dynamic_seeds() -> None:
+    """Re-add models registered dynamically at import time (not from config).
+
+    ``reload()`` clears the dict, so any provider that seeded rows at import
+    (currently just claude-code — it has no list-models API and would vanish
+    from the settings UI with zero registry entries) must re-seed after a
+    reload. The seeders are idempotent, so calling them again is safe.
+    Guarded/lazy so this module stays import-cheap and never hard-depends on
+    anthropic. Best-effort: a missing seeder must not break reload().
+    """
+    try:
+        from .anthropic._claude_code_registry import _seed_claude_code_models
+        _seed_claude_code_models()
+    except Exception:
+        pass

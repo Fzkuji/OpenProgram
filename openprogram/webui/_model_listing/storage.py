@@ -23,6 +23,7 @@ wide lock is fine because the config file is tiny.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any
 
@@ -37,6 +38,15 @@ _cache_lock = threading.Lock()
 def _read_providers_cfg() -> dict[str, dict[str, Any]]:
     from openprogram.webui.server import _load_config
     providers = _load_config().get("providers", {})
+    # Migrate legacy configs from ANY reader, not just the settings UI:
+    #   * why any-reader — a headless agent user with a legacy config never
+    #     opens the settings page, so it must migrate on whatever reads config
+    #     first (registry build, chat picker, connectivity check);
+    #   * why safe to run this eagerly — the migration is idempotent (guarded
+    #     to run once per process), reentrancy-guarded (its own reads don't
+    #     recurse), and offline-capable (C2: builds minimal spec rows from
+    #     local provider.json when live browse is unreachable), so it needs no
+    #     network and can't loop or corrupt.
     _run_spec_migration_once(providers)
     return providers
 
@@ -125,13 +135,52 @@ def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
         _write_providers_cfg(providers)
 
 
+def _minimal_spec_row(pid: str, mid: str, pcfg: dict[str, Any]) -> dict[str, Any]:
+    """Offline-buildable spec row for a legacy enabled id ``spec_row_for``
+    couldn't resolve (no live browse — offline / no key).
+
+    Built from what IS local: the provider's ``provider.json`` default
+    endpoint (api/base_url), falling back to the user's saved ``base_url``
+    override and ``openai-completions`` for a community provider with no
+    dir. Thinking fields derive from ``thinking.json``. Tagged
+    ``source: "migration-minimal"`` so the next online Refresh overwrites it
+    (Refresh upserts by id regardless of source). Cost/context stay unset —
+    they heal on that Refresh. This keeps existing users' enabled models
+    resolvable offline after the enabled-only-registry migration instead of
+    silently dropping to ``get_model → None``.
+    """
+    from openprogram.providers._provider_meta import provider_endpoints
+    from openprogram.providers.thinking_spec import derive_thinking_fields
+
+    ep = provider_endpoints(pid).get("default") or {}
+    api = ep.get("api") or "openai-completions"
+    base_url = ep.get("base_url") or (pcfg.get("base_url") or "")
+    row: dict[str, Any] = {
+        "id": mid,
+        "name": mid,
+        "api": api,
+        "base_url": base_url,
+        "source": "migration-minimal",
+    }
+    levels, default_lv, variant = derive_thinking_fields(pid, mid, False)
+    if levels:
+        row["thinking_levels"] = levels
+        if default_lv:
+            row["default_thinking_level"] = default_lv
+        if variant:
+            row["thinking_variant"] = variant
+    return row
+
+
 def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
     """Backfill ``providers.<p>.models`` from existing config, once.
 
     For each provider:
-      * every ``enabled_models`` id missing a spec row gets one from the
-        current registry/listing; ids that can't resolve stay in
-        ``enabled_models`` (never dropped) and a warning is logged;
+      * every ``enabled_models`` id missing a spec row gets one — from the
+        live listing (``spec_row_for``) when reachable, else a minimal
+        offline row (``_minimal_spec_row``) so the id still resolves without
+        network; only ids for which even a minimal row can't be built stay in
+        ``enabled_models`` (never dropped) with a warning;
       * ``custom_models`` rows are merged in tagged ``source: "manual"``,
         the original ``custom_models`` key left untouched.
 
@@ -150,7 +199,14 @@ def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
                 continue
             spec = spec_row_for(pid, mid)
             if spec is None:
-                import logging
+                # Offline / no key: live browse returned nothing. Build a
+                # minimal row from local provider.json so the id still
+                # resolves (heals on the next online Refresh).
+                try:
+                    spec = _minimal_spec_row(pid, mid, pcfg)
+                except Exception:
+                    spec = None
+            if spec is None:
                 logging.getLogger(__name__).warning(
                     "spec migration: provider %s enabled model %r has no "
                     "resolvable spec — kept in enabled_models, no spec row",

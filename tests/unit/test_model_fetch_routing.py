@@ -130,6 +130,51 @@ def test_anthropic_fetcher_uses_provider_base_url(monkeypatch):
     assert "anthropic-version" in seen["headers"]
 
 
+def test_claude_code_browse_borrows_anthropic_with_empty_registry(monkeypatch):
+    # I1 regression: claude-code has no list-models API of its own — it IS the
+    # anthropic Claude catalog. Post-migration ENABLED_MODELS is empty on a
+    # fresh install, so the old "iterate ENABLED_MODELS for anthropic rows"
+    # fetcher yielded nothing. Browse must instead borrow anthropic's data.
+    import openprogram.providers.enabled_models as mg
+    from openprogram.webui._model_listing import listing, provider_models as pm
+    from openprogram.webui._model_listing import providers as cat
+
+    monkeypatch.setattr(mg, "ENABLED_MODELS", {})  # empty registry
+    listing._reset_browse_cache()
+    monkeypatch.setattr(st, "_read_providers_cfg", lambda: {})  # no ambient config
+    # No credential → browse borrows anthropic's models.dev rows (the
+    # _SUBSCRIPTION_BORROW map), NOT the registry.
+    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    borrowed = {"claude-opus-4-8": {"name": "Claude Opus 4.8"},
+                "claude-haiku-4-5": {"name": "Claude Haiku 4.5"}}
+    # _models_dev_for already borrows anthropic for claude-code; assert it does.
+    assert pm._SUBSCRIPTION_BORROW["claude-code"] == "anthropic"
+    monkeypatch.setattr(pm, "_models_dev_for",
+                        lambda pid: borrowed if pid == "claude-code" else {})
+
+    rows = listing.list_models_for_provider("claude-code")
+    ids = {r["id"] for r in rows}
+    assert ids == {"claude-opus-4-8", "claude-haiku-4-5"}
+
+
+def test_claude_code_fetch_routes_to_anthropic(monkeypatch):
+    # The Fetch button for claude-code hits anthropic's live /v1/models (Bearer
+    # OAuth), same as the anthropic provider — no dead ENABLED_MODELS scan.
+    # claude-code is wired to anthropic's fetcher in the dispatcher map.
+    assert F._FETCHERS["claude-code"] is F._fetch_anthropic
+    used = {"which": None}
+    # patch the map entry (fetch_and_normalize reads _FETCHERS.get, not the
+    # module attribute).
+    fake = (lambda pid, timeout: used.__setitem__("which", pid) or
+            [{"id": "claude-opus-4-8", "name": "Claude Opus 4.8"}])
+    monkeypatch.setitem(F._FETCHERS, "claude-code", fake)
+    from openprogram.webui._model_listing import sources as S
+    monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
+    res = F.fetch_and_normalize("claude-code", timeout=5.0)
+    assert used["which"] == "claude-code"
+    assert [m["id"] for m in res["models"]] == ["claude-opus-4-8"]
+
+
 def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):
     seen = {}
 

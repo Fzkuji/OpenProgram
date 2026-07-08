@@ -40,6 +40,9 @@ def toggle_model(provider_id: str, model_id: str, enabled: bool) -> dict[str, An
     """
     # spec_row_for reads config → keep it OUTSIDE the lock (the lock is not
     # reentrant; _read_providers_cfg inside would deadlock).
+    # Enabling fires one live browse of the provider (via spec_row_for →
+    # list_models_for_provider) to snapshot the current row — intended, and
+    # cheap: browse results are TTL-cached, so a burst of enables shares one.
     spec = spec_row_for(provider_id, model_id) if enabled else None
     with _cache_lock:
         cfg = _read_providers_cfg()

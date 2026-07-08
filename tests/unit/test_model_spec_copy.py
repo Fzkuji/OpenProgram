@@ -124,15 +124,21 @@ def test_migration_backfills_spec_from_enabled_models(monkeypatch, stub_listing)
     assert store["acme"]["enabled_models"] == ["acme-1"]
 
 
-def test_migration_keeps_unresolvable_ids(monkeypatch, stub_listing):
-    """An id the listing can't resolve stays in enabled_models, not dropped."""
-    store = {"acme": {"enabled": True, "enabled_models": ["acme-1", "ghost"]}}
+def test_migration_builds_minimal_row_when_unresolvable(monkeypatch, stub_listing):
+    """C2: an id live browse can't resolve (offline) still gets a MINIMAL spec
+    row built from local metadata, so it resolves without network. "acme" has
+    no provider dir → api defaults to openai-completions, tagged
+    migration-minimal so a later online Refresh overwrites it."""
+    store = {"acme": {"enabled": True, "base_url": "https://acme.example/v1",
+                      "enabled_models": ["acme-1", "ghost"]}}
     st._reset_spec_migration()
     st._migrate_specs(store)
-    ids = [r["id"] for r in store["acme"]["models"]]
-    assert "acme-1" in ids
-    assert "ghost" not in ids  # couldn't resolve → no spec row
-    assert "ghost" in store["acme"]["enabled_models"]  # but not dropped
+    rows = {r["id"]: r for r in store["acme"]["models"]}
+    assert "acme-1" in rows            # resolved via listing (full spec)
+    ghost = rows["ghost"]              # built minimal, not dropped
+    assert ghost["api"] == "openai-completions"
+    assert ghost["base_url"] == "https://acme.example/v1"  # user base_url fallback
+    assert ghost["source"] == "migration-minimal"
 
 
 def test_migration_merges_custom_models_as_manual(monkeypatch, stub_listing):

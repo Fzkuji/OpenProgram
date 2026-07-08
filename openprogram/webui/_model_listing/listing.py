@@ -190,6 +190,10 @@ def list_providers() -> list[dict[str, Any]]:
             "base_url": pcfg.get("base_url") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
             "supports_fetch": (pid in _FETCH_MODELS_PROVIDERS) or (pid in _FETCHERS),
+            # Intentional semantics change (enabled-models migration): get_models
+            # now reads the enabled-only ENABLED_MODELS registry, so this is the
+            # ENABLED count, not the full catalogue count. The first screen is
+            # meta-only by design — the full browse list loads per-provider.
             "model_count": len(models) + len(custom),
             "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
         }

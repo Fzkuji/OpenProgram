@@ -146,6 +146,25 @@ def test_claude_code_dynamic_registration_lands_in_registry():
     assert "claude-code/claude-opus-4-8" in mg.ENABLED_MODELS
 
 
+def test_reload_reapplies_claude_code_seed(monkeypatch):
+    # C1 regression: reload() clears + repopulates ENABLED_MODELS from config
+    # only. The claude-code seed rows (registered dynamically at import, NOT in
+    # config) must survive a reload — else any Refresh silently deletes them.
+    # Uses the REAL reload(), not a monkeypatched no-op.
+    from openprogram.providers.anthropic import _claude_code_registry as ccr
+    ccr._seed_claude_code_models()
+    # config carries no claude-code models
+    monkeypatch.setattr(cr, "read_providers_config",
+                        lambda: {"openai": {"models": [
+                            {"id": "gpt-x", "name": "GPT-X",
+                             "api": "openai-completions"}]}})
+    mg.reload()
+    for mid in ("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"):
+        assert f"claude-code/{mid}" in mg.ENABLED_MODELS
+    # and the config-driven row is present too
+    assert "openai/gpt-x" in mg.ENABLED_MODELS
+
+
 def test_get_model_alias_fallback_still_works(monkeypatch):
     # get_model resolves an alias to a real registry key. Put the real
     # model in via config, then look it up by an alias.
