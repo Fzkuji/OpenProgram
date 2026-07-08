@@ -6,7 +6,7 @@ base_url are filled. Runs alongside the legacy _catalog/ loader during
 migration (see models_generated._load).
 
 models.json is the git-tracked run spec (thinking_levels/cost/compat, etc.).
-It is DISTINCT from providers/<p>/models.cache.json, which is the gitignored
+It is DISTINCT from providers/<p>/models.fetched.json, which is the gitignored
 Fetch cache (models.dev-shaped) and is untouched here.
 """
 from __future__ import annotations

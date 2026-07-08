@@ -17,12 +17,12 @@ openprogram/providers/
 ├── deepseek/                      ← one directory per provider (underscore naming)
 │   ├── provider.json              ← git: id + endpoint groups (api/base_url)
 │   ├── models.json                ← git: builtin baseline (only fields no external source provides)
-│   ├── models.cache.json          ← gitignored: official model list pulled by Fetch
+│   ├── models.fetched.json        ← gitignored: official model list pulled by Fetch
 │   ├── thinking.json              ← git: thinking-effort mapping
 │   ├── probe_thinking.py          ← probe script auto-run during Fetch (optional)
 │   └── deepseek.py                ← wire/stream implementation (only for providers with a dedicated protocol)
 ├── model_registry/                ← merge pipeline (the single data outlet), defines MODEL_REGISTRY
-│   ├── loader.py                  ← reads provider.json + models.json + models.cache.json
+│   ├── loader.py                  ← reads provider.json + models.json + models.fetched.json
 │   ├── models_dev.py              ← models.dev source (in-memory cache, TTL 24h)
 │   └── merge.py                   ← layered overlay, produces Model objects
 ├── thinking_spec.py               ← reads thinking.json + effort translation + thinking-field derivation
@@ -37,7 +37,7 @@ One table for every file's role:
 |---|---|---|---|---|
 | `provider.json` | ✅ | human (once, when adding a provider) | merge pipeline | almost never |
 | `models.json` | ✅ | human (only fields no external source provides) | merge pipeline | rarely |
-| `models.cache.json` | ❌ | Fetch (overwritten on every click) | merge pipeline | every Fetch |
+| `models.fetched.json` | ❌ | Fetch (overwritten on every click) | merge pipeline | every Fetch |
 | `thinking.json` | ✅ | human + probe auto-writes overrides | thinking_spec | only when the API format changes |
 | models.dev (remote) | — | third party | merge pipeline (lazy) | continuously upstream |
 | `config.json` providers section | — | user actions in the settings page | frontend listing + runtime | any time |
@@ -45,18 +45,18 @@ One table for every file's role:
 **Division of labour: every field has exactly one authoritative source.**
 
 - `api` / `base_url` → `provider.json` endpoints (bound in pairs, see 2.1)
-- "which models exist" → `models.cache.json` if fetched, else the `models.json` baseline, else models.dev
+- "which models exist" → `models.fetched.json` if fetched, else the `models.json` baseline, else models.dev
 - price, context, capabilities → models.dev (official Fetch data wins)
 - thinking levels → derived from `thinking.json` (`thinking_spec.derive_thinking_fields`)
 - "which models the user enabled" → `config.json` (`enabled` / `enabled_models`) — user state, never mixed into catalog data
 
 `models.json` is therefore thin: `id`, `name`, `endpoint` (when not default), `key_prefix` (dual-key cases), `headers`, `compat`, plus inline spec fields only when models.dev doesn't cover the provider. **Any field that models.dev or the official API can supply is never hand-written** — hand-written data has no update mechanism and inevitably rots. For most providers this file may not exist at all (the model list falls back to models.dev).
 
-### 2.0 Why models.json and models.cache.json are two files
+### 2.0 Why models.json and models.fetched.json are two files
 
 Their contents look similar but their **lifecycles are entirely different**; merging them into one file breaks either way:
 
-| | `models.json` | `models.cache.json` |
+| | `models.json` | `models.fetched.json` |
 |---|---|---|
 | Nature | factory defaults: repository-maintained models + hand-written overrides | live state on the user's machine: the official list pulled by Fetch |
 | Changed by | humans, via git commits | the program, overwritten on every Fetch |
@@ -89,7 +89,7 @@ A single provider can span multiple wires (measured: opencode's 30 models fall i
 
 Community providers (fireworks, together, …) can have no directory at all:
 
-- model list → models.dev fallback; once the user enters a key and clicks Fetch, `_provider_dir()` auto-creates the directory and writes `models.cache.json`
+- model list → models.dev fallback; once the user enters a key and clicks Fetch, `_provider_dir()` auto-creates the directory and writes `models.fetched.json`
 - `api`/`base_url` → defaults from the models.dev provider entry
 - thinking → OpenAI-compatible fallback (low/medium/high)
 - probe → silently skipped
@@ -102,7 +102,7 @@ Adding a builtin provider = create the directory + write `provider.json` (a few 
 
 ```
 layer 4  thinking.json derivation      → thinking_levels / default / variant
-layer 3  models.cache.json (Fetch)     → official authority: which models, context, capabilities
+layer 3  models.fetched.json         → official authority: which models, context, capabilities
 layer 2  models.json (git baseline)    → hand-written overrides: name, headers, compat…
 layer 1  models.dev (lazy)             → fallback: model list, pricing, capabilities
 base     provider.json endpoints      → api / base_url (per model, by endpoint name)
@@ -110,10 +110,10 @@ base     provider.json endpoints      → api / base_url (per model, by endpoint
 
 Rules:
 
-1. **"Which models exist" follows the highest layer present.** Fetched → the cache list is authoritative (baseline rows absent from the cache are hidden from the UI but kept in the registry so old sessions don't break); never fetched → baseline ∪ models.dev.
-2. **Field-level merge**: cache (official) > models.json (hand-written) > models.dev (fallback). Hand-written means override; official means fact.
+1. **"Which models exist" follows the highest layer present.** Fetched → the fetched list is authoritative (baseline rows absent from it are hidden from the UI but kept in the registry so old sessions don't break); never fetched → baseline ∪ models.dev.
+2. **Field-level merge**: fetched (official) > models.json (hand-written) > models.dev (fallback). Hand-written means override; official means fact.
 3. **Thinking fields are always derived, never stored**: `thinking.json` model_overrides > Fetch capabilities > provider-level mapping > fallback (priority details in thinking-effort.md).
-4. **Offline-safe**: if models.dev is unreachable that layer is skipped and price-like fields stay empty; `provider.json` + `models.json` + cache are all local, so running never depends on the network.
+4. **Offline-safe**: if models.dev is unreachable that layer is skipped and price-like fields stay empty; `provider.json` + `models.json` + fetched data are all local, so running never depends on the network.
 5. Output is `Model` objects keyed `"<prefix>/<id>"`; the prefix defaults to `provider.json`'s `id` and can be overridden per row with `key_prefix` (the gemini-subscription dual-key case).
 
 The pipeline's result is simply:
@@ -145,12 +145,12 @@ The user clicks "Fetch Models" in the settings page:
 fetchers.fetch_models_remote(provider_id)
   → call the official API (/v1/models etc.; Anthropic additionally pulls per-model capabilities)
   → probe_thinking.probe() infers reasoning / writes thinking.json overrides
-  → save_fetched() atomically overwrites providers/<p>/models.cache.json
+  → save_fetched() atomically overwrites providers/<p>/models.fetched.json
   → registry invalidated and reloaded (pipeline reruns for that provider)
   → frontend refetches → UI refreshes
 ```
 
-Fetch only writes the cache file and never touches the git-tracked `models.json` — the builtin baseline is repository-maintained, so user actions never dirty git. But Fetch results **enter the registry immediately**: a new model visible in the settings page is resolvable by `get_model` at that same moment.
+Fetch only writes `models.fetched.json` and never touches the git-tracked `models.json` — the builtin baseline is repository-maintained, so user actions never dirty git. But Fetch results **enter the registry immediately**: a new model visible in the settings page is resolvable by `get_model` at that same moment.
 
 ### 4.3 Custom models
 
@@ -175,7 +175,7 @@ The frontend has no model data of its own; everything goes through three listing
 
 ```
 User enables deepseek in settings and clicks Fetch
-  → models.cache.json written (official new model deepseek-v4-flash arrives)
+  → models.fetched.json written (official new model deepseek-v4-flash arrives)
   → registry reloads: MODEL_REGISTRY["deepseek/deepseek-v4-flash"] appears
 User checks deepseek-v4-flash in the model table
   → config.json enabled_models appended
@@ -192,9 +192,9 @@ No step involves "another list", so nothing can disagree.
 1. **Single outlet**: the model data shown to the user and the model data the runtime resolves come from the same merge function. A second data chain is a violation.
 2. **Minimal hand-writing**: `models.json` only stores fields models.dev / the official API cannot provide. Adding an auto-obtainable field is a violation.
 3. **One-way layering**: `openprogram.providers` never imports `openprogram.webui`.
-4. **Runs offline**: baseline + cache suffice with no network; only decorative fields like pricing are missing.
+4. **Runs offline**: baseline + fetched data suffice with no network; only decorative fields like pricing are missing.
 5. **Key compatibility**: the `"<prefix>/<id>"` format, alias fallback, and `key_prefix` dual keys (gemini-subscription's 10 keys) are all preserved; the registry stays one mutable dict (custom models write in place).
-6. **Fetch never touches git**: Fetch only writes `models.cache.json`; `models.json` is changed only by humans (or repository migration scripts).
+6. **Fetch never touches git**: Fetch only writes `models.fetched.json`; `models.json` is changed only by humans (or repository migration scripts).
 
 ## 8. Current deviations and migration
 
@@ -203,7 +203,7 @@ No step involves "another list", so nothing can disagree.
 
 ### 8.1 Deviations
 
-1. **Two data chains.** The merge pipeline is only half-implemented, inside webui: `webui/_model_catalog/provider_models.combined_models` (cache + models.dev) feeds the settings page, while the runtime `MODELS` (`models_generated._load` → `_catalog_new.load_new_catalog`) reads only the git `models.json` and never looks at the cache or models.dev. Result: the settings page can select `deepseek-v4-flash` while `get_model` cannot find it.
+1. **Two data chains.** The merge pipeline is only half-implemented, inside webui: `webui/_model_catalog/provider_models.combined_models` (fetched + models.dev) feeds the settings page, while the runtime `MODELS` (`models_generated._load` → `_catalog_new.load_new_catalog`) reads only the git `models.json` and never looks at the fetched data or models.dev. Result: the settings page can select `deepseek-v4-flash` while `get_model` cannot find it.
 2. **models.json is a full rich spec** with derived/obtainable fields (`thinking_levels`, `cost`, `context_window`, …; 22 providers, 752 rows), has no update mechanism, and has already rotted (deepseek only lists old models).
 3. **Inverted layering**: the models.dev source and merge logic live in `webui/_model_catalog/`, while the providers layer's `_default_api_for`/`_resolve_base_url` read `MODELS` back to fill api/base_url — a providers→webui→providers cycle.
 4. **`MODELS` is too generic a name** (rename already requested by the user).
@@ -212,8 +212,8 @@ No step involves "another list", so nothing can disagree.
 ### 8.2 Migration order (each step commits independently, nothing breaks)
 
 1. **bailian → alibaba_token_plan_cn**: rename the directory + change `provider.json`'s id to `alibaba-token-plan-cn`, models carried over as-is; once the pipeline lands it auto-aligns with models.dev's 18 models. Small and independent — do it first.
-2. **Sink the data layer**: move `provider_models.py` (cache read/write + combined merge) and `sources/models_dev.py` from `webui/_model_catalog/` into `openprogram/providers/model_registry/`; change `_default_api_for`/`_resolve_base_url` to read `provider.json` endpoints. The dependency cycle dissolves here.
-3. **Connect the registry to the pipeline**: `_load()` runs the full merge (the five layers of section 3); cache and models.dev enter the registry; `_catalog_new.py` folds into `model_registry/loader.py`. The two chains become one at this point.
+2. **Sink the data layer**: move `provider_models.py` (fetched-file read/write + combined merge) and `sources/models_dev.py` from `webui/_model_catalog/` into `openprogram/providers/model_registry/`; change `_default_api_for`/`_resolve_base_url` to read `provider.json` endpoints. The dependency cycle dissolves here.
+3. **Connect the registry to the pipeline**: `_load()` runs the full merge (the five layers of section 3); fetched data and models.dev enter the registry; `_catalog_new.py` folds into `model_registry/loader.py`. The two chains become one at this point.
 4. **Thin out listing**: `list_models_for_provider` drops its own combined + thinking merge and just reads the registry plus presentation fields; the package renames `_model_catalog/` → `_model_listing/`.
 5. **Slim models.json**: a script deletes all derivable/obtainable fields, verifying per provider that the merged result is field-identical to before slimming.
 6. **Naming cleanup**: `MODELS` → `MODEL_REGISTRY` (definition moves into `model_registry/__init__.py`, retiring `models_generated.py`); `thinking_catalog.py`'s derivation folds into `thinking_spec.py`. After this the word "catalog" no longer exists in the code.

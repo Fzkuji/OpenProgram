@@ -17,12 +17,12 @@ openprogram/providers/
 ├── deepseek/                      ← 每个 provider 一个目录（下划线命名）
 │   ├── provider.json              ← git：id + endpoint 分组（api/base_url）
 │   ├── models.json                ← git：内置模型基线（只存外部拿不到的字段）
-│   ├── models.cache.json          ← gitignore：Fetch 拉到的官方模型列表
+│   ├── models.fetched.json        ← gitignore：Fetch 拉到的官方模型列表
 │   ├── thinking.json              ← git：thinking effort 映射
 │   ├── probe_thinking.py          ← Fetch 时自动运行的探测脚本（可选）
 │   └── deepseek.py                ← wire/stream 实现（仅专属协议的 provider 有）
 ├── model_registry/                ← 合并管线（唯一数据出口），定义 MODEL_REGISTRY
-│   ├── loader.py                  ← 读 provider.json + models.json + models.cache.json
+│   ├── loader.py                  ← 读 provider.json + models.json + models.fetched.json
 │   ├── models_dev.py              ← models.dev 数据源（内存缓存，TTL 24h）
 │   └── merge.py                   ← 分层叠加，产出 Model 对象
 ├── thinking_spec.py               ← 读 thinking.json + effort 翻译 + thinking 字段推导
@@ -37,7 +37,7 @@ openprogram/providers/
 |---|---|---|---|---|
 | `provider.json` | ✅ | 人（加 provider 时一次） | 合并管线 | 几乎不变 |
 | `models.json` | ✅ | 人（只写外部拿不到的字段） | 合并管线 | 很少 |
-| `models.cache.json` | ❌ | Fetch（每次点击覆写） | 合并管线 | 每次 Fetch |
+| `models.fetched.json` | ❌ | Fetch（每次点击覆写） | 合并管线 | 每次 Fetch |
 | `thinking.json` | ✅ | 人 + probe 自动回写 overrides | thinking_spec | API 格式变了才变 |
 | models.dev（远端） | — | 第三方维护 | 合并管线（懒加载） | 上游持续更新 |
 | `config.json` providers 节 | — | 用户在设置页操作 | 前端 listing + 运行时 | 用户随时改 |
@@ -45,18 +45,18 @@ openprogram/providers/
 **分工原则：每个字段只有一个权威来源。**
 
 - `api` / `base_url` → `provider.json` 的 endpoints（成对绑定，见 2.1）
-- 「有哪些模型」→ Fetch 过用 `models.cache.json`，没 Fetch 过用 `models.json` 基线，再兜底 models.dev
+- 「有哪些模型」→ Fetch 过用 `models.fetched.json`，没 Fetch 过用 `models.json` 基线，再兜底 models.dev
 - 价格、context、能力 → models.dev（官方 Fetch 数据优先）
 - thinking 档位 → `thinking.json` 推导（`thinking_spec.derive_thinking_fields`）
 - 「用户启用了哪些」→ `config.json`（`enabled` / `enabled_models`），是用户状态，永远不混进目录数据
 
 `models.json` 因此很瘦：`id`、`name`、`endpoint`（非 default 时）、`key_prefix`（双 key 场景）、`headers`、`compat`，以及 models.dev 没收录时才内联的规格字段。**凡是 models.dev 或官方 API 能给的字段，一律不手写**——手写数据没有更新机制，必然腐烂。对多数 provider 这个文件甚至可以不存在（模型列表由 models.dev 兜底）。
 
-### 2.0 为什么 models.json 和 models.cache.json 是两个文件
+### 2.0 为什么 models.json 和 models.fetched.json 是两个文件
 
 它们内容相似但**生命周期完全不同**，合成一个文件必出事：
 
-| | `models.json` | `models.cache.json` |
+| | `models.json` | `models.fetched.json` |
 |---|---|---|
 | 本质 | 出厂预装：仓库维护的默认模型 + 手写 override | 用户机器上的实时状态：Fetch 拉到的官方列表 |
 | 谁改 | 人，走 git 提交 | 程序，每次 Fetch 覆写 |
@@ -89,7 +89,7 @@ openprogram/providers/
 
 社区 provider（fireworks、together 等）可以完全没有目录：
 
-- 模型列表 → models.dev 兜底；用户填 key 点 Fetch 后 `_provider_dir()` 自动建目录写 `models.cache.json`
+- 模型列表 → models.dev 兜底；用户填 key 点 Fetch 后 `_provider_dir()` 自动建目录写 `models.fetched.json`
 - `api`/`base_url` → models.dev 的 provider 条目提供缺省
 - thinking → OpenAI 兼容 fallback（low/medium/high）
 - probe → 静默跳过
@@ -102,7 +102,7 @@ openprogram/providers/
 
 ```
 第 4 层  thinking.json 推导        → thinking_levels / default / variant
-第 3 层  models.cache.json（Fetch） → 官方权威：有哪些模型、context、能力
+第 3 层  models.fetched.json      → 官方权威：有哪些模型、context、能力
 第 2 层  models.json（git 基线）    → 手写覆盖：name、headers、compat…
 第 1 层  models.dev（懒加载）       → 兜底：模型列表、价格、能力
 底座    provider.json endpoints    → api / base_url（每模型按 endpoint 名取）
@@ -110,10 +110,10 @@ openprogram/providers/
 
 规则：
 
-1. **「有哪些模型」以最高的存在层为准。** Fetch 过 → cache 的列表是权威（基线里不在 cache 的行对 UI 隐藏，但仍保留在注册表里，旧会话引用不断链）；没 Fetch 过 → 基线 ∪ models.dev。
-2. **字段级合并**：cache（官方）> models.json（手写）> models.dev（兜底）。手写即 override，官方即事实。
+1. **「有哪些模型」以最高的存在层为准。** Fetch 过 → fetched 的列表是权威（基线里不在 fetched 的行对 UI 隐藏，但仍保留在注册表里，旧会话引用不断链）；没 Fetch 过 → 基线 ∪ models.dev。
+2. **字段级合并**：fetched（官方）> models.json（手写）> models.dev（兜底）。手写即 override，官方即事实。
 3. **thinking 字段永远推导，不存储**：`thinking.json` model_overrides > Fetch capabilities > provider 级映射 > fallback（优先级细节见 thinking-effort.md）。
-4. **离线可用**：models.dev 拉不到就跳过该层，价格等字段缺省；`provider.json` + `models.json` + cache 全在本地，运行不依赖网络。
+4. **离线可用**：models.dev 拉不到就跳过该层，价格等字段缺省；`provider.json` + `models.json` + fetched 全在本地，运行不依赖网络。
 5. 输出 `Model` 对象，key = `"<prefix>/<id>"`，prefix 默认取 `provider.json` 的 `id`，逐行可用 `key_prefix` 覆盖（gemini-subscription 双 key 场景）。
 
 管线跑完的结果就是：
@@ -145,12 +145,12 @@ get_models("deepseek")                       # → 该 provider 的全部 Model
 fetchers.fetch_models_remote(provider_id)
   → 调官方 API（/v1/models 等；Anthropic 额外逐模型拉 capabilities）
   → probe_thinking.probe() 推断 reasoning / 回写 thinking.json overrides
-  → save_fetched() 原子覆写 providers/<p>/models.cache.json
+  → save_fetched() 原子覆写 providers/<p>/models.fetched.json
   → 注册表失效重载（合并管线重跑该 provider）
   → 前端重新请求 → UI 刷新
 ```
 
-Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基线是仓库维护的，用户操作不产生 git 脏状态。但 Fetch 的结果**立即进注册表**：设置页看到的新模型，`get_model` 同一时刻就能解析。
+Fetch 只写 `models.fetched.json`，永远不碰 git 内的 `models.json`——内置基线是仓库维护的，用户操作不产生 git 脏状态。但 Fetch 的结果**立即进注册表**：设置页看到的新模型，`get_model` 同一时刻就能解析。
 
 ### 4.3 自定义模型
 
@@ -175,7 +175,7 @@ Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基
 
 ```
 用户在设置页启用 deepseek、点 Fetch
-  → models.cache.json 写入（官方新型号 deepseek-v4-flash 进来）
+  → models.fetched.json 写入（官方新型号 deepseek-v4-flash 进来）
   → 注册表重载：MODEL_REGISTRY["deepseek/deepseek-v4-flash"] 出现
 用户在模型表勾选 deepseek-v4-flash
   → config.json enabled_models 追加
@@ -192,9 +192,9 @@ Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基
 1. **单一出口**：显示给用户的模型数据和运行时解析的模型数据出自同一个合并函数。出现第二条数据链即违约。
 2. **手写最小化**：`models.json` 只存 models.dev / 官方 API 给不了的字段。往里加可自动获得的字段即违约。
 3. **分层单向**：`openprogram.providers` 不 import `openprogram.webui`。
-4. **离线可跑**：断网时基线 + cache 足够运行，只缺价格等装饰字段。
+4. **离线可跑**：断网时基线 + fetched 数据足够运行，只缺价格等装饰字段。
 5. **key 兼容**：`"<prefix>/<id>"` 格式、alias 回退、`key_prefix` 双 key（gemini-subscription 的 10 个 key）全部保留；注册表是同一个可变 dict（自定义模型原地写）。
-6. **Fetch 不碰 git**：Fetch 只写 `models.cache.json`；`models.json` 只由人（或仓库迁移脚本）改。
+6. **Fetch 不碰 git**：Fetch 只写 `models.fetched.json`；`models.json` 只由人（或仓库迁移脚本）改。
 
 ## 8. 现状偏离与迁移
 
@@ -203,7 +203,7 @@ Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基
 
 ### 8.1 偏离
 
-1. **两条数据链。** 合并管线只在 webui 实现了一半：`webui/_model_catalog/provider_models.combined_models`（cache + models.dev）喂设置页；而运行时 `MODELS`（`models_generated._load` → `_catalog_new.load_new_catalog`）只读 git 的 `models.json`，从不看 cache 和 models.dev。结果：设置页能选 `deepseek-v4-flash`，`get_model` 查不到。
+1. **两条数据链。** 合并管线只在 webui 实现了一半：`webui/_model_catalog/provider_models.combined_models`（fetched + models.dev）喂设置页；而运行时 `MODELS`（`models_generated._load` → `_catalog_new.load_new_catalog`）只读 git 的 `models.json`，从不看 fetched 数据和 models.dev。结果：设置页能选 `deepseek-v4-flash`，`get_model` 查不到。
 2. **models.json 是全量富规格**，含 `thinking_levels`、`cost`、`context_window` 等派生/可获取字段（22 个 provider、752 条），没有更新机制，已经腐烂（deepseek 只剩旧型号）。
 3. **层次倒置**：models.dev 数据源和合并逻辑长在 `webui/_model_catalog/`，providers 层的 `_default_api_for`/`_resolve_base_url` 反过来读 `MODELS` 补 api/base_url，构成 providers→webui→providers 循环。
 4. **`MODELS` 名字太泛**（用户已要求改名）。
@@ -212,8 +212,8 @@ Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基
 ### 8.2 迁移顺序（每步可独立提交、系统不瘫）
 
 1. **bailian → alibaba_token_plan_cn**：目录改名 + `provider.json` 的 id 改 `alibaba-token-plan-cn`，模型内容照搬；管线打通后自动对齐 models.dev 的 18 个模型。独立小改，先做。
-2. **下沉数据层**：把 `provider_models.py`（cache 读写 + combined 合并）和 `sources/models_dev.py` 从 `webui/_model_catalog/` 移到 `openprogram/providers/model_registry/`；`_default_api_for`/`_resolve_base_url` 改读 `provider.json` endpoints。循环依赖至此解除。
-3. **注册表接管线**：`_load()` 改为跑完整合并（第 3 节的五层），cache 和 models.dev 进注册表；`_catalog_new.py` 并入 `model_registry/loader.py`。此时两条链事实合一。
+2. **下沉数据层**：把 `provider_models.py`（fetched 文件读写 + combined 合并）和 `sources/models_dev.py` 从 `webui/_model_catalog/` 移到 `openprogram/providers/model_registry/`；`_default_api_for`/`_resolve_base_url` 改读 `provider.json` endpoints。循环依赖至此解除。
+3. **注册表接管线**：`_load()` 改为跑完整合并（第 3 节的五层），fetched 数据和 models.dev 进注册表；`_catalog_new.py` 并入 `model_registry/loader.py`。此时两条链事实合一。
 4. **listing 改薄**：`list_models_for_provider` 删掉自己那套 combined + thinking 合并，直接读注册表加展示字段；包改名 `_model_catalog/` → `_model_listing/`。
 5. **models.json 瘦身**：脚本删除全部可派生/可获取字段，逐 provider 校验合并结果与瘦身前等价（字段级 diff）。
 6. **命名收尾**：`MODELS` → `MODEL_REGISTRY`（定义移入 `model_registry/__init__.py`，退役 `models_generated.py`）；`thinking_catalog.py` 的推导并入 `thinking_spec.py`。至此代码里不再有「catalog」一词。

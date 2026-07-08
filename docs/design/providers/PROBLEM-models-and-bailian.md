@@ -12,7 +12,7 @@
   - ⚠️ **这个名字 `MODELS` 太泛，看不出功能，用户要求改名**（例如 `ENABLED_MODELS` / 「启用模型清单」之类）。定义在 `openprogram/providers/models_generated.py`。
 - **models.json**（每个 provider 文件夹里一份，进 git）：这个 provider「启用了哪些模型」的规格清单。`MODELS` 就是把 22 个 provider 的 `models.json` 拼起来的。
   - 历史命名混乱：这个文件一度叫 `catalog.json`，已按设计文档改回 `models.json`（commit `20a76b54`）。
-- **models.cache.json**（每个 provider 文件夹里，**不进 git**）：用户在设置页点「Fetch Models」时，从 provider 官方 API 拉下来的模型列表缓存。只有 4 个 provider 拉过。
+- **models.fetched.json**（每个 provider 文件夹里，**不进 git**）：用户在设置页点「Fetch Models」时，从 provider 官方 API 拉下来的模型列表缓存。只有 4 个 provider 拉过。
 - **models.dev**：一个第三方公开网站（`https://models.dev/api.json`），收录全世界 151 个 provider 的模型规格（context 长度、价格、能力）。是个「参考手册」。
 
 ---
@@ -23,7 +23,7 @@
 
 | | 链 A：MODELS（代码运行用） | 链 B：设置页选模型用 |
 |---|---|---|
-| 数据来源 | 每个 provider 的 `models.json`（手写、进 git） | `models.cache.json`（Fetch 缓存）+ models.dev |
+| 数据来源 | 每个 provider 的 `models.json`（手写、进 git） | `models.fetched.json`（Fetch 缓存）+ models.dev |
 | 谁用它 | 所有后端代码 `get_model()` | webui 设置页的模型选择器 |
 | 实现位置 | `models_generated._load` → `_catalog_new.load_new_catalog` | `provider_models.combined_models` |
 
@@ -37,7 +37,7 @@
 
 **根因**：`models.json`（喂给 MODELS）是手写死的，没有任何机制自动更新它；而 Fetch/models.dev 是活的、会更新，但它们的结果进不了 MODELS。
 
-**注**：`models_generated.py` 顶部注释写着原设计意图是「Fetch 直接改写这个文件，无需手维护」，但当前实现没做到 —— Fetch 写的是 `models.cache.json`，和 MODELS 读的 `models.json` 是两个文件。设计文档 `docs/design/providers/models/models.md` 描述的「models.dev 为主数据源 + 分层叠加」只在链 B 实现了，链 A（MODELS）没接上。
+**注**：`models_generated.py` 顶部注释写着原设计意图是「Fetch 直接改写这个文件，无需手维护」，但当前实现没做到 —— Fetch 写的是 `models.fetched.json`，和 MODELS 读的 `models.json` 是两个文件。设计文档 `docs/design/providers/models/models.md` 描述的「models.dev 为主数据源 + 分层叠加」只在链 B 实现了，链 A（MODELS）没接上。
 
 ---
 
@@ -69,7 +69,7 @@
 
 **已完成（已推送到 origin/main）：**
 - 大重构：模型目录从中央 `_catalog/` 迁移到每个 provider 自包含的 `providers/<p>/{provider.json, models.json}`（9 提交）。
-- 文件命名对齐设计文档：git 源 = `models.json`，Fetch 缓存 = `models.cache.json`（commit `20a76b54`）。
+- 文件命名对齐设计文档：git 源 = `models.json`，Fetch 缓存 = `models.fetched.json`（commit `20a76b54`）。
 - 当前 `MODELS` = 755 个模型（752 来自 22 个 provider 的 models.json + 3 个 claude-code 动态注册）。
 
 **未完成 / 卡住：**
