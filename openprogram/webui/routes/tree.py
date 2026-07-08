@@ -407,6 +407,73 @@ def register(app):
             bd["model"] = model_id
             bd["context_window"] = ctx_window
             bd["tools_source"] = "recorded" if latest_tools else "session_default"
+
+            # 完整 /context（对齐 Claude Code）：补 skills / memory / mcp 明细，
+            # 每项列名字 + token。best-effort，任一块失败不影响主分类。
+            from openprogram.context.tokens import estimate_message_tokens as _tok
+
+            def _t(s: str) -> int:
+                return _tok({"role": "system", "content": s or ""})
+
+            # Skills：按 source 分组，列每个 skill。口径对齐 Claude Code——
+            # 系统提示里每个 skill 只占「name: 一行描述」的索引条目（skill
+            # 正文按需加载、不常驻），所以算 name + description 首行，而非 body 全文。
+            try:
+                from openprogram.skills import loader as _sl
+                sk_items = []
+                for s in _sl.list_skills():
+                    name = getattr(s, "name", "") or ""
+                    desc = (getattr(s, "description", "") or "").splitlines()
+                    line = f"{name}: {desc[0] if desc else ''}"
+                    sk_items.append({
+                        "name": name,
+                        "source": getattr(s, "source", "") or "",
+                        "tokens": _t(line),
+                    })
+                sk_items.sort(key=lambda x: -x["tokens"])
+                bd["skills_detail"] = sk_items
+                bd["skills"] = sum(x["tokens"] for x in sk_items)
+            except Exception:
+                bd["skills_detail"] = []
+
+            # Memory files：只算真正**常驻进 system prompt** 的那块。
+            # OpenProgram 的 memory 里只有 core.md 是 always-on block
+            # （memory/core.py），wiki/journal 是按需检索、不常驻，不该计入
+            # 当前 context（算全库会虚高到几十万 token）。对齐 Claude Code
+            # 只列实际加载进 prompt 的 memory 文件。
+            try:
+                import os as _os
+                from openprogram.paths import get_state_dir as _gsd
+                from openprogram.memory import core as _mcore
+                block = ""
+                try:
+                    block = _mcore.system_prompt_block() or ""
+                except Exception:
+                    block = ""
+                mem_items = []
+                if block:
+                    mem_items.append({"path": "core.md", "tokens": _t(block)})
+                bd["memory_detail"] = mem_items
+                bd["memory"] = sum(x["tokens"] for x in mem_items)
+            except Exception:
+                bd["memory_detail"] = []
+
+            # MCP tools：列已配置 MCP server（名字 + 该 server 的工具数）
+            try:
+                from openprogram.mcp.config import load_configs as _lcfg
+                mcp_items = []
+                for cfg_obj in _lcfg(include_disabled=True):
+                    mcp_items.append({
+                        "server": getattr(cfg_obj, "name", "") or "",
+                        "enabled": bool(getattr(cfg_obj, "enabled", True)),
+                    })
+                bd["mcp_detail"] = mcp_items
+            except Exception:
+                bd["mcp_detail"] = []
+
+            # Free space
+            bd["free_space"] = max(0, ctx_window - bd.get("input_used", 0))
+
             return JSONResponse(content=bd)
         except Exception as e:
             return JSONResponse(
