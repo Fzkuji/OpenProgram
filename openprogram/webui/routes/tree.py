@@ -340,6 +340,12 @@ def register(app):
             latest_tools = []
             latest_system = ""
             for m in branch:
+                content = m.get("content") or ""
+                # content 只是**可见文本**。一条 assistant 消息回填进下一轮
+                # context 时还带着 thinking 块和 tool_call 的 JSON —— 这些都
+                # 占 token。extra.blocks 里存了完整结构（thinking / text /
+                # tool_use），只算 content 会让 Messages 一档严重虚低（漏掉
+                # 往往比可见回复更长的 thinking）。这里把结构化块也拼进来估算。
                 extra = m.get("extra")
                 if extra:
                     try:
@@ -349,11 +355,31 @@ def register(app):
                                 latest_tools = ex["tools_available"]
                             if ex.get("system_prompt"):
                                 latest_system = ex["system_prompt"]
+                            parts = [content]
+                            for blk in ex.get("blocks") or []:
+                                if not isinstance(blk, dict):
+                                    continue
+                                bt = blk.get("type")
+                                if bt == "thinking":
+                                    parts.append(blk.get("text") or "")
+                                elif bt == "text":
+                                    # blocks.text 与顶层 content 常常重复，只在
+                                    # content 为空时补，避免重复计数。
+                                    if not content:
+                                        parts.append(blk.get("text") or "")
+                            for tc in ex.get("tool_calls") or []:
+                                try:
+                                    parts.append(
+                                        json.dumps(tc, ensure_ascii=False, default=str)
+                                    )
+                                except Exception:
+                                    pass
+                            content = "\n".join(p for p in parts if p)
                     except Exception:
                         pass
                 msgs.append({
                     "role": m.get("role") or "",
-                    "content": m.get("content") or "",
+                    "content": content,
                     "metadata": {},
                 })
 
