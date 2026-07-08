@@ -30,6 +30,11 @@ def _endpoints(provider_id: str) -> dict:
         return {}
 
 
+def provider_endpoints(provider_id: str) -> dict:
+    """Full endpoint map {name: {api, base_url}} from provider.json, or {}."""
+    return _endpoints(provider_id)
+
+
 def provider_apis(provider_id: str) -> set[str]:
     return {e.get("api") for e in _endpoints(provider_id).values() if e.get("api")}
 

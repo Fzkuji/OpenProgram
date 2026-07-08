@@ -27,12 +27,23 @@ from openprogram.webui._model_catalog.fetchers import anthropic as A
 # api-stamp consistency (drift guard)
 
 @pytest.mark.parametrize("pid", ["minimax", "minimax-cn"])
-def test_default_api_matches_models_generated(pid):
-    from openprogram.providers.models_generated import MODEL_REGISTRY
-    apis = {m.api for m in MODEL_REGISTRY.values() if m.provider == pid}
+def test_default_api_matches_models_generated(pid, monkeypatch):
+    # Post-Task-3 the registry holds only enabled rows, so enable one
+    # MiniMax model (which inherits its anthropic-messages wire from
+    # provider.json) and rebuild the registry. The row's api must then
+    # agree with the catalog's derived stamp — otherwise a fetched row
+    # would route to the wrong stream function.
+    import openprogram.providers._config_read as cr
+    import openprogram.providers.models_generated as mg
+    monkeypatch.setattr(
+        cr, "read_providers_config",
+        lambda: {pid: {"models": [{"id": "MiniMax-M2", "name": "MiniMax M2"}]}},
+    )
+    reg = mg._load()
+    apis = {m.api for m in reg.values() if m.provider == pid}
     assert apis == {"anthropic-messages"}, f"{pid} models: {apis}"
-    # The catalog's stamp map must agree with the static registry, or
-    # fetched rows route to the wrong stream function.
+    # The catalog's stamp map must agree with the enabled row, or fetched
+    # rows route to the wrong stream function.
     assert P._default_api_for(pid) == "anthropic-messages"
 
 

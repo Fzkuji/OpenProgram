@@ -30,6 +30,31 @@ def _no_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _enable_default_models(monkeypatch):
+    # Each legacy Runtime subclass resolves its DEFAULT model from the (now
+    # enabled-only) registry at construction. Enable each provider's default
+    # so these AuthStore-key tests construct all three runtimes regardless of
+    # the machine's real config.
+    import openprogram.providers._config_read as cr
+    import openprogram.providers.models as pm
+    import openprogram.providers.models_generated as mg
+    monkeypatch.setattr(cr, "read_providers_config", lambda: {
+        "google": {"models": [
+            {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
+        ]},
+        "openai": {"models": [
+            {"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"},
+        ]},
+        "anthropic": {"models": [
+            {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
+        ]},
+    })
+    reg = mg._load()
+    monkeypatch.setattr(mg, "MODEL_REGISTRY", reg)
+    monkeypatch.setattr(pm, "MODEL_REGISTRY", reg)
+
+
 def _store_returns(monkeypatch, value):
     # Two resolution entry points: ``resolve_store_api_key_sync`` (api-key
     # only — OpenAI/Gemini runtimes) and ``resolve_api_key_sync`` (unified,

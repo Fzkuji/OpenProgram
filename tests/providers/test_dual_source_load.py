@@ -1,38 +1,52 @@
-from openprogram.providers.models_generated import MODEL_REGISTRY, _load
-from openprogram.providers.models import get_model, get_providers
+"""Runtime registry population + the mutable-same-object invariant.
+
+Post-Task-3 ``models_generated._load`` builds MODEL_REGISTRY from the
+user's enabled models in config (``providers.<p>.models`` spec rows), not
+the git-tracked ``providers/<p>/models.json`` catalogue. These tests pin:
+
+  * ``_load`` reads the config source and populates the registry from it;
+  * the registry is one MUTABLE dict object — dynamic writers
+    (``_register_custom_model_in_registry``, the claude-code seed) do
+    ``MODEL_REGISTRY[k] = m`` in place and must land in the same dict.
+"""
+from openprogram.providers.models import get_model
+
+from ._registry_fixture import install_registry
 
 
-def test_models_still_populated():
-    assert len(MODEL_REGISTRY) > 700  # 752 keys pre-migration; new source reproduces them
-    # spot-check across providers/wires
+def test_registry_populated_from_config(monkeypatch):
+    reg = install_registry(monkeypatch, {
+        "openai": {"models": [{"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"}]},
+        "gemini-subscription": {"models": [
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Subscription)"},
+            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Cloud Code Assist)",
+             "key_prefix": "google-gemini-cli"},
+        ]},
+    })
     assert get_model("openai", "gpt-4o") is not None
-    assert get_model("opencode", "gpt-5.1-codex-max") is not None
     # gemini double-key both resolve
     assert get_model("gemini-subscription", "gemini-2.5-pro") is not None
     assert get_model("google-gemini-cli", "gemini-2.5-pro") is not None
+    assert "openai/gpt-4o" in reg
 
 
-def test_models_is_mutable_same_object():
-    # _register_custom_model_in_registry writes MODEL_REGISTRY[k]=m in place
-    before = id(MODEL_REGISTRY)
-    MODEL_REGISTRY["__test__/x"] = MODEL_REGISTRY["openai/gpt-4o"]
-    assert id(MODEL_REGISTRY) == before
-    del MODEL_REGISTRY["__test__/x"]
+def test_registry_is_mutable_same_object(monkeypatch):
+    # _register_custom_model_in_registry writes MODEL_REGISTRY[k]=m in place.
+    reg = install_registry(monkeypatch, {
+        "openai": {"models": [{"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"}]},
+    })
+    before = id(reg)
+    reg["__test__/x"] = reg["openai/gpt-4o"]
+    assert id(reg) == before
 
 
-def test_load_reads_new_source(monkeypatch):
-    # _load must actually merge load_new_catalog. Wrap it to inject a sentinel
-    # key _catalog can never contain, and assert _load surfaces it.
-    from openprogram.providers import _catalog_new
-
-    real = _catalog_new.load_new_catalog
-
-    def wrapped(root):
-        merged = dict(real(root))
-        probe = next(iter(merged.values()), None)
-        if probe is not None:
-            merged["__sentinel__/probe"] = probe
-        return merged
-
-    monkeypatch.setattr(_catalog_new, "load_new_catalog", wrapped)
-    assert "__sentinel__/probe" in _load()  # proves _load called the new-source loader
+def test_load_reads_config_source(monkeypatch):
+    # _load must read read_providers_config; inject a sentinel provider row
+    # and assert _load surfaces it as a registry key.
+    import openprogram.providers._config_read as cr
+    import openprogram.providers.models_generated as mg
+    monkeypatch.setattr(cr, "read_providers_config",
+                        lambda: {"openai": {"models": [{"id": "__probe__",
+                                                        "name": "P",
+                                                        "api": "openai-completions"}]}})
+    assert "openai/__probe__" in mg._load()
