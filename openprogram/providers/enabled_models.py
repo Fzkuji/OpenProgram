@@ -38,14 +38,26 @@ def _build_model_from_row(row: dict, provider_id: str, endpoints: dict) -> Model
 def _load() -> dict[str, Model]:
     from ._config_read import read_providers_config
     from ._provider_meta import provider_endpoints
+    from openprogram.auth.aliases import resolve
 
     merged: dict[str, Model] = {}
     try:
         providers_cfg = read_providers_config()
     except Exception:
         return merged
-    for provider_id, pcfg in (providers_cfg or {}).items():
+    cfg = providers_cfg or {}
+    for provider_id, pcfg in cfg.items():
         if not isinstance(pcfg, dict):
+            continue
+        # An alias config key (e.g. legacy ``chatgpt-subscription``) whose
+        # canonical id is ALSO a config key would produce duplicate registry
+        # rows — same model twice in the picker, twice in the sidebar. Skip
+        # the alias's rows; the canonical key owns them. A lone alias key
+        # (canonical absent) still loads and routes via its resolved
+        # endpoints — old configs keep working. get_model's alias fallback
+        # keeps ``chatgpt-subscription/...`` lookups resolving either way.
+        canon = resolve(provider_id)
+        if canon != provider_id and canon in cfg:
             continue
         endpoints = provider_endpoints(provider_id)
         for row in (pcfg.get("models") or []):

@@ -17,7 +17,8 @@ from typing import Any
 
 
 _CATALOGUE_URL = "https://models.dev/api.json"
-_TTL_SECONDS = 3600  # 1 hour
+_TTL_SECONDS = 3600  # 1 hour on success
+_FAIL_TTL_SECONDS = 60  # short retry window on failure/empty
 
 _cache_lock = threading.Lock()
 _cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
@@ -25,15 +26,24 @@ _cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
 
 def _load() -> dict[str, Any]:
     """Return the parsed catalogue, fetching it (or refreshing on TTL
-    expiry) if needed. Failures cache an empty dict for the same TTL
-    so a transient network blip doesn't wedge a re-fetch on every call.
+    expiry) if needed.
+
+    A successful fetch (non-empty dict) is cached for the full
+    ``_TTL_SECONDS``. A failure or an EMPTY result is only held for
+    ``_FAIL_TTL_SECONDS`` — an empty models.dev response must NOT be
+    cached as a success, or a transient blip at server startup would
+    hide the entire community-provider tier for the whole hour. The
+    short window still absorbs a burst of calls (a settings-page load
+    fanning out) without hammering the endpoint, then retries.
     """
     with _cache_lock:
-        if (
-            _cache["data"] is not None
-            and time.time() - _cache["fetched_at"] < _TTL_SECONDS
-        ):
-            return _cache["data"]
+        data = _cache["data"]
+        if data:  # non-empty success cached
+            if time.time() - _cache["fetched_at"] < _TTL_SECONDS:
+                return data
+        elif data is not None:  # empty/failed result — short retry window
+            if time.time() - _cache["fetched_at"] < _FAIL_TTL_SECONDS:
+                return data
         import httpx
         try:
             r = httpx.get(_CATALOGUE_URL, timeout=10)

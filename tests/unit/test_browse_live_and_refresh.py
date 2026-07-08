@@ -165,6 +165,35 @@ def test_enabled_models_reads_registry(monkeypatch):
     assert out[0]["enabled"] is True
 
 
+def test_list_providers_hides_alias_provider_row(monkeypatch):
+    # An id that's a known alias of another provider (chatgpt-subscription →
+    # openai-codex) must not surface as its own sidebar row. Even if it leaks
+    # into get_providers() (both config keys built rows), list_providers folds
+    # it away; the canonical openai-codex row stays.
+    import openprogram.providers as P
+    from openprogram.providers.types import Model
+    from openprogram.webui._model_listing import sources as S
+
+    def _mk(pid):
+        return Model.model_validate({
+            "id": "gpt-5.5", "name": "GPT-5.5", "provider": pid,
+            "api": "openai-codex", "base_url": "https://chatgpt.com/backend-api",
+        })
+    monkeypatch.setattr(P, "get_providers",
+                        lambda: ["openai-codex", "chatgpt-subscription"])
+    monkeypatch.setattr(P, "get_models", lambda pid: [_mk(pid)])
+    monkeypatch.setattr(cat, "_label", lambda pid: pid)
+    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
+    monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
+        "openai-codex": {"enabled": True},
+        "chatgpt-subscription": {"enabled": True},
+    })
+    ids = [p["id"] for p in listing.list_providers()]
+    assert "openai-codex" in ids
+    assert "chatgpt-subscription" not in ids
+
+
 # ---------------------------------------------------------------------------
 # Fetch button = Refresh: overwrite enabled specs, no persistence, reload reg
 # ---------------------------------------------------------------------------

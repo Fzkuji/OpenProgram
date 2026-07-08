@@ -152,6 +152,7 @@ def list_providers() -> list[dict[str, Any]]:
     than getting overwritten by models.dev's ``openai`` row).
     """
     from openprogram.providers import get_providers, get_models
+    from openprogram.auth.aliases import resolve as _resolve_alias
     from openprogram.auth.login_methods import login_methods as _login_methods
 
     from .providers import (
@@ -172,6 +173,11 @@ def list_providers() -> list[dict[str, Any]]:
     # Tier 1: HTTP providers from the static registry
     seen: set[str] = set()
     for pid in get_providers():
+        # An id that's a known alias of another provider (e.g. legacy
+        # ``chatgpt-subscription`` → ``openai-codex``) must not surface as its
+        # own sidebar row — it's the same service. The canonical id carries it.
+        if _resolve_alias(pid) != pid:
+            continue
         seen.add(pid)
         pcfg = cfg.get(pid, {})
         models = get_models(pid)
@@ -221,6 +227,8 @@ def list_providers() -> list[dict[str, Any]]:
     for md_prov in models_dev.list_providers():
         pid = md_prov.get("id")
         if not pid or pid in seen:
+            continue
+        if _resolve_alias(pid) != pid:
             continue
         seen.add(pid)
         pcfg = cfg.get(pid, {})

@@ -247,6 +247,44 @@ def test_alias_provider_endpoints_resolve_from_canonical(monkeypatch):
     assert m.base_url == "https://chatgpt.com/backend-api"
 
 
+def test_alias_key_folds_into_canonical_when_both_present(monkeypatch):
+    # Merge fix: config carries BOTH the alias key (chatgpt-subscription) and
+    # its canonical (openai-codex), each with a gpt-5.5 spec row. The registry
+    # must produce ONE key (openai-codex/gpt-5.5) — no duplicate picker row.
+    # The alias key's rows are dropped; canonical owns them.
+    cfg = {
+        "openai-codex": {"models": [
+            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
+             "base_url": "https://chatgpt.com/backend-api"}]},
+        "chatgpt-subscription": {"models": [
+            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
+             "base_url": "https://chatgpt.com/backend-api"}]},
+    }
+    reg = _reload(monkeypatch, cfg)
+    assert "openai-codex/gpt-5.5" in reg
+    assert "chatgpt-subscription/gpt-5.5" not in reg
+    assert [k for k in reg if k.endswith("/gpt-5.5")] == ["openai-codex/gpt-5.5"]
+
+
+def test_get_model_still_resolves_alias_after_fold(monkeypatch):
+    # After the fold, an old session referencing chatgpt-subscription/gpt-5.5
+    # must still resolve via get_model's alias fallback to the canonical row.
+    from openprogram.providers import models as pm
+    cfg = {
+        "openai-codex": {"models": [
+            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
+             "base_url": "https://chatgpt.com/backend-api"}]},
+        "chatgpt-subscription": {"models": [
+            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
+             "base_url": "https://chatgpt.com/backend-api"}]},
+    }
+    reg = _reload(monkeypatch, cfg)
+    monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
+    monkeypatch.setattr(pm, "ENABLED_MODELS", reg)
+    assert pm.get_model("chatgpt-subscription", "gpt-5.5") is not None
+    assert pm.get_model("openai-codex", "gpt-5.5") is not None
+
+
 def test_real_config_untouched(monkeypatch, tmp_path):
     # Every read routes through read_providers_config; patching it means
     # _load never opens the real config file.
