@@ -22,16 +22,17 @@ def build_maps(
     fork_siblings: dict[str, list[str]] = {}
     for nid, m in by_id.items():
         c = caller_of(by_id, m)
+        p = predecessor_of(by_id, m)
         if c:
             caller_children.setdefault(c, []).append(nid)
-            # ROOT 的 caller children = 从根分出的一个个对话轮，它们是并列
-            # 分支（同一分叉点的兄弟），应像 predecessor fork 一样横向铺开
-            # 各占 lane，而不是沿主干纵向堆叠。所以把「ROOT 的 caller
-            # children」也计入 fork_siblings。turn 内的 sub-call（caller 指向
-            # 某个 llm，非 root）不在此列，仍留在本 lane。
-            if is_root(by_id.get(c) or {}):
+            # ROOT 的 caller children 里，**没有对话前驱**的才是从根新分出的
+            # 分支根（并列兄弟），应像 predecessor fork 一样横向各占 lane。
+            # 有 predecessor 的节点是某条分支的**续聊**（如在 A 分支的
+            # reply 后继续问），即便建库时 caller 也写了 ROOT，它也该跟着
+            # predecessor 待在原分支 lane，而不是被误当成新分支拉走。
+            # turn 内 sub-call（caller 指向 llm，非 root）同样不在此列。
+            if is_root(by_id.get(c) or {}) and not (p and p in by_id):
                 fork_siblings.setdefault(c, []).append(nid)
-        p = predecessor_of(by_id, m)
         if p:
             pred_children.setdefault(p, []).append(nid)
             fork_siblings.setdefault(p, []).append(nid)
