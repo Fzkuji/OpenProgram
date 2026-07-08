@@ -10,7 +10,7 @@ Three maps (see docs/design/runtime/dag-layout-algorithm.md):
 """
 from __future__ import annotations
 
-from ._common import predecessor_of, caller_of, ts
+from ._common import predecessor_of, caller_of, ts, is_root
 
 
 def build_maps(
@@ -24,6 +24,13 @@ def build_maps(
         c = caller_of(by_id, m)
         if c:
             caller_children.setdefault(c, []).append(nid)
+            # ROOT 的 caller children = 从根分出的一个个对话轮，它们是并列
+            # 分支（同一分叉点的兄弟），应像 predecessor fork 一样横向铺开
+            # 各占 lane，而不是沿主干纵向堆叠。所以把「ROOT 的 caller
+            # children」也计入 fork_siblings。turn 内的 sub-call（caller 指向
+            # 某个 llm，非 root）不在此列，仍留在本 lane。
+            if is_root(by_id.get(c) or {}):
+                fork_siblings.setdefault(c, []).append(nid)
         p = predecessor_of(by_id, m)
         if p:
             pred_children.setdefault(p, []).append(nid)
