@@ -93,4 +93,26 @@ def build_session_graph(
             "attach_embed_tokens": aembed_tok,
         })
 
+    # Root 兜底：部分分支的首节点建库时 predecessor 与 caller 都没写
+    # （历史数据 / 某些开分支路径），下发后既没有对话前驱也没有子调用父，
+    # 在 DAG 里会各自成为孤儿根，渲染成互不连通的多棵树、且 ROOT 子树悬空。
+    # 这里把「非 root、且 predecessor/caller 都不指向图内任何节点」的顶层
+    # 节点挂回 ROOT，让所有分支归到同一棵树。只补真孤儿，对已有 caller=ROOT
+    # 或有 predecessor 的节点无副作用。
+    if root_node:
+        ids = {n["id"] for n in graph}
+        rid = root_node.id
+        for n in graph:
+            if n["id"] == rid or n.get("display") == "root":
+                continue
+            pred = n.get("predecessor")
+            caller = n.get("caller")
+            pred_in = bool(pred) and pred in ids
+            caller_in = bool(caller) and caller in ids
+            # 既无有效前驱又无有效调用父的顶层节点 → 挂回 ROOT。
+            # （predecessor 指向图外的 spawn/followup reply 不在此列，交由
+            #  normalize_followup 处理，避免干扰 task-followup 的边重写。）
+            if not pred_in and not caller_in:
+                n["caller"] = rid
+
     return annotate_graph(graph, head_id)

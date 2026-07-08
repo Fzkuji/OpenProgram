@@ -72,9 +72,14 @@ export const LANE_COLORS = [
   "#d05fa0", // rose
 ];
 
-/** Layout parent: predecessor (session DAG). */
+/** Layout parent: predecessor (对话链父)优先；没有对话前驱时 fallback 到
+ *  caller（子调用/挂根父）。每轮/每分支的第一个 user 节点约定 predecessor
+ *  为空、只靠 caller="ROOT" 挂在根上（见 webui/server.py 的 first-turn 注释）；
+ *  若只认 predecessor，这些分支首节点会各自成为孤儿根，DAG 渲染成互不连通
+ *  的多棵树、且 ROOT 子树悬空。与 render/edges.ts 的 `predecessor || caller`
+ *  画边语义对齐，让树结构也把 caller 边算上，四条分支归到同一棵树。 */
 export function layoutParent(n: GNode): string | null | undefined {
-  return n.predecessor;
+  return n.predecessor || n.caller;
 }
 
 export type HighlightMode = "viewport" | "context";
