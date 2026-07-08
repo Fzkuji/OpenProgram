@@ -113,14 +113,14 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
       [text("Messages", "对话消息"), "messages", data.messages || 0],
       [text("Free space", "空闲"), "free", data.free_space || 0],
     ];
-    return defs
-      .filter(([, , v]) => v > 0)
-      .map(([label, key, v]) => ({
-        label,
-        tokens: v,
-        pct: pct(v),
-        color: CAT_COLORS[key] || "#888",
-      }));
+    // 全部分类都显示（含 0），不过滤 —— 让用户看到每一档存在与否。
+    return defs.map(([label, key, v]) => ({
+      label,
+      tokens: v,
+      pct: pct(v),
+      color: CAT_COLORS[key] || "#888",
+      zero: v <= 0,
+    }));
   }, [data, text]);
 
   const usedPct =
@@ -224,7 +224,11 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
             {/* 分类总览 */}
             <div className="mt-3 space-y-1.5">
               {rows.map((r) => (
-                <div key={r.label} className="flex items-center justify-between text-[12px]">
+                <div
+                  key={r.label}
+                  className="flex items-center justify-between text-[12px]"
+                  style={{ opacity: r.zero ? 0.4 : 1 }}
+                >
                   <span className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-sm" style={{ background: r.color }} />
                     <span style={{ color: "var(--text-primary)" }}>{r.label}</span>
