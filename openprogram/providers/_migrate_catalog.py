@@ -6,8 +6,9 @@ endpoints; each model references one. Rows are kept ONE-PER-KEY (no id dedup —
 gemini has same-id/different-name rows); a key whose prefix != provider gets a
 `key_prefix` field so get_model's historical spelling keeps resolving.
 
-Target directory is resolved via provider_models._provider_dir (hyphen->
-underscore, reuse existing wire-code dir); the git spec file is catalog.json
+Target directory is resolved relative to the given providers_root (hyphen->
+underscore, reuse existing wire-code dir, mirrors provider_models._provider_dir's
+lookup logic without importing it); the git spec file is catalog.json
 (models.json is the gitignored Fetch cache — untouched).
 """
 from __future__ import annotations
@@ -15,9 +16,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ._catalog_new import load_provider_dir  # noqa: F401  (used by verify)
-
 _SPEC_DROP = {"api", "base_url", "provider"}
+
+
+def _target_dir(providers_root: Path, provider_id: str) -> Path:
+    """Resolve provider id to its directory under providers_root (hyphen->underscore)."""
+    for name in (provider_id, provider_id.replace("-", "_")):
+        d = providers_root / name
+        if d.is_dir():
+            return d
+    return providers_root / provider_id.replace("-", "_")
 
 
 def migrate_catalog_file(catalog: dict) -> tuple[dict, list[dict]]:
@@ -61,14 +69,13 @@ def migrate_catalog_file(catalog: dict) -> tuple[dict, list[dict]]:
 
 
 def migrate_all(catalog_dir: Path, providers_root: Path) -> list[str]:
-    from openprogram.webui._model_catalog.provider_models import _provider_dir
     done = []
     for jf in sorted(catalog_dir.glob("*.json")):
         catalog = json.loads(jf.read_text(encoding="utf-8"))
         if not catalog:
             continue
         pj, models = migrate_catalog_file(catalog)
-        d = _provider_dir(pj["id"])  # underscore dir, reuse existing wire-code dir
+        d = _target_dir(providers_root, pj["id"])  # underscore dir, reuse existing wire-code dir
         d.mkdir(parents=True, exist_ok=True)
         (d / "provider.json").write_text(json.dumps(pj, indent=1, ensure_ascii=False))
         (d / "catalog.json").write_text(json.dumps({"models": models}, indent=1, ensure_ascii=False))
