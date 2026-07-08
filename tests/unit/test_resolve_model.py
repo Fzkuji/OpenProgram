@@ -16,6 +16,31 @@ from openprogram.agent.dispatcher import _resolve_model
 from openprogram.providers.models import get_model
 from openprogram.providers.utils.errors import ErrorReason, LLMError
 
+from tests.providers._registry_fixture import install_registry
+
+
+@pytest.fixture(autouse=True)
+def _seed_registry(monkeypatch):
+    # The runtime registry now holds only the user's enabled models, so these
+    # resolver tests must seed the exact ids they reference (empty config in CI
+    # would otherwise leave get_model returning None). openai-codex/gpt-5.5 is
+    # seeded with api "openai-codex" so ensure_codex_model_registered can mirror
+    # it (it needs an existing codex-api template) and derive thinking fields.
+    install_registry(monkeypatch, {
+        "openai": {"models": [
+            {"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"},
+        ]},
+        "openai-codex": {"models": [
+            {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex"},
+        ]},
+    })
+    # Re-derive the codex model's thinking picker (levels/default) the same way
+    # the runtime does at import; install_registry loads a plain config row.
+    from openprogram.providers.openai_codex.runtime import (
+        ensure_codex_model_registered,
+    )
+    ensure_codex_model_registered("gpt-5.5")
+
 
 def test_dict_model_normalizes_to_string() -> None:
     """Profile model = {"provider": "openai-codex", "id": "gpt-5.5"}

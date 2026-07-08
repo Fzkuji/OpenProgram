@@ -15,6 +15,21 @@ import pytest
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.openai_responses.runtime import OpenAIRuntime
 
+from ._registry_fixture import install_registry
+
+
+@pytest.fixture(autouse=True)
+def _enable_openai(monkeypatch):
+    # The runtime registry now holds only the user's enabled models. Seed the
+    # one OpenAI model these wiring tests resolve so the runtime can find it
+    # regardless of what's in the dev's ~/.openprogram/config.json (empty in CI).
+    install_registry(monkeypatch, {"openai": {"models": [
+        # gpt-4o is OpenAIRuntime's default model (used when no model= passed);
+        # gpt-4o-mini is the id the explicit-model tests resolve.
+        {"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"},
+        {"id": "gpt-4o-mini", "name": "GPT-4o mini", "api": "openai-responses"},
+    ]}})
+
 
 class TestOpenAIRuntime:
     def test_no_api_key_raises(self, monkeypatch):
