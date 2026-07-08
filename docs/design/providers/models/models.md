@@ -6,7 +6,7 @@
 
 ## 1. 一句话架构
 
-**系统只长期记住用户启用的模型。** 浏览「有哪些模型可选」是设置页的实时查询，不落盘；「启用」的动作 = 把该模型那一刻的完整规格写进 `config.json`。运行时注册表 `ENABLED_MODELS` 就是 config 里这几十行——`get_model()` 查的、聊天页显示的、用户勾选的，物理上是同一份数据。
+**系统只长期记住用户启用的模型。** 设置页的层级是「先 provider、后模型」：第一层展示 provider 列表；点进某个 provider，才实时查询**该 provider** 有哪些模型可选——这个查询不落盘。「启用」的动作 = 把某个模型那一刻的完整规格写进 `config.json`。运行时注册表 `ENABLED_MODELS` 就是 config 里这几十行——`get_model()` 查的、聊天页显示的、用户勾选的，物理上是同一份数据。
 
 **核心不变式：聊天页能选的 = 已启用的 = 后端能解析的。** 不是靠合并管线对齐两份清单，而是根本只有一份。
 
@@ -79,7 +79,7 @@ openprogram/providers/                 ← 全部进 git，运行期只读
 
 ### 4.1 浏览（实时，不落盘）
 
-用户打开设置页某个 provider 的模型列表：
+浏览分两级。**第一级：provider 列表**（设置页首屏）= 本地有 `provider.json` 的 provider ∪ models.dev 的 provider 索引，只有名字、配置状态等元信息，不含模型。**第二级：模型列表**——用户点进某一个 provider 后，才对这一个 provider 发起查询：
 
 ```
 list_available_models(provider_id)
@@ -122,8 +122,8 @@ ENABLED_MODELS: dict[str, Model]   # key = "<prefix>/<id>"，内容 = config 规
 
 | 前端位置 | API 路由 | 数据来源 |
 |---|---|---|
-| 设置页 provider 列表 | `GET /api/providers` | provider.json 有的 + models.dev 实时列出的（社区 provider 可直接配置） |
-| 设置页浏览/勾选模型 | `GET /api/providers/<id>/available` | **实时**：4.1 的浏览结果 + 已启用标记 |
+| 设置页首屏：provider 列表（无模型名） | `GET /api/providers` | provider.json 有的 + models.dev 实时列出的（社区 provider 可直接配置） |
+| provider 详情页：浏览/勾选**该 provider** 的模型 | `GET /api/providers/<id>/available` | **实时**：4.1 第二级的浏览结果 + 已启用标记 |
 | 聊天页模型选择器 | `GET /api/models/enabled` | **config**：ENABLED_MODELS 原样返回 |
 | thinking 档位选择器 | （`_thinking.py`） | ENABLED_MODELS 行里的 thinking_levels |
 

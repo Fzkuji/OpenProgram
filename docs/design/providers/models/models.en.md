@@ -6,7 +6,7 @@
 
 ## 1. Architecture in one sentence
 
-**The system only remembers the models the user enabled.** Browsing "which models are available" is a live settings-page query that is never persisted; the act of **enabling** copies that model's full spec, as of that moment, into `config.json`. The runtime registry `ENABLED_MODELS` is those few dozen config rows — what `get_model()` resolves, what the chat page shows, and what the user checked are physically the same data.
+**The system only remembers the models the user enabled.** The settings page is hierarchical — providers first, then models: the first level shows the provider list; only after opening one provider does the page query, live, which models **that provider** offers — and that query is never persisted. The act of **enabling** copies a model's full spec, as of that moment, into `config.json`. The runtime registry `ENABLED_MODELS` is those few dozen config rows — what `get_model()` resolves, what the chat page shows, and what the user checked are physically the same data.
 
 **Core invariant: selectable in chat = enabled = resolvable by the backend.** Not because a merge pipeline keeps two lists aligned, but because there is only one list.
 
@@ -79,7 +79,7 @@ Directory names use underscores (`amazon_bedrock/`); `id` keeps the hyphenated n
 
 ### 4.1 Browse (live, never persisted)
 
-The user opens a provider's model list in settings:
+Browsing has two levels. **Level one: the provider list** (settings landing view) = providers with a local `provider.json` ∪ models.dev's provider index — names and configuration status only, no model names. **Level two: the model list** — only after the user opens one specific provider does the page query that provider:
 
 ```
 list_available_models(provider_id)
@@ -123,8 +123,8 @@ Loaded from config at startup (tens of rows, instant), reloaded when config chan
 
 | Frontend surface | API route | Data source |
 |---|---|---|
-| Settings provider list | `GET /api/providers` | providers with a provider.json + those models.dev lists live (community providers configurable directly) |
-| Settings browse/check models | `GET /api/providers/<id>/available` | **live**: the browse result of 4.1 + enabled flags |
+| Settings landing view: provider list (no model names) | `GET /api/providers` | providers with a provider.json + those models.dev lists live (community providers configurable directly) |
+| Provider detail view: browse/check **that provider's** models | `GET /api/providers/<id>/available` | **live**: the level-two browse result of 4.1 + enabled flags |
 | Chat model picker | `GET /api/models/enabled` | **config**: ENABLED_MODELS as-is |
 | Thinking level picker | (`_thinking.py`) | thinking_levels from the ENABLED_MODELS rows |
 
