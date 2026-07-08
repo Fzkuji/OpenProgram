@@ -179,12 +179,12 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
   }
 
   return (
-    <aside
-      className="flex h-screen w-[400px] shrink-0 flex-col border-l"
+    <div
+      className="flex max-h-[70vh] w-[380px] flex-col overflow-hidden rounded-xl border shadow-2xl"
       style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
     >
       <div
-        className="flex h-12 items-center justify-between border-b px-4"
+        className="flex h-11 shrink-0 items-center justify-between border-b px-4"
         style={{ borderColor: "var(--border)" }}
       >
         <h3 className="text-[13px] font-semibold" style={{ color: "var(--text-bright)" }}>
@@ -283,6 +283,6 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
           </>
         )}
       </div>
-    </aside>
+    </div>
   );
 }

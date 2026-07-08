@@ -1095,18 +1095,24 @@ export function Composer() {
       </div>
 
       {contextPanelOpen && (
-        <div
-          className="fixed inset-0 z-50 flex justify-end"
-          style={{ background: "rgba(0,0,0,0.3)" }}
-          onClick={() => setContextPanelOpen(false)}
-        >
-          <div onClick={(e) => e.stopPropagation()}>
+        <>
+          {/* 透明遮罩：点外关闭，不压暗背景 */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setContextPanelOpen(false)}
+          />
+          {/* 浮动卡片：锚定右下角上下文圆环上方 */}
+          <div
+            className="fixed z-50"
+            style={{ bottom: 52, right: 16 }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <ContextBreakdownPanel
               sessionId={currentSessionId}
               onClose={() => setContextPanelOpen(false)}
             />
           </div>
-        </div>
+        </>
       )}
 
       <div

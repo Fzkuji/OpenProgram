@@ -88,11 +88,11 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
     pct >= 0.9 ? "#e5534b" : pct >= 0.7 ? "#e0a33c" : "#3b9eff";
 
   return (
-    <>
+    <span style={{ position: "relative", display: "inline-flex" }}>
       <button
         className="context-ring-badge"
         title={ringTooltip}
-        onClick={() => setPanelOpen(true)}
+        onClick={() => setPanelOpen((v) => !v)}
         aria-label="Context usage"
       >
         <svg width="22" height="22" viewBox="0 0 22 22">
@@ -119,19 +119,25 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
         </svg>
       </button>
       {panelOpen && (
-        <div
-          className="fixed inset-0 z-50 flex justify-end"
-          style={{ background: "rgba(0,0,0,0.3)" }}
-          onClick={() => setPanelOpen(false)}
-        >
-          <div onClick={(e) => e.stopPropagation()}>
+        <>
+          {/* 透明全屏遮罩：点圆环外关闭（不压暗背景，纯 click-catcher）*/}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setPanelOpen(false)}
+          />
+          {/* 浮动卡片：锚定圆环，向上、向左展开 */}
+          <div
+            className="absolute z-50"
+            style={{ bottom: "calc(100% + 8px)", right: 0 }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <ContextBreakdownPanel
               sessionId={sid}
               onClose={() => setPanelOpen(false)}
             />
           </div>
-        </div>
+        </>
       )}
-    </>
+    </span>
   );
 }
