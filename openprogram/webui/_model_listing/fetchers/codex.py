@@ -7,9 +7,15 @@ source of truth for a Fetch:
 
   1. take the OpenAI catalogue (``openai-codex`` aliases to ``openai`` in
      ``models_dev``), pulled live behind models.dev's shared 1h cache,
-  2. keep the Codex/ChatGPT-subscription-runnable GPT-5.x reasoning family,
-  3. register each surfaced id so the runtime can actually dispatch it, and
-  4. let ``fetch_models_remote`` enrich the rest from models.dev.
+  2. keep the Codex/ChatGPT-subscription-runnable GPT-5.x reasoning family, and
+  3. let ``fetch_models_remote`` enrich the rest from models.dev.
+
+Browse is a **read** path: it does not touch the ``ENABLED_MODELS`` registry
+(post-migration the registry means "enabled" — writing every browsable id
+floods the chat picker). Dispatchability comes from the enable-time config
+rows (a full spec is written to config when the user enables a model) plus
+``OpenAICodexRuntime``'s on-miss single-model registration for the one id
+actually being dispatched.
 
 This replaces the old "re-emit the in-code registry" behaviour, so a Fetch
 reflects what the upstream catalogue lists today rather than a hand-kept list.
@@ -69,18 +75,16 @@ def _fetch_codex_live(provider_id: str, timeout: float) -> Any:
             )
         }
 
-    from openprogram.providers.openai_codex.runtime import (
-        ensure_codex_model_registered,
-    )
-
     out: list[dict[str, Any]] = []
     for mid in sorted(catalogue):
         info = catalogue[mid] or {}
         if not _is_codex_runnable(mid, info):
             continue
-        # A listed id must also be dispatchable — register it in the static
-        # ENABLED_MODELS registry (idempotent) so OpenAICodexRuntime can resolve it.
-        ensure_codex_model_registered(mid)
+        # Read path only — don't register into ENABLED_MODELS here (that dict
+        # means "enabled" post-migration; bulk-writing it floods the chat
+        # picker). A browsed id becomes dispatchable when the user enables it
+        # (writes a full config spec row) and, at dispatch, via
+        # OpenAICodexRuntime's on-miss single-model registration.
         out.append({
             "id": mid,
             "name": info.get("name") or mid,

@@ -175,6 +175,33 @@ def test_claude_code_fetch_routes_to_anthropic(monkeypatch):
     assert [m["id"] for m in res["models"]] == ["claude-opus-4-8"]
 
 
+def test_codex_browse_does_not_grow_registry(monkeypatch):
+    # Browse/Fetch is a READ path: it must NOT write ENABLED_MODELS (post-
+    # migration the registry means "enabled"; bulk-registering every
+    # browsable models.dev id floods the chat picker — live server showed
+    # openai-codex=14 when the user enabled 1). Dispatchability comes from
+    # enable-time config rows + the runtime's on-miss single-model register.
+    import openprogram.providers.enabled_models as mg
+    from openprogram.webui._model_listing.fetchers import codex as C
+    from openprogram.webui._model_listing.sources import models_dev
+
+    reg = {"openai-codex/gpt-5.5": object()}  # a pre-existing enabled codex row
+    monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
+    # Stub the models.dev catalogue with several runnable codex ids.
+    monkeypatch.setattr(models_dev, "list_models", lambda pid: {
+        "gpt-5.1": {"name": "GPT-5.1", "reasoning": True},
+        "gpt-5.2": {"name": "GPT-5.2", "reasoning": True},
+        "gpt-5.3-codex": {"name": "GPT-5.3 Codex", "reasoning": True},
+    })
+    before = dict(reg)
+
+    out = C._fetch_codex_live("openai-codex", timeout=5.0)
+
+    assert isinstance(out, list) and {r["id"] for r in out} == {
+        "gpt-5.1", "gpt-5.2", "gpt-5.3-codex"}
+    assert reg == before, "browse must not register browsed ids into ENABLED_MODELS"
+
+
 def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):
     seen = {}
 
