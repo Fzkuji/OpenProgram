@@ -8,7 +8,7 @@
 
 两类数据分开存：
 
-| | thinking.json | models.json |
+| | thinking.json | models.cache.json |
 |---|---|---|
 | 内容 | API 参数格式、effort 映射、per-model override | Fetch 拉到的模型列表（id、context、reasoning 等） |
 | 变化频率 | 几个月一次（API 格式改了才变） | 每次 Fetch 覆写 |
@@ -22,21 +22,21 @@ openprogram/providers/
 │   ├── anthropic.py             ← stream 实现
 │   ├── thinking.json            ← 进 git：thinking effort 映射
 │   ├── probe_thinking.py        ← Fetch 时自动运行的探测脚本
-│   └── models.json              ← .gitignore：Fetch 生成的模型列表
+│   └── models.cache.json        ← .gitignore：Fetch 生成的模型列表
 ├── deepseek/
 │   ├── thinking.json
 │   ├── probe_thinking.py
-│   └── models.json
+│   └── models.cache.json
 ├── google/
 │   ├── google.py
 │   ├── thinking.json
 │   ├── probe_thinking.py
-│   └── models.json
+│   └── models.cache.json
 ├── openai_codex/
 │   ├── openai_codex.py
 │   ├── thinking.json
 │   ├── probe_thinking.py
-│   └── models.json
+│   └── models.cache.json
 ├── github_copilot/
 │   ├── thinking.json            ← wire_format: "none"（不支持 thinking）
 │   └── ...
@@ -45,14 +45,14 @@ openprogram/providers/
 └── _shared/                     ← 公共工具函数
 ```
 
-`.gitignore` 里有一行 `openprogram/providers/*/models.json`，所有 provider 的 models.json 都不进 git。
+`.gitignore` 里有一行 `openprogram/providers/*/models.cache.json`，所有 provider 的 models.cache.json 都不进 git。
 
 ### 2.1 没有文件夹的 provider
 
 社区 provider（groq、mistral 等）可以没有文件夹。此时：
 - **thinking.json**：`thinking_spec.get_thinking_spec()` 返回 OpenAI 兼容 fallback（`effort_string` + `low/medium/high`）
 - **probe_thinking.py**：Fetch 时 `_load_probe()` catch ImportError，静默跳过
-- **models.json**：Fetch 时 `_provider_dir()` 自动创建文件夹并写入
+- **models.cache.json**：Fetch 时 `_provider_dir()` 自动创建文件夹并写入
 
 ### 2.2 Provider alias
 
@@ -148,7 +148,7 @@ UI 显示几档不是手动维护的，而是从映射表的 key 自动推导：
 3. 无 override → 用 provider 级别的 `effort_map`/`budget_map` 的 key
 4. 无 thinking.json → fallback 的 key（low/medium/high）
 
-## 4. models.json 结构
+## 4. models.cache.json 结构
 
 Fetch Models 生成，存在 provider 文件夹里，不进 git：
 
@@ -171,7 +171,7 @@ Fetch Models 生成，存在 provider 文件夹里，不进 git：
 }
 ```
 
-Anthropic 的 models.json 还包含 `supports_adaptive` 字段（从 capabilities API 获取）。
+Anthropic 的 models.cache.json 还包含 `supports_adaptive` 字段（从 capabilities API 获取）。
 
 ## 5. Fetch 流程
 
@@ -196,7 +196,7 @@ Anthropic 的 models.json 还包含 `supports_adaptive` 字段（从 capabilitie
 4. enrichment: 合并 models.dev 数据（pricing、reasoning 标记）
        │
        ▼
-5. 写入 providers/<provider_dir>/models.json
+5. 写入 providers/<provider_dir>/models.cache.json
        │
        ▼
 6. 前端重新请求 /api/agent_settings → UI 刷新
@@ -208,7 +208,7 @@ Anthropic 的 models.json 还包含 `supports_adaptive` 字段（从 capabilitie
 
 ```
 第 1 层: combined_models(provider_id)
-         = models.json (Fetch 数据) + models.dev (pricing/caps)
+         = models.cache.json (Fetch 数据) + models.dev (pricing/caps)
          → 得到每个模型的基础信息 (id, reasoning, context_window, ...)
 
 第 2 层: thinking_spec.derive_thinking_fields()
@@ -246,7 +246,7 @@ Anthropic 的 models.json 还包含 `supports_adaptive` 字段（从 capabilitie
 2. 写 `thinking.json`（声明 wire_format、effort_map、必要的 model_overrides）
 3. 写 `probe_thinking.py`（暴露 `probe()` 函数，从 API 或 model id 推断 reasoning）
 4. 在 `fetchers/` 里加一个专属 fetcher（或走通用 `_fetch_openai_compat`）
-5. 用户点 Fetch → models.json 自动生成 → UI 自动显示
+5. 用户点 Fetch → models.cache.json 自动生成 → UI 自动显示
 
 ### 8.2 社区 provider（如 groq、mistral）
 
@@ -254,7 +254,7 @@ Anthropic 的 models.json 还包含 `supports_adaptive` 字段（从 capabilitie
 - Fetch 走通用 `_fetch_openai_compat`
 - thinking.json 缺失 → 自动用 fallback（low/medium/high）
 - probe_thinking.py 缺失 → 静默跳过
-- models.json 写入时自动创建文件夹
+- models.cache.json 写入时自动创建文件夹
 
 ## 9. 现状偏离与迁移：干掉 `_catalog/`
 
@@ -265,13 +265,13 @@ Anthropic 的 models.json 还包含 `supports_adaptive` 字段（从 capabilitie
 上面第 1–8 节是**目标设计**：模型数据在 `providers/<p>/`，provider 自包含。
 但当前代码并非如此——`MODELS` 主字典（`providers/models_generated.py:_load`）
 **只从 `openprogram/providers/_catalog/*.json` 加载**（22 个文件、752 条模型，进 git）。
-`providers/<p>/models.json` 只是 Fetch 的本地缓存、**gitignore、且不带 `api`/`base_url`**，
+`providers/<p>/models.cache.json` 只是 Fetch 的本地缓存、**gitignore、且不带 `api`/`base_url`**，
 从未喂给 `MODELS`。`_catalog/` 是 `a449a431`（把两万行 `models_generated.json` 拆成
 per-provider 小文件）时引入的中间层，偏离了本文的自包含设计。
 
 **为什么不能直接删 `_catalog/`：** 它是 752 条模型 `api`+`base_url` 的**唯一 git 源**。
 删掉 `MODELS` 会静默变空 → 所有 `get_model()` 返回 None → 每个 provider「Unknown model」。
-`providers/<p>/models.json` 顶不上，因为它缺 `api`/`base_url` 且不进 git。
+`providers/<p>/models.cache.json` 顶不上，因为它缺 `api`/`base_url` 且不进 git。
 补 `api`/`base_url` 的回填逻辑（`_default_api_for`/`_resolve_base_url`）自身也读 `MODELS`，
 构成循环——`_catalog/` 一空，回填也塌。
 
@@ -360,9 +360,10 @@ providers/<provider>/provider.json   ← 进 git
    （`webui/_runtime_management.py`）从 `custom_models` 构造 `Model` 写入全局 `MODELS`，
    仍调 `_default_api_for`/`_resolve_base_url`。新 loader 换源后，这条路径也要跟着改到新的
    api/base_url 来源，否则自定义 provider 会拿错 api/base_url。
-6. **Fetch 覆写 vs git 源冲突。** Fetch 现在覆写 `providers/<p>/models.json`（`provider_models.py`），
-   而该文件被 gitignore。若把 models.json 改成 git 源，用户 Fetch 会改动版本控制内的内置数据。
-   迁移须区分「内置模型（git，手维护/迁移生成）」与「Fetch 缓存（gitignore）」两个文件，
-   或让 Fetch 写到独立的 `models.cache.json`，加载时合并（内置为准 or 缓存补充，需定优先级）。
+6. **Fetch 覆写 vs git 源冲突。** Fetch 现在覆写 `providers/<p>/models.cache.json`（`provider_models.py`），
+   而该文件被 gitignore。若把 models.cache.json 改成 git 源，用户 Fetch 会改动版本控制内的内置数据。
+   迁移须区分「内置模型（git，手维护/迁移生成）」与「Fetch 缓存（gitignore）」两个文件——
+   内置模型是 `models.json`（进 git），Fetch 写到独立的 `models.cache.json`，
+   加载时合并（内置为准 or 缓存补充，需定优先级）。
 7. **验证粒度。** 「每 provider 一个模型 exec」不够——多 wire provider 须按每个
    `(api, base_url, headers, compat)` 组合各验证一个模型，否则漏掉 provider 内部差异。

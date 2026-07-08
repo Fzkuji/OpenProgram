@@ -1,13 +1,13 @@
-"""New self-contained catalog loader: providers/<p>/provider.json + catalog.json.
+"""New self-contained catalog loader: providers/<p>/provider.json + models.json.
 
 provider.json declares endpoint groups {name: {api, base_url}}; each model in
-catalog.json references an endpoint (default "default") from which its api +
+models.json references an endpoint (default "default") from which its api +
 base_url are filled. Runs alongside the legacy _catalog/ loader during
 migration (see models_generated._load).
 
-catalog.json is the git-tracked run spec (thinking_levels/cost/compat, etc.).
-It is DISTINCT from providers/<p>/models.json, which is the gitignored Fetch
-cache (models.dev-shaped) and is untouched here.
+models.json is the git-tracked run spec (thinking_levels/cost/compat, etc.).
+It is DISTINCT from providers/<p>/models.cache.json, which is the gitignored
+Fetch cache (models.dev-shaped) and is untouched here.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _build_model(row: dict, provider_id: str, endpoints: dict) -> Model:
 
 def load_provider_dir(provider_dir: Path) -> dict[str, Model]:
     pj = provider_dir / "provider.json"
-    cj = provider_dir / "catalog.json"
+    cj = provider_dir / "models.json"
     if not pj.is_file():
         return {}
     try:

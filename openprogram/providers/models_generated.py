@@ -3,7 +3,7 @@ Model catalog — self-contained ``providers/<p>/`` dirs.
 
 The model definitions live as data (not 9000 lines of ``Model(...)``
 calls). Each provider is a self-contained ``providers/<p>/provider.json``
-+ ``providers/<p>/catalog.json`` pair (see ``_catalog_new.load_new_catalog``).
++ ``providers/<p>/models.json`` pair (see ``_catalog_new.load_new_catalog``).
 ``_load()`` builds the ``MODELS`` dict, keyed ``"<provider>/<id>"`` exactly
 as before, so the public interface (``from
 openprogram.providers.models_generated import MODELS``) is unchanged

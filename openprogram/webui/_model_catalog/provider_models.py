@@ -1,14 +1,16 @@
 """Per-provider model store — fetch results saved as
-``openprogram/providers/<provider>/models.json`` (gitignored).
+``openprogram/providers/<provider>/models.cache.json`` (gitignored).
 
 Two sources, combined at read time:
   * fetch (provider official /v1/models) — authoritative "which models +
-    context", saved per-provider as models.json (overwritten on each Fetch).
+    context", saved per-provider as models.cache.json (overwritten on each
+    Fetch).
   * models.dev (live) — fills price / capability fields the official API
     doesn't return.
 
-No frozen snapshot, no config custom_models. A provider with no models.json
-yet falls back to models.dev's full list for that provider.
+No frozen snapshot, no config custom_models. A provider with no
+models.cache.json yet falls back to models.dev's full list for that
+provider.
 """
 from __future__ import annotations
 
@@ -44,16 +46,16 @@ def _provider_dir(provider_id: str) -> Path:
 
 
 def _resolve_write_path(provider_id: str) -> Path:
-    return _provider_dir(provider_id) / "models.json"
+    return _provider_dir(provider_id) / "models.cache.json"
 
 
 def _resolve_read_path(provider_id: str) -> Path | None:
-    p = _provider_dir(provider_id) / "models.json"
+    p = _provider_dir(provider_id) / "models.cache.json"
     return p if p.is_file() else None
 
 
 def save_fetched(provider_id: str, models: list[dict[str, Any]]) -> Path:
-    """Overwrite this provider's models.json with the freshly-fetched list.
+    """Overwrite this provider's models.cache.json with the freshly-fetched list.
 
     Atomic write (tmp + replace). Returns the path written.
     """

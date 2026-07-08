@@ -8,7 +8,7 @@ def _write(root: Path, pid: str, provider_json: dict, models: list[dict]):
     d = root / pid
     d.mkdir(parents=True)
     (d / "provider.json").write_text(json.dumps(provider_json))
-    (d / "catalog.json").write_text(json.dumps({"models": models}))
+    (d / "models.json").write_text(json.dumps({"models": models}))
 
 
 def test_single_wire_provider(tmp_path):
