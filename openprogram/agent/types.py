@@ -126,7 +126,11 @@ class AgentContext(BaseModel):
 class AgentState(BaseModel):
     """Complete agent state."""
     system_prompt: str = ""
-    model: Model
+    # ``None`` only as a transient placeholder at construction — the real
+    # model is applied immediately via ``initial_state`` (AgentSession always
+    # supplies one). Optional so construction never depends on a particular
+    # provider being enabled (post enabled-models migration).
+    model: Model | None = None
     thinking_level: ThinkingLevel = "off"
     tools: list[AgentTool] = Field(default_factory=list)
     messages: list[AgentMessage] = Field(default_factory=list)

@@ -180,6 +180,73 @@ def test_get_model_alias_fallback_still_works(monkeypatch):
     assert pm.get_model("anthropic", "claude-opus-4-8") is not None
 
 
+def test_coding_plan_provider_fills_from_region_sibling_offline(monkeypatch):
+    # F1: a ``-coding-plan`` token-plan provider (minimax-cn-coding-plan) has
+    # an EMPTY provider dir. Its row carries no api/base_url. It must fill
+    # from its region sibling's REAL provider.json (minimax-cn) — OFFLINE,
+    # with NO models.dev call (the catalogue is empty at cold import, so a
+    # network-only path yields a hostless base_url in a fresh process).
+    import openprogram.providers._provider_meta as pm
+    # models.dev must NOT be consulted for this to resolve.
+    def boom(pid):
+        raise AssertionError("models.dev consulted; offline sibling should win")
+    monkeypatch.setattr(pm, "_models_dev_base_url", boom)
+    cfg = {"minimax-cn-coding-plan": {"models": [
+        {"id": "MiniMax-M3", "name": "MiniMax M3"},
+    ]}}
+    reg = _reload(monkeypatch, cfg)
+    m = reg["minimax-cn-coding-plan/MiniMax-M3"]
+    # minimax-cn/provider.json → anthropic-messages + .../anthropic
+    assert m.api == "anthropic-messages"
+    assert m.base_url == "https://api.minimaxi.com/anthropic"
+
+
+def test_community_provider_base_url_filled_from_models_dev(monkeypatch):
+    # F1 fallback: a community provider with an empty dir AND no region
+    # sibling still fills from models.dev, deriving anthropic-messages from
+    # an /anthropic base.
+    import openprogram.providers._provider_meta as pm
+    monkeypatch.setattr(pm, "_endpoints", lambda pid: {})   # no sibling either
+    monkeypatch.setattr(
+        pm, "_models_dev_base_url",
+        lambda pid: "https://api.minimaxi.com/anthropic/v1"
+        if pid == "some-community-provider" else None,
+    )
+    cfg = {"some-community-provider": {"models": [
+        {"id": "M", "name": "M"},
+    ]}}
+    reg = _reload(monkeypatch, cfg)
+    m = reg["some-community-provider/M"]
+    assert m.base_url == "https://api.minimaxi.com/anthropic/v1"
+    assert m.api == "anthropic-messages"
+
+
+def test_alias_provider_endpoints_resolve_from_canonical(monkeypatch):
+    # F3 (endpoint half): chatgpt-subscription has an EMPTY provider dir but
+    # aliases to openai-codex. Its row carries no api/base_url. The registry
+    # must fill both from openai-codex's provider.json (api=openai-codex,
+    # base_url=chatgpt.com backend) so the row routes to the codex transport,
+    # not to a hostless openai-completions request.
+    import openprogram.providers._provider_meta as pm
+    real = pm._endpoints
+
+    def fake(pid):
+        if pid == "openai-codex":
+            return {"default": {"api": "openai-codex",
+                                "base_url": "https://chatgpt.com/backend-api"}}
+        if pid in ("chatgpt-subscription",):
+            return {}          # empty dir
+        return real(pid)
+    monkeypatch.setattr(pm, "_endpoints", fake)
+    cfg = {"chatgpt-subscription": {"models": [
+        {"id": "gpt-5.5", "name": "GPT-5.5"},
+    ]}}
+    reg = _reload(monkeypatch, cfg)
+    m = reg["chatgpt-subscription/gpt-5.5"]
+    assert m.api == "openai-codex"
+    assert m.base_url == "https://chatgpt.com/backend-api"
+
+
 def test_real_config_untouched(monkeypatch, tmp_path):
     # Every read routes through read_providers_config; patching it means
     # _load never opens the real config file.
