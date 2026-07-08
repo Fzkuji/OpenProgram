@@ -1,0 +1,15 @@
+{
+ "id": "openai-completions",
+ "thinking": {
+  "wire_format": "effort_string",
+  "effort_map": {
+   "minimal": "low",
+   "low": "low",
+   "medium": "medium",
+   "high": "high",
+   "xhigh": "high",
+   "max": "high"
+  },
+  "default_effort": "xhigh"
+ }
+}

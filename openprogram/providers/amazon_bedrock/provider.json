@@ -5,5 +5,34 @@
    "api": "bedrock-converse-stream",
    "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com"
   }
+ },
+ "thinking": {
+  "wire_format": "effort_string",
+  "effort_map": {
+   "minimal": "low",
+   "low": "low",
+   "medium": "medium",
+   "high": "high",
+   "xhigh": "max",
+   "max": "max"
+  },
+  "default_effort": "high",
+  "budget_map": {
+   "minimal": 1024,
+   "low": 4096,
+   "medium": 8192,
+   "high": 16000,
+   "xhigh": 32000,
+   "max": 64000
+  }
+ },
+ "cache": {
+  "mode": "explicit",
+  "breakpoint_format": "cachePoint",
+  "retention_ttl_map": {
+   "short": null,
+   "long": "ONE_HOUR"
+  },
+  "max_breakpoints": 4
  }
 }

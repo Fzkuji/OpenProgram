@@ -5,5 +5,26 @@
    "api": "openai-completions",
    "base_url": "https://api.deepseek.com/v1"
   }
+ },
+ "thinking": {
+  "wire_format": "effort_string",
+  "effort_map": {
+   "minimal": "minimal",
+   "low": "low",
+   "medium": "medium",
+   "high": "high",
+   "max": "max"
+  },
+  "default_effort": "medium",
+  "model_overrides": {
+   "deepseek-reasoner": {
+    "effort_map": {},
+    "note": "R1 has no effort control — always full reasoning"
+   },
+   "deepseek-chat": {
+    "effort_map": {},
+    "note": "V3 chat model — no reasoning support"
+   }
+  }
  }
 }

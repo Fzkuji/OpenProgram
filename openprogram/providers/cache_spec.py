@@ -23,6 +23,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from openprogram.providers.thinking_spec import _load_folded
+
 _PROVIDERS_DIR = Path(__file__).parent
 
 # Providers that share another provider's cache config (same API).
@@ -48,13 +50,9 @@ def get_cache_spec(provider_id: str) -> dict[str, Any]:
         return _NONE_FALLBACK
     resolved = _CACHE_ALIASES.get(provider_id, provider_id)
     for dir_name in (resolved, resolved.replace("-", "_")):
-        path = _PROVIDERS_DIR / dir_name / "cache.json"
-        if path.is_file():
-            try:
-                with path.open(encoding="utf-8") as f:
-                    return json.load(f)
-            except (OSError, json.JSONDecodeError):
-                return _NONE_FALLBACK
+        spec = _load_folded(dir_name, "cache", "cache.json")
+        if spec is not None:
+            return spec
     return _NONE_FALLBACK
 
 

@@ -1,11 +1,5 @@
 {
- "id": "azure-openai-responses",
- "endpoints": {
-  "default": {
-   "api": "azure-openai-responses",
-   "base_url": ""
-  }
- },
+ "id": "openai-responses",
  "thinking": {
   "wire_format": "effort_string",
   "effort_map": {
@@ -17,5 +11,9 @@
    "max": "xhigh"
   },
   "default_effort": "xhigh"
+ },
+ "cache": {
+  "mode": "auto",
+  "cache_key_param": "prompt_cache_key"
  }
 }

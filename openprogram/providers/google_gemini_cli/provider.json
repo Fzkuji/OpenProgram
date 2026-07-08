@@ -1,11 +1,5 @@
 {
- "id": "google",
- "endpoints": {
-  "default": {
-   "api": "google-generative-ai",
-   "base_url": "https://generativelanguage.googleapis.com/v1beta"
-  }
- },
+ "id": "google-gemini-cli",
  "thinking": {
   "wire_format": "budget_tokens",
   "budget_map": {

@@ -13,5 +13,9 @@
    "api": "anthropic-messages",
    "base_url": "https://api.individual.githubcopilot.com"
   }
+ },
+ "thinking": {
+  "wire_format": "none",
+  "default_effort": null
  }
 }

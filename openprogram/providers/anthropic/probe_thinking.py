@@ -2,13 +2,16 @@
 
 Run directly: python -m openprogram.providers.anthropic.probe_thinking
 Or import: from openprogram.providers.anthropic.probe_thinking import probe
+
+Read-only: returns the probed capabilities. Programs never write the
+git-tracked spec — the thinking config lives under provider.json's
+``thinking`` key, edited by hand. The browse/refresh path consumes the
+returned dict in memory (fetchers/__init__.py::_load_probe).
 """
 from __future__ import annotations
-import json
-from pathlib import Path
 
 
-def probe(update: bool = False) -> dict[str, dict]:
+def probe() -> dict[str, dict]:
     import httpx
     from openprogram.auth.resolver import resolve_api_key_sync
 
@@ -53,38 +56,10 @@ def probe(update: bool = False) -> dict[str, dict]:
         except Exception:
             pass
 
-    if update and results:
-        _update_thinking_json(results)
     return results
 
 
-def _update_thinking_json(results: dict[str, dict]):
-    path = Path(__file__).parent / "thinking.json"
-    with path.open() as f:
-        spec = json.load(f)
-    provider_levels = set(spec.get("effort_map", {}).keys())
-    overrides = spec.setdefault("model_overrides", {})
-    changed = False
-    for mid, info in results.items():
-        levels = info.get("effort_levels", [])
-        if not levels:
-            continue
-        if set(levels) != provider_levels:
-            entry = {"effort_map": {lv: lv for lv in levels}}
-            if not info.get("adaptive"):
-                entry["variant"] = "budget"
-            if mid not in overrides or overrides[mid] != entry:
-                overrides[mid] = entry
-                changed = True
-    if changed:
-        with path.open("w") as f:
-            json.dump(spec, f, indent=2, ensure_ascii=False)
-            f.write("\n")
-
-
 if __name__ == "__main__":
-    import sys
-    do_update = "--update" in sys.argv
-    r = probe(update=do_update)
+    r = probe()
     for mid, info in sorted(r.items()):
         print(f"  {mid}: {info.get('effort_levels')} adaptive={info.get('adaptive')}")

@@ -11,11 +11,39 @@ files once and exposes helpers the rest of the codebase uses:
 from __future__ import annotations
 
 import json
+import warnings
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
 _PROVIDERS_DIR = Path(__file__).parent
+
+
+def _load_folded(dir_name: str, key: str, legacy_file: str) -> Optional[dict[str, Any]]:
+    """Read provider.json's ``key`` block; fall back to the standalone
+    ``legacy_file`` (with a DeprecationWarning) for un-migrated / out-of-tree
+    provider dirs. Returns None when neither source has data."""
+    prov = _PROVIDERS_DIR / dir_name / "provider.json"
+    if prov.is_file():
+        try:
+            block = json.loads(prov.read_text(encoding="utf-8")).get(key)
+            if block is not None:
+                return block
+        except (OSError, json.JSONDecodeError):
+            pass
+    legacy = _PROVIDERS_DIR / dir_name / legacy_file
+    if legacy.is_file():
+        warnings.warn(
+            f"{dir_name}/{legacy_file} is deprecated; move it under the "
+            f"'{key}' key of provider.json.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        try:
+            return json.loads(legacy.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+    return None
 
 # Fallback for providers without thinking.json — most OpenAI-compatible
 # providers accept reasoning_effort as a pass-through string.
@@ -53,13 +81,9 @@ def get_thinking_spec(provider_id: str) -> dict[str, Any]:
         return _OPENAI_COMPAT_FALLBACK
     resolved = _THINKING_ALIASES.get(provider_id, provider_id)
     for dir_name in (resolved, resolved.replace("-", "_")):
-        path = _PROVIDERS_DIR / dir_name / "thinking.json"
-        if path.is_file():
-            try:
-                with path.open(encoding="utf-8") as f:
-                    return json.load(f)
-            except (OSError, json.JSONDecodeError):
-                return _OPENAI_COMPAT_FALLBACK
+        spec = _load_folded(dir_name, "thinking", "thinking.json")
+        if spec is not None:
+            return spec
     return _OPENAI_COMPAT_FALLBACK
 
 
