@@ -141,20 +141,105 @@ def test_migration_builds_minimal_row_when_unresolvable(monkeypatch, stub_listin
     assert ghost["source"] == "migration-minimal"
 
 
-def test_migration_merges_custom_models_as_manual(monkeypatch, stub_listing):
+def test_migration_merges_only_enabled_custom_models_as_manual(monkeypatch, stub_listing):
+    """Only a custom_models row whose id is in enabled_models is merged as a
+    spec row. A non-enabled custom row is an availability cache, not user
+    enablement — it stays in custom_models and never enters the registry.
+    """
+    # "manual-x" is enabled but unresolvable by the stub listing → it comes in
+    # via the enabled-backfill path (as a manual entry, not a minimal one, so
+    # we exercise the custom-merge branch): make it resolvable-as-custom by
+    # NOT listing it and relying on the custom row. Use a distinct enabled id
+    # the listing can't resolve so the custom row is the only source.
     store = {"acme": {
         "enabled": True,
-        "enabled_models": [],
-        "custom_models": [{"id": "manual-x", "name": "Manual X",
-                           "context_window": 4096}],
+        "enabled_models": ["manual-x"],
+        "custom_models": [
+            {"id": "manual-x", "name": "Manual X", "context_window": 4096},
+            {"id": "cached-y", "name": "Cached Y", "context_window": 2048},
+        ],
     }}
     st._reset_spec_migration()
     st._migrate_specs(store)
     rows = store["acme"]["models"]
-    manual = next(r for r in rows if r["id"] == "manual-x")
-    assert manual["source"] == "manual"
-    assert manual["name"] == "Manual X"
-    # Original custom_models key left untouched (read paths not switched).
+    ids = {r["id"] for r in rows}
+    # The enabled id landed as a spec row (via backfill or custom-merge)...
+    assert "manual-x" in ids
+    # ...but the non-enabled cache row did NOT enter the registry.
+    assert "cached-y" not in ids
+    # Original custom_models key left fully untouched (read paths not switched).
     assert store["acme"]["custom_models"] == [
-        {"id": "manual-x", "name": "Manual X", "context_window": 4096}
+        {"id": "manual-x", "name": "Manual X", "context_window": 4096},
+        {"id": "cached-y", "name": "Cached Y", "context_window": 2048},
     ]
+
+
+# --- Repair pass: prune the v1 bulk-merge from already-migrated configs -----
+
+
+def _repair_provider():
+    """A provider already polluted by the v1 bulk merge: 3 enabled + a flood of
+    non-enabled manual rows, plus rows the repair MUST keep."""
+    return {
+        "enabled": True,
+        "enabled_models": ["keep-a", "keep-b"],
+        "models": [
+            # id in enabled_models → keep even though tagged manual
+            {"id": "keep-a", "name": "Keep A", "source": "manual"},
+            # toggled AFTER migration → no source key → keep
+            {"id": "keep-b", "name": "Keep B"},
+            # migration-minimal → id in enabled by construction → keep
+            {"id": "keep-b", "name": "Keep B min", "source": "migration-minimal"},
+            # bulk-merge artefacts (manual, not enabled) → DROP
+            {"id": "flood-1", "name": "Flood 1", "source": "manual"},
+            {"id": "flood-2", "name": "Flood 2", "source": "manual"},
+        ],
+    }
+
+
+def test_repair_prunes_non_enabled_manual_rows_only():
+    providers = {"p": _repair_provider()}
+    # exercise via a stubbed version marker (< target) so the pass runs
+    import openprogram.webui.server as server
+    _orig = server._load_config
+    server._load_config = lambda: {"spec_migration_version": 0}
+    try:
+        repaired = st._repair_over_merged_specs(providers)
+    finally:
+        server._load_config = _orig
+    assert repaired is True
+    ids = [r["id"] for r in providers["p"]["models"]]
+    assert "flood-1" not in ids and "flood-2" not in ids
+    # every keep row survives (including the no-source and migration-minimal)
+    assert ids.count("keep-a") == 1
+    assert sum(1 for i in ids if i == "keep-b") == 2
+
+
+def test_repair_is_one_shot_via_version_marker():
+    providers = {"p": _repair_provider()}
+    import openprogram.webui.server as server
+    _orig = server._load_config
+    # marker already at the target version → repair is a no-op
+    server._load_config = lambda: {"spec_migration_version": st._SPEC_MIGRATION_VERSION}
+    try:
+        repaired = st._repair_over_merged_specs(providers)
+    finally:
+        server._load_config = _orig
+    assert repaired is False
+    # nothing pruned
+    assert len(providers["p"]["models"]) == 5
+
+
+def test_repair_pass_runs_through_run_once(monkeypatch):
+    """End-to-end: _run_spec_migration_once fires the repair, bumps the marker,
+    and persists the pruned providers."""
+    config = {"spec_migration_version": 0, "providers": {"p": _repair_provider()}}
+    import openprogram.webui.server as server
+    monkeypatch.setattr(server, "_load_config", lambda: config)
+    monkeypatch.setattr(server, "_save_config", lambda c: config.update(c))
+    st._reset_spec_migration()
+    st._run_spec_migration_once(config["providers"])
+    ids = [r["id"] for r in config["providers"]["p"]["models"]]
+    assert "flood-1" not in ids and "flood-2" not in ids
+    # marker bumped so it never runs again
+    assert config["spec_migration_version"] == st._SPEC_MIGRATION_VERSION

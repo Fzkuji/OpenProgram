@@ -57,3 +57,21 @@ def test_disabled_community_provider_not_surfaced(monkeypatch, stub_labels):
     })
     out = listing.list_enabled_models()
     assert all(m["provider"] != "foo-coding-plan" for m in out)
+
+
+def test_disabled_provider_rows_in_registry_absent_from_picker(monkeypatch, stub_labels):
+    """Regression: ENABLED_MODELS loads EVERY provider's spec rows, including a
+    disabled provider's (openai/anthropic in the real config). The picker gate
+    must keep those out — only enabled providers' models reach the composer."""
+    monkeypatch.setattr(mg, "ENABLED_MODELS", {
+        "openai/gpt-x": _model("gpt-x", "openai", api="openai-completions"),
+        "deepseek/deepseek-chat": _model("deepseek-chat", "deepseek"),
+    })
+    monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
+        "openai": {"enabled": False, "models": [{"id": "gpt-x"}]},
+        "deepseek": {"enabled": True, "models": [{"id": "deepseek-chat"}]},
+    })
+    out = listing.list_enabled_models()
+    provs = {m["provider"] for m in out}
+    assert "openai" not in provs          # disabled → hidden
+    assert "deepseek" in provs            # enabled → shown
