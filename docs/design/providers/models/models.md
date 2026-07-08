@@ -1,257 +1,215 @@
-# 模型目录与 Provider 配置
+# 模型目录与 Provider 配置（最终设计）
 
-> Thinking effort 的控制逻辑见 [thinking-effort.md](thinking-effort.md)。本文讲模型目录的数据布局、配置结构、Fetch 流程和数据合并。
+> 本文描述模型目录的**目标运行逻辑**：文件结构、文件与代码的交互、后端与前端各自怎么消费。
+> 与当前代码的差距和迁移路径集中在第 8 节——第 1–7 节永远只写目标态，不写历史。
+> Thinking effort 的参数细节见 [thinking-effort.md](thinking-effort.md)。
 
-## 1. 核心原则
+## 1. 一句话架构
 
-**每个 provider 自包含。** 所有配置（thinking 映射、探测脚本、Fetch 数据）都在 `providers/<provider>/` 下。加一个新 provider = 加一个文件夹；什么都不加也行，走 OpenAI 兼容 fallback。
+每个 provider 一个自包含目录，目录里几份小文件；启动时经**唯一一条合并管线**汇成运行时注册表 `MODEL_REGISTRY`；后端 `get_model()` 和前端所有页面（设置页、聊天选择器、thinking 选择器）读的都是这同一份合并结果。
 
-两类数据分开存：
+**核心不变式：前端能选到的模型，后端一定能解析** ——因为两边根本没有第二份数据。
 
-| | thinking.json | models.json |
-|---|---|---|
-| 内容 | API 参数格式、effort 映射、per-model override | Fetch 拉到的模型列表（id、context、reasoning 等） |
-| 变化频率 | 几个月一次（API 格式改了才变） | 每次 Fetch 覆写 |
-| 版本控制 | 进 git | .gitignore |
-
-## 2. 文件布局
+## 2. 文件结构
 
 ```
 openprogram/providers/
-├── anthropic/
-│   ├── anthropic.py             ← stream 实现
-│   ├── thinking.json            ← 进 git：thinking effort 映射
-│   ├── probe_thinking.py        ← Fetch 时自动运行的探测脚本
-│   └── models.json              ← .gitignore：Fetch 生成的模型列表
-├── deepseek/
-│   ├── thinking.json
-│   ├── probe_thinking.py
-│   └── models.json
-├── google/
-│   ├── google.py
-│   ├── thinking.json
-│   ├── probe_thinking.py
-│   └── models.json
-├── openai_codex/
-│   ├── openai_codex.py
-│   ├── thinking.json
-│   ├── probe_thinking.py
-│   └── models.json
-├── github_copilot/
-│   ├── thinking.json            ← wire_format: "none"（不支持 thinking）
-│   └── ...
-├── thinking_spec.py             ← 公共：加载 thinking.json + 翻译 + 推导
-├── thinking_catalog.py          ← 公共：启动时填 Model 对象的 thinking 字段
-└── _shared/                     ← 公共工具函数
+├── deepseek/                      ← 每个 provider 一个目录（下划线命名）
+│   ├── provider.json              ← git：id + endpoint 分组（api/base_url）
+│   ├── models.json                ← git：内置模型基线（只存外部拿不到的字段）
+│   ├── models.cache.json          ← gitignore：Fetch 拉到的官方模型列表
+│   ├── thinking.json              ← git：thinking effort 映射
+│   ├── probe_thinking.py          ← Fetch 时自动运行的探测脚本（可选）
+│   └── deepseek.py                ← wire/stream 实现（仅专属协议的 provider 有）
+├── catalog/                       ← 合并管线（唯一数据出口）
+│   ├── loader.py                  ← 读 provider.json + models.json + models.cache.json
+│   ├── models_dev.py              ← models.dev 数据源（内存缓存，TTL 24h）
+│   └── merge.py                   ← 分层叠加，产出 Model 对象
+├── thinking_spec.py               ← 读 thinking.json + effort 翻译
+├── thinking_catalog.py            ← derive_thinking_fields（thinking 字段推导）
+├── models_generated.py            ← MODEL_REGISTRY 定义（调 catalog 管线填充）
+└── models.py                      ← get_model / get_providers / get_models
 ```
 
-`.gitignore` 里有一行 `openprogram/providers/*/models.json`，所有 provider 的 models.json 都不进 git。
+每份文件的角色，一张表说清：
 
-### 2.1 没有文件夹的 provider
+| 文件 | 进 git | 谁写 | 谁读 | 变化频率 |
+|---|---|---|---|---|
+| `provider.json` | ✅ | 人（加 provider 时一次） | 合并管线 | 几乎不变 |
+| `models.json` | ✅ | 人（只写外部拿不到的字段） | 合并管线 | 很少 |
+| `models.cache.json` | ❌ | Fetch（每次点击覆写） | 合并管线 | 每次 Fetch |
+| `thinking.json` | ✅ | 人 + probe 自动回写 overrides | thinking_spec | API 格式变了才变 |
+| models.dev（远端） | — | 第三方维护 | 合并管线（懒加载） | 上游持续更新 |
+| `config.json` providers 节 | — | 用户在设置页操作 | 前端 listing + 运行时 | 用户随时改 |
 
-社区 provider（groq、mistral 等）可以没有文件夹。此时：
-- **thinking.json**：`thinking_spec.get_thinking_spec()` 返回 OpenAI 兼容 fallback（`effort_string` + `low/medium/high`）
-- **probe_thinking.py**：Fetch 时 `_load_probe()` catch ImportError，静默跳过
-- **models.json**：Fetch 时 `_provider_dir()` 自动创建文件夹并写入
+**分工原则：每个字段只有一个权威来源。**
 
-### 2.2 Provider alias
+- `api` / `base_url` → `provider.json` 的 endpoints（成对绑定，见 2.1）
+- 「有哪些模型」→ Fetch 过用 `models.cache.json`，没 Fetch 过用 `models.json` 基线，再兜底 models.dev
+- 价格、context、能力 → models.dev（官方 Fetch 数据优先）
+- thinking 档位 → `thinking.json` 推导（`thinking_catalog.derive_thinking_fields`）
+- 「用户启用了哪些」→ `config.json`（`enabled` / `enabled_models`），是用户状态，永远不混进目录数据
 
-`claude-code` 和 `anthropic` 用同一套 API 和模型。`thinking_spec._THINKING_ALIASES = {"claude-code": "anthropic"}` 让 claude-code 共用 anthropic 的 thinking.json，不复制文件。
+`models.json` 因此很瘦：`id`、`name`、`endpoint`（非 default 时）、`key_prefix`（双 key 场景）、`headers`、`compat`，以及 models.dev 没收录时才内联的规格字段。**凡是 models.dev 或官方 API 能给的字段，一律不手写**——手写数据没有更新机制，必然腐烂。
 
-## 3. thinking.json 结构
+### 2.1 provider.json：endpoint 分组
 
-声明该 provider 的 API 怎么接收 thinking/effort 参数。
-
-### 3.1 字段定义
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `wire_format` | `"effort_string"` / `"budget_tokens"` / `"none"` | API 接受字符串、token 数、还是不支持 thinking |
-| `effort_map` | `{框架级别: API字符串}` | `wire_format="effort_string"` 时的映射表 |
-| `budget_map` | `{框架级别: token数}` | `wire_format="budget_tokens"` 时的映射表 |
-| `default_effort` | `string` / `null` | 用户不选时的默认级别 |
-| `model_overrides` | `{model_id: {...}}` | 特定模型的覆盖配置 |
-| `model_overrides.<id>.effort_map` | `{}` 空 dict | 表示该模型不支持 effort 调节 |
-
-### 3.2 示例
-
-**Anthropic**——effort 字符串，model_overrides 由 API capabilities 自动写入：
+一个 provider 内部可以有多个 wire（实测：opencode 30 个模型分属 4 个 `(api, base_url)` 组合，github-copilot 19 个模型分属 3 个 api）。但组合数很少且成对绑定，所以集中声明成 endpoint 组，模型按名引用：
 
 ```json
 {
-  "wire_format": "effort_string",
-  "effort_map": {
-    "minimal": "low", "low": "low", "medium": "medium",
-    "high": "high", "xhigh": "xhigh", "max": "max"
-  },
-  "default_effort": "high",
-  "model_overrides": {
-    "claude-opus-4-8": {
-      "effort_map": {"low":"low","medium":"medium","high":"high","xhigh":"xhigh","max":"max"}
-    },
-    "claude-opus-4-5-20251101": {
-      "effort_map": {"low":"low","medium":"medium","high":"high"}
-    }
+  "id": "opencode",
+  "endpoints": {
+    "default":   {"api": "openai-completions",   "base_url": "https://opencode.ai/zen/v1"},
+    "anthropic": {"api": "anthropic-messages",   "base_url": "https://opencode.ai/zen"},
+    "google":    {"api": "google-generative-ai", "base_url": "https://opencode.ai/zen/v1"},
+    "responses": {"api": "openai-responses",     "base_url": "https://opencode.ai/zen/v1"}
   }
 }
 ```
 
-Opus 4.8 的 override 只有 5 个 key（没有 minimal），所以 UI 显示 5 档。Opus 4.5 只有 3 个 key，UI 显示 3 档。Provider 级别的 `effort_map` 有 6 个 key，作为没有 override 的模型的 fallback。
+- 单 wire provider（deepseek、openai…）只有一个 `default`，退化成最简形式。
+- `models.json` 里模型写 `"endpoint": "anthropic"` 引用组名，缺省走 `default`。
+- 目录名用下划线（`amazon_bedrock/`），`id` 字段存连字符原名（`amazon-bedrock`）——注册表 key 用连字符。
+- 「同服务多协议」天然覆盖：百炼的 OpenAI 兼容端点与 Anthropic 兼容端点就是同一 provider 下两个 endpoint，不拆成两个 provider。
 
-**DeepSeek**——V4 五档，R1 无 effort 控制：
+### 2.2 没有目录的 provider
 
-```json
-{
-  "wire_format": "effort_string",
-  "effort_map": {
-    "minimal": "minimal", "low": "low", "medium": "medium",
-    "high": "high", "max": "max"
-  },
-  "default_effort": "medium",
-  "model_overrides": {
-    "deepseek-reasoner": {"effort_map": {}},
-    "deepseek-chat": {"effort_map": {}}
-  }
-}
-```
+社区 provider（fireworks、together 等）可以完全没有目录：
 
-`deepseek-reasoner` 的 `effort_map` 是空 dict `{}`——表示这个模型有 reasoning 能力但不支持 effort 调节（R1 永远全力推理）。`deepseek-chat` 的空 dict 表示 V3 不支持 reasoning。
+- 模型列表 → models.dev 兜底；用户填 key 点 Fetch 后 `_provider_dir()` 自动建目录写 `models.cache.json`
+- `api`/`base_url` → models.dev 的 provider 条目提供缺省
+- thinking → OpenAI 兼容 fallback（low/medium/high）
+- probe → 静默跳过
 
-**Google Gemini**——用 token 数而非字符串：
+加一个内置 provider = 建目录 + 写 `provider.json`（几行）+ 可选 `thinking.json`。不需要手抄模型清单。
 
-```json
-{
-  "wire_format": "budget_tokens",
-  "budget_map": {
-    "minimal": 512, "low": 2048, "medium": 8192,
-    "high": 24576, "xhigh": 32768, "max": 65536
-  },
-  "default_effort": "medium"
-}
-```
+## 3. 合并管线（唯一数据出口）
 
-**GitHub Copilot**——不支持 thinking：
-
-```json
-{
-  "wire_format": "none",
-  "default_effort": null
-}
-```
-
-### 3.3 thinking_levels 的推导规则
-
-UI 显示几档不是手动维护的，而是从映射表的 key 自动推导：
-
-1. `reasoning=false` → 空列表，UI 不显示滑块
-2. 有 `model_overrides` 且 `effort_map` 不是 null → 用 override 的 key（空 `{}` → 空列表 → UI 不显示）
-3. 无 override → 用 provider 级别的 `effort_map`/`budget_map` 的 key
-4. 无 thinking.json → fallback 的 key（low/medium/high）
-
-## 4. models.json 结构
-
-Fetch Models 生成，存在 provider 文件夹里，不进 git：
-
-```json
-{
-  "provider": "deepseek",
-  "models": [
-    {
-      "id": "deepseek-v4-flash",
-      "name": "deepseek-v4-flash",
-      "reasoning": true,
-      "thinking_levels": ["minimal", "low", "medium", "high", "max"],
-      "default_thinking_level": "medium",
-      "context_window": 1000000,
-      "max_tokens": 384000,
-      "input_cost": 0.14,
-      "output_cost": 0.28
-    }
-  ]
-}
-```
-
-Anthropic 的 models.json 还包含 `supports_adaptive` 字段（从 capabilities API 获取）。
-
-## 5. Fetch 流程
-
-用户在 Settings 里点"Fetch Models"触发：
+`catalog.merge` 对每个 provider 做分层叠加，从下往上、高层的非空字段覆盖低层：
 
 ```
-1. fetchers/__init__.py: fetch_models_remote(provider_id)
-       │
-       ▼
-2. 选 fetcher（_FETCHERS 表 或 通用 _fetch_openai_compat）
-       │
-       ▼
-3. 调 provider 的 API（如 /v1/models）拿模型列表
-       │
-       ├── Anthropic: 对每个模型额外调 GET /v1/models/{id}
-       │   → _extract_thinking_caps() 提取 effort/adaptive capabilities
-       │
-       ├── 其他: _load_probe(provider_id) 调 probe_thinking.probe()
-       │   → 从 model id 推断 reasoning 能力
-       │
-       ▼
-4. enrichment: 合并 models.dev 数据（pricing、reasoning 标记）
-       │
-       ▼
-5. 写入 providers/<provider_dir>/models.json
-       │
-       ▼
-6. 前端重新请求 /api/agent_settings → UI 刷新
+第 4 层  thinking.json 推导        → thinking_levels / default / variant
+第 3 层  models.cache.json（Fetch） → 官方权威：有哪些模型、context、能力
+第 2 层  models.json（git 基线）    → 手写覆盖：name、headers、compat…
+第 1 层  models.dev（懒加载）       → 兜底：模型列表、价格、能力
+底座    provider.json endpoints    → api / base_url（每模型按 endpoint 名取）
 ```
 
-## 6. 数据合并：三层叠加
+规则：
 
-`listing.py` 的 `list_models_for_provider()` 是模型数据的唯一出口。它把三层数据合并成最终结果：
+1. **「有哪些模型」以最高的存在层为准。** Fetch 过 → cache 的列表是权威（基线里不在 cache 的行对 UI 隐藏，但仍保留在注册表里，旧会话引用不断链）；没 Fetch 过 → 基线 ∪ models.dev。
+2. **字段级合并**：cache（官方）> models.json（手写）> models.dev（兜底）。手写即 override，官方即事实。
+3. **thinking 字段永远推导，不存储**：`thinking.json` model_overrides > Fetch capabilities > provider 级映射 > fallback（优先级细节见 thinking-effort.md）。
+4. **离线可用**：models.dev 拉不到就跳过该层，价格等字段缺省；`provider.json` + `models.json` + cache 全在本地，运行不依赖网络。
+5. 输出 `Model` 对象，key = `"<prefix>/<id>"`，prefix 默认取 `provider.json` 的 `id`，逐行可用 `key_prefix` 覆盖（gemini-subscription 双 key 场景）。
 
-```
-第 1 层: combined_models(provider_id)
-         = models.json (Fetch 数据) + models.dev (pricing/caps)
-         → 得到每个模型的基础信息 (id, reasoning, context_window, ...)
+管线跑完的结果就是：
 
-第 2 层: thinking_spec.derive_thinking_fields()
-         = 读 thinking.json → model_overrides → provider 级别映射 → fallback
-         → 得到 thinking_levels / default / variant
-
-第 3 层: Fetch 数据里的 thinking_levels（当第 2 层无结果时用）
-         → models.dev 或 API capabilities 提供的 thinking_levels
+```python
+# openprogram/providers/models_generated.py
+MODEL_REGISTRY: dict[str, Model]   # 唯一的运行时模型注册表
 ```
 
-合并后的结果被三个消费方使用：
+命名说明：不叫 `ENABLED_MODELS`——注册表装的是**全部已知模型**，「启用」是 `config.json` 里的用户状态，两个概念不能共用一个名字。`MODELS` 旧名太泛，弃用。
 
-| 消费方 | 用途 |
-|---|---|
-| `list_models_for_provider()` | Settings 页面的模型表格 |
-| `list_enabled_models()` | Chat 页面的模型选择器（委托给上面） |
-| `get_thinking_config_for_model()` | UI thinking picker 的选项列表（委托给上面） |
+## 4. 后端怎么用
 
-三个消费方走同一条路径，保证前端显示和后端数据完全一致。
+### 4.1 查询接口（`providers/models.py`）
 
-## 7. models.dev 的角色
+```python
+get_model("deepseek", "deepseek-v4-flash")  # → Model | None，带 alias 回退
+get_providers()                              # → 有模型的 provider id 列表
+get_models("deepseek")                       # → 该 provider 的全部 Model
+```
 
-`models.dev` 是跨 provider 的通用数据源，提供：
-- 没 Fetch 过的 provider 的模型列表（兜底）
-- pricing（官方 API 通常不返回价格）
-- reasoning 标记、能力细节
+`get_model` 先查 `"<provider>/<id>"`，miss 时经 `auth.aliases` 试等价 provider 名。20+ 个运行时调用方（agent、runtime、failover、registry…）只认这三个函数，不关心数据从哪来。
 
-缓存在内存，TTL 24h，启动时惰性刷新。不存在 provider 文件夹里（它是跨 provider 的，不属于任何一个）。
+### 4.2 Fetch 写路径
 
-## 8. 加新 provider 的步骤
+用户在设置页点「Fetch Models」：
 
-### 8.1 有专属 API 的 provider（如 DeepSeek）
+```
+fetchers.fetch_models_remote(provider_id)
+  → 调官方 API（/v1/models 等；Anthropic 额外逐模型拉 capabilities）
+  → probe_thinking.probe() 推断 reasoning / 回写 thinking.json overrides
+  → save_fetched() 原子覆写 providers/<p>/models.cache.json
+  → 注册表失效重载（合并管线重跑该 provider）
+  → 前端重新请求 → UI 刷新
+```
 
-1. 创建 `providers/<name>/` 目录
-2. 写 `thinking.json`（声明 wire_format、effort_map、必要的 model_overrides）
-3. 写 `probe_thinking.py`（暴露 `probe()` 函数，从 API 或 model id 推断 reasoning）
-4. 在 `fetchers/` 里加一个专属 fetcher（或走通用 `_fetch_openai_compat`）
-5. 用户点 Fetch → models.json 自动生成 → UI 自动显示
+Fetch 只写 cache 文件，永远不碰 git 内的 `models.json`——内置基线是仓库维护的，用户操作不产生 git 脏状态。但 Fetch 的结果**立即进注册表**：设置页看到的新模型，`get_model` 同一时刻就能解析。
 
-### 8.2 社区 provider（如 groq、mistral）
+### 4.3 自定义模型
 
-什么都不用做。用户在 Settings 里填 API key + 点 Fetch：
-- Fetch 走通用 `_fetch_openai_compat`
-- thinking.json 缺失 → 自动用 fallback（low/medium/high）
-- probe_thinking.py 缺失 → 静默跳过
-- models.json 写入时自动创建文件夹
+用户手工添加的模型存 `config.json` 的 `custom_models`，经 `_register_custom_model_in_registry` 构造 `Model` 原地写入 `MODEL_REGISTRY`（注册表是同一个可变 dict，这条路径依赖此语义）。api/base_url 缺省从 `provider.json` endpoints 取，不再反向查注册表。
+
+## 5. 前端怎么用
+
+前端没有自己的模型数据，全部经三个 listing 函数读**同一份注册表**（`webui/_model_catalog/listing.py`，纯展示层：加 label、enabled 标记、setup hint）：
+
+| 前端位置 | API 路由 | listing 函数 | 内容 |
+|---|---|---|---|
+| 设置页左侧 provider 列表 | `GET /api/providers` | `list_providers()` | 注册表 provider ∪ models.dev 社区 provider（可配置未内置的） |
+| 设置页右侧模型表 | `GET /api/providers/<id>` | `list_models_for_provider()` | 该 provider 合并结果 + enabled 标记 |
+| 聊天页模型选择器 | `GET /api/models/enabled` | `list_enabled_models()` | 委托上一行，按 config 的 enabled 过滤 |
+| thinking 档位选择器 | （`_thinking.py`） | 委托 `list_models_for_provider` | 同一行数据里的 thinking_levels |
+
+- **enabled 状态**只存 `config.json`（`providers.<id>.enabled` / `enabled_models`），listing 读出来打标记；勾选/取消只改 config，不动目录数据。
+- `list_providers` 的社区层（models.dev 全量 provider）让用户不等代码发版就能启用 fireworks/together 这类 provider——填 key、点 Fetch，走 2.2 的自动建目录路径。
+- listing 是薄壳：**不做字段合并、不做 thinking 推导**，那些全在 `providers/catalog` 管线里做完了。webui 只 import providers，providers 永远不 import webui。
+
+## 6. 端到端时序（一次典型交互）
+
+```
+用户在设置页启用 deepseek、点 Fetch
+  → models.cache.json 写入（官方新型号 deepseek-v4-flash 进来）
+  → 注册表重载：MODEL_REGISTRY["deepseek/deepseek-v4-flash"] 出现
+用户在模型表勾选 deepseek-v4-flash
+  → config.json enabled_models 追加
+用户在聊天页选中它发消息
+  → 后端 get_model("deepseek", "deepseek-v4-flash") 命中同一条注册表记录
+  → api/base_url 来自 provider.json endpoints，thinking 档位来自 thinking.json 推导
+  → 请求发出
+```
+
+任何一步都不存在「另一份清单」，所以不存在对不上。
+
+## 7. 不变式（改代码前先对照）
+
+1. **单一出口**：显示给用户的模型数据和运行时解析的模型数据出自同一个合并函数。出现第二条数据链即违约。
+2. **手写最小化**：`models.json` 只存 models.dev / 官方 API 给不了的字段。往里加可自动获得的字段即违约。
+3. **分层单向**：`openprogram.providers` 不 import `openprogram.webui`。
+4. **离线可跑**：断网时基线 + cache 足够运行，只缺价格等装饰字段。
+5. **key 兼容**：`"<prefix>/<id>"` 格式、alias 回退、`key_prefix` 双 key（gemini-subscription 的 10 个 key）全部保留；注册表是同一个可变 dict（自定义模型原地写）。
+6. **Fetch 不碰 git**：Fetch 只写 `models.cache.json`；`models.json` 只由人（或仓库迁移脚本）改。
+
+## 8. 现状偏离与迁移
+
+> 本节记录当前代码（2026-07-08）与上文目标的差距。问题现象的完整描述见
+> [../PROBLEM-models-and-bailian.md](../PROBLEM-models-and-bailian.md)。
+
+### 8.1 偏离
+
+1. **两条数据链。** 合并管线只在 webui 实现了一半：`webui/_model_catalog/provider_models.combined_models`（cache + models.dev）喂设置页；而运行时 `MODELS`（`models_generated._load` → `_catalog_new.load_new_catalog`）只读 git 的 `models.json`，从不看 cache 和 models.dev。结果：设置页能选 `deepseek-v4-flash`，`get_model` 查不到。
+2. **models.json 是全量富规格**，含 `thinking_levels`、`cost`、`context_window` 等派生/可获取字段（22 个 provider、752 条），没有更新机制，已经腐烂（deepseek 只剩旧型号）。
+3. **层次倒置**：models.dev 数据源和合并逻辑长在 `webui/_model_catalog/`，providers 层的 `_default_api_for`/`_resolve_base_url` 反过来读 `MODELS` 补 api/base_url，构成 providers→webui→providers 循环。
+4. **`MODELS` 名字太泛**（用户已要求改名）。
+5. **bailian 命名不标准**：models.dev 里同一 base_url 的 provider 叫 `alibaba-token-plan-cn`，项目里已有预留空目录 `alibaba_token_plan_cn/`；用户已明确要求改用标准名、删 `bailian/`。
+
+### 8.2 迁移顺序（每步可独立提交、系统不瘫）
+
+1. **bailian → alibaba_token_plan_cn**：目录改名 + `provider.json` 的 id 改 `alibaba-token-plan-cn`，模型内容照搬；管线打通后自动对齐 models.dev 的 18 个模型。独立小改，先做。
+2. **下沉数据层**：把 `provider_models.py`（cache 读写 + combined 合并）和 `sources/models_dev.py` 从 `webui/_model_catalog/` 移到 `openprogram/providers/catalog/`；`_default_api_for`/`_resolve_base_url` 改读 `provider.json` endpoints。循环依赖至此解除。
+3. **注册表接管线**：`_load()` 改为跑完整合并（第 3 节的五层），cache 和 models.dev 进注册表。此时两条链事实合一。
+4. **listing 改薄**：`list_models_for_provider` 删掉自己那套 combined + thinking 合并，直接读注册表加展示字段。
+5. **models.json 瘦身**：脚本删除全部可派生/可获取字段，逐 provider 校验合并结果与瘦身前等价（字段级 diff）。
+6. **改名 `MODELS` → `MODEL_REGISTRY`**：纯机械替换 20+ 调用点，放最后一步。
+
+### 8.3 迁移必须保住的点（历史审查所得）
+
+- **alias / 双 key**：`gemini-subscription` 的 `google-gemini-cli/*` + `gemini-subscription/*` 共 10 个 key、name 各异，靠逐行 `key_prefix`，按 `(provider,id)` 去重会丢 5 个。
+- **claude-code 借用链**：thinking 走 alias→anthropic，models.dev 数据借 anthropic（`_SUBSCRIPTION_BORROW`），fetcher 特殊——不是普通目录，借用关系要跟着搬。
+- **逐字段保真**：`cost` 是嵌套对象、`input` 多模态、`headers`（copilot 依赖）、`compat`——瘦身脚本删字段前先确认该字段确实能从 overlay 层拿回来。
+- **验证粒度**：多 wire provider 按每个 `(api, base_url, headers, compat)` 组合各 exec 一个模型，不是每 provider 一个。
+- 核心回归测试保持绿：`tests/unit/test_provider_wire_invariants.py`、`tests/unit/test_model_fetch_routing.py`。
