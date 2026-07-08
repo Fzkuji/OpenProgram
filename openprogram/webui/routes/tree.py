@@ -458,41 +458,48 @@ def register(app):
             except Exception:
                 bd["memory_detail"] = []
 
-            # MCP tools：像 System tools 一样，把每个 MCP 工具的 schema
-            # 当 context 占用统计（名字 + token + 归属 server），不是只列
-            # server 名。MCP client 是运行时状态（只在本 webui 进程连着），
-            # 从 list_clients() 拿每个 client 的 .tools（含 inputSchema）。
+            # MCP tools：像 System tools 一样统计每个 MCP 工具的 schema
+            # token，并按 _defer 分 loaded / deferred（MCP 也走同一套 defer
+            # 机制，见 mcp/adapter.py：非 always_load 的 MCP 工具默认 defer）。
+            # 从 all_tools() 筛带 _mcp_server 属性的注册工具（MCP 工具只在本
+            # webui 进程连着 server 时才注册）。loaded 计完整 schema token，
+            # deferred 只计 catalog 一行。
             try:
                 import json as _json
-                from openprogram.mcp.registry import list_clients as _lc
+                from openprogram.functions._runtime import all_tools as _all
                 mcp_items = []
-                mcp_total = 0
-                for client in (_lc() or []):
-                    server = getattr(
-                        getattr(client, "config", None), "name", "",
-                    ) or ""
-                    for tool in (getattr(client, "tools", None) or []):
-                        tname = getattr(tool, "name", "") or ""
-                        schema = getattr(tool, "inputSchema", None) or {}
-                        desc = getattr(tool, "description", "") or ""
+                mcp_loaded_total = 0
+                mcp_deferred_total = 0
+                for t in (_all() or []):
+                    server = getattr(t, "_mcp_server", None)
+                    if not server:
+                        continue  # 只要 MCP 工具
+                    is_def = bool(getattr(t, "_defer", False))
+                    name = getattr(t, "name", "") or ""
+                    desc = getattr(t, "description", "") or ""
+                    if is_def:
+                        # deferred：只占 catalog 一行 `name: desc`
+                        tk = _t(f"{name}: {desc.splitlines()[0] if desc else ''}")
+                        mcp_deferred_total += tk
+                    else:
+                        # loaded：完整 schema
+                        schema = getattr(t, "schema", None) or getattr(t, "spec", None) or {}
                         try:
-                            body = _json.dumps(
-                                {"name": tname, "description": desc,
-                                 "parameters": schema},
-                                default=str, ensure_ascii=False,
-                            )
+                            body = _json.dumps(schema, default=str, ensure_ascii=False)
                         except Exception:
-                            body = tname + desc
+                            body = name + desc
                         tk = _t(body) + 5
-                        mcp_total += tk
-                        mcp_items.append({
-                            "server": server,
-                            "name": f"{server}__{tname}" if server else tname,
-                            "tokens": tk,
-                        })
+                        mcp_loaded_total += tk
+                    mcp_items.append({
+                        "server": server,
+                        "name": name,
+                        "tokens": tk,
+                        "deferred": is_def,
+                    })
                 mcp_items.sort(key=lambda x: -x["tokens"])
                 bd["mcp_detail"] = mcp_items
-                bd["mcp_tools"] = mcp_total
+                bd["mcp_tools"] = mcp_loaded_total            # loaded 那档
+                bd["mcp_tools_deferred"] = mcp_deferred_total  # deferred 那档
             except Exception:
                 bd["mcp_detail"] = []
 

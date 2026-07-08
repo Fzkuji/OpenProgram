@@ -29,6 +29,7 @@ interface McpItem {
   server: string;
   name: string;
   tokens: number;
+  deferred: boolean;
 }
 
 interface Breakdown {
@@ -39,6 +40,7 @@ interface Breakdown {
   tools_schema?: number;
   tools_deferred_catalog?: number;
   mcp_tools?: number;
+  mcp_tools_deferred?: number;
   input_used?: number;
   free_space?: number;
   tools?: ToolItem[];
@@ -101,6 +103,11 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
         data.tools_deferred_catalog || 0,
       ],
       [text("MCP tools", "MCP 工具"), "mcp", data.mcp_tools || 0],
+      [
+        text("MCP tools (deferred)", "MCP 工具(延迟)"),
+        "deferred",
+        data.mcp_tools_deferred || 0,
+      ],
       [text("Memory files", "记忆文件"), "memory", data.memory || 0],
       [text("Skills", "技能"), "skills", data.skills || 0],
       [text("Messages", "对话消息"), "messages", data.messages || 0],
@@ -245,7 +252,12 @@ export function ContextBreakdownPanel({ sessionId, onClose }: Props) {
               {[...(data?.mcp_detail || [])]
                 .sort((a, b) => b.tokens - a.tokens)
                 .map((m) => (
-                  <Row key={m.name} name={m.name} tokens={m.tokens} />
+                  <Row
+                    key={m.name}
+                    name={m.deferred ? `${m.name} (deferred)` : m.name}
+                    tokens={m.tokens}
+                    dim={m.deferred}
+                  />
                 ))}
             </Section>
 
