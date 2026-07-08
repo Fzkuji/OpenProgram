@@ -119,6 +119,17 @@ def estimate_tools_breakdown(tools: list[Any]) -> list[dict]:
     for t in tools:
         name = getattr(t, "name", "") or ""
         deferred = bool(getattr(t, "_defer", False))
+        if deferred:
+            # deferred 工具当前只占系统提示里的 catalog 一行
+            # `name: description`（正文按需加载、不常驻），与
+            # breakdown._catalog_tokens / tools_deferred_catalog 同口径。
+            # 若按满载 schema 算，逐条明细会远大于总览 deferred 档、误导用户。
+            desc = getattr(t, "description", "") or ""
+            tokens = estimate_message_tokens(
+                {"role": "system", "content": f"{name}: {desc}"}
+            )
+            out.append({"name": name, "tokens": tokens, "deferred": True})
+            continue
         schema = getattr(t, "schema", None) or getattr(t, "spec", None)
         if schema is None:
             out.append({"name": name, "tokens": 20, "deferred": deferred})

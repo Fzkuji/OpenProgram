@@ -507,8 +507,25 @@ def register(app):
             except Exception:
                 bd["mcp_detail"] = []
 
+            # input_used 重算：compute_call_breakdown 只把 system_prompt +
+            # history + loaded tool schema 算进 input_used，没算这里事后补的
+            # deferred catalog / skills / memory / mcp。所以要把所有真实分类
+            # 重新加总，否则上半部「已用量」会比下半部分类总和偏小。
+            bd["input_used"] = (
+                bd.get("system_prompt", 0)
+                + bd.get("messages", 0)
+                + bd.get("tools_schema", 0)
+                + bd.get("tools_deferred_catalog", 0)
+                + bd.get("mcp_tools", 0)
+                + bd.get("mcp_tools_deferred", 0)
+                + bd.get("memory", 0)
+                + bd.get("skills", 0)
+            )
+            bd["input_used_pct"] = (
+                round(bd["input_used"] / ctx_window, 4) if ctx_window else 0
+            )
             # Free space
-            bd["free_space"] = max(0, ctx_window - bd.get("input_used", 0))
+            bd["free_space"] = max(0, ctx_window - bd["input_used"])
 
             return JSONResponse(content=bd)
         except Exception as e:
