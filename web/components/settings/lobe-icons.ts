@@ -16,6 +16,8 @@ export const LOBE_ICONS: Record<string, LobeMatch> = {
   "alibaba-cn": { slug: "alibaba", hasColor: true, hasMono: true },
   "alibaba-coding-plan": { slug: "alibaba", hasColor: true, hasMono: true },
   "alibaba-coding-plan-cn": { slug: "alibaba", hasColor: true, hasMono: true },
+  "alibaba-token-plan": { slug: "alibaba", hasColor: true, hasMono: true },
+  "alibaba-token-plan-cn": { slug: "alibaba", hasColor: true, hasMono: true },
   "amazon-bedrock": { slug: "bedrock", hasColor: true, hasMono: true },
   "anthropic": { slug: "claude", hasColor: true, hasMono: true },
   "azure": { slug: "azure", hasColor: true, hasMono: true },
