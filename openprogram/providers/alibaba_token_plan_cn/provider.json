@@ -1,5 +1,5 @@
 {
- "id": "bailian",
+ "id": "alibaba-token-plan-cn",
  "endpoints": {
   "default": {
    "api": "openai-completions",

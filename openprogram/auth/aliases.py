@@ -42,6 +42,12 @@ _ALIASES: dict[str, str] = {
     "claude-max": "claude-code",
     "gemini-cli": "gemini-subscription",
     "github-copilot-cli": "github-copilot",
+    # Back-compat: this provider (Alibaba's token-plan.cn OpenAI-compatible
+    # endpoint) was called ``bailian`` before it was renamed to match
+    # models.dev's ``alibaba-token-plan-cn``. Old agent.json / session /
+    # enabled-model refs that still say ``bailian`` resolve to the same
+    # registry entries and credentials.
+    "bailian": "alibaba-token-plan-cn",
     # Keep identity mappings so round-tripping through resolve is safe.
     # (Canonical ids go through unchanged.)
 }
