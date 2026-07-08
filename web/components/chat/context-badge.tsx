@@ -80,11 +80,12 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
     (metaLine ? ` · ${metaLine}` : "");
 
   // 环形进度（对齐 Claude Code 那种小圆环）
-  const R = 8.5;             // 半径（放大）
-  const SW = 2.5;            // 描边宽度
+  const R = 8;               // 半径（描边变粗后收一点，避免超出 22 box）
+  const SW = 3.5;            // 描边宽度（加粗 2.5 -> 3.5）
   const C = 2 * Math.PI * R; // 周长
+  // 颜色按用量：够用蓝、偏满黄、快满红（对齐 Claude Code）
   const ringColor =
-    pct > 0.9 ? "var(--accent-red, #e5534b)" : pct > 0.7 ? "#e0a33c" : "var(--accent-blue, #3b9eff)";
+    pct >= 0.9 ? "#e5534b" : pct >= 0.7 ? "#e0a33c" : "#3b9eff";
 
   return (
     <>
