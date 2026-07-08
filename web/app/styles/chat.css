@@ -1049,17 +1049,17 @@
 .thinking-spinner::after {
   content: "";
   position: absolute;
-  top: 4px;                 /* pulled inward so the orbit clears the ring */
+  top: 2px;                 /* 更靠圆心：小圈轨道半径 ~4px，离环内壁更远 */
   left: 50%;
-  width: 4.4px;
-  height: 4.4px;
-  margin-left: -2.2px;
+  width: 6px;               /* 放大：4.4 -> 6 */
+  height: 6px;
+  margin-left: -3px;
   border-radius: 50%;
   background: transparent;  /* hollow */
-  border: 1.4px solid #B98CF5;
+  border: 2px solid #B98CF5; /* 加粗：1.4 -> 2 */
   box-sizing: border-box;
-  /* box center (9,9) is (4 + 2.2 = 6.2)px below this dot's center */
-  transform-origin: 2.2px 6.8px;
+  /* 小圈中心 (9,5)，box 中心 (9,9)，垂直差 4px → transform-origin y=4 */
+  transform-origin: 3px 4px;
   animation: thinkingOrbit 1.15s linear infinite;
 }
 @keyframes thinkingOrbit {
@@ -1610,6 +1610,28 @@
   cursor: default;
   display: inline-flex;
   align-items: center;
+}
+
+/* context 用量圆环（对齐 Claude Code 右下角那个小环）——点击弹 /context 面板 */
+.context-ring-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: background 0.15s;
+}
+.context-ring-badge:hover {
+  background: var(--bg-tertiary);
+}
+.context-ring-badge:focus-visible {
+  outline: 2px solid var(--accent-blue, #3b9eff);
+  outline-offset: 1px;
 }
 
 /* Composer bottom-row container. Declared globally (not in the CSS

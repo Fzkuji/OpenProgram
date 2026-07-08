@@ -43,6 +43,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const [panelOpen, setPanelOpen] = useState(false);
 
   const usage = useSessionStore((s) => (sid ? s.tokens[sid] : undefined));
+  const ctxWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
   const fallbackProvider = useSessionStore((s) => s.agentSettings.chat?.provider);
   const fallbackModel = useSessionStore((s) => s.agentSettings.chat?.model);
 
@@ -69,16 +70,49 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
     ? `${text.tooltip}\n${metaLine}`
     : text.tooltip;
 
+  // 用量百分比：input tokens / context window（拿不到 window 时给个保守默认）
+  const win = ctxWindow && ctxWindow > 0 ? ctxWindow : 200_000;
+  const used = usage.input || 0;
+  const pct = Math.max(0, Math.min(1, used / win));
+
+  // 环形进度（对齐 Claude Code 那种小圆环）
+  const R = 7;               // 半径
+  const SW = 2.5;            // 描边宽度
+  const C = 2 * Math.PI * R; // 周长
+  const ringColor =
+    pct > 0.9 ? "var(--accent-red, #e5534b)" : pct > 0.7 ? "#e0a33c" : "var(--accent-blue, #3b9eff)";
+
   return (
     <>
-      <span
-        className="context-stats-label"
-        title={tooltip}
-        style={{ cursor: "pointer" }}
+      <button
+        className="context-ring-badge"
+        title={`${tooltip}\n${(pct * 100).toFixed(0)}% of context used`}
         onClick={() => setPanelOpen(true)}
+        aria-label="Context usage"
       >
-        {text.text}
-      </span>
+        <svg width="18" height="18" viewBox="0 0 18 18">
+          <circle
+            cx="9"
+            cy="9"
+            r={R}
+            fill="none"
+            stroke="var(--border)"
+            strokeWidth={SW}
+          />
+          <circle
+            cx="9"
+            cy="9"
+            r={R}
+            fill="none"
+            stroke={ringColor}
+            strokeWidth={SW}
+            strokeLinecap="round"
+            strokeDasharray={C}
+            strokeDashoffset={C * (1 - pct)}
+            transform="rotate(-90 9 9)"
+          />
+        </svg>
+      </button>
       {panelOpen && (
         <div
           className="fixed inset-0 z-50 flex justify-end"
