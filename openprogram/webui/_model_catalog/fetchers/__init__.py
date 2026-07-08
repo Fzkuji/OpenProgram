@@ -75,19 +75,22 @@ def _load_probe(provider_id: str) -> Any:
         return None
 
 
-def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
-    """Dispatch to a provider-specific fetcher, normalise the result,
-    and rotate it into ``custom_models`` via
-    ``storage.replace_fetched_models``.
+def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
+    """Dispatch to a provider-specific fetcher and normalise the result
+    into the catalog row shape — WITHOUT any persistence.
 
-    Returns ``{"fetched": N, "added": N, "removed": N, ...}`` on
-    success, ``{"error": "..."}`` on failure.
+    This is the pure "hit the official API and enrich" half of the old
+    Fetch flow, reused by the live-browse path (``listing.list_models_for_provider``)
+    so opening the settings page queries the provider live instead of
+    reading a persisted snapshot.
+
+    Returns ``{"models": [...]}`` on success or ``{"error": "..."}`` on
+    failure. Never persists.
     """
     from openprogram.providers.thinking_catalog import derive_thinking_fields
 
     from ..providers import _FETCH_MODELS_PROVIDERS, _default_api_for, _label
     from ..sources import enrich as _enrich_from_community
-    from ..storage import replace_fetched_models
 
     fetcher = _FETCHERS.get(provider_id)
     # Providers that speak the Anthropic Messages wire format (minimax,
@@ -194,24 +197,70 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
                     entry["thinking_variant"] = variant
         models.append(entry)
 
-    # Fetch is authoritative: overwrite this provider's models.json
-    # (providers/<provider>/models.json, gitignored) with the fresh list.
-    # Read-time merge in provider_models.combined_models fills price /
-    # capability fields from models.dev.
-    from ..provider_models import save_fetched
-    save_fetched(provider_id, models)
-    # Keep config custom_models in sync too (legacy read paths still read
-    # it: listing / runtime_management / model_tools). Belt-and-suspenders
-    # until those switch to provider_models.combined_models.
-    result = replace_fetched_models(provider_id, models)
+    return {"models": models}
+
+
+def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
+    """Refresh entry point (the "Fetch Models" button).
+
+    Semantics (per the enabled-models redesign): NO file persistence.
+    Instead:
+
+      1. force-refresh the live-browse cache for this provider so the
+         settings page shows the freshest official-API list, and
+      2. for every currently-ENABLED model of this provider that appears
+         in that fresh browse result, overwrite its stored spec row in
+         config (via the Task-2 spec-row machinery) so a stale enabled
+         spec heals. Enabled models absent from the fresh result keep
+         their stored spec (an upstream blip must not drop the user's
+         selection).
+
+    Returns ``{"fetched": N, "refreshed": [...], ...}`` on success,
+    ``{"error": "..."}`` on failure.
+    """
+    from ..listing import list_models_for_provider
+    from ..storage import (
+        _cache_lock,
+        _read_providers_cfg,
+        _upsert_spec_row,
+        _write_providers_cfg,
+    )
+
+    # Force-refresh browse (bypasses the short-TTL cache). Also surfaces the
+    # official-API error to the caller if the fetch failed outright.
+    rows = list_models_for_provider(provider_id, force_refresh=True)
+    by_id = {r.get("id"): r for r in rows if r.get("id")}
+
+    refreshed: list[str] = []
+    with _cache_lock:
+        cfg = _read_providers_cfg()
+        pcfg = cfg.setdefault(provider_id, {})
+        enabled_ids = [
+            r.get("id") for r in (pcfg.get("models") or []) if r.get("id")
+        ] or list(pcfg.get("enabled_models") or [])
+        changed = False
+        for mid in enabled_ids:
+            fresh = by_id.get(mid)
+            if not fresh:
+                continue  # absent upstream → keep the stored spec
+            spec = {k: v for k, v in fresh.items() if k != "enabled"}
+            _upsert_spec_row(pcfg, spec)
+            refreshed.append(mid)
+            changed = True
+        if changed:
+            _write_providers_cfg(cfg)
+
+    if changed:
+        # Config spec rows changed → rebuild the runtime registry in place
+        # so the chat picker / runtime see the healed specs immediately.
+        from openprogram.providers import models_generated as _mg
+        _mg.reload()
+
     return {
         "provider": provider_id,
-        "fetched": len(models),
-        "added": result["added"],
-        "removed": result["removed"],
-        "total_custom": result["total"],
-        "dropped_enabled": result.get("dropped_enabled", []),
+        "fetched": len(rows),
+        "refreshed": refreshed,
     }
 
 
-__all__ = ["fetch_models_remote", "_FETCHERS"]
+__all__ = ["fetch_models_remote", "fetch_and_normalize", "_FETCHERS"]

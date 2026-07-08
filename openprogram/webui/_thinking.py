@@ -85,6 +85,23 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
         }
 
     if model_id:
+        # Enabled models: read thinking levels straight off the stored config
+        # spec row — no live browse / network. Only fall through to the live
+        # browse path for a model that isn't an enabled spec row (browse
+        # context, where derivation stays as-is).
+        from openprogram.webui._model_catalog.storage import _read_providers_cfg
+        pcfg = _read_providers_cfg().get(provider, {})
+        for row in (pcfg.get("models") or []):
+            if row.get("id") == model_id:
+                levels = row.get("thinking_levels") or []
+                if levels:
+                    return _build(
+                        levels,
+                        row.get("default_thinking_level"),
+                        row.get("thinking_variant"),
+                    )
+                return {"label": label, "options": [], "default": None, "variant": None}
+
         from openprogram.webui._model_catalog.listing import list_models_for_provider
         for m in list_models_for_provider(provider):
             if m.get("id") == model_id:

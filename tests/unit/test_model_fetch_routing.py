@@ -94,18 +94,14 @@ def test_fetch_dispatch_routes_anthropic_wire_to_anthropic_fetcher(monkeypatch):
 
     monkeypatch.setattr(F, "_fetch_anthropic", fake_anthropic)
     monkeypatch.setattr(F, "_fetch_openai_compat", fake_openai)
-    # Avoid touching config / network in the normalize+store tail.
-    monkeypatch.setattr(
-        st, "replace_fetched_models",
-        lambda pid, models: {"added": len(models), "removed": 0,
-                             "total": len(models), "dropped_enabled": []},
-    )
     from openprogram.webui._model_catalog import sources as S
     monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
 
-    res = F.fetch_models_remote("minimax-cn", timeout=5.0)
+    # Routing + normalize now live in fetch_and_normalize (no persistence).
+    res = F.fetch_and_normalize("minimax-cn", timeout=5.0)
     assert used["which"] == "anthropic"
-    assert res.get("fetched") == 1 and "error" not in res
+    assert "error" not in res
+    assert [m["id"] for m in res["models"]] == ["MiniMax-M3"]
 
 
 # generalized Anthropic fetcher hits the provider's own host

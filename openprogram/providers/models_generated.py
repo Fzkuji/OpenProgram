@@ -58,3 +58,21 @@ def _load() -> dict[str, Model]:
 
 
 MODEL_REGISTRY: dict[str, Model] = _load()
+
+
+def reload() -> dict[str, Model]:
+    """Rebuild the registry from the current config spec rows, in place.
+
+    Clears and repopulates the SAME ``MODEL_REGISTRY`` dict object (never
+    rebinds the name) so every module that did
+    ``from ...models_generated import MODEL_REGISTRY`` sees the update —
+    and dynamic writers' entries survive only if config still carries them.
+    Called after a config write that changes enabled model specs (e.g. the
+    Fetch/Refresh button).
+
+    Returns the same dict for convenience.
+    """
+    fresh = _load()
+    MODEL_REGISTRY.clear()
+    MODEL_REGISTRY.update(fresh)
+    return MODEL_REGISTRY
