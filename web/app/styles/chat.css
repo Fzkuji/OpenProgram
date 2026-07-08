@@ -1612,22 +1612,24 @@
   align-items: center;
 }
 
-/* context 用量圆环（对齐 Claude Code 右下角那个小环）——点击弹 /context 面板 */
+/* context 用量圆环（对齐 Claude Code 右下角那个小环）——点击弹 /context 面板。
+   hover 时露出圆角方块背景，尺寸/圆角与底部那排 pill（Opus/High 等）一致，
+   视觉统一。 */
 .context-ring-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 999px;
+  border-radius: 8px;
   transition: background 0.15s;
 }
 .context-ring-badge:hover {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
 }
 .context-ring-badge:focus-visible {
   outline: 2px solid var(--accent-blue, #3b9eff);

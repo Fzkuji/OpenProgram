@@ -66,17 +66,21 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const modelLabel = usage.model || fallbackModel || "";
   const providerLabel = usage.provider || fallbackProvider || "";
   const metaLine = [providerLabel, modelLabel].filter(Boolean).join(" · ");
-  const tooltip = metaLine
-    ? `${text.tooltip}\n${metaLine}`
-    : text.tooltip;
 
   // 用量百分比：input tokens / context window（拿不到 window 时给个保守默认）
   const win = ctxWindow && ctxWindow > 0 ? ctxWindow : 200_000;
   const used = usage.input || 0;
   const pct = Math.max(0, Math.min(1, used / win));
 
+  // tooltip 用 Claude Code 那种「Context 用了多少/共多少 (百分比)」格式
+  const fmtNum = (n: number) =>
+    n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + "M" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+  const ringTooltip =
+    `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)` +
+    (metaLine ? ` · ${metaLine}` : "");
+
   // 环形进度（对齐 Claude Code 那种小圆环）
-  const R = 7;               // 半径
+  const R = 8.5;             // 半径（放大）
   const SW = 2.5;            // 描边宽度
   const C = 2 * Math.PI * R; // 周长
   const ringColor =
@@ -86,22 +90,22 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
     <>
       <button
         className="context-ring-badge"
-        title={`${tooltip}\n${(pct * 100).toFixed(0)}% of context used`}
+        title={ringTooltip}
         onClick={() => setPanelOpen(true)}
         aria-label="Context usage"
       >
-        <svg width="18" height="18" viewBox="0 0 18 18">
+        <svg width="22" height="22" viewBox="0 0 22 22">
           <circle
-            cx="9"
-            cy="9"
+            cx="11"
+            cy="11"
             r={R}
             fill="none"
             stroke="var(--border)"
             strokeWidth={SW}
           />
           <circle
-            cx="9"
-            cy="9"
+            cx="11"
+            cy="11"
             r={R}
             fill="none"
             stroke={ringColor}
@@ -109,7 +113,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
             strokeLinecap="round"
             strokeDasharray={C}
             strokeDashoffset={C * (1 - pct)}
-            transform="rotate(-90 9 9)"
+            transform="rotate(-90 11 11)"
           />
         </svg>
       </button>
