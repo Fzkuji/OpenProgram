@@ -14,6 +14,8 @@
 #   first run of `openprogram` opens the setup wizard, whose "Agent
 #   programs" step lets the user pick which to install (sizes shown).
 #   Manual: openprogram programs install <gui|research|wiki|all>
+#   Non-interactive: pass --programs <gui|research|wiki|all> (repeatable
+#   or comma-separated) to install them right after the main install.
 #
 # `--minimal` skips 4(build)/5/6/7 — a bare host for servers; everything
 # it skipped can be added later (`openprogram programs install all`,
@@ -31,6 +33,7 @@
 #   ./scripts/install.sh --python /p/bin/python   # pick the interpreter
 #   ./scripts/install.sh --stealth         # + stealth browsers (patchright/camoufox)
 #   ./scripts/install.sh --agent-browser   # + agent-browser (global npm)
+#   ./scripts/install.sh --programs all    # + install agentic programs non-interactively
 # =============================================================================
 set -euo pipefail
 
@@ -45,13 +48,14 @@ HOST_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OS="$(uname -s)"
 
 # ---- args -------------------------------------------------------------------
-PYTHON_BIN=""; MINIMAL=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0
+PYTHON_BIN=""; MINIMAL=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; PROGRAMS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --minimal) MINIMAL=1; shift ;;
     --python) PYTHON_BIN="${2:?--python needs a path}"; shift 2 ;;
     --stealth) WITH_STEALTH=1; shift ;;
     --agent-browser) WITH_AGENT_BROWSER=1; shift ;;
+    --programs) PROGRAMS="$PROGRAMS ${2:?--programs needs <gui|research|wiki|all>}"; shift 2 ;;
     -h|--help) sed -n '/^# Usage:/,/^# ==/p' "$0"; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
@@ -156,16 +160,31 @@ install_extras() {
   fi
 }
 
+# ---- 9. optional: agentic programs (--programs) ------------------------------
+install_programs() {
+  [ -n "$PROGRAMS" ] || return 0
+  # Accept repeated flags and comma-separated values: "gui,research" or
+  # "--programs gui --programs research" both fan out to one call each.
+  local names; names="$(printf '%s' "$PROGRAMS" | tr ',' ' ')"
+  local name
+  for name in $names; do
+    step "installing agentic program: $name"
+    openprogram programs install "$name" || warn "program install failed: $name"
+  done
+}
+
 # ---- run --------------------------------------------------------------------
 step "OpenProgram setup  (os=$OS, minimal=$MINIMAL)"
 install_web
 install_tui
 install_default_extras
 install_extras
+install_programs
 
 # ---- done --------------------------------------------------------------------
 printf "\n${c_green}OpenProgram ready.${c_reset}\n"
 printf "  Start:     openprogram           # first run walks you through provider setup, then opens the chat\n"
 printf "  Web UI:    openprogram web        # -> http://localhost:18100\n"
 printf "  Programs:  pick which agentic programs to install in the first-run wizard\n"
-printf "             (or any time: openprogram programs install <gui|research|wiki|all>)\n"
+printf "             (or any time: openprogram programs install <gui|research|wiki|all>,\n"
+printf "              or non-interactively at install: ./scripts/install.sh --programs all)\n"

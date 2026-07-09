@@ -14,6 +14,8 @@
  first run of `openprogram` opens the setup wizard, whose "Agent
  programs" step lets the user pick which to install (sizes shown).
  Manual: openprogram programs install <gui|research|wiki|all>
+ Non-interactive: pass -Programs <gui|research|wiki|all> (comma-separated
+ or repeated) to install them right after the main install.
 
  -Minimal skips 4(build)/5/6 - a bare host for servers; everything it
  skipped can be added later (openprogram programs install all,
@@ -30,6 +32,7 @@
    .\scripts\install.ps1 -Minimal         # bare host only
    .\scripts\install.ps1 -Stealth         # + stealth browsers
    .\scripts\install.ps1 -AgentBrowser    # + agent-browser (global npm)
+   .\scripts\install.ps1 -Programs all    # + install agentic programs non-interactively
 =============================================================================
 #>
 [CmdletBinding()]
@@ -37,6 +40,7 @@ param(
   [string]$Python = "",
   [switch]$Stealth,
   [switch]$AgentBrowser,
+  [string[]]$Programs = @(),       # install agentic programs non-interactively (gui|research|wiki|all)
   [switch]$Minimal                # bare host: skip web build / programs / default extras
 )
 # NOTE: 'Continue', not 'Stop'. Under 'Stop', Windows PowerShell 5.1 turns a
@@ -131,15 +135,29 @@ function Install-Extras {
   }
 }
 
+# ---- 8. optional: agentic programs (-Programs) -------------------------------
+function Install-Programs {
+  if (-not $Programs) { return }
+  # Accept repeated flags and comma-separated values: -Programs gui,research
+  # and -Programs gui -Programs research both fan out to one call each.
+  foreach ($name in ($Programs -join ',').Split(',', [StringSplitOptions]::RemoveEmptyEntries)) {
+    Step "installing agentic program: $name"
+    openprogram programs install $name
+    if ($LASTEXITCODE -ne 0) { Warn "program install failed: $name" }
+  }
+}
+
 # ---- run --------------------------------------------------------------------
 Step "OpenProgram setup  (os=Windows, minimal=$Minimal)"
 Install-Web
 Install-DefaultExtras
 Install-Extras
+Install-Programs
 
 Write-Host "`nOpenProgram ready." -ForegroundColor Green
 Write-Host "  Start:     openprogram           # first run walks you through provider setup, then opens the chat"
 Write-Host "  Web UI:    openprogram web        # -> http://localhost:18100"
 Write-Host "  Programs:  pick which agentic programs to install in the first-run wizard"
-Write-Host "             (or any time: openprogram programs install <gui|research|wiki|all>)"
+Write-Host "             (or any time: openprogram programs install <gui|research|wiki|all>,"
+Write-Host "              or non-interactively at install: .\scripts\install.ps1 -Programs all)"
 else { Write-Host "  Add a harness: clone it into openprogram\functions\agentics\ and run its installer"; Write-Host "                 (GUI agent: https://github.com/Fzkuji/GUI-Agent-Harness)" }
