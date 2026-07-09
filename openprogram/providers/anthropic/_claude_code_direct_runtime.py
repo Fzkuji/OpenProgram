@@ -93,6 +93,16 @@ def ensure_anthropic_model_registered(mid: str) -> str:
     base_url, modalities) and overrides id/name. Context window defaults to
     the family's known size — the catalog enrichment refines it later.
     """
+    if ":" in mid:
+        import logging
+        import traceback
+        caller = "".join(traceback.format_stack(limit=3)[:-1]).strip()
+        logging.getLogger(__name__).warning(
+            "[anthropic] refusing to register model id with ':' (prefixed?): "
+            "%r — pass a bare id. Caller:\n%s", mid, caller,
+        )
+        return mid
+
     from openprogram.providers.enabled_models import ENABLED_MODELS
 
     key = f"anthropic/{mid}"

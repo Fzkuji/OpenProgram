@@ -17,7 +17,10 @@ Usage:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
+
+_log = logging.getLogger(__name__).warning
 
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.auth.context import get_active_profile_id
@@ -55,6 +58,13 @@ def ensure_codex_model_registered(mid: str) -> None:
     """Register one Codex model id into the static ENABLED_MODELS registry so the
     runtime can actually resolve it.
 
+    A still-prefixed id (``openai-codex:gpt-5.5``) must NEVER be registered:
+    it becomes a picker-visible ghost row (``_display_name_for_codex_model``
+    prettifies it to "GPT-openai Codex:5.5") that shadows the real model.
+    Callers are expected to pass a BARE id; refuse ``:`` ids with a warning
+    naming the caller so the runtime surfaces the honest "Unknown model"
+    instead of a half-working ghost.
+
     This matters because the ChatGPT/Codex backend has no list-models endpoint
     and OpenAICodexRuntime resolves a model id against the static ENABLED_MODELS dict —
     a codex id that isn't registered raises ``Unknown model`` at dispatch, with
@@ -65,6 +75,13 @@ def ensure_codex_model_registered(mid: str) -> None:
     Used both by the import-time seed (the hand list, for offline / pre-Fetch)
     and by the live Fetch (``fetchers/codex.py``), which discovers current ids
     from models.dev and registers each one on demand."""
+    if ":" in mid:
+        import traceback
+        caller = "".join(traceback.format_stack(limit=3)[:-1]).strip()
+        _log(f"[codex] refusing to register model id with ':' (prefixed?): "
+             f"{mid!r} — pass a bare id. Caller:\n{caller}")
+        return
+
     from openprogram.providers.enabled_models import ENABLED_MODELS
     from openprogram.providers.thinking_spec import derive_thinking_fields
 
@@ -177,6 +194,16 @@ class OpenAICodexRuntime(Runtime):
         profile: Optional[str] = None,
         **_ignored: Any,
     ) -> None:
+        # Normalize a still-prefixed id to a bare one. Persisted session
+        # metadata stores ``runtime.model`` verbatim (= ``openai-codex:gpt-5.5``),
+        # and the restore path feeds that back as ``model=``. Left prefixed it
+        # would miss ``_get_model`` and register a ghost model whose display
+        # name is "GPT-openai Codex:5.5". Strip repeatedly to also undo the
+        # ``openai-codex:openai-codex:gpt-5.5`` double-prefix already in old
+        # meta.json files.
+        while isinstance(model, str) and model.startswith(f"{auth_adapter.PROVIDER_ID}:"):
+            model = model.split(":", 1)[1]
+
         self._manager = get_manager()
         self._profile_id = profile or get_active_profile_id()
         self._cached_access_token: str = ""
