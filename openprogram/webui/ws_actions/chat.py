@@ -1,8 +1,8 @@
-"""Chat WS actions: chat / retry_node / retry_function / switch_attempt /
+"""Chat WS actions: chat / retry_node / retry_function /
 set_conversation_channel.
 
 The ``chat`` action is the sole turn entry point from the web UI. The
-retry / switch / channel-bind actions are ws-only.
+retry / channel-bind actions are ws-only.
 """
 from __future__ import annotations
 
@@ -775,61 +775,6 @@ async def handle_retry_function(ws, cmd: dict):
     }))
 
 
-async def handle_switch_attempt(ws, cmd: dict):
-    """Swap the visible result among stored attempts for a function call."""
-    from openprogram.webui import server as _s
-    session_id = cmd.get("session_id")
-    func_name = cmd.get("function")
-    attempt_idx = cmd.get("attempt_index", 0)
-    conv = _s._sessions.get(session_id)
-    if not conv:
-        return
-    messages = conv.get("messages", [])
-    msg_idx = None
-    target_msg = None
-    for i in range(len(messages) - 1, -1, -1):
-        m = messages[i]
-        if (m.get("role") == "assistant"
-                and m.get("type") == "result"
-                and m.get("function") == func_name
-                and "attempts" in m):
-            target_msg = m
-            msg_idx = i
-            break
-
-    if target_msg and 0 <= attempt_idx < len(target_msg["attempts"]):
-        old_idx = target_msg.get("current_attempt", 0)
-        attempts = target_msg["attempts"]
-
-        subsequent_now = messages[msg_idx + 1:]
-        if old_idx < len(attempts):
-            attempts[old_idx]["subsequent_messages"] = subsequent_now
-
-        target_msg["current_attempt"] = attempt_idx
-        target_msg["content"] = attempts[attempt_idx]["content"]
-
-        restored = attempts[attempt_idx].get("subsequent_messages", [])
-        new_msgs_for_attempt = messages[:msg_idx + 1] + restored
-        conv["messages"] = new_msgs_for_attempt
-        _s._set_active_head(
-            session_id,
-            new_msgs_for_attempt[-1]["id"] if new_msgs_for_attempt else None,
-        )
-
-        _s._save_session(session_id)
-        await ws.send_text(json.dumps({
-            "type": "attempt_switched",
-            "data": {
-                "function": func_name,
-                "attempt_index": attempt_idx,
-                "content": attempts[attempt_idx]["content"],
-                "tree": attempts[attempt_idx].get("tree"),
-                "total": len(attempts),
-                "subsequent_messages": restored,
-            },
-        }, default=str))
-
-
 async def handle_set_conversation_channel(ws, cmd: dict):
     """Bind (or unbind) a conversation to a chat channel + account.
 
@@ -1164,7 +1109,6 @@ ACTIONS = {
     "chat": handle_chat,
     "retry_node": handle_retry_node,
     "retry_function": handle_retry_function,
-    "switch_attempt": handle_switch_attempt,
     "set_conversation_channel": handle_set_conversation_channel,
     "compact": handle_compact,
     "context": handle_context,

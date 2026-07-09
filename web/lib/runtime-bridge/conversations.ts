@@ -624,51 +624,6 @@ export function renderSessionMessages(conv: LegacyConv): void {
   W._skipScrollToBottom = false;
 }
 
-/* ===== Attempt switch ============================================ */
-
-interface AttemptSwitchedData {
-  tree?: TreeNode;
-  function?: string;
-  attempt_index?: number;
-  content?: string;
-  subsequent_messages?: LegacyMessage[];
-}
-
-export function handleAttemptSwitched(data: AttemptSwitchedData): void {
-  if (data.tree && (data.tree.path || data.tree.name)) {
-    const rootKey = data.tree.path || data.tree.name;
-    const trees = W.trees || (W.trees = []);
-    const idx = trees.findIndex((t) => t.path === rootKey || t.name === data.tree!.name);
-    if (idx >= 0) trees[idx] = data.tree;
-    else trees.push(data.tree);
-  }
-
-  const sid = W.currentSessionId;
-  if (sid && W.conversations?.[sid]) {
-    const conv = W.conversations[sid];
-    const msgs = conv.messages || [];
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (
-        msgs[i].role === "assistant" &&
-        msgs[i].function === data.function &&
-        msgs[i].attempts
-      ) {
-        msgs[i].current_attempt = data.attempt_index;
-        msgs[i].content = data.content;
-        const restored = data.subsequent_messages || [];
-        conv.messages = msgs.slice(0, i + 1).concat(restored);
-        break;
-      }
-    }
-    W._skipScrollToBottom = true;
-    renderSessionMessages(conv);
-    const el = document.querySelector('[data-function="' + data.function + '"]');
-    if (el) {
-      requestAnimationFrame(() => el.scrollIntoView({ block: "center" }));
-    }
-  }
-}
-
 /* ===== window bridges for still-legacy callers =================== */
 
 W._stopChannelHealthPoll = stopChannelHealthPoll;
@@ -689,4 +644,3 @@ W.newSession = newSession;
 W.loadSessionData = loadSessionData;
 W.extractMessagesFromTree = extractMessagesFromTree;
 W.renderSessionMessages = renderSessionMessages;
-W.handleAttemptSwitched = handleAttemptSwitched;

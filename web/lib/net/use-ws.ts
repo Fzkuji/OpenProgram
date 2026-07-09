@@ -12,7 +12,6 @@ import { useEffect } from "react";
 
 import type { PendingDecision } from "@/lib/session-store";
 import {
-  handleAttemptSwitched,
   loadSessionData,
   onBranchCheckedOut,
   onBranchesListMessage,
@@ -50,7 +49,6 @@ interface WsWindow {
   loadProgramsMeta?: () => Promise<unknown>;
   renderFunctions?: () => void;
   renderSessions?: () => void;
-  handleAttemptSwitched?: (data: unknown) => void;
   _onChannelAccountsMessage?: (data: unknown) => void;
   _onBranchesListMessage?: (data: unknown) => void;
   _onBranchCheckedOut?: (data: unknown) => void;
@@ -341,9 +339,6 @@ export function useWS(): void {
           w.loadProgramsMeta?.().then(() => w.renderFunctions?.());
           return true;
         case "history_list": // legacy no-op
-          return true;
-        case "attempt_switched":
-          handleAttemptSwitched(d as never);
           return true;
         case "channel_accounts":
           onChannelAccountsMessage(d as never);

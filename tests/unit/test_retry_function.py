@@ -208,6 +208,60 @@ def test_retry_overwrite_action_is_removed():
     assert chat.ACTIONS["retry_function"] is chat.handle_retry_function
 
 
+def test_switch_attempt_action_and_handler_removed():
+    # The pre-rewrite in-memory ``attempts`` model (switch_attempt WS action
+    # + handle_switch_attempt) is dead — the version switcher navigates DAG
+    # siblings by HEAD checkout now. Both must be gone so two version models
+    # don't half-coexist.
+    assert "switch_attempt" not in chat.ACTIONS
+    assert not hasattr(chat, "handle_switch_attempt")
+
+
+# ---- concurrency guard: no second run while one is in flight ----------
+
+def test_new_run_rejected_while_run_active(monkeypatch):
+    # A fn-form / Retry run must be refused with 409 when a run is already
+    # in flight in the same session — otherwise two runs advance HEAD
+    # concurrently and interleave the conversation chain. Mirrors the
+    # chat-retry path's _is_run_active guard.
+    from openprogram.webui.routes import chat as routes_chat
+
+    monkeypatch.setattr(
+        "openprogram.webui.server._get_or_create_session",
+        lambda sid=None, **k: {"id": sid or "s1", "last_workdirs": {}},
+    )
+
+    class _Tool:
+        name = "word_count"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.functions.agent_tools", lambda names=None: [_Tool()]
+    )
+
+    class _RM:
+        def _enabled_model_keys(self):
+            return ["k"]
+    monkeypatch.setattr("openprogram.webui.server._runtime_management", _RM())
+
+    # The session already has an in-flight run.
+    monkeypatch.setattr(
+        "openprogram.webui.server._is_run_active", lambda sid: True
+    )
+
+    dispatched = []
+    monkeypatch.setattr(
+        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
+        lambda **kw: dispatched.append(kw),
+    )
+
+    result = routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
+    assert result.get("status_code") == 409
+    assert result.get("code") == "run_active"
+    # Never spawned a competing dispatch.
+    assert dispatched == []
+
+
 # ---- branch semantics at the store level -------------------------------
 # The retry anchors the re-run at the original call's predecessor, which
 # is exactly how the store expresses a sibling branch: two code nodes

@@ -562,16 +562,6 @@ export function handleChatResponse(data: ChatResponseData): void {
           ? data.blocks
           : undefined,
     };
-    if (type === "result" && data.function) {
-      storedMsg.attempts = [
-        {
-          content: data.content || "",
-          tree: data.context_tree || null,
-          timestamp: Date.now() / 1000,
-        },
-      ];
-      storedMsg.current_attempt = 0;
-    }
     // Runtime (function-call) results are owned by the React message
     // store: the chat-stream reducer writes the single runtime row that
     // <MessageList /> renders as one Function-call card, and reload

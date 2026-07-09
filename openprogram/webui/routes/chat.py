@@ -197,6 +197,21 @@ def run_agentic_function_call(
     kwargs = dict(kwargs or {})
     conv = _s._get_or_create_session(session_id)
     session_id = conv["id"]
+    # Reject a second run while one is already in flight in this session.
+    # The chat/retry path already guards via _is_run_active; the fn-form /
+    # Retry entry point did not, so two concurrent runs could advance HEAD
+    # at the same time and interleave the conversation chain (corrupt
+    # siblings, a dropped running_task entry from the setdefault below).
+    # Same 409 the chat retry path returns.
+    if _s._is_run_active(session_id):
+        return {
+            "error": (
+                "a run is currently active in this session — wait for it "
+                "to finish or stop it first"
+            ),
+            "code": "run_active",
+            "status_code": 409,
+        }
     # A NEW run (anchor left unset) passes an EMPTY caller so the
     # @agentic_function decorator stamps its metadata.predecessor with the
     # session's current head (function.py's top-level-call branch) — the
@@ -218,12 +233,14 @@ def run_agentic_function_call(
         pass
     # msg_id is only a WS-routing handle for the response stream;
     # it is never written to the DAG. The code node written by the
-    # @agentic_function is the canonical record and its predecessor
-    # resolves to ROOT (anchor_msg_id="ROOT" below).
+    # @agentic_function is the canonical record: a NEW run (empty anchor)
+    # gets metadata.predecessor = the session head (or ROOT for an empty
+    # session); a Retry (explicit pred:<id> anchor) forks off that id.
     msg_id = uuid.uuid4().hex[:8]
 
-    # Ensure the session ROOT node exists so the code node's
-    # caller=ROOT resolves to a real node. No anchor row.
+    # Ensure the session ROOT node exists so a run that anchors at ROOT
+    # (empty session, or a legacy retry) resolves to a real node. No
+    # anchor row is written for the run itself.
     try:
         from openprogram.agent.session_db import default_db
         from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
