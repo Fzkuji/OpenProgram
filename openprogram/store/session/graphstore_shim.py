@@ -56,6 +56,12 @@ class GraphStoreShim:
         if not caller:
             idx.set_head(node.id)
         idx.set_meta(updated_at=_time.time())
+        # Persist meta NOW: this append usually runs inside the
+        # @agentic_function fork()'d subprocess — the parent server can
+        # only see the head move through meta.json (see the matching
+        # persist in SessionStore.append_message).
+        if not caller:
+            self.store._persist_meta(git, idx)
 
     def load(self):
         """Return a ``Graph`` populated with all nodes for this session.

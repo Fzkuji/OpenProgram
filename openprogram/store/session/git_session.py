@@ -68,6 +68,14 @@ class GitSession:
         self.path = Path(repo_path).expanduser()
         self._lock = threading.Lock()
         self._initialized: Optional[bool] = None
+        # Disk fingerprint as of the last moment THIS process knew memory
+        # and disk agreed (rebuild or own write). @agentic_function runs
+        # execute in a fork()'d subprocess that appends history and moves
+        # HEAD on disk directly — the parent's cached SessionMemoryIndex
+        # can't see that. SessionStore._open compares this against
+        # stat_fingerprint() and rebuilds the index when another process
+        # wrote. None = never synced.
+        self._synced_fingerprint: Optional[tuple[int, int, int]] = None
 
     # Lifecycle
 
@@ -122,6 +130,33 @@ class GitSession:
                           "--quiet")
             self._initialized = True
 
+    # Cross-process freshness
+
+    def stat_fingerprint(self) -> tuple[int, int, int]:
+        """Cheap disk-state fingerprint: (history-dir mtime_ns,
+        meta.json mtime_ns, meta.json size). Two stat calls — no
+        readdir. A history append (rename into the dir) bumps the dir
+        mtime; a head/meta change rewrites meta.json."""
+        try:
+            hist = (self.path / "history").stat().st_mtime_ns
+        except OSError:
+            hist = 0
+        try:
+            st = (self.path / "meta.json").stat()
+            meta_mtime, meta_size = st.st_mtime_ns, st.st_size
+        except OSError:
+            meta_mtime, meta_size = 0, 0
+        return (hist, meta_mtime, meta_size)
+
+    def mark_synced(self) -> None:
+        """Record that in-memory state matches disk right now."""
+        self._synced_fingerprint = self.stat_fingerprint()
+
+    def stale(self) -> bool:
+        """True when another process changed this session on disk since
+        we last synced (never-synced counts as stale)."""
+        return self._synced_fingerprint != self.stat_fingerprint()
+
     # File ops
 
     def write_history(self, seq: int, role: str, node_id: str, payload: dict) -> Path:
@@ -145,6 +180,7 @@ class GitSession:
         tmp = fpath.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
         tmp.replace(fpath)
+        self.mark_synced()
         return fpath
 
     def write_meta(self, meta: dict) -> Path:
@@ -156,6 +192,7 @@ class GitSession:
         tmp = fpath.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(meta, ensure_ascii=False, default=str), encoding="utf-8")
         tmp.replace(fpath)
+        self.mark_synced()
         return fpath
 
     def read_meta(self) -> dict:

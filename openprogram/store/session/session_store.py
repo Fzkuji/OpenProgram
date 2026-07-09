@@ -418,6 +418,30 @@ class SessionStore:
                 # Mark as most-recently-used so the LRU eviction below
                 # never drops a session that's actively being read.
                 self._sessions.move_to_end(session_id)
+                git, idx = cached
+                # @agentic_function runs execute in a fork()'d subprocess
+                # that appends history and moves HEAD on disk directly —
+                # this process's cached index can't see that, so a
+                # mid-run load_session answered from stale memory (the
+                # transcript kept showing the previous run until turn
+                # end). Two stat calls detect the foreign write; rebuild
+                # from disk when it happened. Own-process writes call
+                # mark_synced(), so they never trigger a rebuild.
+                if git.exists() and git.stale():
+                    # Rebuild IN PLACE (reset + repopulate the SAME index
+                    # object): callers across a multi-step operation hold
+                    # (git, idx) from an earlier _open — swapping the
+                    # cached object would orphan their reference, and a
+                    # later step that re-opens (e.g. commit_turn) would
+                    # persist the rebuilt object's stale head over their
+                    # in-memory update.
+                    idx.rebuild_from_paths(
+                        git.list_history(),
+                        git.read_meta(),
+                        _node_conv_predecessor,
+                        _node_caller,
+                    )
+                    git.mark_synced()
                 return cached
             sdir = self._session_dir(session_id)
             if not sdir.exists() and not create_if_missing:
@@ -431,6 +455,7 @@ class SessionStore:
                     _node_conv_predecessor,
                     _node_caller,
                 )
+                git.mark_synced()
             # New key lands at the MRU (end) of the OrderedDict.
             self._sessions[session_id] = (git, idx)
             # Evict least-recently-used entries beyond the cap. The
@@ -740,6 +765,13 @@ class SessionStore:
         if not caller:
             idx.set_head(node.id)
         idx.set_meta(updated_at=time.time())
+        # Persist meta NOW (one tiny json write), not at turn end: a
+        # @agentic_function run appends from a fork()'d subprocess, and
+        # the parent server resolves the active branch from the on-disk
+        # head — a memory-only head keeps every mid-run load on the OLD
+        # branch until turn end.
+        if not caller:
+            self._persist_meta(git, idx)
         # Update registry preview on user messages (debounced to disk).
         if node.role == "user" and node.output:
             text = (node.output or "").strip().replace("\n", " ")

@@ -290,8 +290,18 @@ def _poll(session_id: str, msg_id: str, func_name: str,
         except Exception:
             pass
 
-    while not stop.wait(1.2):
+    # Fast warmup: the run's code node lands on disk a few hundred ms
+    # after dispatch, but a fixed 1.2s first tick made the UI wait up to
+    # 1.2s extra before the pending card could hydrate. Poll quickly
+    # (0.15s, doubling) until the FIRST tree goes out, then settle into
+    # the steady 1.2s cadence.
+    interval = 0.15
+    while not stop.wait(interval):
         _tick(force=False)
+        if state["last_tree"] is not None:
+            interval = 1.2
+        else:
+            interval = min(interval * 2, 1.2)
     # Final flush after stop: emit the terminal tree (root flipped to
     # completed) through the same channel so the card finalizes.
     _tick(force=True)
