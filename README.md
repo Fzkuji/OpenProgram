@@ -81,6 +81,12 @@ curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/ins
 ```
 It clones OpenProgram to `~/OpenProgram` (override with `--target DIR`), installs the host, then — when a terminal is attached — offers a menu to pick which agentic programs to install. `bash -c "$(curl -fsSL …)"` works too. From a checkout: `./scripts/install.sh`.
 
+**Non-interactive / AI-agent install** — every choice has a flag (`--help` lists them all):
+```bash
+curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- --yes --programs all
+```
+`--yes` (or env `CI` / `DEBIAN_FRONTEND=noninteractive` / `OPENPROGRAM_INSTALL_YES`) takes every default with no prompts. Even without it no prompt can hang — each waits 60s, then falls back to its default. Full flag matrix: **[docs/install.md](docs/install.md)**.
+
 **Windows (PowerShell)**
 ```powershell
 git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram

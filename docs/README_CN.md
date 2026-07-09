@@ -58,6 +58,12 @@ curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/ins
 # 已有 checkout：直接 ./scripts/install.sh    ·    Windows：.\scripts\install.ps1
 ```
 
+**非交互 / AI agent 安装** —— 每个选项都有对应参数（`--help` 全部列出）：
+```bash
+curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- --yes --programs all
+```
+`--yes`（或环境变量 `CI` / `DEBIAN_FRONTEND=noninteractive` / `OPENPROGRAM_INSTALL_YES`）会全部取默认值、不弹任何提示。即使不加，也不会卡住——每个提示等待 60 秒后自动取默认值。完整参数表见 **[install.md](install.md)**。
+
 默认安装包含全部轻量内容——web UI、TUI、Research / Wiki 两个 agent 程序、浏览器工具和 channels；GUI agent 按需装（`openprogram programs install gui`，需下载 PyTorch）；`--minimal` 只装精简 host。安装时想非交互地一并装 agent 程序，加 `--programs <gui|research|wiki|all>`（PowerShell 用 `-Programs`）。provider SDK（anthropic / openai / google-genai）默认已装好。
 
 harness 作为 **OpenProgram 程序** 装进 `openprogram/functions/agentics/<Harness>/`
