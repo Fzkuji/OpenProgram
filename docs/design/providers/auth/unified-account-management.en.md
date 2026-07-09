@@ -4,7 +4,7 @@
 list / add / activate / rename / remove multiple accounts per provider, plus
 rotation / failover with on/off switches. The *backend* per provider (Meridian
 for claude-code, AuthStore for the rest) is an implementation detail; the
-**management surface is unified**. Builds on docs/design/unified-auth-storage.md
+**management surface is unified**. Builds on docs/design/providers/auth/unified-auth-storage.md
 (the login side, P1).
 
 ## Core idea

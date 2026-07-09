@@ -18,7 +18,7 @@
 
 ## Global Constraints
 
-- 设计依据：`docs/design/providers/models.md` 第 9 节。
+- 设计依据：`docs/design/providers/models/models.md` 第 9 节。
 - `MODELS: dict[str, Model]`（`models_generated.py:43`）——**类型、变量名、可变性、key 格式 `"<provider>/<id>"` 全部不变**。`_register_custom_model_in_registry`（`_runtime_management.py:302`）会 `MODELS[k]=m` 原地写，loader 不得返回只读视图或每次重建。
 - **按行内 `provider` 字段分组，不按 key 前缀**——`gemini-subscription.json` 里 5 条 `google-gemini-cli/*` 的 `provider` 字段是 `"gemini-subscription"`（`get_providers()` 按 `model.provider` 分组）。两批共 10 key（`google-gemini-cli/<id>` 5 条 + `gemini-subscription/<id>` 5 条，name 各异）必须全部作为**独立 Model** 保留，靠逐行 `key_prefix` 区分（见头部约束 3）。
 - **目录/文件命名**：目标目录 = `provider_models._provider_dir(provider_id)` 返回的下划线目录（复用其映射，勿另建连字符目录）；git 内置规格文件 = `catalog.json`（不是 `models.json`，后者是 Fetch 缓存，勿动、勿改 `.gitignore`）。

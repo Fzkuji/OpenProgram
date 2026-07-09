@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="/docs/" data-page-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 调用流程（权威设计） · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=e7077628">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="One-shot: send a prompt, print the answer, exit (redirect or pipe it)" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc" data-title-en="OpenClaw Integration | OpenClaw 集成指南" data-href-zh="/docs/INTEGRATION_OPENCLAW.html" data-href-en="/docs/INTEGRATION_OPENCLAW.en.html">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness" data-title-en="Harnesses: install, manage, write your own" data-href-zh="/docs/installing-harnesses.html" data-href-en="/docs/installing-harnesses.en.html">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token" data-title-en="Provider Token Tracking" data-href-zh="/docs/provider-token-tracking.html" data-href-en="/docs/provider-token-tracking.en.html">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble" data-title-en="Troubleshooting" data-href-zh="/docs/troubleshooting.html" data-href-en="/docs/troubleshooting.en.html">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title" data-title-en="Agentic Programming Guide">Agentic Programming 指南</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html" data-title-en="Agentic Programming Guide" data-href-zh="/docs/agentic-programming/README.html" data-href-en="/docs/agentic-programming/README.en.html">Agentic Programming 指南</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-title-en="@agentic_function calling sub-functions in a fixed order" data-href-zh="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.en.html">@agentic_function 按固定顺序调用子函数</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-title-en="Next-step decision making (decision.make / exec(choices=))" data-href-zh="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/next-step-decision.en.html">下一步决策（decision.make / exec(choices=)）</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-title-en="How the model picks the next step (the tool-call loop)" data-href-zh="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/tool-calling.en.html">模型如何选择下一步（工具调用循环）</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/agentic-programming/writing-functions/agentic-function.html" data-href-en="/docs/agentic-programming/writing-functions/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/agentic-programming/writing-functions/function-metadata.html" data-href-en="/docs/agentic-programming/writing-functions/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html" data-title-en="Pure Python functions" data-href-zh="/docs/agentic-programming/writing-functions/pure-python.html" data-href-en="/docs/agentic-programming/writing-functions/pure-python.en.html">纯 Python 函数</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details>
+<details class="group" data-key="superpowers"><summary class="group-title">Superpowers</summary><div class="group-body"><details class="group" data-key="superpowers/plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/superpowers/plans/2026-07-08-enabled-models-migration.html">Enabled-Models 迁移 Implementation Plan</a>
+<a class="navlink" href="/docs/superpowers/plans/2026-07-08-provider-self-contained-migration.html">Provider 自包含迁移 Implementation Plan</a>
+<a class="navlink" href="/docs/superpowers/plans/2026-07-08-credential-connection-unification.html">凭据连接信息统一 Implementation Plan</a></div></details></div></details>
+<details class="group" data-key="design" open><summary class="group-title" data-title-en="Design Documents">设计文档</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html" data-title-en="Design Documents" data-href-zh="/docs/design/README.html" data-href-en="/docs/design/README.en.html">设计文档</a>
+<a class="navlink" href="/docs/design/framework-overview.html">OpenProgram 框架总览：一次对话从输入到产出</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title" data-title-en="Channels">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html" data-title-en="Channels" data-href-zh="/docs/design/channels/README.html" data-href-en="/docs/design/channels/README.en.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title" data-title-en="CLI / TUI">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html" data-title-en="CLI / TUI" data-href-zh="/docs/design/cli/README.html" data-href-en="/docs/design/cli/README.en.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html" data-title-en="CLI Naming Convention" data-href-zh="/docs/design/cli/cli-naming.html" data-href-en="/docs/design/cli/cli-naming.en.html">CLI 命名规范</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html" data-title-en="OpenProgram CLI / TUI Redesign" data-href-zh="/docs/design/cli/cli-redesign.html" data-href-en="/docs/design/cli/cli-redesign.en.html">OpenProgram CLI / TUI 重新设计</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html" data-title-en="Slash Commands — Unified Design" data-href-zh="/docs/design/cli/slash-commands.html" data-href-en="/docs/design/cli/slash-commands.en.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html" data-title-en="TUI upgrade: transcript rendering &amp; interaction" data-href-zh="/docs/design/cli/tui-upgrade.html" data-href-en="/docs/design/cli/tui-upgrade.en.html">TUI 升级：会话记录渲染与交互</a>
+<a class="navlink" href="/docs/design/cli/ports.html" data-title-en="Web UI Ports — Architecture, Configuration, and Conflict Handling" data-href-zh="/docs/design/cli/ports.html" data-href-en="/docs/design/cli/ports.en.html">Web UI 端口 — 架构、配置与冲突处理</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html" data-title-en="Slash Commands — Reference Implementations Snapshot" data-href-zh="/docs/design/cli/slash-commands-references.html" data-href-en="/docs/design/cli/slash-commands-references.en.html">斜杠命令 — 参考实现快照</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html" data-title-en="统一 @agentic_function 执行路径" data-href-zh="/docs/design/cli/drop-run-command.html" data-href-en="/docs/design/cli/drop-run-command.en.html">统一 @agentic_function 执行路径</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html" data-title-en="Config write safety — atomic `update_config`" data-href-zh="/docs/design/cli/config-write-safety.html" data-href-en="/docs/design/cli/config-write-safety.en.html">配置写入安全 —— 原子化的 `update_config`</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title" data-title-en="Context">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html" data-title-en="Context" data-href-zh="/docs/design/context/README.html" data-href-en="/docs/design/context/README.en.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/frontend"><summary class="group-title">Frontend</summary><div class="group-body"><a class="navlink" href="/docs/design/frontend/interaction-feedback.html">Interaction feedback — the 0ms rule</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title" data-title-en="Memory — Memory System Design">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a>
+<a class="navlink" href="/docs/design/memory/memory.html" data-title-en="Memory subsystem" data-href-zh="/docs/design/memory/memory.html" data-href-en="/docs/design/memory/memory.en.html">记忆子系统</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title" data-title-en="Proactive Layer — Design">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a>
+<details class="group" data-key="design/proactive/_research_archive"><summary class="group-title">Research Archive</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/_research_archive/replay.html">回放即 policy 测试</a>
+<a class="navlink" href="/docs/design/proactive/_research_archive/threat-model.html">威胁模型</a>
+<a class="navlink" href="/docs/design/proactive/_research_archive/evaluation.html">评估</a></div></details></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title" data-title-en="Providers">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/PROBLEM-models-and-bailian.html">当前问题：模型清单（MODELS）与百炼 provider</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-connection-unification.html">凭据连接信息统一（一个 Credential + 一个解析出口）</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html" data-title-en="Credential-validation unification" data-href-zh="/docs/design/providers/auth/credential-validation-unification.html" data-href-en="/docs/design/providers/auth/credential-validation-unification.en.html">凭证校验统一</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration (Final Design)" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置（最终设计）</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-title-en="Error-taxonomy propagation — structured LLM errors up to the UI" data-href-zh="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-href-en="/docs/design/providers/reliability/error-taxonomy-propagation.en.html">错误分类传播 —— 把结构化的 LLM 错误一路传到 UI</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title" data-title-en="Web UI">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html" data-title-en="Web UI" data-href-zh="/docs/design/ui/README.html" data-href-en="/docs/design/ui/README.en.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title" data-title-en="Function Design">函数设计</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html" data-title-en="Function Design" data-href-zh="/docs/design/function/README.html" data-href-en="/docs/design/function/README.en.html">函数设计</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/design/function/agentic-function.html" data-href-en="/docs/design/function/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html" data-title-en="Function calling" data-href-zh="/docs/design/function/function-calling-unification.html" data-href-en="/docs/design/function/function-calling-unification.en.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title" data-title-en="Extension Gating">扩展门控（Extension Gating）</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html" data-title-en="Extension Gating" data-href-zh="/docs/design/extension-gating/README.html" data-href-en="/docs/design/extension-gating/README.en.html">扩展门控（Extension Gating）</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html" data-title-en="Reference-implementation comparison" data-href-zh="/docs/design/extension-gating/reference-comparison.html" data-href-en="/docs/design/extension-gating/reference-comparison.en.html">参考实现对比</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html" data-title-en="Implementation map" data-href-zh="/docs/design/extension-gating/implementation.html" data-href-en="/docs/design/extension-gating/implementation.en.html">实现地图</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html" data-title-en="Future work — explicitly NOT built" data-href-zh="/docs/design/extension-gating/future-work.html" data-href-en="/docs/design/extension-gating/future-work.en.html">未来工作 —— 明确不做的部分</a></div></details>
+<details class="group" data-key="design/runtime" open><summary class="group-title" data-title-en="Runtime">运行时</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html" data-title-en="Runtime" data-href-zh="/docs/design/runtime/README.html" data-href-en="/docs/design/runtime/README.en.html">运行时</a>
+<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/agent-collab-architecture.html">Agent 协作 — 架构流程图</a>
+<a class="navlink" href="/docs/design/runtime/agent-collaboration.html">Agent 协作：一个分支间通信原语</a>
+<a class="navlink active" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/tool-toggle-management.html">工具开关 / 工具集管理设计</a>
+<a class="navlink" href="/docs/design/runtime/revert-layers.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/permission-model.html">权限系统设计（Permission System Design）</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html" data-title-en="Splitting `agent/dispatcher.py` into a responsibility-scoped package" data-href-zh="/docs/design/runtime/execution/dispatcher-split.html" data-href-en="/docs/design/runtime/execution/dispatcher-split.en.html">将 `agent/dispatcher.py` 拆分为按职责划分的包</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-title-en="Multi-agent + per-turn revert: status" data-href-zh="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-href-en="/docs/design/runtime/operations/multi-agent-revert-todo.en.html">多 agent + 逐 turn 回滚：进展</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html" data-title-en="User input requests: pausing a run to ask the user" data-href-zh="/docs/design/runtime/operations/user-input-requests.html" data-href-en="/docs/design/runtime/operations/user-input-requests.en.html">用户输入请求：暂停运行以向用户提问</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title" data-title-en="Session Subsystem">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title" data-title-en="Integrations">集成</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html" data-title-en="Integrations" data-href-zh="/docs/design/integrations/README.html" data-href-en="/docs/design/integrations/README.en.html">集成</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html" data-title-en="Harness Standard — how an agentic program plugs into OpenProgram" data-href-zh="/docs/design/integrations/harness-standard.html" data-href-en="/docs/design/integrations/harness-standard.en.html">Harness 标准 —— agentic 程序如何接入 OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg" data-title-en="Runtime" data-title-zh="运行时">运行时</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current">Agent 调用流程（权威设计）</span></nav><h1 id="agent-调用流程权威设计">Agent 调用流程（权威设计）<a class="header-anchor" href="#agent-调用流程权威设计">#</a></h1>
+<p>Status: design · Created: 2026-06-18</p>
+<blockquote>
+<p>这是 agent 调用的<strong>核心框架</strong>——所有 turn / LLM 调用都按这个流程走。后续加功能在此基础上往对应节点插入,不改骨架。本文档曾名&quot;LLM 调用路径统一&quot;,现升级为整个调用流程的权威设计。</p>
+</blockquote>
+<h2 id="总览图">总览图<a class="header-anchor" href="#总览图">#</a></h2>
+<p><a href="/docs/design/runtime/agent-call-flow.svg"><code>agent-call-flow.svg</code></a> 画的是<strong>目标(统一后)</strong>:两个入口(用户消息 / 函数体内)汇到<strong>同一条主干</strong>——① compute_reads 读上下文 → ② open_call_node → ③ agent_loop → ④ close_call_node;工具体内再调 exec = 回到主干顶(嵌套)。各入口的特殊处理(聊天的前端流式/标题/压缩、共享的重试/计量)是挂在主干旁的<strong>可选钩子</strong>。底部列出&quot;现状已共享&quot;与&quot;合并要做的 7 步&quot;。</p>
+<blockquote>
+<p><strong>现状 vs 目标</strong>:下面正文描述的是<strong>现状</strong>(两个入口各管各的外围、各写各的记录,只在 agent_loop 汇合)——作为合并的起点参照。统一成上面那条主干的具体步骤,见 <code>session-dag.md</code> 第八节。</p>
+</blockquote>
+<p>骨架一句话(现状):<strong>两个平级入口(dispatcher · runtime.exec)各管各的外围、各写各的 DAG 记录,只在共享的 agent_loop 汇合;exec 在 loop 之下 → 工具体内可再调 LLM 形成嵌套</strong>。</p>
+<h2 id="真实拓扑收敛分叉不是三层嵌套">真实拓扑:收敛分叉,不是三层嵌套<a class="header-anchor" href="#真实拓扑收敛分叉不是三层嵌套">#</a></h2>
+<p>代码实证(<code>agent_loop</code> 全仓只有两个调用点:<code>dispatcher/__init__.py:902</code> 和 <code>agent/agent.py:418</code>):dispatcher <strong>不经过</strong> exec,exec <strong>不经过</strong> dispatcher。它们是平级的两个入口,只共享 agent_loop。</p>
+<pre><code>入口 A: 用户消息 → dispatcher ──直接─────────────┐
+                                                  ├─→ agent_loop(共享引擎)
+入口 B: @agentic_function 体内 → runtime.exec ──经 AgentSession─┘
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>入口</th>
+<th>职责</th>
+<th>到 agent_loop 的路径</th>
+<th>写什么 DAG 记录</th>
+<th>实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A · dispatcher</strong></td>
+<td>turn 生命周期:session、user 节点、attach Runtime、resolve model、解析工具、持久化、前端广播</td>
+<td><strong>直接</strong> <code>agent_loop(...)</code>(<code>__init__.py:902</code>)</td>
+<td>顶层回复 → <strong>assistant 会话消息</strong>(SessionDB, <code>persistence.py:207</code>)</td>
+<td><code>agent/dispatcher/__init__.py</code></td>
+</tr>
+<tr>
+<td><strong>B · runtime.exec</strong></td>
+<td>一次 LLM 调用:开/关 llm 节点、构建上下文</td>
+<td>经 <strong>AgentSession</strong> → <code>session.run</code>(<code>runtime.py:1576</code>)→ <code>agent.py:418</code></td>
+<td>这次调用 → <strong>role=llm DAG 节点</strong></td>
+<td><code>agentic_programming/runtime.py</code></td>
+</tr>
+<tr>
+<td><strong>共享 · agent_loop</strong></td>
+<td>tool loop 引擎:调模型 → 执行工具 → 喂回 → 循环到纯文本</td>
+<td>—</td>
+<td>工具的 code 节点 called_by → 当前 llm 节点</td>
+<td><code>agent/agent_loop.py:114</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="为什么是两个入口不是一个">为什么是两个入口,不是一个<a class="header-anchor" href="#为什么是两个入口不是一个">#</a></h3>
+<p>dispatcher 和 exec 服务两种不同场景,外围插件不重叠:dispatcher 要 session 管理 + 前端 WebSocket 广播 + 标题/压缩;exec 要 DAG llm 节点 + AgentSession retry-rollback。硬合并会让一方背上另一方不需要的逻辑(实测试着折叠时撞到模型分叉、节点重复——见下文步 4)。共享 agent_loop,因为&quot;调模型→执行工具→循环&quot;这个引擎对两者一样。</p>
+<h3 id="关键exec-在-agent_loop-之下所以能嵌套">关键:exec 在 agent_loop <strong>之下</strong>,所以能嵌套<a class="header-anchor" href="#关键exec-在-agent_loop-之下所以能嵌套">#</a></h3>
+<p>当 dispatcher 跑 turn,模型调了 <code>@agentic_function</code> 工具(如 wiki_agent)→ 工具体内 <code>runtime.exec</code> → 又起一个 agent_loop。所以 exec 既是&quot;入口 B&quot;,又被 agent_loop 里的工具反向调用:</p>
+<pre><code>dispatcher → agent_loop → 模型调工具 → @agentic_function 体 → runtime.exec → agent_loop(嵌套)→ ...
+</code></pre>
+<p>这是 agentic programming 的根本能力(函数体内可嵌套调 LLM),也是 wiki_agent 递归的来源。如果 exec 在 loop 之上,工具就无法自己再调 LLM。</p>
+<h3 id="每个节点内部的有序步骤">每个节点内部的有序步骤<a class="header-anchor" href="#每个节点内部的有序步骤">#</a></h3>
+<p><strong>A · dispatcher</strong>:1 建/载 session(沿 active branch 取历史)→ 2 写 user 节点 → 3 attach Runtime(_store + _current_runtime)→ 4 resolve model(agent profile + override)→ 5 解析工具(channel/plan/审批 包装)→ 6 <strong>直接调 agent_loop</strong> → 7 持久化 + finalize(assistant 节点、标题、auto-compact)。</p>
+<p><strong>B · runtime.exec</strong>:1 开 llm 节点(running,_call_id 指向它,外含 timeout/retry 循环)→ 2 构建上下文【a 选历史节点 compute_reads → b render 成消息 + 当前 turn → c 解析工具集 toolset/policy/unattended-deny → d 拼 system + skills → e 建 AgentSession(选 stream_fn)】→ 3 <strong>经 AgentSession 调 agent_loop</strong> → 4 关 llm 节点(回填 output,success)。</p>
+<p><strong>共享 · agent_loop</strong>:每轮调模型前【a convert_to_llm → b memory prefetch → c deferred-tool re-split】→ 调模型/流式 → 判断 tool_use? → 是:执行工具 → 结果喂回 → 再调模型;否(纯文本):退出循环。</p>
+<h2 id="横向对比">横向对比<a class="header-anchor" href="#横向对比">#</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>OpenCode</th>
+<th>OpenClaw</th>
+<th>Hermes</th>
+<th>OpenProgram (统一后)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一次 LLM 调用的抽象</td>
+<td><code>Step</code>(一个节点,tool loop 在内部)</td>
+<td><code>runId</code> 配对(llm_input/llm_output,tool 嵌套在内)</td>
+<td>无层级,平铺列表</td>
+<td><code>exec</code>(一个 llm 节点,tool loop 在内部)</td>
+</tr>
+<tr>
+<td>记录方式</td>
+<td>配对:Step.Started → Step.Ended</td>
+<td>配对:llm_input hook → llm_output hook</td>
+<td>只追加,不标记</td>
+<td>配对:写 running → 回填 output</td>
+</tr>
+<tr>
+<td>工具调用归属</td>
+<td>ToolPart 在 Step 内部(子部分)</td>
+<td>嵌套在同一个 runId 下(子 hook)</td>
+<td>平级 tool 消息</td>
+<td>code 节点的 called_by 指向 llm 节点(子节点)</td>
+</tr>
+<tr>
+<td>聊天 vs 编程调用</td>
+<td>统一(一条路径)</td>
+<td>统一(同一个 hook 系统)</td>
+<td>统一(一个 run_conversation)</td>
+<td>统一(都走 runtime.exec)</td>
+</tr>
+</tbody>
+</table>
+<p>OpenProgram 采用 OpenCode/OpenClaw 的模型:一次调用 = 一个节点,配对写入,工具是子节点。</p>
+<h2 id="问题现状">问题(现状)<a class="header-anchor" href="#问题现状">#</a></h2>
+<p>现在&quot;调一次 LLM&quot;有三条路径:</p>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>入口</th>
+<th>tool loop</th>
+<th>DAG 写 llm 节点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>常规聊天</td>
+<td>dispatcher → agent_loop</td>
+<td>agent_loop 管</td>
+<td>dispatcher 写 SessionDB 消息(不是 DAG llm 节点)</td>
+</tr>
+<tr>
+<td>exec legacy</td>
+<td>exec → <code>self._call()</code></td>
+<td>没有</td>
+<td>exec 写 llm 节点</td>
+</tr>
+<tr>
+<td>exec providers</td>
+<td>exec → <code>session.run</code> → agent_loop</td>
+<td>agent_loop 管</td>
+<td><strong>没写</strong>(bug)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="具体表现">具体表现<a class="header-anchor" href="#具体表现">#</a></h3>
+<ol>
+<li>
+<p><strong>exec providers 路径不写 llm 节点</strong>。<code>_call_via_providers</code> 在 <code>session.run</code> 返回后直接 return,没调 <code>_append_model_call_node</code>。wiki_agent 走这条路径,DAG 里 wiki_agent 直接连 wiki_agent,中间没有 LLM 节点。</p>
+</li>
+<li>
+<p><strong>dispatcher 路径写的不是 DAG llm 节点</strong>。dispatcher 调 <code>persist_assistant_message</code> 写的是 SessionDB 的 assistant 消息(带 token 统计),不是 DAG 的 <code>Call(role=llm)</code> 节点。</p>
+</li>
+<li>
+<p><strong>legacy 路径没有 tool loop</strong>。模型只能返回纯文本,不能调工具。</p>
+</li>
+</ol>
+<h2 id="设计">设计<a class="header-anchor" href="#设计">#</a></h2>
+<h3 id="核心原则">核心原则<a class="header-anchor" href="#核心原则">#</a></h3>
+<p>一次 <code>runtime.exec</code> = 一个 llm 节点。</p>
+<p>llm 节点和 code 节点是同一个抽象:一次调用,进入时 running,结束时回填 output。内部发生了什么(tool loop 跑了几轮、调了哪些工具)都是内部过程,不拆成多个节点。</p>
+<pre><code>进入 exec  → 写 llm 节点 (status=running, output=None)
+exec 内部  → agent_loop 跑 LLM + tool loop
+             (工具的 code 节点 called_by 指向此 llm 节点)
+exec 返回  → 回填 llm 节点 (output=最终回复, status=success)
+</code></pre>
+<h3 id="调用树示例">调用树示例<a class="header-anchor" href="#调用树示例">#</a></h3>
+<p>wiki_agent 递归场景,统一后的 DAG:</p>
+<pre><code>llm (dispatcher 调 exec,模型决定调 wiki_agent)
+  code wiki_agent d1 (工具执行)
+    llm (wiki_agent 内部调 exec,模型又调 wiki_agent)
+      code wiki_agent d2 (递归)
+        llm (又一次 exec)
+          code wiki_agent d3
+            ...
+</code></pre>
+<p>每两个 code 节点之间都有一个 llm 节点,调用链完整。</p>
+<h3 id="统一路径">统一路径<a class="header-anchor" href="#统一路径">#</a></h3>
+<pre><code>runtime.exec(content=[...])
+  → 写 llm 节点 (status=running, output=None)
+  → 构建上下文 (compute_reads + render_dag_messages + content)
+  → 调 LLM,跑 tool loop 直到模型返回纯文本
+      (tool loop 内部模型调的工具,其 code 节点 called_by 指向此 llm 节点)
+  → 回填 llm 节点 (output=最终回复, status=success)
+  → 返回文本
+</code></pre>
+<h3 id="各层改动">各层改动<a class="header-anchor" href="#各层改动">#</a></h3>
+<p><strong>dispatcher</strong>:不再直接调 agent_loop,改成调 runtime.exec。保留的职责:</p>
+<ul>
+<li>写 user 节点</li>
+<li>设置 session 上下文(ContextVar)</li>
+<li>调 runtime.exec</li>
+<li>turn 级别善后(标题生成、compaction 触发)</li>
+</ul>
+<pre><code>process_user_turn (改后)
+  → 写 user 节点 (不变)
+  → 设 _store / _current_runtime (不变)
+  → runtime.exec(content=用户消息)  ← 改这里
+  → finalize
+</code></pre>
+<p><strong>runtime.exec</strong>:统一为一条路径。</p>
+<ul>
+<li>legacy <code>call=my_func</code> 包装成轻量 provider adapter,统一走 <code>_call_via_providers</code></li>
+<li><code>_call_via_providers</code> 补上 llm 节点写入(配对:进入写 running,返回回填)</li>
+<li>删掉 legacy 分支</li>
+</ul>
+<p><strong>agent_loop</strong>:不变。纯粹的&quot;LLM 调用 + tool 执行&quot;引擎,不关心 DAG。</p>
+<h2 id="现状详细分析">现状详细分析<a class="header-anchor" href="#现状详细分析">#</a></h2>
+<h3 id="路径-1-常规聊天-dispatcher">路径 1: 常规聊天 (dispatcher)<a class="header-anchor" href="#路径-1-常规聊天-dispatcher">#</a></h3>
+<pre><code>用户发消息
+→ process_user_turn (dispatcher/__init__.py:96)
+  → 写 user 节点到 DAG (db.append_message)
+  → 设 _store ContextVar
+  → _run_loop_blocking (dispatcher/__init__.py:640)
+    → 构建 AgentContext (tools, system_prompt, history)
+    → agent_loop([prompt], context, config) (agent_loop.py:232)
+      → _stream_assistant_response → LLM 回复
+      → 如果是 tool_use → _execute_tool_calls → tool.execute
+        → 如果工具是 @agentic_function → wrapper 写 code 节点
+        → 工具返回 → agent_loop 继续
+      → 最终拿到纯文本回复
+    ← 返回 final_text
+  → persist_assistant_message (persistence.py:31)
+    → 写 assistant 消息到 SessionDB (不是 DAG llm 节点)
+  → finalize
+</code></pre>
+<h3 id="路径-2-runtimeexec-legacy">路径 2: runtime.exec legacy<a class="header-anchor" href="#路径-2-runtimeexec-legacy">#</a></h3>
+<pre><code>@agentic_function 函数体里调 runtime.exec(content=[...])
+→ exec (runtime.py:789)
+  → self._call(content) → 用户自定义函数,返回文本
+  → _append_model_call_node(reply=...) → 写 llm 节点到 DAG
+← 返回文本
+</code></pre>
+<h3 id="路径-3-runtimeexec-providers">路径 3: runtime.exec providers<a class="header-anchor" href="#路径-3-runtimeexec-providers">#</a></h3>
+<pre><code>@agentic_function 函数体里调 runtime.exec(content=[...])
+→ exec (runtime.py:789)
+  → _call_via_providers (runtime.py:1306)
+    → 构建 AgentSession
+    → session.run(current) → 内部跑 agent_loop (同路径 1 的代码)
+    ← 返回 final assistant message
+  → return _assistant_text(final)  ← 没有写 llm 节点!
+← 返回文本
+</code></pre>
+<h2 id="落地顺序">落地顺序<a class="header-anchor" href="#落地顺序">#</a></h2>
+<h3 id="步-1-2-已完成">步 1-2(✅ 已完成）<a class="header-anchor" href="#步-1-2-已完成">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>步</th>
+<th>做什么</th>
+<th>验证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>exec 配对写 llm 节点(<code>_open_model_call_node</code> / <code>_close_model_call_node</code>),sync + async 两条路径</td>
+<td>✅ wiki_agent session DAG 里出现 llm 节点</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>_call_via_providers</code> 里 session.run 之前把 <code>_call_id</code> 切到 llm 节点,tool loop 的工具 code 节点 called_by 正确指向 llm 节点</td>
+<td>✅ <code>test_tool_loop_subcall_attributes_to_llm_node</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="步-3删-legacy-call-分支">步 3:删 legacy <code>call=</code> 分支<a class="header-anchor" href="#步-3删-legacy-call-分支">#</a></h3>
+<p>把 <code>Runtime(call=fn)</code> 包装成一个 provider model,统一走 <code>_call_via_providers</code>,删掉 <code>_call_fn</code> / <code>_uses_legacy_call</code> 和两条 legacy 分支。</p>
+<table>
+<thead>
+<tr>
+<th>步</th>
+<th>做什么</th>
+<th>文件</th>
+<th>验证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3a</td>
+<td>新增 <code>CallableModel</code> adapter(sync+async,把 pi-ai messages 转回 content 调用户 fn,返回单条 AssistantMessage,无 tool loop;补回 <code>response_format</code>→prompt suffix)</td>
+<td>新建 <code>openprogram/providers/callable_model.py</code></td>
+<td><code>pytest tests/providers/test_functions.py</code></td>
+</tr>
+<tr>
+<td>3b</td>
+<td><code>Runtime.__init__</code> 里 <code>call=</code> → <code>self.api_model = CallableModel(call)</code>,callable runtime 强制 <code>toolset=&quot;none&quot;</code></td>
+<td><code>runtime.py</code> <strong>init</strong></td>
+<td><code>pytest tests/providers/test_functions.py</code></td>
+</tr>
+<tr>
+<td>3c</td>
+<td>删 <code>_call</code>/<code>_async_call</code> 的 <code>_call_fn</code> 分支</td>
+<td><code>runtime.py</code></td>
+<td><code>pytest tests/agentic_programming/</code></td>
+</tr>
+<tr>
+<td>3d</td>
+<td>删 <code>_uses_legacy_call</code> + exec/async_exec 两条 legacy 分支</td>
+<td><code>runtime.py</code></td>
+<td>full <code>pytest tests/agentic_programming tests/providers</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键发现(已验证)</strong>:<code>_call_via_providers</code> 不忽略 content——<code>_render_history_messages(content)</code> 把 content 作为当前 turn(<code>runtime.py:1451</code>),无 store 时 <code>_build_pi_context(content)</code>(<code>:1456</code>)。所以 adapter 不需要特殊处理 content,AgentSession 会把 history+current 给 model,adapter 转回 content 调用户 fn。</p>
+<h3 id="步-4stream_fn-注入-已完成dispatcher-不折叠已论证">步 4:stream_fn 注入(✅ 已完成);dispatcher 不折叠(已论证)<a class="header-anchor" href="#步-4stream_fn-注入-已完成dispatcher-不折叠已论证">#</a></h3>
+<table>
+<thead>
+<tr>
+<th>步</th>
+<th>做什么</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4a</td>
+<td>把 <code>stream_fn</code> 参数穿过 exec → _call_via_providers → AgentSession.<strong>init</strong> → AgentOptions,让 exec 可注入流</td>
+<td>✅ <code>test_exec_stream_fn_injection</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>dispatcher 不折叠进 runtime.exec(实测论证)</strong></p>
+<p>最初设想让 <code>_run_loop_blocking</code> 改调 runtime.exec。实测推翻了这个方向:</p>
+<ol>
+<li><strong>模型会分叉</strong>:dispatcher 用 <code>_resolve_model(agent_profile, req.model_override)</code>(agent profile + 用户选的模型),而 attached runtime 是 <code>create_runtime()</code> 无参自动探测的,<code>api_model</code> 不一致。走 exec 会用错模型。</li>
+<li><strong>上下文会冲突</strong>:dispatcher 用 context-engine 准备好了消息(<code>prep.agent_messages</code>),exec 自己从 DAG render 历史,两套会打架。</li>
+<li><strong>流式事件不兼容</strong>:exec 的 <code>on_stream</code> 发 flat dict,dispatcher 的 <code>on_event</code> 要 webui envelope。</li>
+<li><strong>最关键——会写重复节点</strong>:试着在 dispatcher 里用 <code>_open/_close_model_call_node</code> 加一个 llm 节点,结果 DAG 里出现 <code>[user, assistant, assistant]</code>——因为 <strong>dispatcher 的 assistant 会话消息(<code>persist_assistant_message</code>)本身就是顶层 LLM 调用的 DAG 记录</strong>。再加 llm 节点就重复了。<code>test_dispatcher_integration.py::test_real_loop_text_only</code> 直接抓到这个重复。</li>
+</ol>
+<p><strong>结论</strong>:dispatcher 顶层 LLM 调用<strong>已经</strong>有 DAG 表示(role=assistant 的会话消息节点),工具调用挂在它下面。不需要也不应该再加 llm 节点。原始的&quot;code→code 缺 llm 节点&quot;问题只发生在 <strong><code>@agentic_function</code> 内部 exec 的 tool loop</strong>,已被步 1-2 修复。dispatcher 保持现状。</p>
+<p>dispatcher 和 exec 的关系不是&quot;dispatcher 走 exec&quot;,而是<strong>两个并列的 LLM 调用入口</strong>,各自把顶层调用记进 DAG(dispatcher → assistant 会话节点;exec → llm 节点),共享下层的 agent_loop 引擎和 DAG 节点写入 API。这跟其他框架一致(OpenClaw 也有独立 dispatcher 层)。</p>
+<h3 id="agent-类不动">Agent 类:不动<a class="header-anchor" href="#agent-类不动">#</a></h3>
+<p><code>Agent</code> 在 exec 下层(exec → AgentSession → Agent → agent_loop),是循环驱动器不是平行 LLM 路径,只在 <code>session.py:94</code> 构造一处。折叠它等于重写循环,无收益。</p>
+<h3 id="事件层无改动">事件层:无改动<a class="header-anchor" href="#事件层无改动">#</a></h3>
+<p><code>tool.before</code> 只在 <code>_execute_tool_calls</code>(<code>agent_loop.py:518</code>)一处 fire,所有路径都经过它。CallableModel 无内部 tool loop(用户 fn 只返回 str),不会重复/丢失事件。</p>
+<h3 id="风险">风险<a class="header-anchor" href="#风险">#</a></h3>
+<ol>
+<li><strong>dispatcher 测试 seam(最高)</strong>:4a 把 stream_fn 穿过 4 层后,<code>_run_loop_blocking</code> 仍是 patch 入口,测试的 stream_fn 经 exec 流到 model。<code>test_dispatcher_dag_attach.py</code> 整体替换 <code>_run_loop_blocking</code>,不受影响。</li>
+<li><strong>prompt-cache 前缀稳定</strong>(4b):override 不能破坏 DAG-prefix 缓存。</li>
+<li><strong>response_format 回归</strong>(3a):<code>claude_call</code>/<code>gemini_call</code> 的 JSON-mode 靠 adapter 补回 suffix。</li>
+</ol>
+<h3 id="待更新测试">待更新测试<a class="header-anchor" href="#待更新测试">#</a></h3>
+<p><strong>Trivial(删 assert/override)</strong>:<code>test_openai.py:61</code>、<code>test_anthropic.py:63</code>、<code>test_gemini.py:68</code>(删 <code>_uses_legacy_call() is False</code>);<code>test_decision.py:24</code>、<code>test_loop_options.py:153</code>、<code>test_dispatcher_dag_attach.py:89</code>(删 <code>_uses_legacy_call→True</code> override,留 <code>_call</code> override)。</p>
+<p><strong>Behavioral(需重验)</strong>:<code>test_runtime_exec_dag.py:34</code>、<code>test_functions.py</code> 的 <code>_mock_call</code>(按 content shape 分支,adapter 必须原样传 content)、<code>conftest.py</code> 的 <code>echo_call</code>/<code>noop_call</code>。</p>
+<h2 id="统一记一次模型回复的写入保留新原语删旧机制">统一&quot;记一次模型回复&quot;的写入（保留新原语，删旧机制）<a class="header-anchor" href="#统一记一次模型回复的写入保留新原语删旧机制">#</a></h2>
+<h3 id="现状同一件事两套写法">现状:同一件事两套写法<a class="header-anchor" href="#现状同一件事两套写法">#</a></h3>
+<p>&quot;记录模型回复&quot;现在有两套<strong>配对写节点</strong>(开占位 running → 回填结果)的实现,按入口分:</p>
+<table>
+<thead>
+<tr>
+<th>入口</th>
+<th>开占位</th>
+<th>回填</th>
+<th>实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dispatcher(聊天)</td>
+<td><code>insert_placeholder</code>(_turn_lifecycle.py:65)</td>
+<td><code>persist_assistant_message</code>(persistence.py)</td>
+<td>旧机制</td>
+</tr>
+<tr>
+<td>exec(代码)</td>
+<td><code>_open_model_call_node</code>(runtime.py:631)</td>
+<td><code>_close_model_call_node</code>(runtime.py:656)</td>
+<td>新原语</td>
+</tr>
+</tbody>
+</table>
+<p>两套结构一模一样(open→close 配对),但旧的那套散在 dispatcher,新的在 runtime。这是&quot;头尾都写两份&quot;的根源。</p>
+<h3 id="关键事实让统一变简单">关键事实(让统一变简单)<a class="header-anchor" href="#关键事实让统一变简单">#</a></h3>
+<p>存储层<strong>没有 <code>ROLE_ASSISTANT</code></strong>——只有 user/llm/code(<code>context/nodes.py:36-40</code>)。聊天回复<strong>早就存成 <code>ROLE_LLM</code></strong>:<code>_msg_to_node</code> 把 <code>role=&quot;assistant&quot;</code> 映射成 <code>ROLE_LLM</code>,<code>_node_to_msg</code> 读回来默认还原成 <code>&quot;assistant&quot;</code>(<code>_msg_adapter.py</code>)。exec 的 <code>_open_model_call_node</code> 写的也是 <code>ROLE_LLM</code>,读回来同样默认 &quot;assistant&quot;。</p>
+<p><strong>两个原语在节点层早就用同一个 role。</strong> 唯一差异是 dispatcher 多写了 4 样元数据,exec 的裸原语没写。序列化只有一个收口点 <code>_node_to_msg</code> → 前端读到的还是 &quot;assistant&quot;。</p>
+<h3 id="方案升级新原语-dispatcher-改调它-删旧机制">方案:升级新原语 → dispatcher 改调它 → 删旧机制<a class="header-anchor" href="#方案升级新原语-dispatcher-改调它-删旧机制">#</a></h3>
+<p>把 exec 的配对原语升级成<strong>通用配对原语</strong>(能装下 dispatcher 需要的字段),两个入口都用它,删掉旧的 placeholder/persist 重复机制。</p>
+<p>统一原语必须保留这 4 样(否则前端/分支/计量会断):</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>谁要</th>
+<th>风险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>extra.blocks</code>(thinking/text/tool 卡片顺序)</td>
+<td>前端气泡主体(conv-mapper.ts)</td>
+<td>最高</td>
+</tr>
+<tr>
+<td>token 列 + token_model</td>
+<td>计量 UI</td>
+<td>高</td>
+</tr>
+<tr>
+<td><code>metadata.parent_id=user_msg_id</code></td>
+<td>分支/fork/rewind 的 active-branch 重建</td>
+<td>高</td>
+</tr>
+<tr>
+<td><code>cancelled/completed</code> 终态(exec 当前写 success)</td>
+<td>用户停止时的部分输出</td>
+<td>中</td>
+</tr>
+</tbody>
+</table>
+<p>原语签名升级(可选参数,exec 不传、dispatcher 传):</p>
+<pre><code class="language-python"><span class="n">open_model_call_node</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="s2">&quot;llm&quot;</span><span class="p">,</span> <span class="n">parent_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">content_text</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">node_id</span>
+<span class="n">close_model_call_node</span><span class="p">(</span><span class="n">node_id</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">reply</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="s2">&quot;success&quot;</span><span class="p">,</span> <span class="n">blocks</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">usage</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+</code></pre>
+<p>落地顺序:</p>
+<ol>
+<li>升级 <code>_open/_close_model_call_node</code>,加 <code>parent_id</code> / <code>blocks</code> / <code>usage</code> / <code>status</code> 可选参数(exec 调用不变,默认行为不变)</li>
+<li>dispatcher 的 <code>insert_placeholder</code> 改成调 <code>open_model_call_node(role=&quot;assistant&quot;, parent_id=user_msg_id)</code></li>
+<li>dispatcher 的 <code>persist_assistant_message</code> 改成调 <code>close_model_call_node(blocks=..., usage=..., status=&quot;completed&quot;/&quot;cancelled&quot;)</code>——只保留字段组装,删掉自己的 append/update</li>
+<li>删 <code>_turn_lifecycle.py</code> 的 placeholder/error-fold 里重复的写节点逻辑</li>
+<li>验证:webui 端到端聊天(气泡、thinking/tool 卡片、token、停止、fork)全部正常 + 全量 pytest</li>
+</ol>
+<p>零前端改动——因为 <code>_node_to_msg</code> 仍输出 &quot;assistant&quot;,前端读的字段(blocks/token/parent_id)都还在,只是改由统一原语写。</p>
+<h2 id="相关文件">相关文件<a class="header-anchor" href="#相关文件">#</a></h2>
+<ul>
+<li><code>openprogram/agentic_programming/runtime.py</code> — exec / _call_via_providers / _open|_close_model_call_node(统一原语所在)</li>
+<li><code>openprogram/providers/callable_model.py</code> — CallableModel adapter</li>
+<li><code>openprogram/agent/agent_loop.py</code> — agent_loop / _execute_tool_calls</li>
+<li><code>openprogram/agent/session.py</code> — AgentSession</li>
+<li><code>openprogram/agent/dispatcher/__init__.py</code> — process_user_turn / _run_loop_blocking</li>
+<li><code>openprogram/agent/dispatcher/persistence.py</code> — persist_assistant_message(改调统一原语)</li>
+<li><code>openprogram/agent/internals/_turn_lifecycle.py</code> — insert_placeholder / fold_error(删重复写入)</li>
+<li><code>openprogram/store/session/_msg_adapter.py</code> — _node_to_msg(序列化收口点,role 还原)</li>
+<li><code>openprogram/agentic_programming/function.py</code> — @agentic_function wrapper</li>
+</ul>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/agent-collaboration.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Agent 协作：一个分支间通信原语</span></a><a class="pn-link pn-next" href="/docs/design/runtime/async-task-lifecycle.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Async Task 生命周期</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#总览图">总览图</a>
+<a class="" href="#真实拓扑收敛分叉不是三层嵌套">真实拓扑:收敛分叉,不是三层嵌套</a>
+<a class="lvl-3" href="#为什么是两个入口不是一个">为什么是两个入口,不是一个</a>
+<a class="lvl-3" href="#关键exec-在-agent_loop-之下所以能嵌套">关键:exec 在 agent_loop 之下,所以能嵌套</a>
+<a class="lvl-3" href="#每个节点内部的有序步骤">每个节点内部的有序步骤</a>
+<a class="" href="#横向对比">横向对比</a>
+<a class="" href="#问题现状">问题(现状)</a>
+<a class="lvl-3" href="#具体表现">具体表现</a>
+<a class="" href="#设计">设计</a>
+<a class="lvl-3" href="#核心原则">核心原则</a>
+<a class="lvl-3" href="#调用树示例">调用树示例</a>
+<a class="lvl-3" href="#统一路径">统一路径</a>
+<a class="lvl-3" href="#各层改动">各层改动</a>
+<a class="" href="#现状详细分析">现状详细分析</a>
+<a class="lvl-3" href="#路径-1-常规聊天-dispatcher">路径 1: 常规聊天 (dispatcher)</a>
+<a class="lvl-3" href="#路径-2-runtimeexec-legacy">路径 2: runtime.exec legacy</a>
+<a class="lvl-3" href="#路径-3-runtimeexec-providers">路径 3: runtime.exec providers</a>
+<a class="" href="#落地顺序">落地顺序</a>
+<a class="lvl-3" href="#步-1-2-已完成">步 1-2(✅ 已完成）</a>
+<a class="lvl-3" href="#步-3删-legacy-call-分支">步 3:删 legacy call= 分支</a>
+<a class="lvl-3" href="#步-4stream_fn-注入-已完成dispatcher-不折叠已论证">步 4:stream_fn 注入(✅ 已完成);dispatcher 不折叠(已论证)</a>
+<a class="lvl-3" href="#agent-类不动">Agent 类:不动</a>
+<a class="lvl-3" href="#事件层无改动">事件层:无改动</a>
+<a class="lvl-3" href="#风险">风险</a>
+<a class="lvl-3" href="#待更新测试">待更新测试</a>
+<a class="" href="#统一记一次模型回复的写入保留新原语删旧机制">统一"记一次模型回复"的写入（保留新原语，删旧机制）</a>
+<a class="lvl-3" href="#现状同一件事两套写法">现状:同一件事两套写法</a>
+<a class="lvl-3" href="#关键事实让统一变简单">关键事实(让统一变简单)</a>
+<a class="lvl-3" href="#方案升级新原语-dispatcher-改调它-删旧机制">方案:升级新原语 → dispatcher 改调它 → 删旧机制</a>
+<a class="" href="#相关文件">相关文件</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=e7077628"></script>
+</body>
+</html>

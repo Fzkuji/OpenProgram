@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;padding:0;background:#141416;height:100%;
+    display:flex;align-items:center;justify-content:center;
+    font-family:-apple-system,'Segoe UI',sans-serif;color:#e6edf3}
+  .stage{display:flex;flex-direction:column;align-items:center;gap:24px}
+  .cap{font-family:ui-monospace,Menlo,monospace;font-size:14px;color:#8A8A96;text-align:center}
+  .row{display:flex;align-items:center;gap:28px}
+  .wm{font-size:48px;font-weight:700}
+  .wm .p{background:linear-gradient(90deg,#3B9EFF,#A855F7);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-family:ui-monospace,Menlo,monospace;font-size:13px;letter-spacing:2px;color:#7A7A86;margin-top:6px}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="cap">纯循环动画 · 泡泡此起彼伏地生成与消失,永远循环</div>
+    <div class="row">
+      <svg width="170" height="170" viewBox="0 0 170 170" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#3B9EFF"/><stop offset="1" stop-color="#A855F7"/>
+          </linearGradient>
+          <radialGradient id="bA" cx="0.35" cy="0.3" r="0.85"><stop offset="0" stop-color="#7FC0FF"/><stop offset="1" stop-color="#2F7FE0"/></radialGradient>
+          <radialGradient id="bB" cx="0.35" cy="0.3" r="0.85"><stop offset="0" stop-color="#C09BF7"/><stop offset="1" stop-color="#8A46D8"/></radialGradient>
+          <radialGradient id="bC" cx="0.35" cy="0.3" r="0.85"><stop offset="0" stop-color="#8FA6F2"/><stop offset="1" stop-color="#5A5FD0"/></radialGradient>
+          <radialGradient id="bD" cx="0.35" cy="0.3" r="0.85"><stop offset="0" stop-color="#6FB6FF"/><stop offset="1" stop-color="#3E86E8"/></radialGradient>
+          <clipPath id="inside"><circle cx="85" cy="85" r="60"/></clipPath>
+        </defs>
+
+        <!-- container ring (always full) -->
+        <circle cx="85" cy="85" r="64" fill="none" stroke="url(#ring)" stroke-width="6"/>
+
+        <!-- 5 bubbles, each birth -> hold -> death, staggered so 3-4 are alive at once, forever.
+             keySplines values MUST be 0..1 (an out-of-range value silently kills the whole
+             animation, which is why the ring was empty before). A gentle overshoot on birth is
+             done with a slight ease-out spline, not negative control points. -->
+        <g clip-path="url(#inside)">
+          <circle cx="66" cy="68" fill="url(#bA)" r="0">
+            <animate attributeName="r" dur="10s" begin="0s" repeatCount="indefinite"
+              keyTimes="0; 0.14; 0.45; 0.58; 1" values="0; 30; 30; 0; 0"
+              calcMode="spline" keySplines="0.2 0.9 0.3 1; 0 0 1 1; 0.6 0 0.9 0.2; 0 0 1 1"/>
+          </circle>
+          <circle cx="106" cy="96" fill="url(#bB)" r="0">
+            <animate attributeName="r" dur="10s" begin="2s" repeatCount="indefinite"
+              keyTimes="0; 0.14; 0.45; 0.58; 1" values="0; 23; 23; 0; 0"
+              calcMode="spline" keySplines="0.2 0.9 0.3 1; 0 0 1 1; 0.6 0 0.9 0.2; 0 0 1 1"/>
+          </circle>
+          <circle cx="74" cy="112" fill="url(#bC)" r="0">
+            <animate attributeName="r" dur="10s" begin="4s" repeatCount="indefinite"
+              keyTimes="0; 0.14; 0.45; 0.58; 1" values="0; 15; 15; 0; 0"
+              calcMode="spline" keySplines="0.2 0.9 0.3 1; 0 0 1 1; 0.6 0 0.9 0.2; 0 0 1 1"/>
+          </circle>
+          <circle cx="110" cy="62" fill="url(#bD)" r="0">
+            <animate attributeName="r" dur="10s" begin="6s" repeatCount="indefinite"
+              keyTimes="0; 0.14; 0.45; 0.58; 1" values="0; 18; 18; 0; 0"
+              calcMode="spline" keySplines="0.2 0.9 0.3 1; 0 0 1 1; 0.6 0 0.9 0.2; 0 0 1 1"/>
+          </circle>
+          <circle cx="88" cy="82" fill="url(#bA)" r="0">
+            <animate attributeName="r" dur="10s" begin="8s" repeatCount="indefinite"
+              keyTimes="0; 0.14; 0.45; 0.58; 1" values="0; 12; 12; 0; 0"
+              calcMode="spline" keySplines="0.2 0.9 0.3 1; 0 0 1 1; 0.6 0 0.9 0.2; 0 0 1 1"/>
+          </circle>
+        </g>
+      </svg>
+
+      <div>
+        <div class="wm">Open<span class="p">Program</span></div>
+        <div class="sub">AGENT HARNESS</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

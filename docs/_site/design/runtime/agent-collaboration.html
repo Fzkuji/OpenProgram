@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="zh" data-base="/docs/" data-page-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 协作：一个分支间通信原语 · OpenProgram Docs</title>
+<script>
+(function(){try{var t=localStorage.getItem('op-docs-theme');
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="/docs/assets/site.css?v=e7077628">
+<link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
+<link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
+
+</head>
+<body>
+<header class="topbar">
+  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <a class="brand" href="/docs/index.html"><span class="dot"></span>OpenProgram Docs</a>
+  <div class="spacer"></div>
+  <button class="search-trigger" aria-label="搜索">
+    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  </button>
+  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
+  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+</header>
+
+<div class="scrim"></div>
+<div class="layout">
+  <nav class="sidebar">
+    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
+           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
+<a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="One-shot: send a prompt, print the answer, exit (redirect or pipe it)" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
+<a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
+<a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
+<details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
+<a class="navlink" href="/docs/INTEGRATION_OPENCLAW.html" data-i18n="p_int_oc" data-title-en="OpenClaw Integration | OpenClaw 集成指南" data-href-zh="/docs/INTEGRATION_OPENCLAW.html" data-href-en="/docs/INTEGRATION_OPENCLAW.en.html">集成 OpenClaw</a>
+<a class="navlink" href="/docs/installing-harnesses.html" data-i18n="p_harness" data-title-en="Harnesses: install, manage, write your own" data-href-zh="/docs/installing-harnesses.html" data-href-en="/docs/installing-harnesses.en.html">安装与编写 Harness</a></div></details>
+<details class="group" data-key="__参考__"><summary class="group-title" data-i18n="grp_ref">参考</summary><div class="group-body"><a class="navlink" href="/docs/API.html" data-i18n="p_api" data-title-en="API Reference" data-href-zh="/docs/API.html" data-href-en="/docs/API.en.html">API 参考</a>
+<a class="navlink" href="/docs/provider-token-tracking.html" data-i18n="p_token" data-title-en="Provider Token Tracking" data-href-zh="/docs/provider-token-tracking.html" data-href-en="/docs/provider-token-tracking.en.html">Provider Token 追踪</a>
+<a class="navlink" href="/docs/troubleshooting.html" data-i18n="p_trouble" data-title-en="Troubleshooting" data-href-zh="/docs/troubleshooting.html" data-href-en="/docs/troubleshooting.en.html">故障排查</a></div></details>
+<details class="group" data-key="agentic-programming"><summary class="group-title" data-title-en="Agentic Programming Guide">Agentic Programming 指南</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/README.html" data-title-en="Agentic Programming Guide" data-href-zh="/docs/agentic-programming/README.html" data-href-en="/docs/agentic-programming/README.en.html">Agentic Programming 指南</a>
+<details class="group" data-key="agentic-programming/choosing-the-next-step"><summary class="group-title">Choosing The Next Step</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-title-en="@agentic_function calling sub-functions in a fixed order" data-href-zh="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/fixed-order-calls.en.html">@agentic_function 按固定顺序调用子函数</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-title-en="Next-step decision making (decision.make / exec(choices=))" data-href-zh="/docs/agentic-programming/choosing-the-next-step/next-step-decision.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/next-step-decision.en.html">下一步决策（decision.make / exec(choices=)）</a>
+<a class="navlink" href="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-title-en="How the model picks the next step (the tool-call loop)" data-href-zh="/docs/agentic-programming/choosing-the-next-step/tool-calling.html" data-href-en="/docs/agentic-programming/choosing-the-next-step/tool-calling.en.html">模型如何选择下一步（工具调用循环）</a></div></details>
+<details class="group" data-key="agentic-programming/writing-functions"><summary class="group-title">Writing Functions</summary><div class="group-body"><a class="navlink" href="/docs/agentic-programming/writing-functions/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/agentic-programming/writing-functions/agentic-function.html" data-href-en="/docs/agentic-programming/writing-functions/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/agentic-programming/writing-functions/function-metadata.html" data-href-en="/docs/agentic-programming/writing-functions/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/agentic-programming/writing-functions/pure-python.html" data-title-en="Pure Python functions" data-href-zh="/docs/agentic-programming/writing-functions/pure-python.html" data-href-en="/docs/agentic-programming/writing-functions/pure-python.en.html">纯 Python 函数</a></div></details></div></details>
+<details class="group" data-key="api"><summary class="group-title">Api</summary><div class="group-body"><a class="navlink" href="/docs/api/agentic-function.html" data-title-en="agentic_function" data-href-zh="/docs/api/agentic-function.html" data-href-en="/docs/api/agentic-function.en.html">agentic_function</a>
+<a class="navlink" href="/docs/api/providers.html" data-title-en="Providers" data-href-zh="/docs/api/providers.html" data-href-en="/docs/api/providers.en.html">Providers</a>
+<a class="navlink" href="/docs/api/runtime.html" data-title-en="Runtime" data-href-zh="/docs/api/runtime.html" data-href-en="/docs/api/runtime.en.html">Runtime</a></div></details>
+<details class="group" data-key="philosophy"><summary class="group-title">Philosophy</summary><div class="group-body"><a class="navlink" href="/docs/philosophy/agentic-programming.html" data-title-en="Agentic Programming — Design Philosophy" data-href-zh="/docs/philosophy/agentic-programming.html" data-href-en="/docs/philosophy/agentic-programming.en.html">Agentic Programming — 设计哲学</a></div></details>
+<details class="group" data-key="plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/plans/cache-control-passthrough.html" data-title-en="Change Plan: Pass `cache_control` on content blocks through to the Anthropic API" data-href-zh="/docs/plans/cache-control-passthrough.html" data-href-en="/docs/plans/cache-control-passthrough.en.html">改动规划：让 content block 上的 cache_control 透传到 Anthropic API</a>
+<a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
+<details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
+<details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details>
+<details class="group" data-key="superpowers"><summary class="group-title">Superpowers</summary><div class="group-body"><details class="group" data-key="superpowers/plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/superpowers/plans/2026-07-08-enabled-models-migration.html">Enabled-Models 迁移 Implementation Plan</a>
+<a class="navlink" href="/docs/superpowers/plans/2026-07-08-provider-self-contained-migration.html">Provider 自包含迁移 Implementation Plan</a>
+<a class="navlink" href="/docs/superpowers/plans/2026-07-08-credential-connection-unification.html">凭据连接信息统一 Implementation Plan</a></div></details></div></details>
+<details class="group" data-key="design" open><summary class="group-title" data-title-en="Design Documents">设计文档</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html" data-title-en="Design Documents" data-href-zh="/docs/design/README.html" data-href-en="/docs/design/README.en.html">设计文档</a>
+<a class="navlink" href="/docs/design/framework-overview.html">OpenProgram 框架总览：一次对话从输入到产出</a>
+<a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
+<a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
+<a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
+<details class="group" data-key="design/channels"><summary class="group-title" data-title-en="Channels">Channels</summary><div class="group-body"><a class="navlink" href="/docs/design/channels/README.html" data-title-en="Channels" data-href-zh="/docs/design/channels/README.html" data-href-en="/docs/design/channels/README.en.html">Channels</a>
+<a class="navlink" href="/docs/design/channels/channel-design.html" data-title-en="Channel Subsystem Design" data-href-zh="/docs/design/channels/channel-design.html" data-href-en="/docs/design/channels/channel-design.en.html">Channel 子系统设计</a>
+<a class="navlink" href="/docs/design/channels/channel-audit.html" data-title-en="Channel Subsystem Design Audit" data-href-zh="/docs/design/channels/channel-audit.html" data-href-en="/docs/design/channels/channel-audit.en.html">Channel 子系统设计审计</a></div></details>
+<details class="group" data-key="design/cli"><summary class="group-title" data-title-en="CLI / TUI">CLI / TUI</summary><div class="group-body"><a class="navlink" href="/docs/design/cli/README.html" data-title-en="CLI / TUI" data-href-zh="/docs/design/cli/README.html" data-href-en="/docs/design/cli/README.en.html">CLI / TUI</a>
+<a class="navlink" href="/docs/design/cli/cli-naming.html" data-title-en="CLI Naming Convention" data-href-zh="/docs/design/cli/cli-naming.html" data-href-en="/docs/design/cli/cli-naming.en.html">CLI 命名规范</a>
+<a class="navlink" href="/docs/design/cli/cli-redesign.html" data-title-en="OpenProgram CLI / TUI Redesign" data-href-zh="/docs/design/cli/cli-redesign.html" data-href-en="/docs/design/cli/cli-redesign.en.html">OpenProgram CLI / TUI 重新设计</a>
+<a class="navlink" href="/docs/design/cli/slash-commands.html" data-title-en="Slash Commands — Unified Design" data-href-zh="/docs/design/cli/slash-commands.html" data-href-en="/docs/design/cli/slash-commands.en.html">Slash Commands — Unified Design</a>
+<a class="navlink" href="/docs/design/cli/tui-upgrade.html" data-title-en="TUI upgrade: transcript rendering &amp; interaction" data-href-zh="/docs/design/cli/tui-upgrade.html" data-href-en="/docs/design/cli/tui-upgrade.en.html">TUI 升级：会话记录渲染与交互</a>
+<a class="navlink" href="/docs/design/cli/ports.html" data-title-en="Web UI Ports — Architecture, Configuration, and Conflict Handling" data-href-zh="/docs/design/cli/ports.html" data-href-en="/docs/design/cli/ports.en.html">Web UI 端口 — 架构、配置与冲突处理</a>
+<a class="navlink" href="/docs/design/cli/slash-commands-references.html" data-title-en="Slash Commands — Reference Implementations Snapshot" data-href-zh="/docs/design/cli/slash-commands-references.html" data-href-en="/docs/design/cli/slash-commands-references.en.html">斜杠命令 — 参考实现快照</a>
+<a class="navlink" href="/docs/design/cli/drop-run-command.html" data-title-en="统一 @agentic_function 执行路径" data-href-zh="/docs/design/cli/drop-run-command.html" data-href-en="/docs/design/cli/drop-run-command.en.html">统一 @agentic_function 执行路径</a>
+<a class="navlink" href="/docs/design/cli/config-write-safety.html" data-title-en="Config write safety — atomic `update_config`" data-href-zh="/docs/design/cli/config-write-safety.html" data-href-en="/docs/design/cli/config-write-safety.en.html">配置写入安全 —— 原子化的 `update_config`</a></div></details>
+<details class="group" data-key="design/context"><summary class="group-title" data-title-en="Context">Context</summary><div class="group-body"><a class="navlink" href="/docs/design/context/README.html" data-title-en="Context" data-href-zh="/docs/design/context/README.html" data-href-en="/docs/design/context/README.en.html">Context</a>
+<a class="navlink" href="/docs/design/context/context.html" data-title-en="Context — The Context Layer" data-href-zh="/docs/design/context/context.html" data-href-en="/docs/design/context/context.en.html">Context — 上下文层</a>
+<a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
+<a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
+<a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/frontend"><summary class="group-title">Frontend</summary><div class="group-body"><a class="navlink" href="/docs/design/frontend/interaction-feedback.html">Interaction feedback — the 0ms rule</a></div></details>
+<details class="group" data-key="design/memory"><summary class="group-title" data-title-en="Memory — Memory System Design">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
+<a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
+<a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
+<a class="navlink" href="/docs/design/memory/git-as-entity-memory.html" data-title-en="Entity Memory on Git: Session-Git + Project-Git" data-href-zh="/docs/design/memory/git-as-entity-memory.html" data-href-en="/docs/design/memory/git-as-entity-memory.en.html">实体记忆走 Git: Session-Git + Project-Git</a>
+<a class="navlink" href="/docs/design/memory/virtual-memory.html" data-title-en="Virtual Memory" data-href-zh="/docs/design/memory/virtual-memory.html" data-href-en="/docs/design/memory/virtual-memory.en.html">抽象记忆 (Virtual Memory)</a>
+<a class="navlink" href="/docs/design/memory/memory.html" data-title-en="Memory subsystem" data-href-zh="/docs/design/memory/memory.html" data-href-en="/docs/design/memory/memory.en.html">记忆子系统</a></div></details>
+<details class="group" data-key="design/proactive"><summary class="group-title" data-title-en="Proactive Layer — Design">Proactive Layer — 设计</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/README.html" data-title-en="Proactive Layer — Design" data-href-zh="/docs/design/proactive/README.html" data-href-en="/docs/design/proactive/README.en.html">Proactive Layer — 设计</a>
+<a class="navlink" href="/docs/design/proactive/event-reference.html">OpenProgram · 事件层 API Reference</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.viz.html">OpenProgram · 事件层设计（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.viz.html">OpenProgram · 框架演进（可视化）</a>
+<a class="navlink" href="/docs/design/proactive/policies-mvp.html" data-title-en="Three Template Rules" data-href-zh="/docs/design/proactive/policies-mvp.html" data-href-en="/docs/design/proactive/policies-mvp.en.html">三条样板规则</a>
+<a class="navlink" href="/docs/design/proactive/events-and-state.html" data-title-en="Events and State (The Foundation)" data-href-zh="/docs/design/proactive/events-and-state.html" data-href-en="/docs/design/proactive/events-and-state.en.html">事件与状态（地基）</a>
+<a class="navlink" href="/docs/design/proactive/event-layer.html" data-title-en="Event Layer" data-href-zh="/docs/design/proactive/event-layer.html" data-href-en="/docs/design/proactive/event-layer.en.html">事件层</a>
+<a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
+<a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
+<a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a>
+<details class="group" data-key="design/proactive/_research_archive"><summary class="group-title">Research Archive</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/_research_archive/replay.html">回放即 policy 测试</a>
+<a class="navlink" href="/docs/design/proactive/_research_archive/threat-model.html">威胁模型</a>
+<a class="navlink" href="/docs/design/proactive/_research_archive/evaluation.html">评估</a></div></details></div></details>
+<details class="group" data-key="design/providers"><summary class="group-title" data-title-en="Providers">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/PROBLEM-models-and-bailian.html">当前问题：模型清单（MODELS）与百炼 provider</a>
+<a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
+<details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
+<a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-connection-unification.html">凭据连接信息统一（一个 Credential + 一个解析出口）</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html" data-title-en="Credential-validation unification" data-href-zh="/docs/design/providers/auth/credential-validation-unification.html" data-href-en="/docs/design/providers/auth/credential-validation-unification.en.html">凭证校验统一</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
+<a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration (Final Design)" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置（最终设计）</a></div></details>
+<details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a>
+<a class="navlink" href="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-title-en="Error-taxonomy propagation — structured LLM errors up to the UI" data-href-zh="/docs/design/providers/reliability/error-taxonomy-propagation.html" data-href-en="/docs/design/providers/reliability/error-taxonomy-propagation.en.html">错误分类传播 —— 把结构化的 LLM 错误一路传到 UI</a></div></details></div></details>
+<details class="group" data-key="design/ui"><summary class="group-title" data-title-en="Web UI">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html" data-title-en="Web UI" data-href-zh="/docs/design/ui/README.html" data-href-en="/docs/design/ui/README.en.html">Web UI</a>
+<a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
+<a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
+<a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
+<a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
+<details class="group" data-key="design/function"><summary class="group-title" data-title-en="Function Design">函数设计</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html" data-title-en="Function Design" data-href-zh="/docs/design/function/README.html" data-href-en="/docs/design/function/README.en.html">函数设计</a>
+<a class="navlink" href="/docs/design/function/agentic-function.html" data-title-en="@agentic_function" data-href-zh="/docs/design/function/agentic-function.html" data-href-en="/docs/design/function/agentic-function.en.html">@agentic_function</a>
+<a class="navlink" href="/docs/design/function/function-calling-unification.html" data-title-en="Function calling" data-href-zh="/docs/design/function/function-calling-unification.html" data-href-en="/docs/design/function/function-calling-unification.en.html">Function calling</a>
+<a class="navlink" href="/docs/design/function/function-metadata.html" data-title-en="Function Metadata Specification" data-href-zh="/docs/design/function/function-metadata.html" data-href-en="/docs/design/function/function-metadata.en.html">函数元数据规范</a>
+<a class="navlink" href="/docs/design/function/tool-calling.html" data-title-en="How the Model Picks the Next Step (the Tool-Calling Loop)" data-href-zh="/docs/design/function/tool-calling.html" data-href-en="/docs/design/function/tool-calling.en.html">模型选择下一步的逻辑(工具调用循环)</a>
+<a class="navlink" href="/docs/design/function/pure-python.html" data-title-en="Pure Python Functions" data-href-zh="/docs/design/function/pure-python.html" data-href-en="/docs/design/function/pure-python.en.html">纯 Python 函数</a>
+<details class="group" data-key="design/function/function-calling"><summary class="group-title">Function Calling</summary><div class="group-body"><a class="navlink" href="/docs/design/function/function-calling/code-call.html" data-title-en="@agentic_function Calling Sub-Functions in a Fixed Order" data-href-zh="/docs/design/function/function-calling/code-call.html" data-href-en="/docs/design/function/function-calling/code-call.en.html">@agentic_function 按固定顺序调用子函数</a></div></details></div></details>
+<details class="group" data-key="design/extension-gating"><summary class="group-title" data-title-en="Extension Gating">扩展门控（Extension Gating）</summary><div class="group-body"><a class="navlink" href="/docs/design/extension-gating/README.html" data-title-en="Extension Gating" data-href-zh="/docs/design/extension-gating/README.html" data-href-en="/docs/design/extension-gating/README.en.html">扩展门控（Extension Gating）</a>
+<a class="navlink" href="/docs/design/extension-gating/reference-comparison.html" data-title-en="Reference-implementation comparison" data-href-zh="/docs/design/extension-gating/reference-comparison.html" data-href-en="/docs/design/extension-gating/reference-comparison.en.html">参考实现对比</a>
+<a class="navlink" href="/docs/design/extension-gating/implementation.html" data-title-en="Implementation map" data-href-zh="/docs/design/extension-gating/implementation.html" data-href-en="/docs/design/extension-gating/implementation.en.html">实现地图</a>
+<a class="navlink" href="/docs/design/extension-gating/future-work.html" data-title-en="Future work — explicitly NOT built" data-href-zh="/docs/design/extension-gating/future-work.html" data-href-en="/docs/design/extension-gating/future-work.en.html">未来工作 —— 明确不做的部分</a></div></details>
+<details class="group" data-key="design/runtime" open><summary class="group-title" data-title-en="Runtime">运行时</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html" data-title-en="Runtime" data-href-zh="/docs/design/runtime/README.html" data-href-en="/docs/design/runtime/README.en.html">运行时</a>
+<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/agent-collab-architecture.html">Agent 协作 — 架构流程图</a>
+<a class="navlink active" href="/docs/design/runtime/agent-collaboration.html">Agent 协作：一个分支间通信原语</a>
+<a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
+<a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/tool-toggle-management.html">工具开关 / 工具集管理设计</a>
+<a class="navlink" href="/docs/design/runtime/revert-layers.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/permission-model.html">权限系统设计（Permission System Design）</a>
+<a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
+<a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
+<details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.html" data-title-en="Self-Recursion Guard for Agentic Functions" data-href-zh="/docs/design/runtime/execution/agentic-self-recursion.html" data-href-en="/docs/design/runtime/execution/agentic-self-recursion.en.html">Agentic 函数防自递归机制</a>
+<a class="navlink" href="/docs/design/runtime/execution/agentic-self-recursion.viz.html">Agentic 函数防自递归机制 — 设计文档（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/execution/async-task-lifecycle.html" data-title-en="Async Task Lifecycle" data-href-zh="/docs/design/runtime/execution/async-task-lifecycle.html" data-href-en="/docs/design/runtime/execution/async-task-lifecycle.en.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/execution/next-step-decision.html" data-title-en="Next-step decision making(decision.make / exec(choices=))" data-href-zh="/docs/design/runtime/execution/next-step-decision.html" data-href-en="/docs/design/runtime/execution/next-step-decision.en.html">Next-step decision making(decision.make / exec(choices=))</a>
+<a class="navlink" href="/docs/design/runtime/execution/dispatcher-split.html" data-title-en="Splitting `agent/dispatcher.py` into a responsibility-scoped package" data-href-zh="/docs/design/runtime/execution/dispatcher-split.html" data-href-en="/docs/design/runtime/execution/dispatcher-split.en.html">将 `agent/dispatcher.py` 拆分为按职责划分的包</a></div></details>
+<details class="group" data-key="design/runtime/operations"><summary class="group-title">Operations</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/operations/edge-field-rename.html" data-title-en="DAG Edge Field Rename Design Doc" data-href-zh="/docs/design/runtime/operations/edge-field-rename.html" data-href-en="/docs/design/runtime/operations/edge-field-rename.en.html">DAG 边字段重命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/rewind.html" data-title-en="Rewind — Roll Back to Any Historical Message" data-href-zh="/docs/design/runtime/operations/rewind.html" data-href-en="/docs/design/runtime/operations/rewind.en.html">Rewind — 回退到任意历史消息</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.html" data-title-en="Automatic Branch Naming Design Doc" data-href-zh="/docs/design/runtime/operations/branch-naming.html" data-href-en="/docs/design/runtime/operations/branch-naming.en.html">分支自动命名设计文档</a>
+<a class="navlink" href="/docs/design/runtime/operations/branch-naming.viz.html">分支自动命名设计（可视化）</a>
+<a class="navlink" href="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-title-en="Multi-agent + per-turn revert: status" data-href-zh="/docs/design/runtime/operations/multi-agent-revert-todo.html" data-href-en="/docs/design/runtime/operations/multi-agent-revert-todo.en.html">多 agent + 逐 turn 回滚：进展</a>
+<a class="navlink" href="/docs/design/runtime/operations/file-management.html" data-title-en="File Modification Management — Industry Analysis and OpenProgram Design" data-href-zh="/docs/design/runtime/operations/file-management.html" data-href-en="/docs/design/runtime/operations/file-management.en.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/operations/user-input-requests.html" data-title-en="User input requests: pausing a run to ask the user" data-href-zh="/docs/design/runtime/operations/user-input-requests.html" data-href-en="/docs/design/runtime/operations/user-input-requests.en.html">用户输入请求：暂停运行以向用户提问</a>
+<a class="navlink" href="/docs/design/runtime/operations/unify-parent-called-by.html" data-title-en="Unifying parent_id and called_by — Design" data-href-zh="/docs/design/runtime/operations/unify-parent-called-by.html" data-href-en="/docs/design/runtime/operations/unify-parent-called-by.en.html">统一 parent_id 与 called_by — 设计方案</a>
+<a class="navlink" href="/docs/design/runtime/operations/streaming-resume.html" data-title-en="Persisting In-Flight State / Reconnect Recovery" data-href-zh="/docs/design/runtime/operations/streaming-resume.html" data-href-en="/docs/design/runtime/operations/streaming-resume.en.html">运行中状态的持久化 / 重连恢复</a></div></details>
+<details class="group" data-key="design/runtime/session"><summary class="group-title" data-title-en="Session Subsystem">Session 子系统</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/session/README.html" data-title-en="Session Subsystem" data-href-zh="/docs/design/runtime/session/README.html" data-href-en="/docs/design/runtime/session/README.en.html">Session 子系统</a>
+<a class="navlink" href="/docs/design/runtime/session/name.html" data-title-en="LLM Title Generation" data-href-zh="/docs/design/runtime/session/name.html" data-href-en="/docs/design/runtime/session/name.en.html">LLM 标题生成</a>
+<a class="navlink" href="/docs/design/runtime/session/session-name.html" data-title-en="Session Name — Session Naming Design" data-href-zh="/docs/design/runtime/session/session-name.html" data-href-en="/docs/design/runtime/session/session-name.en.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/session/context.html" data-title-en="Session Context" data-href-zh="/docs/design/runtime/session/context.html" data-href-en="/docs/design/runtime/session/context.en.html">Session 上下文</a>
+<a class="navlink" href="/docs/design/runtime/session/operations.html" data-title-en="Session Operations" data-href-zh="/docs/design/runtime/session/operations.html" data-href-en="/docs/design/runtime/session/operations.en.html">Session 操作流程</a>
+<a class="navlink" href="/docs/design/runtime/session/storage.html" data-title-en="Session Data Model" data-href-zh="/docs/design/runtime/session/storage.html" data-href-en="/docs/design/runtime/session/storage.en.html">Session 数据模型</a>
+<a class="navlink" href="/docs/design/runtime/session/comparison.html" data-title-en="Session Management Comparison" data-href-zh="/docs/design/runtime/session/comparison.html" data-href-en="/docs/design/runtime/session/comparison.en.html">Session 管理方案对比</a></div></details></div></details>
+<details class="group" data-key="design/integrations"><summary class="group-title" data-title-en="Integrations">集成</summary><div class="group-body"><a class="navlink" href="/docs/design/integrations/README.html" data-title-en="Integrations" data-href-zh="/docs/design/integrations/README.html" data-href-en="/docs/design/integrations/README.en.html">集成</a>
+<a class="navlink" href="/docs/design/integrations/harness-standard.html" data-title-en="Harness Standard — how an agentic program plugs into OpenProgram" data-href-zh="/docs/design/integrations/harness-standard.html" data-href-en="/docs/design/integrations/harness-standard.en.html">Harness 标准 —— agentic 程序如何接入 OpenProgram</a>
+<a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
+<a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
+  </nav>
+  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg" data-title-en="Runtime" data-title-zh="运行时">运行时</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current">Agent 协作：一个分支间通信原语</span></nav><h1 id="agent-协作一个分支间通信原语">Agent 协作：一个分支间通信原语<a class="header-anchor" href="#agent-协作一个分支间通信原语">#</a></h1>
+<p>整套 agent 协作收敛成<strong>一个原语：分支间通信</strong>。一个 agent 能派生别的 agent、能给
+别的分支/别的 session 发消息、能把几条分支的内容汇给一个模型综合——这些表面上不同
+的操作，<strong>底层是同一件事</strong>：往某条分支投递内容 → 触发那条分支跑一轮 → 结果自动回送
+发起方。全部做成工具调用，全部建在已有的事件层上。</p>
+<blockquote>
+<p>范围：本文是设计，不含代码。落地顺序见末节。</p>
+</blockquote>
+<hr />
+<h2 id="0-核心只有一个原语">0. 核心：只有一个原语<a class="header-anchor" href="#0-核心只有一个原语">#</a></h2>
+<p>整套协作只有一个原语：</p>
+<blockquote>
+<p><strong>分支间通信</strong> = 往一条分支（同 session 另一分支 / 跨 session / 当场新建的 /
+已存在的）<strong>投递内容</strong> → <strong>触发</strong>那条分支跑一轮（模型读到投来的内容）→ 结果
+<strong>自动回送</strong>发起方（追加一条新消息 + 触发发起方跑一轮，发起方醒来读到、继续）。</p>
+</blockquote>
+<p>所有协作操作都是这个原语的<strong>参数化</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>是通信的哪种用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>派生子 agent</strong></td>
+<td><strong>新建</strong>一条分支 + 投消息 + 自动回</td>
+</tr>
+<tr>
+<td><strong>发消息给某分支</strong></td>
+<td>往<strong>已存在</strong>分支投消息 + 自动回</td>
+</tr>
+<tr>
+<td><strong>综合多条分支</strong></td>
+<td>投递时<strong>带多个来源</strong>分支的内容，让目标模型综合</td>
+</tr>
+</tbody>
+</table>
+<p>投来的内容一定被目标模型读取并使用。数量任意（派生能派 N 个、综合能合 N 条、发消息
+也能群发），不是区分维度。三种用法共用一条投递→触发→回送的路径。</p>
+<p><code>attach</code> 不是操作，是通信结果在 DAG 上的&quot;回流连线&quot;画法（标记结果从哪条分支回来）。</p>
+<hr />
+<h2 id="1-名词对齐沿用现有抽象不发明">1. 名词对齐（沿用现有抽象，不发明）<a class="header-anchor" href="#1-名词对齐沿用现有抽象不发明">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>定义</th>
+<th>来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>session</strong></td>
+<td>一个独立会话，有 <code>session_id</code>，对应一个 git 仓库</td>
+<td><code>SessionStore</code></td>
+</tr>
+<tr>
+<td><strong>branch（分支）</strong></td>
+<td><code>(session_id, head_id)</code> 对。同 session 不同 head = 同会话两条分支；不同 session = 跨会话</td>
+<td><code>merge.py</code> 已确立，同/跨 session 走同一路径</td>
+</tr>
+<tr>
+<td><strong>投递</strong></td>
+<td>往某分支追加一条消息节点</td>
+<td><code>append_message</code>（任意 session_id，无权限限制）</td>
+</tr>
+<tr>
+<td><strong>触发</strong></td>
+<td>让某分支跑一轮 agent</td>
+<td><code>process_user_turn(TurnRequest(...))</code></td>
+</tr>
+<tr>
+<td><strong>自动回送</strong></td>
+<td>目标答完，把回复作为新输入喂回发起方 + 触发它跑</td>
+<td><code>TaskRunner._dispatch_followup</code>（已存在）</td>
+</tr>
+<tr>
+<td><strong>attach 连线</strong></td>
+<td>DAG 上标记&quot;结果从哪条分支回流来&quot;的指针节点（只画图）</td>
+<td><code>write_attach_pointer_for_spawn</code></td>
+</tr>
+</tbody>
+</table>
+<p>DAG 画法已在 <code>dag/dag-live.html</code> 定稿（分支间通信场景：异步、send 瞬间返回、回复异步
+回送、通信点线 hover 显示；派生=子分支服务场景；回流=软连接线）。</p>
+<hr />
+<h2 id="2-原语的工具形态">2. 原语的工具形态<a class="header-anchor" href="#2-原语的工具形态">#</a></h2>
+<p>把原语包成 agent 能调的工具。<strong>一个核心工具 + 两个列举工具</strong>。</p>
+<h3 id="21-message_branch-分支间通信核心唯一的协作原语">2.1 <code>message_branch</code> — 分支间通信（核心，唯一的协作原语）<a class="header-anchor" href="#21-message_branch-分支间通信核心唯一的协作原语">#</a></h3>
+<pre><code>message_branch(
+    message: str,                       # 投给目标的内容/指令
+    target: str = &quot;new&quot;,                # 见下方 target 取值
+    sources: list[str] = [],            # 额外带上这些分支的内容一起投（综合多条时用）
+    agent_id: str = &quot;main&quot;,             # 目标用哪个 agent
+    wait: bool = false,                 # false=异步(默认,瞬间返回)；true=同步等回复
+) -&gt; str
+</code></pre>
+<p><strong><code>target</code> 取值——创建分支和发消息是同一参数的不同取值：</strong></p>
+<table>
+<thead>
+<tr>
+<th>target</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&quot;new&quot;</code></td>
+<td>从 ROOT 全新创建一条分支（新 session），投 message 让它跑</td>
+</tr>
+<tr>
+<td><code>&quot;new:sid:msg_id&quot;</code></td>
+<td>从某节点 fork 出一条新分支，投 message 让它跑</td>
+</tr>
+<tr>
+<td><code>&quot;sid:head&quot;</code></td>
+<td>往一条已存在分支投 message</td>
+</tr>
+</tbody>
+</table>
+<p><strong>创建分支不是独立操作，就是 <code>target</code> 取 <code>new</code> / <code>new:…</code></strong>。三种用法：</p>
+<ul>
+<li><strong>创建并跑（派生 / 开新会话 / fork）</strong>：<code>target=&quot;new&quot;</code> 或 <code>&quot;new:sid:msg_id&quot;</code> →
+新建分支 + 投 message，它跑完自动回流。（想建几条，就调几次，各自异步并行。）</li>
+<li><strong>发消息给已有分支/session</strong>：<code>target=&quot;sid:head&quot;</code> → 往那条分支投 message，触发它
+跑一轮，答完自动回送。跨 session 同一路径（target 是任意 session）。</li>
+<li><strong>综合多条分支</strong>：<code>sources=[&quot;s1:h1&quot;,&quot;s2:h2&quot;,...]</code> → 投递时把这几条分支的内容一起
+带上，目标模型读完综合。数量任意。可与任意 target 组合。</li>
+</ul>
+<p><strong>统一执行流程</strong>（无论哪种用法）：</p>
+<ol>
+<li>解析 <code>target</code>：<code>new</code> → 新建 session + 空 <code>branch_from</code>；<code>new:sid:msg_id</code> →
+在 sid 里 <code>branch_from=msg_id</code> fork；<code>sid:head</code> → <code>set_head</code> 切到该分支。</li>
+<li>组装投递内容：<code>message</code> +（若有 <code>sources</code>）把每条来源分支的内容附上。</li>
+<li>投递 + 触发：<code>process_user_turn(TurnRequest(session_id=目标, user_text=投递内容, branch_from=fork 起点))</code> → 目标分支跑一轮，<strong>模型读到投来的全部内容</strong>。</li>
+<li><strong>回送</strong>：
+<ul>
+<li><code>wait=false</code>（默认）：瞬间返回&quot;已投递 + delivery_id&quot;，发起方不阻塞继续；目标
+答完，<code>_dispatch_followup</code> <strong>自动</strong>把回复作为新消息喂回发起方 session + 触发它
+跑一轮，发起方醒来读到。</li>
+<li><code>wait=true</code>：阻塞等目标答完，直接返回回复文本。</li>
+</ul>
+</li>
+</ol>
+<ul>
+<li>事件：投递 emit <code>branch.message_sent</code>；回送 emit <code>branch.message_replied</code>（见 §3）。</li>
+</ul>
+<h3 id="22-多条来源喂多少内容综合的关键">2.2 多条来源喂多少内容（综合的关键）<a class="header-anchor" href="#22-多条来源喂多少内容综合的关键">#</a></h3>
+<p><code>sources</code> 里每条分支怎么喂给目标模型——<strong>先让每条分支自我总结，再汇集总结</strong>：</p>
+<ol>
+<li>对每条 source 分支，先让它产出一个<strong>面向本次通信的总结</strong>（&quot;把你这条分支的结论
+浓缩成要点&quot;），复用 <code>branch_summarization</code>。</li>
+<li>把这些总结拼成 <code>&lt;branch label=&quot;...&quot;&gt;总结&lt;/branch&gt;</code> 块，连同 <code>message</code> 一起投给
+目标模型综合。</li>
+</ol>
+<p>这样不爆 context、能带很多条、交给模型的是浓缩要点而非原始长对话。统一走&quot;自我总结&quot;，
+不设&quot;喂全文/喂摘要&quot;的参数选择。</p>
+<h3 id="23-list_sessions-list_branches-看见对方通信的前提">2.3 <code>list_sessions</code> / <code>list_branches</code> — 看见对方（通信的前提）<a class="header-anchor" href="#23-list_sessions-list_branches-看见对方通信的前提">#</a></h3>
+<pre><code>list_sessions(limit=50, agent_id?, source?) -&gt; str      # db.list_sessions
+list_branches(session_id?) -&gt; str                        # db.list_branches
+</code></pre>
+<p>通信前要能指定 target/sources，所以得先列出有哪些 session、每个有哪些分支
+（<code>(session_id, head_id)</code> + name）。这是&quot;两个 agent 互相看见&quot;的入口。数据层 + WS
+handler 已有（<code>handle_list_sessions</code> / <code>handle_list_branches</code>），只缺包成工具。</p>
+<h3 id="24-新建分支要有名字">2.4 新建分支要有名字<a class="header-anchor" href="#24-新建分支要有名字">#</a></h3>
+<p><code>message_branch</code> 每次 <code>target=&quot;new&quot;</code> / <code>&quot;new:…&quot;</code> 创建分支，<strong>都必须给分支一个名字</strong>
+——否则 web 端只能显示 8 位 hex 短号，一堆分支分不清谁是谁。</p>
+<ul>
+<li><strong>立刻有名（Stage 1）</strong>：创建时把一个简短 label 传给 <code>run_agent_turn(... label=…)</code>
+→ <code>store.set_branch_name</code>。label 从投递的 <code>message</code> 摘一句（截断到 ~24 字），或让
+模型在调用时显式带一个名字。这样分支一出生就有可读名，不用等 LLM。</li>
+<li><strong>后台自动改好名（Stage 2）</strong>：分支正常聊起来后，由 <code>finalize_turn</code> 在 <code>turns</code>
+命中阈值 <code>{1,6,16,40}</code> 时，后台线程用 LLM 依据分支内容生成更贴切的标题，覆盖
+Stage 1 的临时名。规则见 <a href="/docs/design/runtime/operations/branch-naming.html">branch-naming</a>——那里定义
+了命名的分级、锁、触发点；本节只强调：<strong>message_branch 派生的分支和用户手动
+fork 的分支，走同一套命名（都要 Stage 1 占位名 + Stage 2 自动改名），不能漏。</strong></li>
+</ul>
+<blockquote>
+<p>现状缺口：<code>message_branch</code> 调 <code>run_agent_turn</code> 时<strong>没传 label</strong>，Stage 2 的
+finalize_turn 自动触发<strong>也没接线</strong>——所以派生分支现在没名字。这是要补的实现。</p>
+</blockquote>
+<h3 id="25-回送节点落在哪续接发起方分支不拼主线">2.5 回送节点落在哪：续接发起方分支，不拼主线<a class="header-anchor" href="#25-回送节点落在哪续接发起方分支不拼主线">#</a></h3>
+<p>异步回送（<code>wait=false</code>）时，<code>_dispatch_followup</code> 把目标分支的回复作为一个
+<strong>synthetic user-role turn</strong> 喂回发起方 session。<strong>关键规则：这个回送节点的
+<code>predecessor</code> 必须指向&quot;发起 message_branch 的那个节点&quot;（caller），不是发起方
+session 当前的 <code>head_id</code>。</strong></p>
+<p>为什么：</p>
+<ul>
+<li>用 <code>head_id</code> 当 predecessor → 回送被<strong>拼到主线尾巴</strong>。如果发起方在等待期间又聊了
+别的，回送会莫名其妙接在那后面，DAG 上看不出这是&quot;某次派生的回流&quot;。</li>
+<li>用 caller 当 predecessor → 回送<strong>从当初发起的那个点续接</strong>，在 DAG 上是发起方分支
+的自然延续（和 attach 指针的落位一致：attach 也挂 <code>predecessor = caller_msg_id</code>）。</li>
+</ul>
+<p>DAG 形状：<code>发起节点 ──caller──&gt; 子分支(点划线 spawn edge)</code>，子分支跑完，回送 user
+节点 <code>──predecessor──&gt; 发起节点</code>，续在发起节点之后。发起方读到回送、再回应，继续这条
+链。子分支本身是并列的独立一支（从发起点 fork 出去），<strong>不并回主线</strong>。</p>
+<blockquote>
+<p>现状缺口：<code>_dispatch_followup</code> 构造 <code>TurnRequest</code> 时没指定 <code>branch_from</code>，
+<code>process_user_turn</code> 默认拿 session <code>head_id</code> 当 predecessor → 回送拼到主线。
+修法：回送的 <code>TurnRequest</code> 显式带上发起点（caller_msg_id）作为 <code>branch_from</code>。</p>
+</blockquote>
+<hr />
+<h2 id="3-底座事件层整个设计自包含">3. 底座：事件层（整个设计，自包含）<a class="header-anchor" href="#3-底座事件层整个设计自包含">#</a></h2>
+<p>通信原语建在事件层上。这里把事件层完整写清——它是框架级的统一事件流，<strong>已落地</strong>
+（<code>openprogram/agent/event_bus.py</code> + <code>tool_gate.py</code> + <code>event_bridges.py</code>），通信只是
+它的又一组源 + 消费者。</p>
+<h3 id="31-为什么有事件层">3.1 为什么有事件层<a class="header-anchor" href="#31-为什么有事件层">#</a></h3>
+<p>框架里&quot;某件事发生了&quot;的信号分散在多套机制里（agent loop 的 AgentEvent、auth 的
+<code>_emit</code>、context 的 on_event、channels 的 WS 广播、memory 的 poll、store 的日志）。
+事件层把它们统一成<strong>一条总线：源往里 emit，消费者从里 subscribe，源和消费者互不
+认识</strong>——想&quot;在某时机做某事&quot;，订阅对应类型即可。</p>
+<h3 id="32-event-模型">3.2 Event 模型<a class="header-anchor" href="#32-event-模型">#</a></h3>
+<p>核心三样（是什么事 + 内容 + 时间）固定；关联信息放进开放的 metadata 口袋，不写死。</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Event</span><span class="p">:</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>          <span class="c1"># 唯一编号</span>
+    <span class="n">ts</span><span class="p">:</span> <span class="nb">float</span>        <span class="c1"># 发生时间</span>
+    <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span>        <span class="c1"># 是什么事（见 §3.4）</span>
+    <span class="n">origin</span><span class="p">:</span> <span class="nb">str</span>      <span class="c1"># 谁引起的：user / agent / tool / system / proactive</span>
+    <span class="n">payload</span><span class="p">:</span> <span class="nb">dict</span>    <span class="c1"># 这件事的内容（命令、文件路径、哪条分支收到消息……）</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span>   <span class="c1"># 开放口袋：{&quot;session&quot;:..., &quot;turn&quot;:..., &quot;lane&quot;:...}，需要才塞</span>
+</code></pre>
+<p>session/turn/lane 进口袋不做固定字段：它们是外加关联、对一半事件（auth/channel）没
+意义；开放 dict 让以后加关联维度不改模型。<code>make_event(type, origin, payload, metadata)</code>
+会自动从 ContextVar 填上当前 session/turn。</p>
+<h3 id="33-进程级单例总线">3.3 进程级单例总线<a class="header-anchor" href="#33-进程级单例总线">#</a></h3>
+<p>所有组件（webui、agent loop、channels、memory、auth、task runner、通信工具）都在
+<strong>同一个 worker 进程</strong>里（各是 daemon 线程），所以总线是<strong>进程级单例</strong> <code>get_event_bus()</code>。
+同进程所有线程拿同一实例，直接 emit/subscribe，不跨进程桥接。</p>
+<pre><code class="language-python"><span class="n">bus</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>                              <span class="c1"># 广播，fire-and-forget，不阻塞调用方</span>
+<span class="n">bus</span><span class="o">.</span><span class="n">subscribe</span><span class="p">(</span><span class="n">handler</span><span class="p">,</span> <span class="n">types</span><span class="o">=</span><span class="p">{</span><span class="o">...</span><span class="p">})</span>          <span class="c1"># 按类型订阅，返回 unsubscribe</span>
+<span class="n">emit_safe</span><span class="p">(</span><span class="nb">type</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">payload</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span>   <span class="c1"># 源用：构建+emit，吞掉一切异常</span>
+<span class="n">emit_ws_frame</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>                         <span class="c1"># 源用：把现成 WS 帧经总线送前端（解耦 webui）</span>
+</code></pre>
+<h3 id="34-两类事件源-现有全部事件类型">3.4 两类事件源 + 现有全部事件类型<a class="header-anchor" href="#34-两类事件源-现有全部事件类型">#</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>A 类：agent 活动（带 turn）</th>
+<th>B 类：系统状态（可能没 agent 在跑）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>例子</td>
+<td>用户消息、模型回复、工具前后、文件改、turn 结束、子任务起止</td>
+<td>凭据限流、上下文溢出、外部消息进、技能变</td>
+</tr>
+</tbody>
+</table>
+<p><strong>已落地的事件类型</strong>（第一版，✅=在发）：</p>
+<table>
+<thead>
+<tr>
+<th>类</th>
+<th>type</th>
+<th>何时</th>
+<th>来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td><code>user.prompt_submitted</code></td>
+<td>用户发消息</td>
+<td>dispatcher ✅</td>
+</tr>
+<tr>
+<td>A</td>
+<td><code>model.response_started</code>/<code>.completed</code></td>
+<td>模型开始/说完</td>
+<td>agent_loop ✅</td>
+</tr>
+<tr>
+<td>A</td>
+<td><code>tool.before</code></td>
+<td>工具即将执行（<strong>可拦截</strong>，见 §3.5）</td>
+<td>agent_loop ✅</td>
+</tr>
+<tr>
+<td>A</td>
+<td><code>tool.after</code></td>
+<td>工具执行完</td>
+<td>agent_loop ✅</td>
+</tr>
+<tr>
+<td>A</td>
+<td><code>file.changed</code></td>
+<td>文件被改</td>
+<td>write/edit/apply_patch ✅</td>
+</tr>
+<tr>
+<td>A</td>
+<td><code>turn.ended</code></td>
+<td>一轮结束</td>
+<td>agent_loop ✅</td>
+</tr>
+<tr>
+<td>A</td>
+<td><code>subagent.started</code>/<code>.ended</code></td>
+<td>子任务起止</td>
+<td>TaskRunner ✅</td>
+</tr>
+<tr>
+<td>B</td>
+<td><code>credential.cooldown</code>/<code>.exhausted</code>/<code>.rotated</code></td>
+<td>凭据限流/耗尽/轮换</td>
+<td>event_bridges←AuthStore ✅</td>
+</tr>
+<tr>
+<td>B</td>
+<td><code>context.compaction_recommended</code>/<code>.compacted</code></td>
+<td>上下文到阈值/已压缩</td>
+<td>context/engine ✅</td>
+</tr>
+<tr>
+<td>B</td>
+<td><code>channel.message_inbound</code></td>
+<td>外部消息进</td>
+<td>channels ✅</td>
+</tr>
+<tr>
+<td>B</td>
+<td><code>memory.ingest_started</code>/<code>.ended</code></td>
+<td>wiki ingest 起止</td>
+<td>memory watcher ✅</td>
+</tr>
+<tr>
+<td>B</td>
+<td><code>skills.changed</code>/<code>plugins.update_available</code></td>
+<td>技能改/插件新版</td>
+<td>webui watcher ✅</td>
+</tr>
+</tbody>
+</table>
+<p><strong>本设计新增的通信事件</strong>（A 类）：</p>
+<table>
+<thead>
+<tr>
+<th>type</th>
+<th>何时</th>
+<th>origin</th>
+<th>payload 关键字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>branch.message_sent</code></td>
+<td>message_branch 投递</td>
+<td>agent</td>
+<td>from, to, sources, delivery_id, is_new, chain</td>
+</tr>
+<tr>
+<td><code>branch.message_replied</code></td>
+<td>目标答完自动回送</td>
+<td>agent</td>
+<td>from, to, delivery_id, is_error</td>
+</tr>
+<tr>
+<td><code>branch.created</code> / <code>.started</code> / <code>.failed</code> / <code>.cancelled</code></td>
+<td>分支状态转换</td>
+<td>agent</td>
+<td>branch, parent, agent_id, status</td>
+</tr>
+<tr>
+<td><code>sessions.listed</code> / <code>branches.listed</code></td>
+<td>列举</td>
+<td>agent</td>
+<td>count</td>
+</tr>
+</tbody>
+</table>
+<p><code>chain</code>（派生链）走 metadata，用于深度防循环（§5.1）；状态事件支持进度监听/审计/排查。</p>
+<p>通信复用已有 <code>subagent.started</code>/<code>.ended</code>（派生用法时 TaskRunner 照发）。</p>
+<h3 id="35-两种交互观察-vs-拦截">3.5 两种交互：观察 vs 拦截<a class="header-anchor" href="#35-两种交互观察-vs-拦截">#</a></h3>
+<ul>
+<li><strong>观察型（默认，异步）</strong>：emit 出去，订阅者异步收到，源不等。绝大多数事件走这条。</li>
+<li><strong>拦截型（仅 <code>tool.before</code>，同步）</strong>：工具执行前能让下游说&quot;别执行&quot;。单一入口
+<code>_execute_tool_calls</code> 在 <code>tool.execute()</code> 前有同步问询点（<code>tool_gate.py</code>
+<code>register_tool_gate</code>）。必须快（不许调 LLM）；多方表态取最严；对 subagent 也生效
+（在 approval 包装外，<code>permission_mode=bypass</code> 关不掉它）。<strong>通信工具
+<code>message_branch</code> 走它做值守拦截</strong>（见 §5）。</li>
+</ul>
+<h3 id="36-通信怎么用事件层">3.6 通信怎么用事件层<a class="header-anchor" href="#36-通信怎么用事件层">#</a></h3>
+<ul>
+<li>每个通信动作 <code>emit_safe(...)</code>（投递、回送、列举）—— proactive / 审计 / 前端刷新
+都是这条流的订阅者，互不耦合。</li>
+<li><strong>前端通知统一走 <code>emit_ws_frame(frame)</code></strong>：跨 session 时目标 session 的前端经总线
+收到 <code>ws.frame</code> 事件、webui 订阅后原样广播，两边前端实时看到&quot;收到来自 X 的消息&quot;
+&quot;X 回复了&quot;。前端零改协议、通信工具不认识 webui。</li>
+<li><strong>值守拦截走 <code>tool.before</code> 同步点</strong>：投递是副作用，无人值守 + deny 时拦下要求确认。</li>
+</ul>
+<h3 id="37-一条原则">3.7 一条原则<a class="header-anchor" href="#37-一条原则">#</a></h3>
+<p><strong>不是所有调用都是事件，只有&quot;有消费者想响应&quot;的时机才是。</strong> 上表是精挑的。通信新增的
+几个事件都是真有人响应（前端渲染、proactive、审计）才加。演进只加不改：加事件类型、
+给 payload 加字段零风险（老订阅者只读自己关心的）。</p>
+<hr />
+<h2 id="4-端到端两个-agent-互相看见-通信">4. 端到端：两个 agent 互相看见 + 通信<a class="header-anchor" href="#4-端到端两个-agent-互相看见-通信">#</a></h2>
+<p>A、B 同时在跑（同 session 不同分支，或不同 session）：</p>
+<ol>
+<li><strong>看见</strong>：A 调 <code>list_sessions</code> → 看到 B；<code>list_branches</code> → 看到 B 的活跃分支
+<code>(B_session, B_head)</code>。</li>
+<li><strong>发</strong>：A 调 <code>message_branch(&quot;...&quot;, target=&quot;B_session:B_head&quot;)</code> → 瞬间返回，
+A 继续。</li>
+<li><strong>B 收到</strong>：消息进 B 分支（B 那边一个 △&quot;收到 A 的消息&quot;），B 跑一轮答它（△）。
+两边前端经 ws.frame 实时看到。</li>
+<li><strong>回送 A</strong>：B 答完，<code>_dispatch_followup</code> 自动把回复追加到 A 末尾（△）+ 触发 A
+跑一轮，A 醒来读到、可继续。</li>
+<li><strong>可循环</strong>：A 再 <code>message_branch</code> 给 B……两条分支各自不阻塞、不串行。</li>
+</ol>
+<p>派生（target=&quot;new&quot;）和综合（带 sources）是同一流程的另两种参数，不另列。</p>
+<hr />
+<h2 id="5-健壮性与安全">5. 健壮性与安全<a class="header-anchor" href="#5-健壮性与安全">#</a></h2>
+<p>通信会创建分支、触发别的分支跑、跨 session 写——这些副作用必须有边界。</p>
+<h3 id="51-递归派生-死循环防护">5.1 递归派生 + 死循环防护<a class="header-anchor" href="#51-递归派生-死循环防护">#</a></h3>
+<p><strong>允许递归派生</strong>（子分支能再 <code>message_branch</code> 派子分支，做多层任务分解），靠以下防爆：</p>
+<ul>
+<li><strong>深度上限</strong>：每次投递在 Event metadata 里带一条<strong>派生链</strong>（<code>chain: [发起分支, …, 当前]</code>）。<code>message_branch</code> 执行时若链长 ≥ <code>MAX_DEPTH</code>（默认 8），拒绝并把理由回给
+模型。回送（自动 followup）继承同一条链，不重置——所以 A↔B 互发的来回也算进深度，
+到顶自动停。</li>
+<li><strong>自发拒绝</strong>：target 指向<strong>发起分支自己</strong>（直接环）立即拒绝。</li>
+<li>链信息只在 metadata 流转，不进模型可见内容。</li>
+</ul>
+<h3 id="52-并发上限-排队">5.2 并发上限 + 排队<a class="header-anchor" href="#52-并发上限-排队">#</a></h3>
+<ul>
+<li>派生走 <code>TaskRunner</code> 线程池，上限 <code>OPENPROGRAM_TASK_WORKERS</code>（默认 4）。一次派几十
+个：超出上限的<strong>排队</strong>，槽位空出再跑，不打爆。</li>
+<li>可选 <strong>token 预算</strong>：一次协作的总派生数 / 总 token 设上限，到顶拒绝新派生（防一个
+失控分解派出几百个）。文档默认不强制，留参数。</li>
+</ul>
+<h3 id="53-取消传播级联">5.3 取消传播（级联）<a class="header-anchor" href="#53-取消传播级联">#</a></h3>
+<ul>
+<li>取消一个分支时，<strong>它派出的所有子分支也被中断</strong>：维护&quot;活跃子分支&quot;列表（线程锁保护），
+取消时遍历 <code>child.interrupt</code>，复用 <code>TaskRunner</code> 现有 cancel + <code>kill_active_runtime</code>。</li>
+<li>子分支优雅关闭（cleanup），不留僵尸线程/子进程。</li>
+</ul>
+<h3 id="54-发给正在跑的分支竞态">5.4 发给&quot;正在跑&quot;的分支（竞态）<a class="header-anchor" href="#54-发给正在跑的分支竞态">#</a></h3>
+<p>A 给 B 发消息时 B 可能正跑一轮。<strong>不打断、不丢弃——排队</strong>：消息追加到 B 分支后，等 B
+当前这轮结束再触发处理它（OpenCode 的 pendingWake 思路）。B 空闲则立即触发。</p>
+<h3 id="55-失败回送">5.5 失败回送<a class="header-anchor" href="#55-失败回送">#</a></h3>
+<p>子/目标分支失败（崩溃 / 超时 / 模型报错）：<strong>也回送</strong>，回送内容带 <code>is_error</code> + 原因
+（&quot;B 失败了：&lt;原因&gt;&quot;），发起方模型读到后自行决定重发/换路/放弃。<strong>不内置重试/熔断</strong>
+——父是模型，由它判断比固定策略好。</p>
+<h3 id="56-结果截断">5.6 结果截断<a class="header-anchor" href="#56-结果截断">#</a></h3>
+<p>回送内容超过 <code>max_result_chars</code>（复用 <code>@function</code> 的 30k 默认）就<strong>截断头尾 + 存完整
+文件</strong>，回送里给文件路径。巨量中间结果不撑爆发起方 context、不阻塞主流程。</p>
+<h3 id="57-子分支的身份-最小权限">5.7 子分支的身份 / 最小权限<a class="header-anchor" href="#57-子分支的身份-最小权限">#</a></h3>
+<ul>
+<li><code>agent_id</code> 指定子分支用哪个 agent（不同 agent = 不同 system + 工具集 + 模型）。</li>
+<li>model 支持 <code>inherit</code>（继承发起方模型），也可显式指定更弱的。</li>
+<li><strong>默认子分支权限不高于发起方</strong>（最小权限）；危险工具（删文件等）仍走 §5.8 拦截，
+<code>permission_mode=bypass</code> 关不掉拦截点。</li>
+<li>子分支<strong>只看到投递消息及其后的响应</strong>，不继承发起方完整历史（省 context + 隔离）。</li>
+</ul>
+<h3 id="58-值守拦截-校验">5.8 值守拦截 + 校验<a class="header-anchor" href="#58-值守拦截-校验">#</a></h3>
+<ul>
+<li><code>message_branch</code> 走事件层 <code>tool.before</code> 同步问询点：无人值守 + deny 策略时拦下要求
+确认（对子分支也生效，在 approval 包装外）。</li>
+<li>投递前校验 <code>target</code>（非 &quot;new&quot;）真实存在（<code>db.get_session</code> 非 None），不存在报错、
+不静默新建。沿用三层门控（check_fn / can_use / requires_approval）。</li>
+</ul>
+<h3 id="59-分支可见性">5.9 分支可见性<a class="header-anchor" href="#59-分支可见性">#</a></h3>
+<p>分支标记 <strong>内部（子派生）vs 用户可见</strong>：内部分支只能被 <code>message_branch</code> 触发，不进
+UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent 寻址）。</p>
+<h3 id="510-明确不做及理由">5.10 明确不做（及理由）<a class="header-anchor" href="#510-明确不做及理由">#</a></h3>
+<ul>
+<li><strong>parentID 额外字段</strong>：<code>(session_id, head_id)</code> + caller/predecessor 已构成树，DAG
+已画，不再加冗余字段。</li>
+<li><strong>ID 前缀分类</strong>（fork_/msg_）：现有 id + name 足够寻址，不加。</li>
+<li><strong>重试 / 熔断策略</strong>：失败回送给模型，由模型决定，不内置固定策略（见 §5.5）。</li>
+<li><strong>内置聚合函数</strong>（投票 / 全部成功等）：综合就是把 sources 喂给模型让它综合（§2.2），
+模型综合比预设聚合灵活，不做固定聚合算子。</li>
+</ul>
+<hr />
+<h2 id="6-前后端清单">6. 前后端清单<a class="header-anchor" href="#6-前后端清单">#</a></h2>
+<p><strong>后端（工具，<code>openprogram/functions/tools/agent_collab/</code>）</strong></p>
+<ul>
+<li><code>message_branch.py</code> — 唯一核心：投递 + 触发 + 自动回送 + 多源自我总结</li>
+<li><code>list_sessions.py</code> / <code>list_branches.py</code> — 复用 db.list_*</li>
+<li>各工具 <code>emit_safe(...)</code>；跨 session 通知用 <code>emit_ws_frame</code></li>
+</ul>
+<p><strong>后端（已有，直接复用，不重写）</strong></p>
+<ul>
+<li><code>TaskRunner</code>（线程池并发、await、cancel、_dispatch_followup 自动回送、attach 连线）</li>
+<li><code>SessionStore</code>（list/append/set_head/commit/get）</li>
+<li><code>dispatcher.process_user_turn</code></li>
+<li><code>branch_summarization</code>（多源自我总结）</li>
+<li><code>event_bus</code>（emit_safe / emit_ws_frame）</li>
+</ul>
+<p><strong>前端（<code>web/</code>）</strong></p>
+<ul>
+<li>session / branch 列表面板（已有 WS handler）+ &quot;选 target → 发消息&quot;交互入口</li>
+<li>收到 <code>branch.message_sent</code> / <code>branch.message_replied</code>（经 ws.frame）→ 在对应
+session 的 DAG / 消息流渲染通信节点 + 回流软连接线（hover 显示，dag-live 已定稿）</li>
+<li>派生进度复用现有 <code>task_status</code> 帧 + tasks 面板</li>
+</ul>
+<hr />
+<h2 id="7-落地顺序每步独立可验证">7. 落地顺序（每步独立可验证）<a class="header-anchor" href="#7-落地顺序每步独立可验证">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>步</th>
+<th>做什么</th>
+<th>验证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>C1</strong></td>
+<td><code>message_branch</code> 核心：target=&quot;new&quot;（派生）→ 投递 + 触发 + 自动回送</td>
+<td>agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；事件 message_sent/replied 在事件日志可见</td>
+</tr>
+<tr>
+<td><strong>C2</strong></td>
+<td><code>list_sessions</code> / <code>list_branches</code> 工具</td>
+<td>agent 列出真实多 session / 多分支</td>
+</tr>
+<tr>
+<td><strong>C3</strong></td>
+<td><code>message_branch</code> target=已存在分支（同 session）</td>
+<td>A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A</td>
+</tr>
+<tr>
+<td><strong>C4</strong></td>
+<td>跨 session：target=别的 session</td>
+<td>A 发给别的 session，同一路径跑通；两边前端经 ws.frame 实时更新</td>
+</tr>
+<tr>
+<td><strong>C5</strong></td>
+<td><code>sources</code> 多源综合（自我总结 → 汇集 → 综合）</td>
+<td>带 2 条 source 分支，每条先自我总结，目标模型综合出新回答</td>
+</tr>
+<tr>
+<td><strong>C6</strong></td>
+<td>健壮性（§5）：深度上限 + 自发拒绝、并发排队、取消级联、发给忙碌分支排队、失败回送、结果截断</td>
+<td>A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不炸；取消父→子全停；给正跑的 B 发消息排队等它结束；子崩溃父收到 is_error；超大结果截断给文件路径</td>
+</tr>
+<tr>
+<td><strong>C7</strong></td>
+<td>值守拦截 + target 校验 + 最小权限 + 分支可见性</td>
+<td>deny 下被 tool.before 拦；不存在 target 报错；子分支权限不高于父、不进 UI 选择列表</td>
+</tr>
+<tr>
+<td><strong>C8</strong></td>
+<td>前端交互：列表选 target → 发消息 + 通信节点渲染</td>
+<td>webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线</td>
+</tr>
+</tbody>
+</table>
+<p>C1 核心原语（派生）；C3/C4 推广到已有分支/跨 session；C5 综合；<strong>C6 健壮性（防爆，最该
+先有）</strong>；C7 安全；C8 前端。每步在 webui（<code>cd web &amp;&amp; npm run build</code> + <code>openprogram worker restart</code>）或事件日志（<code>OPENPROGRAM_EVENT_LOG=1</code>）验证。</p>
+<hr />
+<h2 id="8-关键文件速查落地时碰这些">8. 关键文件速查（落地时碰这些）<a class="header-anchor" href="#8-关键文件速查落地时碰这些">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>事</th>
+<th>位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>子 agent 派生 + 自动回送</td>
+<td><code>openprogram/agent/sub_agent_run.py</code>、<code>agent/task/runner.py</code>（spawn_task / _dispatch_followup）</td>
+</tr>
+<tr>
+<td>工具范本 + 注册</td>
+<td><code>openprogram/functions/tools/task/task.py</code>、<code>functions/_runtime.py</code>（@function）</td>
+</tr>
+<tr>
+<td>session/branch 数据层</td>
+<td><code>openprogram/store/session/session_store.py</code>（list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455）</td>
+</tr>
+<tr>
+<td>触发某 session 跑一轮</td>
+<td><code>openprogram/agent/dispatcher/__init__.py</code>（process_user_turn:97）</td>
+</tr>
+<tr>
+<td>多源自我总结</td>
+<td><code>openprogram/agent/compaction/branch_summarization.py</code></td>
+</tr>
+<tr>
+<td>列表 WS handler</td>
+<td><code>webui/ws_actions/session.py:825</code>、<code>branch.py:221</code></td>
+</tr>
+<tr>
+<td>attach 连线（仅画图）</td>
+<td><code>openprogram/agent/sub_agent_run.py</code>（write_attach_pointer_for_spawn）</td>
+</tr>
+<tr>
+<td>事件总线</td>
+<td><code>openprogram/agent/event_bus.py</code>（emit_safe / emit_ws_frame）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>注：&quot;综合多条&quot;由 <code>message_branch(sources=[...])</code> 提供，不另设独立工具。底层
+<code>_merge.py</code> 的多父 ContextCommit 血缘记录被复用来记下&quot;这次综合来自哪几条分支&quot;。</p>
+</blockquote>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-01</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/agent-collab-architecture.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Agent 协作 — 架构流程图</span></a><a class="pn-link pn-next" href="/docs/design/runtime/agent-call-flow.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent 调用流程（权威设计）</span></a></div></article></main>
+  <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
+<div class="toc-list">
+<a class="" href="#0-核心只有一个原语">0. 核心：只有一个原语</a>
+<a class="" href="#1-名词对齐沿用现有抽象不发明">1. 名词对齐（沿用现有抽象，不发明）</a>
+<a class="" href="#2-原语的工具形态">2. 原语的工具形态</a>
+<a class="lvl-3" href="#21-message_branch-分支间通信核心唯一的协作原语">2.1 message_branch — 分支间通信（核心，唯一的协作原语）</a>
+<a class="lvl-3" href="#22-多条来源喂多少内容综合的关键">2.2 多条来源喂多少内容（综合的关键）</a>
+<a class="lvl-3" href="#23-list_sessions-list_branches-看见对方通信的前提">2.3 list_sessions / list_branches — 看见对方（通信的前提）</a>
+<a class="lvl-3" href="#24-新建分支要有名字">2.4 新建分支要有名字</a>
+<a class="lvl-3" href="#25-回送节点落在哪续接发起方分支不拼主线">2.5 回送节点落在哪：续接发起方分支，不拼主线</a>
+<a class="" href="#3-底座事件层整个设计自包含">3. 底座：事件层（整个设计，自包含）</a>
+<a class="lvl-3" href="#31-为什么有事件层">3.1 为什么有事件层</a>
+<a class="lvl-3" href="#32-event-模型">3.2 Event 模型</a>
+<a class="lvl-3" href="#33-进程级单例总线">3.3 进程级单例总线</a>
+<a class="lvl-3" href="#34-两类事件源-现有全部事件类型">3.4 两类事件源 + 现有全部事件类型</a>
+<a class="lvl-3" href="#35-两种交互观察-vs-拦截">3.5 两种交互：观察 vs 拦截</a>
+<a class="lvl-3" href="#36-通信怎么用事件层">3.6 通信怎么用事件层</a>
+<a class="lvl-3" href="#37-一条原则">3.7 一条原则</a>
+<a class="" href="#4-端到端两个-agent-互相看见-通信">4. 端到端：两个 agent 互相看见 + 通信</a>
+<a class="" href="#5-健壮性与安全">5. 健壮性与安全</a>
+<a class="lvl-3" href="#51-递归派生-死循环防护">5.1 递归派生 + 死循环防护</a>
+<a class="lvl-3" href="#52-并发上限-排队">5.2 并发上限 + 排队</a>
+<a class="lvl-3" href="#53-取消传播级联">5.3 取消传播（级联）</a>
+<a class="lvl-3" href="#54-发给正在跑的分支竞态">5.4 发给"正在跑"的分支（竞态）</a>
+<a class="lvl-3" href="#55-失败回送">5.5 失败回送</a>
+<a class="lvl-3" href="#56-结果截断">5.6 结果截断</a>
+<a class="lvl-3" href="#57-子分支的身份-最小权限">5.7 子分支的身份 / 最小权限</a>
+<a class="lvl-3" href="#58-值守拦截-校验">5.8 值守拦截 + 校验</a>
+<a class="lvl-3" href="#59-分支可见性">5.9 分支可见性</a>
+<a class="lvl-3" href="#510-明确不做及理由">5.10 明确不做（及理由）</a>
+<a class="" href="#6-前后端清单">6. 前后端清单</a>
+<a class="" href="#7-落地顺序每步独立可验证">7. 落地顺序（每步独立可验证）</a>
+<a class="" href="#8-关键文件速查落地时碰这些">8. 关键文件速查（落地时碰这些）</a>
+</div></aside>
+</div>
+
+<div class="search-overlay">
+  <div class="search-box">
+    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <div class="search-results"></div>
+  </div>
+</div>
+
+<script src="/docs/assets/site.js?v=e7077628"></script>
+</body>
+</html>

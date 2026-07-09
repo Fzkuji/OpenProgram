@@ -82,7 +82,7 @@ decision menu via `exec(choices=...)` or `decision.make` — see
 The decorator fields (`expose`, `render_range`, `input`,
 `system`, `workdir_mode`, …) are documented in **one place**:
 [`function-metadata.md`](function-metadata.md) §3. The API reference at
-[`../api/agentic_function.md`](../../api/agentic-function.md) carries
+[`../../api/agentic-function.md`](../../api/agentic-function.md) carries
 a condensed quick-reference table.
 
 This page covers usage *patterns*; it intentionally does not duplicate

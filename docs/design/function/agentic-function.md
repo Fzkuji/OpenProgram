@@ -69,7 +69,7 @@ def research_assistant(task: str, runtime) -> str:
 装饰器字段（`expose`、`render_range`、`input`、`no_tools`、
 `system`、`workdir_mode` 等）的文档**集中在一处**：
 [`function-metadata.md`](function-metadata.md) §3。位于
-[`../../api/agentic_function.md`](../../api/agentic-function.md) 的 API 参考
+[`../../api/agentic-function.md`](../../api/agentic-function.md) 的 API 参考
 也提供了相同的表格，便于快速查阅。
 
 本页讲解使用*模式*；它有意不重复

@@ -23,10 +23,20 @@ h1{font-size:23px;border-bottom:2px solid var(--acc);padding-bottom:10px}
 .tbl td,.tbl th{border:1px solid var(--bd);padding:4px 8px;text-align:left}
 .tbl th{background:var(--pan);color:var(--acc)}
 code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
-.comm-line{opacity:.28;transition:opacity .15s}
-.canvas:hover .comm-line{opacity:.95}
+/* 软连接线(通信/合并/attach 回流): 默认隐藏; hover 它的任一端点节点才显示 + 流动动画 */
+.soft-link{opacity:0;transition:opacity .15s;pointer-events:none}
+.soft-link.active{opacity:.95;animation:flow 0.6s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-20}}
 text{font-family:-apple-system,sans-serif;pointer-events:none}
 .node{cursor:pointer}
+.principles{max-width:1000px;margin:32px auto 0;background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:24px 28px;line-height:1.75;font-size:14px}
+.principles h2{font-size:19px;color:var(--acc);border-bottom:2px solid var(--acc);padding-bottom:10px;margin-top:0}
+.principles h3{font-size:15.5px;color:#f0eee6;margin:22px 0 6px}
+.principles p{margin:6px 0;color:var(--tx)}
+.principles ul{margin:6px 0;padding-left:22px}
+.principles li{margin:4px 0;color:var(--tx)}
+.principles b{color:#f0eee6}
+.principles code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
 </style></head>
 <body><div class="w">
 <h1>DAG 实时布局（真算法）</h1>
@@ -48,6 +58,73 @@ text{font-family:-apple-system,sans-serif;pointer-events:none}
     </div>
     <table class="tbl" id="coords"></table>
   </div>
+</div>
+
+<div class="principles">
+  <h2>设计原则（DAG 怎么画 —— 全部规则）</h2>
+
+  <h3>1. 连线：每个节点连它的父，先往下、再往右</h3>
+  <p><b>唯一的连线规则</b>：每个节点连它的【父】，从父<b>先往下（父正下方画竖线到子的行）、再往右（横到子）</b>。所有连线都这样，没有例外。</p>
+  <ul>
+    <li>父 = caller 优先（谁调用我），没有 caller 才用 predecessor。</li>
+    <li>ROOT→问题：从 ROOT 下面竖 + 右到问题。问题<b>必须</b>连到 ROOT 上。</li>
+    <li>问题→A回复、A回复→工具：子调用从父先下后右，逐层缩进（函数调用逻辑）。</li>
+    <li>同一列的两个节点（问题 / B回复了）：从上面那个正下方一条竖线直连下来。</li>
+    <li><b>不存在</b>"一根贯穿整列的主干竖线"；竖线只是"父正下方到子那一段"。节点之间不互相乱连，全靠"连父"自然成树。</li>
+  </ul>
+
+  <h3>2. 节点形状 = 角色</h3>
+  <p>◇ ROOT（菱形，白填充） · ○ user（真人用户消息，圆） · △ llm（AI / agent 消息，三角） · □ code（工具 / 函数调用，方块） · ◉ merge（合并汇聚点，实心带孔圆）。<br>
+  <b>agent 之间发来的消息是 △（三角），不是 ○</b>——圆只给真人用户。</p>
+
+  <h3>3. 颜色 = 分支身份（不表示线的类型）</h3>
+  <p>每条 lane（分支）一个颜色。任何线都用它所属/指向分支的 lane 颜色。<b>绝不</b>用颜色区分线的类型——那会和"颜色=分支"冲突。</p>
+
+  <h3>4. 线型 = 连线类型（颜色之外的另一维，正交）</h3>
+  <ul>
+    <li>━ 实线：同分支调用（父→子，正常对话 / 子调用）</li>
+    <li>- - 虚线 5 4：retry 分叉（用户手动重试 / 改写）</li>
+    <li>-·- 点划线 4 2 1 2：大模型主动建分支（spawn_branch）</li>
+    <li>··· 点线 1 5：分支间通信（send_to_branch）</li>
+    <li>═ 粗实线 2.4：合并汇入（merge）</li>
+    <li>┄ 长虚线 4 4：attach 回流（子分支结果嵌回）</li>
+  </ul>
+
+  <h3>5. 列（lane / tier）</h3>
+  <ul>
+    <li><b>tier（缩进）</b>：按角色固定。ROOT=0，user=1，llm=2，工具=3，子调用逐层 +1。子节点在父的右下角。</li>
+    <li><b>lane（分支列）</b>：有几条分支排几列，按出现顺序 0,1,2，不跳号。</li>
+    <li><b>fork 占两列</b>：一条 fork 分支 = 它自己的竖线列 + 节点列。新分支整条排在它分叉出的那条分支【全部内容】的右边，不重叠。</li>
+    <li><b>正方形网格</b>：横向格距 = 纵向格距，子节点严格在父的右下角（45°）。</li>
+    <li><b>紧凑</b>：空行上移、空列左移，收起节点后腾出的行列要补上，不留空。</li>
+  </ul>
+
+  <h3>6. 行（depth）= 时间序</h3>
+  <p>按全局 created_at（seq）排，早发生的在上。所以一条<b>已存在</b>的分支（如被通信的 B）排在引用它的操作（send）<b>之前</b>，不会被画成"通信时才新建"。retry 的兄弟对齐到同一行（同一时刻的平行可能）。</p>
+
+  <h3>7. 分支间通信（agent ↔ agent）—— 异步</h3>
+  <p>不是同步阻塞（那会让 A 干等 B、两条并行分支变串行甚至死锁）。是异步，像"派后台 agent 干活 + 还能继续聊天"：</p>
+  <ul>
+    <li>A 的 △ 调 send_to_branch → A 这边出一个 □ 工具节点；工具<b>瞬间返回，A 不阻塞</b>，继续自己的事。</li>
+    <li>消息跨到 B：B 那边相当于另一个 agent 发来消息 → 一个 △「B收到」，B 再产出 △「B应答」。<b>B收到/B应答 属于 B 分支</b>（B 的颜色、串在 B 上），不在 A 那边。</li>
+    <li>B 答完，结果<b>异步送回 A 末尾</b> → 一个 △「B回复了」，它是外部推回 A 的新一轮输入，<b>和「问题」同级</b>（user 级，挂 A 主干）。</li>
+    <li>A 再对它回应 → △「A回应」。</li>
+    <li>两条通信线（··· 点线）：A→B 发、B→A 回。两条分支各自的线都不停、不阻塞。</li>
+  </ul>
+
+  <h3>8. 分支合并 / 子分支服务</h3>
+  <ul>
+    <li><b>合并</b>：N 条分支汇聚到一个 ◉ merge 节点（多父）。merge 落在 base 分支的 lane；其它分支用 ═ 粗汇入线汇进来。</li>
+    <li><b>子分支服务</b>：A 调 spawn_branch 派子分支 B（-·- 点划线，B 的首节点和 spawn 节点同一行起）→ B 独立跑 → 结果 ┄ attach 回流嵌回 A。</li>
+  </ul>
+
+  <h3>9. 软连接线：默认隐藏，hover 端点才显示 + 动画</h3>
+  <p><b>调用线</b>（同分支 / retry / spawn —— 结构骨架）常驻显示。<br>
+  <b>软连接线</b>（通信 send→收到、返回 应答→回复了、merge 汇入、attach 回流 —— 凡是跨分支的"谁连了谁"）<b>默认全部隐藏</b>：只有鼠标放到这条线<b>连接的两个端点节点中的任意一个</b>上时，这条线才显示出来，并带<b>流动动画</b>（虚线流动，表示方向）。移开就隐藏。<br>
+  理由：这类线会非常多，常驻会把图糊成一团；按需 hover 显示，既不挡视线又能查"这个节点连去了哪"。</p>
+
+  <h3>10. 本图是什么</h3>
+  <p>不是写死坐标的示意图。这里内置了和后端 <code>graph_layout</code> 一致的布局算法（lane/tier/depth + 占列规则），喂节点数据 → 算法自己算出每个节点的位置 → 画出来。上方切换场景看不同数据跑出来的真实布局。</p>
 </div>
 
 <script>
@@ -98,42 +175,59 @@ function computeTier(byId, nodes){
   return tier;
 }
 
-// depth.compute_depth — DFS by seq, fork siblings 对齐首兄弟
+// depth.compute_depth — 行号 = 主干 DFS pre-order(沿 caller 子树紧贴：子调用
+// 紧跟它的父，不被平行分支的节点隔开)。fork/独立分支在 remaining pass 对齐到
+// 首兄弟同行、其子树独立向下生长(所以 send 紧贴 A回复，B 平行对齐问题)。
+// 1:1 移植自后端 depth.py。
 function computeDepth(byId, nodes, maps){
-  const {callerCh,predCh,fork}=maps;
-  const depth={}; let counter=0;
+  const {callerCh,fork}=maps;
+  const depth={}; const counter=[0];
+  // 非首 fork 兄弟：DFS 时跳过，留到 remaining pass 与首兄弟对齐
   const skip=new Set();
   for(const pid in fork){ const k=fork[pid]; if(k.length>1) k.slice(1).forEach(x=>skip.add(x)); }
-  const kidsOf=id=>{ const a=(callerCh[id]||[]).slice(); for(const x of (predCh[id]||[]))if(!a.includes(x))a.push(x);
-    return a.sort((p,q)=>(byId[p].created_at||0)-(byId[q].created_at||0)); };
-  function dfs(id){ if(id in depth)return; depth[id]=counter++; for(const kid of kidsOf(id)){ if(skip.has(kid))continue; dfs(kid);} }
-  const bySeq=(a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0);
-  const roots=nodes.filter(m=>isRoot(m)).map(m=>m.id).sort(bySeq);
-  for(const r of roots)dfs(r);
-  // fork siblings + 剩余: 对齐到分叉点/首兄弟同行,然后各自往下
-  const remaining=nodes.map(m=>m.id).filter(id=>!(id in depth)).sort(bySeq);
+  function walkDfs(id){
+    if(id in depth)return;
+    depth[id]=counter[0]++;
+    for(const kid of (callerCh[id]||[])){ if(skip.has(kid))continue; walkDfs(kid); }
+  }
+  function walkBranch(id,start){
+    if(id in depth)return;
+    depth[id]=start; let d=start+1;
+    for(const kid of (callerCh[id]||[])){
+      if(kid in depth)continue;
+      depth[kid]=d++;
+      for(const gk of (callerCh[kid]||[])) walkBranch(gk, depth[kid]+1);
+    }
+  }
+  // 主干：从 root DFS
+  const roots=nodes.filter(isRoot).map(m=>m.id).sort((a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0));
+  for(const r of roots) walkDfs(r);
+  // fork/独立分支：对齐到首兄弟行，子树独立下长
+  const remaining=nodes.filter(m=>!(m.id in depth)).map(m=>m.id).sort((a,b)=>(byId[a].created_at||0)-(byId[b].created_at||0));
   for(const id of remaining){
     if(id in depth)continue;
-    const pid=predOf(byId,byId[id]);
-    let start=0;
-    if(byId[id].independent){
-      // 独立分支(用户另开的并行对话)：不和兄弟对齐同行，像下一轮一样往下排。
-      start=counter;
-    }else if(pid && pid in depth){
-      // retry fork：对齐到首兄弟同行
-      let found=false;
-      for(const oid of nodes.map(m=>m.id)){
-        if(oid===id)continue;
-        if(predOf(byId,byId[oid])===pid && oid in depth){ start=depth[oid]; found=true; break; }
+    const pid=predOf(byId,byId[id]); let start=0;
+    if(pid && pid in depth){
+      // 找同 predecessor 的首兄弟的行，对齐过去
+      let aligned=false;
+      for(const m of nodes){
+        if(m.id===id)continue;
+        if(predOf(byId,m)===pid && m.id in depth){ start=depth[m.id]; aligned=true; break; }
       }
-      if(!found) start=depth[pid]+1;
+      if(!aligned) start=depth[pid]+1;
     }
-    // walk branch
-    (function walk(nid,s){ if(nid in depth)return; depth[nid]=s; let d=s+1;
-      for(const kid of kidsOf(nid)){ if(!(kid in depth)){ depth[kid]=d; d++; for(const gk of kidsOf(kid)) walk(gk,depth[kid]+1);} } })(id,start);
+    walkBranch(id,start);
   }
-  for(const m of nodes)if(!(m.id in depth))depth[m.id]=counter++;
   return depth;
+}
+// 一个节点的 caller+predecessor 子树(含自己)
+function descendants(byId,nodes,rootId){
+  const out=new Set([rootId]); let grew=true;
+  while(grew){ grew=false;
+    for(const m of nodes){ if(out.has(m.id))continue;
+      const c=m.caller, p=m.predecessor;
+      if((c&&out.has(c))||(p&&out.has(p))){ out.add(m.id); grew=true; } } }
+  return [...out];
 }
 
 // lane.compute_lane — 数分支按序发号, 续聊跟 predecessor lane
@@ -147,7 +241,7 @@ function computeLane(byId, nodes, maps, tier){
     const stack=[start];
     while(stack.length){
       const cur=stack.pop(); if(cur in lane)continue; lane[cur]=my;
-      for(const kid of (callerCh[cur]||[])){ if((kid in lane)||!sameLane(kid))continue; if(predOf(byId,byId[kid]))continue; stack.push(kid); }
+      for(const kid of (callerCh[cur]||[])){ if((kid in lane)||!sameLane(kid))continue; if(predOf(byId,byId[kid]))continue; if(byId[kid].spawn_from)continue; stack.push(kid); }
       for(const kid of (predCh[cur]||[])){ if(!(kid in lane)&&sameLane(kid))stack.push(kid); }
     }
   }
@@ -233,99 +327,97 @@ function render(nodes){
   const edgeG=svgEl("g",{}), nodeG=svgEl("g",{});
   svg.appendChild(edgeG); svg.appendChild(nodeG);
 
-  // 连线 — 和 spec.html 同一套画法：父中心竖线下到子的行，再横到子。
-  // 同 lane = 实线；fork（落在别的 lane）= 整条 dash（retry 5 4 / spawn 4 2 1 2）。
-  // fork 的竖线落在【子自己的 lane 列】上（子已经在它那条 lane 的列里）。
+  // 连线 = caller 树(照 session-dag.md): 每个节点连它的【父(caller)】, 父在左上、
+  // 子在右下,父正下方竖线 + 横到子(├─/└─ 树形)。
+  //   - 同对话链: user 连 ROOT(竖线), llm 连它的 user, tool 连它的 llm —— 函数调用
+  //     逐层缩进的树。竖线只是"父正下方那一小段",不是贯穿整条 lane。
+  //   - 跨分支(fork/spawn/通信): 子在别的 lane, 从源到子用对应 dash 线型。
+  // 唯一规则：每个节点连它的【父】，从父【先往下、再往右】到子(父正下方竖线
+  // 到子的行，再横到子)。所有连线都这样，无例外。父 = caller 优先，否则 predecessor。
+  //   - ROOT→问题：从 ROOT 下面竖 + 右到问题(连上 ROOT)
+  //   - 问题→A回复：问题下面竖 + 右
+  //   - 问题→B回复了(同列)：问题下面竖到 B回复了(同列横段≈0)
+  //   - 跨分支(fork/spawn/通信)：父在别的 lane，同样"先下后右"，只是线型用 dash 区分。
   for(const m of nodes){
     if(m.display==="root")continue;
     const c=pos(m), color=laneColor(m._laneNum);
-    // 画线父 = caller 优先（挂载/调用关系决定视觉父子）。user 的 caller=ROOT
-    // → 所有 user 都从 ROOT 竖线分出（和 spec 多轮一致，不从 predecessor 串）。
-    // predecessor 只用于 fork 判定 / depth，不决定画线父。
-    // comm_from 节点(B 收到跨分支消息): 它归属 B 分支，结构线接 predecessor
-    // (B 上一条)，跨分支那条由 comm_from 通信线单独画。其余: caller 优先。
-    // B 收到跨分支消息(comm_from)：它是 send 引出的【通信支】，不挂任何分支竖线，
-    // 唯一进来的线就是 send→它的通信线(由 comm_from 段单独画)。这里不画结构线。
-    if(m.comm_from)continue;
     const predId=m.predecessor, callerId=m.caller;
-    const parentId = (callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
+    const parentId=(callerId&&byId[callerId])?callerId:((predId&&byId[predId])?predId:null);
     if(!parentId)continue;
     const parent=byId[parentId], p=pos(parent);
-    const isFork=(m._laneNum!==parent._laneNum);   // 子在别的分支 = fork 出来的
-    // spawn vs retry vs 独立分支：
-    //   spawn_from → 大模型派的(点划线)；independent → 用户另开的独立对话(实线,不画虚线分叉)；
-    //   其余 fork → 用户 retry(虚线)。
-    const isSpawn=isFork && !!m.spawn_from && byId[m.spawn_from];
-    let dash="";
-    if(isFork) dash = isSpawn ? "4 2 1 2" : (m.independent ? "" : "5 4"); // spawn / 独立 / retry
-    if(!isFork || m.independent){
-      // 同分支 / 独立分支：父中心(p.x)竖下到子行，再横到子 —— spec 标准阶梯。
-      // 独立分支(B)的首节点 parent=ROOT，从 ROOT 竖线分出，和 A 分支对称。
+    const isFork=(m._laneNum!==parent._laneNum);
+    if(!isFork){
+      // 父正下方竖到子行，再横到子 —— 先下后右
       edgeG.appendChild(svgEl("path",{
         d:`M ${p.x} ${p.y+R} L ${p.x} ${c.y} L ${c.x-R-3} ${c.y}`,
         fill:"none",stroke:color,"stroke-width":1.8}));
     }else{
-      // fork：从【分叉源节点】拉 dash 到 fork 自己的竖线列，再竖下、横到子。
-      //   retry → 源 = 被 retry 的兄弟（同 predecessor 的首个节点），从它旁边衍生
-      //   spawn → 源 = caller(spawn_branch 节点)
-      const pred=predOf(byId,m);
-      let src=parent;
-      if(isSpawn){ src=byId[m.spawn_from]; }       // spawn: 源 = spawn_branch 节点
-      else if(pred){                                // retry: 源 = 被 retry 的兄弟
-        const sibs=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id);
-        if(sibs.length && byId[sibs[0]]) src=byId[sibs[0]];
+      // 跨分支：源(retry兄弟/spawn工具/通信源) 先下后右到子，线型 dash 区分类型。
+      const isSpawn=!!m.spawn_from&&byId[m.spawn_from];
+      const dash = isSpawn?"4 2 1 2":(m.commLine||m.commFrom?"1 5":(m.independent?"":"5 4"));
+      let src=parent;   // 默认从 caller(独立分支 = ROOT) 引出
+      if(isSpawn) src=byId[m.spawn_from];
+      else if(m.commFrom&&byId[m.commFrom]) src=byId[m.commFrom];
+      else if(!m.independent){   // retry: 从被 retry 的兄弟引出；独立分支: 保持从 ROOT 引出
+        const pred=predOf(byId,m); if(pred){ const sib=(buildMapsCache.fork[pred]||[]).filter(x=>x!==m.id)[0]; if(sib&&byId[sib]) src=byId[sib]; }
       }
       const sp=pos(src);
-      const trunkX = PADX + m._lane*COL;   // 子所在 lane 的竖线列（起始列）
-      // dash: 兄弟节点右侧 → fork 竖线列（横）
-      edgeG.appendChild(svgEl("path",{
-        d:`M ${sp.x+R} ${sp.y} L ${trunkX} ${sp.y}`,
-        fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:0.8}));
-      // fork 竖线下到子行 + 实线横到子
-      edgeG.appendChild(svgEl("path",{
-        d:`M ${trunkX} ${sp.y} L ${trunkX} ${c.y} L ${c.x-R-3} ${c.y}`,
-        fill:"none",stroke:color,"stroke-width":1.6}));
+      edgeG.appendChild(svgEl("path",{d:`M ${sp.x} ${sp.y+R} L ${sp.x} ${c.y} L ${c.x-R-3} ${c.y}`,
+        fill:"none",stroke:color,"stroke-width":1.6,"stroke-dasharray":dash,opacity:dash?0.8:1}));
     }
   }
-  // 合并汇入线: merge 节点的每个 peer(commit_parents 之外, 这里用 mergeFrom 数组)
+  // ===== 软连接线(非调用): merge 汇入 / attach 回流 / 通信。本质都是"谁连了谁"。
+  // 默认隐藏；鼠标放到它连接的【任一端点节点】上才显示 + 流动动画。=====
+  // merge 汇入线
   for(const m of nodes){
     if(m.role!=="merge"||!m.mergeFrom)continue;
     const c=pos(m);
     for(const pid of m.mergeFrom){ const peer=byId[pid]; if(!peer)continue; const pp=pos(peer);
-      edgeG.appendChild(svgEl("path",{d:`M ${pp.x} ${pp.y+R} L ${pp.x} ${c.y} L ${c.x+R+3} ${c.y}`,fill:"none",stroke:laneColor(peer._laneNum),"stroke-width":2.4,opacity:0.9})); }
+      edgeG.appendChild(svgEl("path",{class:"soft-link","data-from":pid,"data-to":m.id,
+        d:`M ${pp.x} ${pp.y+R} L ${pp.x} ${c.y} L ${c.x+R+3} ${c.y}`,fill:"none",stroke:laneColor(peer._laneNum),"stroke-width":2.4})); }
   }
-  // 通信线: comm_from = 从【源(send_to_branch 工具)】跨分支连到本节点(B 收到)。
-  // 点线，颜色用目标分支(B)的 lane 色。这条线表示"消息从 A 的工具发到了 B"。
-  for(const m of nodes){
-    if(!m.comm_from)continue; const src=byId[m.comm_from]; if(!src)continue;
-    const sp=pos(src), c=pos(m);
-    // send → B收到：通信支的主连接，常驻显示(点线区分类型,B分支色)。
-    // 走 send 右侧 → 竖到 B收到行 → 横入(L 形)。
-    edgeG.appendChild(svgEl("path",{
-      d:`M ${sp.x+R} ${sp.y} L ${c.x} ${sp.y} L ${c.x} ${c.y-R}`,
-      fill:"none",stroke:laneColor(m._laneNum),"stroke-width":1.8,"stroke-dasharray":"2 4","stroke-linecap":"round",opacity:0.9}));
-  }
-  // 旧 comm_to(保留兼容,当前场景未用)
-  for(const m of nodes){
-    if(!m.comm_to)continue; const src=pos(m); const tgt=byId[m.comm_to]; if(!tgt)continue; const tp=pos(tgt);
-    edgeG.appendChild(svgEl("path",{class:"comm-line",d:`M ${src.x+R} ${src.y} C ${(src.x+tp.x)/2} ${src.y}, ${(src.x+tp.x)/2} ${tp.y}, ${tp.x-R} ${tp.y}`,fill:"none",stroke:laneColor(tgt._laneNum),"stroke-width":1.8,"stroke-dasharray":"1 5","stroke-linecap":"round"}));
-  }
-  // attach 回流: attach_from
+  // attach 回流线
   for(const m of nodes){
     if(!m.attach_from)continue; const dst=pos(m); const src=byId[m.attach_from]; if(!src)continue; const sp=pos(src);
-    edgeG.appendChild(svgEl("path",{d:`M ${sp.x} ${sp.y+R} C ${sp.x} ${dst.y+ROW}, ${dst.x} ${dst.y+ROW}, ${dst.x+R} ${dst.y}`,fill:"none",stroke:laneColor(src._laneNum),"stroke-width":1.5,"stroke-dasharray":"4 4",opacity:0.85}));
+    edgeG.appendChild(svgEl("path",{class:"soft-link","data-from":m.attach_from,"data-to":m.id,
+      d:`M ${sp.x} ${sp.y+R} C ${sp.x} ${dst.y+ROW}, ${dst.x} ${dst.y+ROW}, ${dst.x+R} ${dst.y}`,fill:"none",stroke:laneColor(src._laneNum),"stroke-width":1.5,"stroke-dasharray":"4 4"}));
+  }
+  // 通信线: commFrom = send工具(A) → 本节点。
+  for(const m of nodes){
+    if(!m.commFrom)continue; const src=byId[m.commFrom]; if(!src)continue;
+    const sp=pos(src), c=pos(m);
+    edgeG.appendChild(svgEl("path",{class:"soft-link","data-from":m.commFrom,"data-to":m.id,
+      d:`M ${sp.x+R} ${sp.y} C ${(sp.x+c.x)/2} ${sp.y}, ${(sp.x+c.x)/2} ${c.y}, ${c.x-R} ${c.y}`,
+      fill:"none",stroke:laneColor(m._laneNum),"stroke-width":1.8,"stroke-dasharray":"6 4","stroke-linecap":"round"}));
   }
 
   // 节点
   for(const m of nodes){
     const c=pos(m), color=laneColor(m._laneNum);
-    const g=svgEl("g",{class:"node"});
+    const g=svgEl("g",{class:"node","data-id":m.id});
     for(const e of shapeEl(m,c.x,c.y,color))g.appendChild(e);
     const label=m.label||m.id;
     const t=svgEl("text",{x:c.x+R+7,y:c.y+4,fill:color,"font-size":12}); t.textContent=label; g.appendChild(t);
     if(m.sub){ const s=svgEl("text",{x:c.x+R+7,y:c.y+18,fill:"#6b6a63","font-size":10}); s.textContent=m.sub; g.appendChild(s); }
     nodeG.appendChild(g);
   }
+
+  // 软连接线 hover 交互: 鼠标放到节点上 → 显示与它相连(data-from/to 含它)的软连接线
+  // + 流动动画; 移开 → 隐藏。鼠标也可直接放到线上(端点的 hit 区)。
+  const softLinks=[...edgeG.querySelectorAll(".soft-link")];
+  function showLinksFor(id){
+    softLinks.forEach(l=>{
+      const on = l.getAttribute("data-from")===id || l.getAttribute("data-to")===id;
+      l.classList.toggle("active", on);
+    });
+  }
+  function clearLinks(){ softLinks.forEach(l=>l.classList.remove("active")); }
+  nodeG.querySelectorAll(".node").forEach(g=>{
+    const id=g.getAttribute("data-id");
+    g.style.pointerEvents="all";
+    g.addEventListener("mouseenter",()=>showLinksFor(id));
+    g.addEventListener("mouseleave",clearLinks);
+  });
 
   // 坐标表
   const tbl=document.getElementById("coords");
@@ -369,26 +461,34 @@ const SCENES=[
    {id:"u1b",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"问题(改写)"},
    {id:"l1b",role:"assistant",caller:"u1b",predecessor:"u1b",created_at:4,label:"回复B"},
    {id:"mg",role:"merge",caller:"l1",predecessor:"l1",created_at:5,label:"merge",sub:"合并A+B",mergeFrom:["l1b"]}]},
- {name:"分支间通信",desc:"A 的三角(llm)调 send_to_branch → A 这边出一个【正方形工具】节点 → 它连到 B，在 B 那边相当于另一个 agent 发来消息，生成一个【三角】，三角再 call 出 B 的应答(三角)。全程 caller 子调用链，不经过 ROOT。",nodes:()=>[R0,
+ {name:"分支间通信",desc:"异步：A 调 send_to_branch(正方形工具)给 B 发消息 → 工具瞬间返回，A【不阻塞】继续自己的事。B 在自己节奏处理(B收到=三角→B应答=三角，都在 B 分支)。B 答完，结果【异步送回】A 末尾，变成一个三角「B回复了」(agent 发来的=三角)。两条通信线：A→B 发、B→A 回；两条分支各自竖线都不停。",nodes:()=>[R0,
    // A 分支
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A回复"},
-   // B 分支(独立)
+   // B 分支(独立,和 A 平行,从 ROOT 来)
    {id:"ub",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:3,label:"B用户",independent:true},
    {id:"lb",role:"assistant",caller:"ub",predecessor:"ub",created_at:4,label:"B回复"},
-   // 通信链: A三角 → 正方形工具 → B三角(收到) → B三角(应答), 全 caller 子调用
-   {id:"send",role:"code",caller:"l1",predecessor:"l1",created_at:5,label:"send_to_branch",sub:"A调的工具"},
-   // send 之后是 B 分支的事：B收到/B应答 属于 B 分支(绿,接 B回复后面)。
-   // caller=send 只用来画那条【跨分支通信线】(send→B收到)，归属仍是 B 分支。
-   {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",comm_from:"send",tierHint:1,created_at:6,label:"B收到(另一agent)"},
-   {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"}]},
- {name:"子分支服务",desc:"A 派 spawn_branch → B 干活 → attach 回流。spawn 点划线，attach 长虚线。",nodes:()=>[R0,
+   // A 调 send 工具(瞬间返回,不阻塞)；B收到/B应答 归 B 分支。
+   {id:"send",role:"code",caller:"l1",predecessor:"l1",created_at:5,label:"send_to_branch",sub:"瞬间返回,A不阻塞"},
+   {id:"bRecv",role:"assistant",caller:"ub",predecessor:"lb",commFrom:"send",created_at:6,label:"B收到(另一agent)"},
+   {id:"bAns",role:"assistant",caller:"bRecv",predecessor:"bRecv",created_at:7,label:"B应答"},
+   // B应答 异步送回 A 末尾 → 三角「B回复了」。它是外部推回 A 的新一轮输入,
+   // 和「问题」同级(tierHint=1,挂 A 竖线 user 列),不是 send 的缩进子调用。
+   {id:"aRecv",role:"assistant",caller:"ROOT",predecessor:"send",commFrom:"bAns",tierHint:1,created_at:8,label:"B回复了",sub:"A的新一轮,直连ROOT(和问题同级)"},
+   // A 收到 B 的回复后,A 的 llm 对它作出回应(B回复了=输入 → A回应=llm,缩进一级)
+   {id:"aAns",role:"assistant",caller:"aRecv",predecessor:"aRecv",created_at:9,label:"A回应",sub:"A 对 B回复的回应"}]},
+ {name:"子分支服务",desc:"A 的 llm 调 spawn_branch(□工具) → 当场【新建】一个临时子 agent 分支 B → B 在自己分支干活(△ 子agent → △ 干完) → 干完后结果【attach 回流】嵌回 A，A 收到后继续(△)。关键区别于通信：B 不是平行已存在的，是 spawn 当场生出来的，所以从 spawn 那行往下长，不和「问题」平行。spawn 线常驻(点划线)，attach 回流是软连接(hover 显示)。",nodes:()=>[R0,
    {id:"u1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:1,label:"问题"},
    {id:"l1",role:"assistant",caller:"u1",predecessor:"u1",created_at:2,label:"A"},
-   {id:"sp",role:"code",caller:"l1",predecessor:"l1",created_at:3,label:"spawn_branch",sub:"派子分支"},
-   {id:"b1",role:"user",caller:"ROOT",predecessor:"ROOT",created_at:4,label:"子分支B",spawn_from:"sp"},
+   {id:"sp",role:"code",caller:"l1",predecessor:"l1",created_at:3,label:"spawn_branch",sub:"A调的工具,当场派子分支"},
+   // B = spawn 当场新建的子 agent 分支。caller=sp(spawn 派的)、无 predecessor →
+   // 不被当独立分支对齐到问题行；从 spawn 那行往下长。首节点是 △ 子agent(非 user)。
+   {id:"b1",role:"assistant",caller:"sp",spawn_from:"sp",tierHint:1,created_at:4,label:"子分支B",sub:"spawn当场新建的子agent"},
    {id:"b2",role:"assistant",caller:"b1",predecessor:"b1",created_at:5,label:"B干完"},
-   {id:"a2",role:"assistant",caller:"l1",predecessor:"l1",created_at:6,label:"A(收到B)",sub:"attach回流",attach_from:"b2"}]},
+   // B 干完 → attach 回流嵌回 A → A 收到后继续(新一轮,挂 A 主干 user 级)。
+   {id:"a2",role:"assistant",caller:"ROOT",predecessor:"sp",attach_from:"b2",tierHint:1,created_at:6,label:"A(收到B)",sub:"attach回流,A收到后继续"},
+   // A 收到子分支结果后,继续处理/回应(A收到B=输入 → A回应=llm,缩进一级)
+   {id:"a3",role:"assistant",caller:"a2",predecessor:"a2",created_at:7,label:"A回应",sub:"A 对子分支结果的处理"}]},
 ];
 
 function show(i){
@@ -403,7 +503,11 @@ function show(i){
 }
 const bar=document.getElementById("bar");
 SCENES.forEach((s,i)=>{ const b=document.createElement("button"); b.textContent=s.name; b.onclick=()=>show(i); bar.appendChild(b); });
-const _h=parseInt((location.hash||"#0").slice(1),10);
-show(Number.isInteger(_h)&&_h>=0&&_h<SCENES.length?_h:0);
+function _showFromHash(){
+  const h=parseInt((location.hash||"#0").slice(1),10);
+  show(Number.isInteger(h)&&h>=0&&h<SCENES.length?h:0);
+}
+window.addEventListener("hashchange",_showFromHash);
+_showFromHash();
 </script>
 </div></body></html>

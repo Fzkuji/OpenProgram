@@ -17,7 +17,7 @@
 
 ## 需要更新的文档（HIGH）
 
-### providers/thinking-effort.md
+### providers/models/thinking-effort.md
 1. **§10 待修项中 Opus 4.7 override 条目过时**: 文档把 `["low","medium","high"]` 限制当作 bug，
    但这是 Anthropic（Claude 4.6 guidance）的 deliberate design choice。应删除该待修条目或改为说明设计原因。
 2. **"max" 级别映射标记错误**: 文档声称 5 个 provider 的 max 映射"未映射"，但实际代码中
@@ -91,7 +91,7 @@
   - 处境提示(`runtime._situational_prefix`)注入 user turn 开头,告诉模型「你在 X 体内、调 X = 无限递归、用底层工具」,docstring 降级置后 → 直接否定「该路由给 wiki_agent」的前提。
   - 兜底:`_MAX_AGENTIC_RECURSION_DEPTH=5`,per-function-name 计数,同名超 5 层抛 `RecursionError`。
   - self-deny 已删,工具列表含函数自己,靠引导不靠屏蔽。
-  - 设计文档:`docs/design/runtime/agentic-self-recursion.md`;测试:`tests/agentic_programming/test_self_recursion_guard.py`(8 用例)。
+  - 设计文档:`docs/design/runtime/execution/agentic-self-recursion.md`;测试:`tests/agentic_programming/test_self_recursion_guard.py`(8 用例)。
 - **遗留**（待做，见 #2）：各 harness 的 exec 限定工具集 + 跨函数环(A→B→A)识别(当前只防直接自递归)。
 - 会话记录：`~/.openprogram/sessions/local_d125e9a9c3/history/`
   context_tree 展示 7 层嵌套(4d76→0c07→0964→c6f9→f1c9→4379→8746→100c)。

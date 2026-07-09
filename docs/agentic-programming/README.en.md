@@ -31,7 +31,7 @@ right one per task is the core skill:
 
 ## Reference
 
-- [`../api/agentic_function.md`](../api/agentic-function.md) — decorator API quick reference
+- [`../api/agentic-function.md`](../api/agentic-function.md) — decorator API quick reference
 - [`../api/runtime.md`](../api/runtime.md) — `Runtime.exec()` parameters and behaviour
 - [`../../skills/agentic-programming/SKILL.md`](../../skills/agentic-programming/SKILL.md) — the in-repo skill an agent follows to write/validate functions (file layout, rule checklist, smoke tests)
 - [`../design/function/function-calling-unification.md`](../design/function/function-calling-unification.md) — internal design notes on the function-calling framework (evolution / refactor plans, not needed for authoring)

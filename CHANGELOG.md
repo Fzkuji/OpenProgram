@@ -24,7 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Per-provider active account** (`auth/active.py`; CLI `openprogram providers use <provider> [profile]`) — run "openai on the work account, anthropic on personal" at the same time. The request path defaults to each provider's active profile; nothing changes until you activate a non-default one (fully backward compatible).
 - **Automatic key rotation + cooldown** (`auth/usage.py`) — the provider call path now acquires a key from the pool per request and reports the outcome: a 429 cools that key down and the next request rotates to another (the rotation/cooldown/fallback machinery in `auth/pool.py` was previously dead — zero callers). Gated: a no-op unless a provider actually has a multi-key pool, so env-key / OAuth / claude-code setups are byte-for-byte unchanged.
 - **One backend model — account = profile — for every provider** (forced by the OAuth refresh constraint: at most one OAuth credential per pool, so multi-account must be separate profiles). api-key keys, OAuth sign-ins and claude-code subscriptions are all *accounts* (profiles) now, behind one surface `/api/providers/{id}/accounts/*` and one `<AccountManager>` panel: rename (hover ✎ on the right), Use to switch the active account, per-account **validate** + **reveal/edit/update** of an api-key (eye toggle), Remove, and a per-provider **rotation toggle** (off by default; on ⇒ a 429 fails over across accounts — `auth/usage.acquire_pooled` + `auth/rotation.py`). A key set the old way (env var / config) is migrated into an account automatically. Retires the api-key creds-in-one-pool surface; CLI / web / TUI all run the same model.
-- Design + status: [`docs/design/unified-account-management.md`](docs/design/unified-account-management.md) (P-A … P-E).
+- Design + status: [`docs/design/providers/auth/unified-account-management.md`](docs/design/providers/auth/unified-account-management.md) (P-A … P-E).
 
 ## [0.4.0] - 2026-05-28
 
@@ -86,7 +86,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Bool params auto-render as Yes/No toggle, `options` as clickable chips
   - All meta functions and built-in functions annotated with `input` metadata
   - Design principle: free text → selection → structured input (minimize cognitive load)
-  - Full spec documented in `docs/api/agentic_function.md`
+  - Full spec documented in `docs/api/agentic-function.md`
 - **Structured function form in Visualizer** — replaces text command input for function execution
   - Shows function name, description, typed parameter fields with hints
   - Integrated into the chat input area (replaces textarea when active)

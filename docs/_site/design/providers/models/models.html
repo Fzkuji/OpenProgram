@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>模型目录与 Provider 配置 · OpenProgram Docs</title>
+<title>模型目录与 Provider 配置（最终设计） · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -33,6 +33,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
            placeholder="过滤目录…" autocomplete="off" spellcheck="false">
     <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
 <a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="One-shot: send a prompt, print the answer, exit (redirect or pipe it)" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
+<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
 <a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
 <a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
 <details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
@@ -56,7 +57,11 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/plans/proactive-implementation.html" data-title-en="Implementation Plan: Wiring the Proactive Layer into the Existing Code" data-href-zh="/docs/plans/proactive-implementation.html" data-href-en="/docs/plans/proactive-implementation.en.html">落地规划：Proactive Layer 接入现有代码</a></div></details>
 <details class="group" data-key="reference"><summary class="group-title">Reference</summary><div class="group-body"><a class="navlink" href="/docs/reference/claude-code-compaction.html" data-title-en="Claude Code Context Compaction Mechanism — Full Pipeline Reference" data-href-zh="/docs/reference/claude-code-compaction.html" data-href-en="/docs/reference/claude-code-compaction.en.html">Claude Code 上下文压缩机制 — 完整流程参考</a></div></details>
 <details class="group" data-key="research"><summary class="group-title">Research</summary><div class="group-body"><a class="navlink" href="/docs/research/execution-trace-model-selection.html" data-title-en="Research: what data model to use for agent execution traces — choosing span" data-href-zh="/docs/research/execution-trace-model-selection.html" data-href-en="/docs/research/execution-trace-model-selection.en.html">调研:agent 执行记录用什么数据模型 —— 选 span</a></div></details>
+<details class="group" data-key="superpowers"><summary class="group-title">Superpowers</summary><div class="group-body"><details class="group" data-key="superpowers/plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/superpowers/plans/2026-07-08-enabled-models-migration.html">Enabled-Models 迁移 Implementation Plan</a>
+<a class="navlink" href="/docs/superpowers/plans/2026-07-08-provider-self-contained-migration.html">Provider 自包含迁移 Implementation Plan</a>
+<a class="navlink" href="/docs/superpowers/plans/2026-07-08-credential-connection-unification.html">凭据连接信息统一 Implementation Plan</a></div></details></div></details>
 <details class="group" data-key="design" open><summary class="group-title" data-title-en="Design Documents">设计文档</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html" data-title-en="Design Documents" data-href-zh="/docs/design/README.html" data-href-en="/docs/design/README.en.html">设计文档</a>
+<a class="navlink" href="/docs/design/framework-overview.html">OpenProgram 框架总览：一次对话从输入到产出</a>
 <a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
 <a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
 <a class="navlink" href="/docs/design/docs-site.html" data-title-en="Design Docs Site (Unified Documentation Website)" data-href-zh="/docs/design/docs-site.html" data-href-en="/docs/design/docs-site.en.html">设计文档站（统一文档网页）</a>
@@ -77,6 +82,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
 <a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
 <a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
+<details class="group" data-key="design/frontend"><summary class="group-title">Frontend</summary><div class="group-body"><a class="navlink" href="/docs/design/frontend/interaction-feedback.html">Interaction feedback — the 0ms rule</a></div></details>
 <details class="group" data-key="design/memory"><summary class="group-title" data-title-en="Memory — Memory System Design">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
 <a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
 <a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
@@ -93,18 +99,22 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/proactive/overview.html" data-title-en="Overview: Walk Through One Scenario End to End" data-href-zh="/docs/design/proactive/overview.html" data-href-en="/docs/design/proactive/overview.en.html">总览：跟着一个场景走一遍</a>
 <a class="navlink" href="/docs/design/proactive/framework-evolution.html" data-title-en="Framework Evolution: Current State → Target" data-href-zh="/docs/design/proactive/framework-evolution.html" data-href-en="/docs/design/proactive/framework-evolution.en.html">框架演进：现状 → 目标</a>
 <a class="navlink" href="/docs/design/proactive/invariants.html" data-title-en="Invariants the Framework Must Enforce Itself" data-href-zh="/docs/design/proactive/invariants.html" data-href-en="/docs/design/proactive/invariants.en.html">框架自己要守的底线</a>
-<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a></div></details>
+<a class="navlink" href="/docs/design/proactive/execution-model.html" data-title-en="How Rules Are Written and How They Run" data-href-zh="/docs/design/proactive/execution-model.html" data-href-en="/docs/design/proactive/execution-model.en.html">规则怎么写、怎么跑</a>
+<details class="group" data-key="design/proactive/_research_archive"><summary class="group-title">Research Archive</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/_research_archive/replay.html">回放即 policy 测试</a>
+<a class="navlink" href="/docs/design/proactive/_research_archive/threat-model.html">威胁模型</a>
+<a class="navlink" href="/docs/design/proactive/_research_archive/evaluation.html">评估</a></div></details></div></details>
 <details class="group" data-key="design/providers" open><summary class="group-title" data-title-en="Providers">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
-<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/PROBLEM-models-and-bailian.html">当前问题：模型清单（MODELS）与百炼 provider</a>
 <a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
 <details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
 <a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/auth/credential-connection-unification.html">凭据连接信息统一（一个 Credential + 一个解析出口）</a>
 <a class="navlink" href="/docs/design/providers/auth/credential-validation-unification.html" data-title-en="Credential-validation unification" data-href-zh="/docs/design/providers/auth/credential-validation-unification.html" data-href-en="/docs/design/providers/auth/credential-validation-unification.en.html">凭证校验统一</a>
 <a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
 <a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
 <a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
 <details class="group" data-key="design/providers/models" open><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
-<a class="navlink active" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置</a></div></details>
+<a class="navlink active" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration (Final Design)" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置（最终设计）</a></div></details>
 <details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-retry.html" data-title-en="Error Handling and Retry Decision Logic for Model Calls" data-href-zh="/docs/design/providers/reliability/error-retry.html" data-href-en="/docs/design/providers/reliability/error-retry.en.html">模型调用的错误处理与重试决策逻辑</a>
@@ -128,16 +138,31 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/extension-gating/implementation.html" data-title-en="Implementation map" data-href-zh="/docs/design/extension-gating/implementation.html" data-href-en="/docs/design/extension-gating/implementation.en.html">实现地图</a>
 <a class="navlink" href="/docs/design/extension-gating/future-work.html" data-title-en="Future work — explicitly NOT built" data-href-zh="/docs/design/extension-gating/future-work.html" data-href-en="/docs/design/extension-gating/future-work.en.html">未来工作 —— 明确不做的部分</a></div></details>
 <details class="group" data-key="design/runtime"><summary class="group-title" data-title-en="Runtime">运行时</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/README.html" data-title-en="Runtime" data-href-zh="/docs/design/runtime/README.html" data-href-en="/docs/design/runtime/README.en.html">运行时</a>
+<a class="navlink" href="/docs/design/runtime/agent-worktree.html">Agent Worktree 工具</a>
+<a class="navlink" href="/docs/design/runtime/agent-collab-architecture.html">Agent 协作 — 架构流程图</a>
+<a class="navlink" href="/docs/design/runtime/agent-collaboration.html">Agent 协作：一个分支间通信原语</a>
+<a class="navlink" href="/docs/design/runtime/agent-call-flow.html">Agent 调用流程（权威设计）</a>
+<a class="navlink" href="/docs/design/runtime/async-task-lifecycle.html">Async Task 生命周期</a>
+<a class="navlink" href="/docs/design/runtime/multi-agent-revert-todo.html">Multi-agent + per-turn revert: status</a>
+<a class="navlink" href="/docs/design/runtime/next-step-decision.html">Next-step decision making(decision.make / exec(choices=))</a>
 <a class="navlink" href="/docs/design/runtime/p3-three-surface-sync.html" data-title-en="P3 — Three-Surface Sync (filling gaps) + P1/P2 onto all three surfaces" data-href-zh="/docs/design/runtime/p3-three-surface-sync.html" data-href-en="/docs/design/runtime/p3-three-surface-sync.en.html">P3 — 三端同步(补全)+ P1/P2 上三端</a>
 <a class="navlink" href="/docs/design/runtime/runtime.html" data-title-en="Runtime — Design Rationale" data-href-zh="/docs/design/runtime/runtime.html" data-href-en="/docs/design/runtime/runtime.en.html">Runtime — 设计理由</a>
+<a class="navlink" href="/docs/design/runtime/session-dag.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
+<a class="navlink" href="/docs/design/runtime/session-name.html">Session Name — 会话命名设计</a>
+<a class="navlink" href="/docs/design/runtime/dispatcher-split.html">Splitting `agent/dispatcher.py` into a responsibility-scoped package</a>
+<a class="navlink" href="/docs/design/runtime/user-input-requests.html">User input requests: pausing a run to ask the user</a>
+<a class="navlink" href="/docs/design/runtime/tool-toggle-management.html">工具开关 / 工具集管理设计</a>
+<a class="navlink" href="/docs/design/runtime/revert-layers.html">文件修改管理 — 行业分析与 OpenProgram 设计</a>
+<a class="navlink" href="/docs/design/runtime/permission-model.html">权限系统设计（Permission System Design）</a>
 <a class="navlink" href="/docs/design/runtime/unified-session-context.html" data-title-en="Unified session context creation" data-href-zh="/docs/design/runtime/unified-session-context.html" data-href-en="/docs/design/runtime/unified-session-context.en.html">统一 session 上下文创建</a>
+<a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
-<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
+<details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
-<a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Session DAG 模型—— 数据结构 + 上下文检索 + 两套合并(最终定稿)</a>
 <a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -167,305 +192,245 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
 <a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg">Providers</span> <span class='bc-sep'>›</span> <span class="bc-seg">Models</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="Model Catalog and Provider Configuration" data-title-zh="模型目录与 Provider 配置">模型目录与 Provider 配置</span></nav><h1 id="模型目录与-provider-配置">模型目录与 Provider 配置<a class="header-anchor" href="#模型目录与-provider-配置">#</a></h1>
+  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg">Providers</span> <span class='bc-sep'>›</span> <span class="bc-seg">Models</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="Model Catalog and Provider Configuration (Final Design)" data-title-zh="模型目录与 Provider 配置（最终设计）">模型目录与 Provider 配置（最终设计）</span></nav><h1 id="模型目录与-provider-配置最终设计">模型目录与 Provider 配置（最终设计）<a class="header-anchor" href="#模型目录与-provider-配置最终设计">#</a></h1>
 <blockquote>
-<p>Thinking effort 的控制逻辑见 <a href="/docs/design/providers/models/thinking-effort.html">thinking-effort.md</a>。本文讲模型目录的数据布局、配置结构、Fetch 流程和数据合并。</p>
+<p>本文描述模型目录的<strong>目标运行逻辑</strong>：数据放哪、文件与代码怎么交互、后端和前端各自怎么消费。
+与当前代码的差距和迁移路径集中在第 8 节——第 1–7 节永远只写目标态，不写历史。
+Thinking effort 的参数细节见 <a href="/docs/design/providers/models/thinking-effort.html">thinking-effort.md</a>。</p>
 </blockquote>
-<h2 id="1-核心原则">1. 核心原则<a class="header-anchor" href="#1-核心原则">#</a></h2>
-<p><strong>每个 provider 自包含。</strong> 所有配置（thinking 映射、探测脚本、Fetch 数据）都在 <code>providers/&lt;provider&gt;/</code> 下。加一个新 provider = 加一个文件夹；什么都不加也行，走 OpenAI 兼容 fallback。</p>
-<p>两类数据分开存：</p>
+<h2 id="1-一句话架构">1. 一句话架构<a class="header-anchor" href="#1-一句话架构">#</a></h2>
+<p><strong>系统只长期记住用户启用的模型。</strong> 设置页的层级是「先 provider、后模型」：第一层展示 provider 列表；点进某个 provider，才实时查询<strong>该 provider</strong> 有哪些模型可选——这个查询不落盘。「启用」的动作 = 把某个模型那一刻的完整规格写进 <code>config.json</code>。运行时注册表 <code>ENABLED_MODELS</code> 就是 config 里这几十行——<code>get_model()</code> 查的、聊天页显示的、用户勾选的，物理上是同一份数据。</p>
+<p><strong>核心不变式：聊天页能选的 = 已启用的 = 后端能解析的。</strong> 不是靠合并管线对齐两份清单，而是根本只有一份。</p>
+<p>由此自动获得的性质：</p>
+<ul>
+<li><strong>没有大文件</strong>：不存全量清单（models.dev 有 151 个 provider、上千个模型且大量重复），config 里只有用户启用的几个到几十个。</li>
+<li><strong>不会过期</strong>：过期的前提是存储。可选列表实时查询，永远是最新的；已启用模型的规格由设置页「Refresh」按需覆写——只刷新用户真正在用的。</li>
+<li><strong>git 干净</strong>：程序只写用户目录的 config；仓库里只有人写的 provider.json；安装包目录运行期只读。</li>
+</ul>
+<h2 id="2-数据分布按谁写分家">2. 数据分布（按「谁写」分家）<a class="header-anchor" href="#2-数据分布按谁写分家">#</a></h2>
 <table>
 <thead>
 <tr>
-<th></th>
-<th>thinking.json</th>
-<th>models.json</th>
+<th>谁写</th>
+<th>放哪</th>
+<th>是什么</th>
+<th>大小</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>内容</td>
-<td>API 参数格式、effort 映射、per-model override</td>
-<td>Fetch 拉到的模型列表（id、context、reasoning 等）</td>
+<td><strong>人</strong>（进 git）</td>
+<td><code>providers/&lt;p&gt;/provider.json</code>（+ 专属协议时的 <code>&lt;p&gt;.py</code>）</td>
+<td>endpoints、thinking、cache、模型级 override</td>
+<td>每份几行到几十行</td>
 </tr>
 <tr>
-<td>变化频率</td>
-<td>几个月一次（API 格式改了才变）</td>
-<td>每次 Fetch 覆写</td>
+<td><strong>程序</strong>（用户机）</td>
+<td><code>config.json</code> → <code>providers.&lt;p&gt;.models</code></td>
+<td>已启用模型的完整规格 + key、enabled 等用户状态</td>
+<td>几十行</td>
 </tr>
 <tr>
-<td>版本控制</td>
-<td>进 git</td>
-<td>.gitignore</td>
+<td>第三方（网络）</td>
+<td>models.dev + 官方 <code>/v1/models</code></td>
+<td>设置页浏览用的实时数据源</td>
+<td>不落盘</td>
 </tr>
 </tbody>
 </table>
-<h2 id="2-文件布局">2. 文件布局<a class="header-anchor" href="#2-文件布局">#</a></h2>
-<pre><code>openprogram/providers/
-├── anthropic/
-│   ├── anthropic.py             ← stream 实现
-│   ├── thinking.json            ← 进 git：thinking effort 映射
-│   ├── probe_thinking.py        ← Fetch 时自动运行的探测脚本
-│   └── models.json              ← .gitignore：Fetch 生成的模型列表
+<pre><code>openprogram/providers/                 ← 全部进 git，运行期只读
 ├── deepseek/
-│   ├── thinking.json
-│   ├── probe_thinking.py
-│   └── models.json
-├── google/
-│   ├── google.py
-│   ├── thinking.json
-│   ├── probe_thinking.py
-│   └── models.json
-├── openai_codex/
-│   ├── openai_codex.py
-│   ├── thinking.json
-│   ├── probe_thinking.py
-│   └── models.json
-├── github_copilot/
-│   ├── thinking.json            ← wire_format: &quot;none&quot;（不支持 thinking）
-│   └── ...
-├── thinking_spec.py             ← 公共：加载 thinking.json + 翻译 + 推导
-├── thinking_catalog.py          ← 公共：启动时填 Model 对象的 thinking 字段
-└── _shared/                     ← 公共工具函数
+│   ├── provider.json                  ← 该 provider 全部手写配置（见第 3 节）
+│   └── deepseek.py                    ← wire/stream 实现（仅专属协议的 provider 有）
+├── enabled_models.py                  ← ENABLED_MODELS：从 config 加载 + endpoints 填充 + thinking 推导
+└── models.py                          ← get_model / get_providers / get_models
+
+~/.openprogram/
+└── config.json                        ← 唯一的用户侧持久化
 </code></pre>
-<p><code>.gitignore</code> 里有一行 <code>openprogram/providers/*/models.json</code>，所有 provider 的 models.json 都不进 git。</p>
-<h3 id="21-没有文件夹的-provider">2.1 没有文件夹的 provider<a class="header-anchor" href="#21-没有文件夹的-provider">#</a></h3>
-<p>社区 provider（groq、mistral 等）可以没有文件夹。此时：</p>
-<ul>
-<li><strong>thinking.json</strong>：<code>thinking_spec.get_thinking_spec()</code> 返回 OpenAI 兼容 fallback（<code>effort_string</code> + <code>low/medium/high</code>）</li>
-<li><strong>probe_thinking.py</strong>：Fetch 时 <code>_load_probe()</code> catch ImportError，静默跳过</li>
-<li><strong>models.json</strong>：Fetch 时 <code>_provider_dir()</code> 自动创建文件夹并写入</li>
-</ul>
-<h3 id="22-provider-alias">2.2 Provider alias<a class="header-anchor" href="#22-provider-alias">#</a></h3>
-<p><code>claude-code</code> 和 <code>anthropic</code> 用同一套 API 和模型。<code>thinking_spec._THINKING_ALIASES = {&quot;claude-code&quot;: &quot;anthropic&quot;}</code> 让 claude-code 共用 anthropic 的 thinking.json，不复制文件。</p>
-<h2 id="3-thinkingjson-结构">3. thinking.json 结构<a class="header-anchor" href="#3-thinkingjson-结构">#</a></h2>
-<p>声明该 provider 的 API 怎么接收 thinking/effort 参数。</p>
-<h3 id="31-字段定义">3.1 字段定义<a class="header-anchor" href="#31-字段定义">#</a></h3>
+<p><strong>命名规则：「catalog」一词整体退役</strong>（历史上一词五用是命名混乱的根源）。<code>models_generated.py</code>、<code>thinking_catalog.py</code>、<code>_catalog_new.py</code>、webui <code>_model_catalog/</code>（→ <code>_model_listing/</code>）全部退役。<strong><code>ENABLED_MODELS</code> 这个名字成立的前提是它真的只装启用的模型</strong>——语义先改，名字后改（见 8.2 迁移顺序）。</p>
+<p><strong>没有目录的 provider</strong>（fireworks、together 等）：models.dev 实时数据里有它们，用户填 key、浏览、启用即可，包里不需要任何文件。</p>
+<h2 id="3-providerjson唯一的手写文件">3. provider.json：唯一的手写文件<a class="header-anchor" href="#3-providerjson唯一的手写文件">#</a></h2>
+<p>一个 provider 的所有人工配置集中一份，全部字段可省略：</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepseek&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;endpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;default&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;api&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai-completions&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;base_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://api.deepseek.com/v1&quot;</span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;thinking&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;effort_string&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;minimal&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;minimal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;max&quot;</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;cache&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;mode&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;none&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;model_overrides&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;some-model&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;headers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;X-Foo&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;compat&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;no_stream_options&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">}}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;models_from&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="p">}</span>
+</code></pre>
 <table>
 <thead>
 <tr>
 <th>字段</th>
-<th>类型</th>
-<th>说明</th>
+<th>作用</th>
+<th>缺省行为</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>wire_format</code></td>
-<td><code>&quot;effort_string&quot;</code> / <code>&quot;budget_tokens&quot;</code> / <code>&quot;none&quot;</code></td>
-<td>API 接受字符串、token 数、还是不支持 thinking</td>
+<td><code>endpoints</code></td>
+<td>api/base_url 分组，模型按组名引用（opencode 4 组、copilot 3 组；单 wire 只有 <code>default</code>）</td>
+<td>models.dev 给的 base_url + OpenAI 兼容协议</td>
 </tr>
 <tr>
-<td><code>effort_map</code></td>
-<td><code>{框架级别: API字符串}</code></td>
-<td><code>wire_format=&quot;effort_string&quot;</code> 时的映射表</td>
+<td><code>thinking</code></td>
+<td>wire_format / effort 映射 / 模型级档位（原 thinking.json，详见 thinking-effort.md）</td>
+<td>OpenAI 兼容 fallback（low/medium/high）</td>
 </tr>
 <tr>
-<td><code>budget_map</code></td>
-<td><code>{框架级别: token数}</code></td>
-<td><code>wire_format=&quot;budget_tokens&quot;</code> 时的映射表</td>
-</tr>
-<tr>
-<td><code>default_effort</code></td>
-<td><code>string</code> / <code>null</code></td>
-<td>用户不选时的默认级别</td>
+<td><code>cache</code></td>
+<td>prompt-caching 声明（原 cache.json）</td>
+<td>不做显式缓存控制</td>
 </tr>
 <tr>
 <td><code>model_overrides</code></td>
-<td><code>{model_id: {...}}</code></td>
-<td>特定模型的覆盖配置</td>
+<td>逐模型的 headers、compat、<code>endpoint</code> 引用、<code>key_prefix</code> 等机器拿不到的字段，<strong>启用时叠进规格</strong></td>
+<td>无 override</td>
 </tr>
 <tr>
-<td><code>model_overrides.&lt;id&gt;.effort_map</code></td>
-<td><code>{}</code> 空 dict</td>
-<td>表示该模型不支持 effort 调节</td>
+<td><code>models_from</code></td>
+<td>订阅型 provider 借用浏览数据源（claude-code → anthropic）</td>
+<td>不借用</td>
 </tr>
 </tbody>
 </table>
-<h3 id="32-示例">3.2 示例<a class="header-anchor" href="#32-示例">#</a></h3>
-<p><strong>Anthropic</strong>——effort 字符串，model_overrides 由 API capabilities 自动写入：</p>
-<pre><code class="language-json"><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;effort_string&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;minimal&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;xhigh&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;xhigh&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;max&quot;</span>
-<span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model_overrides&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;claude-opus-4-8&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="s2">&quot;medium&quot;</span><span class="p">,</span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="nt">&quot;xhigh&quot;</span><span class="p">:</span><span class="s2">&quot;xhigh&quot;</span><span class="p">,</span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="s2">&quot;max&quot;</span><span class="p">}</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;claude-opus-4-5-20251101&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="s2">&quot;medium&quot;</span><span class="p">,</span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="s2">&quot;high&quot;</span><span class="p">}</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
+<p><strong>判断标准：机器拿得到的字段，人不写。</strong> provider.json 里没有模型清单——清单是浏览时实时查的，规格是启用时复制的。</p>
+<p>目录名用下划线（<code>amazon_bedrock/</code>），<code>id</code> 存连字符原名（<code>amazon-bedrock</code>）。同服务多协议（百炼的 OpenAI 兼容 + Anthropic 兼容端点）= 同一 provider 两个 endpoint，不拆两个 provider。</p>
+<h2 id="4-两个动作浏览启用">4. 两个动作：浏览、启用<a class="header-anchor" href="#4-两个动作浏览启用">#</a></h2>
+<h3 id="41-浏览实时不落盘">4.1 浏览（实时，不落盘）<a class="header-anchor" href="#41-浏览实时不落盘">#</a></h3>
+<p>浏览分两级。<strong>第一级：provider 列表</strong>（设置页首屏）= 本地有 <code>provider.json</code> 的 provider ∪ models.dev 的 provider 索引，只有名字、配置状态等元信息，不含模型。<strong>第二级：模型列表</strong>——用户点进某一个 provider 后，才对这一个 provider 发起查询：</p>
+<pre><code>list_available_models(provider_id)
+  = 官方 /v1/models（有 key 时；Anthropic 额外逐模型拉 capabilities，probe 推断 reasoning）
+  ⊕ models.dev（补价格/能力；无 key 时的完整兜底）
+  → 内存合并，直接返回给前端渲染
 </code></pre>
-<p>Opus 4.8 的 override 只有 5 个 key（没有 minimal），所以 UI 显示 5 档。Opus 4.5 只有 3 个 key，UI 显示 3 档。Provider 级别的 <code>effort_map</code> 有 6 个 key，作为没有 override 的模型的 fallback。</p>
-<p><strong>DeepSeek</strong>——V4 五档，R1 无 effort 控制：</p>
-<pre><code class="language-json"><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;effort_string&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;minimal&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;minimal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;max&quot;</span>
-<span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model_overrides&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;deepseek-reasoner&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}},</span>
-<span class="w">    </span><span class="nt">&quot;deepseek-chat&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;effort_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}}</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
+<p>结果只进内存（可带一个短 TTL 缓存避免反复请求），关掉页面就没了。断网时浏览不可用——<strong>发现新模型本来就需要网络</strong>，这不是缺陷是事实。</p>
+<h3 id="42-启用复制规格进-config">4.2 启用（复制规格进 config）<a class="header-anchor" href="#42-启用复制规格进-config">#</a></h3>
+<p>用户在浏览列表里勾选一个模型：</p>
+<pre><code>enable_model(provider_id, row)
+  → 规格 = 浏览行 ⊕ provider.json.model_overrides[id] ⊕ endpoints 解析的 api/base_url
+  → thinking 档位由 provider.json.thinking 推导后一并写入
+  → 追加到 config.json providers.&lt;p&gt;.models
+  → ENABLED_MODELS 重载
 </code></pre>
-<p><code>deepseek-reasoner</code> 的 <code>effort_map</code> 是空 dict <code>{}</code>——表示这个模型有 reasoning 能力但不支持 effort 调节（R1 永远全力推理）。<code>deepseek-chat</code> 的空 dict 表示 V3 不支持 reasoning。</p>
-<p><strong>Google Gemini</strong>——用 token 数而非字符串：</p>
-<pre><code class="language-json"><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;budget_tokens&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;budget_map&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;minimal&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;low&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2048</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;medium&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;high&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">24576</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;xhigh&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">32768</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">65536</span>
-<span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span>
-<span class="p">}</span>
+<ul>
+<li><strong>取消启用</strong> = 从 config 删除该行。</li>
+<li><strong>Refresh</strong> = 对已启用模型重新执行浏览 + 覆写规格（治「规格随时间变旧」，且只刷新用户在用的）。</li>
+<li><strong>手工添加模型</strong>（provider 没列出的）= 用户在同一张表单里手填一行——和「启用」写的是同一个列表，原 <code>custom_models</code> 概念消失。</li>
+<li><strong>订阅 provider 的动态注册</strong>（如 claude-code 登录后自动出现 3 个模型）= 程序代替用户执行一次 enable，写的还是同一个列表。</li>
+</ul>
+<h2 id="5-后端怎么用">5. 后端怎么用<a class="header-anchor" href="#5-后端怎么用">#</a></h2>
+<pre><code class="language-python"><span class="c1"># openprogram/providers/enabled_models.py</span>
+<span class="n">ENABLED_MODELS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Model</span><span class="p">]</span>   <span class="c1"># key = &quot;&lt;prefix&gt;/&lt;id&gt;&quot;，内容 = config 规格 + 推导字段</span>
 </code></pre>
-<p><strong>GitHub Copilot</strong>——不支持 thinking：</p>
-<pre><code class="language-json"><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;wire_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;none&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;default_effort&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
-<span class="p">}</span>
-</code></pre>
-<h3 id="33-thinking_levels-的推导规则">3.3 thinking_levels 的推导规则<a class="header-anchor" href="#33-thinking_levels-的推导规则">#</a></h3>
-<p>UI 显示几档不是手动维护的，而是从映射表的 key 自动推导：</p>
-<ol>
-<li><code>reasoning=false</code> → 空列表，UI 不显示滑块</li>
-<li>有 <code>model_overrides</code> 且 <code>effort_map</code> 不是 null → 用 override 的 key（空 <code>{}</code> → 空列表 → UI 不显示）</li>
-<li>无 override → 用 provider 级别的 <code>effort_map</code>/<code>budget_map</code> 的 key</li>
-<li>无 thinking.json → fallback 的 key（low/medium/high）</li>
-</ol>
-<h2 id="4-modelsjson-结构">4. models.json 结构<a class="header-anchor" href="#4-modelsjson-结构">#</a></h2>
-<p>Fetch Models 生成，存在 provider 文件夹里，不进 git：</p>
-<pre><code class="language-json"><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepseek&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepseek-v4-flash&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;deepseek-v4-flash&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;reasoning&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;thinking_levels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;minimal&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;high&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;max&quot;</span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;default_thinking_level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;context_window&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1000000</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">384000</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;input_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.14</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;output_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.28</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">  </span><span class="p">]</span>
-<span class="p">}</span>
-</code></pre>
-<p>Anthropic 的 models.json 还包含 <code>supports_adaptive</code> 字段（从 capabilities API 获取）。</p>
-<h2 id="5-fetch-流程">5. Fetch 流程<a class="header-anchor" href="#5-fetch-流程">#</a></h2>
-<p>用户在 Settings 里点&quot;Fetch Models&quot;触发：</p>
-<pre><code>1. fetchers/__init__.py: fetch_models_remote(provider_id)
-       │
-       ▼
-2. 选 fetcher（_FETCHERS 表 或 通用 _fetch_openai_compat）
-       │
-       ▼
-3. 调 provider 的 API（如 /v1/models）拿模型列表
-       │
-       ├── Anthropic: 对每个模型额外调 GET /v1/models/{id}
-       │   → _extract_thinking_caps() 提取 effort/adaptive capabilities
-       │
-       ├── 其他: _load_probe(provider_id) 调 probe_thinking.probe()
-       │   → 从 model id 推断 reasoning 能力
-       │
-       ▼
-4. enrichment: 合并 models.dev 数据（pricing、reasoning 标记）
-       │
-       ▼
-5. 写入 providers/&lt;provider_dir&gt;/models.json
-       │
-       ▼
-6. 前端重新请求 /api/agent_settings → UI 刷新
-</code></pre>
-<h2 id="6-数据合并三层叠加">6. 数据合并：三层叠加<a class="header-anchor" href="#6-数据合并三层叠加">#</a></h2>
-<p><code>listing.py</code> 的 <code>list_models_for_provider()</code> 是模型数据的唯一出口。它把三层数据合并成最终结果：</p>
-<pre><code>第 1 层: combined_models(provider_id)
-         = models.json (Fetch 数据) + models.dev (pricing/caps)
-         → 得到每个模型的基础信息 (id, reasoning, context_window, ...)
-
-第 2 层: thinking_spec.derive_thinking_fields()
-         = 读 thinking.json → model_overrides → provider 级别映射 → fallback
-         → 得到 thinking_levels / default / variant
-
-第 3 层: Fetch 数据里的 thinking_levels（当第 2 层无结果时用）
-         → models.dev 或 API capabilities 提供的 thinking_levels
-</code></pre>
-<p>合并后的结果被三个消费方使用：</p>
+<p>启动时从 config 加载（几十行，瞬时），config 变更后重载。<code>get_model</code> / <code>get_providers</code> / <code>get_models</code> 三个查询函数接口不变，20+ 个运行时调用方（agent、runtime、failover…）零改动。<code>get_model</code> miss 时经 <code>auth.aliases</code> 试等价 provider 名。</p>
+<p><strong>约定：系统只认启用的模型。</strong> failover 链、agent 配置引用的模型必须在启用集里；引用未启用的模型 = 配置错误，报错信息提示去设置页启用。旧会话引用已删除的模型时正常显示历史，仅不能继续用该模型发消息。</p>
+<h2 id="6-前端怎么用">6. 前端怎么用<a class="header-anchor" href="#6-前端怎么用">#</a></h2>
 <table>
 <thead>
 <tr>
-<th>消费方</th>
-<th>用途</th>
+<th>前端位置</th>
+<th>API 路由</th>
+<th>数据来源</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>list_models_for_provider()</code></td>
-<td>Settings 页面的模型表格</td>
+<td>设置页首屏：provider 列表（无模型名）</td>
+<td><code>GET /api/providers</code></td>
+<td>provider.json 有的 + models.dev 实时列出的（社区 provider 可直接配置）</td>
 </tr>
 <tr>
-<td><code>list_enabled_models()</code></td>
-<td>Chat 页面的模型选择器（委托给上面）</td>
+<td>provider 详情页：浏览/勾选<strong>该 provider</strong> 的模型</td>
+<td><code>GET /api/providers/&lt;id&gt;/available</code></td>
+<td><strong>实时</strong>：4.1 第二级的浏览结果 + 已启用标记</td>
 </tr>
 <tr>
-<td><code>get_thinking_config_for_model()</code></td>
-<td>UI thinking picker 的选项列表（委托给上面）</td>
+<td>聊天页模型选择器</td>
+<td><code>GET /api/models/enabled</code></td>
+<td><strong>config</strong>：ENABLED_MODELS 原样返回</td>
+</tr>
+<tr>
+<td>thinking 档位选择器</td>
+<td>（<code>_thinking.py</code>）</td>
+<td>ENABLED_MODELS 行里的 thinking_levels</td>
 </tr>
 </tbody>
 </table>
-<p>三个消费方走同一条路径，保证前端显示和后端数据完全一致。</p>
-<h2 id="7-modelsdev-的角色">7. models.dev 的角色<a class="header-anchor" href="#7-modelsdev-的角色">#</a></h2>
-<p><code>models.dev</code> 是跨 provider 的通用数据源，提供：</p>
-<ul>
-<li>没 Fetch 过的 provider 的模型列表（兜底）</li>
-<li>pricing（官方 API 通常不返回价格）</li>
-<li>reasoning 标记、能力细节</li>
-</ul>
-<p>缓存在内存，TTL 24h，启动时惰性刷新。不存在 provider 文件夹里（它是跨 provider 的，不属于任何一个）。</p>
-<h2 id="8-加新-provider-的步骤">8. 加新 provider 的步骤<a class="header-anchor" href="#8-加新-provider-的步骤">#</a></h2>
-<h3 id="81-有专属-api-的-provider如-deepseek">8.1 有专属 API 的 provider（如 DeepSeek）<a class="header-anchor" href="#81-有专属-api-的-provider如-deepseek">#</a></h3>
+<p>webui 展示层（<code>_model_listing/</code>）不做任何合并推导——浏览合并在 4.1 一个函数里，规格合并发生在启用那一刻。webui import providers，providers 永远不 import webui。</p>
+<p><strong>端到端</strong>：填 key → 浏览（实时列表出现 <code>deepseek-v4-flash</code>）→ 勾选（完整规格写进 config，<code>ENABLED_MODELS[&quot;deepseek/deepseek-v4-flash&quot;]</code> 出现）→ 聊天页选中发消息（<code>get_model</code> 命中同一条 config 记录）。任何时刻系统里都只有一份模型数据。</p>
+<h2 id="7-不变式改代码前先对照">7. 不变式（改代码前先对照）<a class="header-anchor" href="#7-不变式改代码前先对照">#</a></h2>
 <ol>
-<li>创建 <code>providers/&lt;name&gt;/</code> 目录</li>
-<li>写 <code>thinking.json</code>（声明 wire_format、effort_map、必要的 model_overrides）</li>
-<li>写 <code>probe_thinking.py</code>（暴露 <code>probe()</code> 函数，从 API 或 model id 推断 reasoning）</li>
-<li>在 <code>fetchers/</code> 里加一个专属 fetcher（或走通用 <code>_fetch_openai_compat</code>）</li>
-<li>用户点 Fetch → models.json 自动生成 → UI 自动显示</li>
+<li><strong>只存启用的</strong>：唯一持久化的模型数据是 config 里的启用规格。出现第二份持久化清单（全量快照、fetch 缓存文件、手写清单）即违约。</li>
+<li><strong>浏览不落盘</strong>：可选列表是实时查询 + 内存缓存，永不写文件。</li>
+<li><strong>按谁写分家</strong>：人写的进 git（provider.json）；程序写的进用户 config；包目录运行期只读。</li>
+<li><strong>手写最小化</strong>：provider.json 只存机器拿不到的字段，且没有模型清单。</li>
+<li><strong>分层单向</strong>：<code>openprogram.providers</code> 不 import <code>openprogram.webui</code>。</li>
+<li><strong>key 兼容</strong>：<code>&quot;&lt;prefix&gt;/&lt;id&gt;&quot;</code>、alias 回退、<code>key_prefix</code>（gemini-subscription 双 key）保留；注册表是同一个可变 dict。</li>
 </ol>
-<h3 id="82-社区-provider如-groqmistral">8.2 社区 provider（如 groq、mistral）<a class="header-anchor" href="#82-社区-provider如-groqmistral">#</a></h3>
-<p>什么都不用做。用户在 Settings 里填 API key + 点 Fetch：</p>
+<h2 id="8-现状偏离与迁移">8. 现状偏离与迁移<a class="header-anchor" href="#8-现状偏离与迁移">#</a></h2>
+<blockquote>
+<p>记录日期 2026-07-08。问题现象的完整描述见 <a href="/docs/design/providers/PROBLEM-models-and-bailian.html">../PROBLEM-models-and-bailian.md</a>。</p>
+</blockquote>
+<h3 id="81-偏离迁移已完成">8.1 偏离（迁移已完成 ✅）<a class="header-anchor" href="#81-偏离迁移已完成">#</a></h3>
+<blockquote>
+<p>迁移步骤 1–7 已全部落地：以下偏离均已消除。注册表改名 <code>ENABLED_MODELS</code>、定义移入 <code>enabled_models.py</code>、<code>_model_catalog/</code> → <code>_model_listing/</code>、<code>models_generated.py</code> / <code>thinking_catalog.py</code> / <code>_catalog_new.py</code> 退役，代码里不再有「catalog」。</p>
+</blockquote>
+<ol>
+<li><strong>持久化了不该持久化的</strong>：752 行手写 <code>models.json</code>（22 个 provider，已腐烂）+ <code>models.fetched.json</code>（Fetch 落盘在安装包目录，靠 .gitignore 遮掩）。目标态里两者都不存在。</li>
+<li><strong>两条数据链</strong>：设置页走 webui 的 <code>combined_models</code>（fetched + models.dev），运行时注册表只读手写 <code>models.json</code>——设置页能选 <code>deepseek-v4-flash</code>，<code>get_model</code> 查不到。目标态里连合并管线都不需要：只有 config 一份。</li>
+<li><strong>每 provider 5 类文件</strong>（provider.json / models.json / thinking.json / cache.json / models.fetched.json）。目标态收敛为 1 份 provider.json。</li>
+<li><strong>probe 结果回写 git 里的 thinking.json</strong>——程序写版本控制文件。目标态 probe 只影响浏览结果和启用时写入 config 的规格。</li>
+<li><strong>层次倒置</strong>：models.dev 源和合并逻辑在 <code>webui/_model_catalog/</code>，providers 层反过来读注册表补 api/base_url，循环依赖。</li>
+<li><strong>注册表装了 755 个模型</strong>，名字先后叫过 <code>MODELS</code> / <code>MODEL_REGISTRY</code>。目标态只装启用的，改名 <code>ENABLED_MODELS</code>——<strong>名字跟着语义走，语义没改完之前不换名</strong>。</li>
+<li><strong>bailian 命名不标准</strong>：models.dev 同 base_url 的 provider 叫 <code>alibaba-token-plan-cn</code>，已有预留空目录；用户已要求改标准名、删 <code>bailian/</code>。</li>
+</ol>
+<h3 id="82-迁移顺序每步独立提交系统不瘫全部完成">8.2 迁移顺序（每步独立提交、系统不瘫）——全部完成 ✅<a class="header-anchor" href="#82-迁移顺序每步独立提交系统不瘫全部完成">#</a></h3>
+<ol>
+<li><strong>bailian → alibaba_token_plan_cn</strong>：目录改名 + id 改 <code>alibaba-token-plan-cn</code>。独立小改，先做。✅</li>
+<li><strong>启用即复制规格</strong>：设置页勾选模型时把完整规格（浏览行 ⊕ override ⊕ endpoints ⊕ thinking 推导）写进 config <code>providers.&lt;p&gt;.models</code>，与 <code>custom_models</code> 统一为一个列表。存量用户的 <code>enabled_models</code> id 列表一次性迁移：按当前注册表把 id 解析成完整规格写入。✅</li>
+<li><strong>运行时切换到 config</strong>：注册表加载源改为「config 规格 + provider.json 填充」，<code>get_model</code> 语义不变。<strong>两条链在这一步合一</strong>——此后 752 行 <code>models.json</code> 和 <code>models.fetched.json</code> 机制成为死代码。✅</li>
+<li><strong>浏览改实时</strong>：<code>list_models_for_provider</code> 拆成「available（实时浏览）」和「enabled（读 config）」两条路；Fetch 落盘逻辑删除（可留短 TTL 内存缓存）。✅</li>
+<li><strong>删除死数据</strong>：<code>git rm</code> 22 份 <code>models.json</code>、fetched 文件机制、<code>.gitignore</code> 相关行。✅</li>
+<li><strong>配置合一</strong>：<code>thinking.json</code>、<code>cache.json</code> 并入 <code>provider.json</code>；<code>thinking_spec</code>/<code>cache_spec</code> 改读新位置；<code>_default_api_for</code>/<code>_resolve_base_url</code> 改读 endpoints（循环依赖解除）。✅</li>
+<li><strong>命名收尾</strong>：注册表改名 <code>ENABLED_MODELS</code>（此时语义已成立），定义移入 <code>enabled_models.py</code>；退役 <code>models_generated.py</code>、<code>thinking_catalog.py</code>（并入 <code>thinking_spec.py</code>）、<code>_catalog_new.py</code>、<code>_model_catalog/</code>（→ <code>_model_listing/</code>）。至此代码里不再有「catalog」。✅</li>
+</ol>
+<h3 id="83-迁移必须保住的点历史审查所得">8.3 迁移必须保住的点（历史审查所得）<a class="header-anchor" href="#83-迁移必须保住的点历史审查所得">#</a></h3>
 <ul>
-<li>Fetch 走通用 <code>_fetch_openai_compat</code></li>
-<li>thinking.json 缺失 → 自动用 fallback（low/medium/high）</li>
-<li>probe_thinking.py 缺失 → 静默跳过</li>
-<li>models.json 写入时自动创建文件夹</li>
+<li><strong>存量启用不能丢</strong>：步骤 2 的 id → 规格迁移必须覆盖 22 个 provider 的现有 enabled_models 与 custom_models；迁移后逐条校验 <code>get_model</code> 结果与迁移前等价。</li>
+<li><strong>alias / 双 key</strong>：gemini-subscription 的 <code>google-gemini-cli/*</code> + <code>gemini-subscription/*</code> 共 10 key、name 各异——启用行各自携带完整 key 与 name，天然保留；alias 回退逻辑不动。</li>
+<li><strong>claude-code 借用链</strong>：浏览数据借 anthropic（<code>models_from</code>）、登录后自动 enable 3 个模型、fetcher 特殊——迁移时逐一保留。</li>
+<li><strong>逐字段保真</strong>：<code>cost</code> 嵌套对象、<code>input</code> 多模态、<code>headers</code>（copilot 依赖）、<code>compat</code>——启用时写入 config 的规格必须含全这些字段；删除手写清单前先确认每个启用行拿得到等价值。</li>
+<li><strong>验证粒度</strong>：多 wire provider 按每个 <code>(api, base_url, headers, compat)</code> 组合各 exec 一个模型。</li>
+<li>核心回归测试保持绿：<code>tests/unit/test_provider_wire_invariants.py</code>、<code>tests/unit/test_model_fetch_routing.py</code>。</li>
 </ul>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-23</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/providers/models/thinking-effort.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Thinking / Effort 子系统设计</span></a><a class="pn-link pn-next" href="/docs/design/providers/reliability/llm-fault-tolerance.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">LLM 调用容错与超时管理</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-08</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/providers/models/thinking-effort.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Thinking / Effort 子系统设计</span></a><a class="pn-link pn-next" href="/docs/design/providers/reliability/llm-fault-tolerance.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">LLM 调用容错与超时管理</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#1-核心原则">1. 核心原则</a>
-<a class="" href="#2-文件布局">2. 文件布局</a>
-<a class="lvl-3" href="#21-没有文件夹的-provider">2.1 没有文件夹的 provider</a>
-<a class="lvl-3" href="#22-provider-alias">2.2 Provider alias</a>
-<a class="" href="#3-thinkingjson-结构">3. thinking.json 结构</a>
-<a class="lvl-3" href="#31-字段定义">3.1 字段定义</a>
-<a class="lvl-3" href="#32-示例">3.2 示例</a>
-<a class="lvl-3" href="#33-thinking_levels-的推导规则">3.3 thinking_levels 的推导规则</a>
-<a class="" href="#4-modelsjson-结构">4. models.json 结构</a>
-<a class="" href="#5-fetch-流程">5. Fetch 流程</a>
-<a class="" href="#6-数据合并三层叠加">6. 数据合并：三层叠加</a>
-<a class="" href="#7-modelsdev-的角色">7. models.dev 的角色</a>
-<a class="" href="#8-加新-provider-的步骤">8. 加新 provider 的步骤</a>
-<a class="lvl-3" href="#81-有专属-api-的-provider如-deepseek">8.1 有专属 API 的 provider（如 DeepSeek）</a>
-<a class="lvl-3" href="#82-社区-provider如-groqmistral">8.2 社区 provider（如 groq、mistral）</a>
+<a class="" href="#1-一句话架构">1. 一句话架构</a>
+<a class="" href="#2-数据分布按谁写分家">2. 数据分布（按「谁写」分家）</a>
+<a class="" href="#3-providerjson唯一的手写文件">3. provider.json：唯一的手写文件</a>
+<a class="" href="#4-两个动作浏览启用">4. 两个动作：浏览、启用</a>
+<a class="lvl-3" href="#41-浏览实时不落盘">4.1 浏览（实时，不落盘）</a>
+<a class="lvl-3" href="#42-启用复制规格进-config">4.2 启用（复制规格进 config）</a>
+<a class="" href="#5-后端怎么用">5. 后端怎么用</a>
+<a class="" href="#6-前端怎么用">6. 前端怎么用</a>
+<a class="" href="#7-不变式改代码前先对照">7. 不变式（改代码前先对照）</a>
+<a class="" href="#8-现状偏离与迁移">8. 现状偏离与迁移</a>
+<a class="lvl-3" href="#81-偏离迁移已完成">8.1 偏离（迁移已完成 ✅）</a>
+<a class="lvl-3" href="#82-迁移顺序每步独立提交系统不瘫全部完成">8.2 迁移顺序（每步独立提交、系统不瘫）——全部完成 ✅</a>
+<a class="lvl-3" href="#83-迁移必须保住的点历史审查所得">8.3 迁移必须保住的点（历史审查所得）</a>
 </div></aside>
 </div>
 

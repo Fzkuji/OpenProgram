@@ -4,7 +4,7 @@
 对每个 provider 列出 / 添加 / 激活 / 重命名 / 删除多个账号，外加带开关的
 轮换 / 故障转移。每个 provider 背后的*后端*（claude-code 用 Meridian，
 其余用 AuthStore）只是实现细节；**管理界面是统一的**。本设计基于
-docs/design/unified-auth-storage.md（登录侧，P1）。
+docs/design/providers/auth/unified-auth-storage.md（登录侧，P1）。
 
 ## 核心思路
 
