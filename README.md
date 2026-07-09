@@ -81,11 +81,11 @@ curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/ins
 ```
 It clones OpenProgram to `~/OpenProgram` (override with `--target DIR`), installs the host, then — when a terminal is attached — offers a menu to pick which agentic programs to install. `bash -c "$(curl -fsSL …)"` works too. From a checkout: `./scripts/install.sh`.
 
-**Non-interactive / AI-agent install** — every choice has a flag (`--help` lists them all):
+**AI-agent install** — the plain one-liner above already works unattended: with no terminal it uses defaults automatically, and with one, every prompt times out to its default after 60s, so nothing can hang. Optionally append `-y` to take defaults immediately, plus `--programs all` (or `gui` / `research` / `wiki`) to also install agent programs:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- --yes --programs all
+curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- -y --programs all
 ```
-`--yes` (or env `CI` / `DEBIAN_FRONTEND=noninteractive` / `OPENPROGRAM_INSTALL_YES`) takes every default with no prompts. Even without it no prompt can hang — each waits 60s, then falls back to its default. Full flag matrix: **[docs/install.md](docs/install.md)**.
+Full flag matrix: **[docs/install.md](docs/install.md)**.
 
 **Windows (PowerShell)**
 ```powershell
@@ -147,6 +147,8 @@ openprogram providers login <prov> --profile work  # add a second account
 openprogram worker status            # is the backend up? on what port?
 openprogram --resume <session-id>    # pick up a previous chat
 ```
+
+**Providers & models** live in **Settings → Providers** (web UI). Each provider takes multiple accounts and multiple API keys under one credential pool — keys auto-rotate, cooling off a rate-limited one. Need a provider that isn't in the built-in list? **Add custom provider** takes just a **Name** and **Base URL** (id auto-generated) for any OpenAI-compatible endpoint; browse its models from the provider's `/models` endpoint or add a model by id, same multi-key management as the rest.
 
 ---
 
