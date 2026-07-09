@@ -3,7 +3,7 @@
 # OpenProgram — one-command installer (macOS / Linux)
 # -----------------------------------------------------------------------------
 # Run it straight off the web — no clone needed:
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh)"
+#   curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
 # It clones OpenProgram to ~/OpenProgram (override with --target DIR), then
 # hands off to the cloned copy. Already inside a checkout? It skips the clone
 # and installs in place. When a terminal is attached it also offers a menu to
@@ -35,7 +35,7 @@
 # Re-runnable: every step is idempotent.
 #
 # Usage:
-#   bash -c "$(curl -fsSL .../scripts/install.sh)"   # web install, prompts for programs
+#   curl -fsSL .../scripts/install.sh | bash    # web install, prompts for programs
 #   ./scripts/install.sh                   # full install (everything above)
 #   ./scripts/install.sh --minimal         # bare host only
 #   ./scripts/install.sh --python /p/bin/python   # pick the interpreter
