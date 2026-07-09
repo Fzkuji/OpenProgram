@@ -28,6 +28,24 @@ def _build_model_from_row(row: dict, provider_id: str, endpoints: dict) -> Model
     ep = endpoints.get(row.get("endpoint", "default")) or endpoints.get("default") or {}
     data = dict(row)
     data["provider"] = provider_id
+    # Reader tolerance for configs that never pass through the webui spec
+    # migration (pure-CLI users): map the legacy models.dev flat keys onto the
+    # Model schema. ``input_modalities`` → ``input`` (filtered to the schema's
+    # allowed values — drops "pdf" etc.); flat ``*_cost`` → nested ``cost``.
+    # A row that already carries ``input``/``cost`` (webui-normalized) wins.
+    if "input" not in data and "input_modalities" in data:
+        _allowed = {"text", "image", "video", "audio"}
+        mods = [m for m in (data.get("input_modalities") or []) if m in _allowed]
+        data["input"] = mods or ["text"]
+    if "cost" not in data and any(
+        k in data for k in ("input_cost", "output_cost", "cache_read_cost", "cache_write_cost")
+    ):
+        data["cost"] = {
+            "input": float(data.get("input_cost", 0) or 0),
+            "output": float(data.get("output_cost", 0) or 0),
+            "cache_read": float(data.get("cache_read_cost", 0) or 0),
+            "cache_write": float(data.get("cache_write_cost", 0) or 0),
+        }
     if not data.get("api"):
         data["api"] = ep.get("api", "openai-completions")
     if not data.get("base_url"):
