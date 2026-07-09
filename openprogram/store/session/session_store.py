@@ -927,12 +927,22 @@ class SessionStore:
         except Exception:
             pass
         for node in idx.all_nodes():
-            # Skip sub-call nodes (tool/code with a real caller).
-            # Don't skip user/assistant nodes — their caller is
-            # a conv predecessor or ROOT, not a sub-call caller.
+            # Skip sub-call nodes — anything living INSIDE a function
+            # run. Two shapes: a tool/code node with a real caller
+            # (nested sub-call), and a user/llm node whose caller is a
+            # code node (the LLM replies a run makes internally). The
+            # old user/llm exemption assumed chat-world callers (a conv
+            # predecessor or ROOT); with function runs it surfaced every
+            # internal LLM leaf as a phantom "branch" in the panel.
             caller = _node_caller(node)
-            if caller and caller != "ROOT" and node.role not in (ROLE_USER, ROLE_LLM):
-                continue
+            if caller and caller != "ROOT":
+                if node.role not in (ROLE_USER, ROLE_LLM):
+                    continue
+                caller_node = idx.nodes_by_id.get(caller)
+                if caller_node is not None and caller_node.role not in (
+                    ROLE_USER, ROLE_LLM,
+                ):
+                    continue
             if (node.metadata or {}).get("display") == "root":
                 continue
             # Attach-pointer rows ride the assistant role but are

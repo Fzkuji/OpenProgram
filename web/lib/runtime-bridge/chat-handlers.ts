@@ -405,33 +405,48 @@ export function handleRunningTask(rt: unknown): void {
     // store not yet mounted (legacy-only page) — fall back to the
     // simple button flip above.
   }
-  // A function run dispatched via POST /api/function (fn-form, welcome
-  // button, retry) streams NO transcript placeholder — its code node is
-  // persisted server-side only, so a user watching the session sees a
-  // blank transcript for the whole run. When the run starts in the
-  // session we're viewing, hydrate once so the pending card appears
-  // (tree_update then fills it live) and ask for one more hydrate on
-  // completion (running_task_clear) for the final result/branch state.
-  // Chat turns (func_name "_chat") stream their own rows — reloading
-  // mid-stream would reset the live bubble, so they're excluded. The
-  // per-msg_id guard also stops the re-emit inside the load_session
-  // response from looping.
+}
+
+/** Hydrate the transcript when a function run's FIRST tree_update lands.
+ *
+ *  Runs dispatched via POST /api/function (fn-form, welcome button,
+ *  retry) stream NO transcript placeholder — the code node is persisted
+ *  server-side only, so a user watching the session sees either a blank
+ *  transcript (fresh run) or the stale previous version (retry) for the
+ *  whole run. ``running_task`` fires BEFORE the code node exists, so
+ *  hydrating on it races and loads the old branch; the first
+ *  ``tree_update`` carries the code node's own id in ``tree.path`` and
+ *  proves it is persisted (and HEAD has moved to it at append). Hydrate
+ *  once per run: the pending card appears — for a retry, replacing the
+ *  old version — and later tree_updates fill it live. One more hydrate
+ *  fires on completion (running_task_clear) for the final result state.
+ */
+const hydratedTreePaths = new Set<string>();
+
+function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
+  const sid = (data as { session_id?: string }).session_id;
+  const path = ((data as { tree?: { path?: string } }).tree || {}).path;
+  if (!sid || !path || sid !== W.currentSessionId) return;
+  if (hydratedTreePaths.has(path)) return;
+  hydratedTreePaths.add(path);
+  try {
+    const w = window as unknown as {
+      __sessionStore?: {
+        getState: () => { messagesById?: Record<string, unknown> };
+      };
+    };
+    // Card already in the transcript (chat-issued tool call, or the
+    // session was freshly loaded) — nothing to hydrate.
+    if (w.__sessionStore?.getState().messagesById?.[path]) return;
+  } catch {
+    /* store not mounted — hydrate anyway */
+  }
   const live = window as Window & {
-    currentSessionId?: string;
     ws?: WebSocket;
-    __functionRunHydrated?: string | null;
     __reloadOnTaskClear?: string | null;
   };
-  if (
-    t.func_name &&
-    t.func_name !== "_chat" &&
-    live.currentSessionId === sid &&
-    live.__functionRunHydrated !== mid &&
-    live.ws &&
-    live.ws.readyState === WebSocket.OPEN
-  ) {
-    live.__functionRunHydrated = mid;
-    live.__reloadOnTaskClear = sid;
+  live.__reloadOnTaskClear = sid;
+  if (live.ws && live.ws.readyState === WebSocket.OPEN) {
     live.ws.send(JSON.stringify({ action: "load_session", session_id: sid }));
   }
 }
@@ -489,6 +504,7 @@ export function handleChatResponse(data: ChatResponseData): void {
     return;
   }
   if (type === "stream_event" || type === "tree_update" || type === "user_message") {
+    if (type === "tree_update") hydrateTranscriptForTreeUpdate(data);
     return;
   }
 
