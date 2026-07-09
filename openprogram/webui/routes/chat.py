@@ -254,6 +254,63 @@ def run_agentic_function_call(
     except Exception:
         pass
 
+    # PRE-CREATE the run's top-level code node in THIS (parent) process,
+    # before spawning the child, so head advances and the pending "running"
+    # card lands on disk within milliseconds of the WS action — instead of
+    # waiting ~1s for the spawned child's fresh-interpreter import to run
+    # before its wrapper appends the node. The child REUSES this id
+    # (threaded across the spawn as a ``|node:<id>`` anchor suffix) and its
+    # append no-ops, so head / predecessor are stamped exactly once here.
+    #
+    # ``anchor_msg_id`` encodes the fork point: a retry passes ``pred:<id>``
+    # (fork off that id, empty caller); fn-form passes ``""`` (chain off the
+    # session head). Mirror the @agentic_function wrapper's resolution so
+    # the pre-created node is byte-identical to what the child would write.
+    _forced_node_id = None
+    try:
+        from openprogram.agentic_programming.function import (
+            create_pending_call_node as _mk_node,
+            _registry as _fn_registry,
+        )
+        from openprogram.store import GraphStoreShim as _GS2
+        _inst = _fn_registry.get(name) or next(
+            (v for v in _fn_registry.values()
+             if getattr(v, "tool_name", None) == name), None,
+        )
+        _expose = getattr(_inst, "expose", "io") if _inst else "io"
+        if _expose != "hidden":
+            _caller = ""
+            _forced_pred = None
+            if isinstance(anchor_msg_id, str) and anchor_msg_id.startswith("pred:"):
+                _forced_pred = anchor_msg_id[len("pred:"):]
+            elif anchor_msg_id:
+                _caller = anchor_msg_id
+            _shim = _GS2(default_db(), session_id)
+            _pending_nid = uuid.uuid4().hex[:12]
+            _node = _mk_node(
+                pending_id=_pending_nid,
+                function_name=name,
+                arguments=kwargs,
+                expose=_expose,
+                render_range=getattr(_inst, "render_range", None) if _inst else None,
+                docstring=(getattr(getattr(_inst, "_fn", None), "__doc__", "") or "").strip()
+                    if _inst else "",
+                caller=_caller,
+                forced_predecessor=_forced_pred,
+                store=_shim,
+            )
+            if _node is not None:
+                _shim.append(_node)
+                _forced_node_id = _pending_nid
+                # Thread the pre-created id to the child so its wrapper
+                # reuses it instead of appending a duplicate top-level node.
+                anchor_msg_id = f"{anchor_msg_id}|node:{_pending_nid}"
+    except Exception:
+        # Pre-create is a latency optimisation, never a correctness
+        # requirement — on any failure fall back to the child creating the
+        # node itself (the original ~1s-late-but-correct behaviour).
+        _forced_node_id = None
+
     from openprogram.agent.session_db import default_db as _rc_db2
     agent_id = (_rc_db2().get_session(session_id) or {}).get("agent_id") or _s._default_agent_id()
 

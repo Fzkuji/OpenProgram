@@ -57,6 +57,7 @@ def _wrap_agentic_runtime_block(
         from openprogram.agentic_programming.function import (
             _call_id as _call_id_var,
             _forced_predecessor as _forced_pred_var,
+            _forced_node_id as _forced_node_var,
         )
         from openprogram.store import GraphStoreShim
         from openprogram.webui._exec_dag import build_exec_dag
@@ -74,12 +75,24 @@ def _wrap_agentic_runtime_block(
         # a sub-call of it — so decode it into ``_forced_predecessor`` and
         # leave the caller empty. Every top-level run then uses the same
         # predecessor edge; only internal sub-calls carry a code caller.
+        # A top-level card the PARENT pre-created before spawning encodes
+        # its node id as a ``|node:<id>`` suffix on the anchor. Strip it
+        # first (it rides on both the ``pred:`` and raw-caller forms) and
+        # publish it as ``_forced_node_id`` so the @agentic_function
+        # wrapper REUSES that id instead of minting + appending a second
+        # top-level node.
+        _anchor = assistant_msg_id
+        _node_token = None
+        if isinstance(_anchor, str) and "|node:" in _anchor:
+            _anchor, _forced_nid = _anchor.split("|node:", 1)
+            if _forced_nid:
+                _node_token = _forced_node_var.set(_forced_nid)
         _pred_token = None
-        if isinstance(assistant_msg_id, str) and assistant_msg_id.startswith("pred:"):
-            _pred_token = _forced_pred_var.set(assistant_msg_id[len("pred:"):])
+        if isinstance(_anchor, str) and _anchor.startswith("pred:"):
+            _pred_token = _forced_pred_var.set(_anchor[len("pred:"):])
             _real_caller = ""
         else:
-            _real_caller = assistant_msg_id
+            _real_caller = _anchor
         _call_token = _call_id_var.set(_real_caller)
         # Live Execution DAG streaming: poll build_exec_dag(...,
         # _real_caller) every ~1.2s while the tool runs and broadcast
@@ -184,6 +197,11 @@ def _wrap_agentic_runtime_block(
             if _pred_token is not None:
                 try:
                     _forced_pred_var.reset(_pred_token)
+                except Exception:
+                    pass
+            if _node_token is not None:
+                try:
+                    _forced_node_var.reset(_node_token)
                 except Exception:
                     pass
             if _live_ctx is not None:

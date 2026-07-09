@@ -46,6 +46,18 @@ _forced_predecessor: ContextVar[Optional[str]] = ContextVar(
     '_forced_predecessor', default=None,
 )
 
+# Pre-created top-level code node id for a run whose placeholder card the
+# PARENT dispatch path already appended (before spawning the child), so the
+# UI's head moves and the pending card exists within milliseconds of the WS
+# action instead of waiting ~1s for the child's fresh-interpreter import.
+# When set, the wrapper REUSES this id as its pending_id and the (idempotent)
+# append becomes a no-op — the node already exists, so head/predecessor are
+# not re-stamped, and the exit update keys on this same id. Unset → the
+# wrapper mints its own uuid and appends as before.
+_forced_node_id: ContextVar[Optional[str]] = ContextVar(
+    '_forced_node_id', default=None,
+)
+
 # Self-recursion safety net. The primary guard against an agentic
 # function re-entering itself (wiki_agent calling wiki_agent →
 # unbounded nesting) is the situational prompt injected in
@@ -107,39 +119,57 @@ def _run_pre_invocation_hooks() -> None:
 _registry: dict[str, "agentic_function"] = {}
 
 
-def _append_function_call_entry(
+def create_pending_call_node(
     *,
     pending_id: str,
     function_name: str,
     arguments: dict,
     expose: str,
-    render_range,
-    started_at,
+    render_range=None,
+    started_at=None,
     docstring: str = "",
-) -> None:
-    """Append a placeholder code Call at @agentic_function entry.
+    caller: Optional[str] = None,
+    forced_predecessor: Optional[str] = None,
+    store=None,
+):
+    """Build the placeholder code ``Call`` for an @agentic_function run.
 
-    The node has ``output=None`` (function hasn't returned yet) and
-    ``metadata.status='running'``. The matching
+    The node has ``output=None`` (the function hasn't returned yet) and
+    ``metadata.status='running'``; the matching
     :func:`_update_function_call_exit` fills these in at exit.
 
-    ``render_range`` is stamped into metadata so ``render_context``
-    (which reads frame settings off the in-DAG code Call) can apply
-    callers / subcalls limits without needing a separate in-memory frame.
+    Shared by two writers so both stamp an IDENTICAL node under the same id:
 
-    No-op when:
-      - no ``_store`` is installed (standalone scripts / tests)
-      - ``expose='hidden'`` (caller wants no trace in the DAG)
+      * the wrapper's :func:`_append_function_call_entry` (in-process /
+        child), which reads ``caller`` / ``forced_predecessor`` off the
+        ContextVars, and
+      * the PARENT dispatch path (``run_agentic_function_call``), which
+        pre-creates this card before spawning the child so head moves and
+        the pending card lands on disk within milliseconds.
+
+    ``caller`` / ``forced_predecessor`` default to the ambient ContextVars
+    (``_call_id`` / ``_forced_predecessor``) so the wrapper needs no extra
+    args; the parent path passes them explicitly. ``store`` (a
+    GraphStoreShim) is only needed to resolve the current head when this is
+    a top-level call with no forced predecessor — pass the parent's shim, or
+    let it default to the ambient ``_store``.
+
+    Returns the constructed ``Call`` (unappended), or ``None`` when
+    ``expose='hidden'``.
     """
     if expose == "hidden":
-        return
-
-    from openprogram.store import _store
-    store = _store.get()
-    if store is None:
-        return
+        return None
 
     from openprogram.context.nodes import Call, ROLE_CODE
+
+    if store is None:
+        from openprogram.store import _store
+        store = _store.get()
+
+    if caller is None:
+        caller = _call_id.get() or ""
+    if forced_predecessor is None:
+        forced_predecessor = _forced_predecessor.get()
 
     meta: dict = {
         "expose": expose,
@@ -153,30 +183,28 @@ def _append_function_call_entry(
     # visible to the model running inside it.
     if docstring:
         meta["doc"] = docstring
-    _caller = _call_id.get() or ""
-    # Top-level manual function call (fn-form / Functions panel) — no
-    # enclosing @agentic_function on the stack, so ``_call_id`` is empty.
+    # Top-level manual function call (fn-form / Functions panel / retry) —
+    # no enclosing @agentic_function on the stack, so ``caller`` is empty.
     # Without a conv predecessor the code node has no place in the
     # conversation chain and the DAG viewport renders it as a detached
     # root. Stamp the session's current head as ``metadata.predecessor``
     # (the conv-chain edge) so it attaches under the active branch's tip.
-    if not _caller:
+    if not caller:
         # A retry forks off a SPECIFIC node (the original run's
         # predecessor); a fresh run chains off the current head. Both land
         # as ``metadata.predecessor`` with an empty caller, so every
         # top-level run uses ONE edge type (predecessor) — internal
         # sub-calls remain the only nodes with a code-node caller.
-        forced = _forced_predecessor.get()
         try:
-            if forced is not None:
+            if forced_predecessor is not None:
                 # "ROOT" is stamped EXPLICITLY (chat first turns carry
                 # predecessor="ROOT" the same way): a retry of a root-level
                 # run must record its fork point, or the branch walk's
                 # legacy seq-stitching treats the sibling version as the
                 # previous turn and renders both runs at once.
-                if forced:
-                    meta["predecessor"] = forced
-            else:
+                if forced_predecessor:
+                    meta["predecessor"] = forced_predecessor
+            elif store is not None:
                 pair = store.store._open(store.session_id)
                 if pair is not None:
                     _git, _idx = pair
@@ -188,21 +216,66 @@ def _append_function_call_entry(
                     meta["predecessor"] = head or "ROOT"
         except Exception:
             pass
-    node = Call(
+    return Call(
         id=pending_id,
         created_at=started_at or time.time(),
         role=ROLE_CODE,
         name=function_name,
         input=_sanitize_function_args(arguments or {}),
         output=None,
-        # ``caller`` is the logical caller — the @agentic_function
-        # whose body is the one invoking us. ``_call_id`` is set by
-        # the outer wrapper before we run; reading it now gives us
-        # the right ancestor. Empty string when this is a top-level
-        # call (no enclosing @agentic_function on the call stack).
-        caller=_call_id.get() or "",
+        # ``caller`` is the logical caller — the @agentic_function whose
+        # body is the one invoking us. Empty string when this is a
+        # top-level call (no enclosing @agentic_function on the stack).
+        caller=caller,
         metadata=meta,
     )
+
+
+def _append_function_call_entry(
+    *,
+    pending_id: str,
+    function_name: str,
+    arguments: dict,
+    expose: str,
+    render_range,
+    started_at,
+    docstring: str = "",
+) -> None:
+    """Append a placeholder code Call at @agentic_function entry.
+
+    ``render_range`` is stamped into metadata so ``render_context``
+    (which reads frame settings off the in-DAG code Call) can apply
+    callers / subcalls limits without needing a separate in-memory frame.
+
+    No-op when:
+      - no ``_store`` is installed (standalone scripts / tests)
+      - ``expose='hidden'`` (caller wants no trace in the DAG)
+
+    When the PARENT dispatch path already pre-created this node (its id is
+    ``pending_id``, threaded in via ``_forced_node_id``), the underlying
+    ``store.append`` is idempotent on id — this call becomes a no-op and
+    does not re-stamp head / predecessor.
+    """
+    if expose == "hidden":
+        return
+
+    from openprogram.store import _store
+    store = _store.get()
+    if store is None:
+        return
+
+    node = create_pending_call_node(
+        pending_id=pending_id,
+        function_name=function_name,
+        arguments=arguments,
+        expose=expose,
+        render_range=render_range,
+        started_at=started_at,
+        docstring=docstring,
+        store=store,
+    )
+    if node is None:
+        return
     try:
         store.append(node)
     except Exception:
@@ -849,7 +922,16 @@ class agentic_function:
             new_args, new_kwargs, runtime_token, owns_runtime = _inject_runtime(sig, args, kwargs)
 
             import uuid as _uuid
-            _pending_call_id = _uuid.uuid4().hex[:12]
+            # Reuse the id the parent dispatch path pre-created for this
+            # run (if any) so the exit update keys on the node already on
+            # disk and the append below no-ops. Only honour it for a
+            # top-level run (no enclosing @agentic_function) — a nested
+            # sub-call must mint its own id, never claim the parent card.
+            _forced_nid = _forced_node_id.get()
+            if _forced_nid and not (_call_id.get() or ""):
+                _pending_call_id = _forced_nid
+            else:
+                _pending_call_id = _uuid.uuid4().hex[:12]
             _started_at = time.time()
 
             bound = sig.bind(*new_args, **new_kwargs)
@@ -958,7 +1040,14 @@ class agentic_function:
             new_args, new_kwargs, runtime_token, owns_runtime = _inject_runtime(sig, args, kwargs)
 
             import uuid as _uuid
-            _pending_call_id = _uuid.uuid4().hex[:12]
+            # Reuse the parent-pre-created id for a top-level run (see the
+            # async wrapper's matching note) so head / predecessor stay
+            # stamped once and the exit update targets the on-disk node.
+            _forced_nid = _forced_node_id.get()
+            if _forced_nid and not (_call_id.get() or ""):
+                _pending_call_id = _forced_nid
+            else:
+                _pending_call_id = _uuid.uuid4().hex[:12]
             _started_at = time.time()
 
             bound = sig.bind(*new_args, **new_kwargs)

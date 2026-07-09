@@ -160,6 +160,33 @@ def dispatch_forced_tool_call(
             "killed": True,
         }
     if out.get("error"):
+        # The child errored — possibly BEFORE its wrapper's finally could
+        # flip the node's status (spawn crash, kwargs pickle error, tool
+        # not found). If the parent pre-created the top-level card (see
+        # run_agentic_function_call), it is stuck at "running"; without a
+        # terminal flip the UI spins forever. Patch any leftover running
+        # row to "error" so the card resolves. In-process runs (no
+        # pre-create, wrapper always finalizes) have no running rows here,
+        # so this is a no-op for them.
+        try:
+            from openprogram.agent.session_db import default_db as _ddb
+            from openprogram.store import GraphStoreShim as _GS
+            _db = _ddb()
+            _db.invalidate_cache(session_id)
+            _shim = _GS(_db, session_id)
+            for _m in (_db.get_messages(session_id) or []):
+                if (_m.get("status") or "done") == "running":
+                    _shim.update(
+                        _m["id"],
+                        output={"error": out["error"]},
+                        metadata={
+                            "status": "error",
+                            "error": out["error"],
+                            "last_update_at": time.time(),
+                        },
+                    )
+        except Exception:
+            pass
         return {"runtime_msg_id": None, "ok": False, "error": out["error"]}
     return {
         "runtime_msg_id": out.get("runtime_msg_id"),

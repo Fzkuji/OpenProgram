@@ -770,8 +770,14 @@ async def handle_retry_function(ws, cmd: dict):
         return
     await ws.send_text(json.dumps({
         "type": "chat_ack",
+        # ``function_run`` tells the frontend this ack is a function
+        # dispatch whose top-level card was PRE-CREATED on disk at dispatch
+        # time (run_agentic_function_call), so it can hydrate the transcript
+        # immediately instead of waiting for the first tree_update (~1.85s
+        # after the spawned child's import finishes). See wsHandleChatAck.
         "data": {"session_id": result.get("session_id", session_id),
-                 "msg_id": result.get("msg_id", "")},
+                 "msg_id": result.get("msg_id", ""),
+                 "function_run": True},
     }))
 
 

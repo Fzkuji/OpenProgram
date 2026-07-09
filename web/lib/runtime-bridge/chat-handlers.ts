@@ -94,6 +94,10 @@ export function setRunActive(active: boolean): void {
 interface ChatAckData {
   session_id?: string;
   msg_id?: string;
+  /** Set by a function dispatch (retry_function) whose top-level code node
+   *  was pre-created on disk at dispatch time — lets us hydrate the
+   *  transcript immediately instead of waiting for the first tree_update. */
+  function_run?: boolean;
 }
 
 export function wsHandleChatAck(data: ChatAckData): void {
@@ -151,6 +155,25 @@ export function wsHandleChatAck(data: ChatAckData): void {
   }
   // A fresh chat_ack means a run just started — grey out Edit/Retry.
   setRunActive(true);
+
+  // Function dispatch (Retry): the top-level code node is already on disk
+  // (pre-created at dispatch time), so hydrate the transcript NOW rather
+  // than waiting ~1.85s for the spawned child's first tree_update. The
+  // tree_update path (hydrateTranscriptForTreeUpdate) stays as the fallback
+  // and is a no-op once this load_session lands the card. Guarded on
+  // function_run so a plain chat ack is untouched.
+  if (data.function_run && data.session_id === W.currentSessionId) {
+    const live = window as Window & {
+      ws?: WebSocket;
+      __reloadOnTaskClear?: string | null;
+    };
+    live.__reloadOnTaskClear = data.session_id;
+    if (live.ws && live.ws.readyState === WebSocket.OPEN) {
+      live.ws.send(
+        JSON.stringify({ action: "load_session", session_id: data.session_id }),
+      );
+    }
+  }
 }
 
 interface ChatResponseData {
