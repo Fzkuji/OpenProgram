@@ -36,6 +36,16 @@ _call_id: ContextVar[Optional[str]] = ContextVar(
     '_call_id', default=None,
 )
 
+# Explicit conversation-predecessor for a top-level run (empty _call_id).
+# Normally a top-level manual call chains off the session's current head
+# (see the stamping block below). A RETRY needs to fork off a SPECIFIC
+# node (the original run's predecessor), not the head — the forced-tool
+# path sets this so the code node lands as a sibling of the original
+# rather than the newest tip. Unset → fall back to the head.
+_forced_predecessor: ContextVar[Optional[str]] = ContextVar(
+    '_forced_predecessor', default=None,
+)
+
 # Self-recursion safety net. The primary guard against an agentic
 # function re-entering itself (wiki_agent calling wiki_agent →
 # unbounded nesting) is the situational prompt injected in
@@ -151,13 +161,23 @@ def _append_function_call_entry(
     # root. Stamp the session's current head as ``metadata.predecessor``
     # (the conv-chain edge) so it attaches under the active branch's tip.
     if not _caller:
+        # A retry forks off a SPECIFIC node (the original run's
+        # predecessor); a fresh run chains off the current head. Both land
+        # as ``metadata.predecessor`` with an empty caller, so every
+        # top-level run uses ONE edge type (predecessor) — internal
+        # sub-calls remain the only nodes with a code-node caller.
+        forced = _forced_predecessor.get()
         try:
-            pair = store.store._open(store.session_id)
-            if pair is not None:
-                _git, _idx = pair
-                head = _idx.head_id
-                if head and head != "ROOT":
-                    meta["predecessor"] = head
+            if forced is not None:
+                if forced and forced != "ROOT":
+                    meta["predecessor"] = forced
+            else:
+                pair = store.store._open(store.session_id)
+                if pair is not None:
+                    _git, _idx = pair
+                    head = _idx.head_id
+                    if head and head != "ROOT":
+                        meta["predecessor"] = head
         except Exception:
             pass
     node = Call(

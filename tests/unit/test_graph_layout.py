@@ -90,13 +90,18 @@ def test_tool_call_indents_no_new_lane():
 
 
 def test_manual_function_hangs_off_root():
-    """Manual fn call (caller=ROOT, no predecessor) stays on lane 0;
-    its internals indent by tier."""
+    """Manual fn call stays on lane 0; its internals indent by tier.
+
+    A NEW function run chains off the session's current head (here the
+    prior assistant reply ``l1``), exactly like a new chat turn — so it
+    carries a real ``predecessor`` and continues the trunk lane rather
+    than forking. Only a retry (sharing a fork point) is predecessor-less
+    off ROOT and gets its own lane; see ``run_agentic_function_call``."""
     by = _annotate([
         _root(),
         {"id": "u1", "role": "user", "caller": "ROOT", "predecessor": "ROOT", "created_at": 1},
         {"id": "l1", "role": "assistant", "caller": "u1", "predecessor": "u1", "created_at": 2},
-        {"id": "gui", "role": "code", "caller": "ROOT", "created_at": 3},
+        {"id": "gui", "role": "code", "caller": "ROOT", "predecessor": "l1", "created_at": 3},
         {"id": "step", "role": "code", "caller": "gui", "created_at": 4},
         {"id": "ilm", "role": "assistant", "caller": "step", "created_at": 5},
     ])
@@ -107,15 +112,18 @@ def test_manual_function_hangs_off_root():
 
 
 def test_root_function_call_same_spacing_as_chat():
-    """Regression: a function call hanging directly off ROOT sits ONE
+    """Regression: a function call chained off the current head sits ONE
     unit from root — same horizontal spacing as a top-level chat message,
-    not two units further out. Nested sub-calls keep relative +1 steps."""
+    not two units further out. Nested sub-calls keep relative +1 steps.
+
+    A new run chains off the head (``u1`` here) like a new chat turn, so
+    it stays on the trunk lane. (Only retries fork; see the retry test.)"""
     by = _annotate([
         _root(),
         # top-level chat message off ROOT
         {"id": "u1", "role": "user", "caller": "ROOT", "predecessor": "ROOT", "created_at": 1},
-        # top-level function call off ROOT (tool/code, no predecessor)
-        {"id": "fn", "role": "tool", "caller": "ROOT", "created_at": 2},
+        # top-level function call chained off the head (u1), like a new turn
+        {"id": "fn", "role": "tool", "caller": "ROOT", "predecessor": "u1", "created_at": 2},
         {"id": "sub", "role": "tool", "caller": "fn", "created_at": 3},
     ])
     # both are one unit from root, and equal to each other

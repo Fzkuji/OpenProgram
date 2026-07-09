@@ -56,6 +56,7 @@ def _wrap_agentic_runtime_block(
         from openprogram.agent.session_db import default_db
         from openprogram.agentic_programming.function import (
             _call_id as _call_id_var,
+            _forced_predecessor as _forced_pred_var,
         )
         from openprogram.store import GraphStoreShim
         from openprogram.webui._exec_dag import build_exec_dag
@@ -66,11 +67,19 @@ def _wrap_agentic_runtime_block(
         # progress comes via tree_update events from the live_progress
         # poller below.
 
-        # ``assistant_msg_id`` is already the real caller in both paths:
-        #   * fn-form: routes/chat.py passes "ROOT".
-        #   * LLM call: it's the LLM reply id.
-        # Set _call_id so the code node's predecessor points at it.
-        _real_caller = assistant_msg_id
+        # ``assistant_msg_id`` is the caller for an LLM-issued call (the
+        # LLM reply id) or a fn-form's caller. A RETRY encodes its fork
+        # point as ``pred:<id>``: the run must land as a SIBLING of the
+        # original (metadata.predecessor = that id, empty caller), NOT as
+        # a sub-call of it — so decode it into ``_forced_predecessor`` and
+        # leave the caller empty. Every top-level run then uses the same
+        # predecessor edge; only internal sub-calls carry a code caller.
+        _pred_token = None
+        if isinstance(assistant_msg_id, str) and assistant_msg_id.startswith("pred:"):
+            _pred_token = _forced_pred_var.set(assistant_msg_id[len("pred:"):])
+            _real_caller = ""
+        else:
+            _real_caller = assistant_msg_id
         _call_token = _call_id_var.set(_real_caller)
         # Live Execution DAG streaming: poll build_exec_dag(...,
         # _real_caller) every ~1.2s while the tool runs and broadcast
@@ -172,6 +181,11 @@ def _wrap_agentic_runtime_block(
                 _call_id_var.reset(_call_token)
             except Exception:
                 pass
+            if _pred_token is not None:
+                try:
+                    _forced_pred_var.reset(_pred_token)
+                except Exception:
+                    pass
             if _live_ctx is not None:
                 try:
                     _live_ctx.__exit__(None, None, None)

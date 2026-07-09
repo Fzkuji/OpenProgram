@@ -102,7 +102,7 @@ def test_retry_redispatches_with_original_kwargs(monkeypatch):
     # Re-dispatched exactly once, with the prior call's kwargs + session,
     # anchored at the original call's predecessor (ROOT here) so the
     # re-run forks as a SIBLING branch instead of stacking.
-    assert calls == [("word_count", {"text": "hello world"}, "s1", "ROOT")]
+    assert calls == [("word_count", {"text": "hello world"}, "s1", "pred:ROOT")]
     # Acked the new run over the WS (so the client can follow the stream).
     assert ws.sent and "chat_ack" in ws.sent[0]
 
@@ -130,7 +130,7 @@ def test_retry_anchors_at_original_calls_predecessor(monkeypatch):
     asyncio.run(chat.handle_retry_function(
         _FakeWS(), {"session_id": "s1", "function": "word_count"}
     ))
-    assert anchors == ["llm_reply_9"]
+    assert anchors == ["pred:llm_reply_9"]
 
 
 def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
@@ -158,7 +158,7 @@ def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
         _FakeWS(), {"session_id": "s1", "function": "gui_agent"}
     ))
     # Outer kwargs, anchored at the outer call's predecessor (ROOT).
-    assert calls == [({"task": "outer"}, "ROOT")]
+    assert calls == [({"task": "outer"}, "pred:ROOT")]
 
 
 def test_retry_never_strips_messages_and_errors_without_prior_call(monkeypatch):
@@ -233,6 +233,115 @@ def _append_code(store, node_id, pred="ROOT", seq_ts=1):
         "function": "word_count", "timestamp": seq_ts,
         "predecessor": pred, "caller": pred,
     })
+
+
+# ---- switcher scope: only complete fn-run entries are siblings --------
+# The "1/12" bug was sibling_index counting every node sharing a (None)
+# parent — all ROOT-anchored calls AND their predecessor-less sub-calls.
+# _is_top_function_run restricts the switcher's sibling set to fn-run
+# ENTRY nodes so a retry shows exactly the alternative runs, nothing else.
+
+def test_is_top_function_run_keys_on_caller_not_predecessor():
+    from openprogram.webui.ws_actions.session import _is_top_function_run
+    nodes = [
+        {"id": "ROOT", "role": "user", "display": "root"},
+        # first run: empty caller, no predecessor (root-level)
+        {"id": "run1", "role": "code", "caller": "", "predecessor": ""},
+        # internal sub-call: caller points at run1 (a code node)
+        {"id": "step", "role": "code", "caller": "run1", "predecessor": ""},
+        {"id": "ilm", "role": "assistant", "caller": "step"},
+        # second run CHAINED off run1 via predecessor — still top-level
+        # (empty caller), NOT a sub-call even though its predecessor is a
+        # code node.
+        {"id": "run2", "role": "code", "caller": "", "predecessor": "run1"},
+        # retry of run2: forks via caller = run2's predecessor (run1)
+        {"id": "retry", "role": "code", "caller": "run1", "predecessor": ""},
+    ]
+    by_id = {n["id"]: n for n in nodes}
+    assert _is_top_function_run(by_id["run1"], by_id)
+    assert _is_top_function_run(by_id["run2"], by_id)   # chained, not sub-call
+    assert not _is_top_function_run(by_id["step"], by_id)   # caller=code node
+    assert not _is_top_function_run(by_id["ilm"], by_id)    # not a code node
+    # retry's caller (run1) is a code node → by the caller rule this is
+    # NOT flagged top-level; that's acceptable — the retry still renders
+    # via get_branch as the active head, and the ORIGINAL (run2) carries
+    # the switcher. The switcher groups by fork point (predecessor|caller),
+    # so run2 + retry share fork parent run1 → counted together.
+    assert _is_top_function_run(by_id["run1"], by_id)
+
+
+def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
+    # A NEW run (anchor left unset) must pass an EMPTY caller to dispatch,
+    # so the @agentic_function decorator stamps metadata.predecessor with
+    # the session's current head — chaining off the previous turn like a
+    # new chat turn (distinct predecessor → its own 1/1 card). It must NOT
+    # hardcode "ROOT" (which lumped every run into one None-parent group,
+    # the "1/12" the user saw).
+    from openprogram.webui.routes import chat as routes_chat
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "openprogram.webui.server._get_or_create_session",
+        lambda sid=None, **k: {"id": sid or "s1", "last_workdirs": {}},
+    )
+
+    class _Tool:
+        name = "word_count"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.functions.agent_tools", lambda names=None: [_Tool()]
+    )
+
+    class _RM:
+        def _enabled_model_keys(self):
+            return ["k"]
+    monkeypatch.setattr("openprogram.webui.server._runtime_management", _RM())
+
+    class _DB:
+        def get_session(self, sid):
+            return {"head_id": "prev_head", "agent_id": "main"}
+        def message_exists(self, sid, mid):
+            return True
+        def update_session(self, *a, **k):
+            pass
+    monkeypatch.setattr(
+        "openprogram.agent.session_db.default_db", lambda: _DB()
+    )
+    monkeypatch.setattr(
+        "openprogram.webui.server._default_agent_id", lambda: "main"
+    )
+
+    def _stop_dispatch(**kw):
+        captured["anchor"] = kw.get("anchor_msg_id")
+        raise RuntimeError("stop-after-anchor")
+    monkeypatch.setattr(
+        "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch
+    )
+    monkeypatch.setattr(
+        "openprogram.webui.server._emit_running_task_event", lambda *a, **k: None
+    )
+
+    import threading
+    real_thread = threading.Thread
+
+    def _inline_thread(target=None, args=(), kwargs=None, daemon=None):
+        class _T:
+            def start(_s):
+                try:
+                    target(*(args or ()), **(kwargs or {}))
+                except Exception:
+                    pass
+            def is_alive(_s):
+                return False
+        return _T()
+    monkeypatch.setattr(threading, "Thread", _inline_thread)
+
+    routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
+    threading.Thread = real_thread
+    # Empty caller → decorator's top-level-call branch stamps the head.
+    assert captured.get("anchor") == ""
 
 
 def test_retry_run_is_sibling_and_only_active_head_renders(tmp_path):

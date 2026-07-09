@@ -114,25 +114,36 @@ def run_agentic_function_call(
     kwargs: dict,
     session_id: str | None = None,
     work_dir: str | None = None,
-    anchor_msg_id: str = "ROOT",
+    anchor_msg_id: str | None = None,
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
     ...}`` on a validation failure).
 
-    Shared by ``POST /api/function/{name}`` (fn-form) and the WS
-    ``retry_function`` action (the Retry button) so both re-runs go
-    through one code path — a fresh top-level code node appended to the
-    session DAG, dispatched exactly like an LLM-issued tool call.
+    Shared by ``POST /api/function/{name}`` (fn-form / welcome button)
+    and the WS ``retry_function`` action (the Retry button) so both go
+    through one code path — a top-level code node appended to the session
+    DAG, dispatched exactly like an LLM-issued tool call.
 
-    ``anchor_msg_id`` becomes the new code node's conversation
-    predecessor (``dispatch_forced_tool_call`` sets ``_call_id`` to it).
-    fn-form leaves it at ``"ROOT"`` — a fresh top-level call. The Retry
-    button passes the ORIGINAL call's predecessor so the re-run lands as
-    a SIBLING branch of that call (same fork model as chat-message
-    retry), not a stacked second node. The forced path already advances
-    HEAD to the new node, so the retried version becomes the active
-    branch and only it renders in the transcript.
+    ``anchor_msg_id`` controls where the run lands on the conversation
+    chain, so function calls become first-class members of the same chain
+    chat turns use:
+
+    * ``None`` (default — a NEW run from fn-form / welcome) → passed as an
+      EMPTY caller, which makes the @agentic_function decorator stamp the
+      run's ``metadata.predecessor`` with the session's CURRENT HEAD (see
+      ``function.py`` — the "top-level manual call" branch). The run
+      chains SEQUENTIALLY off the previous turn's terminal node, exactly
+      like a new chat turn: distinct predecessor → its own 1/1 card, no
+      false siblings. An empty session (no head) → a root-level run.
+    * explicit id (the Retry button passes the ORIGINAL call's
+      predecessor) → becomes the re-run's caller so it lands as a SIBLING
+      of that call (same fork model as chat-message retry): both runs
+      share the original's predecessor, so the version switcher counts
+      2/2 and only the active head renders in the transcript.
+
+    The forced path advances HEAD to the new node, so the newest run
+    becomes the active branch and only it renders in the transcript.
     """
     from openprogram.webui import server as _s
 
@@ -186,6 +197,14 @@ def run_agentic_function_call(
     kwargs = dict(kwargs or {})
     conv = _s._get_or_create_session(session_id)
     session_id = conv["id"]
+    # A NEW run (anchor left unset) passes an EMPTY caller so the
+    # @agentic_function decorator stamps its metadata.predecessor with the
+    # session's current head (function.py's top-level-call branch) — the
+    # run chains off the previous turn's terminal node like a new chat
+    # turn. An explicit anchor (the Retry button) is honoured verbatim as
+    # the run's caller so it forks as a sibling of the original.
+    if anchor_msg_id is None:
+        anchor_msg_id = ""
     if not work_dir or not str(work_dir).strip():
         work_dir = (conv.get("last_workdirs") or {}).get(name)
     if not work_dir or not str(work_dir).strip():

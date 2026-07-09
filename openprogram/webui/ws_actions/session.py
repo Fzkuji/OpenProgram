@@ -59,6 +59,36 @@ def _annotate_spawn_origin(graph: list[dict]) -> None:
         }
 
 
+def _is_top_function_run(m: dict, by_id: dict[str, dict]) -> bool:
+    """True if ``m`` is a top-level @agentic_function ENTRY node — the
+    root of one complete run (manual /run, fn-form, welcome button, or a
+    retry sibling), NOT an internal sub-call of another function.
+
+    The discriminator is the ``caller`` (sub-call) edge, NOT the
+    ``predecessor`` (conversation) edge:
+
+    * an INTERNAL sub-call (gui_step, plan_next_action, a self-recursion)
+      has ``caller`` pointing at another code/tool node — it belongs
+      inside that function's Execution DAG, never a standalone card.
+    * a TOP-LEVEL run has an empty / ROOT caller. Its place on the chain
+      comes from ``metadata.predecessor`` (a new run chains off the head)
+      or a shared fork point (a retry). A code node whose predecessor is
+      ANOTHER code node is therefore still a top-level run — the NEXT run
+      chained after the previous one — not a sub-call.
+
+    Shared with ``_rebuild_runtime_cards`` so the version switcher counts
+    exactly the nodes that render as Function-call cards.
+    """
+    if m.get("role") not in ("tool", "code"):
+        return False
+    caller = m.get("caller") or ""
+    if caller in ("", "ROOT"):
+        return True
+    crole = (by_id.get(caller) or {}).get("role")
+    # caller is another code/tool node → internal sub-call.
+    return crole not in ("tool", "code")
+
+
 def _rebuild_runtime_cards(
     chain: list[dict], all_msgs: list[dict], session_id: str,
 ) -> list[dict]:
@@ -82,36 +112,33 @@ def _rebuild_runtime_cards(
     def _is_top_code(m: dict) -> bool:
         if m.get("role") != "tool":
             return False
-        parent = m.get("predecessor") or ""
-        # Only ROOT-parented or unparented code nodes are top-level
-        # function calls (manual /run, fn-form). Internal sub-calls
-        # (gui_step, conclusion, plan_next_action) have a non-ROOT
-        # parent that is another code node — they must NOT become
-        # standalone cards.
-        if parent == "ROOT" or parent == "":
-            return True
-        # LLM tool-call: parent is the LLM reply → folds into the
-        # assistant bubble, not a standalone card.
-        if role_of.get(parent) == "assistant":
-            return False
-        # Parent is another code node (internal sub-call) → not top level
-        if role_of.get(parent) in ("tool", "code"):
-            return False
-        # Anything else (anchor user row) is a manual/fn-form root.
-        return True
+        # Top-level = a run entry, keyed on the CALLER (sub-call) edge:
+        # every top-level run (fresh, chained, or retry) has an empty /
+        # ROOT caller and carries its chain position in
+        # metadata.predecessor. Internal sub-calls (gui_step, conclusion,
+        # plan_next_action, self-recursion) have caller pointing at
+        # another code/tool node — they live in the card's Execution DAG,
+        # never a standalone card. See _is_top_function_run (same rule).
+        return _is_top_function_run(m, by_id)
 
-    # Collect each top code node's transitive descendants (via predecessor)
-    # so they don't render as separate rows — they live in context_tree.
-    # Only tool/assistant nodes are internal sub-calls of a function.
-    # User nodes whose predecessor points at a tool node are conv
-    # predecessors (next turn after the fn-call), not sub-calls.
+    # Collect each top code node's INTERNAL sub-calls (via the CALLER
+    # edge) so they don't render as separate rows — they live in the
+    # card's context_tree. Sub-calls hang off ``caller`` (a code/tool
+    # node), NOT ``predecessor``: a node whose predecessor points at a
+    # code node is the NEXT top-level run chained/forked after it (a
+    # sibling run), which must keep its OWN card — walking predecessor
+    # here would swallow it. Anything that is itself a top-level fn-run
+    # is never treated as a descendant.
+    by_id_full = {m.get("id"): m for m in all_msgs}
     children_of: dict[str, list[str]] = {}
     for m in all_msgs:
         if m.get("role") == "user":
             continue
-        p = m.get("predecessor") or ""
-        if p and p != "ROOT":
-            children_of.setdefault(p, []).append(m.get("id"))
+        if _is_top_function_run(m, by_id_full):
+            continue  # a run entry is never someone's internal sub-call
+        c = m.get("caller") or ""
+        if c and c != "ROOT":
+            children_of.setdefault(c, []).append(m.get("id"))
 
     def _descendants(root_id: str) -> set[str]:
         seen: set[str] = set()
@@ -489,14 +516,64 @@ async def handle_load_session(ws, cmd: dict):
         from openprogram.webui.ws_actions.branch import (
             _attach_info as _ainfo, _attach_embed_stats as _astats,
         )
+        # Version switcher for a Function-call card must count only the
+        # COMPLETE runs that are true alternatives of THIS run — i.e. the
+        # other top-level @agentic_function entry nodes sharing this run's
+        # conversation predecessor (a retry forks off the original's
+        # predecessor; a new run chains off the head, so it has no
+        # alternatives). Plain ``sibling_index`` counts every node sharing
+        # the parent — for legacy ROOT-anchored runs that lumps together
+        # all root-level calls AND their predecessor-less sub-calls (the
+        # "1/12" the user saw). Restrict the sibling set to fn-run entry
+        # nodes so a fresh, model-anchored session shows exactly 2/2.
+        by_id_all = {mm.get("id"): mm for mm in all_msgs}
+
+        def _norm_pred(mm):
+            """The fork-point id of a run: its conversation predecessor,
+            falling back to ``caller`` (a retry expresses the fork via
+            caller, a chained new run via metadata.predecessor — both name
+            the same fork parent). ROOT / absent → None (root-level)."""
+            p = mm.get("predecessor") or mm.get("caller") or None
+            return None if p == "ROOT" else p
+
+        _fn_run_ids = {
+            mm.get("id") for mm in all_msgs
+            if mm.get("role") in ("tool", "code")
+            and _is_top_function_run(mm, by_id_all)
+        }
+
+        def _fn_run_siblings(mid_):
+            """Ordered ids of the fn-run entries sharing ``mid_``'s
+            predecessor (self included), by created_at then insertion."""
+            src = by_id_all.get(mid_)
+            if src is None:
+                return []
+            pred = _norm_pred(src)
+            sibs = [
+                mm for mm in all_msgs
+                if mm.get("id") in _fn_run_ids and _norm_pred(mm) == pred
+            ]
+            sibs.sort(key=lambda x: (x.get("created_at") or 0, all_msgs.index(x)))
+            return [mm.get("id") for mm in sibs]
+
         shown = []
         for m in chain:
             mid = m.get("id")
-            idx, total = sibling_index(all_msgs, mid)
+            # Function-call cards get fn-run-scoped sibling nav; every
+            # other row (chat turns) keeps the plain predecessor-share nav.
+            if m.get("display") == "runtime" and mid in _fn_run_ids:
+                ids = _fn_run_siblings(mid)
+                i = ids.index(mid) if mid in ids else -1
+                idx = (i + 1) if i >= 0 else 0
+                total = len(ids)
+            else:
+                idx, total = sibling_index(all_msgs, mid)
+                ids = None
             prev_id = next_id = None
             if total > 1:
-                sibs = _siblings(all_msgs, mid)
-                ids = [s.get("id") for s in sibs]
+                if ids is None:
+                    sibs = _siblings(all_msgs, mid)
+                    ids = [s.get("id") for s in sibs]
                 i = ids.index(mid) if mid in ids else -1
                 if i > 0:
                     prev_id = deepest_leaf(all_msgs, ids[i - 1])
