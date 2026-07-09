@@ -11,7 +11,7 @@ git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-需要 Python ≥ 3.11、Node ≥ 20、git。默认安装会装齐所有轻量内容——网页 UI、TUI、Research / Wiki agent 程序、浏览器工具和 channels；GUI agent 按需安装（`openprogram programs install gui`，会下载 PyTorch）；`--minimal` 只装一个精简 host。完整依赖矩阵与参数见 [docs/install.md](install.md)。
+需要 Python ≥ 3.11、Node ≥ 20、git。默认安装装齐 host 本体——网页 UI、TUI、浏览器工具和 channels；agent 程序（GUI / Research / Wiki）在安装时的交互菜单里挑选，或之后用 `openprogram programs install <gui|research|wiki|all>` 补装（GUI 会下载 PyTorch）；`--minimal` 只装一个精简 host。完整依赖矩阵与参数见 [docs/install.md](install.md)。
 
 ### 第 2 步：接入一个 provider
 
