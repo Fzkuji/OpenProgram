@@ -428,6 +428,18 @@ export function handleRunningTaskClear(sessionId: string | undefined): void {
   } catch {
     /* ignore */
   }
+  // One-shot reload requested by the Function-call Retry button: the
+  // retried run is a sibling branch whose HEAD lands at run completion,
+  // so re-hydrate now — the branch view then renders only the active
+  // version and the old run moves behind the < N/M > switcher.
+  const flagged = window as Window & { __reloadOnTaskClear?: string | null };
+  if (flagged.__reloadOnTaskClear === sessionId) {
+    flagged.__reloadOnTaskClear = null;
+    const ws = (window as Window & { ws?: WebSocket }).ws;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
+    }
+  }
 }
 
 /* ===== handleChatResponse (bookkeeping) ========================== */

@@ -175,6 +175,14 @@ export function RuntimeBlock({
             // re-run appends a fresh code node (new run, not an overwrite)
             // and the normal stream flow renders it. No DOM surgery.
             if (!sessionId) return;
+            // The fork lands (and HEAD moves) only when the re-run
+            // finishes, so ask for a one-shot transcript reload on this
+            // session's next running_task_clear — the reloaded branch
+            // then shows only the new version, with the old one behind
+            // the < N/M > switcher (chat retry reloads the same way,
+            // just earlier, because its fork exists before streaming).
+            (window as Window & { __reloadOnTaskClear?: string | null }
+            ).__reloadOnTaskClear = sessionId;
             wsSend({
               action: "retry_function",
               session_id: sessionId,

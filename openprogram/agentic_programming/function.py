@@ -169,15 +169,23 @@ def _append_function_call_entry(
         forced = _forced_predecessor.get()
         try:
             if forced is not None:
-                if forced and forced != "ROOT":
+                # "ROOT" is stamped EXPLICITLY (chat first turns carry
+                # predecessor="ROOT" the same way): a retry of a root-level
+                # run must record its fork point, or the branch walk's
+                # legacy seq-stitching treats the sibling version as the
+                # previous turn and renders both runs at once.
+                if forced:
                     meta["predecessor"] = forced
             else:
                 pair = store.store._open(store.session_id)
                 if pair is not None:
                     _git, _idx = pair
                     head = _idx.head_id
-                    if head and head != "ROOT":
-                        meta["predecessor"] = head
+                    # Fresh session (no head yet) → anchor at ROOT
+                    # explicitly, matching the chat convention, so the
+                    # first run and any retry of it group as fork
+                    # siblings instead of seq-stitched serial turns.
+                    meta["predecessor"] = head or "ROOT"
         except Exception:
             pass
     node = Call(
