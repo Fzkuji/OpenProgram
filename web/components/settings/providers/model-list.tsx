@@ -21,7 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { ProviderIcon } from "../provider-icon";
 
 import styles from "../settings-page.module.css";
-import { formatCtx, type Model, type Provider } from "./types";
+import { formatCtx, refreshAgentChip, type Model, type Provider } from "./types";
 import { useTranslation } from "@/lib/i18n";
 
 
@@ -82,6 +82,9 @@ export function ModelList({
     } catch { /* ignore */ }
     onReload();
     queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
+    // The top-bar agent chip reads agentSettings, not the query cache —
+    // refetch it so disabling the currently-selected model clears the chip.
+    refreshAgentChip();
   }
 
   async function bulkToggle(enabled: boolean) {
@@ -100,6 +103,7 @@ export function ModelList({
     );
     onReload();
     queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
+    refreshAgentChip();
   }
 
   const [fetchStatus, setFetchStatus] = useState<string | null>(null);

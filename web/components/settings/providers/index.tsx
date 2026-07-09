@@ -25,6 +25,7 @@ import { AddCustomProvider } from "./add-custom-provider";
 import type { Provider } from "./types";
 import styles from "../settings-page.module.css";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
+import { refreshAgentChip } from "./types";
 import { useTranslation } from "@/lib/i18n";
 
 // Re-export ApiKey for search-providers-section.tsx (the only other
@@ -121,6 +122,9 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
     // read so a disabled provider's models vanish from the top menu
     // without a page reload (the backend already excludes them).
     queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
+    // The top-bar agent chip reads agentSettings, not the query cache —
+    // refetch it so disabling the current model's provider clears the chip.
+    refreshAgentChip();
   }
 
   return (
@@ -193,6 +197,7 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
                   invalidate("/api/providers/list");
                   setSelectedId(null);
                   queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
+                  refreshAgentChip();
                   router.push("/settings/providers");
                   reload();
                 }}

@@ -190,9 +190,23 @@ def _api_key_env(provider: str) -> str:
     try:
         from openprogram.providers.env_api_keys import env_vars_for
         names = env_vars_for(provider)
-        return names[0] if names else ""
+        if names:
+            return names[0]
     except Exception:
         return ""
+    # Custom (user-added OpenAI-compatible) providers have no env-var row in
+    # any catalogue, but they authenticate with a pasted key — without this
+    # they'd be misclassified as sign-in providers and the web form would
+    # hide the key-paste box entirely. Same synthesised display-only label
+    # the provider listing uses; keys resolve from the AuthStore by pid.
+    try:
+        from openprogram.webui._model_listing.storage import _is_custom_provider
+        from openprogram.webui._model_listing.providers import _synth_env_var
+        if _is_custom_provider(provider):
+            return _synth_env_var(provider)
+    except Exception:
+        pass
+    return ""
 
 
 def _pool_id(provider: str) -> str:

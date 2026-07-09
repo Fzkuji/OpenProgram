@@ -99,3 +99,10 @@ export function formatCtx(n?: number): string {
   if (n >= 1000) return Math.round(n / 1000) + "K";
   return String(n);
 }
+
+/** Refetch agentSettings so the top-bar agent chip drops a model that was
+ *  just disabled. Dynamic import: runtime-bridge/providers touches `window`
+ *  at module scope, so a static import breaks Next prerendering. */
+export function refreshAgentChip(): void {
+  void import("@/lib/runtime-bridge/providers").then((m) => m.loadAgentSettings());
+}

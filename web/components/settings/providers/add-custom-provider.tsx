@@ -83,7 +83,7 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
   const canSubmit = label.trim().length > 0 && baseUrl.trim().length > 0;
 
   return (
-    <div className={styles.detailSection} style={{ margin: "8px", padding: "10px", display: "grid", gap: 6 }}>
+    <div className={styles.detailSection} style={{ margin: "8px", padding: "10px", display: "grid", gap: 6, minWidth: 0 }}>
       <div style={{ fontSize: 12, fontWeight: 600 }}>
         {text("Add custom provider", "添加自定义 Provider")}
       </div>
@@ -94,7 +94,19 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
         autoFocus
       />
       {derivedId && (
-        <div style={{ fontSize: 11, color: "var(--muted-foreground, #888)", marginTop: -2 }}>
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--muted-foreground, #888)",
+            marginTop: -2,
+            // A pasted API key has no break points — without this the
+            // one-word "id" line stretches the grid and the whole sidebar.
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={derivedId}
+        >
           {text("id: ", "id：")}{derivedId}
         </div>
       )}
