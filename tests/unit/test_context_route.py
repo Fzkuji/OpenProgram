@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 
 class _FakeDB:
-    def get_branch(self, session_id):
+    def get_branch(self, session_id, head_id=None):
         return [
             {"role": "user", "content": "研究一下 X 主题", "extra": None},
             {
@@ -62,11 +62,13 @@ def test_context_endpoint_no_tools(client, monkeypatch):
     import openprogram.agent.session_db as _sdb
 
     class _EmptyDB:
-        def get_branch(self, sid):
+        def get_branch(self, sid, head_id=None):
             return [{"role": "user", "content": "hi", "extra": None}]
 
         def get_session(self, sid):
-            return {"model": ""}
+            # tools_enabled=False：没记录 tools_available 且会话未启用工具时，
+            # 端点不回退到 session-default toolset，tools 才为空（见 93d233eb）。
+            return {"model": "", "tools_enabled": False}
 
     monkeypatch.setattr(_sdb, "default_db", lambda: _EmptyDB())
     r = client.get("/api/sessions/s2/context")
