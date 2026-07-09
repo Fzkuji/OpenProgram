@@ -216,6 +216,18 @@ def test_manual_add_empty_id_rejected(mem_cfg):
     assert res["ok"] is False
 
 
+def test_manual_add_unknown_provider_rejected(mem_cfg, monkeypatch):
+    # An unknown provider (not tier-1/tier-2, no custom config key) would write
+    # an ENABLED_MODELS row with an empty base_url that can't dispatch — reject
+    # it and write nothing.
+    monkeypatch.setattr("openprogram.providers.get_providers", lambda: [])
+    from openprogram.webui._model_listing import sources as S
+    monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
+    res = st.add_manual_model("totally-not-a-provider", "ghost-model")
+    assert res["ok"] is False and "unknown provider" in res["error"].lower()
+    assert "totally-not-a-provider" not in mem_cfg
+
+
 # ---------------------------------------------------------------------------
 # toggle_model for a dir-less custom provider — spec built from browse row +
 # provider config base_url

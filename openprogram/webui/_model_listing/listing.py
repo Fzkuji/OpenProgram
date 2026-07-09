@@ -76,6 +76,7 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
     md = _models_dev_for(provider_id)  # {id: normalised row} — {} on failure
 
     official: list[dict[str, Any]] = []
+    fetch_failed = False
     if _is_configured(provider_id):
         try:
             res = fetch_and_normalize(provider_id)
@@ -83,6 +84,12 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
             res = {"error": "fetch raised"}
         if isinstance(res, dict) and isinstance(res.get("models"), list):
             official = res["models"]
+        else:
+            # Fetch errored (401 / unimplemented / raised). Distinguish this
+            # from "provider genuinely has zero models" so we don't cache the
+            # empty result as a success — after the user pastes a key the list
+            # must refresh, not stay empty until TTL expiry.
+            fetch_failed = True
 
     rows: list[dict[str, Any]]
     if official:
@@ -101,8 +108,13 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
         # No key or official API failed → models.dev's full list (or []).
         rows = [{**row, "id": mid} for mid, row in md.items()]
 
-    with _browse_lock:
-        _browse_cache[provider_id] = (time.time(), [dict(r) for r in rows])
+    # Don't cache a failed fetch: an empty ``rows`` here is only trustworthy
+    # when the official API actually answered (or models.dev filled in). When
+    # the fetch failed and models.dev had nothing, caching [] would pin the
+    # provider empty for the whole TTL even after the user adds a key.
+    if not (fetch_failed and not rows):
+        with _browse_lock:
+            _browse_cache[provider_id] = (time.time(), [dict(r) for r in rows])
     return rows
 
 

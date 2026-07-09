@@ -335,6 +335,22 @@ import re as _re
 _SLUG_RE = _re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
+def _known_provider_ids() -> set[str]:
+    """Tier-1 (static registry) + tier-2 (models.dev catalogue) provider ids."""
+    from openprogram.providers import get_providers
+    known = set(get_providers())
+    try:
+        from .sources import models_dev
+        known |= {p.get("id") for p in models_dev.list_providers() if p.get("id")}
+    except Exception:
+        pass
+    return known
+
+
+def _is_known_provider(provider_id: str) -> bool:
+    return provider_id in _known_provider_ids()
+
+
 def create_custom_provider(
     provider_id: str, label: str, base_url: str
 ) -> dict[str, Any]:
@@ -346,6 +362,7 @@ def create_custom_provider(
     through ``_write_providers_cfg`` (which reloads the runtime registry).
     """
     from openprogram.auth.aliases import resolve as _resolve_alias
+    from .providers import _prettify
 
     pid = (provider_id or "").strip().lower()
     label = (label or "").strip()
@@ -357,14 +374,7 @@ def create_custom_provider(
     # Collision: an existing provider id, or an id that's a known alias of one.
     if _resolve_alias(pid) != pid:
         return {"ok": False, "error": f"{pid!r} is a reserved alias — pick another id"}
-    from openprogram.providers import get_providers
-    known = set(get_providers())
-    try:
-        from .sources import models_dev
-        known |= {p.get("id") for p in models_dev.list_providers() if p.get("id")}
-    except Exception:
-        pass
-    if pid in known:
+    if pid in _known_provider_ids():
         return {"ok": False, "error": f"provider {pid!r} already exists"}
     with _cache_lock:
         cfg = _read_providers_cfg()
@@ -373,7 +383,7 @@ def create_custom_provider(
         cfg[pid] = {
             "enabled": True,
             "source": "custom",
-            "label": label or _title_case(pid),
+            "label": label or _prettify(pid),
             "base_url": base_url,
             "models": [],
         }
@@ -396,10 +406,6 @@ def delete_custom_provider(provider_id: str) -> dict[str, Any]:
         del cfg[pid]
         _write_providers_cfg(cfg)
     return {"ok": True, "id": pid, "removed": True}
-
-
-def _title_case(pid: str) -> str:
-    return " ".join(w.capitalize() for w in pid.replace("_", "-").split("-"))
 
 
 def _is_custom_provider(provider_id: str) -> bool:
@@ -426,6 +432,14 @@ def add_manual_model(provider_id: str, model_id: str, name: str | None = None) -
         return {"ok": False, "error": "model id is required"}
     with _cache_lock:
         cfg = _read_providers_cfg()
+        # Reject an unknown provider id: creating a row for one would write an
+        # ENABLED_MODELS entry with an empty base_url that can't dispatch. Known
+        # = a tier-1/tier-2 provider (static registry or models.dev catalogue),
+        # or an existing custom config key.
+        if not _is_known_provider(provider_id) and (
+            cfg.get(provider_id, {}).get("source") != "custom"
+        ):
+            return {"ok": False, "error": f"unknown provider {provider_id!r}"}
         pcfg = cfg.setdefault(provider_id, {})
         api = pcfg.get("api") or _default_api_for(provider_id) or "openai-completions"
         base_url = pcfg.get("base_url") or _resolve_base_url(provider_id) or ""
