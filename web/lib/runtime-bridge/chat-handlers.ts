@@ -72,8 +72,6 @@ interface ChatWindow {
   _recordCacheWrite?: (sid: string) => void;
   refreshHistoryContextRange?: (sid: string) => void;
   _refreshBranchTokens?: () => void;
-  _injectPauseRetryButtons?: () => void;
-  _removePauseRetryButtons?: () => void;
   _updatePlusBtnIndicator?: () => void;
   _refreshWebSearchProviderLabel?: () => void;
   renderSessions?: () => void;
@@ -201,13 +199,6 @@ export function wsHandleStatus(msg: StatusMsg): void {
     }
   }
   W.updatePauseBtn?.();
-  if (msg.stopped) {
-    W._removePauseRetryButtons?.();
-  } else if (msg.paused) {
-    W._injectPauseRetryButtons?.();
-  } else {
-    W._removePauseRetryButtons?.();
-  }
 }
 
 /* ===== sessions_list / running_task ============================== */
@@ -711,141 +702,6 @@ export function submitFollowUp(): void {
 // legacy ui.js node-detail panel still emits an onclick to this stub.
 export function rerunFromNode(): void {}
 
-export function injectPauseRetryButtons(): void {
-  const esc = W.escAttr || ((s: unknown) => String(s));
-  document.querySelectorAll(".runtime-block[data-function]").forEach((block) => {
-    if (block.querySelector(".pause-retry-footer")) return;
-    if (block.querySelector(".runtime-block-footer")) return;
-    const fn = block.getAttribute("data-function");
-    if (!fn) return;
-    const footer = document.createElement("div");
-    footer.className = "runtime-block-footer pause-retry-footer";
-    footer.innerHTML =
-      '<div class="runtime-footer-left">' +
-      "<button class=\"rerun-btn\" onclick=\"stopAndRetry('" +
-      esc(fn) +
-      "')\">&#8634; Retry</button>" +
-      "</div>";
-    block.appendChild(footer);
-  });
-}
-
-export function removePauseRetryButtons(): void {
-  document.querySelectorAll(".pause-retry-footer").forEach((el) => {
-    if (el.parentNode) el.parentNode.removeChild(el);
-  });
-}
-
-export function stopAndRetry(funcName: string): void {
-  const sid = W.currentSessionId;
-  if (!sid) return;
-  fetch("/api/stop", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sid }),
-  })
-    .then((r) => r.json())
-    .then(() => {
-      W.isPaused = false;
-      W.isRunning = false;
-      (W.updateSendBtn as (() => void) | undefined)?.();
-      setTimeout(() => retryCurrentBlock(funcName), 400);
-    })
-    .catch(() => {
-      W.isPaused = false;
-      W.isRunning = false;
-      (W.updateSendBtn as (() => void) | undefined)?.();
-    });
-}
-
-export function retryCurrentBlock(funcName: string): void {
-  const sid = W.currentSessionId;
-  if (!sid || !W.conversations?.[sid]) return;
-  if (!W.ws || W.ws.readyState !== WebSocket.OPEN) {
-    W.addSystemMessage?.("Retry failed: not connected to server.");
-    return;
-  }
-  const parse =
-    W.parseRunCommandForDisplay ||
-    ((t: string) => ({ funcName: t, params: "" }));
-  const esc = W.escHtml || ((s: unknown) => String(s));
-
-  const msgs =
-    ((W.conversations[sid] as { messages?: Record<string, unknown>[] }).messages) || [];
-  let userCmd: string | null = null;
-
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === "user" && msgs[i].display === "runtime") {
-      const parsed = parse(String(msgs[i].content || ""));
-      if (parsed.funcName === funcName || !funcName) {
-        userCmd = String(msgs[i].original_content || msgs[i].content);
-        break;
-      }
-    }
-  }
-  if (!userCmd) {
-    for (let j = msgs.length - 1; j >= 0; j--) {
-      if (msgs[j].role === "user") {
-        const content = String(msgs[j].content || "");
-        if (/^(run\s|create\s|fix\s)/i.test(content)) {
-          const parsed2 = parse(content);
-          if (!funcName || parsed2.funcName === funcName) {
-            userCmd = String(msgs[j].original_content || content);
-            break;
-          }
-        }
-      }
-    }
-  }
-  if (!userCmd && W._lastRunCommand) userCmd = W._lastRunCommand;
-  if (!userCmd && funcName) userCmd = "run " + funcName;
-  if (!userCmd) return;
-
-  if (!funcName) {
-    funcName = parse(userCmd).funcName || "";
-  }
-
-  let existingBlock: Element | null = funcName
-    ? document.querySelector('.runtime-block[data-function="' + funcName + '"]')
-    : null;
-  if (!existingBlock) {
-    existingBlock =
-      document.querySelector(".runtime-block.error") ||
-      document.querySelector(".runtime-block.interrupted");
-  }
-  if (existingBlock) {
-    existingBlock.className = "runtime-block runtime-block-pending";
-    existingBlock.id = "runtime_pending";
-    existingBlock.setAttribute("data-function", funcName);
-    const parsedDisplay = parse(userCmd);
-    existingBlock.innerHTML =
-      '<div class="runtime-block-header">' +
-      '<span class="runtime-icon">&#9654;</span>' +
-      '<span class="runtime-func">' +
-      esc(parsedDisplay.funcName) +
-      (parsedDisplay.params
-        ? '(<span class="runtime-params">' + esc(parsedDisplay.params) + "</span>)"
-        : "()") +
-      "</span>" +
-      "</div>" +
-      '<div class="runtime-block-body"><div class="runtime-block-content">' +
-      '<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>' +
-      "</div></div>";
-  }
-
-  W.setRunning?.(true);
-  W.ws.send(
-    JSON.stringify({
-      action: "retry_overwrite",
-      session_id: sid,
-      function: funcName,
-      text: userCmd,
-      thinking_effort: W._thinkingEffort,
-      exec_thinking_effort: W._execThinkingEffort,
-    }),
-  );
-}
-
 /* ===== assistant message (programs-panel toast) ================== */
 
 export function addAssistantMessage(text: string): void {
@@ -900,8 +756,4 @@ W._handleRunningTask = handleRunningTask;
 W.handleChatResponse = handleChatResponse;
 W.submitFollowUp = submitFollowUp;
 W.rerunFromNode = rerunFromNode;
-W._injectPauseRetryButtons = injectPauseRetryButtons;
-W._removePauseRetryButtons = removePauseRetryButtons;
-W.stopAndRetry = stopAndRetry;
-W.retryCurrentBlock = retryCurrentBlock;
 W.addAssistantMessage = addAssistantMessage;
