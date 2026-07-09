@@ -44,7 +44,7 @@ export async function loadProgramsMeta(): Promise<void> {
     const resp = await fetch("/api/programs/meta");
     const meta = (await resp.json()) || { favorites: [], folders: {} };
     W.programsMeta = meta;
-    const { useFunctions } = await import("@/lib/functions-store");
+    const { useFunctions } = await import("@/lib/state/functions-store");
     useFunctions.getState().setMeta(meta);
   } catch {
     W.programsMeta = { favorites: [], folders: {} };

@@ -333,7 +333,7 @@ export function useWS(): void {
           return true;
         case "functions_list":
           w.availableFunctions = d || [];
-          import("@/lib/functions-store").then(({ useFunctions }) => {
+          import("@/lib/state/functions-store").then(({ useFunctions }) => {
             useFunctions.getState().setFunctions((d || []) as never[]);
           });
           w.loadProgramsMeta?.().then(() => w.renderFunctions?.());

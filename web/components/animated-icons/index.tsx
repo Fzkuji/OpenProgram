@@ -1,7 +1,5 @@
 "use client";
 
-"use client";
-
 /**
  * Animated icons — from pqoqubbw/icons ("Lucide Animated", MIT,
  * https://github.com/pqoqubbw/icons), the copy-paste (shadcn-style)

@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import type { AgenticFunction } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
-import { useFunctions } from "@/lib/functions-store";
+import { useFunctions } from "@/lib/state/functions-store";
 
 interface FunctionsMeta {
   favorites: string[];
