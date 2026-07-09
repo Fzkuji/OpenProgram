@@ -150,8 +150,10 @@ def register(app):
     @app.post("/api/providers/custom")
     async def api_create_custom_provider(body: dict = None):
         """Create a config-only custom provider (OpenAI-compatible endpoint we
-        don't ship). Body: {id, label, base_url}. Validates the id (kebab-case
-        slug, no collision with an existing provider id or alias)."""
+        don't ship). Body: {label, base_url, id?}. ``id`` is optional — when
+        omitted it's derived by slugifying ``label`` with collisions auto-
+        resolved (``-2``/``-3``…). An explicit ``id`` keeps strict validation
+        (kebab-case slug, no collision with an existing provider id or alias)."""
         from openprogram.webui import _model_listing as _mc
         b = body or {}
         res = _mc.create_custom_provider(

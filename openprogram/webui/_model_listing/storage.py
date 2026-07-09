@@ -335,6 +335,30 @@ import re as _re
 _SLUG_RE = _re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
+def _slugify(text: str) -> str:
+    """Derive a kebab-case slug id from a free-form name.
+
+    lowercase → spaces/underscores to hyphens → drop anything outside
+    [a-z0-9-] → collapse hyphen runs → trim leading/trailing hyphens.
+    Returns "" when nothing survives (e.g. a CJK/emoji-only name).
+    """
+    s = text.strip().lower()
+    s = _re.sub(r"[\s_]+", "-", s)
+    s = _re.sub(r"[^a-z0-9-]", "", s)
+    s = _re.sub(r"-+", "-", s)
+    return s.strip("-")
+
+
+def _normalize_label(text: str) -> str:
+    """Trim, collapse internal space runs, and title-case all-lowercase words.
+
+    Mixed-case words the user typed deliberately ("OpenAI", "vLLM") are left
+    untouched — only a word that is entirely lowercase gets capitalized.
+    """
+    words = text.strip().split()
+    return " ".join(w.capitalize() if w.islower() else w for w in words)
+
+
 def _known_provider_ids() -> set[str]:
     """Tier-1 (static registry) + tier-2 (models.dev catalogue) provider ids."""
     from openprogram.providers import get_providers
@@ -351,35 +375,64 @@ def _is_known_provider(provider_id: str) -> bool:
     return provider_id in _known_provider_ids()
 
 
+def _id_taken(pid: str, cfg: dict[str, Any]) -> bool:
+    """True when ``pid`` collides with a reserved alias, a known tier-1/tier-2
+    provider id, or ANY existing config key.
+
+    Used only by the derived-id auto-suffix loop, so an existing custom key
+    counts as taken too — we suffix past it rather than clobber a provider the
+    user already created. (The explicit-id path keeps its own overwrite-custom
+    semantics inline.)"""
+    from openprogram.auth.aliases import resolve as _resolve_alias
+    if _resolve_alias(pid) != pid:
+        return True
+    if pid in _known_provider_ids():
+        return True
+    return pid in cfg
+
+
 def create_custom_provider(
     provider_id: str, label: str, base_url: str
 ) -> dict[str, Any]:
     """Create a config-only custom provider. Returns ``{ok, ...}``.
 
-    Validates the id (kebab-case slug; must not collide with an existing
-    tier-1/tier-2 provider id or a known alias) then writes the marker config
+    ``provider_id`` is optional. When blank the id is derived by slugifying
+    ``label``; on collision the derived id gets a ``-2``/``-3``/… suffix until
+    free (auto-resolve). An explicitly-passed id keeps the strict behavior:
+    bad slug or collision → 400 (API compatibility). Writes the marker config
     ``providers.<id> = {enabled, source:"custom", label, base_url, models:[]}``
     through ``_write_providers_cfg`` (which reloads the runtime registry).
     """
-    from openprogram.auth.aliases import resolve as _resolve_alias
     from .providers import _prettify
 
-    pid = (provider_id or "").strip().lower()
-    label = (label or "").strip()
+    explicit_id = (provider_id or "").strip().lower()
+    label = _normalize_label(label or "")
     base_url = (base_url or "").strip()
-    if not pid or not _SLUG_RE.match(pid):
-        return {"ok": False, "error": "id must be a kebab-case slug (a-z, 0-9, hyphens)"}
     if not base_url:
         return {"ok": False, "error": "base_url is required"}
-    # Collision: an existing provider id, or an id that's a known alias of one.
-    if _resolve_alias(pid) != pid:
-        return {"ok": False, "error": f"{pid!r} is a reserved alias — pick another id"}
-    if pid in _known_provider_ids():
-        return {"ok": False, "error": f"provider {pid!r} already exists"}
+
     with _cache_lock:
         cfg = _read_providers_cfg()
-        if pid in cfg and cfg[pid].get("source") != "custom":
-            return {"ok": False, "error": f"provider {pid!r} already exists"}
+        if explicit_id:
+            pid = explicit_id
+            if not _SLUG_RE.match(pid):
+                return {"ok": False, "error": "id must be a kebab-case slug (a-z, 0-9, hyphens)"}
+            from openprogram.auth.aliases import resolve as _resolve_alias
+            if _resolve_alias(pid) != pid:
+                return {"ok": False, "error": f"{pid!r} is a reserved alias — pick another id"}
+            if pid in _known_provider_ids() or (
+                isinstance(cfg.get(pid), dict) and cfg[pid].get("source") != "custom"
+            ):
+                return {"ok": False, "error": f"provider {pid!r} already exists"}
+        else:
+            base_pid = _slugify(label)
+            if not base_pid:
+                return {"ok": False, "error": "name must contain letters or digits (a-z, 0-9)"}
+            pid = base_pid
+            n = 2
+            while _id_taken(pid, cfg):
+                pid = f"{base_pid}-{n}"
+                n += 1
         cfg[pid] = {
             "enabled": True,
             "source": "custom",
