@@ -32,6 +32,21 @@ function wsSend(payload: unknown): boolean {
   return true;
 }
 
+/** Move HEAD to a sibling version, then reload so the transcript shows
+ *  only that branch's run. Same op the chat-message ``< N/M >`` nav uses
+ *  (POST /api/chat/checkout) — a pure display switch, nothing re-runs. */
+function checkoutSibling(sessionId: string, targetId: string): void {
+  fetch("/api/chat/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, msg_id: targetId }),
+  })
+    .then(() => wsSend({ action: "load_session", session_id: sessionId }))
+    .catch(() => {
+      /* ignore */
+    });
+}
+
 /** Extract the function name from a ``run fn(args)`` / ``run fn arg1``
  *  command — RuntimeBlock no longer renders the params in its header,
  *  so we don't need to parse them out. */
@@ -43,16 +58,11 @@ function parseRun(cmd: string): { fn: string } {
   return { fn: sp < 0 ? text : text.slice(0, sp) };
 }
 
-/** Tree for the selected attempt — mirrors legacy `_getDisplayContent`,
- *  minus the rawContent we no longer surface (it's redundant with the
- *  execution tree's terminal LLM node). */
+/** Tree for this run. Each Retry is a separate sibling node with its
+ *  OWN contextTree (only the active branch's node renders), so we read
+ *  the node's tree directly — no per-message attempts array anymore. */
 function displayTree(msg: ChatMsg): unknown {
-  let tree: unknown = msg.contextTree || null;
-  if (msg.attempts && msg.attempts.length > 0) {
-    const att = msg.attempts[msg.current_attempt || 0];
-    if (att && att.tree) tree = att.tree;
-  }
-  return tree;
+  return msg.contextTree || null;
 }
 
 export function RuntimeBlock({
@@ -97,25 +107,19 @@ export function RuntimeBlock({
     }
   }, [tree]);
 
-  const attempts = msg.attempts ?? [];
-  const attemptIdx = msg.current_attempt || 0;
-  const hasAttempts = attempts.length > 1;
+  // Version navigation: a Retry forks the call as a SIBLING branch, so
+  // the runs are DAG siblings (same predecessor) — navigated with the
+  // same < N/M > switcher chat messages use, via HEAD checkout. Only the
+  // active sibling is on the current branch, so the transcript renders
+  // exactly one run; the switcher (and the Branches panel) reach the rest.
+  const siblingIdx = msg.siblingIndex ?? 0; // 1-based
+  const siblingTotal = msg.siblingTotal ?? 0;
+  const hasSiblings = siblingTotal > 1;
   const usageHtml = !streaming
     ? formatUsageFooterLabel(
         (msg.usage as Parameters<typeof formatUsageFooterLabel>[0]) || null,
       )
     : "";
-
-  function switchAttempt(dir: number) {
-    const next = attemptIdx + dir;
-    if (next < 0 || next >= attempts.length || !sessionId) return;
-    wsSend({
-      action: "switch_attempt",
-      session_id: sessionId,
-      function: fnName,
-      attempt_index: next,
-    });
-  }
 
   // Static header label — the function name + args are already
   // visible on the body's root tree row, so repeating them up here
@@ -126,24 +130,34 @@ export function RuntimeBlock({
 
   const actions = (
     <>
-      {hasAttempts ? (
+      {hasSiblings ? (
         <span className="attempt-nav" onClick={(e) => e.stopPropagation()}>
           <button
             className="attempt-nav-btn"
-            disabled={attemptIdx <= 0}
-            title={text("Previous attempt", "上一次尝试")}
-            onClick={() => switchAttempt(-1)}
+            disabled={siblingIdx <= 1 || !sessionId || !msg.prevSiblingId}
+            title={text("Previous version", "上一个版本")}
+            onClick={() =>
+              sessionId &&
+              msg.prevSiblingId &&
+              checkoutSibling(sessionId, msg.prevSiblingId)
+            }
           >
             {"◀"}
           </button>
           <span className="attempt-nav-label">
-            {attemptIdx + 1}/{attempts.length}
+            {siblingIdx}/{siblingTotal}
           </span>
           <button
             className="attempt-nav-btn"
-            disabled={attemptIdx >= attempts.length - 1}
-            title={text("Next attempt", "下一次尝试")}
-            onClick={() => switchAttempt(1)}
+            disabled={
+              siblingIdx >= siblingTotal || !sessionId || !msg.nextSiblingId
+            }
+            title={text("Next version", "下一个版本")}
+            onClick={() =>
+              sessionId &&
+              msg.nextSiblingId &&
+              checkoutSibling(sessionId, msg.nextSiblingId)
+            }
           >
             {"▶"}
           </button>

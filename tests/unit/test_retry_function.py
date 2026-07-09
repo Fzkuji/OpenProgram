@@ -18,6 +18,13 @@ from openprogram.context.nodes import Call, ROLE_CODE, ROLE_USER
 from openprogram.webui.ws_actions import chat
 
 
+def _code(name, input, seq, *, caller="ROOT", predecessor="ROOT"):
+    """A top-level code Call with a conv predecessor in metadata (that's
+    where the fork model reads the predecessor from)."""
+    return Call(role=ROLE_CODE, name=name, input=input, seq=seq,
+                caller=caller, metadata={"predecessor": predecessor})
+
+
 class _FakeDB:
     def __init__(self, nodes):
         self._nodes = nodes
@@ -73,15 +80,14 @@ def test_last_call_kwargs_none_when_never_called(monkeypatch):
 
 def test_retry_redispatches_with_original_kwargs(monkeypatch):
     nodes = [
-        Call(role=ROLE_CODE, name="word_count",
-             input={"text": "hello world"}, seq=1),
+        _code("word_count", {"text": "hello world"}, seq=1),
     ]
     _patch_db(monkeypatch, nodes)
 
     calls = []
 
-    def _fake_run(name, kwargs, session_id, work_dir=None):
-        calls.append((name, kwargs, session_id))
+    def _fake_run(name, kwargs, session_id, work_dir=None, anchor_msg_id="ROOT"):
+        calls.append((name, kwargs, session_id, anchor_msg_id))
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
@@ -93,10 +99,66 @@ def test_retry_redispatches_with_original_kwargs(monkeypatch):
         ws, {"session_id": "s1", "function": "word_count"}
     ))
 
-    # Re-dispatched exactly once, with the prior call's kwargs + session.
-    assert calls == [("word_count", {"text": "hello world"}, "s1")]
+    # Re-dispatched exactly once, with the prior call's kwargs + session,
+    # anchored at the original call's predecessor (ROOT here) so the
+    # re-run forks as a SIBLING branch instead of stacking.
+    assert calls == [("word_count", {"text": "hello world"}, "s1", "ROOT")]
     # Acked the new run over the WS (so the client can follow the stream).
     assert ws.sent and "chat_ack" in ws.sent[0]
+
+
+def test_retry_anchors_at_original_calls_predecessor(monkeypatch):
+    # An LLM-issued call hangs off its llm reply, not ROOT. The retry
+    # must fork off that SAME predecessor so the new run is a sibling of
+    # the original — mirrors chat-message retry (predecessor = src's
+    # predecessor), the mechanism the version switcher navigates.
+    nodes = [
+        _code("word_count", {"text": "a"}, seq=1,
+              caller="llm_reply_9", predecessor="llm_reply_9"),
+    ]
+    _patch_db(monkeypatch, nodes)
+
+    anchors = []
+
+    def _fake_run(name, kwargs, session_id, work_dir=None, anchor_msg_id="ROOT"):
+        anchors.append(anchor_msg_id)
+        return {"session_id": session_id, "msg_id": "abc"}
+
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run
+    )
+    asyncio.run(chat.handle_retry_function(
+        _FakeWS(), {"session_id": "s1", "function": "word_count"}
+    ))
+    assert anchors == ["llm_reply_9"]
+
+
+def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
+    # A function that calls itself writes nested code nodes of the same
+    # name; retry must re-run the OUTER (top-level) invocation, not an
+    # internal step. _last_call_node excludes nodes whose caller is
+    # itself a code node.
+    outer = _code("gui_agent", {"task": "outer"}, seq=1,
+                  caller="ROOT", predecessor="ROOT")
+    nested = Call(role=ROLE_CODE, name="gui_agent",
+                  input={"task": "inner"}, seq=2,
+                  caller=outer.id, metadata={"predecessor": outer.id})
+    _patch_db(monkeypatch, [outer, nested])
+
+    calls = []
+
+    def _fake_run(name, kwargs, session_id, work_dir=None, anchor_msg_id="ROOT"):
+        calls.append((kwargs, anchor_msg_id))
+        return {"session_id": session_id, "msg_id": "abc"}
+
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run
+    )
+    asyncio.run(chat.handle_retry_function(
+        _FakeWS(), {"session_id": "s1", "function": "gui_agent"}
+    ))
+    # Outer kwargs, anchored at the outer call's predecessor (ROOT).
+    assert calls == [({"task": "outer"}, "ROOT")]
 
 
 def test_retry_never_strips_messages_and_errors_without_prior_call(monkeypatch):
@@ -144,3 +206,54 @@ def test_retry_overwrite_action_is_removed():
     # one present.
     assert "retry_overwrite" not in chat.ACTIONS
     assert chat.ACTIONS["retry_function"] is chat.handle_retry_function
+
+
+# ---- branch semantics at the store level -------------------------------
+# The retry anchors the re-run at the original call's predecessor, which
+# is exactly how the store expresses a sibling branch: two code nodes
+# sharing a predecessor are siblings, get_branch renders only the active
+# head, and list_branches surfaces both so the switcher / Branches panel
+# can reach the other version. These lock that contract end-to-end.
+
+def _fresh_store(tmp_path):
+    from openprogram.store.session.session_store import SessionStore
+    s = SessionStore(tmp_path / "sessions-git")
+    s.create_session("s1", "main", title="t")
+    # A ROOT anchor (the fn-form / retry predecessor), like
+    # run_agentic_function_call writes before dispatching.
+    s.append_message("s1", {"id": "ROOT", "role": "user", "content": "",
+                            "timestamp": 0, "predecessor": None,
+                            "display": "root"})
+    return s
+
+
+def _append_code(store, node_id, pred="ROOT", seq_ts=1):
+    store.append_message("s1", {
+        "id": node_id, "role": "code", "content": "",
+        "function": "word_count", "timestamp": seq_ts,
+        "predecessor": pred, "caller": pred,
+    })
+
+
+def test_retry_run_is_sibling_and_only_active_head_renders(tmp_path):
+    store = _fresh_store(tmp_path)
+    # Original call + its retry, both anchored at ROOT → siblings.
+    _append_code(store, "call1", pred="ROOT", seq_ts=1)
+    _append_code(store, "call2", pred="ROOT", seq_ts=2)
+    store.set_head("s1", "call2")
+
+    # Both share the same predecessor → they are siblings, not a chain.
+    tips = {b["head_msg_id"] for b in store.list_branches("s1")}
+    assert {"call1", "call2"} <= tips
+
+    # Transcript = active branch only: HEAD=call2 renders call2, not call1.
+    branch_ids = [m["id"] for m in store.get_branch("s1")]
+    assert "call2" in branch_ids
+    assert "call1" not in branch_ids
+
+    # Switching HEAD to the old run flips the transcript the other way —
+    # the version switcher's checkout op.
+    store.set_head("s1", "call1")
+    branch_ids = [m["id"] for m in store.get_branch("s1")]
+    assert "call1" in branch_ids
+    assert "call2" not in branch_ids
