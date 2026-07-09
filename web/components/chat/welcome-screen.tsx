@@ -11,7 +11,7 @@
  */
 "use client";
 
-import { cloneElement, isValidElement, useRef } from "react";
+import { cloneElement, isValidElement, useMemo, useRef } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useWindowGlobals } from "@/components/sidebar/use-window-globals";
@@ -44,10 +44,17 @@ export function WelcomeScreen() {
   const openFnForm = useSessionStore((s) => s.openFnForm);
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const fnFormClosing = useSessionStore((s) => s.fnFormClosing);
-  const setComposerInput = useSessionStore((s) => s.setComposerInput);
-  const focusComposer = useSessionStore((s) => s.focusComposer);
   const { availableFunctions } = useWindowGlobals();
   const { text } = useTranslation();
+
+  // Only show example buttons for functions that are actually installed.
+  // `availableFunctions` streams in over the websocket (functions_list);
+  // it's `[]` until then, so no button flashes before the list loads, and
+  // the row (position:absolute — see the module CSS) never shifts layout.
+  const examples = useMemo(
+    () => EXAMPLES.filter((ex) => availableFunctions.some((f) => f.name === ex.name)),
+    [availableFunctions],
+  );
 
   if (!visible) return null;
 
@@ -64,17 +71,10 @@ export function WelcomeScreen() {
     else if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
+    // Buttons only render for functions present in `availableFunctions`
+    // (see `examples` above), so the lookup always hits.
     const fn = availableFunctions.find((f) => f.name === name);
-    if (fn) {
-      openFnForm(fn);
-      return;
-    }
-    // Functions list hasn't streamed in yet — fall back to filling the
-    // composer with the function name so the click still does something.
-    // (The legacy `run <name>` text-command path is gone; if the user
-    // edits + submits, this just sends as plain chat text now.)
-    setComposerInput(`${name} `);
-    focusComposer();
+    if (fn) openFnForm(fn);
   }
 
   return (
@@ -102,7 +102,7 @@ export function WelcomeScreen() {
         aria-hidden={collapsed ? true : undefined}
         inert={collapsed || undefined}
       >
-        {EXAMPLES.map((ex) => (
+        {examples.map((ex) => (
           <ExampleButton key={ex.name} ex={ex} onClick={pickExample} />
         ))}
       </div>

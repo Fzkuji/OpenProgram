@@ -109,6 +109,74 @@ def test_create_label_falls_back_to_title_case(mem_cfg, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Derived-id path (id omitted) — slugify + collision auto-suffix + label norm
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def _no_known_providers(monkeypatch):
+    """No tier-1/tier-2 providers so derived-id collisions come only from cfg."""
+    monkeypatch.setattr("openprogram.providers.get_providers", lambda: [])
+    from openprogram.webui._model_listing import sources as S
+    monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
+
+
+def test_derived_id_slugifies_spaces_and_case(mem_cfg, _no_known_providers):
+    res = st.create_custom_provider("", "Frontier Intelligence", "https://x.test/v1")
+    assert res["ok"] is True
+    assert res["id"] == "frontier-intelligence"
+    assert res["label"] == "Frontier Intelligence"
+    assert "frontier-intelligence" in mem_cfg
+
+
+def test_derived_id_strips_illegal_chars(mem_cfg, _no_known_providers):
+    res = st.create_custom_provider("", "My  Cool!! Provider (v2)", "https://x.test/v1")
+    assert res["ok"] is True
+    assert res["id"] == "my-cool-provider-v2"
+
+
+def test_derived_id_cjk_only_name_rejected(mem_cfg, _no_known_providers):
+    res = st.create_custom_provider("", "自定义供应商", "https://x.test/v1")
+    assert res["ok"] is False and "letters or digits" in res["error"].lower()
+    assert res == res | {"ok": False}  # nothing created
+
+
+def test_derived_id_emoji_only_name_rejected(mem_cfg, _no_known_providers):
+    res = st.create_custom_provider("", "🚀🔥", "https://x.test/v1")
+    assert res["ok"] is False and "letters or digits" in res["error"].lower()
+
+
+def test_derived_id_collision_auto_suffixes(mem_cfg, _no_known_providers):
+    r1 = st.create_custom_provider("", "Frontier Intelligence", "https://x.test/v1")
+    r2 = st.create_custom_provider("", "Frontier Intelligence", "https://y.test/v1")
+    r3 = st.create_custom_provider("", "Frontier Intelligence", "https://z.test/v1")
+    assert r1["id"] == "frontier-intelligence"
+    assert r2["id"] == "frontier-intelligence-2"
+    assert r3["id"] == "frontier-intelligence-3"
+    assert {r1["id"], r2["id"], r3["id"]} <= set(mem_cfg)
+
+
+def test_explicit_id_collision_still_400(mem_cfg, _no_known_providers):
+    # An EXPLICIT id colliding with a non-custom config key must 400, never
+    # auto-suffix (API compatibility — only the derived path auto-resolves).
+    mem_cfg["realprovider"] = {"enabled": True}  # not source=custom
+    res = st.create_custom_provider("realprovider", "Real", "https://x.test/v1")
+    assert res["ok"] is False and "exists" in res["error"].lower()
+
+
+def test_label_normalization_title_cases_lowercase(mem_cfg, _no_known_providers):
+    res = st.create_custom_provider("", "  frontier   intelligence  ", "https://x.test/v1")
+    assert res["ok"] is True
+    assert res["label"] == "Frontier Intelligence"
+
+
+def test_label_normalization_preserves_mixed_case(mem_cfg, _no_known_providers):
+    res = st.create_custom_provider("", "OpenAI Compatible", "https://x.test/v1")
+    assert res["ok"] is True
+    assert res["label"] == "OpenAI Compatible"
+    assert res["id"] == "openai-compatible"
+
+
+# ---------------------------------------------------------------------------
 # Tier-3 listing
 # ---------------------------------------------------------------------------
 

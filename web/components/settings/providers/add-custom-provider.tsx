@@ -9,21 +9,32 @@ import { Input } from "@/components/ui/input";
 import styles from "../settings-page.module.css";
 import { useTranslation } from "@/lib/i18n";
 
+/** Preview of the id the backend derives from a name. Mirrors the server's
+ *  _slugify — for display only; the response's id is authoritative. */
+function slugify(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 /** "Add custom provider" — a small inline form under the sidebar search.
  *  Creates a config-only (tier-3) OpenAI-compatible provider via
- *  POST /api/providers/custom. On success calls onCreated(id) so the parent
- *  reloads the list and selects the new provider. */
+ *  POST /api/providers/custom. The user gives a Name and Base URL; the id is
+ *  derived server-side. On success calls onCreated(id) with the id from the
+ *  response so the parent reloads the list and selects the new provider. */
 export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => void }) {
   const { text } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [id, setId] = useState("");
   const [label, setLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function reset() {
-    setId("");
     setLabel("");
     setBaseUrl("");
     setError(null);
@@ -37,7 +48,7 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
       const r = await fetch("/api/providers/custom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: id.trim(), label: label.trim(), base_url: baseUrl.trim() }),
+        body: JSON.stringify({ label: label.trim(), base_url: baseUrl.trim() }),
       });
       const d = await r.json();
       if (!d.ok) {
@@ -68,7 +79,8 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
     );
   }
 
-  const canSubmit = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id.trim()) && baseUrl.trim().length > 0;
+  const derivedId = slugify(label);
+  const canSubmit = label.trim().length > 0 && baseUrl.trim().length > 0;
 
   return (
     <div className={styles.detailSection} style={{ margin: "8px", padding: "10px", display: "grid", gap: 6 }}>
@@ -76,16 +88,16 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
         {text("Add custom provider", "添加自定义 Provider")}
       </div>
       <Input
-        placeholder={text("id (e.g. frontier-intelligence)", "id（如 frontier-intelligence）")}
-        value={id}
-        onChange={(e) => setId(e.target.value.toLowerCase())}
-        autoFocus
-      />
-      <Input
-        placeholder={text("Display name (optional)", "显示名称（可选）")}
+        placeholder={text("Name (e.g. Frontier Intelligence)", "名称（如 Frontier Intelligence）")}
         value={label}
         onChange={(e) => setLabel(e.target.value)}
+        autoFocus
       />
+      {derivedId && (
+        <div style={{ fontSize: 11, color: "var(--muted-foreground, #888)", marginTop: -2 }}>
+          {text("id: ", "id：")}{derivedId}
+        </div>
+      )}
       <Input
         placeholder={text("Base URL (e.g. https://api.example.com/v1)", "Base URL（如 https://api.example.com/v1）")}
         value={baseUrl}

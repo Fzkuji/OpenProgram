@@ -75,11 +75,11 @@ One **process-wide event bus** is the substrate under everything: the agent loop
 
 ### 1. Install
 
-**macOS / Linux**
+**macOS / Linux** — one command, no clone needed:
 ```bash
-git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
-./scripts/install.sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh)"
 ```
+It clones OpenProgram to `~/OpenProgram` (override with `--target DIR`), installs the host, then — when a terminal is attached — offers a menu to pick which agentic programs to install. Plain `curl -fsSL … | bash` also works (the installer reads `/dev/tty` for its prompts). From a checkout: `./scripts/install.sh`.
 
 **Windows (PowerShell)**
 ```powershell
@@ -87,7 +87,7 @@ git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram
 .\scripts\install.ps1
 ```
 
-One command installs the OpenProgram host — web UI, terminal UI, and the browser tool + chat channels. The first run of `openprogram` opens a setup wizard whose **Agent programs** step offers the bundled harnesses (GUI / Research / Wiki) with their sizes — or add them any time, see step 3. Flags and per-OS notes: **[docs/install.md](docs/install.md)**.
+One command installs the OpenProgram host — web UI, terminal UI, and the browser tool + chat channels. The first run of `openprogram` opens a setup wizard whose **Agent programs** step offers the bundled harnesses (GUI / Research / Wiki) with their sizes — or add them any time, see step 3. To install them non-interactively at setup, pass `--programs <gui|research|wiki|all>` (PowerShell: `-Programs`). Flags and per-OS notes: **[docs/install.md](docs/install.md)**.
 
 ### 2. Run
 
