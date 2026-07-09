@@ -28,10 +28,11 @@ OpenProgram  (the host runtime — install this first, anywhere you like)
 ## 一条命令（推荐）
 
 把宿主克隆到你希望它存放的任意位置，然后运行安装脚本。默认
-安装会启动**全部轻量内容**：web UI（已构建）、终端 UI、Research
-和 Wiki agent 程序、浏览器工具 + channels。GUI agent 需主动开启（它
-会下载 PyTorch）：`openprogram programs install gui`，或 `openprogram setup` →
-programs。`--minimal` 则改为安装一个裸宿主。
+安装会装好 host 的**全部轻量内容**：web UI（已构建）、终端 UI、
+浏览器工具 + channels。agent 程序（GUI / Research / Wiki）**不随默认安装** ——
+有终端时脚本会弹菜单让你挑，或之后用 `openprogram programs install <research|wiki|gui>`
+单独装（GUI 会下载 PyTorch），也可 `openprogram setup` → programs。`--minimal`
+则改为安装一个裸宿主。
 
 **macOS / Linux**
 ```bash
@@ -67,7 +68,7 @@ openprogram web                               # or the browser UI -> http://loca
 | 3 | **OpenProgram** 可编辑安装（`pip install -e .`） | 宿主 + 基础依赖。 |
 | 4 | **Web UI** —— 在 `web/` 中执行 `npm install && npm run build` | Next.js 前端运行在 **:18100**，后端运行在 **:18109**。`--minimal` 会跳过构建（worker 会在首次启动时构建）。 |
 | 5 | **Ink TUI** —— 在 `cli/` 中执行 `npm install && npm run build` | 仅限 POSIX；Windows 使用 Rich REPL。`--minimal` 跳过。 |
-| 6 | **内置程序** —— `openprogram programs install research` + `wiki` | 把两个轻量 harness 克隆进 `functions/agentics/`（可编辑、自动注册；除 openprogram 外无其他依赖）。GUI agent **需主动开启** —— `openprogram programs install gui` 会拉取 PyTorch（约 300 MB；在无 GPU 的 Linux 上会自动选用 CPU wheel，仅在 CUDA 机器上才约 3 GB）。`--minimal` 跳过。 |
+| 6 | **agent 程序（可选，opt-in）** —— 有终端时弹菜单挑，或 `--programs <research\|wiki\|gui\|all>` | **默认不装任何程序。** 选中后：`research` / `wiki` 是纯 Python，克隆进 `functions/agentics/`（可编辑、自动注册；除 openprogram 外无其他依赖）；`gui` 会拉取 PyTorch（约 300 MB；无 GPU 的 Linux 自动选 CPU wheel，仅 CUDA 机器约 3 GB）。装完后随时可用 `openprogram programs install <name>` 再补。 |
 | 7 | **浏览器工具 + channels** | `pip install -e .[all]` + `playwright install chromium`（约 150 MB）。`--minimal` 跳过。更重的 stealth 浏览器 / agent-browser 仍需主动开启 —— 见 [Extras](#extras)。 |
 
 ---
@@ -91,7 +92,9 @@ openprogram web                               # or the browser UI -> http://loca
 
 ### 非交互 / AI agent 安装
 
-给 agent 驱动安装用。以下**环境变量**与 `--yes` 等价 —— 命中任意一个就全部取默认值、不弹任何提示：
+给 agent 驱动安装用 —— **不必特意加参数**：那条 `curl … | bash` 一行命令本身就能无人值守跑。没有终端（管道、CI）时它自动取默认值；即便有终端，每个 `/dev/tty` 读取也有 60 秒超时，到点自动回落到默认值（并打印一行 `(no input in 60s — using default)`）—— 所以**任何提示都不会永久卡住**。用 `OPENPROGRAM_PROMPT_TIMEOUT=<秒>` 可改超时时长。
+
+想立即取默认值、不等超时，就加 `--yes` / `-y`；想顺带非交互地装上 agent 程序，再加 `--programs all`（或 `gui` / `research` / `wiki`）。以下**环境变量**与 `--yes` 等价 —— 命中任意一个就全部取默认值、不弹任何提示：
 
 | 环境变量 | 生效条件 |
 |----------|----------|
@@ -99,12 +102,10 @@ openprogram web                               # or the browser UI -> http://loca
 | `DEBIAN_FRONTEND` | 等于 `noninteractive`（Debian/Ubuntu 通用约定） |
 | `OPENPROGRAM_INSTALL_YES` | 非空（本项目自带的开关） |
 
-即使一个都不设，`install.sh` 的**任何提示都不会永久卡住**：每个 `/dev/tty`
-读取都有 60 秒超时，到点自动取默认值（并打印一行 `(no input in 60s — using default)`）。
-用 `OPENPROGRAM_PROMPT_TIMEOUT=<秒>` 可改超时时长。一条命令即可完全非交互安装：
+一条命令即可完全非交互、并顺带装上 agent 程序：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- --yes --programs all
+curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- -y --programs all
 ```
 
 > Windows 的 `Read-Host` 没有超时机制，所以 `install.ps1` 的提示**不会**自动
@@ -128,7 +129,7 @@ cd <Harness>
 **GUI agent** 有原生依赖（PyTorch、检测器权重、OCR），因此它附带了
 自己的分平台安装脚本 —— 按上面的步骤使用它；完整指南见它的
 [安装章节](../openprogram/functions/agentics/GUI-Agent-Harness#1-install)。
-（默认的 `./scripts/install.sh` 已经通过 `openprogram programs install all` 把它克隆进来；只有当你需要它的资产配置或显式的 CUDA/CPU torch 时，才需在之后再运行该 harness 自己的安装脚本。）
+（选装了 GUI 时 —— 菜单里勾选或 `--programs gui`/`all` —— 安装脚本会把它克隆进来并拉 PyTorch；之后运行该 harness 自己的安装脚本来配资产或指定 CUDA/CPU torch。）
 
 对于**纯 Python** 的已编目 harness，有一条单行快捷命令，会为你完成克隆、
 安装并注册：
@@ -208,7 +209,7 @@ export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $en
 | provider 凭据 | 任何聊天回合 | `openprogram providers login`（或设置界面） | 全部 | 手动 |
 | Playwright / patchright / camoufox / agent-browser | 浏览器工具 | 上面的参数 | 全部 | 参数 |
 
-### GUI-Agent-Harness 程序（默认安装 —— 见 [添加 agent 程序](#adding-agent-programs)）
+### GUI-Agent-Harness 程序（opt-in，选装后 —— 见 [添加 agent 程序](#adding-agent-programs)）
 
 | 项目 | 用于 | 方式 | 平台 | 自动？ |
 |------|--------------|-----|----------|-------|

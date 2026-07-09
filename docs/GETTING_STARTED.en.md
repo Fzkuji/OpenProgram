@@ -11,7 +11,7 @@ git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-Requires Python ≥ 3.11, Node ≥ 20, git. The default install brings up everything light — web UI, TUI, the Research / Wiki agent programs, browser tool + channels; the GUI agent is opt-in (`openprogram programs install gui`, downloads PyTorch); `--minimal` installs a bare host. Full dependency matrix and flags: [docs/install.md](install.md).
+Requires Python ≥ 3.11, Node ≥ 20, git. The default install brings up the host itself — web UI, TUI, browser tool + channels; agent programs (GUI / Research / Wiki) are picked in the installer's interactive menu or added later via `openprogram programs install <gui|research|wiki|all>` (GUI downloads PyTorch); `--minimal` installs a bare host. Full dependency matrix and flags: [docs/install.md](install.md).
 
 ### Step 2: Connect a provider
 
