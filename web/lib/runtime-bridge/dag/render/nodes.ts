@@ -69,13 +69,28 @@ export function drawNodes(
     }
     if (isCollapsible) {
       const hc = cinfo.hiddenCount[id] || 0;
+      const label = folded ? "+" + hc : "−";
+      // Transparent hit rect covering the badge glyph — the "+N" sits
+      // ~13px off-centre, outside the r=7 node hit circle, so clicking
+      // the glyph itself used to miss and the fold "did nothing". Width
+      // grows with the digit count so "+12" stays fully clickable.
+      const badgeW = 10 + Math.max(0, label.length - 2) * 6;
+      const badgeHit = _svg("rect", {
+        x: String(NODE_R + 1),
+        y: String(NODE_R - 2),
+        width: String(badgeW),
+        height: "14",
+        fill: "transparent",
+        "pointer-events": "all",
+      });
+      g.appendChild(badgeHit);
       const badge = _svg("text", {
         x: String(NODE_R + 3),
         y: String(NODE_R + 5),
         class: "history-fold-badge",
         "pointer-events": "none",
       });
-      badge.textContent = folded ? "+" + hc : "−";
+      badge.textContent = label;
       g.appendChild(badge);
     }
     (g as any)._nodeData = node;

@@ -42,8 +42,24 @@ export function drawBadges(
   rows.forEach((b) => {
     const hid = b.head_msg_id as string | undefined;
     if (!hid) return;
-    const node = tree.byId[hid];
-    if (!node) return;
+    const entry = tree.byId[hid];
+    if (!entry) return;
+    // Anchor the chip on the branch's LAST (deepest) *visible* node, not
+    // its entry node. When the branch is collapsed that's the collapsed
+    // group representative; expanded it's the bottom-most node. Same lane
+    // as the entry, largest y among visible nodes in that lane.
+    const lane = entry._lane || 0;
+    let node = entry;
+    let bottomY = pos(entry).y;
+    Object.keys(tree.byId).forEach((id) => {
+      const n = tree.byId[id];
+      if ((n._lane || 0) !== lane) return;
+      const y = pos(n).y;
+      if (y > bottomY) {
+        bottomY = y;
+        node = n;
+      }
+    });
     const p = pos(node);
     const label = (b.name as string) || hid.slice(0, 8);
     const isActive = !!b.active;

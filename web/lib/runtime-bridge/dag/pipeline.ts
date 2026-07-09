@@ -35,8 +35,8 @@ import {
   PAD_X,
   PAD_Y,
   ROW_H,
-  COL_W,
 } from "./types";
+import { computeGeometry } from "./layout/geometry";
 import {
   _branchColor,
   _svg,
@@ -205,47 +205,19 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   });
   setParentOf(parentOf);
 
-  const laneArea = PAD_X + COL_W * Math.max(lanes.laneCount - 1, 0);
-  let maxTier = 0;
-  Object.keys(tree.byId).forEach((id) => {
-    const t = tree.byId[id]._tier;
-    if (typeof t === "number" && t > maxTier) maxTier = t;
-  });
-  const subForkMargin = maxTier >= 1
-    ? COL_W * 0.7 + Math.max(0, maxTier - 1) * COL_W * 0.5 + NODE_R * 2
-    : 0;
   const panelW = (body && body.clientWidth) || 240;
-  // In d3 layout mode the effective node positions live in ``_x`` /
-  // ``_y`` and can extend past (or before) what the legacy lane/tier
-  // formula projects. Scan the actual coords so the SVG canvas is
-  // sized to fit every node and the viewBox can shift if d3 produced
-  // a negative x (the left half of a symmetric subtree spread).
-  let minX = 0;
-  let maxX = 0;
-  let maxYpx = 0;
-  Object.keys(tree.byId).forEach((id) => {
-    const n = tree.byId[id];
-    let x: number;
-    let y: number;
-    if (typeof n._x === "number" && typeof n._y === "number") {
-      x = n._x;
-      y = n._y;
-    } else {
-      const t = typeof n._tier === "number" ? n._tier : 0;
-      x = PAD_X + (n._lane || 0) * COL_W + t * COL_W;
-      y = PAD_Y + (n._depth || 0) * ROW_H;
-    }
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y > maxYpx) maxYpx = y;
-  });
+  // Content-driven pixel packing: lane columns sized to the widest
+  // *visible* tier in each lane (collapse a branch → its neighbours pack
+  // back), and per-lane rows so call-tree siblings never overlap. See
+  // ``layout/geometry.ts``.
+  const geom = computeGeometry(tree.byId);
+  const minX = geom.minX;
+  const maxX = geom.maxX;
+  const maxYpx = geom.maxY;
   // Pad both ends so node shapes (radius NODE_R) don't clip.
   const xPad = NODE_R + 4;
   const left = Math.min(0, minX - xPad);
-  const right = Math.max(
-    laneArea + subForkMargin + PAD_X,
-    maxX + xPad,
-  );
+  const right = maxX + xPad + PAD_X;
   // 节点保持原始像素大小（1:1，不缩放）：SVG 画布用内容实际尺寸，宽内容
   // 靠容器 overflow-x 横向滚动查看，而不是把整图（连节点一起）缩进侧栏
   // ——那样多分支时 scale 太小、节点糊成一团。内容比容器窄时至少铺满容器。
@@ -273,28 +245,11 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   svg.appendChild(edgeG);
   svg.appendChild(nodeG);
 
-  // Column = backend ``_lane`` (already the final column offset for the
-  // branch) + ``_tier`` (indent within the branch). The backend packs
-  // lanes (annotate_graph): a fork lane starts one column right of the
-  // sibling it diverged from. Do NOT recompute offsets here — that
-  // double-counts and pushes forks far away.
-
-  // Compact depth mapping: collapse gaps from folded subtrees.
-  const _visibleDepths = Array.from(new Set(
-    graph.map((n) => typeof n._depth === "number" ? n._depth : 0),
-  )).sort((a, b) => a - b);
-  const _depthToRow: Record<number, number> = Object.create(null);
-  _visibleDepths.forEach((d, i) => { _depthToRow[d] = i; });
-
+  // Positions come from ``computeGeometry`` (content-driven lane packing
+  // + per-lane row de-collision). ``pos`` is a thin lookup so the edge /
+  // node / badge drawers share one source of truth.
   function pos(n: GNode): { x: number; y: number } {
-    const tier = typeof n._tier === "number" ? n._tier : 0;
-    const laneCol = n._lane || 0;
-    const d = typeof n._depth === "number" ? n._depth : 0;
-    const row = _depthToRow[d] ?? d;
-    return {
-      x: PAD_X + (laneCol + tier) * COL_W,
-      y: PAD_Y + row * ROW_H,
-    };
+    return geom.pos[n.id] || { x: PAD_X, y: PAD_Y };
   }
 
   drawEdges(edgeG, tree, graphIn, pos, stableLeafOfNode);
