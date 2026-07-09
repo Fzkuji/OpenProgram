@@ -245,3 +245,60 @@ def test_set_store_for_testing_override(tmp_path: Path):
     from openprogram.auth import get_store
     assert get_store() is custom
     set_store_for_testing(None)
+
+
+# ---- alias-aware pool keying (bailian ↔ alibaba-token-plan-cn) --------------
+# A provider that was renamed (alias → canonical) must resolve to ONE pool no
+# matter which name a caller uses on read or write — never a split-brain where
+# the accounts list (canonical) comes back empty while the key lives under the
+# old alias. `bailian → alibaba-token-plan-cn` is the live example.
+
+def test_key_added_under_alias_lands_in_canonical_pool(tmp_path: Path):
+    s = AuthStore(root=tmp_path)
+    # write under the ALIAS id
+    s.add_credential(_api_cred(provider="bailian", key="sk-alias"))
+    # read back under the CANONICAL id — same pool, key present
+    pool = s.get_pool("alibaba-token-plan-cn", "default")
+    assert [c.payload.auth_value for c in pool.credentials] == ["sk-alias"]
+    # and the stored pool reports the canonical provider_id
+    assert pool.provider_id == "alibaba-token-plan-cn"
+
+
+def test_alias_and_canonical_writes_share_one_pool(tmp_path: Path):
+    s = AuthStore(root=tmp_path)
+    s.add_credential(_api_cred(provider="bailian", key="k-alias"))
+    s.add_credential(_api_cred(provider="alibaba-token-plan-cn", key="k-canon"))
+    pool = s.get_pool("alibaba-token-plan-cn", "default")
+    assert sorted(c.payload.auth_value for c in pool.credentials) == ["k-alias", "k-canon"]
+    # exactly one pool exists for this provider (no split-brain)
+    matches = [p for p in s.list_pools() if p.provider_id == "alibaba-token-plan-cn"]
+    assert len(matches) == 1
+    assert not any(p.provider_id == "bailian" for p in s.list_pools())
+
+
+def test_list_pools_reports_legacy_alias_dir_as_canonical(tmp_path: Path):
+    # Simulate a legacy on-disk dir written under the old alias id, with the
+    # old provider_id baked into the file (pre-migration state).
+    d = tmp_path / "auth" / "bailian"
+    d.mkdir(parents=True)
+    legacy = CredentialPool(
+        provider_id="bailian", profile_id="default",
+        credentials=[_api_cred(provider="bailian", key="sk-legacy")],
+    )
+    (d / "default.json").write_text(json.dumps(legacy.to_dict()), encoding="utf-8")
+    s = AuthStore(root=tmp_path)
+    pools = s.list_pools()
+    # the legacy dir surfaces under the CANONICAL id so a canonical-filtered
+    # accounts list finds it
+    canon = [p for p in pools if p.provider_id == "alibaba-token-plan-cn"]
+    assert len(canon) == 1
+    assert canon[0].credentials[0].payload.auth_value == "sk-legacy"
+    assert not any(p.provider_id == "bailian" for p in pools)
+
+
+def test_delete_pool_alias_aware(tmp_path: Path):
+    s = AuthStore(root=tmp_path)
+    s.add_credential(_api_cred(provider="alibaba-token-plan-cn", key="k"))
+    # delete under the ALIAS id — still hits the canonical pool
+    s.delete_pool("bailian", "default")
+    assert s.find_pool("alibaba-token-plan-cn", "default") is None

@@ -200,9 +200,15 @@ def _pool_id(provider: str) -> str:
 
     `claude-code` is an alias that resolves from the `anthropic` pool (its
     direct runtime reads `anthropic`), so all account ops on claude-code
-    read/write the anthropic pool. Every other provider uses its own id.
+    read/write the anthropic pool. Every other provider resolves through the
+    canonical alias table (``bailian`` → ``alibaba-token-plan-cn`` …) so the
+    pool AND the per-provider sidecars (active / rotation / order / disabled)
+    key off one canonical id — no split-brain if a legacy alias arrives.
     """
-    return "anthropic" if provider == "claude-code" else provider
+    if provider == "claude-code":
+        return "anthropic"
+    from openprogram.auth.aliases import resolve
+    return resolve(provider)
 
 
 def _generic_summary(provider: str) -> dict:
@@ -357,19 +363,20 @@ def register(app):
         from openprogram.auth.active import get_active_pin, set_active_profile
         from openprogram.auth.types import Credential, CredentialData
         store = get_store()
-        existing = {p.profile_id for p in store.list_pools() if p.provider_id == provider}
+        pid = _pool_id(provider)
+        existing = {p.profile_id for p in store.list_pools() if p.provider_id == pid}
         name = (b.get("name") or "").strip()
         if not name:
             name = "default" if "default" not in existing else f"key-{len(existing) + 1}"
-        cur = store.find_pool(provider, name)
+        cur = store.find_pool(pid, name)
         if cur is not None and cur.credentials:
             return JSONResponse(content={"ok": False, "error": f"account '{name}' already exists \u2014 pick another name"})
         store.add_credential(Credential(
-            provider_id=provider, profile_id=name, kind="api_key",
+            provider_id=pid, profile_id=name, kind="api_key",
             payload=CredentialData(kind="api_key", auth_value=key), source="webui_add",
         ))
-        if not existing and not get_active_pin(provider):
-            set_active_profile(provider, name)   # first account becomes active
+        if not existing and not get_active_pin(pid):
+            set_active_profile(pid, name)   # first account becomes active
         return JSONResponse(content={"ok": True, "name": name, "validation": validation})
 
     @app.get("/api/providers/{provider}/accounts/{name}/reveal")
@@ -429,8 +436,9 @@ def register(app):
         if provider == "claude-code":
             return JSONResponse(content={"ok": True, "results": []})
         from openprogram.auth.store import get_store
+        pid = _pool_id(provider)
         out = [{"id": p.profile_id, **_validate_account(provider, p.profile_id)}
-               for p in get_store().list_pools() if p.provider_id == provider]
+               for p in get_store().list_pools() if p.provider_id == pid]
         return JSONResponse(content={"ok": True, "results": out})
 
     @app.post("/api/providers/{provider}/accounts/rotation")
@@ -442,7 +450,7 @@ def register(app):
             return JSONResponse(content={"ok": False, "error": "claude-code doesn't rotate accounts"})
         from openprogram.auth.rotation import set_rotation
         b = body or {}
-        res = set_rotation(provider, enabled=bool(b.get("enabled")), strategy=(b.get("strategy") or ""))
+        res = set_rotation(_pool_id(provider), enabled=bool(b.get("enabled")), strategy=(b.get("strategy") or ""))
         return JSONResponse(content={"ok": True, **res})
 
     @app.post("/api/providers/{provider}/accounts/reorder")
@@ -451,7 +459,7 @@ def register(app):
         rotation is on. Body: ``{order: [account_id, …]}``."""
         from openprogram.auth.order import set_order
         order = (body or {}).get("order") or []
-        set_order(provider, order)
+        set_order(_pool_id(provider), order)
         return JSONResponse(content={"ok": True, "order": [str(x) for x in order]})
 
     @app.post("/api/providers/{provider}/accounts/enabled")
@@ -462,8 +470,9 @@ def register(app):
         from openprogram.auth.enabled import set_enabled, get_disabled
         b = body or {}
         name = b.get("id", b.get("name")) or ""
-        set_enabled(provider, str(name), bool(b.get("enabled", True)))
-        return JSONResponse(content={"ok": True, "disabled": sorted(get_disabled(provider))})
+        pid = _pool_id(provider)
+        set_enabled(pid, str(name), bool(b.get("enabled", True)))
+        return JSONResponse(content={"ok": True, "disabled": sorted(get_disabled(pid))})
 
     @app.post("/api/providers/{provider}/accounts/{name}/retry")
     def api_account_retry(provider: str, name: str):
