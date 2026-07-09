@@ -27,18 +27,10 @@ OpenProgram  (the host runtime — install this first, anywhere you like)
 
 ## 一条命令（推荐）
 
-把宿主克隆到你希望它存放的任意位置，然后运行安装脚本。默认
-安装会装好 host 的**全部轻量内容**：web UI（已构建）、终端 UI、
-浏览器工具 + channels。agent 程序（GUI / Research / Wiki）**不随默认安装** ——
-有终端时脚本会弹菜单让你挑，或之后用 `openprogram programs install <research|wiki|gui>`
-单独装（GUI 会下载 PyTorch），也可 `openprogram setup` → programs。`--minimal`
-则改为安装一个裸宿主。
-
 **macOS / Linux**
 ```bash
-git clone https://github.com/Fzkuji/OpenProgram
-cd OpenProgram
-./scripts/install.sh                  # everything · bare host: --minimal
+curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
+# from a checkout: ./scripts/install.sh   # everything · bare host: --minimal
 ```
 
 **Windows (PowerShell)**
@@ -46,6 +38,8 @@ cd OpenProgram
 iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
 # from a checkout: .\scripts\install.ps1   # everything · bare host: -Minimal
 ```
+
+不在 checkout 里运行时，脚本会先把仓库 clone 到 `~/OpenProgram`（`--target DIR` 可改），再接力安装。默认安装装好 host 的**全部轻量内容**：web UI（已构建）、终端 UI、浏览器工具 + channels。agent 程序（GUI / Research / Wiki）**不随默认安装** —— 有终端时脚本会弹菜单让你挑，或之后用 `openprogram programs install <research|wiki|gui>` 单独装（GUI 会下载 PyTorch），也可 `openprogram setup` → programs。`--minimal` 则改为安装一个裸宿主。
 
 然后直接启动它 —— **首次运行会引导你完成 provider 配置**，随后
 打开聊天界面：

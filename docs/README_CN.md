@@ -51,20 +51,16 @@ OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：
 一键安装 host（网页 UI + 终端 UI + 浏览器/渠道）：
 
 ```bash
-# macOS / Linux —— 一行命令，无需先 clone：
+# macOS / Linux：
 curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
-# 它会把 OpenProgram clone 到 ~/OpenProgram（可用 --target DIR 覆盖），装好 host，
-# 有终端时还会弹出菜单让你挑装哪些 agent 程序（管道安装也能交互，脚本从 /dev/tty 读输入）。
-# 已有 checkout：直接 ./scripts/install.sh    ·    Windows 一行式：iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
 ```
 
-**AI agent 安装** —— 上面那条一行命令本身就能无人值守跑：没有终端时自动取默认值，有终端时每个提示 60 秒后也会超时回落到默认值，不会卡住。可选：追加 `-y` 立即取默认值，再加 `--programs all`（或 `gui` / `research` / `wiki`）顺带装上 agent 程序：
-```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- -y --programs all
+```powershell
+# Windows（PowerShell）：
+iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
 ```
-完整参数表见 **[install.md](install.md)**。
 
-默认安装装好 host 全部轻量内容——web UI、TUI、浏览器工具和 channels；agent 程序（GUI / Research / Wiki）**不随默认安装** —— 有终端时安装脚本会弹菜单让你挑，或之后用 `openprogram programs install <research|wiki|gui>` 单独装（GUI 需下载 PyTorch）。`--minimal` 只装精简 host。想在安装时非交互地一并装 agent 程序，加 `--programs <gui|research|wiki|all>`（PowerShell 用 `-Programs`）。provider SDK（anthropic / openai / google-genai）默认已装好。
+更多选项（参数、无人值守 / AI agent 安装、从 checkout 安装）见 **[install.md](install.md)**。
 
 harness 作为 **OpenProgram 程序** 装进 `openprogram/functions/agentics/<Harness>/`
 并**自动注册**。通用做法（你自己写的也一样）是克隆进那个目录再跑它的安装脚本；
