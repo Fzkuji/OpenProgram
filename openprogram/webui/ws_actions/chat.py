@@ -658,6 +658,31 @@ async def handle_retry_node(ws, cmd: dict):
     ).start()
 
 
+def _last_call_node(session_id: str, func_name: str):
+    """The most recent TOP-LEVEL ``func_name`` code node in the session,
+    or ``None`` if the function was never called there.
+
+    Top-level = a code node whose caller is NOT itself a code node
+    (fn-form / manual retry → caller "ROOT"; LLM-issued → an llm reply).
+    Nested sub-calls of the same name (a function that calls itself) are
+    excluded so a retry re-runs the OUTER invocation, not an internal
+    step.
+    """
+    from openprogram.agent.session_db import default_db
+    try:
+        nodes = default_db().get_nodes(session_id)
+    except Exception:
+        return None
+    code_ids = {n.id for n in nodes if n.is_code()}
+    latest = None
+    for n in sorted(nodes, key=lambda x: x.seq):
+        if (n.is_code() and n.name == func_name
+                and isinstance(n.input, dict)
+                and n.caller not in code_ids):
+            latest = n
+    return latest
+
+
 def _last_call_kwargs(session_id: str, func_name: str):
     """Kwargs of the most recent ``func_name`` code node in the session,
     or ``None`` if the function was never called there.
@@ -668,28 +693,36 @@ def _last_call_kwargs(session_id: str, func_name: str):
     from it could silently run the wrong arguments. ``runtime`` /
     ``callback`` injected params are dropped (not real user args).
     """
-    from openprogram.agent.session_db import default_db
-    try:
-        nodes = default_db().get_nodes(session_id)
-    except Exception:
-        return None
-    latest = None
-    for n in sorted(nodes, key=lambda x: x.seq):
-        if n.is_code() and n.name == func_name and isinstance(n.input, dict):
-            latest = n
+    latest = _last_call_node(session_id, func_name)
     if latest is None:
         return None
     return {k: v for k, v in latest.input.items()
             if k not in ("runtime", "callback")}
 
 
+def _call_predecessor(node) -> str:
+    """The conversation predecessor a re-run should anchor at to become
+    a SIBLING of ``node`` (same fork point). Mirrors chat-retry's
+    ``predecessor = src.predecessor``. Falls back to the node's caller,
+    then "ROOT" — so a fn-form call (caller/predecessor "ROOT") re-runs
+    as a ROOT sibling, and an LLM-issued call re-runs off the same llm
+    reply it originally hung from."""
+    pred = (getattr(node, "metadata", None) or {}).get("predecessor")
+    return pred or getattr(node, "caller", None) or "ROOT"
+
+
 async def handle_retry_function(ws, cmd: dict):
     """Re-run a function call's LAST invocation with the SAME kwargs, in
-    the SAME session, via the modern forced-tool-call dispatch path.
+    the SAME session, as a SIBLING BRANCH of the original call.
 
-    Wired to the runtime-block Retry button. The re-run appends a fresh
-    top-level code node to the session DAG (exactly like fn-form), so it
-    shows up as a new run — old messages are never stripped.
+    Wired to the runtime-block Retry button. Mirrors chat-message retry
+    (``_fork_user_turn_and_run``): the re-run is anchored at the original
+    call's OWN predecessor, so it forks off the same point rather than
+    stacking as a second sequential node. The forced-tool-call path
+    advances HEAD to the new node, so the retried run becomes the active
+    branch — only it renders in the transcript, and the old run is
+    reachable via the runtime-block's version switcher (< N/M >) and the
+    Branches panel. Old messages are never stripped.
     """
     from openprogram.webui import server as _s
     from openprogram.webui.routes.chat import run_agentic_function_call
@@ -699,8 +732,8 @@ async def handle_retry_function(ws, cmd: dict):
     if not session_id or not func_name:
         return
 
-    kwargs = _last_call_kwargs(session_id, func_name)
-    if kwargs is None:
+    node = _last_call_node(session_id, func_name)
+    if node is None:
         _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {
             "type": "error",
             "content": (
@@ -712,7 +745,15 @@ async def handle_retry_function(ws, cmd: dict):
         })
         return
 
-    result = run_agentic_function_call(func_name, kwargs, session_id)
+    kwargs = {k: v for k, v in node.input.items()
+              if k not in ("runtime", "callback")}
+    # Anchor the re-run at the ORIGINAL call's predecessor so it lands as
+    # a sibling branch (same fork model as chat retry), not a stacked run.
+    anchor = _call_predecessor(node)
+
+    result = run_agentic_function_call(
+        func_name, kwargs, session_id, anchor_msg_id=anchor,
+    )
     if "error" in result:
         _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {
             "type": "error",

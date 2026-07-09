@@ -114,6 +114,7 @@ def run_agentic_function_call(
     kwargs: dict,
     session_id: str | None = None,
     work_dir: str | None = None,
+    anchor_msg_id: str = "ROOT",
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
@@ -123,6 +124,15 @@ def run_agentic_function_call(
     ``retry_function`` action (the Retry button) so both re-runs go
     through one code path — a fresh top-level code node appended to the
     session DAG, dispatched exactly like an LLM-issued tool call.
+
+    ``anchor_msg_id`` becomes the new code node's conversation
+    predecessor (``dispatch_forced_tool_call`` sets ``_call_id`` to it).
+    fn-form leaves it at ``"ROOT"`` — a fresh top-level call. The Retry
+    button passes the ORIGINAL call's predecessor so the re-run lands as
+    a SIBLING branch of that call (same fork model as chat-message
+    retry), not a stacked second node. The forced path already advances
+    HEAD to the new node, so the retried version becomes the active
+    branch and only it renders in the transcript.
     """
     from openprogram.webui import server as _s
 
@@ -245,7 +255,7 @@ def run_agentic_function_call(
             try:
                 out = dispatch_forced_tool_call(
                     session_id=session_id,
-                    anchor_msg_id="ROOT",
+                    anchor_msg_id=anchor_msg_id,
                     tool_name=name,
                     tool_input=kwargs,
                     work_dir=work_dir,
