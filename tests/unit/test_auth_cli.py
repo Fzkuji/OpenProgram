@@ -424,10 +424,14 @@ def test_login_resolves_alias(isolated, monkeypatch):
     # Use an alias rather than the canonical id.
     rc = dispatch(_parse(["login", "claude", "--method", "setup_token"]))
     assert rc == 0
-    # The pool must be stored under the canonical id, not the alias.
-    assert store.find_pool("claude", "default") is None
+    # The pool must be stored under the canonical id, not the alias — on disk
+    # under anthropic/, never a literal claude/ dir. (The store is now itself
+    # alias-aware, so find_pool("claude") resolves to the same anthropic pool;
+    # assert the on-disk canonical location, which is the real guarantee.)
+    assert not (store.base_dir() / "claude").exists()
     pool = store.find_pool("anthropic", "default")
     assert pool is not None
+    assert pool.provider_id == "anthropic"
     assert pool.credentials[0].payload.auth_value == "sk-ant-oat-from-alias"
 
 

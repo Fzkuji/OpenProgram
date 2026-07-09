@@ -185,6 +185,22 @@ class AuthStore:
             return self._profile.auth_dir
         return self._root / "auth"
 
+    @staticmethod
+    def _canon(provider_id: str) -> str:
+        """Canonical provider id for storage keying.
+
+        Alias-aware on BOTH read and write: a key added under ``bailian``
+        and one added under ``alibaba-token-plan-cn`` land in the SAME
+        pool — never a split-brain where the sidebar dot resolves the
+        alias but the accounts list looks up the literal id and comes
+        back empty. Canonical ids pass through unchanged.
+        """
+        try:
+            from openprogram.auth.aliases import resolve
+            return resolve(provider_id)
+        except Exception:
+            return provider_id
+
     def _pool_path(self, provider_id: str, profile_id: str) -> Path:
         """Resolve the on-disk path for ``(provider, profile)``.
 
@@ -241,7 +257,7 @@ class AuthStore:
         """Return the pool for ``(provider, profile)``, loading from disk
         if necessary. Raises :class:`AuthConfigError` if not found."""
         with self._sync_lock:
-            key = (provider_id, profile_id)
+            key = (self._canon(provider_id), profile_id)
             self._reload_if_disk_changed(key)
             pool = self._pools.get(key)
             if pool is None:
@@ -274,12 +290,18 @@ class AuthStore:
                 for prov_dir in base.iterdir():
                     if not prov_dir.is_dir():
                         continue
+                    # Alias-aware: a legacy dir (e.g. ``bailian/``) reports
+                    # under its canonical id so the accounts list — which
+                    # filters by canonical provider_id — sees it. Load off
+                    # the literal dir, then re-key/relabel to canonical.
+                    canon = self._canon(prov_dir.name)
                     for pool_file in prov_dir.glob("*.json"):
-                        key = (prov_dir.name, pool_file.stem)
+                        key = (canon, pool_file.stem)
                         if key in found:
                             continue
-                        loaded = self._load_from_disk(key)
+                        loaded = self._load_from_disk((prov_dir.name, pool_file.stem))
                         if loaded is not None:
+                            loaded.provider_id = canon
                             self._pools[key] = loaded
                             found[key] = loaded
             return list(found.values())
@@ -295,6 +317,7 @@ class AuthStore:
         the credential and then call :meth:`put_pool` with the same pool
         object, because we atomically re-write the whole file.
         """
+        pool.provider_id = self._canon(pool.provider_id)
         key = (pool.provider_id, pool.profile_id)
         with self._sync_lock:
             self._pools[key] = pool
@@ -303,6 +326,7 @@ class AuthStore:
     def add_credential(self, cred: Credential) -> CredentialPool:
         """Append ``cred`` to the pool at ``(cred.provider_id, cred.profile_id)``,
         creating the pool if absent. Returns the updated pool."""
+        cred.provider_id = self._canon(cred.provider_id)
         key = (cred.provider_id, cred.profile_id)
         with self._sync_lock:
             pool = self._pools.get(key) or self._load_from_disk(key) or CredentialPool(
@@ -324,7 +348,7 @@ class AuthStore:
         """Remove a single credential from a pool. If the pool becomes
         empty the pool file is *not* deleted — the profile may want to
         add new credentials back. Use :meth:`delete_pool` to nuke it."""
-        key = (provider_id, profile_id)
+        key = (self._canon(provider_id), profile_id)
         with self._sync_lock:
             pool = self._pools.get(key) or self._load_from_disk(key)
             if pool is None:
@@ -344,6 +368,7 @@ class AuthStore:
 
     def delete_pool(self, provider_id: str, profile_id: str) -> None:
         """Delete a pool entirely (in-memory and on-disk)."""
+        provider_id = self._canon(provider_id)
         key = (provider_id, profile_id)
         path = self._pool_path(provider_id, profile_id)
         with self._sync_lock:
