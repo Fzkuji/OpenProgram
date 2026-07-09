@@ -80,3 +80,6 @@ openprogram/webui/programs_meta.json
 
 # fetched per-provider model lists (runtime, user-specific — not source)
 openprogram/providers/_catalog/fetched/
+
+# local agent working notes
+.superpowers/
