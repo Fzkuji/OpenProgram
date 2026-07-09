@@ -1,0 +1,39 @@
+name: Windows install smoke
+
+# Smoke-tests scripts/install.ps1 on a real Windows runner: non-interactive
+# minimal install from a checkout, plus the off-the-web bootstrap path
+# (clone + handoff). Manual trigger + weekly, so it doesn't tax every push.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+jobs:
+  install-ps1:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Minimal install from checkout (non-interactive)
+        shell: pwsh
+        run: .\scripts\install.ps1 -Yes -Minimal
+      - name: openprogram importable after install
+        shell: pwsh
+        run: |
+          $py = if (Test-Path .\.venv\Scripts\python.exe) { ".\.venv\Scripts\python.exe" } else { "python" }
+          & $py -c "import openprogram; print('openprogram OK:', openprogram.__file__)"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Off-the-web bootstrap (clone + handoff, CI env => defaults)
+        shell: pwsh
+        env:
+          OPENPROGRAM_INSTALL_YES: "1"
+        run: |
+          Copy-Item .\scripts\install.ps1 $env:TEMP\op-install.ps1
+          & $env:TEMP\op-install.ps1 -Minimal -Target $env:TEMP\op-bootstrap-clone
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path $env:TEMP\op-bootstrap-clone\pyproject.toml)) {
+            Write-Error "bootstrap clone missing"; exit 1
+          }
