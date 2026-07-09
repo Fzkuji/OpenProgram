@@ -22,7 +22,6 @@ import { ExecutionDag } from "./execution-dag/index";
 import { useMarkdownReady } from "./markdown";
 
 interface RuntimeLegacyGlobals {
-  retryCurrentBlock?: (fn: string) => void;
   renderMathInElement?: (el: HTMLElement, opts: unknown) => void;
 }
 
@@ -98,7 +97,6 @@ export function RuntimeBlock({
     }
   }, [tree]);
 
-  const w = window as unknown as RuntimeLegacyGlobals;
   const attempts = msg.attempts ?? [];
   const attemptIdx = msg.current_attempt || 0;
   const hasAttempts = attempts.length > 1;
@@ -157,7 +155,17 @@ export function RuntimeBlock({
           title={text("Retry", "重试")}
           onClick={(e) => {
             e.stopPropagation();
-            w.retryCurrentBlock?.(fnName);
+            // Re-run the SAME function with its LAST kwargs in the SAME
+            // session. The backend looks up the prior call's stored args
+            // and dispatches via the modern forced-tool-call path, so the
+            // re-run appends a fresh code node (new run, not an overwrite)
+            // and the normal stream flow renders it. No DOM surgery.
+            if (!sessionId) return;
+            wsSend({
+              action: "retry_function",
+              session_id: sessionId,
+              function: fnName,
+            });
           }}
         >
           {text("↻ Retry", "↻ 重试")}

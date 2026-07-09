@@ -1,4 +1,4 @@
-"""Chat WS actions: chat / retry_node / retry_overwrite / switch_attempt /
+"""Chat WS actions: chat / retry_node / retry_function / switch_attempt /
 set_conversation_channel.
 
 The ``chat`` action is the sole turn entry point from the web UI. The
@@ -658,78 +658,74 @@ async def handle_retry_node(ws, cmd: dict):
     ).start()
 
 
-async def handle_retry_overwrite(ws, cmd: dict):
-    """Overwrite retry: drop old user+assistant for the function, re-run."""
+def _last_call_kwargs(session_id: str, func_name: str):
+    """Kwargs of the most recent ``func_name`` code node in the session,
+    or ``None`` if the function was never called there.
+
+    Reads the authoritative persisted DAG node (``Call.input``) rather
+    than reconstructing kwargs from the rendered execution tree — the
+    tree stringifies / truncates params for display, so re-dispatching
+    from it could silently run the wrong arguments. ``runtime`` /
+    ``callback`` injected params are dropped (not real user args).
+    """
+    from openprogram.agent.session_db import default_db
+    try:
+        nodes = default_db().get_nodes(session_id)
+    except Exception:
+        return None
+    latest = None
+    for n in sorted(nodes, key=lambda x: x.seq):
+        if n.is_code() and n.name == func_name and isinstance(n.input, dict):
+            latest = n
+    if latest is None:
+        return None
+    return {k: v for k, v in latest.input.items()
+            if k not in ("runtime", "callback")}
+
+
+async def handle_retry_function(ws, cmd: dict):
+    """Re-run a function call's LAST invocation with the SAME kwargs, in
+    the SAME session, via the modern forced-tool-call dispatch path.
+
+    Wired to the runtime-block Retry button. The re-run appends a fresh
+    top-level code node to the session DAG (exactly like fn-form), so it
+    shows up as a new run — old messages are never stripped.
+    """
     from openprogram.webui import server as _s
+    from openprogram.webui.routes.chat import run_agentic_function_call
+
     session_id = cmd.get("session_id")
     func_name = cmd.get("function")
-    text = cmd.get("text", "").strip()
-    thinking_effort = cmd.get("thinking_effort") or None
-    exec_thinking_effort = cmd.get("exec_thinking_effort") or None
-    if not session_id or not text:
+    if not session_id or not func_name:
         return
 
-    conv = _s._get_or_create_session(session_id)
-    conv.pop("_last_exec_session", None)
-    old_rt = conv.pop("_last_exec_runtime", None)
-    if old_rt and hasattr(old_rt, "close"):
-        old_rt.close()
-
-    messages = conv.get("messages", [])
-    new_messages = []
-    skip_next_assistant = False
-    for m in messages:
-        if skip_next_assistant and m.get("role") == "assistant":
-            skip_next_assistant = False
-            continue
-        if (m.get("role") == "user" and m.get("display") == "runtime"):
-            parsed_check = _s._parse_chat_input(m.get("content", ""))
-            if parsed_check.get("function") == func_name:
-                skip_next_assistant = True
-                continue
-        new_messages.append(m)
-    conv["messages"] = new_messages
-    _s._set_active_head(session_id, new_messages[-1]["id"] if new_messages else None)
-
-    msg_id = str(uuid.uuid4())[:8]
-    original_content = cmd.get("original_content", text)
-
-    _s._append_msg(conv, {
-        "role": "user",
-        "id": msg_id,
-        "content": text,
-        "original_content": original_content,
-        "display": "runtime",
-        "timestamp": time.time(),
-    })
-
-    await ws.send_text(json.dumps({
-        "type": "chat_ack",
-        "data": {"session_id": session_id, "msg_id": msg_id},
-    }))
-
-    parsed = _s._parse_chat_input(text)
-    # The legacy /run retry path was removed when @agentic_function
-    # dispatch unified onto dispatcher.dispatch_forced_tool_call.
-    # Frontend retry should now call POST /api/function/{name} directly.
-    if parsed["action"] == "query":
-        threading.Thread(
-            target=_s._execute_in_context,
-            args=(session_id, msg_id, "query"),
-            kwargs={"query": parsed["raw"],
-                    "thinking_effort": thinking_effort},
-            daemon=True,
-        ).start()
-    else:
-        _s._broadcast_chat_response(session_id, msg_id, {
+    kwargs = _last_call_kwargs(session_id, func_name)
+    if kwargs is None:
+        _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {
             "type": "error",
             "content": (
-                "retry_overwrite no longer dispatches @agentic_function "
-                "runs — call POST /api/function/{name} instead."
+                f"Retry failed: no prior {func_name!r} call found in this "
+                "session to re-run."
             ),
             "function": func_name,
             "display": "runtime",
         })
+        return
+
+    result = run_agentic_function_call(func_name, kwargs, session_id)
+    if "error" in result:
+        _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {
+            "type": "error",
+            "content": f"Retry failed: {result['error']}",
+            "function": func_name,
+            "display": "runtime",
+        })
+        return
+    await ws.send_text(json.dumps({
+        "type": "chat_ack",
+        "data": {"session_id": result.get("session_id", session_id),
+                 "msg_id": result.get("msg_id", "")},
+    }))
 
 
 async def handle_switch_attempt(ws, cmd: dict):
@@ -1120,7 +1116,7 @@ async def handle_rewind(ws, cmd: dict):
 ACTIONS = {
     "chat": handle_chat,
     "retry_node": handle_retry_node,
-    "retry_overwrite": handle_retry_overwrite,
+    "retry_function": handle_retry_function,
     "switch_attempt": handle_switch_attempt,
     "set_conversation_channel": handle_set_conversation_channel,
     "compact": handle_compact,
