@@ -106,6 +106,26 @@ def test_manual_function_hangs_off_root():
     assert _no_overlap(by)
 
 
+def test_root_function_call_same_spacing_as_chat():
+    """Regression: a function call hanging directly off ROOT sits ONE
+    unit from root — same horizontal spacing as a top-level chat message,
+    not two units further out. Nested sub-calls keep relative +1 steps."""
+    by = _annotate([
+        _root(),
+        # top-level chat message off ROOT
+        {"id": "u1", "role": "user", "caller": "ROOT", "predecessor": "ROOT", "created_at": 1},
+        # top-level function call off ROOT (tool/code, no predecessor)
+        {"id": "fn", "role": "tool", "caller": "ROOT", "created_at": 2},
+        {"id": "sub", "role": "tool", "caller": "fn", "created_at": 3},
+    ])
+    # both are one unit from root, and equal to each other
+    assert _col(by["fn"]) == _col(by["u1"])
+    assert _col(by["fn"]) == _col(by["ROOT"]) + 1
+    # nested sub-call keeps its relative one-unit step
+    assert by["sub"]["_tier"] == by["fn"]["_tier"] + 1
+    assert _no_overlap(by)
+
+
 def test_retry_fork_clears_base_lane():
     """Retry → 2nd branch starts past the entire base lane (no overlap)."""
     by = _annotate([

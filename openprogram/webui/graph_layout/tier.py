@@ -3,6 +3,9 @@
 Tier = depth in the **call tree**, not the conversation chain.
 Conversation-level nodes cycle between fixed tiers:
   ROOT=0, user=1, llm=2, next user=1, next llm=2, ...
+A top-level node hanging directly off ROOT is ONE unit from root
+(tier 1), whether it's a chat user message or a manual function call —
+uniform spacing is the contract.
 Sub-call nodes (tool/code) indent from their caller:
   llm→code=3, code→llm=4, code→code=4, etc.
 """
@@ -31,15 +34,15 @@ def compute_tier(by_id: dict[str, dict]) -> dict[str, int]:
             t = _t(caller, depth + 1) + 1
             tier[nid] = t
             return t
-        # Conversation-level: tier by role
+        # Top-level (hangs off ROOT / no in-graph caller): tier by role.
+        # A user turn is one unit from root (1), its llm reply the next
+        # (2). A manual function call hanging directly off ROOT is ALSO
+        # just one unit from root (1) — same as a chat message — and its
+        # own sub-calls indent from it via the caller recursion above.
         role = m.get("role", "")
-        if role == "user":
-            tier[nid] = 1
-        elif role in ("assistant", "llm"):
+        if role in ("assistant", "llm"):
             tier[nid] = 2
-        elif role in ("tool", "code"):
-            tier[nid] = 3
-        else:
+        else:  # user, tool, code, or anything else at top level
             tier[nid] = 1
         return tier[nid]
 
