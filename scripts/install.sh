@@ -2,6 +2,13 @@
 # =============================================================================
 # OpenProgram — one-command installer (macOS / Linux)
 # -----------------------------------------------------------------------------
+# Run it straight off the web — no clone needed:
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh)"
+# It clones OpenProgram to ~/OpenProgram (override with --target DIR), then
+# hands off to the cloned copy. Already inside a checkout? It skips the clone
+# and installs in place. When a terminal is attached it also offers a menu to
+# pick which agentic programs (GUI / Research / Wiki) to install.
+#
 # The default install brings up EVERYTHING `openprogram` ships with:
 #   1. System toolchain: Python 3.11+, Node 20+, git (installed if missing)
 #   2. Python env (uses an active venv/conda, else creates ./.venv)
@@ -28,12 +35,15 @@
 # Re-runnable: every step is idempotent.
 #
 # Usage:
+#   bash -c "$(curl -fsSL .../scripts/install.sh)"   # web install, prompts for programs
 #   ./scripts/install.sh                   # full install (everything above)
 #   ./scripts/install.sh --minimal         # bare host only
 #   ./scripts/install.sh --python /p/bin/python   # pick the interpreter
 #   ./scripts/install.sh --stealth         # + stealth browsers (patchright/camoufox)
 #   ./scripts/install.sh --agent-browser   # + agent-browser (global npm)
 #   ./scripts/install.sh --programs all    # + install agentic programs non-interactively
+#   ./scripts/install.sh --target DIR      # where to clone when run off the web (default ~/OpenProgram)
+#   ./scripts/install.sh --yes             # skip every prompt, use defaults (-y)
 # =============================================================================
 set -euo pipefail
 
@@ -43,23 +53,76 @@ ok()   { printf "${c_green}  ok${c_reset} %s\n" "$*"; }
 warn() { printf "${c_yellow}  !!${c_reset} %s\n" "$*" >&2; }
 die()  { printf "${c_red}ERROR${c_reset} %s\n" "$*" >&2; exit 1; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOST_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OS="$(uname -s)"
+REPO_URL="https://github.com/Fzkuji/OpenProgram.git"
+
+# When piped (curl | bash) BASH_SOURCE is "bash" or empty and dirname resolves
+# to "." — so a real checkout is detected by pyproject.toml sitting next to us,
+# not by the path alone.
+SCRIPT_SRC="${BASH_SOURCE[0]:-}"
+if [ -n "$SCRIPT_SRC" ] && [ -f "$SCRIPT_SRC" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SRC")" && pwd)"
+  HOST_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+  SCRIPT_DIR=""; HOST_ROOT=""
+fi
 
 # ---- args -------------------------------------------------------------------
 PYTHON_BIN=""; MINIMAL=0; WITH_STEALTH=0; WITH_AGENT_BROWSER=0; PROGRAMS=""
+CLONE_TARGET=""; ASSUME_YES=0; BOOTSTRAPPED=0; BOOTSTRAP_ONLY=0; PROGRAMS_GIVEN=0
+FORWARD_ARGS=()   # rebuilt to forward across the bootstrap exec
 while [ $# -gt 0 ]; do
   case "$1" in
-    --minimal) MINIMAL=1; shift ;;
-    --python) PYTHON_BIN="${2:?--python needs a path}"; shift 2 ;;
-    --stealth) WITH_STEALTH=1; shift ;;
-    --agent-browser) WITH_AGENT_BROWSER=1; shift ;;
-    --programs) PROGRAMS="$PROGRAMS ${2:?--programs needs <gui|research|wiki|all>}"; shift 2 ;;
+    --minimal) MINIMAL=1; FORWARD_ARGS+=("$1"); shift ;;
+    --python) PYTHON_BIN="${2:?--python needs a path}"; FORWARD_ARGS+=("$1" "$2"); shift 2 ;;
+    --stealth) WITH_STEALTH=1; FORWARD_ARGS+=("$1"); shift ;;
+    --agent-browser) WITH_AGENT_BROWSER=1; FORWARD_ARGS+=("$1"); shift ;;
+    --programs) PROGRAMS="$PROGRAMS ${2:?--programs needs <gui|research|wiki|all>}"; PROGRAMS_GIVEN=1; FORWARD_ARGS+=("$1" "$2"); shift 2 ;;
+    --target) CLONE_TARGET="${2:?--target needs a directory}"; shift 2 ;;   # consumed by bootstrap, not forwarded
+    -y|--yes) ASSUME_YES=1; FORWARD_ARGS+=("$1"); shift ;;
+    --bootstrapped) BOOTSTRAPPED=1; shift ;;   # internal: child skips re-bootstrapping
+    --bootstrap-only) BOOTSTRAP_ONLY=1; shift ;;   # internal/test: clone + exec --help, then stop
     -h|--help) sed -n '/^# Usage:/,/^# ==/p' "$0"; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
 done
+
+# ---- 0. self-bootstrap (clone + re-exec when not inside a checkout) ----------
+is_openprogram_checkout() { [ -f "$1/pyproject.toml" ] && [ -f "$1/scripts/install.sh" ] && grep -q '^name = "openprogram"' "$1/pyproject.toml" 2>/dev/null; }
+
+if [ "$BOOTSTRAPPED" = "0" ] && { [ -z "$HOST_ROOT" ] || ! is_openprogram_checkout "$HOST_ROOT"; }; then
+  command -v git >/dev/null 2>&1 || die "git is required to install off the web — install git first (macOS: brew install git; Debian/Ubuntu: sudo apt-get install git), or clone the repo and run scripts/install.sh from inside it."
+
+  target="${CLONE_TARGET:-$HOME/OpenProgram}"
+  if [ -z "$CLONE_TARGET" ] && [ "$ASSUME_YES" = "0" ] && [ -r /dev/tty ] && [ -w /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
+    printf 'Clone OpenProgram to [%s]: ' "$target" > /dev/tty
+    read -r reply < /dev/tty || true
+    [ -n "$reply" ] && target="$reply"
+  fi
+  # Expand a leading ~ (read gives a literal tilde).
+  case "$target" in "~") target="$HOME" ;; "~/"*) target="$HOME/${target#\~/}" ;; esac
+
+  if [ -e "$target" ]; then
+    if is_openprogram_checkout "$target"; then
+      step "reusing existing OpenProgram checkout at $target"
+      ( cd "$target" && git pull --ff-only ) || warn "git pull --ff-only failed — using the checkout as-is"
+    else
+      die "target exists but is not an OpenProgram checkout: $target (remove it or pass --target DIR)"
+    fi
+  else
+    step "cloning OpenProgram into $target"
+    git clone --depth 1 "$REPO_URL" "$target" || die "git clone failed: $REPO_URL"
+  fi
+
+  child="$target/scripts/install.sh"
+  [ -f "$child" ] || die "cloned repo has no scripts/install.sh — unexpected layout at $target"
+  if [ "$BOOTSTRAP_ONLY" = "1" ]; then
+    step "bootstrap-only: handing off to $child --help"
+    exec bash "$child" --bootstrapped --help
+  fi
+  step "handing off to the cloned installer: $child"
+  exec bash "$child" --bootstrapped ${FORWARD_ARGS[@]+"${FORWARD_ARGS[@]}"}
+fi
 
 # ---- 1. system toolchain ----------------------------------------------------
 pm_install() {  # best-effort cross-distro package install
@@ -160,6 +223,70 @@ install_extras() {
   fi
 }
 
+# ---- 9a. interactive program menu -------------------------------------------
+# Menu order == PROGRAM_KEYS index (1-based). Sizes mirror KNOWN_PROGRAMS.
+PROGRAM_KEYS=(gui research wiki)
+PROGRAM_MENU=(
+  "GUI harness      — autonomous desktop agent (downloads PyTorch: ~300 MB CPU / ~3 GB CUDA; ~1.5 GB on disk)"
+  "Research harness — topic → submission-ready paper (repo < 1 MB, only depends on openprogram)"
+  "Wiki harness     — ingest sessions into a knowledge vault (repo < 1 MB; Jinja2 + PyYAML)"
+)
+
+# parse_program_choice "<raw input>" -> echoes space-separated keys (or nothing).
+# empty/none -> nothing; all -> every key; "1,3" -> gui wiki; invalid -> exit 1.
+parse_program_choice() {
+  local raw part idx keys=""
+  raw="$(printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+  case "$raw" in
+    ""|none) return 0 ;;
+    all) printf '%s' "${PROGRAM_KEYS[*]}"; return 0 ;;
+  esac
+  local oldIFS="$IFS"; IFS=','
+  for part in $raw; do
+    case "$part" in
+      gui|research|wiki) keys="$keys $part" ;;
+      *[!0-9]*|"") IFS="$oldIFS"; return 1 ;;
+      *)
+        idx=$((part))
+        [ "$idx" -ge 1 ] && [ "$idx" -le "${#PROGRAM_KEYS[@]}" ] || { IFS="$oldIFS"; return 1; }
+        keys="$keys ${PROGRAM_KEYS[$((idx-1))]}" ;;
+    esac
+  done
+  IFS="$oldIFS"
+  # de-dup, preserve first-seen order
+  local out="" k seen
+  for k in $keys; do
+    case " $out " in *" $k "*) : ;; *) out="$out $k" ;; esac
+  done
+  printf '%s' "${out# }"
+}
+
+# Prompt on /dev/tty; re-prompt on invalid; empty -> none. Appends to PROGRAMS.
+prompt_programs_menu() {
+  [ "$PROGRAMS_GIVEN" = "1" ] && return 0        # --programs wins, no prompt
+  [ "$ASSUME_YES" = "1" ] && return 0            # --yes: default (none)
+  # non-interactive (CI / detached / true pipe): default to none. Probe the
+  # device, not just its perms — a "readable" /dev/tty can still be unusable.
+  { [ -r /dev/tty ] && [ -w /dev/tty ] && { : </dev/tty; } 2>/dev/null; } || return 0
+  local i menu_num=1 picked
+  {
+    printf '\nAgentic programs — pick which to install now (or later via the first-run wizard):\n'
+    for i in "${!PROGRAM_MENU[@]}"; do printf '  %d) %s\n' "$menu_num" "${PROGRAM_MENU[$i]}"; menu_num=$((menu_num+1)); done
+    printf '  all)  install every harness\n'
+    printf '  none) skip (default — pick later in the wizard or: openprogram programs install <gui|research|wiki|all>)\n'
+  } > /dev/tty
+  while :; do
+    printf 'Choose (comma-separated numbers, "all", or "none") [none]: ' > /dev/tty
+    local reply=""
+    read -r reply < /dev/tty || true            # declined read must not abort under set -e
+    if picked="$(parse_program_choice "$reply")"; then
+      [ -n "$picked" ] && PROGRAMS="$PROGRAMS $picked"
+      return 0
+    fi
+    printf '  invalid selection: %s\n' "$reply" > /dev/tty
+  done
+}
+
 # ---- 9. optional: agentic programs (--programs) ------------------------------
 install_programs() {
   [ -n "$PROGRAMS" ] || return 0
@@ -179,6 +306,7 @@ install_web
 install_tui
 install_default_extras
 install_extras
+prompt_programs_menu
 install_programs
 
 # ---- done --------------------------------------------------------------------

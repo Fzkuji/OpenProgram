@@ -51,11 +51,11 @@
 
 ### 1. Install
 
-**macOS / Linux**
+**macOS / Linux** — one command, no clone needed:
 ```bash
-git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
-./scripts/install.sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh)"
 ```
+It clones OpenProgram to `~/OpenProgram` (override with `--target DIR`), installs the host, then — when a terminal is attached — offers a menu to pick which agentic programs to install. Plain `curl -fsSL … | bash` also works (the installer reads `/dev/tty` for its prompts). From a checkout: `./scripts/install.sh`.
 
 **Windows (PowerShell)**
 ```powershell

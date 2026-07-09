@@ -27,12 +27,20 @@
 
  Re-runnable: every step is idempotent.
 
+ Run it straight off the web - no clone needed:
+   iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
+ It clones OpenProgram to $HOME\OpenProgram (override with -Target DIR), then
+ hands off to the cloned copy and offers a menu to pick which agentic programs
+ (GUI / Research / Wiki) to install.
+
  Usage:
    .\scripts\install.ps1                  # full install (everything above)
    .\scripts\install.ps1 -Minimal         # bare host only
    .\scripts\install.ps1 -Stealth         # + stealth browsers
    .\scripts\install.ps1 -AgentBrowser    # + agent-browser (global npm)
    .\scripts\install.ps1 -Programs all    # + install agentic programs non-interactively
+   .\scripts\install.ps1 -Target DIR      # where to clone when run off the web (default $HOME\OpenProgram)
+   .\scripts\install.ps1 -Yes             # skip every prompt, use defaults
 =============================================================================
 #>
 [CmdletBinding()]
@@ -41,7 +49,10 @@ param(
   [switch]$Stealth,
   [switch]$AgentBrowser,
   [string[]]$Programs = @(),       # install agentic programs non-interactively (gui|research|wiki|all)
-  [switch]$Minimal                # bare host: skip web build / programs / default extras
+  [switch]$Minimal,               # bare host: skip web build / programs / default extras
+  [string]$Target = "",           # clone destination when run off the web (default $HOME\OpenProgram)
+  [switch]$Yes,                   # skip every prompt, use defaults
+  [switch]$Bootstrapped           # internal: child skips re-bootstrapping
 )
 # NOTE: 'Continue', not 'Stop'. Under 'Stop', Windows PowerShell 5.1 turns a
 # native exe's stderr line (e.g. pip's harmless "Scripts not on PATH" warning)
@@ -53,14 +64,58 @@ function Ok($m){ Write-Host "  ok $m" -ForegroundColor Green }
 function Warn($m){ Write-Host "  !! $m" -ForegroundColor Yellow }
 function Die($m){ Write-Host "ERROR $m" -ForegroundColor Red; exit 1 }
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$HostRoot  = (Resolve-Path "$ScriptDir\..").Path
-
-# ---- 1. system toolchain (best-effort via winget) ---------------------------
 function Have($name){ return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 function Winget-Install($id){
   if (Have winget) { winget install --silent --accept-package-agreements --accept-source-agreements -e --id $id }
   else { Warn "winget not available - install $id manually" }
+}
+
+# When run via `iwr | iex` there is no script file, so $MyInvocation...Path is
+# empty. A real checkout is detected by pyproject.toml next to us, not the path.
+$RepoUrl = "https://github.com/Fzkuji/OpenProgram.git"
+$ScriptPath = $MyInvocation.MyCommand.Path
+$HostRoot = $null
+if ($ScriptPath) {
+  $ScriptDir = Split-Path -Parent $ScriptPath
+  $HostRoot  = (Resolve-Path "$ScriptDir\..").Path
+}
+function Test-OpenProgramCheckout($dir){
+  return ($dir -and (Test-Path "$dir\pyproject.toml") -and (Test-Path "$dir\scripts\install.ps1") `
+          -and (Select-String -Path "$dir\pyproject.toml" -Pattern '^name = "openprogram"' -Quiet))
+}
+
+# ---- 0. self-bootstrap (clone + re-invoke when not inside a checkout) --------
+if (-not $Bootstrapped -and -not (Test-OpenProgramCheckout $HostRoot)) {
+  if (-not (Have git)) { Die "git is required to install off the web - install Git for Windows (winget install Git.Git), or clone the repo and run scripts\install.ps1 from inside it." }
+  $dest = if ($Target) { $Target } else { Join-Path $HOME "OpenProgram" }
+  if (-not $Target -and -not $Yes) {
+    $reply = Read-Host "Clone OpenProgram to [$dest]"
+    if ($reply) { $dest = $reply }
+  }
+  if (Test-Path $dest) {
+    if (Test-OpenProgramCheckout $dest) {
+      Step "reusing existing OpenProgram checkout at $dest"
+      Push-Location $dest; try { git pull --ff-only } finally { Pop-Location }
+    } else {
+      Die "target exists but is not an OpenProgram checkout: $dest (remove it or pass -Target DIR)"
+    }
+  } else {
+    Step "cloning OpenProgram into $dest"
+    git clone --depth 1 $RepoUrl $dest
+    if ($LASTEXITCODE -ne 0) { Die "git clone failed: $RepoUrl" }
+  }
+  $child = Join-Path $dest "scripts\install.ps1"
+  if (-not (Test-Path $child)) { Die "cloned repo has no scripts\install.ps1 - unexpected layout at $dest" }
+  Step "handing off to the cloned installer: $child"
+  $forward = @("-Bootstrapped")
+  if ($Minimal)      { $forward += "-Minimal" }
+  if ($Stealth)      { $forward += "-Stealth" }
+  if ($AgentBrowser) { $forward += "-AgentBrowser" }
+  if ($Yes)          { $forward += "-Yes" }
+  if ($Python)       { $forward += @("-Python", $Python) }
+  if ($Programs)     { $forward += @("-Programs", ($Programs -join ',')) }
+  & $child @forward
+  exit $LASTEXITCODE
 }
 Step "checking system toolchain (python3.11+, node20+, git)"
 if (-not (Have git))  { Step "installing git";    Winget-Install "Git.Git" }
@@ -135,6 +190,47 @@ function Install-Extras {
   }
 }
 
+# ---- 8a. interactive program menu -------------------------------------------
+# Sizes mirror KNOWN_PROGRAMS (openprogram/functions/_programs.py).
+$ProgramKeys = @("gui","research","wiki")
+$ProgramMenu = @(
+  "GUI harness      - autonomous desktop agent (downloads PyTorch: ~300 MB CPU / ~3 GB CUDA; ~1.5 GB on disk)",
+  "Research harness - topic -> submission-ready paper (repo < 1 MB, only depends on openprogram)",
+  "Wiki harness     - ingest sessions into a knowledge vault (repo < 1 MB; Jinja2 + PyYAML)"
+)
+# Parse "1,3" / "all" / "none" / "" -> string[] of keys, or $null on invalid.
+function Convert-ProgramChoice([string]$raw) {
+  $r = ($raw -replace '\s','').ToLower()
+  if ($r -eq '' -or $r -eq 'none') { return @() }
+  if ($r -eq 'all') { return $ProgramKeys }
+  $out = New-Object System.Collections.Generic.List[string]
+  foreach ($part in $r.Split(',', [StringSplitOptions]::RemoveEmptyEntries)) {
+    if ($ProgramKeys -contains $part) { $key = $part }
+    elseif ($part -match '^\d+$') {
+      $idx = [int]$part
+      if ($idx -lt 1 -or $idx -gt $ProgramKeys.Count) { return $null }
+      $key = $ProgramKeys[$idx-1]
+    } else { return $null }
+    if (-not $out.Contains($key)) { $out.Add($key) }
+  }
+  return $out.ToArray()
+}
+function Prompt-Programs {
+  if ($Programs) { return }                       # -Programs wins, no prompt
+  if ($Yes) { return }                            # -Yes: default (none)
+  if (-not [Environment]::UserInteractive) { return }
+  Write-Host "`nAgentic programs - pick which to install now (or later via the first-run wizard):"
+  for ($i = 0; $i -lt $ProgramMenu.Count; $i++) { Write-Host ("  {0}) {1}" -f ($i+1), $ProgramMenu[$i]) }
+  Write-Host "  all)  install every harness"
+  Write-Host '  none) skip (default - pick later, or: openprogram programs install <gui|research|wiki|all>)'
+  while ($true) {
+    $reply = Read-Host 'Choose (comma-separated numbers, "all", or "none") [none]'
+    $picked = Convert-ProgramChoice $reply
+    if ($null -ne $picked) { if ($picked.Count) { $script:Programs = $picked }; return }
+    Write-Host "  invalid selection: $reply"
+  }
+}
+
 # ---- 8. optional: agentic programs (-Programs) -------------------------------
 function Install-Programs {
   if (-not $Programs) { return }
@@ -152,6 +248,7 @@ Step "OpenProgram setup  (os=Windows, minimal=$Minimal)"
 Install-Web
 Install-DefaultExtras
 Install-Extras
+Prompt-Programs
 Install-Programs
 
 Write-Host "`nOpenProgram ready." -ForegroundColor Green
@@ -160,4 +257,3 @@ Write-Host "  Web UI:    openprogram web        # -> http://localhost:18100"
 Write-Host "  Programs:  pick which agentic programs to install in the first-run wizard"
 Write-Host "             (or any time: openprogram programs install <gui|research|wiki|all>,"
 Write-Host "              or non-interactively at install: .\scripts\install.ps1 -Programs all)"
-else { Write-Host "  Add a harness: clone it into openprogram\functions\agentics\ and run its installer"; Write-Host "                 (GUI agent: https://github.com/Fzkuji/GUI-Agent-Harness)" }

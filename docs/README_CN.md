@@ -51,8 +51,11 @@ OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：
 一键安装 host（网页 UI + 终端 UI + 浏览器/渠道）：
 
 ```bash
-git clone https://github.com/Fzkuji/OpenProgram && cd OpenProgram
-./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
+# macOS / Linux —— 一行命令，无需先 clone：
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh)"
+# 它会把 OpenProgram clone 到 ~/OpenProgram（可用 --target DIR 覆盖），装好 host，
+# 有终端时还会弹出菜单让你挑装哪些 agent 程序。普通 `curl -fsSL … | bash` 也行（脚本读 /dev/tty 交互）。
+# 已有 checkout：直接 ./scripts/install.sh    ·    Windows：.\scripts\install.ps1
 ```
 
 默认安装包含全部轻量内容——web UI、TUI、Research / Wiki 两个 agent 程序、浏览器工具和 channels；GUI agent 按需装（`openprogram programs install gui`，需下载 PyTorch）；`--minimal` 只装精简 host。安装时想非交互地一并装 agent 程序，加 `--programs <gui|research|wiki|all>`（PowerShell 用 `-Programs`）。provider SDK（anthropic / openai / google-genai）默认已装好。
