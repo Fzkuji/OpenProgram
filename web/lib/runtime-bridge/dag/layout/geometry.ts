@@ -17,17 +17,18 @@
  *     on it). Collapse a branch → its max tier shrinks → the lanes to its
  *     right slide back. Expand → they push out. Automatic, not fixed.
  *
- *   * Rows: backend ``_depth`` sets the base row (so fork siblings across
- *     lanes stay aligned at the fork point), but within one lane every
- *     visible node gets its own row — call-tree siblings that shared a
- *     depth are stacked instead of overlapping, so each is reachable and
- *     clickable.
+ *   * Rows: within a lane the visible call tree is walked in pre-order,
+ *     one row per node — a parent's whole subtree stacks before its next
+ *     sibling, so children of one parent form a vertical list in their
+ *     shared column (the transcript's indent model) and every node is
+ *     reachable and clickable. The lane's first node anchors at its
+ *     backend ``_depth`` row so fork siblings across lanes align.
  *
  * Returns a per-id ``{x, y}`` map plus the bounding box the caller uses
  * to size the SVG canvas.
  */
 
-import { type GNode, COL_W, ROW_H, PAD_X, PAD_Y } from "../types";
+import { type GNode, COL_W, ROW_H, PAD_X, PAD_Y, layoutParent } from "../types";
 
 export interface Geometry {
   pos: Record<string, { x: number; y: number }>;
@@ -68,31 +69,43 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
   const depthToRow: Record<number, number> = Object.create(null);
   depths.forEach((d, i) => { depthToRow[d] = i; });
 
-  // Walk each lane's nodes in (depth, created_at) order, assigning rows
-  // that never decrease and never repeat within the lane. A node inherits
-  // its depth-row unless that row is already taken in the lane, in which
-  // case it drops to the next free row (call-tree siblings stack).
+  // Walk each lane's call tree in PRE-ORDER, one row per visible node: a
+  // parent's whole subtree stacks before its next sibling, so direct
+  // children of one parent share the parent-tier+1 column and read as a
+  // vertical list (the transcript's indent model). Sorting by depth
+  // instead would interleave sibling subtrees into a diagonal staircase.
+  // The lane's first node anchors at its depth-row so fork siblings
+  // across lanes still align at the fork point.
   const rowOf: Record<string, number> = Object.create(null);
-  const byLane: Record<number, string[]> = Object.create(null);
+  const laneRoots: Record<number, string[]> = Object.create(null);
+  const kidsOf: Record<string, string[]> = Object.create(null);
   ids.forEach((id) => {
-    const lane = byId[id]._lane || 0;
-    (byLane[lane] = byLane[lane] || []).push(id);
+    const n = byId[id];
+    const lane = n._lane || 0;
+    const parent = layoutParent(n);
+    if (parent && byId[parent] && (byId[parent]._lane || 0) === lane) {
+      (kidsOf[parent] = kidsOf[parent] || []).push(id);
+    } else {
+      (laneRoots[lane] = laneRoots[lane] || []).push(id);
+    }
   });
-  Object.keys(byLane).forEach((laneKey) => {
-    const laneIds = byLane[Number(laneKey)];
-    laneIds.sort((a, b) => {
-      const da = typeof byId[a]._depth === "number" ? byId[a]._depth! : 0;
-      const dbb = typeof byId[b]._depth === "number" ? byId[b]._depth! : 0;
-      if (da !== dbb) return da - dbb;
-      return (byId[a].created_at || 0) - (byId[b].created_at || 0);
-    });
-    let nextFree = -1;
-    laneIds.forEach((id) => {
-      const d = typeof byId[id]._depth === "number" ? byId[id]._depth! : 0;
-      const base = depthToRow[d] ?? d;
-      const row = Math.max(base, nextFree);
-      rowOf[id] = row;
-      nextFree = row + 1;
+  const byCallOrder = (a: string, b: string): number =>
+    (byId[a].created_at || 0) - (byId[b].created_at || 0);
+  Object.keys(laneRoots).forEach((laneKey) => {
+    const roots = laneRoots[Number(laneKey)].slice().sort(byCallOrder);
+    let next = -1;
+    roots.forEach((rootId) => {
+      const d = typeof byId[rootId]._depth === "number" ? byId[rootId]._depth! : 0;
+      next = Math.max(next, depthToRow[d] ?? d);
+      // Iterative pre-order: pop, assign, push children reversed so the
+      // first child (by call order) is visited first.
+      const stack = [rootId];
+      while (stack.length) {
+        const id = stack.pop()!;
+        rowOf[id] = next++;
+        const kids = (kidsOf[id] || []).slice().sort(byCallOrder);
+        for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+      }
     });
   });
 
