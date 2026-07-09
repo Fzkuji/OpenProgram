@@ -90,6 +90,7 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
 
     from ..providers import _FETCH_MODELS_PROVIDERS, _default_api_for, _label
     from ..sources import enrich as _enrich_from_community
+    from ..storage import _is_custom_provider
 
     fetcher = _FETCHERS.get(provider_id)
     # Providers that speak the Anthropic Messages wire format (minimax,
@@ -100,6 +101,14 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
     if fetcher is None and _default_api_for(provider_id) == "anthropic-messages":
         fetcher = _fetch_anthropic
     if fetcher is None and provider_id in _FETCH_MODELS_PROVIDERS:
+        fetcher = _fetch_openai_compat
+    # Custom (user-added) providers: config-only OpenAI-compatible endpoints
+    # with no dir / models.dev entry. Their /models is the standard
+    # OpenAI-compatible list, so route them through the generic fetcher — it
+    # resolves base_url + key from config/AuthStore. On failure the generic
+    # fetcher returns {"error": ...}, which _browse_models degrades to empty
+    # (never caches a failure as success).
+    if fetcher is None and _is_custom_provider(provider_id):
         fetcher = _fetch_openai_compat
     if fetcher is None:
         return {"error": (

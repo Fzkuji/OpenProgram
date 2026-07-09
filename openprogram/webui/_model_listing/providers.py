@@ -195,6 +195,18 @@ def _env_var_for(provider_id: str) -> str | None:
     return md.get("env_var")
 
 
+def _synth_env_var(provider_id: str) -> str:
+    """Synthesised ``<ID>_API_KEY`` env-var LABEL for a custom provider with no
+    real env-var mapping (e.g. ``frontier-intelligence`` →
+    ``FRONTIER_INTELLIGENCE_API_KEY``). DISPLAY ONLY: runtime credentials
+    resolve from the AuthStore keyed by provider id, never from this env var.
+    Kept out of ``_env_var_for`` so it can't leak into ``env_vars_for`` and
+    flip ``_is_configured`` for community providers."""
+    slug = "".join(c if (c.isalnum() or c == "-") else "-" for c in provider_id)
+    slug = slug.strip("-").upper().replace("-", "_")
+    return f"{slug}_API_KEY" if slug else "API_KEY"
+
+
 def _static_apis_for(provider_id: str) -> set[str]:
     """The set of wire ``api`` ids the provider's OWN static-registry
     models declare (``{}`` for a community-only provider).
@@ -331,6 +343,14 @@ def _is_configured(provider_id: str) -> bool:
     from openprogram.providers.env_api_keys import env_vars_for, is_configured
     if env_vars_for(provider_id) or provider_id in ("amazon-bedrock", "google-vertex"):
         return is_configured(provider_id)
+    # Custom (user-added) provider: no env-var mapping and no key concept in the
+    # catalogue, so the community fall-through below would report it configured
+    # unconditionally. It's configured only with a real credential — a pool
+    # entry (the AuthStore check above) or its synthesised env var being set.
+    from .storage import _is_custom_provider
+    if _is_custom_provider(provider_id):
+        import os
+        return bool(os.environ.get(_synth_env_var(provider_id)))
     # Community / models.dev provider: a saved key would have hit the
     # AuthStore check at the top. Providers with no key concept at all
     # (no env-var name in the catalogue) are conservatively "configured"

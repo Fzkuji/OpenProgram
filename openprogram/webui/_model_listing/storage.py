@@ -318,6 +318,144 @@ def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Custom (user-added) providers
+# ---------------------------------------------------------------------------
+#
+# A "custom" provider is a config-only key the user creates from the settings
+# page for an OpenAI-compatible endpoint we don't ship a dir/models.dev entry
+# for. It's marked ``source: "custom"`` so the listing can surface it as a
+# tier-3 sidebar row and the delete route can refuse to touch anything else.
+# The runtime already builds Models from the spec rows under
+# ``providers.<pid>.models`` (enabled_models.py), so once the row exists the
+# provider works at runtime with no further code.
+
+import re as _re
+
+# kebab-case slug: lowercase alnum groups joined by single hyphens.
+_SLUG_RE = _re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _known_provider_ids() -> set[str]:
+    """Tier-1 (static registry) + tier-2 (models.dev catalogue) provider ids."""
+    from openprogram.providers import get_providers
+    known = set(get_providers())
+    try:
+        from .sources import models_dev
+        known |= {p.get("id") for p in models_dev.list_providers() if p.get("id")}
+    except Exception:
+        pass
+    return known
+
+
+def _is_known_provider(provider_id: str) -> bool:
+    return provider_id in _known_provider_ids()
+
+
+def create_custom_provider(
+    provider_id: str, label: str, base_url: str
+) -> dict[str, Any]:
+    """Create a config-only custom provider. Returns ``{ok, ...}``.
+
+    Validates the id (kebab-case slug; must not collide with an existing
+    tier-1/tier-2 provider id or a known alias) then writes the marker config
+    ``providers.<id> = {enabled, source:"custom", label, base_url, models:[]}``
+    through ``_write_providers_cfg`` (which reloads the runtime registry).
+    """
+    from openprogram.auth.aliases import resolve as _resolve_alias
+    from .providers import _prettify
+
+    pid = (provider_id or "").strip().lower()
+    label = (label or "").strip()
+    base_url = (base_url or "").strip()
+    if not pid or not _SLUG_RE.match(pid):
+        return {"ok": False, "error": "id must be a kebab-case slug (a-z, 0-9, hyphens)"}
+    if not base_url:
+        return {"ok": False, "error": "base_url is required"}
+    # Collision: an existing provider id, or an id that's a known alias of one.
+    if _resolve_alias(pid) != pid:
+        return {"ok": False, "error": f"{pid!r} is a reserved alias — pick another id"}
+    if pid in _known_provider_ids():
+        return {"ok": False, "error": f"provider {pid!r} already exists"}
+    with _cache_lock:
+        cfg = _read_providers_cfg()
+        if pid in cfg and cfg[pid].get("source") != "custom":
+            return {"ok": False, "error": f"provider {pid!r} already exists"}
+        cfg[pid] = {
+            "enabled": True,
+            "source": "custom",
+            "label": label or _prettify(pid),
+            "base_url": base_url,
+            "models": [],
+        }
+        _write_providers_cfg(cfg)
+    return {"ok": True, "id": pid, "label": cfg[pid]["label"], "base_url": base_url}
+
+
+def delete_custom_provider(provider_id: str) -> dict[str, Any]:
+    """Delete a custom provider's config key. Refuses non-custom providers.
+
+    Leaves the AuthStore credential pool on disk (don't silently drop the
+    user's key) — only the config marker + spec rows go.
+    """
+    pid = (provider_id or "").strip().lower()
+    with _cache_lock:
+        cfg = _read_providers_cfg()
+        pcfg = cfg.get(pid)
+        if not isinstance(pcfg, dict) or pcfg.get("source") != "custom":
+            return {"ok": False, "error": f"{pid!r} is not a custom provider"}
+        del cfg[pid]
+        _write_providers_cfg(cfg)
+    return {"ok": True, "id": pid, "removed": True}
+
+
+def _is_custom_provider(provider_id: str) -> bool:
+    """True when ``provider_id`` is a user-added custom provider
+    (``providers.<pid>.source == "custom"``)."""
+    pcfg = _read_providers_cfg().get(provider_id) or {}
+    return isinstance(pcfg, dict) and pcfg.get("source") == "custom"
+
+
+def add_manual_model(provider_id: str, model_id: str, name: str | None = None) -> dict[str, Any]:
+    """Add a manually-typed model id as an ENABLED spec row for a provider.
+
+    For custom / dir-less providers whose ``/models`` endpoint is unavailable,
+    the user types a model id by hand. This writes a minimal spec row into
+    ``providers.<pid>.models`` (the single source of truth the runtime reads)
+    tagged ``source: "manual"``, with ``api`` and ``base_url`` derived from the
+    provider config, so the model is immediately usable in chat after reload.
+
+    Idempotent by id (upsert). Returns ``{ok, ...}``.
+    """
+    from .providers import _default_api_for
+    mid = (model_id or "").strip()
+    if not mid:
+        return {"ok": False, "error": "model id is required"}
+    with _cache_lock:
+        cfg = _read_providers_cfg()
+        # Reject an unknown provider id: creating a row for one would write an
+        # ENABLED_MODELS entry with an empty base_url that can't dispatch. Known
+        # = a tier-1/tier-2 provider (static registry or models.dev catalogue),
+        # or an existing custom config key.
+        if not _is_known_provider(provider_id) and (
+            cfg.get(provider_id, {}).get("source") != "custom"
+        ):
+            return {"ok": False, "error": f"unknown provider {provider_id!r}"}
+        pcfg = cfg.setdefault(provider_id, {})
+        api = pcfg.get("api") or _default_api_for(provider_id) or "openai-completions"
+        base_url = pcfg.get("base_url") or _resolve_base_url(provider_id) or ""
+        spec = {
+            "id": mid,
+            "name": (name or "").strip() or mid,
+            "api": api,
+            "base_url": base_url,
+            "source": "manual",
+        }
+        _upsert_spec_row(pcfg, spec)
+        _write_providers_cfg(cfg)
+    return {"ok": True, "provider": provider_id, "model": mid}
+
+
+# ---------------------------------------------------------------------------
 # Per-provider config (base URL override, use_responses_api toggle)
 # ---------------------------------------------------------------------------
 

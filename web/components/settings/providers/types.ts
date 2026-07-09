@@ -15,6 +15,9 @@ export interface Provider {
   base_url?: string;
   supports_fetch?: boolean;
   cli_binary?: string;
+  /** User-added (tier-3) provider — a config-only OpenAI-compatible endpoint.
+   *  Drives the "custom" badge + delete action + manual model-add input. */
+  custom?: boolean;
   /**
    * Provider-specific setup instructions surfaced in the detail
    * panel. Backticked spans render as inline <code>; lines starting

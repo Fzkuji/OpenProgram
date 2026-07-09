@@ -63,6 +63,9 @@ from .listing import (
 # Public mutators ---------------------------------------------------
 from .storage import (
     add_custom_models,
+    add_manual_model,
+    create_custom_provider,
+    delete_custom_provider,
     get_provider_config,
     remove_custom_model,
     replace_fetched_models,
@@ -111,6 +114,9 @@ __all__ = [
     "list_enabled_models",
     # Public mutators
     "add_custom_models",
+    "add_manual_model",
+    "create_custom_provider",
+    "delete_custom_provider",
     "replace_fetched_models",
     "remove_custom_model",
     "get_provider_config",
