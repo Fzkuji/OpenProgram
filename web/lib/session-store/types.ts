@@ -150,7 +150,7 @@ export interface ChatMsg {
   /** Structured error taxonomy (on a failed turn) — categorical reason,
    *  whether it's retryable, and a server retry hint. Lets the bubble
    *  render an actionable error. See
-   *  docs/design/providers/error-taxonomy-propagation.md. */
+   *  docs/design/providers/reliability/error-taxonomy-propagation.md. */
   errorReason?: string;
   errorRetryable?: boolean;
   errorRetryAfterS?: number;

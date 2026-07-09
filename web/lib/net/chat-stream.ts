@@ -65,7 +65,7 @@ interface ChatResponseData {
   /** Structured error taxonomy on a `type:"error"` response — lets the
    *  bubble show a categorized, actionable error (rate-limit retry hint vs
    *  fatal auth/context) instead of an opaque string. See
-   *  docs/design/providers/error-taxonomy-propagation.md. */
+   *  docs/design/providers/reliability/error-taxonomy-propagation.md. */
   reason?: string;
   retryable?: boolean;
   retry_after_s?: number;

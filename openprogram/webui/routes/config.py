@@ -15,7 +15,7 @@ def _validate_api_key(env_var: str, value: str) -> str | None:
     branches that (a) only covered OpenAI/Anthropic/Google and silently no-op'd
     ~17 others, and (b) spent a real completion to validate. Now every
     OpenAI-compatible / OpenRouter / Anthropic / Google key is checked without
-    invoking a model. See docs/design/providers/credential-validation-unification.md.
+    invoking a model. See docs/design/providers/auth/credential-validation-unification.md.
     """
     try:
         from openprogram.webui._model_listing import (

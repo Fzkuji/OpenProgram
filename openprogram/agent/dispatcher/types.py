@@ -124,7 +124,7 @@ class TurnResult:
     error: Optional[str] = None
     # Structured error taxonomy for a failed turn, so the webui can show an
     # actionable error (retryable rate-limit vs fatal auth/context) instead of a
-    # string. See docs/design/providers/error-taxonomy-propagation.md.
+    # string. See docs/design/providers/reliability/error-taxonomy-propagation.md.
     error_reason: Optional[str] = None
     error_retryable: Optional[bool] = None
     error_retry_after_s: Optional[float] = None

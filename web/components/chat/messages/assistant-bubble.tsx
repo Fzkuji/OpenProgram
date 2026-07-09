@@ -27,7 +27,7 @@ import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
 
 /** Categorized, actionable headline for a failed turn, by error reason
- *  (see docs/design/providers/error-taxonomy-propagation.md). Returns null
+ *  (see docs/design/providers/reliability/error-taxonomy-propagation.md). Returns null
  *  for reasons with no copy better than the raw message. */
 function errorHeadline(
   msg: ChatMsg,

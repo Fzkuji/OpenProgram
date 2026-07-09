@@ -486,7 +486,7 @@ class Agent:
             err_text = f"{type(err).__name__}: {err}" if str(err) else type(err).__name__
             # Structured taxonomy so surfaces above the provider layer can tell
             # a retryable rate-limit from a fatal auth/context failure instead of
-            # just a string. See docs/design/providers/error-taxonomy-propagation.md.
+            # just a string. See docs/design/providers/reliability/error-taxonomy-propagation.md.
             err_reason = err_retryable = err_retry_after_s = None
             if not is_aborted:
                 try:

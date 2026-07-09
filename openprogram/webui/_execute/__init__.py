@@ -675,7 +675,7 @@ def execute_in_context(
         error_content = f"Error: {e}\n\n{traceback.format_exc()}"
         # Structured taxonomy so the client can tell a retryable rate-limit from
         # a fatal auth/context failure (see
-        # docs/design/providers/error-taxonomy-propagation.md).
+        # docs/design/providers/reliability/error-taxonomy-propagation.md).
         try:
             from openprogram.providers.utils.errors import taxonomy_fields
             err_reason, err_retryable, err_retry_after_s = taxonomy_fields(e)

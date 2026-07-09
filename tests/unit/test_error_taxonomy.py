@@ -1,6 +1,6 @@
 """``errors.taxonomy_fields`` + AssistantMessage error fields — the backend
 half of error-taxonomy propagation
-(docs/design/providers/error-taxonomy-propagation.md).
+(docs/design/providers/reliability/error-taxonomy-propagation.md).
 
 The agent error boundary calls taxonomy_fields(exc) to populate the structured
 error on the AssistantMessage, so surfaces above can tell a retryable
