@@ -235,9 +235,20 @@ export function MessageActions({
     ws.addEventListener("message", onMsg);
   }
 
-  function checkout(targetId: string | undefined) {
+  function checkout(targetId: string | undefined, dir: -1 | 1) {
     if (!sessionId || !targetId || busy) return;
     setBusy(true);
+    // 0ms feedback (interaction-feedback policy): advance the < N/M >
+    // label to the target version immediately so the click registers,
+    // rather than waiting the checkout POST + load_session round-trip that
+    // swaps the whole transcript. The reload rebuilds this row from the
+    // target branch (its content backfills); on failure we revert the
+    // label + re-enable the nav.
+    const store = useSessionStore.getState();
+    const prevIdx = msg.siblingIndex;
+    store.updateMessage(sessionId, msg.id, {
+      siblingIndex: (msg.siblingIndex ?? 0) + dir,
+    });
     postJson("/api/chat/checkout", { session_id: sessionId, msg_id: targetId })
       .then(() => {
         (
@@ -247,6 +258,12 @@ export function MessageActions({
       })
       .catch((err) => {
         console.error("[message-actions] checkout failed:", err);
+        if (useSessionStore.getState().messagesById[msg.id]) {
+          useSessionStore
+            .getState()
+            .updateMessage(sessionId, msg.id, { siblingIndex: prevIdx });
+        }
+        showToast(tr("Version switch failed.", "版本切换失败。"), { tone: "error" });
         setBusy(false);
       });
   }
@@ -307,7 +324,7 @@ export function MessageActions({
             data-nav="prev"
             aria-label={tr("Previous version", "上一个版本")}
             disabled={busy || idx <= 1}
-            onClick={() => checkout(msg.prevSiblingId)}
+            onClick={() => checkout(msg.prevSiblingId, -1)}
           >
             {SVG.chevL}
           </button>
@@ -320,7 +337,7 @@ export function MessageActions({
             data-nav="next"
             aria-label={tr("Next version", "下一个版本")}
             disabled={busy || idx >= total}
-            onClick={() => checkout(msg.nextSiblingId)}
+            onClick={() => checkout(msg.nextSiblingId, 1)}
           >
             {SVG.chevR}
           </button>

@@ -17,6 +17,8 @@ import { useEffect, useRef } from "react";
 import { formatUsageFooterLabel } from "@/lib/format-utils/format";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { showToast } from "@/lib/format-utils/toast";
+import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import { ExecutionDag } from "./execution-dag/index";
 import { useMarkdownReady } from "./markdown";
@@ -34,8 +36,42 @@ function wsSend(payload: unknown): boolean {
 
 /** Move HEAD to a sibling version, then reload so the transcript shows
  *  only that branch's run. Same op the chat-message ``< N/M >`` nav uses
- *  (POST /api/chat/checkout) — a pure display switch, nothing re-runs. */
-function checkoutSibling(sessionId: string, targetId: string): void {
+ *  (POST /api/chat/checkout) — a pure display switch, nothing re-runs.
+ *
+ *  Optimistic (interaction-feedback policy): flip the CURRENT card into a
+ *  spinner body + the target sibling index at 0ms so the click registers
+ *  instantly. The checkout POST + ``load_session`` replaces the transcript
+ *  (~1 round-trip) with the target branch's real run; that reload wipes this
+ *  card's id from the store, which is our "settled" signal. On timeout we
+ *  restore the pre-click card and toast. */
+function checkoutSibling(
+  sessionId: string,
+  targetId: string,
+  currentMsg: ChatMsg,
+  targetIndex: number,
+): void {
+  const store = useSessionStore.getState();
+  const id = currentMsg.id;
+  const snapshot = store.messagesById[id];
+  optimisticAction(
+    {
+      apply: () => {
+        store.updateMessage(sessionId, id, {
+          status: "running",
+          contextTree: undefined,
+          siblingIndex: targetIndex,
+        });
+      },
+      // The load_session reload rebuilds the transcript with new ids, so
+      // this card's id is gone from the store once the switch lands.
+      settled: () => !useSessionStore.getState().messagesById[id],
+      revert: () => {
+        if (snapshot) useSessionStore.getState().updateMessage(sessionId, id, snapshot);
+      },
+      onTimeoutMessage: "Version switch timed out — reverted.",
+    },
+    showToast,
+  );
   fetch("/api/chat/checkout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -43,7 +79,7 @@ function checkoutSibling(sessionId: string, targetId: string): void {
   })
     .then(() => wsSend({ action: "load_session", session_id: sessionId }))
     .catch(() => {
-      /* ignore */
+      /* revert is handled by the optimisticAction timeout */
     });
 }
 
@@ -139,7 +175,7 @@ export function RuntimeBlock({
             onClick={() =>
               sessionId &&
               msg.prevSiblingId &&
-              checkoutSibling(sessionId, msg.prevSiblingId)
+              checkoutSibling(sessionId, msg.prevSiblingId, msg, siblingIdx - 1)
             }
           >
             {"◀"}
@@ -156,7 +192,7 @@ export function RuntimeBlock({
             onClick={() =>
               sessionId &&
               msg.nextSiblingId &&
-              checkoutSibling(sessionId, msg.nextSiblingId)
+              checkoutSibling(sessionId, msg.nextSiblingId, msg, siblingIdx + 1)
             }
           >
             {"▶"}
@@ -175,6 +211,43 @@ export function RuntimeBlock({
             // re-run appends a fresh code node (new run, not an overwrite)
             // and the normal stream flow renders it. No DOM surgery.
             if (!sessionId) return;
+            // 0ms feedback (interaction-feedback policy): flip THIS card
+            // into the new-version pending state right now — spinner body
+            // (clear the tree) + "running", and optimistically advance the
+            // switcher to N+1/N+1 since the retry forks a fresh sibling.
+            // The reload on running_task_clear (armed below) backfills the
+            // real new run and rebuilds the transcript, which drops this
+            // card's id from the store — our "settled" signal. A stuck
+            // retry reverts + toasts after the timeout.
+            const store = useSessionStore.getState();
+            const rid = msg.id;
+            const snapshot = store.messagesById[rid];
+            const total = (msg.siblingTotal ?? 0) + 1;
+            optimisticAction(
+              {
+                apply: () => {
+                  store.updateMessage(sessionId, rid, {
+                    status: "running",
+                    contextTree: undefined,
+                    siblingIndex: total,
+                    siblingTotal: total,
+                  });
+                },
+                settled: () => !useSessionStore.getState().messagesById[rid],
+                revert: () => {
+                  if (snapshot) {
+                    useSessionStore
+                      .getState()
+                      .updateMessage(sessionId, rid, snapshot);
+                  }
+                },
+                onTimeoutMessage: text(
+                  "Retry timed out — reverted.",
+                  "重试超时——已还原。",
+                ),
+              },
+              showToast,
+            );
             // The fork lands (and HEAD moves) only when the re-run
             // finishes, so ask for a one-shot transcript reload on this
             // session's next running_task_clear — the reloaded branch

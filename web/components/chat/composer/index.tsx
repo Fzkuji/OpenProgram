@@ -948,6 +948,35 @@ export function Composer() {
     w.setWelcomeVisible?.(false);
     w.setRunning?.(true);
 
+    // 0ms feedback (interaction-feedback policy): drop a client-side
+    // pending runtime card into the transcript right now so the user sees
+    // the function start instead of a blank gap until the ~0.13s hydrate.
+    // The dispatcher pre-creates the run's node and a load_session
+    // hydrate (chat_ack {function_run:true}) replaces the whole transcript
+    // — that setMessages wipes this placeholder's id, so the real card
+    // takes its place with no flicker. Only when we already have a session
+    // to key it under; a brand-new session's card lands via the post-POST
+    // navigate + hydrate.
+    let placeholderId: string | null = null;
+    if (currentSessionId) {
+      const store = useSessionStore.getState();
+      placeholderId = `__optimistic_fn__:${fn.name}:${Date.now()}`;
+      store.appendMessage(currentSessionId, {
+        id: placeholderId,
+        role: "assistant",
+        content: "",
+        display: "runtime",
+        function: fn.name,
+        status: "running",
+      });
+      store.setRunningTaskFor(currentSessionId, {
+        session_id: currentSessionId,
+        msg_id: placeholderId,
+        func_name: fn.name,
+        started_at: Date.now() / 1000,
+      });
+    }
+
     void fetch(`/api/function/${encodeURIComponent(fn.name)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -980,12 +1009,23 @@ export function Composer() {
       .catch((err) => {
         console.error("function call failed:", err);
         w.setRunning?.(false);
+        // Roll back the optimistic pending card + running task — the
+        // dispatch never landed, so leaving them would show a card
+        // spinning forever with no backing run.
+        if (placeholderId && currentSessionId) {
+          const store = useSessionStore.getState();
+          store.truncateFrom(currentSessionId, placeholderId);
+          store.setRunningTaskFor(currentSessionId, null);
+        }
         // Surface the reason to the user. The backend now returns a
         // structured 400 when a non-agentic tool is invoked via
         // fn-form, so without this the only feedback was a silent
         // console line — the chat panel showed nothing.
         const msg = err instanceof Error ? err.message : String(err);
-        alert(`Function call failed: ${msg}`);
+        showToast(
+          text(`Function call failed: ${msg}`, `函数调用失败：${msg}`),
+          { tone: "error" },
+        );
       });
     handleFnFormClose();
   }, [

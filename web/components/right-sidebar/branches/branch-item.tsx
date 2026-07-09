@@ -42,6 +42,12 @@ export function BranchItem({
 }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
+  // 0ms feedback (interaction-feedback policy): highlight this row as the
+  // active branch the moment it's clicked, before the checkout WS +
+  // load_session reload flips ``branch.active`` for real (~1 round-trip).
+  // Cleared once the reload lands (real active arrives) or after a timeout
+  // if the checkout never took.
+  const [pendingActive, setPendingActive] = useState(false);
   const [value, setValue] = useState(branch.name || "");
   const inputRef = useRef<HTMLInputElement>(null);
   // Animated rename/delete glyphs driven by the WHOLE action button's
@@ -55,6 +61,13 @@ export function BranchItem({
       inputRef.current?.select();
     }
   }, [editing]);
+
+  // Drop the optimistic highlight once the server confirms this row is the
+  // real active branch (reload landed), or if the parent switched the
+  // active branch elsewhere.
+  useEffect(() => {
+    if (branch.active) setPendingActive(false);
+  }, [branch.active]);
 
   const isPending = branch.head_msg_id.startsWith("__pending_task__:");
 
@@ -79,6 +92,10 @@ export function BranchItem({
 
   function checkout() {
     if (editing || branch.active || isPending) return;
+    setPendingActive(true);
+    // Self-clear if the checkout never resolves (row still not active after
+    // the round-trip window) so a stuck row doesn't lie about being active.
+    setTimeout(() => setPendingActive(false), 10_000);
     wsSend({
       action: "checkout_branch",
       session_id: sessionId,
@@ -101,8 +118,12 @@ export function BranchItem({
 
   if (collapsed && !branch.active) return null;
 
+  // Real active supersedes the optimistic flag — once the reload lands and
+  // this row is genuinely the HEAD, drop the pending highlight.
+  const effectiveActive = branch.active || pendingActive;
+
   const cls = "branch-item"
-    + (branch.active ? " active" : "")
+    + (effectiveActive ? " active" : "")
     + (selected ? " selected" : "")
     + (isBase ? " base" : "")
     + (running ? " is-running" : "")
