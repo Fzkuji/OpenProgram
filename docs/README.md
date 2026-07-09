@@ -52,9 +52,9 @@ OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：
 
 ```bash
 # macOS / Linux —— 一行命令，无需先 clone：
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh)"
+curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
 # 它会把 OpenProgram clone 到 ~/OpenProgram（可用 --target DIR 覆盖），装好 host，
-# 有终端时还会弹出菜单让你挑装哪些 agent 程序。普通 `curl -fsSL … | bash` 也行（脚本读 /dev/tty 交互）。
+# 有终端时还会弹出菜单让你挑装哪些 agent 程序（管道安装也能交互，脚本从 /dev/tty 读输入）。
 # 已有 checkout：直接 ./scripts/install.sh    ·    Windows：.\scripts\install.ps1
 ```
 

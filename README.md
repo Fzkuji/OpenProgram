@@ -77,9 +77,9 @@ One **process-wide event bus** is the substrate under everything: the agent loop
 
 **macOS / Linux** — one command, no clone needed:
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh)"
+curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
 ```
-It clones OpenProgram to `~/OpenProgram` (override with `--target DIR`), installs the host, then — when a terminal is attached — offers a menu to pick which agentic programs to install. Plain `curl -fsSL … | bash` also works (the installer reads `/dev/tty` for its prompts). From a checkout: `./scripts/install.sh`.
+It clones OpenProgram to `~/OpenProgram` (override with `--target DIR`), installs the host, then — when a terminal is attached — offers a menu to pick which agentic programs to install. `bash -c "$(curl -fsSL …)"` works too. From a checkout: `./scripts/install.sh`.
 
 **Windows (PowerShell)**
 ```powershell
