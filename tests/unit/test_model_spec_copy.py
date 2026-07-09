@@ -297,3 +297,93 @@ def test_repair_pass_runs_through_run_once(monkeypatch):
     assert "flood-1" not in ids and "flood-2" not in ids
     # marker bumped so it never runs again
     assert config["spec_migration_version"] == st._SPEC_MIGRATION_VERSION
+
+
+# --- Modality / cost key normalization (input_modalities → input, v3) --------
+
+
+@pytest.fixture
+def stub_listing_modev(monkeypatch):
+    """Provider "modev" with one model carrying models.dev FLAT display keys
+    (input_modalities incl. an unsupported "pdf", flat *_cost) but no schema
+    input/cost — the exact shape a live browse row has."""
+    row = {
+        "id": "mm-1",
+        "name": "MM One",
+        "api": "openai-completions",
+        "base_url": "https://modev.example/v1",
+        "input_modalities": ["text", "image", "pdf"],
+        "output_modalities": ["text"],
+        "input_cost": 5.0,
+        "output_cost": 30.0,
+        "cache_read_cost": 0.5,
+        "enabled": False,
+    }
+
+    def _list(provider_id):
+        return [dict(row)] if provider_id == "modev" else []
+
+    import openprogram.webui._model_listing.listing as listing
+    monkeypatch.setattr(listing, "list_models_for_provider", _list)
+    return row
+
+
+def test_enable_normalizes_modalities_and_cost_to_schema(mem_cfg, stub_listing_modev):
+    """Enabling a models.dev-style row writes a spec with schema `input`
+    (pdf filtered out) and nested `cost` the runtime reads."""
+    from openprogram.providers.enabled_models import _build_model_from_row
+
+    tg.toggle_model("modev", "mm-1", True)
+    spec = mem_cfg["modev"]["models"][0]
+    assert spec["input"] == ["text", "image"]  # "pdf" filtered (not a Model Literal)
+    assert spec["cost"]["input"] == 5.0 and spec["cost"]["output"] == 30.0
+
+    m = _build_model_from_row(spec, "modev", {})
+    assert "image" in m.input
+    assert m.cost.input == 5.0
+
+
+def test_v3_repair_converts_legacy_modality_cost_row():
+    """A pre-v3 row with only flat keys → input/cost added, flat keys dropped."""
+    providers = {
+        "p": {
+            "enabled": True,
+            "models": [{
+                "id": "legacy-1", "name": "Legacy", "api": "openai-completions",
+                "base_url": "https://x/v1",
+                "input_modalities": ["text", "image", "pdf"],
+                "output_modalities": ["text"],
+                "input_cost": 2.0, "output_cost": 8.0,
+            }],
+        }
+    }
+    import openprogram.webui.server as server
+    _orig = server._load_config
+    server._load_config = lambda: {"spec_migration_version": 0}
+    try:
+        repaired = st._repair_modality_cost_specs(providers)
+    finally:
+        server._load_config = _orig
+    assert repaired is True
+    row = providers["p"]["models"][0]
+    assert row["input"] == ["text", "image"]
+    assert row["cost"] == {"input": 2.0, "output": 8.0, "cache_read": 0.0, "cache_write": 0.0}
+    # flat display keys dropped
+    assert "input_modalities" not in row and "input_cost" not in row
+    assert "output_modalities" not in row
+
+
+def test_reader_tolerates_legacy_row_without_migration():
+    """Pure-CLI config that never hit the webui migration: _build_model_from_row
+    still maps input_modalities → input (image resolvable)."""
+    from openprogram.providers.enabled_models import _build_model_from_row
+
+    row = {
+        "id": "cli-1", "name": "CLI", "api": "openai-completions",
+        "base_url": "https://x/v1",
+        "input_modalities": ["text", "image", "pdf"],
+        "input_cost": 1.5,
+    }
+    m = _build_model_from_row(row, "p", {})
+    assert "image" in m.input and "pdf" not in m.input
+    assert m.cost.input == 1.5

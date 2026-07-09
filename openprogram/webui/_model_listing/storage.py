@@ -81,23 +81,65 @@ def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
 # existing configs (read-side compat).
 # ---------------------------------------------------------------------------
 
+# Model-schema Literal for input modalities — anything outside this set (e.g.
+# models.dev's "pdf") is not a real ``Model.input`` value and would fail schema
+# validation, so it's filtered out when normalizing.
+_MODEL_INPUT_MODALITIES = frozenset({"text", "image", "video", "audio"})
+
+
+def _normalize_spec_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Add Model-schema keys (``input``, nested ``cost``) to a display-shape
+    spec row, derived from the models.dev flat keys the UI emits.
+
+    A spec row is BOTH the UI-display row (flat ``input_modalities``/
+    ``input_cost``/… keys the settings table renders) AND the runtime
+    ``Model`` shape (nested ``cost``, ``input`` list). Those diverge:
+    ``Model.model_validate`` ignores unknown keys, so a row carrying only the
+    flat display keys validates as text-only with zero cost. This bridges the
+    two by stamping the schema keys the runtime reads. Flat display keys stay
+    (Pydantic ignores them). Idempotent — an already-``input`` row is untouched.
+    Returns a shallow copy; never mutates the input.
+    """
+    out = dict(row)
+    if "input" not in out and "input_modalities" in out:
+        mods = [m for m in (out.get("input_modalities") or []) if m in _MODEL_INPUT_MODALITIES]
+        out["input"] = mods or ["text"]
+    if "cost" not in out and any(
+        k in out for k in ("input_cost", "output_cost", "cache_read_cost", "cache_write_cost")
+    ):
+        out["cost"] = {
+            "input": float(out.get("input_cost", 0) or 0),
+            "output": float(out.get("output_cost", 0) or 0),
+            "cache_read": float(out.get("cache_read_cost", 0) or 0),
+            "cache_write": float(out.get("cache_write_cost", 0) or 0),
+        }
+    return out
+
+
 def spec_row_for(provider_id: str, model_id: str) -> dict[str, Any] | None:
     """Full spec row for one model, as ``providers.<p>.models`` stores it.
 
-    Copied verbatim from ``list_models_for_provider`` (the canonical row
-    shape, nested cost included) with the UI-only ``enabled`` flag stripped.
-    Returns ``None`` if the provider/listing can't resolve the id.
+    Copied from ``list_models_for_provider`` (the canonical row shape) with the
+    UI-only ``enabled`` flag stripped, then normalized so the row carries the
+    Model-schema keys (``input``, nested ``cost``) the runtime reads — not just
+    the models.dev flat display keys. Returns ``None`` if the provider/listing
+    can't resolve the id.
     """
     # Lazy import: listing imports storage, so a module-level import cycles.
     from .listing import list_models_for_provider
     for row in list_models_for_provider(provider_id):
         if row.get("id") == model_id:
             spec = {k: v for k, v in row.items() if k != "enabled"}
-            return spec
+            return _normalize_spec_row(spec)
     return None
 
 
 def _upsert_spec_row(pcfg: dict[str, Any], spec: dict[str, Any]) -> None:
+    # Every persisted spec row routes through here (toggle enable, login-enable
+    # defaults, manual add, migration backfill). Normalize once at the choke
+    # point so a row built from models.dev flat keys carries the Model-schema
+    # ``input``/``cost`` the runtime reads. Idempotent for already-normalized rows.
+    spec = _normalize_spec_row(spec)
     rows = pcfg.setdefault("models", [])
     mid = spec.get("id")
     for i, r in enumerate(rows):
@@ -130,7 +172,7 @@ def _reset_spec_migration() -> None:
 # Versioned second pass (config marker ``spec_migration_version``). Bump this
 # whenever a new one-shot repair of already-migrated configs is needed; the
 # pass runs once per machine (persisted marker), not once per process.
-_SPEC_MIGRATION_VERSION = 2
+_SPEC_MIGRATION_VERSION = 3
 
 
 def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
@@ -141,6 +183,7 @@ def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
     try:
         changed = _migrate_specs(providers)
         repaired = _repair_over_merged_specs(providers)
+        repaired = _repair_modality_cost_specs(providers) or repaired
     finally:
         _spec_migration_running = False
         _spec_migration_done = True
@@ -209,6 +252,46 @@ def _repair_over_merged_specs(providers: dict[str, dict[str, Any]]) -> bool:
         if len(kept) != len(rows):
             pcfg["models"] = kept
             repaired = True
+    return repaired
+
+
+def _repair_modality_cost_specs(providers: dict[str, dict[str, Any]]) -> bool:
+    """v3 one-shot repair: rewrite pre-v3 spec rows that stored modalities/cost
+    under models.dev flat keys the ``Model`` schema doesn't read.
+
+    Rows written before ``_normalize_spec_row`` existed carry ``input_modalities``
+    but no ``input`` (so the runtime saw text-only → image chats failed the
+    modality validator) and flat ``input_cost``/``output_cost``/… but no nested
+    ``cost`` (so cost read as zero). This converts each such row to the schema
+    shape, filtering ``input`` to the allowed Literal values (drops "pdf"), and
+    DROPS the now-redundant flat keys so the persisted row is clean.
+
+    Runs once per machine, guarded by the persisted ``spec_migration_version``
+    marker (shared with the other v3 pass). Returns True if it rewrote anything.
+    """
+    if _spec_migration_version() >= _SPEC_MIGRATION_VERSION:
+        return False
+    _FLAT_COST_KEYS = ("input_cost", "output_cost", "cache_read_cost", "cache_write_cost")
+    repaired = False
+    for pcfg in providers.values():
+        if not isinstance(pcfg, dict):
+            continue
+        for row in (pcfg.get("models") or []):
+            if not isinstance(row, dict):
+                continue
+            touched = False
+            norm = _normalize_spec_row(row)  # adds input/cost from the flat keys
+            for k in ("input", "cost"):
+                if k not in row and k in norm:
+                    row[k] = norm[k]
+                    touched = True
+            # Drop the now-redundant flat display keys so the row is the clean
+            # schema shape. (The settings table rebuilds display fields live
+            # from browse rows; it never reads these off the persisted spec.)
+            for k in ("input_modalities", "output_modalities", *_FLAT_COST_KEYS):
+                if row.pop(k, None) is not None:
+                    touched = True
+            repaired = repaired or touched
     return repaired
 
 
