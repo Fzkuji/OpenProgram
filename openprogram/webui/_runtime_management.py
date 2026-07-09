@@ -186,6 +186,15 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     """
     from openprogram.providers.registry import create_runtime, PROVIDERS
 
+    # Persisted session meta stores ``runtime.model`` verbatim, which for
+    # CLI/OAuth runtimes is the PREFIXED id (``openai-codex:gpt-5.5``). The
+    # restore path (server.py) feeds that back as ``model=`` here. Strip a
+    # leading ``<provider>:`` so it's treated as the bare id it names, not a
+    # new model — otherwise it misses the registry and dynamic registration
+    # mints a ghost row (id ``openai-codex:gpt-5.5`` → "GPT-openai Codex:5.5").
+    while isinstance(model, str) and model.startswith(f"{provider}:"):
+        model = model.split(":", 1)[1]
+
     # If caller didn't pin a model, prefer user config (default_model or
     # the first entry in enabled_models) over the hardcoded PROVIDERS
     # default. Keeps fresh installs on the hardcoded fallback while
