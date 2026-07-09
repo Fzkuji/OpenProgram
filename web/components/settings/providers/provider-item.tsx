@@ -27,6 +27,23 @@ export function ProviderItem({
     >
       <ProviderIcon id={p.id} size={20} />
       <span className={styles.providerLabel}>{p.label}</span>
+      {p.custom && (
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+            padding: "1px 5px",
+            borderRadius: 4,
+            border: "1px solid var(--border, #3a3a3a)",
+            color: "var(--text-muted)",
+          }}
+          title={text("Custom provider you added", "你添加的自定义 Provider")}
+        >
+          {text("Custom", "自定义")}
+        </span>
+      )}
       <span
         className={
           styles.providerDot +

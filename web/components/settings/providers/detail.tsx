@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 
 import { ProviderIcon } from "../provider-icon";
@@ -24,12 +26,27 @@ export function Detail({
   provider,
   onToggle,
   onChanged,
+  onDeleted,
 }: {
   provider: Provider;
   onToggle: (enabled: boolean) => void;
   onChanged: () => void;
+  onDeleted?: () => void;
 }) {
   const { text } = useTranslation();
+
+  async function deleteProvider() {
+    if (!window.confirm(
+      text(
+        `Delete custom provider "${provider.label}"? Its models are removed; any saved API key is kept.`,
+        `删除自定义 Provider “${provider.label}”？其模型将被移除；已保存的 API key 会保留。`,
+      ),
+    )) return;
+    try {
+      await fetch(`/api/providers/custom/${encodeURIComponent(provider.id)}`, { method: "DELETE" });
+    } catch { /* ignore */ }
+    onDeleted?.();
+  }
   const subtitle =
     provider.kind === "cli"
       ? text(`CLI runtime - binary: ${provider.cli_binary || "?"}`, `CLI 运行时 - binary：${provider.cli_binary || "?"}`)
@@ -45,6 +62,8 @@ export function Detail({
   const [models, setModels] = useState<Model[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [fetchStatus, setFetchStatus] = useState<string | null>(null);
+  const [manualId, setManualId] = useState("");
+  const [manualBusy, setManualBusy] = useState(false);
   const connectivityRef = useRef<ConnectivityHandle>(null);
 
   const reloadModels = useCallback(async () => {
@@ -114,6 +133,26 @@ export function Detail({
     }
   }, [provider.id, reloadModels, onChanged, text]);
 
+  // Custom providers whose /models list is unavailable let the user type a
+  // model id by hand. Writes an enabled minimal spec row (source=manual).
+  const addManualModel = useCallback(async () => {
+    const mid = manualId.trim();
+    if (!mid) return;
+    setManualBusy(true);
+    try {
+      await fetch(`/api/providers/${encodeURIComponent(provider.id)}/models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: mid }),
+      });
+      setManualId("");
+      await reloadModels();
+      onChanged();
+    } catch { /* ignore */ } finally {
+      setManualBusy(false);
+    }
+  }, [manualId, provider.id, reloadModels, onChanged]);
+
   return (
     <>
       <div className={styles.detailHeader}>
@@ -129,6 +168,16 @@ export function Detail({
           onCheckedChange={onToggle}
           title={text("Enable this provider", "启用这个 Provider")}
         />
+        {provider.custom && (
+          <Button
+            variant="destructive"
+            size="icon"
+            onClick={deleteProvider}
+            title={text("Delete custom provider", "删除自定义 Provider")}
+          >
+            <Trash2 />
+          </Button>
+        )}
       </div>
 
       {provider.setup_hint && (
@@ -156,6 +205,31 @@ export function Detail({
           lookup. */}
       {provider.kind === "api" && (
         <Connectivity ref={connectivityRef} providerId={provider.id} />
+      )}
+
+      {provider.custom && provider.kind !== "cli" && (
+        <div className={styles.detailSection} style={{ display: "grid", gap: 6 }}>
+          <div className={styles.detailSectionTitle}>
+            <span>{text("Add model by id", "手动添加模型")}</span>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <Input
+              placeholder={text("model id (e.g. my-model)", "模型 id（如 my-model）")}
+              value={manualId}
+              onChange={(e) => setManualId(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addManualModel(); }}
+            />
+            <Button size="sm" onClick={addManualModel} disabled={!manualId.trim() || manualBusy}>
+              {manualBusy ? text("Adding…", "添加中…") : text("Add", "添加")}
+            </Button>
+          </div>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            {text(
+              "Use this when the provider has no /models endpoint. The model is enabled immediately.",
+              "当 Provider 没有 /models 接口时使用。添加后模型会立即启用。",
+            )}
+          </span>
+        </div>
       )}
 
       {provider.kind === "cli" ? (

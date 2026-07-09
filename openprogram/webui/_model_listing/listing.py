@@ -161,6 +161,8 @@ def list_providers() -> list[dict[str, Any]]:
         _env_var_for,
         _is_configured,
         _label,
+        _prettify,
+        _synth_env_var,
     )
     from .setup_hints import _setup_hint
     from .sources import models_dev
@@ -281,6 +283,42 @@ def list_providers() -> list[dict[str, Any]]:
         })
 
     result.sort(key=lambda x: x["label"].lower())
+
+    # Tier 3: config-only custom providers (``source: "custom"``) the user
+    # added from the settings page for an OpenAI-compatible endpoint we don't
+    # ship. They're not in tier 1/2, so surface them here — sorted among
+    # themselves, appended AFTER the alpha sort so they always sit at the end
+    # (flagged ``custom: true`` for the frontend badge + delete action).
+    custom_rows: list[dict[str, Any]] = []
+    for pid, pcfg in cfg.items():
+        if not isinstance(pcfg, dict) or pcfg.get("source") != "custom":
+            continue
+        if pid in seen:
+            continue
+        models_cfg = pcfg.get("models") or []
+        enabled_ids = _enabled_ids(pcfg)
+        all_ids = {r.get("id") for r in models_cfg if r.get("id")}
+        base = pcfg.get("base_url") or ""
+        custom_rows.append({
+            "id": pid,
+            "label": pcfg.get("label") or _prettify(pid),
+            "kind": "api",
+            "custom": True,
+            "enabled": bool(pcfg.get("enabled", False)),
+            "configured": _is_configured(pid),
+            # Synthesised label so the frontend renders the API-keys section for
+            # a custom pid (Detail shows AccountManager when api_key_env is
+            # truthy). Display only — keys resolve from the AuthStore by pid.
+            "api_key_env": _env_var_for(pid) or _synth_env_var(pid),
+            "default_base_url": base,
+            "base_url": base,
+            "use_responses_api": bool(pcfg.get("use_responses_api", False)),
+            "supports_fetch": True,
+            "model_count": len(all_ids),
+            "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
+        })
+    custom_rows.sort(key=lambda x: x["label"].lower())
+    result.extend(custom_rows)
     return result
 
 
@@ -312,6 +350,12 @@ def list_models_for_provider(
     # the legacy id whitelist so a not-yet-migrated config still reads right.
     enabled_ids = _enabled_ids(pcfg)
     default_api = _default_api_for(provider_id) or "openai-completions"
+    # Custom / dir-less providers have no static Model.base_url and no
+    # models.dev endpoint, so the browse rows carry no base_url. Stamp the
+    # provider config base_url onto every row (row value still wins) so a
+    # spec row copied from a browse row via ``spec_row_for`` — the toggle path
+    # — carries the endpoint the runtime needs to dispatch.
+    cfg_base_url = pcfg.get("base_url") or ""
 
     out: list[dict[str, Any]] = []
     all_rows = _browse_models(provider_id, force_refresh=force_refresh)
@@ -359,6 +403,8 @@ def list_models_for_provider(
             "tools": bool(raw.get("tools", True)),
             "enabled": mid in enabled_ids,
         })
+        if not entry.get("base_url") and cfg_base_url:
+            entry["base_url"] = cfg_base_url
         out.append(entry)
 
     return out

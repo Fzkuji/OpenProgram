@@ -147,6 +147,35 @@ def register(app):
         from openprogram.webui import _model_listing as _mc
         return JSONResponse(content={"providers": _mc.list_providers()})
 
+    @app.post("/api/providers/custom")
+    async def api_create_custom_provider(body: dict = None):
+        """Create a config-only custom provider (OpenAI-compatible endpoint we
+        don't ship). Body: {id, label, base_url}. Validates the id (kebab-case
+        slug, no collision with an existing provider id or alias)."""
+        from openprogram.webui import _model_listing as _mc
+        b = body or {}
+        res = _mc.create_custom_provider(
+            b.get("id", ""), b.get("label", ""), b.get("base_url", "")
+        )
+        return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
+
+    @app.delete("/api/providers/custom/{name}")
+    async def api_delete_custom_provider(name: str):
+        """Delete a custom provider (refuses non-custom). Leaves any stored
+        AuthStore credential on disk."""
+        from openprogram.webui import _model_listing as _mc
+        res = _mc.delete_custom_provider(name)
+        return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
+
+    @app.post("/api/providers/{name}/models")
+    async def api_add_manual_model(name: str, body: dict = None):
+        """Add a manually-typed model id (enabled) for a provider whose /models
+        list is unavailable. Writes a minimal spec row (source=manual)."""
+        from openprogram.webui import _model_listing as _mc
+        b = body or {}
+        res = _mc.add_manual_model(name, b.get("id", ""), b.get("name"))
+        return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
+
     @app.get("/api/providers/{name}/models")
     async def api_provider_models(name: str):
         from openprogram.webui import _model_listing as _mc

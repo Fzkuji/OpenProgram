@@ -195,6 +195,18 @@ def _env_var_for(provider_id: str) -> str | None:
     return md.get("env_var")
 
 
+def _synth_env_var(provider_id: str) -> str:
+    """Synthesised ``<ID>_API_KEY`` env-var LABEL for a custom provider with no
+    real env-var mapping (e.g. ``frontier-intelligence`` →
+    ``FRONTIER_INTELLIGENCE_API_KEY``). DISPLAY ONLY: runtime credentials
+    resolve from the AuthStore keyed by provider id, never from this env var.
+    Kept out of ``_env_var_for`` so it can't leak into ``env_vars_for`` and
+    flip ``_is_configured`` for community providers."""
+    slug = "".join(c if (c.isalnum() or c == "-") else "-" for c in provider_id)
+    slug = slug.strip("-").upper().replace("-", "_")
+    return f"{slug}_API_KEY" if slug else "API_KEY"
+
+
 def _static_apis_for(provider_id: str) -> set[str]:
     """The set of wire ``api`` ids the provider's OWN static-registry
     models declare (``{}`` for a community-only provider).

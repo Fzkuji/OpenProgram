@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Detail } from "./detail";
 import { ProviderItem } from "./provider-item";
+import { AddCustomProvider } from "./add-custom-provider";
 import type { Provider } from "./types";
 import styles from "../settings-page.module.css";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
@@ -145,6 +146,12 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
+              <AddCustomProvider
+                onCreated={(id) => {
+                  invalidate("/api/providers/list");
+                  reload(true).then(() => selectProvider(id));
+                }}
+              />
             </div>
           {enabled.filter(matches).length > 0 && (
             <>
@@ -182,6 +189,13 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
                 provider={selected}
                 onToggle={(en) => toggleProvider(selected.id, en)}
                 onChanged={() => reload(true)}
+                onDeleted={() => {
+                  invalidate("/api/providers/list");
+                  setSelectedId(null);
+                  queryClient.invalidateQueries({ queryKey: ["models-enabled"] });
+                  router.push("/settings/providers");
+                  reload();
+                }}
               />
             )}
           </div>
