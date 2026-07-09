@@ -51,25 +51,17 @@
 
 ### 1. Install
 
-**macOS / Linux** — one command, no clone needed:
+**macOS / Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
 ```
-It clones OpenProgram to `~/OpenProgram` (override with `--target DIR`), installs the host, then — when a terminal is attached — offers a menu to pick which agentic programs to install. `bash -c "$(curl -fsSL …)"` works too. From a checkout: `./scripts/install.sh`.
 
-**AI-agent install** — the plain one-liner above already works unattended: with no terminal it uses defaults automatically, and with one, every prompt times out to its default after 60s, so nothing can hang. Optionally append `-y` to take defaults immediately, plus `--programs all` (or `gui` / `research` / `wiki`) to also install agent programs:
-```bash
-curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- -y --programs all
-```
-Full flag matrix: **[install.md](install.md)**.
-
-**Windows (PowerShell)**
+**Windows (PowerShell):**
 ```powershell
 iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
-# from a checkout: .\scripts\install.ps1
 ```
 
-One command installs the OpenProgram host — web UI, terminal UI, and the browser tool + chat channels. The first run of `openprogram` opens a setup wizard whose **Agent programs** step offers the bundled harnesses (GUI / Research / Wiki) with their sizes — or add them any time, see step 3. Flags and per-OS notes: **[docs/install.md](install.md)**.
+More options — flags, unattended / AI-agent install, installing from a checkout: **[install.md](install.md)**.
 
 ### 2. Run
 
