@@ -89,8 +89,8 @@ Full flag matrix: **[docs/install.md](docs/install.md)**.
 
 **Windows (PowerShell)**
 ```powershell
-git clone https://github.com/Fzkuji/OpenProgram; cd OpenProgram
-.\scripts\install.ps1
+iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
+# from a checkout: .\scripts\install.ps1
 ```
 
 One command installs the OpenProgram host — web UI, terminal UI, and the browser tool + chat channels. The first run of `openprogram` opens a setup wizard whose **Agent programs** step offers the bundled harnesses (GUI / Research / Wiki) with their sizes — or add them any time, see step 3. To install them non-interactively at setup, pass `--programs <gui|research|wiki|all>` (PowerShell: `-Programs`). Flags and per-OS notes: **[docs/install.md](docs/install.md)**.

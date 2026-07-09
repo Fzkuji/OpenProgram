@@ -55,7 +55,7 @@ OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：
 curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash
 # 它会把 OpenProgram clone 到 ~/OpenProgram（可用 --target DIR 覆盖），装好 host，
 # 有终端时还会弹出菜单让你挑装哪些 agent 程序（管道安装也能交互，脚本从 /dev/tty 读输入）。
-# 已有 checkout：直接 ./scripts/install.sh    ·    Windows：.\scripts\install.ps1
+# 已有 checkout：直接 ./scripts/install.sh    ·    Windows 一行式：iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
 ```
 
 **AI agent 安装** —— 上面那条一行命令本身就能无人值守跑：没有终端时自动取默认值，有终端时每个提示 60 秒后也会超时回落到默认值，不会卡住。可选：追加 `-y` 立即取默认值，再加 `--programs all`（或 `gui` / `research` / `wiki`）顺带装上 agent 程序：

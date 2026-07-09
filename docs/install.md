@@ -43,9 +43,8 @@ cd OpenProgram
 
 **Windows (PowerShell)**
 ```powershell
-git clone https://github.com/Fzkuji/OpenProgram
-cd OpenProgram
-.\scripts\install.ps1                 # everything · bare host: -Minimal
+iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
+# from a checkout: .\scripts\install.ps1   # everything · bare host: -Minimal
 ```
 
 然后直接启动它 —— **首次运行会引导你完成 provider 配置**，随后
