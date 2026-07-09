@@ -41,6 +41,10 @@
    .\scripts\install.ps1 -Programs all    # + install agentic programs non-interactively
    .\scripts\install.ps1 -Target DIR      # where to clone when run off the web (default $HOME\OpenProgram)
    .\scripts\install.ps1 -Yes             # skip every prompt, use defaults
+
+ AI-agent / non-interactive: pass -Yes (or set env CI / DEBIAN_FRONTEND=noninteractive
+ / OPENPROGRAM_INSTALL_YES) to take every default with no prompts. Read-Host has
+ no timeout, so on Windows an agent must use one of these to avoid a hang.
 =============================================================================
 #>
 [CmdletBinding()]
@@ -65,6 +69,19 @@ function Warn($m){ Write-Host "  !! $m" -ForegroundColor Yellow }
 function Die($m){ Write-Host "ERROR $m" -ForegroundColor Red; exit 1 }
 
 function Have($name){ return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
+
+# Non-interactive signals — treated exactly like -Yes (defaults, no prompts).
+# CI / DEBIAN_FRONTEND=noninteractive are ecosystem conventions;
+# OPENPROGRAM_INSTALL_YES is our own escape hatch.
+# NOTE: Read-Host has no timeout, so (unlike install.sh) the ps1 prompts can't
+# self-default on expiry — an agent must pass -Yes or one of these env vars.
+function Test-NonInteractive {
+  if ($Yes) { return $true }
+  if ($env:CI) { return $true }
+  if ($env:DEBIAN_FRONTEND -eq 'noninteractive') { return $true }
+  if ($env:OPENPROGRAM_INSTALL_YES) { return $true }
+  return $false
+}
 function Winget-Install($id){
   if (Have winget) { winget install --silent --accept-package-agreements --accept-source-agreements -e --id $id }
   else { Warn "winget not available - install $id manually" }
@@ -88,7 +105,7 @@ function Test-OpenProgramCheckout($dir){
 if (-not $Bootstrapped -and -not (Test-OpenProgramCheckout $HostRoot)) {
   if (-not (Have git)) { Die "git is required to install off the web - install Git for Windows (winget install Git.Git), or clone the repo and run scripts\install.ps1 from inside it." }
   $dest = if ($Target) { $Target } else { Join-Path $HOME "OpenProgram" }
-  if (-not $Target -and -not $Yes) {
+  if (-not $Target -and -not (Test-NonInteractive)) {
     $reply = Read-Host "Clone OpenProgram to [$dest]"
     if ($reply) { $dest = $reply }
   }
@@ -217,7 +234,7 @@ function Convert-ProgramChoice([string]$raw) {
 }
 function Prompt-Programs {
   if ($Programs) { return }                       # -Programs wins, no prompt
-  if ($Yes) { return }                            # -Yes: default (none)
+  if (Test-NonInteractive) { return }             # -Yes / CI / etc: default (none)
   if (-not [Environment]::UserInteractive) { return }
   Write-Host "`nAgentic programs - pick which to install now (or later via the first-run wizard):"
   for ($i = 0; $i -lt $ProgramMenu.Count; $i++) { Write-Host ("  {0}) {1}" -f ($i+1), $ProgramMenu[$i]) }

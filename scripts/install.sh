@@ -44,6 +44,12 @@
 #   ./scripts/install.sh --programs all    # + install agentic programs non-interactively
 #   ./scripts/install.sh --target DIR      # where to clone when run off the web (default ~/OpenProgram)
 #   ./scripts/install.sh --yes             # skip every prompt, use defaults (-y)
+#
+# AI-agent / non-interactive: pass --yes (or set CI / DEBIAN_FRONTEND=noninteractive
+# / OPENPROGRAM_INSTALL_YES) to take every default with no prompts. Even without
+# it, no prompt can hang: each /dev/tty read times out after 60s (override with
+# OPENPROGRAM_PROMPT_TIMEOUT=<seconds>) and falls back to the default.
+#   curl -fsSL .../scripts/install.sh | bash -s -- --yes --programs all
 # =============================================================================
 set -euo pipefail
 
@@ -55,6 +61,34 @@ die()  { printf "${c_red}ERROR${c_reset} %s\n" "$*" >&2; exit 1; }
 
 OS="$(uname -s)"
 REPO_URL="https://github.com/Fzkuji/OpenProgram.git"
+
+# Every /dev/tty prompt reads with this timeout so an agent driving the default
+# command inside a pty (and never answering) can't hang forever — on expiry we
+# default exactly as if Enter was pressed. Override for tests via the env var.
+PROMPT_TIMEOUT_SECONDS="${OPENPROGRAM_PROMPT_TIMEOUT:-60}"
+
+# Standard non-interactive signals — treated exactly like --yes (defaults, no
+# prompts). CI/DEBIAN_FRONTEND=noninteractive are ecosystem conventions;
+# OPENPROGRAM_INSTALL_YES is our own escape hatch.
+is_noninteractive() {
+  [ "$ASSUME_YES" = "1" ] && return 0
+  [ -n "${CI:-}" ] && return 0
+  [ "${DEBIAN_FRONTEND:-}" = "noninteractive" ] && return 0
+  [ -n "${OPENPROGRAM_INSTALL_YES:-}" ] && return 0
+  return 1
+}
+
+# tty_prompt "<prompt>" -> echoes the user's line, or empty on timeout/EOF.
+# read -t returns >128 on timeout; the || true keeps set -e happy either way.
+tty_prompt() {
+  local reply=""
+  printf '%s' "$1" > /dev/tty
+  if ! read -t "$PROMPT_TIMEOUT_SECONDS" -r reply < /dev/tty; then
+    reply=""
+    printf '\n(no input in %ss — using default)\n' "$PROMPT_TIMEOUT_SECONDS" > /dev/tty
+  fi
+  printf '%s' "$reply"
+}
 
 # When piped (curl | bash) BASH_SOURCE is "bash" or empty and dirname resolves
 # to "." — so a real checkout is detected by pyproject.toml sitting next to us,
@@ -94,9 +128,8 @@ if [ "$BOOTSTRAPPED" = "0" ] && { [ -z "$HOST_ROOT" ] || ! is_openprogram_checko
   command -v git >/dev/null 2>&1 || die "git is required to install off the web — install git first (macOS: brew install git; Debian/Ubuntu: sudo apt-get install git), or clone the repo and run scripts/install.sh from inside it."
 
   target="${CLONE_TARGET:-$HOME/OpenProgram}"
-  if [ -z "$CLONE_TARGET" ] && [ "$ASSUME_YES" = "0" ] && [ -r /dev/tty ] && [ -w /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
-    printf 'Clone OpenProgram to [%s]: ' "$target" > /dev/tty
-    read -r reply < /dev/tty || true
+  if [ -z "$CLONE_TARGET" ] && ! is_noninteractive && [ -r /dev/tty ] && [ -w /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
+    reply="$(tty_prompt "$(printf 'Clone OpenProgram to [%s]: ' "$target")")"
     [ -n "$reply" ] && target="$reply"
   fi
   # Expand a leading ~ (read gives a literal tilde).
@@ -264,7 +297,7 @@ parse_program_choice() {
 # Prompt on /dev/tty; re-prompt on invalid; empty -> none. Appends to PROGRAMS.
 prompt_programs_menu() {
   [ "$PROGRAMS_GIVEN" = "1" ] && return 0        # --programs wins, no prompt
-  [ "$ASSUME_YES" = "1" ] && return 0            # --yes: default (none)
+  is_noninteractive && return 0                  # --yes / CI / etc: default (none)
   # non-interactive (CI / detached / true pipe): default to none. Probe the
   # device, not just its perms — a "readable" /dev/tty can still be unusable.
   { [ -r /dev/tty ] && [ -w /dev/tty ] && { : </dev/tty; } 2>/dev/null; } || return 0
@@ -276,9 +309,8 @@ prompt_programs_menu() {
     printf '  none) skip (default — pick later in the wizard or: openprogram programs install <gui|research|wiki|all>)\n'
   } > /dev/tty
   while :; do
-    printf 'Choose (comma-separated numbers, "all", or "none") [none]: ' > /dev/tty
     local reply=""
-    read -r reply < /dev/tty || true            # declined read must not abort under set -e
+    reply="$(tty_prompt 'Choose (comma-separated numbers, "all", or "none") [none]: ')"
     if picked="$(parse_program_choice "$reply")"; then
       [ -n "$picked" ] && PROGRAMS="$PROGRAMS $picked"
       return 0

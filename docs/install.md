@@ -74,15 +74,41 @@ openprogram web                               # or the browser UI -> http://loca
 
 ## 命令行参数
 
-| 目标 | `install.sh` (POSIX) | `install.ps1` (Windows) |
-|------|----------------------|--------------------------|
-| 裸宿主（跳过 web 构建 / TUI / 程序 / extras） | `--minimal` | `-Minimal` |
-| 指定某个解释器 | `--python /path/python` | `-Python C:\path\python.exe` |
-| Stealth 浏览器（patchright + camoufox） | `--stealth` | `-Stealth` |
-| `agent-browser` 工具 | `--agent-browser` | `-AgentBrowser` |
+完整参数矩阵（`install.sh --help` / `install.ps1 -Yes` 也会打印）：
+
+| 参数 (POSIX) | 参数 (Windows) | 控制什么 | 默认 |
+|--------------|----------------|----------|------|
+| `--minimal` | `-Minimal` | 裸宿主：跳过 web 构建 / TUI / 程序 / extras | 关（装全部轻量内容） |
+| `--python /path/python` | `-Python C:\path\python.exe` | 指定 Python 解释器 | 自动探测（活动 venv/conda，否则建 `./.venv`） |
+| `--stealth` | `-Stealth` | 额外装 stealth 浏览器（patchright + camoufox，约 350 MB） | 关 |
+| `--agent-browser` | `-AgentBrowser` | 额外装全局 npm `agent-browser`（约 150 MB） | 关 |
+| `--programs <gui\|research\|wiki\|all>` | `-Programs <…>` | 安装时非交互地一并装 agent 程序（可重复或逗号分隔） | 无（首次运行向导里再选） |
+| `--target DIR` | `-Target DIR` | 从网页运行时 clone 到哪里 | `~/OpenProgram`（Win：`$HOME\OpenProgram`） |
+| `--yes` / `-y` | `-Yes` | 跳过所有提示、全部取默认值 | 关（有终端时弹菜单） |
 
 为 GUI harness 显式指定 CUDA/CPU 版 PyTorch：在宿主安装完成后运行它
 自己的安装脚本 —— `openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --cuda cu124`。
+
+### 非交互 / AI agent 安装
+
+给 agent 驱动安装用。以下**环境变量**与 `--yes` 等价 —— 命中任意一个就全部取默认值、不弹任何提示：
+
+| 环境变量 | 生效条件 |
+|----------|----------|
+| `CI` | 非空（GitHub Actions 等 CI 通用约定） |
+| `DEBIAN_FRONTEND` | 等于 `noninteractive`（Debian/Ubuntu 通用约定） |
+| `OPENPROGRAM_INSTALL_YES` | 非空（本项目自带的开关） |
+
+即使一个都不设，`install.sh` 的**任何提示都不会永久卡住**：每个 `/dev/tty`
+读取都有 60 秒超时，到点自动取默认值（并打印一行 `(no input in 60s — using default)`）。
+用 `OPENPROGRAM_PROMPT_TIMEOUT=<秒>` 可改超时时长。一条命令即可完全非交互安装：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash -s -- --yes --programs all
+```
+
+> Windows 的 `Read-Host` 没有超时机制，所以 `install.ps1` 的提示**不会**自动
+> 取默认值 —— agent 在 Windows 上必须传 `-Yes` 或设上表任一环境变量。
 
 ---
 
