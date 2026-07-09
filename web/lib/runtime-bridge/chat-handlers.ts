@@ -405,6 +405,35 @@ export function handleRunningTask(rt: unknown): void {
     // store not yet mounted (legacy-only page) — fall back to the
     // simple button flip above.
   }
+  // A function run dispatched via POST /api/function (fn-form, welcome
+  // button, retry) streams NO transcript placeholder — its code node is
+  // persisted server-side only, so a user watching the session sees a
+  // blank transcript for the whole run. When the run starts in the
+  // session we're viewing, hydrate once so the pending card appears
+  // (tree_update then fills it live) and ask for one more hydrate on
+  // completion (running_task_clear) for the final result/branch state.
+  // Chat turns (func_name "_chat") stream their own rows — reloading
+  // mid-stream would reset the live bubble, so they're excluded. The
+  // per-msg_id guard also stops the re-emit inside the load_session
+  // response from looping.
+  const live = window as Window & {
+    currentSessionId?: string;
+    ws?: WebSocket;
+    __functionRunHydrated?: string | null;
+    __reloadOnTaskClear?: string | null;
+  };
+  if (
+    t.func_name &&
+    t.func_name !== "_chat" &&
+    live.currentSessionId === sid &&
+    live.__functionRunHydrated !== mid &&
+    live.ws &&
+    live.ws.readyState === WebSocket.OPEN
+  ) {
+    live.__functionRunHydrated = mid;
+    live.__reloadOnTaskClear = sid;
+    live.ws.send(JSON.stringify({ action: "load_session", session_id: sid }));
+  }
 }
 
 export function handleRunningTaskClear(sessionId: string | undefined): void {
