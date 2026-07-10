@@ -1458,15 +1458,21 @@ def start_server(port: int = 18109, open_browser: bool = False) -> threading.Thr
     _server_thread.start()
 
     url = f"http://localhost:{port}"
-    print(f"Agentic Visualizer running at {url}")
+    print(f"OpenProgram API running at {url}")
 
     if open_browser:
-        # Small delay to let the server start
+        # 本服务只有 API，没有 HTML 路由——UI 是 web/ 的 Next 前端
+        # （:18100）。要弹就弹前端页，弹后端只会打开一页 JSON 404。
+        import os
+        ui_url = os.environ.get(
+            "OPENPROGRAM_FRONTEND_URL", "http://localhost:18100"
+        )
+
         def _open():
             import time
             time.sleep(0.8)
             import webbrowser
-            webbrowser.open(url)
+            webbrowser.open(ui_url)
         threading.Thread(target=_open, daemon=True).start()
 
     return _server_thread
