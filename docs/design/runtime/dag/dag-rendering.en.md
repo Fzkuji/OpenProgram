@@ -165,11 +165,15 @@ itself):
 
 ## 5. Branch-name badge
 
-- **Anchoring**: below the branch chain's **last conversation-layer node** (execution-layer
-  nodes are not considered, so expanding/collapsing the execution layer doesn't move the
-  badge).
+- **Anchoring**: **directly below** the branch chain's **last conversation-layer node**,
+  one row down (execution-layer nodes are not considered; in the default view the
+  execution subtree is folded into the ⚒ badge, so nothing crosses the cell below and
+  the badge sits straight underneath).
+- **Edge avoidance**: only when an edge crosses the anchor cell (the descending line of
+  an expanded execution subtree, or the conversation continuing) does the badge shift
+  half a column left — a badge never sits on an edge. Expanding/collapsing the execution
+  layer only toggles this half-column shift; it never changes the anchor node.
 - **Collision**: when two badges' grid positions overlap, the later one (by branch order)
-- **Never on an edge**: when the anchor node has a descending edge (an expanded execution subtree, or the conversation continuing), the badge shifts half a column left to clear that vertical line.
   slides down one row until there's no collision.
 - **Source**: badges come ONLY from `list_branches` — **active** branches (bright,
   clickable to checkout). **Merging erases the name** (git semantics): a merged-in
@@ -191,7 +195,7 @@ itself):
 | 10 | spawn dispatch → attach merge-back | spawn edge dash-dot `4 2 1 2` (child branch color); the child branch's first node sits on the **same row** as the spawn node, own lane, tier=1; merge-back long dash `4 4` from the child tip back to its embed position on the main branch (the chat stream renders it as the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
 | 11 | execution-subtree default aggregation | see §0: collapsed to a ⚒N badge by default, click to expand into layout, collapse reclaims rows/cols per rule ②; expansion state is per-branch independent |
 | 12 | status & badge legend | see §4: status drawn on the node's own stroke, placeholder boxes abolished; both sides of a cross-session spawn carry the ↗ corner mark |
-| 13 | badge anchoring & collision | see §5: anchor at the branch's last conversation-layer node, collision shifts down one row, merging erases the badge (provenance moves into the merge node's tooltip) |
+| 13 | badge anchoring · avoidance · collision · merged | see §5: anchor directly below the branch's last conversation-layer node, half-column left shift only when an edge crosses the anchor cell, collision shifts down one row, merging erases the badge (provenance moves into the merge node's tooltip) |
 
 **Send-back nodes and the switcher (semantic note, no dedicated layout scene)**: a
 message_branch send-back (the child branch's answer returning to the initiator's lane

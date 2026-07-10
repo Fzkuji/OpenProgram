@@ -470,22 +470,29 @@ sceneMulti(12,"节点状态与徽标（废除占位框）",
  ],
  "共同规则：状态一律画在节点描边上、徽标附着在节点旁不占格。淘汰一切独立占位节点。");
 
-// ---- 场景13：分支名 badge，三条规则各一张图 ----
-sceneMulti(13,"分支名 badge：锚定 · 碰撞 · 已合并",
- "badge 的三条规则，各一张图。",
+// ---- 场景13：分支名 badge，四条规则各一张图 ----
+sceneMulti(13,"分支名 badge：锚定 · 避让 · 碰撞 · 已合并",
+ "badge 的四条规则，各一张图。",
  [
-  {w:4.4,h:4.6,cap:"<b>锚定＝分支最后一个对话层节点（△回复）下方</b>。执行子树展开（■bash）也<b>不挪 badge</b>；因为 回复 有下行边，badge <b>左偏半格</b>避开那条竖线。",draw:()=>{
+  {w:4.8,h:3.4,cap:"<b>锚定＝分支最后一个对话层节点（△回复）正下方一行</b>。默认视图执行子树收在 &#9874; 徽标里、下方没有边，badge 就在正下面。",draw:()=>{
     let s="";
     s+=edge(0,0,1,1,C.blue);
     s+=edge(1,1,2,2,C.blue);
-    s+=edge(2,2,3,3,C.blue);
     s+=node(null,0,0,'root',C.blue,"ROOT");
     s+=node(null,1,1,'user',C.blue,"问题");
     s+=node(null,2,2,'llm',C.blue,"回复");
-    s+=node(null,3,3,'code',C.blue,"bash","执行层(已展开)");
-    // badge 锚在 回复(列2,行2) 下方一行；该节点有下行边（→bash 的竖线在列2），
-    // badge 向左偏半格避让（规范：徽标不压边）。不画指针线——说明在图下方文字里。
-    const bx=PADX+1.5*COL, by=PADY+3*ROW;
+    s+=toolBadge(2,2,3,C.blue,30);
+    const bx=PADX+2*COL, by=PADY+3*ROW;
+    s+=`<g><rect x="${bx-26}" y="${by-10}" width="52" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#f8f8f6" font-size="10" text-anchor="middle" font-weight="500">问候</text></g>`;
+    return s;}},
+  {w:4.8,h:2.8,cap:"<b>避让＝锚位被边占时左偏半格</b>。执行子树展开后，回复→bash 的竖线穿过正下方锚位——badge 左移半格贴在竖线左侧，<b>徽标永不压边</b>。执行层展开收起只触发这半格偏移，不换锚点。",draw:()=>{
+    let s="";
+    s+=edge(0,0,1,1,C.blue);
+    s+=edge(1,1,2,2,C.blue);
+    s+=node(null,0,0,'user',C.blue,"问题");
+    s+=node(null,1,1,'llm',C.blue,"回复");
+    s+=node(null,2,2,'code',C.blue,"bash","执行层(已展开)");
+    const by=PADY+2*ROW, bx=PADX+0.5*COL;
     s+=`<g><rect x="${bx-26}" y="${by-10}" width="52" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#f8f8f6" font-size="10" text-anchor="middle" font-weight="500">问候</text></g>`;
     return s;}},
   {w:6,h:4.2,cap:"<b>碰撞下移</b>：两条分支锚点同行，「改写方案」的 badge 本应在虚框处（与「原方案」同行、水平距离不足会叠）——后到者<b>下移一行</b>。图里虚框即被放弃的位置。",draw:()=>{
@@ -528,7 +535,7 @@ sceneMulti(13,"分支名 badge：锚定 · 碰撞 · 已合并",
     s+=`<text x="${PADX+1*COL+R+8}" y="${PADY+4*ROW+20}" fill="#6b6a63" font-size="10">tooltip: merged「改写方案」</text>`;
     return s;}}
  ],
- "锚定＝对话层末节点；碰撞＝后到者下移一行；合并即消名（badge 只来自 list_branches 的活跃分支，被合并分支的名字进 merge 节点 tooltip）。锚点节点有下行边（展开的执行子树 / 对话延续）时，badge 向左偏移半格避让竖线——徽标永不压边。");
+ "锚定＝对话层末节点正下方；避让＝锚位有边穿过时才左偏半格（徽标永不压边）；碰撞＝后到者下移一行；合并即消名（badge 只来自 list_branches 的活跃分支，被合并分支的名字进 merge 节点 tooltip）。");
 
 </script>
 </div></body></html>
