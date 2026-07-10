@@ -61,6 +61,10 @@ _DESCRIPTION = (
     "use clean. If you'd genuinely want the sub-agent to read all "
     "the chat history above, use inherit.\n"
     "\n"
+    "If YOU are a spawned agent and can do the work with your own "
+    "tools, DO IT — do not re-delegate the same task to yet another "
+    "agent. Delegation chains waste turns and are depth-capped.\n"
+    "\n"
     "In both modes the reply lands as a branch in the current "
     "session's DAG. The user can switch to it from the branches "
     "panel, or you can merge it back later with merge_branches.\n"
@@ -134,6 +138,25 @@ def _task_impl(
             for c in label
         )[:24]
 
+    # Depth guard — shares message_branch's counter so task() and
+    # message_branch spawns count toward the same chain. Without this a
+    # spawned agent could task() another agent which task()s another …
+    # (observed live: a 5-generation weather-query delegation chain,
+    # every hop just re-wording the same prompt).
+    from openprogram.functions.tools.agent_collab.message_branch import (
+        MAX_SPAWN_DEPTH,
+        current_spawn_depth,
+        set_spawn_depth,
+        _spawn_depth,
+    )
+    depth = current_spawn_depth()
+    if depth >= MAX_SPAWN_DEPTH:
+        return (
+            f"[task refused] spawn depth {depth} reached the max "
+            f"({MAX_SPAWN_DEPTH}). This delegation chain is too deep — "
+            "do the work yourself with your own tools."
+        )
+
     mode = (context or "").strip().lower() or "clean"
     if mode not in ("inherit", "clean"):
         return (
@@ -157,6 +180,12 @@ def _task_impl(
                 subject=description or prompt[:60],
                 description=description or prompt,
                 context_mode=mode,
+                # Anchor the spawned branch to THIS turn (clean mode gets
+                # its root's caller from this via the runner) and carry the
+                # chain depth so the guard above trips in the child too.
+                # Without caller_msg_id the async branch forked from ROOT.
+                caller_msg_id=aid,
+                spawn_depth=depth + 1,
             )
         except Exception as e:  # noqa: BLE001
             return f"[task error] {type(e).__name__}: {e}"
@@ -171,19 +200,25 @@ def _task_impl(
             run_agent_turn,
             write_attach_pointer_for_spawn,
         )
-        result = run_agent_turn(
-            session_id=sid,
-            prompt=prompt,
-            agent_id=chosen_agent,
-            branch_from=aid if mode == "inherit" else None,
-            label=label or None,
-            # clean mode = new branch → its root's caller = the spawning
-            # node, so the DAG attaches the branch to this turn instead of
-            # forking it from ROOT (session-dag.md §2.3). The async path
-            # (runner.py) already does this; without it here the sync
-            # path's sub-branch rendered as an unrelated root-level fork.
-            spawn_caller=aid if mode != "inherit" else None,
-        )
+        # Bind depth+1 for the child turn (same-context synchronous run),
+        # mirroring what the async runner does with task.spawn_depth.
+        _depth_token = set_spawn_depth(depth + 1)
+        try:
+            result = run_agent_turn(
+                session_id=sid,
+                prompt=prompt,
+                agent_id=chosen_agent,
+                branch_from=aid if mode == "inherit" else None,
+                label=label or None,
+                # clean mode = new branch → its root's caller = the spawning
+                # node, so the DAG attaches the branch to this turn instead of
+                # forking it from ROOT (session-dag.md §2.3). The async path
+                # (runner.py) already does this; without it here the sync
+                # path's sub-branch rendered as an unrelated root-level fork.
+                spawn_caller=aid if mode != "inherit" else None,
+            )
+        finally:
+            _spawn_depth.reset(_depth_token)
     except Exception as e:  # noqa: BLE001
         return f"[task error] {type(e).__name__}: {e}"
 

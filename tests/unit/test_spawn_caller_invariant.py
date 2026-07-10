@@ -204,3 +204,77 @@ def test_runner_inherit_passes_no_spawn_caller(store, monkeypatch):
         assert cap["spawn_caller"] is None
     finally:
         runner_mod.shutdown_runner()
+
+
+# ---- entry 1b: async task() (task.py _task_impl wait=False) -------------
+
+def test_task_async_passes_caller_and_depth(store, monkeypatch):
+    """The wait=False branch must anchor the spawn to the calling turn
+    (caller_msg_id) and carry the incremented chain depth — dropping
+    caller_msg_id re-orphaned async spawns at ROOT (the c919c000 case)."""
+    cap = {}
+
+    def fake_async(**kw):
+        cap.update(kw)
+        return "t_fake"
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.run_agent_turn_async", fake_async,
+    )
+    from openprogram.functions.tools.task.task import _task_impl
+    out = _run_with_ctx(
+        lambda: _task_impl(prompt="go", context="clean", wait=False),
+        session_id="p1", turn_id="a1",
+    )
+    assert "task spawned async" in out
+    assert cap["caller_msg_id"] == "a1"
+    assert cap["spawn_depth"] == 1
+
+
+# ---- depth guard: task() refuses past MAX_SPAWN_DEPTH --------------------
+
+def test_task_refuses_at_max_spawn_depth(store, captured_run):
+    from openprogram.functions.tools.agent_collab.message_branch import (
+        MAX_SPAWN_DEPTH, set_spawn_depth, _spawn_depth,
+    )
+    from openprogram.functions.tools.task.task import _task_impl
+
+    def _call():
+        tok = set_spawn_depth(MAX_SPAWN_DEPTH)
+        try:
+            return _task_impl(prompt="go", context="clean", wait=True)
+        finally:
+            _spawn_depth.reset(tok)
+
+    out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
+    assert "[task refused]" in out
+    assert "spawn_caller" not in captured_run  # never reached the spawn
+
+
+def test_task_sync_child_sees_incremented_depth(store, monkeypatch):
+    """The sync path binds depth+1 around the child turn, so a chain of
+    task()-inside-task() eventually trips the guard instead of recursing
+    forever (each generation used to start back at depth 0)."""
+    from openprogram.functions.tools.agent_collab.message_branch import (
+        current_spawn_depth,
+    )
+    from openprogram.agent.sub_agent_run import AgentTurnResult as _R
+    seen = {}
+
+    def fake_run(**kw):
+        seen["child_depth"] = current_spawn_depth()
+        return _R(head_id="h", final_text="(reply)")
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.write_attach_pointer_for_spawn",
+        lambda **kw: None,
+    )
+    from openprogram.functions.tools.task.task import _task_impl
+    _run_with_ctx(
+        lambda: _task_impl(prompt="go", context="clean", wait=True),
+        session_id="p1", turn_id="a1",
+    )
+    assert seen["child_depth"] == 1

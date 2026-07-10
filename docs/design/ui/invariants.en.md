@@ -93,8 +93,15 @@ at the turn that opened it (session-dag.md §2.3) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
 three together.
 
+Spawns along one chain share a single depth counter
+(`message_branch`'s `MAX_SPAWN_DEPTH`); task() and message_branch both
+check and increment it — otherwise a spawned agent can re-delegate
+forever (observed live: a 5-generation weather-query delegation chain,
+each hop just re-wording the prompt).
+
 Source: the sync path omitted it, so DAG branches forked from the
-root (1d1fe016).
+root (1d1fe016); the async task() path dropped the caller and never
+counted depth (follow-up fix).
 
 ## 7. The chat sibling switcher appears only on REAL forks
 
