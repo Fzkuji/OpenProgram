@@ -40,7 +40,16 @@ def compute_depth(
         if nid in stack:  # 防御性防环（正常 DAG 不会成环）
             return 0.0
         p = _parent(nid)
-        d = 0.0 if p is None else _depth(p, stack | {nid}) + 1.0
+        if p is None:
+            d = 0.0
+        else:
+            d = _depth(p, stack | {nid}) + 1.0
+            # spawn 分支根与发起 spawn 的那轮**同一行**（dag-rendering.md
+            # 场景 10）：spawn 边是水平的，子分支从旁边长出来，不是长在
+            # 发起轮的下一行。
+            m = by_id.get(nid) or {}
+            if m.get("source") == "agent_spawn" and not m.get("predecessor"):
+                d -= 1.0
         depth[nid] = d
         return d
 

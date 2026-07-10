@@ -55,6 +55,11 @@ def normalize_followup(graph_entries: list[dict]) -> list[dict]:
             continue
         followup_user_parent = node.get("predecessor")
         attach_id = attach_by_caller.get(followup_user_parent or "")
+        # 没有 attach 指针的 followup（异步回流路径可能不写 attach）：
+        # 把 reply 直接挂回收到回流的那轮，否则合成 user 被过滤后 reply
+        # 的 predecessor 悬空，成为 depth=0 的孤儿根、飘到 ROOT 行。
+        if not attach_id and followup_user_parent in by_id:
+            attach_id = followup_user_parent
         if not attach_id:
             continue
         # Reply's schema predecessor == followup user msg id; rewrite

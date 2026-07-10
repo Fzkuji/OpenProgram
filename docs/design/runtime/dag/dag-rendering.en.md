@@ -230,19 +230,18 @@ The backend `openprogram/webui/graph_builder.py` produces the node array (includ
 annotation. Verification tool: `python tools/dag_dump.py <session_id>` prints
 lane/tier/depth + an ASCII grid.
 
-## 8. Known gaps vs. the implementation (2026-07-10 inventory)
+## 8. Known gaps vs. the implementation (2026-07-10 inventory; all landed same day)
 
-Item-by-item against this spec, in landing order:
+Item-by-item against this spec. All 8 gaps were implemented on
+2026-07-10; the table is kept as a record (each row notes where):
 
-| # | Gap | Spec item |
-|---|---|---|
-| 1 | Execution subtree laid out flat by default (no aggregation pass, no ⚒N badge) | §0 |
-| 2 | Collapse leaves a placeholder dashed box that occupies a cell | rule ② corollary |
-| 3 | running state drawn as a standalone dashed placeholder node | §4 status |
-| 4 | badge anchored to the "lane's deepest visible node" (incl. execution layer), no collision slide | §5 |
-| 5 | merge node has no dedicated shape, convergence line not colored by peer | scene 8 |
-| 6 | attach pointer still drawn as a square in the viewport | scenes 8/10 |
-| 7 | cross-session spawn has no ↗ mark on either side (target silently hangs on ROOT, source leaves no trace) | §4 badges |
-| 8 | spawn root tier computation not per the "conversation-layer user=1" ruling | §1 tier |
-</content>
-</invoke>
+| # | Gap | Spec item | Implementation |
+|---|---|---|---|
+| 1 | Execution subtree laid out flat by default (no aggregation pass, no ⚒N badge) | §0 | ✅ passes/apply-collapse.ts: any node with execution sub-calls starts folded; render/nodes.ts draws ⚒N (spawn-root subtrees exempt) |
+| 2 | Collapse leaves a placeholder dashed box that occupies a cell | rule ② corollary | ✅ shapes.ts: square_outline removed; task reverts to a plain square |
+| 3 | running state drawn as a standalone dashed placeholder node | §4 status | ✅ graph_builder emits status; nodes.ts draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
+| 4 | badge anchored to the "lane's deepest visible node" (incl. execution layer), no collision slide | §5 | ✅ render/badges.ts: anchor at last conversation-layer node, half-column left shift when a line crosses the anchor cell, measured-pixel-box collision slides down one row |
+| 5 | merge node has no dedicated shape, convergence line not colored by peer | scene 8 | ✅ shapes.ts merge_dot (◉); edges.ts merge-in line peer-colored 2.4px solid |
+| 6 | attach pointer still drawn as a square in the viewport | scenes 8/10 | ✅ backend filters it (display=runtime) + graph_builder stamps the ref onto the embed host (attach_returns); edges.ts draws the long-dash return line |
+| 7 | cross-session spawn has no ↗ mark on either side (target silently hangs on ROOT, source leaves no trace) | §4 badges | ✅ graph_builder stamps spawn_remote (target side); nodes.ts draws ↗ (source-side spawn_out rendering ready, awaiting a data source that stamps it) |
+| 8 | spawn root tier computation not per the "conversation-layer user=1" ruling | §1 tier | ✅ graph_layout: tier=1 / same-row depth / new lane; task_followup without an attach pointer re-parents onto the receiving turn (filter.py fallback) |

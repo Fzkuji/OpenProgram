@@ -33,6 +33,12 @@ export function drawEdges(
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     if (node.display === "root") return;
+    // spawn 分支根的连线是点划线 spawn 边（下方专属段），不走对话链 /
+    // fork 桥接，否则同一对节点会叠两种线。
+    if ((node as Record<string, unknown>).source === "agent_spawn"
+        && !node.predecessor) {
+      return;
+    }
     // Parent edge: predecessor (conv chain) if present, else caller
     // (sub-call). A first user / a tool has no predecessor — its parent
     // is its caller (ROOT / the llm), so the edge must follow caller.
@@ -180,16 +186,29 @@ export function drawEdges(
     }
   }
 
-  // ── Attach-reference edges ──
+  // ── Attach / merge reference edges ──
+  // attach 指针节点不画（后端随 display=runtime 过滤，dag-rendering.md
+  // 场景 8/10），它的 ref 由 graph_builder 戳在嵌入位置节点的
+  // ``attach_returns`` 上——回流长虚线从子分支 tip 画回嵌入位置。merge
+  // 节点在 tree 里（◉），汇入线按 peer 分支色加粗实线（场景 8）。
+  const refPairs: Array<{ ref: string; anchorId: string; isMerge: boolean }> = [];
   Object.keys(tree.byId).forEach((id) => {
-    const node = tree.byId[id];
-    if (node.function !== "attach" && node.function !== "merge") return;
-    const ref = node.attach_ref as string | undefined;
-    if (!ref) return;
+    const n = tree.byId[id];
+    const returns = (n as Record<string, unknown>).attach_returns as
+      string[] | undefined;
+    (returns || []).forEach((ref) => {
+      refPairs.push({ ref, anchorId: id, isMerge: false });
+    });
+    if (n.function === "merge" && n.attach_ref) {
+      refPairs.push({ ref: String(n.attach_ref), anchorId: id, isMerge: true });
+    }
+  });
+  refPairs.forEach(({ ref, anchorId, isMerge }) => {
     const src = tree.byId[ref];
-    if (!src) return;
+    const anchorNode = tree.byId[anchorId];
+    if (!src || !anchorNode) return;
     const srcPos = pos(src);
-    const anchorPos = pos(node);
+    const anchorPos = pos(anchorNode);
     const color = _branchColor(src, stableLeafOfNode);
     const ahit = _svg("path", {
       d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
@@ -205,61 +224,54 @@ export function drawEdges(
     edgeG.appendChild(ahit);
     edgeG.appendChild(_svg("path", {
       d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
-      stroke: color, "stroke-width": 1.6, fill: "none",
-      "stroke-linecap": "round", "stroke-dasharray": "4 4", opacity: 0.9,
-      "pointer-events": "none", class: "history-edge attach-edge",
+      stroke: color, fill: "none", "stroke-linecap": "round",
+      "pointer-events": "none",
+      ...(isMerge
+        ? { "stroke-width": 2.4, opacity: 1,
+            class: "history-edge merge-edge" }
+        : { "stroke-width": 1.6, "stroke-dasharray": "4 4", opacity: 0.9,
+            class: "history-edge attach-edge" }),
     }));
   });
 
   // ── Spawn edges ──
+  // spawn 根直接带 caller=发起节点，点划线（4 2 1 2）按子分支色（场景
+  // 10）。发起节点折叠在 ⚒N 里时，沿 caller 链上溯到第一个可见节点
+  // （通常是那轮的 llm）作为线的起点。
   Object.keys(tree.byId).forEach((id) => {
-    const taskNode = tree.byId[id];
-    if (taskNode.role !== "tool" || taskNode.function !== "task") return;
-    const callerId = taskNode.caller || taskNode.predecessor || "";
-    if (!callerId) return;
-    let subTipId = "";
-    for (const k of Object.keys(tree.byId)) {
-      const n = tree.byId[k];
-      if (n.function !== "attach") continue;
-      const ac = n.caller || n.predecessor || "";
-      const ap = n.predecessor || "";
-      if (ac === callerId || ap === callerId) {
-        subTipId = String(n.attach_ref || "");
-        break;
-      }
+    const subRoot = tree.byId[id];
+    if ((subRoot as Record<string, unknown>).source !== "agent_spawn") return;
+    if (subRoot.predecessor) return;
+    let srcId: string | undefined = subRoot.caller as string | undefined;
+    let hops = 0;
+    while (srcId && !tree.byId[srcId] && hops < 50) {
+      const sn = fullById[srcId];
+      srcId = sn ? (sn.caller || sn.predecessor || undefined) : undefined;
+      hops++;
     }
-    if (!subTipId || !tree.byId[subTipId]) return;
-    let cur: string | undefined = subTipId;
-    const seen: Record<string, boolean> = Object.create(null);
-    while (cur && !seen[cur]) {
-      seen[cur] = true;
-      const nn: GNode | undefined = tree.byId[cur];
-      const pp: string | null | undefined = nn && (nn.predecessor);
-      if (!pp || !tree.byId[pp]) break;
-      cur = pp;
-    }
-    const subRoot = cur && tree.byId[cur];
-    if (!subRoot) return;
-    const srcPos = pos(taskNode);
+    if (!srcId || !tree.byId[srcId]) return;
+    const srcNode = tree.byId[srcId];
+    if (srcNode.display === "root") return;
+    const srcPos = pos(srcNode);
     const dstPos = pos(subRoot);
+    const color = _branchColor(subRoot, stableLeafOfNode);
     const hitPath = _svg("path", {
       d: _edgePath(srcPos.x, srcPos.y, dstPos.x, dstPos.y),
       stroke: "transparent", "stroke-width": 14, fill: "none",
-      "pointer-events": "stroke", "data-target-id": subRoot.id,
+      "pointer-events": "stroke", "data-target-id": id,
       class: "history-edge-hit spawn-edge-hit",
     });
     (hitPath as SVGGraphicsElement).style.cursor = "pointer";
-    const subRootId = subRoot.id;
     hitPath.addEventListener("dblclick", (ev) => {
       ev.stopPropagation();
-      _onEdgeDblclick(subRootId);
+      _onEdgeDblclick(id);
     });
     edgeG.appendChild(hitPath);
     edgeG.appendChild(_svg("path", {
       d: _edgePath(srcPos.x, srcPos.y, dstPos.x, dstPos.y),
-      stroke: "var(--text-muted, #8b8b8b)", "stroke-width": 1.2,
+      stroke: color, "stroke-width": 1.4,
       fill: "none", "stroke-linecap": "round",
-      "stroke-dasharray": "1 4", opacity: 0.8,
+      "stroke-dasharray": "4 2 1 2", opacity: 0.85,
       "pointer-events": "none", class: "history-edge spawn-edge",
     }));
   });

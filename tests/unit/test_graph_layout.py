@@ -237,3 +237,58 @@ def test_orphan_no_root():
         {"id": "b", "role": "assistant", "caller": "a", "predecessor": "a", "created_at": 1},
     ])
     assert _no_overlap(by)
+
+
+# ── spawn 分支根：对话层裁决（dag-rendering.md 第一节 / 场景 10） ──
+
+def _spawn_turn():
+    """One turn whose llm spawned a sub-agent branch (clean mode)."""
+    return [
+        _root(),
+        {"id": "u1", "role": "user", "caller": "ROOT", "predecessor": None, "created_at": 1},
+        {"id": "l1", "role": "assistant", "caller": "u1", "predecessor": "u1", "created_at": 2},
+        # spawn branch root: caller = the spawning turn, no predecessor
+        {"id": "s1", "role": "user", "caller": "l1", "predecessor": None,
+         "source": "agent_spawn", "created_at": 3},
+        {"id": "sl1", "role": "assistant", "caller": "s1", "predecessor": "s1",
+         "created_at": 4},
+    ]
+
+
+def test_spawn_root_tier_is_conversation_layer():
+    """spawn 根 tier=1（对话层 user），不吃 caller 的执行层缩进。"""
+    by = _annotate(_spawn_turn())
+    assert by["s1"]["_tier"] == 1
+    assert by["sl1"]["_tier"] == 2
+
+
+def test_spawn_root_same_row_as_spawning_turn():
+    """spawn 根与发起 spawn 的那轮同一行（spawn 边是水平的）。"""
+    by = _annotate(_spawn_turn())
+    assert by["s1"]["_depth"] == by["l1"]["_depth"]
+    assert _no_overlap(by)
+
+
+def test_spawn_branch_gets_own_lane():
+    by = _annotate(_spawn_turn())
+    assert by["s1"]["_lane"] != by["u1"]["_lane"]
+    assert by["sl1"]["_lane"] == by["s1"]["_lane"]
+
+
+def test_followup_reply_without_attach_reparents_to_receiver():
+    """task_followup 回流没写 attach 指针时，reply 挂回收到回流的那轮，
+    不能变成 depth=0 的孤儿根（dag-rendering.md 场景 10 回流语义）。"""
+    by = _annotate([
+        _root(),
+        {"id": "u1", "role": "user", "caller": "ROOT", "predecessor": None, "created_at": 1},
+        {"id": "l1", "role": "assistant", "caller": "u1", "predecessor": "u1", "created_at": 2},
+        # 合成 followup user（display=runtime 被过滤）+ 它的 reply
+        {"id": "fu", "role": "user", "source": "task_followup",
+         "predecessor": "l1", "display": "runtime", "created_at": 3},
+        {"id": "fu_reply", "role": "assistant", "source": "task_followup",
+         "predecessor": "fu", "created_at": 4},
+    ])
+    assert "fu" not in by                      # 合成桥被过滤
+    assert by["fu_reply"]["predecessor"] == "l1"  # 挂回收到回流的那轮
+    assert by["fu_reply"]["_depth"] > by["l1"]["_depth"]
+    assert by["fu_reply"]["_lane"] == by["l1"]["_lane"]

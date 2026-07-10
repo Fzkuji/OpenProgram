@@ -561,14 +561,16 @@ hangs under the sub-agent's lane structure.</p>
 <code>branch_name</code> stamp, caller/predecessor), and <code>graph_layout/</code> does the lane/tier/depth
 annotation. Verification tool: <code>python tools/dag_dump.py &lt;session_id&gt;</code> prints
 lane/tier/depth + an ASCII grid.</p>
-<h2 id="8-known-gaps-vs-the-implementation-2026-07-10-inventory">8. Known gaps vs. the implementation (2026-07-10 inventory)<a class="header-anchor" href="#8-known-gaps-vs-the-implementation-2026-07-10-inventory">#</a></h2>
-<p>Item-by-item against this spec, in landing order:</p>
+<h2 id="8-known-gaps-vs-the-implementation-2026-07-10-inventory-all-landed-same-day">8. Known gaps vs. the implementation (2026-07-10 inventory; all landed same day)<a class="header-anchor" href="#8-known-gaps-vs-the-implementation-2026-07-10-inventory-all-landed-same-day">#</a></h2>
+<p>Item-by-item against this spec. All 8 gaps were implemented on
+2026-07-10; the table is kept as a record (each row notes where):</p>
 <table>
 <thead>
 <tr>
 <th>#</th>
 <th>Gap</th>
 <th>Spec item</th>
+<th>Implementation</th>
 </tr>
 </thead>
 <tbody>
@@ -576,51 +578,49 @@ lane/tier/depth + an ASCII grid.</p>
 <td>1</td>
 <td>Execution subtree laid out flat by default (no aggregation pass, no ⚒N badge)</td>
 <td>§0</td>
+<td>✅ passes/apply-collapse.ts: any node with execution sub-calls starts folded; render/nodes.ts draws ⚒N (spawn-root subtrees exempt)</td>
 </tr>
 <tr>
 <td>2</td>
 <td>Collapse leaves a placeholder dashed box that occupies a cell</td>
 <td>rule ② corollary</td>
+<td>✅ shapes.ts: square_outline removed; task reverts to a plain square</td>
 </tr>
 <tr>
 <td>3</td>
 <td>running state drawn as a standalone dashed placeholder node</td>
 <td>§4 status</td>
+<td>✅ graph_builder emits status; nodes.ts draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed)</td>
 </tr>
 <tr>
 <td>4</td>
 <td>badge anchored to the &quot;lane's deepest visible node&quot; (incl. execution layer), no collision slide</td>
 <td>§5</td>
+<td>✅ render/badges.ts: anchor at last conversation-layer node, half-column left shift when a line crosses the anchor cell, measured-pixel-box collision slides down one row</td>
 </tr>
 <tr>
 <td>5</td>
 <td>merge node has no dedicated shape, convergence line not colored by peer</td>
 <td>scene 8</td>
+<td>✅ shapes.ts merge_dot (◉); edges.ts merge-in line peer-colored 2.4px solid</td>
 </tr>
 <tr>
 <td>6</td>
 <td>attach pointer still drawn as a square in the viewport</td>
 <td>scenes 8/10</td>
+<td>✅ backend filters it (display=runtime) + graph_builder stamps the ref onto the embed host (attach_returns); edges.ts draws the long-dash return line</td>
 </tr>
 <tr>
 <td>7</td>
 <td>cross-session spawn has no ↗ mark on either side (target silently hangs on ROOT, source leaves no trace)</td>
 <td>§4 badges</td>
+<td>✅ graph_builder stamps spawn_remote (target side); nodes.ts draws ↗ (source-side spawn_out rendering ready, awaiting a data source that stamps it)</td>
 </tr>
 <tr>
 <td>8</td>
 <td>spawn root tier computation not per the &quot;conversation-layer user=1&quot; ruling</td>
 <td>§1 tier</td>
-</tr>
-<tr>
-<td></content></td>
-<td></td>
-<td></td>
-</tr>
-<tr>
-<td></invoke></td>
-<td></td>
-<td></td>
+<td>✅ graph_layout: tier=1 / same-row depth / new lane; task_followup without an attach pointer re-parents onto the receiving turn (filter.py fallback)</td>
 </tr>
 </tbody>
 </table>
@@ -638,7 +638,7 @@ lane/tier/depth + an ASCII grid.</p>
 <a class="" href="#5-branch-name-badge">5. Branch-name badge</a>
 <a class="" href="#6-scenarios-svg-authority-in-spechtml-13-scenes">6. Scenarios (SVG authority in spec.html, 13 scenes)</a>
 <a class="" href="#7-render-pipeline-code-map">7. Render pipeline (code map)</a>
-<a class="" href="#8-known-gaps-vs-the-implementation-2026-07-10-inventory">8. Known gaps vs. the implementation (2026-07-10 inventory)</a>
+<a class="" href="#8-known-gaps-vs-the-implementation-2026-07-10-inventory-all-landed-same-day">8. Known gaps vs. the implementation (2026-07-10 inventory; all landed same day)</a>
 </div></aside>
 </div>
 

@@ -198,17 +198,18 @@ web/lib/runtime-bridge/dag/
 caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注。验证工具：
 `python tools/dag_dump.py <session_id>` 打印 lane/tier/depth + ASCII 网格。
 
-## 八、与实现的已知差距（2026-07-10 盘点）
+## 八、与实现的已知差距（2026-07-10 盘点；同日全部落地）
 
-按本规范逐项对照现状，落地顺序：
+按本规范逐项对照现状。8 条差距已于 2026-07-10 实现完毕，下表保留作
+对照记录（每条注实现位置）：
 
-| # | 差距 | 规范条目 |
-|---|---|---|
-| 1 | 执行子树默认平铺（无聚合 pass、无 ⚒N 徽标） | 第〇节 |
-| 2 | 折叠留占位虚线框、占格 | 规则②推论 |
-| 3 | running 态画成独立虚线占位节点 | 第四节 status |
-| 4 | badge 锚定在"lane 最深可见节点"（含执行层）、无碰撞顺延 | 第五节 |
-| 5 | merge 节点无专属形状、汇入线未按 peer 色 | 场景 8 |
-| 6 | attach 指针在 viewport 仍画成方块 | 场景 8/10 |
-| 7 | 跨会话 spawn 两侧都无 ↗ 角标（目标侧静默挂 ROOT，源侧毫无痕迹） | 第四节徽标 |
-| 8 | spawn 根 tier 计算未按"对话层 user=1"裁决 | 第一节 tier |
+| # | 差距 | 规范条目 | 实现 |
+|---|---|---|---|
+| 1 | 执行子树默认平铺（无聚合 pass、无 ⚒N 徽标） | 第〇节 | ✅ passes/apply-collapse.ts：带执行子调用的节点一律起始折叠；render/nodes.ts 画 ⚒N（spawn 根子树豁免不吞） |
+| 2 | 折叠留占位虚线框、占格 | 规则②推论 | ✅ shapes.ts 删除 square_outline；task 回归普通方块 |
+| 3 | running 态画成独立虚线占位节点 | 第四节 status | ✅ graph_builder 下发 status；nodes.ts 画描边（running 虚线呼吸 / error 红+! / cancelled 灰化） |
+| 4 | badge 锚定在"lane 最深可见节点"（含执行层）、无碰撞顺延 | 第五节 | ✅ render/badges.ts：锚对话层末节点、锚位有竖线左偏半格、实测像素盒碰撞下移一行 |
+| 5 | merge 节点无专属形状、汇入线未按 peer 色 | 场景 8 | ✅ shapes.ts merge_dot（◉）；edges.ts 汇入线 peer 色 2.4px 实线 |
+| 6 | attach 指针在 viewport 仍画成方块 | 场景 8/10 | ✅ 后端 display=runtime 过滤 + graph_builder 把 ref 戳到嵌入位置（attach_returns），edges.ts 画回流长虚线 |
+| 7 | 跨会话 spawn 两侧都无 ↗ 角标（目标侧静默挂 ROOT，源侧毫无痕迹） | 第四节徽标 | ✅ graph_builder 打 spawn_remote 标（目标侧）；nodes.ts 画 ↗（源侧 spawn_out 渲染就绪，等数据源打标） |
+| 8 | spawn 根 tier 计算未按"对话层 user=1"裁决 | 第一节 tier | ✅ graph_layout tier=1 / depth 同行 / lane 开新分支；task_followup 无 attach 时挂回接收轮（filter.py 兜底） |

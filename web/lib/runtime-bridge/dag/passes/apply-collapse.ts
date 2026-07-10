@@ -40,8 +40,14 @@ export function _applyCollapse(graph: GNode[]): {
   const childrenOf: Record<string, string[]> = Object.create(null);
   const callerKidsOf: Record<string, string[]> = Object.create(null);
   const internalFlag: Record<string, boolean> = Object.create(null);
+  // spawn 分支根是对话层节点（新分支的开端），不属于发起轮的执行子树：
+  // 聚合/折叠都不吞它（dag-rendering.md 第〇节）。
+  const isSpawnRoot = (m: GNode): boolean =>
+    (m as Record<string, unknown>).source === "agent_spawn" && !m.predecessor;
+  const spawnRootFlag: Record<string, boolean> = Object.create(null);
   graph.forEach((m) => {
     if (m._internal) internalFlag[m.id] = true;
+    if (isSpawnRoot(m)) spawnRootFlag[m.id] = true;
     const _lp = m.predecessor;
     if (_lp) {
       (childrenOf[_lp] = childrenOf[_lp] || []).push(m.id);
@@ -51,7 +57,7 @@ export function _applyCollapse(graph: GNode[]): {
     // prevents folding a user node from collapsing all subsequent
     // turns in the conversation chain.
     const ca = (m as Record<string, unknown>).caller as string | undefined;
-    if (ca && ca !== "ROOT") {
+    if (ca && ca !== "ROOT" && !isSpawnRoot(m)) {
       (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m.id);
     }
   });
@@ -64,7 +70,6 @@ export function _applyCollapse(graph: GNode[]): {
     if (m._runNode) return _internalKids(m.id).length > 0;
     return false;
   }
-  const AUTO_COLLAPSE_THRESHOLD = 4;
   graph.forEach((m) => {
     if (!collapsible(m)) return;
     // Only auto-collapse on first encounter. Once seen, the user's
@@ -72,10 +77,9 @@ export function _applyCollapse(graph: GNode[]): {
     if (_seenCollapsible[m.id]) return;
     _seenCollapsible[m.id] = true;
     if (m.status === "running") return;
-    const kidCount = (callerKidsOf[m.id] || []).length;
-    if (m.role === "tool" && kidCount > 0) {
-      _collapsed[m.id] = true;
-    } else if (kidCount > AUTO_COLLAPSE_THRESHOLD) {
+    // 默认视图只画对话层（dag-rendering.md 第〇节）：凡是带执行子调用的
+    // 节点一律起始折叠，执行子树收进 ⚒N 徽标，点击才展开进布局。
+    if ((callerKidsOf[m.id] || []).length > 0) {
       _collapsed[m.id] = true;
     }
   });

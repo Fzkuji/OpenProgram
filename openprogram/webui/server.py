@@ -1397,7 +1397,7 @@ def create_app():
 _server_thread: Optional[threading.Thread] = None
 
 
-def start_server(port: int = 18109, open_browser: bool = True) -> threading.Thread:
+def start_server(port: int = 18109, open_browser: bool = False) -> threading.Thread:
     """
     Start the visualization server in a background daemon thread.
 

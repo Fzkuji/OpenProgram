@@ -17,7 +17,7 @@ Or from CLI:
 from openprogram.webui.server import start_server, stop_server
 
 
-def start_web(port: int = 18109, open_browser: bool = True):
+def start_web(port: int = 18109, open_browser: bool = False):
     """
     Start the web UI server in a background thread.
 

@@ -27,6 +27,12 @@ def compute_tier(by_id: dict[str, dict]) -> dict[str, int]:
         if is_root(m):
             tier[nid] = 0
             return 0
+        # spawn 分支根：对话层节点（dag-rendering.md 第一节裁决）。它的
+        # caller 指向发起 spawn 的那轮，但它开启的是新分支的对话，tier
+        # 按对话层 user=1 计，不吃 caller 的执行层缩进。
+        if m.get("source") == "agent_spawn" and not m.get("predecessor"):
+            tier[nid] = 1
+            return 1
         # caller field = sub-call parent (tool invoked by llm)
         caller = m.get("caller") or ""
         parent_node = by_id.get(caller) if caller else None

@@ -115,6 +115,24 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const cinfo = _applyCollapse(graph);
   graph = cinfo.visible;
 
+  // attach 指针节点不画（dag-rendering.md 场景 8/10）：它是"head 在哪"
+  // 的数据锚点，留在对话链尾，viewport 里只画回流虚线，不占格。只过滤
+  // 链尾指针（无对话后继）；head 指着它时把 head 退回它的前驱。
+  {
+    const hasConvChild: Record<string, boolean> = Object.create(null);
+    graph.forEach((m) => {
+      if (m.predecessor) hasConvChild[m.predecessor] = true;
+    });
+    const attachTail = (m: GNode): boolean =>
+      m.function === "attach" && !hasConvChild[m.id];
+    const dropped = graph.filter(attachTail);
+    if (dropped.length) {
+      graph = graph.filter((m) => !attachTail(m));
+      const droppedHead = dropped.find((m) => m.id === headId);
+      if (droppedHead) headId = droppedHead.predecessor || headId;
+    }
+  }
+
   const sig = _signature(graph, headId);
   if (sig === _lastSignature && _currentHead === headId) return;
   setLastSignature(sig);
@@ -183,6 +201,11 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   });
   Object.keys(tree.byId).forEach((nid) => {
     const n = tree.byId[nid];
+    // spawn 分支根是对话层节点：caller 只是记录谁发起了它，不代表它是
+    // 发起轮的执行内部节点（否则点击变成"滚到 owner"而不是 checkout）。
+    if ((n as Record<string, unknown>).source === "agent_spawn" && !n.predecessor) {
+      return;
+    }
     const c = (n as { caller?: string }).caller;
     if (c && c !== "ROOT") {
       const parent = tree.byId[c];
@@ -257,7 +280,10 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   drawNodes(nodeG, tree, pos, headId, headAncestors, stableLeafOfNode,
     cinfo, _collapsed, internalSet, internalOwner, _contextSet);
 
-  drawBadges(svg, tree, pos, stableLeafOfNode, HGW.currentSessionId || null);
+  const fullById: Record<string, GNode> = Object.create(null);
+  graphIn.forEach((m) => { fullById[m.id] = m; });
+  drawBadges(svg, tree, pos, stableLeafOfNode, HGW.currentSessionId || null,
+    fullById);
 
   body.replaceChildren(svg);
   _resetTooltip();

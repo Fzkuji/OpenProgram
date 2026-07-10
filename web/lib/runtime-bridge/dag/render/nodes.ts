@@ -67,9 +67,51 @@ export function drawNodes(
       el.setAttribute("pointer-events", "none");
       g.appendChild(el);
     }
+    // ── status 画在节点自己的描边上（dag-rendering.md 第四节，废除占位框） ──
+    const status = (node as Record<string, unknown>).status as string | undefined;
+    if (el && status === "running") {
+      el.setAttribute("stroke-dasharray", "4 3");
+      g.classList.add("is-running");
+    } else if (el && (status === "error" || node.is_error)) {
+      el.setAttribute("stroke", "#e5534b");
+      const bang = _svg("text", {
+        x: String(NODE_R + 2),
+        y: String(-NODE_R),
+        fill: "#e5534b",
+        "font-size": "9",
+        "font-weight": "700",
+        "pointer-events": "none",
+      });
+      bang.textContent = "!";
+      g.appendChild(bang);
+    } else if (status === "cancelled" || status === "stopped") {
+      g.setAttribute("opacity", "0.45");
+    }
+    // ↗ 跨会话 spawn 角标：两侧都标（spawn_remote=目标侧分支根，
+    // spawn_out=源侧发起节点）。同会话 spawn 有点划线边，不加 ↗。
+    if ((node as Record<string, unknown>).spawn_remote
+        || (node as Record<string, unknown>).spawn_out) {
+      const arrow = _svg("text", {
+        x: String(NODE_R + 2),
+        y: String(-NODE_R + 1),
+        fill: color,
+        "font-size": "10",
+        "font-weight": "700",
+        "pointer-events": "none",
+      });
+      arrow.textContent = "↗";
+      g.appendChild(arrow);
+    }
     if (isCollapsible) {
       const hc = cinfo.hiddenCount[id] || 0;
-      const label = folded ? "+" + hc : "−";
+      // 对话层节点折叠的是它的执行子树 → ⚒N（dag-rendering.md 第〇节）；
+      // 执行层内部的折叠沿用 +N。
+      const isConvNode =
+        (node.role === "user" || node.role === "assistant")
+        && node.display !== "runtime" && !node._runNode;
+      const label = folded
+        ? (isConvNode ? "⚒" + hc : "+" + hc)
+        : "−";
       // Transparent hit rect covering the badge glyph — the "+N" sits
       // ~13px off-centre, outside the r=7 node hit circle, so clicking
       // the glyph itself used to miss and the fold "did nothing". Width

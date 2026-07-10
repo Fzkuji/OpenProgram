@@ -93,6 +93,10 @@ def compute_lane(
                 kid_pred = pred_of(by_id, by_id[kid])
                 if kid_pred:
                     continue
+                # spawn 分支根不是 turn 内 sub-call：它开启新分支，第 2 趟
+                # 扫描时自取新 lane（dag-rendering.md 场景 10）。
+                if by_id[kid].get("source") == "agent_spawn":
+                    continue
                 stack.append(kid)
             # Conversation continuation: predecessor children stay in lane
             # (first fork sibling continues; later ones start new lanes).

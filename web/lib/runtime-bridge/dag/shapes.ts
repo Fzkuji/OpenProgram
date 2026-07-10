@@ -50,17 +50,15 @@ export function _branchColor(
   return LANE_COLORS[1 + ((lane - 1) % (LANE_COLORS.length - 1))];
 }
 
-const BRANCH_OP_FUNCTIONS = new Set([
-  "attach",
-  "merge",
-  "task",
-]);
-
 export function _shapeFor(node: GNode): string {
   if (node.display === "root") return "diamond";
   const role = node.role;
   const fn = node.function;
-  if (fn && BRANCH_OP_FUNCTIONS.has(fn)) return "square_outline";
+  // merge 节点：实心带孔圆 ◉，落在 base 分支 lane 上（dag-rendering.md
+  // 场景 8）。attach 指针不画节点（drawNodes 里跳过）；task 是普通执行层
+  // 方块——占位虚框（square_outline）已废除（规则② 推论）。
+  if (fn === "merge") return "merge_dot";
+  if (fn === "attach") return "square";
   // display=runtime nodes are function calls (square), not user msgs
   if (node.display === "runtime") return "square";
   // tool = function call → square
@@ -118,15 +116,16 @@ export function _buildShapeEl(
       x: -s, y: -s, width: s * 2, height: s * 2,
       rx: 0, ry: 0, ...common,
     });
-  } else if (shape === "square_outline") {
-    const s = r * SQR_SCALE;
-    return _svg("rect", {
-      x: -s, y: -s, width: s * 2, height: s * 2,
-      rx: 1.2, ry: 1.2,
+  } else if (shape === "merge_dot") {
+    // ◉ 实心带孔圆（dag-rendering.md 第四节图例）：外圈实心 + 中心
+    // 挖孔，读作"多条分支在此汇为一点"。
+    const g = _svg("g");
+    g.appendChild(_svg("circle", { r, fill: color }));
+    g.appendChild(_svg("circle", {
+      r: r * 0.42,
       fill: "var(--bg-secondary, #1a1a1a)",
-      stroke: color, "stroke-width": "1.5",
-      "stroke-dasharray": "3 2",
-    });
+    }));
+    return g;
   } else if (shape === "diamond") {
     const s = r * SQR_SCALE;
     // ROOT diamond is filled (white) — it's the session anchor, drawn

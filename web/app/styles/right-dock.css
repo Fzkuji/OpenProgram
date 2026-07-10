@@ -316,6 +316,17 @@
 }
 .history-node.is-head { filter: drop-shadow(0 0 4px rgba(255,255,255,0.35)); }
 
+/* status=running：同形状虚线描边 + 呼吸（dag-rendering.md 第四节）。 */
+.history-node.is-running circle,
+.history-node.is-running polygon,
+.history-node.is-running rect {
+  animation: dag-breathe 1.6s ease-in-out infinite;
+}
+@keyframes dag-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 /* Next-message context range: nodes/edges outside the active branch
    the next chat message will carry are faded. Transition so the range
    updating after a turn reads as a soft change, not a flash. */

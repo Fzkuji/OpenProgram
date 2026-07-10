@@ -85,6 +85,7 @@ def build_session_graph(
             "function": m.get("function"),
             "display": m.get("display"),
             "source": m.get("source"),
+            "status": m.get("status"),
             "preview": preview,
             "input": _extract_tool_input(m),
             "name": _extract_function_name(m),
@@ -98,6 +99,18 @@ def build_session_graph(
             "attach_embed_count": aembed_n,
             "attach_embed_tokens": aembed_tok,
         })
+
+    # attach 指针不画节点（dag-rendering.md 场景 8/10），但回流长虚线需要
+    # 它携带的 ref：把 ref 戳到嵌入位置（attach 的 predecessor 节点）上，
+    # 前端从子分支 tip 画回这里。attach 行本身随 display=runtime 被过滤。
+    by_id_row = {n["id"]: n for n in graph}
+    for n in graph:
+        if n.get("function") != "attach" or not n.get("attach_ref"):
+            continue
+        host = by_id_row.get(n.get("predecessor") or "")
+        if host is None:
+            continue
+        host.setdefault("attach_returns", []).append(n["attach_ref"])
 
     # Root 兜底：部分分支的首节点建库时 predecessor 与 caller 都没写
     # （历史数据 / 某些开分支路径），下发后既没有对话前驱也没有子调用父，
@@ -119,6 +132,10 @@ def build_session_graph(
             # （predecessor 指向图外的 spawn/followup reply 不在此列，交由
             #  normalize_followup 处理，避免干扰 task-followup 的边重写。）
             if not pred_in and not caller_in:
+                # 跨会话 spawn 根：caller 在另一个会话的图里。挂回 ROOT
+                # 之前打标，前端画 ↗ 角标（dag-rendering.md 第四节徽标）。
+                if n.get("source") == "agent_spawn" and caller:
+                    n["spawn_remote"] = True
                 n["caller"] = rid
 
     return annotate_graph(graph, head_id)
