@@ -159,7 +159,7 @@ itself):
 |---|---|
 | `⚒N` (right of an llm node) | a collapsed execution subtree, N sub-calls; click to expand |
 | `×N` (right of a code node) | N isomorphic siblings produced by a loop, folded (pure display) |
-| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later) |
+| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later). **Cross-session only**: a same-session spawn has both ends in the graph and the dash-dot edge already expresses the relationship (scene 10) — no ↗ there; the mark is a stand-in for the edge that cannot be drawn, not a generic spawn decoration |
 
 ---
 
