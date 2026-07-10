@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
+import { ThinkingIcon } from "./step-icons";
 
 export function ThinkingBlock({
   text,
@@ -51,8 +52,8 @@ export function ThinkingBlock({
         onClick={() => { userToggled.current = true; setCollapsed((c) => !c); }}
       >
         <span>
-          <span className="inline-tree-script" title="thinking">{"𝓣"}</span>
-          {"\u00a0\u00a0"}
+          <span className="inline-tree-icon" title="thinking"><ThinkingIcon /></span>
+          {"\u00a0"}
           {tr("Thinking", "思考")}
           {streaming ? "…" : ""}
         </span>

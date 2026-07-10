@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>聊天轮次视觉规范 — 执行时间线 + 消息导航</title>
+<style>
+:root{
+  --accent-orange:#d19a66; --accent-green:#18a96b; --accent-red:#e5534b;
+  --accent-cyan:#3bc9db;
+  --bg-primary:#1f1f1e; --bg-secondary:#171716; --bg-tertiary:#252524;
+  --bg-hover:#2e2e2c; --border-light:rgba(226,225,218,0.2);
+  --text-primary:#c3c2b7; --text-secondary:#97958c; --text-muted:#6b6a63;
+  --text-bright:#f8f8f6; --radius:8px;
+  --font-sans:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+  --font-mono:"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#141413;color:var(--text-primary);font-family:var(--font-sans);
+  font-size:14px;line-height:1.6;padding:36px 12vw 120px}
+h1{font-size:20px;color:var(--text-bright);margin-bottom:6px}
+h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:10px;align-items:center}
+.num{display:inline-flex;width:22px;height:22px;border-radius:6px;background:var(--accent-orange);
+  color:#141413;font-size:13px;font-weight:700;align-items:center;justify-content:center}
+.desc{color:var(--text-secondary);font-size:13px;margin-bottom:14px;max-width:760px}
+.stage{background:var(--bg-primary);border:1px solid var(--border-light);border-radius:12px;
+  padding:26px 30px;max-width:820px;position:relative;overflow:hidden}
+.rule{color:var(--text-muted);font-size:12px;max-width:760px;margin-top:10px;line-height:1.7}
+
+/* ── 聊天基元 ── */
+.u-msg{display:flex;justify-content:flex-end;margin:10px 0}
+.u-bubble{background:var(--bg-tertiary);border-radius:14px;padding:9px 14px;max-width:70%;color:var(--text-primary)}
+.reply{margin:10px 0;color:var(--text-primary)}
+.reply b{color:var(--text-bright)}
+
+/* ── 执行时间线（无外框） ── */
+.tl-toggle{display:inline-flex;align-items:center;gap:10px;color:var(--text-muted);
+  font-size:13px;cursor:pointer;user-select:none;margin:10px 0 4px;border-radius:8px;
+  padding:5px 14px 5px 10px;letter-spacing:.2px}
+.tl-toggle:hover{color:var(--text-secondary);background:var(--bg-hover)}
+.tl-toggle .chev{font-size:11px;transition:transform .15s;display:inline-block}
+.tl.open .tl-toggle .chev{transform:rotate(90deg)}
+.tl-body{display:none;position:relative;margin:8px 0 6px;padding-left:34px}
+.tl.open .tl-body{display:block}
+.tl-body::before{content:"";position:absolute;left:10px;top:16px;bottom:16px;width:1.5px;
+  background:var(--border-light);border-radius:1px}
+.step{position:relative;padding:7px 0 7px 2px}
+.step-head{display:flex;align-items:center;gap:10px;color:var(--text-secondary);font-size:13px;
+  cursor:pointer;border-radius:6px;padding:4px 8px;user-select:none}
+.step-head:hover{background:var(--bg-hover)}
+.step-icon{position:absolute;left:-34px;top:10px;width:20px;height:20px;
+  display:flex;align-items:center;justify-content:center;background:var(--bg-primary);
+  color:var(--text-secondary);border-radius:50%}
+.step-icon svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.step-title{flex:0 0 auto}
+.step-note{color:var(--text-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.step-act{opacity:0;display:inline-flex;gap:8px;align-items:center;font-size:12px;color:var(--text-muted);
+  transition:opacity .15s}
+.step:hover .step-act{opacity:1}
+.step-act .btn{border:1px solid var(--border-light);border-radius:6px;padding:1px 8px;cursor:pointer;
+  color:var(--text-secondary);background:transparent;font-size:12px}
+.step-act .btn:hover{background:var(--bg-hover);color:var(--text-bright)}
+.step-body{display:none;margin:6px 0 6px 8px;padding:10px 14px;background:var(--bg-secondary);
+  border-radius:8px;color:var(--text-secondary);font-size:13px}
+
+/* ── 嵌套层级：函数调用内部的子调用 = 缩进一层的子时间线 ── */
+.tl-sub{position:relative;margin:6px 0 4px 8px;padding-left:30px}
+.tl-sub::before{content:"";position:absolute;left:8px;top:12px;bottom:12px;width:1.5px;
+  background:var(--border-light);opacity:.6;border-radius:1px}
+.tl-sub .step{padding:5px 0 5px 2px}
+.tl-sub .step-head{font-size:12.5px;padding:3px 8px}
+.tl-sub .step-icon{left:-30px;top:8px;width:17px;height:17px}
+.tl-sub .step-icon svg{width:12px;height:12px}
+.tl-sub .step-body{font-size:12.5px;padding:8px 12px}
+.step.open .step-body{display:block}
+.step-body .mono{font-family:var(--font-mono);font-size:12px;color:var(--text-primary)}
+.spin{width:7px;height:7px;border-radius:50%;background:var(--accent-cyan);animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ── 消息导航（右缘横线） ── */
+.mini{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:flex;
+  flex-direction:column;gap:7px;align-items:flex-end;padding:8px 4px;z-index:3}
+.mini .dash{width:16px;height:2.5px;border-radius:2px;background:var(--text-muted);opacity:.5;transition:all .15s}
+.mini .dash.active{background:var(--text-bright);opacity:.95;width:20px}
+.mini:hover .dash{opacity:0}
+.mini-panel{position:absolute;right:0;top:50%;transform:translateY(-50%);width:300px;
+  background:var(--bg-tertiary);border:1px solid var(--border-light);border-radius:12px;
+  padding:6px;display:none;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.mini:hover .mini-panel{display:block}
+.mini-row{padding:7px 10px;border-radius:8px;color:var(--text-primary);font-size:13px;cursor:pointer;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mini-row:hover{background:var(--bg-hover)}
+.mini-row.active{background:var(--bg-hover)}
+</style>
+</head>
+<body>
+<h1>聊天轮次视觉规范</h1>
+<div class="desc">执行时间线（去外框、图标竖线串联、三类行统一）+ 右缘消息导航。全部可交互——点开试。</div>
+
+<!-- ═══════ 1. 收起态 ═══════ -->
+<h2><span class="num">1</span>默认（收起）：一轮 = 一行淡文字 + 回复</h2>
+<div class="desc">执行过程不再有框。收起态是一行 GPT"已思考 19s ›"式的淡色摘要文字，只分三类：思考 / 函数 / 子代理。点击展开时间线。</div>
+<div class="stage">
+  <div class="u-msg"><div class="u-bubble">你能开一个agent，帮我去看看今天天气吗，我在北京亚洲金融大厦</div></div>
+
+  <div class="tl" id="tl1">
+    <div class="tl-toggle" onclick="document.getElementById('tl1').classList.toggle('open')">
+      <span>思考 ×2 · 函数 ×1 · 子代理: 查询北京天气</span><span class="chev">›</span>
+    </div>
+    <div class="tl-body">
+      <div class="step" onclick="this.classList.toggle('open')">
+        <span class="step-icon"><svg viewBox="0 0 24 24"><path d="M12 3.5l2 5.6 5.6 2-5.6 2-2 5.6-2-5.6-5.6-2 5.6-2 2-5.6z"/></svg></span>
+        <div class="step-head"><span class="step-title">思考</span>
+          <span class="step-note">需要先核对当前日期，再决定查询口径…</span>
+          <span class="step-act"><button class="btn">复制</button></span></div>
+        <div class="step-body">用户在北京亚洲金融大厦，要今天的天气。我先用 bash 核对系统日期，确认"今天"是哪一天，然后开一个子代理去做实时查询，最后汇总成简短建议。</div>
+      </div>
+      <div class="step" onclick="this.classList.toggle('open')">
+        <span class="step-icon"><svg viewBox="0 0 24 24"><polyline points="15.5 18 21.5 12 15.5 6"/><polyline points="8.5 6 2.5 12 8.5 18"/></svg></span>
+        <div class="step-head"><span class="step-title">函数调用</span>
+          <span class="step-note">bash · date '+%Y-%m-%d %H:%M %Z'</span>
+          <span class="step-act"><button class="btn">复制</button></span></div>
+        <div class="step-body"><span class="mono">$ date '+%Y-%m-%d %H:%M %Z'<br>2026-07-10 16:32 CST</span></div>
+      </div>
+      <div class="step" onclick="this.classList.toggle('open')">
+        <span class="step-icon"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span>
+        <div class="step-head"><span class="step-title">子代理: 查询北京天气</span>
+          <span class="step-note">已完成</span>
+          <span class="step-act"><button class="btn" onclick="event.stopPropagation()">Switch ↗</button></span></div>
+        <div class="step-body">查询日期：2026年7月10日（周五）。当前天气：小雨，25.8°C，湿度 89%；今日 24～28°C，预报大雨转暴雨，降水概率约 98%…</div>
+      </div>
+      <div class="step" onclick="this.classList.toggle('open')">
+        <span class="step-icon"><svg viewBox="0 0 24 24"><path d="M12 3.5l2 5.6 5.6 2-5.6 2-2 5.6-2-5.6-5.6-2 5.6-2 2-5.6z"/></svg></span>
+        <div class="step-head"><span class="step-title">思考</span>
+          <span class="step-note">子代理结果可信，整理成出行建议…</span>
+          <span class="step-act"><button class="btn">复制</button></span></div>
+        <div class="step-body">数据来自中国天气网 + Open-Meteo，两源一致。整理成三行：现况、区间、建议。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="reply">北京今天<b>小雨转暴雨</b>，现在 25.8°C、湿度 89%；全天 24～28°C，降水概率约 98%。<b>建议带伞</b>，尽量减少非必要外出。</div>
+</div>
+<div class="rule">规则：外层无框无底色；收起行 = 摘要文字 + ›，hover 微亮；回复文本永远直接可见。流式进行中的一轮不折叠（实时平铺），落定后收起。</div>
+
+<!-- ═══════ 2. 时间线细节 ═══════ -->
+<h2><span class="num">2</span>时间线行：图标 + 标题 + 一行摘要 + 悬停动作</h2>
+<div class="desc">三类行同一副面孔：左列圆形图标压在竖线上（✦ 思考 / ‹› 函数 / >_ 子代理），中间是标题 + 灰色单行摘要（思考首句 / 工具名和命令 / 子代理状态），右侧动作（复制、Switch）hover 才出现。点行展开内容——内容是贴在竖线里的小块，不再套框中框。</div>
+<div class="stage">
+  <div class="tl open">
+    <div class="tl-toggle"><span>思考 ×1 · 函数 ×2（进行中）</span><span class="chev">›</span></div>
+    <div class="tl-body">
+      <div class="step open">
+        <span class="step-icon"><svg viewBox="0 0 24 24"><path d="M12 3.5l2 5.6 5.6 2-5.6 2-2 5.6-2-5.6-5.6-2 5.6-2 2-5.6z"/></svg></span>
+        <div class="step-head"><span class="step-title">思考</span>
+          <span class="step-note">点开的行长这样——内容嵌在竖线里</span></div>
+        <div class="step-body">展开的内容块只有一层浅底色，没有边框、没有自己的头部——头就是上面那行。再点一次行收回去。</div>
+      </div>
+      <div class="step open">
+        <span class="step-icon"><svg viewBox="0 0 24 24"><polyline points="15.5 18 21.5 12 15.5 6"/><polyline points="8.5 6 2.5 12 8.5 18"/></svg></span>
+        <div class="step-head"><span class="step-title">函数调用</span>
+          <span class="step-note">research_agent · 内部还有子调用 → 展开是缩进一层的子时间线</span></div>
+        <div class="tl-sub">
+          <div class="step" onclick="event.stopPropagation();this.classList.toggle('open')">
+            <span class="step-icon"><svg viewBox="0 0 24 24"><polyline points="15.5 18 21.5 12 15.5 6"/><polyline points="8.5 6 2.5 12 8.5 18"/></svg></span>
+            <div class="step-head"><span class="step-title">web_search</span>
+              <span class="step-note">"北京 朝阳区 今日天气"</span></div>
+            <div class="step-body"><span class="mono">12 results · weather.com.cn, open-meteo.com…</span></div>
+          </div>
+          <div class="step" onclick="event.stopPropagation();this.classList.toggle('open')">
+            <span class="step-icon"><svg viewBox="0 0 24 24"><path d="M12 3.5l2 5.6 5.6 2-5.6 2-2 5.6-2-5.6-5.6-2 5.6-2 2-5.6z"/></svg></span>
+            <div class="step-head"><span class="step-title">思考</span>
+              <span class="step-note">两源数据一致，取中国天气网为准…</span></div>
+            <div class="step-body">中国天气网与 Open-Meteo 的现况一致（小雨 / 25.8°C），预报口径略有差异，以官方源为准。</div>
+          </div>
+          <div class="step" onclick="event.stopPropagation();this.classList.toggle('open')">
+            <span class="step-icon"><svg viewBox="0 0 24 24"><polyline points="15.5 18 21.5 12 15.5 6"/><polyline points="8.5 6 2.5 12 8.5 18"/></svg></span>
+            <div class="step-head"><span class="step-title">read_page</span>
+              <span class="step-note">weather.com.cn/101010300.shtml</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-icon" style="color:var(--accent-cyan)"><span class="spin"></span></span>
+        <div class="step-head"><span class="step-title">函数调用</span>
+          <span class="step-note">web_fetch · weather.com.cn（运行中）</span></div>
+      </div>
+      <div class="step">
+        <span class="step-icon" style="color:var(--accent-red)"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></span>
+        <div class="step-head"><span class="step-title" style="color:var(--accent-red)">函数调用</span>
+          <span class="step-note">bash · 退出码 1 — 失败的行图标换红 ✗</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="rule">状态就画在图标位：运行中 = 呼吸点（青），失败 = 红 ✗，正常 = 类型图标。行高、字号、图标列宽全部统一（20px 圆标压 1.5px 竖线）。<br>
+嵌套层级：函数内部还有子调用时（@agentic_function 的执行树、工具的多层 call-tree），展开就是<b>缩进一层的子时间线</b>——图标缩小一号（17px）、竖线更淡，同一套行样式递归下去，层数不限。</div>
+
+<!-- ═══════ 3. 消息导航 ═══════ -->
+<h2><span class="num">3</span>右缘消息导航：横线即消息，悬停展开列表</h2>
+<div class="desc">聊天列右缘一列小横线，一条横线 = 你发过的一条消息（当前可视的那条加亮加长）。悬停整列 → 展开消息列表面板，点击跳到那条消息。把鼠标移到右边那几条横线上试试。</div>
+<div class="stage" style="min-height:300px">
+  <div class="u-msg"><div class="u-bubble">你好</div></div>
+  <div class="reply">你好！有什么我可以帮你的吗？</div>
+  <div class="u-msg"><div class="u-bubble">你能开一个agent，帮我去看看今天天气吗</div></div>
+  <div class="reply">北京今天小雨转暴雨，现在 25.8°C……建议带伞。</div>
+  <div class="u-msg"><div class="u-bubble">那明天呢？</div></div>
+  <div class="reply">明天多云转晴，26～31°C，无降水……</div>
+
+  <div class="mini">
+    <span class="dash"></span>
+    <span class="dash active"></span>
+    <span class="dash"></span>
+    <div class="mini-panel">
+      <div class="mini-row">你好</div>
+      <div class="mini-row active">你能开一个agent，帮我去看看今天天气吗</div>
+      <div class="mini-row">那明天呢？</div>
+    </div>
+  </div>
+</div>
+<div class="rule">横线只数用户消息（回复不占位）；面板行单行截断；点击 = 平滑滚到那条消息并闪一下。面板出现时横线隐去，二者不叠。列表滚动时高亮跟随当前可视消息。</div>
+
+<script>
+document.querySelectorAll('.mini-row').forEach(r=>r.addEventListener('click',()=>r.style.background='var(--bg-selected,#33332f)'));
+</script>
+</body>
+</html>

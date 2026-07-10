@@ -26,6 +26,7 @@ import { useTranslation } from "@/lib/i18n";
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
+import { MessageMinimap } from "./message-minimap";
 import { RuntimeBlock } from "./runtime-block";
 import { SpawnedFromCard } from "./spawned-from-card";
 import { UserBubble } from "./user-bubble";
@@ -187,6 +188,7 @@ export function MessageList() {
 
   return (
     <>
+      <MessageMinimap />
       {ids.map((id) => (
         <MessageRow key={id} id={id} />
       ))}

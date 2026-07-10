@@ -22,8 +22,12 @@ import { AttachCard } from "./attach-card";
 import {
   ExecutionStrip,
   execStripLabel,
+  FunctionStep,
   SPAWNING_TOOL_NAMES,
+  SubAgentStep,
+  ThinkingStep,
 } from "./execution-strip";
+import type { TNode } from "./execution-dag/types";
 import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
@@ -303,46 +307,79 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   rendered.push(renderBlock(seg.b, seg.i, fifo));
                   return;
                 }
-                // 段内交错：块按序渲染，spawn 调用块后面紧跟它的
-                // Spawned 行——在容器内部也保持"在哪调用画在哪"。
                 const cardFifo = seg.cards.slice();
-                const blockNodes: React.ReactNode[] = [];
+                if (streaming) {
+                  // 进行中：平铺实时块 + spawn 卡跟在调用块后。
+                  const blockNodes: React.ReactNode[] = [];
+                  seg.items.forEach(({ b, i }) => {
+                    blockNodes.push(renderBlock(b, i, fifo));
+                    if (b.type === "tool" && SPAWNING_TOOL_NAMES.has(b.tool || "")
+                        && cardFifo.length > 0) {
+                      const card = cardFifo.shift()!;
+                      blockNodes.push(
+                        <div
+                          key={`attach_${card.id}`}
+                          className="attach-row"
+                          data-msg-id={card.id}
+                        >
+                          <AttachCard msg={card} />
+                        </div>,
+                      );
+                    }
+                  });
+                  rendered.push(<div key={`seg_${si}`}>{blockNodes}</div>);
+                  return;
+                }
+                // 落定的轮次：时间线步骤（chat-turn-visual-spec.html）。
+                // thinking → 思考行；spawn 调用 → 子代理行；agentic 工具
+                // → 函数行 + context_tree 递归子层级；普通工具 → 函数行。
+                const steps: React.ReactNode[] = [];
                 seg.items.forEach(({ b, i }) => {
-                  blockNodes.push(renderBlock(b, i, fifo));
-                  if (b.type === "tool" && SPAWNING_TOOL_NAMES.has(b.tool || "")
-                      && cardFifo.length > 0) {
+                  if (b.type === "thinking") {
+                    steps.push(<ThinkingStep key={`thk_${i}`} text={b.text || ""} />);
+                    return;
+                  }
+                  if (b.type !== "tool") return;
+                  const tname = b.tool || "";
+                  if (SPAWNING_TOOL_NAMES.has(tname) && cardFifo.length > 0) {
                     const card = cardFifo.shift()!;
-                    blockNodes.push(
-                      <div
-                        key={`attach_${card.id}`}
-                        className="attach-row"
-                        data-msg-id={card.id}
-                      >
-                        <AttachCard msg={card} />
+                    steps.push(
+                      <div key={`sub_${card.id}`} data-msg-id={card.id}>
+                        <SubAgentStep card={card} />
                       </div>,
                     );
+                    return;
                   }
+                  let tree: TNode | null = null;
+                  if (AGENTIC_TOOL_NAMES.has(tname)) {
+                    const rc =
+                      (b.tool_call_id && runtimeByToolId.get(b.tool_call_id))
+                      || fifo.shift();
+                    tree = (rc?.contextTree as TNode | undefined) || null;
+                  }
+                  steps.push(<FunctionStep key={`fn_${i}`} block={b} tree={tree} />);
                 });
-                if (streaming) {
-                  // 进行中：平铺，实时可见。
-                  rendered.push(
-                    <div key={`seg_${si}`}>{blockNodes}</div>,
+                // 没配到 spawn 块的卡兜底成子代理行，不丢。
+                cardFifo.forEach((card) => {
+                  steps.push(
+                    <div key={`sub_${card.id}`} data-msg-id={card.id}>
+                      <SubAgentStep card={card} />
+                    </div>,
                   );
-                } else {
-                  const spawnNames = seg.cards.map((c) =>
-                    (c.attach?.label || "").trim()
-                    || (c.attach?.head_id || "").slice(0, 8)
-                    || text("sub-agent", "子代理"));
-                  rendered.push(
-                    <ExecutionStrip
-                      key={`seg_${si}`}
-                      label={execStripLabel(
-                        seg.items.map(({ b }) => b), spawnNames, text)}
-                    >
-                      {blockNodes}
-                    </ExecutionStrip>,
-                  );
-                }
+                });
+                const spawnNames = seg.cards.map((c) =>
+                  (c.attach?.label || "").trim()
+                  || (c.attach?.head_id || "").slice(0, 8)
+                  || text("sub-agent", "子代理"));
+                rendered.push(
+                  <ExecutionStrip
+                    key={`seg_${si}`}
+                    label={execStripLabel(
+                      seg.items.map(({ b }) => b), spawnNames, text)}
+                  >
+                    {steps}
+                  </ExecutionStrip>,
+                );
               });
               if (!hasTextBlock && hasContent) {
                 rendered.push(
