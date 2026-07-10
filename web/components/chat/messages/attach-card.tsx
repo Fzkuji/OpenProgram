@@ -109,6 +109,9 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   useMarkdownReady();
   const { text } = useTranslation();
   const switchIconRef = useRef<AnimatedNavIconHandle>(null);
+  // 默认一行（头部：图标 + 名字 + 状态 + Switch），预览等内容点开才
+  // 渲染——中间产物不占版面。运行中的取消按钮保持可见。
+  const [expanded, setExpanded] = useState(false);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const attach = msg.attach || {};
   const followupNotice = useFollowupNotice(msg.id);
@@ -201,8 +204,16 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
       className="attach-card"
       data-peer-session-id={targetSessionId}
       data-head-id={targetHead}
+      data-expanded={expanded ? "1" : "0"}
     >
-      <div className="attach-card-header">
+      <div
+        className="attach-card-header"
+        onClick={() => setExpanded((v) => !v)}
+        style={{ cursor: "pointer" }}
+        title={expanded
+          ? text("Collapse preview", "收起预览")
+          : text("Expand preview", "展开预览")}
+      >
         <div className="attach-card-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -256,7 +267,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           <button
             type="button"
             className="attach-card-open"
-            onClick={open}
+            onClick={(e) => { e.stopPropagation(); open(); }}
             onMouseEnter={() => switchIconRef.current?.startAnimation?.()}
             onMouseLeave={() => switchIconRef.current?.stopAnimation?.()}
             aria-label={sameSession ? text("Switch to this branch", "切换到这个分支") : text("Open peer session", "打开关联会话")}
@@ -267,20 +278,24 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           </button>
         ) : null}
       </div>
-      <div className="attach-card-preview-label">
-        {hasEmbedStats
-          ? `${text("EMBEDS", "嵌入")} ${embedCount} ${text("messages", "条消息")}${
-              typeof embedTokens === "number"
-                ? ` · ${embedTokens} ${text("tokens", "tokens")}`
-                : ""
-            }${sourceCommitId ? ` · commit ${sourceCommitId.slice(0, 8)}` : ""}`
-          : text("Preview (tip of this branch)", "预览（该分支末端）")}
-      </div>
-      <div
-        className="attach-card-preview chat-text"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(preview) }}
-      />
-      {isManual ? (
+      {expanded ? (
+        <>
+          <div className="attach-card-preview-label">
+            {hasEmbedStats
+              ? `${text("EMBEDS", "嵌入")} ${embedCount} ${text("messages", "条消息")}${
+                  typeof embedTokens === "number"
+                    ? ` · ${embedTokens} ${text("tokens", "tokens")}`
+                    : ""
+                }${sourceCommitId ? ` · commit ${sourceCommitId.slice(0, 8)}` : ""}`
+              : text("Preview (tip of this branch)", "预览（该分支末端）")}
+          </div>
+          <div
+            className="attach-card-preview chat-text"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(preview) }}
+          />
+        </>
+      ) : null}
+      {expanded && isManual ? (
         <div className="attach-card-footer">
           <span className="attach-card-status">
             {hasEmbedStats
@@ -321,7 +336,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
           anywhere. Show it inline as a small italic footer on the
           attach card so the card represents the full sub-task
           lifecycle: spawn → status → preview → auto-followup. */}
-      {followupNotice ? (
+      {expanded && followupNotice ? (
         <div
           className="attach-card-followup"
           // The followup user msg has no chat bubble of its own

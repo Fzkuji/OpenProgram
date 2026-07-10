@@ -19,6 +19,7 @@ import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 
 import { AttachCard } from "./attach-card";
+import { ExecutionStrip, execStripLabel } from "./execution-strip";
 import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
@@ -171,18 +172,6 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
       isError: !!b.is_error,
       status: b.is_error ? "error" : "done",
     };
-    // task/message_branch 调用块：把这次 spawn 的卡画在工具块紧后面。
-    if (SPAWNING_TOOL_NAMES.has(tname) && attachFifo.length > 0) {
-      const card = attachFifo.shift()!;
-      return (
-        <div key={`tool_${idx}`}>
-          <ToolsBlock tools={[tc]} />
-          <div className="attach-row" data-msg-id={card.id}>
-            <AttachCard msg={card} />
-          </div>
-        </div>
-      );
-    }
     return <ToolsBlock key={`tool_${idx}`} tools={[tc]} />;
   };
   const color = agentColor(msg.agentId);
@@ -272,7 +261,74 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               // as one text node after the tool cards so the user
               // still sees the answer.
               const hasTextBlock = msg.blocks.some((b) => b.type === "text");
-              const rendered = msg.blocks.map((b, i) => renderBlock(b, i, fifo));
+              // ── 分段：text 块常驻；连续的 thinking/tool 块聚成一段
+              // 执行痕迹。已落定的轮次把每段折成一条摘要条（点击展开
+              // 逐块序列）；流式进行中的轮次平铺，让用户实时看到它在
+              // 干嘛。段内出现 task/message_branch 调用时，把对应的
+              // Spawned 卡（一行态）挂在该段摘要条下面——在哪调用就
+              // 画在哪。
+              type ExecSeg = {
+                kind: "exec";
+                items: Array<{ b: AssistantBlock; i: number }>;
+                cards: ChatMsg[];
+              };
+              type TextSeg = { kind: "text"; b: AssistantBlock; i: number };
+              const segs: Array<ExecSeg | TextSeg> = [];
+              msg.blocks.forEach((b, i) => {
+                if (b.type === "text") {
+                  segs.push({ kind: "text", b, i });
+                  return;
+                }
+                const last = segs[segs.length - 1];
+                const seg: ExecSeg =
+                  last && last.kind === "exec"
+                    ? last
+                    : (() => {
+                        const s: ExecSeg = { kind: "exec", items: [], cards: [] };
+                        segs.push(s);
+                        return s;
+                      })();
+                seg.items.push({ b, i });
+                if (b.type === "tool" && SPAWNING_TOOL_NAMES.has(b.tool || "")
+                    && attachFifo.length > 0) {
+                  seg.cards.push(attachFifo.shift()!);
+                }
+              });
+              const rendered: React.ReactNode[] = [];
+              segs.forEach((seg, si) => {
+                if (seg.kind === "text") {
+                  rendered.push(renderBlock(seg.b, seg.i, fifo));
+                  return;
+                }
+                const blockNodes = seg.items.map(({ b, i }) =>
+                  renderBlock(b, i, fifo));
+                if (streaming) {
+                  // 进行中：平铺 + 卡片跟在段尾。
+                  rendered.push(
+                    <div key={`seg_${si}`}>{blockNodes}</div>,
+                  );
+                } else {
+                  rendered.push(
+                    <ExecutionStrip
+                      key={`seg_${si}`}
+                      label={execStripLabel(seg.items.map(({ b }) => b), text)}
+                    >
+                      {blockNodes}
+                    </ExecutionStrip>,
+                  );
+                }
+                seg.cards.forEach((card) => {
+                  rendered.push(
+                    <div
+                      key={`attach_${card.id}`}
+                      className="attach-row"
+                      data-msg-id={card.id}
+                    >
+                      <AttachCard msg={card} />
+                    </div>,
+                  );
+                });
+              });
               if (!hasTextBlock && hasContent) {
                 rendered.push(
                   <div
