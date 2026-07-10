@@ -94,8 +94,9 @@ off ROOT. Change spawn semantics in all three together, test all
 three together.
 
 Spawns along one chain share a single depth counter; task() applies
-its own tight cap `MAX_TASK_DEPTH=2` (main agent → coordinator →
-worker, and no further — anything deeper is an agent passing the buck,
+its own tight cap `MAX_TASK_DEPTH=1` (only the main agent spawns; a
+spawned agent does the work itself and never re-delegates — even a
+single "coordinator" hop degenerated into buck-passing in practice,
 observed live as a 5-generation weather-query delegation chain), while
 message_branch keeps the looser `MAX_SPAWN_DEPTH=8` (budgeted for
 multi-round branch-to-branch dialogue, not delegation).

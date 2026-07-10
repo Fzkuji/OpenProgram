@@ -208,9 +208,12 @@ switcher** (they are genuine alternative continuations of the initiator's dialog
 `source=from_branch` gets no agent_spawn-style isolation — see `ui/invariants.md`
 rule 7).
 
-**A sub-agent spawning again (coordinator→worker, within the depth cap)**: recurse per
-scene 10 — the worker branch's dash-dot edge starts from the sub-agent's reply node and
-hangs under the sub-agent's lane structure.
+**A sub-agent spawning again**: forbidden at the data layer
+(`MAX_TASK_DEPTH=1` — only the main agent may task(); a spawned agent always
+does the work itself, see `ui/invariants.md` rule 6). The renderer still
+recurses per scene 10 as a fallback, so historical multi-generation delegation
+chains (the worker branch's dash-dot edge starting from the sub-agent's reply
+node, hanging under its lane structure) remain drawable.
 
 ## 7. Render pipeline (code map)
 

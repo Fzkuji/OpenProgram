@@ -178,8 +178,10 @@ lane 色；**绝不给某类线固定颜色**。类型只靠线型：
 切换器**（它是发起方对话的真实延续替代；`source=from_branch` 不做
 agent_spawn 那样的隔离，隔离规则见 `ui/invariants.md` 规则 7）。
 
-**子代理再 spawn（协调者→worker，深度上限内）**：按场景 10 规则递归——worker
-分支的点划线从子代理的回复节点出发，挂在子代理的 lane 结构下。
+**子代理再 spawn**：数据语义上已被禁止（`MAX_TASK_DEPTH=1`，只有主 agent
+能 task()，被 spawn 的 agent 一律自己干活，见 `ui/invariants.md` 规则 6）。
+渲染层仍按场景 10 规则递归兜底——历史数据里的多代委托链（worker 分支的
+点划线从子代理的回复节点出发，挂在子代理的 lane 结构下）照样画得出来。
 
 ## 七、渲染管线（代码地图）
 

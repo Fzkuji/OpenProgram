@@ -234,9 +234,9 @@ def test_task_async_passes_caller_and_depth(store, monkeypatch):
 # ---- depth guard: task() refuses past MAX_SPAWN_DEPTH --------------------
 
 def test_task_refuses_at_max_task_depth(store, captured_run):
-    """task()'s own cap (MAX_TASK_DEPTH=2) is deliberately tighter than
-    message_branch's MAX_SPAWN_DEPTH: coordinator→worker is the deepest
-    legitimate task() nesting; a worker delegating again gets refused."""
+    """task()'s own cap (MAX_TASK_DEPTH=1) is deliberately tighter than
+    message_branch's MAX_SPAWN_DEPTH: only the main agent may task();
+    a spawned agent delegating again gets refused."""
     from openprogram.functions.tools.agent_collab.message_branch import (
         set_spawn_depth, _spawn_depth,
     )
@@ -254,8 +254,9 @@ def test_task_refuses_at_max_task_depth(store, captured_run):
     assert "spawn_caller" not in captured_run  # never reached the spawn
 
 
-def test_task_allows_coordinator_level(store, captured_run):
-    """Depth 1 (a spawned coordinator) may still task() workers."""
+def test_task_spawned_agent_cannot_redelegate(store, captured_run):
+    """Depth 1 (a spawned agent) must NOT task() again — it does the
+    work itself with its own tools."""
     from openprogram.functions.tools.agent_collab.message_branch import (
         set_spawn_depth, _spawn_depth,
     )
@@ -268,8 +269,9 @@ def test_task_allows_coordinator_level(store, captured_run):
         finally:
             _spawn_depth.reset(tok)
 
-    _run_with_ctx(_call, session_id="p1", turn_id="a1")
-    assert captured_run["spawn_caller"] == "a1"  # spawn went through
+    out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
+    assert "[task refused]" in out
+    assert "spawn_caller" not in captured_run
 
 
 def test_task_sync_child_sees_incremented_depth(store, monkeypatch):

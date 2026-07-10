@@ -61,9 +61,9 @@ _DESCRIPTION = (
     "use clean. If you'd genuinely want the sub-agent to read all "
     "the chat history above, use inherit.\n"
     "\n"
-    "If YOU are a spawned agent and can do the work with your own "
-    "tools, DO IT — do not re-delegate the same task to yet another "
-    "agent. Delegation chains waste turns and are depth-capped.\n"
+    "If YOU are a spawned agent, this tool is NOT available to you: "
+    "do the work yourself with your own tools. Re-delegation is "
+    "refused outright (depth cap 1 — only the main agent spawns).\n"
     "\n"
     "In both modes the reply lands as a branch in the current "
     "session's DAG. The user can switch to it from the branches "
@@ -84,12 +84,14 @@ _DESCRIPTION = (
 )
 
 
-# task() delegation cap. Two levels covers every legitimate pattern
-# (main agent -> coordinator -> workers); a worker delegating AGAIN is
-# an agent avoiding its job. Deliberately much tighter than
-# message_branch's MAX_SPAWN_DEPTH=8, which budgets multi-round
-# branch-to-branch conversation, not delegation.
-MAX_TASK_DEPTH = 2
+# task() delegation cap. ONE level: the main agent may spawn workers;
+# a spawned agent does the work itself — it never re-delegates. Even a
+# single "coordinator" hop turned out to be an agent avoiding its job
+# in practice (observed live: a weather query bounced through a whole
+# delegation chain, every hop re-wording the same prompt). Deliberately
+# much tighter than message_branch's MAX_SPAWN_DEPTH=8, which budgets
+# multi-round branch-to-branch conversation, not delegation.
+MAX_TASK_DEPTH = 1
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
@@ -148,11 +150,11 @@ def _task_impl(
 
     # Depth guard — shares message_branch's counter so task() and
     # message_branch spawns count toward the same chain, but with a much
-    # tighter cap: legitimate task() nesting is coordinator→worker (two
-    # levels); anything deeper is an agent re-delegating instead of
-    # working (observed live: a 5-generation weather-query delegation
-    # chain, every hop just re-wording the same prompt). message_branch
-    # keeps its own looser MAX_SPAWN_DEPTH for branch-to-branch dialogue.
+    # tighter cap: only the main agent may task(); a spawned agent works
+    # with its own tools, it never re-delegates (observed live: a
+    # 5-generation weather-query delegation chain, every hop just
+    # re-wording the same prompt). message_branch keeps its own looser
+    # MAX_SPAWN_DEPTH for branch-to-branch dialogue.
     from openprogram.functions.tools.agent_collab.message_branch import (
         current_spawn_depth,
         set_spawn_depth,

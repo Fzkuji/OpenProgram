@@ -78,10 +78,10 @@ spawn 一个 sub-agent 分支有三个入口：`task()` 同步路径
 一起改，一起测。
 
 同一条链上的 spawn 深度共用一个计数器；task() 有自己的紧上限
-`MAX_TASK_DEPTH=2`（主 agent → 协调者 → 干活者，到此为止——更深就是
-代理在推活儿而不是干活儿，实测出现过 5 代天气查询委托链），
-message_branch 保留宽松的 `MAX_SPAWN_DEPTH=8`（预算给分支间多轮
-对话，不是委托链）。
+`MAX_TASK_DEPTH=1`（只有主 agent 能 spawn，被 spawn 的 agent 自己
+干活、一律不得再委托——实测连"协调者"这一层都会退化成推活儿，
+出现过 5 代天气查询委托链），message_branch 保留宽松的
+`MAX_SPAWN_DEPTH=8`（预算给分支间多轮对话，不是委托链）。
 
 出处：同步路径漏传导致 DAG 分支从头分叉（1d1fe016）；异步 task()
 漏传 caller + 深度不计数（后续修复）。
