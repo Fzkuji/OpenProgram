@@ -122,7 +122,8 @@ function firstLine(s: string): string {
  *  两种点击语义（互斥）：
  *  - `detail`：点行 → 右栏 Executions 显示详情（函数 / 子代理行）。
  *  - `inlineBody`：点行 → 内联展开（思考行）。
- *  `subSteps`（子调用层级）由行尾的 ⌄N 按钮展开，与点行语义无关。 */
+ *  `subSteps`（子调用层级）**常驻展开**：轮级摘要行已是折叠开关，
+ *  树一旦展开就完整可见，行上不放任何展开控件（用户裁决：别加箭头）。 */
 export function StepRow({
   icon,
   title,
@@ -147,7 +148,6 @@ export function StepRow({
   subSteps?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [kidsOpen, setKidsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   const { text } = useTranslation();
@@ -199,20 +199,6 @@ export function StepRow({
             <Icon ref={iconRef} size={13} />
           )}
         </span>
-        {subSteps ? (
-          <button
-            type="button"
-            className={"tl-kids-toggle" + (kidsOpen ? " open" : "")}
-            onClick={(e) => { e.stopPropagation(); setKidsOpen((v) => !v); }}
-            title={kidsOpen
-              ? text("Collapse sub-calls", "收起子调用")
-              : text("Expand sub-calls", "展开子调用")}
-          >
-            ▶
-          </button>
-        ) : (
-          <span className="tl-kids-toggle-placeholder" aria-hidden="true" />
-        )}
         <span className={"tl-step-title" + (error ? " is-error" : "")}>{title}</span>
         {note ? <span className="tl-step-note" title={note}>{note}</span> : null}
         <span className="tl-step-act">
@@ -225,7 +211,7 @@ export function StepRow({
         </span>
       </div>
       {open && inlineBody ? <div className="tl-step-body">{inlineBody}</div> : null}
-      {kidsOpen && subSteps ? <div className="tl-sub">{subSteps}</div> : null}
+      {subSteps ? <div className="tl-sub">{subSteps}</div> : null}
     </div>
   );
 }
