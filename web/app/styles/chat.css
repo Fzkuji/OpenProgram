@@ -1259,8 +1259,9 @@
 .exec-strip-chevron.open { transform: rotate(90deg); }
 .exec-strip-body { padding: 2px 8px 6px; }
 
-/* 展开后的内部块扁平化：去掉每块自己的厚框/底色，收紧间距——外壳
-   已经是卡了，行再各带一个框就头重脚轻。 */
+/* 展开后的内部块扁平化 + 三类行（thinking / 函数 / 子代理）统一成
+   同一副面孔：等高行、图标同列、右侧动作 hover 才现身。外壳已经是
+   卡了，行不再各带框。 */
 .exec-strip-body .inline-tree {
   border: none;
   background: transparent;
@@ -1268,17 +1269,41 @@
 }
 .exec-strip-body .inline-tree-header {
   background: transparent;
-  padding: 4px 2px;
+  padding: 6px 4px;
   font-size: 13px;
+  border-radius: calc(var(--radius) - 2px);
 }
 .exec-strip-body .inline-tree-header:hover { background: var(--bg-hover); }
+.exec-strip-body .inline-tree-script {
+  display: inline-block;
+  width: 18px;
+  text-align: center;
+}
+/* Copy / 展开箭头 hover 才出现——收起态的行只有图标 + 名字，与
+   子代理行的密度一致。 */
+.exec-strip-body .inline-tree-actions { opacity: 0; transition: opacity var(--transition); }
+.exec-strip-body .inline-tree:hover .inline-tree-actions { opacity: 1; }
 .exec-strip-body .attach-row { margin: 0; }
 .exec-strip-body .attach-card {
   border: none;
   background: transparent;
   margin: 0;
 }
-.exec-strip-body .attach-card .attach-card-header { padding: 4px 2px; }
+.exec-strip-body .attach-card .attach-card-header {
+  padding: 6px 4px;
+  border-radius: calc(var(--radius) - 2px);
+}
+.exec-strip-body .attach-card .attach-card-header:hover { background: var(--bg-hover); }
+/* 子代理行在列表里对齐 thinking/函数行的图标列与字号；副标题一行说明
+   收起（列表里不需要），展开态（点开预览）再显示。 */
+.exec-strip-body .attach-card .attach-card-label { font-size: 13px; }
+.exec-strip-body .attach-card[data-expanded="0"] .attach-card-sub { display: none; }
+/* Switch 按钮与 Copy 同规则：hover 现身。 */
+.exec-strip-body .attach-card .attach-card-open {
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.exec-strip-body .attach-card:hover .attach-card-open { opacity: 1; }
 
 /* 一行态的 attach 卡：头部即全部，展开才长出预览。 */
 .attach-card[data-expanded="0"] .attach-card-header { border-bottom: none; }

@@ -19,7 +19,11 @@ import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 
 import { AttachCard } from "./attach-card";
-import { ExecutionStrip, execStripLabel } from "./execution-strip";
+import {
+  ExecutionStrip,
+  execStripLabel,
+  SPAWNING_TOOL_NAMES,
+} from "./execution-strip";
 import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
@@ -130,7 +134,6 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   //（在哪调用就画在哪）。剩下没配到块的卡（老数据没记 blocks）兜底画
   // 在回复文本之前。
   const attachFifo = [...(msg.attachCards ?? [])];
-  const SPAWNING_TOOL_NAMES = new Set(["task", "message_branch"]);
   // Renders one block in its source-order position.
   const renderBlock = (b: AssistantBlock, idx: number, fifo: ChatMsg[]) => {
     if (b.type === "thinking") {

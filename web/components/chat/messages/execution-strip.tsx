@@ -16,30 +16,40 @@ import { useState } from "react";
 import type { AssistantBlock } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 
-/** 汇总标签：`thinking ×2 · task ×1 · bash ×1 · Spawned: 查天气`。 */
+/** spawn 类工具：在摘要里算"子代理"，不算普通函数调用。 */
+export const SPAWNING_TOOL_NAMES = new Set(["task", "message_branch"]);
+
+/** 汇总标签只分三类，不报具体工具名：
+ *  `思考 ×2 · 函数 ×1 · 子代理: 查询北京天气`。 */
 export function execStripLabel(
   blocks: AssistantBlock[],
   spawnNames: string[],
   text: (en: string, zh: string) => string,
 ): string {
   let thinking = 0;
-  const toolCounts = new Map<string, number>();
+  let functions = 0;
+  let spawnBlocks = 0;
   for (const b of blocks) {
     if (b.type === "thinking") thinking++;
     else if (b.type === "tool") {
-      const name = b.tool || "?";
-      toolCounts.set(name, (toolCounts.get(name) || 0) + 1);
+      if (SPAWNING_TOOL_NAMES.has(b.tool || "")) spawnBlocks++;
+      else functions++;
     }
   }
   const parts: string[] = [];
   if (thinking > 0) {
     parts.push(`${text("thinking", "思考")} ×${thinking}`);
   }
-  for (const [name, n] of toolCounts) {
-    parts.push(`${name} ×${n}`);
+  if (functions > 0) {
+    parts.push(`${text("functions", "函数")} ×${functions}`);
   }
-  for (const name of spawnNames) {
-    parts.push(`${text("Spawned", "子任务")}: ${name}`);
+  const subAgents = Math.max(spawnBlocks, spawnNames.length);
+  if (subAgents > 0) {
+    parts.push(
+      spawnNames.length > 0
+        ? `${text("sub-agent", "子代理")}: ${spawnNames.join("、")}`
+        : `${text("sub-agent", "子代理")} ×${subAgents}`,
+    );
   }
   return parts.join(" · ") || text("execution", "执行过程");
 }
