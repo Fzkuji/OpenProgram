@@ -23,7 +23,7 @@ A session graph has two kinds of node, an order of magnitude apart in count:
 
 | Layer | Nodes | Question it answers | Magnitude |
 |---|---|---|---|
-| **Conversation layer** | ROOT, user, llm replies, spawn branch roots, merge | What shape the session has: how many turns, how many branches, who spawned whom | single digits ~ dozens |
+| **Conversation layer** | ROOT, user, llm replies, spawn branch roots, merge, **manually-invoked top-level function nodes** (the user's explicit action — the code node behind a fn-form/run card) | What shape the session has: how many turns, how many branches, who spawned whom | single digits ~ dozens |
 | **Execution layer** | code (tool call) and its internal sub-calls | What one turn did internally | can reach dozens in a single turn |
 
 **Default visibility rule: the Viewport lays out only the conversation layer.** If an

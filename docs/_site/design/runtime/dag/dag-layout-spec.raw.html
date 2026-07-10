@@ -36,6 +36,10 @@ svg:hover .comm-line{opacity:.9}
   <span>▲ <b>llm</b> AI回复（三角）</span>
   <span>■ <b>code</b> 工具/函数（方块）</span>
   <span>◉ <b>merge</b> 合并节点（实心带孔圆）</span>
+  <span>&#9874;N <b>执行子树徽标</b>（默认聚合，场景11）</span>
+  <span>×N <b>循环折叠</b></span>
+  <span>↗ <b>跨会话spawn</b></span>
+  <span><b>状态=描边</b>（running虚线/error红/cancelled灰，场景12）</span>
 </div>
 
 <div class="rule" style="margin-bottom:18px">
@@ -175,7 +179,7 @@ scene(4,"AI 调用工具",
   s+=node(null,3,3,'code',C.blue,"web_search","tier=3");
   return s;
  },
- "工具是子调用 → tier+1（缩进，不是新分支）。lane 仍 0。");
+ "工具是子调用 → tier+1（缩进，不是新分支）。lane 仍 0。【本图是展开后的形态：默认视图里这轮只显示 ▲回复 + &#9874;1 徽标（场景11），点开才长这样。】");
 
 // ---- 场景5：手动调用函数（带内部子调用）----
 scene(5,"手动调用函数（如 gui_agent）",
@@ -201,7 +205,7 @@ scene(5,"手动调用函数（如 gui_agent）",
   s+=node(null,3,7,'llm',C.blue,"内部LLM");
   return s;
  },
- "手动调函数 = 挂在当前对话链上（不另开 lane）。内部子调用 tier 逐层 +1。");
+ "手动调函数 = 挂在当前对话链上（不另开 lane）。内部子调用 tier 逐层 +1。【顶层函数节点（gui_agent 本体）是对话层——用户的一次显式动作，默认可见；它的内部子树按场景11 默认聚合成 &#9874;N，本图是展开后的形态。】");
 
 // ---- 场景6：综合（多轮 + retry + 工具）----
 scene(6,"综合：多轮 + retry + 工具",
@@ -227,7 +231,7 @@ scene(6,"综合：多轮 + retry + 工具",
   s+=node(null,6,2,'llm',C.purple,"回复'");
   return s;
  },
- "lane0 占列 0~3 → fork 竖线列4 + fork 节点列5。fork 在 lane0 内容右边再留一格竖线，不重叠。");
+ "lane0 占列 0~3 → fork 竖线列4 + fork 节点列5。fork 在 lane0 内容右边再留一格竖线，不重叠。【工具展开时的形态；默认聚合下工具收进 &#9874; 徽标，lane0 只占列 0~2、fork 相应左移——正是场景7 的收起效果。】");
 
 // ---- 场景7：收起 lane0 的工具 → lane1 左移一列 ----
 scene(7,"收起子调用 → 后面分支左移",
@@ -253,7 +257,7 @@ scene(7,"收起子调用 → 后面分支左移",
   s+=node(null,5,2,'llm',C.purple,"回复'");
   return s;
  },
- "收起工具：fork 竖线列4→列3、节点列5→列4（左移一格），追问/回复2 上移一行。横竖都紧凑。");
+ "收起工具：fork 竖线列4→列3、节点列5→列4（左移一格），追问/回复2 上移一行。横竖都紧凑。【场景11 的默认聚合就是全图初始即处于本图状态：收起不是特例，是默认；场景6 才是点开后的特例。】");
 
 // 合并汇入线：从 peer tip 斜拉到 merge 节点（peer lane 色，粗实线 2.4px）
 function mergeIn(px,py,mx,my,color){
@@ -342,15 +346,16 @@ scene(10,"子分支服务（spawn → attach 回流）",
 
 
 // ---- 场景11：执行子树默认聚合（⚒N 徽标 ↔ 展开）----
-function toolBadge(x,y,n,color){
-  const cx=PADX+x*COL, cy=PADY+y*ROW;
-  return `<g><rect x="${cx+R+6}" y="${cy-9}" width="34" height="18" rx="9" fill="${color}" opacity="0.18"/><text x="${cx+R+23}" y="${cy+4}" fill="${color}" font-size="11" text-anchor="middle">&#9874;${n}</text></g>`;
+// 徽标画在节点文字标签的右边（错开，不与 label 重叠）
+function toolBadge(x,y,n,color,labelW){
+  const cx=PADX+x*COL+R+8+(labelW||30), cy=PADY+y*ROW;
+  return `<g><rect x="${cx}" y="${cy-9}" width="36" height="18" rx="9" fill="${color}" opacity="0.18"/><text x="${cx+18}" y="${cy+4}" fill="${color}" font-size="11" text-anchor="middle">&#9874;${n}</text></g>`;
 }
 scene(11,"执行子树默认聚合（&#9874;N 徽标）",
- "Viewport 默认只画对话层（ROOT/user/llm/spawn根/merge）。一轮内部的工具调用（可多达几十个）收成 llm 节点旁的 &#9874;N 计数徽标；点击徽标该轮子树才展开、进入布局（进入后按场景4的 tier 缩进）。再点收起，行列按规则② 即时回收。左：默认。右：点开第二轮。",
- 9,6,()=>{
+ "Viewport 默认只画对话层（ROOT/user/llm/spawn根/merge）。一轮内部的工具调用（可多达几十个）收成 llm 节点旁的 &#9874;N 计数徽标；点击徽标该轮子树才展开、进入布局。展开后工具按场景4规则：都是该轮 llm 的子调用，tier=3 平级兄弟，逐行往下（不互相嵌套）。再点收起，行列按规则② 即时回收。左：默认。右：点开「查天气」那轮之后。",
+ 10,7,()=>{
   let s="";
-  // 左：默认聚合
+  // ── 左：默认聚合（对话层骨架） ──
   s+=edge(0,0,1,1,C.blue);
   s+=edge(1,1,2,2,C.blue);
   s+=edge(0,0,1,3,C.blue);
@@ -360,24 +365,24 @@ scene(11,"执行子树默认聚合（&#9874;N 徽标）",
   s+=node(null,2,2,'llm',C.blue,"回复");
   s+=node(null,1,3,'user',C.blue,"查天气");
   s+=node(null,2,4,'llm',C.blue,"回复");
-  s+=toolBadge(2,4,21,C.blue);
-  // 分隔
-  s+=`<line x1="${PADX+4.5*COL}" y1="${PADY-16}" x2="${PADX+4.5*COL}" y2="${PADY+5.5*ROW}" stroke="#3a3a36" stroke-dasharray="3 5"/>`;
-  s+=`<text x="${PADX+4.7*COL}" y="${PADY-12}" fill="#6b6a63" font-size="11">点击 &#9874;21 展开该轮 ↓</text>`;
-  // 右：展开（只画头三个 + ×N 折叠示意）
-  const OX=5.2;
-  s+=edge(OX+0,0,OX+1,1,C.blue);
-  s+=edge(OX+1,1,OX+2,2,C.blue);
-  s+=edge(OX+2,2,OX+3,3,C.blue);
-  s+=edge(OX+2,2,OX+3,4,C.blue);
+  s+=toolBadge(2,4,21,C.blue,30);   // 徽标在「回复」label 右侧，错开
+  // ── 分隔线 + 说明（放在两图之间的空档，不压节点） ──
+  s+=`<line x1="${PADX+4.6*COL}" y1="${PADY-20}" x2="${PADX+4.6*COL}" y2="${PADY+6.5*ROW}" stroke="#3a3a36" stroke-dasharray="3 5"/>`;
+  s+=`<text x="${PADX+4.6*COL}" y="${PADY+6.9*ROW}" fill="#6b6a63" font-size="11" text-anchor="middle">← 默认 ｜ 点击 &#9874;21 展开该轮 →</text>`;
+  // ── 右：展开后。工具是「回复」的 tier3 平级子调用（不嵌套），×N 折叠循环 ──
+  const OX=5.6;
+  s+=edge(OX+0,0,OX+1,1,C.blue);   // 查天气 -> 回复
+  s+=edge(OX+1,1,OX+2,2,C.blue);   // 回复 -> bash      (tier3)
+  s+=edge(OX+1,1,OX+2,3,C.blue);   // 回复 -> web_fetch (tier3, 平级)
+  s+=edge(OX+1,1,OX+2,4,C.blue);   // 回复 -> open_meteo(tier3, 平级)
   s+=node(null,OX+0,0,'user',C.blue,"查天气");
   s+=node(null,OX+1,1,'llm',C.blue,"回复","已展开");
   s+=node(null,OX+2,2,'code',C.blue,"bash");
-  s+=node(null,OX+3,3,'code',C.blue,"web_fetch");
-  s+=node(null,OX+3,4,'code',C.blue,"open_meteo","×19 循环折叠");
+  s+=node(null,OX+2,3,'code',C.blue,"web_fetch");
+  s+=node(null,OX+2,4,'code',C.blue,"open_meteo","×19 循环折叠");
   return s;
  },
- "对话层是骨架、执行层是细节：细节默认进徽标，按需展开。展开状态按节点记忆，切会话清空。执行层节点永不参与分支 badge 锚定（场景13）。");
+ "展开后的工具全部是该轮 llm 的子调用：tier=3、同列、逐行排（场景4 的多工具版）；工具内部若再有子调用才继续 tier+1。同构循环调用折叠成 ×N（场景见 session-dag.md ——数据仍是 N 个节点）。徽标画在节点文字右侧，不与 label 重叠。");
 
 // ---- 场景12：状态与徽标图例 ----
 scene(12,"节点状态与徽标（废除占位框）",
@@ -401,7 +406,7 @@ scene(12,"节点状态与徽标（废除占位框）",
   // ⚒N 徽标
   cx=PADX+5*COL;
   s+=`<polygon points="${cx},${cy-R} ${cx-R},${cy+R*0.8} ${cx+R},${cy+R*0.8}" fill="none" stroke="${C.blue}" stroke-width="2.5"/>`;
-  s+=toolBadge(5,1,9,C.blue);
+  s+=toolBadge(5,1,9,C.blue,2);
   s+=`<text x="${cx-20}" y="${cy+34}" fill="#9a988e" font-size="11">&#9874;N 执行子树</text>`;
   // ↗ 跨会话 spawn
   cx=PADX+7*COL;

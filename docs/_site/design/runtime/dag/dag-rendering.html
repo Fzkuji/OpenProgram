@@ -217,7 +217,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <tbody>
 <tr>
 <td><strong>对话层</strong></td>
-<td>ROOT、user、llm 回复、spawn 分支根、merge</td>
+<td>ROOT、user、llm 回复、spawn 分支根、merge、<strong>手动调用的顶层函数节点</strong>（用户的显式动作，fn-form/run 卡对应的 code 节点本体）</td>
 <td>会话什么形状：几轮、几支、谁开的谁</td>
 <td>个位数~几十</td>
 </tr>
@@ -230,7 +230,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </tbody>
 </table>
 <p><strong>默认可见性规则：Viewport 只布局对话层。</strong> 每个 llm 节点若有执行子树
-（沿 <code>caller</code> 挂下来的 code 节点），收成节点旁一个 <code>⚒N</code> 计数徽标（N=直接+传递
+（沿 <code>caller</code> 挂下来的 code 节点），收成节点旁一个 <code>⚒N</code> 计数徽标；手动调用的
+顶层函数节点同理——节点本体可见，内部子树收进它自己的 <code>⚒N</code>（N=直接+传递
 子调用数）。点击徽标，该轮的执行子树展开、进入布局；再点收起。展开状态按节点
 记忆，切会话清空。</p>
 <pre><code>默认（对话层）:                  点击 ⚒9 展开那一轮:
