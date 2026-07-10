@@ -93,6 +93,24 @@ export function drawNodes(
       badge.textContent = label;
       g.appendChild(badge);
     }
+    // Named-branch label: muted small text to the right of the shape,
+    // dropped one line down when a fold "+N" glyph occupies the right
+    // slot so the two never overlap. Follows node coords (inside the
+    // translated <g>), so it pans/zooms with the DAG.
+    const branchName = node.branch_name;
+    if (branchName) {
+      const tag = _svg("text", {
+        x: String(NODE_R + 5),
+        y: String(isCollapsible ? NODE_R + 15 : NODE_R - 1),
+        class: "history-branch-name",
+        fill: "var(--text-muted, #6b6a63)",
+        "font-size": "8.5",
+        "font-family": "var(--font-sans, sans-serif)",
+        "pointer-events": "none",
+      });
+      tag.textContent = branchName;
+      g.appendChild(tag);
+    }
     (g as any)._nodeData = node;
     nodeG.appendChild(g);
   });

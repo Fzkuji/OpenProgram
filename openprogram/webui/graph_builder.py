@@ -37,6 +37,22 @@ def build_session_graph(
     except Exception:
         full_msgs = []
 
+    # Named branches: {branch_anchor_id: human name}. meta.json's
+    # `branches` dict is keyed by the branch anchor node id (the branch's
+    # first-turn reply); stamp the name onto that node so the DAG can
+    # label which branch is which. Includes merged branches (unlike
+    # list_branches, which only returns live tips). Unnamed branches
+    # (no `name`) get no label.
+    branch_names: dict[str, str] = {}
+    try:
+        sess = db.get_session(session_id) or {}
+        for anchor_id, info in (sess.get("branches") or {}).items():
+            name = (info or {}).get("name")
+            if name:
+                branch_names[anchor_id] = name
+    except Exception:
+        pass
+
     caller_map: dict[str, str] = {}
     nodes = []
     try:
@@ -91,6 +107,7 @@ def build_session_graph(
             "attach_source_commit_id": asrc_commit,
             "attach_embed_count": aembed_n,
             "attach_embed_tokens": aembed_tok,
+            "branch_name": branch_names.get(mid),
         })
 
     # Root 兜底：部分分支的首节点建库时 predecessor 与 caller 都没写

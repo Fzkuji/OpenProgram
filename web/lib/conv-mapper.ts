@@ -294,6 +294,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         attempts: m.attempts as never[] | undefined,
         current_attempt: m.current_attempt,
         attach: _readAttach(m),
+        calledBy: typeof m.predecessor === "string" ? m.predecessor : undefined,
         agentId: m.agent_id || undefined,
         ...siblingFields(m),
       };
@@ -320,5 +321,23 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
     }
     out.push({ id, role: "system", content: m.content || "", status: "done" });
   });
+  // Spawned/attach cards render before the assistant reply they hang off,
+  // not after. An attach pointer (function==="attach") lands on the conv
+  // chain right after its turn's assistant reply (calledBy === that reply's
+  // id), so in load-session replay the card would show below the summary.
+  // Move each such card immediately before its predecessor reply. Display
+  // order only — the underlying chain/head data is untouched. Streaming is
+  // unaffected: the attach row is written only after the turn finalizes, so
+  // it never exists in the live-streamed list this reorders.
+  for (let i = 1; i < out.length; i++) {
+    const card = out[i];
+    if (card.role === "assistant" && card.function === "attach" && card.calledBy) {
+      const prev = out[i - 1];
+      if (prev.id === card.calledBy) {
+        out.splice(i, 1);
+        out.splice(i - 1, 0, card);
+      }
+    }
+  }
   return out;
 }

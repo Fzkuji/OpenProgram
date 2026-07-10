@@ -19,6 +19,7 @@ export interface GNode {
   name?: string;
   preview?: string;
   is_named?: boolean;
+  branch_name?: string | null;
   head_msg_id?: string;
   children?: GNode[];
   _depth?: number;

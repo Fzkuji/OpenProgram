@@ -52,19 +52,58 @@ def _sorted_by_created_at(items: Iterable[MessageLike]) -> list[MessageLike]:
     return sorted(listed, key=lambda m: (m.get("created_at") or 0, listed.index(m)))
 
 
-def siblings(msgs: list[MessageLike], msg_id: str) -> list[MessageLike]:
-    """Return messages sharing a parent with ``msg_id`` (includes itself).
+def _sibling_key(m: MessageLike) -> tuple:
+    """Grouping key for the chat ``< N/M >`` sibling nav.
 
-    Root messages (parent is None) are siblings of all other root
-    messages. Unknown ``msg_id`` returns ``[]``.
+    Plain predecessor-sharing is NOT enough: sub-call tool rows and
+    spawned-branch roots have no ``predecessor`` at all, so they all
+    collapsed into one giant "root sibling" set with the first user
+    turn (the "1/6 branches on a fresh 你好" bug). Three refinements:
+
+    * parent falls back to ``caller`` (a spawned branch's root
+      expresses its fork point via caller, not predecessor);
+    * a spawned root (``source == "agent_spawn"`` with no
+      predecessor) never mixes with organic turns — it's a branch
+      the AGENT opened, not an alternative the user can page to.
+    """
+    parent = m.get("predecessor") or m.get("caller") or None
+    if parent == "ROOT":
+        parent = None
+    spawned = bool(
+        m.get("source") == "agent_spawn" and not m.get("predecessor")
+    )
+    return (parent, spawned)
+
+
+def _is_chat_lane(m: MessageLike) -> bool:
+    """Nodes eligible for chat sibling nav: conversation turns only —
+    no sub-call tool/code rows, no ROOT marker, no runtime cards
+    (fn-run / attach pointers get fn-run-scoped nav from the caller)."""
+    if m.get("role") in ("tool", "code"):
+        return False
+    if m.get("id") == "ROOT" or m.get("display") == "root":
+        return False
+    if m.get("display") == "runtime":
+        return False
+    return True
+
+
+def siblings(msgs: list[MessageLike], msg_id: str) -> list[MessageLike]:
+    """Return messages sharing a fork point with ``msg_id`` (includes
+    itself) — the set the chat ``< N/M >`` switcher pages through.
+
+    Unknown ``msg_id`` returns ``[]``. Sub-call tool rows never form
+    sibling sets (their nav is fn-run-scoped, handled by the caller).
     """
     by_id = _index_by_id(msgs)
     target = by_id.get(msg_id)
     if target is None:
         return []
-    target_parent = _parent_of(target)
+    if not _is_chat_lane(target):
+        return [target]
+    key = _sibling_key(target)
     return _sorted_by_created_at(
-        m for m in msgs if _parent_of(m) == target_parent
+        m for m in msgs if _is_chat_lane(m) and _sibling_key(m) == key
     )
 
 
