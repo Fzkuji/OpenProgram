@@ -168,6 +168,7 @@ def register(app):
         from openprogram.webui import _model_listing as _mc
         res = _mc.delete_custom_provider(name)
         if res.get("ok"):
+            _clear_stale_defaults()
             _broadcast_settings_changed()
         return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
 
@@ -188,6 +189,35 @@ def register(app):
             "models": _mc.list_models_for_provider(name),
         })
 
+    def _clear_stale_defaults():
+        """Disabling a model must actually FORGET it as a default.
+
+        The chat/exec defaults live in three places: the runtime_management
+        globals, and (chat only) the default agent's model in agent.json —
+        which ``_resolve_session_provider_model`` consults UNGATED, so a
+        disabled model would both keep running existing conversations and
+        resurrect onto the top bar the moment it's re-enabled. When the
+        current default is no longer in the user-enabled set, clear all of
+        them; the user picks a new model explicitly."""
+        from openprogram.webui import server as _s
+        _rm = _s._runtime_management
+        if _rm._chat_provider and not _rm._default_is_enabled(
+            _rm._chat_provider, _rm._chat_model
+        ):
+            _rm._chat_provider = None
+            _rm._chat_model = None
+            try:
+                from openprogram.agent.management import manager as _agents
+                _agents.update(_agents.DEFAULT_AGENT_ID,
+                               {"model": {"provider": "", "id": ""}})
+            except Exception:
+                pass
+        if _rm._exec_provider and not _rm._default_is_enabled(
+            _rm._exec_provider, _rm._exec_model
+        ):
+            _rm._exec_provider = None
+            _rm._exec_model = None
+
     def _broadcast_settings_changed():
         """Nudge every connected tab to refetch agent settings + enabled
         models. Enabling/disabling a model or provider can invalidate the
@@ -207,6 +237,7 @@ def register(app):
         from openprogram.webui import _model_listing as _mc
         enabled = bool((body or {}).get("enabled", False))
         res = _mc.toggle_provider(name, enabled)
+        _clear_stale_defaults()
         _broadcast_settings_changed()
         return JSONResponse(content=res)
 
@@ -215,6 +246,7 @@ def register(app):
         from openprogram.webui import _model_listing as _mc
         enabled = bool((body or {}).get("enabled", False))
         res = _mc.toggle_model(name, model_id, enabled)
+        _clear_stale_defaults()
         _broadcast_settings_changed()
         return JSONResponse(content=res)
 
