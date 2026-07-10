@@ -134,7 +134,6 @@ export function StepRow({
   detail,
   inlineBody,
   subSteps,
-  subCount,
 }: {
   icon: "thinking" | "function" | "subagent";
   title: string;
@@ -146,7 +145,6 @@ export function StepRow({
   detail?: DetailNode;
   inlineBody?: React.ReactNode;
   subSteps?: React.ReactNode;
-  subCount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [kidsOpen, setKidsOpen] = useState(false);
@@ -180,9 +178,6 @@ export function StepRow({
         onMouseEnter={() => iconRef.current?.startAnimation?.()}
         onMouseLeave={() => iconRef.current?.stopAnimation?.()}
         style={detail || inlineBody ? undefined : { cursor: "default" }}
-        title={detail
-          ? text("Show details in the side panel", "在右栏查看详情")
-          : undefined}
       >
         <span
           className={
@@ -204,6 +199,20 @@ export function StepRow({
             <Icon ref={iconRef} size={13} />
           )}
         </span>
+        {subSteps ? (
+          <button
+            type="button"
+            className={"tl-kids-toggle" + (kidsOpen ? " open" : "")}
+            onClick={(e) => { e.stopPropagation(); setKidsOpen((v) => !v); }}
+            title={kidsOpen
+              ? text("Collapse sub-calls", "收起子调用")
+              : text("Expand sub-calls", "展开子调用")}
+          >
+            ▶
+          </button>
+        ) : (
+          <span className="tl-kids-toggle-placeholder" aria-hidden="true" />
+        )}
         <span className={"tl-step-title" + (error ? " is-error" : "")}>{title}</span>
         {note ? <span className="tl-step-note" title={note}>{note}</span> : null}
         <span className="tl-step-act">
@@ -214,19 +223,6 @@ export function StepRow({
           ) : null}
           {actions}
         </span>
-        {subSteps ? (
-          <button
-            type="button"
-            className={"tl-kids-toggle" + (kidsOpen ? " open" : "")}
-            onClick={(e) => { e.stopPropagation(); setKidsOpen((v) => !v); }}
-            title={kidsOpen
-              ? text("Collapse sub-calls", "收起子调用")
-              : text("Expand sub-calls", "展开子调用")}
-          >
-            {subCount ? `${subCount}` : ""}
-            <span className="tl-kids-chev">⌄</span>
-          </button>
-        ) : null}
       </div>
       {open && inlineBody ? <div className="tl-step-body">{inlineBody}</div> : null}
       {kidsOpen && subSteps ? <div className="tl-sub">{subSteps}</div> : null}
@@ -302,7 +298,6 @@ export function FunctionStep({
       subSteps={kids.length > 0
         ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
         : undefined}
-      subCount={kids.length || undefined}
     />
   );
 }
@@ -349,7 +344,6 @@ export function TreeStep({ node }: { node: TNode }) {
       subSteps={kids.length > 0
         ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
         : undefined}
-      subCount={kids.length || undefined}
     />
   );
 }

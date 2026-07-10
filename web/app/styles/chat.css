@@ -1365,25 +1365,28 @@
 .tl-sub .tl-step-icon { left: -30px; width: 17px; height: 17px; }
 .tl-sub .tl-step-body { font-size: 12.5px; padding: 8px 12px; }
 
-/* 子调用展开按钮（行尾 ⌄N）：只开结构，不倒内容。 */
+/* 子调用展开箭头：树形惯例——行首（图标后、标题前），▶ 开时转 90°。
+   只开结构，不倒内容。无子调用的行放同宽占位，标题对齐。 */
 .tl-kids-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  width: 16px;
+  flex: 0 0 16px;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 9px;
   cursor: pointer;
-  padding: 1px 6px;
-  border-radius: 6px;
-}
-.tl-kids-toggle:hover { background: var(--bg-hover); color: var(--text-secondary); }
-.tl-kids-chev {
-  display: inline-block;
+  padding: 2px 0;
+  border-radius: 4px;
   transition: transform var(--transition);
 }
-.tl-kids-toggle.open .tl-kids-chev { transform: rotate(180deg); }
+.tl-kids-toggle:hover { color: var(--text-primary); background: var(--bg-selected); }
+.tl-kids-toggle.open { transform: rotate(90deg); }
+.tl-kids-toggle-placeholder { width: 16px; flex: 0 0 16px; }
+/* 动作钉在行尾：note 为空时也不往左漂。 */
+.tl-step-act { margin-left: auto; }
 
 /* 统一步骤图标（流式视图的 inline-tree 头部也用）。 */
 .inline-tree-icon {
