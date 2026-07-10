@@ -67,6 +67,85 @@ def test_root_messages_are_all_siblings():
     assert [s["id"] for s in siblings(msgs, "u1")] == ["u1", "u2"]
 
 
+# ---- siblings: spawn-branch grouping (commit 1d1fe016) ------------------
+# These nail the "1/6 branches on a fresh 你好" fix: siblings() must group
+# by fork point (predecessor, falling back to caller), keep only the chat
+# lane, and never mix agent-spawned roots or runtime cards with organic
+# turns. Regressing any of these resurrects the phantom sibling nav.
+
+def test_siblings_excludes_tool_and_code_rows():
+    # A sub-call tool/code row shares no predecessor with the user turn;
+    # it must not join the root sibling set. Its own nav is fn-run scoped,
+    # so siblings() returns just itself.
+    msgs = [
+        _msg("u1", None, ts=1),
+        {"id": "t1", "predecessor": None, "role": "tool", "created_at": 2},
+        {"id": "c1", "predecessor": None, "role": "code", "created_at": 3},
+    ]
+    assert [s["id"] for s in siblings(msgs, "u1")] == ["u1"]
+    assert [s["id"] for s in siblings(msgs, "t1")] == ["t1"]
+    assert [s["id"] for s in siblings(msgs, "c1")] == ["c1"]
+
+
+def test_siblings_agent_spawn_root_not_mixed_with_organic_turns():
+    # A spawned-branch root (source=agent_spawn, no predecessor) is a
+    # branch the AGENT opened — not an alternative the user can page to.
+    # It must not share the root user turn's sibling set.
+    msgs = [
+        _msg("u1", None, ts=1),
+        {"id": "sp1", "predecessor": None, "source": "agent_spawn",
+         "created_at": 2},
+    ]
+    assert [s["id"] for s in siblings(msgs, "u1")] == ["u1"]
+    assert [s["id"] for s in siblings(msgs, "sp1")] == ["sp1"]
+
+
+def test_siblings_excludes_runtime_cards():
+    # display=runtime cards (fn-run / attach pointers) never join chat nav.
+    msgs = [
+        _msg("u1", None, ts=1),
+        {"id": "rt1", "predecessor": None, "display": "runtime",
+         "created_at": 2},
+    ]
+    assert [s["id"] for s in siblings(msgs, "u1")] == ["u1"]
+    assert [s["id"] for s in siblings(msgs, "rt1")] == ["rt1"]
+
+
+def test_siblings_fall_back_to_caller_when_no_predecessor():
+    # A predecessor-less spawned branch expresses its fork point via caller.
+    # Two spawned turns forked off the same caller are siblings of each
+    # other (but not of a user turn forked elsewhere).
+    msgs = [
+        {"id": "b1", "predecessor": None, "caller": "a1", "created_at": 1},
+        {"id": "b2", "predecessor": None, "caller": "a1", "created_at": 2},
+        _msg("other", None, ts=3),
+    ]
+    assert [s["id"] for s in siblings(msgs, "b1")] == ["b1", "b2"]
+    assert "other" not in [s["id"] for s in siblings(msgs, "b1")]
+
+
+def test_siblings_caller_root_normalized_to_none():
+    # caller="ROOT" is normalized to None so a caller=ROOT branch groups
+    # with genuine root turns rather than forming a phantom "ROOT" bucket.
+    msgs = [
+        _msg("u1", None, ts=1),
+        {"id": "b1", "predecessor": None, "caller": "ROOT", "created_at": 2},
+    ]
+    assert [s["id"] for s in siblings(msgs, "u1")] == ["u1", "b1"]
+
+
+def test_siblings_same_predecessor_user_turns_still_group():
+    # Regression guard: the ordinary retry case (same predecessor user
+    # turns) must keep working — the fix must not narrow legit sibling sets.
+    msgs = [
+        _msg("u1", None, ts=1),
+        _msg("a1", "u1", ts=2),
+        _msg("a2", "u1", ts=3),
+        _msg("a3", "u1", ts=4),
+    ]
+    assert [s["id"] for s in siblings(msgs, "a2")] == ["a1", "a2", "a3"]
+
+
 # ---- children ------------------------------------------------------------
 
 def test_children_returns_all_children_ordered():
