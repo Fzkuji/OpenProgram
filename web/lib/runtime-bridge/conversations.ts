@@ -291,13 +291,25 @@ interface BranchesListPayload {
   branches?: BranchRow[];
   graph?: unknown;
   active?: string | null;
+  trunk_head?: string | null;
 }
+
+// HEAD 位置元数据（active head / 主干 tip），供顶栏 chip 判断
+// "main / 分支名 / detached" 三态。
+const branchMetaByConv: Record<
+  string,
+  { active?: string | null; trunk?: string | null }
+> = {};
 
 export function onBranchesListMessage(payload: BranchesListPayload): void {
   if (!payload || !payload.session_id) return;
   const sid = payload.session_id;
   const rows = Array.isArray(payload.branches) ? payload.branches : [];
   branchesByConv[sid] = rows;
+  branchMetaByConv[sid] = {
+    active: payload.active ?? null,
+    trunk: payload.trunk_head ?? null,
+  };
   if (branchesPending[sid]) {
     const fn = branchesPending[sid];
     delete branchesPending[sid];
@@ -377,7 +389,11 @@ function refreshBranchBadge(): void {
     return;
   }
   const active = list.find((b) => b.active);
-  const label = active ? active.name : "detached";
+  // 三态（学 git）：在命名分支上→分支名；在主干 tip 上→main（主线不是
+  // 游离态）；checkout 到链中间的历史节点才是 detached。
+  const meta = branchMetaByConv[sid] || {};
+  const onTrunk = !!meta.active && !!meta.trunk && meta.active === meta.trunk;
+  const label = active ? active.name : onTrunk ? "main" : "detached";
   const nameEl = badge.querySelector(".branch-name") as HTMLElement | null;
   if (nameEl) {
     nameEl.textContent = label + " (" + list.length + ")";

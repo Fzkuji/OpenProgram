@@ -214,8 +214,24 @@ def build_branches_payload(session_id: str | None) -> dict:
                 })
         except Exception as e:
             _s._log(f"[list_branches] {session_id}: {e}")
+    # 主干 tip（lane 0 最深的对话节点）：HEAD 在这里时顶栏显示 main，
+    # 而不是 detached——学 git，主线不是"游离"状态。
+    trunk_head = None
+    best_depth = -1.0
+    for n in graph:
+        if (n.get("_lane") or 0) != 0:
+            continue
+        if n.get("display") in ("root", "runtime"):
+            continue
+        if n.get("role") not in ("user", "assistant"):
+            continue
+        d = n.get("_depth") or 0
+        if d > best_depth:
+            best_depth = d
+            trunk_head = n.get("id")
     return {"session_id": session_id, "branches": rows,
-            "active": active_head, "graph": graph}
+            "active": active_head, "trunk_head": trunk_head,
+            "graph": graph}
 
 
 async def handle_list_branches(ws, cmd: dict):
