@@ -182,6 +182,19 @@ def _task_impl(
         # responsible for state transitions + attach card update.
         try:
             from openprogram.agent.sub_agent_run import run_agent_turn_async
+            from openprogram.agent.sub_agent_run import (
+                write_attach_placeholder_for_spawn,
+            )
+            # 先落一张 running 占位 attach 卡，锚在发起调用的这轮——卡片
+            # 在哪被调用就显示在哪；runner 终态时原地补结果。没有这张卡，
+            # wait=False 的结果只能靠 task_followup 漂回来、无处锚定。
+            attach_id = write_attach_placeholder_for_spawn(
+                session_id=sid,
+                caller_msg_id=aid,
+                label=label or None,
+                prompt=prompt,
+                chosen_agent=chosen_agent,
+            )
             task_id = run_agent_turn_async(
                 session_id=sid,
                 prompt=prompt,
@@ -197,6 +210,7 @@ def _task_impl(
                 # Without caller_msg_id the async branch forked from ROOT.
                 caller_msg_id=aid,
                 spawn_depth=depth + 1,
+                attach_pointer_id=attach_id,
             )
         except Exception as e:  # noqa: BLE001
             return f"[task error] {type(e).__name__}: {e}"

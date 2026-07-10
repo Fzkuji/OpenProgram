@@ -262,7 +262,10 @@ def _run_spawn_async(
 
     from openprogram.webui import server as _s
 
-    # Resolve fork anchor + parent head (same logic as the sync path).
+    # 锚点 = 发起调用的节点本身（与同步路径 write_attach_pointer_for_spawn
+    # 一致：attach 的 predecessor 就是触发它的那轮）。这里以前抄的是同步
+    # 路径的旧版"上溯到调用者父节点"，同步侧早改掉了，这份拷贝漂移了——
+    # 结果异步卡片显示在调用点上面一层。卡片在哪被调用就锚在哪。
     attach_node_id = uuid.uuid4().hex[:12]
     try:
         from openprogram.agent.session_db import default_db
@@ -270,17 +273,6 @@ def _run_spawn_async(
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
         fork_anchor = msg_id
-        try:
-            pair = store._open(session_id)  # noqa: SLF001
-            if pair is not None:
-                _, _idx = pair
-                spawn_node = _idx.nodes_by_id.get(msg_id)
-                if spawn_node:
-                    branch_from_val = (spawn_node.metadata or {}).get("predecessor")
-                    if branch_from_val:
-                        fork_anchor = branch_from_val
-        except Exception:
-            pass
 
         # Pre-mint the task id so the placeholder attach card carries
         # task_id from the start (UI can correlate). We can't go

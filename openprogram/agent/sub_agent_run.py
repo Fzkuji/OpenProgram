@@ -218,6 +218,64 @@ def write_attach_pointer_for_spawn(
         return None
 
 
+def write_attach_placeholder_for_spawn(
+    *,
+    session_id: str,
+    caller_msg_id: str,
+    label: Optional[str],
+    prompt: str,
+    chosen_agent: str,
+) -> Optional[str]:
+    """Write a ``status=running`` placeholder attach card for an async
+    spawn, anchored at the CALLING node（在哪调用就锚在哪）. The runner
+    patches it on terminal via ``_update_attach_card``. Without this the
+    task(wait=False) path had no card at all — the result later arrived
+    as a task_followup with nothing anchoring it in the transcript.
+    """
+    import json as _json
+    import time as _time
+    import uuid as _uuid
+
+    try:
+        from openprogram.agent.session_db import default_db
+        store = default_db()
+        sess_row = store.get_session(session_id) or {}
+        head_before = sess_row.get("head_id")
+        attach_node_id = _uuid.uuid4().hex[:12]
+        store.append_message(session_id, {
+            "id": attach_node_id,
+            "role": "assistant",
+            "display": "runtime",
+            "function": "attach",
+            "content": "(running)",
+            "predecessor": caller_msg_id,
+            "timestamp": _time.time(),
+            "is_error": False,
+            "agent_id": chosen_agent,
+            "extra": _json.dumps({
+                "attach": {
+                    "session_id": session_id,
+                    "head_id": None,
+                    "label": label or "",
+                    "prompt": prompt[:500],
+                    "source_commit_id": None,
+                    "status": "running",
+                },
+            }, default=str),
+        })
+        if head_before:
+            try:
+                store.set_head(session_id, head_before)
+            except Exception:
+                pass
+        store.commit_turn(
+            session_id, f"task tool spawn (async): {label or chosen_agent}",
+        )
+        return attach_node_id
+    except Exception:
+        return None
+
+
 def run_agent_turn_async(
     session_id: str,
     prompt: str,

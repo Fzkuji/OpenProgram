@@ -321,22 +321,29 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
     }
     out.push({ id, role: "system", content: m.content || "", status: "done" });
   });
-  // Spawned/attach cards render before the assistant reply they hang off,
-  // not after. An attach pointer (function==="attach") lands on the conv
-  // chain right after its turn's assistant reply (calledBy === that reply's
-  // id), so in load-session replay the card would show below the summary.
-  // Move each such card immediately before its predecessor reply. Display
-  // order only — the underlying chain/head data is untouched. Streaming is
-  // unaffected: the attach row is written only after the turn finalizes, so
-  // it never exists in the live-streamed list this reorders.
-  for (let i = 1; i < out.length; i++) {
+  // Spawned/attach 卡片显示在**发起调用的那条消息**的紧前面——在哪被
+  // 调用就画在哪，不追加到列表尾。数据链不动（invariants 规则 9），只
+  // 调显示序：把每张 attach 卡搬到它 calledBy（调用点）消息之前。不要求
+  // 两者在列表里相邻——异步完成的卡、中间夹着 runtime 子行的卡同样归位。
+  for (let i = 0; i < out.length; i++) {
     const card = out[i];
-    if (card.role === "assistant" && card.function === "attach" && card.calledBy) {
-      const prev = out[i - 1];
-      if (prev.id === card.calledBy) {
-        out.splice(i, 1);
-        out.splice(i - 1, 0, card);
-      }
+    if (card.role !== "assistant" || card.function !== "attach" || !card.calledBy) {
+      continue;
+    }
+    const anchorIdx = out.findIndex((m) => m.id === card.calledBy);
+    if (anchorIdx < 0) continue;
+    if (anchorIdx === i + 1) continue; // 已经紧贴在调用点前面
+    if (anchorIdx < i) {
+      // 调用点在前（回放的常态：attach 行落在链上调用轮之后）→ 把卡
+      // 搬到调用点前。移除+插入后 out[i] 恰好是原 i-1（已检查过），
+      // 循环正常 i++ 即可，不会漏元素。
+      out.splice(i, 1);
+      out.splice(anchorIdx, 0, card);
+    } else {
+      // 调用点在后（极少见）：先在调用点前插入，再移除原位置。
+      out.splice(anchorIdx, 0, card);
+      out.splice(i, 1);
+      i--; // out[i] 现在是原 i+1，回退一格让循环重新检查它
     }
   }
   return out;
