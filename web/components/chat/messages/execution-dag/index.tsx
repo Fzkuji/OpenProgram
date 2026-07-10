@@ -21,6 +21,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { FunctionIcon } from "../step-icons";
 
 import {
   cleanForCopy,
@@ -352,8 +353,7 @@ export function ExecutionDag({
         <span>
           {/* 头部图标始终是 𝓕 艺术字（运行中也是），不再用晃动的橙点。
               「运行中」另有 body 里的 Running… 行表达。 */}
-          <span className="inline-tree-script" title="function">{"𝓕"}</span>
-          {"\u00a0\u00a0"}
+          <span className="inline-tree-icon" title="function"><FunctionIcon /></span>
           {headerLabel ?? text("Execution DAG", "执行 DAG")}
         </span>
         <span className="inline-tree-actions">

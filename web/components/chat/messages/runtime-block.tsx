@@ -22,6 +22,7 @@ import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import { ExecutionDag } from "./execution-dag/index";
 import { useMarkdownReady } from "./markdown";
+import { FunctionIcon } from "./step-icons";
 
 interface RuntimeLegacyGlobals {
   renderMathInElement?: (el: HTMLElement, opts: unknown) => void;
@@ -283,10 +284,10 @@ export function RuntimeBlock({
       >
         <div className="inline-tree-header">
           <span>
-            {/* 头部始终 𝓕 艺术字（运行中也是），不用晃动的橙点；运行状态
+            {/* 头部图标与时间线同款（step-icons）；运行状态
                 由下面的 Running… 行表达。间距与 ExecutionDag 头部一致
                 （𝓕 + 两个不间断空格），免得两个卡片的文字缩进不齐。 */}
-            <span className="inline-tree-script" title="function">{"𝓕"}</span>
+            <span className="inline-tree-icon" title="function"><FunctionIcon /></span>
             {"  "}
             {headerLabel}
           </span>

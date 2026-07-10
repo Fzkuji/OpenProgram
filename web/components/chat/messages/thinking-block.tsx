@@ -4,7 +4,7 @@
  * Collapsible "Thinking" block — same ``.inline-tree`` visual shell
  * as ``RuntimeBlock`` / ``ToolsBlock`` so every collapsible inline
  * card in a message uses the same frame + height + toggle position.
- * Header script glyph: 𝓣  Thinking.
+ * Header icon: shared step-icons ThinkingIcon.
  */
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
@@ -53,7 +53,6 @@ export function ThinkingBlock({
       >
         <span>
           <span className="inline-tree-icon" title="thinking"><ThinkingIcon /></span>
-          {"\u00a0"}
           {tr("Thinking", "思考")}
           {streaming ? "…" : ""}
         </span>
