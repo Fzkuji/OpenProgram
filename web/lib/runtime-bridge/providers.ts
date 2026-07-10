@@ -153,9 +153,11 @@ export function updateAgentBadges(): void {
   try {
     const chatValid = as.chat?.provider && as.chat?.model;
     const execValid = as.exec?.provider && as.exec?.model;
+    // null (not undefined) so a now-disabled model CLEARS its chip —
+    // the store treats undefined as "keep previous".
     useSessionStore.getState().setAgentSettings({
-      chat: chatValid ? { ...as.chat } : undefined,
-      exec: execValid ? { ...as.exec } : undefined,
+      chat: chatValid ? { ...as.chat } : null,
+      exec: execValid ? { ...as.exec } : null,
     });
   } catch {
     /* ignore — store not ready yet */

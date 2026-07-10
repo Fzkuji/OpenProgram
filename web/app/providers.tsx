@@ -12,5 +12,10 @@ export function Providers({ children }: { children: ReactNode }) {
         },
       })
   );
+  // Window bridge for non-React callers (use-ws invalidates query caches
+  // on server pushes, e.g. agent_settings_changed -> models-enabled).
+  if (typeof window !== "undefined") {
+    (window as Window & { __queryClient?: QueryClient }).__queryClient = client;
+  }
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }

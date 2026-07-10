@@ -283,6 +283,12 @@ export function useWS(): void {
           });
           // Still fetch full settings (includes thinking config etc.)
           w.loadAgentSettings?.();
+          // Enabled-models may have changed with the settings (Settings
+          // toggles broadcast this event) — drop the query cache so every
+          // tab's model picker refetches, not just the settings tab.
+          (window as Window & {
+            __queryClient?: { invalidateQueries: (f: { queryKey: string[] }) => void };
+          }).__queryClient?.invalidateQueries({ queryKey: ["models-enabled"] });
           return true;
         }
         case "chat_session_update":

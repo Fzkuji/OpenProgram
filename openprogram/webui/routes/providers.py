@@ -167,6 +167,8 @@ def register(app):
         AuthStore credential on disk."""
         from openprogram.webui import _model_listing as _mc
         res = _mc.delete_custom_provider(name)
+        if res.get("ok"):
+            _broadcast_settings_changed()
         return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
 
     @app.post("/api/providers/{name}/models")
@@ -186,17 +188,36 @@ def register(app):
             "models": _mc.list_models_for_provider(name),
         })
 
+    def _broadcast_settings_changed():
+        """Nudge every connected tab to refetch agent settings + enabled
+        models. Enabling/disabling a model or provider can invalidate the
+        current chat/exec default (GET /api/agent_settings gates on the
+        enabled set), and the settings page may live in a different browser
+        tab than the chat — only a WS push reaches them all. Empty data:
+        the handler's direct-apply skips and its loadAgentSettings() refetch
+        pulls the session-scoped, enablement-gated values."""
+        import json
+        from openprogram.webui import server as _s
+        try:
+            _s._broadcast(json.dumps({"type": "agent_settings_changed", "data": {}}))
+        except Exception:
+            pass
+
     @app.post("/api/providers/{name}/toggle")
     async def api_toggle_provider(name: str, body: dict = None):
         from openprogram.webui import _model_listing as _mc
         enabled = bool((body or {}).get("enabled", False))
-        return JSONResponse(content=_mc.toggle_provider(name, enabled))
+        res = _mc.toggle_provider(name, enabled)
+        _broadcast_settings_changed()
+        return JSONResponse(content=res)
 
     @app.post("/api/providers/{name}/models/{model_id:path}/toggle")
     async def api_toggle_model(name: str, model_id: str, body: dict = None):
         from openprogram.webui import _model_listing as _mc
         enabled = bool((body or {}).get("enabled", False))
-        return JSONResponse(content=_mc.toggle_model(name, model_id, enabled))
+        res = _mc.toggle_model(name, model_id, enabled)
+        _broadcast_settings_changed()
+        return JSONResponse(content=res)
 
     @app.get("/api/config/key/{env_var}")
     async def api_get_api_key(env_var: str, reveal: bool = False):

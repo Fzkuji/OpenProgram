@@ -49,7 +49,15 @@ interface ConvState {
   /** Agent settings state for the topbar Chat / Exec badges. Mirror
    *  of ``window._agentSettings``; populated by legacy providers.js. */
   agentSettings: AgentSettingsState;
-  setAgentSettings: (s: AgentSettingsState) => void;
+  /** Per side: an object replaces, ``null`` CLEARS (the chip hides),
+   *  ``undefined`` keeps the previous value (partial update). Clearing
+   *  matters: when the selected model is disabled in Settings the
+   *  refetched settings come back empty, and keep-previous semantics
+   *  would pin the stale model on the top-bar chip forever. */
+  setAgentSettings: (s: {
+    chat?: AgentSettingsState["chat"] | null;
+    exec?: AgentSettingsState["exec"] | null;
+  }) => void;
   /** Branch chip display state for the current conversation. */
   branchInfo: BranchBadgeInfo;
   setBranchInfo: (b: BranchBadgeInfo) => void;
@@ -375,8 +383,9 @@ export const useSessionStore = create<ConvState>((set) => ({
   setAgentSettings: (s) =>
     set((prev) => ({
       agentSettings: {
-        chat: s.chat ?? prev.agentSettings.chat,
-        exec: s.exec ?? prev.agentSettings.exec,
+        // null = clear, undefined = keep previous (see ConvState docs).
+        chat: s.chat === null ? undefined : (s.chat ?? prev.agentSettings.chat),
+        exec: s.exec === null ? undefined : (s.exec ?? prev.agentSettings.exec),
       },
     })),
   branchInfo: { visible: false, name: "main", count: 0 },
