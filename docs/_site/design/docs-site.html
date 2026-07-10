@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -272,7 +270,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p>依赖控制：只新增 <code>markdown-it-py</code>、<code>mdit-py-plugins</code>、<code>Pygments</code> 三个纯 Python 包，放进一个独立 <code>docs-build</code> 可选依赖组，不污染主依赖。</p>
 <h2 id="四目录与产物布局">四、目录与产物布局<a class="header-anchor" href="#四目录与产物布局">#</a></h2>
 <pre><code>docs/                         ← 源文件（不动）
-  design/runtime/dag-viewport.md
+  design/runtime/dag/dag-rendering.md
   design/proactive/event-layer.html   ← 手写 html
   ...
 
@@ -289,7 +287,7 @@ tools/docs_site/              ← 新增：构建脚本（一个小模块）
 
 docs/_site/                   ← 构建产物（git 忽略或按需提交）
   index.html
-  design/runtime/dag-viewport.html
+  design/runtime/dag/dag-rendering.html
   search-index.json
   assets/...
 </code></pre>
@@ -377,7 +375,7 @@ docs/_site/                   ← 构建产物（git 忽略或按需提交）
 </ul>
 <h2 id="九实施步骤每步可独立验证">九、实施步骤（每步可独立验证）<a class="header-anchor" href="#九实施步骤每步可独立验证">#</a></h2>
 <ol>
-<li><strong>脚手架 + 单页渲染</strong> → verify：跑 <code>build.py</code>，<code>dag-viewport.md</code> 生成正确 html，标题/代码/表格无误。</li>
+<li><strong>脚手架 + 单页渲染</strong> → verify：跑 <code>build.py</code>，<code>dag-rendering.md</code> 生成正确 html，标题/代码/表格无误。</li>
 <li><strong>三栏外壳 + 双主题</strong> → verify：浏览器打开，切换深浅正常、防闪烁、排版克制专业。</li>
 <li><strong>导航树自动生成</strong> → verify：左栏完整覆盖所有 md，分组/置顶/当前页高亮正确。</li>
 <li><strong>本页锚点 + 滚动高亮</strong> → verify：右栏锚点点击跳转、滚动时高亮跟随。</li>

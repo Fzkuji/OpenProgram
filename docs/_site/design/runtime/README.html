@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -197,6 +195,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p>Agent 执行运行时 —— 运行循环、worktree、异步任务、流式传输/恢复、DAG 模型，以及回退层。</p>
 <ul>
 <li><a href="/docs/design/runtime/dag/session-dag.html"><code>session-dag.md</code></a> — <strong>权威</strong>:历史记录数据模型(一整张图 / 三种节点 user·llm·code / called_by 边 / render_context 上下文检索)+ 两套调用路径合并的实现设计</li>
+<li><a href="/docs/design/runtime/dag/dag-rendering.html"><code>dag/dag-rendering.md</code></a> — <strong>权威渲染规范</strong>：布局/连线/图例/默认可见性，12 场景</li>
+<li><a href="/docs/design/runtime/dag/branch-collaboration.html"><code>dag/branch-collaboration.md</code></a> — 分支协作（通信 / 派活 / 合并）设计与实现步骤</li>
 <li><a href="/docs/design/runtime/execution/agent-call-flow.html"><code>agent-call-flow.md</code></a> — 调用流程骨架(turn / loop,跟节点模型正交)</li>
 <li><a href="/docs/design/runtime/execution/agent-worktree.html"><code>agent-worktree.md</code></a></li>
 <li><a href="/docs/design/runtime/execution/async-task-lifecycle.html"><code>async-task-lifecycle.md</code></a></li>

@@ -2,8 +2,10 @@
 
 Agent execution runtime — the run loop, worktrees, async tasks, streaming/resume, the DAG model, and revert layers.
 
-- [`session-dag.md`](dag/session-dag.md) — **权威**:历史记录数据模型(一整张图 / 三种节点 user·llm·code / called_by 边 / render_context 上下文检索)+ 两套调用路径合并的实现设计
-- [`agent-call-flow.md`](execution/agent-call-flow.md) — 调用流程骨架(turn / loop,跟节点模型正交)
+- [`session-dag.md`](dag/session-dag.md) — **authoritative**: the execution-record data model (one single graph / three node roles user·llm·code / caller+predecessor edges / render_context retrieval) + the two-path merge implementation design
+- [`dag/dag-rendering.md`](dag/dag-rendering.md) — **authoritative rendering spec**: layout / edges / legend / default visibility, 12 scenarios
+- [`dag/branch-collaboration.md`](dag/branch-collaboration.md) — branch collaboration (communication / dispatch / merge) design and implementation steps
+- [`agent-call-flow.md`](execution/agent-call-flow.md) — the call-flow skeleton (turn / loop, orthogonal to the node model)
 - [`agent-worktree.md`](execution/agent-worktree.md)
 - [`async-task-lifecycle.md`](execution/async-task-lifecycle.md)
 - [`dispatcher-split.md`](execution/dispatcher-split.md) — break `agent/dispatcher.py` into a responsibility-scoped package (no-1000-line rule)

@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -272,7 +270,7 @@ At the same time, treat &quot;being able to freely add dynamic animations later&
 <p>Dependency control: only three pure-Python packages are added — <code>markdown-it-py</code>, <code>mdit-py-plugins</code>, <code>Pygments</code> — placed in a separate optional <code>docs-build</code> dependency group so the main dependencies aren't polluted.</p>
 <h2 id="4-directory-and-output-layout">4. Directory and Output Layout<a class="header-anchor" href="#4-directory-and-output-layout">#</a></h2>
 <pre><code>docs/                         ← source files (untouched)
-  design/runtime/dag-viewport.md
+  design/runtime/dag/dag-rendering.md
   design/proactive/event-layer.html   ← hand-written html
   ...
 
@@ -289,7 +287,7 @@ tools/docs_site/              ← new: build script (one small module)
 
 docs/_site/                   ← build output (git-ignored or committed as needed)
   index.html
-  design/runtime/dag-viewport.html
+  design/runtime/dag/dag-rendering.html
   search-index.json
   assets/...
 </code></pre>
@@ -377,7 +375,7 @@ left col collapsible/remembered expand state   body max-width≈820px   right co
 </ul>
 <h2 id="9-implementation-steps-each-independently-verifiable">9. Implementation Steps (Each Independently Verifiable)<a class="header-anchor" href="#9-implementation-steps-each-independently-verifiable">#</a></h2>
 <ol>
-<li><strong>Scaffolding + single-page rendering</strong> → verify: run <code>build.py</code>, confirm <code>dag-viewport.md</code> produces correct html with titles/code/tables intact.</li>
+<li><strong>Scaffolding + single-page rendering</strong> → verify: run <code>build.py</code>, confirm <code>dag-rendering.md</code> produces correct html with titles/code/tables intact.</li>
 <li><strong>Three-column shell + dual themes</strong> → verify: open in a browser, confirm light/dark switching works, anti-flicker works, and typography is restrained and professional.</li>
 <li><strong>Automatic navigation tree</strong> → verify: the left column fully covers all md, with correct grouping/pinning/current-page highlighting.</li>
 <li><strong>Per-page anchors + scroll highlighting</strong> → verify: right-column anchors jump on click, and highlighting follows while scrolling.</li>

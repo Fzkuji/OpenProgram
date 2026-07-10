@@ -21,8 +21,11 @@ Status: **decided** · Created: 2026-06-19
 
 整个 session = **一整张 DAG，有唯一的根**。不切成多个独立片段，也不让任何一轮悬空。
 
-- **根节点（ROOT）**：每个会话一个根，代表"这个会话"。所有顶层 user 节点都挂在它
-  下面——这是把多轮连成一整张图的汇总点。
+- **根节点（ROOT）**：每个会话一个根，代表"这个会话"。顶层 user 节点挂在它
+  下面——这是把多轮连成一整张图的汇总点。**spawn 分支的根不挂 ROOT**：它的
+  caller 指向发起它的节点（§2.3），连通性经由发起节点仍可达 ROOT，"一张连通图"
+  的不变量不破。（例外：跨会话 spawn 的分支根，caller 指向另一个会话的图，本会
+  话内挂 ROOT 并由渲染层标 ↗ 角标——见 `dag-rendering.md` 图例。）
 - **共享 seq**：整张图一套单调递增的 `seq`（全局时间序），排序的唯一依据。
 - **顶层多轮**：每轮 user 挂在 ROOT 下（互为兄弟），并用一条边指向上一轮的回复，
   表达对话先后。
@@ -214,10 +217,16 @@ placeholder / anchor / 辅助行。**SessionStore 里的 code 子树是唯一真
 
 ### 3.3 画（可视化）
 
+> 画法的权威规范在 `dag-rendering.md`（布局 · 连线 · 图例 · 默认可见性）。
+> 本节只留语义要点：
+
 DAG viewport（右侧小地图）按 tree-indent 渲染：
 
-1. **tier（水平列）按 role 固定**：ROOT=0，user=1，llm=2，code=3，更深子调用
-   = caller's tier + 1。
+1. **tier（水平列）分两层**：对话层按 role 固定（ROOT=0，user=1——含 spawn
+   分支根与回送节点，llm/merge=2）；执行层按调用深度（code=3，更深子调用 =
+   caller's tier + 1）。spawn 根的 caller 指向深节点，但它是对话层 user，
+   tier 仍为 1——caller 只决定 spawn 边从哪画来，不决定它的缩进
+   （裁决记录见 `dag-rendering.md` 第一节）。
 2. **depth（垂直行）按 seq DFS 排**，fork siblings 对齐到同一行。
 3. **lane（分支列）**：主干 lane=0，fork siblings 各占独立 lane。
 4. **连线**：user 从 ROOT 列画、llm 从 user 画、code 从 llm 画；fork siblings 之间

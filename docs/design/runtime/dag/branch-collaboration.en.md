@@ -4,8 +4,8 @@ Status: **draft (pending discussion; user authorized continued progress before g
 
 > Goal: make different branches in the DAG more than just "parallel universes" — let them **collaborate**: one branch sends a message to another, one branch does work on behalf of another, and the results of two branches merge into one. This doc takes stock of the current state (much of it is already implemented), fills the gaps, and defines how merge/communication nodes are drawn in the DAG viewport.
 >
-> Prerequisites: the edge model (caller + predecessor) is covered in `session-dag.md`; layout rules are in
-> `dag-layout-algorithm.md` (includes the 7-scenario spec.html).
+> Prerequisites: the edge model (caller + predecessor) is covered in `session-dag.md`; the authoritative spec
+> for layout and edges is in `dag-rendering.md` (includes 12 scenarios).
 
 ## 1. Current State (verified via codegraph)
 
@@ -26,35 +26,11 @@ The **data layer and backend for branch collaboration mostly already exist**; wh
 
 **Conclusion**: the merge "engine" is already built (merge_branches + attach + multi-parent commits). This doc mainly does three things: (A) define how merge/attach nodes are drawn in the DAG; (B) add an inter-branch messaging tool; (C) wire "sub-branch service → result merge-back" into a complete chain.
 
-## 1.5. Edge Visual Rules (color = branch, line style = type, orthogonal)
+## 1.5. Edge Visual Rules
 
-**Iron rule: color always denotes "branch identity," never "edge type."** Each lane has one color (see `dag/types.ts` `LANE_COLORS`), and any edge uses the lane color of the branch it **belongs to / points at**. **Never** assign a fixed special color to a particular edge type (e.g. gray for spawn, gold for communication) — that conflicts with "color = branch" and makes it impossible to tell whether the branch changed or the edge type changed.
-
-**Edge types are distinguished only by line style (dash pattern / thickness):**
-
-| Edge type | Line style | Color |
-|---|---|---|
-| same-branch edge (parent→child) | solid | that branch's lane color |
-| retry fork (user manual retry/rewrite) | dashed `5 4` | that branch's lane color |
-| LLM proactively creates a branch (spawn_branch) | dash-dot `4 2 1 2` | child branch's lane color |
-| inter-branch communication (send_to_branch) | dotted `1 5` | target branch's lane color |
-| merge convergence (merge) | thick solid `2.4px` | peer branch's lane color |
-| attach merge-back (result embedded back) | long dashes `4 4` | source branch's lane color |
-
-Effect: the same line style appears in different colors on different branches (the color tells you "which branch"); on the same branch, different edge types share the same color and are told apart by dashes (the line style tells you "what relationship"). The two dimensions are orthogonal.
-
-### Default visibility: only communication lines are hidden by default
-
-| Edge type | Default |
-|---|---|
-| same-branch call (solid) | **always shown** |
-| retry fork (dashed) | **always shown** |
-| spawn_branch / create_branch branch creation (dash-dot) | **always shown** |
-| merge convergence (thick solid) | **always shown** |
-| attach merge-back (long dashes) | **always shown** |
-| **send_to_branch communication (dotted)** | **hidden by default; shown only on hovering the node/branch** |
-
-Rationale: structural lines (how this branch came to be, merge/merge-back) are limited in number and form the skeleton — keeping them always shown stays legible. **Communication lines can be very numerous** (branches message each other frequently), and showing them all permanently turns into a tangle — so they're hidden by default and surface only when you hover the relevant node/branch, revealing that node's communication lines. Implementation: communication lines attach hover-visibility on render (CSS class + node hover trigger), and structural lines are unaffected.
+> Handed off to `dag-rendering.md` section 3 (the color=branch, line-style=type
+> orthogonality iron rule + the line-style table + communication lines hidden by
+> default). This doc no longer maintains a copy.
 
 ## 2. Three Collaboration Modes
 
@@ -101,37 +77,14 @@ send_to_branch(target_branch, message) -> the other side's reply (optional wait)
 - each additional "branch being merged in" is expressed via an **attach pointer node**: one attach pointer per peer (`predecessor=target_head`, `attach.head_id=peer tip`)
 - `commit_parents = [target prior commit, *peer commit ids]` (multi-parent, for provenance)
 
-## 3. DAG Drawing of the Merge Node (the core definition of this doc)
+## 3. DAG Drawing of the Merge Node
 
-A merge is the **only** place in the DAG where "multiple lines converge into one node" (everything else fans out tree-like). Drawing:
-
-```
-Before merge (two branches):     After merge:
-col0   col2(fork vert) col3      col0        col3
-◇ROOT                         ◇ROOT
-│                             │
-●─user                        ●─user
-   │                             │
-   ▲─llm    ┊                    ▲─llm    ┊
-            ┊  ●─user'(fork)              ┊  ●─user'
-            ┊     │                       ┊     │
-            ┊     ▲─llm'                  ┊     ▲─llm'
-                                          │        ╲
-                                          ●─◆ merge ←──┘ (two lines converge)
-                                            (new tip, multi-parent)
-```
-
-**Rules**:
-1. **merge node shape**: distinguish it with a special shape (suggested: **double ring / solid diamond with a crossbar**) so it is recognizable at a glance as a "convergence point," different from the ordinary assistant triangle.
-2. **merge node's column (lane)**:
-   - equal merge: the merge is the new mainline tip, returning to the **base branch's lane** (usually the merged main branch's lane, or a freshly opened "post-merge mainline"). Preference: merge into base's lane so that the post-merge mainline continues base.
-   - each merged peer branch draws a **convergence line** (solid or thick dashed) angling from the peer's tip into the merge node (similar to how a git merge commit converges two parent lines).
-3. **convergence line**: from each peer tip → merge node, taking a polyline that "goes vertical to the merge row first, then enters horizontally/diagonally," colored with the peer branch's lane color (so you can see "which branch this line comes from").
-4. **attach pointer node**: the attach pointer used by a merge is a `display=runtime` temporary node (`merge_temp=true`), **not drawn as a standalone node in the viewport** (it would be noise) — the convergence line alone expresses "this branch was merged in." filter.py already filters out `display=runtime`.
-
-**To confirm**: which lane the merge node lands in after the merge —
-- Option A: land in the base branch lane (the post-merge mainline continues base, other branches "converge into" base) — leaning toward this
-- Option B: open a new lane (the merge product forms its own new mainline)
+> Handed off to `dag-rendering.md` scenario 10. The two former "to confirm" items are
+> now ruled (2026-07-10): merge node shape = **double ring ◎** (the graph's unique
+> convergence shape); merge node lane = **lands in the base branch lane** (Option A, the
+> post-merge mainline continues base). The existing ruling that the attach pointer node
+> is not drawn in the viewport (only the convergence line is) is likewise recorded in
+> scenarios 10/11.
 
 ## 4. Inter-branch Messaging Tool (new, to be implemented)
 
@@ -164,10 +117,10 @@ Implementation points:
 
 ## 6. Design Decisions to Discuss
 
-1. **merge node shape**: double ring? solid diamond with a crossbar? or some other shape that reads as "convergence" at a glance?
-2. **post-merge lane**: land in the base branch lane (continue the mainline) or open a new lane? Leaning toward base.
+1. ~~merge node shape~~ **Ruled**: double ring ◎ (`dag-rendering.md` scenario 10).
+2. ~~post-merge lane~~ **Ruled**: lands in the base branch lane (Option A).
 3. **whether send_to_branch waits synchronously for a reply**: deliver by default (async) or wait for a reply (sync)? Leaning toward making it a parameter.
-4. **cross-branch communication line style**: distinct from attach (dashed) and spawn (dash-dot) — what line style/color?
+4. ~~cross-branch communication line style~~ **Ruled**: dotted `1 5`, target branch's lane color, hidden by default and shown on hover (`dag-rendering.md` section 3).
 5. **the boundary between communication and merge**: send_to_branch delivers a single message vs merge converges an entire branch — do we need a "send multiple times, then merge" combined workflow?
 6. **attended interception**: should inter-branch messaging and auto-merge require user confirmation by default (cross-branch side effects)?
 

@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag" open><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink active" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -209,8 +207,11 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <h3 id="11-一张有根的图">1.1 一张有根的图<a class="header-anchor" href="#11-一张有根的图">#</a></h3>
 <p>整个 session = <strong>一整张 DAG，有唯一的根</strong>。不切成多个独立片段，也不让任何一轮悬空。</p>
 <ul>
-<li><strong>根节点（ROOT）</strong>：每个会话一个根，代表&quot;这个会话&quot;。所有顶层 user 节点都挂在它
-下面——这是把多轮连成一整张图的汇总点。</li>
+<li><strong>根节点（ROOT）</strong>：每个会话一个根，代表&quot;这个会话&quot;。顶层 user 节点挂在它
+下面——这是把多轮连成一整张图的汇总点。<strong>spawn 分支的根不挂 ROOT</strong>：它的
+caller 指向发起它的节点（§2.3），连通性经由发起节点仍可达 ROOT，&quot;一张连通图&quot;
+的不变量不破。（例外：跨会话 spawn 的分支根，caller 指向另一个会话的图，本会
+话内挂 ROOT 并由渲染层标 ↗ 角标——见 <code>dag-rendering.md</code> 图例。）</li>
 <li><strong>共享 seq</strong>：整张图一套单调递增的 <code>seq</code>（全局时间序），排序的唯一依据。</li>
 <li><strong>顶层多轮</strong>：每轮 user 挂在 ROOT 下（互为兄弟），并用一条边指向上一轮的回复，
 表达对话先后。</li>
@@ -489,10 +490,17 @@ fork 会 SIGSEGV）。含义：改完函数调用相关代码，<code>openprogra
 充分且必要的（父 worker 长驻，不重启用旧模块）。</p>
 </blockquote>
 <h3 id="33-画可视化">3.3 画（可视化）<a class="header-anchor" href="#33-画可视化">#</a></h3>
+<blockquote>
+<p>画法的权威规范在 <code>dag-rendering.md</code>（布局 · 连线 · 图例 · 默认可见性）。
+本节只留语义要点：</p>
+</blockquote>
 <p>DAG viewport（右侧小地图）按 tree-indent 渲染：</p>
 <ol>
-<li><strong>tier（水平列）按 role 固定</strong>：ROOT=0，user=1，llm=2，code=3，更深子调用
-= caller's tier + 1。</li>
+<li><strong>tier（水平列）分两层</strong>：对话层按 role 固定（ROOT=0，user=1——含 spawn
+分支根与回送节点，llm/merge=2）；执行层按调用深度（code=3，更深子调用 =
+caller's tier + 1）。spawn 根的 caller 指向深节点，但它是对话层 user，
+tier 仍为 1——caller 只决定 spawn 边从哪画来，不决定它的缩进
+（裁决记录见 <code>dag-rendering.md</code> 第一节）。</li>
 <li><strong>depth（垂直行）按 seq DFS 排</strong>，fork siblings 对齐到同一行。</li>
 <li><strong>lane（分支列）</strong>：主干 lane=0，fork siblings 各占独立 lane。</li>
 <li><strong>连线</strong>：user 从 ROOT 列画、llm 从 user 画、code 从 llm 画；fork siblings 之间
@@ -517,7 +525,7 @@ fork 会 SIGSEGV）。含义：改完函数调用相关代码，<code>openprogra
 <li><code>openprogram/store/session/session_store.py</code> — get_branch / 存储</li>
 <li><code>openprogram/agentic_programming/function.py</code> — 函数调用写 code 节点</li>
 </ul>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-01</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/controllability-and-three-surface-sync.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">长跑 agent 任务的可控性 + 三端一致性</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/dag-viewport.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG Viewport 设计文档</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-01</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/controllability-and-three-surface-sync.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">长跑 agent 任务的可控性 + 三端一致性</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/dag-live.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG 实时布局（真算法）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#第一部分-模型是什么">第一部分 · 模型是什么</a>

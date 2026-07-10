@@ -106,7 +106,7 @@ between them. The view scrolls with the chat: clicking a node
 scrolls the conversation to the corresponding message, and the
 panel keeps the currently-viewed range highlighted. d3-hierarchy
 layout is available behind a toggle for fan-out-heavy traces;
-see [`design/runtime/dag-viewport.md`](design/runtime/dag/dag-viewport.md) when adding new
+see [`design/runtime/dag/dag-rendering.md`](design/runtime/dag/dag-rendering.md) when adding new
 node kinds.
 
 ## Multi-account + key rotation

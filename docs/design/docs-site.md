@@ -50,7 +50,7 @@ Status: **draft（待确认）** · Created: 2026-06-29
 
 ```
 docs/                         ← 源文件（不动）
-  design/runtime/dag-viewport.md
+  design/runtime/dag/dag-rendering.md
   design/proactive/event-layer.html   ← 手写 html
   ...
 
@@ -67,7 +67,7 @@ tools/docs_site/              ← 新增：构建脚本（一个小模块）
 
 docs/_site/                   ← 构建产物（git 忽略或按需提交）
   index.html
-  design/runtime/dag-viewport.html
+  design/runtime/dag/dag-rendering.html
   search-index.json
   assets/...
 ```
@@ -133,7 +133,7 @@ docs/_site/                   ← 构建产物（git 忽略或按需提交）
 
 ## 九、实施步骤（每步可独立验证）
 
-1. **脚手架 + 单页渲染** → verify：跑 `build.py`，`dag-viewport.md` 生成正确 html，标题/代码/表格无误。
+1. **脚手架 + 单页渲染** → verify：跑 `build.py`，`dag-rendering.md` 生成正确 html，标题/代码/表格无误。
 2. **三栏外壳 + 双主题** → verify：浏览器打开，切换深浅正常、防闪烁、排版克制专业。
 3. **导航树自动生成** → verify：左栏完整覆盖所有 md，分组/置顶/当前页高亮正确。
 4. **本页锚点 + 滚动高亮** → verify：右栏锚点点击跳转、滚动时高亮跟随。

@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag"><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -271,8 +269,15 @@ path (functions/tools/task/task.py), the async runner
 at the turn that opened it (session-dag.md §2.3) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
 three together.</p>
+<p>Spawns along one chain share a single depth counter; task() applies
+its own tight cap <code>MAX_TASK_DEPTH=2</code> (main agent → coordinator →
+worker, and no further — anything deeper is an agent passing the buck,
+observed live as a 5-generation weather-query delegation chain), while
+message_branch keeps the looser <code>MAX_SPAWN_DEPTH=8</code> (budgeted for
+multi-round branch-to-branch dialogue, not delegation).</p>
 <p>Source: the sync path omitted it, so DAG branches forked from the
-root (1d1fe016).</p>
+root (1d1fe016); the async task() path dropped the caller and never
+counted depth (follow-up fix).</p>
 <h2 id="7-the-chat-sibling-switcher-appears-only-on-real-forks">7. The chat sibling switcher appears only on REAL forks<a class="header-anchor" href="#7-the-chat-sibling-switcher-appears-only-on-real-forks">#</a></h2>
 <p><code>&lt; N/M &gt;</code> sibling sets group by fork point (<code>predecessor</code>, falling
 back to <code>caller</code>; ROOT normalizes to none) and contain conversation
@@ -308,7 +313,7 @@ components that need them use dynamic <code>import()</code> (example:
 <code>refreshAgentChip</code>). New runtime-bridge modules either keep this rule
 in mind or defer window access into function bodies.</p>
 <p>Source: settings-page prerender crash during f09ed1c2.</p>
-<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/ui/attachment-handling.viz.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">OpenProgram · 附件处理设计（可视化）</span></a><a class="pn-link pn-next" href="/docs/design/ui/indicator-dots.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">指示点系统</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-10</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/ui/attachment-handling.viz.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">OpenProgram · 附件处理设计（可视化）</span></a><a class="pn-link pn-next" href="/docs/design/ui/indicator-dots.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">指示点系统</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#1-the-enabled-set-is-the-single-gate-on-model-availability">1. The enabled set is the single gate on model availability</a>

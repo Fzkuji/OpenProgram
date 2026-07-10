@@ -14,7 +14,7 @@ Status: **decided (final model, implementation begins)** · Created: 2026-06-19 
 
 The entire session = **one single DAG with a unique root** (not split into multiple independent traces, and no dangling turns).
 
-- **Root node (session root)**: one root per session, representing "this session / this user" (it is main). **The `caller` of every top-level user node points to it** — this is the aggregation point that connects multiple turns into a single graph. Without it, the turns would be isolated and split into separate graphs.
+- **Root node (session root)**: one root per session, representing "this session / this user" (it is main). Top-level user nodes hang under it — this is the aggregation point that connects multiple turns into a single graph. **A spawn branch's root does NOT hang on ROOT**: its caller points at the node that initiated it (§2.3), and connectivity to ROOT still holds via that initiating node, so the "single connected graph" invariant is not broken. (Exception: a cross-session spawn's branch root, whose caller points into another session's graph — within this session it hangs on ROOT and the render layer marks it with a ↗ badge; see the legend in `dag-rendering.md`.)
 - **Node (span)**: one of three roles — user / llm / code. A single data structure; an LLM call is always the same kind of llm node, never split by whether it was "triggered by the user" or "triggered by a function". (The root node itself can be seen as a special session node, with no input/output.)
 - **Two edges** (see §2 · Edges):
   - `caller` (who invoked me) — the sub-call edge. An LLM calling a tool, a function calling a sub-function; the caller of a top-level node is ROOT.
@@ -151,14 +151,17 @@ No special handling needed — a branch node is just an ordinary node sharing th
 
 ### Viewport Layout Rules
 
+> The authoritative spec for the drawing is in `dag-rendering.md` (layout · edges ·
+> legend · default visibility). This section keeps only the semantic essentials:
+
 The DAG viewport (the minimap in the right-hand panel) renders nodes in a tree-indent fashion. Core rules:
 
-1. **tier (horizontal column position) is fixed by role**, not derived by recursively walking the caller chain:
-   - ROOT: tier=0
-   - user: tier=1
-   - llm/assistant: tier=2
-   - tool/code (direct sub-call): tier=3
-   - deeper sub-calls: tier=caller's tier + 1
+1. **tier (horizontal column position) has two layers**: the conversation layer is fixed
+   by role (ROOT=0, user=1 — including spawn branch roots and hand-back nodes,
+   llm/merge=2); the execution layer goes by call depth (code=3, deeper sub-calls =
+   caller's tier + 1). A spawn root's caller points at a deep node, but it is a
+   conversation-layer user, so its tier is still 1 — caller only decides where the spawn
+   edge is drawn from, not its indent (ruling recorded in section 1 of `dag-rendering.md`).
 
 2. **depth (vertical row position) is ordered by seq DFS**, with fork siblings aligned to the same row.
 

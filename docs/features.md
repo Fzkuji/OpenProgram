@@ -98,7 +98,7 @@ docstring 与 `content` 的拆分、一份基于规则的校验清单，
 该视图随聊天一起滚动：点击某个节点会把对话滚动到对应的消息，
 面板会保持当前查看的范围处于高亮。对于扇出密集的追踪记录，
 可通过一个开关切换到 d3-hierarchy 布局；
-新增节点类型时请参阅 [`design/runtime/dag-viewport.md`](design/runtime/dag/dag-viewport.md)。
+新增节点类型时请参阅 [`design/runtime/dag/dag-rendering.md`](design/runtime/dag/dag-rendering.md)。
 
 ## 多账户 + 密钥轮换
 

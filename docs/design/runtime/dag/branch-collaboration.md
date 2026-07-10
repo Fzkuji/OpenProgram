@@ -6,8 +6,8 @@ Status: **draft（待讨论，用户睡前授权持续推进）** · Created: 20
 > 一个分支发消息、一个分支为另一个分支干活、两个分支的成果合并成一条。本文盘
 > 清现状（很多已实现），补齐缺口，并定义合并/通信节点在 DAG viewport 里的画法。
 >
-> 前置：边模型（caller + predecessor）见 `session-dag.md`；布局规则见
-> `dag-layout-algorithm.md`（含 7 场景 spec.html）。
+> 前置：边模型（caller + predecessor）见 `session-dag.md`；布局与连线的权威规范见
+> `dag-rendering.md`（含 12 场景）。
 
 ## 一、现状盘点（codegraph 实测）
 
@@ -31,42 +31,10 @@ Status: **draft（待讨论，用户睡前授权持续推进）** · Created: 20
 主要做三件事：(A) 定义合并/attach 节点的 DAG 画法；(B) 新增分支间发消息工具；
 (C) 把"子分支服务 → 结果合并回流"串成完整链路。
 
-## 一·五、连线视觉规则（颜色 = 分支，线型 = 类型，正交）
+## 一·五、连线视觉规则
 
-**铁律：颜色永远表示"分支身份"，不表示"线的类型"。** 每条 lane 一个颜色
-（见 `dag/types.ts` `LANE_COLORS`），任何一条连线都用它**所属 / 指向的那条
-分支**的 lane 颜色。**绝不**给某种类型的线指定一个固定特殊颜色（如 spawn 用灰、
-通信用金）——那会和"颜色=分支"冲突，让人分不清是分支变了还是线的类型变了。
-
-**线的类型只用线型（dash 样式 / 粗细）区分：**
-
-| 连线类型 | 线型 | 颜色 |
-|---|---|---|
-| 同分支连线（父→子） | 实线 | 该分支 lane 色 |
-| retry 分叉（用户手动 retry/改写） | 虚线 `5 4` | 该分支 lane 色 |
-| 大模型主动建分支（spawn_branch） | 点划线 `4 2 1 2` | 子分支 lane 色 |
-| 分支间通信（send_to_branch） | 点线 `1 5` | 目标分支 lane 色 |
-| 合并汇入（merge） | 粗实线 `2.4px` | peer 分支 lane 色 |
-| attach 回流（结果嵌回） | 长虚线 `4 4` | 源分支 lane 色 |
-
-效果：同一种线型出现在不同分支上颜色不同（颜色告诉你"哪条分支"）；同一条分支
-上不同类型的线颜色相同、靠 dash 区分（线型告诉你"什么关系"）。两个维度正交。
-
-### 默认显隐：只有通信线默认隐藏
-
-| 连线类型 | 默认 |
-|---|---|
-| 同分支调用（实线） | **常驻显示** |
-| retry 分叉（虚线） | **常驻显示** |
-| spawn_branch / create_branch 建分支（点划线） | **常驻显示** |
-| merge 合并汇入（粗实线） | **常驻显示** |
-| attach 回流（长虚线） | **常驻显示** |
-| **send_to_branch 通信（点线）** | **默认隐藏，鼠标 hover 节点/分支才显示** |
-
-理由：结构线（这条分支怎么来的、合并/回流）数量有限、是骨架，常驻看得清。
-**通信线会非常多**（分支之间频繁发消息），全部常驻会糊成一团——所以默认隐藏，
-hover 到相关节点/分支时才浮现该节点的通信线。实现：通信线渲染时挂 hover 显隐
-（CSS class + 节点 hover 触发），结构线不受影响。
+> 移交 `dag-rendering.md` 第三节（颜色=分支、线型=类型的正交铁律 + 线型表 +
+> 通信线默认隐藏）。本文不再维护副本。
 
 ## 二、三种协作模式
 
@@ -124,44 +92,12 @@ lane 最右列+1 起，有自己的竖线）。
   pointer（`predecessor=target_head`，`attach.head_id=peer tip`）
 - `commit_parents = [target prior commit, *peer commit ids]`（多父，溯源用）
 
-## 三、合并节点的 DAG 画法（本文核心定义）
+## 三、合并节点的 DAG 画法
 
-合并是 DAG 里**唯一出现"多线汇聚到一个节点"**的地方（其它都是树状发散）。画法：
-
-```
-合并前（两条分支）:           合并后:
-列0    列2(fork竖线) 列3        列0         列3
-◇ROOT                         ◇ROOT
-│                             │
-●─user                        ●─user
-   │                             │
-   ▲─llm    ┊                    ▲─llm    ┊
-            ┊  ●─user'(fork)              ┊  ●─user'
-            ┊     │                       ┊     │
-            ┊     ▲─llm'                  ┊     ▲─llm'
-                                          │        ╲
-                                          ●─◆ merge ←──┘ (两线汇入)
-                                            (新 tip, 多父)
-```
-
-**规则**：
-1. **merge 节点形状**：用一个特殊形状区分（建议**双环/实心菱形带横杠**），让它一眼
-   能认出是"汇聚点"，不同于普通 assistant 三角。
-2. **merge 节点的列（lane）**：
-   - equal merge：merge 是新主线 tip，回到 **base 分支的 lane**（通常是被合并的主
-     分支 lane，或新开一条"合并后主线"）。倾向：合并到 base 的 lane，让合并后主线
-     延续 base。
-   - 各被合并的 peer 分支画一条**汇入线**（实线或粗虚线）从 peer 的 tip 斜拉到 merge
-     节点（类似 git 的 merge 提交两条父线汇合）。
-3. **汇入线**：从每个 peer tip → merge 节点，走"先垂直到 merge 行，再水平/斜入"的
-   折线，颜色用 peer 分支的 lane 色（让人看出"这条线来自哪条分支"）。
-4. **attach pointer 节点**：merge 用的 attach pointer 是 `display=runtime` 的临时
-   节点（`merge_temp=true`），**viewport 里不单独画成节点**（会噪），只用汇入线表达
-   "这条分支被合并进来了"。当前 filter.py 已过滤 `display=runtime`。
-
-**待确认**：合并后 merge 节点落在哪条 lane——
-- 选项 A：落 base 分支 lane（合并后延续 base 主线，其它分支"汇入"base）— 倾向这个
-- 选项 B：新开一条 lane（合并产物自成一条新主线）
+> 移交 `dag-rendering.md` 场景 10。原"待确认"两项已裁决（2026-07-10）：
+> merge 节点形状 = **双环 ◎**（全图唯一的汇聚形状）；merge 节点 lane =
+> **落 base 分支 lane**（选项 A，合并后主线延续 base）。attach pointer 节点
+> viewport 不画、只画汇入线的既有裁决一并收录在场景 10/11。
 
 ## 四、分支间发消息工具（新增，需实现）
 
@@ -195,10 +131,10 @@ def send_to_branch(target_branch: str, message: str, wait_reply: bool = False) -
 
 ## 六、待讨论的设计决策
 
-1. **合并节点形状**：双环？实心菱形带横杠？还是别的能一眼认出"汇聚"的形状？
-2. **合并后 lane**：落 base 分支 lane（延续主线）还是新开 lane？倾向 base。
+1. ~~合并节点形状~~ **已裁决**：双环 ◎（`dag-rendering.md` 场景 10）。
+2. ~~合并后 lane~~ **已裁决**：落 base 分支 lane（选项 A）。
 3. **send_to_branch 是否同步等回复**：默认投递（异步）还是等回复（同步）？倾向参数化。
-4. **跨分支通信线型**：和 attach（虚线）、spawn（点划线）区分，用什么线型/颜色？
+4. ~~跨分支通信线型~~ **已裁决**：点线 `1 5`、目标分支 lane 色、默认隐藏 hover 显示（`dag-rendering.md` 第三节）。
 5. **通信 vs 合并的边界**：send_to_branch 投递一条消息 vs merge 汇聚整条分支——
    是否需要"send 多次后再 merge"的组合工作流？
 6. **值守拦截**：分支间发消息、自动合并要不要默认需用户确认（副作用跨分支）？

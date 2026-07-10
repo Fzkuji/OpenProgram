@@ -50,7 +50,7 @@ Dependency control: only three pure-Python packages are added — `markdown-it-p
 
 ```
 docs/                         ← source files (untouched)
-  design/runtime/dag-viewport.md
+  design/runtime/dag/dag-rendering.md
   design/proactive/event-layer.html   ← hand-written html
   ...
 
@@ -67,7 +67,7 @@ tools/docs_site/              ← new: build script (one small module)
 
 docs/_site/                   ← build output (git-ignored or committed as needed)
   index.html
-  design/runtime/dag-viewport.html
+  design/runtime/dag/dag-rendering.html
   search-index.json
   assets/...
 ```
@@ -133,7 +133,7 @@ This is the biggest difference from an ordinary docs site, so the implementation
 
 ## 9. Implementation Steps (Each Independently Verifiable)
 
-1. **Scaffolding + single-page rendering** → verify: run `build.py`, confirm `dag-viewport.md` produces correct html with titles/code/tables intact.
+1. **Scaffolding + single-page rendering** → verify: run `build.py`, confirm `dag-rendering.md` produces correct html with titles/code/tables intact.
 2. **Three-column shell + dual themes** → verify: open in a browser, confirm light/dark switching works, anti-flicker works, and typography is restrained and professional.
 3. **Automatic navigation tree** → verify: the left column fully covers all md, with correct grouping/pinning/current-page highlighting.
 4. **Per-page anchors + scroll highlighting** → verify: right-column anchors jump on click, and highlighting follows while scrolling.

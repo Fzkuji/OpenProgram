@@ -2,6 +2,11 @@
 
 Status: **decided（最终模型，开始实现）** · Created: 2026-06-19 · Finalized: 2026-06-20
 
+> **⚠️ 已被取代（2026-07-10）**：数据语义的现行版本在
+> [`dag/session-dag.md`](dag/session-dag.md)，画法的权威规范在
+> [`dag/dag-rendering.md`](dag/dag-rendering.md)。本文保留是因为"两套合并"
+> 的实现决策记录（§八）仍被引用；新内容不要加在这里。
+
 > 本文是 agent 执行记录的**权威设计**:① 数据结构(一整张图存什么)② 上下文怎么从图中检索 ③ 怎么画 ④ 现状两套调用路径(聊天 / 函数)怎么合并成一套。
 > 模型选型理由见 `docs/research/execution-trace-model-selection.md`(span 概念 + 创新点)。
 > 调用流程图见 `agent-call-flow.svg`(统一后的完整运行流程,含重试/审批/嵌套)。

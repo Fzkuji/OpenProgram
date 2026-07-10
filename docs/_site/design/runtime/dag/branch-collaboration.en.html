@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag" open><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink active" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -197,8 +195,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p>Status: <strong>draft (pending discussion; user authorized continued progress before going to sleep)</strong> · Created: 2026-06-29</p>
 <blockquote>
 <p>Goal: make different branches in the DAG more than just &quot;parallel universes&quot; — let them <strong>collaborate</strong>: one branch sends a message to another, one branch does work on behalf of another, and the results of two branches merge into one. This doc takes stock of the current state (much of it is already implemented), fills the gaps, and defines how merge/communication nodes are drawn in the DAG viewport.</p>
-<p>Prerequisites: the edge model (caller + predecessor) is covered in <code>session-dag.md</code>; layout rules are in
-<code>dag-layout-algorithm.md</code> (includes the 7-scenario spec.html).</p>
+<p>Prerequisites: the edge model (caller + predecessor) is covered in <code>session-dag.md</code>; the authoritative spec
+for layout and edges is in <code>dag-rendering.md</code> (includes 12 scenarios).</p>
 </blockquote>
 <h2 id="1-current-state-verified-via-codegraph">1. Current State (verified via codegraph)<a class="header-anchor" href="#1-current-state-verified-via-codegraph">#</a></h2>
 <p>The <strong>data layer and backend for branch collaboration mostly already exist</strong>; what's missing is mainly ① a tool for one branch to proactively send a message to another, and ② how merge/attach nodes are drawn in the DAG viewport.</p>
@@ -264,87 +262,12 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </tbody>
 </table>
 <p><strong>Conclusion</strong>: the merge &quot;engine&quot; is already built (merge_branches + attach + multi-parent commits). This doc mainly does three things: (A) define how merge/attach nodes are drawn in the DAG; (B) add an inter-branch messaging tool; (C) wire &quot;sub-branch service → result merge-back&quot; into a complete chain.</p>
-<h2 id="15-edge-visual-rules-color-branch-line-style-type-orthogonal">1.5. Edge Visual Rules (color = branch, line style = type, orthogonal)<a class="header-anchor" href="#15-edge-visual-rules-color-branch-line-style-type-orthogonal">#</a></h2>
-<p><strong>Iron rule: color always denotes &quot;branch identity,&quot; never &quot;edge type.&quot;</strong> Each lane has one color (see <code>dag/types.ts</code> <code>LANE_COLORS</code>), and any edge uses the lane color of the branch it <strong>belongs to / points at</strong>. <strong>Never</strong> assign a fixed special color to a particular edge type (e.g. gray for spawn, gold for communication) — that conflicts with &quot;color = branch&quot; and makes it impossible to tell whether the branch changed or the edge type changed.</p>
-<p><strong>Edge types are distinguished only by line style (dash pattern / thickness):</strong></p>
-<table>
-<thead>
-<tr>
-<th>Edge type</th>
-<th>Line style</th>
-<th>Color</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>same-branch edge (parent→child)</td>
-<td>solid</td>
-<td>that branch's lane color</td>
-</tr>
-<tr>
-<td>retry fork (user manual retry/rewrite)</td>
-<td>dashed <code>5 4</code></td>
-<td>that branch's lane color</td>
-</tr>
-<tr>
-<td>LLM proactively creates a branch (spawn_branch)</td>
-<td>dash-dot <code>4 2 1 2</code></td>
-<td>child branch's lane color</td>
-</tr>
-<tr>
-<td>inter-branch communication (send_to_branch)</td>
-<td>dotted <code>1 5</code></td>
-<td>target branch's lane color</td>
-</tr>
-<tr>
-<td>merge convergence (merge)</td>
-<td>thick solid <code>2.4px</code></td>
-<td>peer branch's lane color</td>
-</tr>
-<tr>
-<td>attach merge-back (result embedded back)</td>
-<td>long dashes <code>4 4</code></td>
-<td>source branch's lane color</td>
-</tr>
-</tbody>
-</table>
-<p>Effect: the same line style appears in different colors on different branches (the color tells you &quot;which branch&quot;); on the same branch, different edge types share the same color and are told apart by dashes (the line style tells you &quot;what relationship&quot;). The two dimensions are orthogonal.</p>
-<h3 id="default-visibility-only-communication-lines-are-hidden-by-default">Default visibility: only communication lines are hidden by default<a class="header-anchor" href="#default-visibility-only-communication-lines-are-hidden-by-default">#</a></h3>
-<table>
-<thead>
-<tr>
-<th>Edge type</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>same-branch call (solid)</td>
-<td><strong>always shown</strong></td>
-</tr>
-<tr>
-<td>retry fork (dashed)</td>
-<td><strong>always shown</strong></td>
-</tr>
-<tr>
-<td>spawn_branch / create_branch branch creation (dash-dot)</td>
-<td><strong>always shown</strong></td>
-</tr>
-<tr>
-<td>merge convergence (thick solid)</td>
-<td><strong>always shown</strong></td>
-</tr>
-<tr>
-<td>attach merge-back (long dashes)</td>
-<td><strong>always shown</strong></td>
-</tr>
-<tr>
-<td><strong>send_to_branch communication (dotted)</strong></td>
-<td><strong>hidden by default; shown only on hovering the node/branch</strong></td>
-</tr>
-</tbody>
-</table>
-<p>Rationale: structural lines (how this branch came to be, merge/merge-back) are limited in number and form the skeleton — keeping them always shown stays legible. <strong>Communication lines can be very numerous</strong> (branches message each other frequently), and showing them all permanently turns into a tangle — so they're hidden by default and surface only when you hover the relevant node/branch, revealing that node's communication lines. Implementation: communication lines attach hover-visibility on render (CSS class + node hover trigger), and structural lines are unaffected.</p>
+<h2 id="15-edge-visual-rules">1.5. Edge Visual Rules<a class="header-anchor" href="#15-edge-visual-rules">#</a></h2>
+<blockquote>
+<p>Handed off to <code>dag-rendering.md</code> section 3 (the color=branch, line-style=type
+orthogonality iron rule + the line-style table + communication lines hidden by
+default). This doc no longer maintains a copy.</p>
+</blockquote>
 <h2 id="2-three-collaboration-modes">2. Three Collaboration Modes<a class="header-anchor" href="#2-three-collaboration-modes">#</a></h2>
 <h3 id="mode-1-inter-branch-messaging-communication">Mode 1: Inter-branch messaging (communication)<a class="header-anchor" href="#mode-1-inter-branch-messaging-communication">#</a></h3>
 <p><strong>Scenario</strong>: branch A's LLM wants to ask branch B's LLM something, or push a piece of information to B.</p>
@@ -383,39 +306,15 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <li>each additional &quot;branch being merged in&quot; is expressed via an <strong>attach pointer node</strong>: one attach pointer per peer (<code>predecessor=target_head</code>, <code>attach.head_id=peer tip</code>)</li>
 <li><code>commit_parents = [target prior commit, *peer commit ids]</code> (multi-parent, for provenance)</li>
 </ul>
-<h2 id="3-dag-drawing-of-the-merge-node-the-core-definition-of-this-doc">3. DAG Drawing of the Merge Node (the core definition of this doc)<a class="header-anchor" href="#3-dag-drawing-of-the-merge-node-the-core-definition-of-this-doc">#</a></h2>
-<p>A merge is the <strong>only</strong> place in the DAG where &quot;multiple lines converge into one node&quot; (everything else fans out tree-like). Drawing:</p>
-<pre><code>Before merge (two branches):     After merge:
-col0   col2(fork vert) col3      col0        col3
-◇ROOT                         ◇ROOT
-│                             │
-●─user                        ●─user
-   │                             │
-   ▲─llm    ┊                    ▲─llm    ┊
-            ┊  ●─user'(fork)              ┊  ●─user'
-            ┊     │                       ┊     │
-            ┊     ▲─llm'                  ┊     ▲─llm'
-                                          │        ╲
-                                          ●─◆ merge ←──┘ (two lines converge)
-                                            (new tip, multi-parent)
-</code></pre>
-<p><strong>Rules</strong>:</p>
-<ol>
-<li><strong>merge node shape</strong>: distinguish it with a special shape (suggested: <strong>double ring / solid diamond with a crossbar</strong>) so it is recognizable at a glance as a &quot;convergence point,&quot; different from the ordinary assistant triangle.</li>
-<li><strong>merge node's column (lane)</strong>:
-<ul>
-<li>equal merge: the merge is the new mainline tip, returning to the <strong>base branch's lane</strong> (usually the merged main branch's lane, or a freshly opened &quot;post-merge mainline&quot;). Preference: merge into base's lane so that the post-merge mainline continues base.</li>
-<li>each merged peer branch draws a <strong>convergence line</strong> (solid or thick dashed) angling from the peer's tip into the merge node (similar to how a git merge commit converges two parent lines).</li>
-</ul>
-</li>
-<li><strong>convergence line</strong>: from each peer tip → merge node, taking a polyline that &quot;goes vertical to the merge row first, then enters horizontally/diagonally,&quot; colored with the peer branch's lane color (so you can see &quot;which branch this line comes from&quot;).</li>
-<li><strong>attach pointer node</strong>: the attach pointer used by a merge is a <code>display=runtime</code> temporary node (<code>merge_temp=true</code>), <strong>not drawn as a standalone node in the viewport</strong> (it would be noise) — the convergence line alone expresses &quot;this branch was merged in.&quot; filter.py already filters out <code>display=runtime</code>.</li>
-</ol>
-<p><strong>To confirm</strong>: which lane the merge node lands in after the merge —</p>
-<ul>
-<li>Option A: land in the base branch lane (the post-merge mainline continues base, other branches &quot;converge into&quot; base) — leaning toward this</li>
-<li>Option B: open a new lane (the merge product forms its own new mainline)</li>
-</ul>
+<h2 id="3-dag-drawing-of-the-merge-node">3. DAG Drawing of the Merge Node<a class="header-anchor" href="#3-dag-drawing-of-the-merge-node">#</a></h2>
+<blockquote>
+<p>Handed off to <code>dag-rendering.md</code> scenario 10. The two former &quot;to confirm&quot; items are
+now ruled (2026-07-10): merge node shape = <strong>double ring ◎</strong> (the graph's unique
+convergence shape); merge node lane = <strong>lands in the base branch lane</strong> (Option A, the
+post-merge mainline continues base). The existing ruling that the attach pointer node
+is not drawn in the viewport (only the convergence line is) is likewise recorded in
+scenarios 10/11.</p>
+</blockquote>
 <h2 id="4-inter-branch-messaging-tool-new-to-be-implemented">4. Inter-branch Messaging Tool (new, to be implemented)<a class="header-anchor" href="#4-inter-branch-messaging-tool-new-to-be-implemented">#</a></h2>
 <pre><code class="language-python"><span class="nd">@function</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;send_to_branch&quot;</span><span class="p">)</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">send_to_branch</span><span class="p">(</span><span class="n">target_branch</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">wait_reply</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -472,10 +371,10 @@ col0   col2(fork vert) col3      col0        col3
 </table>
 <h2 id="6-design-decisions-to-discuss">6. Design Decisions to Discuss<a class="header-anchor" href="#6-design-decisions-to-discuss">#</a></h2>
 <ol>
-<li><strong>merge node shape</strong>: double ring? solid diamond with a crossbar? or some other shape that reads as &quot;convergence&quot; at a glance?</li>
-<li><strong>post-merge lane</strong>: land in the base branch lane (continue the mainline) or open a new lane? Leaning toward base.</li>
+<li><s>merge node shape</s> <strong>Ruled</strong>: double ring ◎ (<code>dag-rendering.md</code> scenario 10).</li>
+<li><s>post-merge lane</s> <strong>Ruled</strong>: lands in the base branch lane (Option A).</li>
 <li><strong>whether send_to_branch waits synchronously for a reply</strong>: deliver by default (async) or wait for a reply (sync)? Leaning toward making it a parameter.</li>
-<li><strong>cross-branch communication line style</strong>: distinct from attach (dashed) and spawn (dash-dot) — what line style/color?</li>
+<li><s>cross-branch communication line style</s> <strong>Ruled</strong>: dotted <code>1 5</code>, target branch's lane color, hidden by default and shown on hover (<code>dag-rendering.md</code> section 3).</li>
 <li><strong>the boundary between communication and merge</strong>: send_to_branch delivers a single message vs merge converges an entire branch — do we need a &quot;send multiple times, then merge&quot; combined workflow?</li>
 <li><strong>attended interception</strong>: should inter-branch messaging and auto-merge require user confirmation by default (cross-branch side effects)?</li>
 </ol>
@@ -526,17 +425,16 @@ col0   col2(fork vert) col3      col0        col3
 </tr>
 </tbody>
 </table>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/dag-layout-spec.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 布局视觉规范</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/agent-worktree.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent Worktree 工具</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/dag-rendering.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/agent-worktree.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent Worktree 工具</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#1-current-state-verified-via-codegraph">1. Current State (verified via codegraph)</a>
-<a class="" href="#15-edge-visual-rules-color-branch-line-style-type-orthogonal">1.5. Edge Visual Rules (color = branch, line style = type, orthogonal)</a>
-<a class="lvl-3" href="#default-visibility-only-communication-lines-are-hidden-by-default">Default visibility: only communication lines are hidden by default</a>
+<a class="" href="#15-edge-visual-rules">1.5. Edge Visual Rules</a>
 <a class="" href="#2-three-collaboration-modes">2. Three Collaboration Modes</a>
 <a class="lvl-3" href="#mode-1-inter-branch-messaging-communication">Mode 1: Inter-branch messaging (communication)</a>
 <a class="lvl-3" href="#mode-2-sub-branch-serving-the-main-branch-dispatch-merge-back">Mode 2: Sub-branch serving the main branch (dispatch → merge-back)</a>
 <a class="lvl-3" href="#mode-3-branch-merge-convergence">Mode 3: Branch merge (convergence)</a>
-<a class="" href="#3-dag-drawing-of-the-merge-node-the-core-definition-of-this-doc">3. DAG Drawing of the Merge Node (the core definition of this doc)</a>
+<a class="" href="#3-dag-drawing-of-the-merge-node">3. DAG Drawing of the Merge Node</a>
 <a class="" href="#4-inter-branch-messaging-tool-new-to-be-implemented">4. Inter-branch Messaging Tool (new, to be implemented)</a>
 <a class="" href="#5-implementation-steps-after-user-confirmation">5. Implementation Steps (after user confirmation)</a>
 <a class="" href="#6-design-decisions-to-discuss">6. Design Decisions to Discuss</a>

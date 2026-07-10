@@ -3,6 +3,8 @@
 Agent 执行运行时 —— 运行循环、worktree、异步任务、流式传输/恢复、DAG 模型，以及回退层。
 
 - [`session-dag.md`](dag/session-dag.md) — **权威**:历史记录数据模型(一整张图 / 三种节点 user·llm·code / called_by 边 / render_context 上下文检索)+ 两套调用路径合并的实现设计
+- [`dag/dag-rendering.md`](dag/dag-rendering.md) — **权威渲染规范**：布局/连线/图例/默认可见性，12 场景
+- [`dag/branch-collaboration.md`](dag/branch-collaboration.md) — 分支协作（通信 / 派活 / 合并）设计与实现步骤
 - [`agent-call-flow.md`](execution/agent-call-flow.md) — 调用流程骨架(turn / loop,跟节点模型正交)
 - [`agent-worktree.md`](execution/agent-worktree.md)
 - [`async-task-lifecycle.md`](execution/async-task-lifecycle.md)

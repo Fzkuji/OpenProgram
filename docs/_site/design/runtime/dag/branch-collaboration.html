@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag" open><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink active" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -199,8 +197,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p>目标：让 DAG 里的不同分支不只是&quot;平行世界&quot;，而能<strong>互相协作</strong>——一个分支给另
 一个分支发消息、一个分支为另一个分支干活、两个分支的成果合并成一条。本文盘
 清现状（很多已实现），补齐缺口，并定义合并/通信节点在 DAG viewport 里的画法。</p>
-<p>前置：边模型（caller + predecessor）见 <code>session-dag.md</code>；布局规则见
-<code>dag-layout-algorithm.md</code>（含 7 场景 spec.html）。</p>
+<p>前置：边模型（caller + predecessor）见 <code>session-dag.md</code>；布局与连线的权威规范见
+<code>dag-rendering.md</code>（含 12 场景）。</p>
 </blockquote>
 <h2 id="一现状盘点codegraph-实测">一、现状盘点（codegraph 实测）<a class="header-anchor" href="#一现状盘点codegraph-实测">#</a></h2>
 <p>分支协作的<strong>数据层和后端大部分已存在</strong>，缺的主要是 ①分支间主动发消息的工具
@@ -269,94 +267,11 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <p><strong>结论</strong>：合并的&quot;引擎&quot;已经造好了（merge_branches + attach + 多父 commit）。本文
 主要做三件事：(A) 定义合并/attach 节点的 DAG 画法；(B) 新增分支间发消息工具；
 (C) 把&quot;子分支服务 → 结果合并回流&quot;串成完整链路。</p>
-<h2 id="一五连线视觉规则颜色-分支线型-类型正交">一·五、连线视觉规则（颜色 = 分支，线型 = 类型，正交）<a class="header-anchor" href="#一五连线视觉规则颜色-分支线型-类型正交">#</a></h2>
-<p><strong>铁律：颜色永远表示&quot;分支身份&quot;，不表示&quot;线的类型&quot;。</strong> 每条 lane 一个颜色
-（见 <code>dag/types.ts</code> <code>LANE_COLORS</code>），任何一条连线都用它<strong>所属 / 指向的那条
-分支</strong>的 lane 颜色。<strong>绝不</strong>给某种类型的线指定一个固定特殊颜色（如 spawn 用灰、
-通信用金）——那会和&quot;颜色=分支&quot;冲突，让人分不清是分支变了还是线的类型变了。</p>
-<p><strong>线的类型只用线型（dash 样式 / 粗细）区分：</strong></p>
-<table>
-<thead>
-<tr>
-<th>连线类型</th>
-<th>线型</th>
-<th>颜色</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>同分支连线（父→子）</td>
-<td>实线</td>
-<td>该分支 lane 色</td>
-</tr>
-<tr>
-<td>retry 分叉（用户手动 retry/改写）</td>
-<td>虚线 <code>5 4</code></td>
-<td>该分支 lane 色</td>
-</tr>
-<tr>
-<td>大模型主动建分支（spawn_branch）</td>
-<td>点划线 <code>4 2 1 2</code></td>
-<td>子分支 lane 色</td>
-</tr>
-<tr>
-<td>分支间通信（send_to_branch）</td>
-<td>点线 <code>1 5</code></td>
-<td>目标分支 lane 色</td>
-</tr>
-<tr>
-<td>合并汇入（merge）</td>
-<td>粗实线 <code>2.4px</code></td>
-<td>peer 分支 lane 色</td>
-</tr>
-<tr>
-<td>attach 回流（结果嵌回）</td>
-<td>长虚线 <code>4 4</code></td>
-<td>源分支 lane 色</td>
-</tr>
-</tbody>
-</table>
-<p>效果：同一种线型出现在不同分支上颜色不同（颜色告诉你&quot;哪条分支&quot;）；同一条分支
-上不同类型的线颜色相同、靠 dash 区分（线型告诉你&quot;什么关系&quot;）。两个维度正交。</p>
-<h3 id="默认显隐只有通信线默认隐藏">默认显隐：只有通信线默认隐藏<a class="header-anchor" href="#默认显隐只有通信线默认隐藏">#</a></h3>
-<table>
-<thead>
-<tr>
-<th>连线类型</th>
-<th>默认</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>同分支调用（实线）</td>
-<td><strong>常驻显示</strong></td>
-</tr>
-<tr>
-<td>retry 分叉（虚线）</td>
-<td><strong>常驻显示</strong></td>
-</tr>
-<tr>
-<td>spawn_branch / create_branch 建分支（点划线）</td>
-<td><strong>常驻显示</strong></td>
-</tr>
-<tr>
-<td>merge 合并汇入（粗实线）</td>
-<td><strong>常驻显示</strong></td>
-</tr>
-<tr>
-<td>attach 回流（长虚线）</td>
-<td><strong>常驻显示</strong></td>
-</tr>
-<tr>
-<td><strong>send_to_branch 通信（点线）</strong></td>
-<td><strong>默认隐藏，鼠标 hover 节点/分支才显示</strong></td>
-</tr>
-</tbody>
-</table>
-<p>理由：结构线（这条分支怎么来的、合并/回流）数量有限、是骨架，常驻看得清。
-<strong>通信线会非常多</strong>（分支之间频繁发消息），全部常驻会糊成一团——所以默认隐藏，
-hover 到相关节点/分支时才浮现该节点的通信线。实现：通信线渲染时挂 hover 显隐
-（CSS class + 节点 hover 触发），结构线不受影响。</p>
+<h2 id="一五连线视觉规则">一·五、连线视觉规则<a class="header-anchor" href="#一五连线视觉规则">#</a></h2>
+<blockquote>
+<p>移交 <code>dag-rendering.md</code> 第三节（颜色=分支、线型=类型的正交铁律 + 线型表 +
+通信线默认隐藏）。本文不再维护副本。</p>
+</blockquote>
 <h2 id="二三种协作模式">二、三种协作模式<a class="header-anchor" href="#二三种协作模式">#</a></h2>
 <h3 id="模式-1分支间发消息通信">模式 1：分支间发消息（通信）<a class="header-anchor" href="#模式-1分支间发消息通信">#</a></h3>
 <p><strong>场景</strong>：分支 A 的 LLM 想问分支 B 的 LLM 一句话，或把一条信息推给 B。</p>
@@ -406,46 +321,13 @@ tip。merge 节点有 N 个父（汇聚）。</li>
 pointer（<code>predecessor=target_head</code>，<code>attach.head_id=peer tip</code>）</li>
 <li><code>commit_parents = [target prior commit, *peer commit ids]</code>（多父，溯源用）</li>
 </ul>
-<h2 id="三合并节点的-dag-画法本文核心定义">三、合并节点的 DAG 画法（本文核心定义）<a class="header-anchor" href="#三合并节点的-dag-画法本文核心定义">#</a></h2>
-<p>合并是 DAG 里**唯一出现&quot;多线汇聚到一个节点&quot;**的地方（其它都是树状发散）。画法：</p>
-<pre><code>合并前（两条分支）:           合并后:
-列0    列2(fork竖线) 列3        列0         列3
-◇ROOT                         ◇ROOT
-│                             │
-●─user                        ●─user
-   │                             │
-   ▲─llm    ┊                    ▲─llm    ┊
-            ┊  ●─user'(fork)              ┊  ●─user'
-            ┊     │                       ┊     │
-            ┊     ▲─llm'                  ┊     ▲─llm'
-                                          │        ╲
-                                          ●─◆ merge ←──┘ (两线汇入)
-                                            (新 tip, 多父)
-</code></pre>
-<p><strong>规则</strong>：</p>
-<ol>
-<li><strong>merge 节点形状</strong>：用一个特殊形状区分（建议<strong>双环/实心菱形带横杠</strong>），让它一眼
-能认出是&quot;汇聚点&quot;，不同于普通 assistant 三角。</li>
-<li><strong>merge 节点的列（lane）</strong>：
-<ul>
-<li>equal merge：merge 是新主线 tip，回到 <strong>base 分支的 lane</strong>（通常是被合并的主
-分支 lane，或新开一条&quot;合并后主线&quot;）。倾向：合并到 base 的 lane，让合并后主线
-延续 base。</li>
-<li>各被合并的 peer 分支画一条<strong>汇入线</strong>（实线或粗虚线）从 peer 的 tip 斜拉到 merge
-节点（类似 git 的 merge 提交两条父线汇合）。</li>
-</ul>
-</li>
-<li><strong>汇入线</strong>：从每个 peer tip → merge 节点，走&quot;先垂直到 merge 行，再水平/斜入&quot;的
-折线，颜色用 peer 分支的 lane 色（让人看出&quot;这条线来自哪条分支&quot;）。</li>
-<li><strong>attach pointer 节点</strong>：merge 用的 attach pointer 是 <code>display=runtime</code> 的临时
-节点（<code>merge_temp=true</code>），<strong>viewport 里不单独画成节点</strong>（会噪），只用汇入线表达
-&quot;这条分支被合并进来了&quot;。当前 filter.py 已过滤 <code>display=runtime</code>。</li>
-</ol>
-<p><strong>待确认</strong>：合并后 merge 节点落在哪条 lane——</p>
-<ul>
-<li>选项 A：落 base 分支 lane（合并后延续 base 主线，其它分支&quot;汇入&quot;base）— 倾向这个</li>
-<li>选项 B：新开一条 lane（合并产物自成一条新主线）</li>
-</ul>
+<h2 id="三合并节点的-dag-画法">三、合并节点的 DAG 画法<a class="header-anchor" href="#三合并节点的-dag-画法">#</a></h2>
+<blockquote>
+<p>移交 <code>dag-rendering.md</code> 场景 10。原&quot;待确认&quot;两项已裁决（2026-07-10）：
+merge 节点形状 = <strong>双环 ◎</strong>（全图唯一的汇聚形状）；merge 节点 lane =
+<strong>落 base 分支 lane</strong>（选项 A，合并后主线延续 base）。attach pointer 节点
+viewport 不画、只画汇入线的既有裁决一并收录在场景 10/11。</p>
+</blockquote>
 <h2 id="四分支间发消息工具新增需实现">四、分支间发消息工具（新增，需实现）<a class="header-anchor" href="#四分支间发消息工具新增需实现">#</a></h2>
 <pre><code class="language-python"><span class="nd">@function</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;send_to_branch&quot;</span><span class="p">)</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">send_to_branch</span><span class="p">(</span><span class="n">target_branch</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">wait_reply</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -503,10 +385,10 @@ pointer（<code>predecessor=target_head</code>，<code>attach.head_id=peer tip</
 </table>
 <h2 id="六待讨论的设计决策">六、待讨论的设计决策<a class="header-anchor" href="#六待讨论的设计决策">#</a></h2>
 <ol>
-<li><strong>合并节点形状</strong>：双环？实心菱形带横杠？还是别的能一眼认出&quot;汇聚&quot;的形状？</li>
-<li><strong>合并后 lane</strong>：落 base 分支 lane（延续主线）还是新开 lane？倾向 base。</li>
+<li><s>合并节点形状</s> <strong>已裁决</strong>：双环 ◎（<code>dag-rendering.md</code> 场景 10）。</li>
+<li><s>合并后 lane</s> <strong>已裁决</strong>：落 base 分支 lane（选项 A）。</li>
 <li><strong>send_to_branch 是否同步等回复</strong>：默认投递（异步）还是等回复（同步）？倾向参数化。</li>
-<li><strong>跨分支通信线型</strong>：和 attach（虚线）、spawn（点划线）区分，用什么线型/颜色？</li>
+<li><s>跨分支通信线型</s> <strong>已裁决</strong>：点线 <code>1 5</code>、目标分支 lane 色、默认隐藏 hover 显示（<code>dag-rendering.md</code> 第三节）。</li>
 <li><strong>通信 vs 合并的边界</strong>：send_to_branch 投递一条消息 vs merge 汇聚整条分支——
 是否需要&quot;send 多次后再 merge&quot;的组合工作流？</li>
 <li><strong>值守拦截</strong>：分支间发消息、自动合并要不要默认需用户确认（副作用跨分支）？</li>
@@ -558,17 +440,16 @@ pointer（<code>predecessor=target_head</code>，<code>attach.head_id=peer tip</
 </tr>
 </tbody>
 </table>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/dag-layout-spec.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 布局视觉规范</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/agent-worktree.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent Worktree 工具</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/dag-rendering.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</span></a><a class="pn-link pn-next" href="/docs/design/runtime/execution/agent-worktree.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Agent Worktree 工具</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#一现状盘点codegraph-实测">一、现状盘点（codegraph 实测）</a>
-<a class="" href="#一五连线视觉规则颜色-分支线型-类型正交">一·五、连线视觉规则（颜色 = 分支，线型 = 类型，正交）</a>
-<a class="lvl-3" href="#默认显隐只有通信线默认隐藏">默认显隐：只有通信线默认隐藏</a>
+<a class="" href="#一五连线视觉规则">一·五、连线视觉规则</a>
 <a class="" href="#二三种协作模式">二、三种协作模式</a>
 <a class="lvl-3" href="#模式-1分支间发消息通信">模式 1：分支间发消息（通信）</a>
 <a class="lvl-3" href="#模式-2子分支为主分支服务派活-回流">模式 2：子分支为主分支服务（派活 → 回流）</a>
 <a class="lvl-3" href="#模式-3分支合并汇聚">模式 3：分支合并（汇聚）</a>
-<a class="" href="#三合并节点的-dag-画法本文核心定义">三、合并节点的 DAG 画法（本文核心定义）</a>
+<a class="" href="#三合并节点的-dag-画法">三、合并节点的 DAG 画法</a>
 <a class="" href="#四分支间发消息工具新增需实现">四、分支间发消息工具（新增，需实现）</a>
 <a class="" href="#五落地步骤待用户确认后">五、落地步骤（待用户确认后）</a>
 <a class="" href="#六待讨论的设计决策">六、待讨论的设计决策</a>

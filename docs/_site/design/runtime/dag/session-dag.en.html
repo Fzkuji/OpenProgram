@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag" open><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink active" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -205,7 +203,7 @@ For the call flow diagram, see <code>agent-call-flow.svg</code> (the full unifie
 <h2 id="1-final-conclusion-a-single-graph">1. Final Conclusion (a Single Graph)<a class="header-anchor" href="#1-final-conclusion-a-single-graph">#</a></h2>
 <p>The entire session = <strong>one single DAG with a unique root</strong> (not split into multiple independent traces, and no dangling turns).</p>
 <ul>
-<li><strong>Root node (session root)</strong>: one root per session, representing &quot;this session / this user&quot; (it is main). <strong>The <code>caller</code> of every top-level user node points to it</strong> — this is the aggregation point that connects multiple turns into a single graph. Without it, the turns would be isolated and split into separate graphs.</li>
+<li><strong>Root node (session root)</strong>: one root per session, representing &quot;this session / this user&quot; (it is main). Top-level user nodes hang under it — this is the aggregation point that connects multiple turns into a single graph. <strong>A spawn branch's root does NOT hang on ROOT</strong>: its caller points at the node that initiated it (§2.3), and connectivity to ROOT still holds via that initiating node, so the &quot;single connected graph&quot; invariant is not broken. (Exception: a cross-session spawn's branch root, whose caller points into another session's graph — within this session it hangs on ROOT and the render layer marks it with a ↗ badge; see the legend in <code>dag-rendering.md</code>.)</li>
 <li><strong>Node (span)</strong>: one of three roles — user / llm / code. A single data structure; an LLM call is always the same kind of llm node, never split by whether it was &quot;triggered by the user&quot; or &quot;triggered by a function&quot;. (The root node itself can be seen as a special session node, with no input/output.)</li>
 <li><strong>Two edges</strong> (see §2 · Edges):
 <ul>
@@ -465,17 +463,19 @@ reconstruct the chat order and distinguish branches. A fork = the same predecess
 </table>
 <p>No special handling needed — a branch node is just an ordinary node sharing the same <code>predecessor</code> as the replaced node (tool retry shares <code>caller</code>). Which one is currently active is tracked by the HEAD pointer. In the DAG graph, branches are connected to their peer siblings with dashed lines, offset to the right into a separate column.</p>
 <h3 id="viewport-layout-rules">Viewport Layout Rules<a class="header-anchor" href="#viewport-layout-rules">#</a></h3>
+<blockquote>
+<p>The authoritative spec for the drawing is in <code>dag-rendering.md</code> (layout · edges ·
+legend · default visibility). This section keeps only the semantic essentials:</p>
+</blockquote>
 <p>The DAG viewport (the minimap in the right-hand panel) renders nodes in a tree-indent fashion. Core rules:</p>
 <ol>
 <li>
-<p><strong>tier (horizontal column position) is fixed by role</strong>, not derived by recursively walking the caller chain:</p>
-<ul>
-<li>ROOT: tier=0</li>
-<li>user: tier=1</li>
-<li>llm/assistant: tier=2</li>
-<li>tool/code (direct sub-call): tier=3</li>
-<li>deeper sub-calls: tier=caller's tier + 1</li>
-</ul>
+<p><strong>tier (horizontal column position) has two layers</strong>: the conversation layer is fixed
+by role (ROOT=0, user=1 — including spawn branch roots and hand-back nodes,
+llm/merge=2); the execution layer goes by call depth (code=3, deeper sub-calls =
+caller's tier + 1). A spawn root's caller points at a deep node, but it is a
+conversation-layer user, so its tier is still 1 — caller only decides where the spawn
+edge is drawn from, not its indent (ruling recorded in section 1 of <code>dag-rendering.md</code>).</p>
 </li>
 <li>
 <p><strong>depth (vertical row position) is ordered by seq DFS</strong>, with fork siblings aligned to the same row.</p>
@@ -958,7 +958,7 @@ Forks currently rely on parent_id (kept by Decision 0); <strong>no fork change i
 <li><code>openprogram/agentic_programming/runtime.py</code> — exec / _open/_close_model_call_node (S1/S4)</li>
 <li><code>openprogram/store/session/session_store.py</code> — get_branch / storage (S2)</li>
 </ul>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-01</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/controllability-and-three-surface-sync.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">长跑 agent 任务的可控性 + 三端一致性</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/dag-viewport.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG Viewport 设计文档</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-01</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/controllability-and-three-surface-sync.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">长跑 agent 任务的可控性 + 三端一致性</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/dag-live.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG 实时布局（真算法）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#1-final-conclusion-a-single-graph">1. Final Conclusion (a Single Graph)</a>

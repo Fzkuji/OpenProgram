@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh" data-base="/docs/" data-page-lang="zh" data-alt-lang-url="/docs/design/runtime/dag/dag-viewport.en.html">
+<html lang="en" data-base="/docs/" data-page-lang="en" data-alt-lang-url="/docs/design/runtime/dag/dag-rendering.html">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DAG Viewport 设计文档 · OpenProgram Docs</title>
+<title>DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性） · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -159,11 +159,9 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/runtime/streaming-resume.html">运行中状态的持久化 / 重连恢复</a>
 <a class="navlink" href="/docs/design/runtime/controllability-and-three-surface-sync.html" data-title-en="Controllability of long-running agent tasks + three-surface consistency" data-href-zh="/docs/design/runtime/controllability-and-three-surface-sync.html" data-href-en="/docs/design/runtime/controllability-and-three-surface-sync.en.html">长跑 agent 任务的可控性 + 三端一致性</a>
 <details class="group" data-key="design/runtime/dag" open><summary class="group-title">Dag</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/dag/session-dag.html" data-title-en="Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)" data-href-zh="/docs/design/runtime/dag/session-dag.html" data-href-en="/docs/design/runtime/dag/session-dag.en.html">Agent 执行的 DAG 模型</a>
-<a class="navlink active" href="/docs/design/runtime/dag/dag-viewport.html" data-title-en="DAG Viewport Design Doc" data-href-zh="/docs/design/runtime/dag/dag-viewport.html" data-href-en="/docs/design/runtime/dag/dag-viewport.en.html">DAG Viewport 设计文档</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-live.html">DAG 实时布局（真算法）</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.html" data-title-en="DAG Layout Algorithm Design Doc" data-href-zh="/docs/design/runtime/dag/dag-layout-algorithm.html" data-href-en="/docs/design/runtime/dag/dag-layout-algorithm.en.html">DAG 布局算法设计文档</a>
-<a class="navlink" href="/docs/design/runtime/dag/dag-layout-algorithm.viz.html">DAG 布局算法（可视化）</a>
 <a class="navlink" href="/docs/design/runtime/dag/dag-layout-spec.html">DAG 布局视觉规范</a>
+<a class="navlink active" href="/docs/design/runtime/dag/dag-rendering.html" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-href-zh="/docs/design/runtime/dag/dag-rendering.html" data-href-en="/docs/design/runtime/dag/dag-rendering.en.html">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</a>
 <a class="navlink" href="/docs/design/runtime/dag/branch-collaboration.html" data-title-en="Branch Collaboration Design Doc (Communication · Service · Merge)" data-href-zh="/docs/design/runtime/dag/branch-collaboration.html" data-href-en="/docs/design/runtime/dag/branch-collaboration.en.html">分支协作设计文档（通信 · 服务 · 合并）</a></div></details>
 <details class="group" data-key="design/runtime/execution"><summary class="group-title">Execution</summary><div class="group-body"><a class="navlink" href="/docs/design/runtime/execution/agent-worktree.html" data-title-en="Agent Worktree Tool" data-href-zh="/docs/design/runtime/execution/agent-worktree.html" data-href-en="/docs/design/runtime/execution/agent-worktree.en.html">Agent Worktree 工具</a>
 <a class="navlink" href="/docs/design/runtime/execution/agent-call-flow.html" data-title-en="Agent Call Flow (Authoritative Design)" data-href-zh="/docs/design/runtime/execution/agent-call-flow.html" data-href-en="/docs/design/runtime/execution/agent-call-flow.en.html">Agent 调用流程（权威设计）</a>
@@ -193,291 +191,456 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
 <a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg" data-title-en="Runtime" data-title-zh="运行时">运行时</span> <span class='bc-sep'>›</span> <span class="bc-seg">Dag</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="DAG Viewport Design Doc" data-title-zh="DAG Viewport 设计文档">DAG Viewport 设计文档</span></nav><h1 id="dag-viewport-设计文档">DAG Viewport 设计文档<a class="header-anchor" href="#dag-viewport-设计文档">#</a></h1>
-<p>Status: <strong>draft</strong> · Created: 2026-06-28</p>
+  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg" data-title-en="Runtime" data-title-zh="运行时">运行时</span> <span class='bc-sep'>›</span> <span class="bc-seg">Dag</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)" data-title-zh="DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）">DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）</span></nav><h1 id="dag-rendering-spec-layout-edges-legend-default-visibility">DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)<a class="header-anchor" href="#dag-rendering-spec-layout-edges-legend-default-visibility">#</a></h1>
+<p>Status: <strong>decided (authoritative implementation standard, consolidated 2026-07-10)</strong> · Supersedes <code>dag-layout-algorithm.md</code> + <code>dag-viewport.md</code>, absorbs the edge visual rules from <code>branch-collaboration.md</code></p>
 <blockquote>
-<p>右侧面板的 DAG 小地图。显示当前会话的节点结构，支持分支切换、折叠、滚动同步。</p>
+<p>How the right-panel Viewport minimap draws the DAG: where each node goes, what
+each edge looks like, and what the user sees by default. <strong>This document is the
+authoritative implementation standard</strong> — write the layout code to match it, and
+when something breaks, check against it. For the data semantics (nodes, the two
+edges) see <code>session-dag.md</code>; this document only covers the drawing.</p>
+<p>Every rule comes with an example. The SVGs for the 7 base scenarios live in
+<code>dag-layout-spec.html</code>; the newly added scenarios 8–12 are authoritative in ASCII
+for now, and adding their spec.html figures is a to-do.</p>
 </blockquote>
-<h2 id="一整体架构">一、整体架构<a class="header-anchor" href="#一整体架构">#</a></h2>
-<h3 id="现状问题">现状问题<a class="header-anchor" href="#现状问题">#</a></h3>
-<p>graph 数据构建在 <code>session.py</code> 和 <code>branch.py</code> 各写了一遍，改一处漏一处。前端 <code>pipeline.ts</code> 800 行，layout + edge + node + badge + visibility 全混在一起。改连线逻辑会影响折叠，改折叠会影响 visibility。</p>
-<h3 id="目标架构">目标架构<a class="header-anchor" href="#目标架构">#</a></h3>
-<pre><code>后端                                 前端
-────                                 ────
-
-graph_builder.py (新)                dag/
-  build_session_graph(sid)             index.ts        → 对外接口
-    → {nodes, branches, head}          pipeline.ts     → 调度：passes → layout → render
-                                       types.ts        → GNode 接口 + 常量
-
-graph_layout/ (不动)                 dag/passes/       → 数据变换（不画任何东西）
-  __init__.py → annotate_graph()       merge-runs.ts
-  tier.py                             collapse-runtime-pairs.ts
-  depth.py                            demote-decoration-cards.ts
-  lane.py                             apply-collapse.ts
-  topology.py
-  _common.py                        dag/layout/        → 前端侧树构建（不画任何东西）
-                                       build-tree.ts
-ws_actions/                            assign-lanes.ts
-  session.py  → 调 build_session_graph  depth.ts
-  branch.py   → 调 build_session_graph
-                                     dag/render/        → 画 SVG（只管画，不算布局）
-                                       edges.ts         → 主干连线 + fork 连线
-                                       nodes.ts         → 节点形状 + 状态 class
-                                       badges.ts        → 分支 badge 按钮
-                                       visibility.ts    → 白色填充同步
-
-                                     dag/store/
-                                       globals.ts       → 模块级状态
-</code></pre>
-<h2 id="二后端接口">二、后端接口<a class="header-anchor" href="#二后端接口">#</a></h2>
-<h3 id="graph_builderbuild_session_graphsession_id-dict"><code>graph_builder.build_session_graph(session_id) → dict</code><a class="header-anchor" href="#graph_builderbuild_session_graphsession_id-dict">#</a></h3>
-<p>唯一的 graph 数据构建入口。返回：</p>
-<pre><code class="language-python"><span class="p">{</span>
-    <span class="s2">&quot;graph&quot;</span><span class="p">:</span> <span class="p">[</span>           <span class="c1"># GNode 数组，每个节点包含：</span>
-        <span class="p">{</span>
-            <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-            <span class="s2">&quot;called_by&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>   <span class="c1"># 对话链前驱（conv predecessor）</span>
-            <span class="s2">&quot;caller&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>      <span class="c1"># 子调用父节点（谁调用了我）</span>
-            <span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>        <span class="c1"># user / assistant / tool</span>
-            <span class="s2">&quot;display&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>     <span class="c1"># root / runtime / None</span>
-            <span class="s2">&quot;function&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>    <span class="c1"># 函数名（tool 节点）</span>
-            <span class="s2">&quot;preview&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>     <span class="c1"># 内容预览</span>
-            <span class="s2">&quot;_tier&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>       <span class="c1"># 水平列位置（graph_layout 计算）</span>
-            <span class="s2">&quot;_depth&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>      <span class="c1"># 垂直行位置</span>
-            <span class="s2">&quot;_lane&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>       <span class="c1"># 分支列</span>
-            <span class="o">...</span>                 <span class="c1"># attach 相关字段</span>
-        <span class="p">},</span>
-    <span class="p">],</span>
-    <span class="s2">&quot;branches&quot;</span><span class="p">:</span> <span class="p">[</span>        <span class="c1"># 分支 tip 列表</span>
-        <span class="p">{</span>
-            <span class="s2">&quot;head_msg_id&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="s2">&quot;active&quot;</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
-            <span class="s2">&quot;created_at&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-        <span class="p">},</span>
-    <span class="p">],</span>
-    <span class="s2">&quot;head&quot;</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># 当前 HEAD 节点 id</span>
-<span class="p">}</span>
-</code></pre>
-<h3 id="调用方">调用方<a class="header-anchor" href="#调用方">#</a></h3>
+<hr />
+<h2 id="0-first-what-to-draw-two-granularities-only-the-conversation-layer-by-default">0. First, &quot;what to draw&quot;: two granularities, only the conversation layer by default<a class="header-anchor" href="#0-first-what-to-draw-two-granularities-only-the-conversation-layer-by-default">#</a></h2>
+<p>A session graph has two kinds of node, an order of magnitude apart in count:</p>
 <table>
 <thead>
 <tr>
-<th>调用方</th>
-<th>场景</th>
+<th>Layer</th>
+<th>Nodes</th>
+<th>Question it answers</th>
+<th>Magnitude</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>session.py:handle_load_session</code></td>
-<td>加载会话时，graph 放入 <code>session_loaded</code> WS 消息</td>
+<td><strong>Conversation layer</strong></td>
+<td>ROOT, user, llm replies, spawn branch roots, merge</td>
+<td>What shape the session has: how many turns, how many branches, who spawned whom</td>
+<td>single digits ~ dozens</td>
 </tr>
 <tr>
-<td><code>branch.py:build_branches_payload</code></td>
-<td>分支面板刷新、实时 poller</td>
+<td><strong>Execution layer</strong></td>
+<td>code (tool call) and its internal sub-calls</td>
+<td>What one turn did internally</td>
+<td>can reach dozens in a single turn</td>
 </tr>
 </tbody>
 </table>
-<p>两处都调 <code>build_session_graph</code>，不再各自构建。</p>
-<h3 id="called_by-和-caller-的区别"><code>called_by</code> 和 <code>caller</code> 的区别<a class="header-anchor" href="#called_by-和-caller-的区别">#</a></h3>
+<p><strong>Default visibility rule: the Viewport lays out only the conversation layer.</strong> If an
+llm node has an execution subtree (code nodes hanging off it via <code>caller</code>), it is
+collapsed into a <code>⚒N</code> count badge next to the node (N = direct + transitive
+sub-calls). Click the badge and that turn's execution subtree expands and enters
+layout; click again to collapse. Expansion state is remembered per node and cleared
+when switching sessions.</p>
+<pre><code>Default (conversation layer):    Click ⚒9 to expand that turn:
+◇ROOT                          ◇ROOT
+├ ○你好                        ├ ○你好
+│ └ △回复                      │ └ △回复
+├ ○查天气                      ├ ○查天气
+│ └ △回复 ⚒9                   │ └ △回复
+                               │     ├ ■bash
+                               │     ├ ■web_fetch
+                               │     └ ■…(9 total)
+</code></pre>
+<p>Rationale: execution-layer information already has a better presentation in the chat
+stream (each turn's execution-tree card, the Executions page). The Viewport's job is
+to let you see the session structure at a glance; 50 tool squares laid out flat would
+drown the 8 structural nodes — which is exactly what happened in the real 2026-07-10
+weather session (66 nodes, 50+ of them code).</p>
+<blockquote>
+<p>The other two views — chat stream and call tree — are unaffected: the chat stream
+lays out top-level turns by seq with function nesting folded; the Executions /
+execution-tree card expands fully along caller. Same data, three projections.</p>
+</blockquote>
+<hr />
+<h2 id="1-a-nodes-position-column-row">1. A node's position = (column, row)<a class="header-anchor" href="#1-a-nodes-position-column-row">#</a></h2>
+<ul>
+<li><strong>Column (horizontal) = lane start column + tier indent</strong></li>
+<li><strong>Row (vertical) = depth</strong></li>
+</ul>
+<h3 id="lane-which-branch-it-belongs-to">lane — which branch it belongs to<a class="header-anchor" href="#lane-which-branch-it-belongs-to">#</a></h3>
+<p><strong>Count the branches and hand out column numbers 0, 1, 2… in order of appearance; no
+gaps, no judging which is &quot;the trunk.&quot;</strong></p>
+<p>A branch = one conversation chain (user → llm → user → …). Three events produce a new
+branch:</p>
 <table>
 <thead>
 <tr>
-<th>字段</th>
-<th>含义</th>
-<th>举例</th>
-<th>用途</th>
+<th>Event</th>
+<th>New branch's root</th>
+<th>Attachment</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>called_by</code></td>
-<td>对话链前驱</td>
-<td>user2.called_by = llm1（上一轮回复）</td>
-<td>构建 tree 父子关系、depth/lane、edge 绘制</td>
+<td>retry / rewrite a turn</td>
+<td>the forked-off user / llm node</td>
+<td>shares predecessor with the replaced node</td>
 </tr>
 <tr>
-<td><code>caller</code></td>
-<td>子调用父节点</td>
-<td>tool.caller = llm（模型调了这个工具）</td>
-<td>tier 计算、internal 判定、collapse</td>
+<td>spawn (task / message_branch dispatch)</td>
+<td>the <code>source=agent_spawn</code> user node</td>
+<td>caller = the initiating node, predecessor empty</td>
+</tr>
+<tr>
+<td>the new mainline from a merge</td>
+<td>the merge node itself</td>
+<td>lands in the base branch lane (see scenario 10), no new lane opened</td>
 </tr>
 </tbody>
 </table>
-<p>规则：<strong>凡是判断「谁调用了谁」用 <code>caller</code>。凡是判断「对话顺序」用 <code>called_by</code>。</strong></p>
-<h2 id="三前端接口">三、前端接口<a class="header-anchor" href="#三前端接口">#</a></h2>
-<h3 id="rendergraph-gnode-headid-string-void"><code>render(graph: GNode[], headId: string): void</code><a class="header-anchor" href="#rendergraph-gnode-headid-string-void">#</a></h3>
-<p>唯一的渲染入口。步骤：</p>
-<pre><code>1. passes：merge-runs → collapse-runtime-pairs → demote-decoration-cards → apply-collapse
-2. layout：buildTree → assignDepth → assignLanes
-3. 计算状态：headAncestors（on-head）、internalSet（子调用）
-4. 画 SVG：
-   a. edges.drawEdges(tree, pos, colors)          → 所有连线
-   b. nodes.drawNodes(tree, pos, colors, states)   → 所有节点形状
-   c. badges.drawBadges(branches, tree, pos)       → 分支 badge 按钮
-5. 绑定事件：scroll sync、mutation observer、panel resize
-6. 触发 visibility.recompute()
-</code></pre>
-<h3 id="各-render-子模块的接口">各 render 子模块的接口<a class="header-anchor" href="#各-render-子模块的接口">#</a></h3>
-<h4><code>edges.drawEdges(edgeG, tree, pos, rootPos, forkRoots, colors)</code></h4>
-<p>输入：SVG group、tree 数据、pos 函数、ROOT 位置、fork root 列表、颜色表
-输出：往 edgeG 里添加 SVG line/path 元素</p>
-<p>连线规则：</p>
-<ul>
-<li>主干 user 节点从 ROOT 列画边</li>
-<li>fork 分支 user 节点从 fork 虚拟主干画边</li>
-<li>llm/tool 节点从 parent 画边</li>
-<li>fork siblings 之间画虚线动画</li>
-</ul>
-<h4><code>nodes.drawNodes(nodeG, tree, pos, colors, states)</code></h4>
-<p>输入：SVG group、tree 数据、pos 函数、颜色表、{headAncestors, internalSet, collapsed, collapsible}
-输出：往 nodeG 里添加 SVG g.history-node 元素</p>
-<h4><code>badges.drawBadges(svg, branches, tree, pos, colors, sessionId)</code></h4>
-<p>输入：SVG 根元素、分支列表、tree 数据、pos 函数、颜色表、session id
-输出：在分支 tip 节点下方添加可点击的 badge</p>
-<h4><code>visibility.recompute()</code></h4>
-<p>扫描 <code>#chatArea</code> 可见区域，标记对应 DAG 节点白色填充。</p>
-<p>触发条件：</p>
-<ul>
-<li>聊天滚动（scroll listener）</li>
-<li>聊天 DOM 变化（MutationObserver）</li>
-<li>render 完成后</li>
-</ul>
-<p>MutationObserver 绑定规则：每次 render 时<strong>重新绑定</strong>（不用 flag 阻止），因为 <code>#chatMessages</code> DOM 可能在 load_session 时被替换。</p>
-<h2 id="四节点状态">四、节点状态<a class="header-anchor" href="#四节点状态">#</a></h2>
-<h3 id="on-head-off-head">on-head / off-head<a class="header-anchor" href="#on-head-off-head">#</a></h3>
-<p>从 headId 沿 <code>called_by</code> 回溯到 ROOT，链上所有节点 on-head。其余 off-head。</p>
-<p>视觉：off-head 节点加 CSS class <code>off-head</code>，颜色暗淡。</p>
-<h3 id="visible白色填充">visible（白色填充）<a class="header-anchor" href="#visible白色填充">#</a></h3>
-<p>只依赖聊天视口扫描结果。不做 parent walk-up 传播（之前的 walk-up 会跨分支传播，制造错误的白色填充）。</p>
-<p>简化后的 <code>recompute()</code>：</p>
-<ol>
-<li>扫描 <code>#chatArea</code> 里可见的聊天气泡 <code>data-msg-id</code></li>
-<li>这些 id → 白色填充</li>
-<li>其余 → 透明</li>
-<li>不走 <code>_parentOf</code> walk-up，不走 <code>_internalOwner</code> 传播</li>
-</ol>
-<h3 id="internal">internal<a class="header-anchor" href="#internal">#</a></h3>
-<p><code>caller</code> 字段（不是 <code>called_by</code>）指向非 ROOT 父节点的节点。用于 collapse 计算（折叠只收 internal children）。</p>
-<p><strong>不用于 visibility 传播</strong>（删除 <code>_internalOwner</code> 对 visibility 的影响）。</p>
-<h2 id="五布局">五、布局<a class="header-anchor" href="#五布局">#</a></h2>
-<h3 id="tier水平列-tierpy">tier（水平列）— tier.py<a class="header-anchor" href="#tier水平列-tierpy">#</a></h3>
-<p>按 role 固定：ROOT=0, user=1, llm=2, tool=3, 更深子调用=caller.tier+1。</p>
-<h3 id="depth垂直行-depthpy">depth（垂直行）— depth.py<a class="header-anchor" href="#depth垂直行-depthpy">#</a></h3>
-<p>DFS 序。fork siblings 跳过 DFS，对齐首个 sibling 的 depth。</p>
-<h3 id="lane分支列-lanepy">lane（分支列）— lane.py<a class="header-anchor" href="#lane分支列-lanepy">#</a></h3>
-<p>主干 lane=0。fork 非首个 siblings 分配新 lane。lane 之间留 1 列间距给 fork 虚拟主干线。</p>
-<h3 id="pos-函数">pos 函数<a class="header-anchor" href="#pos-函数">#</a></h3>
-<pre><code class="language-typescript"><span class="kd">function</span><span class="w"> </span><span class="nx">pos</span><span class="p">(</span><span class="nx">n</span><span class="o">:</span><span class="w"> </span><span class="kt">GNode</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="nx">x</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">,</span><span class="w"> </span><span class="nx">y</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">}</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nx">x</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">PAD_X</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">(</span><span class="nx">laneToCol</span><span class="p">[</span><span class="nx">n</span><span class="p">.</span><span class="nx">_lane</span><span class="p">]</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">n</span><span class="p">.</span><span class="nx">_tier</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">COL_W</span>
-<span class="w">    </span><span class="nx">y</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">PAD_Y</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">depthToRow</span><span class="p">[</span><span class="nx">n</span><span class="p">.</span><span class="nx">_depth</span><span class="p">]</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">ROW_H</span>
-<span class="p">}</span>
-</code></pre>
-<h2 id="六连线">六、连线<a class="header-anchor" href="#六连线">#</a></h2>
-<h3 id="主干">主干<a class="header-anchor" href="#主干">#</a></h3>
-<pre><code>◇ ROOT (tier=0)
-│                    ← 垂直主干在 tier=0 列
-├── ○ user1 (tier=1) ← 水平分支 tier=0 → tier=1
-│   └── △ llm1 (tier=2)
-│
-├── ○ user2 (tier=1) ← 水平分支 tier=0 → tier=1（回到 user 列，不串链）
-│   └── △ llm2 (tier=2)
-│       └── ■ tool (tier=3)
-</code></pre>
-<p>主干 user 节点从 ROOT 列（tier=0）画边，不从 <code>called_by</code>（上一轮 llm）画。</p>
-<h3 id="fork-分支">fork 分支<a class="header-anchor" href="#fork-分支">#</a></h3>
-<pre><code>主干                    fork
-├── ○ user2  ┈┈┈┈┈┈  │── ○ user1'
-│   └── △ llm2        │   └── △ llm1'
-│                      │
-│                      ├── ○ user2'
-│                      │   └── △ llm2'
-</code></pre>
-<ol>
-<li>虚线桥：主干 sibling → fork 虚拟主干列</li>
-<li>fork 虚拟主干实线：垂直线从 fork root 到最后一个 user</li>
-<li>fork 内部 user 从虚拟主干横向分出</li>
-</ol>
-<h3 id="折叠">折叠<a class="header-anchor" href="#折叠">#</a></h3>
-<p>折叠一个节点只隐藏其 <code>caller</code> 子调用，不隐藏 <code>called_by</code> 对话链后续 turn。</p>
-<h2 id="七分支-badge">七、分支 badge<a class="header-anchor" href="#七分支-badge">#</a></h2>
-<p>每个分支 tip 节点下方显示 badge。样式跟 HEAD 标签一致（<code>--bg-hover</code> 背景、圆角、无边框）。</p>
-<ul>
-<li>活跃分支：文字亮色</li>
-<li>非活跃分支：文字暗色，点击触发 <code>checkout_branch</code> + <code>load_session</code></li>
-</ul>
-<h2 id="八重构步骤">八、重构步骤<a class="header-anchor" href="#八重构步骤">#</a></h2>
+<p><strong>Branches are packed by actual column occupancy</strong>: the columns a branch occupies = from
+its start column to the deepest column of its subtree; the next branch starts at the
+previous branch's actually-occupied rightmost column +1, with no overlap.</p>
+<h3 id="tier-how-many-columns-to-indent-within-a-branch">tier — how many columns to indent within a branch<a class="header-anchor" href="#tier-how-many-columns-to-indent-within-a-branch">#</a></h3>
+<p><strong>The conversation layer is fixed by role; the execution layer increases by caller
+depth.</strong> Two rules, each governing one layer, so they no longer conflict (the old docs
+never adjudicated which one a spawn root counts by — now adjudicated: a spawn root is a
+conversation-layer user, tier=1; its caller pointing at a deep node only determines
+where the spawn edge is drawn from, not its own indent):</p>
 <table>
 <thead>
 <tr>
-<th>步</th>
-<th>做什么</th>
-<th>验证</th>
+<th>Node</th>
+<th>Layer</th>
+<th>tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ROOT</td>
+<td>—</td>
+<td>0</td>
+</tr>
+<tr>
+<td>user (incl. spawn branch root, hand-back node)</td>
+<td>conversation</td>
+<td>1</td>
+</tr>
+<tr>
+<td>llm reply, merge</td>
+<td>conversation</td>
+<td>2</td>
+</tr>
+<tr>
+<td>code (tool / function call)</td>
+<td>execution</td>
+<td>3</td>
+</tr>
+<tr>
+<td>a deeper call inside the execution layer</td>
+<td>execution</td>
+<td>caller's tier +1</td>
+</tr>
+</tbody>
+</table>
+<h3 id="depth-which-row">depth — which row<a class="header-anchor" href="#depth-which-row">#</a></h3>
+<p>Top to bottom in order of occurrence (predecessor chain + seq). A branch that forks off
+<strong>starts on the same row</strong> as the position it forked from; a spawn branch starts on the
+<strong>row after the initiating node</strong> (it happens after the initiating node).</p>
+<hr />
+<h2 id="2-three-global-layout-rules-unchanged-inherited-from-the-old-layout-docs">2. Three global layout rules (unchanged, inherited from the old layout docs)<a class="header-anchor" href="#2-three-global-layout-rules-unchanged-inherited-from-the-old-layout-docs">#</a></h2>
+<p><strong>① Square grid</strong>: <code>COL_W == ROW_H</code>, child nodes strictly at the parent's lower-right
+corner (45°).</p>
+<p><strong>② Strict alignment + compaction</strong>: nodes land on grid intersections; <strong>empty rows shift
+up to fill, empty columns shift left to fill, no empty rows or columns are kept.</strong> This
+applies to every visibility change: execution subtree collapse/expand, branch folding,
+visibility filtering — once collapsed, the rows and columns it occupied must be freed
+immediately. <strong>Corollary: any &quot;placeholder box&quot; violates this rule</strong> — the running state
+is expressed by the node's own stroke (see the legend), not by drawing a dashed
+placeholder node.</p>
+<p><strong>③ Branches don't overlap</strong>: see the lane rule.</p>
+<hr />
+<h2 id="3-edges-color-branch-line-style-type-orthogonal-iron-rule">3. Edges: color = branch, line style = type (orthogonal, iron rule)<a class="header-anchor" href="#3-edges-color-branch-line-style-type-orthogonal-iron-rule">#</a></h2>
+<p>Each lane has one color (<code>dag/types.ts</code> <code>LANE_COLORS</code>). Any edge uses the lane color of
+the branch it belongs to / points at; <strong>never give a category of edge a fixed color.</strong> Type
+is conveyed only by line style:</p>
+<table>
+<thead>
+<tr>
+<th>Edge type</th>
+<th>Line style</th>
+<th>Color</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>same-branch parent→child</td>
+<td>solid</td>
+<td>this branch's color</td>
+<td>shown</td>
+</tr>
+<tr>
+<td>retry fork bridge</td>
+<td>dashed <code>5 4</code></td>
+<td>this branch's color</td>
+<td>shown</td>
+</tr>
+<tr>
+<td>spawn edge (initiating node → branch root)</td>
+<td>dash-dot <code>4 2 1 2</code></td>
+<td>child branch's color</td>
+<td>shown</td>
+</tr>
+<tr>
+<td>merge convergence (peer tip → merge node)</td>
+<td>thick solid 2.4px</td>
+<td>peer branch's color</td>
+<td>shown</td>
+</tr>
+<tr>
+<td>attach merge-back (source tip → embed position)</td>
+<td>long dashes <code>4 4</code></td>
+<td>source branch's color</td>
+<td>shown</td>
+</tr>
+<tr>
+<td>inter-branch communication (send_to_branch)</td>
+<td>dotted <code>1 5</code></td>
+<td>target branch's color</td>
+<td><strong>shown only on hover</strong> (numerous; always-on would smear)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-node-legend-shape-role-stroke-status">4. Node legend: shape = role, stroke = status<a class="header-anchor" href="#4-node-legend-shape-role-stroke-status">#</a></h2>
+<p><strong>Shape</strong>: ◇ ROOT · ○ user · △ llm · ■ code · ◎ merge (double ring, the graph's unique
+&quot;convergence&quot; shape).</p>
+<p><strong>status mapping</strong> (retiring the dashed placeholder box — status is drawn on the node
+itself):</p>
+<table>
+<thead>
+<tr>
+<th>status</th>
+<th>Drawing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>success</td>
+<td>default stroke</td>
+</tr>
+<tr>
+<td>running</td>
+<td>same-shape dashed stroke + breathing-opacity animation</td>
+</tr>
+<tr>
+<td>error</td>
+<td>red stroke + <code>!</code> badge at the upper right</td>
+</tr>
+<tr>
+<td>cancelled</td>
+<td>whole node grayed 50%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Badges</strong> (attached to the node, no grid cell of their own):</p>
+<table>
+<thead>
+<tr>
+<th>Badge</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>⚒N</code> (right of an llm node)</td>
+<td>a collapsed execution subtree, N sub-calls; click to expand</td>
+</tr>
+<tr>
+<td><code>×N</code> (right of a code node)</td>
+<td>N isomorphic siblings produced by a loop, folded (pure display)</td>
+</tr>
+<tr>
+<td><code>↗</code> (upper right of a spawn root)</td>
+<td>cross-session spawn: the caller lives in another session's graph; tooltip gives the source session. Within this session it hangs on ROOT</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-branch-name-badge">5. Branch-name badge<a class="header-anchor" href="#5-branch-name-badge">#</a></h2>
+<ul>
+<li><strong>Anchoring</strong>: below the branch chain's <strong>last conversation-layer node</strong> (execution-layer
+nodes are not considered, so expanding/collapsing the execution layer doesn't move the
+badge).</li>
+<li><strong>Collision</strong>: when two badges' grid positions overlap, the later one (by branch order)
+slides down one row until there's no collision.</li>
+<li><strong>Source</strong>: active branches come from <code>list_branches</code> (bright, clickable to checkout);
+<strong>merged branches'</strong> names come from session meta <code>branches</code> (gray, read-only, not
+clickable) — merging doesn't erase the name.</li>
+<li>Styling follows the HEAD label (<code>--bg-hover</code> rounded background, 9px text, backing sized
+to the measured text width).</li>
+</ul>
+<hr />
+<h2 id="6-scenarios-17-in-spechtml-812-newly-added">6. Scenarios (1–7 in spec.html, 8–12 newly added)<a class="header-anchor" href="#6-scenarios-17-in-spechtml-812-newly-added">#</a></h2>
+<p><strong>Scenarios 1–7 (existing SVGs)</strong>: single turn / multiple turns / retry / tool indent /
+manual function / composite / collapse shift-left. The rules are unchanged; scenario 4
+(tool indent) shows as a <code>⚒N</code> badge in the default view, and only becomes the original
+indented squares once expanded.</p>
+<h3 id="scenario-8-spawn-branch-dispatch-within-this-session">Scenario 8 · spawn branch (dispatch within this session)<a class="header-anchor" href="#scenario-8-spawn-branch-dispatch-within-this-session">#</a></h3>
+<p>The reply of the &quot;check weather&quot; turn calls task() and spawns a sub-agent:</p>
+<pre><code>col:  0    1    2    3    4
+row0 ◇ROOT
+row1 ├ ○你好
+row2 │ └ △回复
+row3 ├ ○查天气
+row4 │ └ △回复 ⚒2 ─┄─╮        ← spawn edge (dash-dot) starts from the initiating node
+row5 │               ○子代理prompt     ← spawn branch root: new lane, tier=1,
+row6 │               └ △子代理回复 ⚒21    starts on the initiating node's row +1
+</code></pre>
+<p>Key points: the branch root's caller = the initiating node (<code>session-dag.md</code> §2.3), so the
+dash-dot line is drawn precisely from &quot;who spawned it&quot; to &quot;what got spawned&quot;; the branch
+root itself lays out as a conversation-layer user (tier=1, its own lane). If the sub-agent
+spawns again (coordinator→worker, within the depth cap), the same rule recurses: the
+worker branch's dash-dot line starts from the sub-agent's reply node.</p>
+<h3 id="scenario-9-large-execution-subtree-default-aggregation-expansion">Scenario 9 · large execution subtree (default aggregation ↔ expansion)<a class="header-anchor" href="#scenario-9-large-execution-subtree-default-aggregation-expansion">#</a></h3>
+<p>See the section-0 example. When expanding a turn: that turn's code subtree enters layout
+with the tier indent from scenario 4, rows and columns are re-packed on the spot per rule
+②; once collapsed, rows and columns are reclaimed. <strong>The two branches' expansion states are
+independent of each other.</strong></p>
+<h3 id="scenario-10-merge-multi-parent-convergence">Scenario 10 · merge (multi-parent convergence)<a class="header-anchor" href="#scenario-10-merge-multi-parent-convergence">#</a></h3>
+<p>Two branches merge, an equal merge produces a new tip:</p>
+<pre><code>col:  0    1    2    3    4
+row0 ◇ROOT
+row1 ├ ○user ┈┈┈┈┈┈ ○user'      ← retry fork (dashed bridge)
+row2 │ └ △llm         └ △llm'
+row3 │ ╔══════════════════╝      ← convergence line (thick solid, peer branch's color)
+row4 ├ ◎merge                    ← double-ring shape, lands in base branch lane (ruling: no new lane)
+</code></pre>
+<ul>
+<li>the merge node's <code>predecessor</code> = base tip; the peer is expressed via an attach pointer
+(data layer).</li>
+<li><strong>the attach pointer node is not drawn</strong> (<code>display=runtime</code> filtered out); only the
+convergence line is drawn — an existing ruling from branch-collaboration.md, recorded
+here as spec.</li>
+<li>after the merge the peer branch no longer extends; its lane naturally narrows once the
+rows below it are vacated per rule ②.</li>
+</ul>
+<h3 id="scenario-11-dispatch-merge-back-spawn-attach">Scenario 11 · dispatch merge-back (spawn + attach)<a class="header-anchor" href="#scenario-11-dispatch-merge-back-spawn-attach">#</a></h3>
+<p>The sub-branch finishes, the result is attached back to the main branch (the Spawned card
+in the chat stream):</p>
+<pre><code>col:  0    1    2    3
+row1 ├ ○查天气
+row2 │ └ △回复 ─┄─╮
+row3 │           ○子代理prompt
+row4 │           └ △子代理tip
+row5 ├ ⟨attach landing⟩ ⇠┄┄╯        ← attach merge-back long dashes: sub-branch tip → main-branch embed position
+</code></pre>
+<p>The attach pointer node itself is not drawn (same as scenario 10); the merge-back long
+dashes are pulled from the sub-branch tip back to the position it embeds into on the main
+branch. In the chat stream this data renders as a Spawned card (its display order moved up
+to before that turn's reply — a display-layer reordering, the data order untouched, see
+<code>ui/invariants.md</code> rule 9).</p>
+<h3 id="scenario-12-hand-back-node-and-switcher">Scenario 12 · hand-back node and switcher<a class="header-anchor" href="#scenario-12-hand-back-node-and-switcher">#</a></h3>
+<p>The hand-back of a message_branch (the sub-branch's reply comes back to the initiator's
+lane as a user node, <code>predecessor=the initiating point</code>): if the user also sent a message
+of their own while waiting, the two share a predecessor and form a fork — <strong>the hand-back
+node participates in the <code>&lt; N/M &gt;</code> switcher</strong> (it is a genuine continuation-alternative of
+the initiator's conversation, <code>source=from_branch</code> does not isolate the way agent_spawn
+does; for the isolation rule see <code>ui/invariants.md</code> rule 7).</p>
+<hr />
+<h2 id="7-render-pipeline-code-map">7. Render pipeline (code map)<a class="header-anchor" href="#7-render-pipeline-code-map">#</a></h2>
+<pre><code>web/lib/runtime-bridge/dag/
+  pipeline.ts        orchestration: passes → layout → edges → nodes → badges → visibility
+  passes/            data transforms (merge runs, execution-subtree aggregation, collapse)
+  layout/            lane / tier / depth (the implementation of section 1)
+  render/edges.ts    the line-style table of section 3
+  render/nodes.ts    the shapes + status strokes + badges of section 4
+  render/badges.ts   the branch-name badge of section 5
+  store/globals.ts   expansion state, lastGraph, signatures
+</code></pre>
+<p>The backend <code>openprogram/webui/graph_builder.py</code> produces the node array (including the
+<code>branch_name</code> stamp, caller/predecessor), and <code>graph_layout/</code> does the lane/tier/depth
+annotation. Verification tool: <code>python tools/dag_dump.py &lt;session_id&gt;</code> prints
+lane/tier/depth + an ASCII grid.</p>
+<h2 id="8-known-gaps-vs-the-implementation-2026-07-10-inventory">8. Known gaps vs. the implementation (2026-07-10 inventory)<a class="header-anchor" href="#8-known-gaps-vs-the-implementation-2026-07-10-inventory">#</a></h2>
+<p>Item-by-item against this spec, in landing order:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Gap</th>
+<th>Spec item</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>1</td>
-<td>后端：抽 <code>graph_builder.py</code>，session.py 和 branch.py 都调它</td>
-<td>graph 数据一致</td>
+<td>Execution subtree laid out flat by default (no aggregation pass, no ⚒N badge)</td>
+<td>§0</td>
 </tr>
 <tr>
 <td>2</td>
-<td>前端：从 pipeline.ts 抽出 edges.ts（drawEdges 函数）</td>
-<td>连线不变</td>
+<td>Collapse leaves a placeholder dashed box that occupies a cell</td>
+<td>rule ② corollary</td>
 </tr>
 <tr>
 <td>3</td>
-<td>前端：从 pipeline.ts 抽出 nodes.ts（drawNodes 函数）</td>
-<td>节点不变</td>
+<td>running state drawn as a standalone dashed placeholder node</td>
+<td>§4 status</td>
 </tr>
 <tr>
 <td>4</td>
-<td>前端：从 pipeline.ts 抽出 badges.ts（drawBadges 函数）</td>
-<td>badge 不变</td>
+<td>badge anchored to the &quot;lane's deepest visible node&quot; (incl. execution layer), no collision slide</td>
+<td>§5</td>
 </tr>
 <tr>
 <td>5</td>
-<td>前端：visibility.ts 简化（删 parent walk-up + internal 传播，每次 render 重绑 observer）</td>
-<td>visibility 只跟聊天视口</td>
+<td>merge node has no dedicated shape, convergence line not colored by peer</td>
+<td>scenario 10</td>
 </tr>
 <tr>
 <td>6</td>
-<td>前端：pipeline.ts 变成纯调度（调 passes → layout → drawEdges → drawNodes → drawBadges → recompute）</td>
-<td>功能不变，文件 &lt;200 行</td>
+<td>attach pointer still drawn as a square in the viewport</td>
+<td>scenario 10/11</td>
+</tr>
+<tr>
+<td>7</td>
+<td>cross-session spawn has no ↗ badge (silently hangs on ROOT)</td>
+<td>§4 badges</td>
+</tr>
+<tr>
+<td>8</td>
+<td>spawn root tier computation not per the &quot;conversation-layer user=1&quot; ruling</td>
+<td>§1 tier</td>
+</tr>
+<tr>
+<td></content></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td></invoke></td>
+<td></td>
+<td></td>
 </tr>
 </tbody>
 </table>
-<p>每步独立可验证，跑 <code>npm run build</code> + 浏览器确认画面不变。</p>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/session-dag.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Agent 执行的 DAG 模型</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/dag-live.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">DAG 实时布局（真算法）</span></a></div></article></main>
+<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/dag-layout-spec.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 布局视觉规范</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/branch-collaboration.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">分支协作设计文档（通信 · 服务 · 合并）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#一整体架构">一、整体架构</a>
-<a class="lvl-3" href="#现状问题">现状问题</a>
-<a class="lvl-3" href="#目标架构">目标架构</a>
-<a class="" href="#二后端接口">二、后端接口</a>
-<a class="lvl-3" href="#graph_builderbuild_session_graphsession_id-dict">graph_builder.build_session_graph(session_id) → dict</a>
-<a class="lvl-3" href="#调用方">调用方</a>
-<a class="lvl-3" href="#called_by-和-caller-的区别">called_by 和 caller 的区别</a>
-<a class="" href="#三前端接口">三、前端接口</a>
-<a class="lvl-3" href="#rendergraph-gnode-headid-string-void">render(graph: GNode[], headId: string): void</a>
-<a class="lvl-3" href="#各-render-子模块的接口">各 render 子模块的接口</a>
-<a class="" href="#四节点状态">四、节点状态</a>
-<a class="lvl-3" href="#on-head-off-head">on-head / off-head</a>
-<a class="lvl-3" href="#visible白色填充">visible（白色填充）</a>
-<a class="lvl-3" href="#internal">internal</a>
-<a class="" href="#五布局">五、布局</a>
-<a class="lvl-3" href="#tier水平列-tierpy">tier（水平列）— tier.py</a>
-<a class="lvl-3" href="#depth垂直行-depthpy">depth（垂直行）— depth.py</a>
-<a class="lvl-3" href="#lane分支列-lanepy">lane（分支列）— lane.py</a>
-<a class="lvl-3" href="#pos-函数">pos 函数</a>
-<a class="" href="#六连线">六、连线</a>
-<a class="lvl-3" href="#主干">主干</a>
-<a class="lvl-3" href="#fork-分支">fork 分支</a>
-<a class="lvl-3" href="#折叠">折叠</a>
-<a class="" href="#七分支-badge">七、分支 badge</a>
-<a class="" href="#八重构步骤">八、重构步骤</a>
+<a class="" href="#0-first-what-to-draw-two-granularities-only-the-conversation-layer-by-default">0. First, "what to draw": two granularities, only the conversation layer by default</a>
+<a class="" href="#1-a-nodes-position-column-row">1. A node's position = (column, row)</a>
+<a class="lvl-3" href="#lane-which-branch-it-belongs-to">lane — which branch it belongs to</a>
+<a class="lvl-3" href="#tier-how-many-columns-to-indent-within-a-branch">tier — how many columns to indent within a branch</a>
+<a class="lvl-3" href="#depth-which-row">depth — which row</a>
+<a class="" href="#2-three-global-layout-rules-unchanged-inherited-from-the-old-layout-docs">2. Three global layout rules (unchanged, inherited from the old layout docs)</a>
+<a class="" href="#3-edges-color-branch-line-style-type-orthogonal-iron-rule">3. Edges: color = branch, line style = type (orthogonal, iron rule)</a>
+<a class="" href="#4-node-legend-shape-role-stroke-status">4. Node legend: shape = role, stroke = status</a>
+<a class="" href="#5-branch-name-badge">5. Branch-name badge</a>
+<a class="" href="#6-scenarios-17-in-spechtml-812-newly-added">6. Scenarios (1–7 in spec.html, 8–12 newly added)</a>
+<a class="lvl-3" href="#scenario-8-spawn-branch-dispatch-within-this-session">Scenario 8 · spawn branch (dispatch within this session)</a>
+<a class="lvl-3" href="#scenario-9-large-execution-subtree-default-aggregation-expansion">Scenario 9 · large execution subtree (default aggregation ↔ expansion)</a>
+<a class="lvl-3" href="#scenario-10-merge-multi-parent-convergence">Scenario 10 · merge (multi-parent convergence)</a>
+<a class="lvl-3" href="#scenario-11-dispatch-merge-back-spawn-attach">Scenario 11 · dispatch merge-back (spawn + attach)</a>
+<a class="lvl-3" href="#scenario-12-hand-back-node-and-switcher">Scenario 12 · hand-back node and switcher</a>
+<a class="" href="#7-render-pipeline-code-map">7. Render pipeline (code map)</a>
+<a class="" href="#8-known-gaps-vs-the-implementation-2026-07-10-inventory">8. Known gaps vs. the implementation (2026-07-10 inventory)</a>
 </div></aside>
 </div>
 
