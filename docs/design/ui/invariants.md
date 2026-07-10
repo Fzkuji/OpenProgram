@@ -77,11 +77,14 @@ spawn 一个 sub-agent 分支有三个入口：`task()` 同步路径
 （session-dag.md §2.3），而不是挂在 ROOT 上。改 spawn 语义时三个入口
 一起改，一起测。
 
-同一条链上的 spawn 深度共用一个计数器；task() 有自己的紧上限
-`MAX_TASK_DEPTH=1`（只有主 agent 能 spawn，被 spawn 的 agent 自己
-干活、一律不得再委托——实测连"协调者"这一层都会退化成推活儿，
-出现过 5 代天气查询委托链），message_branch 保留宽松的
-`MAX_SPAWN_DEPTH=8`（预算给分支间多轮对话，不是委托链）。
+被 spawn 的 agent **一律不得再委托**——根治手段是工具清单级的：
+task/await_task/cancel_task 标 `unsafe_in=["agent_spawn"]`，dispatcher
+按 `req.source` 过滤后，被 spawn 的 agent 的工具清单里**根本没有**这些
+工具（工具摆在清单里模型就会想用，先给再拒是浪费一轮的坏设计）。
+`MAX_TASK_DEPTH=1` 的深度守卫只是兜底（挡 tools_override 之类的旁路）；
+message_branch 保留宽松的 `MAX_SPAWN_DEPTH=8`（预算给分支间多轮对话，
+不是委托链），两者共用一个链上深度计数器。实测教训：连"协调者"这一层
+都会退化成推活儿，出现过 5 代天气查询委托链。
 
 出处：同步路径漏传导致 DAG 分支从头分叉（1d1fe016）；异步 task()
 漏传 caller + 深度不计数（后续修复）。

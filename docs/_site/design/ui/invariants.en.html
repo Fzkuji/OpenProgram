@@ -269,13 +269,17 @@ path (functions/tools/task/task.py), the async runner
 at the turn that opened it (session-dag.md §2.3) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
 three together.</p>
-<p>Spawns along one chain share a single depth counter; task() applies
-its own tight cap <code>MAX_TASK_DEPTH=1</code> (only the main agent spawns; a
-spawned agent does the work itself and never re-delegates — even a
-single &quot;coordinator&quot; hop degenerated into buck-passing in practice,
-observed live as a 5-generation weather-query delegation chain), while
-message_branch keeps the looser <code>MAX_SPAWN_DEPTH=8</code> (budgeted for
-multi-round branch-to-branch dialogue, not delegation).</p>
+<p>A spawned agent NEVER re-delegates — enforced at the toolset level:
+task/await_task/cancel_task carry <code>unsafe_in=[&quot;agent_spawn&quot;]</code>, so after
+the dispatcher's <code>req.source</code> filter a spawned agent's tool list simply
+does not contain them (a tool sitting in the list invites the model to
+use it; offering it and then refusing wastes a turn — bad design). The
+<code>MAX_TASK_DEPTH=1</code> depth guard is only a backstop (catches bypass paths
+like tools_override); message_branch keeps the looser
+<code>MAX_SPAWN_DEPTH=8</code> (budgeted for multi-round branch-to-branch
+dialogue, not delegation), both sharing one per-chain depth counter.
+Live lesson: even a single &quot;coordinator&quot; hop degenerated into
+buck-passing — a 5-generation weather-query delegation chain.</p>
 <p>Source: the sync path omitted it, so DAG branches forked from the
 root (1d1fe016); the async task() path dropped the caller and never
 counted depth (follow-up fix).</p>

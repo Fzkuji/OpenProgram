@@ -265,6 +265,11 @@ def _task_impl(
     name="task",
     description=_DESCRIPTION,
     toolset=["core"],
+    # 被 spawn 的 agent 根本看不到这个工具（dispatcher 按 req.source
+    # 过滤）——派活的 agent 自己干活，不再转包。工具不在清单里，模型
+    # 就不会想去用；_task_impl 里的深度守卫只是兜底（比如工具被
+    # tools_override 显式塞回来的路径）。
+    unsafe_in=["agent_spawn"],
 )
 def task(
     prompt: str,
@@ -314,6 +319,7 @@ def task(
         "On timeout the call returns with the task still running."
     ),
     toolset=["core"],
+    unsafe_in=["agent_spawn"],  # 同 task：被 spawn 的 agent 不派活也不等活
 )
 def await_task(task_id: str, timeout: float = 0) -> str:
     """Wait for an async task and return its final reply."""
@@ -356,6 +362,7 @@ def await_task(task_id: str, timeout: float = 0) -> str:
         "task entity."
     ),
     toolset=["core"],
+    unsafe_in=["agent_spawn"],  # 同 task
 )
 def cancel_task(task_id: str, reason: str = "") -> str:
     """Signal cancel for an async task."""

@@ -301,3 +301,16 @@ def test_task_sync_child_sees_incremented_depth(store, monkeypatch):
         session_id="p1", turn_id="a1",
     )
     assert seen["child_depth"] == 1
+
+
+def test_spawned_agent_toolset_has_no_task_tools():
+    """根治转包：被 spawn 的 agent（source=agent_spawn）的工具清单里
+    根本没有 task/await_task/cancel_task——工具不在清单里模型就不会
+    想去用；深度守卫只是 tools_override 等旁路的兜底。"""
+    from openprogram.functions import agent_tools
+    spawn_names = {t.name for t in agent_tools(source="agent_spawn")}
+    assert "task" not in spawn_names
+    assert "await_task" not in spawn_names
+    assert "cancel_task" not in spawn_names
+    # 主 agent 照常有 task
+    assert "task" in {t.name for t in agent_tools()}
