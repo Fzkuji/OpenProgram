@@ -474,7 +474,7 @@ sceneMulti(12,"节点状态与徽标（废除占位框）",
 sceneMulti(13,"分支名 badge：锚定 · 碰撞 · 已合并",
  "badge 的三条规则，各一张图。",
  [
-  {w:4.4,h:4.6,cap:"<b>锚定＝分支最后一个对话层节点下方</b>。这轮展开了执行子树（■bash 在更下面），badge 仍锚在 △回复——执行层展开/收起<b>不挪 badge</b>。",draw:()=>{
+  {w:4.4,h:4.6,cap:"<b>锚定＝分支最后一个对话层节点（△回复）下方</b>。执行子树展开（■bash）也<b>不挪 badge</b>；因为 回复 有下行边，badge <b>左偏半格</b>避开那条竖线。",draw:()=>{
     let s="";
     s+=edge(0,0,1,1,C.blue);
     s+=edge(1,1,2,2,C.blue);
@@ -483,13 +483,12 @@ sceneMulti(13,"分支名 badge：锚定 · 碰撞 · 已合并",
     s+=node(null,1,1,'user',C.blue,"问题");
     s+=node(null,2,2,'llm',C.blue,"回复");
     s+=node(null,3,3,'code',C.blue,"bash","执行层(已展开)");
-    // badge 锚在 回复(列2,行2) 下方；该节点有下行边（→bash），badge 向左偏
-    // 半格避让那条竖线（规范：徽标不压边）
-    const bx=PADX+1.45*COL, by=PADY+3.1*ROW;
+    // badge 锚在 回复(列2,行2) 下方一行；该节点有下行边（→bash 的竖线在列2），
+    // badge 向左偏半格避让（规范：徽标不压边）。不画指针线——说明在图下方文字里。
+    const bx=PADX+1.5*COL, by=PADY+3*ROW;
     s+=`<g><rect x="${bx-26}" y="${by-10}" width="52" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#f8f8f6" font-size="10" text-anchor="middle" font-weight="500">问候</text></g>`;
-    s+=`<path d="M ${bx+18} ${by-11} L ${PADX+2*COL-R*0.6} ${PADY+2*ROW+R+2}" stroke="#6b6a63" stroke-width="1" stroke-dasharray="2 3"/>`;
     return s;}},
-  {w:6,h:4.2,cap:"<b>碰撞下移</b>：两条分支的锚点在同一行，badge 本来会重叠——后到的（分支序靠后）<b>向下顺延一行</b>。两个 badge 名字就是这两条分支自己的名字。",draw:()=>{
+  {w:6,h:4.2,cap:"<b>碰撞下移</b>：两条分支锚点同行，「改写方案」的 badge 本应在虚框处（与「原方案」同行、水平距离不足会叠）——后到者<b>下移一行</b>。图里虚框即被放弃的位置。",draw:()=>{
     let s="";
     s+=edge(0,0,1,1,C.blue);
     s+=edge(1,1,2,2,C.blue);
@@ -501,16 +500,13 @@ sceneMulti(13,"分支名 badge：锚定 · 碰撞 · 已合并",
     s+=node(null,2,2,'llm',C.blue,"回复A");
     s+=node(null,4,1,'user',C.purple,"问题(改写)","",true);
     s+=node(null,5,2,'llm',C.purple,"回复B");
-    // badge A 行3
+    // badge A 在行3；badge B 本应同在行3（会与 A 重叠）→ 下移到行4。
+    // 图里只画结果，为什么下移由图下方的说明文字讲。
     let bx=PADX+2*COL, by=PADY+3*ROW;
     s+=`<g><rect x="${bx-30}" y="${by-10}" width="60" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#f8f8f6" font-size="10" text-anchor="middle" font-weight="500">原方案</text></g>`;
-    // badge B 与 A 横向太近会叠 → 下移到行4，并画下移箭头
     bx=PADX+5*COL;
-    s+=`<g opacity="0.45"><rect x="${bx-36}" y="${by-10}" width="72" height="20" rx="6" fill="none" stroke="#6b6a63" stroke-dasharray="3 3"/></g>`;
+    s+=`<g opacity="0.35"><rect x="${bx-36}" y="${by-10}" width="72" height="20" rx="6" fill="none" stroke="#6b6a63" stroke-dasharray="3 3"/></g>`;
     s+=`<g><rect x="${bx-36}" y="${PADY+4*ROW-10}" width="72" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${PADY+4*ROW+4}" fill="#d8d6cc" font-size="10" text-anchor="middle">改写方案</text></g>`;
-    s+=`<path d="M ${bx+42} ${by} L ${bx+42} ${PADY+4*ROW-14}" stroke="#6b6a63" stroke-width="1.2" marker-end="url(#arr)"/>`;
-    s+=`<defs><marker id="arr" viewBox="0 0 6 6" refX="3" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L3,6 L6,0" fill="#6b6a63"/></marker></defs>`;
-    s+=`<text x="${bx-42}" y="${by+2}" fill="#6b6a63" font-size="10" text-anchor="end">虚框=会与左侧重叠的位置</text>`;
     return s;}},
   {w:5.2,h:5,cap:"<b>合并即消名（学 git）</b>：紫分支通过汇入线并进 ◉ 后，它的 badge<b>随之消失</b>——不画灰胶囊。来源不丢：◉ merge 节点的 tooltip 列出被合并的分支名（如「merged: 改写方案」），像 git 的 merge commit message。",draw:()=>{
     let s="";
