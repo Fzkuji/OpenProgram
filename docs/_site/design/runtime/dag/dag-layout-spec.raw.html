@@ -495,7 +495,7 @@ sceneMulti(13,"分支名 badge：锚定 · 避让 · 碰撞 · 已合并",
     const by=PADY+2*ROW, bx=PADX+0.5*COL;
     s+=`<g><rect x="${bx-26}" y="${by-10}" width="52" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#f8f8f6" font-size="10" text-anchor="middle" font-weight="500">问候</text></g>`;
     return s;}},
-  {w:6,h:4.2,cap:"<b>碰撞下移</b>：两条分支锚点同行，「改写方案」的 badge 本应在虚框处（与「原方案」同行、水平距离不足会叠）——后到者<b>下移一行</b>。图里虚框即被放弃的位置。",draw:()=>{
+  {w:7,h:4.6,cap:"<b>碰撞下移（按实测像素盒判定）</b>：badge 底宽＝名字实测宽度。短名字隔着三列碰不上；分支名自动取自消息/任务描述时很长，两个同行锚位的盒子会叠——虚框＝后一个 badge 本应在的锚位，与前一个重叠，于是后到者<b>下移一行</b>。",draw:()=>{
     let s="";
     s+=edge(0,0,1,1,C.blue);
     s+=edge(1,1,2,2,C.blue);
@@ -507,13 +507,14 @@ sceneMulti(13,"分支名 badge：锚定 · 避让 · 碰撞 · 已合并",
     s+=node(null,2,2,'llm',C.blue,"回复A");
     s+=node(null,4,1,'user',C.purple,"问题(改写)","",true);
     s+=node(null,5,2,'llm',C.purple,"回复B");
-    // badge A 在行3；badge B 本应同在行3（会与 A 重叠）→ 下移到行4。
-    // 图里只画结果，为什么下移由图下方的说明文字讲。
-    let bx=PADX+2*COL, by=PADY+3*ROW;
-    s+=`<g><rect x="${bx-30}" y="${by-10}" width="60" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#f8f8f6" font-size="10" text-anchor="middle" font-weight="500">原方案</text></g>`;
+    // 长名字按 10px/字实测画宽：17 字 ≈ 170 + 12 内边距 = 182。
+    // 锚位 A=(列2,行3)、B=(列5,行3)，中心差 168px < 半宽和 182 → 真实重叠。
+    const BW=182, by=PADY+3*ROW;
+    let bx=PADX+2*COL;
+    s+=`<g><rect x="${bx-BW/2}" y="${by-10}" width="${BW}" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#f8f8f6" font-size="10" text-anchor="middle" font-weight="500">请帮我查一下上海明天白天的天气情况</text></g>`;
     bx=PADX+5*COL;
-    s+=`<g opacity="0.35"><rect x="${bx-36}" y="${by-10}" width="72" height="20" rx="6" fill="none" stroke="#6b6a63" stroke-dasharray="3 3"/></g>`;
-    s+=`<g><rect x="${bx-36}" y="${PADY+4*ROW-10}" width="72" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${PADY+4*ROW+4}" fill="#d8d6cc" font-size="10" text-anchor="middle">改写方案</text></g>`;
+    s+=`<g opacity="0.35"><rect x="${bx-BW/2}" y="${by-10}" width="${BW}" height="20" rx="6" fill="none" stroke="#6b6a63" stroke-dasharray="3 3"/></g>`;
+    s+=`<g><rect x="${bx-BW/2}" y="${PADY+4*ROW-10}" width="${BW}" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${PADY+4*ROW+4}" fill="#d8d6cc" font-size="10" text-anchor="middle">请帮我查一下上海后天白天的天气情况</text></g>`;
     return s;}},
   {w:5.2,h:5,cap:"<b>合并即消名（学 git）</b>：紫分支通过汇入线并进 ◉ 后，它的 badge<b>随之消失</b>——不画灰胶囊。来源不丢：◉ merge 节点的 tooltip 列出被合并的分支名（如「merged: 改写方案」），像 git 的 merge commit message。",draw:()=>{
     let s="";

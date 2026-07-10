@@ -476,8 +476,11 @@ the badge sits straight underneath).</li>
 an expanded execution subtree, or the conversation continuing) does the badge shift
 half a column left — a badge never sits on an edge. Expanding/collapsing the execution
 layer only toggles this half-column shift; it never changes the anchor node.</li>
-<li><strong>Collision</strong>: when two badges' grid positions overlap, the later one (by branch order)
-slides down one row until there's no collision.</li>
+<li><strong>Collision</strong>: judged on <strong>measured pixel boxes</strong> (badge backing width = measured text
+width + padding, not grid cells). Short names almost never collide across the grid
+spacing; long names (branches auto-named from a message or task description) on
+same-row anchors do overlap — the later one (by branch order) slides down one row
+until there's no collision.</li>
 <li><strong>Source</strong>: badges come ONLY from <code>list_branches</code> — <strong>active</strong> branches (bright,
 clickable to checkout). <strong>Merging erases the name</strong> (git semantics): a merged-in
 branch no longer draws a badge; its name moves into the ◉ merge node's tooltip
