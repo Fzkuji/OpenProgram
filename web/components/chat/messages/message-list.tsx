@@ -54,6 +54,8 @@ function dispatch(msg: ChatMsg) {
   }
   if (msg.display === "runtime") {
     if (msg.role === "user") return null;
+    // 手动函数运行（fn-form / /run）保留 RuntimeBlock 的树缩进样式
+    // （用户裁决：轮内执行走时间线，这里不改）。
     return (
       <div className="runtime-card-host">
         <RuntimeBlock msg={msg} />

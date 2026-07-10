@@ -248,7 +248,13 @@ export function FunctionStep({
 }
 
 /** context_tree 节点 → 递归步骤行（函数调函数的层级）。 */
-export function TreeStep({ node }: { node: TNode }) {
+export function TreeStep({
+  node,
+  defaultOpen,
+}: {
+  node: TNode;
+  defaultOpen?: boolean;
+}) {
   const kids = node.children || [];
   const running = node.status === "running"
     && !(node.duration_ms || node.end_time);
@@ -259,8 +265,12 @@ export function TreeStep({ node }: { node: TNode }) {
     : [];
   if (params.length) noteParts.push(short(Object.fromEntries(params), 70));
   if (node.duration_ms) noteParts.push(`${Math.round(node.duration_ms)}ms`);
-  const out = node.error || node.output;
-  const hasBody = out !== undefined && out !== null && out !== "" || kids.length > 0;
+  const outRaw = node.error || node.output;
+  // 运行中/无输出的节点 output 常是 null 或字符串 "null"——不渲染。
+  const out = (outRaw === undefined || outRaw === null
+    || String(outRaw).trim() === "" || String(outRaw).trim() === "null")
+    ? undefined : outRaw;
+  const hasBody = out !== undefined || kids.length > 0;
   return (
     <StepRow
       icon="function"
@@ -268,13 +278,14 @@ export function TreeStep({ node }: { node: TNode }) {
       note={noteParts.join(" · ")}
       error={isError}
       running={running}
+      defaultOpen={defaultOpen}
       copyText={JSON.stringify(
         { name: node.name, params: node.params, output: node.output, error: node.error },
         null, 2)}
     >
       {hasBody ? (
         <>
-          {out !== undefined && out !== null && out !== "" ? (
+          {out !== undefined ? (
             <div className={"tl-mono" + (isError ? " is-error" : "")}>
               {short(out, 4000)}
             </div>
