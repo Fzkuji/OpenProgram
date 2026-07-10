@@ -41,6 +41,11 @@ export function renderHistoryGraph(graph: GNode[], headId: string | null): void 
 }
 
 export function repaintBranchTags(): void {
+  // Branch badges read window._branchesByConv at draw time, which is
+  // NOT part of the render signature — force the repaint past the
+  // signature dedup, or a badge-only change (branches fetched after
+  // the first draw) silently no-ops and the DAG never shows names.
+  setLastSignature(null);
   if (_lastGraph) render(_lastGraph, _lastHeadId);
 }
 

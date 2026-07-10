@@ -123,6 +123,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
 <a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
+<a class="navlink" href="/docs/design/ui/invariants.html" data-title-en="Cross-module UI invariants" data-href-zh="/docs/design/ui/invariants.html" data-href-en="/docs/design/ui/invariants.en.html">UI 跨模块不变量</a>
 <a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
 <a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
@@ -413,7 +414,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <blockquote>
 <p><strong>本层提供的是 friction 与可观测性，不是隔离边界。</strong> 它降低事故率、让每次决策可回放可审计，但它不抵抗能注入内容、能攻陷工具的对手。真正的隔离仍然靠 sandbox / seccomp —— 本层与之<strong>互补，不替代</strong>。</p>
 </blockquote>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-29</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/proactive/_research_archive/replay.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">回放即 policy 测试</span></a><a class="pn-link pn-next" href="/docs/design/proactive/_research_archive/evaluation.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">评估</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-10</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/proactive/_research_archive/replay.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">回放即 policy 测试</span></a><a class="pn-link pn-next" href="/docs/design/proactive/_research_archive/evaluation.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">评估</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#先把对手定义清楚">先把对手定义清楚</a>

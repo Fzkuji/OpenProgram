@@ -357,6 +357,19 @@ export function useWS(): void {
           return true;
         case "session_loaded":
           loadSessionData(d as never);
+          // Pull the branch list for the freshly-loaded session. The DAG's
+          // branch-name badges draw from _branchesByConv, which nothing
+          // else fills on a plain load (only rename/delete events and the
+          // Branches panel send list_branches) — without this the first
+          // paint shows a nameless graph until some other interaction.
+          {
+            const sid = (d as Record<string, unknown>)?.id;
+            if (typeof sid === "string" && sid) {
+              socket?.send(
+                JSON.stringify({ action: "list_branches", session_id: sid }),
+              );
+            }
+          }
           // 刷新恢复：函数可能正阻塞在 runtime.ask 等用户答题。live 的
           // question.asked 帧在本次（重）连之前就发过了，刷新后丢了卡片 →
           // 函数卡在 Running。这里确定性地按 session 主动拉一次还在 pending

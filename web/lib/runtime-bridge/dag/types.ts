@@ -10,6 +10,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export interface GNode {
+  branch_name?: string | null;
   id: string;
   predecessor?: string | null;
   role?: string;
@@ -19,7 +20,6 @@ export interface GNode {
   name?: string;
   preview?: string;
   is_named?: boolean;
-  branch_name?: string | null;
   head_msg_id?: string;
   children?: GNode[];
   _depth?: number;
