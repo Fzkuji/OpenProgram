@@ -159,7 +159,7 @@ itself):
 |---|---|
 | `⚒N` (right of an llm node) | a collapsed execution subtree, N sub-calls; click to expand |
 | `×N` (right of a code node) | N isomorphic siblings produced by a loop, folded (pure display) |
-| `↗` (upper right of a spawn root) | cross-session spawn: the caller lives in another session's graph; tooltip gives the source session. Within this session it hangs on ROOT |
+| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later) |
 
 ---
 
@@ -187,7 +187,7 @@ itself):
 | 9 | cross-branch messaging (send_to_branch) | dotted `1 5`, target branch color, hidden by default / shown on hover; a from_branch user node lands at the target branch tail |
 | 10 | spawn dispatch → attach merge-back | spawn edge dash-dot `4 2 1 2` (child branch color); the child branch's first node sits on the **same row** as the spawn node, own lane, tier=1; merge-back long dash `4 4` from the child tip back to its embed position on the main branch (the chat stream renders it as the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
 | 11 | execution-subtree default aggregation | see §0: collapsed to a ⚒N badge by default, click to expand into layout, collapse reclaims rows/cols per rule ②; expansion state is per-branch independent |
-| 12 | status & badge legend | see §4: status drawn on the node's own stroke, placeholder boxes abolished; cross-session spawn roots carry the ↗ corner mark |
+| 12 | status & badge legend | see §4: status drawn on the node's own stroke, placeholder boxes abolished; both sides of a cross-session spawn carry the ↗ corner mark |
 | 13 | badge anchoring & collision | see §5: anchor at the branch's last conversation-layer node, collision shifts down one row, merged branches keep a gray read-only badge |
 
 **Send-back nodes and the switcher (semantic note, no dedicated layout scene)**: a
@@ -232,7 +232,7 @@ Item-by-item against this spec, in landing order:
 | 4 | badge anchored to the "lane's deepest visible node" (incl. execution layer), no collision slide | §5 |
 | 5 | merge node has no dedicated shape, convergence line not colored by peer | scene 8 |
 | 6 | attach pointer still drawn as a square in the viewport | scenes 8/10 |
-| 7 | cross-session spawn has no ↗ badge (silently hangs on ROOT) | §4 badges |
+| 7 | cross-session spawn has no ↗ mark on either side (target silently hangs on ROOT, source leaves no trace) | §4 badges |
 | 8 | spawn root tier computation not per the "conversation-layer user=1" ruling | §1 tier |
 </content>
 </invoke>

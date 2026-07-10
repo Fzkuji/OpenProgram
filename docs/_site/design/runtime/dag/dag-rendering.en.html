@@ -460,8 +460,8 @@ itself):</p>
 <td>N isomorphic siblings produced by a loop, folded (pure display)</td>
 </tr>
 <tr>
-<td><code>↗</code> (upper right of a spawn root)</td>
-<td>cross-session spawn: the caller lives in another session's graph; tooltip gives the source session. Within this session it hangs on ROOT</td>
+<td><code>↗</code> (top-right corner)</td>
+<td>marked on <strong>both sides</strong> of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip &quot;spawned from <source session>&quot;); and the initiating node in the source session (tooltip &quot;dispatched to <target session>&quot; — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later)</td>
 </tr>
 </tbody>
 </table>
@@ -518,7 +518,7 @@ to the measured text width).</li>
 <tr>
 <td>12</td>
 <td>status &amp; badge legend</td>
-<td>see §4: status drawn on the node's own stroke, placeholder boxes abolished; cross-session spawn roots carry the ↗ corner mark</td>
+<td>see §4: status drawn on the node's own stroke, placeholder boxes abolished; both sides of a cross-session spawn carry the ↗ corner mark</td>
 </tr>
 <tr>
 <td>13</td>
@@ -594,7 +594,7 @@ lane/tier/depth + an ASCII grid.</p>
 </tr>
 <tr>
 <td>7</td>
-<td>cross-session spawn has no ↗ badge (silently hangs on ROOT)</td>
+<td>cross-session spawn has no ↗ mark on either side (target silently hangs on ROOT, source leaves no trace)</td>
 <td>§4 badges</td>
 </tr>
 <tr>

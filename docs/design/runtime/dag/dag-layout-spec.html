@@ -386,8 +386,8 @@ scene(11,"执行子树默认聚合（&#9874;N 徽标）",
 
 // ---- 场景12：状态与徽标图例 ----
 scene(12,"节点状态与徽标（废除占位框）",
- "status 画在节点自己的描边上，不再画独立的虚线占位节点。running=虚线描边+呼吸；error=红描边+右上角!；cancelled=整体灰化。跨会话 spawn 的分支根带 ↗ 角标（caller 在另一个会话的图里，本会话内挂 ROOT）。",
- 8,3,()=>{
+ "status 画在节点自己的描边上，不再画独立的虚线占位节点。running=虚线描边+呼吸；error=红描边+右上角!；cancelled=整体灰化。跨会话 spawn 【两侧都标 ↗】：目标会话的分支根（caller 在图外，挂 ROOT，tooltip 标来源）＋源会话里发起 spawn 的节点（tooltip 标派往哪——否则派活在自己图里毫无痕迹）。",
+ 10,3,()=>{
   let s="";
   const cy=PADY+1*ROW;
   // running llm: 虚线描边
@@ -408,14 +408,20 @@ scene(12,"节点状态与徽标（废除占位框）",
   s+=`<polygon points="${cx},${cy-R} ${cx-R},${cy+R*0.8} ${cx+R},${cy+R*0.8}" fill="none" stroke="${C.blue}" stroke-width="2.5"/>`;
   s+=toolBadge(5,1,9,C.blue,2);
   s+=`<text x="${cx-20}" y="${cy+34}" fill="#9a988e" font-size="11">&#9874;N 执行子树</text>`;
-  // ↗ 跨会话 spawn
-  cx=PADX+7*COL;
+  // ↗ 跨会话 spawn —— 两侧都标
+  cx=PADX+6.6*COL;
   s+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${C.green}" stroke-width="2.5"/>`;
   s+=`<text x="${cx+R-2}" y="${cy-R+4}" fill="${C.green}" font-size="13" font-weight="700">&#8599;</text>`;
-  s+=`<text x="${cx-28}" y="${cy+34}" fill="#9a988e" font-size="11">跨会话 spawn 根</text>`;
+  s+=`<text x="${cx-34}" y="${cy+34}" fill="#9a988e" font-size="11">目标侧:分支根</text>`;
+  s+=`<text x="${cx-34}" y="${cy+48}" fill="#6b6a63" font-size="10">spawn 自会话X</text>`;
+  cx=PADX+8.4*COL;
+  s+=`<rect x="${cx-R*0.85}" y="${cy-R*0.85}" width="${R*1.7}" height="${R*1.7}" rx="2" fill="none" stroke="${C.blue}" stroke-width="2.5"/>`;
+  s+=`<text x="${cx+R-2}" y="${cy-R+4}" fill="${C.blue}" font-size="13" font-weight="700">&#8599;</text>`;
+  s+=`<text x="${cx-34}" y="${cy+34}" fill="#9a988e" font-size="11">源侧:发起节点</text>`;
+  s+=`<text x="${cx-34}" y="${cy+48}" fill="#6b6a63" font-size="10">派往会话Y</text>`;
   return s;
  },
- "规则② 推论：占位框占格即违规——状态一律画在节点描边上。跨会话 spawn 根在本会话挂 ROOT，↗ 角标 + tooltip 标来源 session。");
+ "规则② 推论：占位框占格即违规——状态一律画在节点描边上。跨会话 spawn 两侧都标 ↗：目标侧分支根挂 ROOT、tooltip 标来源；源侧发起节点 tooltip 标派往哪。点击 ↗ 跳对端会话（实现可后置）。");
 
 // ---- 场景13：分支名 badge 锚定与碰撞 ----
 scene(13,"分支名 badge：锚定对话层末节点 + 碰撞下移",
