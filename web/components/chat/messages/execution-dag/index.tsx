@@ -351,7 +351,7 @@ export function ExecutionDag({
         onClick={() => setCollapsed((c) => !c)}
       >
         <span>
-          {/* 头部图标始终是 𝓕 艺术字（运行中也是），不再用晃动的橙点。
+          {/* 头部图标与时间线同款（step-icons），运行中也不换成晃动的橙点。
               「运行中」另有 body 里的 Running… 行表达。 */}
           <span className="inline-tree-icon" title="function"><FunctionIcon /></span>
           {headerLabel ?? text("Execution DAG", "执行 DAG")}

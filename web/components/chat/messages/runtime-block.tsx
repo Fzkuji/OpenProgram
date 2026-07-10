@@ -286,7 +286,7 @@ export function RuntimeBlock({
           <span>
             {/* 头部图标与时间线同款（step-icons）；运行状态
                 由下面的 Running… 行表达。间距与 ExecutionDag 头部一致
-                （𝓕 + 两个不间断空格），免得两个卡片的文字缩进不齐。 */}
+                （图标 + 间距与时间线一致），免得两个卡片的文字缩进不齐。 */}
             <span className="inline-tree-icon" title="function"><FunctionIcon /></span>
             {"  "}
             {headerLabel}
