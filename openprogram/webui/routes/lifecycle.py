@@ -2,13 +2,14 @@
 
 Touches server module state heavily: cancel flags, follow-up queues,
 running-tasks map. Each handler delegates the actual work to server-
-module helpers and only re-broadcasts the resulting status envelope.
+module helpers and only emits the resulting status envelope onto the
+event bus (``ws.frame`` → server's WS forwarder).
 """
 from __future__ import annotations
 
-import json
-
 from fastapi.responses import JSONResponse
+
+from openprogram.agent.event_bus import emit_ws_frame
 
 
 def register(app):
@@ -16,14 +17,14 @@ def register(app):
     async def api_pause():
         from openprogram.webui import server as _s
         _s.pause_execution()
-        _s._broadcast(json.dumps({"type": "status", "paused": True}))
+        emit_ws_frame({"type": "status", "paused": True})
         return JSONResponse(content={"paused": True})
 
     @app.post("/api/resume")
     async def api_resume():
         from openprogram.webui import server as _s
         _s.resume_execution()
-        _s._broadcast(json.dumps({"type": "status", "paused": False}))
+        emit_ws_frame({"type": "status", "paused": False})
         return JSONResponse(content={"paused": False})
 
     @app.post("/api/stop")
@@ -66,7 +67,7 @@ def register(app):
             _s._unregister_cancel_event(session_id)
         except Exception:
             pass
-        _s._broadcast(json.dumps({
+        emit_ws_frame({
             "type": "chat_response",
             "data": {
                 "type": "cancelled",
@@ -74,11 +75,11 @@ def register(app):
                 "content": "Execution stopped by user.",
                 "cancelled": True,
             },
-        }))
-        _s._broadcast(json.dumps({
+        })
+        emit_ws_frame({
             "type": "status",
             "paused": False,
             "stopped": True,
             "session_id": session_id,
-        }))
+        })
         return JSONResponse(content={"stopped": True})

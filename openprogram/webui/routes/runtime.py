@@ -21,6 +21,8 @@ import json
 
 from fastapi.responses import JSONResponse
 
+from openprogram.agent.event_bus import emit_ws_frame
+
 
 def _runtime_build_error_response(exc: Exception, provider: str | None = None):
     """Turn a runtime-construction failure into a graceful structured 4xx
@@ -185,7 +187,7 @@ def register(app):
                 _s._user_pinned_provider = prov
                 _s._user_pinned_model = bare_model
                 info = _s._get_provider_info(session_id)
-                _s._broadcast(json.dumps({"type": "provider_changed", "data": info}))
+                emit_ws_frame({"type": "provider_changed", "data": info})
                 return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
 
         if target_provider and target_provider != _s._runtime_management._default_provider:
@@ -209,7 +211,7 @@ def register(app):
         _s._user_pinned_model = bare_model
 
         info = _s._get_provider_info()
-        _s._broadcast(json.dumps({"type": "provider_changed", "data": info}))
+        emit_ws_frame({"type": "provider_changed", "data": info})
         return JSONResponse(content={
             "switched": True,
             "provider": target_provider or _s._runtime_management._default_provider,
@@ -352,7 +354,7 @@ def register(app):
             changed = True
 
         if changed:
-            _s._broadcast(json.dumps({
+            emit_ws_frame({
                 "type": "agent_settings_changed",
                 "data": {
                     "chat": {"provider": _s._runtime_management._chat_provider,
@@ -360,7 +362,7 @@ def register(app):
                     "exec": {"provider": _s._runtime_management._exec_provider,
                              "model": _s._runtime_management._exec_model},
                 },
-            }))
+            })
 
         return JSONResponse(content={
             "chat": {"provider": _s._runtime_management._chat_provider,

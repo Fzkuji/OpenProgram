@@ -195,13 +195,12 @@ def register(app):
         enabled set), and the settings page may live in a different browser
         tab than the chat — only a WS push reaches them all. Empty data:
         the handler's direct-apply skips and its loadAgentSettings() refetch
-        pulls the session-scoped, enablement-gated values."""
-        import json
-        from openprogram.webui import server as _s
-        try:
-            _s._broadcast(json.dumps({"type": "agent_settings_changed", "data": {}}))
-        except Exception:
-            pass
+        pulls the session-scoped, enablement-gated values.
+
+        Goes through the event bus (``ws.frame``) like every other frame
+        source; server.py's single subscriber forwards it to the sockets."""
+        from openprogram.agent.event_bus import emit_ws_frame
+        emit_ws_frame({"type": "agent_settings_changed", "data": {}})
 
     @app.post("/api/providers/{name}/toggle")
     async def api_toggle_provider(name: str, body: dict = None):
