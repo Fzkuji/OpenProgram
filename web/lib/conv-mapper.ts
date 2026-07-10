@@ -298,6 +298,17 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         agentId: m.agent_id || undefined,
         ...siblingFields(m),
       };
+      // Spawned/attach 卡：锚定的调用轮是已输出的 assistant → 收进它的
+      // attachCards，气泡内部按"工具调用之后"的位置渲染（在哪调用就画
+      // 在哪）。锚不是 assistant（如 /task 斜杠路径锚在用户消息）时保持
+      // 顶层行，由尾部调序放到锚后面。
+      if (m.function === "attach" && asstMsg.calledBy) {
+        const parent = assistantById.get(asstMsg.calledBy);
+        if (parent) {
+          parent.attachCards = [...(parent.attachCards ?? []), asstMsg];
+          return;
+        }
+      }
       out.push(asstMsg);
       assistantById.set(id, asstMsg);
       return;
@@ -321,10 +332,10 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
     }
     out.push({ id, role: "system", content: m.content || "", status: "done" });
   });
-  // Spawned/attach 卡片显示在**发起调用的那条消息**的紧前面——在哪被
-  // 调用就画在哪，不追加到列表尾。数据链不动（invariants 规则 9），只
-  // 调显示序：把每张 attach 卡搬到它 calledBy（调用点）消息之前。不要求
-  // 两者在列表里相邻——异步完成的卡、中间夹着 runtime 子行的卡同样归位。
+  // 顶层剩余的 attach 卡（锚在用户消息上的 /task 斜杠路径等）：搬到
+  // 锚（调用点）的**紧后面**——命令在哪发出，卡就跟在哪。assistant 锚
+  // 的卡已在上面收进气泡内部，不会走到这里。数据链不动（invariants
+  // 规则 9），只调显示序。
   for (let i = 0; i < out.length; i++) {
     const card = out[i];
     if (card.role !== "assistant" || card.function !== "attach" || !card.calledBy) {
@@ -332,18 +343,16 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
     }
     const anchorIdx = out.findIndex((m) => m.id === card.calledBy);
     if (anchorIdx < 0) continue;
-    if (anchorIdx === i + 1) continue; // 已经紧贴在调用点前面
+    if (anchorIdx === i - 1) continue; // 已经紧跟在调用点后面
     if (anchorIdx < i) {
-      // 调用点在前（回放的常态：attach 行落在链上调用轮之后）→ 把卡
-      // 搬到调用点前。移除+插入后 out[i] 恰好是原 i-1（已检查过），
-      // 循环正常 i++ 即可，不会漏元素。
+      // 调用点在前 → 搬到它后面。移除后 anchorIdx 不变，插到 anchorIdx+1。
       out.splice(i, 1);
-      out.splice(anchorIdx, 0, card);
+      out.splice(anchorIdx + 1, 0, card);
     } else {
-      // 调用点在后（极少见）：先在调用点前插入，再移除原位置。
-      out.splice(anchorIdx, 0, card);
+      // 调用点在后（极少见）：先插到调用点后，再移除原位置。
+      out.splice(anchorIdx + 1, 0, card);
       out.splice(i, 1);
-      i--; // out[i] 现在是原 i+1，回退一格让循环重新检查它
+      i--; // out[i] 现在是原 i+1，回退让循环重新检查
     }
   }
   return out;

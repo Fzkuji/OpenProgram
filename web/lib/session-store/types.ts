@@ -215,6 +215,13 @@ export interface ChatMsg {
    *  standalone top-level rows. Top-level MessageList skips any row
    *  that lives here. Only assistant rows ever populate this. */
   runtimeChildren?: ChatMsg[];
+  /** Spawned/attach cards anchored to this assistant turn（在哪调用就
+   *  画在哪）: each row records a task() spawn made DURING this turn.
+   *  The bubble renders each card right after the tool block that
+   *  spawned it (FIFO over blocks with tool==="task"), i.e. thinking →
+   *  tool call → Spawned card → … → final text. Populated by
+   *  conv-mapper; rows living here are skipped at the top level. */
+  attachCards?: ChatMsg[];
   /** Ordered LLM blocks (thinking / text / tool) in the order the
    *  model emitted them. When present, the assistant bubble renders
    *  block-by-block so tool cards / RuntimeBlocks land at the exact

@@ -18,6 +18,7 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import { Avatar } from "@/components/avatar";
 
+import { AttachCard } from "./attach-card";
 import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
@@ -123,6 +124,12 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
     const tid = m ? m[1] : undefined;
     if (tid) runtimeByToolId.set(tid, rc);
   }
+  // Spawned/attach 卡按调用顺序排队：每遇到一个 tool==="task" 的块就取
+  // 一张，画在该工具块的紧后面——思考 → 工具调用 → Spawned 卡 → 回复
+  //（在哪调用就画在哪）。剩下没配到块的卡（老数据没记 blocks）兜底画
+  // 在回复文本之前。
+  const attachFifo = [...(msg.attachCards ?? [])];
+  const SPAWNING_TOOL_NAMES = new Set(["task", "message_branch"]);
   // Renders one block in its source-order position.
   const renderBlock = (b: AssistantBlock, idx: number, fifo: ChatMsg[]) => {
     if (b.type === "thinking") {
@@ -164,6 +171,18 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
       isError: !!b.is_error,
       status: b.is_error ? "error" : "done",
     };
+    // task/message_branch 调用块：把这次 spawn 的卡画在工具块紧后面。
+    if (SPAWNING_TOOL_NAMES.has(tname) && attachFifo.length > 0) {
+      const card = attachFifo.shift()!;
+      return (
+        <div key={`tool_${idx}`}>
+          <ToolsBlock tools={[tc]} />
+          <div className="attach-row" data-msg-id={card.id}>
+            <AttachCard msg={card} />
+          </div>
+        </div>
+      );
+    }
     return <ToolsBlock key={`tool_${idx}`} tools={[tc]} />;
   };
   const color = agentColor(msg.agentId);
@@ -281,6 +300,19 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   </div>,
                 );
               }
+              // 兜底：blocks 里没记 task 调用块的老数据——剩余的
+              // Spawned 卡仍画在本轮内部（尾部），不丢。
+              attachFifo.forEach((card) => {
+                rendered.push(
+                  <div
+                    key={`attach_${card.id}`}
+                    className="attach-row"
+                    data-msg-id={card.id}
+                  >
+                    <AttachCard msg={card} />
+                  </div>,
+                );
+              });
               // While streaming and no final chat-text has landed yet,
               // tail the body with the breathing pulse. Bottom of the
               // bubble, aligned to the chat-text column.
@@ -308,6 +340,13 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   ? <ToolsBlock tools={nonAgentic} />
                   : null;
               })()}
+              {/* Spawned 卡：无 blocks 的回退分支里画在工具卡之后、
+                  回复文本之前——与调用发生的位置一致。 */}
+              {attachFifo.map((card) => (
+                <div key={`attach_${card.id}`} className="attach-row" data-msg-id={card.id}>
+                  <AttachCard msg={card} />
+                </div>
+              ))}
               {/* Streaming fallback (msg.blocks not yet built): runtime
                   children BEFORE the chat-text so the final reply sits
                   below the function call card — matches the persisted
