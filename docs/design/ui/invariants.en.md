@@ -93,11 +93,12 @@ at the turn that opened it (session-dag.md §2.3) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
 three together.
 
-Spawns along one chain share a single depth counter
-(`message_branch`'s `MAX_SPAWN_DEPTH`); task() and message_branch both
-check and increment it — otherwise a spawned agent can re-delegate
-forever (observed live: a 5-generation weather-query delegation chain,
-each hop just re-wording the prompt).
+Spawns along one chain share a single depth counter; task() applies
+its own tight cap `MAX_TASK_DEPTH=2` (main agent → coordinator →
+worker, and no further — anything deeper is an agent passing the buck,
+observed live as a 5-generation weather-query delegation chain), while
+message_branch keeps the looser `MAX_SPAWN_DEPTH=8` (budgeted for
+multi-round branch-to-branch dialogue, not delegation).
 
 Source: the sync path omitted it, so DAG branches forked from the
 root (1d1fe016); the async task() path dropped the caller and never

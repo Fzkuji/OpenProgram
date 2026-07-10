@@ -84,6 +84,14 @@ _DESCRIPTION = (
 )
 
 
+# task() delegation cap. Two levels covers every legitimate pattern
+# (main agent -> coordinator -> workers); a worker delegating AGAIN is
+# an agent avoiding its job. Deliberately much tighter than
+# message_branch's MAX_SPAWN_DEPTH=8, which budgets multi-round
+# branch-to-branch conversation, not delegation.
+MAX_TASK_DEPTH = 2
+
+
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     """Pull (session_id, assistant_msg_id, default_agent_id) from the
     ambient ContextVars + the parent's session row. Returns
@@ -139,22 +147,23 @@ def _task_impl(
         )[:24]
 
     # Depth guard — shares message_branch's counter so task() and
-    # message_branch spawns count toward the same chain. Without this a
-    # spawned agent could task() another agent which task()s another …
-    # (observed live: a 5-generation weather-query delegation chain,
-    # every hop just re-wording the same prompt).
+    # message_branch spawns count toward the same chain, but with a much
+    # tighter cap: legitimate task() nesting is coordinator→worker (two
+    # levels); anything deeper is an agent re-delegating instead of
+    # working (observed live: a 5-generation weather-query delegation
+    # chain, every hop just re-wording the same prompt). message_branch
+    # keeps its own looser MAX_SPAWN_DEPTH for branch-to-branch dialogue.
     from openprogram.functions.tools.agent_collab.message_branch import (
-        MAX_SPAWN_DEPTH,
         current_spawn_depth,
         set_spawn_depth,
         _spawn_depth,
     )
     depth = current_spawn_depth()
-    if depth >= MAX_SPAWN_DEPTH:
+    if depth >= MAX_TASK_DEPTH:
         return (
-            f"[task refused] spawn depth {depth} reached the max "
-            f"({MAX_SPAWN_DEPTH}). This delegation chain is too deep — "
-            "do the work yourself with your own tools."
+            f"[task refused] spawn depth {depth} reached the task() max "
+            f"({MAX_TASK_DEPTH}). Do the work yourself with your own "
+            "tools instead of delegating again."
         )
 
     mode = (context or "").strip().lower() or "clean"

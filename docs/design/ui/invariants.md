@@ -77,10 +77,11 @@ spawn 一个 sub-agent 分支有三个入口：`task()` 同步路径
 （session-dag.md §2.3），而不是挂在 ROOT 上。改 spawn 语义时三个入口
 一起改，一起测。
 
-同一条链上的 spawn 深度共用一个计数器（`message_branch` 的
-`MAX_SPAWN_DEPTH`），task() 与 message_branch 都检查并递增它——否则
-子代理可以无限转包（实测出现过 5 代天气查询委托链，每代只是改写
-prompt）。
+同一条链上的 spawn 深度共用一个计数器；task() 有自己的紧上限
+`MAX_TASK_DEPTH=2`（主 agent → 协调者 → 干活者，到此为止——更深就是
+代理在推活儿而不是干活儿，实测出现过 5 代天气查询委托链），
+message_branch 保留宽松的 `MAX_SPAWN_DEPTH=8`（预算给分支间多轮
+对话，不是委托链）。
 
 出处：同步路径漏传导致 DAG 分支从头分叉（1d1fe016）；异步 task()
 漏传 caller + 深度不计数（后续修复）。
