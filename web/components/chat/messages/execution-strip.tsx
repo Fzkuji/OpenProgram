@@ -12,7 +12,7 @@
  * 动画；图标绝对定位在标题行内部，天然与文字对齐。流式进行中的一轮
  * 不走这里（assistant-bubble 平铺实时块），落定后切到本组件。
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import type { AssistantBlock, ChatMsg, DetailNode } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
@@ -20,9 +20,9 @@ import type { TNode } from "./execution-dag/types";
 import { useTranslation } from "@/lib/i18n";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import {
-  type AnimatedNavIconHandle,
   BotIcon,
   BrainIcon,
+  CpuIcon,
   WrenchIcon,
 } from "@/components/animated-icons";
 
@@ -117,14 +117,14 @@ function firstLine(s: string): string {
   return nl > 0 ? t.slice(0, nl) : t;
 }
 
-/** 单个步骤行：图标锚在标题行里压竖线 + 标题 + 单行摘要 + 悬停动作。
+/** 单个步骤行。
  *
- *  两种点击语义（互斥）：
- *  - `detail`：点行 → 右栏 Executions 显示详情（函数 / 子代理行）。
- *  - `inlineBody`：点行 → 内联展开（思考行）。
- *  `subSteps`（子调用层级）默认展开；**图标即开关**——点竖线上的圆
- *  图标折叠/展开子树（用户裁决：不加箭头），折叠时行尾出现
- *  "⋯ N 步" 淡字提示，点它也能展开。 */
+ *  点击语义（用户裁决 2026-07-11）：
+ *  - **标题文字 = 超链接**：点标题 → 右栏 Executions 显示详情。
+ *  - **行空白 / 图标 = 展开开关**：有子树切子树（默认折叠），思考行切
+ *    内联全文；两者都没有的叶子行，点空白也进右栏。
+ *  图标静态不动画；三类配色区分（思考紫 / 函数橙 / LLM 青 / 子代理绿）；
+ *  折叠时行尾淡字 "⋯ N 步" 提示。 */
 export function StepRow({
   icon,
   title,
@@ -138,7 +138,7 @@ export function StepRow({
   subSteps,
   subCount,
 }: {
-  icon: "thinking" | "function" | "subagent";
+  icon: "thinking" | "function" | "llm" | "subagent";
   title: string;
   note?: string;
   error?: boolean;
@@ -151,10 +151,10 @@ export function StepRow({
   subCount?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [kidsOpen, setKidsOpen] = useState(true);
+  const [kidsOpen, setKidsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const iconRef = useRef<AnimatedNavIconHandle>(null);
   const { text } = useTranslation();
+  const toggleable = !!subSteps || !!inlineBody;
   function copy(e: React.MouseEvent) {
     e.stopPropagation();
     const done = () => {
@@ -165,39 +165,33 @@ export function StepRow({
       navigator.clipboard.writeText(copyText).then(done, done);
     } else done();
   }
-  function onHeadClick() {
-    if (detail) {
-      useSessionStore.getState().showDetail(detail);
-      return;
-    }
-    if (inlineBody) setOpen((v) => !v);
+  function toggle() {
+    if (subSteps) setKidsOpen((v) => !v);
+    else if (inlineBody) setOpen((v) => !v);
+    else if (detail) useSessionStore.getState().showDetail(detail);
+  }
+  function openDetail(e: React.MouseEvent) {
+    if (!detail) return;
+    e.stopPropagation();
+    useSessionStore.getState().showDetail(detail);
   }
   const Icon = icon === "thinking" ? BrainIcon
-    : icon === "subagent" ? BotIcon : WrenchIcon;
+    : icon === "subagent" ? BotIcon
+    : icon === "llm" ? CpuIcon : WrenchIcon;
   return (
     <div className={"tl-step" + (open ? " open" : "")}>
       <div
         className="tl-step-head"
-        onClick={onHeadClick}
-        onMouseEnter={() => iconRef.current?.startAnimation?.()}
-        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-        style={detail || inlineBody ? undefined : { cursor: "default" }}
+        onClick={toggle}
+        style={toggleable || detail ? undefined : { cursor: "default" }}
       >
         <span
           className={
-            "tl-step-icon"
+            "tl-step-icon k-" + icon
             + (error ? " is-error" : "")
             + (running ? " is-running" : "")
-            + (subSteps ? " has-kids" : "")
+            + (toggleable ? " is-toggleable" : "")
           }
-          onClick={subSteps
-            ? (e) => { e.stopPropagation(); setKidsOpen((v) => !v); }
-            : undefined}
-          title={subSteps
-            ? (kidsOpen
-                ? text("Collapse sub-calls", "收起子调用")
-                : text("Expand sub-calls", "展开子调用"))
-            : undefined}
           aria-hidden="true"
         >
           {running ? (
@@ -209,19 +203,22 @@ export function StepRow({
               <line x1="18" y1="6" x2="6" y2="18" />
             </svg>
           ) : (
-            <Icon ref={iconRef} size={13} />
+            <Icon size={13} />
           )}
         </span>
-        <span className={"tl-step-title" + (error ? " is-error" : "")}>{title}</span>
+        <span
+          className={"tl-step-title" + (error ? " is-error" : "")
+            + (detail ? " tl-step-link" : "")}
+          onClick={detail ? openDetail : undefined}
+          title={detail ? text("Show details in the side panel", "右栏看详情") : undefined}
+        >
+          {title}
+        </span>
         {note ? <span className="tl-step-note" title={note}>{note}</span> : null}
         {subSteps && !kidsOpen ? (
-          <button
-            type="button"
-            className="tl-fold-hint"
-            onClick={(e) => { e.stopPropagation(); setKidsOpen(true); }}
-          >
+          <span className="tl-fold-hint">
             {`⋯ ${subCount || ""} ${text("steps", "步")}`.replace("  ", " ")}
-          </button>
+          </span>
         ) : null}
         <span className="tl-step-act">
           {copyText ? (
@@ -298,7 +295,9 @@ export function FunctionStep({
     <StepRow
       icon="function"
       title={text("Function call", "函数调用")}
-      note={`${name}${block.input ? " · " + short(block.input) : ""}`}
+      note={`${name}${block.input ? " · " + short(block.input, 60) : ""}${
+        block.result !== undefined && block.result !== null && block.result !== ""
+          ? " → " + short(String(block.result), 60) : ""}`}
       error={isError}
       copyText={JSON.stringify(
         { tool: name, input: block.input, result: block.result }, null, 2)}
@@ -339,10 +338,12 @@ export function TreeStep({ node }: { node: TNode }) {
     node_type: node.node_type,
     raw_reply: node.raw_reply,
   };
+  const isLlm = node.node_type === "exec" || node.name === "LLM";
+  if (out && !node.error) noteParts.push("→ " + short(out, 60));
   return (
     <StepRow
-      icon="function"
-      title={node.name || node.node_type || "call"}
+      icon={isLlm ? "llm" : "function"}
+      title={isLlm ? "LLM" : (node.name || node.node_type || "call")}
       note={noteParts.join(" · ")}
       error={isError}
       running={running}

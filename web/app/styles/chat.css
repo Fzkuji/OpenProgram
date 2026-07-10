@@ -1245,7 +1245,7 @@
   display: inline-block;
 }
 .tl[data-open="1"] .tl-chev { transform: rotate(90deg); }
-.tl-body { position: relative; margin: 8px 0 6px; padding-left: 34px; }
+.tl-body { position: relative; margin: 6px 0 4px; padding-left: 34px; }
 .tl-body::before {
   content: "";
   position: absolute;
@@ -1256,7 +1256,7 @@
   background: var(--border-light);
   border-radius: 1px;
 }
-.tl-step { padding: 7px 0 7px 2px; }
+.tl-step { padding: 2px 0 2px 2px; }
 .tl-step-head {
   position: relative; /* 图标锚在标题行内部，与文字天然对齐 */
   display: flex;
@@ -1266,7 +1266,7 @@
   font-size: 13px;
   cursor: pointer;
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 3px 8px;
   user-select: none;
 }
 .tl-step-head:hover { background: var(--bg-hover); }
@@ -1348,7 +1348,7 @@
   animation: dag-breathe 1.4s ease-in-out infinite;
 }
 /* 嵌套层级：图标缩一号、竖线更淡，同一套样式递归。 */
-.tl-sub { position: relative; margin: 6px 0 4px 8px; padding-left: 30px; }
+.tl-sub { position: relative; margin: 2px 0 2px 8px; padding-left: 30px; }
 .tl-sub::before {
   content: "";
   position: absolute;
@@ -1360,29 +1360,31 @@
   opacity: 0.6;
   border-radius: 1px;
 }
-.tl-sub .tl-step { padding: 5px 0 5px 2px; }
+.tl-sub .tl-step { padding: 1px 0 1px 2px; }
 .tl-sub .tl-step-head { font-size: 12.5px; padding: 3px 8px; }
 .tl-sub .tl-step-icon { left: -30px; width: 17px; height: 17px; }
 .tl-sub .tl-step-body { font-size: 12.5px; padding: 8px 12px; }
 
-/* 图标即子树开关：有子调用的行，点竖线上的圆图标折叠/展开。 */
-.tl-step-icon.has-kids { cursor: pointer; pointer-events: auto; }
-.tl-step-icon.has-kids:hover {
-  color: var(--text-primary);
-  box-shadow: 0 0 0 2px var(--bg-selected);
+/* 三类图标配色：思考紫 / 函数橙 / LLM 青 / 子代理绿（静态，不动画，
+   hover 不变亮——行背景变色已足够）。 */
+.tl-step-icon.k-thinking { color: var(--accent-purple, #a371f7); }
+.tl-step-icon.k-function { color: var(--accent-orange, #d19a66); }
+.tl-step-icon.k-llm { color: var(--accent-cyan, #3bc9db); }
+.tl-step-icon.k-subagent { color: var(--accent-green, #18a96b); }
+/* 可展开的行：图标 hover 出一圈（更大、以图标为圆心），提示可点。 */
+.tl-step-icon.is-toggleable { cursor: pointer; pointer-events: auto; }
+.tl-step-head:hover .tl-step-icon.is-toggleable {
+  box-shadow: 0 0 0 3px var(--bg-selected);
 }
-/* 折叠提示：行尾淡字 "⋯ N 步"，点击展开。 */
+/* 折叠提示：行尾淡字 "⋯ N 步"（状态提示；点行空白即展开）。 */
 .tl-fold-hint {
-  border: none;
-  background: transparent;
   color: var(--text-muted);
   font-size: 11px;
-  cursor: pointer;
-  padding: 1px 6px;
-  border-radius: 6px;
   white-space: nowrap;
 }
-.tl-fold-hint:hover { background: var(--bg-hover); color: var(--text-secondary); }
+/* 标题超链接化：点标题进右栏详情。 */
+.tl-step-link { cursor: pointer; }
+.tl-step-link:hover { color: var(--text-bright, #f8f8f6); text-decoration: underline; }
 /* 动作钉在行尾：note 为空时也不往左漂。 */
 .tl-step-act { margin-left: auto; }
 
