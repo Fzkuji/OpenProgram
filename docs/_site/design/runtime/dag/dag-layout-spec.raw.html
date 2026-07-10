@@ -340,5 +340,104 @@ scene(10,"子分支服务（spawn → attach 回流）",
  },
  "子分支首节点和 spawn_branch 同一行（行3）。spawn 线用子分支的 lane 色 + 点划线 4 2 1 2（类型靠线型不靠颜色），attach 回流用长虚线 4 4。");
 
+
+// ---- 场景11：执行子树默认聚合（⚒N 徽标 ↔ 展开）----
+function toolBadge(x,y,n,color){
+  const cx=PADX+x*COL, cy=PADY+y*ROW;
+  return `<g><rect x="${cx+R+6}" y="${cy-9}" width="34" height="18" rx="9" fill="${color}" opacity="0.18"/><text x="${cx+R+23}" y="${cy+4}" fill="${color}" font-size="11" text-anchor="middle">&#9874;${n}</text></g>`;
+}
+scene(11,"执行子树默认聚合（&#9874;N 徽标）",
+ "Viewport 默认只画对话层（ROOT/user/llm/spawn根/merge）。一轮内部的工具调用（可多达几十个）收成 llm 节点旁的 &#9874;N 计数徽标；点击徽标该轮子树才展开、进入布局（进入后按场景4的 tier 缩进）。再点收起，行列按规则② 即时回收。左：默认。右：点开第二轮。",
+ 9,6,()=>{
+  let s="";
+  // 左：默认聚合
+  s+=edge(0,0,1,1,C.blue);
+  s+=edge(1,1,2,2,C.blue);
+  s+=edge(0,0,1,3,C.blue);
+  s+=edge(1,3,2,4,C.blue);
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"你好");
+  s+=node(null,2,2,'llm',C.blue,"回复");
+  s+=node(null,1,3,'user',C.blue,"查天气");
+  s+=node(null,2,4,'llm',C.blue,"回复");
+  s+=toolBadge(2,4,21,C.blue);
+  // 分隔
+  s+=`<line x1="${PADX+4.5*COL}" y1="${PADY-16}" x2="${PADX+4.5*COL}" y2="${PADY+5.5*ROW}" stroke="#3a3a36" stroke-dasharray="3 5"/>`;
+  s+=`<text x="${PADX+4.7*COL}" y="${PADY-12}" fill="#6b6a63" font-size="11">点击 &#9874;21 展开该轮 ↓</text>`;
+  // 右：展开（只画头三个 + ×N 折叠示意）
+  const OX=5.2;
+  s+=edge(OX+0,0,OX+1,1,C.blue);
+  s+=edge(OX+1,1,OX+2,2,C.blue);
+  s+=edge(OX+2,2,OX+3,3,C.blue);
+  s+=edge(OX+2,2,OX+3,4,C.blue);
+  s+=node(null,OX+0,0,'user',C.blue,"查天气");
+  s+=node(null,OX+1,1,'llm',C.blue,"回复","已展开");
+  s+=node(null,OX+2,2,'code',C.blue,"bash");
+  s+=node(null,OX+3,3,'code',C.blue,"web_fetch");
+  s+=node(null,OX+3,4,'code',C.blue,"open_meteo","×19 循环折叠");
+  return s;
+ },
+ "对话层是骨架、执行层是细节：细节默认进徽标，按需展开。展开状态按节点记忆，切会话清空。执行层节点永不参与分支 badge 锚定（场景13）。");
+
+// ---- 场景12：状态与徽标图例 ----
+scene(12,"节点状态与徽标（废除占位框）",
+ "status 画在节点自己的描边上，不再画独立的虚线占位节点。running=虚线描边+呼吸；error=红描边+右上角!；cancelled=整体灰化。跨会话 spawn 的分支根带 ↗ 角标（caller 在另一个会话的图里，本会话内挂 ROOT）。",
+ 8,3,()=>{
+  let s="";
+  const cy=PADY+1*ROW;
+  // running llm: 虚线描边
+  let cx=PADX+0.5*COL;
+  s+=`<polygon points="${cx},${cy-R} ${cx-R},${cy+R*0.8} ${cx+R},${cy+R*0.8}" fill="none" stroke="${C.blue}" stroke-width="2.5" stroke-dasharray="4 3"><animate attributeName="opacity" values="1;0.35;1" dur="1.6s" repeatCount="indefinite"/></polygon>`;
+  s+=`<text x="${cx-14}" y="${cy+34}" fill="#9a988e" font-size="11">running</text>`;
+  // error code: 红描边 + !
+  cx=PADX+2*COL;
+  s+=`<rect x="${cx-R*0.85}" y="${cy-R*0.85}" width="${R*1.7}" height="${R*1.7}" rx="2" fill="none" stroke="#e5534b" stroke-width="2.5"/>`;
+  s+=`<text x="${cx+R}" y="${cy-R+2}" fill="#e5534b" font-size="12" font-weight="700">!</text>`;
+  s+=`<text x="${cx-10}" y="${cy+34}" fill="#9a988e" font-size="11">error</text>`;
+  // cancelled: 灰化
+  cx=PADX+3.5*COL;
+  s+=`<g opacity="0.4"><polygon points="${cx},${cy-R} ${cx-R},${cy+R*0.8} ${cx+R},${cy+R*0.8}" fill="none" stroke="${C.blue}" stroke-width="2.5"/></g>`;
+  s+=`<text x="${cx-24}" y="${cy+34}" fill="#9a988e" font-size="11">cancelled</text>`;
+  // ⚒N 徽标
+  cx=PADX+5*COL;
+  s+=`<polygon points="${cx},${cy-R} ${cx-R},${cy+R*0.8} ${cx+R},${cy+R*0.8}" fill="none" stroke="${C.blue}" stroke-width="2.5"/>`;
+  s+=toolBadge(5,1,9,C.blue);
+  s+=`<text x="${cx-20}" y="${cy+34}" fill="#9a988e" font-size="11">&#9874;N 执行子树</text>`;
+  // ↗ 跨会话 spawn
+  cx=PADX+7*COL;
+  s+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${C.green}" stroke-width="2.5"/>`;
+  s+=`<text x="${cx+R-2}" y="${cy-R+4}" fill="${C.green}" font-size="13" font-weight="700">&#8599;</text>`;
+  s+=`<text x="${cx-28}" y="${cy+34}" fill="#9a988e" font-size="11">跨会话 spawn 根</text>`;
+  return s;
+ },
+ "规则② 推论：占位框占格即违规——状态一律画在节点描边上。跨会话 spawn 根在本会话挂 ROOT，↗ 角标 + tooltip 标来源 session。");
+
+// ---- 场景13：分支名 badge 锚定与碰撞 ----
+scene(13,"分支名 badge：锚定对话层末节点 + 碰撞下移",
+ "badge 锚定在分支【最后一个对话层节点】下方（执行层展开/收起不挪 badge）。两个 badge 网格位置重叠时，后到者按分支序向下顺延一行。已合并分支的名字来自 session meta（灰、只读）；活跃分支来自 list_branches（亮、可点击 checkout）。",
+ 6,5,()=>{
+  let s="";
+  s+=edge(0,0,1,1,C.blue);
+  s+=edge(1,1,2,2,C.blue);
+  s+=`<path d="M ${PADX+1*COL+R} ${PADY+1*ROW} L ${PADX+3*COL} ${PADY+1*ROW}" stroke="${C.purple}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.7"/>`;
+  s+=`<path d="M ${PADX+3*COL} ${PADY+1*ROW} L ${PADX+4*COL-R} ${PADY+1*ROW}" fill="none" stroke="${C.purple}" stroke-width="1.6"/>`;
+  s+=edge(4,1,5,2,C.purple);
+  s+=node(null,0,0,'root',C.blue,"ROOT");
+  s+=node(null,1,1,'user',C.blue,"问题");
+  s+=node(null,2,2,'llm',C.blue,"回复A");
+  s+=node(null,4,1,'user',C.purple,"问题(改写)");
+  s+=node(null,5,2,'llm',C.purple,"回复B");
+  // badge A: 锚定回复A(列2,行2)下方
+  let bx=PADX+2*COL, by=PADY+3*ROW;
+  s+=`<g><rect x="${bx-34}" y="${by-10}" width="68" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#f8f8f6" font-size="10" text-anchor="middle" font-weight="500">中文问候</text></g>`;
+  // badge B: 本应同排,碰撞 → 下移一行
+  bx=PADX+5*COL; by=PADY+3*ROW;
+  s+=`<g opacity="0.45"><rect x="${bx-40}" y="${by-10}" width="80" height="20" rx="6" fill="none" stroke="#6b6a63" stroke-dasharray="3 3"/><text x="${bx}" y="${by+4}" fill="#6b6a63" font-size="10" text-anchor="middle">碰撞位置</text></g>`;
+  by=PADY+4*ROW;
+  s+=`<g><rect x="${bx-40}" y="${by-10}" width="80" height="20" rx="6" fill="#2a2a26"/><text x="${bx}" y="${by+4}" fill="#9a988e" font-size="10" text-anchor="middle">天气查询(已合并)</text></g>`;
+  return s;
+ },
+ "锚定=对话层末节点（不看执行层）。碰撞规则：网格位重叠→后到者下移一行。已合并分支保留灰色只读 badge（合并不抹名字）。");
+
 </script>
 </div></body></html>

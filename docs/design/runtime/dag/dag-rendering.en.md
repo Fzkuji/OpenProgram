@@ -8,9 +8,12 @@ Status: **decided (authoritative implementation standard, consolidated 2026-07-1
 > when something breaks, check against it. For the data semantics (nodes, the two
 > edges) see `session-dag.md`; this document only covers the drawing.
 >
-> Every rule comes with an example. The SVGs for the 7 base scenarios live in
-> `dag-layout-spec.html`; the newly added scenarios 8–12 are authoritative in ASCII
-> for now, and adding their spec.html figures is a to-do.
+> Every rule comes with an example. **The SVG scenario figures in
+> `dag-layout-spec.html` are authoritative** (13 scenes: 1–7 base layout, 8 merge,
+> 9 cross-branch messaging, 10 spawn dispatch & merge-back, 11 execution-subtree
+> aggregation, 12 status & badge legend, 13 badge anchoring & collision). The ASCII
+> figures in this file are a text-mode digest, equivalent to the html; on conflict
+> the html wins.
 
 ---
 
@@ -71,7 +74,7 @@ branch:
 |---|---|---|
 | retry / rewrite a turn | the forked-off user / llm node | shares predecessor with the replaced node |
 | spawn (task / message_branch dispatch) | the `source=agent_spawn` user node | caller = the initiating node, predecessor empty |
-| the new mainline from a merge | the merge node itself | lands in the base branch lane (see scenario 10), no new lane opened |
+| the new mainline from a merge | the merge node itself | lands in the base branch lane (see scenario 8), no new lane opened |
 
 **Branches are packed by actual column occupancy**: the columns a branch occupies = from
 its start column to the deepest column of its subtree; the next branch starts at the
@@ -97,7 +100,7 @@ where the spawn edge is drawn from, not its own indent):
 
 Top to bottom in order of occurrence (predecessor chain + seq). A branch that forks off
 **starts on the same row** as the position it forked from; a spawn branch starts on the
-**row after the initiating node** (it happens after the initiating node).
+**same row as the spawn call node** (whichever row the spawn happens on, the dispatched branch starts there — spec.html scene 10).
 
 ---
 
@@ -137,7 +140,7 @@ is conveyed only by line style:
 
 ## 4. Node legend: shape = role, stroke = status
 
-**Shape**: ◇ ROOT · ○ user · △ llm · ■ code · ◎ merge (double ring, the graph's unique
+**Shape**: ◇ ROOT · ○ user · △ llm · ■ code · ◉ merge (solid circle with a hole, the graph's unique
 "convergence" shape).
 
 **status mapping** (retiring the dashed placeholder box — status is drawn on the node
@@ -175,92 +178,29 @@ itself):
 
 ---
 
-## 6. Scenarios (1–7 in spec.html, 8–12 newly added)
+## 6. Scenarios (SVG authority in spec.html, 13 scenes)
 
-**Scenarios 1–7 (existing SVGs)**: single turn / multiple turns / retry / tool indent /
-manual function / composite / collapse shift-left. The rules are unchanged; scenario 4
-(tool indent) shows as a `⚒N` badge in the default view, and only becomes the original
-indented squares once expanded.
+| # | Scene | Key points |
+|---|---|---|
+| 1–7 | Base layout (single turn / multi-turn / retry / tool indent / manual function / composite / collapse shift-left) | Rules unchanged; scenario 4's tool indent shows as a ⚒N badge in the default view (scene 11), the indented squares appear only after expansion |
+| 8 | merge (multi-parent convergence) | ◉ solid circle with a hole, lands on the base branch lane, peer merge-in thick solid lines (peer lane color); attach pointer nodes are not drawn, only the lines |
+| 9 | cross-branch messaging (send_to_branch) | dotted `1 5`, target branch color, hidden by default / shown on hover; a from_branch user node lands at the target branch tail |
+| 10 | spawn dispatch → attach merge-back | spawn edge dash-dot `4 2 1 2` (child branch color); the child branch's first node sits on the **same row** as the spawn node, own lane, tier=1; merge-back long dash `4 4` from the child tip back to its embed position on the main branch (the chat stream renders it as the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
+| 11 | execution-subtree default aggregation | see §0: collapsed to a ⚒N badge by default, click to expand into layout, collapse reclaims rows/cols per rule ②; expansion state is per-branch independent |
+| 12 | status & badge legend | see §4: status drawn on the node's own stroke, placeholder boxes abolished; cross-session spawn roots carry the ↗ corner mark |
+| 13 | badge anchoring & collision | see §5: anchor at the branch's last conversation-layer node, collision shifts down one row, merged branches keep a gray read-only badge |
 
-### Scenario 8 · spawn branch (dispatch within this session)
+**Send-back nodes and the switcher (semantic note, no dedicated layout scene)**: a
+message_branch send-back (the child branch's answer returning to the initiator's lane
+as a user node with `predecessor = the initiating node`) forms a fork whenever the user
+also sent a message while waiting — **send-back nodes participate in the `< N/M >`
+switcher** (they are genuine alternative continuations of the initiator's dialogue;
+`source=from_branch` gets no agent_spawn-style isolation — see `ui/invariants.md`
+rule 7).
 
-The reply of the "check weather" turn calls task() and spawns a sub-agent:
-
-```
-col:  0    1    2    3    4
-row0 ◇ROOT
-row1 ├ ○你好
-row2 │ └ △回复
-row3 ├ ○查天气
-row4 │ └ △回复 ⚒2 ─┄─╮        ← spawn edge (dash-dot) starts from the initiating node
-row5 │               ○子代理prompt     ← spawn branch root: new lane, tier=1,
-row6 │               └ △子代理回复 ⚒21    starts on the initiating node's row +1
-```
-
-Key points: the branch root's caller = the initiating node (`session-dag.md` §2.3), so the
-dash-dot line is drawn precisely from "who spawned it" to "what got spawned"; the branch
-root itself lays out as a conversation-layer user (tier=1, its own lane). If the sub-agent
-spawns again (coordinator→worker, within the depth cap), the same rule recurses: the
-worker branch's dash-dot line starts from the sub-agent's reply node.
-
-### Scenario 9 · large execution subtree (default aggregation ↔ expansion)
-
-See the section-0 example. When expanding a turn: that turn's code subtree enters layout
-with the tier indent from scenario 4, rows and columns are re-packed on the spot per rule
-②; once collapsed, rows and columns are reclaimed. **The two branches' expansion states are
-independent of each other.**
-
-### Scenario 10 · merge (multi-parent convergence)
-
-Two branches merge, an equal merge produces a new tip:
-
-```
-col:  0    1    2    3    4
-row0 ◇ROOT
-row1 ├ ○user ┈┈┈┈┈┈ ○user'      ← retry fork (dashed bridge)
-row2 │ └ △llm         └ △llm'
-row3 │ ╔══════════════════╝      ← convergence line (thick solid, peer branch's color)
-row4 ├ ◎merge                    ← double-ring shape, lands in base branch lane (ruling: no new lane)
-```
-
-- the merge node's `predecessor` = base tip; the peer is expressed via an attach pointer
-  (data layer).
-- **the attach pointer node is not drawn** (`display=runtime` filtered out); only the
-  convergence line is drawn — an existing ruling from branch-collaboration.md, recorded
-  here as spec.
-- after the merge the peer branch no longer extends; its lane naturally narrows once the
-  rows below it are vacated per rule ②.
-
-### Scenario 11 · dispatch merge-back (spawn + attach)
-
-The sub-branch finishes, the result is attached back to the main branch (the Spawned card
-in the chat stream):
-
-```
-col:  0    1    2    3
-row1 ├ ○查天气
-row2 │ └ △回复 ─┄─╮
-row3 │           ○子代理prompt
-row4 │           └ △子代理tip
-row5 ├ ⟨attach landing⟩ ⇠┄┄╯        ← attach merge-back long dashes: sub-branch tip → main-branch embed position
-```
-
-The attach pointer node itself is not drawn (same as scenario 10); the merge-back long
-dashes are pulled from the sub-branch tip back to the position it embeds into on the main
-branch. In the chat stream this data renders as a Spawned card (its display order moved up
-to before that turn's reply — a display-layer reordering, the data order untouched, see
-`ui/invariants.md` rule 9).
-
-### Scenario 12 · hand-back node and switcher
-
-The hand-back of a message_branch (the sub-branch's reply comes back to the initiator's
-lane as a user node, `predecessor=the initiating point`): if the user also sent a message
-of their own while waiting, the two share a predecessor and form a fork — **the hand-back
-node participates in the `< N/M >` switcher** (it is a genuine continuation-alternative of
-the initiator's conversation, `source=from_branch` does not isolate the way agent_spawn
-does; for the isolation rule see `ui/invariants.md` rule 7).
-
----
+**A sub-agent spawning again (coordinator→worker, within the depth cap)**: recurse per
+scene 10 — the worker branch's dash-dot edge starts from the sub-agent's reply node and
+hangs under the sub-agent's lane structure.
 
 ## 7. Render pipeline (code map)
 
@@ -290,8 +230,8 @@ Item-by-item against this spec, in landing order:
 | 2 | Collapse leaves a placeholder dashed box that occupies a cell | rule ② corollary |
 | 3 | running state drawn as a standalone dashed placeholder node | §4 status |
 | 4 | badge anchored to the "lane's deepest visible node" (incl. execution layer), no collision slide | §5 |
-| 5 | merge node has no dedicated shape, convergence line not colored by peer | scenario 10 |
-| 6 | attach pointer still drawn as a square in the viewport | scenario 10/11 |
+| 5 | merge node has no dedicated shape, convergence line not colored by peer | scene 8 |
+| 6 | attach pointer still drawn as a square in the viewport | scenes 8/10 |
 | 7 | cross-session spawn has no ↗ badge (silently hangs on ROOT) | §4 badges |
 | 8 | spawn root tier computation not per the "conversation-layer user=1" ruling | §1 tier |
 </content>

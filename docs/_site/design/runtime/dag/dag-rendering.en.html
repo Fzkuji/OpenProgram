@@ -199,9 +199,12 @@ each edge looks like, and what the user sees by default. <strong>This document i
 authoritative implementation standard</strong> — write the layout code to match it, and
 when something breaks, check against it. For the data semantics (nodes, the two
 edges) see <code>session-dag.md</code>; this document only covers the drawing.</p>
-<p>Every rule comes with an example. The SVGs for the 7 base scenarios live in
-<code>dag-layout-spec.html</code>; the newly added scenarios 8–12 are authoritative in ASCII
-for now, and adding their spec.html figures is a to-do.</p>
+<p>Every rule comes with an example. <strong>The SVG scenario figures in
+<code>dag-layout-spec.html</code> are authoritative</strong> (13 scenes: 1–7 base layout, 8 merge,
+9 cross-branch messaging, 10 spawn dispatch &amp; merge-back, 11 execution-subtree
+aggregation, 12 status &amp; badge legend, 13 badge anchoring &amp; collision). The ASCII
+figures in this file are a text-mode digest, equivalent to the html; on conflict
+the html wins.</p>
 </blockquote>
 <hr />
 <h2 id="0-first-what-to-draw-two-granularities-only-the-conversation-layer-by-default">0. First, &quot;what to draw&quot;: two granularities, only the conversation layer by default<a class="header-anchor" href="#0-first-what-to-draw-two-granularities-only-the-conversation-layer-by-default">#</a></h2>
@@ -289,7 +292,7 @@ branch:</p>
 <tr>
 <td>the new mainline from a merge</td>
 <td>the merge node itself</td>
-<td>lands in the base branch lane (see scenario 10), no new lane opened</td>
+<td>lands in the base branch lane (see scenario 8), no new lane opened</td>
 </tr>
 </tbody>
 </table>
@@ -341,7 +344,7 @@ where the spawn edge is drawn from, not its own indent):</p>
 <h3 id="depth-which-row">depth — which row<a class="header-anchor" href="#depth-which-row">#</a></h3>
 <p>Top to bottom in order of occurrence (predecessor chain + seq). A branch that forks off
 <strong>starts on the same row</strong> as the position it forked from; a spawn branch starts on the
-<strong>row after the initiating node</strong> (it happens after the initiating node).</p>
+<strong>same row as the spawn call node</strong> (whichever row the spawn happens on, the dispatched branch starts there — spec.html scene 10).</p>
 <hr />
 <h2 id="2-three-global-layout-rules-unchanged-inherited-from-the-old-layout-docs">2. Three global layout rules (unchanged, inherited from the old layout docs)<a class="header-anchor" href="#2-three-global-layout-rules-unchanged-inherited-from-the-old-layout-docs">#</a></h2>
 <p><strong>① Square grid</strong>: <code>COL_W == ROW_H</code>, child nodes strictly at the parent's lower-right
@@ -409,7 +412,7 @@ is conveyed only by line style:</p>
 </table>
 <hr />
 <h2 id="4-node-legend-shape-role-stroke-status">4. Node legend: shape = role, stroke = status<a class="header-anchor" href="#4-node-legend-shape-role-stroke-status">#</a></h2>
-<p><strong>Shape</strong>: ◇ ROOT · ○ user · △ llm · ■ code · ◎ merge (double ring, the graph's unique
+<p><strong>Shape</strong>: ◇ ROOT · ○ user · △ llm · ■ code · ◉ merge (solid circle with a hole, the graph's unique
 &quot;convergence&quot; shape).</p>
 <p><strong>status mapping</strong> (retiring the dashed placeholder box — status is drawn on the node
 itself):</p>
@@ -477,73 +480,63 @@ clickable) — merging doesn't erase the name.</li>
 to the measured text width).</li>
 </ul>
 <hr />
-<h2 id="6-scenarios-17-in-spechtml-812-newly-added">6. Scenarios (1–7 in spec.html, 8–12 newly added)<a class="header-anchor" href="#6-scenarios-17-in-spechtml-812-newly-added">#</a></h2>
-<p><strong>Scenarios 1–7 (existing SVGs)</strong>: single turn / multiple turns / retry / tool indent /
-manual function / composite / collapse shift-left. The rules are unchanged; scenario 4
-(tool indent) shows as a <code>⚒N</code> badge in the default view, and only becomes the original
-indented squares once expanded.</p>
-<h3 id="scenario-8-spawn-branch-dispatch-within-this-session">Scenario 8 · spawn branch (dispatch within this session)<a class="header-anchor" href="#scenario-8-spawn-branch-dispatch-within-this-session">#</a></h3>
-<p>The reply of the &quot;check weather&quot; turn calls task() and spawns a sub-agent:</p>
-<pre><code>col:  0    1    2    3    4
-row0 ◇ROOT
-row1 ├ ○你好
-row2 │ └ △回复
-row3 ├ ○查天气
-row4 │ └ △回复 ⚒2 ─┄─╮        ← spawn edge (dash-dot) starts from the initiating node
-row5 │               ○子代理prompt     ← spawn branch root: new lane, tier=1,
-row6 │               └ △子代理回复 ⚒21    starts on the initiating node's row +1
-</code></pre>
-<p>Key points: the branch root's caller = the initiating node (<code>session-dag.md</code> §2.3), so the
-dash-dot line is drawn precisely from &quot;who spawned it&quot; to &quot;what got spawned&quot;; the branch
-root itself lays out as a conversation-layer user (tier=1, its own lane). If the sub-agent
-spawns again (coordinator→worker, within the depth cap), the same rule recurses: the
-worker branch's dash-dot line starts from the sub-agent's reply node.</p>
-<h3 id="scenario-9-large-execution-subtree-default-aggregation-expansion">Scenario 9 · large execution subtree (default aggregation ↔ expansion)<a class="header-anchor" href="#scenario-9-large-execution-subtree-default-aggregation-expansion">#</a></h3>
-<p>See the section-0 example. When expanding a turn: that turn's code subtree enters layout
-with the tier indent from scenario 4, rows and columns are re-packed on the spot per rule
-②; once collapsed, rows and columns are reclaimed. <strong>The two branches' expansion states are
-independent of each other.</strong></p>
-<h3 id="scenario-10-merge-multi-parent-convergence">Scenario 10 · merge (multi-parent convergence)<a class="header-anchor" href="#scenario-10-merge-multi-parent-convergence">#</a></h3>
-<p>Two branches merge, an equal merge produces a new tip:</p>
-<pre><code>col:  0    1    2    3    4
-row0 ◇ROOT
-row1 ├ ○user ┈┈┈┈┈┈ ○user'      ← retry fork (dashed bridge)
-row2 │ └ △llm         └ △llm'
-row3 │ ╔══════════════════╝      ← convergence line (thick solid, peer branch's color)
-row4 ├ ◎merge                    ← double-ring shape, lands in base branch lane (ruling: no new lane)
-</code></pre>
-<ul>
-<li>the merge node's <code>predecessor</code> = base tip; the peer is expressed via an attach pointer
-(data layer).</li>
-<li><strong>the attach pointer node is not drawn</strong> (<code>display=runtime</code> filtered out); only the
-convergence line is drawn — an existing ruling from branch-collaboration.md, recorded
-here as spec.</li>
-<li>after the merge the peer branch no longer extends; its lane naturally narrows once the
-rows below it are vacated per rule ②.</li>
-</ul>
-<h3 id="scenario-11-dispatch-merge-back-spawn-attach">Scenario 11 · dispatch merge-back (spawn + attach)<a class="header-anchor" href="#scenario-11-dispatch-merge-back-spawn-attach">#</a></h3>
-<p>The sub-branch finishes, the result is attached back to the main branch (the Spawned card
-in the chat stream):</p>
-<pre><code>col:  0    1    2    3
-row1 ├ ○查天气
-row2 │ └ △回复 ─┄─╮
-row3 │           ○子代理prompt
-row4 │           └ △子代理tip
-row5 ├ ⟨attach landing⟩ ⇠┄┄╯        ← attach merge-back long dashes: sub-branch tip → main-branch embed position
-</code></pre>
-<p>The attach pointer node itself is not drawn (same as scenario 10); the merge-back long
-dashes are pulled from the sub-branch tip back to the position it embeds into on the main
-branch. In the chat stream this data renders as a Spawned card (its display order moved up
-to before that turn's reply — a display-layer reordering, the data order untouched, see
-<code>ui/invariants.md</code> rule 9).</p>
-<h3 id="scenario-12-hand-back-node-and-switcher">Scenario 12 · hand-back node and switcher<a class="header-anchor" href="#scenario-12-hand-back-node-and-switcher">#</a></h3>
-<p>The hand-back of a message_branch (the sub-branch's reply comes back to the initiator's
-lane as a user node, <code>predecessor=the initiating point</code>): if the user also sent a message
-of their own while waiting, the two share a predecessor and form a fork — <strong>the hand-back
-node participates in the <code>&lt; N/M &gt;</code> switcher</strong> (it is a genuine continuation-alternative of
-the initiator's conversation, <code>source=from_branch</code> does not isolate the way agent_spawn
-does; for the isolation rule see <code>ui/invariants.md</code> rule 7).</p>
-<hr />
+<h2 id="6-scenarios-svg-authority-in-spechtml-13-scenes">6. Scenarios (SVG authority in spec.html, 13 scenes)<a class="header-anchor" href="#6-scenarios-svg-authority-in-spechtml-13-scenes">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Scene</th>
+<th>Key points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1–7</td>
+<td>Base layout (single turn / multi-turn / retry / tool indent / manual function / composite / collapse shift-left)</td>
+<td>Rules unchanged; scenario 4's tool indent shows as a ⚒N badge in the default view (scene 11), the indented squares appear only after expansion</td>
+</tr>
+<tr>
+<td>8</td>
+<td>merge (multi-parent convergence)</td>
+<td>◉ solid circle with a hole, lands on the base branch lane, peer merge-in thick solid lines (peer lane color); attach pointer nodes are not drawn, only the lines</td>
+</tr>
+<tr>
+<td>9</td>
+<td>cross-branch messaging (send_to_branch)</td>
+<td>dotted <code>1 5</code>, target branch color, hidden by default / shown on hover; a from_branch user node lands at the target branch tail</td>
+</tr>
+<tr>
+<td>10</td>
+<td>spawn dispatch → attach merge-back</td>
+<td>spawn edge dash-dot <code>4 2 1 2</code> (child branch color); the child branch's first node sits on the <strong>same row</strong> as the spawn node, own lane, tier=1; merge-back long dash <code>4 4</code> from the child tip back to its embed position on the main branch (the chat stream renders it as the Spawned card, display order moved ahead — see <code>ui/invariants.md</code> rule 9)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>execution-subtree default aggregation</td>
+<td>see §0: collapsed to a ⚒N badge by default, click to expand into layout, collapse reclaims rows/cols per rule ②; expansion state is per-branch independent</td>
+</tr>
+<tr>
+<td>12</td>
+<td>status &amp; badge legend</td>
+<td>see §4: status drawn on the node's own stroke, placeholder boxes abolished; cross-session spawn roots carry the ↗ corner mark</td>
+</tr>
+<tr>
+<td>13</td>
+<td>badge anchoring &amp; collision</td>
+<td>see §5: anchor at the branch's last conversation-layer node, collision shifts down one row, merged branches keep a gray read-only badge</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Send-back nodes and the switcher (semantic note, no dedicated layout scene)</strong>: a
+message_branch send-back (the child branch's answer returning to the initiator's lane
+as a user node with <code>predecessor = the initiating node</code>) forms a fork whenever the user
+also sent a message while waiting — <strong>send-back nodes participate in the <code>&lt; N/M &gt;</code>
+switcher</strong> (they are genuine alternative continuations of the initiator's dialogue;
+<code>source=from_branch</code> gets no agent_spawn-style isolation — see <code>ui/invariants.md</code>
+rule 7).</p>
+<p><strong>A sub-agent spawning again (coordinator→worker, within the depth cap)</strong>: recurse per
+scene 10 — the worker branch's dash-dot edge starts from the sub-agent's reply node and
+hangs under the sub-agent's lane structure.</p>
 <h2 id="7-render-pipeline-code-map">7. Render pipeline (code map)<a class="header-anchor" href="#7-render-pipeline-code-map">#</a></h2>
 <pre><code>web/lib/runtime-bridge/dag/
   pipeline.ts        orchestration: passes → layout → edges → nodes → badges → visibility
@@ -592,12 +585,12 @@ lane/tier/depth + an ASCII grid.</p>
 <tr>
 <td>5</td>
 <td>merge node has no dedicated shape, convergence line not colored by peer</td>
-<td>scenario 10</td>
+<td>scene 8</td>
 </tr>
 <tr>
 <td>6</td>
 <td>attach pointer still drawn as a square in the viewport</td>
-<td>scenario 10/11</td>
+<td>scenes 8/10</td>
 </tr>
 <tr>
 <td>7</td>
@@ -621,7 +614,7 @@ lane/tier/depth + an ASCII grid.</p>
 </tr>
 </tbody>
 </table>
-<div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/dag-layout-spec.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 布局视觉规范</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/branch-collaboration.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">分支协作设计文档（通信 · 服务 · 合并）</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-10</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/runtime/dag/dag-layout-spec.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">DAG 布局视觉规范</span></a><a class="pn-link pn-next" href="/docs/design/runtime/dag/branch-collaboration.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">分支协作设计文档（通信 · 服务 · 合并）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#0-first-what-to-draw-two-granularities-only-the-conversation-layer-by-default">0. First, "what to draw": two granularities, only the conversation layer by default</a>
@@ -633,12 +626,7 @@ lane/tier/depth + an ASCII grid.</p>
 <a class="" href="#3-edges-color-branch-line-style-type-orthogonal-iron-rule">3. Edges: color = branch, line style = type (orthogonal, iron rule)</a>
 <a class="" href="#4-node-legend-shape-role-stroke-status">4. Node legend: shape = role, stroke = status</a>
 <a class="" href="#5-branch-name-badge">5. Branch-name badge</a>
-<a class="" href="#6-scenarios-17-in-spechtml-812-newly-added">6. Scenarios (1–7 in spec.html, 8–12 newly added)</a>
-<a class="lvl-3" href="#scenario-8-spawn-branch-dispatch-within-this-session">Scenario 8 · spawn branch (dispatch within this session)</a>
-<a class="lvl-3" href="#scenario-9-large-execution-subtree-default-aggregation-expansion">Scenario 9 · large execution subtree (default aggregation ↔ expansion)</a>
-<a class="lvl-3" href="#scenario-10-merge-multi-parent-convergence">Scenario 10 · merge (multi-parent convergence)</a>
-<a class="lvl-3" href="#scenario-11-dispatch-merge-back-spawn-attach">Scenario 11 · dispatch merge-back (spawn + attach)</a>
-<a class="lvl-3" href="#scenario-12-hand-back-node-and-switcher">Scenario 12 · hand-back node and switcher</a>
+<a class="" href="#6-scenarios-svg-authority-in-spechtml-13-scenes">6. Scenarios (SVG authority in spec.html, 13 scenes)</a>
 <a class="" href="#7-render-pipeline-code-map">7. Render pipeline (code map)</a>
 <a class="" href="#8-known-gaps-vs-the-implementation-2026-07-10-inventory">8. Known gaps vs. the implementation (2026-07-10 inventory)</a>
 </div></aside>
