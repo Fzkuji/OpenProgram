@@ -15,7 +15,7 @@ import { useState } from "react";
 
 import { useSessionStore, type ChatToolCall } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import { FunctionIcon } from "./step-icons";
+import { WrenchIcon } from "@/components/animated-icons";
 
 // TODO(indent): Leaf rows (no children) waste 16px on a hidden .node-toggle.
 // Fix: put ✓/✗ status icon in the toggle slot instead of a separate column,
@@ -118,7 +118,7 @@ export function ToolsBlock({ tools }: { tools: ChatToolCall[] }) {
           ) : anyError ? (
             <span style={{ color: "var(--accent-red)" }}>{"✗"}</span>
           ) : (
-            <span className="inline-tree-icon" title="function"><FunctionIcon /></span>
+            <span className="inline-tree-icon" title="function"><WrenchIcon size={15} /></span>
           )}
           {"  "}
           {label}

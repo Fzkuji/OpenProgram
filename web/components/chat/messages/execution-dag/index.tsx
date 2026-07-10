@@ -21,7 +21,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import { FunctionIcon } from "../step-icons";
+import { WrenchIcon } from "@/components/animated-icons";
 
 import {
   cleanForCopy,
@@ -353,7 +353,7 @@ export function ExecutionDag({
         <span>
           {/* 头部图标与时间线同款（step-icons），运行中也不换成晃动的橙点。
               「运行中」另有 body 里的 Running… 行表达。 */}
-          <span className="inline-tree-icon" title="function"><FunctionIcon /></span>
+          <span className="inline-tree-icon" title="function"><WrenchIcon size={15} /></span>
           {headerLabel ?? text("Execution DAG", "执行 DAG")}
         </span>
         <span className="inline-tree-actions">

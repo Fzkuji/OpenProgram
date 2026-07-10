@@ -3,23 +3,28 @@
 /**
  * 执行时间线 — docs/design/ui/chat-turn-visual-spec.html 的实现。
  *
- * 一轮里连续的 thinking/tool 块（含子代理）渲染成 GPT 活动流式的
- * 时间线：外层无框，收起态是一行淡文字摘要（思考 ×N · 函数 ×N ·
- * 子代理: 名字 ›），展开后是一根竖线串起的步骤行——圆形图标压线、
- * 标题 + 单行摘要、动作悬停出现、点行展开内容。函数内部还有子调用
- * 时（@agentic_function 的 context_tree），展开是缩进一层的子时间
- * 线，同一套行样式递归，层数不限。
+ * 分工：聊天里只画**调用树结构**（行 + 层级），详情看右栏——点击函数
+ * / 子代理行调 `showDetail`，右栏 Executions 面板显示输入/输出/耗时
+ * （与 ExecutionDag、ToolsBlock 同一机制）。行尾 ⌄N 只展开子行
+ * （递归层级），不在聊天里倒 JSON。思考行例外：内容轻，点行内联展开。
  *
- * 流式进行中的一轮不走这里（assistant-bubble 平铺实时块），落定后
- * 切到本组件。
+ * 图标统一走 animated-icons 系列（Brain / Wrench / Bot），行悬停播放
+ * 动画；图标绝对定位在标题行内部，天然与文字对齐。流式进行中的一轮
+ * 不走这里（assistant-bubble 平铺实时块），落定后切到本组件。
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import type { AssistantBlock, ChatMsg } from "@/lib/session-store";
+import type { AssistantBlock, ChatMsg, DetailNode } from "@/lib/session-store";
+import { useSessionStore } from "@/lib/session-store";
 import type { TNode } from "./execution-dag/types";
 import { useTranslation } from "@/lib/i18n";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
-import { FunctionIcon, ThinkingIcon } from "./step-icons";
+import {
+  type AnimatedNavIconHandle,
+  BotIcon,
+  BrainIcon,
+  WrenchIcon,
+} from "@/components/animated-icons";
 
 /** spawn 类工具：在摘要里算"子代理"，不算普通函数调用。 */
 export const SPAWNING_TOOL_NAMES = new Set(["task", "message_branch"]);
@@ -89,106 +94,11 @@ export function ExecutionStrip({
   );
 }
 
-/** 单个步骤行：图标压线 + 标题 + 单行摘要 + 悬停动作 + 可展开内容。 */
-export function StepRow({
-  icon,
-  title,
-  note,
-  error,
-  running,
-  actions,
-  copyText,
-  children,
-  defaultOpen,
-}: {
-  icon: "thinking" | "function" | "subagent";
-  title: string;
-  note?: string;
-  error?: boolean;
-  running?: boolean;
-  actions?: React.ReactNode;
-  /** 悬停"复制"按钮复制的内容；不传则无复制按钮。 */
-  copyText?: string;
-  children?: React.ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(!!defaultOpen);
-  const [copied, setCopied] = useState(false);
-  const { text } = useTranslation();
-  const expandable = !!children;
-  function copy(e: React.MouseEvent) {
-    e.stopPropagation();
-    const done = () => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    };
-    if (copyText && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(copyText).then(done, done);
-    } else done();
-  }
-  return (
-    <div className={"tl-step" + (open ? " open" : "")}>
-      <span
-        className={
-          "tl-step-icon"
-          + (error ? " is-error" : "")
-          + (running ? " is-running" : "")
-        }
-        aria-hidden="true"
-      >
-        {running ? (
-          <span className="tl-spin" />
-        ) : error ? (
-          <svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
-        ) : icon === "thinking" ? (
-          <ThinkingIcon />
-        ) : icon === "subagent" ? (
-          <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>
-        ) : (
-          <FunctionIcon />
-        )}
-      </span>
-      <div
-        className="tl-step-head"
-        onClick={expandable ? () => setOpen((v) => !v) : undefined}
-        style={expandable ? undefined : { cursor: "default" }}
-      >
-        <span className={"tl-step-title" + (error ? " is-error" : "")}>{title}</span>
-        {note ? <span className="tl-step-note" title={note}>{note}</span> : null}
-        <span className="tl-step-act">
-          {copyText ? (
-            <button type="button" className="tl-btn" onClick={copy}>
-              {copied ? text("Copied", "已复制") : text("Copy", "复制")}
-            </button>
-          ) : null}
-          {actions}
-        </span>
-      </div>
-      {open && children ? <div className="tl-step-body">{children}</div> : null}
-    </div>
-  );
-}
-
-function firstLine(s: string): string {
-  const t = (s || "").trim();
-  const nl = t.indexOf("\n");
-  return nl > 0 ? t.slice(0, nl) : t;
-}
-
 /** 后端 ensure_ascii 序列化出的 \\uXXXX 转义还原成真实字符。 */
 function decodeEscapes(s: string): string {
   if (!s.includes("\\u")) return s;
   return s.replace(/\\u([0-9a-fA-F]{4})/g,
     (_, h) => String.fromCharCode(parseInt(h, 16)));
-}
-
-/** 尽力美化：能 JSON.parse 就重新 stringify（真实字符 + 缩进）。 */
-function prettyMaybeJson(s: string): string {
-  try {
-    return JSON.stringify(JSON.parse(s), null, 2);
-  } catch {
-    return decodeEscapes(s);
-  }
 }
 
 function short(v: unknown, n = 90): string {
@@ -201,7 +111,130 @@ function short(v: unknown, n = 90): string {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
-/** 思考步骤。 */
+function firstLine(s: string): string {
+  const t = (s || "").trim();
+  const nl = t.indexOf("\n");
+  return nl > 0 ? t.slice(0, nl) : t;
+}
+
+/** 单个步骤行：图标锚在标题行里压竖线 + 标题 + 单行摘要 + 悬停动作。
+ *
+ *  两种点击语义（互斥）：
+ *  - `detail`：点行 → 右栏 Executions 显示详情（函数 / 子代理行）。
+ *  - `inlineBody`：点行 → 内联展开（思考行）。
+ *  `subSteps`（子调用层级）由行尾的 ⌄N 按钮展开，与点行语义无关。 */
+export function StepRow({
+  icon,
+  title,
+  note,
+  error,
+  running,
+  actions,
+  copyText,
+  detail,
+  inlineBody,
+  subSteps,
+  subCount,
+}: {
+  icon: "thinking" | "function" | "subagent";
+  title: string;
+  note?: string;
+  error?: boolean;
+  running?: boolean;
+  actions?: React.ReactNode;
+  copyText?: string;
+  detail?: DetailNode;
+  inlineBody?: React.ReactNode;
+  subSteps?: React.ReactNode;
+  subCount?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [kidsOpen, setKidsOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const { text } = useTranslation();
+  function copy(e: React.MouseEvent) {
+    e.stopPropagation();
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    };
+    if (copyText && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(copyText).then(done, done);
+    } else done();
+  }
+  function onHeadClick() {
+    if (detail) {
+      useSessionStore.getState().showDetail(detail);
+      return;
+    }
+    if (inlineBody) setOpen((v) => !v);
+  }
+  const Icon = icon === "thinking" ? BrainIcon
+    : icon === "subagent" ? BotIcon : WrenchIcon;
+  return (
+    <div className={"tl-step" + (open ? " open" : "")}>
+      <div
+        className="tl-step-head"
+        onClick={onHeadClick}
+        onMouseEnter={() => iconRef.current?.startAnimation?.()}
+        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+        style={detail || inlineBody ? undefined : { cursor: "default" }}
+        title={detail
+          ? text("Show details in the side panel", "在右栏查看详情")
+          : undefined}
+      >
+        <span
+          className={
+            "tl-step-icon"
+            + (error ? " is-error" : "")
+            + (running ? " is-running" : "")
+          }
+          aria-hidden="true"
+        >
+          {running ? (
+            <span className="tl-spin" />
+          ) : error ? (
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none"
+                 stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          ) : (
+            <Icon ref={iconRef} size={13} />
+          )}
+        </span>
+        <span className={"tl-step-title" + (error ? " is-error" : "")}>{title}</span>
+        {note ? <span className="tl-step-note" title={note}>{note}</span> : null}
+        <span className="tl-step-act">
+          {copyText ? (
+            <button type="button" className="tl-btn" onClick={copy}>
+              {copied ? text("Copied", "已复制") : text("Copy", "复制")}
+            </button>
+          ) : null}
+          {actions}
+        </span>
+        {subSteps ? (
+          <button
+            type="button"
+            className={"tl-kids-toggle" + (kidsOpen ? " open" : "")}
+            onClick={(e) => { e.stopPropagation(); setKidsOpen((v) => !v); }}
+            title={kidsOpen
+              ? text("Collapse sub-calls", "收起子调用")
+              : text("Expand sub-calls", "展开子调用")}
+          >
+            {subCount ? `${subCount}` : ""}
+            <span className="tl-kids-chev">⌄</span>
+          </button>
+        ) : null}
+      </div>
+      {open && inlineBody ? <div className="tl-step-body">{inlineBody}</div> : null}
+      {kidsOpen && subSteps ? <div className="tl-sub">{subSteps}</div> : null}
+    </div>
+  );
+}
+
+/** 思考步骤：内容轻，点行内联展开。 */
 export function ThinkingStep({ text: thinkingText }: { text: string }) {
   useMarkdownReady();
   const { text } = useTranslation();
@@ -212,16 +245,30 @@ export function ThinkingStep({ text: thinkingText }: { text: string }) {
       title={text("Thinking", "思考")}
       note={short(firstLine(thinkingText))}
       copyText={thinkingText}
-    >
-      <div
-        className="chat-text"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(thinkingText) }}
-      />
-    </StepRow>
+      inlineBody={
+        <div
+          className="chat-text"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(thinkingText) }}
+        />
+      }
+    />
   );
 }
 
-/** 普通函数调用步骤（可带 context_tree 递归子层级）。 */
+function parseParams(input?: string): Record<string, unknown> | undefined {
+  if (!input) return undefined;
+  try {
+    const v = JSON.parse(input);
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      return v as Record<string, unknown>;
+    }
+    return { input: v };
+  } catch {
+    return { input: decodeEscapes(input) };
+  }
+}
+
+/** 普通函数调用步骤：点行 → 右栏详情；子调用层级用 ⌄N 展开。 */
 export function FunctionStep({
   block,
   tree,
@@ -232,63 +279,62 @@ export function FunctionStep({
   const { text } = useTranslation();
   const isError = !!block.is_error;
   const name = block.tool || "?";
-  const copyText = JSON.stringify(
-    { tool: name, input: block.input, result: block.result }, null, 2);
   const kids = tree?.children || [];
-  const hasBody = !!block.input || block.result !== undefined || kids.length > 0;
+  const detail: DetailNode = {
+    path: `chat-tool:${block.tool_call_id || name}`,
+    name,
+    status: isError ? "error" : "completed",
+    params: parseParams(block.input),
+    output: block.result === undefined || block.result === null
+      ? undefined : decodeEscapes(String(block.result)),
+    error: isError && block.result
+      ? decodeEscapes(String(block.result)) : undefined,
+  };
   return (
     <StepRow
       icon="function"
       title={text("Function call", "函数调用")}
       note={`${name}${block.input ? " · " + short(block.input) : ""}`}
       error={isError}
-      copyText={copyText}
-    >
-      {hasBody ? (
-        <>
-          {block.input ? (
-            <div className="tl-mono">{prettyMaybeJson(block.input).slice(0, 4000)}</div>
-          ) : null}
-          {block.result !== undefined && block.result !== null && block.result !== "" ? (
-            <div className="tl-mono tl-result">
-              {decodeEscapes(String(block.result)).slice(0, 4000)}
-            </div>
-          ) : null}
-          {kids.length > 0 ? (
-            <div className="tl-sub">
-              {kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)}
-            </div>
-          ) : null}
-        </>
-      ) : null}
-    </StepRow>
+      copyText={JSON.stringify(
+        { tool: name, input: block.input, result: block.result }, null, 2)}
+      detail={detail}
+      subSteps={kids.length > 0
+        ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
+        : undefined}
+      subCount={kids.length || undefined}
+    />
   );
 }
 
-/** context_tree 节点 → 递归步骤行（函数调函数的层级）。 */
-export function TreeStep({
-  node,
-  defaultOpen,
-}: {
-  node: TNode;
-  defaultOpen?: boolean;
-}) {
+/** context_tree / caller 链节点 → 递归步骤行。点行 → 右栏详情。 */
+export function TreeStep({ node }: { node: TNode }) {
   const kids = node.children || [];
   const running = node.status === "running"
     && !(node.duration_ms || node.end_time);
   const isError = node.status === "error" || !!node.error;
   const noteParts: string[] = [];
   const params = node.params
-    ? Object.entries(node.params).filter(([k]) => k !== "runtime" && k !== "callback")
-    : [];
-  if (params.length) noteParts.push(short(Object.fromEntries(params), 70));
+    ? Object.fromEntries(Object.entries(node.params)
+        .filter(([k]) => k !== "runtime" && k !== "callback"))
+    : undefined;
+  if (params && Object.keys(params).length) noteParts.push(short(params, 70));
   if (node.duration_ms) noteParts.push(`${Math.round(node.duration_ms)}ms`);
   const outRaw = node.error || node.output;
-  // 运行中/无输出的节点 output 常是 null 或字符串 "null"——不渲染。
   const out = (outRaw === undefined || outRaw === null
     || String(outRaw).trim() === "" || String(outRaw).trim() === "null")
-    ? undefined : outRaw;
-  const hasBody = out !== undefined || kids.length > 0;
+    ? undefined : decodeEscapes(String(outRaw));
+  const detail: DetailNode = {
+    path: node.path || `chat-node:${node.name || "call"}`,
+    name: node.name || node.node_type || "call",
+    status: node.status || (isError ? "error" : "completed"),
+    params,
+    output: node.error ? undefined : out,
+    error: node.error ? decodeEscapes(String(node.error)) : undefined,
+    duration_ms: node.duration_ms,
+    node_type: node.node_type,
+    raw_reply: node.raw_reply,
+  };
   return (
     <StepRow
       icon="function"
@@ -296,32 +342,20 @@ export function TreeStep({
       note={noteParts.join(" · ")}
       error={isError}
       running={running}
-      defaultOpen={defaultOpen}
       copyText={JSON.stringify(
         { name: node.name, params: node.params, output: node.output, error: node.error },
         null, 2)}
-    >
-      {hasBody ? (
-        <>
-          {out !== undefined ? (
-            <div className={"tl-mono" + (isError ? " is-error" : "")}>
-              {decodeEscapes(String(out)).slice(0, 4000)}
-            </div>
-          ) : null}
-          {kids.length > 0 ? (
-            <div className="tl-sub">
-              {kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)}
-            </div>
-          ) : null}
-        </>
-      ) : null}
-    </StepRow>
+      detail={detail}
+      subSteps={kids.length > 0
+        ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
+        : undefined}
+      subCount={kids.length || undefined}
+    />
   );
 }
 
-/** 子代理步骤：状态在摘要位，Switch 在动作位，展开是回流预览。 */
+/** 子代理步骤：状态在摘要位，Switch/取消在动作位，点行 → 右栏详情。 */
 export function SubAgentStep({ card }: { card: ChatMsg }) {
-  useMarkdownReady();
   const { text } = useTranslation();
   const attach = card.attach || {};
   const name = (attach.label || "").trim()
@@ -354,6 +388,13 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
     if (attach.task_id) wsSend({ action: "cancel_task", task_id: attach.task_id });
   }
   const preview = card.content || "";
+  const detail: DetailNode = {
+    path: `spawn:${targetHead || card.id}`,
+    name: `${text("Sub-agent", "子代理")}: ${name}`,
+    status: status || "completed",
+    output: preview || undefined,
+    prompt: attach.prompt,
+  };
   return (
     <StepRow
       icon="subagent"
@@ -361,6 +402,7 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
       note={statusNote}
       running={running}
       error={isError}
+      detail={detail}
       actions={
         <>
           {running && attach.task_id ? (
@@ -375,13 +417,6 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
           ) : null}
         </>
       }
-    >
-      {preview ? (
-        <div
-          className="chat-text"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(preview) }}
-        />
-      ) : null}
-    </StepRow>
+    />
   );
 }
