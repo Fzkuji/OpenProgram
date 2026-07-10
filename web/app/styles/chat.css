@@ -1365,7 +1365,24 @@
 .tl-sub .tl-step-icon { left: -30px; width: 17px; height: 17px; }
 .tl-sub .tl-step-body { font-size: 12.5px; padding: 8px 12px; }
 
-/* 子调用层级常驻展开（无任何展开控件）：轮级摘要行已是折叠开关。 */
+/* 图标即子树开关：有子调用的行，点竖线上的圆图标折叠/展开。 */
+.tl-step-icon.has-kids { cursor: pointer; pointer-events: auto; }
+.tl-step-icon.has-kids:hover {
+  color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--bg-selected);
+}
+/* 折叠提示：行尾淡字 "⋯ N 步"，点击展开。 */
+.tl-fold-hint {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.tl-fold-hint:hover { background: var(--bg-hover); color: var(--text-secondary); }
 /* 动作钉在行尾：note 为空时也不往左漂。 */
 .tl-step-act { margin-left: auto; }
 

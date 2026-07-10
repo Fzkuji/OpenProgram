@@ -122,8 +122,9 @@ function firstLine(s: string): string {
  *  两种点击语义（互斥）：
  *  - `detail`：点行 → 右栏 Executions 显示详情（函数 / 子代理行）。
  *  - `inlineBody`：点行 → 内联展开（思考行）。
- *  `subSteps`（子调用层级）**常驻展开**：轮级摘要行已是折叠开关，
- *  树一旦展开就完整可见，行上不放任何展开控件（用户裁决：别加箭头）。 */
+ *  `subSteps`（子调用层级）默认展开；**图标即开关**——点竖线上的圆
+ *  图标折叠/展开子树（用户裁决：不加箭头），折叠时行尾出现
+ *  "⋯ N 步" 淡字提示，点它也能展开。 */
 export function StepRow({
   icon,
   title,
@@ -135,6 +136,7 @@ export function StepRow({
   detail,
   inlineBody,
   subSteps,
+  subCount,
 }: {
   icon: "thinking" | "function" | "subagent";
   title: string;
@@ -146,8 +148,10 @@ export function StepRow({
   detail?: DetailNode;
   inlineBody?: React.ReactNode;
   subSteps?: React.ReactNode;
+  subCount?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [kidsOpen, setKidsOpen] = useState(true);
   const [copied, setCopied] = useState(false);
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   const { text } = useTranslation();
@@ -184,7 +188,16 @@ export function StepRow({
             "tl-step-icon"
             + (error ? " is-error" : "")
             + (running ? " is-running" : "")
+            + (subSteps ? " has-kids" : "")
           }
+          onClick={subSteps
+            ? (e) => { e.stopPropagation(); setKidsOpen((v) => !v); }
+            : undefined}
+          title={subSteps
+            ? (kidsOpen
+                ? text("Collapse sub-calls", "收起子调用")
+                : text("Expand sub-calls", "展开子调用"))
+            : undefined}
           aria-hidden="true"
         >
           {running ? (
@@ -201,6 +214,15 @@ export function StepRow({
         </span>
         <span className={"tl-step-title" + (error ? " is-error" : "")}>{title}</span>
         {note ? <span className="tl-step-note" title={note}>{note}</span> : null}
+        {subSteps && !kidsOpen ? (
+          <button
+            type="button"
+            className="tl-fold-hint"
+            onClick={(e) => { e.stopPropagation(); setKidsOpen(true); }}
+          >
+            {`⋯ ${subCount || ""} ${text("steps", "步")}`.replace("  ", " ")}
+          </button>
+        ) : null}
         <span className="tl-step-act">
           {copyText ? (
             <button type="button" className="tl-btn" onClick={copy}>
@@ -211,7 +233,7 @@ export function StepRow({
         </span>
       </div>
       {open && inlineBody ? <div className="tl-step-body">{inlineBody}</div> : null}
-      {subSteps ? <div className="tl-sub">{subSteps}</div> : null}
+      {kidsOpen && subSteps ? <div className="tl-sub">{subSteps}</div> : null}
     </div>
   );
 }
@@ -284,6 +306,7 @@ export function FunctionStep({
       subSteps={kids.length > 0
         ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
         : undefined}
+      subCount={kids.length || undefined}
     />
   );
 }
@@ -330,6 +353,7 @@ export function TreeStep({ node }: { node: TNode }) {
       subSteps={kids.length > 0
         ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
         : undefined}
+      subCount={kids.length || undefined}
     />
   );
 }
