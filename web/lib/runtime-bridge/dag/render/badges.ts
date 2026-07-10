@@ -37,21 +37,12 @@ export function drawBadges(
 ): void {
   const rows =
     (sessionId && HGW._branchesByConv && HGW._branchesByConv[sessionId]) || [];
-  // list_branches only returns ACTIVE branches — a merged branch keeps its
-  // lane in the graph but drops out of the rows, so its name vanished from
-  // the DAG entirely. Union in the names the graph builder stamps on merged
-  // branch anchors (label-only: no checkout click), deduped by name against
-  // the live rows.
-  const liveNames = new Set(rows.map((b) => b.name).filter(Boolean));
-  const merged: { head_msg_id: string; name: string; _labelOnly: true }[] = [];
-  Object.keys(tree.byId).forEach((id) => {
-    const bn = (tree.byId[id] as { branch_name?: string | null }).branch_name;
-    if (bn && !liveNames.has(bn)) merged.push({ head_msg_id: id, name: bn, _labelOnly: true });
-  });
-  const all = [...rows, ...merged];
-  if (!all.length) return;
+  // Badges come ONLY from list_branches' active rows. Merging erases the
+  // badge (git semantics) — a merged branch's name lives on in the merge
+  // node's tooltip, not as a lane pill (dag-rendering.md §5).
+  if (!rows.length) return;
   const tagG = _svg("g", { class: "history-branch-tags" });
-  all.forEach((b) => {
+  rows.forEach((b) => {
     const hid = b.head_msg_id as string | undefined;
     if (!hid) return;
     const entry = tree.byId[hid];
@@ -74,8 +65,7 @@ export function drawBadges(
     });
     const p = pos(node);
     const label = (b.name as string) || hid.slice(0, 8);
-    const isActive = !!(b as { active?: boolean }).active;
-    const labelOnly = !!(b as { _labelOnly?: boolean })._labelOnly;
+    const isActive = !!b.active;
     const dy = 28;
     const color = _branchColor(node, stableLeafOfNode);
     const tg = _svg("g", {
@@ -83,8 +73,7 @@ export function drawBadges(
       transform: "translate(" + p.x + "," + (p.y + dy) + ")",
       "data-head": hid,
     });
-    (tg as SVGGraphicsElement).style.cursor =
-      isActive || labelOnly ? "default" : "pointer";
+    (tg as SVGGraphicsElement).style.cursor = isActive ? "default" : "pointer";
     // 背景宽 = 实测文字宽 + 左右各 6px 内边距，下限 40。
     const bw = Math.max(Math.ceil(_textWidth(label)) + 12, 40);
     const bh = 18;
@@ -114,7 +103,7 @@ export function drawBadges(
     });
     text.textContent = label;
     tg.appendChild(text);
-    if (!isActive && !labelOnly) {
+    if (!isActive) {
       tg.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {

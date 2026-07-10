@@ -43,20 +43,6 @@ def build_session_graph(
     # label which branch is which. Includes merged branches (unlike
     # list_branches, which only returns live tips). Unnamed branches
     # (no `name`) get no label.
-    # Named branches from the session meta — INCLUDING merged ones, which
-    # list_branches drops but whose lanes stay in the graph. The frontend
-    # badge renderer unions these with the live rows so merged branches
-    # keep their name label. Keys are branch anchor node ids.
-    branch_names: dict[str, str] = {}
-    try:
-        sess = db.get_session(session_id) or {}
-        for anchor_id, info in (sess.get("branches") or {}).items():
-            name = (info or {}).get("name")
-            if name:
-                branch_names[anchor_id] = name
-    except Exception:
-        pass
-
     caller_map: dict[str, str] = {}
     nodes = []
     try:
@@ -108,7 +94,6 @@ def build_session_graph(
             "attach_ref": aref,
             "attach_manual": amanual,
             "attach_label": _extract_attach_label(m),
-            "branch_name": branch_names.get(mid),
             "attach_source_commit_id": asrc_commit,
             "attach_embed_count": aembed_n,
             "attach_embed_tokens": aembed_tok,
