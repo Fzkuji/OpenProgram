@@ -222,6 +222,9 @@ export interface ChatMsg {
    *  tool call → Spawned card → … → final text. Populated by
    *  conv-mapper; rows living here are skipped at the top level. */
   attachCards?: ChatMsg[];
+  /** caller 链折出来的调用树（agent 调函数的层级，TNode 形状）：
+   *  时间线的 FunctionStep 按工具名 FIFO 认领并递归渲染。 */
+  callRoots?: Array<Record<string, unknown>>;
   /** Ordered LLM blocks (thinking / text / tool) in the order the
    *  model emitted them. When present, the assistant bubble renders
    *  block-by-block so tool cards / RuntimeBlocks land at the exact

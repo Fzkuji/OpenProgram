@@ -148,7 +148,44 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
   // child immediately after its parent assistant in the chain, so by
   // the time we see the child, the parent is already in `out`.
   const assistantById = new Map<string, ChatMsg>();
+  // ── caller 链 → 调用树（agent 调函数的层级结构） ──
+  // agent 调用的函数执行持久化为一串 role=tool 行（gui_agent →
+  // gui_step → … → LLM leaf），靠 caller 挂在发起回复上。把它们折成
+  // TNode 形状的树喂给时间线（FunctionStep 递归渲染），这些行本身
+  // 不再作为顶层消息渲染。
+  const rawById = new Map<string, LegacyMsg>();
+  messages.forEach((m) => { if (m.id) rawById.set(m.id, m); });
+  const callerKids = new Map<string, LegacyMsg[]>();
+  const inCallTree = new Set<string>();
+  messages.forEach((m) => {
+    const caller = (m as { caller?: string }).caller;
+    if (!caller || caller === "ROOT" || !m.id) return;
+    const parent = rawById.get(caller);
+    if (!parent) return;
+    const isToolRow = m.role === "tool" && !!m.function;
+    const isLlmLeaf = m.role === "assistant" && parent.role === "tool";
+    if (!isToolRow && !isLlmLeaf) return;
+    const arr = callerKids.get(caller);
+    if (arr) arr.push(m); else callerKids.set(caller, [m]);
+    inCallTree.add(m.id);
+  });
+  function toCallNode(m: LegacyMsg): Record<string, unknown> {
+    const kids = (callerKids.get(m.id || "") || []).map(toCallNode);
+    const content = typeof m.content === "string" ? m.content : undefined;
+    const isErr = m.status === "error"
+      || (m as { is_error?: boolean }).is_error === true;
+    return {
+      name: m.role === "assistant" ? "LLM" : (m.function || "call"),
+      status: m.status,
+      output: content,
+      error: isErr ? (content || "error") : undefined,
+      duration_ms: (m as { duration_ms?: number }).duration_ms,
+      children: kids.length ? kids : undefined,
+    };
+  }
   messages.forEach((m, i) => {
+    // caller 链上的执行行已折进所属回复的调用树，不再顶层渲染。
+    if (m.id && inCallTree.has(m.id)) return;
     // streaming-resume: a ``type: "status"`` row with display=runtime
     // is the runner's persisted reply (placeholder when running,
     // finalized when done). Either way it must render — the status
@@ -308,6 +345,11 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
           parent.attachCards = [...(parent.attachCards ?? []), asstMsg];
           return;
         }
+      }
+      const callRootRows = (callerKids.get(id) || [])
+        .filter((k) => k.role === "tool" && !!k.function);
+      if (callRootRows.length) {
+        asstMsg.callRoots = callRootRows.map(toCallNode);
       }
       out.push(asstMsg);
       assistantById.set(id, asstMsg);

@@ -175,9 +175,25 @@ function firstLine(s: string): string {
   return nl > 0 ? t.slice(0, nl) : t;
 }
 
+/** 后端 ensure_ascii 序列化出的 \\uXXXX 转义还原成真实字符。 */
+function decodeEscapes(s: string): string {
+  if (!s.includes("\\u")) return s;
+  return s.replace(/\\u([0-9a-fA-F]{4})/g,
+    (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
+/** 尽力美化：能 JSON.parse 就重新 stringify（真实字符 + 缩进）。 */
+function prettyMaybeJson(s: string): string {
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return decodeEscapes(s);
+  }
+}
+
 function short(v: unknown, n = 90): string {
   let s: string;
-  if (typeof v === "string") s = v;
+  if (typeof v === "string") s = decodeEscapes(v);
   else {
     try { s = JSON.stringify(v); } catch { s = String(v); }
   }
@@ -231,10 +247,12 @@ export function FunctionStep({
       {hasBody ? (
         <>
           {block.input ? (
-            <div className="tl-mono">{short(block.input, 4000)}</div>
+            <div className="tl-mono">{prettyMaybeJson(block.input).slice(0, 4000)}</div>
           ) : null}
           {block.result !== undefined && block.result !== null && block.result !== "" ? (
-            <div className="tl-mono tl-result">{short(String(block.result), 4000)}</div>
+            <div className="tl-mono tl-result">
+              {decodeEscapes(String(block.result)).slice(0, 4000)}
+            </div>
           ) : null}
           {kids.length > 0 ? (
             <div className="tl-sub">
@@ -287,7 +305,7 @@ export function TreeStep({
         <>
           {out !== undefined ? (
             <div className={"tl-mono" + (isError ? " is-error" : "")}>
-              {short(out, 4000)}
+              {decodeEscapes(String(out)).slice(0, 4000)}
             </div>
           ) : null}
           {kids.length > 0 ? (

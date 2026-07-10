@@ -602,6 +602,39 @@ async def handle_load_session(ws, cmd: dict):
                     enriched["attach"] = attach_dict
             shown.append(enriched)
 
+        # caller 链执行行：agent 调函数的层级树（gui_agent → gui_step →
+        # … → LLM 叶子）不在线性对话链上，靠 caller 挂在链上的回复。把
+        # 这些行补进 payload——前端 conv-mapper 把它们折成调用树喂给时
+        # 间线渲染，不作为顶层消息显示。spawn 分支根（role=user）和
+        # attach 指针（父是 assistant）天然不匹配，不会被带进来。
+        _chain_ids = {m.get("id") for m in chain}
+        _kids_by_caller: dict = {}
+        for _m in all_msgs:
+            _c = _m.get("caller")
+            if _c and _c != "ROOT":
+                _kids_by_caller.setdefault(_c, []).append(_m)
+
+        def _collect_exec_rows(mid, acc):
+            parent = by_id_all.get(mid) or {}
+            for _k in _kids_by_caller.get(mid, []):
+                _is_tool = _k.get("role") == "tool" and _k.get("function")
+                _is_leaf = (
+                    _k.get("role") == "assistant"
+                    and parent.get("role") == "tool"
+                )
+                if not (_is_tool or _is_leaf):
+                    continue
+                if _k.get("id") in _chain_ids:
+                    continue
+                acc.append(_k)
+                _collect_exec_rows(_k.get("id"), acc)
+
+        _exec_rows: list = []
+        for _m in chain:
+            if _m.get("role") == "assistant":
+                _collect_exec_rows(_m.get("id"), _exec_rows)
+        shown.extend(_exec_rows)
+
         tree_data = {}  # tree Context retired — execution trace lives in SessionDB DAG nodes
         from openprogram.webui.graph_builder import build_session_graph
         graph = build_session_graph(conv["id"], head)

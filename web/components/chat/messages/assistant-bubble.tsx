@@ -334,6 +334,9 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                 // thinking → 思考行；spawn 调用 → 子代理行；agentic 工具
                 // → 函数行 + context_tree 递归子层级；普通工具 → 函数行。
                 const steps: React.ReactNode[] = [];
+                const callRootsFifo = [
+                  ...((msg.callRoots as unknown as TNode[] | undefined) ?? []),
+                ];
                 seg.items.forEach(({ b, i }) => {
                   if (b.type === "thinking") {
                     steps.push(<ThinkingStep key={`thk_${i}`} text={b.text || ""} />);
@@ -356,6 +359,11 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                       (b.tool_call_id && runtimeByToolId.get(b.tool_call_id))
                       || fifo.shift();
                     tree = (rc?.contextTree as TNode | undefined) || null;
+                  }
+                  if (!tree && callRootsFifo.length) {
+                    // caller 链折出来的调用树：按工具名 FIFO 认领。
+                    const ci = callRootsFifo.findIndex((r) => r.name === tname);
+                    if (ci >= 0) tree = callRootsFifo.splice(ci, 1)[0];
                   }
                   steps.push(<FunctionStep key={`fn_${i}`} block={b} tree={tree} />);
                 });
