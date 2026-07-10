@@ -1217,30 +1217,33 @@
   font-size: 12px;
 }
 
-/* 执行摘要条：一轮里连续的 thinking/tool 块折成一条细条（对话层常驻、
-   执行痕迹默认收起）。比 inline-tree 更矮更淡——它是过程的索引，不是
-   内容本身。展开后内部就是常规的 inline-tree 块序列。 */
-.exec-strip { margin: 8px 0 4px; }
+/* 执行过程容器：一轮里连续的 thinking/tool 块 + Spawned 行收进一个
+   与 inline-tree 同级观感的卡（对话层常驻、执行痕迹默认收起）。头部
+   是这轮过程的摘要（正常字号，撑得住"整轮内容"的分量）；展开后内部
+   块被扁平化成细行——容器有框，行没有框，轻重关系是"壳厚里轻"。 */
+.exec-strip {
+  margin: 8px 0 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
 .exec-strip-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 4px 10px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  color: var(--text-muted);
+  padding: 6px 10px;
+  border: none;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
   user-select: none;
   text-align: left;
 }
-.exec-strip-bar:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
+.exec-strip-bar:hover { background: var(--bg-selected); }
 .exec-strip-gear { opacity: 0.7; }
 .exec-strip-label {
   flex: 1;
@@ -1249,15 +1252,33 @@
   white-space: nowrap;
 }
 .exec-strip-chevron {
-  font-size: 11px;
+  font-size: 12px;
+  color: var(--text-secondary);
   transition: transform var(--transition);
 }
 .exec-strip-chevron.open { transform: rotate(90deg); }
-.exec-strip-body {
-  margin-top: 2px;
-  padding-left: 10px;
-  border-left: 2px solid var(--border-light);
+.exec-strip-body { padding: 2px 8px 6px; }
+
+/* 展开后的内部块扁平化：去掉每块自己的厚框/底色，收紧间距——外壳
+   已经是卡了，行再各带一个框就头重脚轻。 */
+.exec-strip-body .inline-tree {
+  border: none;
+  background: transparent;
+  margin: 0;
 }
+.exec-strip-body .inline-tree-header {
+  background: transparent;
+  padding: 4px 2px;
+  font-size: 13px;
+}
+.exec-strip-body .inline-tree-header:hover { background: var(--bg-hover); }
+.exec-strip-body .attach-row { margin: 0; }
+.exec-strip-body .attach-card {
+  border: none;
+  background: transparent;
+  margin: 0;
+}
+.exec-strip-body .attach-card .attach-card-header { padding: 4px 2px; }
 
 /* 一行态的 attach 卡：头部即全部，展开才长出预览。 */
 .attach-card[data-expanded="0"] .attach-card-header { border-bottom: none; }

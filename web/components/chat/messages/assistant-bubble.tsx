@@ -300,34 +300,46 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   rendered.push(renderBlock(seg.b, seg.i, fifo));
                   return;
                 }
-                const blockNodes = seg.items.map(({ b, i }) =>
-                  renderBlock(b, i, fifo));
+                // 段内交错：块按序渲染，spawn 调用块后面紧跟它的
+                // Spawned 行——在容器内部也保持"在哪调用画在哪"。
+                const cardFifo = seg.cards.slice();
+                const blockNodes: React.ReactNode[] = [];
+                seg.items.forEach(({ b, i }) => {
+                  blockNodes.push(renderBlock(b, i, fifo));
+                  if (b.type === "tool" && SPAWNING_TOOL_NAMES.has(b.tool || "")
+                      && cardFifo.length > 0) {
+                    const card = cardFifo.shift()!;
+                    blockNodes.push(
+                      <div
+                        key={`attach_${card.id}`}
+                        className="attach-row"
+                        data-msg-id={card.id}
+                      >
+                        <AttachCard msg={card} />
+                      </div>,
+                    );
+                  }
+                });
                 if (streaming) {
-                  // 进行中：平铺 + 卡片跟在段尾。
+                  // 进行中：平铺，实时可见。
                   rendered.push(
                     <div key={`seg_${si}`}>{blockNodes}</div>,
                   );
                 } else {
+                  const spawnNames = seg.cards.map((c) =>
+                    (c.attach?.label || "").trim()
+                    || (c.attach?.head_id || "").slice(0, 8)
+                    || text("sub-agent", "子代理"));
                   rendered.push(
                     <ExecutionStrip
                       key={`seg_${si}`}
-                      label={execStripLabel(seg.items.map(({ b }) => b), text)}
+                      label={execStripLabel(
+                        seg.items.map(({ b }) => b), spawnNames, text)}
                     >
                       {blockNodes}
                     </ExecutionStrip>,
                   );
                 }
-                seg.cards.forEach((card) => {
-                  rendered.push(
-                    <div
-                      key={`attach_${card.id}`}
-                      className="attach-row"
-                      data-msg-id={card.id}
-                    >
-                      <AttachCard msg={card} />
-                    </div>,
-                  );
-                });
               });
               if (!hasTextBlock && hasContent) {
                 rendered.push(
