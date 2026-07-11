@@ -299,6 +299,8 @@
      so clicking an execution strip appears to grow upward. Pinning is
      handled by useChatAreaStick; disable the browser's own anchoring. */
   overflow-anchor: none;
+  /* 让 minimap 能用 cqw 算出聊天区实际宽度，贴到右缘分割线。 */
+  container-type: inline-size;
 }
 /* Lock scrolling while the welcome panel is up. Driven by the React
    portal host: `<WelcomeScreen />` renders a child into `#welcome-mount`
@@ -1336,7 +1338,7 @@
 }
 .tl-btn:hover { background: var(--bg-hover); color: var(--text-bright, #f8f8f6); }
 .tl-step-body {
-  margin: 6px 0 6px 8px;
+  margin: 4px 0 6px; /* 与标题条同宽对齐（不再左缩进） */
   padding: 10px 14px;
   background: var(--bg-secondary);
   border-radius: 8px;
@@ -1383,10 +1385,11 @@
 .tl-step-icon.k-function { color: var(--accent-orange, #d19a66); }
 .tl-step-icon.k-llm { color: var(--accent-cyan, #3bc9db); }
 .tl-step-icon.k-subagent { color: var(--accent-green, #18a96b); }
-/* 可展开的行：图标 hover 出一圈（更大、以图标为圆心），提示可点。 */
+/* 可展开的行：图标 hover 出一圈（更大、以图标为圆心），提示可点。
+   圈色取图标自身颜色的淡化版（currentColor 即 k-* 配色）。 */
 .tl-step-icon.is-toggleable { cursor: pointer; pointer-events: auto; }
 .tl-step-head:hover .tl-step-icon.is-toggleable {
-  box-shadow: 0 0 0 3px var(--bg-selected);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
 }
 /* 折叠提示：行尾淡字 "⋯ N 步"（状态提示；点行空白即展开）。 */
 .tl-fold-hint {
@@ -1423,7 +1426,9 @@
 }
 .msg-minimap {
   position: absolute;
-  right: 4px;
+  /* 锚点在 800px 消息列里；用容器宽(100cqw = chat-area)把自己推到
+     聊天区右缘（右侧栏分割线），而不是贴着用户头像。 */
+  right: calc((100% - 100cqw) / 2 + 8px);
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
