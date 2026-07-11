@@ -124,7 +124,7 @@ export function ExecutionStrip({
 }
 
 /** 后端 ensure_ascii 序列化出的 \\uXXXX 转义还原成真实字符。 */
-function decodeEscapes(s: string): string {
+export function decodeEscapes(s: string): string {
   if (!s.includes("\\u")) return s;
   return s.replace(/\\u([0-9a-fA-F]{4})/g,
     (_, h) => String.fromCharCode(parseInt(h, 16)));

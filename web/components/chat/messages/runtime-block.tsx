@@ -21,7 +21,7 @@ import { showToast } from "@/lib/format-utils/toast";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import type { TNode } from "./execution-dag/types";
-import { StepRow, TreeStep } from "./execution-strip";
+import { StepRow, TreeStep, decodeEscapes } from "./execution-strip";
 import { ActionButton, SVG } from "./message-actions";
 import { useMarkdownReady } from "./markdown";
 
@@ -207,8 +207,14 @@ export function RuntimeBlock({
     wsSend({ action: "retry_function", session_id: sessionId, function: fnName });
   }
 
-  function copyTree() {
-    const payload = JSON.stringify(tree ?? { function: fnName }, null, 2);
+  // 复制 = 根调用的返回值（用户关心的是结果，不是内部树结构）；
+  // 还没有输出时退回 "函数名 + 入参"。
+  function copyResult() {
+    const root = tree as TNode | null;
+    const out = root?.error ?? root?.output;
+    const payload = out !== undefined && out !== null && String(out).trim() !== ""
+      ? decodeEscapes(String(out))
+      : JSON.stringify({ function: fnName, params: root?.params }, null, 2);
     const done = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
@@ -216,6 +222,15 @@ export function RuntimeBlock({
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(payload).then(done, done);
     } else done();
+  }
+
+  // 修改：把当初的调用命令回填到输入框，用户改完直接发。
+  function editCall() {
+    const root = tree as TNode | null;
+    const cmd = (msg.content || "").trim()
+      || `run ${fnName}(${Object.entries(root?.params || {})
+           .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ")})`;
+    useSessionStore.getState().setComposerInput(cmd);
   }
 
   const ts = msg.timestamp
@@ -235,16 +250,23 @@ export function RuntimeBlock({
         ) : null}
         <ActionButton
           icon={copied ? SVG.check : SVG.copy}
-          title={text("Copy", "复制")}
+          title={text("Copy result", "复制结果")}
           extraClass={copied ? "is-copied" : undefined}
-          onClick={copyTree}
+          onClick={copyResult}
         />
         {!streaming && fnName ? (
-          <ActionButton
-            icon={SVG.retry}
-            title={text("Retry", "重试")}
-            onClick={doRetry}
-          />
+          <>
+            <ActionButton
+              icon={SVG.retry}
+              title={text("Retry", "重试")}
+              onClick={doRetry}
+            />
+            <ActionButton
+              icon={SVG.pencil}
+              title={text("Edit and re-run", "修改后重新运行")}
+              onClick={editCall}
+            />
+          </>
         ) : null}
         {hasSiblings ? (
           <span className="attempt-nav" onClick={(e) => e.stopPropagation()}>

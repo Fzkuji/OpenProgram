@@ -1334,7 +1334,9 @@
   color: var(--text-muted);
   transition: opacity var(--transition);
 }
-.tl-step:hover > .tl-step-head .tl-step-act { opacity: 1; }
+/* 只在鼠标压着的那一行显示动作（:hover 挂 head 而非 .tl-step——
+   嵌套树里子行悬停会同时命中所有祖先 .tl-step，一排 Copy 全冒出来）。 */
+.tl-step-head:hover .tl-step-act { opacity: 1; }
 .tl-btn {
   border: 1px solid var(--border-light);
   border-radius: 6px;
@@ -1402,7 +1404,12 @@
 }
 /* 手动函数运行的底部操作行：与聊天消息 footer 同款（时间戳 + 图标，
    悬停显现），左缘对齐步骤行的标题文字列。 */
-.runtime-actions-footer { padding-left: 48px; margin-top: 6px; }
+.runtime-actions-footer {
+  justify-content: flex-start; /* 与 assistant 消息一致：底部靠左 */
+  padding-left: 48px;
+  margin-top: 6px;
+}
+.runtime-actions-footer .message-timestamp { padding-left: 0; }
 .runtime-card-host:hover .message-actions,
 .runtime-actions-footer .message-actions:focus-within { opacity: 1; }
 
