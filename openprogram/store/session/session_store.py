@@ -388,10 +388,11 @@ class SessionStore:
             entry = {"id": session_id, "status": "idle", "pinned": False,
                      "archived": False, "unread": False}
             self._index[session_id] = entry
+        # updated_at 只由调用方显式传入（追加消息的路径）——改名/置顶/
+        # 标已读不算"最新一次聊天"，不许把会话顶到侧栏最上。
         for k, v in fields.items():
             if k in self._INDEX_FIELDS or k == "preview":
                 entry[k] = v
-        entry["updated_at"] = time.time()
 
     # Internals
 
@@ -772,12 +773,14 @@ class SessionStore:
         # branch until turn end.
         if not caller:
             self._persist_meta(git, idx)
-        # Update registry preview on user messages (debounced to disk).
+        # Registry: every appended message bumps updated_at（最新一次聊天
+        # 时间，侧栏排序键）；user 消息顺带刷新 preview（debounced to disk）。
+        fields: dict[str, Any] = {"updated_at": time.time()}
         if node.role == "user" and node.output:
             text = (node.output or "").strip().replace("\n", " ")
-            preview = (text[:77] + "…") if len(text) > 80 else text
-            self._update_index_entry(session_id, preview=preview)
-            self._schedule_index_flush()
+            fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
+        self._update_index_entry(session_id, **fields)
+        self._schedule_index_flush()
 
     def append_messages(self, session_id: str, msgs: list[dict[str, Any]]) -> None:
         for m in msgs:
