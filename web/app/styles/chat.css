@@ -700,174 +700,6 @@
 .message-content th, .message-content td { border: 1px solid var(--border); padding: 4px 8px; }
 .message-content th { background: var(--bg-secondary); }
 
-/* ===== Runtime Block (function execution card) ===== */
-.runtime-block {
-  /* Left/right margin matches where .message-content starts —
-     .message has 24px horizontal padding plus .message-content adds
-     another 36px (the 28px avatar + 8px header gap), so chat text
-     begins 60px from the chat-area edge. Mirror that here so the
-     runtime block aligns with the conversation text column, not
-     with the message's avatar column. */
-  margin: 20px 60px;
-  border: 1px solid var(--border);
-  border-left: 3px solid #a08a6c;
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  animation: msgAppear 0.3s ease forwards;
-  overflow: hidden;
-}
-.runtime-block + .message, .message + .runtime-block { margin-top: 20px; }
-/* When a RuntimeBlock is nested INSIDE an assistant bubble
- * (LLM-initiated agentic call), drop the outer margins so it sits
- * tight against the surrounding text and reads as part of the same
- * card, not a separate floating element. */
-.assistant-runtime-children .runtime-block {
-  margin: 12px 0 0 0;
-}
-.runtime-block-header {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 10px 36px 10px 12px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 14px;
-  color: var(--text-bright);
-  cursor: pointer;
-  user-select: none;
-  flex-wrap: nowrap;
-  overflow: hidden;
-  min-width: 0;
-}
-.runtime-block-header:hover { background: var(--bg-hover); }
-.runtime-block.collapsed .runtime-block-header { border-bottom: none; }
-.runtime-block.collapsed .runtime-block-body,
-.runtime-block.collapsed .runtime-block-footer { display: none; }
-.runtime-icon {
-  color: var(--text-secondary);
-  font-size: 14px;
-  flex-shrink: 0;
-  width: 18px;
-  text-align: center;
-  transition: transform var(--transition);
-  display: inline-block;
-  transform: rotate(90deg);
-}
-.runtime-block.collapsed .runtime-icon { transform: rotate(0deg); }
-.runtime-block-header .runtime-result-preview { display: none; }
-.runtime-block.collapsed .runtime-block-header .runtime-result-preview {
-  /* Collapsed-state preview tail: "-> success · 1 steps · 37s".
-   * inline-flex + flex-shrink:0 so it sits on the same row as the
-   * function signature; the .runtime-func ellipsis-truncates as
-   * needed to make room. */
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-size: 14px;
-  margin-left: 8px;
-  font-weight: normal;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.runtime-func {
-  color: var(--text-bright);
-  font-weight: 600;
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.runtime-params {
-  color: var(--text-secondary);
-  font-size: 14px;
-  white-space: nowrap;
-}
-.runtime-block-body {
-  padding: 0;
-}
-.runtime-block-content {
-  margin: 10px 36px;
-}
-.runtime-block-content > * {
-  margin-left: 0;
-  padding-left: 0;
-}
-.runtime-block-body .message-content {
-  padding-left: 0;
-  padding-right: 0;
-}
-.runtime-block-content .runtime-result {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-primary);
-  word-wrap: break-word;
-}
-.runtime-return-label {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--accent-purple);
-  font-weight: 600;
-}
-.runtime-block-content .inline-tree {
-  margin: 14px 0 14px;
-}
-.runtime-output {
-  padding: 4px 32px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-primary);
-  word-wrap: break-word;
-}
-.runtime-output ul, .runtime-output ol { margin: 4px 0; padding-left: 20px; }
-.runtime-output li { margin: 2px 0; }
-.runtime-block-content .typing-indicator {
-  padding-left: 32px;
-  margin-top: 6px;
-}
-.runtime-block-footer {
-  padding: 10px 36px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.runtime-footer-left, .runtime-footer-center, .runtime-footer-right {
-  display: flex;
-  align-items: center;
-  flex: 1;
-}
-.runtime-footer-left { justify-content: flex-start; }
-.runtime-footer-center { justify-content: center; }
-.runtime-footer-right { justify-content: flex-end; }
-.usage-footer-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-}
-.runtime-block-footer .rerun-btn,
-.runtime-block-footer .attempt-nav {
-  margin: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-.runtime-block .rerun-btn {
-  margin-top: 6px;
-}
-.runtime-block.interrupted { border-left-color: var(--text-muted); }
-.runtime-block.error { border-left-color: var(--accent-red); }
-
-/* Pending runtime block (typing indicator) */
-.runtime-block-pending .typing-indicator {
-  padding-left: 0;
-}
-
-
 .spinner {
   width: 16px;
   height: 16px;
@@ -1631,10 +1463,6 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-.message.assistant > .error-content + .rerun-btn {
-  margin-left: 36px;
-  margin-top: 4px;
-}
 
 /* Soft terminal-state badges below the chat body — interrupted and
    cancelled are not full-on errors but still mark the turn as not
@@ -2326,43 +2154,7 @@
 .inline-tree-actions {
   flex-shrink: 0;
 }
-/* Slot for Retry / attempt-nav inside the inline-tree header. */
-.inline-tree-actions .attempt-nav {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.inline-tree-actions .attempt-nav-btn {
-  -webkit-appearance: none; appearance: none;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-family: var(--font-mono);
-  padding: 1px 6px;
-  border-radius: 3px;
-  cursor: pointer;
-  line-height: 1.3;
-}
-.inline-tree-actions .attempt-nav-btn:hover:not(:disabled) {
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
-}
-.inline-tree-actions .attempt-nav-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.inline-tree-actions .attempt-nav-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  padding: 0 2px;
-}
-/* Buttons inside .inline-tree-actions — match each other so Retry
- * and Copy don't read as two different control families. Same
- * background / border / radius / font, identical to .inline-tree-copy
- * so the row reads as a uniform action strip. */
-.inline-tree-actions .rerun-btn,
+/* Copy button inside .inline-tree-actions — quiet mono chip. */
 .inline-tree-actions .inline-tree-copy {
   background: transparent;
   border: 1px solid var(--border);
@@ -2376,7 +2168,6 @@
   cursor: pointer;
   transition: all var(--transition);
 }
-.inline-tree-actions .rerun-btn:hover,
 .inline-tree-actions .inline-tree-copy:hover {
   background: var(--bg-hover);
   color: var(--text-primary);

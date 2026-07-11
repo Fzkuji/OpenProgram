@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 
 import type { AssistantBlock, ChatMsg, DetailNode } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
-import type { TNode } from "./execution-dag/types";
+import type { TNode } from "./tree-types";
 import { useTranslation } from "@/lib/i18n";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import {

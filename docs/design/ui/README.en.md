@@ -1,10 +1,12 @@
 # Web UI
 
-Web UI surfaces — the surface system, indicator dots, attachment handling, and GUI-agent context flow.
+Web UI surfaces — the surface system, indicator dots, attachment handling, chat-turn visuals, and GUI-agent context flow.
 
 - [`invariants.md`](invariants.en.md) — cross-module UI invariants (walk the list before touching related modules)
-- [`attachment-handling.html`](attachment-handling.html)
-- [`attachment-handling.md`](attachment-handling.md)
-- [`gui-agent-context.md`](gui-agent-context.md)
-- [`indicator-dots.md`](indicator-dots.md)
-- [`surface-system.md`](surface-system.md)
+- [`chat-turn-visual-spec.html`](chat-turn-visual-spec.html) — chat-turn visual spec (execution timeline + manual function runs + message minimap; interactive demo, single source of truth)
+- [`interaction-feedback.md`](interaction-feedback.md) — the 0ms interaction-feedback rule (optimistic state first, data backfills)
+- [`composer-interaction-modes.md`](composer-interaction-modes.en.md) — composer interaction modes
+- [`attachment-handling.md`](attachment-handling.en.md) — attachment handling ([rendered](attachment-handling.html))
+- [`gui-agent-context.md`](gui-agent-context.en.md) — GUI agent context flow
+- [`indicator-dots.md`](indicator-dots.en.md) — indicator dots
+- [`surface-system.md`](surface-system.en.md) — surface system

@@ -116,6 +116,9 @@ supporting notes / investigations that should not override it.
 
 | Doc | Topic |
 |---|---|
+| [`ui/invariants.md`](ui/invariants.en.md) | Cross-module UI invariants |
+| [`ui/chat-turn-visual-spec.html`](ui/chat-turn-visual-spec.html) | Chat-turn visual spec (execution timeline + manual runs + message minimap) |
+| [`ui/interaction-feedback.md`](ui/interaction-feedback.md) | The 0ms interaction-feedback rule |
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface system |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | Indicator dots |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | Attachment handling ([rendered](ui/attachment-handling.html)) |

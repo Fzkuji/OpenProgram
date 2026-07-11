@@ -137,68 +137,6 @@
   flex-shrink: 0; line-height: 1.3;
 }
 
-.rerun-btn {
-  -webkit-appearance: none; appearance: none;
-  padding: 0 12px; height: 28px; line-height: 28px; font-size: 12px;
-  background: var(--bg-hover); border: 1px solid var(--border); border-radius: 4px;
-  color: var(--text-secondary); cursor: pointer; font-family: var(--font-sans);
-  display: inline-flex; align-items: center; justify-content: center;
-  margin: 0 !important; box-sizing: border-box;
-}
-.rerun-btn:hover { color: var(--accent-blue); border-color: var(--accent-blue); }
-
-/* Inline retry panel in execution tree */
-.retry-icon {
-  font-size: 12px; color: var(--text-muted); cursor: pointer;
-  flex-shrink: 0; padding: 1px 6px; border-radius: 3px;
-  border: 1px solid var(--border); background: var(--bg-tertiary);
-  opacity: 0; transition: opacity 0.15s;
-}
-.node-row:hover .retry-icon { opacity: 1; }
-.retry-icon:hover { color: var(--accent-blue); border-color: var(--accent-blue); background: rgba(97,175,239,0.08); }
-
-.retry-panel {
-  margin: 4px 0 4px 36px; padding: 8px 10px;
-  background: var(--bg-tertiary); border: 1px solid var(--border);
-  border-radius: var(--radius); font-size: 12px;
-}
-.retry-field { margin-bottom: 8px; }
-.retry-field-label {
-  display: block; font-size: 12px; color: var(--accent-cyan);
-  font-family: var(--font-mono); margin-bottom: 3px; font-weight: 600;
-}
-.retry-field-group {
-  border-left: 2px solid var(--border); padding-left: 24px; margin-top: 2px;
-}
-.retry-field-input {
-  width: 100%; background: var(--bg-input); color: var(--text-primary);
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 6px 10px; font-family: var(--font-mono); font-size: 12px;
-}
-textarea.retry-field-input { min-height: 50px; max-height: 200px; resize: vertical; }
-.retry-field-input:focus { outline: none; border-color: var(--accent-blue); }
-.retry-panel-actions { display: flex; gap: 6px; margin-top: 2px; }
-.retry-panel-actions button {
-  padding: 4px 12px; font-size: 12px; border-radius: 4px; cursor: pointer;
-  border: 1px solid var(--border); font-family: var(--font-sans);
-}
-/* Retry-panel buttons: same idle-neutral / amber-on-hover philosophy
-   as the rest of the product. Was solid orange + white text — read as
-   the single loudest control on the page. The cancel button already
-   followed this pattern, the exec button was the outlier. */
-.retry-exec-btn {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--border);
-}
-.retry-exec-btn:hover {
-  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
-  color: var(--accent-orange);
-  border-color: color-mix(in srgb, var(--accent-orange) 30%, transparent);
-}
-.retry-cancel-btn { background: var(--bg-hover); color: var(--text-secondary); }
-.retry-cancel-btn:hover { color: var(--text-primary); }
-
 /* Vertical guide line column aligns with the parent ▶/▼ toggle's
  * visual center: ``.node-row`` padding-left is 6px, ``.node-toggle``
  * is 16px wide → toggle centre lives at 6 + 8 = 14px from the

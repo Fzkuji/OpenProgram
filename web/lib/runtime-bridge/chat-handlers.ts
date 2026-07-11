@@ -771,12 +771,6 @@ export function submitFollowUp(): void {
   }
 }
 
-/* ===== retry / pause-retry ======================================= */
-
-// Per-node retry is the React <ExecutionTree /> retry panel now; the
-// legacy ui.js node-detail panel still emits an onclick to this stub.
-export function rerunFromNode(): void {}
-
 /* ===== assistant message (programs-panel toast) ================== */
 
 export function addAssistantMessage(text: string): void {
@@ -830,5 +824,4 @@ W._handleSessionsList = handleSessionsList;
 W._handleRunningTask = handleRunningTask;
 W.handleChatResponse = handleChatResponse;
 W.submitFollowUp = submitFollowUp;
-W.rerunFromNode = rerunFromNode;
 W.addAssistantMessage = addAssistantMessage;

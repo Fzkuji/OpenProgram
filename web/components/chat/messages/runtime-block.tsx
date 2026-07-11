@@ -1,16 +1,18 @@
 "use client";
 
 /**
- * Function-call block — renders ANY function call (agentic
- * @agentic_function OR a regular LLM tool call surfaced via /run-style
- * runtime envelope) as a unified ``.inline-tree`` card, the same shape
- * used by ``ToolsBlock`` for regular tool calls. No outer
- * ``runtime-block`` frame, no separate "return:" preview — the
- * execution tree IS the visualisation.
+ * Manual function run — renders a fn-form///run function call as the
+ * same frameless execution timeline chat turns use
+ * (docs/design/ui/chat-turn-visual-spec.html §3): TreeStep root with
+ * the subtree open by default (the process IS the content), plus a
+ * message-style footer below the tree — timestamp + Copy(result) /
+ * Retry / Edit + the shared ``.message-nav`` version switcher.
  *
- * Header label = ``fnName(params)`` so the user immediately sees what
- * was called with what kwargs. Retry / attempt-nav move into the
- * ``inline-tree-actions`` slot so the card has one frame, not two.
+ * Fork semantics: Retry = sibling branch with unchanged params; Edit
+ * reopens the fn-form prefilled and submits as a sibling branch with
+ * edited params (fork_of_node). Old runs stay reachable via ◀ N/M ▶ —
+ * nothing is ever appended at the conversation tail. Nested renders
+ * (inside an assistant bubble) drop the footer.
  */
 import { useEffect, useRef, useState } from "react";
 
@@ -24,7 +26,7 @@ import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
-import type { TNode } from "./execution-dag/types";
+import type { TNode } from "./tree-types";
 import { StepRow, TreeStep, decodeEscapes } from "./execution-strip";
 import { ActionButton, SVG } from "./message-actions";
 import { useMarkdownReady } from "./markdown";

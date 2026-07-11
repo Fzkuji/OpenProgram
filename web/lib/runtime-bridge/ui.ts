@@ -635,16 +635,6 @@ export function showDetail(node: DetailNode): void {
     escHtml(node.expose || "io") +
     "</div></div>";
 
-  if (node.name !== "chat_session") {
-    html +=
-      '<div class="detail-section">' +
-      "<button class=\"rerun-btn\" onclick=\"rerunFromNode('" +
-      escAttr(node.path) +
-      "')\">&#8634; Modify " +
-      escHtml(node.name) +
-      "</button></div>";
-  }
-
   body.innerHTML = html;
 }
 

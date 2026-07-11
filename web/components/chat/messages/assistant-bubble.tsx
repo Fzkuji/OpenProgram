@@ -27,7 +27,7 @@ import {
   SubAgentStep,
   ThinkingStep,
 } from "./execution-strip";
-import type { TNode } from "./execution-dag/types";
+import type { TNode } from "./tree-types";
 import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";

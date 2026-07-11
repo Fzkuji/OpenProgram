@@ -1,7 +1,7 @@
 /**
  * optimisticAction — the shared 0ms-feedback helper.
  *
- * Interaction-feedback policy (docs/design/frontend/interaction-feedback.md):
+ * Interaction-feedback policy (docs/design/ui/interaction-feedback.md):
  * every click that starts something slower than ~100ms flips a visible
  * transitional state IMMEDIATELY (client-side, 0ms), real data backfills
  * when the server confirms, and a failure/timeout rolls the state back with
