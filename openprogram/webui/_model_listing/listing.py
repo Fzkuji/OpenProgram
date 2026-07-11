@@ -133,13 +133,19 @@ def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
     """
     if not provider_id or not model_id:
         return False
+    # 运行时把当前模型记成 "provider:id" 线格式（如 openai-codex:gpt-5.5），
+    # 注册表和目录都用裸 id——先剥前缀，否则查不到、按钮永远不显示。
+    if model_id.startswith(f"{provider_id}:"):
+        model_id = model_id[len(provider_id) + 1:]
     from openprogram.providers.enabled_models import ENABLED_MODELS
     m = ENABLED_MODELS.get(f"{provider_id}/{model_id}")
     if getattr(m, "api", None) not in _FAST_CAPABLE_APIS:
         return False
     from .sources import models_dev
 
-    def _has_priority(pid: str) -> bool:
+    # "fast 档"在 OpenAI 协议上叫 service_tier="priority"（priority
+    # processing）；这里查目录里该厂商的这个模型有没有这个档。
+    def _catalogue_has_fast(pid: str) -> bool:
         try:
             row = models_dev.lookup(pid, model_id) or {}
         except Exception:
@@ -149,7 +155,7 @@ def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
     # 网关（如 frontier-intelligence）转售上游模型时目录不认识网关本身；
     # 线路既然是 openai 系，就退回按上游 openai 同名模型判——openai 兼容
     # 网关对不认识的 service_tier 按惯例忽略，不会炸请求。
-    return _has_priority(provider_id) or _has_priority("openai")
+    return _catalogue_has_fast(provider_id) or _catalogue_has_fast("openai")
 
 
 def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
