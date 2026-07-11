@@ -26,6 +26,8 @@ export interface LegacyConv {
   id: string;
   title?: string;
   created_at?: number;
+  /** 最后活跃时间（追加消息即更新）；recency 排序 / 日期分桶用它。 */
+  updated_at?: number;
   channel?: string | null;
   account_id?: string | null;
   preview?: string | null;

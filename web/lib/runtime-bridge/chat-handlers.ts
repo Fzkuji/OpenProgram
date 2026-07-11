@@ -230,6 +230,8 @@ interface SessionRow {
   id: string;
   title?: string;
   created_at?: number;
+  /** 最后活跃时间（服务端每次列表都带上，权威值总是覆盖）。 */
+  updated_at?: number;
   channel?: string | null;
   account_id?: string | null;
   peer?: string | null;
@@ -264,6 +266,7 @@ export function handleSessionsList(data: SessionRow[]): void {
           title: c.title,
           messages: [],
           created_at: c.created_at,
+          updated_at: c.updated_at,
           channel: c.channel || null,
           account_id: c.account_id || null,
           peer: c.peer || null,
@@ -302,6 +305,8 @@ export function handleSessionsList(data: SessionRow[]): void {
         if (c.created_at != null && convs[c.id].created_at == null) {
           convs[c.id].created_at = c.created_at;
         }
+        // updated_at 是活跃度，服务端每次都是最新值——总是覆盖。
+        if (c.updated_at != null) convs[c.id].updated_at = c.updated_at;
         if (c.title && !convs[c.id].title) convs[c.id].title = c.title;
       }
     }

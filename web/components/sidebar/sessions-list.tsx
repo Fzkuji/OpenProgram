@@ -182,12 +182,12 @@ export function SessionsList() {
     // All sessions are shown — no filtering of empty/placeholder rows.
     if (view.status === "active") arr = arr.filter((c) => !c.archived);
     else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
-    // Last-activity window (uses created_at; swap to updated_at when the
-    // backend tracks it). "all" = no window.
+    // Last-activity window — updated_at（后端随消息追加维护），老行
+    // 无 updated_at 时退回 created_at。"all" = no window.
     if (view.lastActivity !== "all") {
       const days = view.lastActivity === "1d" ? 1 : view.lastActivity === "7d" ? 7 : 30;
       const cutoff = nowTs - days * 86400;
-      arr = arr.filter((c) => (c.created_at || 0) >= cutoff);
+      arr = arr.filter((c) => (c.updated_at || c.created_at || 0) >= cutoff);
     }
     // Project filter — each conv carries a project NAME (home-folder
     // name for ad-hoc chats), so "All projects" shows everything and a
@@ -201,14 +201,15 @@ export function SessionsList() {
       if (view.sort === "title") {
         return labelFor(a, "").localeCompare(labelFor(b, ""));
       }
-      // recency + created both order by created_at (newest first) until
-      // the backend exposes a separate last-activity timestamp.
-      // Missing created_at sorts as 0 (oldest), NOT nowTs: legacy DB rows
-      // with a null created_at would otherwise fall back to "now" and
-      // outrank a genuinely just-created session — sinking every new chat
-      // below them, off the top of the list, so its row reads as "missing"
-      // until the turn finishes and a real timestamp lands.
-      return (b.created_at || 0) - (a.created_at || 0);
+      // "created" 按创建时间；"recency" 按最后活跃（updated_at，随消息
+      // 追加更新），老行缺 updated_at 时退回 created_at。缺失时间戳一律
+      // 按 0（最旧）处理，不能退回 nowTs——否则 null 时间戳的老行会压过
+      // 刚建的会话。
+      if (view.sort === "created") {
+        return (b.created_at || 0) - (a.created_at || 0);
+      }
+      return (b.updated_at || b.created_at || 0)
+        - (a.updated_at || a.created_at || 0);
     };
     return [...arr].sort(cmp);
   })();
@@ -463,7 +464,11 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
   const rest = visible.filter((c) => !c.pinned);
   const buckets = new Map<string, Section>();
   for (const c of rest) {
-    const b = _dateBucket(c.created_at || 0, o.nowTs, o.labels, o.dateLocale);
+    // 日期分桶按最后活跃时间："Today" = 今天动过的会话，与 recency
+    // 排序一致（否则今天聊过的老会话会挂在旧日期桶里）。
+    const b = _dateBucket(
+      c.updated_at || c.created_at || 0, o.nowTs, o.labels, o.dateLocale,
+    );
     if (!buckets.has(b.key)) buckets.set(b.key, { key: b.key, label: b.label, items: [] });
     buckets.get(b.key)!.items.push(c);
   }

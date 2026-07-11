@@ -949,6 +949,7 @@ def build_sessions_list() -> list[dict]:
             "id": sid,
             "title": title or sid,
             "created_at": row.get("created_at") or 0,
+            "updated_at": row.get("updated_at") or row.get("created_at") or 0,
             "agent_id": row.get("agent_id"),
             "source": row.get("source"),
             "peer_display": row.get("peer_display"),
@@ -963,7 +964,7 @@ def build_sessions_list() -> list[dict]:
             "unread": bool(row.get("unread")),
             "project": _proj_map.get(sid, _default_proj),
         })
-    conv_list.sort(key=lambda c: c.get("created_at") or 0, reverse=True)
+    conv_list.sort(key=lambda c: c.get("updated_at") or 0, reverse=True)
     return conv_list
 
 
