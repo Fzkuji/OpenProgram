@@ -83,10 +83,21 @@ openprogram/providers/                 ← 全部进 git，运行期只读
 
 ```
 list_available_models(provider_id)
-  = 官方 /v1/models（有 key 时；Anthropic 额外逐模型拉 capabilities，probe 推断 reasoning）
+  = 该 provider 的官方源（一个 fetcher，见下）
   ⊕ models.dev（补价格/能力；无 key 时的完整兜底）
   → 内存合并，直接返回给前端渲染
 ```
+
+官方源按 provider 分派到一个 fetcher（`_model_listing/fetchers/`），每种源形态不同但**返回同一契约**：成功 → `list[dict]`（每行至少 id/name），失败 → `{"error": ...}`。
+
+| 源形态 | fetcher | 例子 |
+|---|---|---|
+| 标准 `/v1/models`（OpenAI 兼容） | `openai_compat` | deepseek、openrouter、自定义网关 |
+| Anthropic `GET /v1/models` + 逐模型 capabilities | `anthropic` | anthropic、claude-code、minimax |
+| 账户级私有端点（`/v1/models` 被 Cloudflare 挡，改拉订阅账户的模型表） | `codex` | openai-codex（`/backend-api/codex/models`，见 fast-tier.md §2.1） |
+| 各家 SDK 列表 | `google` / `bedrock` / `github_copilot` | 对应 provider |
+
+无论哪种源，`fetch_and_normalize` 是**唯一的归一化收口**：它把 fetcher 千差万别的 key（`context_length`/`context_window`/`contextWindow` 等）统一成一份 entry dict，再叠 models.dev 补全。下游只看归一化后的统一行，看不到源的差异。
 
 结果只进内存（可带一个短 TTL 缓存避免反复请求），关掉页面就没了。断网时浏览不可用——**发现新模型本来就需要网络**，这不是缺陷是事实。
 
@@ -139,6 +150,7 @@ webui 展示层（`_model_listing/`）不做任何合并推导——浏览合并
 4. **手写最小化**：provider.json 只存机器拿不到的字段，且没有模型清单。
 5. **分层单向**：`openprogram.providers` 不 import `openprogram.webui`。
 6. **key 兼容**：`"<prefix>/<id>"`、alias 回退、`key_prefix`（gemini-subscription 双 key）保留；注册表是同一个可变 dict。
+7. **多源一格**：不管来源是官方 `/v1/models`、账户级私有端点（codex）、models.dev 社区目录还是用户手填，都在 `fetch_and_normalize` 一个函数里归一成同一份行结构；启用时经 `_upsert_spec_row` 一个收口写进 config（`_normalize_spec_row` 补全 Model schema 字段）；读取时经 `_build_model_from_row` 一个转换器建成 `Model`。三处收口各只有一个，谁也不许旁路自造格式。
 
 ## 8. 现状偏离与迁移
 

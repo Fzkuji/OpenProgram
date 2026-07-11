@@ -83,11 +83,28 @@ Browsing has two levels. **Level one: the provider list** (settings landing view
 
 ```
 list_available_models(provider_id)
-  = official /v1/models (when a key exists; Anthropic additionally pulls per-model
-    capabilities; probe infers reasoning)
+  = the provider's official source (one fetcher, see below)
   ⊕ models.dev (fills price/capabilities; full fallback when there is no key)
   → merged in memory, returned straight to the frontend
 ```
+
+The official source dispatches per provider to one fetcher
+(`_model_listing/fetchers/`). Each source has a different shape but **returns
+the same contract**: success → `list[dict]` (each row has at least id/name),
+failure → `{"error": ...}`.
+
+| Source shape | fetcher | example |
+|---|---|---|
+| Standard `/v1/models` (OpenAI-compatible) | `openai_compat` | deepseek, openrouter, custom gateways |
+| Anthropic `GET /v1/models` + per-model capabilities | `anthropic` | anthropic, claude-code, minimax |
+| Account-level private endpoint (`/v1/models` is Cloudflare-blocked; read the subscription's model table instead) | `codex` | openai-codex (`/backend-api/codex/models`, see fast-tier.md §2.1) |
+| Vendor SDK list | `google` / `bedrock` / `github_copilot` | the matching provider |
+
+Whatever the source, `fetch_and_normalize` is the **single normalisation choke
+point**: it collapses each fetcher's disparate keys (`context_length` /
+`context_window` / `contextWindow`, …) into one entry dict, then layers
+models.dev on top. Downstream only ever sees the normalised row — never the
+source differences.
 
 Results live in memory only (a short-TTL cache is fine); closing the page discards them. Browsing is unavailable offline — **discovering new models requires the network by definition**; that is a fact, not a defect.
 
@@ -140,6 +157,7 @@ The webui presentation layer (`_model_listing/`) does no merging or derivation �
 4. **Minimal hand-writing**: provider.json stores only what machines cannot obtain, and never a model list.
 5. **One-way layering**: `openprogram.providers` never imports `openprogram.webui`.
 6. **Key compatibility**: `"<prefix>/<id>"`, alias fallback, `key_prefix` (gemini-subscription dual keys) preserved; the registry stays one mutable dict.
+7. **Many sources, one shape**: whether a row comes from an official `/v1/models`, an account-level private endpoint (codex), the models.dev community catalogue, or a hand-typed entry, it is normalised into one row shape by the single `fetch_and_normalize` function; enabling routes through the single `_upsert_spec_row` choke point into config (`_normalize_spec_row` fills the Model-schema keys); reading routes through the single `_build_model_from_row` converter into a `Model`. Each of the three choke points is exactly one; nothing may bypass them to mint its own shape.
 
 ## 8. Current deviations and migration
 

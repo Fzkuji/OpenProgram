@@ -192,9 +192,9 @@ probe_thinking.py 和 Fetch 的集成：
 | `providers/thinking_catalog.py` | 启动时用 derive_thinking_fields 填充 Model 对象的 thinking 字段 |
 | `providers/types.py` | `ThinkingLevel` 类型定义、`SimpleStreamOptions.reasoning` 字段 |
 | `webui/_thinking.py` | UI picker 构建（从 listing 取数据）、apply_thinking_effort（运行时设值） |
-| `webui/_model_catalog/listing.py` | list_models_for_provider（统一推导 thinking_levels 的唯一入口） |
-| `webui/_model_catalog/fetchers/__init__.py` | Fetch enrichment：自动调 probe_thinking |
-| `webui/_model_catalog/fetchers/anthropic.py` | Anthropic Fetch：从 capabilities 提取 thinking_levels |
+| `webui/_model_listing/listing.py` | list_models_for_provider（统一推导 thinking_levels 的唯一入口） |
+| `webui/_model_listing/fetchers/__init__.py` | Fetch enrichment：自动调 probe_thinking |
+| `webui/_model_listing/fetchers/anthropic.py` | Anthropic Fetch：从 capabilities 提取 thinking_levels |
 | `agent/session_config.py` | `VALID_THINKING` 校验、`reasoning_from_config` 转换 |
 
 ## 11. 当前各模型实际档位
