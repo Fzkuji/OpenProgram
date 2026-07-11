@@ -166,6 +166,7 @@ export function StepRow({
   inlineBody,
   subSteps,
   subCount,
+  defaultKidsOpen,
 }: {
   icon: "thinking" | "function" | "llm" | "subagent";
   title: string;
@@ -178,9 +179,11 @@ export function StepRow({
   inlineBody?: React.ReactNode;
   subSteps?: React.ReactNode;
   subCount?: number;
+  /** 子树初始展开（手动函数运行的根行用：过程即内容，不折叠）。 */
+  defaultKidsOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [kidsOpen, setKidsOpen] = useState(false);
+  const [kidsOpen, setKidsOpen] = useState(!!defaultKidsOpen);
   const [copied, setCopied] = useState(false);
   const { text } = useTranslation();
   const toggleable = !!subSteps || !!inlineBody;
@@ -347,8 +350,13 @@ export function FunctionStep({
   );
 }
 
-/** context_tree / caller 链节点 → 递归步骤行。点行 → 右栏详情。 */
-export function TreeStep({ node }: { node: TNode }) {
+/** context_tree / caller 链节点 → 递归步骤行。点行 → 右栏详情。
+ *  actions/defaultKidsOpen 供手动运行的根行透传（重试、版本切换）。 */
+export function TreeStep({ node, actions, defaultKidsOpen }: {
+  node: TNode;
+  actions?: React.ReactNode;
+  defaultKidsOpen?: boolean;
+}) {
   const kids = node.children || [];
   const running = node.status === "running"
     && !(node.duration_ms || node.end_time);
@@ -384,14 +392,18 @@ export function TreeStep({ node }: { node: TNode }) {
       note={noteParts.join(" · ")}
       error={isError}
       running={running}
+      actions={actions}
       copyText={JSON.stringify(
         { name: node.name, params: node.params, output: node.output, error: node.error },
         null, 2)}
       detail={detail}
       subSteps={kids.length > 0
-        ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
+        ? kids.map((c, i) => (
+            <TreeStep key={c.path || i} node={c} defaultKidsOpen={defaultKidsOpen} />
+          ))
         : undefined}
       subCount={kids.length || undefined}
+      defaultKidsOpen={defaultKidsOpen}
     />
   );
 }

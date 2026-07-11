@@ -20,9 +20,9 @@ import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
-import { ExecutionDag } from "./execution-dag/index";
+import type { TNode } from "./execution-dag/types";
+import { StepRow, TreeStep } from "./execution-strip";
 import { useMarkdownReady } from "./markdown";
-import { WrenchIcon } from "@/components/animated-icons";
 
 interface RuntimeLegacyGlobals {
   renderMathInElement?: (el: HTMLElement, opts: unknown) => void;
@@ -270,50 +270,44 @@ export function RuntimeBlock({
     </>
   );
 
-  // No tree yet (just-spawned placeholder) — render a tiny inline-tree
-  // shell so the user sees the function frame immediately. As soon as
-  // the first tree_update lands, ExecutionDag takes over rendering.
+  // 与聊天时间线同一套组件（无框、圆图标压竖线）。手动运行的
+  // 过程即内容：整棵树默认展开，根行挂重试/版本切换动作。
+  // No tree yet (just-spawned placeholder) — a single running row.
   if (!tree) {
     return (
       <div
         ref={ref}
-        className="inline-tree"
+        className="tl"
+        data-open="1"
         id={streaming ? "runtime_pending" : undefined}
         data-function={fnName || undefined}
         data-msg-id={msg.id}
       >
-        <div className="inline-tree-header">
-          <span>
-            {/* 头部图标与时间线同款（step-icons）；运行状态
-                由下面的 Running… 行表达。间距与 ExecutionDag 头部一致
-                （图标 + 间距与时间线一致），免得两个卡片的文字缩进不齐。 */}
-            <span className="inline-tree-icon" title="function"><WrenchIcon size={15} /></span>
-            {"  "}
-            {headerLabel}
-          </span>
-          <span className="inline-tree-actions">{actions}</span>
-        </div>
-        <div className="inline-tree-body">
-          <div className="pending-body" style={{ padding: "4px 0" }}>
-            <span className="indicator-dot pulse-scale" aria-hidden="true" />
-            <span className="pending-label">
-              {text("Running…", "运行中…")}
-            </span>
-          </div>
+        <div className="tl-body">
+          <StepRow
+            icon="function"
+            title={fnName || headerLabel}
+            note={text("Running…", "运行中…")}
+            running
+            actions={actions}
+          />
         </div>
       </div>
     );
   }
 
   return (
-    <div ref={ref} data-msg-id={msg.id}>
-      <ExecutionDag
-        tree={tree as never}
-        headerLabel={headerLabel}
-        actions={actions}
-        pendingId={streaming ? "runtime_pending" : undefined}
-        dataFunction={fnName || undefined}
-      />
+    <div
+      ref={ref}
+      className="tl"
+      data-open="1"
+      id={streaming ? "runtime_pending" : undefined}
+      data-function={fnName || undefined}
+      data-msg-id={msg.id}
+    >
+      <div className="tl-body">
+        <TreeStep node={tree as TNode} actions={actions} defaultKidsOpen />
+      </div>
       {usageHtml ? (
         <div
           className="runtime-usage-footer"
