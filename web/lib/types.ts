@@ -69,6 +69,7 @@ export interface AgenticFunction {
 export interface FunctionsMeta {
   favorites: string[];
   folders: Record<string, string[]>;
+  icons?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------

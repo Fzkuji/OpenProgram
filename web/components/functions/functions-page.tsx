@@ -25,6 +25,7 @@ import { cls, RenameInput, ProfileNavRow } from "./functions-page-parts";
 import { ConfirmDialog } from "@/components/sidebar/sessions-list/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
+import { useFunctions } from "@/lib/state/functions-store";
 import {
   type AnimatedNavIconHandle,
   FileTextIcon,
@@ -143,8 +144,14 @@ export function FunctionsPage() {
       ),
       icons: { ...next.icons },
     };
-    // Notify any non-polling listeners instantly.
-    window.dispatchEvent(new CustomEvent("wah:meta-changed"));
+    // The zustand store is what the sidebar actually renders from —
+    // merge favorites/icons in (folders are a separate concept, keep).
+    const fnStore = useFunctions.getState();
+    fnStore.setMeta({
+      ...fnStore.meta,
+      favorites: [...next.favorites],
+      icons: { ...next.icons },
+    });
     if (typeof w.renderFunctions === "function") (w.renderFunctions as () => void)();
   }, []);
 

@@ -19,6 +19,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Reorder } from "framer-motion";
 
 import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
+import { useFunctions } from "@/lib/state/functions-store";
 import { type AnimatedNavIconHandle } from "@/components/animated-icons";
 import {
   FUNCTION_ICONS,
@@ -34,16 +35,18 @@ interface FunctionsMeta {
 }
 
 async function persistMeta(meta: FunctionsMeta): Promise<void> {
-  // Publish the new ref BEFORE the network round-trip so the rest of
-  // the UI updates instantly. The fetch is fire-and-forget.
-  (window as unknown as Record<string, unknown>).programsMeta = {
+  // Publish BEFORE the network round-trip so the UI updates instantly.
+  // The zustand store is the live source (sidebar + functions page read
+  // it via useFunctions); window.programsMeta stays for legacy readers.
+  const fresh = {
     favorites: [...meta.favorites],
     folders: Object.fromEntries(
       Object.entries(meta.folders).map(([k, v]) => [k, [...v]]),
     ),
     icons: { ...meta.icons },
   };
-  window.dispatchEvent(new CustomEvent("wah:meta-changed"));
+  useFunctions.getState().setMeta(fresh);
+  (window as unknown as Record<string, unknown>).programsMeta = fresh;
   try {
     await fetch("/api/programs/meta", {
       method: "POST",
