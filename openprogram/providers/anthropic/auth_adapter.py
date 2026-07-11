@@ -1,26 +1,18 @@
-"""Anthropic auth adapter — registers with AuthManager, adopts Claude Code state.
+"""Anthropic auth adapter — registers with AuthManager.
 
 Three credential routes the adapter exposes:
 
   1. **API key** — the legacy ``ANTHROPIC_API_KEY`` env var. Handled via
      :mod:`auth.sources.env` on the ``anthropic`` provider.
 
-  2. **OAuth token** (``sk-ant-oat`` prefix) — minted by the
-     ``claude login`` flow in Claude Code. We don't own the refresh path;
-     Claude Code rotates it through its own Keychain/file, and we adopt
-     the result read-only so the CLI remains authoritative. Import
-     via :func:`import_from_claude_code`. If the on-disk token is past
-     expiry, AuthManager surfaces :class:`AuthReadOnlyError` — the user
-     must rerun ``claude login`` in their terminal (we tell them how).
-
-  3. **OAuth via our own PKCE flow** — the Claude subscription browser
+  2. **OAuth via our own PKCE flow** — the Claude subscription browser
      login, same shape as openai-codex. ``build_pkce_config`` configures
      :class:`PkceLoginMethod` against ``claude.ai/oauth/authorize`` +
      ``console.anthropic.com/v1/oauth/token`` with the Claude Code OAuth
      client. The minted ``sk-ant-oat`` token carries a refresh_token, so
      we DO own rotation here — :func:`_anthropic_refresh` is registered.
 
-  4. **setup-token paste** — headless fallback. The user mints a token
+  3. **setup-token paste** — headless fallback. The user mints a token
      out-of-band with ``claude setup-token`` and pastes it; we store it
      as an ``oauth`` credential WITHOUT a refresh_token (setup-tokens
      don't carry one, ~1y lifetime). Via :func:`import_setup_token`.
@@ -80,80 +72,6 @@ def build_pkce_config():
         redirect_uri_override=OAUTH_REDIRECT_URI,
         token_use_json=True,
         extra_authorize_params={"code": "true"},
-    )
-
-
-# ---------------------------------------------------------------------------
-# Path resolution
-# ---------------------------------------------------------------------------
-
-def claude_code_credentials_path() -> Path:
-    """Return the filesystem path to Claude Code's credentials file.
-
-    The canonical on-disk location is ``~/.claude/.credentials.json``.
-    macOS users may alternatively have the payload in the Keychain under
-    service ``Claude Code-credentials``; Keychain adoption is a follow-up
-    (needs a ``security find-generic-password`` external-process hook).
-    """
-    return Path.home() / ".claude" / ".credentials.json"
-
-
-# ---------------------------------------------------------------------------
-# Import from Claude Code
-# ---------------------------------------------------------------------------
-
-def import_from_claude_code(
-    *,
-    profile_id: str = "default",
-    path: Optional[Path] = None,
-) -> Optional[Credential]:
-    """Read Claude Code's credentials file and produce a delegated OAuth
-    credential.
-
-    Returns ``None`` if the file is missing or unusable — callers decide
-    whether that's a "please log in" error or just "skip this route".
-
-    The resulting credential is a ``cli_delegated`` :class:`CredentialData`,
-    read-only. The Claude Code CLI owns rotation; every API call re-reads
-    the file through AuthManager, so rotations propagate automatically.
-    """
-    target = Path(path) if path else claude_code_credentials_path()
-    if not target.exists():
-        return None
-    try:
-        data = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    oauth = data.get("claudeAiOauth") or {}
-    if not oauth.get("accessToken"):
-        return None
-
-    metadata: dict[str, Any] = {
-        "imported_from": "claude_code",
-        "source_path": str(target),
-        "platform": sys.platform,
-    }
-    if oauth.get("subscriptionType"):
-        metadata["subscription_type"] = oauth["subscriptionType"]
-    if oauth.get("scopes"):
-        metadata["scopes"] = oauth["scopes"]
-
-    return Credential(
-        provider_id=PROVIDER_ID,
-        profile_id=profile_id,
-        kind="cli_delegated",
-        payload=CredentialData(
-            kind="cli_delegated",
-            data={
-                "store_path": str(target),
-                "access_key_path": ["claudeAiOauth", "accessToken"],
-                "refresh_key_path": ["claudeAiOauth", "refreshToken"],
-                "expires_key_path": ["claudeAiOauth", "expiresAt"],
-            },
-        ),
-        source="claude_code_import",
-        metadata=metadata,
-        read_only=True,
     )
 
 
@@ -329,8 +247,6 @@ __all__ = [
     "OAUTH_REDIRECT_URI",
     "OAUTH_SCOPES",
     "build_pkce_config",
-    "claude_code_credentials_path",
-    "import_from_claude_code",
     "import_api_key",
     "import_setup_token",
     "_anthropic_refresh",

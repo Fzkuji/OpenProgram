@@ -139,7 +139,7 @@ def _show_provider_status() -> bool:
     from .store import get_store
     try:
         from .sources import (
-            ClaudeCodeSource, CodexCliSource, EnvApiKeySource,
+            CodexCliSource, EnvApiKeySource,
             GhCliSource, QwenCliSource,
         )
         from .profiles import DEFAULT_PROFILE_NAME, get_profile_manager
@@ -163,7 +163,6 @@ def _show_provider_status() -> bool:
     profile_obj = pm.get_profile(profile)
     sources_list: list[Any] = [
         CodexCliSource(profile_id=profile),
-        ClaudeCodeSource(profile_id=profile),
         QwenCliSource(profile_id=profile),
         GhCliSource(),
     ]
@@ -230,7 +229,6 @@ def pick_login_method_interactive(
 def _action_scan_and_import() -> None:
     from .cli import _payload_summary
     from .sources import (
-        ClaudeCodeSource,
         CodexCliSource,
         EnvApiKeySource,
         GhCliSource,
@@ -246,7 +244,6 @@ def _action_scan_and_import() -> None:
 
     sources: list[Any] = [
         CodexCliSource(profile_id=profile),
-        ClaudeCodeSource(profile_id=profile),
         QwenCliSource(profile_id=profile),
         GhCliSource(),
     ]

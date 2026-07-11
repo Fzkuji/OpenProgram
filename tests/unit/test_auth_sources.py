@@ -17,7 +17,6 @@ from pathlib import Path
 import pytest
 
 from openprogram.auth.sources import (
-    ClaudeCodeSource,
     CodexCliSource,
     EnvApiKeySource,
     GhCliSource,
@@ -133,40 +132,6 @@ def test_codex_source_removal_does_not_delete_file(tmp_path):
     assert steps[0].executable is False
     assert steps[0].kind == "external_cli"
     assert "codex logout" in steps[0].description
-
-
-# ---- ClaudeCodeSource -----------------------------------------------------
-
-def test_claude_source_imports_oauth_shape(tmp_path: Path):
-    path = tmp_path / ".credentials.json"
-    path.write_text(json.dumps({
-        "claudeAiOauth": {
-            "accessToken": "ACC",
-            "refreshToken": "REF",
-            "expiresAt": 1712345678901,
-            "scopes": ["user:inference"],
-            "subscriptionType": "pro",
-        }
-    }))
-    src = ClaudeCodeSource(override_path=str(path))
-    [cred] = src.try_import(tmp_path)
-    assert cred.kind == "cli_delegated"
-    assert cred.payload.data["access_key_path"] == ["claudeAiOauth", "accessToken"]
-    assert cred.payload.data["expires_key_path"] == ["claudeAiOauth", "expiresAt"]
-    assert cred.metadata["subscription_type"] == "pro"
-    assert cred.metadata["scopes"] == ["user:inference"]
-
-
-def test_claude_source_missing_token_returns_empty(tmp_path):
-    path = tmp_path / ".credentials.json"
-    path.write_text(json.dumps({"claudeAiOauth": {}}))
-    src = ClaudeCodeSource(override_path=str(path))
-    assert src.try_import(tmp_path) == []
-
-
-def test_claude_source_missing_file_returns_empty(tmp_path):
-    src = ClaudeCodeSource(override_path=str(tmp_path / "nope.json"))
-    assert src.try_import(tmp_path) == []
 
 
 # ---- QwenCliSource --------------------------------------------------------

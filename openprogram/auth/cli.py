@@ -645,17 +645,6 @@ def _login_import_from_cli(provider: str, profile: str) -> Credential:
                 f"Run `codex login --device-auth` first, then re-run this command."
             )
         return cred
-    if provider in ("anthropic", "claude-code"):
-        # claude-code is an alias for the anthropic credential pool; the
-        # adapter always registers under provider_id="anthropic".
-        from openprogram.providers.anthropic import auth_adapter
-        cred = auth_adapter.import_from_claude_code(profile_id=profile)
-        if cred is None:
-            raise AuthConfigError(
-                f"{auth_adapter.claude_code_credentials_path()} not found. "
-                f"Run `claude login` (Claude Code CLI) first."
-            )
-        return cred
     if provider == "gemini-subscription":
         from openprogram.providers.google_gemini_cli import auth_adapter
         cred = auth_adapter.import_from_gemini_cli(profile_id=profile)
@@ -830,7 +819,6 @@ def _cmd_list(profile_filter: Optional[str], as_json: bool) -> int:
 
 def _cmd_discover(as_json: bool) -> int:
     from openprogram.auth.sources import (
-        ClaudeCodeSource,
         CodexCliSource,
         EnvApiKeySource,
         GhCliSource,
@@ -842,7 +830,6 @@ def _cmd_discover(as_json: bool) -> int:
     default = pm.get_profile(DEFAULT_PROFILE_NAME)
     sources: list[Any] = [
         CodexCliSource(),
-        ClaudeCodeSource(),
         QwenCliSource(),
         GhCliSource(),
     ]
@@ -950,7 +937,6 @@ def run_adopt_all(profile: str) -> dict[str, Any]:
     doesn't accumulate duplicates.
     """
     from openprogram.auth.sources import (
-        ClaudeCodeSource,
         CodexCliSource,
         EnvApiKeySource,
         GhCliSource,
@@ -964,7 +950,6 @@ def run_adopt_all(profile: str) -> dict[str, Any]:
 
     sources: list[Any] = [
         CodexCliSource(profile_id=profile),
-        ClaudeCodeSource(profile_id=profile),
         QwenCliSource(profile_id=profile),
         GhCliSource(),
     ]
@@ -1025,7 +1010,6 @@ def run_adopt_all(profile: str) -> dict[str, Any]:
 
 def _source_by_id(source_id: str, profile: str):
     from openprogram.auth.sources import (
-        ClaudeCodeSource,
         CodexCliSource,
         EnvApiKeySource,
         GhCliSource,
@@ -1035,8 +1019,6 @@ def _source_by_id(source_id: str, profile: str):
 
     if source_id == "codex_cli":
         return CodexCliSource(profile_id=profile)
-    if source_id == "claude_code":
-        return ClaudeCodeSource(profile_id=profile)
     if source_id == "qwen_cli":
         return QwenCliSource(profile_id=profile)
     if source_id == "gh_cli":
@@ -1420,7 +1402,6 @@ def _cmd_setup() -> int:
 
 def _run_setup() -> int:
     from openprogram.auth.sources import (
-        ClaudeCodeSource,
         CodexCliSource,
         EnvApiKeySource,
         GhCliSource,
@@ -1448,7 +1429,6 @@ def _run_setup() -> int:
     print("\n[1/3] Scanning for existing credentials...\n")
     sources: list[Any] = [
         CodexCliSource(),
-        ClaudeCodeSource(),
         QwenCliSource(),
         GhCliSource(),
     ]

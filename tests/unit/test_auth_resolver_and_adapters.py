@@ -106,30 +106,6 @@ def test_resolver_respects_active_profile(store):
 
 # ---- Anthropic adapter ---------------------------------------------------
 
-def test_anthropic_import_from_claude_code(tmp_path):
-    path = tmp_path / ".credentials.json"
-    path.write_text(json.dumps({
-        "claudeAiOauth": {
-            "accessToken": "sk-ant-oat-ABC",
-            "refreshToken": "REF",
-            "expiresAt": 1712345678901,
-            "subscriptionType": "pro",
-            "scopes": ["user:inference"],
-        },
-    }))
-    cred = anthro_adapter.import_from_claude_code(path=path)
-    assert cred is not None
-    assert cred.kind == "cli_delegated"
-    assert cred.read_only is True
-    assert cred.metadata["subscription_type"] == "pro"
-    assert cred.metadata["scopes"] == ["user:inference"]
-    assert cred.payload.data["access_key_path"] == ["claudeAiOauth", "accessToken"]
-
-
-def test_anthropic_import_returns_none_when_file_missing(tmp_path):
-    assert anthro_adapter.import_from_claude_code(path=tmp_path / "nope.json") is None
-
-
 def test_anthropic_import_api_key_wrapper():
     cred = anthro_adapter.import_api_key("sk-ant-api03-XYZ")
     assert cred.kind == "api_key"

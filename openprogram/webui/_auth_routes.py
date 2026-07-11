@@ -379,7 +379,6 @@ def discover_credentials() -> dict[str, Any]:
     credentials into the store is a separate :func:`adopt` call — this
     endpoint is read-only."""
     from openprogram.auth.sources import (
-        ClaudeCodeSource,
         CodexCliSource,
         EnvApiKeySource,
         GhCliSource,
@@ -393,7 +392,6 @@ def discover_credentials() -> dict[str, Any]:
 
     sources = [
         CodexCliSource(),
-        ClaudeCodeSource(),
         QwenCliSource(),
         GhCliSource(),
     ]
