@@ -286,37 +286,41 @@ export function RuntimeBlock({
           </>
         ) : null}
         {hasSiblings ? (
-          <span className="attempt-nav" onClick={(e) => e.stopPropagation()}>
+          <div className="message-nav">
             <button
-              className="attempt-nav-btn"
+              type="button"
+              className="message-nav-btn"
+              data-nav="prev"
+              aria-label={text("Previous version", "上一个版本")}
               disabled={siblingIdx <= 1 || !sessionId || !msg.prevSiblingId}
-              title={text("Previous version", "上一个版本")}
               onClick={() =>
                 sessionId &&
                 msg.prevSiblingId &&
                 checkoutSibling(sessionId, msg.prevSiblingId, msg, siblingIdx - 1)
               }
             >
-              {"◀"}
+              {SVG.chevL}
             </button>
-            <span className="attempt-nav-label">
-              {siblingIdx}/{siblingTotal}
+            <span className="message-nav-label">
+              {siblingIdx} / {siblingTotal}
             </span>
             <button
-              className="attempt-nav-btn"
+              type="button"
+              className="message-nav-btn"
+              data-nav="next"
+              aria-label={text("Next version", "下一个版本")}
               disabled={
                 siblingIdx >= siblingTotal || !sessionId || !msg.nextSiblingId
               }
-              title={text("Next version", "下一个版本")}
               onClick={() =>
                 sessionId &&
                 msg.nextSiblingId &&
                 checkoutSibling(sessionId, msg.nextSiblingId, msg, siblingIdx + 1)
               }
             >
-              {"▶"}
+              {SVG.chevR}
             </button>
-          </span>
+          </div>
         ) : null}
       </div>
     </div>
