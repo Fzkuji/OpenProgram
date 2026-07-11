@@ -12,7 +12,7 @@
  * 动画；图标绝对定位在标题行内部，天然与文字对齐。流式进行中的一轮
  * 不走这里（assistant-bubble 平铺实时块），落定后切到本组件。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { AssistantBlock, ChatMsg, DetailNode } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
@@ -66,6 +66,33 @@ export function execStripLabel(
   return parts.join(" · ") || text("execution", "执行过程");
 }
 
+/** 高度过渡容器：grid 0fr↔1fr 动画，展开向下推、收起平滑抽走。
+ *  关闭动画结束后卸载子树，折叠状态不付渲染成本。 */
+function Collapse({ open, children }: {
+  open: boolean;
+  children: React.ReactNode;
+}) {
+  const [shown, setShown] = useState(false);
+  const [mounted, setMounted] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const raf = requestAnimationFrame(() =>
+        requestAnimationFrame(() => setShown(true)));
+      return () => cancelAnimationFrame(raf);
+    }
+    setShown(false);
+    const t = setTimeout(() => setMounted(false), 220);
+    return () => clearTimeout(t);
+  }, [open]);
+  if (!mounted) return null;
+  return (
+    <div className={"tl-collapse" + (shown ? " is-open" : "")}>
+      <div className="tl-collapse-inner">{children}</div>
+    </div>
+  );
+}
+
 /** 时间线外壳：一行淡文字摘要 ›，点击展开竖线时间线。 */
 export function ExecutionStrip({
   label,
@@ -89,7 +116,9 @@ export function ExecutionStrip({
         <span>{label}</span>
         <span className="tl-chev" aria-hidden="true">›</span>
       </button>
-      {open ? <div className="tl-body">{children}</div> : null}
+      <Collapse open={open}>
+        <div className="tl-body">{children}</div>
+      </Collapse>
     </div>
   );
 }
@@ -229,8 +258,16 @@ export function StepRow({
           {actions}
         </span>
       </div>
-      {open && inlineBody ? <div className="tl-step-body">{inlineBody}</div> : null}
-      {kidsOpen && subSteps ? <div className="tl-sub">{subSteps}</div> : null}
+      {inlineBody ? (
+        <Collapse open={open}>
+          <div className="tl-step-body">{inlineBody}</div>
+        </Collapse>
+      ) : null}
+      {subSteps ? (
+        <Collapse open={kidsOpen}>
+          <div className="tl-sub">{subSteps}</div>
+        </Collapse>
+      ) : null}
     </div>
   );
 }

@@ -295,6 +295,10 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  /* Native scroll anchoring keeps content BELOW an expansion stationary,
+     so clicking an execution strip appears to grow upward. Pinning is
+     handled by useChatAreaStick; disable the browser's own anchoring. */
+  overflow-anchor: none;
 }
 /* Lock scrolling while the welcome panel is up. Driven by the React
    portal host: `<WelcomeScreen />` renders a child into `#welcome-mount`
@@ -1222,6 +1226,14 @@
    步骤行（圆形图标压线、标题 + 单行摘要、动作悬停出现、点行展开）。
    函数内部的 context_tree 递归成缩进一层的子时间线（.tl-sub）。 */
 .tl { margin: 6px 0 4px; }
+/* 展开/收起高度过渡：grid 0fr↔1fr，展开向下推开、收起平滑抽走。 */
+.tl-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.18s ease;
+}
+.tl-collapse.is-open { grid-template-rows: 1fr; }
+.tl-collapse > .tl-collapse-inner { overflow: hidden; min-height: 0; }
 .tl-toggle {
   display: inline-flex;
   align-items: center;

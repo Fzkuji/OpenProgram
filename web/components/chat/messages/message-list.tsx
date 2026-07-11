@@ -99,19 +99,29 @@ function useChatAreaStick(newTurnSeed: number) {
     const msgs = document.getElementById("chatMessages");
     if (!area || !msgs) return;
     let stuck = true;
+    // A click that expands/collapses something (execution strip, thinking
+    // row) resizes the container; pinning then yanks the clicked element
+    // upward. Suppress the pin briefly after any pointer interaction so
+    // user-initiated growth expands downward in place.
+    let lastPointer = 0;
     const pin = () => {
       const w = window as unknown as { renderMathInChat?: () => void };
       try { w.renderMathInChat?.(); } catch { /* ignore */ }
-      if (stuck) area.scrollTop = area.scrollHeight;
+      if (stuck && performance.now() - lastPointer > 600) {
+        area.scrollTop = area.scrollHeight;
+      }
     };
     const onScroll = () => {
       stuck = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
     };
+    const onPointer = () => { lastPointer = performance.now(); };
     area.addEventListener("scroll", onScroll, { passive: true });
+    area.addEventListener("pointerdown", onPointer, { passive: true });
     const ro = new ResizeObserver(pin);
     ro.observe(msgs);
     return () => {
       area.removeEventListener("scroll", onScroll);
+      area.removeEventListener("pointerdown", onPointer);
       ro.disconnect();
     };
   }, []);
