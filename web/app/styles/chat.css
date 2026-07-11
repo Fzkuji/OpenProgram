@@ -380,6 +380,8 @@
 .message.assistant .message-actions-footer {
   justify-content: flex-start; /* assistant: bottom-left */
   padding-left: 36px;          /* align under the assistant text column */
+  /* 与 toggle→正文 的间隔一致（tl margin 4 + 流 gap 8 = 12） */
+  margin-top: 12px;
 }
 /* 时间戳自带 0 6px 内边距；行首那 6px 会让整排比正文右移，去掉。 */
 .message.assistant .message-actions-footer .message-timestamp {
