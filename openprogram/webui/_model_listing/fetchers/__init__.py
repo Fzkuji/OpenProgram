@@ -163,6 +163,15 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
         for cost_key in ("input_cost", "output_cost", "cache_read_cost"):
             if cost_key in it:
                 entry[cost_key] = it[cost_key]
+        # Capability fields a fetcher resolved from the provider's own
+        # account/models API are authoritative — carry them through so the
+        # models.dev enrichment below can't overwrite them. Codex's endpoint
+        # gives the real fast/thinking picker per model; models.dev only has
+        # the public-API-platform guess. ``setdefault`` in enrich already
+        # respects anything present here.
+        for cap_key in ("fast", "thinking_levels", "default_thinking_level"):
+            if cap_key in it:
+                entry[cap_key] = it[cap_key]
         # Community enrichment: ask models.dev (and any other source
         # in ``sources._SOURCES``) for context window, output cap,
         # pricing, modalities, reasoning flag. Provider APIs like

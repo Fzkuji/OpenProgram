@@ -1,98 +1,144 @@
 """OpenAI Codex (``openai-codex``) model fetcher.
 
-The ChatGPT/Codex backend has **no** public list-models API — ``/models``
-403s behind Cloudflare — so we can't query it directly. Instead we treat the
-community catalogue (``models.dev``, which tracks the OpenAI family) as the
-source of truth for a Fetch:
+The Codex/ChatGPT-subscription backend DOES have a private account-level
+list-models endpoint — the same one the official ``codex`` CLI hits on
+startup:
 
-  1. take the OpenAI catalogue (``openai-codex`` aliases to ``openai`` in
-     ``models_dev``), pulled live behind models.dev's shared 1h cache,
-  2. keep the Codex/ChatGPT-subscription-runnable GPT-5.x reasoning family, and
-  3. let ``fetch_models_remote`` enrich the rest from models.dev.
+    GET https://chatgpt.com/backend-api/codex/models?client_version=<ver>
+
+authorized with the subscription OAuth bearer + ``chatgpt-account-id``. It
+returns exactly the models this account may dispatch, each with its real
+subscription-side ``context_window``, ``service_tiers`` (the fast/priority
+knob), and ``supported_reasoning_levels`` (the thinking picker). We read all
+of that here and hand it back in one normalised shape so enable-time storage
+and the runtime never have to guess.
+
+Why not models.dev (the previous source): it tracks the *public API platform*
+OpenAI catalogue, not the subscription front-door. Its ids leaked models the
+subscription can't run (e.g. ``gpt-5.6-luna`` used to slip through the
+"id has no 'nano'" heuristic and then 404 at dispatch), its context windows
+were the API-platform numbers (1050k, not the subscription's 372k), and its
+fast flag was reconstructed from a hand-written family table that misfired on
+tiers like ``gpt-5.4-mini`` (no fast tier, but the table said yes). The
+official endpoint is authoritative for all three.
 
 Browse is a **read** path: it does not touch the ``ENABLED_MODELS`` registry
 (post-migration the registry means "enabled" — writing every browsable id
-floods the chat picker). Dispatchability comes from the enable-time config
-rows (a full spec is written to config when the user enables a model) plus
-``OpenAICodexRuntime``'s on-miss single-model registration for the one id
-actually being dispatched.
+floods the chat picker). A browsed id becomes dispatchable when the user
+enables it (a full spec row — fast/thinking included — is written to config)
+plus ``OpenAICodexRuntime``'s on-miss single-model registration.
 
-This replaces the old "re-emit the in-code registry" behaviour, so a Fetch
-reflects what the upstream catalogue lists today rather than a hand-kept list.
-
-Two consequences worth knowing:
-
-  * Ids that exist in our in-code registry but **not** in models.dev (e.g. a
-    ``-codex`` tier models.dev doesn't track) are not surfaced by a Fetch. The
-    live catalogue is treated as authoritative; pin such a model by hand if you
-    need it.
-  * If models.dev is unreachable we return an **error** rather than falling
-    back to the in-code registry — re-emitting the seed would resurrect ids the
-    catalogue doesn't list and, on a re-fetch, overwrite a good saved list with
-    a stale one. An errored Fetch leaves the existing ``custom_models`` intact.
+Offline / no token → returns ``{"error": ...}`` so the orchestrator keeps the
+existing saved list untouched rather than blanking it. (You can't dispatch a
+Codex model without a token anyway, so a token-less browse losing the list is
+not a regression — the models were unusable in that state regardless.)
 """
 from __future__ import annotations
 
 from typing import Any
 
+# The framework's Codex thinking picker only knows these effort levels
+# (openai_codex/provider.json). The live endpoint occasionally lists a higher
+# ``ultra`` tier on the frontier models; the wire doesn't accept it here, so we
+# drop anything outside this set instead of writing a level the UI can't render.
+_CODEX_THINKING_LEVELS = ("minimal", "low", "medium", "high", "xhigh", "max")
 
-def _is_codex_runnable(mid: str, info: dict[str, Any]) -> bool:
-    """Deterministic filter over models.dev's ``openai`` ids selecting the
-    Codex/ChatGPT-subscription family.
 
-    The dotted ``gpt-5.x`` reasoning family, minus the ``chat-latest`` aliases
-    and the ``nano`` tier (not served by the Codex subscription). The trailing
-    dot in ``gpt-5.`` is deliberate — it keeps the dotted minor families and
-    excludes the original no-dot ``gpt-5`` / ``gpt-5-codex`` / ``gpt-5-mini``
-    rows. (Rule verified against the live catalogue; see the
-    codex-live-fetch-design investigation.)"""
+def _codex_list_url(client_version: str) -> str:
     return (
-        mid.startswith("gpt-5.")
-        and bool(info.get("reasoning"))
-        and "chat" not in mid
-        and "nano" not in mid
+        "https://chatgpt.com/backend-api/codex/models"
+        f"?client_version={client_version}"
     )
 
 
-def _fetch_codex_live(provider_id: str, timeout: float) -> Any:
-    """Live Codex fetch via the models.dev OpenAI catalogue.
+def _normalise_codex_model(m: dict[str, Any]) -> dict[str, Any] | None:
+    """One live endpoint row → our config-row shape. ``None`` for rows we skip
+    (hidden helper models like ``codex-auto-review``)."""
+    mid = m.get("slug")
+    if not mid or m.get("visibility") == "hide":
+        return None
 
-    Returns ``{"error": ...}`` when the catalogue is unreachable so the
-    orchestrator leaves the saved model list untouched (rather than rotating in
-    a stale/in-code fallback)."""
-    from ..sources import models_dev
+    row: dict[str, Any] = {
+        "id": mid,
+        "name": m.get("display_name") or mid,
+        "reasoning": bool(m.get("supported_reasoning_levels")),
+    }
+    ctx = m.get("context_window") or m.get("max_context_window")
+    if ctx:
+        row["context_window"] = int(ctx)
+    if "image" in (m.get("input_modalities") or []):
+        row["vision"] = True
+
+    # Fast/priority tier: the endpoint spells it out per model, so no more
+    # guessing from an id family table. ``service_tiers`` carries a
+    # ``{"id": "priority", ...}`` entry exactly when this model has a fast tier.
+    row["fast"] = any(
+        t.get("id") == "priority" for t in (m.get("service_tiers") or [])
+    )
+
+    # Thinking picker: the effort ids the endpoint advertises, filtered to what
+    # the framework's wire can send (drops ``ultra``).
+    levels = [
+        lv.get("effort")
+        for lv in (m.get("supported_reasoning_levels") or [])
+        if lv.get("effort") in _CODEX_THINKING_LEVELS
+    ]
+    if levels:
+        row["thinking_levels"] = levels
+        default = m.get("default_reasoning_level")
+        row["default_thinking_level"] = default if default in levels else levels[0]
+    return row
+
+
+def _fetch_codex_live(provider_id: str, timeout: float) -> Any:
+    """Live Codex fetch via the account's models endpoint.
+
+    Returns ``{"error": ...}`` when unreachable / unauthorized so the
+    orchestrator leaves the saved model list untouched."""
+    import httpx
+
+    from openprogram.providers.openai_codex.oauth import _get_account_id_from_jwt
+    from openprogram.providers.openai_codex.openai_codex import (
+        _resolve_codex_bearer_token,
+    )
+    from openprogram.providers.openai_codex.runtime import _CODEX_CLIENT_VERSION
+
+    token = _resolve_codex_bearer_token(None)
+    if not token:
+        return {"error": (
+            "not signed in to ChatGPT/Codex — run `codex login` or the "
+            "OpenProgram OAuth wizard, then Fetch again."
+        )}
+    account_id = _get_account_id_from_jwt(token) or ""
 
     try:
-        catalogue = models_dev.list_models("openai-codex")  # alias -> "openai"
-    except Exception:
-        catalogue = {}
-
-    if not catalogue:
-        return {
-            "error": (
-                "could not reach the models.dev catalogue — your existing "
-                "Codex model list was kept. Try Fetch again when online."
-            )
-        }
+        resp = httpx.get(
+            _codex_list_url(_CODEX_CLIENT_VERSION),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "chatgpt-account-id": account_id,
+                "originator": "codex_cli_rs",
+                "version": _CODEX_CLIENT_VERSION,
+                "Content-Type": "application/json",
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        return {"error": (
+            f"could not reach the Codex models endpoint ({exc}) — your existing "
+            "Codex model list was kept. Try Fetch again when online."
+        )}
 
     out: list[dict[str, Any]] = []
-    for mid in sorted(catalogue):
-        info = catalogue[mid] or {}
-        if not _is_codex_runnable(mid, info):
+    for m in payload.get("models") or []:
+        if not isinstance(m, dict):
             continue
-        # Read path only — don't register into ENABLED_MODELS here (that dict
-        # means "enabled" post-migration; bulk-writing it floods the chat
-        # picker). A browsed id becomes dispatchable when the user enables it
-        # (writes a full config spec row) and, at dispatch, via
-        # OpenAICodexRuntime's on-miss single-model registration.
-        out.append({
-            "id": mid,
-            "name": info.get("name") or mid,
-            "context_window": info.get("context_window") or 0,
-            "vision": bool(info.get("vision")),
-            "reasoning": bool(info.get("reasoning")),
-        })
+        row = _normalise_codex_model(m)
+        if row:
+            out.append(row)
 
     if not out:
-        return {"error": "models.dev returned no Codex-runnable models"}
+        return {"error": "Codex models endpoint returned no usable models"}
     return out

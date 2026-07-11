@@ -35,12 +35,11 @@ from openprogram.auth.types import (
 from . import auth_adapter
 
 
-_KNOWN_CODEX_MODELS = [
-    "gpt-5.5", "gpt-5.5-mini", "gpt-5.5-pro", "gpt-5.5-codex",
-    "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-pro",
-    "gpt-5.3-codex", "gpt-5.3-codex-spark",
-    "gpt-5.2-codex", "gpt-5.1-codex", "gpt-5.1-codex-mini",
-]
+# Client version we present to the Codex backend. The models endpoint gates
+# some ids behind a minimum client version (``gpt-5.6-*`` needs ≥ 0.144.0), and
+# dispatch only serves a model to a recognised ``originator: codex_cli_rs`` at
+# or above that version — so this string must track a real released CLI.
+_CODEX_CLIENT_VERSION = "0.144.1"
 
 
 def _codex_supports_xhigh(model_id: str) -> bool:
@@ -245,18 +244,21 @@ class OpenAICodexRuntime(Runtime):
 
         # ChatGPT backend wants extra headers alongside Bearer. Attach them
         # to a per-runtime Model copy so we don't mutate the registry.
+        # ``originator: codex_cli_rs`` + ``version`` is the identity the backend
+        # gates newer/greylisted ids behind — dispatch 404s a model like
+        # ``gpt-5.6-luna`` for an unrecognised originator even though the list
+        # endpoint returns it. Present the real CLI identity so listing and
+        # dispatch agree on what's runnable.
         self.api_model = self.api_model.model_copy(update={
             "headers": {
                 "chatgpt-account-id": account_id,
-                "originator": "openprogram",
+                "originator": "codex_cli_rs",
+                "version": _CODEX_CLIENT_VERSION,
                 "OpenAI-Beta": "responses=experimental",
             },
         })
 
         self.system = system
-
-    def list_models(self) -> list[str]:
-        return list(_KNOWN_CODEX_MODELS)
 
     def exec(self, *args: Any, **kwargs: Any) -> Any:
         # Re-acquire on every call — AuthManager refreshes internally if

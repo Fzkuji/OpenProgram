@@ -118,21 +118,18 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
     return rows
 
 
-# 订阅入口（ChatGPT / Claude 订阅）公开目录不收录，它们的高速档手动
-# 声明；其余 provider 一律 models.dev 自动检测（用户裁决 2026-07-12）。
-_SUBSCRIPTION_FAST_PROVIDERS = {"openai-codex", "claude-code"}
-
-
 def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
     """当前模型有没有 Fast（高速）档。全自动、事件驱动——agent_settings
     在每次连接/会话切换/模型切换/轮次结束时重算并推给前端，composer 据
     此显隐高速开关。判定两层：
 
-      1. openai-codex / claude-code（订阅入口）→ 手动声明表
-         ``enabled_models.default_fast``；
-      2. 其他 provider → models.dev：该模型有 fast 档（GPT 系
-         service_tier="priority"，Claude 系 id=="fast" 的 speed 档）
-         就显示，没有或目录不认识就不显示。
+      1. openai-codex → 读注册表里落盘的 ``Model.fast``。这个字段来自官方
+         codex models 端点（``service_tiers`` 里有 priority 档就是 True），
+         Fetch 时随 spec 一起写进 config，用时直接读文件，不再手写家族表。
+      2. claude-code → 手写声明表 ``enabled_models.default_fast``（Opus
+         4.6/4.7/4.8）；订阅端还没验证有没有 models 端点可拉，暂留手写。
+      3. 其他 provider → models.dev：该模型有 fast 档（service_tier
+         =="priority" 或 id=="fast"）就显示，没有或目录不认识就不显示。
     """
     if not provider_id or not model_id:
         return False
@@ -140,7 +137,11 @@ def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
     # ——先剥前缀再查。
     if model_id.startswith(f"{provider_id}:"):
         model_id = model_id[len(provider_id) + 1:]
-    if provider_id in _SUBSCRIPTION_FAST_PROVIDERS:
+    if provider_id == "openai-codex":
+        from openprogram.providers.models import get_model
+        m = get_model(provider_id, model_id)
+        return bool(getattr(m, "fast", False)) if m else False
+    if provider_id == "claude-code":
         from openprogram.providers.enabled_models import default_fast
         return default_fast(model_id)
     from .sources import models_dev
@@ -426,16 +427,18 @@ def list_models_for_provider(
         if not mid:
             continue
         reasoning = bool(raw.get("reasoning", False))
-        # Priority: thinking.json model_overrides (freshest, from probe)
-        # > Fetch data thinking_levels > thinking.json provider level
-        # > catalog fallback.
-        levels, default_lv, variant = derive_thinking_fields(
-            provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
-        )
-        if not levels and raw.get("thinking_levels"):
+        # Priority: a fetcher that read the provider's own account/models API
+        # (Codex's endpoint gives the real per-model effort picker) wins — it's
+        # the account's actual truth. Fall back to thinking.json derivation only
+        # when the fetcher supplied nothing.
+        if raw.get("thinking_levels"):
             levels = list(raw["thinking_levels"])
             default_lv = raw.get("default_thinking_level")
             variant = raw.get("thinking_variant")
+        else:
+            levels, default_lv, variant = derive_thinking_fields(
+                provider_id, mid, reasoning, bool(raw.get("supports_xhigh", False))
+            )
         entry: dict[str, Any] = {
             k: v for k, v in raw.items() if not k.startswith("_")
         }

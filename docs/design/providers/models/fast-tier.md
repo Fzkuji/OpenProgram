@@ -10,40 +10,58 @@
 
 | 家族 | 线上形态 | 计费事实 |
 |---|---|---|
-| GPT 5.4 / 5.5 / 5.6 系 | 请求体 `service_tier: "priority"`（OpenAI 叫 priority processing） | API 按量计费的加价档，**不是订阅功能** |
+| GPT 5.4 / 5.5 / 5.6 系 | 请求体 `service_tier: "priority"`（OpenAI 叫 priority processing） | Codex 订阅端把它列成每模型的档（"1.5x 速度、增加用量"）；哪些模型有这个档直接来自 `service_tiers`（§2.1），不靠猜 |
 | Claude Opus 4.6 / 4.7 / 4.8 | 请求体 `speed: "fast"` + 头 `anthropic-beta: fast-mode-2026-02-01` | 同样按量计费；订阅账户没充 usage credits 时 Anthropic 返回 429 "Usage credits are required for fast mode"（2026-07-12 实测），**如实透传给界面**——报错是账户问题，不代表模型不支持 |
 
 其他所有模型（Gemini / DeepSeek / Qwen / Llama / MiniMax …）没有 fast 概念。
 
-## 2. 判定：`supports_fast(provider, model)` 两层
+## 2. 判定：`supports_fast(provider, model)` 三支
 
 入口：`openprogram/webui/_model_listing/listing.py`。判定前先剥
 `"provider:"` 线格式前缀（运行时把当前模型记成 `openai-codex:gpt-5.5`）。
 
-1. **订阅入口手写声明**——`openai-codex`、`claude-code`（集合
-   `_SUBSCRIPTION_FAST_PROVIDERS`）。这两个是订阅入口，公开目录不收录，
-   查 `enabled_models.default_fast(model_id)` 家族表：
-   `gpt-5.4/5.5/5.6` 开头 → True；id 含 `opus-4-6/4-7/4-8`（连字符或点号
-   写法）→ True；其他 → False。
-2. **其余 provider 全自动**——查 models.dev 的 `speed_modes`：该模型有
-   `service_tier == "priority"` 的档或 `id == "fast"` 的档 → True；
-   没有、或目录不认识这个 provider → False。
+1. **openai-codex → 读注册表落盘的 `Model.fast`**。这个字段不是手写的，
+   来自官方 codex models 端点（见 §2.1），Fetch 时随 spec 一起写进 config，
+   判定时 `get_model("openai-codex", id).fast` 直接读文件。`gpt-5.4-mini`
+   这类没有 fast 档的会精确判 False（旧手写前缀表会误判 True）。
+2. **claude-code → 手写声明表** `enabled_models.default_fast(model_id)`：
+   id 含 `opus-4-6/4-7/4-8`（连字符或点号写法）→ True。订阅端还没验证有没有
+   可拉的 models 端点，暂留手写；能拉了就照 codex 的样子换成端点落盘。
+3. **其余 provider → models.dev 全自动**：该模型有 `service_tier ==
+   "priority"` 或 `id == "fast"` 的档 → True；没有、或目录不认识 → False。
 
-裁决记录：只有这两个订阅入口享受手写；私有网关（如 frontier-intelligence）
-不特判——目录不认识就没有 fast 按钮。需要例外时用 config 显式覆盖（§3）。
+裁决记录：私有网关（如 frontier-intelligence）不特判——目录不认识就没有
+fast 按钮。需要例外时用 config 显式覆盖（§3）。
 
-## 3. 存储：规则 + 现算，基本不落盘
+### 2.1 codex 的官方数据源
+
+`GET https://chatgpt.com/backend-api/codex/models?client_version=<ver>`
+（官方 `codex` CLI 启动时拉的同一个账户级端点），用订阅 OAuth bearer +
+`chatgpt-account-id` 授权。每个模型带 `service_tiers`（有 `id:"priority"`
+就是有 fast 档）、`supported_reasoning_levels`（thinking 档）、真实
+`context_window`（订阅端 372k，不是 API 平台的 1050k）。请求 / dispatch 都用
+`originator: codex_cli_rs` + `version` 身份——后端对灰度 id（如
+`gpt-5.6-luna`）按客户端身份放行，用别的 originator 会列表有、dispatch 404。
+
+弃用 models.dev 的原因：它跟踪的是公开 API 平台目录，不是订阅入口。id 会漏
+账户跑不了的模型、context 是 API 平台数字、fast 靠 id 前缀猜（`gpt-5.4-mini`
+误判）。官方端点这三样都权威。
+
+## 3. 存储：先读官方 → 落 config → 之后读文件
+
+codex 的原则：**信息全从官网实时拿，不手写任何模型清单**。
 
 | 层 | 位置 | 持久化 |
 |---|---|---|
-| 家族声明表 | `providers/enabled_models.py::default_fast` + `listing.py::_SUBSCRIPTION_FAST_PROVIDERS` | 源码 |
-| 用户显式覆盖 | `~/.openprogram/config.json` 模型 spec 行的 `"fast": true/false`（行值优先，`_build_model_from_row` 尊重它） | 配置文件（可选，当前无人使用） |
-| `Model.fast` 字段 | 注册表构建 / 动态注册（codex `ensure_codex_model_registered`、anthropic `ensure_anthropic_model_registered`）时按声明表回填 | 仅内存（`ENABLED_MODELS` 是进程内 dict） |
-| models.dev 目录 | `webui/_model_listing/sources/models_dev.py`，`https://models.dev/api.json` | 远端；本地只有 1h 内存缓存（失败 60s 重试），**无磁盘缓存** |
+| codex 官方端点 | `webui/_model_listing/fetchers/codex.py::_fetch_codex_live` | 远端；`_browse_models` 10 分钟内存缓存，**无磁盘缓存** |
+| config spec 行（含 `fast`/`thinking_levels`/`context`） | 用户启用某模型时，`fetch_and_normalize` 归一化后的整行写进 `~/.openprogram/config.json`；Fetch 按钮（`fetch_models_remote`）用新端点数据 heal 已启用行 | 配置文件（这就是"存文件"这一环） |
+| `Model.fast` 字段 | `_build_model_from_row` 读 config 行的 `fast`（行有值就用，codex 行总带值）；注册表构建时进 `ENABLED_MODELS` | 仅内存（进程内 dict，源头是 config） |
+| claude-code 手写表 | `providers/enabled_models.py::default_fast`（仅剩 Opus 部分在判定路径上） | 源码 |
+| models.dev 目录 | `webui/_model_listing/sources/models_dev.py` | 远端；1h 内存缓存，无磁盘缓存 |
 
-已知短板：断网 / models.dev 不可用且内存缓存过期时，自动检测层全部返回
-False（订阅入口不受影响）。兜底方案（未做）：把最近一次成功拉取的目录落盘
-`~/.openprogram/cache/`。
+数据流：**官方端点 → 归一化 → config.json → 注册表 → supports_fast /
+dispatch**。断网 / 没登录时端点返回 error、保留已存 config 行不覆盖——反正没
+token 也 dispatch 不了这些模型，token-less 浏览拿不到列表不算回归。
 
 ## 4. 事件流：任何切换自适应，无需刷新
 
@@ -65,7 +83,7 @@ False（订阅入口不受影响）。兜底方案（未做）：把最近一次
 | 构建器 | 行为 |
 |---|---|
 | `providers/openai_responses` / `openai_completions` | `opts.service_tier` → 请求体 `service_tier`（原有行为） |
-| `providers/openai_codex`（ChatGPT 订阅） | 同上透传（2026-07-12 新增；后端不认时按 OpenAI 惯例忽略未知字段） |
+| `providers/openai_codex`（ChatGPT 订阅） | 同上透传 `opts.service_tier` → 请求体；dispatch 用 `originator: codex_cli_rs` + `version` 身份（后端对灰度 id 按客户端身份放行，见 §2.1） |
 | `providers/anthropic` | `opts.service_tier` 存在 **且** `model.fast` 为真 → 请求体 `extra_body={"speed":"fast"}` + beta 头 `_BETA_FAST`（`_build_client(fast=...)` 追加，不覆盖其他 beta） |
 | 其他线路 | 不透传，参数不出网 |
 
@@ -73,16 +91,18 @@ False（订阅入口不受影响）。兜底方案（未做）：把最近一次
 
 ```
 openprogram/providers/types.py                     Model.fast 字段
-openprogram/providers/enabled_models.py            default_fast 声明表 + 配置行回填
-openprogram/providers/openai_codex/{openai_codex,runtime}.py   codex 透传 + 注册回填
+openprogram/providers/enabled_models.py            default_fast（仅 claude-code Opus）+ 配置行回填
+openprogram/providers/openai_codex/{openai_codex,runtime}.py   service_tier 透传；codex_cli_rs 身份 + _CODEX_CLIENT_VERSION
 openprogram/providers/anthropic/{anthropic,_claude_code_direct_runtime}.py  Claude fast 线路 + 注册回填
-openprogram/webui/_model_listing/listing.py        supports_fast 判定入口；_model_to_dict 透出 fast
-openprogram/webui/_model_listing/sources/models_dev.py  目录拉取与 1h 内存缓存
+openprogram/webui/_model_listing/fetchers/codex.py 官方端点拉取 + 归一化（fast/thinking/context 来源）
+openprogram/webui/_model_listing/fetchers/__init__.py  编排：透传 fetcher 的 fast/thinking，enrich 不覆盖
+openprogram/webui/_model_listing/listing.py        supports_fast 判定入口；list_models_for_provider 优先用 fetcher thinking
 openprogram/webui/routes/runtime.py                /api/agent_settings 下发 chat.fast
 web/lib/session-store/types.ts                     AgentBadgeInfo.fast 类型
 web/components/chat/composer/index.tsx             开关显隐 + 发送门控
 ```
 
-改动指南：给某模型加/去 fast → 只动 `default_fast` 声明表（或该模型的
-config 行）；换判定逻辑 → 只动 `listing.py::supports_fast`；新 provider
-想要 fast → 什么都不用做（models.dev 认识它就自动生效）。
+改动指南：codex 的 fast/thinking 全自动，加/去模型什么都不用做——点 Fetch
+重拉端点即可；换判定逻辑 → 只动 `listing.py::supports_fast`；claude-code 加/去
+fast → 动 `default_fast` 的 Opus 部分；其他 provider 想要 fast → models.dev
+认识它就自动生效。
