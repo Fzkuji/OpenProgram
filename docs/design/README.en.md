@@ -73,6 +73,7 @@ supporting notes / investigations that should not override it.
 | [`providers/request-build.md`](providers/request-build.md) | 请求构建流程 |
 | [`providers/models/models.md`](providers/models/models.md) | 模型目录最终设计 |
 | [`providers/models/thinking-effort.md`](providers/models/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
+| [`providers/models/fast-tier.md`](providers/models/fast-tier.en.md) | The Fast tier: two-tier detection, storage, wires |
 | [`providers/auth/claude-code-direct-oauth.md`](providers/auth/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
 | [`providers/auth/credential-validation-unification.md`](providers/auth/credential-validation-unification.md) | Unified credential validation |
 | [`providers/auth/unified-auth-storage.md`](providers/auth/unified-auth-storage.md) | 统一认证存储 |

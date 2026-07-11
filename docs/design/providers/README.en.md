@@ -38,3 +38,4 @@ The data layout and configuration structure of the model list, plus the declarat
 
 - [`models`](models/models.md) — Model catalog and provider configuration (data layout, fetch, merge)
 - [`thinking-effort`](models/thinking-effort.md) — The thinking/effort subsystem (declarative per-provider mapping)
+- [`fast-tier`](models/fast-tier.en.md) — the Fast tier: two-tier detection (hand-written subscription entries / models.dev auto), storage, wires
