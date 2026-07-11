@@ -395,6 +395,9 @@ export function Composer() {
   // chat like the other toggles). The backend forwards it to the provider
   // request body and no-ops for providers that don't read service_tier.
   const fastEnabled = useSessionStore((s) => s.composerSettings.fast);
+  // 有的模型没有 Fast 档（service_tier）——后端 agent_settings 按当前
+  // 模型下发 chat.fast；不支持就整个隐藏开关/chip，也不随消息发送。
+  const fastSupported = useSessionStore((s) => !!s.agentSettings?.chat?.fast);
   const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
   const toggleFast = () =>
     setComposerSettings({ fast: !useSessionStore.getState().composerSettings.fast });
@@ -652,7 +655,7 @@ export function Composer() {
       toolsEnabled,
       webSearchEnabled,
       activeProfile,
-      serviceTier: fastEnabled ? "priority" : undefined,
+      serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
     });
     if (!handled) {
       // chat.js hasn't loaded yet (shouldn't happen in steady state).
@@ -666,7 +669,7 @@ export function Composer() {
         tools: toolsEnabled,
         web_search: webSearchEnabled,
         ...(permMode ? { permission_mode: permMode } : {}),
-        ...(fastEnabled ? { service_tier: "priority" } : {}),
+        ...(fastEnabled && fastSupported ? { service_tier: "priority" } : {}),
       });
       if (!ok) return;
     }
@@ -693,6 +696,7 @@ export function Composer() {
     toolsEnabled,
     webSearchEnabled,
     fastEnabled,
+    fastSupported,
   ]);
 
   function stop() {
@@ -1104,7 +1108,8 @@ export function Composer() {
 
   /* ---- Render -------------------------------------------------------- */
 
-  const anyToolActive = toolsEnabled || webSearchEnabled || fastEnabled || unattended;
+  const anyToolActive =
+    toolsEnabled || webSearchEnabled || (fastEnabled && fastSupported) || unattended;
 
   return (
     <div className={styles.inputArea}>
@@ -1350,18 +1355,20 @@ export function Composer() {
                         label={text("Web Search", "网页搜索")}
                       />
                     </Menu.Item>
-                    <Menu.Item
-                      className={styles.plusMenuRow}
-                      closeOnClick={false}
-                      onClick={() => toggleFast()}
-                    >
-                      <PlusMenuItem
-                        active={fastEnabled}
-                        onClick={noop}
-                        icon={<FastIcon />}
-                        label={text("Fast", "高速")}
-                      />
-                    </Menu.Item>
+                    {fastSupported ? (
+                      <Menu.Item
+                        className={styles.plusMenuRow}
+                        closeOnClick={false}
+                        onClick={() => toggleFast()}
+                      >
+                        <PlusMenuItem
+                          active={fastEnabled}
+                          onClick={noop}
+                          icon={<FastIcon />}
+                          label={text("Fast", "高速")}
+                        />
+                      </Menu.Item>
+                    ) : null}
 
                     <Menu.Separator className={styles.plusMenuDivider} />
 
@@ -1411,7 +1418,7 @@ export function Composer() {
                   />
                 </HoverTip>
               )}
-              {fastEnabled && (
+              {fastEnabled && fastSupported && (
                 <HoverTip label={text("Fast", "高速")}>
                   <ToolChip
                     icon={<FastIcon size={16} />}

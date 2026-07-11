@@ -362,6 +362,10 @@ def _build_request_body(
     body["instructions"] = context.system_prompt or "You are a helpful assistant."
     if opts.get("session_id"):
         body["prompt_cache_key"] = opts["session_id"]
+    # Fast（priority）档：与 Responses API 同名参数，直接透传（用户裁决：
+    # GPT 订阅入口开放 fast 按钮）。后端不认时按惯例忽略未知字段。
+    if opts.get("service_tier"):
+        body["service_tier"] = opts["service_tier"]
     # `max_output_tokens` and `temperature` are rejected by the Codex backend;
     # they're only valid on the public OpenAI Responses API.
 

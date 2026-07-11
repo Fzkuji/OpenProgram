@@ -312,6 +312,9 @@ export interface AgentBadgeInfo {
   model?: string;
   session_id?: string;
   locked?: boolean;
+  /** 当前模型有无 Fast（service_tier）档；false/缺省 → composer 隐藏
+   *  "高速"开关（与 thinking_levels 为空隐藏思考菜单同一模式）。 */
+  fast?: boolean;
 }
 export interface AgentSettingsState {
   chat?: AgentBadgeInfo;

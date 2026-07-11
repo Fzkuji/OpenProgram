@@ -222,6 +222,9 @@ def register(app):
     async def get_agent_settings(session_id: str = None):
         """Return current chat/exec provider+model. Optionally per-session."""
         from openprogram.webui import server as _s
+        from openprogram.webui._model_listing.listing import (
+            supports_fast as _supports_fast,
+        )
         _s._init_providers()
 
         chat_session_id = None
@@ -262,6 +265,9 @@ def register(app):
                 "session_id": chat_session_id,
                 "locked": chat_locked,
                 "thinking": _s._get_thinking_config_for_model(chat_provider, chat_model),
+                # 当前模型有无 Fast（service_tier）档——composer 据此
+                # 显隐"高速"开关，与 thinking 显隐同一模式。
+                "fast": _supports_fast(chat_provider, chat_model),
             },
             "exec": {
                 "provider": exec_provider,

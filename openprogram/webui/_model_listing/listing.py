@@ -118,6 +118,40 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
     return rows
 
 
+# 会把 service_tier 真正发上线的请求构建器（openai_responses /
+# openai_completions / openai_codex）。anthropic-messages 不透传——
+# Claude 的 fast 走 speed 参数且要另充 usage credits，暂不支持。
+_FAST_CAPABLE_APIS = {"openai-responses", "openai-completions", "openai-codex"}
+
+
+def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
+    """该模型是否支持 Fast（高速）档。两个条件都要满足：
+
+    1. 模型的请求线路会透传 ``service_tier``（注册表 Model.api ∈
+       ``_FAST_CAPABLE_APIS``）；
+    2. models.dev 的 ``speed_modes`` 里存在带 ``service_tier`` 的档位。
+    """
+    if not provider_id or not model_id:
+        return False
+    from openprogram.providers.enabled_models import ENABLED_MODELS
+    m = ENABLED_MODELS.get(f"{provider_id}/{model_id}")
+    if getattr(m, "api", None) not in _FAST_CAPABLE_APIS:
+        return False
+    from .sources import models_dev
+
+    def _has_priority(pid: str) -> bool:
+        try:
+            row = models_dev.lookup(pid, model_id) or {}
+        except Exception:
+            return False
+        return any(sm.get("service_tier") for sm in row.get("speed_modes") or [])
+
+    # 网关（如 frontier-intelligence）转售上游模型时目录不认识网关本身；
+    # 线路既然是 openai 系，就退回按上游 openai 同名模型判——openai 兼容
+    # 网关对不认识的 service_tier 按惯例忽略，不会炸请求。
+    return _has_priority(provider_id) or _has_priority("openai")
+
+
 def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
     inputs = list(getattr(model, "input", []) or [])
     return {
