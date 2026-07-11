@@ -381,6 +381,10 @@
   justify-content: flex-start; /* assistant: bottom-left */
   padding-left: 36px;          /* align under the assistant text column */
 }
+/* 时间戳自带 0 6px 内边距；行首那 6px 会让整排比正文右移，去掉。 */
+.message.assistant .message-actions-footer .message-timestamp {
+  padding-left: 0;
+}
 /* User footer's right edge must line up with the bubble's right edge
    (same 36px inset the bubble uses), not jut further right. */
 .message.user .message-actions-footer {
