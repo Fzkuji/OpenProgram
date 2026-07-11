@@ -143,19 +143,18 @@ def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
         return False
     from .sources import models_dev
 
-    # "fast 档"在 OpenAI 协议上叫 service_tier="priority"（priority
-    # processing）；这里查 models.dev 里该厂商的这个模型有没有这个档。
-    def _models_dev_has_fast(pid: str) -> bool:
+    # "fast 档"在 OpenAI 协议上叫 service_tier="priority"。先按所选厂商查
+    # models.dev；网关（如 frontier-intelligence）转售上游模型时 models.dev
+    # 不认识网关本身，就退回按上游 openai 同名模型查——openai 兼容网关对
+    # 不认识的 service_tier 按惯例忽略，不会炸请求。
+    for pid in (provider_id, "openai"):
         try:
             row = models_dev.lookup(pid, model_id) or {}
         except Exception:
-            return False
-        return any(sm.get("service_tier") for sm in row.get("speed_modes") or [])
-
-    # 网关（如 frontier-intelligence）转售上游模型时目录不认识网关本身；
-    # 线路既然是 openai 系，就退回按上游 openai 同名模型判——openai 兼容
-    # 网关对不认识的 service_tier 按惯例忽略，不会炸请求。
-    return _models_dev_has_fast(provider_id) or _models_dev_has_fast("openai")
+            continue
+        if any(sm.get("service_tier") for sm in row.get("speed_modes") or []):
+            return True
+    return False
 
 
 def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
