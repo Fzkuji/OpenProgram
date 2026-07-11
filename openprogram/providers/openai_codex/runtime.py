@@ -102,9 +102,11 @@ def ensure_codex_model_registered(mid: str) -> None:
         True,
         _codex_supports_xhigh(mid),
     )
+    from openprogram.providers.enabled_models import default_fast
     ENABLED_MODELS[key] = model.model_copy(update={
         "id": mid,
         "name": model.name or display,
+        "fast": default_fast(mid),
         "reasoning": True,
         "thinking_levels": levels,
         "default_thinking_level": default,

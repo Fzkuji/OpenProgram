@@ -322,6 +322,10 @@ class Model(BaseModel):
     # the default path (LobeChat-style quirk marker). Examples: "opus47",
     # "codex_max". Provider request builders and the UI picker switch on this.
     thinking_variant: str | None = None
+    # 高速（Fast）档声明：支持的模型写 True，不支持的不写（默认 False）。
+    # GPT 系在线上叫 service_tier="priority"；Claude Opus 4.6+ 走
+    # speed:"fast" + fast-mode beta 头。声明表见 enabled_models.default_fast。
+    fast: bool = False
     input: list[Literal["text", "image", "video", "audio"]] = Field(default_factory=lambda: ["text"])
     cost: ModelCost = Field(default_factory=ModelCost)
     context_window: int = 128000

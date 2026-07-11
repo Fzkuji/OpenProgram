@@ -118,43 +118,40 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
     return rows
 
 
-# 会把 service_tier 真正发上线的请求构建器（openai_responses /
-# openai_completions / openai_codex）。anthropic-messages 不透传——
-# Claude 的 fast 走 speed 参数且要另充 usage credits，暂不支持。
-_FAST_CAPABLE_APIS = {"openai-responses", "openai-completions", "openai-codex"}
+# 订阅入口（ChatGPT / Claude 订阅）公开目录不收录，它们的高速档手动
+# 声明；其余 provider 一律 models.dev 自动检测（用户裁决 2026-07-12）。
+_SUBSCRIPTION_FAST_PROVIDERS = {"openai-codex", "claude-code"}
 
 
 def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
-    """该模型是否支持 Fast（高速）档。两个条件都要满足：
+    """当前模型有没有 Fast（高速）档。全自动、事件驱动——agent_settings
+    在每次连接/会话切换/模型切换/轮次结束时重算并推给前端，composer 据
+    此显隐高速开关。判定两层：
 
-    1. 模型的请求线路会透传 ``service_tier``（注册表 Model.api ∈
-       ``_FAST_CAPABLE_APIS``）；
-    2. models.dev 的 ``speed_modes`` 里存在带 ``service_tier`` 的档位。
+      1. openai-codex / claude-code（订阅入口）→ 手动声明表
+         ``enabled_models.default_fast``；
+      2. 其他 provider → models.dev：该模型有 fast 档（GPT 系
+         service_tier="priority"，Claude 系 id=="fast" 的 speed 档）
+         就显示，没有或目录不认识就不显示。
     """
     if not provider_id or not model_id:
         return False
-    # 运行时把当前模型记成 "provider:id" 线格式（如 openai-codex:gpt-5.5），
-    # 注册表和目录都用裸 id——先剥前缀，否则查不到、按钮永远不显示。
+    # 运行时把当前模型记成 "provider:id" 线格式（如 openai-codex:gpt-5.5）
+    # ——先剥前缀再查。
     if model_id.startswith(f"{provider_id}:"):
         model_id = model_id[len(provider_id) + 1:]
-    from openprogram.providers.enabled_models import ENABLED_MODELS
-    m = ENABLED_MODELS.get(f"{provider_id}/{model_id}")
-    if getattr(m, "api", None) not in _FAST_CAPABLE_APIS:
-        return False
+    if provider_id in _SUBSCRIPTION_FAST_PROVIDERS:
+        from openprogram.providers.enabled_models import default_fast
+        return default_fast(model_id)
     from .sources import models_dev
-
-    # "fast 档"在 OpenAI 协议上叫 service_tier="priority"。先按所选厂商查
-    # models.dev；网关（如 frontier-intelligence）转售上游模型时 models.dev
-    # 不认识网关本身，就退回按上游 openai 同名模型查——openai 兼容网关对
-    # 不认识的 service_tier 按惯例忽略，不会炸请求。
-    for pid in (provider_id, "openai"):
-        try:
-            row = models_dev.lookup(pid, model_id) or {}
-        except Exception:
-            continue
-        if any(sm.get("service_tier") for sm in row.get("speed_modes") or []):
-            return True
-    return False
+    try:
+        row = models_dev.lookup(provider_id, model_id) or {}
+    except Exception:
+        return False
+    return any(
+        sm.get("service_tier") == "priority" or sm.get("id") == "fast"
+        for sm in row.get("speed_modes") or []
+    )
 
 
 def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
@@ -169,6 +166,8 @@ def _model_to_dict(model: Any, enabled: bool) -> dict[str, Any]:
         "video": "video" in inputs,
         "audio": "audio" in inputs,
         "reasoning": bool(getattr(model, "reasoning", False)),
+        # 高速档声明（enabled_models.default_fast）；False → UI 不显示开关。
+        "fast": bool(getattr(model, "fast", False)),
         # Thinking UX capability (see providers/thinking_spec.py).
         # Empty `thinking_levels` → UI hides the menu for this model.
         "thinking_levels": list(getattr(model, "thinking_levels", []) or []),

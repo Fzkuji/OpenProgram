@@ -81,6 +81,10 @@ _BETA_CLAUDE_CODE = "claude-code-20250219"
 #     exhausted, no per-token surcharge.
 # Sending the wrong one is what billed $1.98 for a single 1M probe.
 _BETA_CONTEXT_1M = "context-management-2025-06-27"
+# Claude 的高速档（Opus 4.6+）：请求体 speed:"fast" + 本 beta 头。订阅
+# 账户没充 usage credits 时 Anthropic 会 429（"Usage credits are
+# required for fast mode"）——如实透传给界面，不代表模型不支持。
+_BETA_FAST = "fast-mode-2026-02-01"
 
 
 def _wants_1m(model_id: str) -> bool:
@@ -219,6 +223,7 @@ def _build_client(
     options_headers: dict[str, str] | None = None,
     is_oauth_override: bool | None = None,
     base_url_override: str | None = None,
+    fast: bool = False,
 ) -> tuple[_anthropic.AsyncAnthropic, bool]:
     """
     Build the Anthropic async client with appropriate headers.
@@ -259,6 +264,8 @@ def _build_client(
     # beta header on.
     if _wants_1m(model.id):
         beta_features.append(_BETA_CONTEXT_1M)
+    if fast:
+        beta_features.append(_BETA_FAST)
 
     # SDK-level retry budget: Anthropic SDK retries 429/5xx/transport
     # errors with its own exponential backoff. Default is 2; we raise
@@ -613,9 +620,13 @@ async def stream_simple(
     cache_control = _get_cache_control(base_url, getattr(opts, "cache_retention", None))
 
     _merged_headers = {**(getattr(opts, "headers", None) or {}), **(_conn.headers if _conn else {})}
+    # 高速档：composer 的 fast 开关随消息带 service_tier；模型声明了
+    # fast 才透传（Claude 线上形态 = speed:"fast" + fast-mode beta 头）。
+    _fast = bool(getattr(opts, "service_tier", None)) and bool(getattr(model, "fast", False))
     client, is_oauth = _build_client(
         model, api_key,
         interleaved_thinking=True,
+        fast=_fast,
         options_headers=_merged_headers or None,
         is_oauth_override=is_oauth,
         base_url_override=base_url,
@@ -658,6 +669,10 @@ async def stream_simple(
         "max_tokens": max_tokens,
         # Note: "stream": True is NOT passed to client.messages.stream() — the method itself streams
     }
+
+    if _fast:
+        # SDK 不认识 speed 这个字段，走 extra_body 直入请求体。
+        params["extra_body"] = {"speed": "fast"}
 
     if system:
         params["system"] = system

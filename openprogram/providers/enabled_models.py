@@ -21,6 +21,20 @@ from __future__ import annotations
 from .types import Model
 
 
+# 高速档声明表（用户裁决 2026-07-12：支持的写出来，其他的不写）。
+# 只有两个家族有 fast：GPT 5.4/5.5/5.6 系（service_tier="priority"）
+# 和 Claude Opus 4.6/4.7/4.8（speed:"fast" + beta 头）。按模型 id 判，
+# 与线路无关——同一个模型经网关转售照样有高速档。
+def default_fast(model_id: str) -> bool:
+    mid = (model_id or "").lower().split("/")[-1]
+    if mid.startswith(("gpt-5.4", "gpt-5.5", "gpt-5.6")):
+        return True
+    return any(t in mid for t in (
+        "opus-4-6", "opus-4-7", "opus-4-8",
+        "opus-4.6", "opus-4.7", "opus-4.8",
+    ))
+
+
 def _build_model_from_row(row: dict, provider_id: str, endpoints: dict) -> Model:
     """A config spec row → Model. The row already carries most fields
     (incl. nested cost/headers/compat and usually ``api``); the provider's
@@ -50,6 +64,9 @@ def _build_model_from_row(row: dict, provider_id: str, endpoints: dict) -> Model
         data["api"] = ep.get("api", "openai-completions")
     if not data.get("base_url"):
         data["base_url"] = ep.get("base_url", "")
+    # 高速档：配置行显式写了 fast 就听它的，没写的按声明表回填。
+    if "fast" not in data:
+        data["fast"] = default_fast(str(data.get("id") or ""))
     return Model.model_validate(data)
 
 

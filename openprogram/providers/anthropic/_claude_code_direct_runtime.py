@@ -128,10 +128,12 @@ def ensure_anthropic_model_registered(mid: str) -> str:
     levels, default, variant = derive_thinking_fields(
         "anthropic", mid, True, True,
     )
+    from openprogram.providers.enabled_models import default_fast
     ENABLED_MODELS[key] = template.model_copy(update={
         "id": mid,
         "name": mid,
         "context_window": ctx,
+        "fast": default_fast(mid),
         "reasoning": True,
         "thinking_levels": levels,
         "default_thinking_level": default,
