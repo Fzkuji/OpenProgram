@@ -102,7 +102,24 @@ def register(app):
             or body.get("_workdir")
             or body.get("workdir")
         )
-        result = run_agentic_function_call(name, kwargs, session_id, work_dir)
+        # ``fork_of_node``: edit-and-rerun. Anchor the run at the named
+        # prior call's predecessor so it lands as a SIBLING branch of that
+        # run (same fork model as retry_function), not a stacked new call.
+        anchor = None
+        fork_of = body.get("fork_of_node")
+        if fork_of and session_id:
+            from openprogram.agent.session_db import default_db
+            from openprogram.webui.ws_actions.chat import _call_predecessor
+            try:
+                nodes = default_db().get_nodes(session_id)
+            except Exception:
+                nodes = []
+            node = next((n for n in nodes if n.id == fork_of), None)
+            if node is not None:
+                anchor = _call_predecessor(node)
+        result = run_agentic_function_call(
+            name, kwargs, session_id, work_dir, anchor_msg_id=anchor,
+        )
         if "error" in result:
             return JSONResponse(status_code=result.pop("status_code", 400),
                                 content=result)

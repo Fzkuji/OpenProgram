@@ -180,6 +180,15 @@ interface ConvState {
    *  and sends it through the chat WS channel, then clears this. */
   fnFormFunction: AgenticFunction | null;
   openFnForm: (fn: AgenticFunction) => void;
+  /** 手动运行的"修改"入口：预填上次的参数，提交时以 fork_of_node
+   *  为锚点作为兄弟分支重跑（旧运行保留在 ◀ N/M ▶ 里）。 */
+  openFnFormEdit: (
+    fn: AgenticFunction,
+    prefill: Record<string, string>,
+    forkOfNode: string,
+  ) => void;
+  fnFormPrefill: Record<string, string> | null;
+  fnFormForkOf: string | null;
   closeFnForm: () => void;
   /** True between the close click and the wrapper-height transition
    *  end — `fnFormFunction` stays non-null through the close animation
@@ -535,6 +544,8 @@ export const useSessionStore = create<ConvState>((set) => ({
         // not carried across the switch — they're throwaway.)
         fnFormFunction: null,
         fnFormClosing: false,
+        fnFormPrefill: null,
+        fnFormForkOf: null,
         // Reset the welcome screen visibility on session switch:
         //   - null id  → New chat clicked, show the welcome panel.
         //   - non-null → entering an existing session, hide it (the
@@ -651,8 +662,20 @@ export const useSessionStore = create<ConvState>((set) => ({
   setContextPanelOpen: (open) => set({ contextPanelOpen: open }),
 
   fnFormFunction: null,
-  openFnForm: (fn) => set({ fnFormFunction: fn, fnFormClosing: false }),
-  closeFnForm: () => set({ fnFormFunction: null, fnFormClosing: false }),
+  fnFormPrefill: null,
+  fnFormForkOf: null,
+  openFnForm: (fn) => set({
+    fnFormFunction: fn, fnFormClosing: false,
+    fnFormPrefill: null, fnFormForkOf: null,
+  }),
+  openFnFormEdit: (fn, prefill, forkOfNode) => set({
+    fnFormFunction: fn, fnFormClosing: false,
+    fnFormPrefill: prefill, fnFormForkOf: forkOfNode,
+  }),
+  closeFnForm: () => set({
+    fnFormFunction: null, fnFormClosing: false,
+    fnFormPrefill: null, fnFormForkOf: null,
+  }),
   fnFormClosing: false,
   setFnFormClosing: (v) => set({ fnFormClosing: v }),
 

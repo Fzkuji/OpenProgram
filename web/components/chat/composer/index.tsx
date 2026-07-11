@@ -939,6 +939,10 @@ export function Composer() {
     const body: Record<string, unknown> = { kwargs };
     if (workdirMode !== "hidden" && wd) body.work_dir = wd;
     if (currentSessionId) body.session_id = currentSessionId;
+    // "修改后重新运行"：以原调用为锚点 fork 兄弟分支（旧运行保留在
+    // ◀ N/M ▶ 切换里），不是在对话尾部追加一次新调用。
+    const forkOf = useSessionStore.getState().fnFormForkOf;
+    if (forkOf) body.fork_of_node = forkOf;
 
     // Hide welcome panel right away (matches old sendChatMessage UX).
     const w = window as unknown as {

@@ -28,7 +28,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import type { AgenticFunction } from "@/lib/session-store";
+import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
 import { defaultParamValue, visibleParams } from "./fn-form";
 
@@ -60,9 +60,12 @@ export function useFnFormState(fn: AgenticFunction | null): FnFormStateHook {
       setClosing(false);
       return;
     }
+    // "修改后重新运行"路径带上次调用的参数（fnFormPrefill）；普通打开
+    // 用 schema 默认值。开表单时一次性读取即可，不需要响应式订阅。
+    const prefill = useSessionStore.getState().fnFormPrefill;
     const seed: Record<string, string> = {};
     for (const p of visibleParams(fn)) {
-      const v = defaultParamValue(p);
+      const v = prefill?.[p.name] ?? defaultParamValue(p);
       if (v) seed[p.name] = v;
     }
     setValuesRaw(seed);

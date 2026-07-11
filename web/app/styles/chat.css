@@ -1406,7 +1406,7 @@
    悬停显现），左缘对齐步骤行的标题文字列。 */
 .runtime-actions-footer {
   justify-content: flex-start; /* 与 assistant 消息一致：底部靠左 */
-  padding-left: 48px;
+  padding-left: 2px; /* 对齐树最左缘（根图标列），不悬空在半截缩进上 */
   margin-top: 6px;
 }
 .runtime-actions-footer .message-timestamp { padding-left: 0; }

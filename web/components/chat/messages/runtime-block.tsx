@@ -15,7 +15,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { formatUsageFooterLabel } from "@/lib/format-utils/format";
-import { useSessionStore, type ChatMsg } from "@/lib/session-store";
+import {
+  useSessionStore,
+  type AgenticFunction,
+  type ChatMsg,
+} from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
@@ -224,13 +228,26 @@ export function RuntimeBlock({
     } else done();
   }
 
-  // 修改：把当初的调用命令回填到输入框，用户改完直接发。
+  // 修改：重新弹出 fn-form，预填上次的参数；提交时以本次运行为锚点
+  // fork 兄弟分支（旧运行保留在 ◀ N/M ▶ 里），语义 = 可改参数的重试。
   function editCall() {
     const root = tree as TNode | null;
-    const cmd = (msg.content || "").trim()
-      || `run ${fnName}(${Object.entries(root?.params || {})
-           .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ")})`;
-    useSessionStore.getState().setComposerInput(cmd);
+    const w = window as unknown as { availableFunctions?: AgenticFunction[] };
+    const fn = (w.availableFunctions || []).find((f) => f.name === fnName);
+    if (!fn) {
+      showToast(text(
+        `Function ${fnName} not found.`, `找不到函数 ${fnName}。`,
+      ), { tone: "error" });
+      return;
+    }
+    const prefill: Record<string, string> = {};
+    for (const [k, v] of Object.entries(root?.params || {})) {
+      if (k === "runtime" || k === "callback") continue;
+      prefill[k] = typeof v === "boolean"
+        ? (v ? "True" : "False")
+        : typeof v === "string" ? v : JSON.stringify(v);
+    }
+    useSessionStore.getState().openFnFormEdit(fn, prefill, msg.id);
   }
 
   const ts = msg.timestamp
