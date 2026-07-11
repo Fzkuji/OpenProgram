@@ -46,7 +46,7 @@ function wsSend(payload: unknown): boolean {
 // ../../animated-icons). They self-animate on hover (uncontrolled) —
 // the action button is icon-sized so hovering it animates the glyph.
 // chevL/chevR stay static (tiny ‹ › nav carets — not worth animating).
-const SVG = {
+export const SVG = {
   copy: <CopyIcon />,
   check: <CheckIcon />,
   retry: <RefreshCwIcon />,
@@ -94,7 +94,7 @@ function setRunActive(active: boolean): void {
  * reliably every time. (Uncontrolled self-hover only fired over the
  * centred 14px glyph and could miss the second hover.)
  */
-function ActionButton({
+export function ActionButton({
   icon,
   title,
   onClick,

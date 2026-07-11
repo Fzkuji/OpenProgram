@@ -1400,6 +1400,12 @@
   /* 混 bg-primary 而非 transparent：不透明，压得住背后的竖线 */
   box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, var(--bg-primary));
 }
+/* 手动函数运行的底部操作行：与聊天消息 footer 同款（时间戳 + 图标，
+   悬停显现），左缘对齐步骤行的标题文字列。 */
+.runtime-actions-footer { padding-left: 48px; margin-top: 6px; }
+.runtime-card-host:hover .message-actions,
+.runtime-actions-footer .message-actions:focus-within { opacity: 1; }
+
 /* 折叠提示：行尾淡字 "⋯ N 步"（状态提示；点行空白即展开）。 */
 .tl-fold-hint {
   color: var(--text-muted);

@@ -12,7 +12,7 @@
  * was called with what kwargs. Retry / attempt-nav move into the
  * ``inline-tree-actions`` slot so the card has one frame, not two.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { formatUsageFooterLabel } from "@/lib/format-utils/format";
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
@@ -22,6 +22,7 @@ import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import type { TNode } from "./execution-dag/types";
 import { StepRow, TreeStep } from "./execution-strip";
+import { ActionButton, SVG } from "./message-actions";
 import { useMarkdownReady } from "./markdown";
 
 interface RuntimeLegacyGlobals {
@@ -115,6 +116,7 @@ export function RuntimeBlock({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { text } = useTranslation();
+  const [copied, setCopied] = useState(false);
   useMarkdownReady();
 
   const sessionId = useSessionStore((s) => s.currentSessionId);
@@ -165,110 +167,121 @@ export function RuntimeBlock({
   // nested calls. Drop the signature; keep the frame.
   const headerLabel = text("Function call", "函数调用");
 
-  const actions = (
-    <>
-      {hasSiblings ? (
-        <span className="attempt-nav" onClick={(e) => e.stopPropagation()}>
-          <button
-            className="attempt-nav-btn"
-            disabled={siblingIdx <= 1 || !sessionId || !msg.prevSiblingId}
-            title={text("Previous version", "上一个版本")}
-            onClick={() =>
-              sessionId &&
-              msg.prevSiblingId &&
-              checkoutSibling(sessionId, msg.prevSiblingId, msg, siblingIdx - 1)
-            }
-          >
-            {"◀"}
-          </button>
-          <span className="attempt-nav-label">
-            {siblingIdx}/{siblingTotal}
+  // Re-run the SAME function with its LAST kwargs in the SAME session.
+  // The backend looks up the prior call's stored args and dispatches via
+  // the forced-tool-call path (fresh sibling run, not an overwrite).
+  function doRetry() {
+    if (!sessionId) return;
+    // 0ms feedback (interaction-feedback policy): flip THIS card into the
+    // new-version pending state right now; the reload on
+    // running_task_clear backfills the real run. Stuck retry reverts.
+    const store = useSessionStore.getState();
+    const rid = msg.id;
+    const snapshot = store.messagesById[rid];
+    const total = (msg.siblingTotal ?? 0) + 1;
+    optimisticAction(
+      {
+        apply: () => {
+          store.updateMessage(sessionId, rid, {
+            status: "running",
+            contextTree: undefined,
+            siblingIndex: total,
+            siblingTotal: total,
+          });
+        },
+        settled: () => !useSessionStore.getState().messagesById[rid],
+        revert: () => {
+          if (snapshot) {
+            useSessionStore.getState().updateMessage(sessionId, rid, snapshot);
+          }
+        },
+        onTimeoutMessage: text(
+          "Retry timed out — reverted.",
+          "重试超时——已还原。",
+        ),
+      },
+      showToast,
+    );
+    (window as Window & { __reloadOnTaskClear?: string | null }
+    ).__reloadOnTaskClear = sessionId;
+    wsSend({ action: "retry_function", session_id: sessionId, function: fnName });
+  }
+
+  function copyTree() {
+    const payload = JSON.stringify(tree ?? { function: fnName }, null, 2);
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(payload).then(done, done);
+    } else done();
+  }
+
+  const ts = msg.timestamp
+    ? new Date(msg.timestamp > 1e12 ? msg.timestamp : msg.timestamp * 1000)
+    : null;
+
+  // 底部操作行：与聊天消息的 footer 同款（悬停显现的图标行），
+  // 不再把重试/版本切换塞在根行右侧。仅顶层手动运行渲染；
+  // 嵌在 assistant 气泡里的调用没有 footer。
+  const footer = !nested ? (
+    <div className="message-actions-footer runtime-actions-footer">
+      <div className="message-actions">
+        {ts ? (
+          <span className="message-timestamp" title={ts.toLocaleString()}>
+            {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
-          <button
-            className="attempt-nav-btn"
-            disabled={
-              siblingIdx >= siblingTotal || !sessionId || !msg.nextSiblingId
-            }
-            title={text("Next version", "下一个版本")}
-            onClick={() =>
-              sessionId &&
-              msg.nextSiblingId &&
-              checkoutSibling(sessionId, msg.nextSiblingId, msg, siblingIdx + 1)
-            }
-          >
-            {"▶"}
-          </button>
-        </span>
-      ) : null}
-      {!streaming && fnName && !nested ? (
-        <button
-          className="rerun-btn"
-          title={text("Retry", "重试")}
-          onClick={(e) => {
-            e.stopPropagation();
-            // Re-run the SAME function with its LAST kwargs in the SAME
-            // session. The backend looks up the prior call's stored args
-            // and dispatches via the modern forced-tool-call path, so the
-            // re-run appends a fresh code node (new run, not an overwrite)
-            // and the normal stream flow renders it. No DOM surgery.
-            if (!sessionId) return;
-            // 0ms feedback (interaction-feedback policy): flip THIS card
-            // into the new-version pending state right now — spinner body
-            // (clear the tree) + "running", and optimistically advance the
-            // switcher to N+1/N+1 since the retry forks a fresh sibling.
-            // The reload on running_task_clear (armed below) backfills the
-            // real new run and rebuilds the transcript, which drops this
-            // card's id from the store — our "settled" signal. A stuck
-            // retry reverts + toasts after the timeout.
-            const store = useSessionStore.getState();
-            const rid = msg.id;
-            const snapshot = store.messagesById[rid];
-            const total = (msg.siblingTotal ?? 0) + 1;
-            optimisticAction(
-              {
-                apply: () => {
-                  store.updateMessage(sessionId, rid, {
-                    status: "running",
-                    contextTree: undefined,
-                    siblingIndex: total,
-                    siblingTotal: total,
-                  });
-                },
-                settled: () => !useSessionStore.getState().messagesById[rid],
-                revert: () => {
-                  if (snapshot) {
-                    useSessionStore
-                      .getState()
-                      .updateMessage(sessionId, rid, snapshot);
-                  }
-                },
-                onTimeoutMessage: text(
-                  "Retry timed out — reverted.",
-                  "重试超时——已还原。",
-                ),
-              },
-              showToast,
-            );
-            // The fork lands (and HEAD moves) only when the re-run
-            // finishes, so ask for a one-shot transcript reload on this
-            // session's next running_task_clear — the reloaded branch
-            // then shows only the new version, with the old one behind
-            // the < N/M > switcher (chat retry reloads the same way,
-            // just earlier, because its fork exists before streaming).
-            (window as Window & { __reloadOnTaskClear?: string | null }
-            ).__reloadOnTaskClear = sessionId;
-            wsSend({
-              action: "retry_function",
-              session_id: sessionId,
-              function: fnName,
-            });
-          }}
-        >
-          {text("↻ Retry", "↻ 重试")}
-        </button>
-      ) : null}
-    </>
-  );
+        ) : null}
+        <ActionButton
+          icon={copied ? SVG.check : SVG.copy}
+          title={text("Copy", "复制")}
+          extraClass={copied ? "is-copied" : undefined}
+          onClick={copyTree}
+        />
+        {!streaming && fnName ? (
+          <ActionButton
+            icon={SVG.retry}
+            title={text("Retry", "重试")}
+            onClick={doRetry}
+          />
+        ) : null}
+        {hasSiblings ? (
+          <span className="attempt-nav" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="attempt-nav-btn"
+              disabled={siblingIdx <= 1 || !sessionId || !msg.prevSiblingId}
+              title={text("Previous version", "上一个版本")}
+              onClick={() =>
+                sessionId &&
+                msg.prevSiblingId &&
+                checkoutSibling(sessionId, msg.prevSiblingId, msg, siblingIdx - 1)
+              }
+            >
+              {"◀"}
+            </button>
+            <span className="attempt-nav-label">
+              {siblingIdx}/{siblingTotal}
+            </span>
+            <button
+              className="attempt-nav-btn"
+              disabled={
+                siblingIdx >= siblingTotal || !sessionId || !msg.nextSiblingId
+              }
+              title={text("Next version", "下一个版本")}
+              onClick={() =>
+                sessionId &&
+                msg.nextSiblingId &&
+                checkoutSibling(sessionId, msg.nextSiblingId, msg, siblingIdx + 1)
+              }
+            >
+              {"▶"}
+            </button>
+          </span>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
 
   // 与聊天时间线同一套组件（无框、圆图标压竖线）。手动运行的
   // 过程即内容：整棵树默认展开，根行挂重试/版本切换动作。
@@ -289,9 +302,9 @@ export function RuntimeBlock({
             title={fnName || headerLabel}
             note={text("Running…", "运行中…")}
             running
-            actions={actions}
           />
         </div>
+        {footer}
       </div>
     );
   }
@@ -306,7 +319,7 @@ export function RuntimeBlock({
       data-msg-id={msg.id}
     >
       <div className="tl-body">
-        <TreeStep node={tree as TNode} actions={actions} defaultKidsOpen />
+        <TreeStep node={tree as TNode} defaultKidsOpen />
       </div>
       {usageHtml ? (
         <div
@@ -314,6 +327,7 @@ export function RuntimeBlock({
           dangerouslySetInnerHTML={{ __html: usageHtml }}
         />
       ) : null}
+      {footer}
     </div>
   );
 }
