@@ -1236,10 +1236,11 @@
 }
 .tl-collapse.is-open { grid-template-rows: 1fr; }
 .tl-collapse > .tl-collapse-inner { overflow: hidden; min-height: 0; }
+/* GPT 式纯文字开关：与正文左对齐，无按钮底色，hover 只提亮文字。 */
 .tl-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--text-muted);
   font-size: 13px;
   cursor: pointer;
@@ -1247,23 +1248,22 @@
   margin: 2px 0;
   border: none;
   background: transparent;
-  border-radius: 8px;
-  padding: 5px 14px 5px 10px;
+  padding: 3px 0;
   letter-spacing: 0.2px;
   text-align: left;
 }
-.tl-toggle:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.tl-toggle:hover { color: var(--text-secondary); }
 .tl-chev {
   font-size: 11px;
   transition: transform var(--transition);
   display: inline-block;
 }
 .tl[data-open="1"] .tl-chev { transform: rotate(90deg); }
-.tl-body { position: relative; margin: 6px 0 4px; padding-left: 34px; }
+.tl-body { position: relative; margin: 6px 0 4px; padding-left: 38px; }
 .tl-body::before {
   content: "";
   position: absolute;
-  left: 10px;
+  left: 13.25px; /* 对准图标圆心（icon 在 4..24，圆心 14） */
   top: 16px;
   bottom: 16px;
   width: 1.5px;
@@ -1286,7 +1286,7 @@
 .tl-step-head:hover { background: var(--bg-hover); }
 .tl-step-icon {
   position: absolute;
-  left: -34px;
+  left: -36px; /* 头行在 padding 38 + step 2 处，图标落在 4..24 */
   top: 50%;
   transform: translateY(-50%);
   width: 20px;
@@ -1297,6 +1297,8 @@
   background: var(--bg-primary);
   color: var(--text-secondary);
   border-radius: 50%;
+  /* 不透明底色圈：把穿过的竖线挡出一圈空隙 */
+  box-shadow: 0 0 0 3px var(--bg-primary);
 }
 /* animated-icons 组件外层是 div：拍平成纯图标容器。 */
 .tl-step-icon > div {
@@ -1362,11 +1364,11 @@
   animation: dag-breathe 1.4s ease-in-out infinite;
 }
 /* 嵌套层级：图标缩一号、竖线更淡，同一套样式递归。 */
-.tl-sub { position: relative; margin: 2px 0 2px 8px; padding-left: 30px; }
+.tl-sub { position: relative; margin: 2px 0 2px 8px; padding-left: 34px; }
 .tl-sub::before {
   content: "";
   position: absolute;
-  left: 8px;
+  left: 11.75px; /* 对准子图标圆心（icon 在 4..21，圆心 12.5） */
   top: 12px;
   bottom: 12px;
   width: 1.5px;
@@ -1376,7 +1378,7 @@
 }
 .tl-sub .tl-step { padding: 1px 0 1px 2px; }
 .tl-sub .tl-step-head { font-size: 12.5px; padding: 3px 8px; }
-.tl-sub .tl-step-icon { left: -30px; width: 17px; height: 17px; }
+.tl-sub .tl-step-icon { left: -32px; width: 17px; height: 17px; }
 .tl-sub .tl-step-body { font-size: 12.5px; padding: 8px 12px; }
 
 /* 三类图标配色：思考紫 / 函数橙 / LLM 青 / 子代理绿（静态，不动画，
@@ -1389,7 +1391,8 @@
    圈色取图标自身颜色的淡化版（currentColor 即 k-* 配色）。 */
 .tl-step-icon.is-toggleable { cursor: pointer; pointer-events: auto; }
 .tl-step-head:hover .tl-step-icon.is-toggleable {
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+  /* 混 bg-primary 而非 transparent：不透明，压得住背后的竖线 */
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, var(--bg-primary));
 }
 /* 折叠提示：行尾淡字 "⋯ N 步"（状态提示；点行空白即展开）。 */
 .tl-fold-hint {
