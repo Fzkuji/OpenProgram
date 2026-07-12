@@ -53,17 +53,17 @@ export function execStripLabel(
     }
   }
   const parts: string[] = [];
-  if (thinking > 0) parts.push(`${text("thinking", "思考")} ×${thinking}`);
-  if (functions > 0) parts.push(`${text("functions", "函数")} ×${functions}`);
+  if (thinking > 0) parts.push(`${text("Thinking", "思考")} ×${thinking}`);
+  if (functions > 0) parts.push(`${text("Functions", "函数")} ×${functions}`);
   const subAgents = Math.max(spawnBlocks, spawnNames.length);
   if (subAgents > 0) {
     parts.push(
       spawnNames.length > 0
-        ? `${text("sub-agent", "子代理")}: ${spawnNames.join("、")}`
-        : `${text("sub-agent", "子代理")} ×${subAgents}`,
+        ? `${text("Sub-agent", "子代理")}: ${spawnNames.join("、")}`
+        : `${text("Sub-agent", "子代理")} ×${subAgents}`,
     );
   }
-  return parts.join(" · ") || text("execution", "执行过程");
+  return parts.join(" · ") || text("Execution", "执行过程");
 }
 
 /** 高度过渡容器：grid 0fr↔1fr 动画，展开向下推、收起平滑抽走。
@@ -414,7 +414,7 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
   const attach = card.attach || {};
   const name = (attach.label || "").trim()
     || (attach.head_id || "").slice(0, 8)
-    || text("sub-agent", "子代理");
+    || text("Sub-agent", "子代理");
   const status = attach.status;
   const running = status === "running" || status === "pending" || status === "queued";
   const isError = status === "errored";
