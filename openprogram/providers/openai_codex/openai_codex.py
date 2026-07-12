@@ -202,6 +202,26 @@ def stream_openai_codex_responses(
                 **(getattr(model, "headers", None) or {}),
                 **(opts.get("headers") or {}),
             }
+            # The Codex backend gates greylisted model ids (e.g. gpt-5.6-luna)
+            # behind the real CLI identity: it serves them only to a recognised
+            # ``originator: codex_cli_rs`` at/above a minimum ``version``. Older
+            # ids don't check, so an identity-less request silently works for
+            # gpt-5.5 but 404s ("Model not found") for luna. The identity lives
+            # on OpenAICodexRuntime.api_model.headers, but the dispatcher path
+            # re-resolves the model via get_model() → a plain registry Model
+            # with no headers, so it never reaches here. Backfill the identity
+            # from the token when it's absent, so dispatch works regardless of
+            # which Model object routed here.
+            if "originator" not in headers:
+                from .oauth import _get_account_id_from_jwt
+                from .runtime import _CODEX_CLIENT_VERSION
+                headers["originator"] = "codex_cli_rs"
+                headers["version"] = _CODEX_CLIENT_VERSION
+                headers.setdefault("OpenAI-Beta", "responses=experimental")
+                if "chatgpt-account-id" not in headers:
+                    acct = _get_account_id_from_jwt(api_key) or ""
+                    if acct:
+                        headers["chatgpt-account-id"] = acct
 
             ev_stream.push({"type": "start", "partial": output})
 
