@@ -209,8 +209,8 @@ def spawn_detached() -> int:
         port = read_worker_port()
         port_str = f", port {port}" if port else ""
         print(
-            f"openprogram worker already running (PID {existing}{port_str}). "
-            f"Stop it first with `openprogram worker stop`."
+            f"openprogram already running (PID {existing}{port_str}). "
+            f"Stop it first with `openprogram stop`."
         )
         return 1
 
@@ -251,10 +251,10 @@ def spawn_detached() -> int:
         if current_worker_pid() == proc.pid:
             port = read_worker_port()
             port_str = f", port {port}" if port else ""
-            print(f"openprogram worker started (PID {proc.pid}{port_str}). Logs: {log_file}")
+            print(f"openprogram started (PID {proc.pid}{port_str}). Logs: {log_file}")
             return 0
 
-    print(f"openprogram worker starting (PID {proc.pid}); not yet ready. Watch {log_file}.")
+    print(f"openprogram starting (PID {proc.pid}); not yet ready. Watch {log_file}.")
     return 0
 
 
@@ -262,9 +262,9 @@ def stop_worker() -> int:
     """SIGTERM the worker, escalate to SIGKILL after 5s. Returns 0 on success."""
     pid = current_worker_pid()
     if pid is None:
-        print("openprogram worker: not running.")
+        print("openprogram: not running.")
         return 0
-    print(f"Stopping openprogram worker (PID {pid})...")
+    print(f"Stopping openprogram (PID {pid})...")
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -349,24 +349,24 @@ def print_status() -> int:
     port, pid, source = find_running_webui()
 
     if source == "none":
-        print("openprogram worker: not running")
+        print("openprogram: not running")
         print()
-        print("  Start it with:  openprogram worker start")
-        print("  Or install as a service:  openprogram worker install")
+        print("  Start it with:  openprogram")
+        print("  Or install as a service (auto-start at login):  openprogram worker install")
         return 0
 
     if source == "unmanaged":
         # Foreground ``--web`` or ``web`` — webui is up, but not under
-        # ``worker start`` management, so ``worker stop`` / ``restart``
-        # can't touch it. Be transparent about that.
-        print(f"openprogram webui: running on :{port}  (unmanaged)")
+        # the managed background service, so ``openprogram stop`` /
+        # ``restart`` can't touch it. Be transparent about that.
+        print(f"openprogram: running on :{port}  (foreground `openprogram web`)")
         print()
-        print("  Started via `openprogram web` —")
-        print("  the foreground process owns it. `worker stop` will not")
-        print("  affect this instance; Ctrl-C in that terminal will.")
+        print("  This instance is owned by the terminal that launched")
+        print("  `openprogram web`; `openprogram stop` won't affect it —")
+        print("  Ctrl-C in that terminal will.")
         print()
-        print("  For a managed worker, stop the foreground process and")
-        print("  run:  openprogram worker start")
+        print("  For a background service that survives closing the terminal,")
+        print("  stop the foreground process and run:  openprogram")
         return 0
 
     started = _worker_start_time(pid) if pid is not None else None
@@ -375,7 +375,7 @@ def print_status() -> int:
         age = f", up {_format_duration(time.time() - started)}"
 
     port_str = f", port {port}" if port else ""
-    print(f"openprogram worker: running (PID {pid}{port_str}{age})")
+    print(f"openprogram: running (PID {pid}{port_str}{age})")
     print(f"  logs: {paths.log_path()}")
 
     try:

@@ -202,15 +202,13 @@ def _print_no_worker_hint() -> None:
     stdio redirect.
     """
     _tty_write(
-        "openprogram: no worker is running.\n"
+        "openprogram: the background service isn't running and couldn't be\n"
+        "started automatically (the port may be in use).\n"
         "\n"
-        "The TUI connects to a persistent worker process that hosts the\n"
-        "model API, sessions, and any chat-channel adapters. Start one:\n"
+        "  openprogram status                 # check what's holding the port\n"
+        "  openprogram worker install         # install as a login service\n"
         "\n"
-        "  openprogram worker start          # one-off background process\n"
-        "  openprogram worker install        # install as a system service\n"
-        "\n"
-        "Then re-run `openprogram` to open the TUI.\n"
+        "Then re-run `openprogram`.\n"
     )
 
 

@@ -32,6 +32,12 @@ from openprogram._ports import (
 _FRONTEND_PORT = 18100
 
 
+# ponytail: _find_web_dir / _frontend_command / _start_frontend /
+# _stop_frontend are no longer called — _cmd_web now delegates the whole
+# backend+frontend boot to the detached worker (spawn_detached → worker
+# run → start_web_frontend). Kept, not deleted, so a foreground-frontend
+# mode can be restored without rewriting the platform-specific Next.js
+# spawn/teardown. Delete them if that path is confirmed dead for good.
 def _find_web_dir() -> Path | None:
     """Locate the ``web/`` source dir that ships next to the package.
 
@@ -264,49 +270,42 @@ def _cmd_web(port, open_browser, web_port=None):
         print("  different backend port:  openprogram setup ui")
         sys.exit(1)
 
-    # Start the backend WITHOUT opening a browser — the real UI is the
-    # frontend on :18100, not the backend on :18109 (which has no HTML
-    # routes). We open the correct URL ourselves once we know whether a
-    # frontend is available.
-    thread = start_web(port=port, open_browser=False)
+    # Start the backend + frontend as a DETACHED background service, then
+    # free the terminal — same machinery the TUI path already uses
+    # (cli_ink.py:_resolve_worker_port → spawn_detached). The worker's
+    # ``worker run`` brings up BOTH the backend (:18109) and the bundled
+    # Next.js frontend (:18100) itself (runner.py start_web +
+    # start_web_frontend), so we don't boot them in-process here. This is
+    # why closing the terminal no longer kills the web UI — the worker has
+    # no controlling TTY and survives. Stop it with ``openprogram stop``.
+    from openprogram.worker import spawn_detached
 
+    # Honour an explicit --port / --web-port on the detached path: the
+    # worker resolves ports from these envs (runner.py / worker/web.py),
+    # not from function args.
+    os.environ.setdefault("OPENPROGRAM_BACKEND_PORT", str(port))
+    os.environ.setdefault("OPENPROGRAM_WEB_PORT", str(web_port))
+
+    rc = spawn_detached()
+    if rc != 0:
+        print("openprogram: couldn't start the background service "
+              "(the port may be in use). Try `openprogram status`.")
+        sys.exit(1)
+
+    ui_url = f"http://localhost:{web_port}"
+
+    # Wait briefly for the frontend to bind before opening the browser, so
+    # the user doesn't land on a connection-refused page.
     try:
-        from openprogram.worker import current_worker_pid
-        pid = current_worker_pid()
-        if pid:
-            print(f"Channels worker running (PID {pid}).")
+        from openprogram.cli_ink import _wait_until_listening
+        _wait_until_listening(web_port, timeout=10.0)
     except Exception:
         pass
 
-    frontend = _start_frontend(port, web_port)
-    # The UI lives on the frontend port only when OUR frontend is up —
-    # either we just spawned it, or _start_frontend reused one it confirmed
-    # was ours. A bare _port_in_use(web_port) here would ALSO fire when an
-    # unrelated program squats it (the squatter _start_frontend already
-    # refused to reuse), and we'd then open the browser at that foreign one.
-    has_frontend = frontend is not None or _frontend_is_ours(web_port) is True
-    ui_url = (
-        f"http://localhost:{web_port}" if has_frontend
-        else f"http://localhost:{port}"
-    )
-
     if open_browser:
-        import threading
-
-        def _open():
-            import time
-            import webbrowser
-            # Give the frontend a moment to bind :18100 before opening.
-            time.sleep(2.0 if frontend is not None else 0.5)
-            webbrowser.open(ui_url)
-
-        threading.Thread(target=_open, daemon=True).start()
+        import webbrowser
+        webbrowser.open(ui_url)
 
     print(f"Web UI: {ui_url}")
-    print("Press Ctrl+C to stop.")
-    try:
-        thread.join()
-    except KeyboardInterrupt:
-        print("\nStopping web UI.")
-    finally:
-        _stop_frontend(frontend)
+    print("Running in the background — close this terminal any time.")
+    print("Stop it with:  openprogram stop")

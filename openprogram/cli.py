@@ -91,6 +91,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
         "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp",
+        "stop", "status", "restart", "help",
     }
     bypass_flags = {
         "--print", "-p", "--help", "-h", "--version", "--print-prompt",
@@ -268,16 +269,44 @@ def main():
         description="OpenProgram — build, run, and chat with agentic programs.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "common commands:\n"
-            "  openprogram                       open the chat (terminal UI)\n"
-            "  openprogram web                   open the browser UI\n"
-            "  openprogram setup                 first-run setup wizard\n"
-            "  openprogram providers available   list/search every provider you can use\n"
-            "  openprogram providers login <id>  add a provider key (then auto-fetches models)\n"
-            "  openprogram config list           show settings (config get/set to change)\n"
-            "  openprogram doctor                health checks\n"
+            "commands:\n"
+            "  chat / run\n"
+            "    (none)          open the chat (terminal UI)\n"
+            "    web             open the browser UI at http://localhost:18100\n"
+            "    --print \"...\"   one-shot prompt; print reply and exit\n"
+            "    --resume <id>   resume a prior chat session\n"
             "\n"
-            "Run `openprogram <verb> -h` for a command's own help "
+            "  background service\n"
+            "    status          is the background service running? (PID, port, uptime)\n"
+            "    stop            stop it (web UI stays up until you do)\n"
+            "    restart         restart it (after changing code / config)\n"
+            "\n"
+            "  setup & config\n"
+            "    setup           first-run setup wizard\n"
+            "    providers       manage LLM providers / keys (login, available, status)\n"
+            "    config          view / change settings\n"
+            "    ports           show / set the web UI ports\n"
+            "    mcp             manage MCP servers\n"
+            "    browser         install / maintain the browser tools\n"
+            "\n"
+            "  content\n"
+            "    agents          manage agents (model, skills, tools per persona)\n"
+            "    sessions        manage chat sessions\n"
+            "    programs        run / list agentic programs\n"
+            "    skills          manage the SKILL.md registry\n"
+            "    plugins         manage installed plugins\n"
+            "    channels        chat-channel bots (Telegram, Discord, Slack, WeChat)\n"
+            "    memory          inspect / manage persistent memory\n"
+            "\n"
+            "  maintenance\n"
+            "    doctor          health checks\n"
+            "    rescue          diagnose problems, print fix commands\n"
+            "    logs            view log files\n"
+            "    update          check for + apply updates\n"
+            "    worker install  run as a login service (auto-start, crash-restart)\n"
+            "    completion      emit a shell autocompletion script\n"
+            "\n"
+            "Run `openprogram <command> -h` for a command's own help "
             "(e.g. `openprogram providers -h`)."
         ),
     )
@@ -296,7 +325,12 @@ def main():
         help="Resume a prior CLI chat session. Find ids via "
              "`openprogram sessions list` or the Web UI sidebar.")
 
-    sub = parser.add_subparsers(dest="command", help="Subcommand")
+    # help=SUPPRESS hides argparse's default flat, add-order subcommand dump
+    # (rescue/logs/completion first, daily commands scattered mid-list). The
+    # grouped, curated list in ``epilog`` replaces it. Each sub-parser keeps
+    # its own ``help=`` so ``openprogram <verb> -h`` still works.
+    sub = parser.add_subparsers(dest="command", metavar="<command>",
+                                help=argparse.SUPPRESS)
 
     # ---- rescue (crestodian-style first-aid diagnostic) -------------------
     sub.add_parser(
@@ -629,6 +663,17 @@ def main():
     worker_sub.add_parser("uninstall",
         help="Remove the system service.")
 
+    # Top-level aliases that hide the internal "worker" noun. Running
+    # `openprogram` already auto-starts the background service, so the only
+    # verbs a user needs are stop / status / restart.
+    sub.add_parser("stop",
+        help="Stop the background OpenProgram service. The web UI stays "
+             "reachable after you close the terminal until you run this.")
+    sub.add_parser("status",
+        help="Show whether the background service is running (PID, port, uptime).")
+    sub.add_parser("restart",
+        help="Restart the background service (picks up new code / config).")
+
     # ---- channels ---------------------------------------------------------
     p_channels = sub.add_parser("channels",
         help="Run / inspect chat-channel bots (Telegram, Discord, Slack, WeChat)")
@@ -638,8 +683,8 @@ def main():
         help="Interactive wizard — pick channel, log in (QR / token), "
              "bind to an agent. One command instead of "
              "`accounts add` + `accounts login` + `bindings add`. "
-             "Channels run inside the persistent worker — start it with "
-             "`openprogram worker start`.")
+             "Channels run inside the background service — start it by "
+             "running `openprogram`.")
     # ---- channels accounts --------------------------------------------
     p_chacct = channels_sub.add_parser("accounts",
         help="Manage channel bot accounts (WeChat, Telegram, etc.)")
@@ -688,8 +733,8 @@ def main():
     # ---- mcp -------------------------------------------------------------
     p_mcp = sub.add_parser("mcp",
         help="Manage MCP (Model Context Protocol) servers. Talks to "
-             "the running worker — start it first with `openprogram "
-             "worker start`. Same backend as the webui /mcp page and "
+             "the background service — start it first by running "
+             "`openprogram`. Same backend as the webui /mcp page and "
              "the TUI /mcp command.")
     p_mcp_sub = p_mcp.add_subparsers(dest="mcp_verb", metavar="verb")
     p_mcp_sub.add_parser("list", help="List every configured MCP server with state")
@@ -832,6 +877,12 @@ def main():
              "search / tts / channels / backend) jumps to that section; "
              "omit for the full first-run wizard.",
     )
+
+    # ``openprogram help`` → ``openprogram --help`` (bare ``help`` isn't a
+    # subcommand; users type it anyway). Only when it's the first token, so
+    # ``openprogram config help`` etc. still reach their own sub-parser.
+    if len(sys.argv) > 1 and sys.argv[1] == "help":
+        sys.argv[1] = "--help"
 
     args = parser.parse_args()
 
@@ -1215,6 +1266,22 @@ def main():
             sys.exit(0)
         print(f"update failed: {msg}")
         sys.exit(1)
+
+    # Top-level aliases for the background service — no "worker" noun.
+    if args.command == "stop":
+        from openprogram import worker as _worker
+        sys.exit(_worker.stop_worker())
+    if args.command == "restart":
+        from openprogram import worker as _worker
+        sys.exit(_worker.restart_worker())
+    if args.command == "status":
+        from openprogram import worker as _worker
+        from openprogram.worker import services as _services
+        rc = _worker.print_status()
+        if _services.is_supported():
+            print()
+            _services.status()
+        sys.exit(rc)
 
     if args.command == "worker":
         verb = getattr(args, "worker_verb", None)

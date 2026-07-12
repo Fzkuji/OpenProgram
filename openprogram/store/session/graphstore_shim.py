@@ -62,6 +62,17 @@ class GraphStoreShim:
         # persist in SessionStore.append_message).
         if not caller:
             self.store._persist_meta(git, idx)
+        # Registry too — same as SessionStore.append_message: updated_at
+        # is the sidebar's recency-sort key. The webui dispatcher appends
+        # through THIS shim, so skipping the registry here left every web
+        # chat row without a timestamp and the sidebar order collapsed to
+        # insertion order after a refresh (new sessions sank to the bottom).
+        fields: dict = {"updated_at": _time.time()}
+        if node.role == "user" and node.output:
+            text = str(node.output or "").strip().replace("\n", " ")
+            fields["preview"] = (text[:77] + "…") if len(text) > 80 else text
+        self.store._update_index_entry(self.session_id, **fields)
+        self.store._schedule_index_flush()
 
     def load(self):
         """Return a ``Graph`` populated with all nodes for this session.

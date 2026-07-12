@@ -251,6 +251,8 @@ export interface ConvSummary {
   id: string;
   title: string;
   created_at?: number;
+  /** Last-activity timestamp — the sidebar's recency-sort key. */
+  updated_at?: number;
   agent_id?: string;
   source?: string;
   peer_display?: string;

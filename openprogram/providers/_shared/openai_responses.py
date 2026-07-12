@@ -363,10 +363,19 @@ async def process_responses_stream(
 
             if item_type == "reasoning" and isinstance(current_block, dict) and current_block.get("type") == "thinking":
                 summary = item_dict.get("summary") or []
-                thinking_text = "\n\n".join(s.get("text", "") if isinstance(s, dict) else getattr(s, "text", "") for s in summary)
-                current_block["thinking"] = thinking_text
+                thinking_text = "\n\n".join(s.get("text", "") if isinstance(s, dict) else getattr(s, "text", "") for s in summary).strip()
+                # Codex returns the DONE reasoning item with encrypted_content
+                # and an EMPTY summary array — the readable text only arrived
+                # via reasoning_summary_text.delta. Overwriting unconditionally
+                # clobbers that accumulated text to "", the thinking block then
+                # fails the `if _t:` guard at persist time, and neither the
+                # live blocks nor the DAG node ever carry the thinking — the
+                # UI can't collapse it into the "Thinking ×1" strip. Keep the
+                # deltas when the summary is empty.
+                if thinking_text:
+                    current_block["thinking"] = thinking_text
                 current_block["thinking_signature"] = json.dumps(item_dict)
-                stream.push({"type": "thinking_end", "content_index": block_index(), "content": thinking_text, "partial": output})
+                stream.push({"type": "thinking_end", "content_index": block_index(), "content": current_block.get("thinking", ""), "partial": output})
                 current_block = None
 
             elif item_type == "message" and isinstance(current_block, dict) and current_block.get("type") == "text":

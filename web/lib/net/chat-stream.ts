@@ -50,6 +50,11 @@ interface ChatResponseData {
   event?: StreamEvent;
   content?: string;
   text?: string;
+  /** Ordered execution blocks (thinking / text / tool) the persisted
+   *  message carries. conv-mapper rebuilds these on reload; the final
+   *  chat_response envelope also ships them so a live turn can converge
+   *  to the same collapsed ExecutionStrip shape without a refresh. */
+  blocks?: unknown[];
   cancelled?: boolean;
   context_tree?: unknown;
   /** Live execution tree carried by `tree_update` envelopes. */
@@ -559,6 +564,17 @@ function finalize(sid: string, rid: string, d: ChatResponseData): void {
   // text when nothing streamed (e.g. a non-streaming run).
   const finalText = d.content ?? d.text;
   if (finalText && !cur.content) patch.content = finalText;
+
+  // Converge the live turn to the reloaded shape. `msg.blocks` is what
+  // gates the collapsed ExecutionStrip ("Thinking ×1 ›") render in the
+  // bubble; during streaming only `msg.thinking` / `msg.content` are set,
+  // so a just-finished turn shows the un-collapsed fallback until a page
+  // refresh runs conv-mapper and populates `blocks`. The final envelope
+  // ships the same ordered blocks the persisted path rebuilds — apply
+  // them now so the strip collapses the moment streaming ends, no refresh.
+  if (Array.isArray(d.blocks) && d.blocks.length && !cur.blocks) {
+    patch.blocks = d.blocks as ChatMsg["blocks"];
+  }
 
   // Any tool still "running" at terminal time gets closed out — no
   // tool_result will arrive after the turn ends.

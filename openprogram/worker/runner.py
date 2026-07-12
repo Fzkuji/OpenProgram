@@ -304,11 +304,16 @@ def run_foreground() -> int:
         print("\n[worker] stopping...")
         if stop_event is not None:
             stop_event.set()
+        # Shared join budget, not 3s per thread: `openprogram stop` waits
+        # 5s after SIGTERM before force-killing, and two channel bots at
+        # 3s each already blew that window — every stop ended in SIGKILL.
+        # Threads that don't stop in time drop on process exit anyway.
+        _join_deadline = time.time() + 2.0
         for label, t in channel_threads:
-            t.join(timeout=3)
+            t.join(timeout=max(0.1, _join_deadline - time.time()))
             if t.is_alive():
                 print(f"[{label}] still running; drops on process exit")
-        stop_web_frontend(web_proc)
+        stop_web_frontend(web_proc, timeout=2.0)
     finally:
         lock.release()
         clear_pid_file()

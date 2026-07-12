@@ -36,6 +36,11 @@ function toSummary(c: Record<string, unknown>): ConvSummary {
     id: String(c.id),
     title: typeof c.title === "string" ? c.title : "",
     created_at: c.created_at as number | undefined,
+    // Recency-sort key. The server sends it and the sidebar sorts on
+    // `updated_at || created_at`; dropping it here made every reloaded row
+    // fall back to created_at (0 for persisted rows) so a fresh session
+    // sank to the bottom after refresh.
+    updated_at: c.updated_at as number | undefined,
     agent_id: (c.agent_id as string | undefined) ?? undefined,
     source: (c.source as string | undefined) ?? undefined,
     peer_display: (c.peer_display as string | undefined) ?? undefined,
