@@ -1,9 +1,10 @@
 """Generic OpenAI-compatible ``/v1/models`` fetcher.
 
-Used as the default for every provider listed in
-``providers._FETCH_MODELS_PROVIDERS`` that doesn't have a dedicated
-entry in ``fetchers.__init__._FETCHERS``. Bearer auth + standard
-``{data: [{id, ...}]}`` envelope.
+The shared fallback: used for every provider listed in
+``providers._FETCH_MODELS_PROVIDERS`` (and custom providers) that ships no
+``providers/<name>/list_models.py`` of its own. Bearer auth + standard
+``{data: [{id, ...}]}`` envelope. Belongs to no single provider, so it lives
+here in the dispatcher package rather than in a provider directory.
 """
 from __future__ import annotations
 

@@ -1,18 +1,25 @@
-"""Google AI Studio (``generativelanguage.googleapis.com``) ``/v1beta/models``
-fetcher. API-key query param style (not Bearer); response shape uses
-``name = "models/<id>"`` rather than the bare id, and ``displayName``
-+ ``inputTokenLimit`` for the friendly fields. We filter to chat-style
-models (``generateContent`` in ``supportedGenerationMethods``) so
-embeddings and AQA-only entries don't pollute the picker."""
+"""Google AI Studio model list — ``/v1beta/models`` (query-param key).
+
+Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
+
+Differs from the OpenAI-compatible shape: the api key is a query param
+(``?key=``, not a Bearer header); ``name`` is ``"models/<id>"`` rather than the
+bare id; friendly fields are ``displayName`` + ``inputTokenLimit``. We filter to
+chat-style models (``generateContent`` in ``supportedGenerationMethods``) so
+embeddings and AQA-only entries don't pollute the picker.
+
+Contract: success → ``list[dict]``, failure → ``{"error": ...}``.
+"""
 from __future__ import annotations
 
 from typing import Any
 
 
-def _fetch_google(provider_id: str, timeout: float) -> Any:
+def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
 
-    from ..storage import _resolve_api_key
+    from openprogram.webui._model_listing.storage import _resolve_api_key
 
     api_key = _resolve_api_key(provider_id)
     if not api_key:

@@ -1,56 +1,65 @@
-"""Model-list fetchers — one module per provider, plus the dispatcher.
+"""Model-list dispatcher.
 
-Each per-provider module exposes a single function ``_fetch_<provider>``
-that takes ``(provider_id, timeout)`` and returns either:
+A provider that lists models in a way the generic OpenAI-compatible
+``/v1/models`` fetcher can't handle ships a ``list_models.py`` in its own
+directory (``openprogram/providers/<name>/list_models.py``) exposing:
 
-* a list of model dicts (success), or
-* a dict with an ``"error"`` key (failure with a human-readable
-  message)
+    def fetch(provider_id: str, timeout: float) -> list[dict] | {"error": ...}
 
-This file holds the ``_FETCHERS`` map (provider id → fetcher
-function) and the ``fetch_models_remote`` orchestrator that:
+The dispatcher loads that by directory name — the same convention
+``probe_thinking.probe()`` uses — so adding a provider needs no edit here; it
+just drops a file in its own directory. Providers whose ``/v1/models`` is
+standard don't ship the file and use the generic ``_fetch_openai_compat``
+(kept here because it belongs to no single provider). See
+``docs/design/providers/models/models.md`` §4.1.
 
-1. Picks the right fetcher (explicit ``_FETCHERS`` entry first; falls
-   back to ``_fetch_openai_compat`` for any provider in
-   ``providers._FETCH_MODELS_PROVIDERS``).
-2. Normalises every per-fetcher response into the entry shape
-   ``replace_fetched_models`` wants — pulling out
-   ``context_window`` / ``max_tokens`` from the several spellings
-   different upstreams use, lifting cost hints, deriving thinking
-   capability via ``thinking_spec.derive_thinking_fields``.
-3. Calls ``storage.replace_fetched_models`` to rotate the
-   ``_source: "fetched"`` rows (preserving manual additions) and
-   prune enabled spec rows whose id is now dead.
+Each ``fetch`` returns either a list of model dicts (success) or a dict with an
+``"error"`` key (failure, human-readable). ``fetch_and_normalize`` then:
+
+1. Picks the source (per-provider ``list_models.fetch`` → anthropic-wire route
+   → generic ``_fetch_openai_compat`` → custom-provider → error).
+2. Normalises every response into one entry shape — pulling
+   ``context_window`` / ``max_tokens`` from the several spellings upstreams
+   use, lifting cost hints, carrying a fetcher's fast/thinking through, and
+   deriving thinking via ``thinking_spec.derive_thinking_fields``.
+3. (Refresh path) rotates the enabled spec rows via storage.
 """
 from __future__ import annotations
 
 from typing import Any
 
-# Per-provider fetchers
+# Generic OpenAI-compatible /v1/models fetcher — the fallback for every
+# provider that DOESN'T ship its own list_models.py. It belongs to no single
+# provider, so it stays here rather than in a provider directory.
 from .openai_compat import _fetch_openai_compat
-from .anthropic import _fetch_anthropic
-from .bedrock import _fetch_bedrock
-from .codex import _fetch_codex_live
-from .deepseek import _fetch_deepseek
-from .github_copilot import _fetch_github_copilot
-from .google import _fetch_google
 
 
-# Provider id → fetcher function. Providers in
-# ``providers._FETCH_MODELS_PROVIDERS`` use ``_fetch_openai_compat`` by
-# default; explicit entries here override that default.
-_FETCHERS: dict[str, Any] = {
-    "anthropic": _fetch_anthropic,
-    # claude-code runs DIRECT on the anthropic subscription — fetch the live
-    # model list from Anthropic's own /v1/models (Bearer OAuth), same as the
-    # anthropic provider. (Was a Meridian-daemon proxy probe.)
-    "claude-code": _fetch_anthropic,
-    "openai-codex": _fetch_codex_live,
-    "google": _fetch_google,
-    "amazon-bedrock": _fetch_bedrock,
-    "github-copilot": _fetch_github_copilot,
-    "deepseek": _fetch_deepseek,  # /v1/models is id-only, enrich locally
+# Providers whose model source is loaded by directory-name convention from
+# ``providers/<dir>/list_models.py::fetch``. claude-code has no directory of its
+# own (it rides the anthropic runtime), so it's mapped to anthropic's module
+# explicitly; every other entry resolves to its own provider directory.
+_LIST_MODELS_MODULE_OVERRIDES = {
+    "claude-code": "anthropic",
 }
+
+
+def _load_fetcher(provider_id: str) -> Any:
+    """Load ``providers.<dir>.list_models.fetch`` for a provider, or ``None``
+    when it ships no such module (→ dispatcher falls back to the generic
+    fetcher). Mirrors ``_load_probe``: directory name from the provider id,
+    convention module ``list_models``, convention function ``fetch``."""
+    dir_name = _LIST_MODELS_MODULE_OVERRIDES.get(
+        provider_id, provider_id.replace("-", "_")
+    )
+    try:
+        mod = __import__(
+            f"openprogram.providers.{dir_name}.list_models",
+            fromlist=["fetch"],
+        )
+        return mod.fetch
+    except (ImportError, AttributeError):
+        return None
+
 
 # Cache probed reasoning results per Fetch (avoid calling probe() per model)
 _probe_cache: dict[str, dict] = {}
@@ -92,14 +101,14 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
     from ..sources import enrich as _enrich_from_community
     from ..storage import _is_custom_provider
 
-    fetcher = _FETCHERS.get(provider_id)
+    fetcher = _load_fetcher(provider_id)
     # Providers that speak the Anthropic Messages wire format (minimax,
     # minimax-cn, …) expose Anthropic's GET /v1/models with x-api-key —
     # the OpenAI-compatible GET /models 404s on their /anthropic host.
     # Route them to the (now base_url-aware) Anthropic fetcher before the
-    # OpenAI-compat fallback.
+    # OpenAI-compat fallback. anthropic's list_models.fetch is base_url-aware.
     if fetcher is None and _default_api_for(provider_id) == "anthropic-messages":
-        fetcher = _fetch_anthropic
+        fetcher = _load_fetcher("anthropic")
     if fetcher is None and provider_id in _FETCH_MODELS_PROVIDERS:
         fetcher = _fetch_openai_compat
     # Custom (user-added) providers: config-only OpenAI-compatible endpoints
@@ -280,4 +289,4 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     }
 
 
-__all__ = ["fetch_models_remote", "fetch_and_normalize", "_FETCHERS"]
+__all__ = ["fetch_models_remote", "fetch_and_normalize", "_load_fetcher"]

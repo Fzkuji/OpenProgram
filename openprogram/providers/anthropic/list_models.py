@@ -1,21 +1,30 @@
-"""Anthropic ``/v1/models`` fetcher — ``x-api-key`` header, returns
-``{data: [{id, display_name, ...}]}``. Differs from the generic
-OpenAI-compatible fetcher in two ways: auth header (``x-api-key``,
-not ``Authorization: Bearer``) and the mandatory
-``anthropic-version`` header.
+"""Anthropic model list — ``/v1/models`` (``x-api-key`` header).
 
-Works for any provider that speaks the Anthropic Messages wire format,
-not just native Anthropic: native uses ``api.anthropic.com``, everyone
-else (minimax, minimax-cn, …) hits ``<their base_url>/v1/models``."""
+Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
+
+Differs from the generic OpenAI-compatible fetcher in two ways: auth header
+(``x-api-key``, not ``Authorization: Bearer``) and the mandatory
+``anthropic-version`` header. Works for any provider that speaks the Anthropic
+Messages wire format, not just native Anthropic: native uses
+``api.anthropic.com``, everyone else (minimax, minimax-cn, …) hits
+``<their base_url>/v1/models``. The dispatcher routes anthropic-wire providers
+here even without an explicit entry, via the ``anthropic-messages`` api route.
+
+Contract: success → ``list[dict]``, failure → ``{"error": ...}``.
+"""
 from __future__ import annotations
 
 from typing import Any
 
 
-def _fetch_anthropic(provider_id: str, timeout: float) -> Any:
+def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
 
-    from ..storage import _resolve_api_key, _resolve_base_url
+    from openprogram.webui._model_listing.storage import (
+        _resolve_api_key,
+        _resolve_base_url,
+    )
 
     # claude-code runs on a Claude SUBSCRIPTION (OAuth, no api-key). Its
     # credentials live in the `anthropic` pool and the token is an
@@ -36,7 +45,7 @@ def _fetch_anthropic(provider_id: str, timeout: float) -> Any:
                 return {"error": f"No base URL resolvable for {provider_id}."}
             url = base.rstrip("/") + "/v1/models"
     if not api_key:
-        from ..providers import _env_var_for
+        from openprogram.webui._model_listing.providers import _env_var_for
         env = _env_var_for(provider_id)
         return {"error": f"No API key set ({env})." if env else "No credential — sign in first."}
     # An sk-ant-oat OAuth token authenticates as Bearer + Claude Code identity

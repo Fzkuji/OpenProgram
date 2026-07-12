@@ -88,17 +88,25 @@ list_available_models(provider_id)
   → merged in memory, returned straight to the frontend
 ```
 
-The official source dispatches per provider to one fetcher
-(`_model_listing/fetchers/`). Each source has a different shape but **returns
-the same contract**: success → `list[dict]` (each row has at least id/name),
-failure → `{"error": ...}`.
+**Fetcher placement rule: a provider whose interface departs from the standard
+OpenAI shape carries its own fetcher in its own directory.** Each source has a
+different shape but **returns the same contract**: success → `list[dict]`
+(each row has at least id/name), failure → `{"error": ...}`.
 
-| Source shape | fetcher | example |
+| Source shape | fetcher location | example |
 |---|---|---|
-| Standard `/v1/models` (OpenAI-compatible) | `openai_compat` | deepseek, openrouter, custom gateways |
-| Anthropic `GET /v1/models` + per-model capabilities | `anthropic` | anthropic, claude-code, minimax |
-| Account-level private endpoint (`/v1/models` is Cloudflare-blocked; read the subscription's model table instead) | `codex` | openai-codex (`/backend-api/codex/models`, see fast-tier.md §2.1) |
-| Vendor-specific list API (response shape / auth differ from OpenAI-compatible, so each gets its own) | `google` (query-param key + `models/<id>` prefix) / `bedrock` (boto3 SigV4, not HTTP) / `github_copilot` (session bearer + capabilities envelope) | the matching provider |
+| Standard `/v1/models` (OpenAI-compatible) | generic `_model_listing/fetchers/openai_compat.py` (shared fallback, owned by no single provider) | openai, openrouter, groq, custom gateways |
+| Anthropic `GET /v1/models` + per-model capabilities | `providers/anthropic/list_models.py` | anthropic, claude-code, minimax |
+| Account-level private endpoint (`/v1/models` is Cloudflare-blocked; read the subscription's model table instead) | `providers/openai_codex/list_models.py` (see fast-tier.md §2.1) | openai-codex |
+| Vendor-specific list API (shape / auth differ from OpenAI-compatible) | `providers/<name>/list_models.py`: `google` (query-param key + `models/<id>` prefix) / `amazon_bedrock` (boto3 SigV4, not HTTP) / `github_copilot` (session bearer + capabilities envelope) / `deepseek` (id-only, enriched after) | the matching provider |
+
+**Convention loading**: a provider whose interface departs from standard ships
+a `list_models.py` in its own directory exposing `fetch(provider_id, timeout)`;
+the dispatcher's `_load_fetcher` `__import__`s it by directory name — the exact
+mechanism `probe_thinking.probe()` uses, so adding a provider needs no central
+edit. A standard-interface provider ships no such file and uses the generic
+`openai_compat`. Whether the file exists = whether the provider's interface
+departs from standard — a natural, on-demand test.
 
 Whatever the source, `fetch_and_normalize` is the **single normalisation choke
 point**: it collapses each fetcher's disparate keys (`context_length` /

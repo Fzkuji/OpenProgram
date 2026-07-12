@@ -21,7 +21,7 @@ import pytest
 from openprogram.webui._model_listing import fetchers as F
 from openprogram.webui._model_listing import providers as P
 from openprogram.webui._model_listing import storage as st
-from openprogram.webui._model_listing.fetchers import anthropic as A
+from openprogram.providers.anthropic import list_models as A
 
 
 # api-stamp consistency (drift guard)
@@ -92,7 +92,7 @@ def test_fetch_dispatch_routes_anthropic_wire_to_anthropic_fetcher(monkeypatch):
         used["which"] = "openai_compat"
         return {"error": "wrong fetcher"}
 
-    monkeypatch.setattr(F, "_fetch_anthropic", fake_anthropic)
+    monkeypatch.setattr(A, "fetch", fake_anthropic)
     monkeypatch.setattr(F, "_fetch_openai_compat", fake_openai)
     from openprogram.webui._model_listing import sources as S
     monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
@@ -123,7 +123,7 @@ def test_anthropic_fetcher_uses_provider_base_url(monkeypatch):
     import httpx
     monkeypatch.setattr(httpx, "get", fake_get)
 
-    out = A._fetch_anthropic("minimax-cn", 5.0)
+    out = A.fetch("minimax-cn", 5.0)
     assert isinstance(out, list) and out[0]["id"] == "MiniMax-M3"
     assert seen["url"] == "https://api.minimaxi.com/anthropic/v1/models"
     assert seen["headers"].get("x-api-key") == "k"
@@ -160,14 +160,14 @@ def test_claude_code_browse_borrows_anthropic_with_empty_registry(monkeypatch):
 def test_claude_code_fetch_routes_to_anthropic(monkeypatch):
     # The Fetch button for claude-code hits anthropic's live /v1/models (Bearer
     # OAuth), same as the anthropic provider — no dead ENABLED_MODELS scan.
-    # claude-code is wired to anthropic's fetcher in the dispatcher map.
-    assert F._FETCHERS["claude-code"] is F._fetch_anthropic
+    # claude-code has no directory of its own, so the dispatcher maps it to
+    # anthropic's list_models module by convention override.
+    assert F._load_fetcher("claude-code") is A.fetch
     used = {"which": None}
-    # patch the map entry (fetch_and_normalize reads _FETCHERS.get, not the
-    # module attribute).
+    # Patch anthropic's fetch so we can see claude-code route through it.
     fake = (lambda pid, timeout: used.__setitem__("which", pid) or
             [{"id": "claude-opus-4-8", "name": "Claude Opus 4.8"}])
-    monkeypatch.setitem(F._FETCHERS, "claude-code", fake)
+    monkeypatch.setattr(A, "fetch", fake)
     from openprogram.webui._model_listing import sources as S
     monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
     res = F.fetch_and_normalize("claude-code", timeout=5.0)
@@ -179,7 +179,7 @@ def _stub_codex_endpoint(monkeypatch, payload):
     """Point the codex fetcher at a fake account/models endpoint response."""
     from openprogram.providers.openai_codex import oauth as _oauth
     from openprogram.providers.openai_codex import openai_codex as _oc
-    from openprogram.webui._model_listing.fetchers import codex as C
+    from openprogram.providers.openai_codex import list_models as C
 
     monkeypatch.setattr(_oc, "_resolve_codex_bearer_token", lambda *_: "tok")
     monkeypatch.setattr(_oauth, "_get_account_id_from_jwt", lambda *_: "acct")
@@ -218,7 +218,7 @@ def test_codex_browse_does_not_grow_registry(monkeypatch):
     monkeypatch.setattr(mg, "ENABLED_MODELS", reg)
     before = dict(reg)
 
-    out = C._fetch_codex_live("openai-codex", timeout=5.0)
+    out = C.fetch("openai-codex", timeout=5.0)
 
     # Hidden helper models dropped; the account's real ids surface.
     assert {r["id"] for r in out} == {"gpt-5.6-luna", "gpt-5.4-mini"}
@@ -241,12 +241,12 @@ def test_codex_fetch_drops_ultra_and_needs_token(monkeypatch):
          "supported_reasoning_levels": [
              {"effort": "high"}, {"effort": "max"}, {"effort": "ultra"}]},
     ]})
-    out = C._fetch_codex_live("openai-codex", timeout=5.0)
+    out = C.fetch("openai-codex", timeout=5.0)
     assert out[0]["thinking_levels"] == ["high", "max"]  # ultra dropped
 
     from openprogram.providers.openai_codex import openai_codex as _oc
     monkeypatch.setattr(_oc, "_resolve_codex_bearer_token", lambda *_: "")
-    err = C._fetch_codex_live("openai-codex", timeout=5.0)
+    err = C.fetch("openai-codex", timeout=5.0)
     assert isinstance(err, dict) and "error" in err
 
 
@@ -261,5 +261,5 @@ def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):
     import httpx
     monkeypatch.setattr(httpx, "get", lambda url, **kw: seen.update(url=url) or _Resp())
 
-    A._fetch_anthropic("anthropic", 5.0)
+    A.fetch("anthropic", 5.0)
     assert seen["url"] == "https://api.anthropic.com/v1/models"

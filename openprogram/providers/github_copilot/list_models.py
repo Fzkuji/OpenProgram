@@ -1,21 +1,24 @@
-"""GitHub Copilot ``/v1/models`` fetcher.
+"""GitHub Copilot model list — ``/v1/models`` with a session bearer.
 
-Needs the per-session bearer token from the github-copilot provider's
-token cache. Live fetch only works if a chat session has been opened
-recently (token in cache). The capabilities envelope is richer than
-the OpenAI shape — we surface ``vision`` support and
-``max_context_window_tokens`` when present."""
+Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
+
+Needs the per-session bearer token from this provider's token cache, so a live
+fetch only works once a chat session has populated it. The capabilities
+envelope is richer than the OpenAI shape — we surface ``vision`` support and
+``max_context_window_tokens`` when present.
+
+Contract: success → ``list[dict]``, failure → ``{"error": ...}``.
+"""
 from __future__ import annotations
 
 from typing import Any
 
 
-def _fetch_github_copilot(provider_id: str, timeout: float) -> Any:
+def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
     try:
-        from openprogram.providers.github_copilot.token_cache import (
-            get_cached_token,
-        )
+        from .token_cache import get_cached_token
         token = get_cached_token()
     except Exception:
         token = None

@@ -1,37 +1,33 @@
-"""OpenAI Codex (``openai-codex``) model fetcher.
+"""OpenAI Codex model list — the account's own models endpoint.
 
-The Codex/ChatGPT-subscription backend DOES have a private account-level
-list-models endpoint — the same one the official ``codex`` CLI hits on
-startup:
+Convention module: the model-listing dispatcher
+(``webui/_model_listing/fetchers``) loads ``fetch(provider_id, timeout)`` from
+each provider's ``list_models.py`` by directory name, the same way it loads
+``probe_thinking.probe()``. A provider that ships this file describes its own
+model source; one that doesn't falls back to the generic OpenAI-compatible
+``/v1/models`` fetcher.
+
+The Codex/ChatGPT-subscription backend has a private account-level list-models
+endpoint — the same one the official ``codex`` CLI hits on startup:
 
     GET https://chatgpt.com/backend-api/codex/models?client_version=<ver>
 
 authorized with the subscription OAuth bearer + ``chatgpt-account-id``. It
 returns exactly the models this account may dispatch, each with its real
 subscription-side ``context_window``, ``service_tiers`` (the fast/priority
-knob), and ``supported_reasoning_levels`` (the thinking picker). We read all
-of that here and hand it back in one normalised shape so enable-time storage
-and the runtime never have to guess.
+knob), and ``supported_reasoning_levels`` (the thinking picker). We read all of
+that here and hand it back in one normalised shape so enable-time storage and
+the runtime never have to guess.
 
-Why not models.dev (the previous source): it tracks the *public API platform*
-OpenAI catalogue, not the subscription front-door. Its ids leaked models the
-subscription can't run (e.g. ``gpt-5.6-luna`` used to slip through the
-"id has no 'nano'" heuristic and then 404 at dispatch), its context windows
-were the API-platform numbers (1050k, not the subscription's 372k), and its
-fast flag was reconstructed from a hand-written family table that misfired on
-tiers like ``gpt-5.4-mini`` (no fast tier, but the table said yes). The
-official endpoint is authoritative for all three.
+Why not models.dev: it tracks the *public API platform* catalogue, not the
+subscription front-door — leaking un-runnable ids (``gpt-5.6-luna`` slipped
+through the "no 'nano'" heuristic then 404'd), wrong context windows (1050k vs
+the subscription's 372k), and a fast flag guessed from an id-prefix table that
+misfired on tiers like ``gpt-5.4-mini``. The official endpoint is authoritative.
 
-Browse is a **read** path: it does not touch the ``ENABLED_MODELS`` registry
-(post-migration the registry means "enabled" — writing every browsable id
-floods the chat picker). A browsed id becomes dispatchable when the user
-enables it (a full spec row — fast/thinking included — is written to config)
-plus ``OpenAICodexRuntime``'s on-miss single-model registration.
-
-Offline / no token → returns ``{"error": ...}`` so the orchestrator keeps the
-existing saved list untouched rather than blanking it. (You can't dispatch a
-Codex model without a token anyway, so a token-less browse losing the list is
-not a regression — the models were unusable in that state regardless.)
+Contract: success → ``list[dict]`` (each row has at least id/name), failure →
+``{"error": ...}``. Offline / no token → error (the dispatcher keeps the saved
+list), never blank — you can't dispatch a Codex model without a token anyway.
 """
 from __future__ import annotations
 
@@ -90,18 +86,16 @@ def _normalise_codex_model(m: dict[str, Any]) -> dict[str, Any] | None:
     return row
 
 
-def _fetch_codex_live(provider_id: str, timeout: float) -> Any:
+def fetch(provider_id: str, timeout: float) -> Any:
     """Live Codex fetch via the account's models endpoint.
 
     Returns ``{"error": ...}`` when unreachable / unauthorized so the
-    orchestrator leaves the saved model list untouched."""
+    dispatcher leaves the saved model list untouched."""
     import httpx
 
-    from openprogram.providers.openai_codex.oauth import _get_account_id_from_jwt
-    from openprogram.providers.openai_codex.openai_codex import (
-        _resolve_codex_bearer_token,
-    )
-    from openprogram.providers.openai_codex.runtime import _CODEX_CLIENT_VERSION
+    from .oauth import _get_account_id_from_jwt
+    from .openai_codex import _resolve_codex_bearer_token
+    from .runtime import _CODEX_CLIENT_VERSION
 
     token = _resolve_codex_bearer_token(None)
     if not token:

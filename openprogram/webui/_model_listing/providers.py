@@ -79,7 +79,7 @@ _CLI_PROVIDERS: list[dict[str, Any]] = []
 # Providers whose base URL speaks the OpenAI-compatible /v1/models
 # listing (Bearer auth, standard {data:[{id:...}]} response). Everything
 # else either has no public listing or uses a custom auth / response
-# shape and so has a dedicated entry in ``fetchers._FETCHERS`` instead.
+# shape and so ships its own ``providers/<name>/list_models.py`` instead.
 _FETCH_MODELS_PROVIDERS = frozenset({
     "openai",
     "openrouter",

@@ -1,15 +1,22 @@
-"""Amazon Bedrock ``list_foundation_models`` fetcher via boto3.
+"""Amazon Bedrock model list — ``list_foundation_models`` via boto3.
 
-Uses the AWS credentials chain (env, profile, instance metadata, …)
-so there's no API key to resolve here — Bedrock auth is the standard
-SigV4 dance handled by boto3. We filter to text-in / text-out models;
-image / embedding / video entries don't belong in the chat picker."""
+Convention module (see ``openai_codex/list_models.py`` for the pattern): the
+dispatcher loads ``fetch(provider_id, timeout)`` by directory name.
+
+Uses the AWS credentials chain (env, profile, instance metadata, …) so there's
+no API key to resolve — Bedrock auth is the standard SigV4 dance boto3 handles.
+boto3 is an optional dependency (``pip install boto3``); absent it, we return a
+friendly error rather than tracebacking. We filter to text-in / text-out
+models; image / embedding / video entries don't belong in the chat picker.
+
+Contract: success → ``list[dict]``, failure → ``{"error": ...}``.
+"""
 from __future__ import annotations
 
 from typing import Any
 
 
-def _fetch_bedrock(provider_id: str, timeout: float) -> Any:
+def fetch(provider_id: str, timeout: float) -> Any:
     try:
         import boto3
     except ImportError:

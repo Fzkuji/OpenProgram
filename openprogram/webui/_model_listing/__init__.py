@@ -16,15 +16,13 @@ Layout::
       toggle.py          # toggle_provider + toggle_model
       test_provider.py   # connectivity probe (Codex-aware)
       fetchers/
-        __init__.py      # _FETCHERS map + fetch_models_remote dispatcher
-        _common.py       # generic OpenAI-compatible /v1/models
-        anthropic.py
-        bedrock.py
-        claude_code.py
-        codex.py
-        deepseek.py      # fetcher + curated metadata table
-        github_copilot.py
-        google.py
+        __init__.py       # dispatcher: _load_fetcher + fetch_and_normalize + fetch_models_remote
+        openai_compat.py  # generic OpenAI-compatible /v1/models (shared fallback)
+
+A provider whose ``/v1/models`` isn't OpenAI-compatible ships its own
+``providers/<name>/list_models.py`` exposing ``fetch(provider_id, timeout)``;
+the dispatcher loads it by directory name (same convention as
+``probe_thinking.probe()``). See ``docs/design/providers/models/models.md`` §4.1.
 
 Adding a new provider: usually NOTHING. The credential kind, fetch
 fetcher, chat api-stamp, and base convention are all DERIVED from the
@@ -44,9 +42,9 @@ The optional touch-points, only when something can't be derived:
      it is normally empty.
   4. (Optional) Add a ``setup_hints._SETUP_HINTS`` entry for
      non-paste-a-key flows.
-  5. (Optional) Add a dedicated fetcher under ``fetchers/`` and
-     register it in ``fetchers.__init__._FETCHERS`` if /v1/models
-     needs custom handling.
+  5. (Optional) Add ``providers/<name>/list_models.py`` with a
+     ``fetch(provider_id, timeout)`` function if /v1/models needs custom
+     handling — the dispatcher finds it by directory name, no registration.
   6. Add at least one Model row in
      ``providers/enabled_models.py`` (auto-registers the provider
      id with ``get_providers()``).

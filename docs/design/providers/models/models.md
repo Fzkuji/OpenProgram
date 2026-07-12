@@ -88,14 +88,16 @@ list_available_models(provider_id)
   → 内存合并，直接返回给前端渲染
 ```
 
-官方源按 provider 分派到一个 fetcher（`_model_listing/fetchers/`），每种源形态不同但**返回同一契约**：成功 → `list[dict]`（每行至少 id/name），失败 → `{"error": ...}`。
+**fetcher 归位原则：接口偏离标准 OpenAI 格式的 provider，把它自己的 fetcher 放在自己目录里。** 每种源形态不同但**返回同一契约**：成功 → `list[dict]`（每行至少 id/name），失败 → `{"error": ...}`。
 
-| 源形态 | fetcher | 例子 |
+| 源形态 | fetcher 位置 | 例子 |
 |---|---|---|
-| 标准 `/v1/models`（OpenAI 兼容） | `openai_compat` | deepseek、openrouter、自定义网关 |
-| Anthropic `GET /v1/models` + 逐模型 capabilities | `anthropic` | anthropic、claude-code、minimax |
-| 账户级私有端点（`/v1/models` 被 Cloudflare 挡，改拉订阅账户的模型表） | `codex` | openai-codex（`/backend-api/codex/models`，见 fast-tier.md §2.1） |
-| 厂商专用列表接口（响应形状 / 鉴权与 OpenAI 兼容格式不同，各写一个） | `google`（query-param key + `models/<id>` 前缀）/ `bedrock`（boto3 SigV4，非 HTTP）/ `github_copilot`（会话 bearer + capabilities 信封） | 对应 provider |
+| 标准 `/v1/models`（OpenAI 兼容） | 通用 `_model_listing/fetchers/openai_compat.py`（共享兜底，不属于任何单个 provider） | openai、openrouter、groq、自定义网关 |
+| Anthropic `GET /v1/models` + 逐模型 capabilities | `providers/anthropic/list_models.py` | anthropic、claude-code、minimax |
+| 账户级私有端点（`/v1/models` 被 Cloudflare 挡，改拉订阅账户的模型表） | `providers/openai_codex/list_models.py`（见 fast-tier.md §2.1） | openai-codex |
+| 厂商专用列表接口（响应形状 / 鉴权与 OpenAI 兼容不同） | `providers/<name>/list_models.py`：`google`（query-param key + `models/<id>` 前缀）/ `amazon_bedrock`（boto3 SigV4，非 HTTP）/ `github_copilot`（会话 bearer + capabilities 信封）/ `deepseek`（id-only 后补） | 对应 provider |
+
+**约定加载**：接口偏离标准的 provider 在自己目录放一个 `list_models.py`，导出 `fetch(provider_id, timeout)`；分派器 `_load_fetcher` 按目录名 `__import__` 找它——和 `probe_thinking.probe()` 完全一套机制，新增 provider 零中心改动。接口标准的 provider 不放这个文件，走通用 `openai_compat`。**有没有这个文件 = 这个 provider 接口是否偏离标准**，是个自然的、按需的判据。
 
 无论哪种源，`fetch_and_normalize` 是**唯一的归一化收口**：它把 fetcher 千差万别的 key（`context_length`/`context_window`/`contextWindow` 等）统一成一份 entry dict，再叠 models.dev 补全。下游只看归一化后的统一行，看不到源的差异。
 

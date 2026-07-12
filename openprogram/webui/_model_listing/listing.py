@@ -218,7 +218,7 @@ def list_providers() -> list[dict[str, Any]]:
     from .setup_hints import _setup_hint
     from .sources import models_dev
     from .storage import _read_providers_cfg
-    from .fetchers import _FETCHERS
+    from .fetchers import _load_fetcher
 
     cfg = _read_providers_cfg()
     result: list[dict[str, Any]] = []
@@ -248,7 +248,7 @@ def list_providers() -> list[dict[str, Any]]:
             "default_base_url": default_base,
             "base_url": pcfg.get("base_url") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
-            "supports_fetch": (pid in _FETCH_MODELS_PROVIDERS) or (pid in _FETCHERS),
+            "supports_fetch": (pid in _FETCH_MODELS_PROVIDERS) or (_load_fetcher(pid) is not None),
             # Intentional semantics change (enabled-models migration): get_models
             # now reads the enabled-only ENABLED_MODELS registry, so this is the
             # ENABLED count, not the full catalogue count. The first screen is
@@ -304,10 +304,9 @@ def list_providers() -> list[dict[str, Any]]:
             "base_url": pcfg.get("base_url") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
             # Every OpenAI-compatible provider models.dev knows about
-            # is fetch-able by default; the dispatcher in
-            # ``fetchers.fetch_models_remote`` falls through to
-            # ``_fetch_openai_compat`` when there's no explicit
-            # ``_FETCHERS`` entry.
+            # is fetch-able by default; the dispatcher falls through to
+            # ``_fetch_openai_compat`` when the provider ships no
+            # ``list_models.py`` of its own.
             "supports_fetch": True,
             "model_count": len(community_ids | custom_ids),
             "enabled_model_count": sum(
