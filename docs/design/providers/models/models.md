@@ -95,7 +95,7 @@ list_available_models(provider_id)
 | 标准 `/v1/models`（OpenAI 兼容） | `openai_compat` | deepseek、openrouter、自定义网关 |
 | Anthropic `GET /v1/models` + 逐模型 capabilities | `anthropic` | anthropic、claude-code、minimax |
 | 账户级私有端点（`/v1/models` 被 Cloudflare 挡，改拉订阅账户的模型表） | `codex` | openai-codex（`/backend-api/codex/models`，见 fast-tier.md §2.1） |
-| 各家 SDK 列表 | `google` / `bedrock` / `github_copilot` | 对应 provider |
+| 厂商专用列表接口（响应形状 / 鉴权与 OpenAI 兼容格式不同，各写一个） | `google`（query-param key + `models/<id>` 前缀）/ `bedrock`（boto3 SigV4，非 HTTP）/ `github_copilot`（会话 bearer + capabilities 信封） | 对应 provider |
 
 无论哪种源，`fetch_and_normalize` 是**唯一的归一化收口**：它把 fetcher 千差万别的 key（`context_length`/`context_window`/`contextWindow` 等）统一成一份 entry dict，再叠 models.dev 补全。下游只看归一化后的统一行，看不到源的差异。
 

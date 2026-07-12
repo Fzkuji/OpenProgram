@@ -98,7 +98,7 @@ failure → `{"error": ...}`.
 | Standard `/v1/models` (OpenAI-compatible) | `openai_compat` | deepseek, openrouter, custom gateways |
 | Anthropic `GET /v1/models` + per-model capabilities | `anthropic` | anthropic, claude-code, minimax |
 | Account-level private endpoint (`/v1/models` is Cloudflare-blocked; read the subscription's model table instead) | `codex` | openai-codex (`/backend-api/codex/models`, see fast-tier.md §2.1) |
-| Vendor SDK list | `google` / `bedrock` / `github_copilot` | the matching provider |
+| Vendor-specific list API (response shape / auth differ from OpenAI-compatible, so each gets its own) | `google` (query-param key + `models/<id>` prefix) / `bedrock` (boto3 SigV4, not HTTP) / `github_copilot` (session bearer + capabilities envelope) | the matching provider |
 
 Whatever the source, `fetch_and_normalize` is the **single normalisation choke
 point**: it collapses each fetcher's disparate keys (`context_length` /
