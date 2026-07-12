@@ -32,7 +32,6 @@ import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { RuntimeBlock } from "./runtime-block";
-import { ThinkingBlock } from "./thinking-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
 
@@ -141,7 +140,11 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   // Renders one block in its source-order position.
   const renderBlock = (b: AssistantBlock, idx: number, fifo: ChatMsg[]) => {
     if (b.type === "thinking") {
-      return <ThinkingBlock key={`thk_${idx}`} text={b.text || ""} streaming={streaming} />;
+      // Frameless timeline row (chat-turn-visual-spec.html), same as the
+      // settled-turn path below — NOT the old boxed ThinkingBlock. The
+      // streaming (flat) path used to render a框; unify on ThinkingStep so
+      // thinking is a one-line summary row in both streaming and settled states.
+      return <ThinkingStep key={`thk_${idx}`} text={b.text || ""} />;
     }
     if (b.type === "text") {
       return (
@@ -440,7 +443,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
           ) : (
             <>
               {msg.thinking ? (
-                <ThinkingBlock text={msg.thinking} streaming={streaming} />
+                <ThinkingStep text={msg.thinking} />
               ) : null}
               {(() => {
                 // Filter agentic tool calls out of the folded "Tool calls"
