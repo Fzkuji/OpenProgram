@@ -704,10 +704,17 @@ def _get_or_create_session(session_id: str = None,
             _sessions[session_id] = {
                 "id": session_id,
                 "runtime": None,          # created lazily on first message
+                "agent_id": resolved_agent,  # so _resolve's agent-default tier fires
                 "provider_name": ((_sess or {}).get("provider_name") if isinstance(_sess, dict) else None)
                                  or _inherit_prov,
-                "provider_override": _inherit_prov,
-                "model_override": _inherit_model,
+                # Read the persisted per-conv override back (same pattern as
+                # provider_name above); fall back to the global pinned value.
+                # Without this a rebuilt session loses the user's model pick and
+                # dispatch falls back to the agent/global default.
+                "provider_override": ((_sess or {}).get("provider_override") if isinstance(_sess, dict) else None)
+                                     or _inherit_prov,
+                "model_override": ((_sess or {}).get("model_override") if isinstance(_sess, dict) else None)
+                                  or _inherit_model,
                 "messages": _hydrated,
                 "head_id": _hydrated_head,
                 "tools_enabled": ((_sess or {}).get("tools_enabled") if isinstance(_sess, dict) else None),

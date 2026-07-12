@@ -186,6 +186,12 @@ def register(app):
                 )
                 _s._user_pinned_provider = prov
                 _s._user_pinned_model = bare_model
+                # Persist the per-conv override to meta.json. Without this the
+                # override lives only in memory: once the session is evicted +
+                # rebuilt (or the process restarts) it's lost, and dispatch
+                # (esp. retry) falls back to the agent/global default — the
+                # "top bar says gpt-5.5 but retry runs the agent's luna" bug.
+                await asyncio.to_thread(_s._save_session, session_id)
                 info = _s._get_provider_info(session_id)
                 emit_ws_frame({"type": "provider_changed", "data": info})
                 return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
