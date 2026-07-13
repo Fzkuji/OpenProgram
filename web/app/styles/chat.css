@@ -1091,6 +1091,31 @@
   text-align: left;
 }
 .tl-toggle:hover { color: var(--text-secondary); }
+/* 流式进行中：折叠摘要小字的扫光 shimmer = "正在思考/运行"。
+   渐变裁剪文字实现，明暗主题都跟随文字变量。 */
+.tl-label-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--text-muted) 35%,
+    var(--text-primary) 50%,
+    var(--text-muted) 65%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: tlShimmer 1.8s linear infinite;
+}
+@keyframes tlShimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+/* 新步骤行淡入下滑：流式中往底部拼接新行时不突兀。 */
+.tl-step { animation: tlStepIn 0.22s ease both; }
+@keyframes tlStepIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
 .tl-chev {
   font-size: 11px;
   transition: transform var(--transition);

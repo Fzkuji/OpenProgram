@@ -93,12 +93,18 @@ function Collapse({ open, children }: {
   );
 }
 
-/** 时间线外壳：一行淡文字摘要 ›，点击展开竖线时间线。 */
+/** 时间线外壳：一行淡文字摘要 ›，点击展开竖线时间线。
+ *
+ *  流式进行中同样折叠（用户裁决 2026-07-13）：小字摘要加 shimmer
+ *  扫光表示"正在思考/运行"，点击展开看实时步骤列表——新步骤在底部
+ *  拼接，运行中的行用呼吸点。落定后 shimmer 停止，其余不变。 */
 export function ExecutionStrip({
   label,
+  streaming,
   children,
 }: {
   label: string;
+  streaming?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -113,7 +119,7 @@ export function ExecutionStrip({
           ? text("Collapse execution trace", "收起执行过程")
           : text("Expand execution trace", "展开执行过程")}
       >
-        <span>{label}</span>
+        <span className={streaming ? "tl-label-shimmer" : undefined}>{label}</span>
         <span className="tl-chev" aria-hidden="true">›</span>
       </button>
       <Collapse open={open}>
@@ -144,6 +150,16 @@ function firstLine(s: string): string {
   const t = (s || "").trim();
   const nl = t.indexOf("\n");
   return nl > 0 ? t.slice(0, nl) : t;
+}
+
+function lastLine(s: string): string {
+  const lines = (s || "").trim().split("\n").filter((l) => l.trim());
+  return lines[lines.length - 1] || "";
+}
+
+/** note 是纯文本一行，markdown 标记（**、`）原样露出来很难看——摘掉。 */
+function plainNote(s: string): string {
+  return s.replace(/\*\*|__|`/g, "");
 }
 
 /** 单个步骤行。
@@ -246,7 +262,9 @@ export function StepRow({
         >
           {title}
         </span>
-        {note ? <span className="tl-step-note" title={note}>{note}</span> : null}
+        {/* 不加 title：流式中 note 每个 delta 都在变，原生 tooltip 会
+            钉死在视口角落变成"漂浮黑框"；全文本来就有行内展开可看。 */}
+        {note ? <span className="tl-step-note">{note}</span> : null}
         {subSteps && !kidsOpen ? (
           <span className="tl-fold-hint">
             {`⋯ ${subCount || ""} ${text("steps", "步")}`.replace("  ", " ")}
@@ -275,16 +293,23 @@ export function StepRow({
   );
 }
 
-/** 思考步骤：内容轻，点行内联展开。 */
-export function ThinkingStep({ text: thinkingText }: { text: string }) {
+/** 思考步骤：内容轻，点行内联展开。
+ *  流式中（running）note 显示**最新**一行——最近在想什么；落定后显示
+ *  第一行作固定摘要。展开态的全文随 delta 向下拼接生长。 */
+export function ThinkingStep({ text: thinkingText, running }: {
+  text: string;
+  running?: boolean;
+}) {
   useMarkdownReady();
   const { text } = useTranslation();
   if (!thinkingText) return null;
+  const line = running ? lastLine(thinkingText) : firstLine(thinkingText);
   return (
     <StepRow
       icon="thinking"
       title={text("Thinking", "思考")}
-      note={short(firstLine(thinkingText))}
+      note={short(plainNote(line))}
+      running={running}
       copyText={thinkingText}
       inlineBody={
         <div
@@ -309,13 +334,16 @@ function parseParams(input?: string): Record<string, unknown> | undefined {
   }
 }
 
-/** 普通函数调用步骤：点行 → 右栏详情；子调用层级用 ⌄N 展开。 */
+/** 普通函数调用步骤：点行 → 右栏详情；子调用层级用 ⌄N 展开。
+ *  running：流式中结果还没回来的调用——图标位换呼吸点。 */
 export function FunctionStep({
   block,
   tree,
+  running,
 }: {
   block: AssistantBlock;
   tree?: TNode | null;
+  running?: boolean;
 }) {
   const { text } = useTranslation();
   const isError = !!block.is_error;
@@ -324,7 +352,7 @@ export function FunctionStep({
   const detail: DetailNode = {
     path: `chat-tool:${block.tool_call_id || name}`,
     name,
-    status: isError ? "error" : "completed",
+    status: running ? "running" : isError ? "error" : "completed",
     params: parseParams(block.input),
     output: block.result === undefined || block.result === null
       ? undefined : decodeEscapes(String(block.result)),
@@ -339,6 +367,7 @@ export function FunctionStep({
         block.result !== undefined && block.result !== null && block.result !== ""
           ? " → " + short(String(block.result), 60) : ""}`}
       error={isError}
+      running={running}
       copyText={JSON.stringify(
         { tool: name, input: block.input, result: block.result }, null, 2)}
       detail={detail}

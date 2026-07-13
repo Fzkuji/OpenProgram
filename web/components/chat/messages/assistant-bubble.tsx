@@ -116,6 +116,39 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   const tools = msg.tools ?? [];
   const hasContent = !!msg.content;
 
+  // 流式进行中 msg.blocks 还没建（finalize 才落），从实时字段合成同形
+  // 的伪 blocks，让进行中的一轮走和落定/刷新完全相同的时间线渲染——
+  // 折叠摘要条 + shimmer，而不是旧的平铺（带框 ToolsBlock + 裸思考行
+  // 压头像）。顺序丢了 thinking/tool 的穿插（codex 的 thinking 聚在一
+  // 个字段里），落定后由真 blocks 恢复原始顺序。
+  const runningToolIds = new Set(
+    tools.filter((t) => t.status === "running").map((t) => t.id),
+  );
+  const liveBlocks: AssistantBlock[] = [];
+  if (streaming && (!msg.blocks || msg.blocks.length === 0)) {
+    if (msg.thinking) liveBlocks.push({ type: "thinking", text: msg.thinking });
+    for (const t of tools) {
+      liveBlocks.push({
+        type: "tool",
+        tool: t.tool,
+        tool_call_id: t.id,
+        input: t.input,
+        result: t.result,
+        is_error: !!t.isError,
+      });
+    }
+    if (msg.content) liveBlocks.push({ type: "text", text: msg.content });
+  }
+  const effBlocks: AssistantBlock[] | undefined =
+    msg.blocks && msg.blocks.length > 0
+      ? msg.blocks
+      : liveBlocks.length > 0
+        ? liveBlocks
+        : undefined;
+  // 思考行的"进行中"：没有函数在跑、正文也没开始 —— 当前活跃的就是思考。
+  const thinkingRunning =
+    streaming && !hasContent && runningToolIds.size === 0;
+
   const AGENTIC_TOOL_NAMES = new Set(["gui_agent", "research_agent", "wiki_agent"]);
   const runtimeChildren = msg.runtimeChildren ?? [];
   const runtimeByToolId = new Map<string, ChatMsg>();
@@ -248,12 +281,12 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
         </div>
       ) : (
         <div className="chat-stream-body">
-          {msg.blocks && msg.blocks.length > 0 ? (
+          {effBlocks ? (
             (() => {
               // FIFO pool of unmatched agentic runtime children, used
               // when a tool block lacks a tool_call_id we can map to.
               const usedIds = new Set<string>();
-              for (const b of msg.blocks) {
+              for (const b of effBlocks) {
                 if (b.type === "tool" && b.tool_call_id
                     && runtimeByToolId.has(b.tool_call_id)) {
                   usedIds.add(b.tool_call_id);
@@ -270,7 +303,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               // If blocks has zero text entries, append the content
               // as one text node after the tool cards so the user
               // still sees the answer.
-              const hasTextBlock = msg.blocks.some((b) => b.type === "text");
+              const hasTextBlock = effBlocks.some((b) => b.type === "text");
               // ── 分段：text 块常驻；连续的 thinking/tool 块聚成一段
               // 执行痕迹。已落定的轮次把每段折成一条摘要条（点击展开
               // 逐块序列）；流式进行中的轮次平铺，让用户实时看到它在
@@ -284,7 +317,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               };
               type TextSeg = { kind: "text"; b: AssistantBlock; i: number };
               const segs: Array<ExecSeg | TextSeg> = [];
-              msg.blocks.forEach((b, i) => {
+              effBlocks.forEach((b, i) => {
                 if (b.type === "text") {
                   segs.push({ kind: "text", b, i });
                   return;
@@ -311,38 +344,24 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   return;
                 }
                 const cardFifo = seg.cards.slice();
-                if (streaming) {
-                  // 进行中：平铺实时块 + spawn 卡跟在调用块后。
-                  const blockNodes: React.ReactNode[] = [];
-                  seg.items.forEach(({ b, i }) => {
-                    blockNodes.push(renderBlock(b, i, fifo));
-                    if (b.type === "tool" && SPAWNING_TOOL_NAMES.has(b.tool || "")
-                        && cardFifo.length > 0) {
-                      const card = cardFifo.shift()!;
-                      blockNodes.push(
-                        <div
-                          key={`attach_${card.id}`}
-                          className="attach-row"
-                          data-msg-id={card.id}
-                        >
-                          <AttachCard msg={card} />
-                        </div>,
-                      );
-                    }
-                  });
-                  rendered.push(<div key={`seg_${si}`}>{blockNodes}</div>);
-                  return;
-                }
-                // 落定的轮次：时间线步骤（chat-turn-visual-spec.html）。
-                // thinking → 思考行；spawn 调用 → 子代理行；agentic 工具
-                // → 函数行 + context_tree 递归子层级；普通工具 → 函数行。
+                // 时间线步骤（chat-turn-visual-spec.html）——流式与落定
+                // 同一条路径：进行中折叠为 shimmer 摘要条，点击展开实时
+                // 列表；运行中的行呼吸点。thinking → 思考行；spawn 调用
+                // → 子代理行；agentic 工具 → 函数行 + context_tree 递归
+                // 子层级；普通工具 → 函数行。
                 const steps: React.ReactNode[] = [];
                 const callRootsFifo = [
                   ...((msg.callRoots as unknown as TNode[] | undefined) ?? []),
                 ];
                 seg.items.forEach(({ b, i }) => {
                   if (b.type === "thinking") {
-                    steps.push(<ThinkingStep key={`thk_${i}`} text={b.text || ""} />);
+                    steps.push(
+                      <ThinkingStep
+                        key={`thk_${i}`}
+                        text={b.text || ""}
+                        running={thinkingRunning}
+                      />,
+                    );
                     return;
                   }
                   if (b.type !== "tool") return;
@@ -368,7 +387,14 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                     const ci = callRootsFifo.findIndex((r) => r.name === tname);
                     if (ci >= 0) tree = callRootsFifo.splice(ci, 1)[0];
                   }
-                  steps.push(<FunctionStep key={`fn_${i}`} block={b} tree={tree} />);
+                  steps.push(
+                    <FunctionStep
+                      key={`fn_${i}`}
+                      block={b}
+                      tree={tree}
+                      running={!!b.tool_call_id && runningToolIds.has(b.tool_call_id)}
+                    />,
+                  );
                 });
                 // 没配到 spawn 块的卡兜底成子代理行，不丢。
                 cardFifo.forEach((card) => {
@@ -385,6 +411,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                 rendered.push(
                   <ExecutionStrip
                     key={`seg_${si}`}
+                    streaming={streaming}
                     label={execStripLabel(
                       seg.items.map(({ b }) => b), spawnNames, text)}
                   >
@@ -432,12 +459,9 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   </div>,
                 );
               });
-              // While streaming and no final chat-text has landed yet,
-              // tail the body with the breathing pulse. Bottom of the
-              // bubble, aligned to the chat-text column.
-              if (streaming && !hasContent) {
-                rendered.push(<TypingIndicator key="typing_tail" />);
-              }
+              // 进行中不再叠加尾部呼吸点：折叠摘要条的 shimmer 已经表达
+              // "正在思考/运行"，再挂一个 spinner 就是三种信号打架（用户
+              // 截图里的乱象之一）。正文 token 一到，chat-text 自然接上。
               return rendered;
             })()
           ) : (
