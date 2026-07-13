@@ -23,6 +23,8 @@ import {
 } from "@/lib/session-store";
 
 import { useTranslation } from "@/lib/i18n";
+import { useAgentProfile } from "@/lib/format-utils/agent-style";
+import { Avatar } from "@/components/avatar";
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
@@ -147,15 +149,28 @@ function useChatAreaStick(newTurnSeed: number) {
  */
 function PendingReplyIndicator() {
   const { text } = useTranslation();
+  // Same avatar as the assistant bubble that replaces this on the first
+  // delta (same .message-header placement, same profile config), so the
+  // agent identity is continuous from the moment the user hits send —
+  // no logo blink-out during the transient "thinking…" state.
+  const profile = useAgentProfile();
   return (
     <div className="message assistant pending-standalone">
-      {/* No avatar / name here. The transient "thinking…" state doesn't
-          need to repeat the agent identity — the real assistant bubble
-          that replaces this (on the first delta) carries the avatar +
-          name. Just a breathing dot + label, indented to the SAME
-          content column as message text (avatar 28px + 8px gap = 36px),
-          so it lines up with the reply that lands underneath it instead
-          of sitting at the avatar's edge. */}
+      <div className="message-header">
+        <Avatar
+          className="message-avatar bot-avatar"
+          size={28}
+          radius={8}
+          name={profile.name}
+          config={
+            profile.avatar ?? {
+              kind: "dicebear",
+              style: "shapes",
+              seed: profile.name,
+            }
+          }
+        />
+      </div>
       <div
         className="pending-body"
         style={{ paddingLeft: 36 }}

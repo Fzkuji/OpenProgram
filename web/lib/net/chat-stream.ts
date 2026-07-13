@@ -21,6 +21,9 @@
  *           thinking    → append to reply.thinking
  *           tool_use    → push a ChatToolCall (status "running")
  *           tool_result → fill the matching tool's result + status
+ *           All four ALSO build `reply.blocks` incrementally in arrival
+ *           order (trailing-block extend or append), so the streaming
+ *           timeline shows the true thinking/tool interleaving live.
  *       type === "result" | "error" | "cancelled"
  *           → finalize the reply (status + any final text)
  *   other chat_response types (status / tree_update / context_stats /
@@ -28,7 +31,12 @@
  *   and are left to their own handlers.
  */
 
-import { useSessionStore, type ChatMsg, type ChatToolCall } from "@/lib/session-store";
+import {
+  useSessionStore,
+  type AssistantBlock,
+  type ChatMsg,
+  type ChatToolCall,
+} from "@/lib/session-store";
 
 interface StreamEvent {
   type: "text" | "thinking" | "tool_use" | "tool_result";
@@ -475,6 +483,27 @@ export function appendLocalUserTurn(
   });
 }
 
+/** Extend the trailing block of `kind` with `delta`, or open a new one
+ *  when the tail is a different kind (e.g. thinking resumed after a tool
+ *  call → new thinking segment). This is what preserves the LLM's real
+ *  thinking/tool interleaving during streaming: events arrive in strict
+ *  chronological order, so appending in arrival order rebuilds the same
+ *  ordered timeline the dispatcher persists on turn_end. */
+function appendDeltaBlock(
+  blocks: AssistantBlock[] | undefined,
+  kind: "thinking" | "text",
+  delta: string,
+): AssistantBlock[] {
+  const next = [...(blocks ?? [])];
+  const last = next[next.length - 1];
+  if (last && last.type === kind) {
+    next[next.length - 1] = { ...last, text: (last.text ?? "") + delta };
+  } else {
+    next.push({ type: kind, text: delta });
+  }
+  return next;
+}
+
 function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
   const store = useSessionStore.getState();
   const cur = ensureReply(sid, rid);
@@ -483,21 +512,35 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
     case "text":
       store.updateMessage(sid, rid, {
         content: cur.content + (evt.text ?? ""),
+        blocks: appendDeltaBlock(cur.blocks, "text", evt.text ?? ""),
         status: "streaming",
       });
       break;
     case "thinking":
       store.updateMessage(sid, rid, {
         thinking: (cur.thinking ?? "") + (evt.text ?? ""),
+        blocks: appendDeltaBlock(cur.blocks, "thinking", evt.text ?? ""),
         status: "streaming",
       });
       break;
     case "tool_use": {
+      const blocks: AssistantBlock[] = [
+        ...(cur.blocks ?? []),
+        {
+          type: "tool",
+          tool: evt.tool || "?",
+          tool_call_id: evt.tool_call_id,
+          input: evt.input ?? "",
+        },
+      ];
       // Agentic tools (gui_agent / research_agent / wiki_agent) render
       // as their own RuntimeBlock row (via handleRuntimeRow) — skip
-      // the folded chat-tool card so they don't appear twice.
+      // the folded chat-tool card so they don't appear twice. The
+      // BLOCK is still recorded so the timeline keeps the call in its
+      // chronological slot (the bubble maps agentic tool blocks to the
+      // runtime child, not a plain function row).
       if (evt.tool && AGENTIC_TOOL_NAMES.has(evt.tool)) {
-        store.updateMessage(sid, rid, { status: "streaming" });
+        store.updateMessage(sid, rid, { blocks, status: "streaming" });
         break;
       }
       const tools: ChatToolCall[] = [...(cur.tools ?? [])];
@@ -507,14 +550,27 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
         input: evt.input ?? "",
         status: "running",
       });
-      store.updateMessage(sid, rid, { tools, status: "streaming" });
+      store.updateMessage(sid, rid, { tools, blocks, status: "streaming" });
       break;
     }
     case "tool_result": {
-      // Agentic tool results were never pushed in tool_use above —
-      // nothing to update here. The runtime row takes care of the
-      // result display.
-      if (evt.tool && AGENTIC_TOOL_NAMES.has(evt.tool)) break;
+      // Truthy-id match only: an empty/missing tool_call_id would
+      // "match" every id-less tool block. When the id is absent the
+      // result simply doesn't land in the live blocks — finalize's
+      // authoritative overwrite fills it in.
+      const blocks = (cur.blocks ?? []).map((b): AssistantBlock =>
+        b.type === "tool" && !!evt.tool_call_id
+        && b.tool_call_id === evt.tool_call_id
+          ? { ...b, result: evt.result ?? "", is_error: !!evt.is_error }
+          : b,
+      );
+      // Agentic tool results were never pushed into `tools` above —
+      // only their block gets the result. The runtime row takes care
+      // of the rich result display.
+      if (evt.tool && AGENTIC_TOOL_NAMES.has(evt.tool)) {
+        store.updateMessage(sid, rid, { blocks });
+        break;
+      }
       const tools = (cur.tools ?? []).map((t): ChatToolCall =>
         t.id === evt.tool_call_id
           ? {
@@ -525,7 +581,7 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
             }
           : t,
       );
-      store.updateMessage(sid, rid, { tools });
+      store.updateMessage(sid, rid, { tools, blocks });
       break;
     }
   }
@@ -565,14 +621,14 @@ function finalize(sid: string, rid: string, d: ChatResponseData): void {
   const finalText = d.content ?? d.text;
   if (finalText && !cur.content) patch.content = finalText;
 
-  // Converge the live turn to the reloaded shape. `msg.blocks` is what
-  // gates the collapsed ExecutionStrip ("Thinking ×1 ›") render in the
-  // bubble; during streaming only `msg.thinking` / `msg.content` are set,
-  // so a just-finished turn shows the un-collapsed fallback until a page
-  // refresh runs conv-mapper and populates `blocks`. The final envelope
-  // ships the same ordered blocks the persisted path rebuilds — apply
-  // them now so the strip collapses the moment streaming ends, no refresh.
-  if (Array.isArray(d.blocks) && d.blocks.length && !cur.blocks) {
+  // Converge the live turn to the reloaded shape. Streaming built
+  // `blocks` incrementally in event-arrival order; the final envelope
+  // carries the dispatcher's authoritative ordered blocks (rebuilt from
+  // the provider's content list on turn_end). Overwrite with those so
+  // any segmentation drift (e.g. two consecutive provider thinking
+  // blocks the live builder merged into one) is corrected — order and
+  // counts match what a page refresh would render from conv-mapper.
+  if (Array.isArray(d.blocks) && d.blocks.length) {
     patch.blocks = d.blocks as ChatMsg["blocks"];
   }
 

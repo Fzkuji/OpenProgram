@@ -116,38 +116,18 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   const tools = msg.tools ?? [];
   const hasContent = !!msg.content;
 
-  // 流式进行中 msg.blocks 还没建（finalize 才落），从实时字段合成同形
-  // 的伪 blocks，让进行中的一轮走和落定/刷新完全相同的时间线渲染——
-  // 折叠摘要条 + shimmer，而不是旧的平铺（带框 ToolsBlock + 裸思考行
-  // 压头像）。顺序丢了 thinking/tool 的穿插（codex 的 thinking 聚在一
-  // 个字段里），落定后由真 blocks 恢复原始顺序。
+  // 流式期间 chat-stream.ts 按事件到达顺序增量构建 msg.blocks（思考被
+  // 工具调用打断后再来的 delta 开新段），所以进行中和落定/刷新走的是
+  // 同一份交替时间线数据——边跑边往下长，落定时由 finalize 用后端权威
+  // blocks 覆盖一次（顺序一致，视觉不动）。
   const runningToolIds = new Set(
     tools.filter((t) => t.status === "running").map((t) => t.id),
   );
-  const liveBlocks: AssistantBlock[] = [];
-  if (streaming && (!msg.blocks || msg.blocks.length === 0)) {
-    if (msg.thinking) liveBlocks.push({ type: "thinking", text: msg.thinking });
-    for (const t of tools) {
-      liveBlocks.push({
-        type: "tool",
-        tool: t.tool,
-        tool_call_id: t.id,
-        input: t.input,
-        result: t.result,
-        is_error: !!t.isError,
-      });
-    }
-    if (msg.content) liveBlocks.push({ type: "text", text: msg.content });
-  }
   const effBlocks: AssistantBlock[] | undefined =
-    msg.blocks && msg.blocks.length > 0
-      ? msg.blocks
-      : liveBlocks.length > 0
-        ? liveBlocks
-        : undefined;
-  // 思考行的"进行中"：没有函数在跑、正文也没开始 —— 当前活跃的就是思考。
-  const thinkingRunning =
-    streaming && !hasContent && runningToolIds.size === 0;
+    msg.blocks && msg.blocks.length > 0 ? msg.blocks : undefined;
+  // "进行中"的行 = 时间线的最后一个块（且还在流式）。只有它有动画：
+  // 思考行刷最新一行字 + 呼吸点，其余行已定格。
+  const lastBlockIdx = effBlocks ? effBlocks.length - 1 : -1;
 
   const AGENTIC_TOOL_NAMES = new Set(["gui_agent", "research_agent", "wiki_agent"]);
   const runtimeChildren = msg.runtimeChildren ?? [];
@@ -359,7 +339,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                       <ThinkingStep
                         key={`thk_${i}`}
                         text={b.text || ""}
-                        running={thinkingRunning}
+                        running={streaming && i === lastBlockIdx}
                       />,
                     );
                     return;
