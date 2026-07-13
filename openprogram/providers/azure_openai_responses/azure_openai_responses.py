@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from openprogram.providers.types import Context, Model, SimpleStreamOptions
 
 _DEFAULT_API_VERSION = "v1"
-_AZURE_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode", "azure-openai-responses"})
 
 
 def stream_azure_openai_responses(
@@ -186,7 +185,7 @@ def _build_params(
     opts: dict[str, Any],
     deployment_name: str,
 ) -> dict[str, Any]:
-    messages = convert_responses_messages(model, context, _AZURE_TOOL_CALL_PROVIDERS)
+    messages = convert_responses_messages(model, context)
     params: dict[str, Any] = {
         "model": deployment_name,
         "input": messages,

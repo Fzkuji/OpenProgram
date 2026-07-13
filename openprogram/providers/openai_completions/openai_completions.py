@@ -69,6 +69,25 @@ def _uses_max_completion_tokens(model: Model) -> bool:
     return bool(getattr(model, "reasoning", False))
 
 
+def _completions_tool_call_id(id_: str) -> str:
+    """Tool-call id as sent to a Chat Completions endpoint.
+
+    History from the Responses path stores composite ids
+    (``call_x|fc_y``); the ``fc_`` item-id half is Responses-only, so
+    keep just the call half. Many OpenAI-compatible relays re-post the
+    request to the Responses API upstream, which caps call_id at
+    64 chars — anything still too long or with illegal characters is
+    hashed deterministically, so the assistant/tool pair stays matched
+    (both sides route through this same function).
+    """
+    import hashlib
+    import re
+    cid = id_.split("|")[0]
+    if len(cid) <= 64 and re.match(r"^[a-zA-Z0-9_-]+$", cid):
+        return cid
+    return "tc_" + hashlib.sha256(cid.encode()).hexdigest()[:60]
+
+
 def _build_messages(context: Context, model: Model) -> list[dict[str, Any]]:
     """Convert Context messages to OpenAI Chat Completions format."""
     result: list[dict[str, Any]] = []
@@ -124,7 +143,7 @@ def _build_messages(context: Context, model: Model) -> list[dict[str, Any]]:
             if tool_calls:
                 tc_list = [
                     {
-                        "id": tc.id,
+                        "id": _completions_tool_call_id(tc.id),
                         "type": "function",
                         "function": {
                             "name": tc.name,
@@ -146,7 +165,7 @@ def _build_messages(context: Context, model: Model) -> list[dict[str, Any]]:
             )
             result.append({
                 "role": "tool",
-                "tool_call_id": msg.tool_call_id,
+                "tool_call_id": _completions_tool_call_id(msg.tool_call_id),
                 "content": content_text,
             })
 

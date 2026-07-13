@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from openprogram.providers.types import Context, Model, SimpleStreamOptions
 
 _DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api"
-_CODEX_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode"})
 
 # Back-compat alias kept so external code that imports the old
 # CodexStreamError name still works. New code should use
@@ -160,7 +159,7 @@ def stream_openai_codex_responses(
             if not api_key:
                 raise ValueError(f"No API key for provider: {model.provider}")
             base_url = getattr(model, "base_url", None) or _DEFAULT_CODEX_BASE_URL
-            messages = convert_responses_messages(model, context, _CODEX_TOOL_CALL_PROVIDERS, include_system_prompt=False)
+            messages = convert_responses_messages(model, context, include_system_prompt=False)
             request_body = _build_request_body(model, context, opts, messages)
 
             if opts.get("on_payload"):

@@ -27,9 +27,6 @@ from openprogram.providers.utils.event_stream import EventStream
 if TYPE_CHECKING:
     from openprogram.providers.types import Context, Model, SimpleStreamOptions
 
-_OPENAI_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-codex", "opencode"})
-
-
 def stream_openai_responses(
     model: "Model",
     context: "Context",
@@ -209,7 +206,7 @@ def _build_params(
     context: "Context",
     opts: dict[str, Any],
 ) -> dict[str, Any]:
-    messages = convert_responses_messages(model, context, _OPENAI_TOOL_CALL_PROVIDERS)
+    messages = convert_responses_messages(model, context)
     params: dict[str, Any] = {
         "model": model.id,
         "input": messages,

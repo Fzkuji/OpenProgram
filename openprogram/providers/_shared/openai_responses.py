@@ -52,36 +52,33 @@ def _short_hash(s: str) -> str:
 # ---------------------------------------------------------------------------
 
 # Providers whose tool call IDs use the "callId|itemId" format
-_RESPONSES_ALLOWED_TOOL_CALL_PROVIDERS = frozenset({"openai", "openai-responses", "openai-codex"})
-
-
 def convert_responses_messages(
     model: "Model",
     context: "Context",
-    allowed_tool_call_providers: frozenset[str] | None = None,
     include_system_prompt: bool = True,
 ) -> list[dict[str, Any]]:
     """Convert internal messages to OpenAI Responses API input format."""
     from openprogram.providers._shared.transform_messages import transform_messages
 
-    if allowed_tool_call_providers is None:
-        allowed_tool_call_providers = _RESPONSES_ALLOWED_TOOL_CALL_PROVIDERS
-
     # transform_messages calls this with 3 args (id, model, msg) per its
-    # NormalizeToolCallIdFn signature. We only need the id — model is in
-    # closure, msg is unused here — but the parameter count must match
-    # the protocol.
+    # NormalizeToolCallIdFn signature, and ONLY for cross-model replay —
+    # same-model turns keep their native ids untouched. Every Responses
+    # endpoint (official or custom relay) caps call_id at 64 chars, so
+    # normalize unconditionally: a foreign id is meaningless to the
+    # target upstream anyway.
     def normalize_tool_call_id(id_: str, _model=None, _msg=None) -> str:
-        if model.provider not in allowed_tool_call_providers:
-            return id_
+        import re
         if "|" not in id_:
-            return id_
+            # Single foreign id (Anthropic toolu_..., synthetic, ...):
+            # pass through when it fits, otherwise hash it
+            # deterministically so the call/result pair stays matched.
+            if len(id_) <= 64 and re.match(r"^[a-zA-Z0-9_-]+$", id_):
+                return id_
+            import hashlib
+            return "tc_" + hashlib.sha256(id_.encode()).hexdigest()[:60]
         call_id, item_id_raw = id_.split("|", 1)
-        sanitized_call = id_.replace("|", "_")[:64].rstrip("_")
-        sanitized_item = item_id_raw
-        # Sanitize
-        sanitized_call = __import__("re").sub(r"[^a-zA-Z0-9_-]", "_", call_id)
-        sanitized_item = __import__("re").sub(r"[^a-zA-Z0-9_-]", "_", item_id_raw)
+        sanitized_call = re.sub(r"[^a-zA-Z0-9_-]", "_", call_id)
+        sanitized_item = re.sub(r"[^a-zA-Z0-9_-]", "_", item_id_raw)
         if not sanitized_item.startswith("fc"):
             sanitized_item = f"fc_{sanitized_item}"
         sanitized_call = sanitized_call[:64].rstrip("_")
@@ -125,8 +122,12 @@ def convert_responses_messages(
 
         elif role == "assistant":
             output: list[dict[str, Any]] = []
-            is_different_model = (
-                msg.model != model.id
+            # A turn from any OTHER model (different id, provider or api)
+            # carries fc_ item ids the target upstream never issued —
+            # replaying them risks "Item not found". Only a same-model
+            # turn keeps its item id.
+            is_foreign_turn = not (
+                msg.model == model.id
                 and msg.provider == model.provider
                 and msg.api == model.api
             )
@@ -173,7 +174,7 @@ def convert_responses_messages(
                     call_id = call_parts[0]
                     item_id: str | None = call_parts[1] if len(call_parts) > 1 else None
 
-                    if is_different_model and item_id and item_id.startswith("fc_"):
+                    if is_foreign_turn and item_id and item_id.startswith("fc_"):
                         item_id = None
 
                     fc: dict[str, Any] = {
