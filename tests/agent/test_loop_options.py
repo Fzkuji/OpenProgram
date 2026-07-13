@@ -14,9 +14,9 @@ import time
 
 from openprogram.agent import AgentSession
 from openprogram.agent.types import AgentToolResult
-from openprogram.providers import get_model
 from openprogram.providers.types import (
     AssistantMessage,
+    Model,
     EventDone,
     EventStart,
     TextContent,
@@ -87,9 +87,16 @@ def _echo_tool():
     )
 
 
+def _fake_model() -> Model:
+    # Constructed directly: the registry is config-dependent (enabled
+    # models), so unit tests must not resolve models through it.
+    return Model(id="fake", name="fake", api="openai-completions",
+                 provider="openai", base_url="https://example.invalid/v1")
+
+
 def _session(stream_fn, **kwargs) -> AgentSession:
     session = AgentSession(
-        model=get_model("openai", "gpt-4o-mini"),
+        model=_fake_model(),
         tools=[_echo_tool()],
         **kwargs,
     )

@@ -18,9 +18,9 @@ from openprogram.agent.tool_gate import (
     register_tool_gate,
 )
 from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.providers import get_model
 from openprogram.providers.types import (
     AssistantMessage,
+    Model,
     EventDone,
     EventStart,
     TextContent,
@@ -134,7 +134,10 @@ def test_gate_blocks_tool_end_to_end():
         _assistant([TextContent(text="ok")]),
     ])
     session = AgentSession(
-        model=get_model("openai", "gpt-4o-mini"), tools=[tool]
+        model=Model(id="fake", name="fake", api="openai-completions",
+                    provider="openai",
+                    base_url="https://example.invalid/v1"),
+        tools=[tool]
     )
     session._agent.stream_fn = stream_fn
     asyncio.run(session.run("go"))

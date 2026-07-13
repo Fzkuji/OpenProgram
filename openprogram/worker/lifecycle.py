@@ -65,13 +65,25 @@ def read_worker_port() -> Optional[int]:
     # Fallback: probe the conventional default port. An unmanaged
     # ``--web`` foreground process is just as serviceable to an HTTP
     # client as a managed worker.
-    port = _DEFAULT_WEBUI_PORT
+    port = _default_webui_port()
     if _probe_tcp_listening(port):
         return port
     return None
 
 
-_DEFAULT_WEBUI_PORT = 18109
+def _default_webui_port() -> int:
+    """Default backend port, honouring ``OPENPROGRAM_BACKEND_PORT``.
+
+    Multi-instance setups (a stable and a dev worker side by side)
+    differ only by profile + this env var; probing a hard-coded 18109
+    would discover the OTHER instance's backend and report its port
+    as this worker's (e.g. a just-spawned dev worker printing
+    "port 18109" while it actually serves 18209).
+    """
+    try:
+        return int(os.environ.get("OPENPROGRAM_BACKEND_PORT", "") or 18109)
+    except ValueError:
+        return 18109
 
 
 def _probe_tcp_listening(port: int, host: str = "127.0.0.1",
@@ -107,10 +119,10 @@ def find_running_webui() -> tuple[Optional[int], Optional[int], str]:
                 pass
         # PID present but no port file — uncommon but treat as managed
         # at the default port (we know SOMETHING owns the lock).
-        if _probe_tcp_listening(_DEFAULT_WEBUI_PORT):
-            return _DEFAULT_WEBUI_PORT, pid, "managed"
-    if _probe_tcp_listening(_DEFAULT_WEBUI_PORT):
-        return _DEFAULT_WEBUI_PORT, None, "unmanaged"
+        if _probe_tcp_listening(_default_webui_port()):
+            return _default_webui_port(), pid, "managed"
+    if _probe_tcp_listening(_default_webui_port()):
+        return _default_webui_port(), None, "unmanaged"
     return None, None, "none"
 
 
