@@ -2,19 +2,19 @@
    Light: warm off-white, easy on the eyes. Dark: soft charcoal, not pure black. */
 
 :root {
-  /* light (default) —护眼暖白 */
-  --bg:        #fcfcfa;
-  --bg-side:   #f5f5f1;
-  --bg-code:   #f3f3ee;
+  /* light (default) — matches the web UI palette (web/app/styles/base.css) */
+  --bg:        #faf9f5;   /* --bg-primary */
+  --bg-side:   #f5f4ed;   /* --bg-secondary */
+  --bg-code:   #f0eee6;   /* --bg-tertiary */
   --bg-card:   #ffffff;
-  --tx:        #2b2d31;
-  --tx-soft:   #62656b;
-  --tx-faint:  #8b8e94;
-  --acc:       #2f7d6e;   /* teal-green, calm */
-  --acc-soft:  #e3f0ec;
-  --bd:        #e4e4dd;
-  --bd-soft:   #eeeee8;
-  --sel:       #cfe8e1;
+  --tx:        #3d3d3a;   /* --text-primary */
+  --tx-soft:   #73726c;   /* --text-secondary */
+  --tx-faint:  #9c9a91;
+  --acc:       #b8651f;   /* --accent-orange (light) */
+  --acc-soft:  #f3e6d6;
+  --bd:        rgba(31, 30, 29, 0.12);   /* --border */
+  --bd-soft:   rgba(31, 30, 29, 0.07);
+  --sel:       #eedcc4;
   --shadow:    0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.04);
 
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
@@ -28,18 +28,19 @@
 }
 
 html[data-theme="dark"] {
-  --bg:        #1a1c20;
-  --bg-side:   #16181b;
-  --bg-code:   #21242a;
-  --bg-card:   #20232a;
-  --tx:        #d6d8dd;
-  --tx-soft:   #9aa0a8;
-  --tx-faint:  #6b7178;
-  --acc:       #5cc4ad;
-  --acc-soft:  #1d2e2b;
-  --bd:        #2c2f36;
-  --bd-soft:   #25282e;
-  --sel:       #2a4a44;
+  /* matches the web UI dark palette (web/app/styles/base.css) */
+  --bg:        #1f1f1e;   /* --bg-primary */
+  --bg-side:   #171716;   /* --bg-secondary */
+  --bg-code:   #252524;   /* --bg-tertiary */
+  --bg-card:   #252524;
+  --tx:        #c3c2b7;   /* --text-primary */
+  --tx-soft:   #97958c;   /* --text-secondary */
+  --tx-faint:  #6f6e66;
+  --acc:       #d19a66;   /* --accent-orange (dark) */
+  --acc-soft:  #35291d;
+  --bd:        rgba(226, 225, 218, 0.12);   /* --border */
+  --bd-soft:   rgba(226, 225, 218, 0.07);
+  --sel:       #4a3a26;
   --shadow:    0 1px 3px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
 }
 
