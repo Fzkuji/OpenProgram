@@ -9,7 +9,7 @@ OpenProgram 有三种使用方式：浏览器里的 Web UI、终端里的 TUI、
 会话统一存放在 `~/.openprogram/sessions/`（每个会话是一个 git 仓库），三种界面读写同一个存储。因此：
 
 - 终端里开的聊天会出现在 Web UI 的侧栏里，点开即接着聊。
-- Web 里的会话可以在终端里用 `/resume` 选中续聊，或用 `openprogram --resume <session-id>` 直接指定。
+- Web 里的会话可以在 TUI 内用 `/resume` 选中续聊，或用 `openprogram --resume <session-id> --print "..."` 非交互地续接。（`--resume` 参数目前在启动交互式 TUI 时不生效——交互续聊请用 TUI 内的 `/resume`。）
 - `openprogram --print "..."` 单发的对话也会写入会话存储，事后可以在任一界面翻看。
 
 worker 的管理命令：`openprogram status` / `stop` / `restart`；`openprogram worker install` 可注册为登录自启服务。详见 `openprogram -h`。
@@ -19,7 +19,7 @@ worker 的管理命令：`openprogram status` / `stop` / `restart`；`openprogra
 | 界面 | 进入方式 | 适合 |
 |---|---|---|
 | [Web UI](web.md) | `openprogram web`，浏览器打开 `http://localhost:18100` | 日常主界面：聊天、DAG 分支视图、函数 / skill / MCP / 记忆管理、设置 |
-| [终端 TUI](tui.md) | `openprogram`（无参数） | 不离开终端的完整聊天：斜杠命令、权限档切换、历史滚动 |
+| [终端 TUI](tui.md) | `openprogram tui`（裸 `openprogram` 会先询问进终端还是网页） | 不离开终端的完整聊天：斜杠命令、权限档切换、历史滚动 |
 | [CLI 单发](cli.md) | `openprogram --print "..."` | 脚本化、被其他程序调用、快速问一句 |
 
 ## 隔离的工作区

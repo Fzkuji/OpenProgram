@@ -2,7 +2,7 @@
 
 ## 这是什么？
 
-本指南介绍如何在 [OpenClaw](https://github.com/nicepkg/openclaw) 中使用 **Agentic Programming** — 作为 skill、工具库或 MCP tool provider。
+本指南介绍如何在 [OpenClaw](https://github.com/openclaw/openclaw) 中使用 **Agentic Programming** — 作为 skill、工具库或 MCP tool provider。
 
 Agentic Programming 和 OpenClaw 解决不同的问题：
 - **OpenClaw** 编排 agent、管理会话、路由消息
@@ -91,13 +91,14 @@ if __name__ == "__main__":
     print(result)
 ```
 
-**`SKILL.md`：**
+**`SKILL.md`**（OpenClaw 要求 YAML front matter——agent 靠 `name` 和 `description` 匹配技能）：
 ```markdown
+---
+name: my-agentic-skill
+description: Plan and decompose tasks using Agentic Programming with automatic context tracking.
+---
+
 # my-agentic-skill
-
-使用 Agentic Programming 进行任务规划和分解，自动追踪上下文。
-
-## 用法
 
 当用户要求规划、分解或拆解任务时，运行：
 
@@ -105,6 +106,8 @@ if __name__ == "__main__":
 python3 ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py "任务描述"
 \`\`\`
 ```
+
+OpenClaw 和 OpenProgram 使用同一套 AgentSkills 兼容的 `SKILL.md` 格式，为其中一方写的 skill 在另一方也能加载。OpenProgram 自己的 skill 放在仓库根目录的 [`skills/`](https://github.com/Fzkuji/OpenProgram/tree/main/skills) 下，可以原样复制进任何 OpenClaw skill 根目录。
 
 ## 用法 2：在 Agent 脚本中作为 Python 库
 

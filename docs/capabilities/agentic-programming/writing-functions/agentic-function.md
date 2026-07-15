@@ -23,11 +23,11 @@ def translate_to_chinese(text: str, runtime=None) -> str:
     )}])
 ```
 
-Give the `runtime` parameter a `None` default. The runtime is injected
-automatically on direct calls, but when the model picks the function via
-`tools=[...]`, tool dispatch binds only the model-supplied arguments — a
-`runtime` parameter without a default raises a `TypeError` before injection
-happens.
+Declare a `runtime` parameter and never pass it yourself: the framework
+injects it on direct Python calls and on tool dispatch alike (a missing or
+`None` value is filled before the signature is enforced), and filters it out
+of the tool schema so the model never sees it. `runtime=None` is the
+conventional spelling; a bare `runtime` without a default also works.
 
 The docstring is the function-level description. The `content` block is the
 actual instruction and data for this LLM call.
@@ -50,10 +50,12 @@ def research_pipeline(task: str, runtime) -> dict:
 
 ## LLM-selected tools
 
-Use `runtime.exec(tools=[...])` when the model should choose which function to
-call. Tools are opt-in: a bare `runtime.exec(content=...)` has no tools
-(although a nested `exec` inside a tool body inherits the outer tool list) —
-see [`tool-calling.md`](../choosing-the-next-step/tool-calling.md).
+Use `runtime.exec(tools=[...])` when the model should choose from a specific
+menu of functions. Note that a bare `runtime.exec(content=...)` is not
+tool-free: with neither `tools=` nor `toolset=` passed, the call resolves the
+full registry toolset by default, so the model can already search, run code,
+and edit files. Pass `toolset="none"` (or `tools=[]`) for a pure reasoning
+call — see [`tool-calling.md`](../choosing-the-next-step/tool-calling.md).
 
 ```python
 @agentic_function(input={

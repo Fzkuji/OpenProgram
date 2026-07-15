@@ -13,7 +13,7 @@ Only two families have a fast tier:
 
 Other models (Gemini, DeepSeek, Qwen, etc.) have no fast concept, and the toggle does not appear for them.
 
-Detection runs per provider along three paths: `openai-codex` reads the `Model.fast` field persisted from the official model endpoint (updated by Fetch after a subscription login — no hand-written list); `claude-code` uses a built-in declaration table (the Opus models above); every other provider checks the models.dev catalog for a priority tier.
+Detection is per model, via the `Model.fast` field in the runtime registry. A model entry that carries an explicit `fast` value in config wins — for `openai-codex` that value is persisted from the official models endpoint's `service_tiers` data (updated by Fetch after a subscription login, no hand-written list). Entries without one are backfilled from a built-in declaration covering exactly the two families above, matched by model id regardless of provider — the same model resold through a gateway keeps its fast tier.
 
 ## How to enable it
 

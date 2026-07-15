@@ -26,7 +26,7 @@ openprogram
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...     # Claude
 export OPENAI_API_KEY=sk-...            # GPT
-export GOOGLE_API_KEY=...               # Gemini
+export GEMINI_API_KEY=...               # Gemini（GOOGLE_API_KEY 也可以）
 ```
 
 确认检查：`openprogram providers` 会列出检测到的凭据。

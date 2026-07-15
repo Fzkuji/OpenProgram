@@ -21,7 +21,8 @@ openprogram --profile <name>     # state-directory profile, reroutes to ~/.openp
 
 | Command | What it does | Key flags |
 |------|------|----------|
-| `openprogram` | Open the terminal chat UI; auto-launches a worker if none is running | — |
+| `openprogram` | Open the chat; a bare run first asks terminal UI vs web UI, auto-launches a worker if none is running | — |
+| `openprogram tui` (alias `chat`) | Launch the terminal UI directly, skipping the surface prompt (Ink on macOS/Linux, Rich on Windows) | `--print`, `--resume` also work after the verb |
 | `openprogram web` | Start the service and open the browser UI (`http://localhost:18100`) | `--port` (backend, default 18109), `--web-port` (frontend, default 18100), `--no-browser` |
 
 ## Background service
@@ -55,19 +56,21 @@ The `worker` subcommands offer finer control:
 
 ### providers — LLM providers and credentials
 
+`secrets` is accepted as an alias for `providers`.
+
 | Verb | What it does |
 |------|------|
-| `login <provider>` | Log in to a provider; `--api-key` / `--api-key-stdin` supply the key non-interactively, `--profile` selects the credential profile |
+| `login <provider>` | Log in to a provider; `--api-key` / `--api-key-stdin` supply the key non-interactively, `--profile` selects the credential profile, `--method` forces a specific login method |
 | `logout` | Remove a provider's credentials |
 | `list` | List credential pools by profile |
-| `available` (alias `search`) | List every configurable provider, optionally filtered with QUERY |
+| `available` (aliases `search`, `catalog`) | List every configurable provider, optionally filtered with QUERY |
 | `status` | Check a provider's current credentials |
 | `use` | Set which account (profile) a provider uses |
 | `discover` / `adopt` | Scan external credential sources / import them into the credential store |
 | `doctor` | Diagnose credentials (expiry, refresh, cooldown, conflicts) |
 | `setup` | Interactive first-time setup |
 | `aliases` | List provider short-name aliases |
-| `profiles` | Credential profile management |
+| `profiles` | Credential profile management (`list` / `create` / `delete`) |
 | `migrate` | Migrate stored credentials to the current format |
 
 `openprogram providers` with no verb prints the status table for all current credentials.
@@ -109,8 +112,15 @@ The `worker` subcommands offer finer control:
 |------|------|
 | `list` | List every session across all agents |
 | `resume` | Answer a waiting session |
-| `attach` / `detach` | Route a channel user's messages into a session / remove the alias |
+| `attach` / `detach` | Route a channel user's messages into a session / remove the alias (`--channel`, `--peer` required; `--account`, `--peer-kind` optional) |
 | `aliases` | List all session-to-channel-user aliases |
+
+### subagent
+
+| Verb | What it does |
+|------|------|
+| `spawn` | Spawn an agent in a session as a new branch: `--session` and `--prompt` required; `--parent-msg` picks the fork node, `--label` names the branch, `--agent` picks the agent profile (default `main`), `--context inherit\|clean` (or `--clean`), `--no-json` for a human-readable summary |
+| `merge` | Merge peer sessions into a target with a new turn: `--target` and repeatable `--sub SID` required; `--message` is the merge instruction, `--agent` the merge agent, `--base N` marks one peer as the merge base, `--no-json` for a human-readable summary |
 
 ### programs
 
@@ -119,7 +129,7 @@ The `worker` subcommands offer finer control:
 | `run <name>` | Run a program; `--arg key=value` (repeatable), `--provider`, `--model` |
 | `list` | List saved programs |
 | `available` | List installable programs and installed third-party harnesses |
-| `install` / `uninstall` | Install / uninstall a program (gui/research/wiki/all) or a third-party harness (git URL / owner/repo) |
+| `install` / `uninstall` | Install / uninstall a program (gui/research/wiki/all) or a third-party harness (git URL / owner/repo); `install --upgrade` reinstalls even if present |
 
 ### skills
 
@@ -153,11 +163,11 @@ The `worker` subcommands offer finer control:
 | Verb | What it does |
 |------|------|
 | `status` | Path, entry count, last sleep time |
-| `recall` | Search the wiki + recent journal, print raw snippets |
+| `recall` | Search the wiki + recent journal, print raw snippets; `--days N` limits the journal window (default 30) |
 | `show` / `edit` | Print / edit a wiki page with `$EDITOR` |
-| `sleep` | Run a sleep consolidation pass now (light → deep → REM) |
+| `sleep` | Run a sleep consolidation pass now (light → deep → REM); `--phase light\|deep\|rem` runs one phase only |
 | `reflections` | Print the latest entries of `wiki/reflections.md` |
-| `export` | tar+gzip the whole memory directory to a given path |
+| `export` | tar+gzip the whole memory directory; `--out PATH` sets the output file (default `./openprogram-memory-<date>.tar.gz`) |
 
 ## Maintenance
 
@@ -167,3 +177,4 @@ The `worker` subcommands offer finer control:
 | `rescue` | Diagnose problems and print the fix commands directly | — |
 | `logs` | View logs | `list`; `tail [name]` (`-n` line count, `-f` follow); `path [name]`. name is worker / runtime / ink, default worker |
 | `update` | Check for and apply updates | `--check` only checks; `--force` bypasses the 6-hour throttle |
+| `cron-worker` | Foreground loop that fires scheduled entries from the `cron` tool | `--once` evaluates one tick and exits; `--list` shows each entry with match status |

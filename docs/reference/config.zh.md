@@ -35,7 +35,7 @@ openprogram config set ui.web_port 8101
 | `default_model` | 默认模型（setup 向导写入） | `openprogram/setup.py` |
 | `default_workdir` | agent 的默认工作目录 | `openprogram/paths.py` |
 | `providers` | 每个 provider 的设置子树（启用的模型、自定义模型等），由 Web UI 模型列表管理 | `openprogram/providers/_config_read.py`、`openprogram/webui/_model_listing/storage.py` |
-| `api_keys` | 环境变量名 → API key 的映射，setup 向导写入，worker 启动时导出到环境 | `openprogram/_setup_sections/sections.py`、`openprogram/webui/server.py` |
+| `api_keys` | 环境变量名 → API key 的映射，setup 向导写入，worker 启动时导出到环境。用于 web 搜索 / TTS 的 key；LLM provider 的 key 存在凭据库（`openprogram providers login`），不在这里 | `openprogram/_setup_sections/sections.py`、`openprogram/webui/server.py` |
 | `spec_migration_version` | 模型 spec 迁移的一次性标记，含义见代码 | `openprogram/webui/_model_listing/storage.py` |
 
 ## 环境变量
@@ -47,7 +47,6 @@ openprogram config set ui.web_port 8101
 | 变量 | 用途 | 代码 |
 |------|------|------|
 | `OPENPROGRAM_PROFILE` | 状态目录 profile，等价 `--profile`，改道到 `~/.openprogram-<name>/` | `openprogram/paths.py` |
-| `OPENPROGRAM_STATE_DIR` | 直接覆盖状态目录路径 | `openprogram/paths.py`（memory、rescue 提示均引用） |
 | `OPENPROGRAM_HOME` | auth profiles 的替代基目录 | `openprogram/auth/profiles.py` |
 | `OPENPROGRAM_WORKDIR` | agent 默认工作目录（优先于 config 的 `default_workdir`） | `openprogram/paths.py` |
 
@@ -77,8 +76,10 @@ openprogram config set ui.web_port 8101
 
 | 变量 | 用途 | 代码 |
 |------|------|------|
+| `AGENTIC_PROVIDER` / `AGENTIC_MODEL` | `detect_provider()`（进而 `create_runtime()`）最先选用的 provider / 模型，优先于配置文件和 CLI 检测 | `openprogram/providers/registry.py` |
 | `OPENPROGRAM_MAX_RETRIES` | Runtime 的 API 瞬态故障重试次数（默认 6） | `openprogram/agentic_programming/runtime.py` |
-| `OPENPROGRAM_EXEC_TIMEOUT_S` | 单次 `runtime.exec` 的时间预算（秒） | `openprogram/agentic_programming/runtime.py` |
+| `OPENPROGRAM_RETRY_BACKOFF_BASE` | 指数重试退避的基数秒数（默认 1.5） | `openprogram/agentic_programming/runtime.py` |
+| `OPENPROGRAM_EXEC_TIMEOUT_S` | 调用方没传 `timeout_s` 时每次 `runtime.exec` 的默认墙钟预算（秒；没设或为 `0` = 不限时） | `openprogram/agentic_programming/runtime.py` |
 | `OPENPROGRAM_FALLBACK_MODELS` | 逗号分隔的 `provider/model` 列表，主模型失败时按序切换 | `openprogram/providers/utils/failover.py` |
 | `OPENPROGRAM_PROVIDER_STREAM_RETRIES` | 流式请求的最大重试次数 | `openprogram/providers/utils/stream_retry.py` |
 | `OPENPROGRAM_STRICT_TOOLS` | `0` = 关闭严格工具 schema（默认开） | `openprogram/providers/_schema/__init__.py` |

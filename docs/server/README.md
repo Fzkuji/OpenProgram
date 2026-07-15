@@ -54,11 +54,11 @@ One-off override: the environment variables `OPENPROGRAM_BACKEND_PORT` / `OPENPR
 
 ```bash
 openprogram logs list           # all log files (size, last updated)
-openprogram logs tail [name]    # last N lines; -n line count, -f follow
+openprogram logs tail [name]    # last N lines (default 50); -n line count, -f follow
 openprogram logs path [name]    # print the log file's absolute path
 ```
 
-There are three log names: `worker` (the default, `~/.openprogram/worker.log`), `runtime` (`~/.openprogram/logs/runtime.log`), and `ink` (TUI startup log, `~/.openprogram/logs/ink-startup.log`).
+There are three log names: `worker` (the default, `~/.openprogram/worker.log`), `runtime` (`~/.openprogram/logs/runtime.log`), and `ink-startup` (TUI startup log, `~/.openprogram/logs/ink-startup.log`). Prefixes match, so `openprogram logs tail ink` works.
 
 ## Running as a login service
 

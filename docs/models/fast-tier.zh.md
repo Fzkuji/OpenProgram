@@ -13,7 +13,7 @@
 
 其他模型（Gemini、DeepSeek、Qwen 等）没有 fast 概念，开关不会出现。
 
-判定按 provider 分三路：`openai-codex` 读官方模型端点落盘的 `Model.fast` 字段（登录订阅后 Fetch 即更新，不靠手写清单）；`claude-code` 用内置声明表（上述 Opus 型号）；其余 provider 查 models.dev 目录里有没有 priority 档。
+判定按模型，看运行时注册表里的 `Model.fast` 字段。配置里模型行显式写了 `fast` 就听它的——`openai-codex` 的值来自官方模型端点的 `service_tiers` 数据（登录订阅后 Fetch 即更新，不靠手写清单）；没写的按内置声明回填，声明只覆盖上述两个家族，按模型 id 匹配、与 provider 无关——同一个模型经网关转售照样保留高速档。
 
 ## 怎么开
 

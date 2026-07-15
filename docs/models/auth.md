@@ -23,10 +23,10 @@ printf %s "$KEY" | openprogram providers login deepseek --api-key-stdin   # scri
 
 Subscription providers log in via browser or device code; `login` picks the method automatically (`--method` forces one):
 
-- `anthropic` / `claude-code`: Claude subscription PKCE login, or paste the output of `claude setup-token`
-- `openai-codex`: ChatGPT subscription; requires the `codex` CLI (`codex login`)
-- `gemini-subscription`: Google account login
-- `github-copilot`: GitHub OAuth token; the short-lived Copilot token is exchanged on demand and never written to disk
+- `anthropic` / `claude-code`: Claude subscription PKCE login in the browser, or paste the output of `claude setup-token` (both write to the same `anthropic` credential pool)
+- `openai-codex`: ChatGPT subscription PKCE login in the browser; an existing `codex` CLI login can instead be imported via `discover` / `adopt` below
+- `gemini-subscription`: imports `~/.gemini/oauth_creds.json` — log in with the Gemini CLI first
+- `github-copilot`: GitHub device-code login in the browser (or import a `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` env var); the short-lived Copilot token is exchanged on demand and never written to disk
 
 ### Importing credentials already on this machine
 
@@ -58,4 +58,4 @@ openprogram providers use <provider> [profile]   # switch between multiple accou
 openprogram providers list                 # list credential pools by profile
 ```
 
-Every provider supports multiple accounts (named profiles), and one account can hold multiple API keys rotated automatically — a rate-limited key cools down and the next one takes over.
+Every provider supports multiple accounts (named profiles), and one account's credential pool can hold multiple API keys. A key that returns 401 / 402 / 429 / 503 is put on a cooldown and the pool hands the next healthy key to the following request — automatically, with selectable strategies (`fill_first` is the default "backup key" behavior; `round_robin`, `random`, and `least_used` are also available). Rotating across whole accounts (instead of the single active one) is a separate per-provider switch, off by default.

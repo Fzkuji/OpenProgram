@@ -21,11 +21,11 @@
 - `tools` 是 LLM 可挑选的函数菜单。每一项可以是
   `@agentic_function`、`{"spec":..., "execute":...}` dict，或带有
   `.spec` / `.execute` 的对象。
-- **工具是按需启用的。** 如果既不传 `tools=` 也不传 `toolset=`，LLM
-  拿到的工具是 `None`——这是一次纯推理调用，LLM 没有函数可挑，只能输出文本。要让它"挑选一个函数"，你必须显式传入
-  `tools=[...]` 或 `toolset="default"`。一个需要注意的点：工具体内部嵌套的
-  `exec` 会继承外层调用的工具（通过
-  `_current_tools` contextvar），因此它不会自动处于无工具状态。
+- **工具默认开启。** 如果既不传 `tools=` 也不传 `toolset=`，`exec`
+  会解析出**完整**的注册表工具集，任何函数不必逐个声明就能搜索、跑代码、改文件。
+  确实不想要工具的调用要用 `toolset="none"`（或 `tools=[]`）显式退出——只有这时
+  才是纯推理调用，模型只能输出文本。工具体内部嵌套的 `exec` 会继承外层调用的
+  `tools=` 列表（通过 `_current_tools` contextvar）。
 - 要裁剪工具菜单，`exec` 还接受策略参数
   `tools_source`、`tools_allow` 和 `tools_deny`。
 - 设置了 `tools` 后，`exec` 进入工具循环，直到模型返回纯文本（或触及循环的硬上限——见 [终止](#termination)）。
@@ -34,7 +34,7 @@
 `"auto"`（默认：由模型决定）、`"required"`（必须挑选一个函数）、
 `"none"`（仅文本），或 `{"type": "function", "name": "X"}` 强制某个函数。它会被转发给 provider，由后者映射到自身的协议形态（已覆盖 OpenAI、Anthropic、Gemini 和 Bedrock）。
 在 provider 支持该开关的情况下，`parallel_tool_calls=False` 禁止在一轮内进行多次挑选。`max_iterations` 限制循环的轮数——实际上限是
-`min(50, max_iterations)`（见
+`min(50, max_iterations)`，下限为 1（见
 [终止](#termination)）。对于一次强制的、结构化的决策*结尾*（而非逐轮控制），`exec(choices=...)` 仍是更丰富的工具——见 [下一步决策](./next-step-decision.md)。
 
 ## 循环主体：`_run_loop`

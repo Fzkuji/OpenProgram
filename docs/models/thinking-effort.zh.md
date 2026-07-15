@@ -10,7 +10,7 @@
 minimal · low · medium · high · xhigh · max
 ```
 
-每个模型只支持其中一个子集，界面按模型实际支持的档位显示。例如 Opus 4.8 是 low 到 max 五档，DeepSeek reasoner 不可调（永远全力推理），GitHub Copilot 线路不支持 thinking。档位数据来自各 provider 的能力探测：Anthropic 有精确的 capabilities API，其他家从模型目录或 id 推断，没有任何信息的 provider 自动退到 low / medium / high 三档。
+每个模型只支持其中一个子集，界面按模型实际支持的档位显示。例如 Opus 4.8 是 low 到 max 五档，DeepSeek reasoner 不可调（永远全力推理），GitHub Copilot 线路不支持 thinking。档位数据来自各 provider 的声明（`provider.json` 的 `thinking` 块，含按模型的覆写）；端点自带能力信息的 provider——Anthropic 的 `/v1/models`、Codex 订阅模型端点——Fetch 时会刷新每个模型的档位。完全没有声明的 provider 自动退到 low / medium / high 三档。
 
 ## 默认值
 
@@ -18,7 +18,7 @@ minimal · low · medium · high · xhigh · max
 
 | Provider 家族 | 默认档 |
 |---|---|
-| OpenAI Responses / Codex / Azure OpenAI | `xhigh` |
+| OpenAI（Responses 与 Completions）/ Codex / Azure OpenAI | `xhigh` |
 | Anthropic / claude-code、Amazon Bedrock | `high` |
 | Google / Gemini CLI（按 token budget 换算）、DeepSeek | `medium` |
 | 无声明的 provider（三档兜底） | `medium` |

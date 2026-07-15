@@ -1,6 +1,6 @@
 # MCP
 
-Connect any MCP (Model Context Protocol) server and its tools appear in chat under a `<name>_` prefix for the model to call. This page covers adding servers, where the configuration lives, and the supported transports.
+Connect any MCP (Model Context Protocol) server and its tools appear in chat as `<name>__<tool>` for the model to call. This page covers adding servers, where the configuration lives, and the supported transports.
 
 ## Quick start
 
@@ -10,7 +10,7 @@ openprogram mcp list                              # status of every configured s
 openprogram mcp show drawio                       # that server's tools and full schemas
 ```
 
-`mcp add` options: `--env KEY=VALUE` (inject an environment variable into the subprocess, repeatable), `--timeout` (startup and per-call timeout in seconds), `--disabled` (write the config without starting the server). The `name` becomes the prefix for all of that server's tools.
+`mcp add` options: `--env KEY=VALUE` (inject an environment variable into the subprocess, repeatable), `--timeout` (startup and per-call timeout in seconds), `--disabled` (write the config without starting the server). The `name` becomes the prefix (`<name>__<tool>`) for all of that server's tools.
 
 All subcommands:
 
@@ -22,7 +22,7 @@ openprogram mcp list | show | add | rm | restart | enable | disable | edit | tes
 - `edit` opens the config file in `$EDITOR` — HTTP / SSE servers are currently added this way (`add` only covers stdio).
 - `test` spins the server up with a throwaway config and confirms it returns a tool list, without writing anything to disk.
 
-The management commands talk to the resident OpenProgram background service; if it is not running, check `openprogram status` or start a chat once.
+The management commands talk to the resident OpenProgram background worker; if it is not running, start it with `openprogram worker start` (check with `openprogram status`).
 
 ## Where the config lives
 
@@ -58,4 +58,4 @@ The management commands talk to the resident OpenProgram background service; if 
 
 `auth.kind` supports `none` / `bearer` (a `token` field) / `oauth` (OAuth 2.1 PKCE; servers with dynamic client registration work with zero config — only servers requiring a pre-registered client need `client_id` / `client_secret`).
 
-Beyond tools, MCP's other two primitives — resources and prompts — are also exposed to the model through a built-in meta tool (see `mcp_meta` in [Built-in tools](tools.md)).
+Beyond tools, MCP's other two primitives — resources and prompts — are also exposed to the model through built-in meta tools (see `mcp_meta` in [Built-in tools](tools.md)).

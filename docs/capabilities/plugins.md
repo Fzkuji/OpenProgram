@@ -10,13 +10,13 @@ openprogram plugins search <query>       # search the configured marketplaces
 openprogram plugins install pip <package>       # source is one of four: pip / npm / git / path
 openprogram plugins install git <url> --ref v1.2
 openprogram plugins install path /abs/path/to/plugin
-openprogram plugins update               # reinstall-upgrade from pip / npm
+openprogram plugins update --all         # reinstall-upgrade pip / npm plugins (or pass one name)
 openprogram plugins enable <name>
 openprogram plugins disable <name>
 openprogram plugins uninstall <name>
 ```
 
-Everything installs under `~/.openprogram/plugins/` (npm packages under its `node_modules/`); trust levels persist in `~/.openprogram/plugin-trust.json`. The web UI exposes the same management API through the plugin routes.
+Git clones and npm packages land under `~/.openprogram/plugins/` (npm under its `node_modules/`); pip plugins install into the running Python environment and are discovered via the `openprogram.plugins` entry-point group. Trust levels (`verified` / `community` / `untrusted`; unlisted plugins default to `untrusted`) persist in `~/.openprogram/plugin-trust.json`. The web UI exposes the same management API through the plugin routes.
 
 ## What a plugin looks like
 

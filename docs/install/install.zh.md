@@ -61,14 +61,14 @@ openprogram web                               # or the browser UI -> http://loca
 | 3 | **OpenProgram** 可编辑安装（`pip install -e .`） | 宿主 + 基础依赖。 |
 | 4 | **Web UI** —— 在 `web/` 中执行 `npm install && npm run build` | Next.js 前端运行在 **:18100**，后端运行在 **:18109**。`--minimal` 会跳过构建（worker 会在首次启动时构建）。 |
 | 5 | **Ink TUI** —— 在 `cli/` 中执行 `npm install && npm run build` | 仅限 POSIX；Windows 使用 Rich REPL。`--minimal` 跳过。 |
-| 6 | **agent 程序（可选，opt-in）** —— 有终端时弹菜单挑，或 `--programs <research\|wiki\|gui\|all>` | **默认不装任何程序。** 选中后：`research` / `wiki` 是纯 Python，克隆进 `functions/agentics/`（可编辑、自动注册；除 openprogram 外无其他依赖）；`gui` 会拉取 PyTorch（约 300 MB；无 GPU 的 Linux 自动选 CPU wheel，仅 CUDA 机器约 3 GB）。装完后随时可用 `openprogram programs install <name>` 再补。 |
+| 6 | **agent 程序（可选，opt-in）** —— 有终端时弹菜单挑，或 `--programs <research\|wiki\|gui\|all>` | **默认不装任何程序。** 选中后：`research` / `wiki` 是纯 Python，以树内 git checkout 的形式克隆进 `functions/agentics/` 并自动注册（`research` 除 openprogram 外无其他依赖；`wiki` 另需 Jinja2 + PyYAML）；`gui` 会拉取 PyTorch（约 300 MB —— 无 GPU 的 Linux 自动选 CPU wheel，仅 CUDA 机器约 3 GB）。装完后随时可用 `openprogram programs install <name>` 再补。 |
 | 7 | **浏览器工具 + channels** | `pip install -e .[all]` + `playwright install chromium`（约 150 MB）。`--minimal` 跳过。更重的 stealth 浏览器 / agent-browser 仍需主动开启 —— 见 [Extras](#extras)。 |
 
 ---
 
 ## 命令行参数
 
-完整参数矩阵（`install.sh --help` / `install.ps1 -Yes` 也会打印）：
+完整参数矩阵（`install.sh --help` 会打印；PowerShell 的参数写在 `install.ps1` 文件头部注释里）：
 
 | 参数 (POSIX) | 参数 (Windows) | 控制什么 | 默认 |
 |--------------|----------------|----------|------|
@@ -124,18 +124,18 @@ cd <Harness>
 [安装章节](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/functions/agentics/GUI-Agent-Harness#1-install)。
 （选装了 GUI 时 —— 菜单里勾选或 `--programs gui`/`all` —— 安装脚本会把它克隆进来并拉 PyTorch；之后运行该 harness 自己的安装脚本来配资产或指定 CUDA/CPU torch。）
 
-对于**纯 Python** 的已编目 harness，有一条单行快捷命令，会为你完成克隆、
-安装并注册：
+对于已编目的 harness，有一条单行快捷命令，会为你完成克隆、安装并注册：
 ```bash
-openprogram programs install research     # or: wiki / all
+openprogram programs install research     # or: wiki / gui / all
 openprogram programs available            # see install status
 ```
-`programs install` 执行的是**非可编辑**安装（依赖装到 site-packages，代码在
-源码树内运行）；它**不会**拉取像 GUI 的 YOLO 权重或 OCR 这类原生资产 —— 所以
-GUI agent 改用它自己的安装脚本（见上文）。
+`programs install` 会克隆仓库并 pip 安装它声明的依赖（**非可编辑**：依赖装到
+site-packages，代码在源码树内运行）。对 `gui` 来说这包括 PyTorch，但**不含**
+YOLO 权重、OCR 预热这类原生资产 —— 这些要运行 GUI harness 自己的安装脚本（见上文）。
 
 执行上述任意操作后，重启 worker（或在 Functions 页面点击 **Refresh**），
-该程序就会出现在 web UI 中。第三方 harness 的方式相同：
+该程序就会出现在 web UI 中。第三方 harness 的安装方式相同 ——
+`openprogram programs install <git-url | owner/repo>`；详见
 [installing-harnesses.md](../capabilities/installing-harnesses.md)。
 
 ---

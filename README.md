@@ -137,7 +137,7 @@ openprogram secrets list             # same as `providers list` (openclaw-style 
 openprogram providers use <prov> [profile]  # pick which account a provider runs on
 openprogram providers login <prov> --profile work  # add a second account
 openprogram worker status            # is the backend up? on what port?
-openprogram --resume <session-id>    # pick up a previous chat
+openprogram --print --resume <id>    # continue a previous chat headlessly
 ```
 
 **Providers & models** live in **Settings → Providers** (web UI). Each provider takes multiple accounts and multiple API keys under one credential pool — keys auto-rotate, cooling off a rate-limited one. Need a provider that isn't in the built-in list? **Add custom provider** takes just a **Name** and **Base URL** (id auto-generated) for any OpenAI-compatible endpoint; browse its models from the provider's `/models` endpoint or add a model by id, same multi-key management as the rest.
@@ -179,8 +179,8 @@ openprogram --print "summarise CHANGELOG.md" > summary.md
 # Run a specific agentic function with key=value args
 openprogram programs run research --arg topic="state-space models"
 
-# Resume an earlier session by id
-openprogram --resume local_d9a16a6b06
+# Continue an earlier session by id (headless; combine with --print)
+openprogram --print --resume local_d9a16a6b06 "and now?"
 ```
 
 Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or a resumed session shows up in the web / terminal UI too.
@@ -192,10 +192,10 @@ Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or 
 | **Automatic context** | Every `@agentic_function` call is a tree node; the runtime threads it through nested LLM calls — no manual prompt assembly. |
 | **Deep work** | `deep_work(task, level)` runs an autonomous plan → execute → evaluate → revise loop until the output meets the chosen quality bar. State persists to disk. |
 | **Functions that author functions** | New / fixed `@agentic_function`s are written by the agent itself via ordinary file-editing tools, guided by the `agentic-programming` skill. No dedicated `create()` / `fix()` calls. |
-| **Conversation as a git DAG** | Sessions are commits + branches + merges + cherry-picks, with the right sidebar exposing the operations. File-touching branches run in isolated git worktrees. |
-| **Layered memory** | Six stores under `~/.openprogram/memory/` (journal / wiki / sleep / scheduler / recall_counts / store), each for a different timescale. The agent picks the layer. |
-| **Mini-DAG execution view** | The right rail draws every node + edge of the active session, scrolls with the chat, and offers a d3-hierarchy layout for fan-out-heavy traces. |
-| **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Discord today, more coming). |
+| **Conversation as a git DAG** | Sessions are commits + branches + merges, with the right sidebar exposing the operations. File-touching branches run in isolated git worktrees. |
+| **Layered memory** | A layered store under `~/.openprogram/memory/` — `journal/` (daily notes), `wiki/` (long-lived pages), `core.md` (always-loaded profile), `index.sqlite` (recall index). The agent picks the layer. |
+| **Mini-DAG execution view** | The right rail draws every node + edge of the active session and scrolls with the chat. |
+| **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Telegram, Discord, Slack, WeChat). |
 
 The detailed tour of each one — code samples, design rationale, where to look in the codebase — lives in [**docs/start/features.md**](docs/start/features.md).
 

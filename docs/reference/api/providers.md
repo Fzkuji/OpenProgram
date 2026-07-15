@@ -2,273 +2,159 @@
 
 > Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/)
 
-Built-in Runtime subclasses, ready to use out of the box. Every provider is an **optional dependency** — you only need to install the SDK when you import the corresponding class.
+`create_runtime` plus the built-in `Runtime` subclasses. All providers speak the raw HTTP APIs through OpenProgram's provider layer — **no vendor SDK needs to be installed**. The CLI/subscription providers reuse the OAuth credentials of the corresponding CLI tool, so those CLIs must be installed and logged in once.
+
+```bash
+# Codex CLI (for openai-codex / OpenAICodexRuntime)
+npm install -g @openai/codex && codex login
+
+# Gemini CLI (for gemini-cli / GeminiCLIRuntime)
+npm install -g @google/gemini-cli && gemini
+
+# Claude Code CLI (for claude-code / ClaudeCodeRuntime — its OAuth token is adopted)
+npm install -g @anthropic-ai/claude-code && claude login
+```
+
+API keys for the API providers are stored in the credential store: **Settings → Providers** in the Web UI, or `openprogram providers login <provider> --api-key`.
 
 ---
 
-## Installation
+## create_runtime / detect_provider
 
-The framework core has no SDK dependencies at all. Install them as needed:
+```python
+from openprogram.providers.registry import create_runtime, detect_provider, check_providers
 
-```bash
-# Anthropic Claude API
-pip install anthropic
-
-# OpenAI GPT / Responses API
-pip install openai
-
-# Google Gemini API
-pip install google-genai
-
-# Claude Code CLI
-npm install -g @anthropic-ai/claude-code
-
-# OpenAI Codex CLI
-npm install -g @openai/codex
-
-# Gemini CLI
-npm install -g @google/gemini-cli
+rt = create_runtime()                                   # auto-detect the best available provider
+rt = create_runtime(provider="anthropic")               # explicit provider, its default model
+rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 ```
+
+### `create_runtime(provider=None, model=None, **kwargs)`
+
+Returns a ready-to-use `Runtime`. `provider=None` (or `"auto"`) runs `detect_provider()`. The six providers below get their dedicated `Runtime` subclass; **any other provider name** (deepseek, groq, openrouter, minimax, kimi, and the rest of the catalogue) is routed through the base `Runtime("provider:model", ...)` via the model registry — the same path the chat dispatcher uses. `**kwargs` are forwarded to the runtime constructor.
+
+### `detect_provider() -> (provider_name, default_model)`
+
+Detection priority:
+
+1. Environment variables `AGENTIC_PROVIDER` / `AGENTIC_MODEL`
+2. Config file (`~/.openprogram/config.json` → `default_provider` / `default_model`)
+3. Caller environment (running inside Codex CLI → use it)
+4. Available CLI binaries (`codex` → `openai-codex`, `gemini` → `gemini-cli`)
+5. Stored API keys (anthropic → openai → google)
+
+Raises `RuntimeError` with setup guidance when nothing is found.
+
+### `check_providers() -> dict`
+
+Availability report for the six dedicated providers: `{name: {"available": bool, "method": "CLI"|"API", "model": default}}`, with `"default": True` on the one `detect_provider()` would pick.
+
+### The `PROVIDERS` table
+
+| Provider name | Runtime class | Default model | Credential |
+|------|------|------|------|
+| `claude-code` | `ClaudeCodeRuntime` | `claude-sonnet-4` (alias, expanded to the current Sonnet) | Claude subscription OAuth (adopted from Claude Code CLI) |
+| `openai-codex` | `OpenAICodexRuntime` | `gpt-5.5` | ChatGPT subscription OAuth (`~/.codex/auth.json`) |
+| `gemini-cli` | `GeminiCLIRuntime` | `gemini-2.5-flash` | Google account OAuth (`~/.gemini/oauth_creds.json`) |
+| `anthropic` | `AnthropicRuntime` | `claude-sonnet-4-6` | Anthropic API key |
+| `openai` | `OpenAIRuntime` | `gpt-4.1` (table) / `gpt-4o` (class constructor) | OpenAI API key |
+| `gemini` | `GeminiRuntime` | `gemini-2.5-flash` | Google API key |
+
+All six classes are importable from `openprogram.providers` (lazy) or `openprogram.providers.registry`.
 
 ---
 
 ## AnthropicRuntime
 
-Anthropic Claude API. Supports text + image content blocks, `response_format` JSON constraints, and automatic prompt caching.
+Anthropic Messages API, via the provider layer (streaming, tool loop, DAG recording all included).
 
 ```python
 from openprogram.providers import AnthropicRuntime
 
-rt = AnthropicRuntime(
-    api_key="sk-ant-...",      # or set the ANTHROPIC_API_KEY environment variable
-    model="claude-sonnet-4-6",
-    max_tokens=4096,
-    system="You are a helpful assistant.",  # optional system prompt
-    cache_system=True,          # cache the system prompt (default True)
-)
+rt = AnthropicRuntime(api_key="sk-ant-...", model="claude-sonnet-4-6")
 ```
 
 ### Constructor parameters
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `api_key` | `str \| None` | `None` | API key. When `None`, reads the `ANTHROPIC_API_KEY` environment variable |
-| `model` | `str` | `"claude-sonnet-4-6"` | Default model |
-| `max_tokens` | `int` | `4096` | Maximum number of output tokens |
-| `system` | `str \| None` | `None` | System prompt |
-| `cache_system` | `bool` | `True` | Whether to cache the system prompt |
-| `max_retries` | `int` | `2` | Number of retries |
+| `api_key` | `str \| None` | `None` | API key. `None` = resolved from the credential store — a stored API key or an adopted Claude-subscription OAuth token (`sk-ant-oat...`, for which the wire switches to Bearer auth automatically) |
+| `model` | `str` | `"claude-sonnet-4-6"` | Model id under the `anthropic` provider namespace |
+| `max_retries` | `int` | `2` | Retry budget forwarded to the base `Runtime` |
 
-### Prompt Caching
-
-AnthropicRuntime automatically adds `cache_control: {"type": "ephemeral"}` to the last content block. This means:
-
-- **The context prefix is cached**: across successive calls, an identical Context prefix hits the cache, substantially reducing latency and cost
-- **The system prompt is cached**: if `system` is set and `cache_system=True`
-
-You can also control caching manually:
-
-```python
-rt.exec(content=[
-    {"type": "text", "text": "...", "cache_control": {"type": "ephemeral"}},
-    {"type": "text", "text": "..."},
-])
-```
-
-### response_format
-
-The Anthropic API has no native JSON schema parameter like OpenAI's. Here a text-constraint approach is used: it appends an instruction to "return only JSON that matches the schema":
-
-```python
-result = rt.exec(
-    content=[{"type": "text", "text": "Extract title and authors"}],
-    response_format={
-        "type": "object",
-        "properties": {
-            "title": {"type": "string"},
-            "authors": {
-                "type": "array",
-                "items": {"type": "string"},
-            },
-        },
-    },
-)
-```
-
-### Image support
-
-```python
-# from a file
-rt.exec(content=[
-    {"type": "text", "text": "What's in this image?"},
-    {"type": "image", "path": "screenshot.png"},
-])
-
-# from base64
-rt.exec(content=[
-    {"type": "image", "data": "<base64>", "media_type": "image/png"},
-])
-
-# from a URL
-rt.exec(content=[
-    {"type": "image", "url": "https://example.com/image.png"},
-])
-```
+Raises `ValueError` when no credential can be resolved. `list_models()` returns the enabled Anthropic model ids.
 
 ---
 
 ## OpenAIRuntime
 
-OpenAI GPT API. Supports text + image, and response_format (JSON mode / structured output).
+OpenAI Responses API, via the provider layer.
 
 ```python
 from openprogram.providers import OpenAIRuntime
 
-rt = OpenAIRuntime(
-    api_key="sk-...",          # or set the OPENAI_API_KEY environment variable
-    model="gpt-4o",
-    max_tokens=4096,
-    system="You are a helpful assistant.",
-    temperature=0.7,           # optional
-    base_url="https://...",    # optional, for Azure or a local service
-)
+rt = OpenAIRuntime(api_key="sk-...", model="gpt-4o")
 ```
 
 ### Constructor parameters
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `api_key` | `str \| None` | `None` | API key. When `None`, reads the `OPENAI_API_KEY` environment variable |
-| `model` | `str` | `"gpt-4o"` | Default model |
-| `max_tokens` | `int` | `4096` | Maximum number of output tokens |
-| `system` | `str \| None` | `None` | System prompt |
-| `temperature` | `float \| None` | `None` | Sampling temperature |
-| `max_retries` | `int` | `2` | Number of retries |
-| `base_url` | `str \| None` | `None` | Custom base URL |
+| `api_key` | `str \| None` | `None` | API key. `None` = resolved from the credential store (`openprogram providers login openai --api-key`) |
+| `model` | `str` | `"gpt-4o"` | Model id under the `openai` provider namespace |
+| `max_retries` | `int` | `2` | Retry budget forwarded to the base `Runtime` |
 
-### response_format
-
-```python
-# JSON mode
-result = rt.exec(
-    content=[{"type": "text", "text": "List 3 colors as JSON array"}],
-    response_format={"type": "json_object"},
-)
-
-# Structured output (JSON schema)
-result = rt.exec(
-    content=[{"type": "text", "text": "Rate this idea"}],
-    response_format={
-        "type": "json_schema",
-        "json_schema": {
-            "name": "rating",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "score": {"type": "integer"},
-                    "reasoning": {"type": "string"},
-                },
-            },
-        },
-    },
-)
-```
-
-### Compatible APIs
-
-Through `base_url` you can connect to any OpenAI-compatible API:
-
-```python
-# Azure OpenAI
-rt = OpenAIRuntime(
-    api_key="...",
-    base_url="https://your-resource.openai.azure.com/openai/deployments/gpt-4o",
-    model="gpt-4o",
-)
-
-# Local server (vLLM, Ollama, etc.)
-rt = OpenAIRuntime(
-    api_key="not-needed",
-    base_url="http://localhost:8000/v1",
-    model="meta-llama/Llama-3-70B",
-)
-```
+For Azure or a local OpenAI-compatible server, add a custom provider (Settings → Providers → Add custom provider, name + base URL) and use `Runtime(model="<provider>:<model>")` or `create_runtime(provider="<provider>")`.
 
 ---
 
 ## GeminiRuntime
 
-Google Gemini API. Supports text + image.
+Google Gemini Generative Language API, via the provider layer.
 
 ```python
 from openprogram.providers import GeminiRuntime
 
-rt = GeminiRuntime(
-    api_key="...",             # or set the GOOGLE_API_KEY environment variable
-    model="gemini-2.5-flash",
-    max_output_tokens=4096,
-    system_instruction="You are a helpful assistant.",
-    temperature=0.7,
-)
+rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
 ```
 
 ### Constructor parameters
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `api_key` | `str \| None` | `None` | API key. When `None`, reads the `GOOGLE_API_KEY` environment variable |
-| `model` | `str` | `"gemini-2.5-flash"` | Default model |
-| `max_output_tokens` | `int` | `4096` | Maximum number of output tokens |
-| `system_instruction` | `str \| None` | `None` | System instruction |
-| `temperature` | `float \| None` | `None` | Sampling temperature |
-| `max_retries` | `int` | `2` | Number of retries |
-
-### response_format
-
-GeminiRuntime supports requesting JSON output through the `response_format` parameter:
-
-```python
-result = rt.exec(
-    content=[{"type": "text", "text": "List 3 colors"}],
-    response_format={"schema": {"type": "array", "items": {"type": "string"}}},
-)
-```
-
-When `response_format` is passed, `response_mime_type="application/json"` is set automatically. If it includes a `schema` field, `response_schema` is also set.
+| `api_key` | `str \| None` | `None` | API key. `None` = resolved from the credential store (accepted env-var names when adding one: `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`) |
+| `model` | `str` | `"gemini-2.5-flash"` | Model id under the `google` provider namespace |
+| `max_retries` | `int` | `2` | Retry budget forwarded to the base `Runtime` |
 
 ---
 
 ## ClaudeCodeRuntime
 
-Claude Code CLI. Suited to local development machines / subscription-account scenarios, with no need to configure a separate API key in Python.
+Claude via a **Claude subscription** — connects directly to `api.anthropic.com` with the subscription's OAuth token (Bearer auth + Claude Code identity headers). No API key billing; the token is resolved fresh on every call so CLI-side rotations propagate.
 
 ```python
 from openprogram.providers import ClaudeCodeRuntime
 
-rt = ClaudeCodeRuntime(
-    model="haiku",
-    timeout=120,
-)
+rt = ClaudeCodeRuntime(model="claude-sonnet-4")
 ```
 
-Before using it, first complete:
+Setup: log in once with the Claude Code CLI (`claude login`) so the OAuth token can be adopted, or add a Claude account with `openprogram providers claude-code accounts add`.
 
-```bash
-npm install -g @anthropic-ai/claude-code
-claude login
-```
+### Constructor parameters
 
-Notes:
-- Primarily intended for text and image input
-- Better suited to interactive development workflows than to high-throughput server-side calls
-- If you pass audio / video / file blocks, it emits a warning and skips the unsupported content
+| Parameter | Type | Default | Description |
+|------|------|--------|------|
+| `api_key` | `str \| None` | `None` | Normally omitted — the token resolves from the credential store on every call. Passing a value pins it (not recommended: subscription tokens expire) |
+| `model` | `str` | `"claude-sonnet-4"` | A bare family alias (`claude-opus-4` / `claude-sonnet-4` / `claude-haiku-4`) expands to the current default of that family; any more-specific id (`claude-opus-4-8`, dated ids) is passed through verbatim |
+| `max_retries` | `int` | `2` | Retry budget forwarded to the base `Runtime` |
+
+Extra keyword arguments are accepted and ignored for backward compatibility. Raises `ValueError` when no Claude credential exists.
 
 ---
 
 ## OpenAICodexRuntime
 
-ChatGPT / Codex subscription runtime. It reads OAuth credentials from the Codex
-CLI auth file and uses the ChatGPT Responses backend.
+ChatGPT / Codex **subscription** runtime. Reads OAuth credentials adopted from the Codex CLI's `~/.codex/auth.json` and talks to the ChatGPT Responses backend. Refreshed tokens are mirrored back so the Codex CLI stays in sync.
 
 ```python
 from openprogram.providers import OpenAICodexRuntime
@@ -276,32 +162,28 @@ from openprogram.providers import OpenAICodexRuntime
 rt = OpenAICodexRuntime(model="gpt-5.5")
 ```
 
-Before using it, first complete:
+Setup:
 
 ```bash
 npm install -g @openai/codex
-codex login --device-auth
+codex login          # OAuth login — do not pick the API-key option
 ```
 
 ### Constructor parameters
 
 | Parameter | Type | Default | Description |
 |------|------|------|------|
-| `model` | `str` | `"gpt-5.5-mini"` | Default model |
-| `system` | `str \| None` | `None` | Forwarded as `instructions` |
-| `profile` | `str \| None` | active profile | Specifies the OpenProgram auth profile |
+| `model` | `str` | `"gpt-5.5"` | Codex model id (a `openai-codex:` prefix, if present, is stripped) |
+| `system` | `str \| None` | `None` | Optional system prompt |
+| `profile` | `str \| None` | active profile | OpenProgram auth profile to use (keyword-only) |
 
-Notes:
-- Requires an OAuth credential; it does not use a bare OpenAI API key
-- Compatible with subprocess-era parameters passed by older callers; these extra parameters are ignored
-- If you only have an OpenAI API key, use `OpenAIRuntime`
+Extra keyword arguments are accepted and ignored. Requires an OAuth credential — a bare OpenAI API key raises `AuthConfigError` (use `OpenAIRuntime` instead).
 
 ---
 
 ## GeminiCLIRuntime
 
-Gemini CLI / subscription runtime. It reads Gemini CLI OAuth credentials and
-uses the Gemini HTTP backend through OpenProgram's provider layer.
+Gemini via a **Google account** (Gemini CLI OAuth). Reuses `~/.gemini/oauth_creds.json` and talks to the Cloud Code Assist backend over HTTP — no subprocess.
 
 ```python
 from openprogram.providers import GeminiCLIRuntime
@@ -309,33 +191,39 @@ from openprogram.providers import GeminiCLIRuntime
 rt = GeminiCLIRuntime(model="gemini-2.5-flash")
 ```
 
-If you want to use the class explicitly, you can also write it directly like this:
-
-```python
-from openprogram.providers.google_gemini_cli import GeminiCLIRuntime
-
-rt = GeminiCLIRuntime(model="gemini-2.5-flash")
-```
-
-Before using it, first complete:
+Setup:
 
 ```bash
 npm install -g @google/gemini-cli
-gemini
+gemini               # first run performs the OAuth login
 ```
 
 ### Constructor parameters
 
 | Parameter | Type | Default | Description |
-|------|------|--------|------|
-| `model` | `str` | `"gemini-2.5-flash"` | Default model |
-| `system` | `str \| None` | `None` | Forwarded as `instructions` |
-| `profile` | `str \| None` | active profile | Specifies the OpenProgram auth profile |
+|------|------|------|------|
+| `model` | `str` | `"gemini-2.5-flash"` | Model id; must match a `gemini-subscription/<id>` registry entry |
+| `system` | `str \| None` | `None` | Optional system prompt |
+| `profile` | `str \| None` | active profile | OpenProgram auth profile to use (keyword-only) |
 
-Notes:
-- Requires a Gemini CLI OAuth credential
-- Compatible with subprocess-era parameters passed by older callers; these extra parameters are ignored
-- If you only have a Google API key, use `GeminiRuntime`
+Extra keyword arguments are accepted and ignored. If you only have a Google API key, use `GeminiRuntime`.
+
+---
+
+## Every other provider
+
+Providers without a dedicated class — deepseek, groq, openrouter, minimax, kimi, and the rest of the catalogue — work through the model registry:
+
+```python
+from openprogram.agentic_programming.runtime import Runtime
+rt = Runtime(model="deepseek:deepseek-chat")
+
+# or, equivalently:
+from openprogram.providers.registry import create_runtime
+rt = create_runtime(provider="deepseek", model="deepseek-chat")
+```
+
+`create_runtime(provider=...)` without a model picks the provider's first enabled model, and raises `ValueError` if the provider has no registered models yet (enable some via Settings → Providers or `openprogram providers available <provider>`).
 
 ---
 
@@ -359,4 +247,4 @@ class MyRuntime(Runtime):
         return my_api_call("\n".join(texts), model=model)
 ```
 
-The key point: `_call()` receives `content: list[dict]` and returns a `str`. It's that simple.
+The key point: `_call()` receives `content: list[dict]` and returns a `str`. It's that simple. (Passing `call=fn` to the base `Runtime` achieves the same without a subclass.)

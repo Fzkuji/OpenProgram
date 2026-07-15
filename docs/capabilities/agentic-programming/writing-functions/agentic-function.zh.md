@@ -23,9 +23,10 @@ def translate_to_chinese(text: str, runtime=None) -> str:
     )}])
 ```
 
-给 `runtime` 参数一个 `None` 默认值。直接调用时 runtime 会被自动注入，但当模型
-通过 `tools=[...]` 选中该函数时，工具分发只会绑定模型提供的参数——没有默认值的
-`runtime` 参数会在注入发生之前就抛出 `TypeError`。
+声明一个 `runtime` 参数，但永远不要自己传它：无论是直接的 Python 调用还是工具
+分发，框架都会自动注入（缺失或为 `None` 的值会在签名校验之前被填上），并把它从
+工具 schema 中过滤掉，模型永远看不到它。`runtime=None` 是惯用写法；不带默认值的
+`runtime` 同样可用。
 
 docstring 是函数级别的描述。`content` 块才是这次 LLM 调用真正的指令和数据。
 
@@ -47,9 +48,10 @@ def research_pipeline(task: str, runtime) -> dict:
 
 ## LLM 选择的工具
 
-当应当由模型来决定调用哪个函数时，使用 `runtime.exec(tools=[...])`。工具是可选启用的：
-裸的 `runtime.exec(content=...)` 不带任何工具（不过工具函数体内部嵌套的 `exec`
-会继承外层的工具列表）——
+当应当由模型从一份指定的函数菜单中挑选时，使用 `runtime.exec(tools=[...])`。注意
+裸的 `runtime.exec(content=...)` 并非无工具：既不传 `tools=` 也不传 `toolset=`
+时，调用默认解析出完整的注册表工具集，模型已经可以搜索、跑代码、改文件。想要
+纯推理调用请传 `toolset="none"`（或 `tools=[]`）——
 见 [`tool-calling.md`](../choosing-the-next-step/tool-calling.md)。
 
 ```python

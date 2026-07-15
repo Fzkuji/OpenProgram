@@ -22,7 +22,7 @@ openprogram providers doctor     # diagnose credentials: expiry, refresh, cooldo
 openprogram setup                # re-run the setup wizard
 ```
 
-You can also set an environment variable directly (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`) and restart the service.
+You can also set an environment variable directly (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`) and restart the service.
 
 ## Where is my data stored?
 

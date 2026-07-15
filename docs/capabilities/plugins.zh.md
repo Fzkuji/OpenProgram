@@ -10,13 +10,13 @@ openprogram plugins search <query>       # 在配置的 marketplace 里搜索
 openprogram plugins install pip <package>       # 来源四选一：pip / npm / git / path
 openprogram plugins install git <url> --ref v1.2
 openprogram plugins install path /abs/path/to/plugin
-openprogram plugins update               # 从 pip / npm 重装升级
+openprogram plugins update --all         # 重装升级 pip / npm 来源的插件（也可以只传一个名字）
 openprogram plugins enable <name>
 openprogram plugins disable <name>
 openprogram plugins uninstall <name>
 ```
 
-安装位置统一在 `~/.openprogram/plugins/`（npm 包在其 `node_modules/` 下）；信任等级持久化在 `~/.openprogram/plugin-trust.json`。Web UI 通过插件路由暴露同一套管理 API。
+git 克隆和 npm 包落在 `~/.openprogram/plugins/` 下（npm 在其 `node_modules/` 里）；pip 插件装进当前 Python 环境，靠 `openprogram.plugins` entry-point group 被发现。信任等级（`verified` / `community` / `untrusted`，未登记的插件默认 `untrusted`）持久化在 `~/.openprogram/plugin-trust.json`。Web UI 通过插件路由暴露同一套管理 API。
 
 ## 插件是什么形态
 

@@ -15,6 +15,8 @@ openprogram update --force   # 绕过 6 小时节流，立即检查
 - 工作树有未提交改动时**拒绝 pull**，避免在你改过的代码上制造合并冲突；
 - 只做 fast-forward，本地有自己的提交时不会强行合并。
 
+从 PyPI wheel 装的（`pip install openprogram`）则改走 pip 更新到 PyPI 最新版；`openprogram update` 会自动识别安装方式并选对路径。
+
 更新成功后会写入一条记录，下次启动 `openprogram` 时显示"updated to X"的提示。更新的是代码，正在运行的服务要 `openprogram restart` 才用上新版本。
 
 ## 自动更新
@@ -31,7 +33,7 @@ cd OpenProgram && ./scripts/install.sh    # Windows: .\scripts\install.ps1
 
 脚本的每一步都是幂等的，任何时候重跑都安全——已装好的步骤会跳过或原地刷新，不会破坏现有配置和会话数据（它们在 `~/.openprogram/`，脚本不碰）。
 
-手动升级等价于这两步：
+手动升级等价于这几步：
 
 ```bash
 git pull

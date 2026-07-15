@@ -8,8 +8,9 @@ in everyday use*.
 
 ## Automatic Context
 
-Every `@agentic_function` call creates a **Context** node.
-Nodes form a tree that is automatically injected into LLM calls:
+Every `@agentic_function` call is recorded as a node in the
+session's flat conversation DAG — the same DAG that holds user
+messages and LLM calls. Nested calls thread automatically:
 
 ```
 login_flow ✓ 8.8s
@@ -20,7 +21,22 @@ login_flow ✓ 8.8s
 
 When `verify` calls the LLM, it automatically sees what
 `observe` and `click` returned. No manual context management:
-you write functions, the runtime threads the tree.
+you write functions, the runtime threads the DAG.
+
+Two decorator knobs control what a call contributes to later
+LLM calls:
+
+```python
+@agentic_function(expose="full", render_range={"callers": 1})
+def navigate(target): ...
+```
+
+`expose` sets how much of the call's internals later calls see —
+`io` (default: input/output only), `llm` (only its LLM exchanges),
+`full` (everything), or `hidden` (no node at all).
+`render_range={"callers": N}` caps how much pre-existing history
+the function itself sees (`0` walls it off completely);
+`{"subcalls": N}` bounds its own in-frame history in long loops.
 
 ## Deep Work — autonomous quality loop
 
@@ -70,8 +86,7 @@ the right sidebar exposes the usual git operations:
   without losing the original thread
 - **Attach** context from another session (cross-session reuse)
   as a labelled user message
-- **Merge** two threads when their branches converge
-- **Cherry-pick** specific commits across branches
+- **Merge** two or more branches into a single aggregated reply
 
 Branches that touch files run in **isolated git worktrees**
 under the hood, so two concurrent agents on different branches
@@ -80,22 +95,23 @@ conversations by copying messages; we fork the underlying repo.
 
 ## Layered memory
 
-Memory isn't a single bag. Six separate stores under
-`~/.openprogram/memory/` cover different timescales and purposes:
+Memory isn't a single bag. `~/.openprogram/memory/` holds
+distinct pieces, each with its own timescale and purpose:
 
-| Layer | What goes there |
+| Piece | What it is |
 |---|---|
-| `journal` | Short-term — recent observations, raw notes |
-| `wiki` | Durable — facts the agent decided to keep around |
-| `sleep` | Periodic consolidation (offline daemon merges journal → wiki) |
-| `scheduler` | Cron-driven recalls that surface a memory at a specific time |
-| `recall_counts` | Hit counts that boost frequently-used memories |
-| `store` | Project-scoped key/value |
+| `journal/` | Chronological notes, one Markdown file per day |
+| `wiki/` | Durable knowledge — an Obsidian-style vault of topic pages, plus an LLM-maintained `index.md`, a `log.md` timeline, and `reflections.md` |
+| `core.md` | Tiny (<2 KB) always-on block injected into every agent's system prompt |
+| `index.sqlite` | Full-text (FTS5) index over wiki + journal, used for recall |
+| `.state/` | Bookkeeping — recall hit counts, sleep-stage state |
 
-Open `/memory` to inspect or hand-edit any layer; the agent
-decides which layer to write to based on what it learned. The
-split exists because "remember this until I tell you to forget"
-and "remember this for the next 10 turns" want different
+Consolidation runs as a "sleep" sweep (light → deep → REM) that
+merges journal entries into the wiki and rewrites `core.md`;
+`openprogram memory sleep` runs one now. Inspect or hand-edit
+from the CLI (`openprogram memory status / recall / show / edit`)
+or the web UI's Memory page. The split exists because "remember
+this permanently" and "what happened yesterday" want different
 storage strategies.
 
 ## Mini-DAG — execution view in the right rail
@@ -104,10 +120,10 @@ Every conversation has a right-rail mini-DAG that draws each
 node (user message, LLM call, code Call, attach) and the edges
 between them. The view scrolls with the chat: clicking a node
 scrolls the conversation to the corresponding message, and the
-panel keeps the currently-viewed range highlighted. d3-hierarchy
-layout is available behind a toggle for fan-out-heavy traces;
-see [`design/runtime/dag/dag-rendering.md`](../reference/design/runtime/dag/dag-rendering.md) when adding new
-node kinds.
+panel keeps the currently-viewed range highlighted. The
+rendering rules are specified in
+[`design/runtime/dag/dag-rendering.md`](../reference/design/runtime/dag/dag-rendering.md) — consult it when
+adding new node kinds.
 
 ## Multi-account + key rotation
 
@@ -126,9 +142,9 @@ openprogram providers list                              # the active one is mark
 The same panel lives in the **web** (Settings → Providers) and the **TUI**
 (`/login <provider>`): list / add / activate / rename / remove. `/login` in the
 terminal completes the whole sign-in there — OAuth, device-code, import-from-CLI,
-or an API-key paste — instead of bouncing you to the browser. claude-code keeps
-its Claude-subscription (Meridian) backend behind the exact same panel, so it's
-just one instance of the generic surface.
+or an API-key paste — instead of bouncing you to the browser. Claude-subscription
+accounts (`claude-code`) sit behind the exact same panel — just one instance of
+the generic surface.
 
 **api-key providers** get the same multi-credential model as a list of keys:
 paste a key (it's validated first) and it joins the list, **name** each one, and
@@ -148,7 +164,7 @@ is lost. Design + status:
 The dispatcher already supports multiple `agent_id`s per
 session — every row is stamped with the producer agent, the
 sidebar can colour-code by author, and the channel layer maps
-external transports (currently Discord) to per-account
-identities. Cross-channel message routing + a declarative
-tool-availability system are tracked as the next set of
-features (see the project's open task list for status).
+external transports (Telegram / Discord / Slack / WeChat) to
+per-account identities. Cross-channel message routing + a
+declarative tool-availability system are tracked as the next
+set of features.

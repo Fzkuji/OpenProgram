@@ -15,7 +15,7 @@
 
 2. **登录：**
    ```bash
-   claude login
+   claude auth login
    ```
 
 3. **验证可用：**
@@ -85,7 +85,7 @@ runtime = ClaudeCodeRuntime(
     ← 返回值
 ```
 
-不再有子进程调用——它就是标准的 Anthropic 协议，只是凭据来自你的订阅。
+全程没有子进程——它就是标准的 Anthropic 协议，只是凭据来自你的订阅。
 
 ## 限制
 
@@ -146,6 +146,6 @@ if __name__ == "__main__":
 
 | 错误 | 解决方案 |
 |-------|----------|
-| `ValueError: No Claude credential` | 运行 `claude login`（订阅），或在 Settings → Providers 添加 Anthropic API key |
-| 认证相关的 4xx 错误 | token 过期或失效——重新 `claude login`，或用 `openprogram providers doctor` 诊断 |
+| `ValueError: No Claude credential` | 运行 `claude auth login`（订阅），或在 Settings → Providers 添加 Anthropic API key |
+| 认证相关的 4xx 错误 | token 过期或失效——重新 `claude auth login`，或用 `openprogram providers doctor` 诊断 |
 | 模型 id 被 API 拒绝 | 别名（`sonnet`/`opus`/`haiku`）以外的 id 原样透传，检查拼写和版本号 |

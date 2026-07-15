@@ -8,7 +8,7 @@
 
 ```bash
 openprogram --profile dev            # CLI 全局参数
-OPENPROGRAM_PROFILE=dev openprogram  # 或环境变量，二者等价（环境变量优先）
+OPENPROGRAM_PROFILE=dev openprogram  # 或环境变量，二者等价（两者都设时以参数为准）
 ```
 
 `--profile` 是全局参数，放在子命令前，对所有子命令生效：`openprogram --profile dev sessions list`、`openprogram --profile dev restart` 等。

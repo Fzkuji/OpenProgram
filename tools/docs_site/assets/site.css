@@ -167,8 +167,9 @@ article { width: 100%; max-width: var(--maxw); }
 
 /* right toc */
 aside.toc {
-  position: fixed; top: 96px; right: 0; width: var(--toc-w); bottom: 0;
-  overflow-y: auto; padding: 38px 20px 60px; font-size: 13px;
+  position: fixed; top: 96px; right: 0; width: var(--toc-w);
+  max-height: calc(100vh - 96px - 48px);
+  overflow-y: auto; padding: 38px 20px 24px; font-size: 13px;
 }
 aside.toc .toc-title {
   font-size: 12px; font-weight: 700;

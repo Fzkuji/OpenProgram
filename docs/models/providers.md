@@ -11,13 +11,13 @@ Access methods: **API key** = a key stored in the credential store (`providers l
 | `anthropic` | Anthropic Messages | API key (`ANTHROPIC_API_KEY`) or OAuth (Claude subscription, PKCE / pasting a `claude setup-token`) | Explicit prompt caching (`cache_control`, 1h TTL supported) |
 | `openai` | OpenAI Responses | API key (`OPENAI_API_KEY`) | Automatic caching on the Responses protocol (`prompt_cache_key`) |
 | `openai_responses` / `openai_completions` | OpenAI Responses / Chat Completions | — (shared protocol implementations, reused by many providers) | |
-| `openai_codex` | ChatGPT backend | OAuth (ChatGPT subscription), reuses `~/.codex/auth.json`; requires a `codex` CLI login | Model list pulled live from the official endpoint |
+| `openai_codex` | ChatGPT backend | OAuth (ChatGPT subscription): browser PKCE sign-in; an existing `codex` CLI login can also be imported via `providers discover` | Model list pulled live from the official endpoint |
 | `azure_openai_responses` | Azure OpenAI Responses | API key (`AZURE_OPENAI_API_KEY`) + a base URL you supply | |
 | `google` | Google Generative AI | API key (`GEMINI_API_KEY` / `GOOGLE_API_KEY`) | Thinking controlled via a token budget |
 | `google_gemini_cli` | Cloud Code Assist | CLI credentials: reads `~/.gemini/oauth_creds.json` directly; the Gemini CLI handles refreshing | |
-| `gemini_subscription` | Cloud Code Assist | Google account OAuth (subscription) | Aliases `gemini`, `gemini-cli` |
+| `gemini_subscription` | Cloud Code Assist | CLI credentials: imports `~/.gemini/oauth_creds.json` (log in with the Gemini CLI first) | Aliases `gemini`, `gemini-cli` |
 | `amazon_bedrock` | Bedrock Converse Stream | Cloud credential chain (`AWS_PROFILE` / access keys / bearer token, etc., detected at runtime) | Explicit prompt caching (`cachePoint`) |
-| `github_copilot` | OpenAI Responses and others | GitHub OAuth token (`GH_TOKEN`, etc.), exchanged on demand for a short-lived Copilot token that is never written to disk | No thinking-effort support |
+| `github_copilot` | OpenAI Responses and others | GitHub device-code OAuth in the browser, or import a token from `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`; exchanged on demand for a short-lived Copilot token that is never written to disk | No thinking-effort support |
 | `deepseek` | OpenAI Completions | API key (`DEEPSEEK_API_KEY`) | Reasoning is not adjustable on reasoner models |
 | `openrouter` | OpenAI Completions | API key (`OPENROUTER_API_KEY`) | Aggregation gateway |
 | `vercel_ai_gateway` | Anthropic Messages | API key (`AI_GATEWAY_API_KEY`) | Aggregation gateway |
@@ -28,14 +28,18 @@ Access methods: **API key** = a key stored in the credential store (`providers l
 | `zai` | OpenAI Completions | API key (`ZAI_API_KEY`) | |
 | `huggingface` | OpenAI Completions | API key (`HF_TOKEN`) | |
 | `minimax` / `minimax_cn` | Anthropic Messages | API key (`MINIMAX_API_KEY` / `MINIMAX_CN_API_KEY`) | International / China endpoints |
-| `minimax_cn_coding_plan` | Anthropic Messages | API key (`MINIMAX_API_KEY`) | China coding plan subscription |
+| `minimax_cn_coding_plan` | Anthropic Messages | API key (`MINIMAX_CN_API_KEY` / `MINIMAX_API_KEY` — same account and key as `minimax_cn`) | "MiniMax Token Plan (CN)" coding subscription |
 | `kimi_coding` | Anthropic Messages | API key (`KIMI_API_KEY` / `MOONSHOT_API_KEY`) | |
 | `alibaba_token_plan_cn` | OpenAI Completions | Plan API key | Alias `bailian` |
 | `opencode` | OpenAI Completions and others | API key (`OPENCODE_API_KEY`) | |
 
 Streaming output is supported by every provider (the whole layer is built on the streaming interface). Multimodal input is decided per model rather than per provider, based on each provider's model catalog data; trust what the UI shows for a given model. Prompt caching has been verified in code only where noted in the table above.
 
-Empty directories such as `claude_code`, `chatgpt_subscription`, and `claude_max_proxy` are alias placeholders (e.g. `claude-max` → `claude-code`); their behavior is decided by the alias table, not by a separate implementation.
+Empty directories such as `claude_code`, `chatgpt_subscription`, and `claude_max_proxy` are alias placeholders (`claude-max` → `claude-code`, `chatgpt-subscription` → `openai-codex`); their behavior is decided by the alias table, not by a separate implementation. `minimax_cn_coding_plan` is likewise config-driven with no code of its own.
+
+## Custom providers
+
+Any OpenAI-compatible endpoint the table does not cover can be added from the Web UI under Settings → Providers: a display name and a base URL are the only required fields (an id is derived from the name if you don't give one). The endpoint's `/models` list is then browsable with the same Fetch button as built-in providers, and enabled models work at runtime with no code changes. Custom providers are stored in config as `providers.<id>` with `source: "custom"`.
 
 ## Using providers as a library
 

@@ -6,7 +6,7 @@ page collects the recurring "it doesn't work" cases.
 
 ## "No provider available"
 
-`openprogram providers` shows what's detected. Common causes:
+`openprogram providers` lists the credentials on file; `openprogram providers discover` scans for external CLI logins (Claude Code, Codex, Gemini CLI) to adopt. Common causes:
 
 - forgot `openprogram providers login <provider>` (or the login of the matching external CLI)
 - API key set in a different shell than the one running the worker
@@ -61,10 +61,12 @@ location if you rename a parent folder.
 
 ## Worker doesn't start / starts on the wrong port
 
-`openprogram doctor` runs a fast end-to-end check: Python deps,
-Node bundle, providers, MCP, plugins, ports. `openprogram rescue`
-goes beyond diagnosis and prints the fix commands directly. Read
-their output before raising an issue.
+`openprogram doctor` runs a fast end-to-end check: the
+Python/Node/git toolchain, skills and plugins loading, provider
+credentials, MCP servers, disk cache, and whether the worker is
+listening on :18109. `openprogram rescue` goes beyond diagnosis
+and prints the fix commands directly. Read their output before
+raising an issue.
 
 ## `import openprogram` raises ModuleNotFoundError
 

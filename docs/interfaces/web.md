@@ -18,7 +18,7 @@ Open `http://localhost:18100` in a browser. The frontend is Next.js (port 18100 
 
 ### Message streaming
 
-Replies stream in over WebSocket: a placeholder reply appears immediately after sending, and text, thinking, and tool-call blocks render incrementally in arrival order.
+Replies stream in over WebSocket: a placeholder reply appears immediately after sending, and text, thinking, and tool-call blocks render incrementally in arrival order. When several agents write into one session, each assistant message carries the producing agent's avatar and name.
 
 ### Collapsible thinking
 
@@ -26,14 +26,19 @@ The model's thinking process renders as a collapsible block, collapsed by defaul
 
 ### Function-call timeline
 
-Function and tool calls within each reply turn render as an expandable execution timeline: one row per step, with arguments, output, errors, and duration for each function call. Nested calls display recursively as a context tree, and subagents are steps in the timeline too. Clicking a step opens the execution detail panel in the right sidebar. Manual `/run` function invocations use the same timeline rendering.
+Function and tool calls within each reply turn render as an expandable execution timeline: one row per step, with arguments, output, errors, and duration for each function call. Nested calls display recursively as a context tree, and subagents are steps in the timeline too. Clicking a step opens the execution detail panel in the right sidebar. Functions run manually from the `/functions` page's Run dialog use the same timeline rendering.
+
+### Attachments
+
+Drag and drop images or text files onto the input box (pasting works too); they are attached to the next message you send.
 
 ### Session branches and the DAG view
 
 Session history is stored as a DAG, not a flat list:
 
 - The branch menu in the top bar lists all branches of the current session, with checkout, rename, and delete.
-- The Branches panel in the right sidebar provides the DAG view: branches are colored by swimlane, running branches carry an animated marker; multi-select merge and cross-session attach are supported.
+- The History view in the right sidebar shows a live mini-DAG of the session: one node per message or function call, colored by branch, with merge and attach operations appearing as nodes of their own. Click a node to collapse or expand its subtree (or jump the chat to that step); double-click a node or edge to check out that branch.
+- The Branches panel above the mini-DAG lists branches with a running marker on active ones, and supports multi-select merge — equal merge into a fresh tip, or merge in place into a chosen base branch — as well as attaching branches from another session (cross-session attach).
 - Multiple versions of the same message switch via a `< N/M >` selector — it only moves the displayed position, never deletes history.
 
 ### Rewind

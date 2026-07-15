@@ -6,7 +6,7 @@
 
 ## "No provider available"
 
-`openprogram providers` 会显示检测到了哪些 provider。常见原因：
+`openprogram providers` 列出已存的凭据；`openprogram providers discover` 扫描可采用的外部 CLI 登录态（Claude Code、Codex、Gemini CLI）。常见原因：
 
 - 忘记执行 `openprogram providers login <provider>`（或对应外部 CLI 的登录）
 - API key 设置在了与运行 worker 不同的 shell 中
@@ -61,10 +61,10 @@ rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Har
 
 ## worker 无法启动 / 启动在了错误的端口
 
-`openprogram doctor` 会运行一次快速的端到端检查：Python 依赖、
-Node bundle、provider、MCP、插件、端口。`openprogram rescue`
-在诊断之外还会直接打印修复命令。在提 issue 之前先读一遍
-它们的输出。
+`openprogram doctor` 会运行一次快速的端到端检查：Python/Node/git
+工具链、技能和插件能否加载、provider 凭据、MCP server、磁盘缓存，
+以及 worker 是否在 :18109 监听。`openprogram rescue` 在诊断之外
+还会直接打印修复命令。在提 issue 之前先读一遍它们的输出。
 
 ## `import openprogram` 报 ModuleNotFoundError
 

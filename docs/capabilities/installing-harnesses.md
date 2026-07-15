@@ -66,7 +66,7 @@ checkout it points to.
 |---|---|---|
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | no extra deps |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Jinja2 + PyYAML (tiny) |
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` | heavy: PyTorch via ultralytics + OpenCV. On GPU-less Linux the CPU torch wheel (~300 MB) is auto-selected instead of the ~3 GB CUDA build. |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` | heavy: PyTorch via ultralytics + OpenCV. On GPU-less Linux the CPU torch wheel (~200 MB) is auto-selected instead of the ~3 GB CUDA build. |
 
 `openprogram programs install all` installs the three; the first-run
 setup wizard's "Agent programs" step offers the same choice
@@ -143,7 +143,7 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 (Windows PowerShell: `$env:OPENPROGRAM_DEBUG_REGISTRY=1; openprogram programs list`)
 
 Then use it — the harness's functions are callable like any built-in
-(in chat, or `openprogram programs run <fn> key=value`).
+(in chat, or `openprogram programs run <fn> -a key=value`).
 
 ## Platform notes
 
@@ -263,7 +263,7 @@ cd /path/to/My-Harness && git add -A && git commit -m wip
 openprogram programs install file:///path/to/My-Harness
 openprogram programs available        # should show: My-Harness [ok] (package: …)
 OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list   # functions present?
-openprogram programs run my_tool text=hello              # smoke test
+openprogram programs run my_tool -a text=hello           # smoke test
 openprogram programs uninstall My-Harness                # clean up
 ```
 

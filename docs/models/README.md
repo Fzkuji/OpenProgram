@@ -37,7 +37,7 @@ openprogram providers setup      # interactive: scan existing credentials → lo
 Configuring credentials does not by itself make models selectable. Each provider has an "enabled models" list, and only enabled models appear in the chat UI's model picker.
 
 - Mechanism: the registry (`openprogram/providers/enabled_models.py`) reads each provider's model entries from the config file at startup and builds the runtime model list; config changes take effect on reload.
-- Config file: `~/.openprogram/config.json` (`~/.openprogram-<name>/config.json` when using `--profile <name>`). Each provider lives under `providers.<id>`: an `enabled` flag, the enabled model entries (with specs such as context window and pricing), and manually added `custom_models`.
+- Config file: `~/.openprogram/config.json` (`~/.openprogram-<name>/config.json` when using `--profile <name>`). Each provider lives under `providers.<id>`: an `enabled` flag and the enabled model entries under `models` (spec rows with context window, pricing, and so on). Models added by hand are stored in the same list, tagged `source: "manual"`.
 - How to enable models: tick them in the setup wizard; browse the provider's model list under Settings → Providers in the Web UI and tick them there (the Fetch button re-pulls the official model catalog); subscription providers auto-enable a default model set on login. Editing config.json by hand is normally unnecessary.
 - Default model: the top-level `default_provider` and `default_model` config keys decide which model a new session uses; switching models in the UI updates them.
 

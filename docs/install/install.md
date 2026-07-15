@@ -68,14 +68,14 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
 | 4 | **Web UI** — `npm install && npm run build` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. `--minimal` skips the build (the worker builds on first start). |
 | 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. `--minimal` skips. |
-| 6 | **Agent programs (opt-in)** — menu when a terminal is attached, or `--programs <research\|wiki\|gui\|all>` | **No program installs by default.** When selected: `research` / `wiki` are pure Python, cloned into `functions/agentics/` (editable, auto-register; no deps beyond openprogram); `gui` pulls PyTorch (~300 MB; the CPU wheel is auto-selected on GPU-less Linux, ~3 GB only on CUDA boxes). Add any of them later with `openprogram programs install <name>`. |
+| 6 | **Agent programs (opt-in)** — menu when a terminal is attached, or `--programs <research\|wiki\|gui\|all>` | **No program installs by default.** When selected: `research` / `wiki` are pure Python, cloned into `functions/agentics/` as in-tree git checkouts that auto-register (`research` needs nothing beyond openprogram; `wiki` adds Jinja2 + PyYAML); `gui` pulls PyTorch (~300 MB — the CPU wheel is auto-selected on GPU-less Linux; ~3 GB only on CUDA boxes). Add any of them later with `openprogram programs install <name>`. |
 | 7 | **Browser tool + channels** | `pip install -e .[all]` + `playwright install chromium` (~150 MB). `--minimal` skips. Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
 
 ---
 
 ## Flags
 
-The full flag matrix (`install.sh --help` / `install.ps1 -Yes` prints it too):
+The full flag matrix (`install.sh --help` prints it; the PowerShell flags are documented at the top of `install.ps1`):
 
 | Flag (POSIX) | Flag (Windows) | Controls | Default |
 |--------------|----------------|----------|---------|
@@ -141,18 +141,20 @@ own per-platform installer — use it via the steps above; full guide in its
 [install section](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/functions/agentics/GUI-Agent-Harness#1-install).
 (When GUI is opted in — checked in the menu, or `--programs gui`/`all` — the install script clones it and pulls PyTorch; run the harness's own installer afterwards for its asset setup or an explicit CUDA/CPU torch.)
 
-For the **pure-Python** bundled harnesses there's a one-line shortcut that clones,
-installs, and registers them for you:
+For the bundled harnesses there's a one-line shortcut that clones, installs,
+and registers them for you:
 ```bash
-openprogram programs install research     # or: wiki / all
+openprogram programs install research     # or: wiki / gui / all
 openprogram programs available            # see install status
 ```
-`programs install` does a **non-editable** install (deps to site-packages, code runs
-in-tree); it does **not** fetch native assets like the GUI's YOLO weight or OCR — so
-the GUI agent uses its own installer (above) instead.
+`programs install` clones the repo and pip-installs its declared deps
+(**non-editable**: deps go to site-packages, the code runs in-tree). For `gui`
+that includes PyTorch, but **not** native assets like the YOLO weight or the
+OCR warm-up — run the GUI harness's own installer (above) for those.
 
 After any of these, restart the worker (or hit **Refresh** on the Functions page)
-and the program shows in the web UI. Third-party harnesses work the same way:
+and the program shows in the web UI. Third-party harnesses install the same way —
+`openprogram programs install <git-url | owner/repo>`; details:
 [installing-harnesses.md](../capabilities/installing-harnesses.md).
 
 ---

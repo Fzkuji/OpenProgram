@@ -13,7 +13,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | `list` | List directory contents | Nothing |
 | `glob` | Find files by filename pattern | Nothing |
 | `grep` | Content search; prefers ripgrep, falls back to Python re without rg | Nothing (`rg` makes it faster) |
-| `semble` | Semantic + lexical code search returning ranked code blocks | `semble` Python library |
+| `semble_search` / `semble_find_related` | Semantic + lexical code search returning ranked code blocks | `semble` Python library |
 
 ## Execution
 
@@ -29,7 +29,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 |---|---|---|
 | `web_search` | Keywords to a list of relevant URLs, multiple backends | See the backend table below |
 | `web_fetch` | Fetch a URL and convert it to readable text | Nothing (`trafilatura` gives cleaner extraction) |
-| `browser` | Playwright-driven headless Chromium (open / navigate and other actions) | Playwright + a browser (install via `openprogram browser`) |
+| `playwright_browser` | Playwright-driven headless Chromium (open / navigate and other actions) | Playwright + a browser (install via `openprogram browser install`) |
 | `agent_browser` | Drive a browser through the npm `agent-browser` CLI; snapshot returns the accessibility tree | npm package `agent-browser` |
 
 `web_search` backends and keys (DuckDuckGo and arXiv are key-free and work out of the box):
@@ -43,14 +43,14 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | Google PSE | `GOOGLE_PSE_API_KEY` + `GOOGLE_PSE_CX` |
 | Jina | `JINA_API_KEY` |
 | Kagi | `KAGI_API_KEY` |
-| MiniMax | `MINIMAX_CODE_PLAN_KEY` |
-| Moonshot (Kimi) | `KIMI_API_KEY` |
+| MiniMax | `MINIMAX_CODE_PLAN_KEY`, `MINIMAX_CODING_API_KEY`, or `MINIMAX_API_KEY` |
+| Moonshot (Kimi) | `KIMI_API_KEY` or `MOONSHOT_API_KEY` |
 | Perplexity | `PERPLEXITY_API_KEY` |
 | SearXNG | `SEARXNG_URL` (address of a self-hosted instance) |
 | Serper | `SERPER_API_KEY` |
 | Tavily | `TAVILY_API_KEY` |
 | You.com | `YDC_API_KEY` or `YOU_API_KEY` |
-| Ollama | Local Ollama, no key |
+| Ollama | Local Ollama (signed in via `ollama signin`), or `OLLAMA_API_KEY` for Ollama Cloud |
 
 ## Images and PDF
 
@@ -64,15 +64,15 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 
 | Tool | What it does | Requires |
 |---|---|---|
-| `task` | Spawn another agent within the same session and collect its reply | Nothing |
+| `task` (+ `await_task` / `cancel_task`) | Spawn another agent within the same session and collect its reply | Nothing |
 | `spawn_program` | Invoke any registered `@agentic_function` | Nothing |
-| `agent_collab` | Cross-branch communication (`message_branch`) | Nothing |
+| `message_branch` (+ `list_branches` / `list_sessions`) | Cross-branch communication | Nothing |
 | `mixture_of_agents` | Ask N models in parallel, then synthesize | Multiple configured provider keys |
-| `clarify` | Ask the user 1-N questions with options (AskUserQuestion) | Nothing |
-| `todo` | In-session task list (todo_read / todo_write) | Nothing |
-| `plan_mode` | Enter / exit plan mode | Nothing |
+| `ask_user_question` | Ask the user 1-N questions with options | Nothing |
+| `todo_read` / `todo_write` | In-session task list | Nothing |
+| `enter_plan_mode` / `exit_plan_mode` | Enter / exit plan mode | Nothing |
 | `canvas` | Incrementally write into named blocks of a markdown file | Nothing |
-| `memory` | Read / write the persistent memory store (record observations, retrieve, etc. — seven entry points) | Nothing |
-| `worktree` | Create / merge / discard git worktrees | git |
+| `memory_*` | Read / write the persistent memory vault — 13 entry points: `memory_note`, `memory_recall`, `memory_reflect`, `memory_get`, `memory_browse`, `memory_lint`, `memory_ingest`, plus wiki maintenance (`backlinks` / `rename` / `relink` / `delete` / `review` / `status`) | Nothing |
+| `worktree_*` | Git worktrees: `worktree_create` / `merge` / `discard` / `list` / `keep` | git |
 | `cron` | Register recurring agent tasks | Nothing |
-| `mcp_meta` | Expose MCP resources / prompts primitives to the model | A configured MCP server (see [MCP](mcp.md)) |
+| `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | Expose MCP resources / prompts primitives to the model (the `mcp_meta` directory) | A configured MCP server (see [MCP](mcp.md)) |

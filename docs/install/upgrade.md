@@ -15,6 +15,8 @@ The update strategy depends on how you installed. A git-clone install (`pip inst
 - The pull is **refused when the working tree has uncommitted changes**, to avoid creating merge conflicts on top of your edits;
 - Only fast-forwards are applied — if you have local commits of your own, nothing is force-merged.
 
+An install from a PyPI wheel (`pip install openprogram`) updates via pip against the latest PyPI release instead; `openprogram update` detects the install method and picks the right path automatically.
+
 A successful update writes a record, and the next `openprogram` start shows an "updated to X" notice. The update only changes the code on disk — a running service needs `openprogram restart` to pick up the new version.
 
 ## Automatic updates

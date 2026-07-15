@@ -11,7 +11,7 @@ OpenProgram is built on Agentic Programming: **Python controls the flow, the LLM
 
 ## Agentic workflows: ready-made agents
 
-Complete workflows written on top of the paradigm (called harnesses / agentic programs in the code), usable right after install: GUI automation, autonomous research, a personal knowledge base. List them with `openprogram programs list`, install with `openprogram programs install <name>`; once registered, the functions can be triggered as tools in chat or run directly with `openprogram programs run`.
+Complete workflows written on top of the paradigm (called harnesses / agentic programs in the code), usable right after install: GUI automation, autonomous research, a personal knowledge base. See what is installable with `openprogram programs available`, install with `openprogram programs install <name>`, list the registered functions with `openprogram programs list`; once registered, the functions can be triggered as tools in chat or run directly with `openprogram programs run`.
 
 - [Agentic workflows overview](workflows/README.md)
 - [GUI Agent](workflows/gui-agent.md) — give it one task sentence, it operates the desktop autonomously

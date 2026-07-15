@@ -173,7 +173,15 @@
           if (e.isIntersecting) {
             tocLinks.forEach((l) => l.classList.remove("active"));
             const a = map.get(e.target);
-            if (a) a.classList.add("active");
+            if (a) {
+              a.classList.add("active");
+              // keep the highlighted entry visible; hands off while the
+              // pointer is inside the toc (the user is scrolling it)
+              const toc = a.closest("aside.toc");
+              if (toc && toc.scrollHeight > toc.clientHeight && !toc.matches(":hover")) {
+                toc.scrollTo({ top: a.offsetTop - toc.clientHeight / 2 + a.offsetHeight / 2, behavior: "smooth" });
+              }
+            }
           }
         });
       }, { rootMargin: "-116px 0px -70% 0px", threshold: 0 });

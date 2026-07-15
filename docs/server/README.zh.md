@@ -54,11 +54,11 @@ openprogram ports --backend 8102 --frontend 8101
 
 ```bash
 openprogram logs list           # 所有日志文件（大小、更新时间）
-openprogram logs tail [name]    # 最后 N 行；-n 行数，-f 持续跟踪
+openprogram logs tail [name]    # 最后 N 行（默认 50）；-n 行数，-f 持续跟踪
 openprogram logs path [name]    # 打印日志文件的绝对路径
 ```
 
-日志名有三个：`worker`（默认，`~/.openprogram/worker.log`）、`runtime`（`~/.openprogram/logs/runtime.log`）、`ink`（TUI 启动日志，`~/.openprogram/logs/ink-startup.log`）。
+日志名有三个：`worker`（默认，`~/.openprogram/worker.log`）、`runtime`（`~/.openprogram/logs/runtime.log`）、`ink-startup`（TUI 启动日志，`~/.openprogram/logs/ink-startup.log`）。名字按前缀匹配，所以 `openprogram logs tail ink` 也行。
 
 ## 作为登录服务运行
 

@@ -22,7 +22,7 @@ openprogram providers doctor     # 诊断凭据：过期、刷新、冷却、冲
 openprogram setup                # 重新走一遍配置向导
 ```
 
-也可以直接设置环境变量（`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`）后重启服务。
+也可以直接设置环境变量（`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`）后重启服务。
 
 ## 我的数据存在哪里？
 

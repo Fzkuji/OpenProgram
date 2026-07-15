@@ -64,7 +64,7 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 |---|---|---|
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | 无额外依赖 |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Jinja2 + PyYAML（极小） |
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` | 重量级：通过 ultralytics 引入 PyTorch + OpenCV。在无 GPU 的 Linux 上会自动选择 CPU 版 torch wheel（约 300 MB），而非约 3 GB 的 CUDA 构建。 |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` | 重量级：通过 ultralytics 引入 PyTorch + OpenCV。在无 GPU 的 Linux 上会自动选择 CPU 版 torch wheel（约 200 MB），而非约 3 GB 的 CUDA 构建。 |
 
 `openprogram programs install all` 会安装这三个；首次运行的安装向导
 中的 “Agent programs” 步骤会以交互方式提供相同的选择。
@@ -139,7 +139,7 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 （Windows PowerShell：`$env:OPENPROGRAM_DEBUG_REGISTRY=1; openprogram programs list`）
 
 然后就可以使用它——harness 的函数像任何内置函数一样可调用
-（在 chat 中，或 `openprogram programs run <fn> key=value`）。
+（在 chat 中，或 `openprogram programs run <fn> -a key=value`）。
 
 ## 平台说明
 
@@ -257,7 +257,7 @@ cd /path/to/My-Harness && git add -A && git commit -m wip
 openprogram programs install file:///path/to/My-Harness
 openprogram programs available        # 应显示：My-Harness [ok] (package: …)
 OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list   # 函数是否出现？
-openprogram programs run my_tool text=hello              # 冒烟测试
+openprogram programs run my_tool -a text=hello           # 冒烟测试
 openprogram programs uninstall My-Harness                # 清理
 ```
 

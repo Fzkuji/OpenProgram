@@ -21,7 +21,8 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 
 | 命令 | 作用 | 关键参数 |
 |------|------|----------|
-| `openprogram` | 打开终端聊天 UI；没有 worker 时自动拉起 | — |
+| `openprogram` | 打开聊天；裸跑会先问开终端 UI 还是 Web UI，没有 worker 时自动拉起 | — |
+| `openprogram tui`（别名 `chat`） | 直接启动终端 UI，跳过界面选择（macOS/Linux 用 Ink，Windows 用 Rich） | `--print`、`--resume` 在动词后同样可用 |
 | `openprogram web` | 启动服务并打开浏览器 UI（`http://localhost:18100`） | `--port`（backend，默认 18109）、`--web-port`（frontend，默认 18100）、`--no-browser` |
 
 ## 后台服务
@@ -55,19 +56,21 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 
 ### providers —— LLM provider 与凭据
 
+`secrets` 是 `providers` 的别名。
+
 | 动词 | 作用 |
 |------|------|
-| `login <provider>` | 登录一个 provider；`--api-key` / `--api-key-stdin` 非交互提供 key，`--profile` 指定凭据 profile |
+| `login <provider>` | 登录一个 provider；`--api-key` / `--api-key-stdin` 非交互提供 key，`--profile` 指定凭据 profile，`--method` 强制指定登录方式 |
 | `logout` | 移除一个 provider 的凭据 |
 | `list` | 按 profile 列出凭据池 |
-| `available`（别名 `search`） | 列出全部可配置的 provider，可加 QUERY 过滤 |
+| `available`（别名 `search`、`catalog`） | 列出全部可配置的 provider，可加 QUERY 过滤 |
 | `status` | 检查一个 provider 当前的凭据 |
 | `use` | 设置一个 provider 用哪个账号（profile） |
 | `discover` / `adopt` | 扫描外部来源的凭据 / 收编进凭据库 |
 | `doctor` | 诊断凭据（过期、刷新、冷却、冲突） |
 | `setup` | 交互式首次配置 |
 | `aliases` | 列出 provider 短名别名 |
-| `profiles` | 凭据 profile 管理 |
+| `profiles` | 凭据 profile 管理（`list` / `create` / `delete`） |
 | `migrate` | 把存储的凭据迁移到当前格式 |
 
 不带动词的 `openprogram providers` 打印当前全部凭据的状态表。
@@ -109,8 +112,15 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 |------|------|
 | `list` | 列出所有 agent 的全部会话 |
 | `resume` | 回答一个等待中的会话 |
-| `attach` / `detach` | 把频道用户的消息路由进某会话 / 取消别名 |
+| `attach` / `detach` | 把频道用户的消息路由进某会话 / 取消别名（`--channel`、`--peer` 必填；`--account`、`--peer-kind` 可选） |
 | `aliases` | 列出全部会话与频道用户的别名 |
+
+### subagent
+
+| 动词 | 作用 |
+|------|------|
+| `spawn` | 在某会话里生成一个新分支的 agent：`--session` 和 `--prompt` 必填；`--parent-msg` 指定分叉节点，`--label` 命名分支，`--agent` 选 agent profile（默认 `main`），`--context inherit\|clean`（或 `--clean`），`--no-json` 打印人类可读摘要 |
+| `merge` | 把多个平级会话合并进目标会话形成新 turn：`--target` 与可重复的 `--sub SID` 必填；`--message` 是合并指令，`--agent` 选合并 agent，`--base N` 把某个 peer 标记为合并基底，`--no-json` 打印人类可读摘要 |
 
 ### programs
 
@@ -119,7 +129,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | `run <name>` | 运行一个 program；`--arg key=value`（可重复）、`--provider`、`--model` |
 | `list` | 列出保存的 program |
 | `available` | 列出可安装的 program 与已装的第三方 harness |
-| `install` / `uninstall` | 安装 / 卸载 program（gui/research/wiki/all）或第三方 harness（git URL / owner/repo） |
+| `install` / `uninstall` | 安装 / 卸载 program（gui/research/wiki/all）或第三方 harness（git URL / owner/repo）；`install --upgrade` 已装也重装 |
 
 ### skills
 
@@ -153,11 +163,11 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | 动词 | 作用 |
 |------|------|
 | `status` | 路径、条目数、上次 sleep 时间 |
-| `recall` | 搜索 wiki + 近期 journal，打印原始片段 |
+| `recall` | 搜索 wiki + 近期 journal，打印原始片段；`--days N` 限定 journal 窗口（默认 30） |
 | `show` / `edit` | 打印 / 用 `$EDITOR` 编辑一个 wiki 页 |
-| `sleep` | 立即跑一轮 sleep 整理（light → deep → REM） |
+| `sleep` | 立即跑一轮 sleep 整理（light → deep → REM）；`--phase light\|deep\|rem` 只跑一个阶段 |
 | `reflections` | 打印 `wiki/reflections.md` 最新条目 |
-| `export` | 把整个记忆目录 tar+gzip 到指定路径 |
+| `export` | 把整个记忆目录 tar+gzip 打包；`--out PATH` 指定输出文件（默认 `./openprogram-memory-<date>.tar.gz`） |
 
 ## 维护
 
@@ -167,3 +177,4 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | `rescue` | 诊断问题并直接打印修复命令 | — |
 | `logs` | 查看日志 | `list`；`tail [name]`（`-n` 行数、`-f` 跟踪）；`path [name]`。name 为 worker / runtime / ink，默认 worker |
 | `update` | 检查并应用更新 | `--check` 只检查；`--force` 绕过 6 小时节流 |
+| `cron-worker` | 前台循环，触发 `cron` 工具登记的计划任务 | `--once` 只评估一个 tick 就退出；`--list` 显示每条任务的匹配状态 |

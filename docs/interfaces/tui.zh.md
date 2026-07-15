@@ -7,14 +7,15 @@
 ## 进入与退出
 
 ```bash
-openprogram          # 无参数即进入 TUI
+openprogram tui      # 直接进入终端聊天（别名：openprogram chat）
+openprogram          # 裸命令会先询问：进终端 UI 还是 Web UI
 ```
 
 macOS / Linux 上的 TUI 是 Node.js（Ink）实现，通过 WebSocket 连接本地 worker（没有在跑会自动拉起）；Windows 上回退到一个较简单的 Rich REPL。会话与 Web UI 共用，见[界面总览](README.md)。
 
 退出：`/quit`，或空闲时快速按两次 `Ctrl-C`。
 
-续聊历史会话：TUI 内用 `/resume` 挑选；会话 id 可用 `openprogram sessions list` 查。
+续聊历史会话：TUI 内用 `/resume` 挑选；会话 id 可用 `openprogram sessions list` 查。（`openprogram --resume <id>` 参数目前只对 `--print` 单发生效，启动交互式 TUI 时不生效。）
 
 ## 按键
 
@@ -59,4 +60,4 @@ macOS / Linux 上的 TUI 是 Node.js（Ink）实现，通过 WebSocket 连接本
 
 另有 `/search`、`/review`、`/diff`、`/init`、`/browser`、`/welcome`。完整清单以 `/help` 输出为准。
 
-Windows 的 Rich REPL 只支持较小的子集（`/help`、`/web`、`/model`、`/functions`、`/login`、`/attach`、`/detach`、`/connections`、`/agent`、`/new`、`/copy`、`/quit`），退出也可用 `Ctrl-C` 或 `Ctrl-D`。
+Windows 的 Rich REPL 支持一个较小的集合：`/help`、`/web`、`/model`、`/agent`、`/new`、`/copy`、`/tools`、`/skills`、`/functions`、`/apps`、`/mcp`、`/session`、`/login`、`/attach`、`/detach`、`/connections`、`/profile`、`/compact`、`/context`、`/rewind`、`/sandbox`、`/clear`、`/quit`。退出也可用 `Ctrl-C` 或 `Ctrl-D`。

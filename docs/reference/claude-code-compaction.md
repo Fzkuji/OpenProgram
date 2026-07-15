@@ -231,8 +231,6 @@ Modified files: src/utils.py, src/config.py, tests/test_utils.py"
 
 **Chained compaction**: After compaction, the conversation continues, and when it fills again it is compacted again. Each time compacts on top of the previous summary, and information decays layer by layer — the first pass loses early detail, the second loses mid-stage detail. A long session may be compacted 3-5 times.
 
-**Chained compaction**: After compaction, the conversation continues, and when it fills again it is compacted again. Each time compacts on top of the previous summary, and information decays layer by layer.
-
 ### Tier 5: Reactive
 
 **What it does**: Emergency compaction when the API returns a 413 (prompt too long) error.

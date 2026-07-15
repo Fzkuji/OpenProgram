@@ -23,19 +23,12 @@
 
 ```python
 from openprogram import agentic_function
-from openprogram.agentic_programming import Runtime
 
-@agentic_function
-def research_pipeline(task: str, runtime: Runtime) -> dict:
-    """Run the full research pipeline: survey → find gaps → generate ideas.
-
-    Args:
-        task: Research topic.
-        runtime: LLM runtime instance.
-
-    Returns:
-        Result dict containing survey, gaps, and ideas.
-    """
+@agentic_function(input={
+    "task": {"description": "Research topic."},
+})
+def research_pipeline(task: str, runtime=None) -> dict:
+    """Run the full research pipeline: survey, find gaps, generate ideas."""
     survey = survey_topic(topic=task, runtime=runtime)
     gaps = identify_gaps(survey=survey, runtime=runtime)
     ideas = generate_ideas(gaps=gaps, runtime=runtime)
@@ -46,17 +39,11 @@ def research_pipeline(task: str, runtime: Runtime) -> dict:
 ## 示例：用一次 exec 调用做汇总
 
 ```python
-@agentic_function
-def research_pipeline(task: str, runtime: Runtime) -> str:
-    """Run the full research pipeline and summarise the results.
-
-    Args:
-        task: Research topic.
-        runtime: LLM runtime instance.
-
-    Returns:
-        The consolidated research summary.
-    """
+@agentic_function(input={
+    "task": {"description": "Research topic."},
+})
+def research_pipeline(task: str, runtime=None) -> str:
+    """Run the full research pipeline and summarise the results."""
     survey = survey_topic(topic=task, runtime=runtime)
     gaps = identify_gaps(survey=survey, runtime=runtime)
     ideas = generate_ideas(gaps=gaps, runtime=runtime)
@@ -70,7 +57,9 @@ def research_pipeline(task: str, runtime: Runtime) -> str:
     ])
 ```
 
-## 上下文树
+## 会话 DAG
+
+每次调用是一个节点；`caller` 边指向编排函数：
 
 ```
 research_pipeline

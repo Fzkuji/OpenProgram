@@ -24,19 +24,12 @@ hard-coded in Python.
 
 ```python
 from openprogram import agentic_function
-from openprogram.agentic_programming import Runtime
 
-@agentic_function
-def research_pipeline(task: str, runtime: Runtime) -> dict:
-    """Run the full research pipeline: survey → find gaps → generate ideas.
-
-    Args:
-        task: Research topic.
-        runtime: LLM runtime instance.
-
-    Returns:
-        Result dict containing survey, gaps, and ideas.
-    """
+@agentic_function(input={
+    "task": {"description": "Research topic."},
+})
+def research_pipeline(task: str, runtime=None) -> dict:
+    """Run the full research pipeline: survey, find gaps, generate ideas."""
     survey = survey_topic(topic=task, runtime=runtime)
     gaps = identify_gaps(survey=survey, runtime=runtime)
     ideas = generate_ideas(gaps=gaps, runtime=runtime)
@@ -47,17 +40,11 @@ def research_pipeline(task: str, runtime: Runtime) -> dict:
 ## Example: one exec call to summarise
 
 ```python
-@agentic_function
-def research_pipeline(task: str, runtime: Runtime) -> str:
-    """Run the full research pipeline and summarise the results.
-
-    Args:
-        task: Research topic.
-        runtime: LLM runtime instance.
-
-    Returns:
-        The consolidated research summary.
-    """
+@agentic_function(input={
+    "task": {"description": "Research topic."},
+})
+def research_pipeline(task: str, runtime=None) -> str:
+    """Run the full research pipeline and summarise the results."""
     survey = survey_topic(topic=task, runtime=runtime)
     gaps = identify_gaps(survey=survey, runtime=runtime)
     ideas = generate_ideas(gaps=gaps, runtime=runtime)
@@ -71,7 +58,9 @@ def research_pipeline(task: str, runtime: Runtime) -> str:
     ])
 ```
 
-## Context tree
+## Session DAG
+
+Each call is one node; the `caller` edge points at the orchestrator:
 
 ```
 research_pipeline

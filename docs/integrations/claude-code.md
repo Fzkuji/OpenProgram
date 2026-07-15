@@ -15,7 +15,7 @@ If you have `claude` installed and logged in, you're ready to go.
 
 2. **Log in:**
    ```bash
-   claude login
+   claude auth login
    ```
 
 3. **Verify it works:**
@@ -85,7 +85,7 @@ Your Python code
     ← return value
 ```
 
-No more subprocess calls — it is the standard Anthropic protocol, just with credentials from your subscription.
+No subprocess is involved — it is the standard Anthropic protocol, just with credentials from your subscription.
 
 ## Limitations
 
@@ -146,6 +146,6 @@ if __name__ == "__main__":
 
 | Error | Solution |
 |-------|----------|
-| `ValueError: No Claude credential` | Run `claude login` (subscription), or add an Anthropic API key under Settings → Providers |
-| Auth-related 4xx errors | Token expired or invalid — `claude login` again, or diagnose with `openprogram providers doctor` |
+| `ValueError: No Claude credential` | Run `claude auth login` (subscription), or add an Anthropic API key under Settings → Providers |
+| Auth-related 4xx errors | Token expired or invalid — `claude auth login` again, or diagnose with `openprogram providers doctor` |
 | Model id rejected by the API | Ids other than the aliases (`sonnet`/`opus`/`haiku`) are passed through as is; check the spelling and version number |

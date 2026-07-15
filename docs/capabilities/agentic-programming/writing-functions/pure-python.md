@@ -45,12 +45,12 @@ def extract_emails(text: str) -> list[str]:
     return re.findall(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
 ```
 
-## Context tree
+## Session DAG
 
-Pure Python functions do not appear in the context tree (unless decorated
+Pure Python functions leave no node on the session DAG (unless decorated
 with `@traced`).
 
-If you want the call recorded in the execution tree, add `@traced`:
+If you want the call recorded on the DAG, add `@traced`:
 
 ```python
 from openprogram.agentic_programming.function import traced

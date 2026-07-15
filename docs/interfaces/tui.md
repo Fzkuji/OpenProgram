@@ -7,14 +7,15 @@ The full chat interface for using OpenProgram without leaving the terminal. This
 ## Entering and exiting
 
 ```bash
-openprogram          # no arguments enters the TUI
+openprogram tui      # straight into the terminal chat (alias: openprogram chat)
+openprogram          # bare invocation first asks: terminal UI or web UI
 ```
 
 On macOS / Linux the TUI is implemented in Node.js (Ink) and connects to the local worker over WebSocket (starting one automatically if none is running); on Windows it falls back to a simpler Rich REPL. Sessions are shared with the Web UI, see the [interfaces overview](README.md).
 
 Exit: `/quit`, or press `Ctrl-C` twice quickly while idle.
 
-To resume a past session: use `/resume` inside the TUI to pick one; session ids are listed by `openprogram sessions list`.
+To resume a past session: use `/resume` inside the TUI to pick one; session ids are listed by `openprogram sessions list`. (The `openprogram --resume <id>` flag currently takes effect only for `--print` one-shots, not when launching the interactive TUI.)
 
 ## Keys
 
@@ -59,4 +60,4 @@ Type `/` to trigger completion. Common ones:
 
 Also available: `/search`, `/review`, `/diff`, `/init`, `/browser`, `/welcome`. The `/help` output is the authoritative full list.
 
-The Windows Rich REPL supports only a smaller subset (`/help`, `/web`, `/model`, `/functions`, `/login`, `/attach`, `/detach`, `/connections`, `/agent`, `/new`, `/copy`, `/quit`); it can also exit via `Ctrl-C` or `Ctrl-D`.
+The Windows Rich REPL supports a smaller set: `/help`, `/web`, `/model`, `/agent`, `/new`, `/copy`, `/tools`, `/skills`, `/functions`, `/apps`, `/mcp`, `/session`, `/login`, `/attach`, `/detach`, `/connections`, `/profile`, `/compact`, `/context`, `/rewind`, `/sandbox`, `/clear`, `/quit`. It can also exit via `Ctrl-C` or `Ctrl-D`.

@@ -35,7 +35,7 @@ The top-level keys actually written to `~/.openprogram/config.json` (do not edit
 | `default_model` | Default model (written by the setup wizard) | `openprogram/setup.py` |
 | `default_workdir` | Default working directory for agents | `openprogram/paths.py` |
 | `providers` | Per-provider settings subtree (enabled models, custom models, etc.), managed by the Web UI model listing | `openprogram/providers/_config_read.py`, `openprogram/webui/_model_listing/storage.py` |
-| `api_keys` | Environment variable name → API key mapping, written by the setup wizard and exported into the environment at worker startup | `openprogram/_setup_sections/sections.py`, `openprogram/webui/server.py` |
+| `api_keys` | Environment variable name → API key mapping, written by the setup wizard and exported into the environment at worker startup. Used for web-search / TTS keys; LLM provider keys live in the credential store (`openprogram providers login`), not here | `openprogram/_setup_sections/sections.py`, `openprogram/webui/server.py` |
 | `spec_migration_version` | One-time marker for the model-spec migration; see the code for its meaning | `openprogram/webui/_model_listing/storage.py` |
 
 ## Environment variables
@@ -47,7 +47,6 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | Variable | Purpose | Code |
 |------|------|------|
 | `OPENPROGRAM_PROFILE` | State-directory profile, equivalent to `--profile`, reroutes to `~/.openprogram-<name>/` | `openprogram/paths.py` |
-| `OPENPROGRAM_STATE_DIR` | Directly overrides the state directory path | `openprogram/paths.py` (referenced by memory and the rescue hints) |
 | `OPENPROGRAM_HOME` | Alternative base directory for auth profiles | `openprogram/auth/profiles.py` |
 | `OPENPROGRAM_WORKDIR` | Default agent working directory (takes precedence over the config's `default_workdir`) | `openprogram/paths.py` |
 
@@ -77,8 +76,10 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 
 | Variable | Purpose | Code |
 |------|------|------|
+| `AGENTIC_PROVIDER` / `AGENTIC_MODEL` | Provider / model that `detect_provider()` (and thus `create_runtime()`) picks first, before config-file and CLI detection | `openprogram/providers/registry.py` |
 | `OPENPROGRAM_MAX_RETRIES` | Runtime retry count for transient API failures (default 6) | `openprogram/agentic_programming/runtime.py` |
-| `OPENPROGRAM_EXEC_TIMEOUT_S` | Time budget in seconds for a single `runtime.exec` | `openprogram/agentic_programming/runtime.py` |
+| `OPENPROGRAM_RETRY_BACKOFF_BASE` | Base seconds for the exponential retry backoff (default 1.5) | `openprogram/agentic_programming/runtime.py` |
+| `OPENPROGRAM_EXEC_TIMEOUT_S` | Default wall-clock budget in seconds for every `runtime.exec` when the caller passes no `timeout_s` (unset or `0` = unbounded) | `openprogram/agentic_programming/runtime.py` |
 | `OPENPROGRAM_FALLBACK_MODELS` | Comma-separated `provider/model` list; switched to in order when the main model fails | `openprogram/providers/utils/failover.py` |
 | `OPENPROGRAM_PROVIDER_STREAM_RETRIES` | Maximum retries for streaming requests | `openprogram/providers/utils/stream_retry.py` |
 | `OPENPROGRAM_STRICT_TOOLS` | `0` = turn off strict tool schemas (on by default) | `openprogram/providers/_schema/__init__.py` |

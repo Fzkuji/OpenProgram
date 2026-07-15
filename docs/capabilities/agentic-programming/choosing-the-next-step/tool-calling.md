@@ -27,12 +27,13 @@ Inside an `@agentic_function`, call
 - `tools` is the menu of functions the LLM may pick from. Each entry can be
   an `@agentic_function`, a `{"spec":..., "execute":...}` dict, or an object
   with `.spec` / `.execute`.
-- **Tools are opt-in.** With neither `tools=` nor `toolset=` passed, the LLM
-  gets `None` for tools — a pure reasoning call where the LLM has no function
-  to pick and can only emit text. To let it "pick a function", you must pass
-  `tools=[...]` or `toolset="default"` explicitly. One caveat: a nested
-  `exec` inside a tool body inherits the outer call's tools (via the
-  `_current_tools` contextvar), so it is not automatically tool-free.
+- **Tools are on by default.** With neither `tools=` nor `toolset=` passed,
+  `exec` resolves the FULL registry toolset, so any function can search, run
+  code, and edit files without opting in. A call that genuinely wants no
+  tools opts out explicitly with `toolset="none"` (or `tools=[]`) — only then
+  is it a pure reasoning call where the model can only emit text. A nested
+  `exec` inside a tool body inherits the outer call's `tools=` list (via the
+  `_current_tools` contextvar).
 - To trim the tool menu, `exec` also takes the policy parameters
   `tools_source`, `tools_allow`, and `tools_deny`.
 - With `tools` set, `exec` enters the tool loop until the model returns pure
@@ -45,7 +46,7 @@ function. It is forwarded to the provider, which maps it onto its own
 protocol shape (OpenAI, Anthropic, Gemini, and Bedrock are covered).
 `parallel_tool_calls=False` forbids several picks in one round where the
 provider supports the knob. `max_iterations` caps the loop's rounds — the
-effective cap is `min(50, max_iterations)` (see
+effective cap is `min(50, max_iterations)`, floored at 1 (see
 [Termination](#termination)). For a forced, structured decision *ending*
 (rather than per-round control), `exec(choices=...)` remains the richer
 tool — see [next-step decision](./next-step-decision.md).

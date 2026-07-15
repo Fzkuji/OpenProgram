@@ -44,11 +44,11 @@ def extract_emails(text: str) -> list[str]:
     return re.findall(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
 ```
 
-## 上下文树
+## 会话 DAG
 
-纯 Python 函数不会出现在上下文树中（除非用 `@traced` 装饰）。
+纯 Python 函数不会在会话 DAG 上留下节点（除非用 `@traced` 装饰）。
 
-如果你想把调用记录到执行树中，请加上 `@traced`：
+如果你想把调用记录到 DAG 上，请加上 `@traced`：
 
 ```python
 from openprogram.agentic_programming.function import traced

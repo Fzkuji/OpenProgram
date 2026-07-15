@@ -28,6 +28,8 @@ openprogram programs run <name> -a key=value  # 直接运行一个 program
 
 `programs run` 还接受 `--provider`（claude-code / openai-codex / gemini-cli / anthropic / openai / gemini，默认自动探测）和 `--model` 覆盖模型。
 
+`programs install` 把 harness 克隆到 `openprogram/functions/agentics/` 下，并安装其自己的 `pyproject.toml` / `requirements.txt` 声明的依赖。该目录下的一切——不论是安装的 harness 还是手动 `git clone`——在 worker 下次重启时自动注册。
+
 ## 用哪种方式触发
 
 - **聊天里**：入口函数以 `as_tool=True` 注册为工具，直接用自然语言描述任务，模型会调用它（如 `gui_agent`、`research_agent`、`wiki_agent`）。

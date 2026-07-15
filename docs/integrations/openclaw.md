@@ -2,7 +2,7 @@
 
 ## What Is This?
 
-This guide shows how to use **Agentic Programming** within [OpenClaw](https://github.com/nicepkg/openclaw) — as a skill, a utility library, or an MCP tool provider.
+This guide shows how to use **Agentic Programming** within [OpenClaw](https://github.com/openclaw/openclaw) — as a skill, a utility library, or an MCP tool provider.
 
 Agentic Programming and OpenClaw solve different problems:
 - **OpenClaw** orchestrates agents, manages sessions, routes messages
@@ -91,13 +91,14 @@ if __name__ == "__main__":
     print(result)
 ```
 
-**`SKILL.md`:**
+**`SKILL.md`** (OpenClaw requires the YAML front matter — `name` and `description` are what the agent matches on):
 ```markdown
+---
+name: my-agentic-skill
+description: Plan and decompose tasks using Agentic Programming with automatic context tracking.
+---
+
 # my-agentic-skill
-
-Plan and decompose tasks using Agentic Programming with automatic context tracking.
-
-## Usage
 
 When the user asks to plan, decompose, or break down a task, run:
 
@@ -105,6 +106,8 @@ When the user asks to plan, decompose, or break down a task, run:
 python3 ~/.openclaw/workspace/skills/my-agentic-skill/scripts/analyze.py "the task description"
 \`\`\`
 ```
+
+OpenClaw and OpenProgram use the same AgentSkills-compatible `SKILL.md` format, so a skill written for one loads in the other. OpenProgram's own skills live in [`skills/`](https://github.com/Fzkuji/OpenProgram/tree/main/skills) at the repo root and can be copied into any OpenClaw skill root as-is.
 
 ## Usage Pattern 2: As a Python Library in Agent Scripts
 

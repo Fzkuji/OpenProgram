@@ -44,13 +44,13 @@ openprogram sessions aliases   # list all session-to-channel-user bindings
 
 ## Session operations in the web UI
 
-Session history is stored as a git DAG, and branches are first-class. Hovering over any message reveals action buttons:
+Session history is stored as a conversation DAG (git-style: commits, branches, forks), and branches are first-class. Hovering over any message reveals action buttons:
 
 - **Copy** — copy the message content.
 - **Retry from here** — regenerate everything after this message.
 - **Edit message** — modify a message you sent and regenerate.
-- **Branch to new session** — fork a new session from this message; the original thread is untouched.
-- **Roll back to here** — reset the session to the state at this message.
+- **Branch into a new conversation** — fork a new session from this message; the original thread is untouched.
+- **Rewind to here** — reset the session to the state at this message.
 
 After an edit or retry, the same slot holds multiple versions — switch with the previous / next version arrows beside the message. The branch menu in the top bar lists and switches the current session's branches.
 

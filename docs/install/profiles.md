@@ -8,7 +8,7 @@ By default all state (config / sessions / logs / memory) lives in `~/.openprogra
 
 ```bash
 openprogram --profile dev            # CLI global flag
-OPENPROGRAM_PROFILE=dev openprogram  # or the env var — equivalent (the env var wins)
+OPENPROGRAM_PROFILE=dev openprogram  # or the env var — equivalent (the flag wins if both are set)
 ```
 
 `--profile` is a global flag: put it before the subcommand and it applies to every subcommand — `openprogram --profile dev sessions list`, `openprogram --profile dev restart`, and so on.

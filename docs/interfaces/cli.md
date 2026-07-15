@@ -23,7 +23,7 @@ openprogram sessions list                 # find the session id
 openprogram --resume <session-id> --print "Given last time's conclusion, what is the next step"
 ```
 
-For interactive resumption, pick the session with `/resume` inside the TUI instead (see [Terminal TUI](tui.md)).
+`--resume` takes effect together with `--print`. For interactive resumption, pick the session with `/resume` inside the TUI instead (the flag is currently ignored when launching the interactive TUI); see [Terminal TUI](tui.md).
 
 ## Isolated environments
 
@@ -42,6 +42,7 @@ openprogram sessions list
 openprogram providers list --json
 openprogram providers discover --json
 openprogram status
+openprogram programs run <name> --arg key=value   # run one agentic program
 ```
 
 See `openprogram -h` for the full command list; each subcommand has its own `-h`.

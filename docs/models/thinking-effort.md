@@ -10,7 +10,7 @@ The framework defines `off` plus six levels:
 minimal · low · medium · high · xhigh · max
 ```
 
-Each model supports only a subset, and the UI shows the levels the model actually supports. For example, Opus 4.8 has five levels from low to max, DeepSeek reasoner is not adjustable (it always reasons at full effort), and the GitHub Copilot path has no thinking support. Level data comes from each provider's capability detection: Anthropic has a precise capabilities API, other vendors are inferred from the model catalog or the model id, and providers with no information at all fall back to the three levels low / medium / high.
+Each model supports only a subset, and the UI shows the levels the model actually supports. For example, Opus 4.8 has five levels from low to max, DeepSeek reasoner is not adjustable (it always reasons at full effort), and the GitHub Copilot path has no thinking support. Level data comes from each provider's declaration (the `thinking` block in `provider.json`, with per-model overrides); providers whose endpoint reports capabilities — Anthropic's `/v1/models`, the Codex subscription models endpoint — refresh the per-model levels on Fetch. Providers with no declaration at all fall back to the three levels low / medium / high.
 
 ## Defaults
 
@@ -18,7 +18,7 @@ The default level is declared by each provider (`default_effort` in `provider.js
 
 | Provider family | Default |
 |---|---|
-| OpenAI Responses / Codex / Azure OpenAI | `xhigh` |
+| OpenAI (Responses and Completions) / Codex / Azure OpenAI | `xhigh` |
 | Anthropic / claude-code, Amazon Bedrock | `high` |
 | Google / Gemini CLI (converted via token budget), DeepSeek | `medium` |
 | Providers with no declaration (three-level fallback) | `medium` |

@@ -2,6 +2,7 @@
 
 > OpenProgram is the productized implementation of the Agentic Programming paradigm.
 > This document is about the paradigm itself: what problem it solves, why it inverts control, and what its core primitives are.
+> The paradigm is described in the paper *LLM-as-Code: Agentic Programming for Agent Harness* ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)), accepted at the KDD 2026 AgenticSE workshop.
 
 ## The Problem
 
@@ -41,15 +42,17 @@ The entire paradigm is just three things:
 
 ### 1. `@agentic_function`
 
-A decorator. For a function it decorates, the docstring automatically becomes the instruction given to the LLM, and `runtime.exec(...)` triggers the model call.
+A decorator. For a function it decorates, the docstring travels with the call as descriptive context, and `runtime.exec(...)` inside the body triggers the model call. The `runtime` parameter is auto-injected.
 
 ```python
 from openprogram import agentic_function
 
 @agentic_function
-def summarize(text: str) -> str:
-    """Summarize this content in one sentence, preserving the core point."""
-    return runtime.exec(content=[{"type": "text", "text": text}])
+def summarize(text: str, runtime=None) -> str:
+    """Summarize a text in one sentence, preserving the core point."""
+    return runtime.exec(content=[{"type": "text", "text": (
+        f"Summarize in one sentence, preserving the core point:\n\n{text}"
+    )}])
 ```
 
 External callers can't tell the difference — `summarize(article)` looks just like any Python function.
@@ -65,17 +68,20 @@ The runtime abstraction for LLM calls. It is responsible for:
 
 ### 3. `Context`
 
-The automatic record of the function call graph. Every time an `@agentic_function` is entered/returned or `runtime.exec()` is triggered, a node is attached to a tree. Each node records: inputs, outputs, token usage, elapsed time, failure reason.
+The automatic record of execution. Every user turn, every LLM call, and every function call is one node on a single **flat DAG**; the edges are `caller` (which function invoked this node) and `reads` (which nodes an LLM call saw in its prompt). Each node records inputs, outputs, token usage, elapsed time, and failure reason.
 
-This tree **is not shown to the model** (unless you deliberately splice it into the prompt). It's shown to you — for debugging, visualization, and replaying failure paths.
+The DAG is not just a trace — it is also **where each LLM call's history comes from**: `runtime.exec()` renders its message history from the DAG. Two decorator knobs shape that flow per function:
 
-The context isn't the selling point; it's a byproduct of LLM calls. The selling point is that "you can call the model seamlessly inside a function".
+- `expose` — what a completed call reveals to its parent (`"io"` by default: name + input + output, internals hidden).
+- `render_range` — how much history the function's own `exec` pulls in. `render_range={"callers": 0}` gives an isolated scratch context that sees none of the prior conversation.
+
+So context management stops being prompt plumbing and becomes a property you declare on the function. The same DAG doubles as your debugging view: visualization, token accounting, replaying failure paths.
 
 ## Derived Concepts
 
 ### The LLM Writes Code Too
 
-The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the spec. This doesn't need dedicated `create()` / `fix()` framework functions (they too used to just wrap one LLM call plus one file write); the agent does it directly with ordinary file-editing tools, following the [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) as the spec — where files go, decorator metadata, the division of labor between the docstring and `content`, and the validation checklist.
+The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the spec. This needs no dedicated `create()` / `fix()` framework functions; the agent authors new functions with ordinary file edits, following the [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) as the spec — where files go, decorator metadata, the division of labor between the docstring and `content`, and the validation checklist. A background watcher rescans `functions/agentics/` and hot-loads new modules: their `@agentic_function` decorators fire on import and self-register, so a freshly written function is callable without a restart.
 
 Code is data, the LLM is the compiler, and functions are the product — the loop closes.
 
@@ -83,9 +89,9 @@ Code is data, the LLM is the compiler, and functions are the product — the loo
 
 Agentic Programming is at the same time:
 - **A library** — you write `@agentic_function`s and wire up the pipeline by hand
-- **A CLI** — `openprogram create "task description" --name my_fn`, letting the LLM write it for you
+- **A running product** — chat in the CLI or WebUI and ask the agent to write the function for you; the generated file lands in `functions/agentics/` and hot-loads
 
-Beginners start with the CLI, and the generated code is a complete, readable Python file. Those who want to dig deeper can then import and hand-write. This is a tool that **can be understood incrementally**.
+Beginners start by asking, and what they get is a complete, readable Python file. Those who want to dig deeper can then import and hand-write. This is a tool that **can be understood incrementally**.
 
 ## Comparison with Traditional Agent Frameworks
 
@@ -93,14 +99,14 @@ Beginners start with the CLI, and the generated code is a complete, readable Pyt
 |------|---------------------|---------------------|
 | "Fetch 10 pages and generate a summary for each" | The agent decides ordering and parallelism itself | Python writes `for url in urls: summarize(fetch(url))` |
 | "Remember context across 3 consecutive conversations" | Stuff the conversation into a memory store and query it each time | It's just a local variable in a Python function |
-| "Let the LLM decide which tool to call" | function calling + agent loop | Write `tool = runtime.exec(...); dispatch(tool)` |
-| "Retry on error" | The agent decides itself | `try / except + retry` |
+| "Let the LLM decide which tool to call" | function calling + agent loop | `runtime.exec(tools=[...])` or `decision.make(prompt, options)` |
+| "Retry on error" | The agent decides itself | `try / except` + code gates: an invalid pick is caught by validation and the model is asked to re-decide |
 
 This isn't to say agent frameworks are wrong; they suit a class of tasks (fully open-ended, with fuzzy goals). But most of what you want to do can actually be done more reliably with Agentic Programming.
 
 ## OpenProgram = the Productized Paradigm
 
-The `agentic_programming/` subpackage is the paradigm's engine code. `providers/` adapts the various LLMs. `programs/` holds the functions and applications already written under this paradigm. `webui/` lets beginners run things without writing code.
+The `agentic_programming/` subpackage is the paradigm's engine code. `context/` implements the flat-DAG context model. `providers/` adapts the various LLMs. `functions/agentics/` holds the functions and applications already written under this paradigm. `webui/` lets beginners run things without writing code.
 
 The paradigm comes first; the product exists to use it.
 
