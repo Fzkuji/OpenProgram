@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Interaction feedback — the 0ms rule · OpenProgram Docs</title>
+<title>LLM-call fault tolerance &amp; timeout management · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
-<link rel="stylesheet" href="/docs/assets/site.css?v=e7077628">
+<link rel="stylesheet" href="/docs/assets/site.css?v=81aa3967">
 <link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
 <link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
 
@@ -33,7 +33,6 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
            placeholder="过滤目录…" autocomplete="off" spellcheck="false">
     <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
 <a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="One-shot: send a prompt, print the answer, exit (redirect or pipe it)" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
-<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
 <a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
 <a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
 <details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
@@ -82,7 +81,6 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
 <a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
 <a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
-<details class="group" data-key="design/frontend" open><summary class="group-title">Frontend</summary><div class="group-body"><a class="navlink active" href="/docs/design/frontend/interaction-feedback.html">Interaction feedback — the 0ms rule</a></div></details>
 <details class="group" data-key="design/memory"><summary class="group-title" data-title-en="Memory — Memory System Design">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
 <a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
 <a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
@@ -103,8 +101,19 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/proactive/_research_archive"><summary class="group-title">Research Archive</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/_research_archive/replay.html">回放即 policy 测试</a>
 <a class="navlink" href="/docs/design/proactive/_research_archive/threat-model.html">威胁模型</a>
 <a class="navlink" href="/docs/design/proactive/_research_archive/evaluation.html">评估</a></div></details></div></details>
-<details class="group" data-key="design/providers"><summary class="group-title" data-title-en="Providers">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<details class="group" data-key="design/providers" open><summary class="group-title" data-title-en="Providers">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink active" href="/docs/design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
 <a class="navlink" href="/docs/design/providers/PROBLEM-models-and-bailian.html">当前问题：模型清单（MODELS）与百炼 provider</a>
+<a class="navlink" href="/docs/design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
 <a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
 <details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
 <a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
@@ -113,7 +122,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
 <a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
 <a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
-<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/fast-tier.html" data-title-en="Fast tier — detection, storage, and wires" data-href-zh="/docs/design/providers/models/fast-tier.html" data-href-en="/docs/design/providers/models/fast-tier.en.html">Fast（高速）档 — 判定、存储与线路</a>
+<a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
 <a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration (Final Design)" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置（最终设计）</a></div></details>
 <details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
@@ -122,9 +132,11 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/ui"><summary class="group-title" data-title-en="Web UI">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html" data-title-en="Web UI" data-href-zh="/docs/design/ui/README.html" data-href-en="/docs/design/ui/README.en.html">Web UI</a>
 <a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
 <a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/interaction-feedback.html">Interaction feedback — the 0ms rule</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
 <a class="navlink" href="/docs/design/ui/invariants.html" data-title-en="Cross-module UI invariants" data-href-zh="/docs/design/ui/invariants.html" data-href-en="/docs/design/ui/invariants.en.html">UI 跨模块不变量</a>
 <a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
+<a class="navlink" href="/docs/design/ui/chat-turn-visual-spec.html">聊天轮次视觉规范 — 执行时间线 + 消息导航</a>
 <a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
 <details class="group" data-key="design/function"><summary class="group-title" data-title-en="Function Design">函数设计</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html" data-title-en="Function Design" data-href-zh="/docs/design/function/README.html" data-href-en="/docs/design/function/README.en.html">函数设计</a>
@@ -191,121 +203,446 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
 <a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg">Frontend</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current">Interaction feedback — the 0ms rule</span></nav><h1 id="interaction-feedback-the-0ms-rule">Interaction feedback — the 0ms rule<a class="header-anchor" href="#interaction-feedback-the-0ms-rule">#</a></h1>
-<p><strong>Policy (standing):</strong> every user click that starts something slower than
-~100ms gets INSTANT visible feedback. An optimistic transitional state renders
-immediately (0ms, client-side); real data backfills when it arrives; failures
-roll back with a visible error. <em>&quot;点完之后没有反馈很折磨。&quot;</em></p>
-<p>Never let a click sit with no visible change while a round-trip is in flight.</p>
-<h2 id="the-three-layers">The three layers<a class="header-anchor" href="#the-three-layers">#</a></h2>
-<ol>
-<li><strong>0ms optimistic</strong> — the click flips a visible transitional state on the
-client, before any network I/O. Spinner card, target-version highlighted,
-&quot;stopping…&quot;, a pending bubble in the transcript. Written straight into the
-session store (an optimistic flag / status patch on the message or store
-object — never parallel bookkeeping).</li>
-<li><strong>Fast server confirm</strong> — the backend acknowledges. For function runs the
-dispatcher pre-creates the run's node at dispatch (commit <code>4712f368</code>), so a
-<code>load_session</code> ~0.13s after the click returns the real pending card and
-<code>chat_ack {function_run:true}</code> triggers immediate hydration. The hydrate's
-<code>setMessages</code> replaces the whole transcript, so a client placeholder keyed
-with a throwaway id is dropped cleanly — no flicker.</li>
-<li><strong>Streaming backfill</strong> — <code>tree_update</code> / <code>stream_event</code> deltas fill the card
-live; the terminal <code>result</code> / <code>running_task_clear</code> finalizes it.</li>
-</ol>
-<p><strong>Failure rollback (required):</strong> every optimistic state must resolve. Either
-the backfill supersedes it, or a timeout (10s for control actions,
-<code>OPTIMISTIC_TIMEOUT_MS</code>) reverts the state and shows an error toast. An
-optimistic state that can hang forever is a lie — worse than no feedback.</p>
-<h2 id="shared-helper">Shared helper<a class="header-anchor" href="#shared-helper">#</a></h2>
-<p><code>web/lib/runtime-bridge/optimistic-action.ts</code> — <code>optimisticAction({apply, settled, revert, onTimeoutMessage})</code>. <code>apply</code> flips the 0ms state; <code>settled()</code>
-returns true once real data supersedes it (message gone from the store, tree
-repopulated, <code>branch.active</code> flipped…); on timeout with <code>settled()</code> still
-false it runs <code>revert</code> + toasts. Used by the surfaces whose confirm path is a
-<code>load_session</code> reload (retry, version switcher). Surfaces with a purely local
-transient (stop, fn-form placeholder, branch checkout) inline the pattern.</p>
-<h2 id="per-surface-inventory">Per-surface inventory<a class="header-anchor" href="#per-surface-inventory">#</a></h2>
+  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg">Providers</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current">LLM-call fault tolerance &amp; timeout management</span></nav><h1 id="llm-call-fault-tolerance-timeout-management">LLM-call fault tolerance &amp; timeout management<a class="header-anchor" href="#llm-call-fault-tolerance-timeout-management">#</a></h1>
+<p>A cross-project study of how reference agent frameworks call LLMs
+robustly — retry, backoff, timeouts, connection handling, failover — and
+where OpenProgram stands after the 2026-05 hardening pass.</p>
+<p>Sources studied (all under <code>references/</code>, read-only):</p>
 <table>
 <thead>
 <tr>
-<th>Surface</th>
-<th>First 100ms BEFORE</th>
-<th>First 100ms AFTER</th>
-<th>Status</th>
+<th>Project</th>
+<th>Lang</th>
+<th>Role</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Chat send</td>
-<td>welcome hides (0ms); user bubble + reply placeholder land on <code>chat_ack</code> (~1 RT)</td>
-<td>unchanged — send already optimistic enough; bubble on ack</td>
-<td>OK</td>
+<td><strong>openclaw</strong></td>
+<td>TS</td>
+<td>Claude-Code-style agent; the most complete transport layer</td>
 </tr>
 <tr>
-<td>Stop button</td>
-<td>runningTask cleared + assistant patched to <code>[cancelled by user]</code> at 0ms</td>
-<td>unchanged</td>
-<td>OK (already optimistic)</td>
+<td><strong>opencode</strong> (sst/opencode)</td>
+<td>TS</td>
+<td>Effect.js + Vercel-AI-SDK-style executor</td>
 </tr>
 <tr>
-<td><strong>Function-call Retry</strong></td>
-<td>nothing — card stays on old version until run completes + reload</td>
-<td>card flips to spinner body + &quot;running&quot;, switcher → N+1/N+1, at 0ms; reload backfills; 10s revert</td>
-<td><strong>DONE</strong></td>
+<td><strong>hermes-agent</strong> (NousResearch)</td>
+<td><strong>Py</strong></td>
+<td>Closest analog to us; richest fault tolerance</td>
 </tr>
 <tr>
-<td><strong>fn-form / welcome submit</strong></td>
-<td>welcome hides + run flag flips; blank transcript gap until ~0.13s hydrate</td>
-<td>pending runtime card inserted into transcript at 0ms; hydrate replaces it seamlessly; POST failure removes it + error toast</td>
-<td><strong>DONE</strong></td>
+<td><strong>pi-ai</strong> (badlogic/pi-mono)</td>
+<td>TS</td>
+<td>The direct reference our codex provider was ported from</td>
 </tr>
 <tr>
-<td><strong>Runtime <code>&lt; N/M &gt;</code> switcher</strong></td>
-<td>POST checkout → load_session; no visual change until reload</td>
-<td>current card → spinner body + target sibling index at 0ms; reload swaps content; 10s revert</td>
-<td><strong>DONE</strong></td>
-</tr>
-<tr>
-<td><strong>Chat message <code>&lt; N/M &gt;</code> switcher</strong></td>
-<td><code>busy</code> dims buttons; label unchanged until reload</td>
-<td><code>N/M</code> label advances to target at 0ms; reload backfills; failure reverts label + toast</td>
-<td><strong>DONE</strong></td>
-</tr>
-<tr>
-<td><strong>Branches panel checkout</strong></td>
-<td>WS checkout + load_session; row highlight unchanged until reload</td>
-<td>clicked row highlighted active at 0ms; real <code>branch.active</code> supersedes; 10s self-clear</td>
-<td><strong>DONE</strong></td>
-</tr>
-<tr>
-<td>Chat Retry / Edit / Branch / Rewind</td>
-<td><code>setBusy(true)</code> dims buttons; <code>setRunActive</code> greys Edit/Retry</td>
-<td>unchanged — busy flag is adequate transitional feedback</td>
-<td>OK (adequate)</td>
-</tr>
-<tr>
-<td>Session switch (sidebar)</td>
-<td><code>router.push</code>; cached messages render on route change</td>
-<td>unchanged — store already holds prior messages</td>
-<td>OK</td>
-</tr>
-<tr>
-<td>Enable/disable models · tools · toggles</td>
-<td>local store flip, instant</td>
-<td>unchanged</td>
-<td>OK</td>
+<td><strong>claude-code</strong></td>
+<td>TS</td>
+<td>Partial bundle; HTTP behavior = the Anthropic SDK</td>
 </tr>
 </tbody>
 </table>
-<p>New optimistic states use the store's existing machinery (<code>updateMessage</code>
-status/tree patches, <code>siblingIndex</code>, <code>setRunningTaskFor</code>, <code>appendMessage</code>
-placeholder). No parallel state.</p>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-10</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/context/context-composition.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">上下文组成 —— 注册式三层（目标态设计）</span></a><a class="pn-link pn-next" href="/docs/design/memory/README.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Memory — 记忆系统设计</span></a></div></article></main>
+<hr />
+<h2 id="1-the-comparison-matrix">1. The comparison matrix<a class="header-anchor" href="#1-the-comparison-matrix">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>openclaw</th>
+<th>opencode</th>
+<th>hermes-agent</th>
+<th>pi-ai (codex)</th>
+<th>OpenProgram (now)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Retry attempts</td>
+<td>3 (+2 inner transient)</td>
+<td>2</td>
+<td>3</td>
+<td>3</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Backoff base</td>
+<td>300 ms</td>
+<td>500 ms</td>
+<td>5 s</td>
+<td>1 s</td>
+<td>1 s</td>
+</tr>
+<tr>
+<td>Backoff cap</td>
+<td>30 s</td>
+<td>10 s</td>
+<td>120 s</td>
+<td>none</td>
+<td><strong>30 s</strong> ✅ new</td>
+</tr>
+<tr>
+<td>Jitter</td>
+<td>symmetric / positive</td>
+<td>±20%</td>
+<td>decorrelated (0.5)</td>
+<td>none</td>
+<td>symmetric / positive</td>
+</tr>
+<tr>
+<td>Retryable status</td>
+<td>408/409/429/5xx</td>
+<td>429/503/504/529</td>
+<td>429/5xx/524</td>
+<td>429/5xx</td>
+<td>429/5xx + body patterns</td>
+</tr>
+<tr>
+<td>Retry-After</td>
+<td>ms+sec+date</td>
+<td>ms+sec+date (cap 10s)</td>
+<td>none</td>
+<td>none</td>
+<td><strong>ms+sec+date</strong> ✅ new</td>
+</tr>
+<tr>
+<td>Body / idle timeout</td>
+<td><strong>30 min, any byte</strong> (undici)</td>
+<td>none (HTTP) / 5 min (WS)</td>
+<td>180 s stale, context-scaled</td>
+<td>none</td>
+<td><strong>30 min any-byte + 15 min data-stall + 2 h cap</strong> ✅ new</td>
+</tr>
+<tr>
+<td>Connect timeout</td>
+<td>undici default</td>
+<td>none / 15 s (WS)</td>
+<td>SDK default</td>
+<td>none</td>
+<td>30 s</td>
+</tr>
+<tr>
+<td>TTFB guard</td>
+<td>30 s (Azure)</td>
+<td>n/a</td>
+<td>120 s (codex)</td>
+<td>none</td>
+<td>covered by idle/read</td>
+</tr>
+<tr>
+<td>HTTP version</td>
+<td><strong>force HTTP/1.1</strong></td>
+<td>default</td>
+<td>auto (h2)</td>
+<td>—</td>
+<td>httpx default (h1.1)</td>
+</tr>
+<tr>
+<td>IPv6 / Happy Eyeballs</td>
+<td><strong>autoSelectFamily</strong></td>
+<td>no</td>
+<td>no</td>
+<td>—</td>
+<td>❌ gap</td>
+</tr>
+<tr>
+<td>TCP keepalive tuning</td>
+<td>undici default</td>
+<td>no</td>
+<td><strong>SO_KEEPALIVE 30/10/3</strong></td>
+<td>—</td>
+<td>❌ gap</td>
+</tr>
+<tr>
+<td>Connection reuse</td>
+<td>undici keep-alive</td>
+<td>WS pool, 55-min recycle</td>
+<td><strong>shared client + rebuild on stale</strong></td>
+<td>—</td>
+<td>❌ per-call client</td>
+</tr>
+<tr>
+<td>API-key rotation</td>
+<td><strong>yes</strong></td>
+<td>no</td>
+<td><strong>yes (pool + cooldowns)</strong></td>
+<td>—</td>
+<td>❌ gap</td>
+</tr>
+<tr>
+<td>Provider/model failover</td>
+<td><strong>yes</strong></td>
+<td>WS→HTTP only</td>
+<td><strong>yes (chain)</strong></td>
+<td>—</td>
+<td>❌ gap</td>
+</tr>
+<tr>
+<td>After-first-token break</td>
+<td>error</td>
+<td>error</td>
+<td><strong>partial + continue</strong></td>
+<td>error</td>
+<td>error</td>
+</tr>
+<tr>
+<td>OAuth refresh mid-call</td>
+<td>—</td>
+<td>—</td>
+<td><strong>per-request token provider</strong></td>
+<td>per-call</td>
+<td>per-call resolve</td>
+</tr>
+<tr>
+<td>Rate-limit header parse</td>
+<td>—</td>
+<td><strong>yes (x-ratelimit-*)</strong></td>
+<td>yes (Nous)</td>
+<td>—</td>
+<td>❌ gap</td>
+</tr>
+<tr>
+<td>Error classification</td>
+<td>yes</td>
+<td>yes (tagged union)</td>
+<td>yes</td>
+<td>basic</td>
+<td>yes (<code>ErrorReason</code>)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-notable-per-project-patterns">2. Notable per-project patterns<a class="header-anchor" href="#2-notable-per-project-patterns">#</a></h2>
+<h3 id="openclaw-best-transport-layer">openclaw (best transport layer)<a class="header-anchor" href="#openclaw-best-transport-layer">#</a></h3>
+<ul>
+<li><strong>Stream timeout = 30 min, set on the undici global dispatcher</strong> as
+<code>bodyTimeout = headersTimeout = DEFAULT_UNDICI_STREAM_TIMEOUT_MS</code>
+(<code>src/infra/net/undici-global-dispatcher.ts:16</code>), reset on <strong>any</strong> byte.
+<em>This is the key insight:</em> don't put a tight read timeout on a
+reasoning stream — give it 30 minutes, reset on any traffic.</li>
+<li><strong>Forces HTTP/1.1</strong> (<code>allowH2:false</code>) and <strong>Happy Eyeballs</strong>
+(<code>autoSelectFamily</code>) — avoids h2 stream resets and broken-IPv6 hangs
+(the classic VPN failure).</li>
+<li><strong>Two-tier retry</strong>: outer <code>retry.ts</code> (3, 300ms→30s) + inner
+<code>operation-retry.ts</code> (2, 250ms→1s) for transient provider ops.</li>
+<li><strong>API-key rotation</strong> (<code>api-key-rotation.ts</code>): outer loop over keys,
+inner transient retry per key.</li>
+<li><strong>Failover categories</strong> (<code>failover-matches.ts</code>): rate_limit / overloaded
+/ server / timeout / network — each a regex group.</li>
+<li><strong>Positive-only jitter</strong> when honoring Retry-After (never sleep less
+than the server asked); <strong>SDK-retry bypass</strong> via <code>x-should-retry</code>.</li>
+</ul>
+<h3 id="hermes-agent-richest-python-closest-to-us">hermes-agent (richest; Python, closest to us)<a class="header-anchor" href="#hermes-agent-richest-python-closest-to-us">#</a></h3>
+<ul>
+<li><strong>TCP keepalive socket injection</strong> (<code>run_agent.py</code>): <code>SO_KEEPALIVE=1</code>,
+<code>TCP_KEEPIDLE=30s</code>, <code>TCP_KEEPINTVL=10s</code>, <code>TCP_KEEPCNT=3</code> → <strong>dead peer
+detected in ~60 s</strong> instead of hanging. Plus force-close TCP before
+SDK close to avoid CLOSE_WAIT pileup.</li>
+<li><strong>Decorrelated jittered backoff</strong> seeded from <code>time_ns ^ counter</code> so
+concurrent sessions don't retry in lockstep (base 5s, ×2, cap 120s).</li>
+<li><strong>Context-scaled stream-stale timeout</strong>: 180s base, →240s &gt;50k tokens,
+→300s &gt;100k tokens; disabled entirely for local providers.</li>
+<li><strong>Separate TTFB vs inter-event timeouts</strong> (codex TTFB 120s, disabled
+above 25k context to avoid false positives during long prefill).</li>
+<li><strong>Credential pool</strong> with rotation strategies (round-robin / least-used)
+and exhaustion cooldowns (401→5 min, 429/402→1 h, dead→prune 24 h).</li>
+<li><strong>OAuth per-request token provider</strong> via httpx event hook (refresh
+skew 60 s) — tokens refresh mid-session without rebuilding the client.</li>
+<li><strong>Partial-response recovery</strong>: on a break <em>after</em> the first token it
+returns the partial text + <code>finish_reason=length</code> and lets the next
+turn continue — no lost work, no blind retry.</li>
+</ul>
+<h3 id="opencode">opencode<a class="header-anchor" href="#opencode">#</a></h3>
+<ul>
+<li><strong>No body/idle timeout on HTTP</strong> — streams unbounded (like pi-ai).</li>
+<li>WebSocket path: connect 15s, idle 5min (reset per frame), <strong>55-min
+connection-age recycle</strong>, WS→HTTP fallback after 5 stream failures.</li>
+<li><strong>Rate-limit header parsing</strong> for OpenAI + Anthropic into a structured
+object (enables proactive client-side throttling).</li>
+<li>Tagged-union error model; honors Retry-After (cap 10s).</li>
+</ul>
+<h3 id="pi-ai-our-codexs-reference">pi-ai (our codex's reference)<a class="header-anchor" href="#pi-ai-our-codexs-reference">#</a></h3>
+<ul>
+<li><code>MAX_RETRIES=3</code>, <code>BASE_DELAY_MS=1000</code>, retries 429/5xx + body patterns —
+<strong>no explicit body-read timeout</strong>; relies on fetch + retry. (Our old
+120s httpx read cap was an OpenProgram-only addition — the bug.)</li>
+</ul>
+<hr />
+<h2 id="3-what-we-changed-2026-05-pass">3. What we changed (2026-05 pass)<a class="header-anchor" href="#3-what-we-changed-2026-05-pass">#</a></h2>
+<p>All in <code>openprogram/providers/</code>:</p>
+<ol>
+<li>
+<p><strong>Codex timeouts decoupled &amp; made generous</strong> (<code>openai_codex/openai_codex.py</code>):</p>
+<ul>
+<li>httpx <code>Timeout(connect=30, read=1860, write=30, pool=30)</code> — the old
+single <code>timeout=120</code> float capped the body read at 120 s, firing
+before our idle budget over a buffering proxy/VPN (the reported bug).</li>
+<li>SSE governor rebuilt into <strong>two budgets + a backstop</strong>, matching
+openclaw's &quot;generous, reset-on-any-byte&quot; model:
+<ul>
+<li><code>SSE_IDLE_TIMEOUT_S = 1800</code> (30 min) — &quot;no bytes at all&quot;, reset on
+<strong>any</strong> line (pings included) ≈ openclaw <code>bodyTimeout</code>.</li>
+<li><code>SSE_DATA_STALL_TIMEOUT_S = 900</code> (15 min) — <strong>our extra</strong>: &quot;no real
+data&quot;, reset only on parsed events; catches ping-flood stalls
+openclaw can't see.</li>
+<li><code>SSE_TOTAL_TIMEOUT_S = 7200</code> (2 h) — runaway backstop.</li>
+</ul>
+</li>
+<li>All env-overridable (<code>OPENPROGRAM_SSE_*</code>, <code>OPENPROGRAM_HTTPX_*</code>).</li>
+</ul>
+</li>
+<li>
+<p><strong>Backoff cap</strong> (<code>utils/stream_retry.py</code>): exponential component capped
+at 30 s (<code>OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S</code>); a larger
+server Retry-After is still honored.</p>
+</li>
+<li>
+<p><strong>Retry-After: all three forms</strong> (<code>utils/errors.py</code>): <code>retry-after-ms</code>,
+integer seconds, and HTTP-date — previously seconds-only.</p>
+</li>
+</ol>
+<hr />
+<h2 id="4-whats-now-implemented-vs-deferred">4. What's now implemented vs deferred<a class="header-anchor" href="#4-whats-now-implemented-vs-deferred">#</a></h2>
+<p><strong>Implemented (new modules under <code>providers/utils/</code>, wired into codex; the
+generic ones available to every HTTP provider):</strong></p>
+<ul>
+<li><strong>Central timeout policy</strong> (<code>timeouts.py</code>) — one source of truth, loosened
+to OpenClaw's 30-min level, with context-scaling helpers.</li>
+<li><strong>Robust client builder</strong> (<code>http_client.py</code>):
+<ul>
+<li><strong>TCP keepalive</strong> — <code>SO_KEEPALIVE</code> + idle/interval/count → ~60 s dead-peer
+detection (the VPN drop case). Defensive per-OS; <code>OPENPROGRAM_TCP_KEEPALIVE=0</code>
+to disable.</li>
+<li><strong>Force-IPv4</strong> escape hatch (<code>OPENPROGRAM_FORCE_IPV4=1</code>) for broken-IPv6 VPNs
+(binds an IPv4 source address — httpx has no Happy-Eyeballs).</li>
+<li><strong>Connection reuse</strong> — <code>get_shared_async_client</code> (loop-keyed); codex now
+reuses its TLS connection across turns instead of re-handshaking.</li>
+<li><strong>Proxy</strong> via httpx 0.28 <code>proxy=</code> (fixed the removed <code>proxies=</code> form, a
+latent crash).</li>
+</ul>
+</li>
+<li><strong>Rate-limit header parsing</strong> (<code>rate_limit.py</code>) — <code>x-ratelimit-*</code> /
+<code>anthropic-ratelimit-*</code>; codex warns when a bucket is low/exhausted.</li>
+<li><strong>Partial-response recovery</strong> (<code>openai_codex.py</code>) — a transient mid-stream
+break <em>after</em> content finalizes the partial turn (<code>stop_reason=&quot;length&quot;</code>)
+instead of erroring; permanent failures (auth/invalid/context/policy) still
+hard-fail. Toggle <code>OPENPROGRAM_PARTIAL_RECOVERY=0</code>.</li>
+<li><strong>Provider/model failover</strong> (<code>failover.py</code> + <code>agent_loop.py</code>) — classifier
+(rate_limit/overloaded/server/timeout/network) + a <code>stream_with_failover</code>
+wrapper that tries the primary then each configured fallback on a
+<strong>pre-content</strong> failover-worthy failure (forwards events, suppresses the
+duplicate <code>start</code>, never switches after a token streamed). Wired into the
+turn loop <strong>default-OFF</strong>: a no-op unless <code>OPENPROGRAM_FALLBACK_MODELS</code>
+(&quot;provider/model,provider2/model2&quot;) is set.</li>
+<li>Wired codex + gemini_cli to the shared client; <strong>fixed gemini's
+<code>timeout=120.0</code> single-float bug</strong> (same class as codex's).</li>
+<li>(earlier) backoff <strong>cap</strong> + <strong>Retry-After</strong> all three forms.</li>
+</ul>
+<p><strong>Cleanly disabled where not applicable (designed, off by default):</strong></p>
+<ul>
+<li><strong>API-key rotation</strong> — the full machinery already exists in the auth layer
+(<code>auth/pool.py</code>: <code>pick</code> rotation + <code>mark_failure</code>/<code>report_failure</code> cooldowns
+with strategies and TTLs). Rotation <strong>on acquire</strong> is automatic when a pool
+has &gt;1 credential. The per-call <strong>failure-cooldown</strong> reporting is deliberately
+NOT wired into the live single-account path: cooling down the only credential
+would self-lock the user out for zero benefit. So on a single account rotation
+is a clean no-op; it activates automatically once multiple credentials are
+configured. No half-wired risky code in the hot path.</li>
+<li><strong>OAuth per-request token provider</strong> — codex already resolves + refreshes the
+bearer per call via the auth manager; a full httpx event-hook provider is a
+nicety, not a fix, so it's left out.</li>
+</ul>
+<hr />
+<h2 id="5-tunables-added">5. Tunables added<a class="header-anchor" href="#5-tunables-added">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>Env var</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OPENPROGRAM_SSE_IDLE_TIMEOUT_S</code></td>
+<td>1800</td>
+<td>no-bytes-at-all (any line resets)</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S</code></td>
+<td>900</td>
+<td>no-real-data (data resets)</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_SSE_TOTAL_TIMEOUT_S</code></td>
+<td>7200</td>
+<td>single-stream runaway cap</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_HTTPX_CONNECT_TIMEOUT_S</code></td>
+<td>30</td>
+<td>connect (fast-fail dead VPN)</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_HTTPX_READ_TIMEOUT_S</code></td>
+<td>idle+60</td>
+<td>httpx read backstop</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_PROVIDER_STREAM_RETRIES</code></td>
+<td>3</td>
+<td>per-stream retry attempts</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_PROVIDER_STREAM_BACKOFF_S</code></td>
+<td>1.0</td>
+<td>backoff base</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S</code></td>
+<td>30.0</td>
+<td>backoff exponential cap</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_TCP_KEEPALIVE</code></td>
+<td>1</td>
+<td>enable TCP keepalive (dead-peer detection)</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_TCP_KEEPIDLE_S</code> / <code>_KEEPINTVL_S</code> / <code>_KEEPCNT</code></td>
+<td>30 / 10 / 3</td>
+<td>keepalive probe timing (~60 s detection)</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_FORCE_IPV4</code></td>
+<td>0</td>
+<td>bind IPv4 source (broken-IPv6 VPNs)</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_PARTIAL_RECOVERY</code></td>
+<td>1</td>
+<td>salvage partial output on mid-stream break</td>
+</tr>
+<tr>
+<td><code>OPENPROGRAM_FALLBACK_MODELS</code></td>
+<td>(empty)</td>
+<td><code>provider/model,…</code> — enable provider/model failover</td>
+</tr>
+</tbody>
+</table>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-10</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/providers/error-taxonomy-propagation.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">Error-taxonomy propagation — structured LLM errors up to the UI</span></a><a class="pn-link pn-next" href="/docs/design/providers/error-and-timeout-mechanism.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">OpenProgram · 报错与超时机制（现状）</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#the-three-layers">The three layers</a>
-<a class="" href="#shared-helper">Shared helper</a>
-<a class="" href="#per-surface-inventory">Per-surface inventory</a>
+<a class="" href="#1-the-comparison-matrix">1. The comparison matrix</a>
+<a class="" href="#2-notable-per-project-patterns">2. Notable per-project patterns</a>
+<a class="lvl-3" href="#openclaw-best-transport-layer">openclaw (best transport layer)</a>
+<a class="lvl-3" href="#hermes-agent-richest-python-closest-to-us">hermes-agent (richest; Python, closest to us)</a>
+<a class="lvl-3" href="#opencode">opencode</a>
+<a class="lvl-3" href="#pi-ai-our-codexs-reference">pi-ai (our codex's reference)</a>
+<a class="" href="#3-what-we-changed-2026-05-pass">3. What we changed (2026-05 pass)</a>
+<a class="" href="#4-whats-now-implemented-vs-deferred">4. What's now implemented vs deferred</a>
+<a class="" href="#5-tunables-added">5. Tunables added</a>
 </div></aside>
 </div>
 
@@ -316,6 +653,6 @@ placeholder). No parallel state.</p>
   </div>
 </div>
 
-<script src="/docs/assets/site.js?v=e7077628"></script>
+<script src="/docs/assets/site.js?v=81aa3967"></script>
 </body>
 </html>

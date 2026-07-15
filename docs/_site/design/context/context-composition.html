@@ -9,7 +9,7 @@
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
-<link rel="stylesheet" href="/docs/assets/site.css?v=e7077628">
+<link rel="stylesheet" href="/docs/assets/site.css?v=81aa3967">
 <link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
 <link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
 
@@ -33,7 +33,6 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
            placeholder="过滤目录…" autocomplete="off" spellcheck="false">
     <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
 <a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="One-shot: send a prompt, print the answer, exit (redirect or pipe it)" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
-<a class="navlink" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
 <a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
 <a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
 <details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
@@ -82,7 +81,6 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
 <a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
 <a class="navlink active" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
-<details class="group" data-key="design/frontend"><summary class="group-title">Frontend</summary><div class="group-body"><a class="navlink" href="/docs/design/frontend/interaction-feedback.html">Interaction feedback — the 0ms rule</a></div></details>
 <details class="group" data-key="design/memory"><summary class="group-title" data-title-en="Memory — Memory System Design">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
 <a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
 <a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
@@ -104,7 +102,18 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/proactive/_research_archive/threat-model.html">威胁模型</a>
 <a class="navlink" href="/docs/design/proactive/_research_archive/evaluation.html">评估</a></div></details></div></details>
 <details class="group" data-key="design/providers"><summary class="group-title" data-title-en="Providers">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="/docs/design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
 <a class="navlink" href="/docs/design/providers/PROBLEM-models-and-bailian.html">当前问题：模型清单（MODELS）与百炼 provider</a>
+<a class="navlink" href="/docs/design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
 <a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
 <details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
 <a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
@@ -113,7 +122,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
 <a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
 <a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
-<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/fast-tier.html" data-title-en="Fast tier — detection, storage, and wires" data-href-zh="/docs/design/providers/models/fast-tier.html" data-href-en="/docs/design/providers/models/fast-tier.en.html">Fast（高速）档 — 判定、存储与线路</a>
+<a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
 <a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration (Final Design)" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置（最终设计）</a></div></details>
 <details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
@@ -122,9 +132,11 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/ui"><summary class="group-title" data-title-en="Web UI">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html" data-title-en="Web UI" data-href-zh="/docs/design/ui/README.html" data-href-en="/docs/design/ui/README.en.html">Web UI</a>
 <a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
 <a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/interaction-feedback.html">Interaction feedback — the 0ms rule</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
 <a class="navlink" href="/docs/design/ui/invariants.html" data-title-en="Cross-module UI invariants" data-href-zh="/docs/design/ui/invariants.html" data-href-en="/docs/design/ui/invariants.en.html">UI 跨模块不变量</a>
 <a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
+<a class="navlink" href="/docs/design/ui/chat-turn-visual-spec.html">聊天轮次视觉规范 — 执行时间线 + 消息导航</a>
 <a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
 <details class="group" data-key="design/function"><summary class="group-title" data-title-en="Function Design">函数设计</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html" data-title-en="Function Design" data-href-zh="/docs/design/function/README.html" data-href-en="/docs/design/function/README.en.html">函数设计</a>
@@ -1143,7 +1155,7 @@ io 已释放</strong> —— 它是历史的安全网,不是删光。整会话�
 <li><code>../providers/request-build.md</code> —— 下游:Context 翻译成各家 wire + 缓存落地</li>
 <li><code>agentic-self-recursion.md</code> —— <code>_situational_prefix</code>,L2 处境的雏形</li>
 </ul>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/context/context-comparison.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</span></a><a class="pn-link pn-next" href="/docs/design/frontend/interaction-feedback.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Interaction feedback — the 0ms rule</span></a></div></article></main>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-06-25</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/context/context-comparison.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</span></a><a class="pn-link pn-next" href="/docs/design/memory/README.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Memory — 记忆系统设计</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
 <a class="" href="#一三层判据信息流向哪">一、三层判据：信息流向哪</a>
@@ -1187,6 +1199,6 @@ io 已释放</strong> —— 它是历史的安全网,不是删光。整会话�
   </div>
 </div>
 
-<script src="/docs/assets/site.js?v=e7077628"></script>
+<script src="/docs/assets/site.js?v=81aa3967"></script>
 </body>
 </html>

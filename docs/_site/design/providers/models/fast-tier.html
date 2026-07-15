@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-<html lang="zh" data-base="/docs/" data-page-lang="zh">
+<html lang="zh" data-base="/docs/" data-page-lang="zh" data-alt-lang-url="/docs/design/providers/models/fast-tier.en.html">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>项目总览（中文） · OpenProgram Docs</title>
+<title>Fast（高速）档 — 判定、存储与线路 · OpenProgram Docs</title>
 <script>
 (function(){try{var t=localStorage.getItem('op-docs-theme');
 if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
-<link rel="stylesheet" href="/docs/assets/site.css?v=e7077628">
+<link rel="stylesheet" href="/docs/assets/site.css?v=81aa3967">
 <link rel="stylesheet" href="/docs/assets/pygments-light.css" media="(prefers-color-scheme: light)" id="pyg-light">
 <link rel="stylesheet" href="/docs/assets/pygments-dark.css" media="(prefers-color-scheme: dark)" id="pyg-dark">
 
@@ -31,9 +31,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
   <nav class="sidebar">
     <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
            placeholder="过滤目录…" autocomplete="off" spellcheck="false">
-    <div class="nav-tree"><details class="group" data-key="__快速上手__" open><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
+    <div class="nav-tree"><details class="group" data-key="__快速上手__"><summary class="group-title" data-i18n="grp_start">快速上手</summary><div class="group-body"><a class="navlink" href="/docs/GETTING_STARTED.html" data-i18n="p_start" data-title-en="Getting Started" data-href-zh="/docs/GETTING_STARTED.html" data-href-en="/docs/GETTING_STARTED.en.html">快速上手</a>
 <a class="navlink" href="/docs/README.html" data-i18n="p_overview" data-title-en="One-shot: send a prompt, print the answer, exit (redirect or pipe it)" data-href-zh="/docs/README.html" data-href-en="/docs/README.en.html">项目总览</a>
-<a class="navlink active" href="/docs/README_CN.html" data-i18n="p_overview_cn">项目总览（中文）</a>
 <a class="navlink" href="/docs/features.html" data-i18n="p_features" data-title-en="Key Features — detailed tour" data-href-zh="/docs/features.html" data-href-en="/docs/features.en.html">功能详解</a>
 <a class="navlink" href="/docs/install.html" data-i18n="p_install" data-title-en="Installing OpenProgram" data-href-zh="/docs/install.html" data-href-en="/docs/install.en.html">安装</a></div></details>
 <details class="group" data-key="__集成__"><summary class="group-title" data-i18n="grp_integ">集成</summary><div class="group-body"><a class="navlink" href="/docs/INTEGRATION_CLAUDE_CODE.html" data-i18n="p_int_cc" data-title-en="Claude Code Integration" data-href-zh="/docs/INTEGRATION_CLAUDE_CODE.html" data-href-en="/docs/INTEGRATION_CLAUDE_CODE.en.html">集成 Claude Code</a>
@@ -60,7 +59,7 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="superpowers"><summary class="group-title">Superpowers</summary><div class="group-body"><details class="group" data-key="superpowers/plans"><summary class="group-title">Plans</summary><div class="group-body"><a class="navlink" href="/docs/superpowers/plans/2026-07-08-enabled-models-migration.html">Enabled-Models 迁移 Implementation Plan</a>
 <a class="navlink" href="/docs/superpowers/plans/2026-07-08-provider-self-contained-migration.html">Provider 自包含迁移 Implementation Plan</a>
 <a class="navlink" href="/docs/superpowers/plans/2026-07-08-credential-connection-unification.html">凭据连接信息统一 Implementation Plan</a></div></details></div></details>
-<details class="group" data-key="design"><summary class="group-title" data-title-en="Design Documents">设计文档</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html" data-title-en="Design Documents" data-href-zh="/docs/design/README.html" data-href-en="/docs/design/README.en.html">设计文档</a>
+<details class="group" data-key="design" open><summary class="group-title" data-title-en="Design Documents">设计文档</summary><div class="group-body"><a class="navlink" href="/docs/design/README.html" data-title-en="Design Documents" data-href-zh="/docs/design/README.html" data-href-en="/docs/design/README.en.html">设计文档</a>
 <a class="navlink" href="/docs/design/framework-overview.html">OpenProgram 框架总览：一次对话从输入到产出</a>
 <a class="navlink" href="/docs/design/usage-metering.html" data-title-en="Usage Metering Subsystem Design" data-href-zh="/docs/design/usage-metering.html" data-href-en="/docs/design/usage-metering.en.html">Usage Metering 子系统设计</a>
 <a class="navlink" href="/docs/design/TODO-doc-code-gaps.html" data-title-en="Open Items Where Design Docs Are Out of Sync With Code" data-href-zh="/docs/design/TODO-doc-code-gaps.html" data-href-en="/docs/design/TODO-doc-code-gaps.en.html">设计文档与代码不对齐的待修项</a>
@@ -82,7 +81,6 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/context/context-compaction.html">上下文压缩</a>
 <a class="navlink" href="/docs/design/context/context-comparison.html" data-title-en="Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)" data-href-zh="/docs/design/context/context-comparison.html" data-href-en="/docs/design/context/context-comparison.en.html">上下文成分对比 —— 参考项目 vs 我们（按三层组织）</a>
 <a class="navlink" href="/docs/design/context/context-composition.html" data-title-en="Context Composition — Registry-Based Three Layers (Target-State Design)" data-href-zh="/docs/design/context/context-composition.html" data-href-en="/docs/design/context/context-composition.en.html">上下文组成 —— 注册式三层（目标态设计）</a></div></details>
-<details class="group" data-key="design/frontend"><summary class="group-title">Frontend</summary><div class="group-body"><a class="navlink" href="/docs/design/frontend/interaction-feedback.html">Interaction feedback — the 0ms rule</a></div></details>
 <details class="group" data-key="design/memory"><summary class="group-title" data-title-en="Memory — Memory System Design">Memory — 记忆系统设计</summary><div class="group-body"><a class="navlink" href="/docs/design/memory/README.html" data-title-en="Memory — Memory System Design" data-href-zh="/docs/design/memory/README.html" data-href-en="/docs/design/memory/README.en.html">Memory — 记忆系统设计</a>
 <a class="navlink" href="/docs/design/memory/memory-v2.html" data-title-en="Memory v2 — Entity/Virtual Two-Tier + Provenance-Navigated Recall" data-href-zh="/docs/design/memory/memory-v2.html" data-href-en="/docs/design/memory/memory-v2.en.html">Memory v2 — 实体/虚拟两级 + Provenance 导航召回</a>
 <a class="navlink" href="/docs/design/memory/entity-memory.html" data-title-en="Entity Memory" data-href-zh="/docs/design/memory/entity-memory.html" data-href-en="/docs/design/memory/entity-memory.en.html">实体记忆 (Entity Memory)</a>
@@ -103,8 +101,19 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/proactive/_research_archive"><summary class="group-title">Research Archive</summary><div class="group-body"><a class="navlink" href="/docs/design/proactive/_research_archive/replay.html">回放即 policy 测试</a>
 <a class="navlink" href="/docs/design/proactive/_research_archive/threat-model.html">威胁模型</a>
 <a class="navlink" href="/docs/design/proactive/_research_archive/evaluation.html">评估</a></div></details></div></details>
-<details class="group" data-key="design/providers"><summary class="group-title" data-title-en="Providers">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<details class="group" data-key="design/providers" open><summary class="group-title" data-title-en="Providers">Providers</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/README.html" data-title-en="Providers" data-href-zh="/docs/design/providers/README.html" data-href-en="/docs/design/providers/README.en.html">Providers</a>
+<a class="navlink" href="/docs/design/providers/api-key-resolution-unification.html">API-key / credential resolution unification</a>
+<a class="navlink" href="/docs/design/providers/claude-code-direct-oauth.html">claude-code 直连订阅(砍掉 Meridian)</a>
+<a class="navlink" href="/docs/design/providers/credential-status-redesign.html">Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge</a>
+<a class="navlink" href="/docs/design/providers/credential-validation-unification.html">Credential-validation unification</a>
+<a class="navlink" href="/docs/design/providers/error-taxonomy-propagation.html">Error-taxonomy propagation — structured LLM errors up to the UI</a>
+<a class="navlink" href="/docs/design/providers/llm-fault-tolerance.html">LLM-call fault tolerance &amp; timeout management</a>
+<a class="navlink" href="/docs/design/providers/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
+<a class="navlink" href="/docs/design/providers/thinking-effort.html">Thinking / Effort 子系统设计</a>
+<a class="navlink" href="/docs/design/providers/unified-account-management.html">Unified account management + pool rotation/fallback</a>
+<a class="navlink" href="/docs/design/providers/unified-auth-storage.html">Unified self-contained auth storage</a>
 <a class="navlink" href="/docs/design/providers/PROBLEM-models-and-bailian.html">当前问题：模型清单（MODELS）与百炼 provider</a>
+<a class="navlink" href="/docs/design/providers/error-retry.html">模型调用的错误处理与重试决策逻辑</a>
 <a class="navlink" href="/docs/design/providers/request-build.html" data-title-en="Request building: Context → per-provider parameters" data-href-zh="/docs/design/providers/request-build.html" data-href-en="/docs/design/providers/request-build.en.html">请求构建:Context → 各 provider 参数</a>
 <details class="group" data-key="design/providers/auth"><summary class="group-title">Auth</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/auth/api-key-resolution-unification.html" data-title-en="API-key / credential resolution unification" data-href-zh="/docs/design/providers/auth/api-key-resolution-unification.html" data-href-en="/docs/design/providers/auth/api-key-resolution-unification.en.html">API key / 凭据解析统一</a>
 <a class="navlink" href="/docs/design/providers/auth/claude-code-direct-oauth.html" data-title-en="claude-code direct subscription connection (drop Meridian)" data-href-zh="/docs/design/providers/auth/claude-code-direct-oauth.html" data-href-en="/docs/design/providers/auth/claude-code-direct-oauth.en.html">claude-code 直连订阅(砍掉 Meridian)</a>
@@ -113,7 +122,8 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/providers/auth/credential-status-redesign.html" data-title-en="Credential status redesign — &quot;usable or stopped&quot;, no COOLING badge" data-href-zh="/docs/design/providers/auth/credential-status-redesign.html" data-href-en="/docs/design/providers/auth/credential-status-redesign.en.html">凭证状态重新设计 —— “可用或停用”，去掉 COOLING 标记</a>
 <a class="navlink" href="/docs/design/providers/auth/unified-auth-storage.html" data-title-en="Unified self-contained auth storage" data-href-zh="/docs/design/providers/auth/unified-auth-storage.html" data-href-en="/docs/design/providers/auth/unified-auth-storage.en.html">统一的自包含认证存储</a>
 <a class="navlink" href="/docs/design/providers/auth/unified-account-management.html" data-title-en="Unified account management + pool rotation/fallback" data-href-zh="/docs/design/providers/auth/unified-account-management.html" data-href-en="/docs/design/providers/auth/unified-account-management.en.html">统一账号管理 + 凭据池轮换/回退</a></div></details>
-<details class="group" data-key="design/providers/models"><summary class="group-title">Models</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
+<details class="group" data-key="design/providers/models" open><summary class="group-title">Models</summary><div class="group-body"><a class="navlink active" href="/docs/design/providers/models/fast-tier.html" data-title-en="Fast tier — detection, storage, and wires" data-href-zh="/docs/design/providers/models/fast-tier.html" data-href-en="/docs/design/providers/models/fast-tier.en.html">Fast（高速）档 — 判定、存储与线路</a>
+<a class="navlink" href="/docs/design/providers/models/thinking-effort.html" data-title-en="Thinking / Effort Subsystem Design" data-href-zh="/docs/design/providers/models/thinking-effort.html" data-href-en="/docs/design/providers/models/thinking-effort.en.html">Thinking / Effort 子系统设计</a>
 <a class="navlink" href="/docs/design/providers/models/models.html" data-title-en="Model Catalog and Provider Configuration (Final Design)" data-href-zh="/docs/design/providers/models/models.html" data-href-en="/docs/design/providers/models/models.en.html">模型目录与 Provider 配置（最终设计）</a></div></details>
 <details class="group" data-key="design/providers/reliability"><summary class="group-title">Reliability</summary><div class="group-body"><a class="navlink" href="/docs/design/providers/reliability/llm-fault-tolerance.html" data-title-en="LLM-call fault tolerance &amp; timeout management" data-href-zh="/docs/design/providers/reliability/llm-fault-tolerance.html" data-href-en="/docs/design/providers/reliability/llm-fault-tolerance.en.html">LLM 调用容错与超时管理</a>
 <a class="navlink" href="/docs/design/providers/reliability/error-and-timeout-mechanism.html">OpenProgram · 报错与超时机制（现状）</a>
@@ -122,9 +132,11 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <details class="group" data-key="design/ui"><summary class="group-title" data-title-en="Web UI">Web UI</summary><div class="group-body"><a class="navlink" href="/docs/design/ui/README.html" data-title-en="Web UI" data-href-zh="/docs/design/ui/README.html" data-href-en="/docs/design/ui/README.en.html">Web UI</a>
 <a class="navlink" href="/docs/design/ui/composer-interaction-modes.html" data-title-en="Composer interaction modes — the input box as the unified catch point for &quot;user decisions&quot;" data-href-zh="/docs/design/ui/composer-interaction-modes.html" data-href-en="/docs/design/ui/composer-interaction-modes.en.html">Composer interaction modes — 输入框作为&quot;用户决定&quot;的统一承接点</a>
 <a class="navlink" href="/docs/design/ui/gui-agent-context.html" data-title-en="GUI agent — call structure &amp; context flow" data-href-zh="/docs/design/ui/gui-agent-context.html" data-href-en="/docs/design/ui/gui-agent-context.en.html">GUI agent — 调用结构与上下文流</a>
+<a class="navlink" href="/docs/design/ui/interaction-feedback.html">Interaction feedback — the 0ms rule</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.viz.html">OpenProgram · 附件处理设计（可视化）</a>
 <a class="navlink" href="/docs/design/ui/invariants.html" data-title-en="Cross-module UI invariants" data-href-zh="/docs/design/ui/invariants.html" data-href-en="/docs/design/ui/invariants.en.html">UI 跨模块不变量</a>
 <a class="navlink" href="/docs/design/ui/indicator-dots.html" data-title-en="Indicator dot system" data-href-zh="/docs/design/ui/indicator-dots.html" data-href-en="/docs/design/ui/indicator-dots.en.html">指示点系统</a>
+<a class="navlink" href="/docs/design/ui/chat-turn-visual-spec.html">聊天轮次视觉规范 — 执行时间线 + 消息导航</a>
 <a class="navlink" href="/docs/design/ui/surface-system.html" data-title-en="Surface system (dark mode)" data-href-zh="/docs/design/ui/surface-system.html" data-href-en="/docs/design/ui/surface-system.en.html">表面系统（深色模式）</a>
 <a class="navlink" href="/docs/design/ui/attachment-handling.html" data-title-en="Attachment Handling Design (Web Chat)" data-href-zh="/docs/design/ui/attachment-handling.html" data-href-en="/docs/design/ui/attachment-handling.en.html">附件处理设计（Web 聊天）</a></div></details>
 <details class="group" data-key="design/function"><summary class="group-title" data-title-en="Function Design">函数设计</summary><div class="group-body"><a class="navlink" href="/docs/design/function/README.html" data-title-en="Function Design" data-href-zh="/docs/design/function/README.html" data-href-en="/docs/design/function/README.en.html">函数设计</a>
@@ -191,376 +203,165 @@ document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 <a class="navlink" href="/docs/design/integrations/mcp-integration.html" data-title-en="MCP Tool Integration" data-href-zh="/docs/design/integrations/mcp-integration.html" data-href-en="/docs/design/integrations/mcp-integration.en.html">MCP 工具集成</a>
 <a class="navlink" href="/docs/design/integrations/skills-and-plugins.html" data-title-en="Skills &amp; Plugins — Design Draft v2 (best-of-breed, full-featured)" data-href-zh="/docs/design/integrations/skills-and-plugins.html" data-href-en="/docs/design/integrations/skills-and-plugins.en.html">Skills &amp; Plugins — 设计稿 v2（博采众长，全功能）</a></div></details></div></details></div>
   </nav>
-  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg">快速上手</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current">项目总览（中文）</span></nav><p align="center">
-  <img src="../docs/images/logo.svg" alt="OpenProgram" width="300">
-</p>
-<p align="center">开源 Agent Harness 框架。支持任意 LLM 和平台。Agentic Programming 范式。</p>
-<p align="center">
-  <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
-  <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
-  <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
-  <a href="https://github.com/Fzkuji/OpenProgram/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Fzkuji/OpenProgram?style=flat-square"></a>
-</p>
-<p align="center">
-  <a href="/docs/GETTING_STARTED.html">快速上手</a> &middot;
-  <a href="/docs/README.html">文档入口</a> &middot;
-  <a href="/docs/API.html">API 参考</a> &middot;
-  <a href="/docs/philosophy/agentic-programming.html">设计哲学</a> &middot;
-  <a href="/docs/../README.html">English</a>
-</p>
-<hr />
-<blockquote>
-<p><strong>基于 Agentic Programming 范式。</strong> 当前的 LLM agent 框架让 LLM 控制一切——做什么、何时做、怎么做。结果？不可预测的执行、上下文爆炸、没有输出保证。OpenProgram 反转这一切：<strong>Python 控制流程，LLM 只在被要求时推理。</strong> 详见<a href="/docs/philosophy/agentic-programming.html">设计哲学</a>。</p>
-</blockquote>
-<p align="center">
-  <img src="../docs/images/code_hero.png" alt="OpenProgram 代码示例" width="800">
-</p>
-<h2 id="快速开始">快速开始<a class="header-anchor" href="#快速开始">#</a></h2>
-<h3 id="前置条件">前置条件<a class="header-anchor" href="#前置条件">#</a></h3>
-<p>OpenProgram 需要至少一个 LLM 提供方。设置以下任意一个：</p>
+  <main class="content"><article><nav class="breadcrumb"><span class="bc-seg" data-title-en="Design Documents" data-title-zh="设计文档">设计文档</span> <span class='bc-sep'>›</span> <span class="bc-seg">Providers</span> <span class='bc-sep'>›</span> <span class="bc-seg">Models</span> <span class='bc-sep'>›</span> <span class="bc-seg bc-current" data-title-en="Fast tier — detection, storage, and wires" data-title-zh="Fast（高速）档 — 判定、存储与线路">Fast（高速）档 — 判定、存储与线路</span></nav><h1 id="fast高速档-判定存储与线路">Fast（高速）档 — 判定、存储与线路<a class="header-anchor" href="#fast高速档-判定存储与线路">#</a></h1>
+<p>状态：已落地（2026-07-12，用户逐条裁决）。本文记录 fast 功能的代码摆放、
+数据来源与判定规则，防遗忘。姊妹文档：<a href="/docs/design/providers/models/thinking-effort.html"><code>thinking-effort.md</code></a>
+（同为&quot;模型能力 → UI 开关&quot;的声明式子系统，结构刻意对齐）。</p>
+<h2 id="1-fast-是什么">1. Fast 是什么<a class="header-anchor" href="#1-fast-是什么">#</a></h2>
+<p>聊天输入框 + 菜单里的&quot;高速&quot;开关。开了之后，请求按厂商协议带上高速档参数：</p>
 <table>
 <thead>
 <tr>
-<th>提供方</th>
-<th>设置</th>
+<th>家族</th>
+<th>线上形态</th>
+<th>计费事实</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Claude Code CLI</td>
-<td><code>npm i -g @anthropic-ai/claude-code &amp;&amp; claude login</code></td>
+<td>GPT 5.4 / 5.5 / 5.6 系</td>
+<td>请求体 <code>service_tier: &quot;priority&quot;</code>（OpenAI 叫 priority processing）</td>
+<td>Codex 订阅端把它列成每模型的档（&quot;1.5x 速度、增加用量&quot;）；哪些模型有这个档直接来自 <code>service_tiers</code>（§2.1），不靠猜</td>
 </tr>
 <tr>
-<td>Codex CLI</td>
-<td><code>npm i -g @openai/codex &amp;&amp; codex auth</code></td>
-</tr>
-<tr>
-<td>Gemini CLI</td>
-<td><code>npm i -g @google/gemini-cli</code></td>
-</tr>
-<tr>
-<td>Anthropic API</td>
-<td><code>export ANTHROPIC_API_KEY=...</code></td>
-</tr>
-<tr>
-<td>OpenAI API</td>
-<td><code>export OPENAI_API_KEY=...</code></td>
-</tr>
-<tr>
-<td>Gemini API</td>
-<td><code>export GOOGLE_API_KEY=...</code></td>
+<td>Claude Opus 4.6 / 4.7 / 4.8</td>
+<td>请求体 <code>speed: &quot;fast&quot;</code> + 头 <code>anthropic-beta: fast-mode-2026-02-01</code></td>
+<td>同样按量计费；订阅账户没充 usage credits 时 Anthropic 返回 429 &quot;Usage credits are required for fast mode&quot;（2026-07-12 实测），<strong>如实透传给界面</strong>——报错是账户问题，不代表模型不支持</td>
 </tr>
 </tbody>
 </table>
-<p>然后选择你的使用方式：</p>
-<h3 id="方式-a-python-编写-agentic-代码">方式 A: Python — 编写 agentic 代码<a class="header-anchor" href="#方式-a-python-编写-agentic-代码">#</a></h3>
-<p>安装包后直接编码：</p>
-<p>一键安装 host（网页 UI + 终端 UI + 浏览器/渠道）：</p>
-<pre><code class="language-bash"><span class="c1"># macOS / Linux：</span>
-curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
-</code></pre>
-<pre><code class="language-powershell"><span class="c"># Windows（PowerShell）：</span>
-<span class="nb">iwr </span><span class="n">-useb</span> <span class="n">https</span><span class="p">://</span><span class="n">raw</span><span class="p">.</span><span class="n">githubusercontent</span><span class="p">.</span><span class="n">com</span><span class="p">/</span><span class="n">Fzkuji</span><span class="p">/</span><span class="n">OpenProgram</span><span class="p">/</span><span class="n">main</span><span class="p">/</span><span class="n">scripts</span><span class="p">/</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span> <span class="p">|</span> <span class="nb">iex</span>
-</code></pre>
-<p>更多选项（参数、无人值守 / AI agent 安装、从 checkout 安装）见 <strong><a href="/docs/install.html">install.md</a></strong>。</p>
-<p>harness 作为 <strong>OpenProgram 程序</strong> 装进 <code>openprogram/functions/agentics/&lt;Harness&gt;/</code>
-并<strong>自动注册</strong>。通用做法（你自己写的也一样）是克隆进那个目录再跑它的安装脚本；
-纯 Python 的 Research / Wiki 另有一行快捷命令：</p>
-<pre><code class="language-bash">openprogram<span class="w"> </span>programs<span class="w"> </span>install<span class="w"> </span>research<span class="w">      </span><span class="c1"># 或 wiki（GUI agent 见其 README，需跑自带安装脚本）</span>
-</code></pre>
-<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram</span><span class="w"> </span><span class="kn">import</span> <span class="n">agentic_function</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.providers.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_runtime</span>
-
-<span class="n">runtime</span> <span class="o">=</span> <span class="n">create_runtime</span><span class="p">()</span>
-
-<span class="nd">@agentic_function</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">login_flow</span><span class="p">(</span><span class="n">username</span><span class="p">,</span> <span class="n">password</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;完成登录流程。&quot;&quot;&quot;</span>
-    <span class="n">observe</span><span class="p">(</span><span class="n">task</span><span class="o">=</span><span class="s2">&quot;find login form&quot;</span><span class="p">)</span>       <span class="c1"># Python 决定做什么</span>
-    <span class="n">click</span><span class="p">(</span><span class="n">element</span><span class="o">=</span><span class="s2">&quot;login button&quot;</span><span class="p">)</span>         <span class="c1"># Python 决定顺序</span>
-    <span class="k">return</span> <span class="n">verify</span><span class="p">(</span><span class="n">expected</span><span class="o">=</span><span class="s2">&quot;dashboard&quot;</span><span class="p">)</span>   <span class="c1"># Python 决定何时停止</span>
-</code></pre>
-<h3 id="方式-b-skills-让你的-llm-agent-使用">方式 B: Skills — 让你的 LLM agent 使用<a class="header-anchor" href="#方式-b-skills-让你的-llm-agent-使用">#</a></h3>
-<p>按&quot;方式 A&quot;装好 OpenProgram 后，注册 skills：</p>
-<pre><code class="language-bash">openprogram<span class="w"> </span>install-skills<span class="w">                </span><span class="c1"># 自动检测 Claude Code / Gemini CLI</span>
-</code></pre>
-<p>或手动：</p>
-<pre><code class="language-bash">git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Fzkuji/OpenProgram.git
-cp<span class="w"> </span>-r<span class="w"> </span>OpenProgram/skills/*<span class="w"> </span>~/.claude/skills/<span class="w">    </span><span class="c1"># Claude Code</span>
-cp<span class="w"> </span>-r<span class="w"> </span>OpenProgram/skills/*<span class="w"> </span>~/.gemini/skills/<span class="w">    </span><span class="c1"># Gemini CLI</span>
-</code></pre>
-<p>然后与 agent 对话：<em>&quot;创建一个从文本中提取邮箱地址的函数&quot;</em></p>
-<p>Agent 会识别 skill，调用 <code>openprogram create</code>，生成的函数会处理后续所有操作。</p>
-<p>使用 <code>openprogram providers</code> 验证你的配置。</p>
-<p><strong>每个 provider 支持多账号</strong>（每个账号是一个命名 profile）：用 <code>openprogram providers use &lt;provider&gt; [profile]</code> 选择某个 provider 当前跑哪个账号，并在 CLI、Web（设置 → Providers）、TUI（<code>/login &lt;provider&gt;</code>）任一端用同一套面板管理（列出 / 添加 / 激活 / 改名 / 删除）。给一个账号添加<strong>多个 API key</strong> 即可自动轮询 —— 某个 key 被限流会自动冷却并切到下一个。详见 <a href="/docs/features.html#multi-account--key-rotation">docs/features.md</a>。</p>
-<p><strong>自定义 provider</strong>：内置列表之外的 OpenAI 兼容端点，可在设置页点 <strong>添加自定义 Provider</strong> 加进来 —— 只需填 <strong>名称</strong> 和 <strong>Base URL</strong>（id 由名称自动生成）。模型既可从该 provider 的 <code>/models</code> 端点直接浏览勾选，也可按 id 手动添加；多个 API key 与内置 provider 用同一套凭据池统一管理、自动轮询。</p>
-<h3 id="方式-c-web-ui">方式 C: Web UI<a class="header-anchor" href="#方式-c-web-ui">#</a></h3>
-<p>基于浏览器的界面，可实时运行函数、管理对话、查看执行树。安装器（方式 A）已经构建好网页 UI，直接启动：</p>
-<pre><code class="language-bash">openprogram<span class="w"> </span>web
-</code></pre>
-<p>访问 <code>http://localhost:18100</code>。Next.js 前端运行在 18100，FastAPI 后端默认运行在 18109。支持明暗主题（Settings → General）。</p>
-<hr />
-<h2 id="支持的项目">支持的项目<a class="header-anchor" href="#支持的项目">#</a></h2>
-<p>OpenProgram 自带三个 agent 应用,位于 <code>openprogram/functions/agentics/</code>——每个都是基于 <code>@agentic_function</code> 范式构建的完整 agent:</p>
+<p>其他所有模型（Gemini / DeepSeek / Qwen / Llama / MiniMax …）没有 fast 概念。</p>
+<h2 id="2-判定supports_fastprovider-model-三支">2. 判定：<code>supports_fast(provider, model)</code> 三支<a class="header-anchor" href="#2-判定supports_fastprovider-model-三支">#</a></h2>
+<p>入口：<code>openprogram/webui/_model_listing/listing.py</code>。判定前先剥
+<code>&quot;provider:&quot;</code> 线格式前缀（运行时把当前模型记成 <code>openai-codex:gpt-5.5</code>）。</p>
+<ol>
+<li><strong>openai-codex → 读注册表落盘的 <code>Model.fast</code></strong>。这个字段不是手写的，
+来自官方 codex models 端点（见 §2.1），Fetch 时随 spec 一起写进 config，
+判定时 <code>get_model(&quot;openai-codex&quot;, id).fast</code> 直接读文件。<code>gpt-5.4-mini</code>
+这类没有 fast 档的会精确判 False（旧手写前缀表会误判 True）。</li>
+<li><strong>claude-code → 手写声明表</strong> <code>enabled_models.default_fast(model_id)</code>：
+id 含 <code>opus-4-6/4-7/4-8</code>（连字符或点号写法）→ True。订阅端还没验证有没有
+可拉的 models 端点，暂留手写；能拉了就照 codex 的样子换成端点落盘。</li>
+<li><strong>其余 provider → models.dev 全自动</strong>：该模型有 <code>service_tier == &quot;priority&quot;</code> 或 <code>id == &quot;fast&quot;</code> 的档 → True；没有、或目录不认识 → False。</li>
+</ol>
+<p>裁决记录：私有网关（如 frontier-intelligence）不特判——目录不认识就没有
+fast 按钮。需要例外时用 config 显式覆盖（§3）。</p>
+<h3 id="21-codex-的官方数据源">2.1 codex 的官方数据源<a class="header-anchor" href="#21-codex-的官方数据源">#</a></h3>
+<p><code>GET https://chatgpt.com/backend-api/codex/models?client_version=&lt;ver&gt;</code>
+（官方 <code>codex</code> CLI 启动时拉的同一个账户级端点），用订阅 OAuth bearer +
+<code>chatgpt-account-id</code> 授权。每个模型带 <code>service_tiers</code>（有 <code>id:&quot;priority&quot;</code>
+就是有 fast 档）、<code>supported_reasoning_levels</code>（thinking 档）、真实
+<code>context_window</code>（订阅端 372k，不是 API 平台的 1050k）。请求 / dispatch 都用
+<code>originator: codex_cli_rs</code> + <code>version</code> 身份——后端对灰度 id（如
+<code>gpt-5.6-luna</code>）按客户端身份放行，用别的 originator 会列表有、dispatch 404。</p>
+<p>弃用 models.dev 的原因：它跟踪的是公开 API 平台目录，不是订阅入口。id 会漏
+账户跑不了的模型、context 是 API 平台数字、fast 靠 id 前缀猜（<code>gpt-5.4-mini</code>
+误判）。官方端点这三样都权威。</p>
+<h2 id="3-存储先读官方-落-config-之后读文件">3. 存储：先读官方 → 落 config → 之后读文件<a class="header-anchor" href="#3-存储先读官方-落-config-之后读文件">#</a></h2>
+<p>codex 的原则：<strong>信息全从官网实时拿，不手写任何模型清单</strong>。</p>
 <table>
 <thead>
 <tr>
-<th>项目</th>
-<th>功能</th>
+<th>层</th>
+<th>位置</th>
+<th>持久化</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="https://github.com/Fzkuji/GUI-Agent-Harness">GUI Agent Harness</a></td>
-<td>自主 GUI agent——通过视觉操控桌面应用(及 OSWorld 虚拟机):observe → plan → act → verify。Python 控制循环,LLM 仅在被要求时推理。</td>
+<td>codex 官方端点</td>
+<td><code>webui/_model_listing/fetchers/codex.py::_fetch_codex_live</code></td>
+<td>远端；<code>_browse_models</code> 10 分钟内存缓存，<strong>无磁盘缓存</strong></td>
 </tr>
 <tr>
-<td><a href="https://github.com/Fzkuji/Research-Agent-Harness">Research Agent Harness</a></td>
-<td>自主研究 agent——文献调研 → idea → 实验 → 论文写作 → 跨模型审稿。从选题到投稿全流程。</td>
+<td>config spec 行（含 <code>fast</code>/<code>thinking_levels</code>/<code>context</code>）</td>
+<td>用户启用某模型时，<code>fetch_and_normalize</code> 归一化后的整行写进 <code>~/.openprogram/config.json</code>；Fetch 按钮（<code>fetch_models_remote</code>）用新端点数据 heal 已启用行</td>
+<td>配置文件（这就是&quot;存文件&quot;这一环）</td>
 </tr>
 <tr>
-<td><a href="https://github.com/Fzkuji/Wiki-Agent-Harness">Wiki Agent Harness</a></td>
-<td>自主 wiki 构建——把笔记、文档、对话整理成结构化的、兼容 Obsidian 的知识库,带 <code>[[wikilinks]]</code>。</td>
+<td><code>Model.fast</code> 字段</td>
+<td><code>_build_model_from_row</code> 读 config 行的 <code>fast</code>（行有值就用，codex 行总带值）；注册表构建时进 <code>ENABLED_MODELS</code></td>
+<td>仅内存（进程内 dict，源头是 config）</td>
+</tr>
+<tr>
+<td>claude-code 手写表</td>
+<td><code>providers/enabled_models.py::default_fast</code>（仅剩 Opus 部分在判定路径上）</td>
+<td>源码</td>
+</tr>
+<tr>
+<td>models.dev 目录</td>
+<td><code>webui/_model_listing/sources/models_dev.py</code></td>
+<td>远端；1h 内存缓存，无磁盘缓存</td>
 </tr>
 </tbody>
 </table>
-<h2 id="为什么选择-agentic-programming">为什么选择 Agentic Programming?<a class="header-anchor" href="#为什么选择-agentic-programming">#</a></h2>
-<p align="center">
-  <img src="../docs/images/the_idea.png" alt="Python 控制流程，LLM 负责推理" width="800">
-</p>
-<table>
-<thead>
-<tr>
-<th>原则</th>
-<th>方式</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>确定性流程</strong></td>
-<td>Python 控制 <code>if/else/for/while</code>。执行路径是保证的，不是建议的。</td>
-</tr>
-<tr>
-<td><strong>最少 LLM 调用</strong></td>
-<td>只在需要推理时调用 LLM。2 次调用，不是 10 次。</td>
-</tr>
-<tr>
-<td><strong>指令写在代码里</strong></td>
-<td>每次调用的 prompt 写在函数体的 <code>runtime.exec(content=...)</code> 里，不散落在单独的 prompt 文件中。</td>
-</tr>
-<tr>
-<td><strong>自我演化</strong></td>
-<td>函数由 agent 直接编写、修复、改进——遵循 <code>agentic-programming</code> skill。</td>
-</tr>
-</tbody>
-</table>
-<details>
-<summary><strong>当前框架的问题</strong></summary>
-<p align="center">
-  <img src="../docs/images/the_problem.png" alt="LLM 作为调度器" width="800">
-</p>
-<p>当前的 LLM agent 框架将 LLM 置于中央调度器的位置。这带来了三个根本问题：</p>
-<ul>
-<li><strong>不可预测的执行</strong> — LLM 可能跳过、重复或自行发明步骤，无视预设的工作流</li>
-<li><strong>上下文爆炸</strong> — 每次工具调用往返都会累积历史记录</li>
-<li><strong>没有输出保证</strong> — LLM 是在&quot;理解&quot;指令，而非&quot;执行&quot;指令</li>
-</ul>
-<p>核心问题：<strong>LLM 控制了流程，但没有任何东西能强制执行它。</strong> Skills、prompts 和系统消息只是建议，不是保证。</p>
-</details>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Tool-Calling / MCP</th>
-<th>Agentic Programming</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>谁调度？</strong></td>
-<td>LLM 决定</td>
-<td>Python 决定</td>
-</tr>
-<tr>
-<td><strong>函数包含</strong></td>
-<td>纯代码</td>
-<td>代码 + LLM 推理</td>
-</tr>
-<tr>
-<td><strong>上下文</strong></td>
-<td>扁平的对话</td>
-<td>结构化的树</td>
-</tr>
-<tr>
-<td><strong>Prompt</strong></td>
-<td>隐藏在 agent 配置中</td>
-<td>Docstring = prompt</td>
-</tr>
-<tr>
-<td><strong>自我改进</strong></td>
-<td>未内置</td>
-<td><code>create</code> → <code>fix</code> → 演化</td>
-</tr>
-</tbody>
-</table>
-<p>MCP 是<em>传输层</em>。Agentic Programming 是<em>执行模型</em>。两者正交。</p>
-<hr />
-<h2 id="核心特性">核心特性<a class="header-anchor" href="#核心特性">#</a></h2>
-<h3 id="自动上下文">自动上下文<a class="header-anchor" href="#自动上下文">#</a></h3>
-<p>每个 <code>@agentic_function</code> 调用创建<strong>函数节点</strong>，每次 <code>runtime.exec()</code> 创建 <strong>exec 节点</strong>。节点组成树，自动注入到 LLM 调用中：</p>
-<pre><code>login_flow ✓ 8.8s
-├── observe ✓ 3.1s
-│   └── _exec → &quot;found login form at (200, 300)&quot;
-├── click ✓ 2.5s
-│   └── _exec → &quot;clicked login button&quot;
-└── verify ✓ 3.2s
-    └── _exec → &quot;dashboard confirmed&quot;
+<p>数据流：<strong>官方端点 → 归一化 → config.json → 注册表 → supports_fast /
+dispatch</strong>。断网 / 没登录时端点返回 error、保留已存 config 行不覆盖——反正没
+token 也 dispatch 不了这些模型，token-less 浏览拿不到列表不算回归。</p>
+<h2 id="4-事件流任何切换自适应无需刷新">4. 事件流：任何切换自适应，无需刷新<a class="header-anchor" href="#4-事件流任何切换自适应无需刷新">#</a></h2>
+<pre><code>连接建立 / 会话切换 / 模型切换 / 每轮消息 ack+结束
+  → 前端 loadAgentSettings()（lib/runtime-bridge/providers.ts）
+  → GET /api/agent_settings（webui/routes/runtime.py）
+      chat.fast = supports_fast(当前会话的 provider, model)   ← 每次现算
+  → zustand agentSettings.chat.fast
+  → composer 订阅重渲染：显/隐 &quot;高速&quot; 菜单项与 chip
 </code></pre>
-<p>当 <code>verify</code> 调用 LLM 时，它自动看到 <code>observe</code> 和 <code>click</code> 的返回结果。不需要手动管理上下文。</p>
-<h3 id="deep-work-自主质量循环">Deep Work — 自主质量循环<a class="header-anchor" href="#deep-work-自主质量循环">#</a></h3>
-<p>对于需要持续努力和高标准的复杂任务，<code>deep_work</code> 会运行一个自主的 计划-执行-评估 循环，直到输出达到指定的质量水平：</p>
-<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">openprogram.functions.agentics.deep_work</span><span class="w"> </span><span class="kn">import</span> <span class="n">deep_work</span>
-
-<span class="n">result</span> <span class="o">=</span> <span class="n">deep_work</span><span class="p">(</span>
-    <span class="n">task</span><span class="o">=</span><span class="s2">&quot;写一篇关于 LLM agent 中上下文管理的综述论文。&quot;</span><span class="p">,</span>
-    <span class="n">level</span><span class="o">=</span><span class="s2">&quot;phd&quot;</span><span class="p">,</span>        <span class="c1"># high_school → bachelor → master → phd → professor</span>
-    <span class="n">runtime</span><span class="o">=</span><span class="n">runtime</span><span class="p">,</span>
-<span class="p">)</span>
+<p>发送侧双保险：composer 只在 <code>fastEnabled &amp;&amp; fastSupported</code> 时给消息带
+<code>service_tier: &quot;priority&quot;</code>（切到不支持的模型后，残留的会话级 fast 设置
+不会发出去）。</p>
+<h2 id="5-线路侧请求构建器">5. 线路侧（请求构建器）<a class="header-anchor" href="#5-线路侧请求构建器">#</a></h2>
+<table>
+<thead>
+<tr>
+<th>构建器</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>providers/openai_responses</code> / <code>openai_completions</code></td>
+<td><code>opts.service_tier</code> → 请求体 <code>service_tier</code>（原有行为）</td>
+</tr>
+<tr>
+<td><code>providers/openai_codex</code>（ChatGPT 订阅）</td>
+<td>同上透传 <code>opts.service_tier</code> → 请求体；dispatch 用 <code>originator: codex_cli_rs</code> + <code>version</code> 身份（后端对灰度 id 按客户端身份放行，见 §2.1）</td>
+</tr>
+<tr>
+<td><code>providers/anthropic</code></td>
+<td><code>opts.service_tier</code> 存在 <strong>且</strong> <code>model.fast</code> 为真 → 请求体 <code>extra_body={&quot;speed&quot;:&quot;fast&quot;}</code> + beta 头 <code>_BETA_FAST</code>（<code>_build_client(fast=...)</code> 追加，不覆盖其他 beta）</td>
+</tr>
+<tr>
+<td>其他线路</td>
+<td>不透传，参数不出网</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-文件地图">6. 文件地图<a class="header-anchor" href="#6-文件地图">#</a></h2>
+<pre><code>openprogram/providers/types.py                     Model.fast 字段
+openprogram/providers/enabled_models.py            default_fast（仅 claude-code Opus）+ 配置行回填
+openprogram/providers/openai_codex/{openai_codex,runtime}.py   service_tier 透传；codex_cli_rs 身份 + _CODEX_CLIENT_VERSION
+openprogram/providers/anthropic/{anthropic,_claude_code_direct_runtime}.py  Claude fast 线路 + 注册回填
+openprogram/webui/_model_listing/fetchers/codex.py 官方端点拉取 + 归一化（fast/thinking/context 来源）
+openprogram/webui/_model_listing/fetchers/__init__.py  编排：透传 fetcher 的 fast/thinking，enrich 不覆盖
+openprogram/webui/_model_listing/listing.py        supports_fast 判定入口；list_models_for_provider 优先用 fetcher thinking
+openprogram/webui/routes/runtime.py                /api/agent_settings 下发 chat.fast
+web/lib/session-store/types.ts                     AgentBadgeInfo.fast 类型
+web/components/chat/composer/index.tsx             开关显隐 + 发送门控
 </code></pre>
-<p>Agent 先确认需求，然后完全自主工作——执行、自我评估、修订，直到通过质量审查。状态持久化到磁盘，中断的工作可以从断点恢复。</p>
-<h3 id="函数编写函数">函数编写函数<a class="header-anchor" href="#函数编写函数">#</a></h3>
-<p>编写、修复、搭建 <code>@agentic_function</code> 本身也是 agent 的工作——用普通文件编辑工具直接完成，遵循 <strong><code>agentic-programming</code> skill</strong>（<code>skills/agentic-programming/SKILL.md</code>）。没有专门的 <code>create()</code> / <code>fix()</code> 框架调用：它们以前也只是包了一次 LLM 调用加一次文件写入,agent 自己就能做。</p>
-<p>skill 是完整规范——文件放哪、装饰器元数据、docstring 与 <code>content</code> 的分工、校验清单、冒烟测试。<code>write → run → fail → fix</code> 循环依然意味着程序在使用中自我改进。</p>
-<h2 id="api-参考">API 参考<a class="header-anchor" href="#api-参考">#</a></h2>
-<h3 id="核心">核心<a class="header-anchor" href="#核心">#</a></h3>
-<table>
-<thead>
-<tr>
-<th>导入</th>
-<th>功能</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>from openprogram import agentic_function</code></td>
-<td>装饰器。每次调用记录为 session DAG 的一个节点</td>
-</tr>
-<tr>
-<td><code>from openprogram.agentic_programming.runtime import Runtime</code></td>
-<td>LLM 运行时。<code>exec()</code> 调用 LLM，上下文从 DAG 自动算出</td>
-</tr>
-<tr>
-<td><code>from openprogram.providers.registry import create_runtime</code></td>
-<td>创建 Runtime，支持自动检测或指定提供方</td>
-</tr>
-</tbody>
-</table>
-<h3 id="编写函数">编写函数<a class="header-anchor" href="#编写函数">#</a></h3>
-<p>没有 <code>create()</code> / <code>fix()</code> 这类元函数——编写、修改、校验 <code>@agentic_function</code> 直接用普通文件编辑工具完成，遵循 <strong><code>agentic-programming</code> skill</strong>（<code>skills/agentic-programming/SKILL.md</code>）。该 skill 是完整规范:文件布局、装饰器元数据、docstring 与 <code>content</code> 的分工、校验清单。</p>
-<h3 id="内置函数">内置函数<a class="header-anchor" href="#内置函数">#</a></h3>
-<table>
-<thead>
-<tr>
-<th>导入</th>
-<th>功能</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>from openprogram.functions.agentics.deep_work import deep_work</code></td>
-<td>自主计划-执行-评估循环，支持质量等级</td>
-</tr>
-<tr>
-<td><code>from openprogram.functions.agentics.ask_user import ask_user</code></td>
-<td>向用户提一个澄清问题并阻塞等待答复</td>
-</tr>
-</tbody>
-</table>
-<h3 id="提供方">提供方<a class="header-anchor" href="#提供方">#</a></h3>
-<p>六个内置提供方：Anthropic、OpenAI、Gemini (API)、Claude Code、Codex、Gemini (CLI)。所有 CLI 提供方在调用之间维持<strong>会话连续性</strong>。详见 <a href="/docs/api/providers.html">Provider 文档</a>。</p>
-<h2 id="集成">集成<a class="header-anchor" href="#集成">#</a></h2>
-<table>
-<thead>
-<tr>
-<th>指南</th>
-<th>描述</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="/docs/GETTING_STARTED.html">Getting Started</a></td>
-<td>3 分钟上手及可运行示例</td>
-</tr>
-<tr>
-<td><a href="/docs/INTEGRATION_CLAUDE_CODE.html">Claude Code</a></td>
-<td>通过 Claude Code CLI 使用，无需 API key</td>
-</tr>
-<tr>
-<td><a href="/docs/INTEGRATION_OPENCLAW.html">OpenClaw</a></td>
-<td>作为 OpenClaw skill 使用</td>
-</tr>
-<tr>
-<td><a href="/docs/API.html">API Reference</a></td>
-<td>完整 API 文档</td>
-</tr>
-</tbody>
-</table>
-<details>
-<summary><strong>项目结构</strong></summary>
-<pre><code>openprogram/
-├── __init__.py                      # agentic_function 再导出
-├── cli.py                           # `openprogram` 命令入口
-├── agentic_programming/             # 范式引擎
-│   ├── function.py                  #   @agentic_function 装饰器
-│   ├── runtime.py                   #   Runtime（exec + retry + DAG 上下文）
-│   ├── session.py                   #   会话生命周期
-│   └── skills.py                    #   SKILL.md 发现
-├── context/                         # 扁平 DAG 上下文模型 — nodes / storage / render / render_context
-├── providers/                       # Anthropic、OpenAI、Gemini、Claude Code、Codex、Gemini CLI
-├── functions/
-│   ├── _registry.py                 #   tools + agentic functions 的统一注册表
-│   ├── tools/                       #   @function 叶子工具 — bash / read / edit / grep / semble_search / web_search 等
-│   └── agentics/                    #   @agentic_function 模块（每个一个目录，代码写在 __init__.py）
-│       ├── ask_user/                #     向用户提澄清问题
-│       ├── deep_work/               #     自主计划-执行-评估循环
-│       ├── extract_pdf_figures/     #     PDF 图表抽取
-│       ├── …                        #     其它 agentic functions …
-│       ├── GUI-Agent-Harness/       #     自主 GUI agent（独立仓库，符号链接）
-│       ├── Research-Agent-Harness/  #     自主研究 agent（独立仓库，符号链接）
-│       └── Wiki-Agent-Harness/      #     自主 wiki 构建 agent（独立仓库，符号链接）
-└── webui/                           # `openprogram web` 浏览器 UI
-skills/                              # 用于 agent 集成的 SKILL.md 文件
-examples/                            # 可运行的示例
-tests/                               # pytest 测试套件
-</code></pre>
-</details>
-<h2 id="贡献">贡献<a class="header-anchor" href="#贡献">#</a></h2>
-<p>这是一个<strong>范式提案</strong>，附带参考实现。欢迎讨论、其他语言的替代实现、验证或挑战此方法的用例，以及 bug 报告。</p>
-<p>详见 <a href="/docs/../CONTRIBUTING.html">CONTRIBUTING.md</a>。</p>
-<h2 id="许可证">许可证<a class="header-anchor" href="#许可证">#</a></h2>
-<p><a href="/docs/../LICENSE">AGPL-3.0</a> © 2026 Fzkuji。可自由使用、研究、修改、分发——但任何<strong>分发或作为联网服务运行</strong>的衍生作品也必须以 AGPL 开源,并保留署名。</p>
-<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-09</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/README.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">项目总览</span></a><a class="pn-link pn-next" href="/docs/features.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">功能详解</span></a></div></article></main>
+<p>改动指南：codex 的 fast/thinking 全自动，加/去模型什么都不用做——点 Fetch
+重拉端点即可；换判定逻辑 → 只动 <code>listing.py::supports_fast</code>；claude-code 加/去
+fast → 动 <code>default_fast</code> 的 Opus 部分；其他 provider 想要 fast → models.dev
+认识它就自动生效。</p>
+<div class="page-updated"><span data-i18n="updated">最后更新</span> · 2026-07-12</div><div class="prevnext"><a class="pn-link pn-prev" href="/docs/design/providers/auth/unified-account-management.html"><span class="pn-dir" data-i18n="prev">上一篇</span><span class="pn-title">统一账号管理 + 凭据池轮换/回退</span></a><a class="pn-link pn-next" href="/docs/design/providers/models/thinking-effort.html"><span class="pn-dir" data-i18n="next">下一篇</span><span class="pn-title">Thinking / Effort 子系统设计</span></a></div></article></main>
   <aside class="toc"><div class="toc-title" data-i18n="on_this_page">本页内容</div>
 <div class="toc-list">
-<a class="" href="#快速开始">快速开始</a>
-<a class="lvl-3" href="#前置条件">前置条件</a>
-<a class="lvl-3" href="#方式-a-python-编写-agentic-代码">方式 A: Python — 编写 agentic 代码</a>
-<a class="lvl-3" href="#方式-b-skills-让你的-llm-agent-使用">方式 B: Skills — 让你的 LLM agent 使用</a>
-<a class="lvl-3" href="#方式-c-web-ui">方式 C: Web UI</a>
-<a class="" href="#支持的项目">支持的项目</a>
-<a class="" href="#为什么选择-agentic-programming">为什么选择 Agentic Programming?</a>
-<a class="" href="#核心特性">核心特性</a>
-<a class="lvl-3" href="#自动上下文">自动上下文</a>
-<a class="lvl-3" href="#deep-work-自主质量循环">Deep Work — 自主质量循环</a>
-<a class="lvl-3" href="#函数编写函数">函数编写函数</a>
-<a class="" href="#api-参考">API 参考</a>
-<a class="lvl-3" href="#核心">核心</a>
-<a class="lvl-3" href="#编写函数">编写函数</a>
-<a class="lvl-3" href="#内置函数">内置函数</a>
-<a class="lvl-3" href="#提供方">提供方</a>
-<a class="" href="#集成">集成</a>
-<a class="" href="#贡献">贡献</a>
-<a class="" href="#许可证">许可证</a>
+<a class="" href="#1-fast-是什么">1. Fast 是什么</a>
+<a class="" href="#2-判定supports_fastprovider-model-三支">2. 判定：supports_fast(provider, model) 三支</a>
+<a class="lvl-3" href="#21-codex-的官方数据源">2.1 codex 的官方数据源</a>
+<a class="" href="#3-存储先读官方-落-config-之后读文件">3. 存储：先读官方 → 落 config → 之后读文件</a>
+<a class="" href="#4-事件流任何切换自适应无需刷新">4. 事件流：任何切换自适应，无需刷新</a>
+<a class="" href="#5-线路侧请求构建器">5. 线路侧（请求构建器）</a>
+<a class="" href="#6-文件地图">6. 文件地图</a>
 </div></aside>
 </div>
 
@@ -571,6 +372,6 @@ tests/                               # pytest 测试套件
   </div>
 </div>
 
-<script src="/docs/assets/site.js?v=e7077628"></script>
+<script src="/docs/assets/site.js?v=81aa3967"></script>
 </body>
 </html>
