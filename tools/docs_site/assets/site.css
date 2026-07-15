@@ -150,7 +150,7 @@ nav.sidebar details.group details.group > summary.group-title {
 nav.sidebar .group-body { padding-left: 8px; margin-left: 9px; border-left: 1px solid var(--bd-soft); }
 nav.sidebar details.group details.group { margin-left: 2px; }
 nav.sidebar a.navlink {
-  display: block; padding: 6px 9px; border-radius: 7px; font-size: 14px;
+  display: block; padding: 6px 9px 6px 22px; border-radius: 7px; font-size: 14px;
   color: var(--tx-soft); line-height: 1.45;
 }
 nav.sidebar a.navlink:hover { background: var(--bd-soft); color: var(--tx); text-decoration: none; }
