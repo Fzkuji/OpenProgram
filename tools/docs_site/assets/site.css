@@ -1,6 +1,16 @@
 /* OpenProgram Docs — unified theme. One variable set, two palettes.
    Light: warm off-white, easy on the eyes. Dark: soft charcoal, not pure black. */
 
+/* Inter (variable weight, latin subset) — same face as the web UI. Non-latin
+   glyphs fall through to the system CJK fonts in the stack. */
+@font-face {
+  font-family: "Inter Var";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(fonts/inter-latin-wght-normal.woff2) format("woff2-variations");
+}
+
 :root {
   /* light (default) — matches the web UI palette (web/app/styles/base.css) */
   --bg:        #faf9f5;   /* --bg-primary */
@@ -17,7 +27,7 @@
   --sel:       #eedcc4;
   --shadow:    0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.04);
 
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+  --sans: "Inter Var", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
           "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
   --mono: "JetBrains Mono", "SF Mono", "Menlo", "Consolas",
           "PingFang SC", "Microsoft YaHei", monospace;
@@ -70,7 +80,7 @@ header.topbar {
   font-weight: 700; font-size: 15px; letter-spacing: .01em;
   display: flex; align-items: center; gap: 8px; white-space: nowrap;
 }
-.topbar .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--acc); }
+.topbar .brand .mark { width: 20px; height: 20px; border-radius: 5px; display: block; }
 .topbar .spacer { flex: 1; }
 .topbar .search-trigger {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
@@ -88,6 +98,35 @@ header.topbar {
 }
 .topbar button.icon:hover { background: var(--bg-side); color: var(--tx); }
 /* hamburger shows on all widths: wide = collapse the sidebar, narrow = drawer */
+
+/* theme toggle: show the icon for the theme you'd switch TO */
+#theme-toggle .ic-sun { display: none; }
+html[data-theme="dark"] #theme-toggle .ic-sun { display: block; }
+html[data-theme="dark"] #theme-toggle .ic-moon { display: none; }
+
+/* language dropdown */
+.lang-wrap { position: relative; }
+.topbar button.lang-trigger {
+  width: auto; padding: 0 10px; gap: 6px;
+  font-size: 12.5px; font-weight: 600; font-family: var(--sans);
+}
+.lang-trigger .chev { transition: transform .15s ease; }
+.lang-wrap.open .lang-trigger .chev { transform: rotate(180deg); }
+.lang-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; min-width: 160px;
+  background: var(--bg-card); border: 1px solid var(--bd); border-radius: 10px;
+  box-shadow: var(--shadow); padding: 5px; display: none; z-index: 200;
+}
+.lang-wrap.open .lang-menu { display: block; }
+.lang-opt {
+  display: flex; width: 100%; align-items: center; justify-content: space-between;
+  gap: 18px; padding: 7px 10px; border: none; background: none; cursor: pointer;
+  color: var(--tx); font: 600 13.5px var(--sans); border-radius: 7px; text-align: left;
+}
+.lang-opt:hover { background: var(--bd-soft); }
+.lang-opt .check { visibility: hidden; color: var(--acc); flex: none; }
+.lang-opt.active { color: var(--acc); }
+.lang-opt.active .check { visibility: visible; }
 
 /* ── tabbar (top-level sections, below the topbar) ── */
 nav.tabbar {
@@ -218,14 +257,15 @@ aside.toc a.active { color: var(--acc); border-left-color: var(--acc); font-weig
 .prevnext .pn-title { font-weight: 600; font-size: 14px; color: var(--acc); }
 
 /* ── article typography ── */
-article h1 { font-size: 30px; line-height: 1.25; margin: 0 0 4px; letter-spacing: -.01em; }
+article h1 { font-size: 32px; line-height: 1.22; margin: 0 0 4px; letter-spacing: -.022em; font-weight: 720; }
 article h2 {
   font-size: 22px; margin: 44px 0 14px; padding-bottom: 8px;
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--bd); letter-spacing: -.015em;
 }
-article h3 { font-size: 17.5px; margin: 30px 0 10px; }
+article h3 { font-size: 17.5px; margin: 30px 0 10px; letter-spacing: -.008em; }
 article h4 { font-size: 15.5px; margin: 22px 0 8px; color: var(--tx-soft); }
-article h1, article h2, article h3, article h4 { font-weight: 650; scroll-margin-top: 116px; }
+article h2, article h3, article h4 { font-weight: 640; }
+article h1, article h2, article h3, article h4 { scroll-margin-top: 116px; }
 article .header-anchor {
   opacity: 0; margin-left: 8px; color: var(--tx-faint); font-weight: 400; text-decoration: none;
 }
@@ -267,7 +307,7 @@ article pre .copy-btn.copied { color: var(--acc); border-color: var(--acc); }
   display: flex; align-items: center; gap: 7px;
   font-weight: 650; font-size: 13.5px; color: var(--cl-accent); margin-bottom: 4px;
 }
-.callout-icon { font-size: 14px; }
+.callout-icon { display: inline-flex; align-items: center; }
 .callout-body p { margin: 4px 0; }
 .callout-body p:last-child { margin-bottom: 0; }
 .callout-note      { --cl-accent: #3b82f6; --cl-bg: color-mix(in srgb, #3b82f6 8%, var(--bg)); }

@@ -99,12 +99,19 @@ def _make_unique_slug(text: str) -> str:
 
 # ── callouts (GitHub-style > [!NOTE] / [!WARNING] / [!TIP] / [!IMPORTANT]) ───
 
-_CALLOUT_KINDS = {  # kind -> (css class, icon, English label, 中文 label)
-    "NOTE": ("note", "ℹ", "Note", "提示"),
-    "TIP": ("tip", "✓", "Tip", "建议"),
-    "IMPORTANT": ("important", "★", "Important", "重要"),
-    "WARNING": ("warning", "⚠", "Warning", "注意"),
-    "CAUTION": ("caution", "⛔", "Caution", "警告"),
+def _callout_svg(path: str) -> str:
+    return (
+        '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"'
+        f' stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">{path}</svg>'
+    )
+
+
+_CALLOUT_KINDS = {  # kind -> (css class, icon svg, English label, 中文 label)
+    "NOTE": ("note", _callout_svg('<circle cx="8" cy="8" r="6.4"/><path d="M8 7.4V11M8 5.1v.1"/>'), "Note", "提示"),
+    "TIP": ("tip", _callout_svg('<circle cx="8" cy="8" r="6.4"/><path d="M5.2 8.3l2 2L10.8 6"/>'), "Tip", "建议"),
+    "IMPORTANT": ("important", _callout_svg('<path d="M8 1.6l2 4.1 4.5.6-3.2 3.1.7 4.5L8 11.8l-4 2.1.7-4.5L1.5 6.3l4.5-.6z"/>'), "Important", "重要"),
+    "WARNING": ("warning", _callout_svg('<path d="M8 2.2 1.8 13h12.4z"/><path d="M8 6.6v3M8 11.7v.1"/>'), "Warning", "注意"),
+    "CAUTION": ("caution", _callout_svg('<circle cx="8" cy="8" r="6.4"/><path d="M3.5 3.5l9 9"/>'), "Caution", "警告"),
 }
 _BLOCKQUOTE_RE = re.compile(r"<blockquote>\s*(.*?)\s*</blockquote>", re.DOTALL)
 _CALLOUT_HEAD_RE = re.compile(

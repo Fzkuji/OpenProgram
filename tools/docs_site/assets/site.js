@@ -25,11 +25,9 @@
       const next = ROOT.getAttribute("data-theme") === "dark" ? "light" : "dark";
       ROOT.setAttribute("data-theme", next);
       try { localStorage.setItem("op-docs-theme", next); } catch (e) {}
-      themeBtn.textContent = next === "dark" ? "☀" : "☾";
       syncPygments(next);
       window.dispatchEvent(new CustomEvent("documentThemeChange", { detail: { theme: next } }));
     });
-    themeBtn.textContent = ROOT.getAttribute("data-theme") === "dark" ? "☀" : "☾";
   }
 
   // ── i18n (UI chrome; body language is per-document) ───────────────────
@@ -62,8 +60,11 @@
       if (v != null) el.setAttribute("placeholder", v);
     });
     ROOT.setAttribute("lang", lang === "zh" ? "zh" : "en");
-    const btn = document.getElementById("lang-toggle");
-    if (btn) btn.textContent = lang === "zh" ? "中" : "EN";
+    const label = document.querySelector("#lang-toggle .lang-label");
+    if (label) label.textContent = lang === "zh" ? "中文" : "EN";
+    document.querySelectorAll(".lang-opt").forEach((b) => {
+      b.classList.toggle("active", b.getAttribute("data-lang") === lang);
+    });
     // Bilingual-labelled elements (sidebar links, group headers, tabs,
     // breadcrumbs, callout heads) switch text; links switch href too.
     document.querySelectorAll("[data-title-zh]").forEach((el) => {
@@ -78,15 +79,36 @@
   }
 
   const langBtn = document.getElementById("lang-toggle");
-  if (langBtn) {
-    langBtn.addEventListener("click", () => {
-      curLang = curLang === "en" ? "zh" : "en";
-      try { localStorage.setItem("op-docs-lang", curLang); } catch (e) {}
-      applyLang(curLang);
-      window.dispatchEvent(new CustomEvent("documentLangChange", { detail: { lang: curLang } }));
-      const altUrl = ROOT.getAttribute("data-alt-lang-url");
-      const pl = ROOT.getAttribute("data-page-lang");
-      if (altUrl && pl && pl !== curLang) navigate(altUrl); // stay in-app
+  const langWrap = langBtn && langBtn.closest(".lang-wrap");
+  function closeLangMenu() {
+    if (langWrap) langWrap.classList.remove("open");
+    if (langBtn) langBtn.setAttribute("aria-expanded", "false");
+  }
+  if (langBtn && langWrap) {
+    langBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = langWrap.classList.toggle("open");
+      langBtn.setAttribute("aria-expanded", String(open));
+    });
+    langWrap.querySelectorAll(".lang-opt").forEach((opt) => {
+      opt.addEventListener("click", () => {
+        closeLangMenu();
+        const lang = opt.getAttribute("data-lang");
+        if (lang === curLang) return;
+        curLang = lang;
+        try { localStorage.setItem("op-docs-lang", curLang); } catch (e) {}
+        applyLang(curLang);
+        window.dispatchEvent(new CustomEvent("documentLangChange", { detail: { lang: curLang } }));
+        const altUrl = ROOT.getAttribute("data-alt-lang-url");
+        const pl = ROOT.getAttribute("data-page-lang");
+        if (altUrl && pl && pl !== curLang) navigate(altUrl); // stay in-app
+      });
+    });
+    document.addEventListener("click", (e) => {
+      if (!langWrap.contains(e.target)) closeLangMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeLangMenu();
     });
   }
 
