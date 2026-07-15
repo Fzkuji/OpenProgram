@@ -12,6 +12,7 @@ debounced, so it adds negligible latency.
 """
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
@@ -61,6 +62,23 @@ def _rebuild() -> None:
 # Debounce: don't re-scan the tree on every single asset request in a burst.
 _LAST_CHECK = 0.0
 _CHECK_INTERVAL = 2.0  # seconds
+# A full build takes ~10s; it must never run on the event loop (it would
+# freeze every route, not just /docs). Rebuild in a background thread and keep
+# serving the previous _site — build() swaps the new tree in atomically.
+_REBUILD_LOCK = threading.Lock()
+
+
+def _rebuild_in_background() -> None:
+    if not _REBUILD_LOCK.acquire(blocking=False):
+        return  # a rebuild is already running
+    def run() -> None:
+        try:
+            _rebuild()
+        except Exception as e:  # never let a build error 500 the whole route
+            print(f"[docs] auto-rebuild failed: {e}")
+        finally:
+            _REBUILD_LOCK.release()
+    threading.Thread(target=run, name="docs-rebuild", daemon=True).start()
 
 
 def _maybe_rebuild() -> None:
@@ -71,7 +89,8 @@ def _maybe_rebuild() -> None:
     _LAST_CHECK = now
     docs = _docs_dir()
     site = _site_dir()
-    src_mtime = _newest_mtime(docs, skip={"_site", "images", "slides"})
+    src_mtime = _newest_mtime(
+        docs, skip={"_site", "_site.tmp", "_site.old", "images", "slides"})
     # Compare against the built index.html (always regenerated on each build).
     index = site / "index.html"
     try:
@@ -79,10 +98,7 @@ def _maybe_rebuild() -> None:
     except OSError:
         out_mtime = 0.0
     if src_mtime > out_mtime:
-        try:
-            _rebuild()
-        except Exception as e:  # never let a build error 500 the whole route
-            print(f"[docs] auto-rebuild failed: {e}")
+        _rebuild_in_background()
 
 
 def register(app) -> None:

@@ -400,6 +400,28 @@ def render_nav(groups, current_out: Path, base: str) -> str:
 # ── main build ──────────────────────────────────────────────────────────────
 
 def build() -> int:
+    # Build into _site.tmp, then swap it in with two renames. The worker
+    # rebuilds in a background thread while still serving _site; without the
+    # swap, readers would see a half-deleted tree for the ~10s a build takes.
+    global OUT_ROOT
+    final = DOCS_ROOT / "_site"
+    OUT_ROOT = DOCS_ROOT / "_site.tmp"
+    try:
+        rc = _build_into_out_root()
+        if rc == 0:
+            old = DOCS_ROOT / "_site.old"
+            if old.exists():
+                shutil.rmtree(old)
+            if final.exists():
+                final.rename(old)
+            OUT_ROOT.rename(final)
+            shutil.rmtree(old, ignore_errors=True)
+        return rc
+    finally:
+        OUT_ROOT = final
+
+
+def _build_into_out_root() -> int:
     if not DOCS_ROOT.exists():
         print(f"docs root not found: {DOCS_ROOT}", file=sys.stderr)
         return 1
@@ -426,7 +448,7 @@ def build() -> int:
         if path.suffix.lower() not in IMG_EXT or not path.is_file():
             continue
         rel = path.relative_to(DOCS_ROOT)
-        if rel.parts and rel.parts[0] == "_site":
+        if rel.parts and rel.parts[0] in ("_site", "_site.tmp", "_site.old"):
             continue
         dst = OUT_ROOT / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
