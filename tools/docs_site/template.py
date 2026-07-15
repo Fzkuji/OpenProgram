@@ -56,6 +56,18 @@ def render_page(
     """
     safe_title = _html.escape(title)
     alt_attr = f' data-alt-lang-url="{alt_lang_url}"' if alt_lang_url else ""
+    if nav_html:
+        layout_cls = ""
+        sidebar_html = (
+            '<nav class="sidebar">\n'
+            '    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"\n'
+            '           placeholder="过滤目录…" autocomplete="off" spellcheck="false">\n'
+            f'    <div class="nav-tree">{nav_html}</div>\n'
+            '  </nav>\n  '
+        )
+    else:
+        layout_cls = " no-side"
+        sidebar_html = ""
     return f"""<!DOCTYPE html>
 <html lang="{page_lang}" data-base="{base}" data-page-lang="{page_lang}"{alt_attr}>
 <head>
@@ -82,13 +94,8 @@ def render_page(
 <nav class="tabbar">{tabbar_html}</nav>
 
 <div class="scrim"></div>
-<div class="layout">
-  <nav class="sidebar">
-    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"
-           placeholder="过滤目录…" autocomplete="off" spellcheck="false">
-    <div class="nav-tree">{nav_html}</div>
-  </nav>
-  <main class="content"><article>{breadcrumb_html}{body_html}{meta_html}{prevnext_html}</article></main>
+<div class="layout{layout_cls}">
+  {sidebar_html}<main class="content"><article>{breadcrumb_html}{body_html}{meta_html}{prevnext_html}</article></main>
   <aside class="toc">{toc_html}</aside>
 </div>
 

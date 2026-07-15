@@ -20,12 +20,12 @@ EXCLUDE_DIRS = {"_site", "_site.tmp", "_site.old", "images", "slides"}
 TABS: dict[str, tuple[str, str]] = {
     "start":        ("开始使用", "Get started"),
     "install":      ("安装", "Install"),
-    "capabilities": ("Capabilities", "Capabilities"),
+    "capabilities": ("能力", "Capabilities"),
     "interfaces":   ("界面", "Interfaces"),
-    "models":       ("Models", "Models"),
-    "integrations": ("Integrations", "Integrations"),
-    "server":       ("Server & Ops", "Server & Ops"),
-    "reference":    ("Reference", "Reference"),
+    "models":       ("模型", "Models"),
+    "integrations": ("集成", "Integrations"),
+    "server":       ("服务与运维", "Server & Ops"),
+    "reference":    ("参考", "Reference"),
 }
 # Loose files directly under docs/ belong to a tab too.
 ROOT_PAGE_TAB = {"README.md": "start"}

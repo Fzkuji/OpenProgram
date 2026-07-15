@@ -594,11 +594,9 @@ def _write_home(tabs) -> None:
             f'<span class="hc-count">{count_pages(t.root)}<span data-i18n="unit"> 篇</span></span></a>'
         )
     body.append("</div>")
-    first = tabs[0] if tabs else None
-    nav_html = render_nav([first.root], Path("index.html"), DEPLOY_BASE) if first else ""
     tabbar_html = render_tabbar(tabs, "", DEPLOY_BASE)
     full = render_page(title="OpenProgram 文档", body_html="\n".join(body),
-                       nav_html=nav_html, toc_html="", base=DEPLOY_BASE,
+                       nav_html="", toc_html="", base=DEPLOY_BASE,
                        tabbar_html=tabbar_html)
     (OUT_ROOT / "index.html").write_text(full, encoding="utf-8")
 
