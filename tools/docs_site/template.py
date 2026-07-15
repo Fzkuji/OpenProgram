@@ -44,6 +44,7 @@ def render_page(
     prevnext_html: str = "",
     meta_html: str = "",
     extra_head: str = "",
+    tabbar_html: str = "",
 ) -> str:
     """Assemble one full HTML document.
 
@@ -78,6 +79,7 @@ def render_page(
   <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
   <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
 </header>
+<nav class="tabbar">{tabbar_html}</nav>
 
 <div class="scrim"></div>
 <div class="layout">

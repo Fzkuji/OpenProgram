@@ -347,6 +347,18 @@ def git_mtime(src: Path) -> str:
 
 # ── nav tree -> html ────────────────────────────────────────────────────────
 
+def render_tabbar(tabs, active_key: str, base: str) -> str:
+    links = []
+    for t in tabs:
+        href = base + str(t.landing).replace("\\", "/")
+        cls = " active" if t.key == active_key else ""
+        en = (f' data-title-en="{_html.escape(t.title_en, quote=True)}"'
+              if t.title_en and t.title_en != t.title else "")
+        links.append(f'<a class="tablink{cls}" href="{href}"{en}>{_html.escape(t.title)}</a>')
+    return "".join(links)
+
+
+
 def render_nav(groups, current_out: Path, base: str) -> str:
     def contains_current(g) -> bool:
         if any(p.out == current_out for p in g.pages):
@@ -427,7 +439,7 @@ def _build_into_out_root() -> int:
         return 1
 
     pages = navmod.discover(DOCS_ROOT)
-    groups = navmod.build_tree(DOCS_ROOT, pages)
+    tabs = navmod.build_tabs(DOCS_ROOT, pages)
 
     if OUT_ROOT.exists():
         shutil.rmtree(OUT_ROOT)
@@ -458,8 +470,15 @@ def _build_into_out_root() -> int:
     search_records: list[dict] = []
     rendered = 0
 
-    # ordered sequence (for prev/next) + per-page group chain (for breadcrumbs)
-    ordered = flatten_pages(groups)
+    # ordered sequence (for prev/next) + per-page group chain (for breadcrumbs),
+    # tab by tab so reading order follows the navbar.
+    ordered = []
+    tab_key_of: dict[Path, str] = {}
+    for tab in tabs:
+        for pg, chain in flatten_pages([tab.root]):
+            ordered.append((pg, [(tab.title, tab.title_en)] + chain))
+            tab_key_of[pg.out] = tab.key
+    tab_by_key = {t.key: t for t in tabs}
     seq = [pg for pg, _chain in ordered]
     chain_of = {pg.out: chain for pg, chain in ordered}
     idx_of = {pg.out: i for i, pg in enumerate(seq)}
@@ -492,7 +511,9 @@ def _build_into_out_root() -> int:
                 body = relink_internal(body, p.out.parent)
                 toc = extract_toc(body)
 
-        nav_html = render_nav(groups, p.out, base)
+        tab = tab_by_key[tab_key_of[p.out]]
+        nav_html = render_nav([tab.root], p.out, base)
+        tabbar_html = render_tabbar(tabs, tab.key, base)
 
         # breadcrumb + prev/next + last-updated
         chain = chain_of.get(p.out, [])
@@ -513,6 +534,7 @@ def _build_into_out_root() -> int:
             title=p.title, body_html=body, nav_html=nav_html,
             toc_html=toc, base=base, page_lang="zh", alt_lang_url=alt_url,
             breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
+            tabbar_html=tabbar_html,
         )
         out_path = OUT_ROOT / p.out
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -530,6 +552,7 @@ def _build_into_out_root() -> int:
                 title=p.title, body_html=en_body, nav_html=nav_html,
                 toc_html=en_toc, base=base, page_lang="en", alt_lang_url=en_back,
                 breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
+                tabbar_html=tabbar_html,
             )
             en_path = OUT_ROOT / p.en_out
             en_path.parent.mkdir(parents=True, exist_ok=True)
@@ -544,53 +567,39 @@ def _build_into_out_root() -> int:
         })
 
     searchmod.write_index(search_records, OUT_ROOT)
-    _write_home(groups)
+    _write_home(tabs)
 
     print(f"built {rendered} pages → {OUT_ROOT}")
     return 0
 
 
-def _write_home(groups) -> None:
-    """Landing page: a card grid of the top-level sections only."""
-    root = groups[0]
+def _write_home(tabs) -> None:
+    """Landing page: one card per navbar tab."""
 
     def count_pages(g) -> int:
         return len(g.pages) + sum(count_pages(sg) for sg in g.subgroups)
 
-    def landing(g):
-        # link to the group's README if it has one, else its first page
-        readme = next((p for p in g.pages if p.is_readme), None)
-        target = readme or (g.pages[0] if g.pages else None)
-        if target is None:
-            for sg in g.subgroups:
-                t = landing(sg)
-                if t:
-                    return t
-            return None
-        return str(target.out).replace("\\", "/")
-
-    cards = []
-    for sg in root.subgroups:
-        url = landing(sg)
-        if url:
-            cards.append((sg.title, url, count_pages(sg), sg.i18n_key))
-
-    body = ['<h1 data-i18n="home_title">OpenProgram 设计文档</h1>',
-            '<p class="page-meta"><span data-i18n="home_sub">框架的设计笔记、API 与指南，'
-            '按子系统组织。左侧目录浏览，或按 </span><kbd>⌘K</kbd>'
+    body = ['<h1 data-i18n="home_title">OpenProgram 文档</h1>',
+            '<p class="page-meta"><span data-i18n="home_sub">从安装到编写你自己的 '
+            'Agentic Workflow。顶栏选择主题，或按 </span><kbd>⌘K</kbd>'
             '<span data-i18n="home_sub2"> 搜索。</span></p>',
             '<div class="home-grid">']
-    for title, url, n, ikey in cards:
-        ti18n = f' data-i18n="{ikey}"' if ikey else ""
+    for t in tabs:
+        url = str(t.landing).replace("\\", "/")
+        ten = (f' data-title-en="{_html.escape(t.title_en, quote=True)}"'
+               if t.title_en and t.title_en != t.title else "")
         body.append(
             f'<a class="home-card" href="{DEPLOY_BASE}{url}">'
-            f'<span class="hc-title"{ti18n}>{_html.escape(title)}</span>'
-            f'<span class="hc-count">{n}<span data-i18n="unit"> 篇</span></span></a>'
+            f'<span class="hc-title"{ten}>{_html.escape(t.title)}</span>'
+            f'<span class="hc-count">{count_pages(t.root)}<span data-i18n="unit"> 篇</span></span></a>'
         )
     body.append("</div>")
-    nav_html = render_nav(groups, Path("index.html"), DEPLOY_BASE)
-    full = render_page(title="OpenProgram 设计文档", body_html="\n".join(body),
-                       nav_html=nav_html, toc_html="", base=DEPLOY_BASE)
+    first = tabs[0] if tabs else None
+    nav_html = render_nav([first.root], Path("index.html"), DEPLOY_BASE) if first else ""
+    tabbar_html = render_tabbar(tabs, "", DEPLOY_BASE)
+    full = render_page(title="OpenProgram 文档", body_html="\n".join(body),
+                       nav_html=nav_html, toc_html="", base=DEPLOY_BASE,
+                       tabbar_html=tabbar_html)
     (OUT_ROOT / "index.html").write_text(full, encoding="utf-8")
 
 

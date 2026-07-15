@@ -12,37 +12,34 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Folders that are never part of the docs site.
-EXCLUDE_DIRS = {"_site", "images", "slides"}
+EXCLUDE_DIRS = {"_site", "_site.tmp", "_site.old", "images", "slides"}
 
-# The top-level loose pages in docs/ have no folder of their own, so we group
-# them logically by filename. (rel-path string -> (display title, subgroup).)
-# This keeps the source files in place — they're linked from many other docs —
-# while giving the sidebar clean names and a sensible structure.
-ROOT_PAGE_GROUPS: dict[str, tuple[str, str]] = {
-    "README.md":                  ("项目总览", "快速上手"),
-    "GETTING_STARTED.md":         ("快速上手", "快速上手"),
-    "install.md":                 ("安装", "快速上手"),
-    "features.md":                ("功能详解", "快速上手"),
-    "INTEGRATION_CLAUDE_CODE.md": ("集成 Claude Code", "集成"),
-    "INTEGRATION_OPENCLAW.md":    ("集成 OpenClaw", "集成"),
-    "installing-harnesses.md":    ("安装与编写 Harness", "集成"),
-    "API.md":                     ("API 参考", "参考"),
-    "provider-token-tracking.md": ("Provider Token 追踪", "参考"),
-    "troubleshooting.md":         ("故障排查", "参考"),
+# Top-level tabs. Each top-level directory under docs/ is one tab in the top
+# navbar; the sidebar only shows the current tab's tree. Order here is the
+# navbar order. (dir name -> (中文 label, English label))
+TABS: dict[str, tuple[str, str]] = {
+    "start":        ("开始使用", "Get started"),
+    "install":      ("安装", "Install"),
+    "capabilities": ("Capabilities", "Capabilities"),
+    "interfaces":   ("界面", "Interfaces"),
+    "models":       ("Models", "Models"),
+    "integrations": ("Integrations", "Integrations"),
+    "server":       ("Server & Ops", "Server & Ops"),
+    "reference":    ("Reference", "Reference"),
 }
-# Order the synthetic root subgroups appear in.
-ROOT_SUBGROUP_ORDER = ["快速上手", "集成", "参考"]
+# Loose files directly under docs/ belong to a tab too.
+ROOT_PAGE_TAB = {"README.md": "start"}
+# A top-level dir not listed in TABS falls back to the reference tab, so a
+# stray folder degrades to "filed under Reference" instead of vanishing.
+FALLBACK_TAB = "reference"
 
-# i18n key for each synthetic subgroup (so the sidebar headers can switch lang).
-ROOT_SUBGROUP_I18N = {"快速上手": "grp_start", "集成": "grp_integ", "参考": "grp_ref"}
-
-# Per-root-page i18n key (clean bilingual display names for the loose pages).
+# Display-name overrides for pages whose H1 doesn't make a good sidebar label.
+ROOT_PAGE_GROUPS: dict[str, tuple[str, str]] = {
+    "README.md": ("项目总览", "start"),
+}
+# Per-page i18n key (bilingual sidebar labels for pages the toggle must switch).
 ROOT_PAGE_I18N = {
     "README.md": "p_overview",
-    "GETTING_STARTED.md": "p_start", "install.md": "p_install",
-    "features.md": "p_features", "INTEGRATION_CLAUDE_CODE.md": "p_int_cc",
-    "INTEGRATION_OPENCLAW.md": "p_int_oc", "installing-harnesses.md": "p_harness",
-    "API.md": "p_api", "provider-token-tracking.md": "p_token", "troubleshooting.md": "p_trouble",
 }
 
 
@@ -172,59 +169,89 @@ def _dedupe_md_html(pages: list[Page]) -> list[Page]:
     return result
 
 
-def build_tree(docs_root: Path, pages: list[Page]) -> list[Group]:
-    """Group pages into a nested tree mirroring the directory structure."""
-    # Map relative dir -> Group
-    groups: dict[Path, Group] = {}
+@dataclass
+class Tab:
+    key: str            # top-level dir name ("start", "models", …)
+    title: str
+    title_en: str
+    root: Group         # tree of this tab's pages; root.pages render loose
+    landing: Path       # out path the navbar tab links to
+
+
+def tab_of(p: Page) -> str:
+    parts = p.rel.parts
+    if len(parts) == 1:
+        return ROOT_PAGE_TAB.get(parts[0], FALLBACK_TAB)
+    return parts[0] if parts[0] in TABS else FALLBACK_TAB
+
+
+# Explicit sidebar order for product pages (rel path or rel dir -> rank).
+# Tutorial docs must read top-to-bottom; anything unlisted sorts after these,
+# alphabetically (which is fine for the design-notes archive).
+PAGE_ORDER: dict[str, int] = {
+    "README.md": 0,
+    "start/GETTING_STARTED.md": 1,
+    "start/features.md": 2,
+    "capabilities/agentic-programming": 0,
+    "capabilities/installing-harnesses.md": 10,
+    "integrations/claude-code.md": 0,
+    "integrations/openclaw.md": 1,
+    "reference/API.md": 0,
+    "reference/api": 1,
+    "reference/design": 900,  # design-notes archive always last
+}
+
+
+def _order_key(rel: Path) -> int:
+    return PAGE_ORDER.get(str(rel).replace("\\", "/"), 999)
+
+
+def build_tabs(docs_root: Path, pages: list[Page]) -> list[Tab]:
+    """Split pages by top-level tab, each with its own directory-mirroring tree."""
+    tabs: list[Tab] = []
+    for key, (zh, en) in TABS.items():
+        tab_pages = [p for p in pages if tab_of(p) == key]
+        if not tab_pages:
+            continue
+        root = _tree_for_tab(docs_root, key, tab_pages)
+        tabs.append(Tab(key=key, title=zh, title_en=en, root=root,
+                        landing=_landing(root)))
+    return tabs
+
+
+def _landing(root: Group) -> Path:
+    if root.pages:
+        return root.pages[0].out
+    g = root
+    while g.subgroups and not g.pages:
+        g = g.subgroups[0]
+    return g.pages[0].out if g.pages else Path("index.html")
+
+
+def _tree_for_tab(docs_root: Path, tab_key: str, pages: list[Page]) -> Group:
+    """Directory tree rooted at the tab dir: pages directly in the tab dir (and
+    loose docs-root pages mapped to this tab) render loose; subdirs become
+    collapsible groups."""
+    tab_dir = Path(tab_key)
+    root = Group(title="", rel_dir=tab_dir)
+    groups: dict[Path, Group] = {tab_dir: root, Path("."): root}
 
     def group_for(rel_dir: Path) -> Group:
         if rel_dir in groups:
             return groups[rel_dir]
-        if rel_dir == Path("."):
-            g = Group(title="", rel_dir=Path("."))
-        else:
-            readme = docs_root / rel_dir / "README.md"
-            readme_en = docs_root / rel_dir / "README.en.md"
-            title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
-            title_en = extract_title(readme_en) if readme_en.exists() else ""
-            g = Group(title=title, rel_dir=rel_dir, title_en=title_en)
+        readme = docs_root / rel_dir / "README.md"
+        readme_en = docs_root / rel_dir / "README.en.md"
+        title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
+        title_en = extract_title(readme_en) if readme_en.exists() else ""
+        g = Group(title=title, rel_dir=rel_dir, title_en=title_en)
         groups[rel_dir] = g
-        # attach to parent
-        if rel_dir != Path("."):
-            parent = group_for(rel_dir.parent if str(rel_dir.parent) != "." else Path("."))
-            parent.subgroups.append(g)
+        group_for(rel_dir.parent).subgroups.append(g)
         return g
 
-    # Synthetic subgroups for the loose root pages (快速上手 / 集成 / 参考).
-    root_subgroups: dict[str, Group] = {}
-
-    def root_subgroup(name: str) -> Group:
-        if name not in root_subgroups:
-            root_subgroups[name] = Group(
-                title=name, rel_dir=Path(f"__{name}__"),
-                i18n_key=ROOT_SUBGROUP_I18N.get(name, ""),
-            )
-        return root_subgroups[name]
-
     for p in pages:
-        parent_str = str(p.rel.parent)
-        if parent_str == ".":
-            rel_str = str(p.rel).replace("\\", "/")
-            override = ROOT_PAGE_GROUPS.get(rel_str)
-            if override:
-                root_subgroup(override[1]).pages.append(p)
-            else:
-                group_for(Path(".")).pages.append(p)  # uncategorized → root
-        else:
-            group_for(p.rel.parent).pages.append(p)
+        group_for(p.rel.parent).pages.append(p)
 
-    # sort pages within each real group
     for g in groups.values():
-        g.pages.sort(key=lambda p: (not p.is_readme, p.title.lower()))
-        g.subgroups.sort(key=lambda sg: sg.title.lower())
-
-    root = group_for(Path("."))
-    # Prepend the synthetic root subgroups in a fixed order.
-    ordered = [root_subgroups[n] for n in ROOT_SUBGROUP_ORDER if n in root_subgroups]
-    root.subgroups = ordered + root.subgroups
-    return [root]
+        g.pages.sort(key=lambda p: (_order_key(p.rel), not p.is_readme, p.title.lower()))
+        g.subgroups.sort(key=lambda sg: (_order_key(sg.rel_dir), sg.title.lower()))
+    return root

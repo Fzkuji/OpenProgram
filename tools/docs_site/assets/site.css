@@ -88,8 +88,26 @@ header.topbar {
 .topbar button.icon:hover { background: var(--bg-side); color: var(--tx); }
 /* hamburger shows on all widths: wide = collapse the sidebar, narrow = drawer */
 
+/* ── tabbar (top-level sections, below the topbar) ── */
+nav.tabbar {
+  position: fixed; top: 56px; left: 0; right: 0; height: 40px; z-index: 99;
+  display: flex; align-items: stretch; gap: 2px; padding: 0 16px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--bd);
+  overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+}
+nav.tabbar::-webkit-scrollbar { display: none; }
+.tablink {
+  color: var(--tx-soft); font-size: 13.5px; font-weight: 500;
+  padding: 0 12px; display: inline-flex; align-items: center;
+  border-bottom: 2px solid transparent;
+}
+.tablink:hover { color: var(--tx); }
+.tablink.active { color: var(--acc); border-bottom-color: var(--acc); font-weight: 600; }
+
 /* ── layout ── */
-.layout { display: flex; padding-top: 56px; }
+.layout { display: flex; padding-top: 96px; }
 
 /* wide-screen sidebar collapse (toggled by the hamburger) */
 html[data-nav-collapsed="1"] nav.sidebar { transform: translateX(-100%); }
@@ -97,7 +115,7 @@ html[data-nav-collapsed="1"] main.content { margin-left: 0; }
 
 /* left nav */
 nav.sidebar {
-  position: fixed; top: 56px; bottom: 0; left: 0; width: var(--nav-w);
+  position: fixed; top: 96px; bottom: 0; left: 0; width: var(--nav-w);
   overflow-y: auto; padding: 20px 14px 60px; border-right: 1px solid var(--bd);
   background: var(--bg-side); transition: transform .2s ease;
 }
@@ -146,7 +164,7 @@ article { width: 100%; max-width: var(--maxw); }
 
 /* right toc */
 aside.toc {
-  position: fixed; top: 56px; right: 0; width: var(--toc-w); bottom: 0;
+  position: fixed; top: 96px; right: 0; width: var(--toc-w); bottom: 0;
   overflow-y: auto; padding: 38px 20px 60px; font-size: 13px;
 }
 aside.toc .toc-title {
@@ -203,7 +221,7 @@ article h2 {
 }
 article h3 { font-size: 17.5px; margin: 30px 0 10px; }
 article h4 { font-size: 15.5px; margin: 22px 0 8px; color: var(--tx-soft); }
-article h1, article h2, article h3, article h4 { font-weight: 650; scroll-margin-top: 76px; }
+article h1, article h2, article h3, article h4 { font-weight: 650; scroll-margin-top: 116px; }
 article .header-anchor {
   opacity: 0; margin-left: 8px; color: var(--tx-faint); font-weight: 400; text-decoration: none;
 }
