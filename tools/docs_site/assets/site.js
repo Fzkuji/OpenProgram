@@ -188,15 +188,23 @@
   }
 
   // ── SPA navigation ─────────────────────────────────────────────────────
-  const pageCache = new Map(); // url -> Document
+  const pageCache = new Map(); // url -> {doc, t}
   const CACHE_MAX = 80;
+  const CACHE_TTL = 5 * 60 * 1000; // long-lived tabs pick up redeploys
 
   function cachePut(url, doc) {
     if (pageCache.size >= CACHE_MAX) {
       const first = pageCache.keys().next().value;
       pageCache.delete(first);
     }
-    pageCache.set(url, doc);
+    pageCache.set(url, { doc: doc, t: Date.now() });
+  }
+
+  function cacheGet(url) {
+    const e = pageCache.get(url);
+    if (!e) return null;
+    if (Date.now() - e.t > CACHE_TTL) { pageCache.delete(url); return null; }
+    return e.doc;
   }
 
   function normalize(href) {
@@ -215,14 +223,14 @@
   }
 
   function fetchPage(pathname) {
-    const key = pathname;
-    if (pageCache.has(key)) return Promise.resolve(pageCache.get(key));
+    const cached = cacheGet(pathname);
+    if (cached) return Promise.resolve(cached);
     return fetch(pathname).then((r) => {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.text();
     }).then((html) => {
       const doc = new DOMParser().parseFromString(html, "text/html");
-      cachePut(key, doc);
+      cachePut(pathname, doc);
       return doc;
     });
   }
@@ -306,6 +314,11 @@
     const seq = ++navSeq;
     fetchPage(clean).then((doc) => {
       if (seq !== navSeq) return; // a newer navigation superseded this one
+      // Site was rebuilt underneath this tab → full load to pick up the new
+      // assets and sidebar instead of mixing two builds.
+      const nb = doc.documentElement.getAttribute("data-build");
+      const cb = ROOT.getAttribute("data-build");
+      if (nb && cb && nb !== cb) { location.href = pathname; return; }
       const doSwap = () => { swapFrom(doc, pathname); afterSwap(pathname); };
       if (push) history.pushState({ spa: true }, "", pathname);
       if (document.startViewTransition) document.startViewTransition(doSwap);
@@ -343,7 +356,7 @@
     const a = e.target.closest ? e.target.closest("a[href]") : null;
     if (!a || !isInternalPage(a.href)) return;
     const clean = normalize(a.href).split("#")[0];
-    if (pageCache.has(clean) || clean === location.pathname) return;
+    if (cacheGet(clean) || clean === location.pathname) return;
     clearTimeout(prefetchTimer);
     prefetchTimer = setTimeout(() => { fetchPage(clean).catch(() => {}); }, 65);
   }

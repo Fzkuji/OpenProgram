@@ -23,6 +23,11 @@ def _asset_version() -> str:
 
 ASSET_VER = _asset_version()
 
+# Per-build stamp: lets an open SPA tab detect that the site was rebuilt
+# underneath it (fetched page carries a different stamp → full reload).
+import time as _time
+BUILD_STAMP = str(int(_time.time()))
+
 # Inline head script: set theme before first paint to avoid a flash.
 _THEME_BOOT = """
 (function(){try{var t=localStorage.getItem('op-docs-theme');
@@ -69,7 +74,7 @@ def render_page(
         layout_cls = " no-side"
         sidebar_html = ""
     return f"""<!DOCTYPE html>
-<html lang="{page_lang}" data-base="{base}" data-page-lang="{page_lang}"{alt_attr}>
+<html lang="{page_lang}" data-base="{base}" data-page-lang="{page_lang}" data-build="{BUILD_STAMP}"{alt_attr}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
