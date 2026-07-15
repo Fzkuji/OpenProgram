@@ -574,31 +574,11 @@ def _build_into_out_root() -> int:
 
 
 def _write_home(tabs) -> None:
-    """Landing page: one card per navbar tab."""
-
-    def count_pages(g) -> int:
-        return len(g.pages) + sum(count_pages(sg) for sg in g.subgroups)
-
-    body = ['<h1 data-i18n="home_title">OpenProgram 文档</h1>',
-            '<p class="page-meta"><span data-i18n="home_sub">从安装到编写你自己的 '
-            'Agentic Workflow。顶栏选择主题，或按 </span><kbd>⌘K</kbd>'
-            '<span data-i18n="home_sub2"> 搜索。</span></p>',
-            '<div class="home-grid">']
-    for t in tabs:
-        url = str(t.landing).replace("\\", "/")
-        ten = (f' data-title-en="{_html.escape(t.title_en, quote=True)}"'
-               if t.title_en and t.title_en != t.title else "")
-        body.append(
-            f'<a class="home-card" href="{DEPLOY_BASE}{url}">'
-            f'<span class="hc-title"{ten}>{_html.escape(t.title)}</span>'
-            f'<span class="hc-count">{count_pages(t.root)}<span data-i18n="unit"> 篇</span></span></a>'
-        )
-    body.append("</div>")
-    tabbar_html = render_tabbar(tabs, "", DEPLOY_BASE)
-    full = render_page(title="OpenProgram 文档", body_html="\n".join(body),
-                       nav_html="", toc_html="", base=DEPLOY_BASE,
-                       tabbar_html=tabbar_html)
-    (OUT_ROOT / "index.html").write_text(full, encoding="utf-8")
+    """/docs/ IS the 项目总览 page: reuse the rendered README.html verbatim
+    (its links are all DEPLOY_BASE-absolute, so it works at either URL)."""
+    readme = OUT_ROOT / "README.html"
+    if readme.exists():
+        shutil.copy2(readme, OUT_ROOT / "index.html")
 
 
 if __name__ == "__main__":
