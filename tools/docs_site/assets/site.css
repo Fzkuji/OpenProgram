@@ -367,3 +367,18 @@ article:has(.viz-frame) { max-width: none; }
 
 /* home page: no sidebar, content centered full-width */
 .layout.no-side main.content { margin-left: 0; }
+
+/* ── flat sidebar sections (OpenClaw-style, non-collapsible) ── */
+.nav-sec { margin: 20px 0 4px; }
+.nav-sec:first-of-type { margin-top: 8px; }
+.nav-sec-title {
+  font-size: 11.5px; font-weight: 650; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--tx-faint);
+  padding: 0 9px; margin-bottom: 4px;
+}
+a.nav-back {
+  display: block; font-size: 12.5px; color: var(--tx-soft);
+  padding: 4px 9px; margin-bottom: 4px;
+}
+a.nav-back::before { content: "← "; }
+a.nav-back:hover { color: var(--acc); text-decoration: none; }

@@ -119,48 +119,21 @@
   let tocObserver = null;
 
   function initSidebar() {
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem("op-docs-nav") || "{}"); } catch (e) {}
-    document.querySelectorAll("nav.sidebar details.group").forEach((d) => {
-      const key = d.getAttribute("data-key");
-      if (!d.hasAttribute("open") && saved[key] === true) d.setAttribute("open", "");
-      if (d.dataset.bound) return;
-      d.dataset.bound = "1";
-      d.addEventListener("toggle", () => {
-        try {
-          const s = JSON.parse(localStorage.getItem("op-docs-nav") || "{}");
-          s[key] = d.open;
-          localStorage.setItem("op-docs-nav", JSON.stringify(s));
-        } catch (e) {}
-      });
-    });
     const active = document.querySelector("nav.sidebar a.navlink.active");
     if (active) active.scrollIntoView({ block: "center" });
 
     const navFilter = document.querySelector(".nav-filter");
     if (navFilter && !navFilter.dataset.bound) {
       navFilter.dataset.bound = "1";
-      const savedOpen = new WeakMap();
       navFilter.addEventListener("input", () => {
         const q = navFilter.value.trim().toLowerCase();
-        const allLinks = Array.from(document.querySelectorAll("nav.sidebar a.navlink"));
-        const allGroups = Array.from(document.querySelectorAll("nav.sidebar details.group"));
-        if (!q) {
-          allLinks.forEach((a) => (a.style.display = ""));
-          allGroups.forEach((g) => {
-            g.style.display = "";
-            if (savedOpen.has(g)) g.open = savedOpen.get(g);
-          });
-          return;
-        }
-        allGroups.forEach((g) => { if (!savedOpen.has(g)) savedOpen.set(g, g.open); });
-        allLinks.forEach((a) => {
-          a.style.display = a.textContent.toLowerCase().includes(q) ? "" : "none";
+        document.querySelectorAll("nav.sidebar a.navlink").forEach((a) => {
+          a.style.display = !q || a.textContent.toLowerCase().includes(q) ? "" : "none";
         });
-        allGroups.forEach((g) => {
-          const hasMatch = g.querySelector('a.navlink:not([style*="display: none"])');
-          g.style.display = hasMatch ? "" : "none";
-          if (hasMatch) g.open = true;
+        // a section is visible iff it still has a visible link
+        document.querySelectorAll("nav.sidebar .nav-sec").forEach((sec) => {
+          const hasMatch = !q || sec.querySelector('a.navlink:not([style*="display: none"])');
+          sec.style.display = hasMatch ? "" : "none";
         });
       });
     }
@@ -293,16 +266,11 @@
       };
       const targetPath = pathname.split("#")[0];
       if (activeHref(targetPath)) {
-        // same tree: just move the .active marker and open its branch
+        // same section list: just move the .active marker
         document.querySelectorAll("nav.sidebar a.navlink.active").forEach((a) => a.classList.remove("active"));
         const a = document.querySelector('nav.sidebar a.navlink[href="' + targetPath + '"]');
         if (a) {
           a.classList.add("active");
-          let el = a.parentElement;
-          while (el && el !== curSidebar) {
-            if (el.tagName === "DETAILS") el.setAttribute("open", "");
-            el = el.parentElement;
-          }
           a.scrollIntoView({ block: "nearest" });
         }
       } else {

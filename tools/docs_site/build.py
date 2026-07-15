@@ -274,22 +274,13 @@ def _scope_css(css: str, prefix: str) -> str:
 
 # ── ordered flatten + breadcrumbs + git mtime ───────────────────────────────
 
-def flatten_pages(groups):
-    """Pages in sidebar display order, each with its group chain (for prev/next
-    and breadcrumbs). Returns list of (page, [group_titles])."""
+def flatten_pages(sections):
+    """Pages in sidebar display order, each with its section chain (for
+    prev/next and breadcrumbs). Returns list of (page, [(en, zh)])."""
     out = []
-
-    def walk(g, chain):
-        # each chain entry is (en_title, zh_title) so breadcrumbs can be bilingual
-        new_chain = chain if not g.title else chain + [(g.title, g.title_zh or g.title)]
-        for c in navmod.ordered_children(g):
-            if isinstance(c, navmod.Page):
-                out.append((c, new_chain))
-            else:
-                walk(c, new_chain)
-
-    for g in groups:
-        walk(g, [])
+    for sec in sections:
+        for p in sec.pages:
+            out.append((p, [(sec.title, sec.title_zh or sec.title)]))
     return out
 
 
@@ -361,16 +352,12 @@ def render_tabbar(tabs, active_key: str, base: str) -> str:
 
 
 
-def render_nav(groups, current_out: Path, base: str) -> str:
-    def contains_current(g) -> bool:
-        if any(p.out == current_out for p in g.pages):
-            return True
-        return any(contains_current(sg) for sg in g.subgroups)
-
+def render_nav(sections, current_out: Path, base: str) -> str:
+    """Flat OpenClaw-style sidebar: every page sits under a plain section
+    header; nothing collapses."""
     def navlink(p) -> str:
         href = base + str(p.out).replace("\\", "/")
         active = " active" if p.out == current_out else ""
-        i18n = f' data-i18n="{p.i18n_key}"' if p.i18n_key else ""
         # If a Chinese version exists, carry its label + URL so the language
         # toggle can switch this sidebar entry to Chinese.
         extra = ""
@@ -378,36 +365,17 @@ def render_nav(groups, current_out: Path, base: str) -> str:
             zh_href = base + str(p.zh_out).replace("\\", "/")
             extra = (f' data-title-zh="{_html.escape(p.title_zh or p.title, quote=True)}"'
                      f' data-href-en="{href}" data-href-zh="{zh_href}"')
-        return f'<a class="navlink{active}" href="{href}"{i18n}{extra}>{_html.escape(p.title)}</a>'
+        return f'<a class="navlink{active}" href="{href}"{extra}>{_html.escape(p.title)}</a>'
 
-    def render_pages_and_subs(g) -> str:
-        return "\n".join(
-            navlink(c) if isinstance(c, navmod.Page) else render_group(c)
-            for c in navmod.ordered_children(g)
-        )
-
-    def render_group(g, top=False) -> str:
-        # Root group: render its children directly (loose pages and
-        # collapsible sections interleaved in PAGE_ORDER).
-        if top:
-            return render_pages_and_subs(g)
-        key = str(g.rel_dir).replace("\\", "/")
-        # synthetic root subgroups (快速上手/集成/参考) default-open on the home page
-        is_synthetic = key.startswith("__")
-        is_open = contains_current(g) or (is_synthetic and current_out == Path("index.html"))
-        open_attr = " open" if is_open else ""
-        i18n = f' data-i18n="{g.i18n_key}"' if g.i18n_key else ""
-        # real directory groups carry their English label so the toggle can
-        # switch the section header (synthetic groups use i18n_key instead).
-        ten = f' data-title-zh="{_html.escape(g.title_zh, quote=True)}"' if (g.title_zh and not g.i18n_key) else ""
-        return (
-            f'<details class="group" data-key="{_html.escape(key)}"{open_attr}>'
-            f'<summary class="group-title"{i18n}{ten}>{_html.escape(g.title)}</summary>'
-            f'<div class="group-body">{render_pages_and_subs(g)}</div>'
-            f"</details>"
-        )
-
-    return "\n".join(render_group(g, top=True) for g in groups)
+    out = []
+    for sec in sections:
+        zh = (f' data-title-zh="{_html.escape(sec.title_zh, quote=True)}"'
+              if sec.title_zh and sec.title_zh != sec.title else "")
+        out.append('<div class="nav-sec">')
+        out.append(f'<div class="nav-sec-title"{zh}>{_html.escape(sec.title)}</div>')
+        out.extend(navlink(p) for p in sec.pages)
+        out.append("</div>")
+    return "\n".join(out)
 
 
 # ── main build ──────────────────────────────────────────────────────────────
@@ -471,14 +439,20 @@ def _build_into_out_root() -> int:
     search_records: list[dict] = []
     rendered = 0
 
-    # ordered sequence (for prev/next) + per-page group chain (for breadcrumbs),
-    # tab by tab so reading order follows the navbar.
+    # ordered sequence (for prev/next) + per-page section chain (breadcrumbs),
+    # tab by tab so reading order follows the navbar; archive sections follow
+    # the product sections of their tab.
     ordered = []
     tab_key_of: dict[Path, str] = {}
+    in_archive: set[Path] = set()
     for tab in tabs:
-        for pg, chain in flatten_pages([tab.root]):
+        for pg, chain in flatten_pages(tab.sections):
             ordered.append((pg, [(tab.title, tab.title_zh)] + chain))
             tab_key_of[pg.out] = tab.key
+        for pg, chain in flatten_pages(tab.archive_sections):
+            ordered.append((pg, [(tab.title, tab.title_zh)] + chain))
+            tab_key_of[pg.out] = tab.key
+            in_archive.add(pg.out)
     tab_by_key = {t.key: t for t in tabs}
     seq = [pg for pg, _chain in ordered]
     chain_of = {pg.out: chain for pg, chain in ordered}
@@ -513,7 +487,15 @@ def _build_into_out_root() -> int:
                 toc = extract_toc(body)
 
         tab = tab_by_key[tab_key_of[p.out]]
-        nav_html = render_nav([tab.root], p.out, base)
+        # Inside the design-notes archive the sidebar shows the archive's own
+        # sections (with a way back); everywhere else, the tab's product pages.
+        if p.out in in_archive:
+            nav_html = render_nav(tab.archive_sections, p.out, base)
+            nav_html = (f'<a class="nav-back" href="{base}reference/README.html">'
+                        f'<span data-title-zh="返回参考">Back to Reference</span></a>\n'
+                        + nav_html)
+        else:
+            nav_html = render_nav(tab.sections, p.out, base)
         tabbar_html = render_tabbar(tabs, tab.key, base)
 
         # breadcrumb + prev/next + last-updated

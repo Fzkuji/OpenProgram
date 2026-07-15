@@ -61,16 +61,6 @@ class Page:
     title_zh: str = ""  # Chinese sidebar label (from the .zh.md H1), if any
 
 
-@dataclass
-class Group:
-    title: str
-    rel_dir: Path                       # relative to docs/ ("" for root)
-    pages: list[Page] = field(default_factory=list)
-    subgroups: list["Group"] = field(default_factory=list)
-    i18n_key: str = ""  # if set, group header switches with the UI language
-    title_zh: str = ""  # Chinese group label (from README.zh.md H1), if any
-
-
 _H1_RE = re.compile(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", re.MULTILINE)
 _HTML_TITLE_RE = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 
@@ -165,7 +155,7 @@ def _dedupe_md_html(pages: list[Page]) -> list[Page]:
             for p in group:
                 if p.kind == "html":
                     p.out = p.rel.parent / f"{p.rel.stem}.viz.html"
-                    p.title = f"{p.title}（可视化）"
+                    p.title = f"{p.title} (viz)"
                 result.append(p)
         else:
             result.extend(group)
@@ -173,11 +163,21 @@ def _dedupe_md_html(pages: list[Page]) -> list[Page]:
 
 
 @dataclass
+class Section:
+    """One sidebar section: a plain (non-collapsible) header + a flat page list.
+    Every page belongs to exactly one section — OpenClaw-style."""
+    title: str
+    title_zh: str
+    pages: list  # list[Page]
+
+
+@dataclass
 class Tab:
     key: str            # top-level dir name ("start", "models", …)
     title: str          # English (default) label
     title_zh: str
-    root: Group         # tree of this tab's pages; root.pages render loose
+    sections: list      # list[Section] — the tab's product sidebar
+    archive_sections: list  # list[Section] — reference tab only: design notes
     landing: Path       # out path the navbar tab links to
 
 
@@ -186,6 +186,76 @@ def tab_of(p: Page) -> str:
     if len(parts) == 1:
         return ROOT_PAGE_TAB.get(parts[0], FALLBACK_TAB)
     return parts[0] if parts[0] in TABS else FALLBACK_TAB
+
+
+# Editorial sidebar layout: per tab, ordered sections with explicit page
+# membership. (section EN title, section 中文 title, [rel paths in order]).
+# Pages not listed here fall into an automatic trailing section named after
+# their directory, so a new file never vanishes from the sidebar.
+ARCHIVE_PREFIX = "reference/design/"
+TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
+    "start": [
+        ("Overview", "概览", ["README.md", "start/features.md"]),
+        ("First steps", "第一步", [
+            "start/GETTING_STARTED.md", "start/daily-use.md", "start/faq.md"]),
+    ],
+    "install": [
+        ("Install", "安装", ["install/install.md"]),
+        ("Maintenance", "维护", ["install/upgrade.md", "install/profiles.md"]),
+    ],
+    "capabilities": [
+        ("Overview", "概览", ["capabilities/README.md"]),
+        ("Agentic Programming", "Agentic Programming", [
+            "capabilities/agentic-programming/README.md",
+            "capabilities/agentic-programming/philosophy.md"]),
+        ("Writing functions", "编写函数", [
+            "capabilities/agentic-programming/writing-functions/pure-python.md",
+            "capabilities/agentic-programming/writing-functions/agentic-function.md",
+            "capabilities/agentic-programming/writing-functions/function-metadata.md"]),
+        ("Choosing the next step", "选择下一步", [
+            "capabilities/agentic-programming/choosing-the-next-step/tool-calling.md",
+            "capabilities/agentic-programming/choosing-the-next-step/fixed-order-calls.md",
+            "capabilities/agentic-programming/choosing-the-next-step/next-step-decision.md"]),
+        ("Agentic Workflows", "Agentic Workflows", [
+            "capabilities/workflows/README.md",
+            "capabilities/workflows/gui-agent.md",
+            "capabilities/workflows/research-agent.md",
+            "capabilities/workflows/wiki-agent.md"]),
+        ("Extending", "扩展", [
+            "capabilities/installing-harnesses.md", "capabilities/skills.md",
+            "capabilities/plugins.md", "capabilities/mcp.md",
+            "capabilities/tools.md"]),
+    ],
+    "interfaces": [
+        ("Overview", "概览", ["interfaces/README.md"]),
+        ("Surfaces", "界面", [
+            "interfaces/web.md", "interfaces/tui.md", "interfaces/cli.md"]),
+    ],
+    "models": [
+        ("Overview", "概览", ["models/README.md", "models/providers.md"]),
+        ("Configuration", "配置", [
+            "models/auth.md", "models/fast-tier.md",
+            "models/thinking-effort.md", "models/token-tracking.md"]),
+    ],
+    "integrations": [
+        ("Integrations", "集成", [
+            "integrations/claude-code.md", "integrations/openclaw.md"]),
+    ],
+    "server": [
+        ("Overview", "概览", ["server/README.md"]),
+        ("Operations", "运维", [
+            "server/configuration.md", "server/troubleshooting.md"]),
+    ],
+    "reference": [
+        ("Overview", "概览", ["reference/README.md"]),
+        ("API", "API", [
+            "reference/API.md", "reference/api/runtime.md",
+            "reference/api/providers.md", "reference/api/agentic-function.md"]),
+        ("CLI and configuration", "CLI 与配置", [
+            "reference/cli.md", "reference/config.md"]),
+        ("Notes", "笔记", ["reference/claude-code-compaction.md"]),
+    ],
+}
 
 
 # Explicit sidebar order for product pages (rel path or rel dir -> rank).
@@ -243,65 +313,100 @@ def _order_key(rel: Path) -> int:
     return PAGE_ORDER.get(str(rel).replace("\\", "/"), 999)
 
 
-def ordered_children(g: "Group") -> list:
-    """Pages and subgroups of a group, merged into sidebar display order:
-    by PAGE_ORDER rank, loose pages before groups at equal rank."""
-    items = [(_order_key(p.rel), 0, str(p.rel), p) for p in g.pages]
-    items += [(_order_key(sg.rel_dir), 1, str(sg.rel_dir), sg) for sg in g.subgroups]
-    items.sort(key=lambda t: t[:3])
-    return [x for _, _, _, x in items]
-
-
 def build_tabs(docs_root: Path, pages: list[Page]) -> list[Tab]:
-    """Split pages by top-level tab, each with its own directory-mirroring tree."""
+    """Split pages by tab and lay each tab out as flat, always-visible
+    sections (OpenClaw-style: header + page list, nothing collapsible)."""
     tabs: list[Tab] = []
     for key, (en, zh) in TABS.items():
         tab_pages = [p for p in pages if tab_of(p) == key]
         if not tab_pages:
             continue
-        root = _tree_for_tab(docs_root, key, tab_pages)
-        tabs.append(Tab(key=key, title=en, title_zh=zh, root=root,
-                        landing=_landing(root)))
+        rel_str = lambda p: str(p.rel).replace("\\", "/")
+        by_rel = {rel_str(p): p for p in tab_pages}
+        archive = [p for p in tab_pages if rel_str(p).startswith(ARCHIVE_PREFIX)]
+        placed: set[str] = set(rel_str(p) for p in archive)
+
+        sections: list[Section] = []
+        for sec_en, sec_zh, paths in TAB_SECTIONS.get(key, []):
+            sec_pages = [by_rel[r] for r in paths if r in by_rel]
+            placed.update(r for r in paths if r in by_rel)
+            if sec_pages:
+                sections.append(Section(title=sec_en, title_zh=sec_zh, pages=sec_pages))
+
+        # Anything unlisted lands in an automatic section named after its
+        # directory, so new files never vanish from the sidebar.
+        leftovers = [p for p in tab_pages if rel_str(p) not in placed]
+        sections.extend(_auto_sections(docs_root, leftovers, base_dir=Path(key)))
+
+        archive_sections = _auto_sections(
+            docs_root, archive, base_dir=Path(ARCHIVE_PREFIX.rstrip("/")))
+        if archive_sections:
+            # entry point from the product sidebar into the archive
+            first = archive_sections[0].pages[0]
+            sections.append(Section(
+                title="Design notes", title_zh="设计文档",
+                pages=[_archive_entry(first, docs_root)]))
+
+        landing = sections[0].pages[0].out if sections and sections[0].pages else Path("index.html")
+        tabs.append(Tab(key=key, title=en, title_zh=zh, sections=sections,
+                        archive_sections=archive_sections, landing=landing))
     return tabs
 
 
-def _landing(root: Group) -> Path:
-    if root.pages:
-        return root.pages[0].out
-    g = root
-    while g.subgroups and not g.pages:
-        g = g.subgroups[0]
-    return g.pages[0].out if g.pages else Path("index.html")
+def _archive_entry(first_page: Page, docs_root: Path) -> Page:
+    """The single 'Design notes' link in the Reference sidebar: points at the
+    archive's README (or its first page)."""
+    readme_rel = Path(ARCHIVE_PREFIX) / "README.md"
+    src = docs_root / readme_rel
+    if src.exists():
+        zh = docs_root / (str(readme_rel)[:-3] + ".zh.md")
+        return Page(
+            src=src, rel=readme_rel, out=readme_rel.with_suffix(".html"),
+            title="Design notes archive", is_readme=True, kind="md",
+            title_zh="设计文档归档",
+            zh_src=zh if zh.exists() else None,
+            zh_out=readme_rel.with_name("README.zh.html") if zh.exists() else None,
+        )
+    return first_page
 
 
-def _tree_for_tab(docs_root: Path, tab_key: str, pages: list[Page]) -> Group:
-    """Directory tree rooted at the tab dir: pages directly in the tab dir (and
-    loose docs-root pages mapped to this tab) render loose; subdirs become
-    collapsible groups."""
-    tab_dir = Path(tab_key)
-    root = Group(title="", rel_dir=tab_dir)
-    groups: dict[Path, Group] = {tab_dir: root, Path("."): root}
+def _dir_title(docs_root: Path, rel_dir: Path) -> tuple[str, str]:
+    override = DIR_TITLES.get(str(rel_dir).replace("\\", "/"))
+    if override:
+        return override
+    readme = docs_root / rel_dir / "README.md"
+    readme_zh = docs_root / rel_dir / "README.zh.md"
+    title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
+    title_zh = extract_title(readme_zh) if readme_zh.exists() else ""
+    return title, title_zh
 
-    def group_for(rel_dir: Path) -> Group:
-        if rel_dir in groups:
-            return groups[rel_dir]
-        readme = docs_root / rel_dir / "README.md"
-        readme_zh = docs_root / rel_dir / "README.zh.md"
-        override = DIR_TITLES.get(str(rel_dir).replace("\\", "/"))
-        if override:
-            title, title_zh = override
-        else:
-            title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
-            title_zh = extract_title(readme_zh) if readme_zh.exists() else ""
-        g = Group(title=title, rel_dir=rel_dir, title_zh=title_zh)
-        groups[rel_dir] = g
-        group_for(rel_dir.parent).subgroups.append(g)
-        return g
 
+def _auto_sections(docs_root: Path, pages: list[Page], base_dir: Path) -> list[Section]:
+    """Group pages into one flat section per directory, ordered by path.
+    Nested dirs become their own sections titled 'Parent · Child'."""
+    by_dir: dict[Path, list[Page]] = {}
     for p in pages:
-        group_for(p.rel.parent).pages.append(p)
+        by_dir.setdefault(p.rel.parent, []).append(p)
 
-    for g in groups.values():
-        g.pages.sort(key=lambda p: (_order_key(p.rel), not p.is_readme, p.title.lower()))
-        g.subgroups.sort(key=lambda sg: (_order_key(sg.rel_dir), sg.title.lower()))
-    return root
+    sections: list[Section] = []
+    for rel_dir in sorted(by_dir, key=lambda d: str(d)):
+        sec_pages = sorted(
+            by_dir[rel_dir],
+            key=lambda p: (_order_key(p.rel), not p.is_readme, p.title.lower()))
+        # section title: the dir chain below base_dir, joined for nested dirs
+        try:
+            chain = rel_dir.relative_to(base_dir).parts
+        except ValueError:
+            chain = rel_dir.parts
+        if not chain:
+            title, title_zh = _dir_title(docs_root, rel_dir)
+        else:
+            parts_en, parts_zh = [], []
+            for i in range(len(chain)):
+                en, zh = _dir_title(docs_root, base_dir.joinpath(*chain[:i + 1]))
+                parts_en.append(en)
+                parts_zh.append(zh or en)
+            title = " · ".join(parts_en)
+            title_zh = " · ".join(parts_zh)
+        sections.append(Section(title=title, title_zh=title_zh, pages=sec_pages))
+    return sections
