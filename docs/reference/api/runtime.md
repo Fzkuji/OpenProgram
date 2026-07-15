@@ -2,7 +2,7 @@
 
 > Source: [`openprogram/agentic_programming/runtime.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agentic_programming/runtime.py)
 
-LLM 运行时。封装 LLM provider,自动从 session DAG 算上下文、调用 LLM、把回复写回 DAG。
+The LLM runtime. Wraps an LLM provider, automatically computes context from the session DAG, calls the LLM, and writes the reply back to the DAG.
 
 ---
 
@@ -12,23 +12,23 @@ LLM 运行时。封装 LLM provider,自动从 session DAG 算上下文、调用 
 class Runtime(call=None, model="default")
 ```
 
-### 构造参数
+### Constructor parameters
 
-| 参数 | 类型 | 默认值 | 说明 |
+| Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `call` | `Callable \| None` | `None` | LLM provider 函数。签名：`fn(content: list[dict], model: str, response_format: dict) -> str`。如果不传，需要子类化并重写 `_call()` |
-| `model` | `str` | `"default"` | 默认模型名称，每次调用可覆盖 |
-| `max_retries` | `int \| None` | `None` | exec() 最大尝试次数（包含首次调用，且必须 >= 1）。`None` = 读环境变量 `OPENPROGRAM_MAX_RETRIES`，没设则为 `6` |
+| `call` | `Callable \| None` | `None` | The LLM provider function. Signature: `fn(content: list[dict], model: str, response_format: dict) -> str`. If not provided, you must subclass and override `_call()` |
+| `model` | `str` | `"default"` | The default model name; can be overridden on each call |
+| `max_retries` | `int \| None` | `None` | Maximum number of exec() attempts (including the first call, and must be >= 1). `None` = read the environment variable `OPENPROGRAM_MAX_RETRIES`, defaulting to `6` if unset |
 
-### 属性
+### Attributes
 
-| 属性 | 类型 | 说明 |
+| Attribute | Type | Description |
 |------|------|------|
-| `model` | `str` | 默认模型名称 |
+| `model` | `str` | The default model name |
 
 ---
 
-## 方法
+## Methods
 
 ### `exec()`
 
@@ -39,36 +39,36 @@ Runtime.exec(content, context=None, response_format=None, model=None,
              max_iterations=20, choices=None, timeout_s=None, on_retry=None) -> Any
 ```
 
-调用 LLM,上下文从 session DAG 自动算出。
+Calls the LLM, with context computed automatically from the session DAG.
 
-**在 `@agentic_function` 内部调用时:**
-1. 从当前函数的 DAG 节点出发,`render_context` 按 `expose` / `render_range` 算出本次要读哪些历史节点
-2. `render_dag_messages` 把这些节点渲染成 messages
-3. 调用 `_call()` 发送请求
-4. 把回复写成一个新的 `llm` 节点 append 到 DAG
+**When called inside an `@agentic_function`:**
+1. Starting from the current function's DAG node, `render_context` uses `expose` / `render_range` to determine which historical nodes to read this time
+2. `render_dag_messages` renders those nodes into messages
+3. `_call()` is invoked to send the request
+4. The reply is written as a new `llm` node and appended to the DAG
 
-**在 `@agentic_function` 外部调用时:** 直接调用 LLM,不算上下文、不写 DAG(退化成单轮调用)。
+**When called outside an `@agentic_function`:** the LLM is called directly, with no context computation and no DAG write (it degrades to a single-turn call).
 
-一个 `@agentic_function` 可以多次调用 `exec()`,每次都是 DAG 上的一个新 `llm` 节点。
+A single `@agentic_function` can call `exec()` multiple times; each call is a new `llm` node on the DAG.
 
-#### 参数
+#### Parameters
 
-| 参数 | 类型 | 默认值 | 说明 |
+| Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `content` | `list[dict]` | *(必填)* | 内容块列表（见下方格式） |
-| `context` | `str \| None` | `None` | 手动覆盖自动算出的上下文。`None` = 从 DAG 自动算 |
-| `response_format` | `dict \| None` | `None` | 输出格式约束（JSON schema），传给 `_call()` |
-| `model` | `str \| None` | `None` | 覆盖默认模型 |
-| `tools` | `list \| None` | `None` | 本次调用 LLM 可用的工具。设了就跑工具循环直到模型返回纯文本 |
-| `toolset` / `tools_source` / `tools_allow` / `tools_deny` | — | `None` | 工具集与策略过滤 |
-| `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / `{"type":"function","name":"X"}` 强制某工具。透传到 provider（OpenAI / Anthropic / Gemini / Bedrock 各自映射协议形态） |
-| `parallel_tool_calls` | `bool` | `True` | 允许一轮多个工具调用；`False` 透传到支持该开关的 provider |
-| `max_iterations` | `int` | `20` | 工具循环轮数上限（一轮 = 一次模型调用 + 其工具执行）。生效值为 `min(50, max_iterations)`，50 是 `agent_loop.py` 的硬上限 |
-| `choices` | `dict \| list \| None` | `None` | 设了则约束 turn 的**收尾**:模型跑完整 turn 后,最终回复必须从 `choices` 里选一个;`exec` 解析并返回该选择的结果。详见 [next-step-decision](../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.md) |
-| `timeout_s` | `float \| None` | `None` | 整个 `exec()`（含全部重试）的 wall-clock 时间预算,超时抛 `LLMError`（`reason=timeout`） |
-| `on_retry` | `Callable \| None` | `None` | 每次重试前调用的观测回调,入参 `RetryInfo`;回调内抛出的异常被忽略 |
+| `content` | `list[dict]` | *(required)* | List of content blocks (see format below) |
+| `context` | `str \| None` | `None` | Manually override the automatically computed context. `None` = compute automatically from the DAG |
+| `response_format` | `dict \| None` | `None` | Output format constraint (JSON schema), passed to `_call()` |
+| `model` | `str \| None` | `None` | Override the default model |
+| `tools` | `list \| None` | `None` | The tools available to the LLM for this call. If set, the tool loop runs until the model returns plain text |
+| `toolset` / `tools_source` / `tools_allow` / `tools_deny` | — | `None` | Toolset and policy filtering |
+| `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / `{"type":"function","name":"X"}` to force a specific tool. Passed through to the provider (OpenAI / Anthropic / Gemini / Bedrock each map it to their own protocol form) |
+| `parallel_tool_calls` | `bool` | `True` | Allow multiple tool calls in a single turn; `False` is passed through to providers that support the switch |
+| `max_iterations` | `int` | `20` | Upper bound on tool-loop iterations (one iteration = one model call plus its tool execution). The effective value is `min(50, max_iterations)`, where 50 is the hard limit in `agent_loop.py` |
+| `choices` | `dict \| list \| None` | `None` | If set, constrains the **end** of the turn: after the model finishes the full turn, its final reply must pick one of `choices`; `exec` parses and returns the result of that choice. See [next-step-decision](../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.md) for details |
+| `timeout_s` | `float \| None` | `None` | The wall-clock time budget for the entire `exec()` (including all retries); on timeout, raises `LLMError` (`reason=timeout`) |
+| `on_retry` | `Callable \| None` | `None` | An observation callback invoked before each retry, receiving a `RetryInfo`; exceptions raised inside the callback are ignored |
 
-#### Content block 格式
+#### Content block format
 
 ```python
 {"type": "text",  "text": "Find the login button."}
@@ -77,16 +77,16 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 {"type": "file",  "path": "data.csv"}
 ```
 
-#### 返回值
+#### Return value
 
-`str` — LLM 的回复文本。带 `choices` 时返回解析后的决策结果(选中函数的返回值,或选中值本身)。
+`str` — the LLM's reply text. With `choices`, returns the parsed decision result (the return value of the selected function, or the selected value itself).
 
-#### 异常
+#### Exceptions
 
-- `RuntimeError` — 同一个 `@agentic_function` 内调用了两次
-- `TypeError` — 传入了 async 的 call 函数（应使用 `async_exec()`）
-- `NotImplementedError` — 没有配置 call 函数
-- `LLMError` — 重试耗尽或遇到不可重试错误时抛出,结构化字段含 `reason` / `retryable` / `http_status` / `attempts` 等
+- `RuntimeError` — called twice within the same `@agentic_function`
+- `TypeError` — an async call function was passed in (use `async_exec()` instead)
+- `NotImplementedError` — no call function configured
+- `LLMError` — raised when retries are exhausted or a non-retryable error is hit; structured fields include `reason` / `retryable` / `http_status` / `attempts`, etc.
 
 ---
 
@@ -96,9 +96,9 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 await Runtime.async_exec(content, context=None, response_format=None, model=None) -> str
 ```
 
-`exec()` 的异步版本。内部调用 `_async_call()`。
+The async version of `exec()`. Internally calls `_async_call()`.
 
-参数和行为与 `exec()` 相同。如果传入同步 call 函数，会自动适配（不报错）。
+Parameters and behavior are identical to `exec()`. If a synchronous call function is passed in, it is adapted automatically (no error).
 
 ---
 
@@ -108,19 +108,19 @@ await Runtime.async_exec(content, context=None, response_format=None, model=None
 Runtime._call(content, model="default", response_format=None) -> str
 ```
 
-实际调用 LLM 的方法。**子类化时重写此方法。**
+The method that actually calls the LLM. **Override this method when subclassing.**
 
-#### 参数
+#### Parameters
 
-| 参数 | 类型 | 说明 |
+| Parameter | Type | Description |
 |------|------|------|
-| `content` | `list[dict]` | 完整的内容列表（context + 用户内容） |
-| `model` | `str` | 模型名称 |
-| `response_format` | `dict \| None` | 输出格式约束 |
+| `content` | `list[dict]` | The full content list (context + user content) |
+| `model` | `str` | The model name |
+| `response_format` | `dict \| None` | Output format constraint |
 
-#### 返回值
+#### Return value
 
-`str` — LLM 回复文本。
+`str` — the LLM reply text.
 
 ---
 
@@ -130,20 +130,20 @@ Runtime._call(content, model="default", response_format=None) -> str
 await Runtime._async_call(content, model="default", response_format=None) -> str
 ```
 
-`_call()` 的异步版本。子类化时重写此方法以支持异步 provider。
+The async version of `_call()`. Override this method when subclassing to support an async provider.
 
 ---
 
-## 使用方式
+## Usage
 
-### 方式一：传入 call 函数
+### Option 1: Pass in a call function
 
 ```python
 from openprogram import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 
 def my_llm(content, model="sonnet", response_format=None):
-    # 把 content 转成你的 provider 格式，发请求
+    # Convert content into your provider's format and send the request
     texts = [b["text"] for b in content if b["type"] == "text"]
     return call_my_api("\n".join(texts), model=model)
 
@@ -158,7 +158,7 @@ def observe(task):
     ])
 ```
 
-### 方式二：子类化
+### Option 2: Subclass
 
 ```python
 class AnthropicRuntime(Runtime):
@@ -180,7 +180,7 @@ class AnthropicRuntime(Runtime):
 runtime = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
 ```
 
-### 多个 Runtime 共存
+### Multiple Runtimes coexisting
 
 ```python
 fast = Runtime(call=gemini_call, model="gemini-2.5-flash")
@@ -199,35 +199,35 @@ def plan(goal):
 
 ---
 
-## Retry 机制
+## Retry mechanism
 
-`exec()` 和 `async_exec()` 内置自动重试，用于处理 LLM API 的临时性错误（网络超时、速率限制、服务器错误等）。
+`exec()` and `async_exec()` have built-in automatic retries to handle transient LLM API errors (network timeouts, rate limits, server errors, etc.).
 
-### 配置
+### Configuration
 
 ```python
-# 默认：max_retries=None → 读环境变量 OPENPROGRAM_MAX_RETRIES,没设则为 6
+# Default: max_retries=None → read env var OPENPROGRAM_MAX_RETRIES, defaulting to 6 if unset
 rt = Runtime(call=my_llm)
 
-# 不重试（失败即抛异常）
+# No retries (raise an exception on the first failure)
 rt = Runtime(call=my_llm, max_retries=1)
 
-# 多次重试（适用于不稳定的 API）
+# Multiple retries (for an unstable API)
 rt = Runtime(call=my_llm, max_retries=5)
 ```
 
-### 行为规则
+### Behavior rules
 
-| 情况 | 处理 |
+| Situation | Handling |
 |------|------|
-| API 调用成功 | 返回结果 |
-| API 抛出异常（非 `TypeError` / `NotImplementedError`） | 记录失败 attempt，然后继续重试，直到达到 `max_retries` |
-| `TypeError` 或 `NotImplementedError` | 立即抛出，不重试（通常是 provider 实现或调用方式的问题） |
-| 所有重试均失败 | 抛出结构化 `LLMError`（`reason` / `retryable` / `http_status` / `attempts` 等字段），并附上完整 attempt 报告 |
+| API call succeeds | Return the result |
+| API raises an exception (other than `TypeError` / `NotImplementedError`) | Record the failed attempt, then keep retrying until `max_retries` is reached |
+| `TypeError` or `NotImplementedError` | Raised immediately, no retry (usually a problem with the provider implementation or the way it's called) |
+| All retries fail | Raise a structured `LLMError` (fields such as `reason` / `retryable` / `http_status` / `attempts`), with a full attempt report attached |
 
-### 错误报告格式
+### Error report format
 
-当所有重试耗尽时,抛出的 `LLMError` 包含每次尝试的错误信息,结构化字段（`reason` / `retryable` / `http_status` / `attempts` / `elapsed_s` 等）可直接读取:
+When all retries are exhausted, the `LLMError` raised contains the error information for each attempt; its structured fields (`reason` / `retryable` / `http_status` / `attempts` / `elapsed_s`, etc.) can be read directly:
 
 ```
 LLMError: exec() failed after 3 attempt(s):
@@ -236,9 +236,9 @@ Attempt 2: RateLimitError: 429 Too Many Requests
 Attempt 3: ConnectionError: timeout
 ```
 
-### 重试的边界
+### The boundaries of retrying
 
-`max_retries` 只处理 API 层面的瞬态故障(网络超时、速率限制等)。如果是函数本身的逻辑或输出格式有问题,重试解决不了——直接修改函数代码,参见 [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)。
+`max_retries` only handles transient failures at the API level (network timeouts, rate limits, etc.). If the problem lies in the function's own logic or output format, retrying won't fix it — edit the function code directly; see [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md).
 
 ```python
 runtime = Runtime(call=my_llm, max_retries=3)

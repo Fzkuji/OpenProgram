@@ -2,13 +2,13 @@
 
 > Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/)
 
-内置 Runtime 子类，开箱即用。每个 provider 都是**可选依赖**——只在你 import 对应类时才需要安装 SDK。
+Built-in Runtime subclasses, ready to use out of the box. Every provider is an **optional dependency** — you only need to install the SDK when you import the corresponding class.
 
 ---
 
-## 安装
+## Installation
 
-框架核心没有任何 SDK 依赖。按需安装：
+The framework core has no SDK dependencies at all. Install them as needed:
 
 ```bash
 # Anthropic Claude API
@@ -34,39 +34,39 @@ npm install -g @google/gemini-cli
 
 ## AnthropicRuntime
 
-Anthropic Claude API。支持 text + image content blocks、`response_format` JSON 约束，自动 prompt caching。
+Anthropic Claude API. Supports text + image content blocks, `response_format` JSON constraints, and automatic prompt caching.
 
 ```python
 from openprogram.providers import AnthropicRuntime
 
 rt = AnthropicRuntime(
-    api_key="sk-ant-...",      # 或设置 ANTHROPIC_API_KEY 环境变量
+    api_key="sk-ant-...",      # or set the ANTHROPIC_API_KEY environment variable
     model="claude-sonnet-4-6",
     max_tokens=4096,
-    system="You are a helpful assistant.",  # 可选 system prompt
-    cache_system=True,          # 缓存 system prompt（默认 True）
+    system="You are a helpful assistant.",  # optional system prompt
+    cache_system=True,          # cache the system prompt (default True)
 )
 ```
 
-### 构造参数
+### Constructor parameters
 
-| 参数 | 类型 | 默认值 | 说明 |
+| Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `api_key` | `str \| None` | `None` | API key。`None` 时读 `ANTHROPIC_API_KEY` 环境变量 |
-| `model` | `str` | `"claude-sonnet-4-6"` | 默认模型 |
-| `max_tokens` | `int` | `4096` | 最大输出 token 数 |
+| `api_key` | `str \| None` | `None` | API key. When `None`, reads the `ANTHROPIC_API_KEY` environment variable |
+| `model` | `str` | `"claude-sonnet-4-6"` | Default model |
+| `max_tokens` | `int` | `4096` | Maximum number of output tokens |
 | `system` | `str \| None` | `None` | System prompt |
-| `cache_system` | `bool` | `True` | 是否缓存 system prompt |
-| `max_retries` | `int` | `2` | 重试次数 |
+| `cache_system` | `bool` | `True` | Whether to cache the system prompt |
+| `max_retries` | `int` | `2` | Number of retries |
 
 ### Prompt Caching
 
-AnthropicRuntime 自动在最后一个 content block 上添加 `cache_control: {"type": "ephemeral"}`。这意味着：
+AnthropicRuntime automatically adds `cache_control: {"type": "ephemeral"}` to the last content block. This means:
 
-- **context 前缀被缓存**：连续调用时，相同的 Context 前缀命中缓存，大幅降低延迟和成本
-- **system prompt 被缓存**：如果设置了 `system` 且 `cache_system=True`
+- **The context prefix is cached**: across successive calls, an identical Context prefix hits the cache, substantially reducing latency and cost
+- **The system prompt is cached**: if `system` is set and `cache_system=True`
 
-你也可以手动控制缓存：
+You can also control caching manually:
 
 ```python
 rt.exec(content=[
@@ -77,7 +77,7 @@ rt.exec(content=[
 
 ### response_format
 
-Anthropic API 本身没有像 OpenAI 那样的原生 JSON schema 参数，这里采用文本约束方式追加一条“只返回匹配 schema 的 JSON”指令：
+The Anthropic API has no native JSON schema parameter like OpenAI's. Here a text-constraint approach is used: it appends an instruction to "return only JSON that matches the schema":
 
 ```python
 result = rt.exec(
@@ -95,21 +95,21 @@ result = rt.exec(
 )
 ```
 
-### Image 支持
+### Image support
 
 ```python
-# 从文件
+# from a file
 rt.exec(content=[
     {"type": "text", "text": "What's in this image?"},
     {"type": "image", "path": "screenshot.png"},
 ])
 
-# 从 base64
+# from base64
 rt.exec(content=[
     {"type": "image", "data": "<base64>", "media_type": "image/png"},
 ])
 
-# 从 URL
+# from a URL
 rt.exec(content=[
     {"type": "image", "url": "https://example.com/image.png"},
 ])
@@ -119,32 +119,32 @@ rt.exec(content=[
 
 ## OpenAIRuntime
 
-OpenAI GPT API。支持 text + image，response_format（JSON mode / structured output）。
+OpenAI GPT API. Supports text + image, and response_format (JSON mode / structured output).
 
 ```python
 from openprogram.providers import OpenAIRuntime
 
 rt = OpenAIRuntime(
-    api_key="sk-...",          # 或设置 OPENAI_API_KEY 环境变量
+    api_key="sk-...",          # or set the OPENAI_API_KEY environment variable
     model="gpt-4o",
     max_tokens=4096,
     system="You are a helpful assistant.",
-    temperature=0.7,           # 可选
-    base_url="https://...",    # 可选，用于 Azure 或本地服务
+    temperature=0.7,           # optional
+    base_url="https://...",    # optional, for Azure or a local service
 )
 ```
 
-### 构造参数
+### Constructor parameters
 
-| 参数 | 类型 | 默认值 | 说明 |
+| Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `api_key` | `str \| None` | `None` | API key。`None` 时读 `OPENAI_API_KEY` 环境变量 |
-| `model` | `str` | `"gpt-4o"` | 默认模型 |
-| `max_tokens` | `int` | `4096` | 最大输出 token 数 |
+| `api_key` | `str \| None` | `None` | API key. When `None`, reads the `OPENAI_API_KEY` environment variable |
+| `model` | `str` | `"gpt-4o"` | Default model |
+| `max_tokens` | `int` | `4096` | Maximum number of output tokens |
 | `system` | `str \| None` | `None` | System prompt |
-| `temperature` | `float \| None` | `None` | 采样温度 |
-| `max_retries` | `int` | `2` | 重试次数 |
-| `base_url` | `str \| None` | `None` | 自定义 base URL |
+| `temperature` | `float \| None` | `None` | Sampling temperature |
+| `max_retries` | `int` | `2` | Number of retries |
+| `base_url` | `str \| None` | `None` | Custom base URL |
 
 ### response_format
 
@@ -174,9 +174,9 @@ result = rt.exec(
 )
 ```
 
-### 兼容 API
+### Compatible APIs
 
-通过 `base_url` 可以连接任何 OpenAI 兼容的 API：
+Through `base_url` you can connect to any OpenAI-compatible API:
 
 ```python
 # Azure OpenAI
@@ -198,13 +198,13 @@ rt = OpenAIRuntime(
 
 ## GeminiRuntime
 
-Google Gemini API。支持 text + image。
+Google Gemini API. Supports text + image.
 
 ```python
 from openprogram.providers import GeminiRuntime
 
 rt = GeminiRuntime(
-    api_key="...",             # 或设置 GOOGLE_API_KEY 环境变量
+    api_key="...",             # or set the GOOGLE_API_KEY environment variable
     model="gemini-2.5-flash",
     max_output_tokens=4096,
     system_instruction="You are a helpful assistant.",
@@ -212,20 +212,20 @@ rt = GeminiRuntime(
 )
 ```
 
-### 构造参数
+### Constructor parameters
 
-| 参数 | 类型 | 默认值 | 说明 |
+| Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `api_key` | `str \| None` | `None` | API key。`None` 时读 `GOOGLE_API_KEY` 环境变量 |
-| `model` | `str` | `"gemini-2.5-flash"` | 默认模型 |
-| `max_output_tokens` | `int` | `4096` | 最大输出 token 数 |
+| `api_key` | `str \| None` | `None` | API key. When `None`, reads the `GOOGLE_API_KEY` environment variable |
+| `model` | `str` | `"gemini-2.5-flash"` | Default model |
+| `max_output_tokens` | `int` | `4096` | Maximum number of output tokens |
 | `system_instruction` | `str \| None` | `None` | System instruction |
-| `temperature` | `float \| None` | `None` | 采样温度 |
-| `max_retries` | `int` | `2` | 重试次数 |
+| `temperature` | `float \| None` | `None` | Sampling temperature |
+| `max_retries` | `int` | `2` | Number of retries |
 
 ### response_format
 
-GeminiRuntime 支持通过 `response_format` 参数请求 JSON 输出：
+GeminiRuntime supports requesting JSON output through the `response_format` parameter:
 
 ```python
 result = rt.exec(
@@ -234,13 +234,13 @@ result = rt.exec(
 )
 ```
 
-传入 `response_format` 时，自动设置 `response_mime_type="application/json"`。如果包含 `schema` 字段，还会设置 `response_schema`。
+When `response_format` is passed, `response_mime_type="application/json"` is set automatically. If it includes a `schema` field, `response_schema` is also set.
 
 ---
 
 ## ClaudeCodeRuntime
 
-Claude Code CLI。适合本地开发机 / 订阅账号场景，不需要在 Python 里单独配置 API key。
+Claude Code CLI. Suited to local development machines / subscription-account scenarios, with no need to configure a separate API key in Python.
 
 ```python
 from openprogram.providers import ClaudeCodeRuntime
@@ -251,17 +251,17 @@ rt = ClaudeCodeRuntime(
 )
 ```
 
-使用前先完成：
+Before using it, first complete:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 claude login
 ```
 
-说明：
-- 主要面向 text 和 image 输入
-- 更适合交互式开发工作流，而不是高吞吐服务端调用
-- 如果传入 audio / video / file blocks，会给出 warning 并跳过不支持的内容
+Notes:
+- Primarily intended for text and image input
+- Better suited to interactive development workflows than to high-throughput server-side calls
+- If you pass audio / video / file blocks, it emits a warning and skips the unsupported content
 
 ---
 
@@ -276,25 +276,25 @@ from openprogram.providers import OpenAICodexRuntime
 rt = OpenAICodexRuntime(model="gpt-5.5")
 ```
 
-使用前先完成：
+Before using it, first complete:
 
 ```bash
 npm install -g @openai/codex
 codex login --device-auth
 ```
 
-### 构造参数
+### Constructor parameters
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `model` | `str` | `"gpt-5.5-mini"` | 默认模型 |
-| `system` | `str \| None` | `None` | 作为 `instructions` 转发 |
-| `profile` | `str \| None` | active profile | 指定 OpenProgram auth profile |
+| Parameter | Type | Default | Description |
+|------|------|------|------|
+| `model` | `str` | `"gpt-5.5-mini"` | Default model |
+| `system` | `str \| None` | `None` | Forwarded as `instructions` |
+| `profile` | `str \| None` | active profile | Specifies the OpenProgram auth profile |
 
-说明：
-- 需要 OAuth credential，不使用 bare OpenAI API key
-- 兼容旧调用方传入的 subprocess-era 参数；这些额外参数会被忽略
-- 如果只有 OpenAI API key，请使用 `OpenAIRuntime`
+Notes:
+- Requires an OAuth credential; it does not use a bare OpenAI API key
+- Compatible with subprocess-era parameters passed by older callers; these extra parameters are ignored
+- If you only have an OpenAI API key, use `OpenAIRuntime`
 
 ---
 
@@ -309,7 +309,7 @@ from openprogram.providers import GeminiCLIRuntime
 rt = GeminiCLIRuntime(model="gemini-2.5-flash")
 ```
 
-如果你想显式使用类，也可以直接这样写：
+If you want to use the class explicitly, you can also write it directly like this:
 
 ```python
 from openprogram.providers.google_gemini_cli import GeminiCLIRuntime
@@ -317,31 +317,31 @@ from openprogram.providers.google_gemini_cli import GeminiCLIRuntime
 rt = GeminiCLIRuntime(model="gemini-2.5-flash")
 ```
 
-使用前先完成：
+Before using it, first complete:
 
 ```bash
 npm install -g @google/gemini-cli
 gemini
 ```
 
-### 构造参数
+### Constructor parameters
 
-| 参数 | 类型 | 默认值 | 说明 |
+| Parameter | Type | Default | Description |
 |------|------|--------|------|
-| `model` | `str` | `"gemini-2.5-flash"` | 默认模型 |
-| `system` | `str \| None` | `None` | 作为 `instructions` 转发 |
-| `profile` | `str \| None` | active profile | 指定 OpenProgram auth profile |
+| `model` | `str` | `"gemini-2.5-flash"` | Default model |
+| `system` | `str \| None` | `None` | Forwarded as `instructions` |
+| `profile` | `str \| None` | active profile | Specifies the OpenProgram auth profile |
 
-说明：
-- 需要 Gemini CLI OAuth credential
-- 兼容旧调用方传入的 subprocess-era 参数；这些额外参数会被忽略
-- 如果只有 Google API key，请使用 `GeminiRuntime`
+Notes:
+- Requires a Gemini CLI OAuth credential
+- Compatible with subprocess-era parameters passed by older callers; these extra parameters are ignored
+- If you only have a Google API key, use `GeminiRuntime`
 
 ---
 
-## 自定义 Provider
+## Custom Providers
 
-所有内置 provider 都是 `Runtime` 的子类。你可以用同样的方式创建自己的：
+All built-in providers are subclasses of `Runtime`. You can create your own in the same way:
 
 ```python
 from openprogram.agentic_programming.runtime import Runtime
@@ -352,11 +352,11 @@ class MyRuntime(Runtime):
         self.api_key = api_key
 
     def _call(self, content, model="default", response_format=None):
-        # 1. 把 content blocks 转成你的 API 格式
-        # 2. 调用 API
-        # 3. 返回 str
+        # 1. convert the content blocks into your API's format
+        # 2. call the API
+        # 3. return a str
         texts = [b["text"] for b in content if b["type"] == "text"]
         return my_api_call("\n".join(texts), model=model)
 ```
 
-关键：`_call()` 接收 `content: list[dict]`，返回 `str`。就这么简单。
+The key point: `_call()` receives `content: list[dict]` and returns a `str`. It's that simple.

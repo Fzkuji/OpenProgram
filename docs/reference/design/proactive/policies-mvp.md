@@ -1,103 +1,89 @@
-# 三条样板规则
+# Three Template Rules
 
-前面都在讲机制，这篇给三条**真规则**，从头到尾走通。它们既是第一版要做的，也是你以后写新
-规则的样板——照着改就行。读这篇前先读完 `overview.md` 和 `execution-model.md`。
+The previous docs covered the mechanism; this one gives three **real rules** and walks them end to end. They are both what the first version ships and a template for writing new rules later — just copy and adapt. Before reading this, finish `overview.md` and `execution-model.md`.
 
-## 为什么先只做三条
+## Why start with only three
 
-不是因为时间不够，是**故意的**。主动打扰系统的经典死法不是"功能太少"，而是"规则太多、
-误报太多，用户三天就学会无视所有提示"（Clippy、UAC 弹窗就是这么死的）。
+Not because we're short on time — it's **deliberate**. The classic way a proactive-interruption system dies isn't "too few features," it's "too many rules, too many false positives, and within three days users learn to ignore every prompt" (this is exactly how Clippy and UAC pop-ups died).
 
-所以这层不提供"配置文件 / DSL"让人十分钟写一条规则——规则必须是 Python 类、得过 code
-review。先做三条把机制跑通、把每条都打磨到真有用，再加第四条。三条各自验证一种不同的出手
-方式：一条挡路、两条旁观（其中一条还演示"先做功课再开口"）。
+So this layer does not offer a "config file / DSL" that lets someone write a rule in ten minutes — rules must be Python classes and must pass code review. We first ship three to get the mechanism working and polish each one until it's genuinely useful, then add a fourth. The three each validate a different way of stepping in: one blocks the path, two observe (one of which also demonstrates "do your homework before speaking up").
 
-| 规则 | 类型 | 一句话 |
+| Rule | Type | One line |
 |---|---|---|
-| DangerousCommandGuard | 挡路 | 危险命令执行前拦下来问用户 |
-| TestGapWatcher | 旁观（先做功课） | 改了核心代码没补测试，后台核实后提醒 |
-| UnvalidatedCompletionNudge | 旁观（先提醒模型） | 模型说完成了却没验证，先悄悄让模型自己去验 |
+| DangerousCommandGuard | Block the path | Catch a dangerous command before it runs and ask the user |
+| TestGapWatcher | Observe (do homework first) | Core code changed without tests; verify in the background, then remind |
+| UnvalidatedCompletionNudge | Observe (nudge the model first) | The model claims it's done but didn't verify; quietly let the model verify itself first |
 
 ---
 
-## 1. DangerousCommandGuard（挡路）
+## 1. DangerousCommandGuard (block the path)
 
-**做什么**：工具即将执行时，如果是危险的 shell 命令，拦下来问用户。
+**What it does**: when a tool is about to run, if it's a dangerous shell command, catch it and ask the user.
 
 ```python
 class DangerousCommandGuard:
     on = {"tool.before"}
-    lane = "gate"            # 挡路：在命令真正跑之前拦
+    lane = "gate"            # block the path: intercept before the command actually runs
     cooldown_s = 0
 
     def evaluate(self, event, state):
-        if event.payload["工具"] != "bash":
+        if event.payload["tool"] != "bash":
             return None
-        命令 = event.payload["命令"]
-        if 是危险命令(命令):
-            return Gate.ask(f"这条命令有风险：{命令}\n确认执行吗？")
+        command = event.payload["command"]
+        if is_dangerous_command(command):
+            return Gate.ask(f"This command is risky: {command}\nConfirm execution?")
         return None
 ```
 
-**关键：判断要看到参数，不能只匹配关键词。** 否则误报会多到用户习惯性秒点确认，护栏就废了
-（这正是 UAC 弹窗的死法）。要区分：
+**Key: the judgment must see the arguments, not just match keywords.** Otherwise false positives pile up until the user reflexively clicks "confirm" in a split second, and the guardrail is useless (this is precisely how UAC pop-ups die). You have to distinguish:
 
-| 危险 | 不危险（别误报） |
+| Dangerous | Not dangerous (don't false-positive) |
 |---|---|
-| `rm -rf /` `rm -rf ~/项目` | `rm -rf /tmp/xxx`、`rm -rf node_modules`（日常操作） |
-| `git push --force origin main`（推保护分支） | `git push --force` 到自己的 feature 分支（很常见） |
-| `kubectl delete namespace`（删整个命名空间） | `kubectl delete pod xxx`（日常） |
+| `rm -rf /` `rm -rf ~/project` | `rm -rf /tmp/xxx`, `rm -rf node_modules` (everyday operations) |
+| `git push --force origin main` (pushing a protected branch) | `git push --force` to your own feature branch (very common) |
+| `kubectl delete namespace` (deleting an entire namespace) | `kubectl delete pod xxx` (everyday) |
 
-所以 `是危险命令()` 要解析路径白名单、判断分支名、区分资源类型，不是 `"rm -rf" in 命令`
-这么粗。
+So `is_dangerous_command()` must parse a path allowlist, check the branch name, and distinguish resource types — not something as crude as `"rm -rf" in command`.
 
-**诚实地说它能做到哪**：它防的是**手滑、误操作**，不是防恶意对手。聪明的绕过方式（把命令
-base64 编码、写进脚本再执行、用别的工具代替 bash）它都拦不住。这版就把它定位成"防手滑的
-护栏"，不假装它是安全边界。真要防对手得上沙箱，那是另一回事（归档的 threat-model 里）。
+**Be honest about how far it goes**: it guards against **slips and mistakes**, not against a malicious adversary. Clever bypasses (base64-encoding the command, writing it into a script and then running that, using another tool instead of bash) it can't catch any of these. This version positions it as a "guardrail against slips" and doesn't pretend to be a security boundary. Actually defending against an adversary requires a sandbox, which is a separate matter (covered in the archived threat-model).
 
-**和现有批准机制的关系**：OpenProgram 已经有工具批准弹窗。别搞成同一条命令弹两次——
-让这条规则的判断作为"风险标注"挂到现有批准流程上，合并成一次确认。
+**Relationship to the existing approval mechanism**: OpenProgram already has a tool-approval pop-up. Don't end up popping twice for the same command — let this rule's judgment attach as a "risk annotation" onto the existing approval flow, merged into a single confirmation.
 
 ---
 
-## 2. TestGapWatcher（旁观 + 先做功课）
+## 2. TestGapWatcher (observe + do homework first)
 
-**做什么**：用户/模型表示这轮要收尾了（要提交了、说做完了），如果改了核心代码却没动测试，
-提醒一下。
+**What it does**: when the user/model signals the round is wrapping up (about to commit, says it's done), if core code changed but tests didn't, give a reminder.
 
 ```python
 class TestGapWatcher:
-    on = {"model.response_completed"}    # 模型说完一轮话时检查
-    lane = "observer"                    # 旁观：不挡路
-    cooldown_s = 1800                    # 同一情况半小时内不重复提
+    on = {"model.response_completed"}    # check when the model finishes a round of talking
+    lane = "observer"                    # observe: don't block the path
+    cooldown_s = 1800                    # don't re-raise the same situation within half an hour
 
     def evaluate(self, event, state):
-        # 只在"要收尾了"的时候才检查，不是每次改文件都查
-        if not 是收尾信号(event, state):
+        # only check when "wrapping up", not on every file change
+        if not is_wrapup_signal(event, state):
             return None
-        if state.改了核心代码 and not state.动了测试:
-            # 不直接提醒——先派个只读后台任务去核实
-            return Prepare(任务="看看这个改动到底缺不缺测试、值不值得提醒")
+        if state.changed_core_code and not state.touched_tests:
+            # don't remind directly — first dispatch a read-only background task to verify
+            return Prepare(task="check whether this change really lacks tests and whether it's worth a reminder")
         return None
 ```
 
-**为什么"先做功课"（Prepare）**：一看到"改了代码没测试"就提醒，误报会很多——改个注释、
-重命名、改配置、升级依赖、改前端（前端目录常常根本没测试文化）全会命中。所以不直接开口，
-先起个**只读**后台小任务，让它真去看看这个改动到底缺不缺测试、缺得值不值得提。它返回一个
-判断，**够有把握才 Notify**，没把握就咽回去，不打扰用户。
+**Why "do homework first" (Prepare)**: reminding the moment you see "code changed without tests" produces many false positives — a comment edit, a rename, a config change, a dependency bump, a frontend change (frontend directories often have no testing culture at all) would all trigger it. So instead of speaking up directly, it first spins up a **read-only** background task to actually look at whether the change really lacks tests and whether the gap is worth raising. That task returns a judgment, and **only when it's confident enough does it Notify**; if it's not confident, it swallows the reminder and doesn't bother the user.
 
-这条最容易变成讨人嫌的 Clippy。两个约束：
-- **触发收窄**：只在"要收尾"时查（要提交、说做完），不是每次文件变动都查。
-- **花销要看得见**：后台任务是要花钱的（可能调 LLM）。在界面上给个小账单——这层今天跑了
-  几次后台核实、花了多少、几次最后没提醒——让用户知道它在花钱、能关掉。
+This is the rule most likely to turn into an annoying Clippy. Two constraints:
+- **Narrow the trigger**: only check when "wrapping up" (about to commit, says it's done), not on every file change.
+- **Make the cost visible**: background tasks cost money (they may call an LLM). Show a small bill in the UI — how many times this layer ran a background verification today, how much it spent, and how many times it ended up not reminding — so the user knows it's spending money and can turn it off.
 
-**提醒里给一键操作**：Notify 不只是一句话，给个"帮我补测试"的按钮，点了就起个起草测试的任务。
+**Give a one-click action in the reminder**: a Notify isn't just a sentence; include a "write the tests for me" button that, when clicked, spins up a task to draft the tests.
 
 ---
 
-## 3. UnvalidatedCompletionNudge（旁观 + 先提醒模型）
+## 3. UnvalidatedCompletionNudge (observe + nudge the model first)
 
-**做什么**：模型说"完成了"，但这一轮根本没跑过测试/没验证，那多半是没真验。
+**What it does**: the model says "done," but this round never ran tests / never verified, which usually means it didn't actually verify.
 
 ```python
 class UnvalidatedCompletionNudge:
@@ -106,29 +92,25 @@ class UnvalidatedCompletionNudge:
     cooldown_s = 900
 
     def evaluate(self, event, state):
-        if event.payload["声称完成"] and state.本轮有文件改动 \
-                and not state.本轮有验证动作:
-            # 默认不打扰用户——先悄悄提醒模型自己去验
-            return Inject("你说完成了，但这一轮没有验证动作。请先验证再下结论。")
+        if event.payload["claimed_done"] and state.round_had_file_changes \
+                and not state.round_had_verification:
+            # default to not bothering the user — first quietly nudge the model to verify itself
+            return Inject("You said it's done, but this round had no verification action. Verify first, then conclude.")
         return None
 ```
 
-**为什么默认用 Inject（提醒模型）而不是 Notify（提醒用户）**：这个 repo 的规范本来就要求
-模型改完自己验证。模型守规矩，这条永远不触发；模型偷懒，**更省事的办法是悄悄推模型一把**，
-让它自己回去验，而不是把球踢给用户点确认。只有模型被推了还是不验，才升级成提醒用户。
-这也呼应 overview 的动作表：Inject 是"给模型注入一句话，不打扰用户"。
+**Why default to Inject (nudge the model) instead of Notify (notify the user)**: this repo's conventions already require the model to verify its own work after a change. If the model follows the rules, this rule never fires; if the model cuts corners, **the cheaper fix is to quietly nudge the model** to go back and verify, rather than kicking the ball to the user to click confirm. Only when the model is nudged and still doesn't verify does it escalate to notifying the user. This also echoes the action table in the overview: Inject is "inject a sentence into the model without bothering the user."
 
-**一个判断细节**："本轮有验证动作"得算全——跑测试算，用浏览器（MCP）实际打开页面看效果
-也算（前端改动常这么验）。漏算了浏览器验证，前端改动就会被频繁误判成"没验证"。
+**One detail of the judgment**: "this round had a verification action" must be counted fully — running tests counts, and using the browser (MCP) to actually open the page and check the result also counts (frontend changes are often verified this way). Missing browser verification would frequently misjudge frontend changes as "not verified."
 
 ---
 
-## 写新规则时回头看这三条
+## Look back at these three when writing new rules
 
-| 你想做的规则 | 照哪条抄 |
+| The rule you want to write | Which one to copy |
 |---|---|
-| 在某动作发生前拦住 | DangerousCommandGuard（挡路、看眼前、要快） |
-| 攒够条件后提醒，但怕误报 | TestGapWatcher（旁观、先 Prepare 做功课、再 Notify） |
-| 想纠正模型行为、不想打扰用户 | UnvalidatedCompletionNudge（旁观、用 Inject 推模型） |
+| Block before some action happens | DangerousCommandGuard (block the path, look at what's in front of you, be fast) |
+| Remind once conditions accumulate, but worried about false positives | TestGapWatcher (observe, Prepare to do homework first, then Notify) |
+| Want to correct the model's behavior without bothering the user | UnvalidatedCompletionNudge (observe, use Inject to nudge the model) |
 
-每条都是：定 `on`/`lane`/`cooldown_s` + 写 `evaluate`。不碰框架内核。
+Each one is: set `on`/`lane`/`cooldown_s` + write `evaluate`. Don't touch the framework core.

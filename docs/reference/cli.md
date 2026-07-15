@@ -1,169 +1,169 @@
-# CLI 命令参考
+# CLI reference
 
-`openprogram` 全部子命令的速查表。每条命令都可以用 `openprogram <command> -h` 查看自己的帮助；子命令的动词再套一层，如 `openprogram logs tail -h`。
+A quick reference for every `openprogram` subcommand. Each command has its own help via `openprogram <command> -h`; subcommand verbs nest one level deeper, e.g. `openprogram logs tail -h`.
 
-## 全局用法
+## Global usage
 
 ```bash
-openprogram                      # 打开终端聊天 UI（TUI）
-openprogram --print "..."        # 一次性 prompt：发送、打印回复、退出
-openprogram --resume <id>        # 恢复此前的 CLI 聊天会话
-openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogram-<name>/
+openprogram                      # open the terminal chat UI (TUI)
+openprogram --print "..."        # one-shot prompt: send, print the reply, exit
+openprogram --resume <id>        # resume a previous CLI chat session
+openprogram --profile <name>     # state-directory profile, reroutes to ~/.openprogram-<name>/
 ```
 
-| 选项 | 作用 |
+| Flag | What it does |
 |------|------|
-| `--print PROMPT` | 一次性 prompt，打印回复后退出 |
-| `--profile PROFILE` | 状态目录 profile，等价于环境变量 `OPENPROGRAM_PROFILE` |
-| `--resume SESSION_ID` | 恢复会话；id 用 `openprogram sessions list` 或 Web UI 侧栏查 |
+| `--print PROMPT` | One-shot prompt; prints the reply and exits |
+| `--profile PROFILE` | State-directory profile, equivalent to the `OPENPROGRAM_PROFILE` environment variable |
+| `--resume SESSION_ID` | Resume a session; find ids with `openprogram sessions list` or the Web UI sidebar |
 
-## 聊天与运行
+## Chat and running
 
-| 命令 | 作用 | 关键参数 |
+| Command | What it does | Key flags |
 |------|------|----------|
-| `openprogram` | 打开终端聊天 UI；没有 worker 时自动拉起 | — |
-| `openprogram web` | 启动服务并打开浏览器 UI（`http://localhost:18100`） | `--port`（backend，默认 18109）、`--web-port`（frontend，默认 18100）、`--no-browser` |
+| `openprogram` | Open the terminal chat UI; auto-launches a worker if none is running | — |
+| `openprogram web` | Start the service and open the browser UI (`http://localhost:18100`) | `--port` (backend, default 18109), `--web-port` (frontend, default 18100), `--no-browser` |
 
-## 后台服务
+## Background service
 
-| 命令 | 作用 |
+| Command | What it does |
 |------|------|
-| `status` | 后台服务是否在跑（PID、端口、运行时长） |
-| `stop` | 停止后台服务 |
-| `restart` | 重启（改了代码 / 配置之后用） |
+| `status` | Is the background service running (PID, port, uptime) |
+| `stop` | Stop the background service |
+| `restart` | Restart (after code / config changes) |
 
-`worker` 子命令提供更细的控制：
+The `worker` subcommands offer finer control:
 
-| 命令 | 作用 |
+| Command | What it does |
 |------|------|
-| `worker run` | 前台运行 worker（阻塞），调试用，Ctrl-C 停止 |
-| `worker start` | 后台启动一个 worker 并返回 |
-| `worker stop` | 停止（SIGTERM，必要时升级为 SIGKILL） |
-| `worker restart` | 停掉再起一个新的 |
-| `worker status` | 是否在跑、PID、端口、运行时长 |
-| `worker install` | 安装为系统服务（macOS launchd / Linux systemd --user），随登录启动、崩溃重启 |
-| `worker uninstall` | 移除系统服务 |
+| `worker run` | Run the worker in the foreground (blocking), for debugging; Ctrl-C to stop |
+| `worker start` | Start a worker in the background and return |
+| `worker stop` | Stop (SIGTERM, escalating to SIGKILL if needed) |
+| `worker restart` | Stop and start a fresh one |
+| `worker status` | Running or not, PID, port, uptime |
+| `worker install` | Install as a system service (macOS launchd / Linux systemd --user); starts at login, restarts after a crash |
+| `worker uninstall` | Remove the system service |
 
-## 安装与配置
+## Setup and configuration
 
-| 命令 | 作用 | 关键参数 / 动词 |
+| Command | What it does | Key flags / verbs |
 |------|------|----------|
-| `setup` | 首次运行的设置向导 | `menu` 打开交互选择器；给一个分区名直达（model / tools / agent / skills / ui / memory / profile / search / tts / channels / backend） |
-| `config` | 查看 / 修改设置 | `list`（全部设置：值、分组、生效方式）、`get <key>`、`set <key> <value>` |
-| `ports` | 查看 / 持久化 Web UI 端口 | `--backend PORT`（默认 18109）、`--frontend PORT`（默认 18100） |
-| `completion` | 输出 shell 补全脚本 | `bash` / `zsh` / `powershell` / `pwsh` |
+| `setup` | First-run setup wizard | `menu` opens the interactive picker; give a section name to jump straight there (model / tools / agent / skills / ui / memory / profile / search / tts / channels / backend) |
+| `config` | View / change settings | `list` (every setting: value, group, apply mode), `get <key>`, `set <key> <value>` |
+| `ports` | View / persist the Web UI ports | `--backend PORT` (default 18109), `--frontend PORT` (default 18100) |
+| `completion` | Print a shell completion script | `bash` / `zsh` / `powershell` / `pwsh` |
 
-### providers —— LLM provider 与凭据
+### providers — LLM providers and credentials
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `login <provider>` | 登录一个 provider；`--api-key` / `--api-key-stdin` 非交互提供 key，`--profile` 指定凭据 profile |
-| `logout` | 移除一个 provider 的凭据 |
-| `list` | 按 profile 列出凭据池 |
-| `available`（别名 `search`） | 列出全部可配置的 provider，可加 QUERY 过滤 |
-| `status` | 检查一个 provider 当前的凭据 |
-| `use` | 设置一个 provider 用哪个账号（profile） |
-| `discover` / `adopt` | 扫描外部来源的凭据 / 收编进凭据库 |
-| `doctor` | 诊断凭据（过期、刷新、冷却、冲突） |
-| `setup` | 交互式首次配置 |
-| `aliases` | 列出 provider 短名别名 |
-| `profiles` | 凭据 profile 管理 |
-| `migrate` | 把存储的凭据迁移到当前格式 |
+| `login <provider>` | Log in to a provider; `--api-key` / `--api-key-stdin` supply the key non-interactively, `--profile` selects the credential profile |
+| `logout` | Remove a provider's credentials |
+| `list` | List credential pools by profile |
+| `available` (alias `search`) | List every configurable provider, optionally filtered with QUERY |
+| `status` | Check a provider's current credentials |
+| `use` | Set which account (profile) a provider uses |
+| `discover` / `adopt` | Scan external credential sources / import them into the credential store |
+| `doctor` | Diagnose credentials (expiry, refresh, cooldown, conflicts) |
+| `setup` | Interactive first-time setup |
+| `aliases` | List provider short-name aliases |
+| `profiles` | Credential profile management |
+| `migrate` | Migrate stored credentials to the current format |
 
-不带动词的 `openprogram providers` 打印当前全部凭据的状态表。
+`openprogram providers` with no verb prints the status table for all current credentials.
 
-### mcp —— MCP server
+### mcp — MCP servers
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `list` | 列出全部已配置的 MCP server 及状态 |
-| `show` | 显示一个 server 的工具与完整 schema |
-| `add` | 添加 stdio 命令型 server，写入 `mcp_servers.json` 并立即启动 |
-| `rm` | 移除（停止 + 删配置） |
-| `restart` / `enable` / `disable` | 重启 / 启用并启动 / 停止并标记禁用（保留配置） |
-| `edit` | 用 `$EDITOR` 直接编辑 `mcp_servers.json` |
-| `test` | 临时启动一个配置，验证能起来并返回工具列表，不落盘 |
+| `list` | List every configured MCP server and its status |
+| `show` | Show a server's tools and full schemas |
+| `add` | Add a stdio command server; writes `mcp_servers.json` and starts it immediately |
+| `rm` | Remove (stop + delete config) |
+| `restart` / `enable` / `disable` | Restart / enable and start / stop and mark disabled (config kept) |
+| `edit` | Edit `mcp_servers.json` directly with `$EDITOR` |
+| `test` | Start a config temporarily to verify it comes up and returns its tool list, without persisting |
 
-### browser —— 浏览器工具
+### browser — browser tools
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `install` | 安装浏览器工具依赖（Playwright + Chromium、patchright/camoufox、agent-browser），可选一个目标或 `all` |
-| `status` | 显示安装情况、sidecar Chrome 是否在跑、保存的登录数 |
-| `refresh` | 重新把真实 Chrome profile 拷到 sidecar（在主 Chrome 登录新站点后用） |
-| `reset` | 完全重置：杀 sidecar、清 profile + 登录态 + 端口文件 |
-| `list` / `rm` | 列出 / 删除 `~/.openprogram/browser-states/` 下保存的登录 |
+| `install` | Install browser tool dependencies (Playwright + Chromium, patchright/camoufox, agent-browser); pick one target or `all` |
+| `status` | Show install state, whether the sidecar Chrome is running, saved login count |
+| `refresh` | Re-copy the real Chrome profile into the sidecar (after logging in to a new site in your main Chrome) |
+| `reset` | Full reset: kill the sidecar, clear the profile + login state + port files |
+| `list` / `rm` | List / delete saved logins under `~/.openprogram/browser-states/` |
 
-## 内容管理
+## Content management
 
 ### agents
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `list` / `show` / `add` / `rm` | 列出 / 查看 / 创建 / 删除 agent（删除会连带其全部会话） |
-| `set-default` | 设为默认 agent |
+| `list` / `show` / `add` / `rm` | List / view / create / delete agents (deleting removes all its sessions too) |
+| `set-default` | Set as the default agent |
 
 ### sessions
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `list` | 列出所有 agent 的全部会话 |
-| `resume` | 回答一个等待中的会话 |
-| `attach` / `detach` | 把频道用户的消息路由进某会话 / 取消别名 |
-| `aliases` | 列出全部会话与频道用户的别名 |
+| `list` | List every session across all agents |
+| `resume` | Answer a waiting session |
+| `attach` / `detach` | Route a channel user's messages into a session / remove the alias |
+| `aliases` | List all session-to-channel-user aliases |
 
 ### programs
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `run <name>` | 运行一个 program；`--arg key=value`（可重复）、`--provider`、`--model` |
-| `list` | 列出保存的 program |
-| `available` | 列出可安装的 program 与已装的第三方 harness |
-| `install` / `uninstall` | 安装 / 卸载 program（gui/research/wiki/all）或第三方 harness（git URL / owner/repo） |
+| `run <name>` | Run a program; `--arg key=value` (repeatable), `--provider`, `--model` |
+| `list` | List saved programs |
+| `available` | List installable programs and installed third-party harnesses |
+| `install` / `uninstall` | Install / uninstall a program (gui/research/wiki/all) or a third-party harness (git URL / owner/repo) |
 
 ### skills
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `list` | 列出发现的技能 |
-| `search` / `install` | 在发现源（默认 ClawHub）搜索 / 安装技能 |
-| `update` | 重拉过期技能（比对 SKILL.md 哈希） |
-| `remove` | 删除已装技能 |
-| `doctor` | 扫描技能目录的问题 |
+| `list` | List discovered skills |
+| `search` / `install` | Search / install skills from the discovery source (ClawHub by default) |
+| `update` | Re-pull stale skills (compares SKILL.md hashes) |
+| `remove` | Delete an installed skill |
+| `doctor` | Scan the skills directory for problems |
 
 ### plugins
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `list` / `search` | 列出已装插件 / 搜索 marketplace |
-| `install` / `uninstall` / `update` | 从 pip / npm / git / 路径安装、卸载、升级 |
-| `enable` / `disable` | 启用 / 禁用 |
+| `list` / `search` | List installed plugins / search the marketplace |
+| `install` / `uninstall` / `update` | Install from pip / npm / git / a path, uninstall, upgrade |
+| `enable` / `disable` | Enable / disable |
 
-### channels —— 聊天频道机器人
+### channels — chat channel bots
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `list` | 各平台的启用与配置状态 |
-| `setup` | 交互向导：选频道、登录（扫码 / token）、绑定 agent |
-| `accounts` | 管理频道机器人账号（WeChat、Telegram 等） |
-| `bindings` | 把入站频道消息路由到 agent |
+| `list` | Enable and configuration status per platform |
+| `setup` | Interactive wizard: pick a channel, log in (QR code / token), bind an agent |
+| `accounts` | Manage channel bot accounts (WeChat, Telegram, etc.) |
+| `bindings` | Route inbound channel messages to agents |
 
-### memory —— 持久记忆
+### memory — persistent memory
 
-| 动词 | 作用 |
+| Verb | What it does |
 |------|------|
-| `status` | 路径、条目数、上次 sleep 时间 |
-| `recall` | 搜索 wiki + 近期 journal，打印原始片段 |
-| `show` / `edit` | 打印 / 用 `$EDITOR` 编辑一个 wiki 页 |
-| `sleep` | 立即跑一轮 sleep 整理（light → deep → REM） |
-| `reflections` | 打印 `wiki/reflections.md` 最新条目 |
-| `export` | 把整个记忆目录 tar+gzip 到指定路径 |
+| `status` | Path, entry count, last sleep time |
+| `recall` | Search the wiki + recent journal, print raw snippets |
+| `show` / `edit` | Print / edit a wiki page with `$EDITOR` |
+| `sleep` | Run a sleep consolidation pass now (light → deep → REM) |
+| `reflections` | Print the latest entries of `wiki/reflections.md` |
+| `export` | tar+gzip the whole memory directory to a given path |
 
-## 维护
+## Maintenance
 
-| 命令 | 作用 | 关键参数 / 动词 |
+| Command | What it does | Key flags / verbs |
 |------|------|----------|
-| `doctor` | 端到端健康检查 | `--json` 输出 JSON |
-| `rescue` | 诊断问题并直接打印修复命令 | — |
-| `logs` | 查看日志 | `list`；`tail [name]`（`-n` 行数、`-f` 跟踪）；`path [name]`。name 为 worker / runtime / ink，默认 worker |
-| `update` | 检查并应用更新 | `--check` 只检查；`--force` 绕过 6 小时节流 |
+| `doctor` | End-to-end health check | `--json` for JSON output |
+| `rescue` | Diagnose problems and print the fix commands directly | — |
+| `logs` | View logs | `list`; `tail [name]` (`-n` line count, `-f` follow); `path [name]`. name is worker / runtime / ink, default worker |
+| `update` | Check for and apply updates | `--check` only checks; `--force` bypasses the 6-hour throttle |

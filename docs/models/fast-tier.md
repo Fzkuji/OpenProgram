@@ -1,29 +1,29 @@
-# fast tier
+# Fast tier
 
-部分厂商给部分模型提供付费高速档。OpenProgram 把它做成聊天界面的"高速"开关：打开后请求按厂商协议带上高速档参数。
+Some vendors offer a paid high-speed tier for some models. OpenProgram surfaces it as a "fast" toggle in the chat UI: when enabled, requests carry the vendor's fast-tier parameter.
 
-## 哪些模型有
+## Which models have it
 
-只有两个家族存在 fast 档：
+Only two families have a fast tier:
 
-| 家族 | 请求形态 |
+| Family | Request shape |
 |---|---|
-| GPT 5.4 / 5.5 / 5.6 系（OpenAI priority processing） | 请求体 `service_tier: "priority"` |
-| Claude Opus 4.6 / 4.7 / 4.8 | 请求体 `speed: "fast"` + fast-mode beta 头 |
+| GPT 5.4 / 5.5 / 5.6 series (OpenAI priority processing) | `service_tier: "priority"` in the request body |
+| Claude Opus 4.6 / 4.7 / 4.8 | `speed: "fast"` in the request body + the fast-mode beta header |
 
-其他模型（Gemini、DeepSeek、Qwen 等）没有 fast 概念，开关不会出现。
+Other models (Gemini, DeepSeek, Qwen, etc.) have no fast concept, and the toggle does not appear for them.
 
-判定按 provider 分三路：`openai-codex` 读官方模型端点落盘的 `Model.fast` 字段（登录订阅后 Fetch 即更新，不靠手写清单）；`claude-code` 用内置声明表（上述 Opus 型号）；其余 provider 查 models.dev 目录里有没有 priority 档。
+Detection runs per provider along three paths: `openai-codex` reads the `Model.fast` field persisted from the official model endpoint (updated by Fetch after a subscription login — no hand-written list); `claude-code` uses a built-in declaration table (the Opus models above); every other provider checks the models.dev catalog for a priority tier.
 
-## 怎么开
+## How to enable it
 
-- 聊天输入框的"高速"菜单项 / chip：对当前模型逐次生效，切到不支持的模型后开关自动隐藏、参数不会发出。
-- agent 配置里的 `service_tier`：给某个 agent 存一个默认档，每轮请求可再覆盖。
+- The "fast" menu item / chip in the chat input box: applies per request to the current model. Switching to an unsupported model hides the toggle and the parameter is never sent.
+- `service_tier` in the agent configuration: stores a default tier for an agent, overridable on any turn.
 
-## 对哪些 provider 生效
+## Which providers it applies to
 
-请求构建侧只有这些线路透传高速参数：`openai_responses`、`openai_completions`、`openai_codex`（请求体 `service_tier`），以及 `anthropic`（仅当模型声明了 fast 时切换到 `speed: "fast"` + beta 头）。其他 provider 不透传，参数不出网。
+On the request-building side, only these paths pass the fast-tier parameter through: `openai_responses`, `openai_completions`, and `openai_codex` (`service_tier` in the request body), plus `anthropic` (switching to `speed: "fast"` + the beta header only when the model declares fast support). Other providers do not pass it through, and the parameter never leaves the machine.
 
-计费提醒：fast 档按量计费。Claude 订阅账户没有充值 usage credits 时，Anthropic 会返回 429 "Usage credits are required for fast mode"——这是账户问题，不代表模型不支持，界面会原样展示该报错。
+Billing note: the fast tier is pay-as-you-go. On a Claude subscription account with no usage credits topped up, Anthropic returns 429 "Usage credits are required for fast mode" — an account issue, not a lack of model support; the UI shows the error as is.
 
-实现细节与判定规则的完整记录见[设计笔记](../reference/design/providers/models/fast-tier.md)。
+For the full record of implementation details and detection rules, see the [design notes](../reference/design/providers/models/fast-tier.md).

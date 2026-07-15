@@ -1,48 +1,48 @@
-# Channel 子系统设计
+# Channel Subsystem Design
 
-外部 chat 平台 (Telegram / Discord / Slack / WeChat) 通过这个子系统跟 OpenProgram 双向通讯：用户在 platform 上发消息触发 agent，agent 回复通过同一条 channel 发回去。
+External chat platforms (Telegram / Discord / Slack / WeChat) communicate bidirectionally with OpenProgram through this subsystem: a user sends a message on a platform to trigger the agent, and the agent's reply is sent back through the same channel.
 
-本文档描述**实施完成后的当前形态**。设计演化历史 + 修复过的缺陷列表见 [`channel-audit.md`](./channel-audit.md)。
+This document describes **the current shape after implementation is complete**. For the design evolution history and the list of fixed defects, see [`channel-audit.md`](./channel-audit.md).
 
-## 1. 整体形态
+## 1. Overall Shape
 
 ```
 ┌─────────────────────┐       ┌──────────────────────┐
-│  外部用户/Telegram   │       │  你自己写的 Python   │
-│  Discord/Slack/WX   │       │  脚本/cron/jupyter   │
+│  External user/Telegram │   │  Your own Python     │
+│  Discord/Slack/WX   │       │  script/cron/jupyter │
 └──────────┬──────────┘       └──────────┬───────────┘
-           │ 用户发消息进来                │ 想给某人发消息
+           │ user message comes in         │ want to send someone a message
            ▼                              ▼
   ┌──────────────────┐            ┌────────────────────┐
-  │ telegram.py 等   │            │   outbound.py      │  ← 入口 A
-  │ 4 个 adapter     │            │   send(...)        │     一次性发, 不需要长跑进程
-  │ - 长轮询/事件循环│            └─────────┬──────────┘
-  │ - parse 出统一   │                      │
+  │ telegram.py etc. │            │   outbound.py      │  ← entry A
+  │ 4 adapters       │            │   send(...)        │     one-shot send, no long-running process needed
+  │ - long poll/event loop│       └─────────┬──────────┘
+  │ - parse into unified  │                 │
   │   ChannelMessage │                      │
   └────────┬─────────┘                      │
            │                                │
            ▼                                │
   ┌───────────────────────────┐             │
   │   dispatch_inbound        │             │
-  │   (流量中枢, 串起所有事)  │             │
+  │   (traffic hub, ties everything together) │
   │                           │             │
-  │   ① 路由: 决定哪个 agent  │             │
-  │   ② 算 session_key        │             │
-  │   ③ 加载 session 状态     │             │
-  │   ④ 调 agent 跑这一回合   │             │
+  │   ① route: decide which agent │         │
+  │   ② compute session_key   │             │
+  │   ③ load session state    │             │
+  │   ④ call agent to run this turn │        │
   │   ⑤ progress streaming    │             │
-  │   ⑥ 推 webui WS           │             │
+  │   ⑥ push to webui WS      │             │
   └────────┬──────────────────┘             │
            │                                │
-           │ 边跑边 edit 占位/最终 reply    │
+           │ edit placeholder / final reply as it runs │
            ▼                                ▼
   ┌─────────────────────────────────────────────────┐
-  │           _transport.py (统一底层)              │  ← 唯一往外发字节的地方
+  │           _transport.py (unified low level)     │  ← the only place that sends bytes outward
   │                                                 │
-  │   post_message(平台, 账号, 收信人, 文本)        │
-  │   patch_message(平台, 账号, 收信人, msg_id, 文本)│
+  │   post_message(platform, account, recipient, text) │
+  │   patch_message(platform, account, recipient, msg_id, text) │
   │                                                 │
-  │   返回 SendResult {                             │
+  │   returns SendResult {                          │
   │     ok, message_id, error_kind, retryable       │
   │   }                                             │
   └────────┬────────────────────────────────────────┘
@@ -51,131 +51,131 @@
   Telegram API / Discord API / Slack API / WeChat iLink API
 ```
 
-## 2. 端到端用例：用户发消息进来 → bot 回复
+## 2. End-to-End Use Case: User Message Comes In → Bot Replies
 
-**示例**：你在 Telegram 给 bot 发"帮我看下当前目录有什么 Python 文件"。
+**Example**: On Telegram you send the bot "help me check what Python files are in the current directory".
 
 ```
-1. Telegram 服务器把消息推给 bot
-   → openprogram/channels/telegram.py 在长轮询, 收到 update dict
+1. The Telegram server pushes the message to the bot
+   → openprogram/channels/telegram.py is long-polling, receives the update dict
 
-2. _handle_update(update) 内部:
-   a. 抽 text = "帮我看下当前目录有什么 Python 文件"
-   b. 构造 ChannelMessage {
+2. Inside _handle_update(update):
+   a. extract text = "help me check what Python files are in the current directory"
+   b. construct ChannelMessage {
         text=..., chat_id="123", user_id="456",
         user_display="zhangsan", chat_type="direct",
         ts=1716000000, reply_to_id="", thread_id="",
       }
-   c. 调 dispatch_inbound(channel="telegram", account_id="default",
+   c. call dispatch_inbound(channel="telegram", account_id="default",
                           peer_kind="direct", peer_id="123",
                           user_text=text, user_display="zhangsan",
                           progress_stream=True)
 
-3. dispatch_inbound 内部 (在 _conversation.py):
-   a. 查 bindings → 决定用 "main" agent
-   b. 算 session_key = "default_direct_123" (在 _session_routing.py)
-   c. 加载 / 创建 session (在 _session_store.py 调 SessionDB)
-   d. 发占位消息: _transport.post_message("telegram", "default", "123",
+3. Inside dispatch_inbound (in _conversation.py):
+   a. look up bindings → decide to use the "main" agent
+   b. compute session_key = "default_direct_123" (in _session_routing.py)
+   c. load / create session (in _session_store.py, calling SessionDB)
+   d. send placeholder message: _transport.post_message("telegram", "default", "123",
                                           "⏳ working...")
-      返回 SendResult{ok=True, message_id="9001"}
+      returns SendResult{ok=True, message_id="9001"}
       → MessageHandle{platform="telegram", account="default",
                       target="123", message_id="9001"}
-   e. 调 process_user_turn(req, on_event=_on_event) 跑 agent
+   e. call process_user_turn(req, on_event=_on_event) to run the agent
 
-4. Agent 内部决定调 bash tool 跑 `ls *.py`:
-   a. dispatcher emit tool_use envelope → _on_event 拿到
-   b. _on_event 看到 tool_use → progress_lines = ["⚙ bash"]
-   c. 节流满足 (距上次 edit >1s) → _transport.patch_message(
+4. The agent decides internally to call the bash tool to run `ls *.py`:
+   a. dispatcher emits a tool_use envelope → _on_event receives it
+   b. _on_event sees tool_use → progress_lines = ["⚙ bash"]
+   c. throttle satisfied (>1s since last edit) → _transport.patch_message(
         "telegram", "default", "123", "9001", "⚙ bash")
-      → Telegram 上那条 "⏳ working..." 变成 "⚙ bash"
+      → on Telegram that "⏳ working..." becomes "⚙ bash"
 
-5. bash 跑完返回 "a.py b.py c.py":
-   a. dispatcher emit tool_result envelope → _on_event 拿到
-   b. progress_lines = ["✓ bash"]  (把 ⚙ 换成 ✓)
-   c. 节流满足 → patch_message edit 成 "✓ bash"
+5. bash finishes and returns "a.py b.py c.py":
+   a. dispatcher emits a tool_result envelope → _on_event receives it
+   b. progress_lines = ["✓ bash"]  (swap ⚙ for ✓)
+   c. throttle satisfied → patch_message edits to "✓ bash"
 
-6. Agent 综合 bash 输出写出最终回复 "找到 3 个 Python 文件: a.py / b.py / c.py":
-   a. process_user_turn 返回, result.final_text = 这段话
-   b. dispatch_inbound 强制 edit (跳节流): _transport.patch_message
-      把 "9001" 改成完整回复
-   c. 持久化到 SessionDB, broadcast 给 webui
-   d. dispatch_inbound 返回 None
+6. The agent combines the bash output and writes the final reply "Found 3 Python files: a.py / b.py / c.py":
+   a. process_user_turn returns, result.final_text = this text
+   b. dispatch_inbound forces an edit (bypassing the throttle): _transport.patch_message
+      changes "9001" to the full reply
+   c. persist to SessionDB, broadcast to webui
+   d. dispatch_inbound returns None
 
-7. telegram.py 拿到 None → 不发任何 reply (因为已经 edit 进去了)
-   用户在 Telegram 看到那条占位 "⏳..." 已经长成完整回复
+7. telegram.py gets None → does not send any reply (because it was already edited in)
+   In Telegram the user sees that "⏳..." placeholder has grown into the full reply
 ```
 
-## 3. 用例 B：cron / @agentic_function 主动发消息
+## 3. Use Case B: cron / @agentic_function Proactively Sends a Message
 
 ```python
 from openprogram.channels.outbound import send
 
-# 在任何 Python 脚本里, 不需要 worker 在跑
+# In any Python script, no worker needs to be running
 send("telegram", "default", "1234", "早上好")
 ```
 
-发生的事：
+What happens:
 
 ```
-1. outbound.send 调 _transport.post_message
-2. _transport.post_message 拿凭据 → HTTPS POST sendMessage
-3. SendResult 返回 → outbound.send 返回 True/False
-4. 脚本继续
+1. outbound.send calls _transport.post_message
+2. _transport.post_message fetches credentials → HTTPS POST sendMessage
+3. SendResult returns → outbound.send returns True/False
+4. the script continues
 ```
 
-**没有**：adapter 实例、worker 进程、session、agent 调用、webui broadcast。一行调用即发即走。
+**There is no**: adapter instance, worker process, session, agent call, or webui broadcast. A single call fires and forgets.
 
-这就是为什么 outbound.send 是单独入口而不是走 adapter——cron 脚本根本没有 adapter 实例在跑。
+This is why outbound.send is a separate entry point instead of going through an adapter — a cron script simply has no adapter instance running.
 
-## 4. 五条核心设计原则
+## 4. Five Core Design Principles
 
-### 4.1 两个入口、一份实现
+### 4.1 Two Entry Points, One Implementation
 
-| 入口 | 用途 | 状态 | 谁调 |
+| Entry point | Purpose | State | Caller |
 |---|---|---|---|
-| `outbound.send` | 一次性发, 不需要长跑进程 | 无状态 | cron 脚本 / jupyter / @agentic_function / webui (回复) |
-| `Channel.send_text` + `edit_text` | 持有 message_id 后续 edit | 有状态 | dispatch_inbound progress streaming |
+| `outbound.send` | one-shot send, no long-running process needed | stateless | cron script / jupyter / @agentic_function / webui (reply) |
+| `Channel.send_text` + `edit_text` | holds message_id for subsequent edits | stateful | dispatch_inbound progress streaming |
 
-底下都调同一个 `_transport.post_message` / `patch_message`。HTTP 调用 / 凭据加载 / chunking 只有一份代码。
+Both call the same `_transport.post_message` / `patch_message` underneath. There is only one copy of the HTTP call / credential loading / chunking code.
 
-为什么不合并入口：cron 脚本 / jupyter 临时调用没有 worker 进程在跑，需要无状态的 raw HTTP 接口；progress streaming 需要持有 message_id 才能 edit，需要 stateful 接口。两类需求不同，但底层共享。
+Why not merge the entry points: a cron script / jupyter ad-hoc call has no worker process running and needs a stateless raw HTTP interface; progress streaming needs to hold a message_id in order to edit and so needs a stateful interface. The two kinds of needs differ, but the low level is shared.
 
-### 4.2 dispatch_inbound 是流量中枢
+### 4.2 dispatch_inbound Is the Traffic Hub
 
-所有从外部进来的消息都走它。它本身不做具体活儿，只串流程：
+Every message coming in from outside goes through it. It does no concrete work itself; it only ties the flow together:
 
 ```python
 def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
                     user_text, user_display="", progress_stream=False) -> Optional[str]:
-    # 委托给独立模块
+    # delegate to independent modules
     agent_id = bindings.route(...) or session_aliases.lookup(...)
     session_key = _session_routing.session_key_for_agent(...) + apply_reset_policy(...)
     meta, _ = _session_store.load_or_init_session(...)
 
-    # 可选: 发占位 + 订阅 stream → progress edit
+    # optional: send placeholder + subscribe to stream → progress edit
     if progress_stream:
         placeholder_handle = _transport.post_message(... "⏳ working...")
 
-    # 跑 agent
+    # run the agent
     result = process_user_turn(req, on_event=...)
 
-    # 持久化 + broadcast
+    # persist + broadcast
     _broadcast.broadcast_channel_turn(...)
 
-    return result.final_text  # 或 None (progress 模式)
+    return result.final_text  # or None (progress mode)
 ```
 
-`_conversation.py` 自己只有 283 行（之前一个文件 588 行 5 职责）。
+`_conversation.py` itself is only 283 lines (previously a single file of 588 lines with 5 responsibilities).
 
-### 4.3 平台差异封到底层
+### 4.3 Platform Differences Sealed in the Low Level
 
-`_transport.py` 是**唯一**调 HTTP 往外发的地方。Telegram 的 `editMessageText`、Discord 的 `PATCH /messages/{id}`、Slack 的 `chat.update`、WeChat 的 iLink 协议——全都在这里。
+`_transport.py` is the **only** place that calls HTTP to send outward. Telegram's `editMessageText`, Discord's `PATCH /messages/{id}`, Slack's `chat.update`, WeChat's iLink protocol — they all live here.
 
-adapter 类 (`telegram.py` 等) 只负责：(a) 连服务器的事件循环、(b) 把 platform-native 对象 parse 成 `ChannelMessage`。**不负责发消息**——发消息是 dispatch_inbound 通过 `_transport` 干的。
+The adapter classes (`telegram.py` etc.) are responsible only for: (a) the event loop that connects to the server, and (b) parsing platform-native objects into `ChannelMessage`. **They are not responsible for sending messages** — sending is done by dispatch_inbound through `_transport`.
 
-### 4.4 错误信号结构化
+### 4.4 Structured Error Signals
 
-`_transport.post_message` 返回 `SendResult`：
+`_transport.post_message` returns `SendResult`:
 
 ```python
 @dataclass(frozen=True)
@@ -183,30 +183,30 @@ class SendResult:
     ok: bool
     message_id: str = ""
     error_kind: str = ""          # auth / rate_limit / bad_target / network / not_supported / unknown
-    error_detail: str = ""        # human-readable 一行
-    retryable: bool = False       # 瞬态可重试 vs 永久失败
+    error_detail: str = ""        # human-readable one line
+    retryable: bool = False       # transient retryable vs permanent failure
 
     def __bool__(self): return self.ok
 ```
 
-调用方可以做"token 失效请重新登录" vs "chat_id 错误" vs "稍后重试"的区分。
+The caller can distinguish between "token expired, please log in again" vs "wrong chat_id" vs "retry later".
 
-`outbound.send` 保留 bool 签名（兼容旧 caller），`outbound.send_full()` 暴露完整 SendResult。`Channel.send_text` / `edit_text` 同理，有 `_full` 变体。
+`outbound.send` keeps its bool signature (for compatibility with old callers), and `outbound.send_full()` exposes the full SendResult. `Channel.send_text` / `edit_text` work the same way, each with a `_full` variant.
 
-### 4.5 plugin 扩展点
+### 4.5 Plugin Extension Point
 
-要加新平台（比如 WhatsApp）不用改源码：
+Adding a new platform (say WhatsApp) requires no source changes:
 
-**方式 A** — `pyproject.toml` entry_point（推荐）：
+**Option A** — `pyproject.toml` entry_point (recommended):
 
 ```toml
 [project.entry-points."openprogram.channels"]
 whatsapp = "my_pkg.whatsapp:WhatsAppChannel"
 ```
 
-启动时 `importlib.metadata.entry_points(group="openprogram.channels")` 自动扫描。
+At startup `importlib.metadata.entry_points(group="openprogram.channels")` scans automatically.
 
-**方式 B** — `register_channel` imperative 调用：
+**Option B** — `register_channel` imperative call:
 
 ```python
 from openprogram.channels import register_channel
@@ -215,114 +215,114 @@ from my_pkg.whatsapp import WhatsAppChannel
 register_channel("whatsapp", WhatsAppChannel)
 ```
 
-适合 jupyter 临时挂或 plugin hooks 里动态注册。
+Suitable for a temporary mount in jupyter or dynamic registration in plugin hooks.
 
-内置 4 个平台优先，同名 plugin 被无声忽略。
+The 4 built-in platforms take priority; a same-named plugin is silently ignored.
 
-## 5. 模块清单
+## 5. Module Inventory
 
 ```
-openprogram/channels/   14 文件
+openprogram/channels/   14 files
 ├── base.py              Channel ABC + MessageHandle + send_text/edit_text(_full)
-├── _transport.py        SendResult + 4 个平台 HTTP post/patch (统一底层)
-├── _message.py          ChannelMessage 入站中性结构 dataclass
-├── outbound.py          入口 A: send / send_full (薄包装)
-├── _conversation.py     dispatch_inbound 主流程 + progress streaming
-├── _session_store.py    session 路径 / 创建 / 加载 / 保存
+├── _transport.py        SendResult + 4 platforms' HTTP post/patch (unified low level)
+├── _message.py          ChannelMessage inbound neutral-structure dataclass
+├── outbound.py          entry A: send / send_full (thin wrapper)
+├── _conversation.py     dispatch_inbound main flow + progress streaming
+├── _session_store.py    session path / create / load / save
 ├── _session_routing.py  session_key + reset policy
 ├── _broadcast.py        webui WS push (channel_turn / session_updated)
 ├── __init__.py          CHANNEL_CLASSES proxy + register_channel + entry_points
-├── telegram.py          Telegram bot 长轮询入站
-├── discord.py           Discord bot Gateway 入站
-├── slack.py             Slack Socket Mode 入站
-├── wechat.py            WeChat iLink 长轮询入站 (含 QR 登录)
-├── accounts.py          凭据存储
-└── bindings.py          (channel, account, peer) → agent 路由表
+├── telegram.py          Telegram bot long-poll inbound
+├── discord.py           Discord bot Gateway inbound
+├── slack.py             Slack Socket Mode inbound
+├── wechat.py            WeChat iLink long-poll inbound (incl. QR login)
+├── accounts.py          credential storage
+└── bindings.py          (channel, account, peer) → agent routing table
 ```
 
-读法：每个模块只跟它声明的 caller 打交道，不存在循环依赖。
+How to read it: each module deals only with the callers it declares; there are no circular dependencies.
 
-| 模块 | 职责 | 典型 caller |
+| Module | Responsibility | Typical caller |
 |---|---|---|
-| `_transport.py` | 唯一往外发字节, 4 个平台 HTTP | outbound + base.send_text |
-| `_message.py` | ChannelMessage parse 中性结构 | adapter 入口 |
-| `base.py` | Channel ABC + MessageHandle | adapter 子类、dispatch_inbound |
-| `outbound.py` | 入口 A (一次性发) | cron 脚本、jupyter、@agentic_function |
-| `_conversation.py` | dispatch_inbound 主流程 | 4 个 adapter 的 on_message |
-| `_session_store.py` | session 加载/保存 | dispatch_inbound |
-| `_session_routing.py` | session_key 计算 | dispatch_inbound |
+| `_transport.py` | the only place that sends bytes outward, 4 platforms' HTTP | outbound + base.send_text |
+| `_message.py` | ChannelMessage parse neutral structure | adapter entry |
+| `base.py` | Channel ABC + MessageHandle | adapter subclasses, dispatch_inbound |
+| `outbound.py` | entry A (one-shot send) | cron script, jupyter, @agentic_function |
+| `_conversation.py` | dispatch_inbound main flow | the 4 adapters' on_message |
+| `_session_store.py` | session load/save | dispatch_inbound |
+| `_session_routing.py` | session_key computation | dispatch_inbound |
 | `_broadcast.py` | webui WS push | dispatch_inbound |
-| `telegram.py` 等 | 入站事件循环 + parse | worker 启动时实例化 |
-| `__init__.py` | CHANNEL_CLASSES + plugin 注册 | webui list_status / worker |
-| `accounts.py` | 凭据存储 | 所有 _transport 函数 |
-| `bindings.py` | inbound 路由 | dispatch_inbound |
+| `telegram.py` etc. | inbound event loop + parse | instantiated at worker startup |
+| `__init__.py` | CHANNEL_CLASSES + plugin registration | webui list_status / worker |
+| `accounts.py` | credential storage | all _transport functions |
+| `bindings.py` | inbound routing | dispatch_inbound |
 
-## 6. 支持的平台
+## 6. Supported Platforms
 
-| 平台 | 入站机制 | 出站机制 | progress streaming | 备注 |
+| Platform | Inbound mechanism | Outbound mechanism | progress streaming | Notes |
 |---|---|---|---|---|
-| **Telegram** | 长轮询 `getUpdates` (无 webhook 依赖) | bot API `sendMessage` / `editMessageText` | ✓ | bot token, public Bot API |
+| **Telegram** | long-poll `getUpdates` (no webhook dependency) | bot API `sendMessage` / `editMessageText` | ✓ | bot token, public Bot API |
 | **Discord** | discord.py Gateway WS | REST `POST /messages` / `PATCH /messages/{id}` | ✓ | bot token, intents.message_content |
 | **Slack** | Socket Mode (slack_sdk) | `chat.postMessage` / `chat.update` | ✓ | bot_token (xoxb-) + app_token (xapp-) |
-| **WeChat** | iLink `getupdates` 长轮询 | iLink `sendmessage` | ✗ (iLink 不支持 edit) | 个微扫码登录, 无企业认证门槛 |
+| **WeChat** | iLink `getupdates` long-poll | iLink `sendmessage` | ✗ (iLink does not support edit) | personal WeChat QR login, no enterprise-verification barrier |
 
-平台差异以本表和各 adapter 顶部 docstring 为准。
+Platform differences are governed by this table and the docstring at the top of each adapter.
 
-## 7. 用户入口
+## 7. User Entry Points
 
 ### 7.1 CLI
 
-完整的命令树 (`openprogram channels`)：
+The full command tree (`openprogram channels`):
 
 ```
-openprogram channels list                          显示每个 platform/account 状态
-openprogram channels setup                         交互式 setup wizard
+openprogram channels list                          show status of each platform/account
+openprogram channels setup                         interactive setup wizard
 
 openprogram channels accounts
-  ├── list                                         列所有账号
-  ├── add <channel> --id <name>                    新建一个账号 slot
-  ├── login <channel> --id <name>                  交互式录入凭据
-  │     - telegram/discord/slack: getpass 粘贴 token
-  │     - wechat: 启动 iLink QR 扫码流程
-  └── rm <channel> <account_id>                    删账号 + 关联 bindings
+  ├── list                                         list all accounts
+  ├── add <channel> --id <name>                    create a new account slot
+  ├── login <channel> --id <name>                  interactively enter credentials
+  │     - telegram/discord/slack: getpass paste token
+  │     - wechat: start iLink QR login flow
+  └── rm <channel> <account_id>                    delete account + associated bindings
 
 openprogram channels bindings
-  ├── list                                         列所有路由规则
+  ├── list                                         list all routing rules
   ├── add <agent_id> --channel <ch> [--account <acct>] [--peer <peer> --peer-kind <kind>]
-  │                                                  把 (channel, account, peer) 路由到 agent
-  └── rm <binding_id>                              删一条路由
+  │                                                  route (channel, account, peer) to an agent
+  └── rm <binding_id>                              delete one route
 ```
 
 ### 7.2 TUI
 
-| 入口 | 实现 | 行数 |
+| Entry point | Implementation | Lines |
 |---|---|---|
-| `/channel` slash command | `cli/src/commands/handler.ts` 触发 `pickers/channel.tsx` | 374 行 picker |
-| Channel 实时活动 feed | `cli/src/components/ChannelActivityFeed.tsx` | 66 行 |
-| WS handler 显示 channel turn | `cli/src/screens/repl/wsHandlers/handleChannelTurn.ts` | — |
+| `/channel` slash command | `cli/src/commands/handler.ts` triggers `pickers/channel.tsx` | 374-line picker |
+| Channel real-time activity feed | `cli/src/components/ChannelActivityFeed.tsx` | 66 lines |
+| WS handler that displays a channel turn | `cli/src/screens/repl/wsHandlers/handleChannelTurn.ts` | — |
 
-`/channel` 工作流：选 channel → 选 account → 引导用户用 `/attach` 把当前对话绑到 channel peer。
+`/channel` workflow: pick a channel → pick an account → guide the user to use `/attach` to bind the current conversation to a channel peer.
 
 ### 7.3 Web UI
 
-| 入口 | 实现 | 状态 |
+| Entry point | Implementation | Status |
 |---|---|---|
-| Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` (168 行) | ✓ 完整 |
-| Health badge status API | `/api/channels/{platform}/{account_id}/status` 返回 alive/stale/unknown | ✓ 完整 |
-| 独立 settings 页 | — | **⚠ 缺失** |
+| Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` (168 lines) | ✓ complete |
+| Health badge status API | `/api/channels/{platform}/{account_id}/status` returns alive/stale/unknown | ✓ complete |
+| Standalone settings page | — | **⚠ missing** |
 
-Web 端目前**没有 `/settings/channels` 配置页**。所有账号 / bindings 管理只能走 CLI。后续要做 Web 端配置 UI 的话，对应 API 加在 `openprogram/webui/routes/channels.py` 里。
+The Web side currently **has no `/settings/channels` config page**. All account / bindings management can only go through the CLI. If a Web config UI is to be built later, the corresponding API should be added in `openprogram/webui/routes/channels.py`.
 
-## 8. plugin / 扩展未来工作
+## 8. Plugin / Extension Future Work
 
-| 当前状态 | 后续若需扩展 |
+| Current status | If extension is needed later |
 |---|---|
-| 4 个内置平台 | 加 WhatsApp / Signal / Matrix / LINE 等 — 写 `Channel` 子类 + entry_point 注册 |
-| ChannelMessage 已含 `reply_to_id` / `thread_id` / `attachments` 字段 | dispatch_inbound 暂不消费, 等真实需求出现 (reply quote / thread 隔离 / 附件读取) 再接 |
-| Reaction approval (✓/✗ 确认 dangerous tool) | 未实现, hermes/OpenClaw 都有, 等用户提需求再做 |
-| Token-level text streaming | 目前只在 tool 边界 edit, 没有 reply text delta 实时 edit (rate limit 风险) |
+| 4 built-in platforms | add WhatsApp / Signal / Matrix / LINE etc. — write a `Channel` subclass + entry_point registration |
+| ChannelMessage already contains `reply_to_id` / `thread_id` / `attachments` fields | dispatch_inbound does not consume them yet; wire them up once a real need appears (reply quote / thread isolation / attachment reading) |
+| Reaction approval (✓/✗ to confirm a dangerous tool) | not implemented; both hermes/OpenClaw have it; build it once a user asks |
+| Token-level text streaming | currently only edits at tool boundaries; no real-time edit of reply text deltas (rate limit risk) |
 
-## 9. 参考
+## 9. References
 
-- [`channel-audit.md`](./channel-audit.md) — 设计演化历史 + 已修缺陷清单 + 跟 OpenClaw / Hermes 的对比
-- 各 adapter 顶部 docstring — platform-specific 协议细节
+- [`channel-audit.md`](./channel-audit.md) — design evolution history + fixed-defect list + comparison with OpenClaw / Hermes
+- the docstring at the top of each adapter — platform-specific protocol details

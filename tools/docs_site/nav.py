@@ -17,15 +17,15 @@ EXCLUDE_DIRS = {"_site", "_site.tmp", "_site.old", "images", "slides"}
 # Top-level tabs. Each top-level directory under docs/ is one tab in the top
 # navbar; the sidebar only shows the current tab's tree. Order here is the
 # navbar order. (dir name -> (中文 label, English label))
-TABS: dict[str, tuple[str, str]] = {
-    "start":        ("开始使用", "Get started"),
-    "install":      ("安装", "Install"),
-    "capabilities": ("能力", "Capabilities"),
-    "interfaces":   ("界面", "Interfaces"),
-    "models":       ("模型", "Models"),
-    "integrations": ("集成", "Integrations"),
-    "server":       ("服务与运维", "Server & Ops"),
-    "reference":    ("参考", "Reference"),
+TABS: dict[str, tuple[str, str]] = {  # dir -> (English label, 中文 label)
+    "start":        ("Get started", "开始使用"),
+    "install":      ("Install", "安装"),
+    "capabilities": ("Capabilities", "能力"),
+    "interfaces":   ("Interfaces", "界面"),
+    "models":       ("Models", "模型"),
+    "integrations": ("Integrations", "集成"),
+    "server":       ("Server & Ops", "服务与运维"),
+    "reference":    ("Reference", "参考"),
 }
 # Loose files directly under docs/ belong to a tab too.
 ROOT_PAGE_TAB = {"README.md": "start"}
@@ -35,19 +35,16 @@ FALLBACK_TAB = "reference"
 
 # Display-name overrides for pages whose H1 doesn't make a good sidebar label.
 ROOT_PAGE_GROUPS: dict[str, tuple[str, str]] = {
-    "README.md": ("项目总览", "start"),
-    "capabilities/agentic-programming/philosophy.md": ("设计哲学", ""),
+    "README.md": ("Overview", "start"),
+    "capabilities/agentic-programming/philosophy.md": ("Philosophy", ""),
 }
 
 # Sidebar titles for directories that have no README.md of their own.
-DIR_TITLES: dict[str, tuple[str, str]] = {  # rel dir -> (中文, English)
-    "capabilities/agentic-programming/writing-functions": ("编写函数", "Writing functions"),
-    "capabilities/agentic-programming/choosing-the-next-step": ("选择下一步", "Choosing the next step"),
+DIR_TITLES: dict[str, tuple[str, str]] = {  # rel dir -> (English, 中文)
+    "capabilities/agentic-programming/writing-functions": ("Writing functions", "编写函数"),
+    "capabilities/agentic-programming/choosing-the-next-step": ("Choosing the next step", "选择下一步"),
 }
-# Per-page i18n key (bilingual sidebar labels for pages the toggle must switch).
-ROOT_PAGE_I18N = {
-    "README.md": "p_overview",
-}
+
 
 
 @dataclass
@@ -59,9 +56,9 @@ class Page:
     is_readme: bool
     kind: str          # "md" or "html"
     i18n_key: str = ""  # if set, sidebar label switches with the UI language
-    en_src: Path | None = None   # English-version source (xxx.en.md), if any
-    en_out: Path | None = None   # English-version output path, if any
-    title_en: str = ""  # English sidebar label (from the .en.md H1), if any
+    zh_src: Path | None = None   # Chinese-version source (xxx.zh.md), if any
+    zh_out: Path | None = None   # Chinese-version output path, if any
+    title_zh: str = ""  # Chinese sidebar label (from the .zh.md H1), if any
 
 
 @dataclass
@@ -71,7 +68,7 @@ class Group:
     pages: list[Page] = field(default_factory=list)
     subgroups: list["Group"] = field(default_factory=list)
     i18n_key: str = ""  # if set, group header switches with the UI language
-    title_en: str = ""  # English group label (from README.en.md H1), if any
+    title_zh: str = ""  # Chinese group label (from README.zh.md H1), if any
 
 
 _H1_RE = re.compile(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", re.MULTILINE)
@@ -108,19 +105,19 @@ def prettify(name: str) -> str:
 def discover(docs_root: Path) -> list[Page]:
     """All renderable pages under docs/, excluding EXCLUDE_DIRS.
 
-    Bilingual convention: ``xxx.md`` is the default (Chinese) version; a sibling
-    ``xxx.en.md`` is its English version. The .en.md does NOT get its own
-    sidebar entry — it's attached to xxx.md as ``en_src`` and reached via the
+    Bilingual convention: ``xxx.md`` is the default (English) version; a sibling
+    ``xxx.zh.md`` is its Chinese version. The .zh.md does NOT get its own
+    sidebar entry — it's attached to xxx.md as ``zh_src`` and reached via the
     language toggle.
     """
-    # First pass: collect all .en.md english sources, keyed by their base stem.
-    en_sources: dict[Path, Path] = {}  # base rel (xxx.md) -> en src path
-    for path in docs_root.rglob("*.en.md"):
+    # First pass: collect all .zh.md chinese sources, keyed by their base stem.
+    zh_sources: dict[Path, Path] = {}  # base rel (xxx.md) -> zh src path
+    for path in docs_root.rglob("*.zh.md"):
         rel = path.relative_to(docs_root)
         if any(part in EXCLUDE_DIRS for part in rel.parts):
             continue
-        base_rel = rel.with_name(rel.name[:-len(".en.md")] + ".md")
-        en_sources[base_rel] = path
+        base_rel = rel.with_name(rel.name[:-len(".zh.md")] + ".md")
+        zh_sources[base_rel] = path
 
     pages: list[Page] = []
     for path in sorted(docs_root.rglob("*")):
@@ -129,15 +126,15 @@ def discover(docs_root: Path) -> list[Page]:
         rel = path.relative_to(docs_root)
         if any(part in EXCLUDE_DIRS for part in rel.parts):
             continue
-        if rel.name.endswith(".en.md"):
-            continue  # english version is attached to its base, not a page
+        if rel.name.endswith(".zh.md"):
+            continue  # chinese version is attached to its base, not a page
         out = rel.with_suffix(".html")
         rel_str = str(rel).replace("\\", "/")
         override = ROOT_PAGE_GROUPS.get(rel_str)
         title = override[0] if override else extract_title(path)
-        en_src = en_sources.get(rel)
-        en_out = (rel.with_name(rel.stem + ".en.html")) if en_src else None
-        title_en = extract_title(en_src) if en_src else ""
+        zh_src = zh_sources.get(rel)
+        zh_out = (rel.with_name(rel.stem + ".zh.html")) if zh_src else None
+        title_zh = extract_title(zh_src) if zh_src else ""
         pages.append(
             Page(
                 src=path,
@@ -146,10 +143,9 @@ def discover(docs_root: Path) -> list[Page]:
                 title=title,
                 is_readme=path.stem.upper() == "README",
                 kind=path.suffix.lstrip("."),
-                i18n_key=ROOT_PAGE_I18N.get(rel_str, ""),
-                en_src=en_src,
-                en_out=en_out,
-                title_en=title_en,
+                zh_src=zh_src,
+                zh_out=zh_out,
+                title_zh=title_zh,
             )
         )
     return _dedupe_md_html(pages)
@@ -179,8 +175,8 @@ def _dedupe_md_html(pages: list[Page]) -> list[Page]:
 @dataclass
 class Tab:
     key: str            # top-level dir name ("start", "models", …)
-    title: str
-    title_en: str
+    title: str          # English (default) label
+    title_zh: str
     root: Group         # tree of this tab's pages; root.pages render loose
     landing: Path       # out path the navbar tab links to
 
@@ -259,12 +255,12 @@ def ordered_children(g: "Group") -> list:
 def build_tabs(docs_root: Path, pages: list[Page]) -> list[Tab]:
     """Split pages by top-level tab, each with its own directory-mirroring tree."""
     tabs: list[Tab] = []
-    for key, (zh, en) in TABS.items():
+    for key, (en, zh) in TABS.items():
         tab_pages = [p for p in pages if tab_of(p) == key]
         if not tab_pages:
             continue
         root = _tree_for_tab(docs_root, key, tab_pages)
-        tabs.append(Tab(key=key, title=zh, title_en=en, root=root,
+        tabs.append(Tab(key=key, title=en, title_zh=zh, root=root,
                         landing=_landing(root)))
     return tabs
 
@@ -290,14 +286,14 @@ def _tree_for_tab(docs_root: Path, tab_key: str, pages: list[Page]) -> Group:
         if rel_dir in groups:
             return groups[rel_dir]
         readme = docs_root / rel_dir / "README.md"
-        readme_en = docs_root / rel_dir / "README.en.md"
+        readme_zh = docs_root / rel_dir / "README.zh.md"
         override = DIR_TITLES.get(str(rel_dir).replace("\\", "/"))
         if override:
-            title, title_en = override
+            title, title_zh = override
         else:
             title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
-            title_en = extract_title(readme_en) if readme_en.exists() else ""
-        g = Group(title=title, rel_dir=rel_dir, title_en=title_en)
+            title_zh = extract_title(readme_zh) if readme_zh.exists() else ""
+        g = Group(title=title, rel_dir=rel_dir, title_zh=title_zh)
         groups[rel_dir] = g
         group_for(rel_dir.parent).subgroups.append(g)
         return g

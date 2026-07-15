@@ -1,96 +1,96 @@
-# 常见问题
+# FAQ
 
-这页收集安装和日常使用中最常见的问题，每条都给出对应的命令解法。
+The most common questions from installation and daily use, each with the command that solves it.
 
-## 端口 18100 或 18109 被占用怎么办？
+## Port 18100 or 18109 is already in use?
 
-先看当前配置的端口，再改成空闲的：
-
-```bash
-openprogram ports                              # 查看当前端口
-openprogram ports --backend 18119 --frontend 18110   # 持久修改，下次启动生效
-```
-
-只想改一次运行，用环境变量 `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT` 覆盖。如果占端口的是残留进程，`lsof -ti:18100 | xargs kill` 释放后重启。
-
-## provider 没被检测到 / "No provider available"？
+Check the currently configured ports, then move to free ones:
 
 ```bash
-openprogram providers            # 列出已检测到的凭据
-openprogram providers discover   # 扫描外部来源（Claude Code / Codex / Gemini CLI 等）
-openprogram providers doctor     # 诊断凭据：过期、刷新、冷却、冲突
-openprogram setup                # 重新走一遍配置向导
+openprogram ports                              # show current ports
+openprogram ports --backend 18119 --frontend 18110   # persistent change, takes effect on next start
 ```
 
-也可以直接设置环境变量（`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`）后重启服务。
+To change just one run, override with the environment variables `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT`. If the port is held by a leftover process, free it with `lsof -ti:18100 | xargs kill` and restart.
 
-## 我的数据存在哪里？
-
-默认全部在 `~/.openprogram/` 下：`config.json`（配置）、`sessions/`（会话）、`logs/`（日志）、`memory/`（记忆）、`usage.db`（token 用量）。使用 `--profile <name>` 时改存 `~/.openprogram-<name>/`。
-
-## 怎么更新到最新版本？
+## Provider not detected / "No provider available"?
 
 ```bash
-openprogram update           # 检查并应用更新
-openprogram update --check   # 只检查，不应用
-openprogram update --force   # 绕过 6 小时节流，立即检查
+openprogram providers            # list detected credentials
+openprogram providers discover   # scan external sources (Claude Code / Codex / Gemini CLI, ...)
+openprogram providers doctor     # diagnose credentials: expiry, refresh, cooldown, conflicts
+openprogram setup                # re-run the setup wizard
 ```
 
-worker 启动时也会在后台自动检查更新（每 6 小时至多一次）。详见 [升级](../install/upgrade.md)。
+You can also set an environment variable directly (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`) and restart the service.
 
-## `openprogram web` 打开的页面加载不出来？
+## Where is my data stored?
 
-打开的必须是 **http://localhost:18100**（前端），不是 :18109（后端 API，没有 HTML 页面）。如果 18100 上什么都没有，多半是 web UI 没构建——重新运行 `./scripts/install.sh` 即可。
+Everything lives under `~/.openprogram/` by default: `config.json` (configuration), `sessions/` (sessions), `logs/` (logs), `memory/` (memory), `usage.db` (token usage). With `--profile <name>` it moves to `~/.openprogram-<name>/`.
 
-## 服务好像没起来 / 行为异常，怎么排查？
-
-按这个顺序：
+## How do I update to the latest version?
 
 ```bash
-openprogram status     # 服务是否在跑
-openprogram restart    # 重启
-openprogram doctor     # 健康检查
-openprogram rescue     # 诊断问题并打印修复命令
+openprogram update           # check and apply updates
+openprogram update --check   # check only, don't apply
+openprogram update --force   # bypass the 6-hour throttle, check now
 ```
 
-## 怎么看日志？
+The worker also auto-checks for updates in the background at startup (at most once every 6 hours). See [Upgrading](../install/upgrade.md).
+
+## The page opened by `openprogram web` won't load?
+
+The page to open is **http://localhost:18100** (the frontend), not :18109 (the backend API, which serves no HTML). If nothing is on 18100 at all, the web UI most likely wasn't built — re-run `./scripts/install.sh`.
+
+## The service doesn't seem to be up / behaves oddly — how do I debug?
+
+In this order:
 
 ```bash
-openprogram logs list            # 所有日志文件（大小、时间）
-openprogram logs tail            # 最后 50 行 worker 日志
-openprogram logs tail -f         # 持续跟踪
-openprogram logs tail runtime    # 指定日志：worker / runtime / ink
+openprogram status     # is the service running
+openprogram restart    # restart
+openprogram doctor     # health check
+openprogram rescue     # diagnose problems and print the fix commands
 ```
 
-## GUI agent 下载太慢或失败了怎么办？
+## How do I read the logs?
 
-`openprogram programs install gui` 会下载 PyTorch（CPU 版约 300 MB，CUDA 机器约 3 GB）和模型权重，耗时正常。失败后重跑同一条命令即可续装。GPA 检测权重下不动时可手动获取：
+```bash
+openprogram logs list            # all log files (size, age)
+openprogram logs tail            # last 50 lines of the worker log
+openprogram logs tail -f         # follow live
+openprogram logs tail runtime    # pick a log: worker / runtime / ink
+```
+
+## The GUI agent download is slow or failed?
+
+`openprogram programs install gui` downloads PyTorch (~300 MB for the CPU build, ~3 GB on CUDA machines) and model weights, so a long download is normal. If it fails, re-run the same command to resume. If the GPA detector weight won't download, fetch it manually:
 
 ```bash
 hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
 ```
 
-## 装完 agent 程序后界面里没出现？
+## I installed an agent program but it doesn't show up in the UI?
 
-程序在启动时注册，装完后需要 `openprogram restart`（或在 Functions 页面点 Refresh）。用 `openprogram programs available` 确认它已安装。
+Programs register at startup, so run `openprogram restart` after installing (or hit Refresh on the Functions page). Confirm it's installed with `openprogram programs available`.
 
-## 同一个 provider 有多个账户或多个 key，怎么切换？
-
-```bash
-openprogram providers login openai --profile work   # 添加第二个账户
-openprogram providers use openai work               # 切到 work 账户
-openprogram providers list                          # 查看各账户，激活的有标记
-```
-
-## 一台机器能同时跑两个 OpenProgram 吗？
-
-能，用 profile 把状态目录和端口分开，见 [多实例与 profile](../install/profiles.md)。
-
-## 之前的对话怎么找回来？
+## Multiple accounts or keys for the same provider — how do I switch?
 
 ```bash
-openprogram sessions list          # 列出所有会话
-openprogram --resume <session_id>  # 在终端续上
+openprogram providers login openai --profile work   # add a second account
+openprogram providers use openai work               # switch to the "work" account
+openprogram providers list                          # list accounts, the active one is marked
 ```
 
-web 侧栏也能直接点开历史会话。
+## Can one machine run two OpenPrograms at once?
+
+Yes — use profiles to separate the state directories and ports. See [Multiple instances & profiles](../install/profiles.md).
+
+## How do I get an earlier conversation back?
+
+```bash
+openprogram sessions list          # list all sessions
+openprogram --resume <session_id>  # resume it in the terminal
+```
+
+You can also open past sessions directly from the web sidebar.

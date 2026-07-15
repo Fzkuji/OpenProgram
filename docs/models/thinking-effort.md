@@ -1,36 +1,36 @@
-# thinking effort
+# Thinking effort
 
-各家 API 用不同参数控制推理深度（`effort` 字符串、`reasoning_effort`、token budget）。OpenProgram 把它们统一成一个档位滑块。
+Each vendor's API controls reasoning depth with a different parameter (an `effort` string, `reasoning_effort`, a token budget). OpenProgram unifies them into a single effort slider.
 
-## 档位
+## Levels
 
-框架统一定义 `off` + 六档：
+The framework defines `off` plus six levels:
 
 ```
 minimal · low · medium · high · xhigh · max
 ```
 
-每个模型只支持其中一个子集，界面按模型实际支持的档位显示。例如 Opus 4.8 是 low 到 max 五档，DeepSeek reasoner 不可调（永远全力推理），GitHub Copilot 线路不支持 thinking。档位数据来自各 provider 的能力探测：Anthropic 有精确的 capabilities API，其他家从模型目录或 id 推断，没有任何信息的 provider 自动退到 low / medium / high 三档。
+Each model supports only a subset, and the UI shows the levels the model actually supports. For example, Opus 4.8 has five levels from low to max, DeepSeek reasoner is not adjustable (it always reasons at full effort), and the GitHub Copilot path has no thinking support. Level data comes from each provider's capability detection: Anthropic has a precise capabilities API, other vendors are inferred from the model catalog or the model id, and providers with no information at all fall back to the three levels low / medium / high.
 
-## 默认值
+## Defaults
 
-默认档由各 provider 声明（`provider.json` 的 `default_effort`）：
+The default level is declared by each provider (`default_effort` in `provider.json`):
 
-| Provider 家族 | 默认档 |
+| Provider family | Default |
 |---|---|
 | OpenAI Responses / Codex / Azure OpenAI | `xhigh` |
-| Anthropic / claude-code、Amazon Bedrock | `high` |
-| Google / Gemini CLI（按 token budget 换算）、DeepSeek | `medium` |
-| 无声明的 provider（三档兜底） | `medium` |
+| Anthropic / claude-code, Amazon Bedrock | `high` |
+| Google / Gemini CLI (converted via token budget), DeepSeek | `medium` |
+| Providers with no declaration (three-level fallback) | `medium` |
 
-## 怎么改
+## How to change it
 
-由外到内三个层级，内层覆盖外层：
+Three layers from outermost to innermost, with inner layers overriding outer ones:
 
-1. **agent 配置** `thinking_effort`：该 agent 的默认档（Web UI 的 agent 设置）。
-2. **项目配置**：项目级默认值，覆盖 agent 默认。
-3. **每轮请求**：聊天界面的档位选择器（Web UI 输入框旁），或 TUI 里的 `/effort` 命令；对当前会话逐轮生效。
+1. **Agent configuration** `thinking_effort`: the agent's default level (agent settings in the Web UI).
+2. **Project configuration**: a project-level default that overrides the agent default.
+3. **Per turn**: the level picker in the chat UI (next to the Web UI input box), or the `/effort` command in the TUI; applies turn by turn to the current session.
 
-选定的档位随会话持久化，provider 发请求前把框架档位翻译成各家 API 的实际参数。
+The selected level persists with the session, and the provider translates the framework level into the vendor API's actual parameter before sending each request.
 
-映射规则与探测策略的完整记录见[设计笔记](../reference/design/providers/models/thinking-effort.md)。
+For the full record of mapping rules and detection strategy, see the [design notes](../reference/design/providers/models/thinking-effort.md).

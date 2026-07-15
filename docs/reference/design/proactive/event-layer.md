@@ -1,135 +1,135 @@
-# 事件层
+# Event Layer
 
-一条统一的事件流，给整个框架用。proactive 只是它第一个消费者。
+A single unified event stream for the whole framework. proactive is just its first consumer.
 
-> **实现状态（2026-06-13）**：本篇 §1–§5 已全部落地——`Event`/`make_event`/`emit_safe`/
-> `subscribe(types=)`/`get_event_bus()` 在 `openprogram/agent/event_bus.py`，同步问询点在
-> `openprogram/agent/tool_gate.py`，B 类桥在 `openprogram/agent/event_bridges.py`（auth）+
-> 各源头 tap。A、B 两类事件都在发。观察方式：`OPENPROGRAM_EVENT_LOG=1` 重启 worker
-> 后读 `/tmp/openprogram-events.jsonl`。剩余：步 4（webui 切订阅者）、步 5（proactive 规则层）。
+> **Implementation status (2026-06-13)**: §1–§5 of this doc have all landed — `Event`/`make_event`/`emit_safe`/
+> `subscribe(types=)`/`get_event_bus()` live in `openprogram/agent/event_bus.py`, the synchronous interception point is in
+> `openprogram/agent/tool_gate.py`, and the type-B bridges are in `openprogram/agent/event_bridges.py` (auth) plus
+> per-source taps. Both type-A and type-B events are being emitted. To observe: set `OPENPROGRAM_EVENT_LOG=1`, restart the worker,
+> then read `/tmp/openprogram-events.jsonl`. Remaining: step 4 (switch webui over to being a subscriber), step 5 (proactive rules layer).
 
-**为什么要**：框架里"某件事发生了"的信号现在散在六套互不相通的机制里（agent loop 的
-AgentEvent 流、auth 的 `_emit`、context 的 on_event、channels 的 WS 广播、memory 的定时 poll、
-store 的纯日志）。想"在某时机做某事"，得先搞清那个时机归哪套、怎么接。这层把它们统一成
-**一条总线：源往里 emit，消费者从里 subscribe**。（`auth/store.py:204` 的 `subscribe/_emit`
-已经把事件做对了，这层是把它推广到全框架。）
+**Why**: the "something happened" signal in the framework is currently scattered across six unconnected mechanisms (the agent loop's
+AgentEvent stream, auth's `_emit`, context's on_event, the channels WS broadcast, memory's periodic poll, and the
+store's plain logging). To "do something at a certain moment", you first have to figure out which mechanism owns that moment and how to hook into it. This layer unifies them into
+**a single bus: sources emit into it, consumers subscribe from it**. (The `subscribe/_emit` at `auth/store.py:204`
+already gets events right; this layer generalizes that to the whole framework.)
 
-## 1. Event 模型
+## 1. The Event Model
 
-核心三样（是什么事 + 内容 + 时间）固定；关联信息放进一个开放的 metadata 口袋，不写死字段。
+The three core fields (what happened + content + time) are fixed; correlation info goes into an open metadata pocket rather than hard-coded fields.
 
 ```python
 @dataclass(frozen=True)
 class Event:
-    id: str          # 唯一编号
-    ts: float        # 发生时间
-    type: str        # 是什么事，见 §3
-    origin: str      # 谁引起的：user / agent / tool / system / proactive
-    payload: dict    # 这件事的内容（命令、文件路径、哪个账号被限流……）
-    metadata: dict   # 开放口袋：{"session":..., "turn":..., "lane":...}，需要才塞
+    id: str          # unique id
+    ts: float        # when it happened
+    type: str        # what kind of event, see §3
+    origin: str      # who triggered it: user / agent / tool / system / proactive
+    payload: dict    # the event's content (command, file path, which account got rate-limited, ...)
+    metadata: dict   # open pocket: {"session":..., "turn":..., "lane":...}, fill in only when needed
 ```
 
-为什么 session/turn/lane 进口袋而不做固定字段：它们不是事件的内在属性，是外加的关联，且对
-一半事件（auth、channel）根本没意义——做成固定字段就得靠"可空"打补丁。开放 dict 还让以后加
-新关联维度不用改模型。（成熟事件系统都这形状：核心固定，关联进 labels / headers。）
+Why session/turn/lane go into the pocket rather than being fixed fields: they are not intrinsic properties of an event, they are
+externally attached correlations, and for half the events (auth, channel) they have no meaning at all — making them fixed fields would force you to patch around them with "nullable". An open dict also lets you add
+new correlation dimensions later without changing the model. (Mature event systems all have this shape: a fixed core, with correlation going into labels / headers.)
 
-> turn 不是这层要建模的东西——框架里没有 Turn 对象，它就是 assistant 消息的 id，靠一个
-> ContextVar（`_current_turn_id`）传着。agent 事件 emit 时这个 var 有值就塞进 metadata；
-> auth/channel 事件 emit 时它是空的，口袋里自然没 turn。
+> turn is not something this layer models — there is no Turn object in the framework; it is simply the id of the assistant message, carried via a
+> ContextVar (`_current_turn_id`). When an agent event is emitted and this var has a value, it gets stuffed into metadata;
+> when an auth/channel event is emitted the var is empty, so the pocket naturally has no turn.
 
-## 2. 两类事件源
+## 2. Two Classes of Event Source
 
-| | A 类：agent 活动 | B 类：系统状态 |
+| | Type A: agent activity | Type B: system state |
 |---|---|---|
-| 何时 | agent 干活过程中 | 全局状态变化，可能没 agent 在跑 |
-| 例子 | 用户消息、模型回复、工具前后、文件改、一轮结束 | 凭据限流、上下文要溢出、外部消息进、技能变 |
-| 对 proactive | 基础 | 往往更有价值（"凭据限流了""上下文要溢出"是明确的可响应时机） |
+| When | While the agent is working | A global state change, possibly with no agent running |
+| Examples | User message, model response, before/after a tool, file changed, end of a turn | Credential rate-limited, context about to overflow, external message arrives, skills changed |
+| For proactive | The baseline | Often more valuable ("credential rate-limited" and "context about to overflow" are clear, actionable moments) |
 
-容易只盯 A 类，但 B 类（agent loop 之外的 auth/context/channels）对主动性常常更重要。两类都
-进同一条总线，metadata 口袋天然装得下——A 类带 turn，B 类不带，不为谁开特例。
+It is easy to focus only on type A, but type B (auth/context/channels outside the agent loop) is often more important for proactivity. Both
+go into the same bus, and the metadata pocket naturally accommodates both — type A carries turn, type B does not, with no special case for either.
 
-## 3. 事件类型（第一版）
+## 3. Event Types (first version)
 
-| 类 | type | 何时 | 来源（实际接线） | 状态 |
+| Class | type | When | Source (actual wiring) | Status |
 |---|---|---|---|---|
-| A | `user.prompt_submitted` | 用户发消息 | dispatcher（持久化分支外，webui/channel 两路都发） | ✅ 在发 |
-| A | `model.response_started`/`.completed` | 模型开始/说完回复 | agent_loop 流式 start/done | ✅ 在发 |
-| A | `tool.before` | 工具即将执行 | agent_loop `_execute_tool_calls`（可拦截，见 §5） | ✅ 在发+可拦 |
-| A | `tool.after` | 工具执行完 | agent_loop | ✅ 在发 |
-| A | `file.changed` | 文件被改（payload 带 path/op） | write/edit/apply_patch 写成功后 | ✅ 在发 |
-| A | `turn.ended` | 一轮结束 | agent_loop（正常 + error/abort 两处） | ✅ 在发 |
-| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner 状态漏斗 | ✅ 在发 |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/池耗尽/轮换 | `event_bridges.py` 订阅 `AuthStore` 翻译 | ✅ 桥已装 |
-| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | `context/engine.py` 源头 tap | ✅ 在发 |
-| B | `channel.message_inbound` | 外部消息进来 | `channels/_conversation.py` 源头 tap | ✅ 在发 |
-| B | `memory.ingest_started`/`.ended` | 空闲会话 wiki ingest 起止 | `memory/session_watcher.py` 源头 tap | ✅ 在发 |
-| B | `skills.changed`/`plugins.update_available` | 技能改/插件有新版 | webui watcher 源头 tap | ✅ 在发（skills 已 live 验证） |
+| A | `user.prompt_submitted` | User sends a message | dispatcher (outside the persistence branch; emitted on both the webui and channel paths) | ✅ emitting |
+| A | `model.response_started`/`.completed` | Model starts / finishes its reply | agent_loop streaming start/done | ✅ emitting |
+| A | `tool.before` | Tool about to execute | agent_loop `_execute_tool_calls` (interceptable, see §5) | ✅ emitting + interceptable |
+| A | `tool.after` | Tool finished executing | agent_loop | ✅ emitting |
+| A | `file.changed` | File modified (payload carries path/op) | after a successful write in write/edit/apply_patch | ✅ emitting |
+| A | `turn.ended` | End of a turn | agent_loop (both the normal path and the error/abort paths) | ✅ emitting |
+| A | `subagent.started`/`.ended` | Subtask start/end | TaskRunner state funnel | ✅ emitting |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential rate-limited / pool exhausted / rotated | `event_bridges.py` subscribes to `AuthStore` and translates | ✅ bridge installed |
+| B | `context.compaction_recommended`/`.compacted` | Context hits the threshold / has been compacted | `context/engine.py` source tap | ✅ emitting |
+| B | `channel.message_inbound` | External message arrives | `channels/_conversation.py` source tap | ✅ emitting |
+| B | `memory.ingest_started`/`.ended` | Idle-session wiki ingest start/end | `memory/session_watcher.py` source tap | ✅ emitting |
+| B | `skills.changed`/`plugins.update_available` | Skill changed / new plugin version available | webui watcher source tap | ✅ emitting (skills verified live) |
 
-## 4. 定位：一个进程级单例总线
+## 4. Placement: a process-level singleton bus
 
-所有相关组件（webui、agent loop、channels、memory、auth、task runner）都跑在**同一个 worker
-进程**里（各是 daemon 线程）。所以总线就是个**进程级单例**——复用闲置的 `agent/event_bus.py`，
-照框架已有的 `get_store()`/`get_runner()` 双检锁先例加个 `get_event_bus()`。同进程所有线程拿到
-同一实例，直接 emit/subscribe，不需要跨进程桥接。
+All the relevant components (webui, agent loop, channels, memory, auth, task runner) run in **the same worker
+process** (each as a daemon thread). So the bus is just a **process-level singleton** — reuse the idle `agent/event_bus.py`,
+and add a `get_event_bus()` following the existing double-checked-locking precedent of `get_store()`/`get_runner()`. Every thread in the same process gets
+the same instance and emits/subscribes directly, with no cross-process bridging needed.
 
 ```python
 class EventBus:
     def emit(self, event: Event) -> None: ...
-        # 广播给订阅者，fire-and-forget，不阻塞调用方
+        # broadcast to subscribers, fire-and-forget, does not block the caller
 
     def subscribe(self, handler, *, types=None) -> unsubscribe_fn: ...
-        # 按事件类型订阅，只收关心的那几类
+        # subscribe by event type, receive only the few types you care about
 ```
 
-（现有 EventBus 是按 channel 订阅、传任意 data；改成按事件类型订阅、传统一 Event。）
+(The existing EventBus subscribes by channel and passes arbitrary data; this changes it to subscribe by event type and pass a unified Event.)
 
-## 5. 两种交互：观察 vs 拦截
+## 5. Two Interaction Modes: Observe vs. Intercept
 
-**观察型（默认，异步）**：emit 出去，订阅者异步收到，事件源不等。绝大多数事件走这条，订阅者
-再慢也不拖慢框架。
+**Observe (default, async)**: emit it out, subscribers receive it asynchronously, and the event source does not wait. The vast majority of events take this path, and no matter how slow a subscriber
+is it does not slow the framework down.
 
-**拦截型（仅 `tool.before`，同步）**：工具执行前这个点要能让下游说"别执行"。在工具的单一入口
-`_execute_tool_calls` 的 `tool.execute()` 之前加一个同步问询点。要点：必须快（不许调 LLM）；
-多方表态取最严；对 subagent 也生效（位于 approval 包装之外，`permission_mode=bypass` 关不掉它）。
+**Intercept (only `tool.before`, synchronous)**: just before a tool executes, this point must let downstream say "don't execute". A synchronous interception point is added before the
+`tool.execute()` call in the tool's single entry point `_execute_tool_calls`. Key constraints: it must be fast (no calling the LLM);
+when multiple parties weigh in, the strictest verdict wins; and it applies to subagents too (it sits outside the approval wrapper, so `permission_mode=bypass` cannot turn it off).
 
-已落地的 API（`openprogram/agent/tool_gate.py`）：
+The landed API (`openprogram/agent/tool_gate.py`):
 
 ```python
 from openprogram.agent.tool_gate import register_tool_gate
 
-# gate 函数：拿到 tool.before 事件，返回 None（放行）或 deny 理由字符串
+# gate function: takes a tool.before event, returns None (allow) or a deny reason string
 unregister = register_tool_gate(
-    lambda ev: "危险删除" if "rm -rf" in str(ev.payload.get("args")) else None
+    lambda ev: "dangerous deletion" if "rm -rf" in str(ev.payload.get("args")) else None
 )
 ```
 
-deny 理由经现有错误路径作为 error tool result 回给模型；多 gate 的 deny 理由合并；gate 自身
-抛异常按放行处理（fail-open）。"ask（弹确认）"档复用 `_approval.py` 的泛化留到后续步。
+The deny reason is returned to the model as an error tool result via the existing error path; deny reasons from multiple gates are merged; and a gate that
+throws an exception is treated as allowing (fail-open). Generalizing the `_approval.py` "ask (pop a confirmation)" tier is left to a later step.
 
-## 6. 框架图
+## 6. Architecture Diagram
 
-![事件层架构图](diagrams/event-layer-architecture.svg)
+![Event layer architecture diagram](diagrams/event-layer-architecture.svg)
 
-> 交互版（带事件流动画的完整可视化页面）：[`event-layer.html`](event-layer.html)
+> Interactive version (full visualization page with animated event flow): [`event-layer.html`](event-layer.html)
 
-- 总线是唯一枢纽：源和消费者互不认识，只认总线——这就是"统一"。
-- webui 和 proactive 都只是**消费者**，平级。proactive 不在事件层里面，是它之上的应用——
-  事件层和 proactive 彻底解耦，可以只做事件层。
-- 拦截是右侧单独一条同步线，只为 `tool.before`；其余全是异步观察。
+- The bus is the sole hub: sources and consumers don't know each other, they only know the bus — this is what "unified" means.
+- webui and proactive are both just **consumers**, at the same level. proactive is not inside the event layer; it is an application on top of it —
+  the event layer and proactive are fully decoupled, so you can build the event layer alone.
+- Interception is a single separate synchronous line on the right, only for `tool.before`; everything else is asynchronous observation.
 
-## 7. 两条要记住的原则
+## 7. Two Principles to Remember
 
-**不是所有调用都是事件，只有"有消费者想响应"的时机才是。** §3 那张表是精挑的，不是把框架
-所有动作列进来。agent 内部一次列表拼接没人想响应，就不发事件。事件流变成什么都往里倒的垃圾场，
-是这类系统最常见的腐烂方式。
+**Not every call is an event — only moments that "some consumer wants to respond to" are.** The table in §3 is hand-picked, not a dump of
+every action in the framework. Nobody wants to respond to the agent concatenating a list internally, so no event is emitted for it. An event stream becoming a dumping ground where everything gets thrown in
+is the most common way these systems rot.
 
-**以后想加监测很便宜，因为源和消费者互不认识——加事件只动 emit 那一处，别处不用改。**
-框架自己的函数加一行 `emit` 即可；一整类动作（如所有工具）在公共入口加一次就覆盖一批；只有
-第三方碰不到的代码才要包一层。**演进只加不改**：加事件类型、给 payload 加字段都零风险（老订阅者
-只读自己关心的），改老结构才会影响老订阅者——这也是 payload/metadata 用开放 dict 的理由。
+**Adding monitoring later is cheap, precisely because sources and consumers don't know each other — adding an event touches only the one emit site, with nothing else changed.**
+For the framework's own functions, one line of `emit` is enough; a whole class of actions (like all tools) can be covered at once by adding it at a common entry point; only
+code from third parties that you can't touch needs a wrapper. **Evolution is add-only, never change**: adding an event type or adding a field to a payload is zero-risk (old subscribers
+only read what they care about), while it is changing an old structure that affects old subscribers — which is also why payload/metadata use open dicts.
 
-## 8. 落地
+## 8. Landing It
 
-接线点（file:line）、把六套源桥进总线的做法、分步与验证，见
-[实施规划](../plans/proactive-implementation.md)。顺序：先把 A 类收口成总线并验证能打出完整
-事件序列，再补文件改动事件和工具前可截，再桥进 B 类系统事件，最后补并发的 lane 区分。
+For the wiring points (file:line), the approach to bridging the six sources into the bus, and the step-by-step plan with verification, see
+[the implementation plan](../plans/proactive-implementation.md). Order: first consolidate type A into the bus and verify it can emit a complete
+event sequence, then add file-change events and before-tool interception, then bridge in type-B system events, and finally add lane distinction for concurrency.

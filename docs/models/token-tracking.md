@@ -1,14 +1,14 @@
-# Provider Token 统计
+# Provider Token Tracking
 
-## 统一格式（Anthropic 约定）
+## Unified Format (Anthropic Convention)
 
-所有 provider 都归一化为：
+All providers normalize to:
 ```python
 {
-    "input_tokens": int,   # 非缓存输入 token
-    "output_tokens": int,  # 输出 token
-    "cache_read": int,     # 缓存输入 token（从缓存读取）
-    "cache_create": int,   # 写入缓存的 token（仅 Anthropic/Claude Code）
+    "input_tokens": int,   # Non-cached input tokens
+    "output_tokens": int,  # Output tokens
+    "cache_read": int,     # Cached input tokens (read from cache)
+    "cache_create": int,   # Tokens written to cache (Anthropic/Claude Code only)
 }
 ```
 
@@ -16,18 +16,18 @@
 
 ## 1. Anthropic API (`anthropic.py`)
 
-**API 调用**：`client.messages.create(**kwargs)`
+**API Call**: `client.messages.create(**kwargs)`
 
-**原始响应**：
+**Raw Response**:
 ```python
 response.usage:
-    input_tokens: int           # 非缓存输入 token
-    output_tokens: int          # 输出 token
-    cache_read_input_tokens: int    # 从 prompt 缓存读取的 token
-    cache_creation_input_tokens: int # 写入 prompt 缓存的 token
+    input_tokens: int           # Non-cached input tokens
+    output_tokens: int          # Output tokens
+    cache_read_input_tokens: int    # Tokens read from prompt cache
+    cache_creation_input_tokens: int # Tokens written to prompt cache
 ```
 
-**提取逻辑**（第 147-154 行）：
+**Extraction** (lines 147-154):
 ```python
 self.last_usage = {
     "input_tokens": u.input_tokens,
@@ -37,57 +37,57 @@ self.last_usage = {
 }
 ```
 
-- **累加方式**：无，每次调用覆盖
-- **`usage_is_cumulative`**：`False`
-- **缓存支持**：完整（读 + 写）
-- **备注**：原生格式，无需归一化。通过在 system 消息上设置 `cache_control` 支持 prompt 缓存。
+- **Accumulation**: None, overwritten each call
+- **`usage_is_cumulative`**: `False`
+- **Cache support**: Full (read + create)
+- **Notes**: Native format, no normalization needed. Supports prompt caching via `cache_control` on system messages.
 
 ---
 
 ## 2. OpenAI API (`openai.py`)
 
-**API 调用**：`client.chat.completions.create(**kwargs)`
+**API Call**: `client.chat.completions.create(**kwargs)`
 
-**原始响应**：
+**Raw Response**:
 ```python
 response.usage:
-    prompt_tokens: int          # 输入 token 总数（缓存 + 非缓存）
-    completion_tokens: int      # 输出 token
+    prompt_tokens: int          # TOTAL input tokens (cached + non-cached)
+    completion_tokens: int      # Output tokens
     prompt_tokens_details:
-        cached_tokens: int      # 来自 prompt 缓存的 token
+        cached_tokens: int      # Tokens from prompt cache
 ```
 
-**提取逻辑**（第 148-159 行）：
+**Extraction** (lines 148-159):
 ```python
 details = getattr(u, 'prompt_tokens_details', None)
 cached = getattr(details, 'cached_tokens', 0) if details else 0
 total_in = getattr(u, 'prompt_tokens', 0)
 self.last_usage = {
-    "input_tokens": total_in - (cached or 0),  # 减去缓存部分得到非缓存 token
+    "input_tokens": total_in - (cached or 0),  # Subtract cached to get non-cached
     "output_tokens": u.completion_tokens,
     "cache_read": cached or 0,
 }
 ```
 
-- **累加方式**：无，每次调用覆盖
-- **`usage_is_cumulative`**：`False`
-- **缓存支持**：仅读（无 cache_create）
-- **关键差异**：OpenAI 的 `prompt_tokens` 包含缓存 token。必须减去才能符合 Anthropic 约定。
+- **Accumulation**: None, overwritten each call
+- **`usage_is_cumulative`**: `False`
+- **Cache support**: Read only (no cache_create)
+- **Key difference**: OpenAI `prompt_tokens` INCLUDES cached tokens. Must subtract to match Anthropic convention.
 
 ---
 
 ## 3. Gemini API (`gemini.py`)
 
-**API 调用**：`client.models.generate_content(model=..., contents=..., config=...)`
+**API Call**: `client.models.generate_content(model=..., contents=..., config=...)`
 
-**原始响应**：
+**Raw Response**:
 ```python
 response.usage_metadata:
-    prompt_token_count: int       # 输入 token
-    candidates_token_count: int   # 输出 token
+    prompt_token_count: int       # Input tokens
+    candidates_token_count: int   # Output tokens
 ```
 
-**提取逻辑**（第 156-161 行）：
+**Extraction** (lines 156-161):
 ```python
 self.last_usage = {
     "input_tokens": u.prompt_token_count,
@@ -95,83 +95,83 @@ self.last_usage = {
 }
 ```
 
-- **累加方式**：无，每次调用覆盖
-- **`usage_is_cumulative`**：`False`
-- **缓存支持**：无（Gemini API 不暴露缓存统计）
-- **备注**：仅有 2 个字段可用。无缓存信息。
+- **Accumulation**: None, overwritten each call
+- **`usage_is_cumulative`**: `False`
+- **Cache support**: None (Gemini API doesn't expose cache stats)
+- **Notes**: Only 2 fields available. No cache info.
 
 ---
 
 ## 4. Codex CLI (`openai_codex.py`)
 
-**输出格式**：JSONL 流（换行分隔的 JSON 事件）
+**Output Format**: JSONL stream (newline-delimited JSON events)
 
-**事件及其数据**：
+**Events and their data**:
 ```
 {"type": "thread.started", "thread_id": "..."}
 {"type": "thread.resumed", "thread_id": "..."}
 {"type": "turn.started"}
 {"type": "item.started", "item": {"type": "agent_message"|"command_execution", ...}}
 {"type": "item.completed", "item": {...}}
-{"type": "turn.completed", "usage": {...}}   ← TOKEN 用量在这里
+{"type": "turn.completed", "usage": {...}}   ← TOKEN USAGE HERE
 {"type": "turn.failed", "error": {...}}
 {"type": "error", "message": "..."}
 ```
 
-**Usage 对象**（来自 `turn.completed`）：
+**Usage Object** (from `turn.completed`):
 ```python
 event["usage"]:
-    input_tokens: int           # 输入 token 总数（缓存 + 非缓存）
-    output_tokens: int          # 输出 token
-    cached_input_tokens: int    # 来自缓存的 token
+    input_tokens: int           # TOTAL input tokens (cached + non-cached)
+    output_tokens: int          # Output tokens
+    cached_input_tokens: int    # Tokens from cache
 ```
 
-**提取逻辑**（第 438-451 行）：
+**Extraction** (lines 438-451):
 ```python
 cached = usage.get("cached_input_tokens", 0)
 total_in = usage.get("input_tokens", 0)
 prev = self.last_usage or {"input_tokens": 0, "output_tokens": 0, "cache_read": 0}
 self.last_usage = {
-    "input_tokens": prev["input_tokens"] + (total_in - cached),    # 累加
-    "output_tokens": prev["output_tokens"] + output_tokens,         # 累加
-    "cache_read": prev["cache_read"] + cached,                      # 累加
+    "input_tokens": prev["input_tokens"] + (total_in - cached),    # CUMULATIVE
+    "output_tokens": prev["output_tokens"] + output_tokens,         # CUMULATIVE
+    "cache_read": prev["cache_read"] + cached,                      # CUMULATIVE
 }
 ```
 
-- **累加方式**：是。每个 `turn.completed` 都会累加到之前的总量上。
-- **`usage_is_cumulative`**：`True`
-- **缓存支持**：仅读（无 cache_create）
-- **关键差异**：`input_tokens` 包含缓存（与 OpenAI 一样）。单次 exec 可能产生多个 turn。用量会在 runtime 整个生命周期内的所有 turn 上累加。
+- **Accumulation**: YES. Each `turn.completed` ADDS to previous totals.
+- **`usage_is_cumulative`**: `True`
+- **Cache support**: Read only (no cache_create)
+- **Key difference**: `input_tokens` INCLUDES cached (like OpenAI). A single exec may produce multiple turns. Usage accumulates across ALL turns in the runtime's lifetime.
 
 ---
 
 ## 5. Claude Code CLI (`claude_code.py`)
 
-**输出格式**：stream-json（持久进程每行输出一个 JSON 对象）
+**Output Format**: stream-json (one JSON object per line from persistent process)
 
-**事件及其数据**：
+**Events and their data**:
 ```
 {"type": "system", ...}
 {"type": "assistant", "message": {"content": [{"type": "text"|"tool_use", ...}]}}
-{"type": "result", "result": "...", "usage": {...}, "duration_ms": N, "num_turns": N}  ← TOKEN 用量在这里
+{"type": "result", "result": "...", "usage": {...}, "duration_ms": N, "num_turns": N}  ← TOKEN USAGE HERE
 ```
 
-**Usage 对象**（来自 `result` 事件）：
+**Usage Object** (from `result` event):
 ```python
 data["usage"]:
-    input_tokens: int                   # 非缓存输入 token
-    output_tokens: int                  # 输出 token
-    cache_read_input_tokens: int        # 从 prompt 缓存读取的 token
-    cache_creation_input_tokens: int    # 写入 prompt 缓存的 token
+    input_tokens: int                   # Non-cached input tokens
+    output_tokens: int                  # Output tokens
+    cache_read_input_tokens: int        # Tokens read from prompt cache
+    cache_creation_input_tokens: int    # Tokens written to prompt cache
 ```
 
-**可用的额外字段**（当前未提取）：
+**Extra fields available** (NOT currently extracted):
 ```python
-data["duration_ms"]: int    # 执行的墙钟时间（毫秒）
-data["num_turns"]: int      # agent turn / 交互次数
+data["duration_ms"]: int    # Wall-clock execution time in ms
+data["num_turns"]: int      # Number of agent turns/interactions
 ```
 
-**提取逻辑**（第 329-338 行）：
+**Extraction** (lines 329-338):
 ```python
 self.last_usage = {
     "input_tokens": usage.get("input_tokens", 0),
@@ -181,70 +181,70 @@ self.last_usage = {
 }
 ```
 
-- **累加方式**：无，每次调用覆盖
-- **`usage_is_cumulative`**：`False`
-- **缓存支持**：完整（读 + 写）
-- **备注**：持久进程（stdin/stdout）。字段名与 Anthropic API 相同。`result` 事件仅包含单次调用的用量，不是整个会话的累计值。
+- **Accumulation**: None, overwritten each call
+- **`usage_is_cumulative`**: `False`
+- **Cache support**: Full (read + create)
+- **Notes**: Persistent process (stdin/stdout). Same field names as Anthropic API. The `result` event includes per-call usage only, NOT cumulative across the session.
 
 ---
 
 ## 6. Gemini CLI (`gemini_cli.py`)
 
-**输出格式**：单个 JSON 对象（`--output-format json`）
+**Output Format**: Single JSON object (`--output-format json`)
 
-**响应**：
+**Response**:
 ```python
 {
-    "session_id": "...",    # 用于 --resume 标志
-    "response": "..."       # 响应文本
+    "session_id": "...",    # For --resume flag
+    "response": "..."       # The response text
 }
 ```
 
-**Token 用量**：不可用。Gemini CLI 的 JSON 输出不包含任何 token 用量信息。
+**Token Usage**: NOT AVAILABLE. Gemini CLI JSON output does not include any token usage information.
 
-**提取逻辑**：无（`last_usage` 保持为 `None`）
+**Extraction**: None (`last_usage` remains `None`)
 
-- **累加方式**：不适用
-- **`usage_is_cumulative`**：`False`
-- **缓存支持**：不适用
-- **备注**：无法用 Gemini CLI 跟踪 token。这是该 CLI 输出格式的限制。
+- **Accumulation**: N/A
+- **`usage_is_cumulative`**: `False`
+- **Cache support**: N/A
+- **Notes**: Cannot track tokens with Gemini CLI. This is a limitation of the CLI's output format.
 
 ---
 
-## 汇总表
+## Summary Table
 
-| Provider | 类型 | 原始字段 | 累加 | 缓存 | input 是否含缓存？ |
+| Provider | Type | Raw Fields | Cumulative | Cache | input includes cached? |
 |----------|------|-----------|------------|-------|----------------------|
-| Anthropic API | API | input, output, cache_read, cache_create | 否 | 完整 | 否 |
-| OpenAI API | API | prompt_tokens, completion_tokens, cached_tokens | 否 | 读 | 是（需减去） |
-| Gemini API | API | prompt_token_count, candidates_token_count | 否 | 无 | 不适用 |
-| Codex CLI | CLI | input_tokens, output_tokens, cached_input_tokens | **是** | 读 | 是（需减去） |
-| Claude Code CLI | CLI | input, output, cache_read, cache_create + duration_ms, num_turns | 否 | 完整 | 否 |
-| Gemini CLI | CLI | 无 | 不适用 | 无 | 不适用 |
+| Anthropic API | API | input, output, cache_read, cache_create | No | Full | No |
+| OpenAI API | API | prompt_tokens, completion_tokens, cached_tokens | No | Read | YES (subtract) |
+| Gemini API | API | prompt_token_count, candidates_token_count | No | None | N/A |
+| Codex CLI | CLI | input_tokens, output_tokens, cached_input_tokens | **YES** | Read | YES (subtract) |
+| Claude Code CLI | CLI | input, output, cache_read, cache_create + duration_ms, num_turns | No | Full | No |
+| Gemini CLI | CLI | None | N/A | None | N/A |
 
 ---
 
-## 服务端统计设计
+## Server-Side Tracking Design
 
-### Chat Agent（按会话累计，存储于 `conv["_chat_usage"]`）
+### Chat Agent (cumulative per conversation, stored in `conv["_chat_usage"]`)
 
-| Provider | 策略 |
+| Provider | Strategy |
 |----------|----------|
-| Codex CLI | `last_usage` 本身已是累计值 → 直接**替换** `_chat_usage` |
-| Claude Code CLI | `last_usage` 是单次调用值 → **累加**到 `_chat_usage` |
-| Anthropic API | `last_usage` 是单次调用值 → **累加**到 `_chat_usage` |
-| OpenAI API | `last_usage` 是单次调用值 → **累加**到 `_chat_usage` |
-| Gemini API | `last_usage` 是单次调用值 → **累加**到 `_chat_usage` |
-| Gemini CLI | 无用量数据 → `_chat_usage` 不变 |
+| Codex CLI | `last_usage` is already cumulative → **replace** `_chat_usage` directly |
+| Claude Code CLI | `last_usage` is per-call → **add** to `_chat_usage` |
+| Anthropic API | `last_usage` is per-call → **add** to `_chat_usage` |
+| OpenAI API | `last_usage` is per-call → **add** to `_chat_usage` |
+| Gemini API | `last_usage` is per-call → **add** to `_chat_usage` |
+| Gemini CLI | No usage data → `_chat_usage` unchanged |
 
-### Exec Agent（按函数，来自 `exec_rt.last_usage`）
+### Exec Agent (per-function, from `exec_rt.last_usage`)
 
-每次函数执行都会创建自己的 runtime。`last_usage` 仅代表该次执行的用量（Codex 也是如此，因为每个函数都会创建一个全新的 runtime）。
+Each function execution creates its own runtime. `last_usage` represents usage for that execution only (even Codex, since a fresh runtime is created per function).
 
-### 前端展示
+### Frontend Display
 
-| 位置 | 数据 | 格式 |
+| Location | Data | Format |
 |----------|------|--------|
-| 输入区（右下角） | `context_stats.chat` | `chat in:2.3k · out:450` |
-| 函数卡片标题 | `result.usage` | `in:1.2k · out:200` |
-| 数字格式化 | `< 1000` → 原值，`1k-999k` → `X.Xk`，`>= 1M` → `X.Xm` |
+| Input area (bottom-right) | `context_stats.chat` | `chat in:2.3k · out:450` |
+| Function card header | `result.usage` | `in:1.2k · out:200` |
+| Number formatting | `< 1000` → raw, `1k-999k` → `X.Xk`, `>= 1M` → `X.Xm` |

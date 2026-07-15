@@ -1,35 +1,35 @@
-# @agentic_function 按固定顺序调用子函数
+# @agentic_function Calling Sub-Functions in a Fixed Order
 
-调用大模型（可选），按代码写死的顺序调用多个子函数。
+Optionally calls the LLM, then invokes multiple sub-functions in the order hard-coded in the source.
 
-## 适用场景
+## Use Cases
 
-- 研究流程：调研 → 找 gap → 生成想法
-- 论文流程：写初稿 → 审稿 → 修改
-- 数据流程：采集 → 清洗 → 分析
-- 任何步骤顺序固定的多步任务
+- Research flow: survey → find gap → generate ideas
+- Paper flow: write draft → review → revise
+- Data flow: collect → clean → analyze
+- Any multi-step task with a fixed step order
 
-## 设计要点
+## Design Points
 
-- 用 `@agentic_function` 装饰器
-- 按固定顺序调用多个子 `@agentic_function`
-- `exec()` 可选：不调（纯串联），或调多次（每次创建一个 exec 子节点）
-- 子函数之间通过 Python 变量传递数据
-- 一个函数可以调多次 `exec()`，也可以调任意多个其他 `@agentic_function`
+- Use the `@agentic_function` decorator
+- Call multiple sub-`@agentic_function`s in a fixed order
+- `exec()` is optional: don't call it (pure chaining), or call it multiple times (each call creates an exec child node)
+- Data is passed between sub-functions through Python variables
+- A single function can call `exec()` multiple times, and can call any number of other `@agentic_function`s
 
-## 示例：不调 exec，纯串联
+## Example: No exec, Pure Chaining
 
 ```python
 @agentic_function
 def research_pipeline(task: str, runtime: Runtime) -> dict:
-    """执行完整研究流程：调研 → 找 gap → 生成想法。
+    """Run the full research flow: survey → find gap → generate ideas.
 
     Args:
-        task: 研究主题。
-        runtime: LLM 运行时实例。
+        task: Research topic.
+        runtime: LLM runtime instance.
 
     Returns:
-        包含 survey、gaps、ideas 的结果字典。
+        A result dict containing survey, gaps, and ideas.
     """
     survey = survey_topic(topic=task, runtime=runtime)
     gaps = identify_gaps(survey=survey, runtime=runtime)
@@ -38,19 +38,19 @@ def research_pipeline(task: str, runtime: Runtime) -> dict:
     return {"survey": survey, "gaps": gaps, "ideas": ideas}
 ```
 
-## 示例：调一次 exec 做总结
+## Example: Calling exec Once to Summarize
 
 ```python
 @agentic_function
 def research_pipeline(task: str, runtime: Runtime) -> str:
-    """执行完整研究流程并总结结果。
+    """Run the full research flow and summarize the result.
 
     Args:
-        task: 研究主题。
-        runtime: LLM 运行时实例。
+        task: Research topic.
+        runtime: LLM runtime instance.
 
     Returns:
-        整合后的研究总结。
+        The consolidated research summary.
     """
     survey = survey_topic(topic=task, runtime=runtime)
     gaps = identify_gaps(survey=survey, runtime=runtime)
@@ -69,35 +69,35 @@ def research_pipeline(task: str, runtime: Runtime) -> str:
 
 ```
 research_pipeline
-├── survey_topic       ← 第1步
-├── identify_gaps      ← 第2步
-└── generate_ideas     ← 第3步
+├── survey_topic       ← step 1
+├── identify_gaps      ← step 2
+└── generate_ideas     ← step 3
 ```
 
-## 步骤之间的数据传递
+## Passing Data Between Steps
 
-子函数之间通过 Python 变量传递，不需要大模型参与：
+Data is passed between sub-functions through Python variables, with no LLM involvement:
 
 ```python
 survey = survey_topic(topic=task, runtime=runtime)
 gaps = identify_gaps(survey=survey, runtime=runtime)
 ```
 
-`survey_topic` 的返回值直接作为 `identify_gaps` 的输入参数。
+The return value of `survey_topic` is used directly as the input argument to `identify_gaps`.
 
-## 步骤之间插入 Python 处理
+## Inserting Python Processing Between Steps
 
 ```python
 survey = survey_topic(topic=task, runtime=runtime)
 
-# 中间插入普通 Python 处理
+# Insert ordinary Python processing in between
 key_points = extract_key_points(survey)
 filtered = [p for p in key_points if p["relevance"] > 0.5]
 
 gaps = identify_gaps(survey="\n".join(filtered), runtime=runtime)
 ```
 
-## 错误处理
+## Error Handling
 
 ```python
 survey = survey_topic(topic=task, runtime=runtime)
@@ -107,11 +107,11 @@ if not survey or "error" in survey.lower():
 gaps = identify_gaps(survey=survey, runtime=runtime)
 ```
 
-## 与"大模型选择调用"的区别
+## Difference from "LLM-Chosen Calls"
 
-| | 固定顺序调用 | 大模型选择调用 |
+| | Fixed-order calls | LLM-chosen calls |
 |---|-----------|-------------|
-| 谁决定调用顺序 | Python 代码 | 大模型 |
-| 调用几个子函数 | 多个，全部执行 | 1个，选择执行 |
-| 是否需要函数注册表 | 不需要 | 需要 |
-| 灵活性 | 固定流程 | 根据任务变化 |
+| Who decides the call order | Python code | The LLM |
+| How many sub-functions are called | Multiple, all executed | One, chosen to execute |
+| Whether a function registry is required | Not required | Required |
+| Flexibility | Fixed flow | Varies with the task |

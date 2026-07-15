@@ -1,183 +1,183 @@
-# Session 管理方案对比
+# Session Management Comparison
 
-Claude Code、OpenCode、OpenClaw、OpenProgram（我们的设计）四个项目的 session 管理机制全面对比。
+A comprehensive comparison of the session management mechanisms across four projects: Claude Code, OpenCode, OpenClaw, and OpenProgram (our design).
 
-## 1. 存储格式
+## 1. Storage Format
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| 存储介质 | 文件系统（每 session 一个 JSONL） | SQLite 数据库（单文件 `opencode.db`） | JSON 注册表（`sessions.json`）+ 每 session 一个 JSONL | Git 仓库（每 session 一个目录）+ JSON 注册表（`index.json`） |
-| 元数据位置 | 混在 JSONL 里（`ai-title`、`custom-title`、`mode` 等条目） | `sessions` 表（10 个字段） | `sessions.json` 里的 SessionEntry（约 70 个字段） | `meta.json`（每 session 目录内）+ `index.json`（注册表缓存） |
-| 消息位置 | 同一个 JSONL 文件（`user`、`assistant` 条目） | 独立的 `messages` 表 + `parts` 列（JSON 数组） | 独立的 `<id>.jsonl` transcript 文件 | Git history（每消息一个文件，DAG 结构） |
-| 文件快照 | JSONL 里的 `file-history-snapshot` 条目 | 独立的 `files` 表（path, content, version） | 无 | Git worktree（每 session 可有独立工作目录） |
-| 存储路径 | `~/.claude/projects/<slug>/<uuid>.jsonl` | `<data_dir>/opencode.db` | `<state>/agents/<id>/sessions/sessions.json` + `<id>.jsonl` | `<state>/sessions/<id>/`（meta.json + history/）+ `<state>/sessions/index.json` |
-| 元数据与消息分离 | 不分离，全在一个文件 | 分离（不同表） | 分离（不同文件） | 分离（meta.json vs history/） |
+| Storage medium | Filesystem (one JSONL per session) | SQLite database (single file `opencode.db`) | JSON registry (`sessions.json`) + one JSONL per session | Git repository (one directory per session) + JSON registry (`index.json`) |
+| Metadata location | Mixed into the JSONL (`ai-title`, `custom-title`, `mode`, and other entries) | `sessions` table (10 fields) | The SessionEntry in `sessions.json` (around 70 fields) | `meta.json` (inside each session directory) + `index.json` (registry cache) |
+| Message location | Same JSONL file (`user`, `assistant` entries) | Dedicated `messages` table + `parts` column (JSON array) | Dedicated `<id>.jsonl` transcript file | Git history (one file per message, DAG structure) |
+| File snapshots | `file-history-snapshot` entries in the JSONL | Dedicated `files` table (path, content, version) | None | Git worktree (each session can have its own working directory) |
+| Storage path | `~/.claude/projects/<slug>/<uuid>.jsonl` | `<data_dir>/opencode.db` | `<state>/agents/<id>/sessions/sessions.json` + `<id>.jsonl` | `<state>/sessions/<id>/` (meta.json + history/) + `<state>/sessions/index.json` |
+| Metadata/message separation | Not separated, all in one file | Separated (different tables) | Separated (different files) | Separated (meta.json vs history/) |
 
-## 2. Session 元数据字段
+## 2. Session Metadata Fields
 
-| 字段类别 | Claude Code | OpenCode | OpenClaw | OpenProgram |
+| Field category | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |----------|------------|----------|---------|-------------|
-| **id** | JSONL 文件名（UUID） | `sessions.id`（UUID） | `sessionId` | `id`（UUID） |
-| **标题** | `aiTitle` + `customTitle` 两个独立条目 | `sessions.title` 单字段 | `displayName` + `label` | `title` 单字段 |
-| **标题优先级** | `customTitle > aiTitle > summaryHint > firstPrompt > id` | 最后写入的值 | `displayName > label` | 最后写入的值（截取 / LLM / 手动三个来源平等覆盖） |
-| **创建时间** | JSONL 首条消息的 timestamp | `sessions.created_at` | `startedAt` | `created_at` |
-| **更新时间** | 文件 mtime 或 sidecar | `sessions.updated_at`（trigger 自动） | `updatedAt`（应用层写入） | `updated_at`（应用层写入） |
-| **消息计数** | 无 | `sessions.message_count`（trigger 自动 +1/-1） | 无 | 无 |
-| **token 统计** | 无（在 `usage` 里但不汇总） | `prompt_tokens` / `completion_tokens` / `cost` | `inputTokens` / `outputTokens` / `totalTokens` / `estimatedCostUsd` / `cacheRead` / `cacheWrite` / `contextTokens` | 无（由独立的 UsageLedger 子系统管理） |
-| **运行状态** | `~/.claude/sessions/<pid>.json` 里的 `status`（idle/busy） | 无 | `status`（running/done/failed/killed/timeout） | `status` 枚举（idle/running/needs_input/done/failed，dispatcher 写入，启动时重置） |
-| **父子关系** | 无 | `parent_session_id`（title 生成和 task 用子 session） | `spawnedBy` / `parentSessionKey` / `spawnDepth`（0=主, 1=子agent, 2=子子agent） | 无 |
-| **渠道/来源** | 无 | 无 | `channel` / `groupId` / `origin`（含 label/provider/surface/chatType/from/to/nativeChannelId/accountId/threadId） + `lastChannel` / `lastTo` / `lastAccountId` / `lastThreadId` | `source` / `channel` / `account_id` / `peer_display` / `peer_id` |
-| **模型/配置** | JSONL 里的 `mode`、`permission-mode` 条目 | 无（运行时状态） | `providerOverride` / `modelOverride` / `modelOverrideSource` / `authProfileOverride` / `thinkingLevel` / `fastMode` / `verboseLevel` 等 | 非持久（runtime 对象持有，不存 meta.json） |
-| **Compaction** | `system:compact_boundary` 条目（preTokens/postTokens/preservedSegment） | `summary_message_id` 指向摘要消息 | `compactionCount` / `compactionCheckpoints` 数组（每个含 tokensBefore/tokensAfter/summary） | compactionSummary 消息节点（DAG 中的特殊节点，source="compaction"） |
-| **项目绑定** | 通过目录路径隐式绑定（`projects/<slug>/`） | 无 | 无（通过 agent 目录隐式） | `project_id` 字段 + 项目内 `.openprogram/sessions/` 目录 |
-| **Git 分支** | JSONL 里的 `gitBranch` 字段 | 无 | 无 | DAG 分支（`head_id` + branches map） |
-| **Preview** | 无独立字段（列举时从尾部提取 firstPrompt） | 无 | 无 | `preview`（注册表字段，`append_message` 时更新） |
-| **归档/置顶/分组** | 无 | 无 | 无 | `pinned` / `archived` / `group` |
-| **未读标记** | 无 | 无 | 无 | `unread`（background run 完成时标记，打开时清除） |
-| **队列策略** | 无 | 无 | `queueMode`（steer/followup/collect/interrupt 等 7 种）/ `queueDebounceMs` / `queueCap` / `queueDrop` | 无 |
-| **子 agent 角色** | 无 | 无 | `subagentRole`（orchestrator/leaf）/ `subagentControlScope` | 无 |
-| **Heartbeat** | 无 | 无 | `lastHeartbeatText` / `lastHeartbeatSentAt` / `heartbeatTaskState` | 无 |
-| **Memory flush** | 无 | 无 | `memoryFlushAt` / `memoryFlushCompactionCount` / `memoryFlushContextHash` | 无 |
-| **CLI 绑定** | 无 | 无 | `cliSessionIds` / `cliSessionBindings` / `claudeCliSessionId` | 无 |
-| **自动命名标记** | 无（靠 `customTitle` 条目是否存在判断） | 无（靠 `isDefaultTitle` 正则判断） | 无 | `_auto_titled`（bool，首轮自动命名幂等标记） |
+| **id** | JSONL filename (UUID) | `sessions.id` (UUID) | `sessionId` | `id` (UUID) |
+| **Title** | Two separate entries, `aiTitle` + `customTitle` | Single `sessions.title` field | `displayName` + `label` | Single `title` field |
+| **Title priority** | `customTitle > aiTitle > summaryHint > firstPrompt > id` | Last value written | `displayName > label` | Last value written (truncation / LLM / manual — all three sources override equally) |
+| **Created time** | timestamp of the first message in the JSONL | `sessions.created_at` | `startedAt` | `created_at` |
+| **Updated time** | File mtime or sidecar | `sessions.updated_at` (trigger-driven) | `updatedAt` (written by the application layer) | `updated_at` (written by the application layer) |
+| **Message count** | None | `sessions.message_count` (trigger-driven +1/-1) | None | None |
+| **token stats** | None (present in `usage` but not aggregated) | `prompt_tokens` / `completion_tokens` / `cost` | `inputTokens` / `outputTokens` / `totalTokens` / `estimatedCostUsd` / `cacheRead` / `cacheWrite` / `contextTokens` | None (managed by the separate UsageLedger subsystem) |
+| **Run status** | `status` in `~/.claude/sessions/<pid>.json` (idle/busy) | None | `status` (running/done/failed/killed/timeout) | `status` enum (idle/running/needs_input/done/failed, written by the dispatcher, reset on startup) |
+| **Parent/child relationships** | None | `parent_session_id` (child sessions used for title generation and tasks) | `spawnedBy` / `parentSessionKey` / `spawnDepth` (0=main, 1=subagent, 2=sub-subagent) | None |
+| **Channel/source** | None | None | `channel` / `groupId` / `origin` (includes label/provider/surface/chatType/from/to/nativeChannelId/accountId/threadId) + `lastChannel` / `lastTo` / `lastAccountId` / `lastThreadId` | `source` / `channel` / `account_id` / `peer_display` / `peer_id` |
+| **Model/config** | `mode`, `permission-mode` entries in the JSONL | None (runtime state) | `providerOverride` / `modelOverride` / `modelOverrideSource` / `authProfileOverride` / `thinkingLevel` / `fastMode` / `verboseLevel`, etc. | Not persisted (held by the runtime object, not stored in meta.json) |
+| **Compaction** | `system:compact_boundary` entry (preTokens/postTokens/preservedSegment) | `summary_message_id` points to the summary message | `compactionCount` / `compactionCheckpoints` array (each entry has tokensBefore/tokensAfter/summary) | compactionSummary message node (a special node in the DAG, source="compaction") |
+| **Project binding** | Implicitly bound via the directory path (`projects/<slug>/`) | None | None (implicit via the agent directory) | `project_id` field + an in-project `.openprogram/sessions/` directory |
+| **Git branch** | `gitBranch` field in the JSONL | None | None | DAG branches (`head_id` + branches map) |
+| **Preview** | No dedicated field (firstPrompt extracted from the tail when listing) | None | None | `preview` (registry field, updated on `append_message`) |
+| **Archive/pin/group** | None | None | None | `pinned` / `archived` / `group` |
+| **Unread marker** | None | None | None | `unread` (set when a background run completes, cleared on open) |
+| **Queue policy** | None | None | `queueMode` (7 modes: steer/followup/collect/interrupt, etc.) / `queueDebounceMs` / `queueCap` / `queueDrop` | None |
+| **Subagent role** | None | None | `subagentRole` (orchestrator/leaf) / `subagentControlScope` | None |
+| **Heartbeat** | None | None | `lastHeartbeatText` / `lastHeartbeatSentAt` / `heartbeatTaskState` | None |
+| **Memory flush** | None | None | `memoryFlushAt` / `memoryFlushCompactionCount` / `memoryFlushContextHash` | None |
+| **CLI binding** | None | None | `cliSessionIds` / `cliSessionBindings` / `claudeCliSessionId` | None |
+| **Auto-naming marker** | None (inferred from whether a `customTitle` entry exists) | None (inferred from an `isDefaultTitle` regex) | None | `_auto_titled` (bool, idempotency marker for first-turn auto-naming) |
 
-## 3. Session 列举
-
-| | Claude Code | OpenCode | OpenClaw | OpenProgram |
-|---|---|---|---|---|
-| **机制** | 扫目录 + 读文件尾部 | SQL 查询 | 读 sessions.json | 读 index.json 注册表 |
-| **索引** | 无 | 数据库索引 | 注册表本身 | 注册表（`index.json`） |
-| **具体流程** | `readdir` → `stat` 取 mtime → 按 mtime 降序 → 批量（每批 32 个）读尾部内容 → 字符串搜索提取标题等字段 | `SELECT * FROM sessions WHERE parent_session_id IS NULL ORDER BY created_at DESC` | `fs.readFileSync` → `JSON.parse` → 返回整个 `Record<string, SessionEntry>` | 启动时读 `index.json` 到内存 → `list_sessions()` 纯内存遍历 |
-| **读取量** | 每个文件读尾部内容（字符串搜索，不做 JSON.parse） | 一条 SQL | 一个文件 | 一个文件（启动时），之后纯内存 |
-| **过滤** | 只扫当前项目目录（隐式按项目过滤） | `WHERE parent_session_id IS NULL`（过滤子 session） | 无 | 不过滤（空壳从创建入口防） |
-| **排序** | 按文件 mtime 降序 | `ORDER BY created_at DESC` | 调用方自行排序 | 内存中按 `updated_at` 降序 |
-| **分页** | 无 | 无 | 无 | `limit` + `offset` |
-| **搜索** | 无 | 无 | 无 | 无 |
-| **缓存** | 可选 sidecar `.ccr-tip.json`（存最后事件 ID + 更新时间，避免读文件内容） | SQLite 页缓存（8MB） | mtime + fileSize 判断是否重读（TTL 45 秒） | 内存常驻（写操作同步更新内存 + 磁盘） |
-| **超时保护** | 有（列举超时兜底） | 不需要 | 不需要 | 不需要 |
-| **复杂度** | O(n) 文件 I/O | O(log n) 数据库查询 | O(1) 文件读 + O(n) 内存遍历 | O(n) 内存遍历（不碰磁盘） |
-
-## 4. Session 创建
+## 3. Session Listing
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **入口** | 1 个：创建 JSONL 文件 | 3 个：`Create`（普通）/ `CreateTitleSession`（标题子 session）/ `CreateTaskSession`（task 子 session） | 1 个：`updateSessionStore` 里往 store 加 key | 2 个：`dispatcher.process_user_turn`（用户发消息）/ `channel handler`（渠道消息） |
-| **ID 生成** | UUID 文件名 | UUID / `"title-" + parentId` / toolCallID | sessionKey | `"local_" + uuid` |
-| **注册** | 无需注册（扫目录发现） | 数据库 INSERT 后自动可查 | 写入 sessions.json | 写入 `index.json` 注册表 |
-| **事件通知** | 无 | pubsub `CreatedEvent` | 无 | 无（创建不广播，前端通过 `list_sessions` 发现） |
-| **原子性** | 文件创建本身原子 | `INSERT ... RETURNING` 数据库事务 | 文件锁内 read-modify-write | 创建 + 写入第一条消息原子化（不产生空壳） |
-| **空壳防护** | 无（session = 文件，创建即有内容） | 无（INSERT 时必须有 title） | 无 | 有（延迟创建：`session_context` 进入时只记 id，第一条消息写入时才真正创建） |
+| **Mechanism** | Scan directory + read file tails | SQL query | Read sessions.json | Read the index.json registry |
+| **Index** | None | Database index | The registry itself | Registry (`index.json`) |
+| **Detailed flow** | `readdir` → `stat` to get mtime → sort by mtime descending → batch-read tail content (32 per batch) → string-search to extract title and other fields | `SELECT * FROM sessions WHERE parent_session_id IS NULL ORDER BY created_at DESC` | `fs.readFileSync` → `JSON.parse` → return the entire `Record<string, SessionEntry>` | On startup, read `index.json` into memory → `list_sessions()` is a pure in-memory traversal |
+| **Read volume** | Read tail content of each file (string search, no JSON.parse) | One SQL statement | One file | One file (on startup), pure in-memory thereafter |
+| **Filtering** | Scans only the current project directory (implicit per-project filtering) | `WHERE parent_session_id IS NULL` (filters out child sessions) | None | No filtering (empty shells are prevented at the creation entry point) |
+| **Sorting** | By file mtime descending | `ORDER BY created_at DESC` | The caller sorts on its own | In memory, by `updated_at` descending |
+| **Pagination** | None | None | None | `limit` + `offset` |
+| **Search** | None | None | None | None |
+| **Cache** | Optional sidecar `.ccr-tip.json` (stores last event ID + update time, avoids reading file content) | SQLite page cache (8MB) | mtime + fileSize used to decide whether to re-read (TTL 45 seconds) | Resident in memory (write operations update memory + disk in sync) |
+| **Timeout protection** | Yes (listing timeout fallback) | Not needed | Not needed | Not needed |
+| **Complexity** | O(n) file I/O | O(log n) database query | O(1) file read + O(n) in-memory traversal | O(n) in-memory traversal (no disk access) |
 
-## 5. Session 删除
+## 4. Session Creation
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **方式** | 删除 JSONL 文件 | `DELETE FROM sessions WHERE id = ?` | 从 sessions.json 删 key | `delete_session` 清磁盘 + 删注册表条目 |
-| **级联清理** | 只删一个文件（元数据和消息在同一文件） | `ON DELETE CASCADE` 自动清 messages 和 files | 手动归档 transcript 文件（`archiveSessionTranscripts`，不直接删） | 删除整个 session 目录（meta.json + history/） |
-| **事件通知** | 无 | pubsub `DeletedEvent` | 无 | WebSocket `session_deleted` 广播 |
+| **Entry points** | 1: create the JSONL file | 3: `Create` (normal) / `CreateTitleSession` (title child session) / `CreateTaskSession` (task child session) | 1: add a key to the store inside `updateSessionStore` | 2: `dispatcher.process_user_turn` (user sends a message) / `channel handler` (channel message) |
+| **ID generation** | UUID filename | UUID / `"title-" + parentId` / toolCallID | sessionKey | `"local_" + uuid` |
+| **Registration** | No registration needed (discovered by scanning the directory) | Queryable automatically after a database INSERT | Written to sessions.json | Written to the `index.json` registry |
+| **Event notification** | None | pubsub `CreatedEvent` | None | None (creation is not broadcast; the frontend discovers it via `list_sessions`) |
+| **Atomicity** | File creation is itself atomic | `INSERT ... RETURNING` database transaction | read-modify-write inside a file lock | Creation + writing the first message are made atomic (no empty shell produced) |
+| **Empty-shell protection** | None (session = file, content exists on creation) | None (a title is required on INSERT) | None | Yes (lazy creation: entering `session_context` only records the id; the session is actually created when the first message is written) |
+
+## 5. Session Deletion
+
+| | Claude Code | OpenCode | OpenClaw | OpenProgram |
+|---|---|---|---|---|
+| **Method** | Delete the JSONL file | `DELETE FROM sessions WHERE id = ?` | Delete the key from sessions.json | `delete_session` wipes disk + removes the registry entry |
+| **Cascade cleanup** | Deletes a single file only (metadata and messages live in the same file) | `ON DELETE CASCADE` automatically clears messages and files | Manually archive the transcript file (`archiveSessionTranscripts`, not a direct delete) | Delete the entire session directory (meta.json + history/) |
+| **Event notification** | None | pubsub `DeletedEvent` | None | WebSocket `session_deleted` broadcast |
 
 ## 6. Session Resume
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **方式** | 读整个 JSONL，通过 `uuid`/`parentUuid` 重建消息链，恢复 mode/permissionMode/title 等状态 | SQL 查询 session + messages，按 created_at 排序 | 读 transcript JSONL，恢复消息序列 | `get_branch(session_id, head_id)` 从 DAG 中沿 parent_id 链回溯，返回线性消息序列 |
-| **Compaction 处理** | 从 `compact_boundary` 条目的 `preservedSegment` 确定保留范围 | 如果 `summary_message_id != ""`，跳过该消息之前的所有消息 | 从 `compactionCheckpoints` 恢复 | compactionSummary 节点作为新的分支起点，旧消息在 DAG 中保留但不在活跃分支上 |
+| **Method** | Read the whole JSONL, rebuild the message chain via `uuid`/`parentUuid`, restore state such as mode/permissionMode/title | SQL query for session + messages, ordered by created_at | Read the transcript JSONL, restore the message sequence | `get_branch(session_id, head_id)` walks back along the parent_id chain in the DAG and returns a linear message sequence |
+| **Compaction handling** | The retained range is determined from the `preservedSegment` of the `compact_boundary` entry | If `summary_message_id != ""`, skip all messages before that message | Restore from `compactionCheckpoints` | The compactionSummary node becomes the new branch start; old messages are kept in the DAG but are not on the active branch |
 
-## 7. Compaction（上下文压缩）
-
-| | Claude Code | OpenCode | OpenClaw | OpenProgram |
-|---|---|---|---|---|
-| **触发** | 手动 + 自动 | 手动 | 自动（按 token 阈值） | 手动（`/compact`）+ 自动（`compaction_recommended` 信号） |
-| **实现** | append `system:compact_boundary` 条目到 JSONL | 用专用 `summarizeProvider` 生成摘要，写入新 message，`summary_message_id` 指向它 | 生成摘要，记录 checkpoint（tokensBefore/tokensAfter/summary），更新 `compactionCount` | LLM 生成摘要 → 写入 compactionSummary 节点（source="compaction"）→ 保留尾部消息重新挂到摘要节点下 → 移动 head_id |
-| **记录的信息** | trigger/preTokens/postTokens/preservedSegment/durationMs | summary_message_id | compactionCount + compactionCheckpoints 数组 | 摘要内容在节点 content 里，budget_pct/context_window 在推荐信号里 |
-| **旧消息** | 保留在 JSONL 里，通过 preservedSegment 标记哪些活跃 | 保留在数据库，加载时跳过 summary 之前的 | 保留在 transcript 里 | 保留在 DAG 中（append-only），但不在活跃分支上 |
-
-## 8. 活跃进程跟踪
+## 7. Compaction (Context Compression)
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **机制** | `~/.claude/sessions/<pid>.json` 独立文件 | 无（单进程 TUI） | SessionEntry 的 `status` 字段 | `status` 枚举字段（meta.json + 注册表） |
-| **字段** | pid, sessionId, cwd, startedAt, version, kind（interactive）, entrypoint（cli）, status（idle/busy）, updatedAt, name, bridgeSessionId | — | status（running/done/failed/killed/timeout）, runtimeMs, abortedLastRun | `status`（idle/running/needs_input/done/failed） |
-| **崩溃恢复** | 进程退出后文件残留（需外部清理） | — | status 可能卡在 running（无自动恢复） | 启动时重置所有 `status=running` → `idle` |
-| **与 session 列举的关系** | 不参与列举 | — | 参与列举（status 是 SessionEntry 的一部分） | 参与列举（`status` 在注册表中） |
+| **Trigger** | Manual + automatic | Manual | Automatic (by token threshold) | Manual (`/compact`) + automatic (`compaction_recommended` signal) |
+| **Implementation** | Append a `system:compact_boundary` entry to the JSONL | Generate a summary with a dedicated `summarizeProvider`, write it as a new message, and point `summary_message_id` at it | Generate a summary, record a checkpoint (tokensBefore/tokensAfter/summary), update `compactionCount` | LLM generates a summary → write a compactionSummary node (source="compaction") → reattach the retained tail messages under the summary node → move head_id |
+| **Recorded information** | trigger/preTokens/postTokens/preservedSegment/durationMs | summary_message_id | compactionCount + the compactionCheckpoints array | Summary content lives in the node content; budget_pct/context_window live in the recommendation signal |
+| **Old messages** | Kept in the JSONL, with preservedSegment marking which are active | Kept in the database, skipped before the summary on load | Kept in the transcript | Kept in the DAG (append-only), but not on the active branch |
 
-## 9. 并发控制
-
-| | Claude Code | OpenCode | OpenClaw | OpenProgram |
-|---|---|---|---|---|
-| **机制** | 文件级（单进程写，多进程通过 pid 文件协调） | SQLite WAL 模式 + 8MB 页缓存 | 文件锁（lockfile）+ 进程内 FIFO 队列 | Python `threading.Lock`（`_sessions_lock`）+ Git 文件级操作 |
-| **锁粒度** | 每个 JSONL 文件 | 数据库级 | 每个 sessions.json 文件 | SessionStore 级（`self._lock`） |
-| **进程内** | 单线程 | SQLite 处理 | FIFO 队列串行化同一 storePath 的写操作 | `threading.Lock` 保护 `_sessions` dict 和注册表写入 |
-| **跨进程** | pid 文件标记（`sessions/<pid>.json`） | SQLite 内置 | lockfile 排他锁（stale 检测 30 分钟 + PID 存活检查） | 无显式跨进程锁（单 worker 进程模型） |
-| **锁超时/看门狗** | 无 | 无（SQLite busy timeout） | 看门狗每 60 秒巡检，持有超时 5 分钟 | 无 |
-
-## 10. 数据维护
+## 8. Active Process Tracking
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **过期清理** | 无 | 无 | `pruneStaleEntries`：30 天未更新的条目 | 启动时清理 `archived=True` 且超 90 天未更新的 session |
-| **容量限制** | 无 | 无 | `capEntryCount`：最多 500 个条目，超出删最旧 | 上限 1000，超出删最旧的已归档 session |
-| **文件轮转** | 无 | 无 | `rotateSessionFile`：sessions.json 超 10MB 轮转，保留最近 3 个备份 | 无 |
-| **磁盘预算** | 无 | 无 | `enforceSessionDiskBudget`：可选，按总磁盘占用清理 | 无 |
-| **删除时归档** | 无（直接删文件） | 无（CASCADE 直接删） | 有（transcript 文件归档而非直接删） | 无（直接删目录） |
-| **维护模式** | — | — | "warn"（默认只警告）/ "enforce"（真正执行） | — |
-| **updated_at 维护** | 隐式（文件 mtime） | SQLite trigger 自动 | 应用层写入 | 应用层写入（`_persist_meta` 时自动设 `time.time()`） |
-| **message_count 维护** | 不跟踪 | SQLite trigger 自动 +1/-1 | 不跟踪 | 不跟踪 |
+| **Mechanism** | A dedicated `~/.claude/sessions/<pid>.json` file | None (single-process TUI) | The `status` field of SessionEntry | `status` enum field (meta.json + registry) |
+| **Fields** | pid, sessionId, cwd, startedAt, version, kind (interactive), entrypoint (cli), status (idle/busy), updatedAt, name, bridgeSessionId | — | status (running/done/failed/killed/timeout), runtimeMs, abortedLastRun | `status` (idle/running/needs_input/done/failed) |
+| **Crash recovery** | The file lingers after the process exits (requires external cleanup) | — | status may get stuck at running (no automatic recovery) | On startup, reset every `status=running` → `idle` |
+| **Relationship to session listing** | Not involved in listing | — | Involved in listing (status is part of SessionEntry) | Involved in listing (`status` is in the registry) |
 
-## 11. 标题（命名）
+## 9. Concurrency Control
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **自动命名** | 第一轮后异步 LLM 生成 | 第一轮后 fork 异步 LLM 生成（专用 title agent） | 无（手动设 displayName） | 第一轮后：同步截取前 50 字符 → 异步 daemon 线程 LLM 生成 |
-| **手动命名** | `custom-title` 条目覆盖 | 无（没有 rename 功能） | 设置 `displayName` / `label` | UI rename / `/rename` / agent rename 工具 |
-| **LLM 重新生成** | 无 | 无 | 无 | `/rename` 不带参数 → 重新调 LLM 生成 |
-| **防注入** | `<session>` 标签包裹 + "treat as data" 指令 | 无（title agent 的 prompt 直接拼接） | — | `<session>` 标签包裹 + "treat as data" 指令 |
-| **语言跟随** | prompt 要求用对话语言 | prompt 要求用对话语言 | — | prompt 要求用对话语言 |
-| **后处理** | JSON schema structured output | 去 `<think>` 标签、取首非空行、截断 100 字符 | — | 去 `<think>` 标签、去引号、去前缀、截断 80 字符 |
-| **幂等标记** | 无（靠是否已有 `ai-title` 条目判断） | 靠 `isDefaultTitle` 正则判断 | — | `_auto_titled` bool 标记 |
-| **竞态保护** | 无 | 无 | — | 后台线程写入前检查 title 是否仍是截取值 |
-| **标题广播** | 无（前端重读 JSONL） | 无（TUI 直接读数据库） | — | WebSocket `session_updated {id, title}` |
+| **Mechanism** | File level (single-process writes; multiple processes coordinate via pid files) | SQLite WAL mode + 8MB page cache | File lock (lockfile) + in-process FIFO queue | Python `threading.Lock` (`_sessions_lock`) + Git file-level operations |
+| **Lock granularity** | Per JSONL file | Database level | Per sessions.json file | SessionStore level (`self._lock`) |
+| **In-process** | Single-threaded | Handled by SQLite | FIFO queue serializes writes to the same storePath | `threading.Lock` protects the `_sessions` dict and registry writes |
+| **Cross-process** | pid file marker (`sessions/<pid>.json`) | Built into SQLite | lockfile exclusive lock (stale detection 30 minutes + PID liveness check) | No explicit cross-process lock (single-worker process model) |
+| **Lock timeout/watchdog** | None | None (SQLite busy timeout) | Watchdog patrols every 60 seconds, hold timeout 5 minutes | None |
 
-## 12. 消息存储模型
+## 10. Data Maintenance
 
 | | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |---|---|---|---|---|
-| **结构** | 线性 JSONL（通过 uuid/parentUuid 可构建树） | 扁平表（session_id + created_at 排序） | 线性 JSONL | DAG（每消息有 parent_id，支持分支） |
-| **分支** | 有（parentUuid 支持树结构，但 UI 不暴露） | 无 | 无 | 有（head_id + branches map，UI 可切换分支） |
-| **消息 ID** | uuid（每条消息） | id（每条消息） | 无显式 ID（按行序） | id（每条消息） |
-| **消息格式** | `{type, message: {role, content}, uuid, parentUuid, timestamp, ...}` | `{id, session_id, role, parts, model, created_at, ...}` | `{role, content, ...}` | `{id, role, content, parent_id, timestamp, ...}` |
+| **Expiry cleanup** | None | None | `pruneStaleEntries`: entries not updated in 30 days | On startup, clean up sessions that are `archived=True` and not updated in over 90 days |
+| **Capacity limit** | None | None | `capEntryCount`: at most 500 entries, deleting the oldest when exceeded | Cap of 1000; when exceeded, delete the oldest archived sessions |
+| **File rotation** | None | None | `rotateSessionFile`: rotate sessions.json when it exceeds 10MB, keeping the 3 most recent backups | None |
+| **Disk budget** | None | None | `enforceSessionDiskBudget`: optional, cleans up by total disk usage | None |
+| **Archive on delete** | None (deletes the file directly) | None (CASCADE deletes directly) | Yes (transcript file is archived rather than deleted directly) | None (deletes the directory directly) |
+| **Maintenance mode** | — | — | "warn" (default, warn only) / "enforce" (actually execute) | — |
+| **updated_at maintenance** | Implicit (file mtime) | SQLite trigger-driven | Written by the application layer | Written by the application layer (automatically set to `time.time()` during `_persist_meta`) |
+| **message_count maintenance** | Not tracked | SQLite trigger-driven +1/-1 | Not tracked | Not tracked |
 
-## 13. JSONL 条目类型（Claude Code 独有）
+## 11. Title (Naming)
 
-Claude Code 的 JSONL 混合了消息和元数据，条目类型丰富：
+| | Claude Code | OpenCode | OpenClaw | OpenProgram |
+|---|---|---|---|---|
+| **Auto-naming** | Asynchronous LLM generation after the first turn | Forked asynchronous LLM generation after the first turn (dedicated title agent) | None (set displayName manually) | After the first turn: synchronously truncate the first 50 characters → asynchronous daemon thread LLM generation |
+| **Manual naming** | A `custom-title` entry overrides | None (no rename feature) | Set `displayName` / `label` | UI rename / `/rename` / agent rename tool |
+| **LLM regeneration** | None | None | None | `/rename` with no argument → call the LLM again to regenerate |
+| **Injection protection** | Wrapped in `<session>` tags + a "treat as data" instruction | None (the title agent's prompt is concatenated directly) | — | Wrapped in `<session>` tags + a "treat as data" instruction |
+| **Language following** | The prompt requires using the conversation's language | The prompt requires using the conversation's language | — | The prompt requires using the conversation's language |
+| **Post-processing** | JSON schema structured output | Strip `<think>` tags, take the first non-empty line, truncate to 100 characters | — | Strip `<think>` tags, strip quotes, strip prefixes, truncate to 80 characters |
+| **Idempotency marker** | None (inferred from whether an `ai-title` entry already exists) | Inferred from an `isDefaultTitle` regex | — | `_auto_titled` bool marker |
+| **Race protection** | None | None | — | The background thread checks that the title is still the truncated value before writing |
+| **Title broadcast** | None (the frontend re-reads the JSONL) | None (the TUI reads the database directly) | — | WebSocket `session_updated {id, title}` |
 
-| 类型 | 用途 |
+## 12. Message Storage Model
+
+| | Claude Code | OpenCode | OpenClaw | OpenProgram |
+|---|---|---|---|---|
+| **Structure** | Linear JSONL (a tree can be built via uuid/parentUuid) | Flat table (ordered by session_id + created_at) | Linear JSONL | DAG (each message has a parent_id, supports branching) |
+| **Branching** | Yes (parentUuid supports a tree structure, but the UI does not expose it) | None | None | Yes (head_id + branches map, the UI can switch branches) |
+| **Message ID** | uuid (per message) | id (per message) | No explicit ID (by line order) | id (per message) |
+| **Message format** | `{type, message: {role, content}, uuid, parentUuid, timestamp, ...}` | `{id, session_id, role, parts, model, created_at, ...}` | `{role, content, ...}` | `{id, role, content, parent_id, timestamp, ...}` |
+
+## 13. JSONL Entry Types (Claude Code only)
+
+Claude Code's JSONL mixes messages and metadata, with a rich set of entry types:
+
+| Type | Purpose |
 |------|------|
-| `user` | 用户消息（含 uuid, parentUuid, timestamp, cwd, gitBranch） |
-| `assistant` | 助手回复（含 usage, model, requestId） |
-| `attachment` | 附件（文件、图片） |
-| `system` | 系统事件（子类型：turn_duration / away_summary / compact_boundary / api_error / local_command / informational / bridge_status / scheduled_task_fire） |
-| `ai-title` | LLM 自动生成的标题 |
-| `custom-title` | 用户手动设置的标题 |
-| `agent-name` | agent 名称 |
-| `last-prompt` | 最后提示位置（leafUuid） |
-| `mode` | 对话模式（normal/plan/...） |
-| `permission-mode` | 权限模式 |
-| `file-history-snapshot` | 文件快照（用于 revert） |
-| `bridge-session` | Bridge 会话 ID |
-| `queue-operation` | 队列操作 |
+| `user` | User message (includes uuid, parentUuid, timestamp, cwd, gitBranch) |
+| `assistant` | Assistant reply (includes usage, model, requestId) |
+| `attachment` | Attachment (file, image) |
+| `system` | System event (subtypes: turn_duration / away_summary / compact_boundary / api_error / local_command / informational / bridge_status / scheduled_task_fire) |
+| `ai-title` | LLM auto-generated title |
+| `custom-title` | User-set title |
+| `agent-name` | Agent name |
+| `last-prompt` | Last prompt position (leafUuid) |
+| `mode` | Conversation mode (normal/plan/...) |
+| `permission-mode` | Permission mode |
+| `file-history-snapshot` | File snapshot (used for revert) |
+| `bridge-session` | Bridge session ID |
+| `queue-operation` | Queue operation |
 
-## 14. 总结
+## 14. Summary
 
-| 维度 | Claude Code | OpenCode | OpenClaw | OpenProgram |
+| Dimension | Claude Code | OpenCode | OpenClaw | OpenProgram |
 |------|------------|----------|---------|-------------|
-| **设计哲学** | 文件即数据，append-only | 关系数据库，结构化查询 | 注册表 + transcript | Git DAG + 注册表 |
-| **列举性能** | 最慢（扫目录 + 读文件） | 最快（数据库索引） | 快（读一个 JSON 文件） | 快（内存常驻注册表） |
-| **元数据丰富度** | 少（标题 + 几个状态标记） | 中等（10 个字段） | 最多（约 70 个字段） | 中等（约 18 个字段） |
-| **维护能力** | 无 | 无 | 最完善（过期/容量/轮转/预算） | 有（90 天过期清理 + 1000 容量上限） |
-| **并发能力** | 弱（单进程写） | 强（SQLite WAL） | 中等（文件锁 + 队列） | 中等（threading.Lock，单 worker） |
-| **分支能力** | 有（DAG，UI 不暴露） | 无 | 无 | 有（DAG，UI 可切换） |
-| **渠道支持** | 无 | 无 | 有（完整路由字段） | 有（channel/account_id/peer） |
-| **归档/置顶** | 无 | 无 | 无 | 有（pinned/archived/group） |
-| **崩溃恢复** | 无自动恢复 | 不需要（单进程） | 无自动恢复 | 启动时重置 status=running → idle + 注册表损坏自动重建 |
-| **空壳防护** | 不需要（文件即内容） | 不需要（INSERT 即有数据） | 不需要 | 延迟创建 + 创建即写消息原子化 |
+| **Design philosophy** | File as data, append-only | Relational database, structured queries | Registry + transcript | Git DAG + registry |
+| **Listing performance** | Slowest (scan directory + read files) | Fastest (database index) | Fast (read one JSON file) | Fast (in-memory resident registry) |
+| **Metadata richness** | Low (title + a few status markers) | Medium (10 fields) | Highest (around 70 fields) | Medium (around 18 fields) |
+| **Maintenance capability** | None | None | Most complete (expiry/capacity/rotation/budget) | Yes (90-day expiry cleanup + 1000 capacity cap) |
+| **Concurrency capability** | Weak (single-process writes) | Strong (SQLite WAL) | Medium (file lock + queue) | Medium (threading.Lock, single worker) |
+| **Branching capability** | Yes (DAG, UI does not expose it) | None | None | Yes (DAG, UI can switch) |
+| **Channel support** | None | None | Yes (full routing fields) | Yes (channel/account_id/peer) |
+| **Archive/pin** | None | None | None | Yes (pinned/archived/group) |
+| **Crash recovery** | No automatic recovery | Not needed (single process) | No automatic recovery | On startup, reset status=running → idle + automatic rebuild of a corrupted registry |
+| **Empty-shell protection** | Not needed (file is content) | Not needed (data exists on INSERT) | Not needed | Lazy creation + atomic create-and-write-message |

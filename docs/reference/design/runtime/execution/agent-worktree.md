@@ -1,61 +1,60 @@
-# Agent Worktree 工具
+# Agent Worktree Tool
 
-> Agent 在用户真实代码仓库里跑高风险改动时，需要一个隔离的临时工作目录：
-> 改成了 merge 回主线，改坏了 discard 一抹了之，主仓库一字未动。
-> 底层就是 `git worktree add` / `git worktree remove` 的封装，但要跟
-> OpenProgram 自己的 session-git 严格区分开。
+> When an agent runs high-risk changes inside the user's real code repository, it needs an isolated temporary working directory:
+> if the changes are good, merge them back into the mainline; if they go wrong, discard them with a single wipe, and the main repo stays untouched.
+> Under the hood this is just a wrapper around `git worktree add` / `git worktree remove`, but it must be kept strictly separate from
+> OpenProgram's own session-git.
 
-参考 Claude Code 的 `EnterWorktreeTool` / `ExitWorktreeTool`
-（`references/claude-code-leaked/src/tools/EnterWorktreeTool/`），
-本设计照搬其"切 cwd + 状态机 + 退出时 keep/discard"骨架，但适配
-OpenProgram 的 runtime / session 模型。
+Referencing Claude Code's `EnterWorktreeTool` / `ExitWorktreeTool`
+(`references/claude-code-leaked/src/tools/EnterWorktreeTool/`),
+this design copies its "switch cwd + state machine + keep/discard on exit" skeleton, but adapts it to
+OpenProgram's runtime / session model.
 
 ---
 
-## Part 1. 设计需要考虑的维度
+## Part 1. Dimensions the Design Must Consider
 
-### D1. Worktree 实体存什么
+### D1. What a Worktree Entity Stores
 
-每个 active worktree 是一条记录，字段：
+Each active worktree is one record, with fields:
 
-- `id`: worktree 短 id（hex，跟 commit id 风格一致）
-- `source_repo`: 用户真实仓库 root（绝对路径）
-- `worktree_path`: `git worktree add` 落地的目录（绝对路径）
-- `branch_name`: worktree 上对应的分支名（默认 `op/wt/<id>`）
-- `base_ref`: 创建时的基线 ref（默认 `HEAD`，可指定 origin/main / commit sha）
-- `created_at`: unix 时间戳
+- `id`: short worktree id (hex, same style as commit ids)
+- `source_repo`: the user's real repository root (absolute path)
+- `worktree_path`: the directory created by `git worktree add` (absolute path)
+- `branch_name`: the branch name corresponding to the worktree (defaults to `op/wt/<id>`)
+- `base_ref`: the baseline ref at creation time (defaults to `HEAD`, can be set to origin/main / commit sha)
+- `created_at`: unix timestamp
 - `status`: `active` / `committing` / `merged` / `discarded` / `kept`
-- `parent_session_id`: 关联的 OpenProgram session（一对一或一对多）
-- `parent_task_id`: 关联的 async task（若有）
-- `created_by_agent`: agent id（记录是哪个 agent 开的，UI 上能看出来）
+- `parent_session_id`: the associated OpenProgram session (one-to-one or one-to-many)
+- `parent_task_id`: the associated async task (if any)
+- `created_by_agent`: agent id (records which agent opened it, so it is visible in the UI)
 
-记录持久化在 session-git 仓库的 `worktrees/<id>.json`，跟 ContextCommit 平行存。
-session 关闭时不自动清理，等 agent 或用户显式 merge / discard。
+Records are persisted in the session-git repository at `worktrees/<id>.json`, stored alongside ContextCommit.
+They are not cleaned up automatically when the session closes; they wait for the agent or user to explicitly merge / discard.
 
-### D2. cwd 切换机制
+### D2. cwd Switching Mechanism
 
-OpenProgram 的工具分两类：
+OpenProgram's tools fall into two categories:
 
-1. **Runtime-spawned subprocess**（Codex CLI / Claude CLI 这种带 `--cd` 参数的）
-   通过 `runtime.set_workdir(path)` 控制。
-2. **In-process `@function` 工具**（bash / edit / write / read 等）
-   bash 走 `get_active_backend().run(...)`，目前 `LocalBackend.run` 接收
-   `cwd` 参数但调用方没传；edit / write / read 强制要求绝对路径。
+1. **Runtime-spawned subprocess** (Codex CLI / Claude CLI, which take a `--cd` argument)
+   controlled via `runtime.set_workdir(path)`.
+2. **In-process `@function` tools** (bash / edit / write / read, etc.)
+   bash goes through `get_active_backend().run(...)`; currently `LocalBackend.run` accepts
+   a `cwd` argument but callers don't pass it; edit / write / read require absolute paths.
 
-设计：在 `openprogram/agent/_runtime.py` 增加一个 ContextVar
-`_current_worktree_path: Optional[str]`，dispatcher 每次进 turn 时，
-若 session 当前有 active worktree（从 session meta 读），就 `set` 这个 var。
-工具实现按需消费：
+Design: add a ContextVar `_current_worktree_path: Optional[str]` in `openprogram/agent/_runtime.py`.
+Each time the dispatcher enters a turn, if the session currently has an active worktree (read from session meta),
+it `set`s this var. Tool implementations consume it as needed:
 
-- bash：`LocalBackend.run(cmd, cwd=_current_worktree_path.get())`
-- edit / write / read：相对路径解析时以 `_current_worktree_path` 为根；
-  绝对路径必须在 worktree 之下（D6 安全校验）。
-- runtime 子进程：保留现有 `apply_default_workdir(runtime, session_id)`，
-  改成优先返回 worktree path（若有），否则 session-git 的 `workdir/`。
+- bash: `LocalBackend.run(cmd, cwd=_current_worktree_path.get())`
+- edit / write / read: resolve relative paths against `_current_worktree_path` as the root;
+  absolute paths must be under the worktree (D6 security check).
+- runtime subprocess: keep the existing `apply_default_workdir(runtime, session_id)`,
+  but change it to prefer returning the worktree path (if any), otherwise session-git's `workdir/`.
 
-不引入"显式 cwd 参数"。worktree 是 session 级别的上下文，工具不感知。
+No "explicit cwd argument" is introduced. The worktree is session-level context; tools are unaware of it.
 
-### D3. 状态机
+### D3. State Machine
 
 ```
             create
@@ -71,374 +70,374 @@ OpenProgram 的工具分两类：
         └────┬─────┘
              │ keep
              ▼
-           kept (用户决定保留分支但不 merge 也不删)
+           kept (user decides to keep the branch but neither merge nor delete it)
 ```
 
-- `active`: agent 正在用。bash / edit 这类工具 cwd 默认指向这里。
-- `committing`: 短暂状态，merge 操作期间持锁，防止并发改文件。
-- `merged`: `git merge` 成功，worktree 目录已 `git worktree remove`。
-- `discarded`: `git worktree remove --force` 成功，分支也删了。
-- `kept`: 用户走 `worktree_keep` —— worktree 目录保留，OpenProgram
-  解绑这条记录但不动 git。后续用户自己接管。
+- `active`: the agent is using it. Tools like bash / edit default their cwd here.
+- `committing`: a brief state, holding a lock during the merge operation to prevent concurrent file edits.
+- `merged`: `git merge` succeeded, the worktree directory has been `git worktree remove`d.
+- `discarded`: `git worktree remove --force` succeeded, the branch was deleted too.
+- `kept`: the user went through `worktree_keep` — the worktree directory is kept, OpenProgram
+  unbinds this record but does not touch git. The user takes over from there.
 
-### D4. 跟 OpenProgram session-git 的隔离
+### D4. Isolation from OpenProgram session-git
 
-OpenProgram 自己有 `~/.openprogram/sessions/<sid>/`（每个 session 一个 git repo），
-存对话内存的 history / context / workdir。**绝对不能把 agent worktree
-落地在这个目录树里**：
+OpenProgram has its own `~/.openprogram/sessions/<sid>/` (one git repo per session),
+storing the conversation memory's history / context / workdir. **The agent worktree must never
+be created inside this directory tree**:
 
-- worktree_path 必须不在任何 `~/.openprogram/sessions/*` 之下（D14 校验）。
-- source_repo 不能等于 session-git 仓库路径。
-- session-git 的 commit 跟 worktree 的 commit 各管各的；UI 上 ContextCommit
-  时间线只看 session-git，worktree 时间线另一个 panel 显示。
+- worktree_path must not be under any `~/.openprogram/sessions/*` (D14 check).
+- source_repo must not equal a session-git repository path.
+- session-git commits and worktree commits are managed independently; in the UI the ContextCommit
+  timeline only looks at session-git, while the worktree timeline is shown in a separate panel.
 
-历史上 OpenProgram 试过 sub-agent worktree（commit `5ba13149`），
-落地在 `<session-repo>/_worktrees/<branch>/`，后来被重构成"sub-agent =
-peer session + attach"（commit `75e430c0`）。本设计不复用那条路径——
-那个是"在 session-git 内部开分支跑 sub-agent"，本设计是"在用户真实代码
-仓库开 worktree 给 agent 跑改动"，完全不同的目的。
+Historically OpenProgram tried sub-agent worktrees (commit `5ba13149`),
+created under `<session-repo>/_worktrees/<branch>/`, which was later refactored into "sub-agent =
+peer session + attach" (commit `75e430c0`). This design does not reuse that path —
+that one was "open a branch inside session-git to run a sub-agent", whereas this design is "open a worktree
+in the user's real code repository for the agent to run changes". Completely different purposes.
 
-### D5. Source repo 来源
+### D5. Where source_repo Comes From
 
-三个入口，优先级从高到低：
+Three entry points, in descending priority:
 
-1. **agent 显式传**：worktree_create 工具的 `source_repo` 参数（绝对路径）。
-   适合 plan agent 列任务时已经知道目标仓库。
-2. **fn-form 的 "Working in a folder"**：用户在 web UI 给程序输入的
-   `_work_dir`。dispatcher 在进 turn 前若发现这个 path 是个 git repo 根，
-   就当作 default source_repo（worktree_create 不传 source_repo 时用）。
-3. **session 当前 cwd 的祖先 git root**：用 `git rev-parse --show-toplevel`
-   走一遍。一般是用户启动 OpenProgram 的目录。
+1. **Explicitly passed by the agent**: the `source_repo` parameter of the worktree_create tool (absolute path).
+   Suitable when a plan agent already knows the target repository while listing tasks.
+2. **The fn-form "Working in a folder"**: the `_work_dir` the user supplies to the program in the web UI.
+   Before entering a turn, if the dispatcher finds that this path is a git repo root,
+   it treats it as the default source_repo (used when worktree_create is called without source_repo).
+3. **The ancestor git root of the session's current cwd**: resolved via `git rev-parse --show-toplevel`.
+   Usually the directory from which the user launched OpenProgram.
 
-入口都失败 → worktree_create 报错 `source_repo_not_a_git_repo`。
-不会自动 `git init` 给用户建仓库（破坏性太大）。
+If all entry points fail → worktree_create reports the error `source_repo_not_a_git_repo`.
+It will not automatically `git init` a repository for the user (too destructive).
 
-### D6. 安全 / 权限
+### D6. Security / Permissions
 
-worktree 内 agent 工具的核心安全约束：**bash 命令的 cwd 锁定，但 cmd
-内可以 `cd ..` 跑到 worktree 外**。这不是真正的 sandbox，是"默认指向"。
-两层补救：
+The core security constraint for agent tools inside a worktree: **the bash command's cwd is locked, but the cmd
+itself can `cd ..` to run outside the worktree**. This is not a true sandbox; it is a "default direction".
+Two mitigations:
 
-- **绝对路径校验**：edit / write / read 收到 `file_path` 时，若它落在
-  worktree_path 之外，记一条 warning 进 ContextCommit metadata
-  （`outside_worktree=true`），但不阻止——用户可能确实要读 system 配置。
-- **bash 的 cwd 永远是 worktree_path**：即使 LLM 写了 `cd /tmp && rm -rf X`，
-  起点是 worktree_path，shell session 不持久（每条 bash 都是新 subprocess），
-  下次 bash 又回 worktree_path。
+- **Absolute path check**: when edit / write / read receive a `file_path` that falls outside
+  worktree_path, log a warning into the ContextCommit metadata
+  (`outside_worktree=true`), but do not block — the user may genuinely want to read a system config.
+- **bash's cwd is always worktree_path**: even if the LLM writes `cd /tmp && rm -rf X`,
+  the starting point is worktree_path, the shell session is not persistent (each bash is a fresh subprocess),
+  and the next bash returns to worktree_path.
 
-不做：bash 命令的 chroot / namespace 隔离。OpenProgram 已经支持 docker
-backend，要 hard sandbox 走那条路。
+Not doing: chroot / namespace isolation for bash commands. OpenProgram already supports a docker
+backend; for a hard sandbox, go that route.
 
-### D7. Worktree 内的 commit
+### D7. Commits Inside a Worktree
 
-agent 在 worktree 里写文件 → worktree 目录是脏的。两种语义：
+The agent writes files in the worktree → the worktree directory is dirty. Two semantics:
 
-- **自动 commit**：每次 agent 工具调用后（bash 跑 git add / edit / write），
-  worktree 工具不自动 commit。让 agent 自己用 bash 跑 `git add -A && git commit`。
-  这样 commit message 由 agent 决定，符合 git 习惯。
-- **merge 时强制 commit**：worktree_merge 时若 worktree 有 uncommitted
-  changes，先报错 `worktree_dirty`，让 agent 显式处理（commit 掉 / stash 掉
-  / discard 掉）。不自动 commit-and-merge。
+- **Auto commit**: after each agent tool call (bash running git add / edit / write),
+  the worktree tool does not auto-commit. It lets the agent run `git add -A && git commit` via bash itself.
+  This way the commit message is decided by the agent, consistent with git conventions.
+- **Forced commit at merge time**: when worktree_merge runs, if the worktree has uncommitted
+  changes, it first reports the error `worktree_dirty` and lets the agent handle it explicitly (commit it /
+  stash it / discard it). It does not auto-commit-and-merge.
 
-### D8. Merge 策略
+### D8. Merge Strategy
 
-`worktree_merge(worktree_id, mode="ff-only" | "squash" | "no-ff")`，默认 ff-only。
+`worktree_merge(worktree_id, mode="ff-only" | "squash" | "no-ff")`, defaults to ff-only.
 
-- **ff-only**: source_repo 的 HEAD 是 worktree branch 的祖先 → fast-forward。
-  否则报错 `not_fast_forward`，让 agent 决定是 rebase 还是切到 squash。
-- **squash**: `git merge --squash <branch>` → 多个 worktree commit 压成一条；
-  适合 worktree 内是探索性多次小 commit 的情形。
-- **no-ff**: 总是创建 merge commit，保留 worktree 的 commit 历史。
+- **ff-only**: source_repo's HEAD is an ancestor of the worktree branch → fast-forward.
+  Otherwise reports the error `not_fast_forward`, letting the agent decide whether to rebase or switch to squash.
+- **squash**: `git merge --squash <branch>` → multiple worktree commits squashed into one;
+  suitable when the worktree contains many exploratory small commits.
+- **no-ff**: always creates a merge commit, preserving the worktree's commit history.
 
-merge 之后默认 `git worktree remove <path>` 删掉 worktree 目录，但
-**branch 保留**（让用户能 git log 看到这次改动的历史）。
-冲突的处理：merge 失败时**不**自动 reset，worktree 状态保持 `committing`
-（实际上回滚到 active），让 agent 或用户进 worktree 手动解决冲突。
+After a merge, by default `git worktree remove <path>` deletes the worktree directory, but
+**the branch is kept** (so the user can `git log` to see the history of this change).
+Handling conflicts: on merge failure it does **not** auto-reset; the worktree status stays `committing`
+(effectively rolling back to active), letting the agent or user enter the worktree to resolve conflicts manually.
 
-### D9. Discard 语义
+### D9. Discard Semantics
 
 `worktree_discard(worktree_id, force=False)`:
 
-- `force=False`（默认）：worktree 必须 clean（没有 uncommitted / untracked）。
-  否则报错 `worktree_dirty`，agent 可以决定是 stash 还是 force。
-- `force=True`：`git worktree remove --force <path>` + `git branch -D <branch>`。
-  uncommitted 改动直接丢。
-- 记录在 worktrees/<id>.json 里 status 改成 `discarded` + 时间戳。文件不删，
-  方便审计——但 worktree_path 已经不存在了。
+- `force=False` (default): the worktree must be clean (no uncommitted / untracked).
+  Otherwise reports the error `worktree_dirty`, and the agent can decide whether to stash or force.
+- `force=True`: `git worktree remove --force <path>` + `git branch -D <branch>`.
+  Uncommitted changes are dropped directly.
+- The record in worktrees/<id>.json has its status changed to `discarded` + a timestamp. The file is not deleted,
+  for auditing convenience — but worktree_path no longer exists.
 
-不提供"discard 前自动备份"。讨论过把丢弃的内容打 tar 塞 `~/.openprogram/discarded/`，
-但保留这条逃生绳成本不高，留到 Part 6（未来）。
+No "auto-backup before discard" is provided. There was discussion of tar-ing the discarded content into
+`~/.openprogram/discarded/`, but keeping this escape rope is not costly; it is left to Part 6 (future).
 
-### D10. Worktree 跟 task 的关系
+### D10. Relationship Between Worktree and Task
 
-async task 系统（见 `async-task-lifecycle.md`）：
+The async task system (see `async-task-lifecycle.md`):
 
-- 一个 task 可以独占创建并使用 worktree（task_create → worktree_create）。
-- task cancel 时，task 持有的 worktree 默认走 `discard force=True`。
-  task complete 时**不**自动 merge——让 task 完成后由 plan agent / 用户
-  显式决定（plan agent 看了 3 个 task 的产出后挑一个 merge）。
-- 一个 task 没强制要求开 worktree。轻量 task（读文件、跑 grep）直接在
-  source_repo 上跑就行，不开 worktree。
+- A task can exclusively create and use a worktree (task_create → worktree_create).
+- On task cancel, the worktree held by the task defaults to `discard force=True`.
+  On task complete it does **not** auto-merge — after the task completes, the plan agent / user
+  decides explicitly (the plan agent picks one to merge after looking at the output of 3 tasks).
+- A task is not required to open a worktree. Lightweight tasks (reading files, running grep) just run
+  directly on source_repo without opening a worktree.
 
-实现上，task lifecycle 在 cancel hook 里调 `worktree_manager.discard_for_task(task_id)`。
+In implementation, the task lifecycle calls `worktree_manager.discard_for_task(task_id)` in the cancel hook.
 
-### D11. Worktree 跟 ContextCommit 的关系
+### D11. Relationship Between Worktree and ContextCommit
 
-agent 在 worktree 里跑工具，工具结果（bash stdout / edit confirmation）
-正常进 ContextCommit 的 items。**worktree 里的 file diff 不直接进 ContextCommit
-内容**——文件 diff 是 git 的事，ContextCommit 只记"工具调用 X 修改了文件 Y"
-这类事件级别的事实。
+When the agent runs tools in a worktree, the tool results (bash stdout / edit confirmation)
+go into the ContextCommit items normally. **The file diff inside the worktree does not go directly into ContextCommit
+content** — file diffs are git's business; ContextCommit only records event-level facts like
+"tool call X modified file Y".
 
-新增一个轻量 metadata：每条工具 item 的 metadata 里加
-`worktree_id: Optional[str]`，标明这条工具调用发生在哪个 worktree 上
-（None 就是在 source_repo 直接跑）。UI 渲染时给 worktree 内的工具调用
-加个角标。
+Add a lightweight metadata field: each tool item's metadata gets
+`worktree_id: Optional[str]`, indicating which worktree this tool call happened in
+(None means it ran directly in source_repo). When the UI renders, it adds a badge
+to tool calls inside a worktree.
 
-worktree merge / discard 操作本身也写进 ContextCommit，作为 system 节点
-（类似 attach pointer 的 marker），content 是 "Merged worktree wt_abc1234
-into source_repo (ff-only, 3 files changed)"。
+The worktree merge / discard operations themselves are also written into ContextCommit as system nodes
+(similar to an attach pointer marker), with content like "Merged worktree wt_abc1234
+into source_repo (ff-only, 3 files changed)".
 
-### D12. Agent 工具暴露
+### D12. Agent Tool Surface
 
-四个工具：
+Four tools:
 
-| Tool | 参数 | 返回 |
+| Tool | Parameters | Returns |
 |---|---|---|
 | `worktree_create` | `source_repo: str?` `name: str?` `base_ref: str?` | `{id, path, branch, base_sha}` |
 | `worktree_merge`  | `worktree_id: str` `mode: str = "ff-only"` `delete_branch: bool = False` | `{merged_sha, files_changed: int, summary: str}` |
 | `worktree_discard`| `worktree_id: str` `force: bool = False` | `{status: "discarded"}` |
 | `worktree_list`   | `status_filter: str?` | `[{id, path, branch, status, source_repo, age_seconds}]` |
 
-错误码（返回 error 字符串前缀）:
+Error codes (prefix of the returned error string):
 
-- `not_a_git_repo`: source_repo 不是 git repo
-- `worktree_dirty`: worktree 有 uncommitted changes
-- `not_fast_forward`: merge 时不能 ff
-- `merge_conflict`: merge 期间冲突
-- `worktree_in_sessions_dir`: source_repo 落在 sessions 树里（D4 隔离违例）
-- `worktree_exists`: 同 source_repo 下同名 branch 已有 worktree
+- `not_a_git_repo`: source_repo is not a git repo
+- `worktree_dirty`: the worktree has uncommitted changes
+- `not_fast_forward`: cannot ff during merge
+- `merge_conflict`: conflict during merge
+- `worktree_in_sessions_dir`: source_repo falls inside the sessions tree (D4 isolation violation)
+- `worktree_exists`: a worktree with the same branch name already exists under the same source_repo
 
-`worktree_create` / `worktree_merge` / `worktree_discard` 默认
-`requires_approval=True`，permission_mode=auto 才不弹审批。
+`worktree_create` / `worktree_merge` / `worktree_discard` default to
+`requires_approval=True`; only permission_mode=auto skips the approval prompt.
 
-不暴露 `worktree_switch` 工具——一个 session 同时只有一个 active worktree
-（D2 的 ContextVar 是单值），切换语义复杂（要不要写一条切换 marker？
-切换后老 worktree 怎么算？），收益不抵成本。多 worktree 通过 async task
-实现，每个 task 一个 worktree。
+No `worktree_switch` tool is exposed — a session has only one active worktree at a time
+(D2's ContextVar is single-valued), switching semantics are complex (do we write a switch marker?
+what happens to the old worktree after switching?), and the benefit does not outweigh the cost. Multiple
+worktrees are achieved through async tasks, one worktree per task.
 
-### D13. UI 表达
+### D13. UI Representation
 
-- **Composer 工具栏**：当前 session 有 active worktree 时，PromptInput 上方
-  显示一个 chip `worktree: wt_abc1234 (3 files changed)`，hover 弹 panel
-  显示 worktree_path / branch / 改动文件列表 / Merge / Discard / Keep 按钮。
-- **fn-form 的 "Working in a folder"**：保持原样，只显示 source_repo 路径。
-  worktree 作为内部 detail 不在 fn-form 里 surface。
-- **DAG 时间线**：worktree create / merge / discard marker 节点用区分色
-  渲染（跟 attach marker 一致风格）。
-- **不做的**：worktree 文件 diff 的内联预览（用户可以点开"open in editor"
-  / 用户自己的 git GUI 看）。
+- **Composer toolbar**: when the current session has an active worktree, a chip
+  `worktree: wt_abc1234 (3 files changed)` is shown above the PromptInput; hovering pops a panel
+  showing worktree_path / branch / the list of changed files / Merge / Discard / Keep buttons.
+- **The fn-form "Working in a folder"**: kept as-is, only showing the source_repo path.
+  The worktree is an internal detail and is not surfaced in the fn-form.
+- **DAG timeline**: worktree create / merge / discard marker nodes are rendered in a distinguishing color
+  (same style as the attach marker).
+- **Not doing**: inline preview of worktree file diffs (the user can click "open in editor"
+  / use their own git GUI to view).
 
-### D14. 错误 / 边界
+### D14. Errors / Edge Cases
 
-- `source_repo` 不是 git repo → `not_a_git_repo` 错误，提示用户先 `git init`。
-- `source_repo` 有 uncommitted changes 但 worktree 是新分支 → OK，
-  worktree 从 base_ref（默认 HEAD）创建，不受 source_repo working tree 状态影响。
-- `worktree_path` 已存在 → `worktree_exists` 错误。允许用户传 name 重试。
-- `source_repo` 在 sessions 树里 → `worktree_in_sessions_dir` 拒绝（D4）。
-- `base_ref` 不存在 → git 自己报错，工具透传 stderr。
-- agent 误删 worktree_path（绕过 worktree_discard 直接 rm -rf）→
-  下次 worktree_list 探测到 path 不存在时自动标记 `status=discarded`
-  并写一条 "auto-cleaned" 记录。
+- `source_repo` is not a git repo → `not_a_git_repo` error, prompting the user to `git init` first.
+- `source_repo` has uncommitted changes but the worktree is a new branch → OK,
+  the worktree is created from base_ref (defaults to HEAD), unaffected by the source_repo working tree state.
+- `worktree_path` already exists → `worktree_exists` error. The user is allowed to pass a name and retry.
+- `source_repo` is inside the sessions tree → `worktree_in_sessions_dir` rejection (D4).
+- `base_ref` does not exist → git reports the error itself, the tool passes through stderr.
+- the agent accidentally deletes worktree_path (bypassing worktree_discard with a direct rm -rf) →
+  next time worktree_list detects the path no longer exists, it automatically marks `status=discarded`
+  and writes an "auto-cleaned" record.
 
-### D15. 跟 Async Task 的整合
+### D15. Integration with Async Task
 
-worktree_create / merge / discard 本身是同步工具（git 子进程），不要 wrap
-成 async task。但**worktree 内的长时间工作**（agent 跑测试、跑 build）
-通常是 async task 的工作内容：
+worktree_create / merge / discard are themselves synchronous tools (git subprocesses); do not wrap
+them into async tasks. But **long-running work inside a worktree** (the agent running tests, running a build)
+is usually the work content of an async task:
 
-- async task 启动时可以指定 `worktree_id`（task 的 cwd 锁定到这个 worktree）。
-- task 内部跑的 bash / edit 也走 D2 的 ContextVar 路径，cwd 是 worktree_path。
-- task cancel hook → 调 `worktree_manager.on_task_cancel(task_id)`，
-  默认 discard。
-- task complete 不自动 merge（D10）。
-
----
-
-## Part 2. 场景 × 维度
-
-### 场景 A: 单 agent 单 worktree（基础流程）
-
-agent 接到任务"改 foo.py 加个 logging"，开 worktree → 改 → 跑测试 → merge。
-
-| 维度 | 设计 |
-|---|---|
-| **D1 实体** | 一条 worktree 记录，`status=active`，绑定当前 session |
-| **D2 cwd** | dispatcher 进 turn 时读 session.meta.active_worktree_id → 设 `_current_worktree_path` ContextVar；bash/edit/write/read 全部默认 cwd 这里 |
-| **D3 状态** | active → committing（merge 期间）→ merged |
-| **D4 隔离** | worktree_path 不在 sessions 树里：默认 `~/.openprogram/worktrees/<id>-<slug>/`（独立目录，跟 source_repo 平级） |
-| **D5 source** | fn-form 传的 `_work_dir` 当 source_repo；agent 也可显式传 |
-| **D6 安全** | bash 的 cwd 起点是 worktree_path；edit/write 收到 worktree 之外的绝对路径写 warning 不阻止 |
-| **D7 commit** | agent 自己用 bash 跑 `git add . && git commit -m "..."`；worktree_merge 前要求 worktree clean |
-| **D8 merge** | ff-only 默认；source_repo HEAD 未动则 ff 成功 |
-| **D9 discard** | 不走 |
-| **D10 task** | 不走 task（直接在主 turn 跑） |
-| **D11 commit log** | bash/edit 的工具 item 都标 `worktree_id`；merge 写一条 system marker |
-| **D12 工具** | worktree_create → 干活 → worktree_merge |
-| **D13 UI** | composer 显 chip "wt_abc1234 (2 files changed)"，merge 后 chip 消失，DAG 加 marker |
-| **D14 边界** | source_repo 不是 git repo 时 worktree_create 报错；用户先 git init |
-| **D15 task** | N/A |
-
-### 场景 B: 单 agent 多次 worktree（探索失败）
-
-agent 试方案 A 跑测试不过 → discard → 试方案 B → 通过 → merge。
-
-| 维度 | 设计 |
-|---|---|
-| **D1 实体** | 两条 worktree 记录（不同 id / branch / path）。第一条 status=discarded，第二条 status=merged |
-| **D2 cwd** | 任意时刻只有一个 active：discard 完第一条才能 create 第二条；ContextVar 切换由 dispatcher 在 turn 边界做 |
-| **D3 状态** | wt1: active → discarded；wt2: active → merged |
-| **D4 隔离** | 两个 worktree 各自独立目录 |
-| **D5 source** | 同一 source_repo，两次复用 |
-| **D6 安全** | 同 A |
-| **D7 commit** | wt1 里 agent 可能跑了几次 commit，discard 时随分支一起删；wt2 commit 走正常 merge |
-| **D8 merge** | wt2 走 ff-only；如果 wt1 期间 source_repo 没动（只是 worktree 自己改），ff 成功 |
-| **D9 discard** | wt1 `force=True`（agent 决定不要这条线了，包括 uncommitted 实验） |
-| **D10 task** | 不走 |
-| **D11 commit log** | DAG 上 wt1 marker（create + discard）+ wt2 marker（create + merge）|
-| **D12 工具** | create → discard → create → merge |
-| **D13 UI** | chip 切换两次：wt1 显示后消失，wt2 显示后消失 |
-| **D14 边界** | wt1 discard 时 force=True 跳过 dirty 检查 |
-| **D15 task** | N/A |
-
-### 场景 C: 并发 worktree（plan agent 分发 3 个 task）
-
-plan agent 列 3 个独立改动 → 3 个 async task，每个 task 一个 worktree
-（独立 source_repo 副本）→ 全跑完 → plan agent 看结果挑一个 merge，其余 discard。
-
-| 维度 | 设计 |
-|---|---|
-| **D1 实体** | 3 条 worktree 记录，每条绑定一个 task_id；status 同步演变 |
-| **D2 cwd** | 每个 task 内部跑时，**task runtime 的 ContextVar** 独立设置 `_current_worktree_path=task.worktree_path`；主 session 的 plan agent 自己不 active 任何 worktree（plan agent 不动文件） |
-| **D3 状态** | 3 条并行 active → 任务全完 → 2 条 discarded + 1 条 merged |
-| **D4 隔离** | 每条 worktree 独立目录；source_repo 都指向同一个，但 git worktree add 本来就支持同时多 worktree（不同 branch）|
-| **D5 source** | 全部同一 source_repo |
-| **D6 安全** | 每个 task 隔离 cwd，互不影响 |
-| **D7 commit** | 每个 task 自己 commit |
-| **D8 merge** | 挑中的那个走 ff-only；如果其他 task 都没 merge 过，source_repo HEAD 没动，ff 成功 |
-| **D9 discard** | 其余 2 个走 force=True（plan agent 选了 1，剩下的不再要） |
-| **D10 task** | 每个 task 创建时分配 worktree；task complete 不自动 merge（D10），等 plan agent 决策 |
-| **D11 commit log** | 3 条 worktree 都各自产生 marker；plan agent 写一段 assistant 解释"采用方案 2"|
-| **D12 工具** | plan agent 调 worktree_list 看 3 条；调 worktree_merge wt2 + worktree_discard wt1 wt3 |
-| **D13 UI** | composer chip 是 plan agent 自己的 session，不显示子 worktree；task panel 里每个 task 卡片显示自己的 worktree chip |
-| **D14 边界** | 3 个 worktree 同时 create 时 git worktree add 互斥锁（git 自己有 lockfile）|
-| **D15 task** | 完整接入：task 创建→worktree 分配；task cancel→discard；task complete→等决策 |
-
-### 场景 D: 长时间 worktree / 用户接管
-
-agent 跑到一半（worktree 里 commit 了 5 个 patch），用户决定自己接手。
-
-| 维度 | 设计 |
-|---|---|
-| **D1 实体** | 状态从 active → kept |
-| **D2 cwd** | 用户点 "Keep & detach" 后，session 的 active_worktree_id 清空，ContextVar 不再设；后续 agent turn 回到 source_repo 当 cwd |
-| **D3 状态** | active → kept |
-| **D4 隔离** | 不动 |
-| **D5 source** | 不动 |
-| **D6 安全** | worktree 还在磁盘上，但 OpenProgram 不再写它；用户在自己的 terminal / IDE 打开 worktree_path 继续干 |
-| **D7 commit** | agent 之前的 commit 都保留在 branch 上 |
-| **D8 merge** | 不走（用户自己决定 merge / rebase） |
-| **D9 discard** | 不走 |
-| **D10 task** | 如果是 task 持有的 worktree，task 也同步进 `kept` 状态（task 不再写日志，但记录已保留） |
-| **D11 commit log** | 写一条 system marker "Worktree wt_xxx kept for manual handover at <path>"，agent 之后看 ContextCommit 知道有这件事 |
-| **D12 工具** | UI 直接调 ws action（不是 agent 工具）`worktree_keep(worktree_id)`；agent 工具也可以暴露 worktree_keep，但低优先级 |
-| **D13 UI** | chip 改 "kept — open in editor"，点击复制路径 |
-| **D14 边界** | 用户后续把 worktree 目录手动删了 → 下次 OpenProgram 启动 list_worktrees 探测 path 不存在 → 标记 discarded（D14）|
-| **D15 task** | task 也进 detached 状态，不影响新 task |
+- when an async task starts it can specify `worktree_id` (the task's cwd is locked to this worktree).
+- the bash / edit run inside the task also goes through the D2 ContextVar path, with cwd being worktree_path.
+- task cancel hook → calls `worktree_manager.on_task_cancel(task_id)`,
+  which defaults to discard.
+- task complete does not auto-merge (D10).
 
 ---
 
-## Part 3. 现状 vs 目标
+## Part 2. Scenario × Dimension
 
-| 能力 | 现状 | 目标 | 差距 |
+### Scenario A: Single agent, single worktree (basic flow)
+
+The agent receives the task "modify foo.py to add logging", opens a worktree → modifies → runs tests → merges.
+
+| Dimension | Design |
+|---|---|
+| **D1 entity** | one worktree record, `status=active`, bound to the current session |
+| **D2 cwd** | when the dispatcher enters a turn it reads session.meta.active_worktree_id → sets the `_current_worktree_path` ContextVar; bash/edit/write/read all default cwd here |
+| **D3 status** | active → committing (during merge) → merged |
+| **D4 isolation** | worktree_path is not in the sessions tree: defaults to `~/.openprogram/worktrees/<id>-<slug>/` (an independent directory, sibling to source_repo) |
+| **D5 source** | the `_work_dir` passed by the fn-form is the source_repo; the agent can also pass it explicitly |
+| **D6 security** | bash's cwd starts at worktree_path; edit/write receiving an absolute path outside the worktree writes a warning but does not block |
+| **D7 commit** | the agent runs `git add . && git commit -m "..."` via bash itself; worktree_merge requires the worktree to be clean beforehand |
+| **D8 merge** | ff-only default; ff succeeds since source_repo HEAD has not moved |
+| **D9 discard** | not used |
+| **D10 task** | no task (runs directly in the main turn) |
+| **D11 commit log** | the bash/edit tool items are all tagged with `worktree_id`; merge writes a system marker |
+| **D12 tools** | worktree_create → do the work → worktree_merge |
+| **D13 UI** | composer shows chip "wt_abc1234 (2 files changed)", the chip disappears after merge, the DAG adds a marker |
+| **D14 edge** | worktree_create reports an error when source_repo is not a git repo; the user git inits first |
+| **D15 task** | N/A |
+
+### Scenario B: Single agent, multiple worktrees (failed exploration)
+
+The agent tries approach A, tests fail → discard → tries approach B → passes → merge.
+
+| Dimension | Design |
+|---|---|
+| **D1 entity** | two worktree records (different id / branch / path). The first has status=discarded, the second has status=merged |
+| **D2 cwd** | only one is active at any moment: the second can be created only after discarding the first; the ContextVar switch is done by the dispatcher at the turn boundary |
+| **D3 status** | wt1: active → discarded; wt2: active → merged |
+| **D4 isolation** | the two worktrees each have an independent directory |
+| **D5 source** | the same source_repo, reused twice |
+| **D6 security** | same as A |
+| **D7 commit** | in wt1 the agent may have run a few commits, deleted along with the branch on discard; wt2's commits go through a normal merge |
+| **D8 merge** | wt2 goes through ff-only; if source_repo did not move during wt1 (only the worktree itself changed), ff succeeds |
+| **D9 discard** | wt1 `force=True` (the agent decides to drop this line, including uncommitted experiments) |
+| **D10 task** | not used |
+| **D11 commit log** | on the DAG, wt1 markers (create + discard) + wt2 markers (create + merge) |
+| **D12 tools** | create → discard → create → merge |
+| **D13 UI** | the chip switches twice: wt1 shows then disappears, wt2 shows then disappears |
+| **D14 edge** | when discarding wt1, force=True skips the dirty check |
+| **D15 task** | N/A |
+
+### Scenario C: Concurrent worktrees (plan agent dispatches 3 tasks)
+
+The plan agent lists 3 independent changes → 3 async tasks, one worktree per task
+(independent copies of source_repo) → all complete → the plan agent looks at the results, picks one to merge, discards the rest.
+
+| Dimension | Design |
+|---|---|
+| **D1 entity** | 3 worktree records, each bound to a task_id; status evolves in sync |
+| **D2 cwd** | when running inside each task, **the task runtime's ContextVar** independently sets `_current_worktree_path=task.worktree_path`; the main session's plan agent itself does not activate any worktree (the plan agent does not touch files) |
+| **D3 status** | 3 parallel active → all tasks complete → 2 discarded + 1 merged |
+| **D4 isolation** | each worktree has an independent directory; source_repo all point to the same one, but git worktree add inherently supports multiple worktrees at once (different branches) |
+| **D5 source** | all the same source_repo |
+| **D6 security** | each task isolates its cwd, not affecting one another |
+| **D7 commit** | each task commits itself |
+| **D8 merge** | the chosen one goes through ff-only; if none of the other tasks merged, source_repo HEAD has not moved, ff succeeds |
+| **D9 discard** | the remaining 2 go through force=True (the plan agent picked 1, the rest are no longer wanted) |
+| **D10 task** | each task is assigned a worktree at creation; task complete does not auto-merge (D10), waiting for the plan agent's decision |
+| **D11 commit log** | all 3 worktrees each produce markers; the plan agent writes an assistant explanation "adopting approach 2" |
+| **D12 tools** | the plan agent calls worktree_list to see the 3; calls worktree_merge wt2 + worktree_discard wt1 wt3 |
+| **D13 UI** | the composer chip is the plan agent's own session, not showing sub-worktrees; in the task panel each task card shows its own worktree chip |
+| **D14 edge** | when 3 worktrees are created at once, git worktree add mutex (git has its own lockfile) |
+| **D15 task** | fully integrated: task creation → worktree assignment; task cancel → discard; task complete → wait for decision |
+
+### Scenario D: Long-running worktree / user takeover
+
+The agent is halfway through (5 patches committed in the worktree), the user decides to take over themselves.
+
+| Dimension | Design |
+|---|---|
+| **D1 entity** | status goes from active → kept |
+| **D2 cwd** | after the user clicks "Keep & detach", the session's active_worktree_id is cleared, the ContextVar is no longer set; subsequent agent turns return to source_repo as cwd |
+| **D3 status** | active → kept |
+| **D4 isolation** | unchanged |
+| **D5 source** | unchanged |
+| **D6 security** | the worktree is still on disk, but OpenProgram no longer writes to it; the user opens worktree_path in their own terminal / IDE to continue |
+| **D7 commit** | the agent's earlier commits are all kept on the branch |
+| **D8 merge** | not used (the user decides merge / rebase themselves) |
+| **D9 discard** | not used |
+| **D10 task** | if it is a worktree held by a task, the task also moves into the `kept` state in sync (the task no longer writes logs, but the record is kept) |
+| **D11 commit log** | writes a system marker "Worktree wt_xxx kept for manual handover at <path>", so the agent later looking at ContextCommit knows this happened |
+| **D12 tools** | the UI directly calls the ws action (not an agent tool) `worktree_keep(worktree_id)`; the agent tool can also expose worktree_keep, but low priority |
+| **D13 UI** | the chip changes to "kept — open in editor", clicking copies the path |
+| **D14 edge** | the user later deletes the worktree directory manually → next OpenProgram startup, list_worktrees detects the path no longer exists → marks discarded (D14) |
+| **D15 task** | the task also enters a detached state, not affecting new tasks |
+
+---
+
+## Part 3. Current State vs Target
+
+| Capability | Current State | Target | Gap |
 |---|---|---|---|
-| 用户真实 repo 的 worktree 隔离 | 无 | 完整 create/merge/discard | 大 |
-| Agent cwd 绑定 worktree | 无（runtime 走 session-git workdir/） | ContextVar 切换 | 中 |
-| Bash 工具传 cwd | LocalBackend 接收但 bash 函数没传 | 走 ContextVar | 小 |
-| Edit/Write/Read 校验 worktree 边界 | 无（只校验绝对路径） | warning 不阻止 | 小 |
-| Worktree 状态机持久化 | 无 | worktrees/<id>.json 在 session-git | 中 |
-| UI worktree chip | 无 | composer 顶部 chip + panel | 中 |
-| Worktree × Task 整合 | 无（task 系统本身在设计中） | task cancel 自动 discard | 中（依赖 async-task） |
-| Sub-agent worktree 历史代码 | 已重构掉（commit `75e430c0`） | 不复用 | N/A |
+| Worktree isolation in the user's real repo | none | full create/merge/discard | large |
+| Agent cwd bound to worktree | none (runtime uses session-git workdir/) | ContextVar switching | medium |
+| Bash tool passing cwd | LocalBackend accepts it but the bash function doesn't pass it | go through ContextVar | small |
+| Edit/Write/Read checking worktree boundary | none (only checks absolute paths) | warning without blocking | small |
+| Worktree state machine persistence | none | worktrees/<id>.json in session-git | medium |
+| UI worktree chip | none | chip + panel at the top of the composer | medium |
+| Worktree × Task integration | none (the task system itself is in design) | task cancel auto-discard | medium (depends on async-task) |
+| Sub-agent worktree legacy code | already refactored away (commit `75e430c0`) | not reused | N/A |
 
 ---
 
-## Part 4. 改动清单
+## Part 4. Change List
 
-按依赖顺序：
+In dependency order:
 
-| 步骤 | 文件 | 主要改动 |
+| Step | File | Main change |
 |---|---|---|
-| 1 | 新建 `openprogram/worktree/types.py` | `Worktree` dataclass + `WorktreeStatus` Enum + 序列化 |
-| 2 | 新建 `openprogram/worktree/manager.py` | `WorktreeManager`：create / merge / discard / list / keep；底层 `subprocess.run(["git", "worktree", ...])`；持久化到 `<session-repo>/worktrees/<id>.json` |
-| 3 | 新建 `openprogram/worktree/_paths.py` | worktree path 策略：`~/.openprogram/worktrees/<id>-<slug>/`；隔离校验（D4）|
-| 4 | 改 `openprogram/agent/_workdir.py` | `apply_default_workdir` 优先返回 active worktree path |
-| 5 | 改 `openprogram/agent/dispatcher.py` | turn 开始时读 session.meta.active_worktree_id → 设 `_current_worktree_path` ContextVar |
-| 6 | 改 `openprogram/functions/tools/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | 改 `openprogram/functions/tools/edit/edit.py` + write/read | warning when path outside worktree（D6）|
-| 8 | 新建 `openprogram/functions/tools/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
-| 9 | 改 `openprogram/store/session_store.py` | session.meta 加 `active_worktree_id` 字段；helper `set_active_worktree` / `get_active_worktree` |
-| 10 | 新建 `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree`（用户手动 UI 操作）|
-| 11 | 新建 `web/components/chat/composer/worktree-chip.tsx` | chip 组件 + hover panel + Merge/Discard/Keep 按钮 |
-| 12 | 改 `web/components/chat/composer/composer.tsx` | 引入 chip |
-| 13 | 改 ContextCommit item metadata 渲染 | 工具调用 item 显示 worktree_id 角标 |
-| 14 | 改 `openprogram/agent/dispatcher.py` 写 marker | worktree_create / merge / discard 写 system 节点进 ContextCommit |
-| 15 | （依赖 async-task）`openprogram/tasks/lifecycle.py` 接 hook | task cancel → `WorktreeManager.on_task_cancel`；task create 可选 attach worktree |
-| 16 | Tests | unit: WorktreeManager（create/merge/discard 路径校验、隔离校验）；integration: agent in worktree → merge 全流程 |
+| 1 | new `openprogram/worktree/types.py` | `Worktree` dataclass + `WorktreeStatus` Enum + serialization |
+| 2 | new `openprogram/worktree/manager.py` | `WorktreeManager`: create / merge / discard / list / keep; underlying `subprocess.run(["git", "worktree", ...])`; persists to `<session-repo>/worktrees/<id>.json` |
+| 3 | new `openprogram/worktree/_paths.py` | worktree path policy: `~/.openprogram/worktrees/<id>-<slug>/`; isolation check (D4) |
+| 4 | edit `openprogram/agent/_workdir.py` | `apply_default_workdir` prefers returning the active worktree path |
+| 5 | edit `openprogram/agent/dispatcher.py` | at the start of a turn, read session.meta.active_worktree_id → set the `_current_worktree_path` ContextVar |
+| 6 | edit `openprogram/functions/tools/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
+| 7 | edit `openprogram/functions/tools/edit/edit.py` + write/read | warning when path outside worktree (D6) |
+| 8 | new `openprogram/functions/tools/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
+| 9 | edit `openprogram/store/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
+| 10 | new `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree` (user manual UI operations) |
+| 11 | new `web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |
+| 12 | edit `web/components/chat/composer/composer.tsx` | bring in the chip |
+| 13 | edit ContextCommit item metadata rendering | tool call items show a worktree_id badge |
+| 14 | edit `openprogram/agent/dispatcher.py` to write markers | worktree_create / merge / discard write system nodes into ContextCommit |
+| 15 | (depends on async-task) hook into `openprogram/tasks/lifecycle.py` | task cancel → `WorktreeManager.on_task_cancel`; task create can optionally attach a worktree |
+| 16 | Tests | unit: WorktreeManager (create/merge/discard path checks, isolation check); integration: agent in worktree → merge full flow |
 
 ---
 
-## Part 5. 关键不变式
+## Part 5. Key Invariants
 
-实施时必须每条都校验：
+Every one of these must be checked during implementation:
 
-1. **worktree_path 永远不在 `~/.openprogram/sessions/` 子树里**
-   （隔离 OpenProgram 自己的 git，违反则 worktree_create 拒绝）。
+1. **worktree_path is never inside the `~/.openprogram/sessions/` subtree**
+   (isolating OpenProgram's own git; if violated, worktree_create rejects).
 
-2. **discard 后主仓库零改动**
-   `git worktree remove --force` + `git branch -D` 不动 source_repo 的 HEAD
-   和 working tree。校验：discard 前后 `git rev-parse HEAD` 一致。
+2. **Zero changes to the main repo after discard**
+   `git worktree remove --force` + `git branch -D` do not touch source_repo's HEAD
+   or working tree. Check: `git rev-parse HEAD` is identical before and after discard.
 
-3. **merge 失败时 worktree 不自动消失**
-   merge_conflict / not_fast_forward 错误后，worktree status 回 `active`，
-   目录保留，让 agent 或用户手动看。
+3. **The worktree does not disappear automatically when a merge fails**
+   after a merge_conflict / not_fast_forward error, the worktree status returns to `active`,
+   the directory is kept, letting the agent or user inspect it manually.
 
-4. **同一 session 同一时刻最多一个 active worktree**
-   session.meta.active_worktree_id 是单值；worktree_create 时若已有 active，
-   报错 `already_active`，提示先 merge/discard/keep。
+4. **At most one active worktree per session at any moment**
+   session.meta.active_worktree_id is single-valued; if there is already an active worktree at worktree_create time,
+   it reports the error `already_active`, prompting to merge/discard/keep first.
 
-5. **bash 命令的 cwd 起点永远是 active worktree_path**（若存在）
-   而不是 session-git workdir/；多次 bash 调用之间不持久 shell state，每条
-   都是新 subprocess，cwd 都重置回 worktree_path。
+5. **The starting cwd of a bash command is always the active worktree_path** (if it exists)
+   rather than session-git workdir/; shell state is not persistent across bash calls, each one
+   is a fresh subprocess, with cwd reset back to worktree_path.
 
-6. **worktree_id 在工具 item metadata 里出现 = 这次工具调用在那个 worktree 内执行**
-   ContextCommit 读取时能据此区分"在哪儿改的"。
+6. **worktree_id appearing in a tool item's metadata = this tool call executed inside that worktree**
+   when ContextCommit reads it, it can distinguish "where the change was made" accordingly.
 
-7. **kept worktree 的 branch 不删**
-   只解绑 OpenProgram 的引用；用户的 git 仓库里还能 `git checkout` 到这个 branch。
+7. **The branch of a kept worktree is not deleted**
+   only OpenProgram's reference is unbound; in the user's git repository they can still `git checkout` to this branch.
 
 ---
 
-## Part 6. 不在本设计范围
+## Part 6. Out of Scope for This Design
 
-- **远程 push**：worktree 只本地；要把 worktree branch 推 origin，agent 自己用
-  bash 跑 `git push -u origin <branch>`。worktree_merge 也不做 push。
-- **worktree 间 cherry-pick / rebase**：复杂语义，留给 agent 自己用 bash 处理。
-- **冲突 resolution UI**：merge 冲突时 OpenProgram 不提供可视化 mergetool；
-  让 agent 用 edit 改文件 / bash 跑 git mergetool。
-- **跨 source_repo 的 worktree**：一个 worktree 必然对应一个 source_repo；不支持
-  把 worktree 改动 merge 到另一个仓库（要做就用 bash 跑 git patch 流程）。
-- **discard 前的自动备份**：D9 提到的 `~/.openprogram/discarded/` 打包，留作未来加强。
-- **chroot / namespace 真 sandbox**：D6 是"默认 cwd 锁定"不是 sandbox；硬隔离走
-  docker backend。
-- **session 关闭时自动清理 active worktree**：保留 active worktree 跨 session
-  重启（重启后 list_worktrees 探测，仍 active 的标 kept 让用户手动处理）。
+- **Remote push**: the worktree is local-only; to push the worktree branch to origin, the agent runs
+  `git push -u origin <branch>` via bash itself. worktree_merge does not push either.
+- **cherry-pick / rebase between worktrees**: complex semantics, left for the agent to handle via bash itself.
+- **conflict resolution UI**: on merge conflicts OpenProgram does not provide a visual mergetool;
+  the agent uses edit to modify files / bash to run git mergetool.
+- **worktrees across source_repos**: one worktree necessarily corresponds to one source_repo; merging
+  worktree changes into another repository is not supported (do it via a bash git patch flow if needed).
+- **auto-backup before discard**: the `~/.openprogram/discarded/` archiving mentioned in D9, left as a future enhancement.
+- **chroot / namespace true sandbox**: D6 is "default cwd lock", not a sandbox; for hard isolation, go through the
+  docker backend.
+- **auto-cleanup of the active worktree when the session closes**: the active worktree is kept across session
+  restarts (after restart, list_worktrees probes, and ones still active are marked kept for the user to handle manually).

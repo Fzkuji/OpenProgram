@@ -1,75 +1,75 @@
-# 服务总览
+# Server overview
 
-OpenProgram 的 Web UI、TUI、CLI 背后是同一个常驻本地服务，代码和日志里叫 worker。本页说明它如何启动、如何查看状态、端口和日志在哪。
+OpenProgram's Web UI, TUI, and CLI all sit on top of one resident local service, called the worker in code and logs. This page covers how it starts, how to check its status, and where the ports and logs are.
 
-## 启动
+## Starting
 
-不需要手动启动。直接运行 `openprogram`（终端 UI）时，如果没有 worker 在跑，会自动拉起一个后台 worker 并连上去。不想自动拉起时设 `OPENPROGRAM_NO_AUTO_WORKER=1`，此时 TUI 只连接已有 worker。
+No manual start is needed. Running `openprogram` (the terminal UI) automatically launches a background worker and connects to it if none is running. To disable the auto-launch, set `OPENPROGRAM_NO_AUTO_WORKER=1`; the TUI then only connects to an existing worker.
 
-手动控制用 `openprogram worker` 子命令：
+For manual control, use the `openprogram worker` subcommands:
 
 ```bash
-openprogram worker start     # 后台启动一个 worker 并返回
-openprogram worker run       # 前台运行（阻塞），调试用，Ctrl-C 停止
-openprogram worker status    # 是否在跑、PID、端口、运行时长
-openprogram worker stop      # 停止（SIGTERM，必要时升级为 SIGKILL）
-openprogram worker restart   # 停掉再起一个新的
+openprogram worker start     # start a worker in the background and return
+openprogram worker run       # run in the foreground (blocking), for debugging; Ctrl-C to stop
+openprogram worker status    # running or not, PID, port, uptime
+openprogram worker stop      # stop (SIGTERM, escalating to SIGKILL if needed)
+openprogram worker restart   # stop and start a fresh one
 ```
 
-`openprogram web` 在当前终端启动服务并打开浏览器 UI（`http://localhost:18100`）。
+`openprogram web` starts the service in the current terminal and opens the browser UI (`http://localhost:18100`).
 
 ## status / stop / restart
 
-顶层也有三个快捷命令：
+Three shortcut commands also exist at the top level:
 
 ```bash
-openprogram status     # 后台服务是否在跑（PID、端口、运行时长、日志路径）
-openprogram stop       # 停止后台服务
-openprogram restart    # 重启（改了代码或配置之后用）
+openprogram status     # is the background service running (PID, port, uptime, log path)
+openprogram stop       # stop the background service
+openprogram restart    # restart (after code or config changes)
 ```
 
-`openprogram status` 的输出示例：
+Example output of `openprogram status`:
 
 ```
 openprogram: running (PID 82472, port 18109, up 48m)
   logs: ~/.openprogram/worker.log
 ```
 
-## 端口
+## Ports
 
-| 端口 | 用途 | 默认值 |
+| Port | Purpose | Default |
 |------|------|--------|
-| backend | FastAPI 后端（API + WebSocket），TUI 和 Web UI 都连它 | 18109 |
-| frontend | Next.js 前端（浏览器里打开的地址） | 18100 |
+| backend | FastAPI backend (API + WebSocket); both the TUI and the Web UI connect to it | 18109 |
+| frontend | Next.js frontend (the address you open in the browser) | 18100 |
 
-持久化修改：
+Persistent change:
 
 ```bash
 openprogram ports --backend 8102 --frontend 8101
 ```
 
-单次运行覆盖：环境变量 `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT`，或 `openprogram web --port <backend> --web-port <frontend>`。优先级：显式参数 → 环境变量 → 持久化偏好 → 默认值。
+One-off override: the environment variables `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT`, or `openprogram web --port <backend> --web-port <frontend>`. Precedence: explicit flags → environment variables → persisted preference → defaults.
 
-## 日志
-
-```bash
-openprogram logs list           # 所有日志文件（大小、更新时间）
-openprogram logs tail [name]    # 最后 N 行；-n 行数，-f 持续跟踪
-openprogram logs path [name]    # 打印日志文件的绝对路径
-```
-
-日志名有三个：`worker`（默认，`~/.openprogram/worker.log`）、`runtime`（`~/.openprogram/logs/runtime.log`）、`ink`（TUI 启动日志，`~/.openprogram/logs/ink-startup.log`）。
-
-## 作为登录服务运行
+## Logs
 
 ```bash
-openprogram worker install      # 安装为系统服务
-openprogram worker uninstall    # 移除
+openprogram logs list           # all log files (size, last updated)
+openprogram logs tail [name]    # last N lines; -n line count, -f follow
+openprogram logs path [name]    # print the log file's absolute path
 ```
 
-macOS 用 launchd（`~/Library/LaunchAgents/ai.openprogram.worker.plist`），Linux 用 systemd --user。安装后 worker 随登录自动启动，崩溃后自动重启。`openprogram status` 会显示服务是否已安装。
+There are three log names: `worker` (the default, `~/.openprogram/worker.log`), `runtime` (`~/.openprogram/logs/runtime.log`), and `ink` (TUI startup log, `~/.openprogram/logs/ink-startup.log`).
 
-## 相关页面
+## Running as a login service
 
-- [配置与数据目录](configuration.md) —— `~/.openprogram/` 里有什么，`openprogram config` 怎么用
-- [故障排查](troubleshooting.md) —— 常见的"它不工作"场景
+```bash
+openprogram worker install      # install as a system service
+openprogram worker uninstall    # remove it
+```
+
+macOS uses launchd (`~/Library/LaunchAgents/ai.openprogram.worker.plist`); Linux uses systemd --user. Once installed, the worker starts automatically at login and restarts after a crash. `openprogram status` shows whether the service is installed.
+
+## Related pages
+
+- [Configuration and data directory](configuration.md) — what lives in `~/.openprogram/` and how to use `openprogram config`
+- [Troubleshooting](troubleshooting.md) — the recurring "it doesn't work" cases

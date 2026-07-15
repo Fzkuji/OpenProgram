@@ -38,7 +38,7 @@ def render_page(
     nav_html: str,
     toc_html: str,
     base: str,
-    page_lang: str = "zh",
+    page_lang: str = "en",
     alt_lang_url: str = "",
     breadcrumb_html: str = "",
     prevnext_html: str = "",
@@ -61,7 +61,7 @@ def render_page(
         sidebar_html = (
             '<nav class="sidebar">\n'
             '    <input class="nav-filter" type="text" data-i18n-ph="nav_filter"\n'
-            '           placeholder="过滤目录…" autocomplete="off" spellcheck="false">\n'
+            '           placeholder="Filter docs…" autocomplete="off" spellcheck="false">\n'
             f'    <div class="nav-tree">{nav_html}</div>\n'
             '  </nav>\n  '
         )
@@ -82,14 +82,14 @@ def render_page(
 </head>
 <body>
 <header class="topbar">
-  <button class="icon hamburger" aria-label="菜单">☰</button>
+  <button class="icon hamburger" aria-label="Menu">☰</button>
   <a class="brand" href="{base}index.html"><span class="dot"></span>OpenProgram Docs</a>
   <div class="spacer"></div>
-  <button class="search-trigger" aria-label="搜索">
-    <span>🔍</span><span class="label" data-i18n="search">搜索文档</span><kbd>⌘K</kbd>
+  <button class="search-trigger" aria-label="Search">
+    <span>🔍</span><span class="label" data-i18n="search">Search docs</span><kbd>⌘K</kbd>
   </button>
-  <button class="icon" id="lang-toggle" aria-label="切换语言">中</button>
-  <button class="icon" id="theme-toggle" aria-label="切换主题">☾</button>
+  <button class="icon" id="lang-toggle" aria-label="Toggle language">EN</button>
+  <button class="icon" id="theme-toggle" aria-label="Toggle theme">☾</button>
 </header>
 <nav class="tabbar">{tabbar_html}</nav>
 
@@ -101,7 +101,7 @@ def render_page(
 
 <div class="search-overlay">
   <div class="search-box">
-    <input type="text" data-i18n-ph="search_ph" placeholder="搜索标题或正文…" autocomplete="off" spellcheck="false">
+    <input type="text" data-i18n-ph="search_ph" placeholder="Search titles or text…" autocomplete="off" spellcheck="false">
     <div class="search-results"></div>
   </div>
 </div>

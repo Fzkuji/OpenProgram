@@ -1,31 +1,31 @@
 # Plugins
 
-插件是打包好的扩展：一个带 manifest 的 pip / npm / git / 本地包，装进宿主后向 OpenProgram 贡献 commands、skills、MCP server、providers、hooks、agents、侧边栏项、web 页面等。这一页讲插件怎么装、怎么管，以及插件长什么样。
+A plugin is a packaged extension: a pip / npm / git / local package with a manifest that, once installed into the host, contributes commands, skills, MCP servers, providers, hooks, agents, sidebar items, web pages, and more to OpenProgram. This page covers installing and managing plugins, and what a plugin looks like.
 
-## 安装与管理
+## Install and manage
 
 ```bash
-openprogram plugins list                 # 已安装插件
-openprogram plugins search <query>       # 在配置的 marketplace 里搜索
-openprogram plugins install pip <package>       # 来源四选一：pip / npm / git / path
+openprogram plugins list                 # installed plugins
+openprogram plugins search <query>       # search the configured marketplaces
+openprogram plugins install pip <package>       # source is one of four: pip / npm / git / path
 openprogram plugins install git <url> --ref v1.2
 openprogram plugins install path /abs/path/to/plugin
-openprogram plugins update               # 从 pip / npm 重装升级
+openprogram plugins update               # reinstall-upgrade from pip / npm
 openprogram plugins enable <name>
 openprogram plugins disable <name>
 openprogram plugins uninstall <name>
 ```
 
-安装位置统一在 `~/.openprogram/plugins/`（npm 包在其 `node_modules/` 下）；信任等级持久化在 `~/.openprogram/plugin-trust.json`。Web UI 通过插件路由暴露同一套管理 API。
+Everything installs under `~/.openprogram/plugins/` (npm packages under its `node_modules/`); trust levels persist in `~/.openprogram/plugin-trust.json`. The web UI exposes the same management API through the plugin routes.
 
-## 插件是什么形态
+## What a plugin looks like
 
-一个目录（或已安装的包），带三种 manifest 之一，解析优先级从高到低：
+A directory (or installed package) carrying one of three manifests, resolved in this priority order:
 
-1. `plugin.json`（顶级文件，claude-code / hermes 风格）
-2. `pyproject.toml` 里的 `[tool.openprogram.plugin]`
-3. `package.json` 里的 `"openprogram"` 字段（opencode 风格）
+1. `plugin.json` (top-level file, claude-code / hermes style)
+2. `[tool.openprogram.plugin]` in `pyproject.toml`
+3. the `"openprogram"` field in `package.json` (opencode style)
 
-manifest 字段包括 `name`、`version`、`description`、`trust`（community / verified）、`entrypoints`、`sidebar`、`options`、`requires`。`requires` 声明插件间依赖：加载器按拓扑序决定 enable 顺序，缺依赖时报 `missing dependencies: ...`。
+Manifest fields include `name`, `version`, `description`, `trust` (community / verified), `entrypoints`, `sidebar`, `options`, and `requires`. `requires` declares inter-plugin dependencies: the loader enables plugins in topological order and reports `missing dependencies: ...` when one is absent.
 
-加载时导入 `entrypoints` 指向的模块（pip entry point 的 `module:obj`、或 manifest 里的 `python` / `module` 键），插件由此向贡献注册表暴露自己的 commands / skills / mcpServers / providers / hooks / agents / sidebar / web 入口，宿主各子系统从注册表读取并接合。
+At load time the module named by `entrypoints` is imported (a pip entry point's `module:obj`, or the `python` / `module` key in the manifest). Through that import the plugin exposes its commands / skills / mcpServers / providers / hooks / agents / sidebar / web entries to the contribution registry, and each host subsystem reads from the registry and wires them in.

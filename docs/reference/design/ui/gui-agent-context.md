@@ -1,101 +1,139 @@
-# GUI agent — 调用结构与上下文流
+# GUI agent — call structure & context flow
 
-本文档记录 `gui_agent` 在当前 `expose` / `render_range` 默认语义下的上下文是怎么流动的，以及每个 `@agentic_function` 上的装饰器参数为什么这么设。
+This document records how context flows through `gui_agent` under the current
+`expose` / `render_range` default semantics, and why each `@agentic_function`'s
+decorator arguments are set the way they are.
 
-参考：
-- 装饰器语义：[`agentic-programming/function-metadata.md`](../../../capabilities/agentic-programming/writing-functions/function-metadata.md)
-- render_context 实现：`openprogram/context/nodes.py`
-- 代码：`openprogram/functions/agentics/GUI-Agent-Harness/gui_harness/`
+References:
+- Decorator semantics: [`agentic-programming/function-metadata.md`](../../../capabilities/agentic-programming/writing-functions/function-metadata.md)
+- render_context implementation: `openprogram/context/nodes.py`
+- Code: `openprogram/functions/agentics/GUI-Agent-Harness/gui_harness/`
 
-## 1. 调用结构
+## 1. Call structure
 
 ```
-gui_agent(task)                   ← 顶层 @agentic_function (no render_range)
-  └─ loop N 次：
-     gui_step(task, feedback)     ← @agentic_function 编排 (no runtime.exec)
-       ├─ observe()               Python: 截图 + 检测组件 + 识别状态
+gui_agent(task)                   ← top-level @agentic_function (no render_range)
+  └─ loop N times:
+     gui_step(task, feedback)     ← @agentic_function orchestration (no runtime.exec)
+       ├─ observe()               Python: screenshot + detect components + read state
        ├─ verify_step(...)        @agentic_function LLM leaf
        ├─ plan_next_action(...)   @agentic_function LLM leaf
-       └─ dispatch_action(...)    Python: 执行 plan 选的动作
+       └─ dispatch_action(...)    Python: run the action plan picked
      ↓ return dict(goal, action, target, success, error, ...)
-     ↓ 作为下一个 gui_step 的 feedback 传入
+     ↓ passed in as the next gui_step's feedback
   └─ conclusion(task, ...)        @agentic_function LLM leaf
 ```
 
-`gui_step` 不直接调 `runtime.exec`，它的作用是把四个阶段串起来。所有 LLM 调用发生在 `verify_step` / `plan_next_action` / `conclusion` 这三个 leaf 函数里。
+`gui_step` doesn't call `runtime.exec` directly; its job is to chain the four
+stages together. All LLM calls happen inside the three leaf functions
+`verify_step` / `plan_next_action` / `conclusion`.
 
-## 2. 各函数的 render_range 配置
+## 2. render_range config per function
 
-| 函数 | render_range | 理由 |
+| Function | render_range | Rationale |
 |---|---|---|
-| `gui_agent` | 不设（用默认） | 顶层，应该看到完整对话历史 + 自己 frame 内所有 gui_step 的 io。`callers=None`（全保留 chat 历史）+ `subcalls=-1`（gui_step 链自然累积）正好是想要的 |
-| `gui_step` | 不设 | 自己不调 `runtime.exec`，render_range 对它没有任何实际意义 |
-| `verify_step` | `{"callers": 0}` | 一次快照判断"上一步做没做成"。所需信息（前一步 goal/action/target/outcome、当前 screenshot、本步检测到的组件）全部通过 `content=[...]` 显式塞进去。`callers=0` 把上层 chat 历史和之前的 gui_step 链全墙掉，避免淹没快照判断 |
-| `plan_next_action` | 不设（用默认） | **planner 必须看见历史**才能做出非重复决策。默认 `callers=None` 让它看到 task 描述 + 之前所有 gui_step 的 io（goal/action/target/success）+ 本轮 verify 的 io。`subcalls=-1` 在 leaf 里没作用（leaf 没有 in-frame 节点） |
-| `conclusion` | `{"callers": 0}` | 总结要 ground 在最终屏幕状态，不让 step-by-step 叙述污染。所需信息（task、completed、steps_taken、final screenshot）显式塞进 `content=[...]` |
+| `gui_agent` | unset (default) | Top level — should see the full conversation history plus the io of every gui_step in its own frame. `callers=None` (keep all chat history) + `subcalls=-1` (the gui_step chain accumulates naturally) is exactly what's wanted |
+| `gui_step` | unset | It doesn't call `runtime.exec` itself, so render_range has no practical meaning for it |
+| `verify_step` | `{"callers": 0}` | A one-shot snapshot judgment of "did the previous step succeed?". Everything it needs (the previous step's goal/action/target/outcome, the current screenshot, the components detected this step) is pushed in explicitly via `content=[...]`. `callers=0` walls off the upper chat history and the prior gui_step chain so they don't drown the snapshot judgment |
+| `plan_next_action` | unset (default) | **The planner must see history** to make non-repeating decisions. The default `callers=None` lets it see the task description + the io of every prior gui_step (goal/action/target/success) + this round's verify io. `subcalls=-1` has no effect in a leaf (a leaf has no in-frame nodes) |
+| `conclusion` | `{"callers": 0}` | The summary should be grounded in the final screen state, not polluted by the step-by-step narrative. Everything it needs (task, completed, steps_taken, final screenshot) is pushed in explicitly via `content=[...]` |
 
-辅助 leaf（component_memory 里的几个、`learn`、`observe`、`general_action`）都用 `{"callers": 0}` —— 它们是独立判断器，输入都通过 `content=[...]` 给齐，不需要对话上下文。
+The helper leaves (the ones in component_memory, `learn`, `observe`,
+`general_action`) all use `{"callers": 0}` — they are independent judges whose
+input is fully supplied via `content=[...]` and need no conversation context.
 
-## 3. 关键设计点
+## 3. Key design points
 
-### plan_next_action 看见什么
+### What plan_next_action sees
 
-从 plan 第 5 步的视角，`render_context` 的输入：
+From the perspective of plan step #5, the inputs to `render_context`:
 
-- `frame_entry_seq` = plan_next_action #5 这个 code 节点的 seq
-- `head_seq` = DAG 当前最大 seq
-- `render_range` = `None`（用默认 `callers=None, subcalls=-1`）
+- `frame_entry_seq` = the seq of the plan_next_action #5 code node
+- `head_seq` = the current max seq in the DAG
+- `render_range` = `None` (use defaults `callers=None, subcalls=-1`)
 
-走 render_context：
-- pre-frame = 所有 seq ≤ frame_entry_seq 的节点 = 顶层 chat 那条 user 消息、gui_agent 的 code 节点、gui_step #1..#4 的 code 节点（含各自 io）、本轮 gui_step #5 的 verify_step code 节点（含 io）、observe Python 结果对应的节点（如果走 DAG 的话）
-- in-frame = plan_next_action #5 自己 frame 内的节点 = 空（leaf 还没发 exec）
-- pre-frame 不截断；in-frame 不截断（也没东西可截）
-- expose 过滤：每个 gui_step 是 `expose="io"`，所以 gui_step 的 io 节点保留、gui_step 内部的 verify_step / plan_next_action 的 LLM 调用被藏掉
+Walking render_context:
+- pre-frame = all nodes with seq ≤ frame_entry_seq = the top-level chat user
+  message, gui_agent's code node, the code nodes of gui_step #1..#4 (with their
+  io), this round's gui_step #5 verify_step code node (with io), and the node for
+  the observe Python result (if it goes through the DAG)
+- in-frame = the nodes inside plan_next_action #5's own frame = empty (the leaf
+  hasn't issued exec yet)
+- pre-frame is not truncated; in-frame is not truncated (nothing to truncate)
+- expose filtering: each gui_step is `expose="io"`, so the gui_step io nodes are
+  kept while the LLM calls of verify_step / plan_next_action inside gui_step are
+  hidden
 
-最后 plan_next_action #5 的 prompt 里有：
+So plan_next_action #5's prompt ends up with:
 
 ```
-user: <原始 task>
-... 之前 chat 历史 ...
+user: <original task>
+... prior chat history ...
 [gui_step #1] input={...} output={"goal": "open Firefox", "action": "click", "target": "Firefox icon", "success": true}
 [gui_step #2] input={...} output={"goal": "open url bar", "action": "click", ...}
 [gui_step #3] input={...} output={...}
 [gui_step #4] input={...} output={...}
 [verify_step #5] input={...} output={"step_succeeded": true, "observation": ...}
-[plan_next_action #5] input={...}   ← 自己
+[plan_next_action #5] input={...}   ← itself
 ```
 
-planner 因此能看到"前四步都做了什么、最近一步 verify 怎么判的"，做出不重复的下一步决策。
+The planner can therefore see "what the first four steps did, and how the most
+recent verify judged it" and make a non-repeating next-step decision.
 
-### verify_step 为什么相反
+### Why verify_step is the opposite
 
-verify_step 是被动判断："上一步做的事情，从当前截图看成功了吗？"判断材料完全是局部的：
+verify_step is a passive judgment: "did the thing the previous step did succeed,
+as seen from the current screenshot?". Its evidence is entirely local:
 
-- 上一步 feedback dict（goal/action/target/success/error）— 已经通过 `content=[feedback_text]` 塞进
-- 当前 screenshot — 已经通过 `content=[{"type": "image", ...}]` 塞进
-- 当前检测到的组件 — 已经通过 `content=[component_info]` 塞进
+- the previous step's feedback dict (goal/action/target/success/error) — already
+  pushed in via `content=[feedback_text]`
+- the current screenshot — already pushed in via `content=[{"type": "image", ...}]`
+- the components detected this step — already pushed in via `content=[component_info]`
 
-如果让它看完整 chat + gui_step 链，反而会引入噪音让"上一步是否成功"这个简单判断被宏观叙述带偏。所以显式 `callers=0` 墙掉。
+Letting it see the full chat + gui_step chain would instead introduce noise that
+biases this simple "did the last step succeed" judgment with the macro narrative.
+Hence the explicit `callers=0` wall.
 
-### conclusion 同理
+### conclusion, same reasoning
 
-总结要写出"最终屏幕上 visibly 是什么"，不要写"step 3 干了什么、step 7 又干了什么"那种过程叙述。`callers=0` + 在 prompt 里硬约束"用屏幕上具体可见的文字"。
+The summary should state "what is visibly on the final screen", not narrate
+"step 3 did this, step 7 did that". `callers=0` plus a hard constraint in the
+prompt to "use the concrete text visible on screen".
 
-## 4. 跟旧版本的差异
+## 4. Difference from the old version
 
-之前的代码用了 `{"callers": 0, "subcalls": 0}` 全墙策略，再通过 Python 显式构造 feedback dict 一层层往下传。问题是 planner 真的只看得到上一步的 feedback，看不到完整 trace，会出现重复执行同样动作的 bug。
+The earlier code used a full-wall `{"callers": 0, "subcalls": 0}` strategy and
+then explicitly built a feedback dict in Python and threaded it down level by
+level. The problem was that the planner could really only see the previous step's
+feedback, not the full trace, leading to a bug where it repeatedly performed the
+same action.
 
-现在的设计：
+The current design:
 
-- planner 走 DAG 默认行为天然看见历史（不再需要显式累加）
-- 隔离需要的 leaf（verify / conclusion / 工具型判断器）显式 `callers=0`
-- 不再有"top-level 是特例"的分支 —— gui_agent 顶层和它内部的 gui_step 都走完全相同的 render_context 代码路径
+- the planner sees history naturally via the DAG default behavior (no more
+  explicit accumulation)
+- isolate the leaves that need it (verify / conclusion / tool-style judges) with
+  an explicit `callers=0`
+- there's no longer a "top-level is a special case" branch — the gui_agent top
+  level and the gui_step inside it go through exactly the same render_context code
+  path
 
-旧的 "collapsed 模式提议"、"hidden 副作用"、"子函数 io 冗余"等分析都已经不适用：
-- 旧 "io 漏点：露 code 子调用"分析过时——`expose="io"` 现在的语义就是 frame-自己的 input/output 露、frame 内部的 LLM 藏；嵌套子函数自己再用自己的 expose 决定它的 io 露不露
-- 不再需要 "collapsed" 模式——`expose="io"` 默认就把内部 LLM 藏好，子函数的 io 在它自己的 expose 决定下要么露要么藏，没有"既要露 io 又要藏嵌套孙子"的中间需要
+The old analyses about a "collapsed mode proposal", "hidden side effects",
+"sub-function io redundancy" no longer apply:
+- the old "io leak: exposing code sub-calls" analysis is outdated — `expose="io"`
+  now means: the frame's own input/output is exposed, the LLM inside the frame is
+  hidden; a nested sub-function decides whether its own io is exposed via its own
+  expose
+- a "collapsed" mode is no longer needed — `expose="io"` hides the inner LLM by
+  default, and a sub-function's io is either exposed or hidden under its own
+  expose; there's no in-between need to "expose io while hiding nested grandchildren"
 
-## 5. 改完后需要观察什么
+## 5. What to watch after the change
 
-- 长 task 跑下来 plan_next_action 的 prompt 会不会因为 gui_step 链太长而过大。如果有 token 压力，给 `plan_next_action` 或 `gui_agent` 加 `render_range={"callers": N}` 显式截断最近 N 个 gui_step
-- screenshot 是 image 节点，N 张大图会撑爆 context。可能要走"压缩老 screenshot 为文字描述"路径，但那是 prompt 层的优化，不是 render_range 层的事
+- For long tasks, plan_next_action's prompt may grow large because the gui_step
+  chain gets long. Under token pressure, give `plan_next_action` or `gui_agent` a
+  `render_range={"callers": N}` to explicitly truncate to the most recent N
+  gui_steps
+- A screenshot is an image node; N large images will blow up the context. We may
+  need a "compress old screenshots into text descriptions" path, but that's a
+  prompt-layer optimization, not a render_range-layer concern

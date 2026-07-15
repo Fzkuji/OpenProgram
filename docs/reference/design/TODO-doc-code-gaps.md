@@ -1,145 +1,145 @@
-# 设计文档与代码不对齐的待修项
+# Open Items Where Design Docs Are Out of Sync With Code
 
-审计日期: 2026-06-18（第二次审计）
+Audit date: 2026-06-18 (second audit)
 
-本文件记录设计文档与实际代码的偏差，按优先级排列。修复后从此处删除对应条目。
+This file records the divergences between the design docs and the actual code, ordered by priority. Once a divergence is fixed, delete its entry here.
 
 ---
 
-## ~~路径错误~~（已修复）
+## ~~Path errors~~ (fixed)
 
 ### ~~extension-gating/implementation.md~~
-- ~~文档写的路径: `openprogram/agents/gating.py`, `openprogram/agents/manager.py`~~
-- ~~实际路径: `openprogram/agent/management/gating.py`, `openprogram/agent/management/manager.py`~~
-- 状态: ✅ 已修正，文档路径现已正确
+- ~~Paths written in the doc: `openprogram/agents/gating.py`, `openprogram/agents/manager.py`~~
+- ~~Actual paths: `openprogram/agent/management/gating.py`, `openprogram/agent/management/manager.py`~~
+- Status: ✅ Corrected; the doc paths are now right.
 
 ---
 
-## 需要更新的文档（HIGH）
+## Docs that need updating (HIGH)
 
 ### providers/models/thinking-effort.md
-1. **§10 待修项中 Opus 4.7 override 条目过时**: 文档把 `["low","medium","high"]` 限制当作 bug，
-   但这是 Anthropic（Claude 4.6 guidance）的 deliberate design choice。应删除该待修条目或改为说明设计原因。
-2. **"max" 级别映射标记错误**: 文档声称 5 个 provider 的 max 映射"未映射"，但实际代码中
-   `anthropic.py` 已有 `xhigh → max` 映射，所有 provider 都支持 max level。应更新映射表。
-3. **Fable 5**: 文档提到缺少 Fable 5 说明，但 `thinking_catalog.py` 中也没有 Fable 5 条目。
-   需要确认：是代码缺还是文档多写了？如果该模型已经存在于 models.dev 目录但 catalog 未收录，需加上。
+1. **The Opus 4.7 override entry in the §10 open items is stale**: the doc treats the `["low","medium","high"]` restriction as a bug,
+   but this is a deliberate design choice by Anthropic (Claude 4.6 guidance). Either delete this open item or rewrite it to explain the design rationale.
+2. **The "max" level mapping is marked incorrectly**: the doc claims the max mapping for 5 providers is "unmapped", but in the actual code
+   `anthropic.py` already has the `xhigh → max` mapping, and every provider supports the max level. Update the mapping table.
+3. **Fable 5**: the doc mentions that the Fable 5 description is missing, but `thinking_catalog.py` has no Fable 5 entry either.
+   Need to confirm: is it missing from the code, or did the doc write too much? If the model already exists in the models.dev catalog but is not recorded in the catalog, add it.
 
 ---
 
-## 状态标记过期（MEDIUM）
+## Stale status markers (MEDIUM)
 
 ### memory/memory-v2.md
-- Phase 0-1: 已完成（文档标记正确）
-- Phase 2: 文档标 "❌ 未开始"，但 §0.5 又提到 "前置读层已落地"（Provenance dataclass）
-- 应明确：Phase 2 分拆为子步骤，标注哪些 substep 已 partial、哪些待做
+- Phase 0-1: complete (doc marker is correct)
+- Phase 2: the doc marks it "❌ not started", but §0.5 also mentions "the pre-read layer has landed" (the Provenance dataclass)
+- Should clarify: split Phase 2 into substeps and mark which substeps are already partial and which are still to do.
 
-### ~~context/contextgit.md → 已并入 context/storage-and-engine.md~~
-- ~~文档标记: "Status: proposal, not implemented"~~
-- 状态: ✅ 已与 context-commit-chain / context-engine-spec / context-attach-merge / cross-turn 一并合入 `context/context.md`（DAG 底座在 `contextgit/dag.py`，上层未建）
+### ~~context/contextgit.md → merged into context/storage-and-engine.md~~
+- ~~Doc marker: "Status: proposal, not implemented"~~
+- Status: ✅ Merged into `context/context.md` together with context-commit-chain / context-engine-spec / context-attach-merge / cross-turn (the DAG foundation lives in `contextgit/dag.py`; the upper layer is not yet built).
 
 ---
 
-## 实施滞后（设计有效但代码未完全跟上）
+## Implementation lag (design is valid but the code has not fully caught up)
 
 ### context/cross-turn-tool-context.md
-- "tool aging + 1 行语义 stub" 策略文档描述完整
-- `openprogram/context/tool_aging/` 存在但实现与文档有偏差
-- 待实施完成后同步文档
+- The "tool aging + one-line semantic stub" strategy is fully described in the doc
+- `openprogram/context/tool_aging/` exists but the implementation diverges from the doc
+- Sync the doc once the implementation is finished.
 
 ### providers/model-catalog-final.md
-- models.dev 自动更新 TTL + fetched 覆盖式保存的完整流水线未完全落地
-- 模型列表拉取逻辑存在但自动刷新机制未实现
+- The full pipeline of models.dev auto-update TTL + overwrite-save of the fetched data has not fully landed
+- The model-list fetch logic exists but the auto-refresh mechanism is not implemented.
 
 ---
 
-## 内容缺失
+## Missing content
 
-### runtime/ 缺 process_runner 设计文档
-- `agent/process_runner.py` 是重要的子进程执行模块（spawn、stop、user-input bridge）
-- 没有对应的设计文档
+### runtime/ is missing a process_runner design doc
+- `agent/process_runner.py` is an important subprocess-execution module (spawn, stop, user-input bridge)
+- There is no corresponding design doc.
 
-### runtime/ 缺 dispatcher 设计文档
-- `agent/dispatcher/__init__.py` 是 530 行的核心模块
-- 没有独立的设计文档（dispatcher-split.md 只讨论拆分，不是完整设计）
-
----
-
-## 本次审计确认已正确的文档
-
-以下文档经审计与代码完全一致，无需修改：
-
-- `runtime/controllability-and-three-surface-sync.md` — attended/unattended、graceful stop、三端同步均已实现
-- `runtime/user-input-requests.md` — Phase 1+2 已落地（QuestionRegistry、三种 Transport 含新增的 TTYTransport）
-- `function/function-calling-unification.md` — 已使用 "profiles" 术语，与代码一致
-- `extension-gating/implementation.md` — 路径已正确
-- `context/context.md`（合并自 contextgit 等五份 + 总图）— 状态标记正确
+### runtime/ is missing a dispatcher design doc
+- `agent/dispatcher/__init__.py` is a 530-line core module
+- There is no standalone design doc (dispatcher-split.md only discusses the split, it is not a full design).
 
 ---
 
-## 工具调用体系待解决问题
+## Docs confirmed correct in this audit
 
-### 1. wiki_agent 自递归原因（✅ 已查明）
-- **根因**：`research_harness/wiki/wiki_agent.py:122` 裸调 `runtime.exec(content=[task])`——
-  不传 toolset/tools,默认拿 `DEFAULT_TOOLSET="full"`(98 个工具,含 wiki_agent 自身)。
-  模型看到 wiki_agent 的 tool description("Maintain a wiki vault — route to ingest...")
-  正好匹配当前任务("调研 long horizon agent") → 认为需要调 wiki_agent → 调自己 →
-  进去又是裸 exec 又看到自己 → 无限递归。每层返回
-  `{'error': "'info|warning|success|error'"}`(wiki 内部 enum validation 失败),
-  上层模型收到错误 → 重试又调自己。
-- **已解决（commit `1f6f5fce`）**：从「self-deny 屏蔽工具」改成「处境引导 + 递归深度上限兜底」。
-  - 处境提示(`runtime._situational_prefix`)注入 user turn 开头,告诉模型「你在 X 体内、调 X = 无限递归、用底层工具」,docstring 降级置后 → 直接否定「该路由给 wiki_agent」的前提。
-  - 兜底:`_MAX_AGENTIC_RECURSION_DEPTH=5`,per-function-name 计数,同名超 5 层抛 `RecursionError`。
-  - self-deny 已删,工具列表含函数自己,靠引导不靠屏蔽。
-  - 设计文档:`docs/design/runtime/execution/agentic-self-recursion.md`;测试:`tests/agentic_programming/test_self_recursion_guard.py`(8 用例)。
-- **遗留**（待做，见 #2）：各 harness 的 exec 限定工具集 + 跨函数环(A→B→A)识别(当前只防直接自递归)。
-- 会话记录：`~/.openprogram/sessions/local_d125e9a9c3/history/`
-  context_tree 展示 7 层嵌套(4d76→0c07→0964→c6f9→f1c9→4379→8746→100c)。
+The following docs were audited and are fully consistent with the code; no changes needed:
 
-### 2. Harness 内部工具集是否需要限制
-- 问题：wiki_agent/research_agent/gui_agent 这些 harness 在自己的内部 exec 里,是否应该只看到"做本职工作需要的工具",而不是 full 全集?
-- 现状：默认全开(full),self-deny 只挡了自己调自己;一个 harness 仍可调另一个(wiki 调 research、research 调 gui)——可能导致"跑偏"。
-- 决策待定：(a) 框架不管,各 harness 自己在 exec 里传 toolset 限制;(b) 框架自动 deny 所有 harness entry points(wiki/research/gui)当一个 harness 在跑时;(c) 保持现状只防自递归。
-- 参考：Claude Code 的 subagent 用 allowlist 限工具,正是防这种跑偏。
-
-### 3. Tool Profile 选择尚未影响实际工具解析
-- 问题：聊天框 profile picker 可选 profile、后端持久化 active profile,但**选了某 profile 后这次对话实际用的工具仍由 Tools toggle(on/off)决定**,没有把 profile 的工具列表作为 tools_override 发给 dispatcher。
-- 修法：WS chat action 传 active profile name → dispatcher 用 `agent_tools(toolset=<profile>)` 解析 → 只给那组工具。
-- 位置：`webui/ws_actions/chat.py:313-316` (tools_override 逻辑) + `composer/index.tsx` submit 函数。
-
-### 4. Functions 页 Agentic/Built-in tab 分离(进行中)
-- 设计：顶部 tab 栏(类似 Memory 页的 Wiki/Journal/Core),分 Agentic(函数管理+文件夹)和 Built-in Tools(profile 管理)。
-- 现状：tab 栏已加、tab 状态已加、sidebar 在 builtin tab 隐藏、agentic 内容在 builtin tab 隐藏、tools 只在 builtin tab 显示。CSS 已加。
-- 待做：typecheck + build + 浏览器验证,确认分 tab 渲染正确。
-
-### 5. ~~Functions 页删除操作仍用原生 confirm()~~
-- ✅ 已修复：搜索确认无残留原生 `confirm()` 调用，已全部替换为 ConfirmDialog。
-
-### 6. ~~Functions 页工具右键菜单不合理~~
-- ✅ 已修复：`functions-page.tsx:579` 已改为 `tab === "agentic" ? contentCtx : undefined`，builtin tab 不触发 contentCtx。
+- `runtime/controllability-and-three-surface-sync.md` — attended/unattended, graceful stop, and three-surface sync are all implemented
+- `runtime/user-input-requests.md` — Phase 1+2 have landed (QuestionRegistry, the three Transports including the newly added TTYTransport)
+- `function/function-calling-unification.md` — already uses the "profiles" terminology, consistent with the code
+- `extension-gating/implementation.md` — paths are now correct
+- `context/context.md` (merged from contextgit and four others + the overview diagram) — status markers are correct
 
 ---
 
-## Agentic Function 运行时待解决问题
+## Open problems in the tool-calling system
 
-### 7. 断点续跑（checkpoint resume）
-- **问题**：agentic function 内部 `runtime.exec` 连续 6 次重试全失败（provider 不可达）后直接抛错，函数终止，无法恢复。
-- **现状**：DAG 状态完整（frame 节点标 `status="error"`，子节点全保留），`_render_history_messages` 从 DAG 加载历史，基础设施已就位。
-- **方案**：提供 `resume_function(session_id, node_id)` 入口——把 frame 节点 status 改回 `running`，用同一个 frame_node_id 重新调 `runtime.exec`，DAG 历史自动接上。webui 加"重试"按钮触发。
-- **核心改动**：需要一个"重入"入口 + 恢复 contextvar（_call_id 等）+ 重建 runtime/agent 上下文。
-- **位置**：`agentic_programming/function.py`（wrapper 层）、`agentic_programming/runtime.py`（exec 层）
+### 1. Cause of wiki_agent self-recursion (✅ identified)
+- **Root cause**: `research_harness/wiki/wiki_agent.py:122` calls `runtime.exec(content=[task])` bare——
+  it does not pass toolset/tools, so it defaults to `DEFAULT_TOOLSET="full"` (98 tools, including wiki_agent itself).
+  The model sees wiki_agent's tool description ("Maintain a wiki vault — route to ingest...")
+  which happens to match the current task ("research long horizon agent") → decides it needs to call wiki_agent → calls itself →
+  inside it is another bare exec that again sees itself → infinite recursion. Each level returns
+  `{'error': "'info|warning|success|error'"}` (wiki's internal enum validation failure),
+  the upper-level model receives the error → retries and calls itself again.
+- **Resolved (commit `1f6f5fce`)**: changed from "self-deny by hiding the tool" to "situational guidance + a recursion-depth ceiling as a backstop".
+  - The situational hint (`runtime._situational_prefix`) is injected at the start of the user turn, telling the model "you are inside X, calling X = infinite recursion, use the lower-level tools", with the docstring demoted to the back → directly negating the premise "this should route to wiki_agent".
+  - Backstop: `_MAX_AGENTIC_RECURSION_DEPTH=5`, counted per function name; exceeding 5 levels for the same name raises `RecursionError`.
+  - self-deny has been removed, the tool list contains the function itself, relying on guidance rather than hiding.
+  - Design doc: `docs/design/runtime/execution/agentic-self-recursion.md`; tests: `tests/agentic_programming/test_self_recursion_guard.py` (8 cases).
+- **Remaining** (to do, see #2): scoping the toolset for each harness's exec + detecting cross-function cycles (A→B→A) (currently only direct self-recursion is guarded).
+- Session record: `~/.openprogram/sessions/local_d125e9a9c3/history/`
+  the context_tree shows 7 levels of nesting (4d76→0c07→0964→c6f9→f1c9→4379→8746→100c).
 
-### ~~8. Bash 工具文件修改不追踪~~
-- ✅ 已解决（`69432d88`）：统一入口触发——`_execute_tool_calls` 中 bash 执行前后做文件状态 diff，变更文件自动补做 checkpoint。
-- 已知限制：当前只扫 cwd 顶层文件，子目录变更未覆盖（待后续改为递归扫描）。
-- 另外 ④ 系统级沙箱（`cf2edde5`）也从源头限制了 bash 能碰的文件范围。
+### 2. Whether harness-internal toolsets need to be restricted
+- Problem: for harnesses like wiki_agent/research_agent/gui_agent, should their own internal exec see only "the tools needed to do their actual job", rather than the full set?
+- Current state: full set by default (full); self-deny only blocks a harness from calling itself; one harness can still call another (wiki calls research, research calls gui) — which can lead to "going off track".
+- Decision pending: (a) the framework stays out of it, each harness restricts the toolset in its own exec; (b) the framework automatically denies all harness entry points (wiki/research/gui) while a harness is running; (c) keep the status quo and only guard self-recursion.
+- Reference: Claude Code's subagents use an allowlist to restrict tools, precisely to prevent this kind of going off track.
+
+### 3. Tool Profile selection does not yet affect actual tool resolution
+- Problem: the chat-box profile picker lets you choose a profile and the backend persists the active profile, but **after picking a profile the tools actually used in that conversation are still decided by the Tools toggle (on/off)**, the profile's tool list is not sent to the dispatcher as tools_override.
+- Fix: the WS chat action passes the active profile name → the dispatcher resolves it with `agent_tools(toolset=<profile>)` → only that set of tools is provided.
+- Location: `webui/ws_actions/chat.py:313-316` (the tools_override logic) + the submit function in `composer/index.tsx`.
+
+### 4. Splitting the Functions page into Agentic/Built-in tabs (in progress)
+- Design: a tab bar at the top (similar to the Wiki/Journal/Core on the Memory page), splitting into Agentic (function management + folders) and Built-in Tools (profile management).
+- Current state: the tab bar is added, tab state is added, the sidebar is hidden on the builtin tab, agentic content is hidden on the builtin tab, and tools show only on the builtin tab. CSS is added.
+- To do: typecheck + build + browser verification, to confirm the per-tab rendering is correct.
+
+### 5. ~~The Functions page delete action still uses the native confirm()~~
+- ✅ Fixed: searched and confirmed there are no leftover native `confirm()` calls; all have been replaced with ConfirmDialog.
+
+### 6. ~~The tool right-click menu on the Functions page is unreasonable~~
+- ✅ Fixed: `functions-page.tsx:579` is now `tab === "agentic" ? contentCtx : undefined`, so the builtin tab does not trigger contentCtx.
 
 ---
 
-## ~~其它待解决~~（已修复）
+## Open problems in the Agentic Function runtime
 
-### ~~research_agent 的假预设 `toolset=("harness",)`~~
-- ✅ 已修复：改为 `toolset=("research",)`（2026-06-18）
+### 7. Checkpoint resume
+- **Problem**: when `runtime.exec` inside an agentic function fails all 6 consecutive retries (provider unreachable), it raises directly, the function terminates, and it cannot be recovered.
+- **Current state**: the DAG state is complete (the frame node is marked `status="error"`, all child nodes are preserved), `_render_history_messages` loads history from the DAG, and the infrastructure is in place.
+- **Plan**: provide a `resume_function(session_id, node_id)` entry point — set the frame node's status back to `running`, re-call `runtime.exec` with the same frame_node_id, and the DAG history is automatically reconnected. Add a "retry" button in the webui to trigger it.
+- **Core change**: needs a "re-entry" entry point + restoring the contextvars (_call_id, etc.) + rebuilding the runtime/agent context.
+- **Location**: `agentic_programming/function.py` (the wrapper layer), `agentic_programming/runtime.py` (the exec layer).
 
-### ~~设计文档 "full" 静态列表注释过时~~
-- ✅ 已修复：`functions/__init__.py` TOOLSETS["full"] 注释已更新，说明 full 现在只是命名预设，暴露由 `exposed_names()` 动态收集。
+### ~~8. Bash tool does not track file modifications~~
+- ✅ Resolved (`69432d88`): triggered through the unified entry point — `_execute_tool_calls` diffs the file state before and after bash runs, and automatically makes a checkpoint for any changed files.
+- Known limitation: it currently only scans the top-level files of the cwd, subdirectory changes are not covered (to be changed to a recursive scan later).
+- Additionally, the ④ system-level sandbox (`cf2edde5`) also restricts at the source the range of files bash can touch.
+
+---
+
+## ~~Other open items~~ (fixed)
+
+### ~~research_agent's bad default `toolset=("harness",)`~~
+- ✅ Fixed: changed to `toolset=("research",)` (2026-06-18).
+
+### ~~The stale comment on the "full" static list in the design doc~~
+- ✅ Fixed: the `functions/__init__.py` TOOLSETS["full"] comment is updated, explaining that full is now just a named preset and that exposure is collected dynamically by `exposed_names()`.

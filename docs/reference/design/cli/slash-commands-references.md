@@ -1,4 +1,4 @@
-# 斜杠命令 — 参考实现快照
+# Slash Commands — Reference Implementations Snapshot
 
 调研于 2026-05-25。每个项目记录：来源目录、frontmatter 字段、模板语法、执行模式、参数解析、UI、安全。
 

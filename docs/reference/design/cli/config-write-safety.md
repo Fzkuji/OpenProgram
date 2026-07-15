@@ -1,46 +1,48 @@
-# 配置写入安全 —— 原子化的 `update_config`
+# Config write safety — atomic `update_config`
 
-状态：**面向 web 的写入已落地（步骤 1–3）** · 步骤 4 遗留 · 负责人：core/config · 创建于：2026-06-04
+Status: **web-facing writes landed (steps 1–3)** · step 4 residual · Owner: core/config · Created: 2026-06-04
 
-优化路线图第 5 项。承接此前的配置 IO 收口工作：该工作让 webui 委托给
-`setup._read_config`/`_write_config` 并强制 0o600。
+Optimization-roadmap item #5. Follows the config-IO consolidation that made the
+webui delegate to `setup._read_config`/`_write_config` and enforce 0o600.
 
-## 1. 问题
+## 1. Problem
 
-`config.json` 由分离的 `_read_config()` … `_write_config()` 调用进行修改，
-中间夹着改动 —— 一次非原子的 read-modify-write —— 来自多个位置，
-彼此之间**没有共享锁**：
+`config.json` is mutated by separate `_read_config()` … `_write_config()` calls
+with modification in between — a non-atomic read-modify-write — from several
+places, with **no shared lock** across them:
 
-- `config_schema.set_setting`（`config_schema.py:253,288`）—— TUI `/config` + web
-  System 标签页 + `openprogram config`。
-- `routes/config.py:save_config` —— web 端的 "Save API keys" 表单（读取 config、
-  合并 `api_keys`、写回）。
-- `setup.py:set_ui_ports` / `write_search_default_provider`（`135,176`）。
-- `_setup_sections/*` —— `openprogram setup` 向导。
+- `config_schema.set_setting` (`config_schema.py:253,288`) — TUI `/config` + web
+  System tab + `openprogram config`.
+- `routes/config.py:save_config` — the web "Save API keys" form (read config,
+  merge `api_keys`, write).
+- `setup.py:set_ui_ports` / `write_search_default_provider` (`135,176`).
+- `_setup_sections/*` — the `openprogram setup` wizard.
 
-`storage.py` 已经用一个模块级 `threading.Lock`（`_cache_lock`）对它的
-**providers** 段写入做了串行化，但该锁是该模块私有的 ——
-上面那些写入方并不会去拿它。
+`storage.py` already serialises its **providers**-section writes with a
+module-level `threading.Lock` (`_cache_lock`), but that lock is private to that
+module — the writers above don't take it.
 
-于是两个并发写入方发生竞争，后写的那次覆盖掉先写的那次：
-- 进程内：一次 TUI 工具开关（`set_setting`）和一次 web api-key 保存
-  （`save_config`）都跑在 **worker** 进程里；没有共享锁，其中一个就会
-  覆盖另一个。
-- 跨进程：`openprogram config` / `openprogram setup` 是**独立的进程**，
-  在 worker 写同一个文件时也在写它 —— `threading` 锁无法跨进程感知。
+So two concurrent writers race and the later write clobbers the earlier one:
+- In-process: a TUI tool-toggle (`set_setting`) and a web api-key save
+  (`save_config`) both run in the **worker** process; without a shared lock one
+  overwrites the other.
+- Cross-process: `openprogram config` / `openprogram setup` are **separate
+  processes** writing the same file while the worker writes it — a `threading`
+  lock can't see across processes.
 
-## 2. 设计
+## 2. Design
 
-在 `setup.py` 中提供一个原子入口：
+One atomic entry point in `setup.py`:
 
 ```python
-_config_write_lock = threading.Lock()          # 进程内（worker 线程）
+_config_write_lock = threading.Lock()          # in-process (worker threads)
 
 def update_config(mutator: Callable[[dict], None]) -> dict:
-    """对 config.json 做原子的 read-modify-write。同时持有一个进程内锁和一个
-    跨进程文件锁（config.json.lock，经由 filelock），读取当前 config，原地
-    应用 mutator(cfg)，写回（0o600），并返回它。这是修改 config 某一部分的
-    唯一正确方式 —— 绝不要分开调用 read_config() + write_config()，那样会竞争。"""
+    """Atomic read-modify-write of config.json. Holds an in-process lock AND a
+    cross-process file lock (config.json.lock, via filelock), reads the current
+    config, applies mutator(cfg) in place, writes it back (0o600), returns it.
+    The ONLY correct way to change part of the config — never read_config() +
+    write_config() separately, which races."""
     with _config_write_lock:
         with FileLock(str(get_config_path()) + ".lock", timeout=10):
             cfg = _read_config()
@@ -49,31 +51,34 @@ def update_config(mutator: Callable[[dict], None]) -> dict:
             return cfg
 ```
 
-- `filelock`（3.16.1，已是依赖项）提供跨进程锁；`threading.Lock` 提供进程内
-  锁（filelock 在单个进程内是可重入的，但线程锁让 read-modify-write 这段临界区
-  在 worker 的各线程之间也保持原子）。
-- `_read_config` / `_write_config` 仍保留给只读 / 整体替换使用；只有
-  read-modify-write 迁移到 `update_config`。
+- `filelock` (3.16.1, already a dependency) gives the cross-process lock; the
+  `threading.Lock` gives the in-process one (filelock is re-entrant per process
+  but the thread lock makes the read-modify-write critical section atomic across
+  the worker's threads too).
+- `_read_config` / `_write_config` stay for read-only / full-replace; only
+  read-modify-write moves to `update_config`.
 
-## 3. 迁移
+## 3. Migration
 
-1. **（已完成，935685c4）** 给 `setup.py` 加上 `update_config` 加一个单元测试
-   （两个“并发”的 mutator 被串行化；结果同时反映两者）。
-2. **（已完成，1c21d43d）** 把两个面向 web 的竞争方 ——
-   `config_schema.set_setting`（`_set_at` 分支和 `tools.disabled` 分支都算）
-   以及 `routes/config.py:save_config`（api_keys 合并）—— 迁移到 `update_config`。
-3. **（已完成，0cc67aed）** 把 `setup.py` 自己的 `set_ui_ports` /
-   `write_search_default_provider` 迁移到 `update_config`。（面向 web 的 config
-   写入路径现已全部原子化。）
-4. **（遗留）** 迁移 `_setup_sections/*` 中 `openprogram setup` 向导的写入方，
-   并让 `storage.py` 的 providers 段写入也走 `update_config`，从而做到跨进程安全
-   （它们今天在进程内是安全的，靠的是私有的 `_cache_lock`；缺口在于并发的
-   CLI/向导写入）。这两者都偏 CLI 侧 / 概率低于上面已经关闭的 web 竞争。
+1. **(done, 935685c4)** Add `update_config` to `setup.py` + a unit test (two
+   "concurrent" mutators serialise; result reflects both).
+2. **(done, 1c21d43d)** Migrate the two web-facing racers —
+   `config_schema.set_setting` (both the `_set_at` branch and the
+   `tools.disabled` branch) and `routes/config.py:save_config` (the api_keys
+   merge) — to `update_config`.
+3. **(done, 0cc67aed)** Migrate `setup.py`'s own `set_ui_ports` /
+   `write_search_default_provider` to `update_config`. (The web-facing config
+   write paths are now all atomic.)
+4. **(residual)** Migrate the `_setup_sections/*` `openprogram setup` wizard
+   writers, and route `storage.py`'s providers-section writes through
+   `update_config` so they're cross-process safe (they're in-process safe today
+   via the private `_cache_lock`; the gap is a concurrent CLI/wizard write). Both
+   are CLI-side / lower-likelihood than the web racers closed above.
 
-每一步：重启 worker、`/healthz`、从 web 端保存一个设置 + 一个 api key、
-确认两者都持久化（没有被覆盖）、测试通过。
+Each step: restart worker, `/healthz`, save a setting + an api key from the web,
+confirm both persist (no clobber), tests green.
 
-## 4. 非目标
+## 4. Non-goals
 
-不是 config schema/校验方面的改动（那是 `config_schema` 的事）；也不是要弃用
-JSON。只是让每一次写入都原子且互斥。
+Not a config schema/validation change (that's `config_schema`); not a move off
+JSON. Just making every write atomic and mutually exclusive.

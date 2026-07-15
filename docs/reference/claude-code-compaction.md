@@ -1,298 +1,298 @@
-# Claude Code 上下文压缩机制 — 完整流程参考
+# Claude Code Context Compaction Mechanism — Full Pipeline Reference
 
-> 调研文档（非设计文档）。基于源码逆向分析，记录 Claude Code 的压缩机制。
+> Research document (not a design document). Reverse-engineered from source, documenting Claude Code's compaction mechanism.
 >
-> **可靠度说明**：5 级级联的描述来自第三方逆向分析，不是 Anthropic 官方文档确认的。
-> 官方 API 文档（platform.claude.com）只描述了单一的 compact 机制（超 token 阈值 → LLM 摘要），
-> 内部的 Microcompact / Snip / Context Collapse 分层是 Claude Code 客户端的实现细节。
-> 不同逆向分析来源对执行顺序的描述有细微差异。以下采用 Inside Claude Code 的版本（分析最详细）。
-> 阈值和参数在不同版本中有调整，以下数字可能不完全准确。
+> **Reliability note**: The description of the 5-tier cascade comes from third-party reverse engineering, not confirmed by Anthropic's official documentation.
+> The official API docs (platform.claude.com) describe only a single compact mechanism (over token threshold → LLM summary);
+> the internal Microcompact / Snip / Context Collapse layering is a Claude Code client implementation detail.
+> Different reverse-engineering sources describe the execution order with slight variations. The version below follows Inside Claude Code (the most detailed analysis).
+> Thresholds and parameters have been adjusted across versions; the numbers below may not be entirely accurate.
 >
-> 来源（按可靠度排序）：
-> - [Compaction - Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/compaction)（官方，但只描述 API 层面）
-> - [Context editing - Claude API Docs](https://platform.claude.com/docs/en/build-with-claude/context-editing)（官方）
-> - [Inside Claude Code - Context Compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html)（逆向分析，最详细）
-> - [Dive into Claude Code](https://arxiv.org/html/2604.14228v1)（arXiv 2604.14228，VILA-Lab 源码逆向分析）
-> - [DeepWiki - Context Window & Compaction](https://deepwiki.com/anthropics/claude-code/3.3-context-window-and-compaction)（社区 wiki）
-> - [Claude Code VS OpenCode §5.3](https://0xtresser.github.io/Claude-Code-VS-OpenCode/en/Chapter_05_Session_and_Context/5.3_Context_Compaction.html)（对比分析）
+> Sources (ordered by reliability):
+> - [Compaction - Claude Platform Docs](https://platform.claude.com/docs/en/build-with-claude/compaction) (official, but describes only the API level)
+> - [Context editing - Claude API Docs](https://platform.claude.com/docs/en/build-with-claude/context-editing) (official)
+> - [Inside Claude Code - Context Compaction](https://y-agent.github.io/inside-claude-code/04-context-compaction.html) (reverse engineering, most detailed)
+> - [Dive into Claude Code](https://arxiv.org/html/2604.14228v1) (arXiv 2604.14228, VILA-Lab source reverse engineering)
+> - [DeepWiki - Context Window & Compaction](https://deepwiki.com/anthropics/claude-code/3.3-context-window-and-compaction) (community wiki)
+> - [Claude Code VS OpenCode §5.3](https://0xtresser.github.io/Claude-Code-VS-OpenCode/en/Chapter_05_Session_and_Context/5.3_Context_Compaction.html) (comparative analysis)
 
 ---
 
-## 1. 总览
+## 1. Overview
 
-Claude Code 有两类压缩机制：
+Claude Code has two kinds of compaction mechanisms:
 
-**常规操作**（每轮 LLM 调用前都做，和上下文长度无关）：
-- Budget Reduction：截断超大的单个工具输出
+**Routine operation** (done before every LLM call, independent of context length):
+- Budget Reduction: truncate oversized individual tool outputs
 
-**级联压缩**（按 Tier 1→2→3→4→5 的顺序升级，成本低的先做）：
-- Tier 1 Microcompact：清理旧工具输出
-- Tier 2 Snip：删最旧的几轮对话
-- Tier 3 Context Collapse：分段 LLM 摘要
-- Tier 4 Auto-Compact：全量 LLM 摘要
-- Tier 5 Reactive：API 返回 413 时紧急压缩
+**Cascade compaction** (escalates in the order Tier 1→2→3→4→5, cheapest first):
+- Tier 1 Microcompact: clear old tool outputs
+- Tier 2 Snip: delete the oldest few turns
+- Tier 3 Context Collapse: segmented LLM summarization
+- Tier 4 Auto-Compact: full LLM summarization
+- Tier 5 Reactive: emergency compaction when the API returns 413
 
-| | 名称 | 做什么 | 触发条件 | 调 LLM | 破缓存 | 信息损失 |
+| | Name | What it does | Trigger | Calls LLM | Breaks cache | Information loss |
 |---|---|---|---|---|---|---|
-| 常规 | Budget Reduction | 截断超大单个输出 | 单个 tool_result > **4000 字符** | 否 | 否 | 中间内容丢 |
-| Tier 1 | Microcompact | 旧工具输出清理 | 工具调用 ≥ **50 次**（之后每 **25 次**）/ 空闲 **90 分钟** | 否 | cache-aware 不破 | 旧输出丢 |
-| Tier 2 | Snip | 删最旧几轮 | Tier 1 后仍超预算 | 否 | 是 | 整轮丢 |
-| Tier 3 | Context Collapse | 分段摘要 | Tier 2 后仍超，~**90%** 占用 | 是 | 是 | 细节丢，要点留 |
-| Tier 4 | Auto-Compact | 全量摘要 | Tier 3 后仍超 / 用户 `/compact` | 是 | 是 | 大量丢，只留概要 |
-| Tier 5 | Reactive | 紧急压缩 | API 返回 **413** prompt_too_long | 是 | 是 | 同 Tier 4 |
+| Routine | Budget Reduction | Truncate oversized individual output | A single tool_result > **4000 chars** | No | No | Middle content lost |
+| Tier 1 | Microcompact | Clear old tool outputs | Tool calls ≥ **50** (then every **25**) / idle **90 minutes** | No | cache-aware: no break | Old outputs lost |
+| Tier 2 | Snip | Delete the oldest few turns | Still over budget after Tier 1 | No | Yes | Whole turns lost |
+| Tier 3 | Context Collapse | Segmented summarization | Still over after Tier 2, ~**90%** usage | Yes | Yes | Detail lost, key points kept |
+| Tier 4 | Auto-Compact | Full summarization | Still over after Tier 3 / user `/compact` | Yes | Yes | Heavy loss, only a digest kept |
+| Tier 5 | Reactive | Emergency compaction | API returns **413** prompt_too_long | Yes | Yes | Same as Tier 4 |
 
-**级联逻辑**：每轮 LLM 调用前，从 Tier 1 开始检查。满足条件就执行，执行完重新检查是否还超。还超就进入下一个 Tier。前面的 Tier 成本低（不调 LLM、不破缓存），尽量在前面解决。
+**Cascade logic**: Before every LLM call, check starting from Tier 1. If the condition is met, execute it; after executing, recheck whether it is still over. If still over, advance to the next Tier. The earlier Tiers are cheaper (no LLM call, no cache break), so resolve it as early as possible.
 
-> **注意**：Tier 3 Context Collapse 和 Tier 4 Auto-Compact 的关系，逆向分析来源描述为
-> "overlapping strategies"（重叠策略），不一定是严格的"3 不够才上 4"。可能某些配置下
-> 跳过 Tier 3 直接走 Tier 4。`/compact` 手动命令直接触发 Tier 4，跳过 Tier 1-3。
+> **Note**: The relationship between Tier 3 Context Collapse and Tier 4 Auto-Compact is described by reverse-engineering sources as
+> "overlapping strategies," not necessarily a strict "fall back to 4 only when 3 is insufficient." Some configurations may
+> skip Tier 3 and go straight to Tier 4. The `/compact` manual command directly triggers Tier 4, skipping Tiers 1-3.
 
 ---
 
-## 2. 常规操作：Budget Reduction
+## 2. Routine Operation: Budget Reduction
 
-**和级联无关**，每轮 LLM 调用前都做。
+**Unrelated to the cascade**; done before every LLM call.
 
-**做什么**：检查每个工具输出的大小，超过阈值就截断。
+**What it does**: Check the size of each tool output, and truncate any that exceeds the threshold.
 
-**参数**：
-- 截断阈值：**4000 字符**（约 1000 tokens）
-- 截断方式：超过 4000 字符的输出，只保留前 **2400 字符**（60%）+ 后 **1600 字符**（40%），中间丢弃
-- 只处理工具输出（tool_result），不处理 user/assistant 消息
+**Parameters**:
+- Truncation threshold: **4000 chars** (about 1000 tokens)
+- Truncation method: for output exceeding 4000 chars, keep only the first **2400 chars** (60%) + the last **1600 chars** (40%), discarding the middle
+- Only processes tool outputs (tool_result), not user/assistant messages
 
-**示例**：
+**Example**:
 ```
-截断前（50000 字符）：
+Before truncation (50000 chars):
 [tool_result] "src/a.py:12: TODO fix this\nsrc/b.py:34: ..."
 
-截断后（4000 字符）：
+After truncation (4000 chars):
 [tool_result] "src/a.py:12: TODO fix this\n...[46000 chars removed]...\nsrc/z.py:99: TODO cleanup"
 ```
 
 ---
 
-## 3. 级联压缩
+## 3. Cascade Compaction
 
-每轮 LLM 调用前，Budget Reduction 之后，按 Tier 顺序检查和执行。
+Before every LLM call, after Budget Reduction, check and execute in Tier order.
 
-### Tier 1：Microcompact
+### Tier 1: Microcompact
 
-**做什么**：清理旧的工具输出，释放空间。
+**What it does**: Clear old tool outputs to free up space.
 
-**触发条件**：
-- Cache-aware path：**50 次工具调用**后首次触发，之后**每 25 次**再触发
-- Time-based path：距上次 assistant 消息 **~90 分钟**
+**Trigger**:
+- Cache-aware path: first triggers after **50 tool calls**, then again **every 25**
+- Time-based path: **~90 minutes** since the last assistant message
 
-**只处理特定工具**：FileRead、Shell、Grep、Glob、WebSearch、WebFetch、FileEdit、FileWrite
+**Only processes specific tools**: FileRead, Shell, Grep, Glob, WebSearch, WebFetch, FileEdit, FileWrite
 
-**两条路径**：
+**Two paths**:
 
-| | Cache-aware（主力） | Time-based（备用） |
+| | Cache-aware (primary) | Time-based (fallback) |
 |---|---|---|
-| 做什么 | 通过 Context Editing API 让服务端清除旧 tool_result | 客户端把旧 tool_result 替换为 sentinel 字符串 |
-| 破缓存 | 不破（服务端操作，客户端消息不变） | 破（客户端改了消息） |
-| 触发 | 50 次工具调用后，每 25 次 | 空闲 ~90 分钟 |
-| 可恢复 | 否 | 否 |
-| 依赖 | Anthropic API 的 Context Editing（其他 provider 不支持） | 无依赖 |
+| What it does | Has the server clear old tool_result via the Context Editing API | Client replaces old tool_result with a sentinel string |
+| Breaks cache | No (server-side operation, client messages unchanged) | Yes (client modified the messages) |
+| Trigger | After 50 tool calls, every 25 | Idle ~90 minutes |
+| Recoverable | No | No |
+| Dependency | Anthropic API's Context Editing (not supported by other providers) | No dependency |
 
-**压缩效果**：每个被清理的工具输出从原始大小（几百到几千 tokens）→ 0 tokens（cache-aware）或 ~20 tokens（time-based）。例：一次 Microcompact 清理了 10 个旧工具结果，每个平均 500 tokens → 释放约 4800 tokens。
+**Compaction effect**: Each cleared tool output goes from its original size (a few hundred to a few thousand tokens) → 0 tokens (cache-aware) or ~20 tokens (time-based). Example: one Microcompact cleared 10 old tool results, each averaging 500 tokens → freed about 4800 tokens.
 
-**示例**：
+**Example**:
 ```
-清理前：
-[tool_result] "import os\nimport sys\n\nclass Config:\n    ..."（2000 tokens）
+Before clearing:
+[tool_result] "import os\nimport sys\n\nclass Config:\n    ..." (2000 tokens)
 
-清理后（cache-aware）：
-[tool_result] ""（服务端清空，0 tokens，缓存不破）
+After clearing (cache-aware):
+[tool_result] "" (server-cleared, 0 tokens, cache not broken)
 
-清理后（time-based）：
-[tool_result] "[content no longer available]"（~20 tokens）
+After clearing (time-based):
+[tool_result] "[content no longer available]" (~20 tokens)
 ```
 
-**Cache-aware path 细节**：sentinel 字符串做了**字节级归一化（byte-stable canonical form）**——重复 microcompact 不改变已缓存内容。核心原则：已进缓存的内容，客户端不修改（修改会破前缀匹配）。要清旧内容时：
-- 已在缓存 → cache-aware path，通过 Context Editing API 让服务端清
-- 没在缓存 → time-based path，客户端直接替换为 sentinel
+**Cache-aware path details**: The sentinel string uses **byte-stable canonical form normalization** — repeated microcompact does not change already-cached content. Core principle: content already in the cache is not modified by the client (modifying it would break prefix matching). When old content needs clearing:
+- Already in cache → cache-aware path, have the server clear it via the Context Editing API
+- Not in cache → time-based path, client directly replaces it with a sentinel
 
-#### Context Editing API（cache_edits）
+#### Context Editing API (cache_edits)
 
-Microcompact cache-aware path 的底层实现。Anthropic API 的公开 beta（header: `context-management-2025-06-27`），不是 Claude Code 专有，普通开发者可用。
+The underlying implementation of the Microcompact cache-aware path. It is a public beta of the Anthropic API (header: `context-management-2025-06-27`), not exclusive to Claude Code; ordinary developers can use it.
 
-**工作原理**：客户端发送完整消息历史（不做任何修改），同时在 API 请求中传一个 `cache_edits` 参数。服务端收到后：
-1. 在缓存内部找到旧的 tool_result 块
-2. 把它们替换为空或占位文本
-3. 缓存前缀不变（因为客户端发的消息没变，服务端只改了缓存内部的数据）
-4. 客户端完全不需要知道哪些被清了
+**How it works**: The client sends the complete message history (without any modification) while passing a `cache_edits` parameter in the API request. On receipt, the server:
+1. Finds the old tool_result blocks inside the cache
+2. Replaces them with empty or placeholder text
+3. Leaves the cache prefix unchanged (because the client's sent messages did not change; the server only modified the data inside the cache)
+4. Requires the client to know nothing about which were cleared
 
-和正常 LLM 调用合并在一起，不是额外请求——发消息的同时顺便告诉服务端"清掉旧的 tool_result"。
+It is merged with a normal LLM call rather than being an extra request — while sending messages, it tells the server in passing to "clear the old tool_result."
 
-| 策略 | 做什么 |
+| Strategy | What it does |
 |---|---|
-| `clear_tool_uses` | 清除旧的 tool_result，只保留最近 N 个（N 的具体值未从源码确认，逆向分析未给出） |
-| `clear_thinking` | 清除旧的 thinking blocks |
-| `clear_at_least` | 控制最少清多少 token |
+| `clear_tool_uses` | Clear old tool_result, keeping only the most recent N (the exact value of N is not confirmed from source; reverse engineering did not give it) |
+| `clear_thinking` | Clear old thinking blocks |
+| `clear_at_least` | Control the minimum number of tokens to clear |
 
-**和其他 Tier 的关系**：Context Editing 不是独立的 Tier，它是 Tier 1 Microcompact cache-aware path 的底层实现。Tier 2-5 都不用这个 API——它们直接修改客户端的消息列表。
+**Relationship to other Tiers**: Context Editing is not an independent Tier; it is the underlying implementation of the Tier 1 Microcompact cache-aware path. Tiers 2-5 do not use this API — they directly modify the client's message list.
 
-**限制**：只有 Anthropic API 支持。OpenAI / Google / 其他 provider 没有类似能力，只能走 time-based path（客户端替换，会破缓存）。
+**Limitation**: Only the Anthropic API supports it. OpenAI / Google / other providers have no equivalent capability and can only use the time-based path (client replacement, which breaks the cache).
 
-### Tier 2：Snip
+### Tier 2: Snip
 
-**做什么**：直接删除最旧的几轮对话。不做摘要、不存磁盘，直接丢。
+**What it does**: Directly delete the oldest few turns of conversation. No summarization, no disk storage — just discard.
 
-**触发条件**：Tier 1 做完后仍超预算（逆向分析中出现 ~13K tokens buffer 的说法，但具体阈值可能随版本变化）
+**Trigger**: Still over budget after Tier 1 is done (a ~13K tokens buffer is mentioned in reverse engineering, but the specific threshold may vary by version)
 
-**参数**：
-- 删除粒度：**整轮**（user + assistant + 该轮所有工具调用一起删），不会出现"user 在但 assistant 被删"的不一致
-- 删多少：从最旧的开始逐轮删，每删一轮重新算 token 数，**删到阈值以下为止**（不是固定删 N 轮）
-- 删除的内容彻底消失，模型不知道之前聊过什么
-- 没有删除标记（不会在上下文里留"已删除 5 轮"之类的提示）
+**Parameters**:
+- Deletion granularity: **whole turn** (user + assistant + all tool calls of that turn deleted together), so no inconsistency like "user present but assistant deleted"
+- How much to delete: delete turn by turn starting from the oldest, recomputing the token count after each deletion, **until below the threshold** (not a fixed N turns)
+- Deleted content disappears entirely; the model does not know what was discussed before
+- No deletion marker (no hint like "5 turns deleted" left in the context)
 
-**代价**：信息完全丢失，缓存前缀被破坏。但免费（不调 LLM），执行速度快。
+**Cost**: Total information loss, and the cache prefix is broken. But free (no LLM call) and fast to execute.
 
-### Tier 3：Context Collapse
+### Tier 3: Context Collapse
 
-**做什么**：把旧对话分成若干段（5-10 轮一段），每段用 LLM 生成摘要。
+**What it does**: Splits old conversation into several segments (5-10 turns per segment) and generates an LLM summary for each segment.
 
-**触发条件**：Tier 2 Snip 做完后仍超阈值（约 90%，非阻塞触发；95% 时阻塞强制触发）
+**Trigger**: Still over the threshold after Tier 2 Snip is done (about 90%, non-blocking trigger; at 95% it blocks and forces a trigger)
 
-**关键特性**：原始消息**保留**在 collapse store 中。这是**读时投影（read-time projection）**——类似数据库 View，底表不动，查询看到的是摘要视图。原始历史保留着，理论上可以重建/回滚。
+**Key property**: The original messages are **retained** in the collapse store. This is a **read-time projection** — similar to a database View, where the base table is untouched and the query sees a summary view. The original history is retained, so it can in theory be reconstructed/rolled back.
 
-**参数**：
-- 分段标准：**5-10 轮一段**（具体值未从源码确认）
-- 每段独立用 LLM 摘要，每段摘要约 **100-300 tokens**（估算，未确认）
-- 最近 N 轮完整保留，只摘要更旧的段（N 值未确认）
-- LLM 调用次数 = 段数（例：30 轮分 3 段 = 3 次 LLM 调用）
+**Parameters**:
+- Segmentation criterion: **5-10 turns per segment** (exact value not confirmed from source)
+- Each segment is summarized independently by the LLM, each summary about **100-300 tokens** (estimated, unconfirmed)
+- The most recent N turns are kept in full; only older segments are summarized (the value of N is unconfirmed)
+- Number of LLM calls = number of segments (example: 30 turns split into 3 segments = 3 LLM calls)
 
-**和 Tier 4 的区别**：
-- Context Collapse 是**分段**摘要，每段独立，保留分段边界和时间线结构
-- Auto-Compact 是**全量**摘要，一把压成一段，结构丢失
+**Difference from Tier 4**:
+- Context Collapse is **segmented** summarization, each segment independent, preserving segment boundaries and the timeline structure
+- Auto-Compact is **full** summarization, compressed into a single segment, losing structure
 
-**示例**：
+**Example**:
 ```
-压缩前（35 轮）：
-[轮 6-10] 读代码、找 bug、修复、测试
-[轮 11-15] 重构 config 模块
-[轮 16-35] 改 API 模块...
+Before compaction (35 turns):
+[turns 6-10] read code, find bug, fix, test
+[turns 11-15] refactor config module
+[turns 16-35] modify API module...
 
-压缩后：
-[摘要] "Turns 6-10: 修了 utils.py 的 bug，添加了回滚脚本"
-[摘要] "Turns 11-15: 重构了 config 模块，抽出了 Settings 类"
-[轮 16-35] ...（最近的完整保留）
+After compaction:
+[summary] "Turns 6-10: fixed a bug in utils.py, added a rollback script"
+[summary] "Turns 11-15: refactored the config module, extracted the Settings class"
+[turns 16-35] ... (most recent kept in full)
 ```
-原始的 turn 6-15 仍然保存在 collapse store 中，模型看到的是折叠版本。
+The original turns 6-15 are still kept in the collapse store; the model sees the collapsed version.
 
-### Tier 4：Auto-Compact
+### Tier 4: Auto-Compact
 
-**做什么**：把整个对话历史一次性发给 LLM，生成一个摘要块，替换所有旧消息。
+**What it does**: Sends the entire conversation history to the LLM at once, generates a single summary block, and replaces all old messages.
 
-**触发条件**：Tier 3 做完后仍超阈值。或用户手动 `/compact`。
+**Trigger**: Still over the threshold after Tier 3 is done. Or the user manually runs `/compact`.
 
-**关键特性**：原始消息被**替换**，不可回滚。信息损失最大。
+**Key property**: The original messages are **replaced**, not rollback-able. Information loss is maximal.
 
-**参数**：
-- 摘要块大小：约 **2000-5000 tokens**（取决于对话复杂度，由 LLM 自行决定）
-- 保留最近 **1-2 轮**完整对话（不被摘要）
-- LLM 调用：**1 次**（全量摘要）
-- 压缩后上下文从原来的 70-90% 降到约 **15-25%**
-- 可通过 `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` 环境变量调整触发百分比
+**Parameters**:
+- Summary block size: about **2000-5000 tokens** (depends on conversation complexity, decided by the LLM itself)
+- Keeps the most recent **1-2 turns** of full conversation (not summarized)
+- LLM calls: **1** (full summarization)
+- After compaction, context drops from the original 70-90% to about **15-25%**
+- The trigger percentage can be adjusted via the `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` environment variable
 
-**具体过程**：
-1. 执行 PreCompact hooks（通知系统即将压缩）
-2. 用 `getCompactPrompt()` 构造压缩提示（类似"请把以下对话历史压缩成关键事实"）
-3. 把整个对话历史发给 LLM，生成摘要
-4. 用 `buildPostCompactMessages()` 构建压缩后的消息
-5. system prompt 从 CLAUDE.md **重新加载**（不是从摘要来的，所以 CLAUDE.md 的内容永远不丢）
+**The specific process**:
+1. Run the PreCompact hooks (notify the system that compaction is imminent)
+2. Construct the compaction prompt with `getCompactPrompt()` (something like "Please compress the following conversation history into key facts")
+3. Send the entire conversation history to the LLM to generate the summary
+4. Build the post-compaction messages with `buildPostCompactMessages()`
+5. The system prompt is **reloaded** from CLAUDE.md (not derived from the summary, so the contents of CLAUDE.md are never lost)
 
-**`/compact` 手动命令**：
-- `/compact` 或 `/compact 保留关于数据库迁移的讨论`
-- 直接触发 Auto-Compact，不经过 Tier 1-3
-- 带提示词时摘要质量更好（用户指导保留什么）
-- 官方建议在 **60% 占用时手动 `/compact`**
+**The `/compact` manual command**:
+- `/compact` or `/compact keep the discussion about database migration`
+- Directly triggers Auto-Compact, bypassing Tiers 1-3
+- Summary quality is better when given a prompt (the user guides what to keep)
+- The official recommendation is to manually `/compact` at **60% usage**
 
-**丢失的**：早期指令、设计讨论、推理过程、50+ 轮前的代码片段、风格偏好。
-**保留的**：当前任务、最近修改的文件名、最近的错误和解决方案、CLAUDE.md 内容。
+**Lost**: early instructions, design discussions, reasoning processes, code snippets from 50+ turns ago, style preferences.
+**Kept**: the current task, recently modified filenames, recent errors and their solutions, the contents of CLAUDE.md.
 
-**示例**：
+**Example**:
 ```
-压缩前（35 轮，150K tokens）：
+Before compaction (35 turns, 150K tokens):
 [system prompt]
-[35 轮完整对话历史]
+[35 turns of full conversation history]
 
-压缩后（~30K tokens）：
-[system prompt]（从 CLAUDE.md 重新加载）
+After compaction (~30K tokens):
+[system prompt] (reloaded from CLAUDE.md)
 [compaction block]
-"会话摘要：用户在做 Python 项目重构。
-已完成：修了 utils.py 的 bug、重构了 config 模块、添加了 3 个测试。
-当前状态：所有测试通过。用户正在处理 API 模块。
-关键决定：使用 FastAPI 替换 Flask、数据库用 PostgreSQL。
-修改过的文件：src/utils.py, src/config.py, tests/test_utils.py"
-[最近 1-2 轮完整保留]
+"Session summary: The user is refactoring a Python project.
+Completed: fixed a bug in utils.py, refactored the config module, added 3 tests.
+Current state: all tests pass. The user is working on the API module.
+Key decisions: replace Flask with FastAPI, use PostgreSQL for the database.
+Modified files: src/utils.py, src/config.py, tests/test_utils.py"
+[most recent 1-2 turns kept in full]
 ```
 
-**链式压缩**：压缩后继续聊，再次满了再压。每次在上一次摘要基础上再压，信息逐层衰减——第一次丢早期细节，第二次丢中期细节。长会话可能压缩 3-5 次。
+**Chained compaction**: After compaction, the conversation continues, and when it fills again it is compacted again. Each time compacts on top of the previous summary, and information decays layer by layer — the first pass loses early detail, the second loses mid-stage detail. A long session may be compacted 3-5 times.
 
-**链式压缩**：压缩后继续聊，再次满了再压。每次在上一次摘要基础上再压，信息逐层衰减。
+**Chained compaction**: After compaction, the conversation continues, and when it fills again it is compacted again. Each time compacts on top of the previous summary, and information decays layer by layer.
 
-### Tier 5：Reactive
+### Tier 5: Reactive
 
-**做什么**：API 返回 413（prompt too long）错误时的紧急压缩。
+**What it does**: Emergency compaction when the API returns a 413 (prompt too long) error.
 
-**触发条件**：LLM 调用失败，返回 prompt_too_long / 413 错误。
+**Trigger**: The LLM call fails, returning a prompt_too_long / 413 error.
 
-**做法**：尝试 context-collapse overflow recovery，失败则做紧急 compact。每轮至多触发一次。都失败则终止会话。
+**Method**: Attempt context-collapse overflow recovery; if that fails, do an emergency compact. Triggers at most once per turn. If both fail, terminate the session.
 
 ---
 
-## 4. 执行流程
+## 4. Execution Flow
 
-每轮 LLM 调用前的完整流程：
+The complete flow before every LLM call:
 
 ```
-1. Budget Reduction → 截断超大工具输出（每轮都做）
+1. Budget Reduction → truncate oversized tool outputs (done every turn)
 
-2. 级联检查（按 Tier 顺序）：
-   Tier 1: Microcompact 条件满足？→ 清旧工具输出
-   Tier 2: 仍超阈值？→ Snip 删旧轮
-   Tier 3: 仍超阈值？→ Context Collapse 分段摘要
-   Tier 4: 仍超阈值？→ Auto-Compact 全量摘要
+2. Cascade check (in Tier order):
+   Tier 1: Microcompact condition met? → clear old tool outputs
+   Tier 2: still over threshold? → Snip deletes old turns
+   Tier 3: still over threshold? → Context Collapse segmented summarization
+   Tier 4: still over threshold? → Auto-Compact full summarization
 
-3. 调 LLM
+3. Call the LLM
 
-4. 如果 API 返回 413：
-   Tier 5: Reactive → 紧急压缩 → 重试
-   → 失败则终止
+4. If the API returns 413:
+   Tier 5: Reactive → emergency compaction → retry
+   → terminate on failure
 ```
 
 ---
 
-## 5. 完整运行示例
+## 5. Full Run-Through Example
 
-场景：200K context，持续工作几小时。
+Scenario: 200K context, continuous work over several hours.
 
-**阶段 1（0-30%）**：正常对话。Budget Reduction 检查工具输出大小，没超的跳过。级联都不触发。
+**Phase 1 (0-30%)**: Normal conversation. Budget Reduction checks tool output sizes; those not exceeding are skipped. None of the cascade triggers.
 
-**阶段 2（30-50%）**：工具调用超过 50 次。Tier 1 Microcompact cache-aware 首次触发，清理前 30 次工具调用的输出，释放约 15K tokens。之后每 25 次再清一轮。级联到 Tier 1 就够了，Tier 2-4 不触发。
+**Phase 2 (30-50%)**: Tool calls exceed 50. Tier 1 Microcompact cache-aware triggers for the first time, clearing the outputs of the first 30 tool calls and freeing about 15K tokens. After that it clears another round every 25. The cascade gets to Tier 1 and that is enough; Tiers 2-4 do not trigger.
 
-**阶段 3（超阈值）**：对话消息累积超阈值。Tier 1 Microcompact 做了，还是超。Tier 2 Snip 触发，删最旧的 5 轮，释放约 25K tokens。降到阈值以下，Tier 3-4 不触发。
+**Phase 3 (over threshold)**: Conversation messages accumulate beyond the threshold. Tier 1 Microcompact runs but is still over. Tier 2 Snip triggers, deleting the oldest 5 turns and freeing about 25K tokens. It drops below the threshold; Tiers 3-4 do not trigger.
 
-**阶段 4**：继续使用。再次超阈值时重复阶段 3（Microcompact + Snip）。
+**Phase 4**: Continued use. When over the threshold again, repeat Phase 3 (Microcompact + Snip).
 
-**阶段 5（极端）**：反复 Snip 后可删的旧轮不多了，Snip 不够用。Tier 3 Context Collapse 触发，分段摘要。还不够则 Tier 4 Auto-Compact。这种情况很少——因为 Microcompact 日常控制住了工具输出的增长，Snip 通常够用。
+**Phase 5 (extreme)**: After repeated Snips there are few old turns left to delete, and Snip is no longer enough. Tier 3 Context Collapse triggers, segmented summarization. If still not enough, Tier 4 Auto-Compact. This situation is rare — because Microcompact keeps the growth of tool output under control day to day, Snip is usually enough.
 
 ---
 
-## 6. 关键设计原则
+## 6. Key Design Principles
 
-1. **Lazy degradation**：成本低的先做。Microcompact（免费不破缓存）→ Snip（免费破缓存）→ Context Collapse（调 LLM）→ Auto-Compact（调 LLM，最激进）。
+1. **Lazy degradation**: Do the cheap things first. Microcompact (free, no cache break) → Snip (free, breaks cache) → Context Collapse (calls LLM) → Auto-Compact (calls LLM, most aggressive).
 
-2. **工具输出优先清理**：旧的 grep / read_file / bash 输出是最大且最不重要的消耗者。先清它们，对话消息尽量保留。
+2. **Tool output cleared first**: Old grep / read_file / bash outputs are the largest and least important consumers. Clear them first, and keep conversation messages as much as possible.
 
-3. **日常靠 Microcompact**：cache-aware path 持续释放空间且不破缓存。这使得 Snip/Compact 极少触发。
+3. **Day-to-day relies on Microcompact**: The cache-aware path continuously frees space without breaking the cache. This makes Snip/Compact trigger very rarely.
 
-4. **缓存保护**：Microcompact cache-aware 通过 Context Editing API 服务端清除，缓存不破。Budget Reduction 截断后内容固定。Snip/Compact 会破缓存但触发频率低。
+4. **Cache protection**: Microcompact cache-aware clears server-side via the Context Editing API, so the cache is not broken. After Budget Reduction truncation, content is fixed. Snip/Compact break the cache but trigger infrequently.
 
-5. **对话消息不单独截断**：user/assistant 消息要么整轮删（Snip），要么 LLM 摘要（Compact）。不对单条消息截断。
+5. **Conversation messages are not truncated individually**: user/assistant messages are either deleted by the whole turn (Snip) or LLM-summarized (Compact). Individual messages are not truncated.
 
-6. **CLAUDE.md 不参与压缩**：从磁盘重新加载，永远不丢。
+6. **CLAUDE.md does not participate in compaction**: It is reloaded from disk and never lost.
 
-7. **用户控制**：`/compact` + `/context` 让用户主导。自动是兜底。
+7. **User control**: `/compact` + `/context` let the user take the lead. Automatic is the fallback.

@@ -1,43 +1,46 @@
-# 下一步决策（decision.make / exec(choices=)）
+# Next-step decision making (decision.make / exec(choices=))
 
-本文档描述 OpenProgram 的**下一步决策**机制：一个 agentic
-function 把"接下来发生什么"交给 LLM —— 给它一组选项，它选出一个，框架直接把这个选择解析成"下一步的结果"。该机制是一条独立于
-provider 原生 tool call 的路径。
+This document describes OpenProgram's **next-step decision** mechanism: an
+agentic function hands "what happens next" to the LLM — give it a set of
+options, it picks one, and the framework resolves that pick directly into
+"the result of the next step". This mechanism is a separate path from
+provider-native tool calls.
 
-它位于框架的 `openprogram/agentic_programming/decision.py`。
-两个入口共享同样的选项形态和解析逻辑：
+It lives in the framework at `openprogram/agentic_programming/decision.py`.
+Two entry points share the same option shapes and parsing:
 
-- `decision.make(prompt, options)` —— 纯决策；模型不做任何工作，
-  只负责选。
-- `runtime.exec(..., choices=options)` —— 模型先跑完一整轮
-  （推理、tool call），只有收尾这一步才是决策。
+- `decision.make(prompt, options)` — pure decision; the model does no work,
+  it just picks.
+- `runtime.exec(..., choices=options)` — the model first runs a full turn
+  (reasoning, tool calls), and only the closing move is a decision.
 
-`decision.make` 需要一个 runtime 来发起模型调用，但这个 runtime
-会从 `_current_runtime` ContextVar 自动取得。只有当调用链上某个函数声明了
-runtime 类参数（`runtime` / `exec_runtime` / `review_runtime`）时，该
-ContextVar 才会被设置 —— 一个没有声明该参数的入口
-`@agentic_function` 会让 `decision.make` 抛出 `RuntimeError`。
-所以在函数上声明 `runtime=None` 但你不需要把它往下传；只有在
-agentic function 之外才显式传入 `runtime=`。
+`decision.make` needs a runtime to issue the model call, but the runtime is
+taken automatically from the `_current_runtime` ContextVar. That ContextVar
+is only set when a function on the call chain declares a runtime-class
+parameter (`runtime` / `exec_runtime` / `review_runtime`) — an entry-point
+`@agentic_function` without one makes `decision.make` raise `RuntimeError`.
+So declare `runtime=None` on the function and you do not pass it on; only
+outside an agentic function do you pass `runtime=` explicitly.
 
-## 与原生 tool call 的对比
+## Versus native tool calls
 
-| | 原生 tool call | 下一步决策（本机制） |
+| | Native tool call | Next-step decision (this mechanism) |
 |---|---|---|
-| 选项如何到达模型 | provider 协议的 `tools` 字段 | prompt 内的文本菜单 |
-| 模型如何表达它的选择 | 协议层的结构化 `ToolCall` | 回复正文里的一段 JSON |
-| 由谁解析 | provider / agent_loop | `decision.py` 自身 |
-| 选项能否是非函数 | 不能，必须是 tool | 能，支持 value 选项 |
-| 依赖 | provider 的 tool-use 支持 | 无，纯文本即可 |
+| How options reach the model | the provider protocol's `tools` field | a text menu inside the prompt |
+| How the model expresses its pick | protocol-level structured `ToolCall` | a JSON snippet in the reply body |
+| Who parses | provider / agent_loop | `decision.py` itself |
+| Can an option be a non-function | no, must be a tool | yes, value options are supported |
+| Dependency | provider tool-use support | none, plain text suffices |
 
-当你不想依赖 provider 的 tool-use 支持，或者需要"一个不是函数的选项"时，选择本机制 ——
-一个直接返回值的决策（通常是像 `done` / `escalate`
-这样的路由标记）。
+Pick this mechanism when you don't want to depend on the provider's tool-use
+support, or when you need "an option that is not a function" — a decision
+that returns a value directly (typically routing markers like `done` /
+`escalate`).
 
-## 入口一：`decision.make` —— 纯决策
+## Entry one: `decision.make` — pure decision
 
-在一个 `@agentic_function` 内部，只调用一次 `decision.make` —— 不传
-runtime，也不写 `if`：
+Inside an `@agentic_function`, call `decision.make` once — no runtime passed,
+no `if` written:
 
 ```python
 from openprogram.agentic_programming import agentic_function, decision
@@ -45,25 +48,28 @@ from openprogram.agentic_programming import agentic_function, decision
 @agentic_function
 def route_message(msg: str, runtime=None) -> str:
     return decision.make("Pick one way to handle this message.", {
-        "analyze":  analyze_sentiment,        # 一个函数
-        "fallback": fallback_reply,           # 一个函数
-        "done":     "CONVERSATION_OVER",      # 一个值
+        "analyze":  analyze_sentiment,        # a function
+        "fallback": fallback_reply,           # a function
+        "done":     "CONVERSATION_OVER",      # a value
     })
 ```
 
-`decision.make` 渲染菜单、调用模型、解析回复，然后
-**把选择直接解析成下一步的结果**：
+`decision.make` renders the menu, calls the model, parses the reply, then
+**resolves the pick directly into the result of the next step**:
 
-- LLM 选了一个函数 → 该函数执行（带上解析出的 + 注入的参数），返回它的返回值。
-- LLM 选了一个值 → 原样返回该值。
+- LLM picked a function → that function executes (with parsed + injected
+  arguments) and its return value is returned.
+- LLM picked a value → that value is returned as-is.
 
-两种情况返回的都是"下一步的结果"本身。调用方从不检查"选中了哪一个"，也从不按类型分支 ——
-决策本身就是分支，所以没有 `if` 要写。
+Both cases return "the result of the next step" itself. The caller never
+checks "which one was picked" and never branches by type — the decision IS
+the branch, so there is no `if` to write.
 
-## 入口二：`runtime.exec(choices=...)` —— 先干活，最后决策
+## Entry two: `runtime.exec(choices=...)` — work first, decide last
 
-更常见的需求：模型先跑完一整轮（推理、tool call，无论这活需要什么），而
-**收尾**的返回必须是一个决策。使用 `exec` 的 `choices=` 参数：
+The more common need: the model first runs a full turn (reasoning, tool
+calls, whatever the job takes), and the **closing** return must be a
+decision. Use `exec`'s `choices=` parameter:
 
 ```python
 @agentic_function
@@ -71,8 +77,8 @@ def handle_ticket(ticket: str, runtime=None) -> dict:
     """Read the ticket, look things up, then decide which flow to route to."""
     return runtime.exec(
         f"Handle this ticket: {ticket}",
-        toolset="default",          # 之前：模型用 tool 做调研、执行命令
-        choices={                   # 收尾：返回必须是其中之一
+        toolset="default",          # before: the model uses tools to research, run commands
+        choices={                   # closing: the return must be one of these
             "refund":    issue_refund,
             "escalate":  escalate_to_human,
             "close":     {"status": "closed"},
@@ -80,132 +86,147 @@ def handle_ticket(ticket: str, runtime=None) -> dict:
     )
 ```
 
-`exec(choices=...)` 做的事：它把选项菜单加上一条"先干活，最后用一段 JSON
-做选择"的指令（`DECISION_FINISH_INSTRUCTION`）拼接进
-prompt，然后跑一轮正常的 exec —— 来自 `tools` /
-`toolset` 的 tool 照常被调用，模型照常推理。在这一轮的末尾，模型的最终回复必须是一段
-`{"call": ...}` JSON，`exec` 用 `resolve_decision`
-解析它：被选中的函数执行并返回其结果，被选中的值则被返回。
+What `exec(choices=...)` does: it splices the option menu plus a "work
+first, close with a JSON pick" instruction (`DECISION_FINISH_INSTRUCTION`)
+into the prompt, then runs a normal exec turn — tools from `tools` /
+`toolset` get called as usual, the model reasons as usual. At the end of the
+turn, the model's final reply must be one `{"call": ...}` JSON, and `exec`
+resolves it with `resolve_decision`: a picked function executes and returns
+its result, a picked value is returned.
 
-不带 `choices` 的 `exec` 返回原始回复文本；带 `choices` 时它返回解析后的决策结果。`decision.make(prompt, options)`
-等价于一个没有前置工作的 `exec(choices=options)` —— 但有一处微妙差别：只有
-`exec(choices=)` 会追加 `DECISION_FINISH_INSTRUCTION`；
-`decision.make` 只发送你的 prompt 加菜单，所以你自己的 prompt
-必须告诉模型去选。
+`exec` without `choices` returns the raw reply text; with `choices` it
+returns the resolved decision result. `decision.make(prompt, options)` is
+equivalent to an `exec(choices=options)` with no preceding work — with one
+nuance: only `exec(choices=)` appends the `DECISION_FINISH_INSTRUCTION`;
+`decision.make` sends just your prompt plus the menu, so your own prompt
+must tell the model to pick.
 
-## 选项容器
+## Option containers
 
-每个选项的形态都像一个 tool：它有名字、描述，以及一个
-**payload schema**。三种选项类型：
+Each option is shaped like a tool: it has a name, a description, and a
+**payload schema**. Three option kinds:
 
-| 选项类型 | 被选中时 | schema 来自 |
+| Option kind | When picked | Schema comes from |
 |---|---|---|
-| 函数选项 | 执行该函数，返回它的返回值 | 函数签名 |
-| 值选项 | 返回那个固定的值 | 无 |
-| schema 选项 | 模型按 schema 填充结构化数据；返回 `{"decision": name, **filled fields}` | 你显式声明的 schema |
+| Function option | executes the function, returns its return value | the function signature |
+| Value option | returns that fixed value | none |
+| Schema option | the model fills structured data per the schema; returns `{"decision": name, **filled fields}` | the schema you declare explicitly |
 
-`options` 可以是 dict 或 list。
+`options` can be a dict or a list.
 
-**dict 形式** `{name: handler}`，其中 key 是选项名：
+**Dict form** `{name: handler}`, where the key is the option name:
 
 ```python
 decision.make("...", {
-    "retry":     retry_fn,                            # 函数选项
-    "skip":      "SKIPPED",                           # 值选项
-    "abort":     (AbortSignal(), "pick when stuck"),  # 值选项 + 描述
-    "emit_plan": ("Produce a plan.", {                # schema 选项：("description", schema)
+    "retry":     retry_fn,                            # function option
+    "skip":      "SKIPPED",                           # value option
+    "abort":     (AbortSignal(), "pick when stuck"),  # value option + description
+    "emit_plan": ("Produce a plan.", {                # schema option: ("description", schema)
         "steps": [{"action": str, "target": str}],
         "rationale": str,
     }),
 })
 ```
 
-**list 形式** —— 每一项要么是一个 callable，要么是一个 `(callable, "description")`
-元组，要么是一个字符串选项形态（`"name"` / `("name", "description")` /
-`("name", "description", schema)`）。在 list 形式下，函数选项的名字是该函数的
-`__name__`。
+**List form** — each item is a callable, a `(callable, "description")`
+tuple, or a string option shape (`"name"` / `("name", "description")` /
+`("name", "description", schema)`). In list form a function option's name is
+the function's `__name__`.
 
-### schema 结构
+### Schema structure
 
-一个 schema 是 `{field_name: field_type}`，且字段类型**递归嵌套**，所以单个选项可以让模型返回任意结构的
-JSON：
+A schema is `{field_name: field_type}`, and field types **nest
+recursively**, so one option can have the model return arbitrarily
+structured JSON:
 
-| 写法 | 含义 |
+| Notation | Meaning |
 |---|---|
-| `field: str`（任意 Python 类型） | 该类型的一个标量 |
-| `field: "description"` | 一个带描述的 `str` 标量 |
-| `field: [subschema]` | 一个列表，其每个元素都匹配 `subschema` |
-| `field: {subfield: ...}` | 一个嵌套对象（key 是 subfield 名） |
-| `field: {"type": T, "description": ..., "options": [...]}` | 带 type/description/enum 的元描述 |
+| `field: str` (any Python type) | a scalar of that type |
+| `field: "description"` | a described `str` scalar |
+| `field: [subschema]` | a list whose every element matches `subschema` |
+| `field: {subfield: ...}` | a nested object (keys are subfield names) |
+| `field: {"type": T, "description": ..., "options": [...]}` | meta-description with type/description/enum |
 
-三点注意：list schema 必须**恰好**包含一个元素模板 ——
-`[str, int]` 会抛 `TypeError`；一个所有 key 都落在
-`{type, description, options, fields, items}` 之内的 dict 会被解析成元规格，而不是嵌套对象（嵌套对象至少需要一个落在该集合之外的
-key）；还有，元组在 handler 位置是保留语法 —— 一个字面量 2-元组值选项会被误解析为
-`(value, "description")`。
+Three caveats: a list schema must contain **exactly one** item template —
+`[str, int]` raises `TypeError`; a dict whose keys all fall inside
+`{type, description, options, fields, items}` is parsed as a meta-spec, not
+a nested object (a nested object needs at least one key outside that set);
+and tuples are reserved syntax in handler position — a literal 2-tuple value
+option gets misparsed as `(value, "description")`.
 
-解析之后，`parse_args` 会针对 schema **递归校验**类型和嵌套；`render_options`
-渲染出的 `Call:` 示例也带上了嵌套占位符的形态。这让"有限分支的选择"与
-tool call 对齐 —— 每个分支都可以携带任意结构的
-payload。如果需求是"完全没有分支，永远返回相同结构"，就用单选项的
-`decision.make`，或者干脆用
-`exec(response_format=...)`。
+After parsing, `parse_args` **recursively validates** types and nesting
+against the schema; the `Call:` example `render_options` renders also
+carries the nested placeholder shape. This aligns "finite-branch choice"
+with tool calling — every branch can carry an arbitrarily structured
+payload. If the need is "no branching at all, always return the same
+structure", use a single-option `decision.make`, or just
+`exec(response_format=...)`.
 
-## 内部步骤
+## Internal steps
 
-### 1. `render_options` 渲染菜单
+### 1. `render_options` renders the menu
 
-对每个选项它会输出：签名 `name(param: type, ...)`、描述、逐参数细节，以及一行
-`Call:` JSON 示例。只展示 `source="llm"` 参数 —— `runtime` / `context`
-注入的参数对 LLM 隐藏。如果某个参数声明了 `options`
-（enum），细节里会列出允许的取值。`Call:`
-示例中的占位符值是原生 JSON 字面量（`0` / `false` / `[]` / `{}` /
-`"<str>"`）。
+For each option it emits: the signature `name(param: type, ...)`, the
+description, per-parameter detail, and a one-line `Call:` JSON example. Only
+`source="llm"` parameters are shown — `runtime` / `context` injected
+parameters are hidden from the LLM. If a parameter declares `options`
+(enum), the detail lists the allowed values. Placeholder values in the
+`Call:` example are native JSON literals (`0` / `false` / `[]` / `{}` /
+`"<str>"`).
 
-### 2. 调用模型
+### 2. Call the model
 
-`decision.make` 直接做一次 `runtime.exec(prompt + menu)`；
-`exec(choices=)` 把菜单拼进它本来就要发送的那一轮里。
+`decision.make` does a direct `runtime.exec(prompt + menu)`;
+`exec(choices=)` splices the menu into the turn it was going to send anyway.
 
-### 3. `parse_args` 解析并校验
+### 3. `parse_args` parses and validates
 
-- `extract_action` 从一个 ```` ```json ```` 代码块或裸文本中挖出带
-  `call` key 的 JSON。`call` key 有别名
-  `action` / `function` / `tool`，其中任何一个都被接受。
-- `call` 不在注册表里 → `_ParseError("unknown_call")`。
-- `_validate_field` 逐字段校验：类型
-  （`str/int/float/bool/list/dict`；`bool` 不算作 `int`，`float`
-  接受 `int`）、enum（`options`）。
-- 函数选项：按签名从 `context` dict 填充 `source="context"`
-  参数，注入 `runtime` 类参数，丢弃签名之外的字段，检查必填项（那些没有默认值的）。
-- 值/文本选项：每个声明的 schema 字段都是必填的；schema 之外被幻觉出来的字段会被丢弃。
-- 返回 `(chosen, kwargs)` —— 对函数选项，`chosen`
-  是原始函数；对值/文本选项，它是名字字符串。
+- `extract_action` digs the JSON carrying a `call` key out of a
+  ```` ```json ```` code block or bare text. The `call` key has aliases
+  `action` / `function` / `tool`, any of which is accepted.
+- `call` not in the registry → `_ParseError("unknown_call")`.
+- `_validate_field` validates field by field: type
+  (`str/int/float/bool/list/dict`; `bool` does not count as `int`, `float`
+  accepts `int`), enum (`options`).
+- Function options: fill `source="context"` parameters from the `context`
+  dict per the signature, inject `runtime`-class parameters, drop fields
+  outside the signature, check required ones (those without defaults).
+- Value/text options: every declared schema field is required; hallucinated
+  fields outside the schema are dropped.
+- Returns `(chosen, kwargs)` — for a function option `chosen` is the
+  original function; for a value/text option it is the name string.
 
-### 4. 解析失败时重试
+### 4. Retry on parse failure
 
-如果任一步骤抛出 `_ParseError`，`parse_args` 会重试（默认
-`max_retries=1`，设为 0 可禁用；`max_retries` 只能在
-`decision.make` / `parse_args` 上设置 —— `exec(choices=)`
-这条路径固定为一次重试）：它用 `runtime.exec` 把"上一次回复 + 出错原因 + 重新渲染的菜单"发回给
-LLM 让它重新选。这次重试和其他任何模型调用一样，照常落进
-DAG。当所有重试都用尽 → 抛出 `DecisionError`，携带最后一次的错误类型、消息以及回复的开头部分。
+If any step raises `_ParseError`, `parse_args` retries (default
+`max_retries=1`, set 0 to disable; `max_retries` is settable only on
+`decision.make` / `parse_args` — the `exec(choices=)` path is fixed at one
+retry): it uses `runtime.exec` to send "the
+previous reply + the error reason + the re-rendered menu" back to the LLM
+for another pick. The retry is a model call like any other and lands in the
+DAG as usual. When all retries are exhausted → raises `DecisionError`
+carrying the last error kind, message, and the head of the reply.
 
-`DecisionError` 是 `ValueError` 的子类（旧的 `except ValueError`
-代码仍能捕获它），而调用方可以用 `except DecisionError`
-精确地捕获"模型始终没有产出有效选择"，而不会误捕不相关的
-`ValueError` —— 例如一个 planner 把它当作"这一步结束了"。框架止步于"抛出一个清晰的异常"；捕获之后做什么是调用方的事，没有内置兜底。
+`DecisionError` subclasses `ValueError` (old `except ValueError` code still
+catches it), and callers can `except DecisionError` to catch exactly "the
+model never produced a valid pick" without trapping unrelated
+`ValueError`s — e.g. a planner treating it as "this step is over". The
+framework stops at "raise a clear exception"; what happens after catching is
+the caller's business, with no built-in fallback.
 
-### 5. `resolve_decision` 解析成结果
+### 5. `resolve_decision` resolves into a result
 
-如果 `chosen` 是函数，就运行 `chosen(**kwargs)` 并返回结果；如果它是字符串，就在值表里查出该值并返回（一个声明了
-schema 的值选项返回 `{"decision": name, **kwargs}`）。
+If `chosen` is a function, run `chosen(**kwargs)` and return the result; if
+it is a string, look the value up in the value table and return it (a value
+option that declared a schema returns `{"decision": name, **kwargs}`).
 
-## 与 tool-call 循环的关系
+## Relation to the tool-call loop
 
-本机制不与 `tool-calling.md` 中描述的 `agent_loop.py`
-的 tool-call 循环冲突 —— 它们是"让模型选下一步"的两个并行实现。一个
-`@agentic_function` 既可以作为 `exec(tools=[...])`
-的原生 tool，也可以作为一个决策选项 —— 同一个函数，两条调用路径。用哪一条取决于：你是否想依赖
-provider 的 tool use、某个选项是否需要是值而不是函数，以及每次决策和重试是否都应该是一个可追踪的
-DAG 节点。
+This mechanism does not conflict with the tool-call loop of
+`agent_loop.py` described in `tool-calling.md` — they are two parallel
+implementations of "let the model pick the next step". An
+`@agentic_function` can serve both as a native tool for `exec(tools=[...])`
+and as a decision option — same function, two call paths. Which to use
+hinges on: whether you want to depend on provider tool use, whether an
+option needs to be a value rather than a function, and whether every
+decision and retry should be a traceable DAG node.

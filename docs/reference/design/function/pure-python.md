@@ -1,44 +1,44 @@
-# 纯 Python 函数
+# Pure Python Functions
 
-## 适用场景
+## When to Use
 
-任务是纯确定性逻辑，不需要 LLM 推理。例如：
-- 字数统计
-- 文件读写
-- 数据格式转换
-- 数学计算
+The task is pure deterministic logic that requires no LLM reasoning. For example:
+- Word counting
+- File I/O
+- Data format conversion
+- Mathematical computation
 
-## 设计要点
+## Design Points
 
-- **不用** `@agentic_function` 装饰器
-- **不用** `runtime.exec()`
-- **不需要** `runtime` 参数
-- 用标准 Google-style docstring
+- **Do not** use the `@agentic_function` decorator
+- **Do not** use `runtime.exec()`
+- **No** `runtime` parameter needed
+- Use a standard Google-style docstring
 
-## 示例
+## Examples
 
 ```python
 def word_count(text: str) -> int:
-    """统计文本中的单词数量。
+    """Count the number of words in the text.
 
     Args:
-        text: 输入文本。
+        text: The input text.
 
     Returns:
-        单词数量。
+        The number of words.
     """
     return len(text.split())
 ```
 
 ```python
 def extract_emails(text: str) -> list[str]:
-    """从文本中提取所有邮箱地址。
+    """Extract all email addresses from the text.
 
     Args:
-        text: 输入文本。
+        text: The input text.
 
     Returns:
-        邮箱地址列表。
+        A list of email addresses.
     """
     import re
     return re.findall(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
@@ -46,25 +46,25 @@ def extract_emails(text: str) -> list[str]:
 
 ## Context Tree
 
-纯 Python 函数不出现在 context tree 中（除非加了 `@traced` 装饰器）。
+Pure Python functions do not appear in the context tree (unless the `@traced` decorator is added).
 
-如果希望在 execution tree 中看到调用记录，可以加 `@traced`：
+If you want the call to show up in the execution tree, add `@traced`:
 
 ```python
 from openprogram.agentic_programming.function import traced
 
 @traced
 def word_count(text: str) -> int:
-    """统计文本中的单词数量。"""
+    """Count the number of words in the text."""
     return len(text.split())
 ```
 
-## 何时用纯 Python，何时用 @agentic_function
+## When to Use Pure Python vs. @agentic_function
 
-| 判断标准 | 纯 Python | @agentic_function |
+| Criterion | Pure Python | @agentic_function |
 |---------|----------|-------------------|
-| 输入确定 → 输出确定 | ✓ | |
-| 需要理解语义 | | ✓ |
-| 需要生成自然语言 | | ✓ |
-| 需要分类/判断/推理 | | ✓ |
-| 有明确的算法/规则 | ✓ | |
+| Deterministic input → deterministic output | ✓ | |
+| Requires understanding semantics | | ✓ |
+| Requires generating natural language | | ✓ |
+| Requires classification/judgment/reasoning | | ✓ |
+| Has a clear algorithm/rule | ✓ | |

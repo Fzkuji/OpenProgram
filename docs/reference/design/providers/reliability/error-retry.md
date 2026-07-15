@@ -1,86 +1,86 @@
-# 模型调用的错误处理与重试决策逻辑
+# Error Handling and Retry Decision Logic for Model Calls
 
-本文档描述一次 `@agentic_function` 内的模型调用从发起到失败/成功之间,系统在每一层"做选择"的逻辑:什么时候重试、什么时候放弃、什么时候判定为永久错误。
+This document describes the logic by which the system "makes choices" at each layer between the start and the failure/success of a single model call within an `@agentic_function`: when to retry, when to give up, and when to declare a permanent error.
 
-## 调用链
+## Call Chain
 
-一次 `runtime.exec()` 触发模型调用,自上而下经过:
+A single `runtime.exec()` triggers a model call, which passes top-down through:
 
 ```
-@agentic_function 内 runtime.exec()
-  └─ Runtime.exec() ............. 重试循环(本层)
+runtime.exec() inside @agentic_function
+  └─ Runtime.exec() ............. retry loop (this layer)
        └─ _call → _call_via_providers
-            └─ AgentSession.run() .... 自动重试层
-                 └─ agent.run() ....... try/except 包装,产出 AssistantMessage
-                      └─ agent_loop ... provider 流式 HTTP
+            └─ AgentSession.run() .... automatic retry layer
+                 └─ agent.run() ....... try/except wrapper, produces AssistantMessage
+                      └─ agent_loop ... provider streaming HTTP
 ```
 
-错误在两个地方"成形":
-1. `agent_loop` 里抛出的异常,被 `agent.py` 捕获,产出一条 `stop_reason="error"` 的 `AssistantMessage`。
-2. provider 流自己发出 `error` 事件,`agent_loop` 直接把它当 `final_message`。
+Errors "take shape" in two places:
+1. Exceptions thrown inside `agent_loop` are caught by `agent.py`, producing an `AssistantMessage` with `stop_reason="error"`.
+2. The provider stream itself emits an `error` event, and `agent_loop` treats it directly as the `final_message`.
 
-两种情况下游都看到同一个东西:一条 `stop_reason="error"` 的消息,带一个 `error_message`(可能为空)。
+In both cases the downstream sees the same thing: a message with `stop_reason="error"`, carrying an `error_message` (which may be empty).
 
-## 第一层:`AgentSession` 自动重试
+## Layer One: `AgentSession` Automatic Retry
 
-实现:`openprogram/agent/session.py::_run_with_retry` + `openprogram/agent/retry.py`。
+Implementation: `openprogram/agent/session.py::_run_with_retry` + `openprogram/agent/retry.py`.
 
-配置 `RetrySettings(enabled=True, max_retries=3, base_delay_ms=2000)`。每次 `run()` 后检查最后一条 assistant 消息:
+Configuration `RetrySettings(enabled=True, max_retries=3, base_delay_ms=2000)`. After each `run()`, it checks the last assistant message:
 
-- `is_retryable_error(msg)` 为 `True` 且未超 `max_retries` → 退避后重试。
-- 退避 `compute_backoff_ms(attempt) = base * 2^(attempt-1)` → 2s、4s、8s。
-- 重试前把上一条失败的 assistant 消息从历史里弹掉(`replace_messages(msgs[:-1])`),避免污染下一次 prompt。
+- `is_retryable_error(msg)` is `True` and `max_retries` is not exceeded → retry after backoff.
+- Backoff `compute_backoff_ms(attempt) = base * 2^(attempt-1)` → 2s, 4s, 8s.
+- Before retrying, pop the previously failed assistant message off the history (`replace_messages(msgs[:-1])`) to avoid contaminating the next prompt.
 
-`is_retryable_error` 的判定顺序:
-
-```
-stop_reason != "error"            → False(不是错误,不重试)
-context overflow                  → False(交给 compaction,不是重试能解决的)
-error_message 为空                → True
-error_message 命中 _RETRY_PATTERN → True,否则 False
-```
-
-`_RETRY_PATTERN` 匹配:`overloaded`、`rate limit`、`429`、`5xx`、`service unavailable`、`connection error/refused`、`other side closed`、`fetch failed`、`reset before headers`、`terminated` 等瞬时故障特征。
-
-**关键设计点:`error_message` 为空时判定为可重试。** provider 流中途断开(连接重置、SSL EOF、网关抖动)时,往往还没收到结构化的错误体就断了,`error_message` 是空字符串。如果空消息走正则匹配,匹配不到任何模式 → 判"不可重试" → 这一层重试根本不触发 → 错误一路下沉,最终在 `runtime.py` 兜底成不透明的 `"Agent session failed"`。把空消息直接判为可重试,正是堵这个洞:内容为空的错误几乎必然是流断了,而流断属于瞬时故障。
-
-## 第二层:`Runtime.exec()` 重试循环
-
-实现:`openprogram/agentic_programming/runtime.py::Runtime.exec` / `async_exec`。
-
-构造参数 `max_retries=3`(默认)。`_call` 抛异常时:
+The decision order in `is_retryable_error`:
 
 ```
-TypeError / NotImplementedError → 直接 raise(编程错误,不重试)
-_is_permanent_error(e)          → 直接 raise,标注 "failed permanently"
-attempt == max_retries - 1      → raise,标注 "failed after N attempts"
-其余                            → time.sleep(_RETRY_BACKOFF * 2^attempt) 后重试
+stop_reason != "error"            → False (not an error, do not retry)
+context overflow                  → False (hand off to compaction; retry won't fix it)
+error_message is empty            → True
+error_message matches _RETRY_PATTERN → True, otherwise False
 ```
 
-退避 `_RETRY_BACKOFF=1.5`,即 1.5s、3s、6s。
+`_RETRY_PATTERN` matches transient-failure signatures such as `overloaded`, `rate limit`, `429`, `5xx`, `service unavailable`, `connection error/refused`, `other side closed`, `fetch failed`, `reset before headers`, and `terminated`.
 
-**永久错误判定** `_is_permanent_error`:把 `类型名: 异常文本` 转小写,匹配 `_PERMANENT_ERROR_MARKERS` 任一子串:
+**Key design point: an empty `error_message` is treated as retryable.** When a provider stream drops mid-flight (connection reset, SSL EOF, gateway jitter), the stream often breaks before any structured error body arrives, so `error_message` is an empty string. If an empty message went through regex matching, it would match no pattern → be judged "not retryable" → this layer's retry would never fire → the error would sink all the way down and finally be papered over in `runtime.py` as an opaque `"Agent session failed"`. Treating an empty message as retryable directly plugs this hole: an error with empty content is almost certainly a dropped stream, and a dropped stream is a transient failure.
+
+## Layer Two: `Runtime.exec()` Retry Loop
+
+Implementation: `openprogram/agentic_programming/runtime.py::Runtime.exec` / `async_exec`.
+
+Constructor parameter `max_retries=3` (default). When `_call` throws an exception:
 
 ```
-not a valid image / invalid image / image data is not   ← 请求体里的图像损坏
-login expired / login failed / re-auth / unauthorized    ← 网关侧鉴权失效
-invalid api key / invalid_api_key                        ← 凭证错误
+TypeError / NotImplementedError → raise directly (programming error, do not retry)
+_is_permanent_error(e)          → raise directly, annotated "failed permanently"
+attempt == max_retries - 1      → raise, annotated "failed after N attempts"
+otherwise                       → retry after time.sleep(_RETRY_BACKOFF * 2^attempt)
 ```
 
-这类错误下一次完全相同的请求会以完全相同的方式失败,重试只是白白消耗次数和墙钟时间,所以一旦命中立即放弃,并在错误信息里写明 "permanently",和"重试 N 次后失败"区分开,便于排查。
+Backoff `_RETRY_BACKOFF=1.5`, i.e. 1.5s, 3s, 6s.
 
-## 两层重试是相乘的
+**Permanent-error decision** `_is_permanent_error`: it lowercases `type_name: exception_text` and matches against any substring in `_PERMANENT_ERROR_MARKERS`:
 
-第一层(AgentSession)和第二层(exec)各自独立计数。最坏情况:exec 重试 3 次,每次内部 AgentSession 又重试 3 次 = 9 次实际 API 调用,加退避总耗时可达数十秒才最终失败。
+```
+not a valid image / invalid image / image data is not   ← corrupt image in the request body
+login expired / login failed / re-auth / unauthorized    ← auth invalidated on the gateway side
+invalid api key / invalid_api_key                        ← credential error
+```
 
-这是历史叠加的结果:AgentSession 那层是早就有的通用重试,exec 那层是 Runtime 自己的保护。两层都保留时,职责重叠。如果确认 AgentSession 那层已稳定生效,exec 层可以降到 `max_retries=1`(不重试),让重试职责单一化。当前两层都开。
+The next identical request will fail in exactly the same way for these errors, so retrying merely wastes attempts and wall-clock time. The moment one is hit, give up immediately and spell out "permanently" in the error message, distinguishing it from "failed after N retries" to ease troubleshooting.
 
-## 边界:重试解决不了的
+## The Two Retry Layers Multiply
 
-- **网关鉴权失效**(`openai-codex` login expired/failed):属于永久错误,exec 层命中 `_PERMANENT_ERROR_MARKERS` 后立即放弃。跑批前必须保证鉴权有效,重试不是补救手段。
-- **上下文溢出**:`is_retryable_error` 显式排除,应由 compaction 处理。
-- **编程错误**(`TypeError` / `NotImplementedError`):函数签名/实现错了,exec 层直接抛。
+Layer one (AgentSession) and layer two (exec) count independently. Worst case: exec retries 3 times, and each time the inner AgentSession retries another 3 times = 9 actual API calls, with backoff bringing total elapsed time to tens of seconds before final failure.
 
-## 错误信息的可诊断性
+This is the result of historical accretion: the AgentSession layer is the long-standing general-purpose retry, while the exec layer is the Runtime's own protection. With both retained, their responsibilities overlap. If the AgentSession layer is confirmed to be reliably in effect, the exec layer can be lowered to `max_retries=1` (no retry), making retry a single responsibility. Currently both layers are on.
 
-`agent.py` 捕获异常时,`err_text = f"{type(err).__name__}: {err}"`(异常文本为空时退化为只有类型名),并把 traceback 打到 stderr。`runtime.py` 的兜底信息不再是裸的 `"Agent session failed"`,而是带上每次 attempt 的 `类型名: 异常文本` 列表和失败原因(permanently / after N attempts)。
+## Boundaries: What Retry Cannot Solve
+
+- **Gateway auth invalidation** (`openai-codex` login expired/failed): a permanent error; the exec layer gives up immediately after hitting `_PERMANENT_ERROR_MARKERS`. Auth must be valid before a batch run; retry is not a remedy.
+- **Context overflow**: explicitly excluded by `is_retryable_error`; it should be handled by compaction.
+- **Programming errors** (`TypeError` / `NotImplementedError`): the function signature/implementation is wrong, and the exec layer raises directly.
+
+## Diagnosability of Error Messages
+
+When `agent.py` catches an exception, `err_text = f"{type(err).__name__}: {err}"` (degrading to just the type name when the exception text is empty), and the traceback is printed to stderr. The fallback message in `runtime.py` is no longer a bare `"Agent session failed"`, but instead carries a list of `type_name: exception_text` for each attempt along with the failure reason (permanently / after N attempts).

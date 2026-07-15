@@ -2,11 +2,11 @@
 
 > Source: [`openprogram/agentic_programming/function.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agentic_programming/function.py)
 
-`@agentic_function` 把普通 Python 函数变成 Agentic Function:每次调用记录为 session DAG 的一个 `code` 节点,函数体内的 `runtime.exec` 调用记录为 `llm` 节点。
+`@agentic_function` turns an ordinary Python function into an Agentic Function: each call is recorded as a `code` node in the session DAG, and the `runtime.exec` calls inside the function body are recorded as `llm` nodes.
 
-完整的编写规范——文件布局、docstring 与 `content` 的分工、参数元数据、校验清单、冒烟测试——见 [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)。本文只列装饰器本身。
+For the full authoring conventions—file layout, the division of labor between the docstring and `content`, parameter metadata, the validation checklist, and smoke tests—see [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md). This document only covers the decorator itself.
 
-## 用法
+## Usage
 
 ```python
 from openprogram import agentic_function
@@ -17,24 +17,24 @@ def f(x: str, runtime) -> str:
     return runtime.exec(content=[{"type": "text", "text": f"...{x}..."}])
 ```
 
-裸用 `@agentic_function` 或带参数 `@agentic_function(...)` 都可以。
+You can use bare `@agentic_function` or the parameterized form `@agentic_function(...)`.
 
-## 装饰器参数
+## Decorator parameters
 
-| 参数 | 类型 | 默认 | 说明 |
+| Parameter | Type | Default | Description |
 |------|------|------|------|
-| `expose` | `str` | `"io"` | **朝外**:别人渲染 DAG 时能看到我的什么。`"io"` = 本函数的 input/output 节点对外可见,内部直接的 LLM 调用对外隐藏;`"llm"` = 反过来,只露内部 LLM 交换,藏 input/output;`"full"` = 全可见;`"hidden"` = 根本不写 DAG 节点 |
-| `render_range` | `dict` | `None` | **朝内**:本函数内部 `runtime.exec` 拼 prompt 时,从 DAG 读多少历史节点。形状 `{"callers": N, "subcalls": M}`,两个数字都是 **节点计数(按 `seq` 切片)**:<br>• `callers` — 本函数 frame **启动前**的节点,取最近 N 个(`None` 默认 = 不限,`0` = 全墙)<br>• `subcalls` — 本函数 frame **启动后**已写入的节点,取最近 N 个(`-1` 默认 = 不限,frame 自然看见自己的进度;`N>=0` = 只想截 prompt 时显式设;`0` = 完全墙掉 in-frame)<br>`{"callers":0,"subcalls":0}` = 跟外界和自己 frame 全断绝 |
-| `input` | `dict` | `None` | 每个参数的 UI 元数据(`description` / `placeholder` / `multiline` / `options` / `hidden` 等),WebUI 据此渲染输入表单 |
-| `workdir_mode` | `str` | `None` | 工作目录选择器模式:`"optional"` / `"hidden"` / `"required"`,其余值报错。消费方是 WebUI——它通过 AST 解析源码文本读取,所以必须以字面量写在装饰器调用里才生效 |
-| `system` | `str` | `None` | 本函数 LLM 调用的 system prompt(调用期间盖到注入的 runtime 上,调用后恢复) |
+| `expose` | `str` | `"io"` | **Outward-facing**: what others can see about me when they render the DAG. `"io"` = this function's input/output nodes are visible externally, while its direct internal LLM calls are hidden; `"llm"` = the reverse, exposing only the internal LLM exchanges and hiding input/output; `"full"` = everything visible; `"hidden"` = no DAG nodes are written at all |
+| `render_range` | `dict` | `None` | **Inward-facing**: how many history nodes to read from the DAG when this function's internal `runtime.exec` assembles its prompt. Shape `{"callers": N, "subcalls": M}`, where both numbers are **node counts (sliced by `seq`)**:<br>• `callers` — nodes written **before** this function's frame started; take the most recent N (`None` default = unlimited, `0` = a full wall)<br>• `subcalls` — nodes already written **after** this function's frame started; take the most recent N (`-1` default = unlimited, so the frame naturally sees its own progress; `N>=0` = set explicitly when you want to truncate the prompt; `0` = wall off in-frame entirely)<br>`{"callers":0,"subcalls":0}` = cut off from both the outside world and your own frame |
+| `input` | `dict` | `None` | Per-parameter UI metadata (`description` / `placeholder` / `multiline` / `options` / `hidden`, etc.); the WebUI renders the input form from it |
+| `workdir_mode` | `str` | `None` | Working-directory picker mode: `"optional"` / `"hidden"` / `"required"`; any other value raises an error. The consumer is the WebUI—it reads the value by AST-parsing the source text, so it must be written as a literal inside the decorator call to take effect |
+| `system` | `str` | `None` | The system prompt for this function's LLM calls (applied over the injected runtime for the duration of the call, then restored afterward) |
 
-函数名、参数名 / 类型 / 默认值、一句话摘要都从函数签名和 docstring 自动读取,不在装饰器里重复(见 SKILL.md §3)。
+The function name, parameter names / types / defaults, and the one-line summary are all read automatically from the function signature and docstring, not repeated in the decorator (see SKILL.md §3).
 
-## 记录到 DAG
+## Recording to the DAG
 
-- **进入函数**:写一个 `code` 节点(`output=None`, `status="running"`),函数 docstring 一并存进该节点的 `metadata.doc`,渲染上下文时拼在 `函数名(参数)` 前面。
-- **函数体内 `runtime.exec`**:每次调用写一个 `llm` 节点。
-- **退出函数**:回填同一个 `code` 节点的 `output` / `status`。
+- **Entering the function**: write a `code` node (`output=None`, `status="running"`), and store the function docstring into that node's `metadata.doc`, which is prepended to `function_name(args)` when rendering context.
+- **`runtime.exec` inside the function body**: each call writes an `llm` node.
+- **Exiting the function**: backfill the same `code` node's `output` / `status`.
 
-`expose="hidden"` 时不写任何节点。standalone 运行(没安装 DAG store)时记录全部 no-op,函数照常执行。
+When `expose="hidden"`, no nodes are written. In standalone runs (with no DAG store installed), all recording is a no-op and the function executes as usual.

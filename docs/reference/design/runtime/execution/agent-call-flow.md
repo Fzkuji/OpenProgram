@@ -1,313 +1,313 @@
-# Agent 调用流程（权威设计）
+# Agent Call Flow (Authoritative Design)
 
 Status: design · Created: 2026-06-18
 
-> 这是 agent 调用的**核心框架**——所有 turn / LLM 调用都按这个流程走。后续加功能在此基础上往对应节点插入,不改骨架。本文档曾名"LLM 调用路径统一",现升级为整个调用流程的权威设计。
+> This is the **core framework** for agent calls — every turn / LLM call follows this flow. Future features are inserted at the corresponding nodes on top of this; the skeleton stays unchanged. This document was once called "Unifying the LLM call path"; it is now promoted to the authoritative design for the entire call flow.
 
-## 总览图
+## Overview Diagram
 
-[`agent-call-flow.svg`](../agent-call-flow.svg) 画的是**目标(统一后)**:两个入口(用户消息 / 函数体内)汇到**同一条主干**——① render_context 读上下文 → ② open_call_node → ③ agent_loop → ④ close_call_node;工具体内再调 exec = 回到主干顶(嵌套)。各入口的特殊处理(聊天的前端流式/标题/压缩、共享的重试/计量)是挂在主干旁的**可选钩子**。底部列出"现状已共享"与"合并要做的 7 步"。
+[`agent-call-flow.svg`](../agent-call-flow.svg) depicts the **target (after unification)**: two entry points (user message / inside a function body) converge onto **one shared trunk** — ① render_context reads the context → ② open_call_node → ③ agent_loop → ④ close_call_node; calling exec from inside a tool body returns to the top of the trunk (nesting). The special handling of each entry point (chat's front-end streaming / title / compaction, the shared retry / metering) hangs off the trunk as **optional hooks**. The bottom lists "what is already shared today" and "the 7 steps the merge requires".
 
-> **现状 vs 目标**:下面正文描述的是**现状**(两个入口各管各的外围、各写各的记录,只在 agent_loop 汇合)——作为合并的起点参照。统一成上面那条主干的具体步骤,见 `session-dag.md` 第八节。
+> **Current state vs target**: the prose below describes the **current state** (the two entry points each manage their own periphery, each write their own records, and only converge at agent_loop) — serving as the starting reference for the merge. For the concrete steps to unify into the single trunk above, see section 8 of `session-dag.md`.
 
-骨架一句话(现状):**两个平级入口(dispatcher · runtime.exec)各管各的外围、各写各的 DAG 记录,只在共享的 agent_loop 汇合;exec 在 loop 之下 → 工具体内可再调 LLM 形成嵌套**。
+The skeleton in one sentence (current state): **two peer entry points (dispatcher · runtime.exec) each manage their own periphery and write their own DAG records, converging only at the shared agent_loop; exec sits below the loop → a tool body can call the LLM again, forming nesting**.
 
-## 真实拓扑:收敛分叉,不是三层嵌套
+## Real Topology: Converging Fork, Not Three-Level Nesting
 
-代码实证(`agent_loop` 全仓只有两个调用点:`dispatcher/__init__.py:902` 和 `agent/agent.py:418`):dispatcher **不经过** exec,exec **不经过** dispatcher。它们是平级的两个入口,只共享 agent_loop。
+Code evidence (`agent_loop` has only two call sites in the entire repo: `dispatcher/__init__.py:902` and `agent/agent.py:418`): the dispatcher **does not go through** exec, and exec **does not go through** the dispatcher. They are two peer entry points, sharing only agent_loop.
 
 ```
-入口 A: 用户消息 → dispatcher ──直接─────────────┐
-                                                  ├─→ agent_loop(共享引擎)
-入口 B: @agentic_function 体内 → runtime.exec ──经 AgentSession─┘
+Entry A: user message → dispatcher ──directly─────────────┐
+                                                  ├─→ agent_loop (shared engine)
+Entry B: inside @agentic_function body → runtime.exec ──via AgentSession─┘
 ```
 
-| 入口 | 职责 | 到 agent_loop 的路径 | 写什么 DAG 记录 | 实现 |
+| Entry | Responsibility | Path to agent_loop | What DAG record it writes | Implementation |
 |---|---|---|---|---|
-| **A · dispatcher** | turn 生命周期:session、user 节点、attach Runtime、resolve model、解析工具、持久化、前端广播 | **直接** `agent_loop(...)`(`__init__.py:902`) | 顶层回复 → **assistant 会话消息**(SessionDB, `persistence.py:207`) | `agent/dispatcher/__init__.py` |
-| **B · runtime.exec** | 一次 LLM 调用:开/关 llm 节点、构建上下文 | 经 **AgentSession** → `session.run`(`runtime.py:1576`)→ `agent.py:418` | 这次调用 → **role=llm DAG 节点** | `agentic_programming/runtime.py` |
-| **共享 · agent_loop** | tool loop 引擎:调模型 → 执行工具 → 喂回 → 循环到纯文本 | — | 工具的 code 节点 called_by → 当前 llm 节点 | `agent/agent_loop.py:114` |
+| **A · dispatcher** | turn lifecycle: session, user node, attach Runtime, resolve model, parse tools, persist, front-end broadcast | **directly** `agent_loop(...)` (`__init__.py:902`) | top-level reply → **assistant session message** (SessionDB, `persistence.py:207`) | `agent/dispatcher/__init__.py` |
+| **B · runtime.exec** | one LLM call: open/close the llm node, build the context | via **AgentSession** → `session.run` (`runtime.py:1576`) → `agent.py:418` | this call → **role=llm DAG node** | `agentic_programming/runtime.py` |
+| **shared · agent_loop** | tool loop engine: call model → run tools → feed back → loop until plain text | — | the tool's code node called_by → the current llm node | `agent/agent_loop.py:114` |
 
-### 为什么是两个入口,不是一个
+### Why Two Entry Points, Not One
 
-dispatcher 和 exec 服务两种不同场景,外围插件不重叠:dispatcher 要 session 管理 + 前端 WebSocket 广播 + 标题/压缩;exec 要 DAG llm 节点 + AgentSession retry-rollback。硬合并会让一方背上另一方不需要的逻辑(实测试着折叠时撞到模型分叉、节点重复——见下文步 4)。共享 agent_loop,因为"调模型→执行工具→循环"这个引擎对两者一样。
+dispatcher and exec serve two different scenarios, and their peripheral plugins do not overlap: dispatcher needs session management + front-end WebSocket broadcast + title/compaction; exec needs the DAG llm node + AgentSession retry-rollback. A hard merge would saddle one side with logic the other doesn't need (an attempt to fold them in practice hit model forking and node duplication — see step 4 below). agent_loop is shared, because the "call model → run tools → loop" engine is identical for both.
 
-### 关键:exec 在 agent_loop **之下**,所以能嵌套
+### Key: exec Sits **Below** agent_loop, So It Can Nest
 
-当 dispatcher 跑 turn,模型调了 `@agentic_function` 工具(如 wiki_agent)→ 工具体内 `runtime.exec` → 又起一个 agent_loop。所以 exec 既是"入口 B",又被 agent_loop 里的工具反向调用:
+When the dispatcher runs a turn and the model calls an `@agentic_function` tool (e.g. wiki_agent) → the tool body calls `runtime.exec` → which starts another agent_loop. So exec is both "Entry B" and is called in reverse by a tool inside agent_loop:
 
 ```
-dispatcher → agent_loop → 模型调工具 → @agentic_function 体 → runtime.exec → agent_loop(嵌套)→ ...
+dispatcher → agent_loop → model calls tool → @agentic_function body → runtime.exec → agent_loop (nested) → ...
 ```
 
-这是 agentic programming 的根本能力(函数体内可嵌套调 LLM),也是 wiki_agent 递归的来源。如果 exec 在 loop 之上,工具就无法自己再调 LLM。
+This is the fundamental capability of agentic programming (a function body can nest LLM calls), and it is the source of wiki_agent's recursion. If exec sat above the loop, a tool could not call the LLM itself.
 
-### 每个节点内部的有序步骤
+### The Ordered Steps Inside Each Node
 
-**A · dispatcher**:1 建/载 session(沿 active branch 取历史)→ 2 写 user 节点 → 3 attach Runtime(_store + _current_runtime)→ 4 resolve model(agent profile + override)→ 5 解析工具(channel/plan/审批 包装)→ 6 **直接调 agent_loop** → 7 持久化 + finalize(assistant 节点、标题、auto-compact)。
+**A · dispatcher**: 1 create/load session (read history along the active branch) → 2 write the user node → 3 attach Runtime (_store + _current_runtime) → 4 resolve model (agent profile + override) → 5 parse tools (channel/plan/approval wrapping) → 6 **call agent_loop directly** → 7 persist + finalize (assistant node, title, auto-compact).
 
-**B · runtime.exec**:1 开 llm 节点(running,_call_id 指向它,外含 timeout/retry 循环)→ 2 构建上下文【a 选历史节点 render_context → b render 成消息 + 当前 turn → c 解析工具集 toolset/policy/unattended-deny → d 拼 system + skills → e 建 AgentSession(选 stream_fn)】→ 3 **经 AgentSession 调 agent_loop** → 4 关 llm 节点(回填 output,success)。
+**B · runtime.exec**: 1 open the llm node (running, _call_id points to it, wrapped in an outer timeout/retry loop) → 2 build the context [a select history nodes via render_context → b render into messages + current turn → c resolve the toolset toolset/policy/unattended-deny → d assemble system + skills → e create AgentSession (select stream_fn)] → 3 **call agent_loop via AgentSession** → 4 close the llm node (backfill output, success).
 
-**共享 · agent_loop**:每轮调模型前【a convert_to_llm → b memory prefetch → c deferred-tool re-split】→ 调模型/流式 → 判断 tool_use? → 是:执行工具 → 结果喂回 → 再调模型;否(纯文本):退出循环。
+**shared · agent_loop**: before each round of calling the model [a convert_to_llm → b memory prefetch → c deferred-tool re-split] → call the model / stream → check tool_use? → yes: run the tool → feed the result back → call the model again; no (plain text): exit the loop.
 
-## 横向对比
+## Side-by-Side Comparison
 
-| | OpenCode | OpenClaw | Hermes | OpenProgram (统一后) |
+| | OpenCode | OpenClaw | Hermes | OpenProgram (after unification) |
 |---|---|---|---|---|
-| 一次 LLM 调用的抽象 | `Step`(一个节点,tool loop 在内部) | `runId` 配对(llm_input/llm_output,tool 嵌套在内) | 无层级,平铺列表 | `exec`(一个 llm 节点,tool loop 在内部) |
-| 记录方式 | 配对:Step.Started → Step.Ended | 配对:llm_input hook → llm_output hook | 只追加,不标记 | 配对:写 running → 回填 output |
-| 工具调用归属 | ToolPart 在 Step 内部(子部分) | 嵌套在同一个 runId 下(子 hook) | 平级 tool 消息 | code 节点的 called_by 指向 llm 节点(子节点) |
-| 聊天 vs 编程调用 | 统一(一条路径) | 统一(同一个 hook 系统) | 统一(一个 run_conversation) | 统一(都走 runtime.exec) |
+| Abstraction for one LLM call | `Step` (one node, tool loop inside) | `runId` pairing (llm_input/llm_output, tool nested inside) | no hierarchy, flat list | `exec` (one llm node, tool loop inside) |
+| Recording method | paired: Step.Started → Step.Ended | paired: llm_input hook → llm_output hook | append-only, no marking | paired: write running → backfill output |
+| Tool-call attribution | ToolPart inside the Step (sub-part) | nested under the same runId (sub-hook) | peer tool message | the code node's called_by points to the llm node (child node) |
+| Chat vs programmatic call | unified (one path) | unified (same hook system) | unified (one run_conversation) | unified (both go through runtime.exec) |
 
-OpenProgram 采用 OpenCode/OpenClaw 的模型:一次调用 = 一个节点,配对写入,工具是子节点。
+OpenProgram adopts the OpenCode/OpenClaw model: one call = one node, paired writes, tools are child nodes.
 
-## 问题(现状)
+## Problems (Current State)
 
-现在"调一次 LLM"有三条路径:
+Right now "making one LLM call" has three paths:
 
-| 路径 | 入口 | tool loop | DAG 写 llm 节点 |
+| Path | Entry | tool loop | Writes DAG llm node |
 |---|---|---|---|
-| 常规聊天 | dispatcher → agent_loop | agent_loop 管 | dispatcher 写 SessionDB 消息(不是 DAG llm 节点) |
-| exec legacy | exec → `self._call()` | 没有 | exec 写 llm 节点 |
-| exec providers | exec → `session.run` → agent_loop | agent_loop 管 | **没写**(bug) |
+| regular chat | dispatcher → agent_loop | managed by agent_loop | dispatcher writes a SessionDB message (not a DAG llm node) |
+| exec legacy | exec → `self._call()` | none | exec writes the llm node |
+| exec providers | exec → `session.run` → agent_loop | managed by agent_loop | **not written** (bug) |
 
-### 具体表现
+### Concrete Symptoms
 
-1. **exec providers 路径不写 llm 节点**。`_call_via_providers` 在 `session.run` 返回后直接 return,没调 `_append_model_call_node`。wiki_agent 走这条路径,DAG 里 wiki_agent 直接连 wiki_agent,中间没有 LLM 节点。
+1. **The exec providers path does not write the llm node**. `_call_via_providers` returns immediately after `session.run` returns, without calling `_append_model_call_node`. wiki_agent takes this path, so in the DAG wiki_agent connects directly to wiki_agent with no LLM node in between.
 
-2. **dispatcher 路径写的不是 DAG llm 节点**。dispatcher 调 `persist_assistant_message` 写的是 SessionDB 的 assistant 消息(带 token 统计),不是 DAG 的 `Call(role=llm)` 节点。
+2. **The dispatcher path writes something other than a DAG llm node**. The dispatcher calls `persist_assistant_message`, which writes a SessionDB assistant message (with token stats), not a DAG `Call(role=llm)` node.
 
-3. **legacy 路径没有 tool loop**。模型只能返回纯文本,不能调工具。
+3. **The legacy path has no tool loop**. The model can only return plain text and cannot call tools.
 
-## 设计
+## Design
 
-### 核心原则
+### Core Principle
 
-一次 `runtime.exec` = 一个 llm 节点。
+One `runtime.exec` = one llm node.
 
-llm 节点和 code 节点是同一个抽象:一次调用,进入时 running,结束时回填 output。内部发生了什么(tool loop 跑了几轮、调了哪些工具)都是内部过程,不拆成多个节点。
-
-```
-进入 exec  → 写 llm 节点 (status=running, output=None)
-exec 内部  → agent_loop 跑 LLM + tool loop
-             (工具的 code 节点 called_by 指向此 llm 节点)
-exec 返回  → 回填 llm 节点 (output=最终回复, status=success)
-```
-
-### 调用树示例
-
-wiki_agent 递归场景,统一后的 DAG:
+The llm node and the code node are the same abstraction: one call, running on entry, output backfilled on exit. Whatever happens inside (how many rounds the tool loop ran, which tools were called) is an internal process and is not split into multiple nodes.
 
 ```
-llm (dispatcher 调 exec,模型决定调 wiki_agent)
-  code wiki_agent d1 (工具执行)
-    llm (wiki_agent 内部调 exec,模型又调 wiki_agent)
-      code wiki_agent d2 (递归)
-        llm (又一次 exec)
+enter exec  → write the llm node (status=running, output=None)
+inside exec → agent_loop runs the LLM + tool loop
+              (the tool's code node called_by points to this llm node)
+exec returns → backfill the llm node (output=final reply, status=success)
+```
+
+### Call-Tree Example
+
+The wiki_agent recursion scenario, DAG after unification:
+
+```
+llm (dispatcher calls exec, model decides to call wiki_agent)
+  code wiki_agent d1 (tool execution)
+    llm (wiki_agent internally calls exec, model calls wiki_agent again)
+      code wiki_agent d2 (recursion)
+        llm (yet another exec)
           code wiki_agent d3
             ...
 ```
 
-每两个 code 节点之间都有一个 llm 节点,调用链完整。
+There is an llm node between every two code nodes, so the call chain is complete.
 
-### 统一路径
+### Unified Path
 
 ```
 runtime.exec(content=[...])
-  → 写 llm 节点 (status=running, output=None)
-  → 构建上下文 (render_context + render_dag_messages + content)
-  → 调 LLM,跑 tool loop 直到模型返回纯文本
-      (tool loop 内部模型调的工具,其 code 节点 called_by 指向此 llm 节点)
-  → 回填 llm 节点 (output=最终回复, status=success)
-  → 返回文本
+  → write the llm node (status=running, output=None)
+  → build the context (render_context + render_dag_messages + content)
+  → call the LLM, run the tool loop until the model returns plain text
+      (for tools the model calls inside the tool loop, their code node called_by points to this llm node)
+  → backfill the llm node (output=final reply, status=success)
+  → return text
 ```
 
-### 各层改动
+### Changes Per Layer
 
-**dispatcher**:不再直接调 agent_loop,改成调 runtime.exec。保留的职责:
-- 写 user 节点
-- 设置 session 上下文(ContextVar)
-- 调 runtime.exec
-- turn 级别善后(标题生成、compaction 触发)
+**dispatcher**: no longer calls agent_loop directly; instead calls runtime.exec. Retained responsibilities:
+- write the user node
+- set the session context (ContextVar)
+- call runtime.exec
+- turn-level cleanup (title generation, compaction trigger)
 
 ```
-process_user_turn (改后)
-  → 写 user 节点 (不变)
-  → 设 _store / _current_runtime (不变)
-  → runtime.exec(content=用户消息)  ← 改这里
+process_user_turn (after change)
+  → write the user node (unchanged)
+  → set _store / _current_runtime (unchanged)
+  → runtime.exec(content=user message)  ← change here
   → finalize
 ```
 
-**runtime.exec**:统一为一条路径。
-- legacy `call=my_func` 包装成轻量 provider adapter,统一走 `_call_via_providers`
-- `_call_via_providers` 补上 llm 节点写入(配对:进入写 running,返回回填)
-- 删掉 legacy 分支
+**runtime.exec**: unified into a single path.
+- legacy `call=my_func` is wrapped into a lightweight provider adapter and uniformly goes through `_call_via_providers`
+- `_call_via_providers` gets the llm node write added (paired: write running on entry, backfill on return)
+- delete the legacy branch
 
-**agent_loop**:不变。纯粹的"LLM 调用 + tool 执行"引擎,不关心 DAG。
+**agent_loop**: unchanged. A pure "LLM call + tool execution" engine, unaware of the DAG.
 
-## 现状详细分析
+## Detailed Analysis of the Current State
 
-### 路径 1: 常规聊天 (dispatcher)
+### Path 1: Regular Chat (dispatcher)
 
 ```
-用户发消息
+user sends a message
 → process_user_turn (dispatcher/__init__.py:96)
-  → 写 user 节点到 DAG (db.append_message)
-  → 设 _store ContextVar
+  → write the user node to the DAG (db.append_message)
+  → set the _store ContextVar
   → _run_loop_blocking (dispatcher/__init__.py:640)
-    → 构建 AgentContext (tools, system_prompt, history)
+    → build AgentContext (tools, system_prompt, history)
     → agent_loop([prompt], context, config) (agent_loop.py:232)
-      → _stream_assistant_response → LLM 回复
-      → 如果是 tool_use → _execute_tool_calls → tool.execute
-        → 如果工具是 @agentic_function → wrapper 写 code 节点
-        → 工具返回 → agent_loop 继续
-      → 最终拿到纯文本回复
-    ← 返回 final_text
+      → _stream_assistant_response → LLM reply
+      → if tool_use → _execute_tool_calls → tool.execute
+        → if the tool is an @agentic_function → the wrapper writes a code node
+        → tool returns → agent_loop continues
+      → eventually get a plain-text reply
+    ← return final_text
   → persist_assistant_message (persistence.py:31)
-    → 写 assistant 消息到 SessionDB (不是 DAG llm 节点)
+    → write the assistant message to SessionDB (not a DAG llm node)
   → finalize
 ```
 
-### 路径 2: runtime.exec legacy
+### Path 2: runtime.exec legacy
 
 ```
-@agentic_function 函数体里调 runtime.exec(content=[...])
+inside an @agentic_function body, call runtime.exec(content=[...])
 → exec (runtime.py:789)
-  → self._call(content) → 用户自定义函数,返回文本
-  → _append_model_call_node(reply=...) → 写 llm 节点到 DAG
-← 返回文本
+  → self._call(content) → user-defined function, returns text
+  → _append_model_call_node(reply=...) → write the llm node to the DAG
+← return text
 ```
 
-### 路径 3: runtime.exec providers
+### Path 3: runtime.exec providers
 
 ```
-@agentic_function 函数体里调 runtime.exec(content=[...])
+inside an @agentic_function body, call runtime.exec(content=[...])
 → exec (runtime.py:789)
   → _call_via_providers (runtime.py:1306)
-    → 构建 AgentSession
-    → session.run(current) → 内部跑 agent_loop (同路径 1 的代码)
-    ← 返回 final assistant message
-  → return _assistant_text(final)  ← 没有写 llm 节点!
-← 返回文本
+    → build AgentSession
+    → session.run(current) → internally runs agent_loop (same code as Path 1)
+    ← return the final assistant message
+  → return _assistant_text(final)  ← no llm node written!
+← return text
 ```
 
-## 落地顺序
+## Landing Order
 
-### 步 1-2(✅ 已完成）
+### Steps 1-2 (✅ done)
 
-| 步 | 做什么 | 验证 |
+| Step | What to do | Verification |
 |---|---|---|
-| 1 | exec 配对写 llm 节点(`_open_model_call_node` / `_close_model_call_node`),sync + async 两条路径 | ✅ wiki_agent session DAG 里出现 llm 节点 |
-| 2 | `_call_via_providers` 里 session.run 之前把 `_call_id` 切到 llm 节点,tool loop 的工具 code 节点 called_by 正确指向 llm 节点 | ✅ `test_tool_loop_subcall_attributes_to_llm_node` |
+| 1 | exec writes the llm node in pairs (`_open_model_call_node` / `_close_model_call_node`), both the sync and async paths | ✅ the llm node appears in the wiki_agent session DAG |
+| 2 | In `_call_via_providers`, switch `_call_id` to the llm node before session.run, so the tool loop's tool code nodes called_by correctly point to the llm node | ✅ `test_tool_loop_subcall_attributes_to_llm_node` |
 
-### 步 3:删 legacy `call=` 分支
+### Step 3: Delete the legacy `call=` branch
 
-把 `Runtime(call=fn)` 包装成一个 provider model,统一走 `_call_via_providers`,删掉 `_call_fn` / `_uses_legacy_call` 和两条 legacy 分支。
+Wrap `Runtime(call=fn)` into a provider model, uniformly go through `_call_via_providers`, and delete `_call_fn` / `_uses_legacy_call` and the two legacy branches.
 
-| 步 | 做什么 | 文件 | 验证 |
+| Step | What to do | File | Verification |
 |---|---|---|---|
-| 3a | 新增 `CallableModel` adapter(sync+async,把 pi-ai messages 转回 content 调用户 fn,返回单条 AssistantMessage,无 tool loop;补回 `response_format`→prompt suffix) | 新建 `openprogram/providers/callable_model.py` | `pytest tests/providers/test_functions.py` |
-| 3b | `Runtime.__init__` 里 `call=` → `self.api_model = CallableModel(call)`,callable runtime 强制 `toolset="none"` | `runtime.py` __init__ | `pytest tests/providers/test_functions.py` |
-| 3c | 删 `_call`/`_async_call` 的 `_call_fn` 分支 | `runtime.py` | `pytest tests/agentic_programming/` |
-| 3d | 删 `_uses_legacy_call` + exec/async_exec 两条 legacy 分支 | `runtime.py` | full `pytest tests/agentic_programming tests/providers` |
+| 3a | Add a `CallableModel` adapter (sync+async, converts pi-ai messages back to content to call the user fn, returns a single AssistantMessage, no tool loop; reinstate `response_format`→prompt suffix) | new file `openprogram/providers/callable_model.py` | `pytest tests/providers/test_functions.py` |
+| 3b | In `Runtime.__init__`, `call=` → `self.api_model = CallableModel(call)`; a callable runtime forces `toolset="none"` | `runtime.py` __init__ | `pytest tests/providers/test_functions.py` |
+| 3c | Delete the `_call_fn` branch in `_call`/`_async_call` | `runtime.py` | `pytest tests/agentic_programming/` |
+| 3d | Delete `_uses_legacy_call` + the two legacy branches in exec/async_exec | `runtime.py` | full `pytest tests/agentic_programming tests/providers` |
 
-**关键发现(已验证)**:`_call_via_providers` 不忽略 content——`_render_history_messages(content)` 把 content 作为当前 turn(`runtime.py:1451`),无 store 时 `_build_pi_context(content)`(`:1456`)。所以 adapter 不需要特殊处理 content,AgentSession 会把 history+current 给 model,adapter 转回 content 调用户 fn。
+**Key finding (verified)**: `_call_via_providers` does not ignore content — `_render_history_messages(content)` treats content as the current turn (`runtime.py:1451`), and with no store, `_build_pi_context(content)` (`:1456`). So the adapter needs no special handling of content; AgentSession hands history+current to the model, and the adapter converts back to content to call the user fn.
 
-### 步 4:stream_fn 注入(✅ 已完成);dispatcher 不折叠(已论证)
+### Step 4: stream_fn injection (✅ done); dispatcher is not folded in (argued out)
 
-| 步 | 做什么 | 状态 |
+| Step | What to do | Status |
 |---|---|---|
-| 4a | 把 `stream_fn` 参数穿过 exec → _call_via_providers → AgentSession.__init__ → AgentOptions,让 exec 可注入流 | ✅ `test_exec_stream_fn_injection` |
+| 4a | Thread the `stream_fn` parameter through exec → _call_via_providers → AgentSession.__init__ → AgentOptions, so exec can inject a stream | ✅ `test_exec_stream_fn_injection` |
 
-**dispatcher 不折叠进 runtime.exec(实测论证)**
+**dispatcher is not folded into runtime.exec (argued out empirically)**
 
-最初设想让 `_run_loop_blocking` 改调 runtime.exec。实测推翻了这个方向:
+The initial idea was to have `_run_loop_blocking` call runtime.exec instead. In practice this direction was overturned:
 
-1. **模型会分叉**:dispatcher 用 `_resolve_model(agent_profile, req.model_override)`(agent profile + 用户选的模型),而 attached runtime 是 `create_runtime()` 无参自动探测的,`api_model` 不一致。走 exec 会用错模型。
-2. **上下文会冲突**:dispatcher 用 context-engine 准备好了消息(`prep.agent_messages`),exec 自己从 DAG render 历史,两套会打架。
-3. **流式事件不兼容**:exec 的 `on_stream` 发 flat dict,dispatcher 的 `on_event` 要 webui envelope。
-4. **最关键——会写重复节点**:试着在 dispatcher 里用 `_open/_close_model_call_node` 加一个 llm 节点,结果 DAG 里出现 `[user, assistant, assistant]`——因为 **dispatcher 的 assistant 会话消息(`persist_assistant_message`)本身就是顶层 LLM 调用的 DAG 记录**。再加 llm 节点就重复了。`test_dispatcher_integration.py::test_real_loop_text_only` 直接抓到这个重复。
+1. **The model would fork**: the dispatcher uses `_resolve_model(agent_profile, req.model_override)` (agent profile + the model the user picked), whereas the attached runtime comes from `create_runtime()` with no args via auto-detection, so the `api_model` is inconsistent. Going through exec would use the wrong model.
+2. **The context would conflict**: the dispatcher uses the context-engine to prepare messages (`prep.agent_messages`), while exec renders history from the DAG itself; the two sets would clash.
+3. **The streaming events are incompatible**: exec's `on_stream` emits a flat dict, while the dispatcher's `on_event` expects a webui envelope.
+4. **Most critical — duplicate nodes would be written**: trying to add an llm node in the dispatcher with `_open/_close_model_call_node` produced `[user, assistant, assistant]` in the DAG — because **the dispatcher's assistant session message (`persist_assistant_message`) is itself the DAG record of the top-level LLM call**. Adding another llm node duplicates it. `test_dispatcher_integration.py::test_real_loop_text_only` caught this duplication directly.
 
-**结论**:dispatcher 顶层 LLM 调用**已经**有 DAG 表示(role=assistant 的会话消息节点),工具调用挂在它下面。不需要也不应该再加 llm 节点。原始的"code→code 缺 llm 节点"问题只发生在 **`@agentic_function` 内部 exec 的 tool loop**,已被步 1-2 修复。dispatcher 保持现状。
+**Conclusion**: the dispatcher's top-level LLM call **already** has a DAG representation (the role=assistant session-message node), with tool calls hanging below it. There is no need — and it would be wrong — to add another llm node. The original "code→code missing an llm node" problem occurs only in the **tool loop of exec inside an `@agentic_function`**, which was already fixed by steps 1-2. The dispatcher stays as is.
 
-dispatcher 和 exec 的关系不是"dispatcher 走 exec",而是**两个并列的 LLM 调用入口**,各自把顶层调用记进 DAG(dispatcher → assistant 会话节点;exec → llm 节点),共享下层的 agent_loop 引擎和 DAG 节点写入 API。这跟其他框架一致(OpenClaw 也有独立 dispatcher 层)。
+The relationship between dispatcher and exec is not "dispatcher goes through exec" but rather **two parallel LLM-call entry points**, each recording its top-level call into the DAG (dispatcher → assistant session node; exec → llm node), sharing the lower agent_loop engine and the DAG node-write API. This is consistent with other frameworks (OpenClaw also has a separate dispatcher layer).
 
-### Agent 类:不动
+### The Agent Class: Left Alone
 
-`Agent` 在 exec 下层(exec → AgentSession → Agent → agent_loop),是循环驱动器不是平行 LLM 路径,只在 `session.py:94` 构造一处。折叠它等于重写循环,无收益。
+`Agent` sits below exec (exec → AgentSession → Agent → agent_loop); it is a loop driver, not a parallel LLM path, and is constructed in only one place (`session.py:94`). Folding it would amount to rewriting the loop, with no payoff.
 
-### 事件层:无改动
+### Event Layer: No Changes
 
-`tool.before` 只在 `_execute_tool_calls`(`agent_loop.py:518`)一处 fire,所有路径都经过它。CallableModel 无内部 tool loop(用户 fn 只返回 str),不会重复/丢失事件。
+`tool.before` fires in only one place, `_execute_tool_calls` (`agent_loop.py:518`), and all paths go through it. CallableModel has no internal tool loop (the user fn only returns a str), so it will not duplicate or lose events.
 
-### 风险
+### Risks
 
-1. **dispatcher 测试 seam(最高)**:4a 把 stream_fn 穿过 4 层后,`_run_loop_blocking` 仍是 patch 入口,测试的 stream_fn 经 exec 流到 model。`test_dispatcher_dag_attach.py` 整体替换 `_run_loop_blocking`,不受影响。
-2. **prompt-cache 前缀稳定**(4b):override 不能破坏 DAG-prefix 缓存。
-3. **response_format 回归**(3a):`claude_call`/`gemini_call` 的 JSON-mode 靠 adapter 补回 suffix。
+1. **dispatcher test seam (highest)**: after 4a threads stream_fn through 4 layers, `_run_loop_blocking` is still the patch entry, and the test's stream_fn flows through exec to the model. `test_dispatcher_dag_attach.py` replaces `_run_loop_blocking` wholesale and is unaffected.
+2. **prompt-cache prefix stability** (4b): the override must not break the DAG-prefix cache.
+3. **response_format regression** (3a): the JSON-mode of `claude_call`/`gemini_call` relies on the adapter to reinstate the suffix.
 
-### 待更新测试
+### Tests to Update
 
-**Trivial(删 assert/override)**:`test_openai.py:61`、`test_anthropic.py:63`、`test_gemini.py:68`(删 `_uses_legacy_call() is False`);`test_decision.py:24`、`test_loop_options.py:153`、`test_dispatcher_dag_attach.py:89`(删 `_uses_legacy_call→True` override,留 `_call` override)。
+**Trivial (delete an assert/override)**: `test_openai.py:61`, `test_anthropic.py:63`, `test_gemini.py:68` (delete `_uses_legacy_call() is False`); `test_decision.py:24`, `test_loop_options.py:153`, `test_dispatcher_dag_attach.py:89` (delete the `_uses_legacy_call→True` override, keep the `_call` override).
 
-**Behavioral(需重验)**:`test_runtime_exec_dag.py:34`、`test_functions.py` 的 `_mock_call`(按 content shape 分支,adapter 必须原样传 content)、`conftest.py` 的 `echo_call`/`noop_call`。
+**Behavioral (need re-verification)**: `test_runtime_exec_dag.py:34`, the `_mock_call` in `test_functions.py` (branches on content shape; the adapter must pass content through verbatim), the `echo_call`/`noop_call` in `conftest.py`.
 
-## 统一"记一次模型回复"的写入（保留新原语，删旧机制）
+## Unifying the "record one model reply" write (keep the new primitive, delete the old mechanism)
 
-### 现状:同一件事两套写法
+### Current State: Two Ways to Write the Same Thing
 
-"记录模型回复"现在有两套**配对写节点**(开占位 running → 回填结果)的实现,按入口分:
+"Recording a model reply" currently has two **paired node-write** implementations (open a running placeholder → backfill the result), split by entry point:
 
-| 入口 | 开占位 | 回填 | 实现 |
+| Entry | Open placeholder | Backfill | Implementation |
 |---|---|---|---|
-| dispatcher(聊天) | `insert_placeholder`(_turn_lifecycle.py:65) | `persist_assistant_message`(persistence.py) | 旧机制 |
-| exec(代码) | `_open_model_call_node`(runtime.py:631) | `_close_model_call_node`(runtime.py:656) | 新原语 |
+| dispatcher (chat) | `insert_placeholder` (_turn_lifecycle.py:65) | `persist_assistant_message` (persistence.py) | old mechanism |
+| exec (code) | `_open_model_call_node` (runtime.py:631) | `_close_model_call_node` (runtime.py:656) | new primitive |
 
-两套结构一模一样(open→close 配对),但旧的那套散在 dispatcher,新的在 runtime。这是"头尾都写两份"的根源。
+The two have identical structure (open→close pairing), but the old one is scattered across the dispatcher and the new one lives in runtime. This is the root of "writing both head and tail twice".
 
-### 关键事实(让统一变简单)
+### Key Facts (That Make Unification Easy)
 
-存储层**没有 `ROLE_ASSISTANT`**——只有 user/llm/code(`context/nodes.py:36-40`)。聊天回复**早就存成 `ROLE_LLM`**:`_msg_to_node` 把 `role="assistant"` 映射成 `ROLE_LLM`,`_node_to_msg` 读回来默认还原成 `"assistant"`(`_msg_adapter.py`)。exec 的 `_open_model_call_node` 写的也是 `ROLE_LLM`,读回来同样默认 "assistant"。
+The storage layer **has no `ROLE_ASSISTANT`** — only user/llm/code (`context/nodes.py:36-40`). The chat reply is **already stored as `ROLE_LLM`**: `_msg_to_node` maps `role="assistant"` to `ROLE_LLM`, and `_node_to_msg` reads it back and defaults to restoring it to `"assistant"` (`_msg_adapter.py`). exec's `_open_model_call_node` also writes `ROLE_LLM`, and it too reads back to "assistant" by default.
 
-**两个原语在节点层早就用同一个 role。** 唯一差异是 dispatcher 多写了 4 样元数据,exec 的裸原语没写。序列化只有一个收口点 `_node_to_msg` → 前端读到的还是 "assistant"。
+**The two primitives already use the same role at the node layer.** The only difference is that the dispatcher writes 4 extra pieces of metadata that exec's bare primitive does not. Serialization has a single chokepoint `_node_to_msg` → what the front-end reads is still "assistant".
 
-### 方案:升级新原语 → dispatcher 改调它 → 删旧机制
+### Plan: Upgrade the New Primitive → Have the dispatcher Call It → Delete the Old Mechanism
 
-把 exec 的配对原语升级成**通用配对原语**(能装下 dispatcher 需要的字段),两个入口都用它,删掉旧的 placeholder/persist 重复机制。
+Upgrade exec's paired primitive into a **general paired primitive** (able to hold the fields the dispatcher needs), have both entry points use it, and delete the old duplicated placeholder/persist mechanism.
 
-统一原语必须保留这 4 样(否则前端/分支/计量会断):
+The unified primitive must retain these 4 things (otherwise the front-end / branching / metering will break):
 
-| 字段 | 谁要 | 风险 |
+| Field | Who needs it | Risk |
 |---|---|---|
-| `extra.blocks`(thinking/text/tool 卡片顺序) | 前端气泡主体(conv-mapper.ts) | 最高 |
-| token 列 + token_model | 计量 UI | 高 |
-| `metadata.parent_id=user_msg_id` | 分支/fork/rewind 的 active-branch 重建 | 高 |
-| `cancelled/completed` 终态(exec 当前写 success) | 用户停止时的部分输出 | 中 |
+| `extra.blocks` (the order of thinking/text/tool cards) | the front-end bubble body (conv-mapper.ts) | highest |
+| token columns + token_model | metering UI | high |
+| `metadata.parent_id=user_msg_id` | active-branch rebuild for branch/fork/rewind | high |
+| `cancelled/completed` terminal state (exec currently writes success) | partial output when the user stops | medium |
 
-原语签名升级(可选参数,exec 不传、dispatcher 传):
+Primitive signature upgrade (optional params; exec doesn't pass them, dispatcher does):
 
 ```python
 open_model_call_node(*, role="llm", parent_id=None, content_text="", model=None) -> node_id
 close_model_call_node(node_id, *, reply, status="success", blocks=None, usage=None)
 ```
 
-落地顺序:
-1. 升级 `_open/_close_model_call_node`,加 `parent_id` / `blocks` / `usage` / `status` 可选参数(exec 调用不变,默认行为不变)
-2. dispatcher 的 `insert_placeholder` 改成调 `open_model_call_node(role="assistant", parent_id=user_msg_id)`
-3. dispatcher 的 `persist_assistant_message` 改成调 `close_model_call_node(blocks=..., usage=..., status="completed"/"cancelled")`——只保留字段组装,删掉自己的 append/update
-4. 删 `_turn_lifecycle.py` 的 placeholder/error-fold 里重复的写节点逻辑
-5. 验证:webui 端到端聊天(气泡、thinking/tool 卡片、token、停止、fork)全部正常 + 全量 pytest
+Landing order:
+1. Upgrade `_open/_close_model_call_node`, adding optional `parent_id` / `blocks` / `usage` / `status` params (exec calls unchanged, default behavior unchanged)
+2. Change the dispatcher's `insert_placeholder` to call `open_model_call_node(role="assistant", parent_id=user_msg_id)`
+3. Change the dispatcher's `persist_assistant_message` to call `close_model_call_node(blocks=..., usage=..., status="completed"/"cancelled")` — keep only the field assembly, delete its own append/update
+4. Delete the duplicated node-write logic in the placeholder/error-fold of `_turn_lifecycle.py`
+5. Verify: webui end-to-end chat (bubbles, thinking/tool cards, tokens, stop, fork) all working + full pytest
 
-零前端改动——因为 `_node_to_msg` 仍输出 "assistant",前端读的字段(blocks/token/parent_id)都还在,只是改由统一原语写。
+Zero front-end changes — because `_node_to_msg` still outputs "assistant", the fields the front-end reads (blocks/token/parent_id) are all still there, just written by the unified primitive instead.
 
-## 相关文件
+## Related Files
 
-- `openprogram/agentic_programming/runtime.py` — exec / _call_via_providers / _open|_close_model_call_node(统一原语所在)
+- `openprogram/agentic_programming/runtime.py` — exec / _call_via_providers / _open|_close_model_call_node (where the unified primitive lives)
 - `openprogram/providers/callable_model.py` — CallableModel adapter
 - `openprogram/agent/agent_loop.py` — agent_loop / _execute_tool_calls
 - `openprogram/agent/session.py` — AgentSession
 - `openprogram/agent/dispatcher/__init__.py` — process_user_turn / _run_loop_blocking
-- `openprogram/agent/dispatcher/persistence.py` — persist_assistant_message(改调统一原语)
-- `openprogram/agent/internals/_turn_lifecycle.py` — insert_placeholder / fold_error(删重复写入)
-- `openprogram/store/session/_msg_adapter.py` — _node_to_msg(序列化收口点,role 还原)
+- `openprogram/agent/dispatcher/persistence.py` — persist_assistant_message (switched to call the unified primitive)
+- `openprogram/agent/internals/_turn_lifecycle.py` — insert_placeholder / fold_error (delete the duplicated writes)
+- `openprogram/store/session/_msg_adapter.py` — _node_to_msg (the serialization chokepoint, role restoration)
 - `openprogram/agentic_programming/function.py` — @agentic_function wrapper

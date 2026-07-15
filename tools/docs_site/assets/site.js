@@ -62,19 +62,19 @@
     if (btn) btn.textContent = lang === "en" ? "EN" : "中";
 
     // Any labelled-bilingual element (sidebar links, group headers, breadcrumb
-    // segments) switches its text to match the chosen language. Sidebar links
-    // also switch their href to the matching-language page.
-    document.querySelectorAll("[data-title-en]").forEach((el) => {
-      if (el.dataset.titleZh == null) el.dataset.titleZh = el.textContent;  // capture once
-      el.textContent = lang === "en" ? el.getAttribute("data-title-en") : el.dataset.titleZh;
+    // segments, callout heads) switches its text to match the chosen language.
+    // Sidebar links also switch their href to the matching-language page.
+    document.querySelectorAll("[data-title-zh]").forEach((el) => {
+      if (el.dataset.titleEn == null) el.dataset.titleEn = el.textContent;  // capture once
+      el.textContent = lang === "zh" ? el.getAttribute("data-title-zh") : el.dataset.titleEn;
       const hrefZh = el.getAttribute("data-href-zh");
       const hrefEn = el.getAttribute("data-href-en");
-      if (lang === "en" && hrefEn) el.setAttribute("href", hrefEn);
-      else if (lang !== "en" && hrefZh) el.setAttribute("href", hrefZh);
+      if (lang === "zh" && hrefZh) el.setAttribute("href", hrefZh);
+      else if (lang !== "zh" && hrefEn) el.setAttribute("href", hrefEn);
     });
   }
-  let curLang = "zh";
-  try { curLang = localStorage.getItem("op-docs-lang") || "zh"; } catch (e) {}
+  let curLang = "en";
+  try { curLang = localStorage.getItem("op-docs-lang") || "en"; } catch (e) {}
   // The page's own content language wins: an .en page shows English UI, a zh
   // page shows Chinese UI — so the chrome always matches the body you're reading.
   const pageLang = ROOT.getAttribute("data-page-lang");

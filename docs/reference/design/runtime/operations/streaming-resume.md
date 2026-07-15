@@ -1,26 +1,27 @@
-# 运行中状态的持久化 / 重连恢复
+# Persisting In-Flight State / Reconnect Recovery
 
-## 问题陈述
+## Problem Statement
 
-当前 UI 上任何"正在跑"的产物（LLM streaming reply / tool call / agentic
-function / task spawn / merge）在跑完之前**只活在内存 + WebSocket
-stream 里**。刷新页面就丢——因为 SessionDB 里这条 msg 还没存。要等
-最后一刻写盘后才能在新页面看到。
+Currently, any "in-flight" artifact shown in the UI (LLM streaming reply / tool call / agentic
+function / task spawn / merge) lives **only in memory + the WebSocket
+stream** until it finishes. Refreshing the page loses it — because the msg hasn't been written to
+the SessionDB yet. You can only see it in a new page after the final flush to disk.
 
-并且如果 backend 在跑到一半挂了 / 网络断了，那条产物就永远丢了，没
-状态可查、没办法恢复、也没办法"看一眼当前进度"。
+And if the backend dies midway / the network drops, that artifact is lost forever: there's no
+state to query, no way to recover, and no way to "take a peek at the current progress."
 
-## 目标
+## Goal
 
-> 任何能在 chat / DAG 上看到的"运行中"产物，**第一时间就持久化一条
-> placeholder**，之后每个 incremental update 落盘 + 推 WS。前端任意时
-> 刻刷新 / 切回，能看到当前进度 + 继续接收实时流，零状态丢失。
+> Any "in-flight" artifact visible in chat / DAG should **immediately persist a
+> placeholder**, and every subsequent incremental update is flushed to disk + pushed over WS. The
+> frontend can refresh / switch back at any moment, see the current progress + keep receiving the
+> live stream, with zero state loss.
 
-## 五个组件
+## Five Components
 
-### 1. 统一 placeholder schema
+### 1. Unified placeholder schema
 
-每条 msg（无论 user / assistant / tool）都新增三个字段：
+Every msg (whether user / assistant / tool) gains three new fields:
 
 ```
 status:          "pending" | "running" | "done" | "error" | "aborted"
@@ -28,45 +29,45 @@ started_at:      float (epoch)
 last_update_at:  float (epoch)
 ```
 
-`pending` = 已分配 id 但还没开始；`running` = 正在产出；终态三选一。
+`pending` = id assigned but not started yet; `running` = actively producing output; one of three terminal states.
 
-**写入时机**：任何会跑一段时间的操作 **第一时间** 就写 placeholder：
-- LLM streaming reply: dispatcher 调 LLM 之前
-- tool call: tool dispatcher 调函数之前
-- agentic function: `_execute/run.py` 跑 function 之前
-- task spawn: 已经有 ([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/task/runner.py))
-- merge: `_execute/_run_merge` 之前
+**Write timing**: any operation that runs for a while writes its placeholder **immediately**:
+- LLM streaming reply: before the dispatcher calls the LLM
+- tool call: before the tool dispatcher calls the function
+- agentic function: before `_execute/run.py` runs the function
+- task spawn: already in place ([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/task/runner.py))
+- merge: before `_execute/_run_merge`
 
-### 2. 增量节流持久化
+### 2. Throttled incremental persistence
 
-每条 `status=running` 的 msg 在跑的过程中，**节流 ~250ms** 把当前快照写
-回 SessionDB：
+Every `status=running` msg, while running, writes its current snapshot back to the SessionDB
+**throttled at ~250ms**:
 
-- `content`: streaming partial / 当前 tree dump
-- `metadata.context_tree`: agentic function 的 DAG snapshot
-- `metadata.partial_tokens_used`: 累计 input/output token
+- `content`: streaming partial / current tree dump
+- `metadata.context_tree`: the agentic function's DAG snapshot
+- `metadata.partial_tokens_used`: cumulative input/output tokens
 - `last_update_at`: now
 
-节流由一个 per-msg `_ThrottledSaver` 实例管理，确保 backend 退出前最
-后一次必落盘（atexit / signal hook）。
+Throttling is managed by a per-msg `_ThrottledSaver` instance, which guarantees one final flush to
+disk before the backend exits (atexit / signal hook).
 
-跑完调 `finalize(status="done", content=...)` 写终态。
+When done, call `finalize(status="done", content=...)` to write the terminal state.
 
-### 3. WS 按 msg_id 订阅
+### 3. WS subscription by msg_id
 
-新 ws action：
+New ws action:
 
 ```json
 { "action": "subscribe_msg", "session_id": "...", "msg_id": "..." }
 ```
 
-backend 维护：
+The backend maintains:
 
 ```python
 _msg_subscribers: dict[tuple[str, str], set[WebSocket]]
 ```
 
-每次 placeholder update 时既走持久化又 push 到该 channel：
+On each placeholder update, both persist and push to that channel:
 
 ```json
 {
@@ -81,11 +82,11 @@ _msg_subscribers: dict[tuple[str, str], set[WebSocket]]
 }
 ```
 
-订阅释放：客户端 `unsubscribe_msg` / 断连 / msg 进入终态后自动清理。
+Subscription release: cleaned up automatically when the client sends `unsubscribe_msg` / disconnects / the msg enters a terminal state.
 
-### 4. 前端 load_session 检测 + 自动续连
+### 4. Frontend load_session detection + auto-resubscribe
 
-`session-store` 的 `feedFromConv` 调用之后，扫一遍所有 ChatMsg：
+After `session-store`'s `feedFromConv` call, scan all ChatMsg:
 
 ```ts
 const running = msgs.filter(m => m.status === "running");
@@ -96,52 +97,53 @@ running.forEach(m => wsSend({
 }));
 ```
 
-收到 `msg_update` 事件就 `patch` 对应 ChatMsg 的 content / tree。
+On receiving a `msg_update` event, `patch` the corresponding ChatMsg's content / tree.
 
-UI 层：
-- `AssistantBubble` 看到 `status=running` 渲染光标 / streaming 动画
-- `RuntimeBlock` 看到 `status=running` 显示运行中 Execution DAG（已经支
-  持，因为现在 stream tree 就这么画）
-- attach card：跟现有 `status=running` 行为一致（已有）
+UI layer:
+- `AssistantBubble`, on seeing `status=running`, renders a cursor / streaming animation
+- `RuntimeBlock`, on seeing `status=running`, shows the running Execution DAG (already
+  supported, since that's how the stream tree is drawn now)
+- attach card: consistent with the existing `status=running` behavior (already present)
 
-### 5. 死亡检测 + abort sweep
+### 5. Death detection + abort sweep
 
-worker 启动时：
-1. 扫 `~/.openprogram/sessions/*/history/*.json`
-2. 找 `status=running` 且 `last_update_at` 超过阈值（如 5 分钟）的 msg
-3. 改 status=`aborted`，append 一行 `metadata.aborted_reason="worker restart"`
+When the worker starts:
+1. Scan `~/.openprogram/sessions/*/history/*.json`
+2. Find msgs with `status=running` whose `last_update_at` exceeds the threshold (e.g. 5 minutes)
+3. Set status=`aborted`, and append a line `metadata.aborted_reason="worker restart"`
 
-保证 backend 重启后没有"永远在跑"的孤儿 msg。
+This ensures no orphan msgs are left "running forever" after a backend restart.
 
-## Schema 改动 (Phase 1)
+## Schema Changes (Phase 1)
 
-`openprogram/store/_msg_adapter.py::_node_to_msg`：
+`openprogram/store/_msg_adapter.py::_node_to_msg`:
 
-- 写入时把 `node.metadata.status` / `started_at` / `last_update_at`
-  反映到 msg dict
-- 没有 status 字段的旧节点默认 `status="done"`（向后兼容）
+- On write, reflect `node.metadata.status` / `started_at` / `last_update_at`
+  into the msg dict
+- Old nodes without a status field default to `status="done"` (backward compatible)
 
-`openprogram/context/nodes.py::Call`：不动 dataclass，新字段全走
-`metadata`。
+`openprogram/context/nodes.py::Call`: don't touch the dataclass; all new fields go through
+`metadata`.
 
-## 实施分期
+## Implementation Phases
 
-| Phase | 范围 | 估时 |
+| Phase | Scope | Estimate |
 |---|---|---|
 | 1 | placeholder schema + worker abort sweep | 30 min |
-| 2 | `_execute/run.py` agentic function 写 placeholder + 节流 tree save | 60 min |
-| 3 | dispatcher LLM reply 写 placeholder + streaming content save | 60 min |
-| 4 | inline tool call placeholder（bash 等长跑） | 30 min |
+| 2 | `_execute/run.py` agentic function writes placeholder + throttled tree save | 60 min |
+| 3 | dispatcher LLM reply writes placeholder + streaming content save | 60 min |
+| 4 | inline tool call placeholder (long-running bash, etc.) | 30 min |
 | 5 | WS `subscribe_msg` channel + per-msg broadcast | 60 min |
-| 6 | 前端 load_session 检测 + auto subscribe + live patch | 60 min |
-| 7 | 测试 + edge cases (重启 / 断连 / msg_id 冲突) | 30 min |
+| 6 | frontend load_session detection + auto subscribe + live patch | 60 min |
+| 7 | tests + edge cases (restart / disconnect / msg_id collision) | 30 min |
 
-总计 ~5h。每 phase 独立可用 + 可回滚。
+Total ~5h. Each phase is independently usable + rollback-able.
 
-## 不在本次范围
+## Out of Scope This Time
 
-- 真正的"中断后恢复" — 比如 backend 跑到一半挂了，重启后继续跑剩下
-  的 sub-call。这要 checkpoint LLM context + 重放，工作量数倍于本设
-  计。当前方案下中断的 msg 会被标 aborted，用户用 Retry 按钮重跑。
-- 跨 session 全局活跃任务面板（"现在有哪些 msg 在跑"）。可以基于
-  `_msg_subscribers` 的 keyspace 容易扩展，但不在本期。
+- True "resume after interruption" — e.g. the backend dies midway and, after restart, continues
+  running the remaining sub-calls. This requires checkpointing the LLM context + replay, several
+  times the effort of this design. Under the current approach, an interrupted msg is marked
+  aborted, and the user reruns it with the Retry button.
+- A cross-session global active-task panel ("which msgs are running right now"). This is easy to
+  extend on top of the `_msg_subscribers` keyspace, but not in this round.

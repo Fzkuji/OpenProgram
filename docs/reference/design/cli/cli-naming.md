@@ -1,30 +1,32 @@
-# CLI 命名规范
+# CLI Naming Convention
 
-每个 `openprogram` 子命令都遵循相同的结构，这样用户就能从已知命令
-推断出新命令。
+Every `openprogram` subcommand follows the same shape so users can
+guess new commands from ones they already know.
 
-## 规则
+## Rule
 
 ```
 openprogram <noun> [<noun> ...] <verb> [<arg> ...]
 ```
 
-- **每个命令恰好一个动词。** 它始终是位置参数之前的最后一个词。
-  命令绝不能有两个动词，也绝不能把动词混进名词栈的中间。
-- **名词在前，动词在后。** 额外的名词堆叠在动词前面，以收窄
-  命名空间。
-- **名词可以用复数。** 当命名空间表示一个集合时使用复数
-  （`providers`、`profiles`、`models`、`channels`）。仅当只有
-  恰好一个事物且它永远不可能有同级兄弟时才用单数（罕见）。
-- **动词用一般现在时，无后缀。** `list`、`status`、`add`、
-  `remove`、`login`、`logout`、`set`、`get`、`discover`、`adopt`、
-  `doctor`、`setup`。不是 `listing`，不是 `lists`，不是 `added`。
-- **位置参数跟在动词后面。** `openprogram providers
-  auth login codex` —— `codex` 是 `login` 动词的目标。
-- **标志使用双横线 kebab-case。** `--profile`、`--display-name`、
-  `--max-poll-seconds`。绝不用 camelCase，绝不用下划线。
+- **Exactly one verb per command.** It is always the last word before
+  positional arguments. A command must never have two verbs, and
+  must never mix verbs into the middle of the noun stack.
+- **Nouns come first, verb comes last.** Additional nouns stack in
+  front of the verb to narrow the namespace.
+- **Nouns may be plural.** Use plural when the namespace represents a
+  collection (`providers`, `profiles`, `models`, `channels`). Use
+  singular only when there is exactly one thing and it can never have
+  siblings (rare).
+- **Verbs are simple present, no suffix.** `list`, `status`, `add`,
+  `remove`, `login`, `logout`, `set`, `get`, `discover`, `adopt`,
+  `doctor`, `setup`. Not `listing`, not `lists`, not `added`.
+- **Positional arguments come after the verb.** `openprogram providers
+  auth login codex` — `codex` is the target of the `login` verb.
+- **Flags use double-dash kebab-case.** `--profile`, `--display-name`,
+  `--max-poll-seconds`. Never camelCase, never underscores.
 
-## 示例（当前与未来）
+## Examples (current and future)
 
 ```
 openprogram providers login <prov>               ✓
@@ -41,49 +43,50 @@ openprogram channels login discord               (future, same pattern in differ
 openprogram tools login github                   (future)
 ```
 
-## 何时增加一层命名空间
+## When to add a namespace layer
 
-只有当父级名词确实需要拆分成*多个*同级子组时，才增加一个中间名词
-（例如用 `providers auth login` 而非 `providers login`）。如果父级
-始终只涉及一个子组，就折叠这一层 —— 没有同级兄弟的中间名词
-是累赘。
+Only add a middle noun (e.g. `providers auth login` instead of
+`providers login`) when the parent noun genuinely needs to split into
+*multiple* sibling subgroups. If the parent only ever speaks about
+one subgroup, collapse the layer — a middle noun with no siblings is
+dead weight.
 
-例如，OpenClaw 保留 `openclaw models auth login`，因为
-`models` 还有 `aliases`、`list` 以及其他同级兄弟。我们让
-`providers login` 保持扁平，因为 `providers` 上的每个动词都
-与 auth 相邻。
+For example, OpenClaw keeps `openclaw models auth login` because
+`models` also has `aliases`, `list`, and other siblings. We keep
+`providers login` flat because every verb on `providers` is
+auth-adjacent.
 
-## 为什么采用这条规则
+## Why this rule
 
-1. 可发现性 —— 输入 `openprogram providers auth <TAB>` 会列出
-   该命名空间上可用的每个操作。无需翻找。
-2. 可扩展性 —— 新领域可以在任意层级作为同级名词嵌入，
-   不会冲突。`providers models list` 不会与
-   `providers auth list` 冲突。
-3. 与成熟 CLI 殊途同归的做法一致：
-   - `openclaw models auth login`、`openclaw models aliases add`
-   - `gh auth login`、`gh repo create`
-   - `docker container ls`、`docker image prune`
-   - `kubectl get pods`、`kubectl delete service <name>`
+1. Discoverability — typing `openprogram providers auth <TAB>` lists
+   every action available on that namespace. No hunting.
+2. Extensibility — new domains slot in as sibling nouns at any level
+   without colliding. `providers models list` doesn't conflict with
+   `providers auth list`.
+3. Mirrors what mature CLIs converged on:
+   - `openclaw models auth login`, `openclaw models aliases add`
+   - `gh auth login`, `gh repo create`
+   - `docker container ls`, `docker image prune`
+   - `kubectl get pods`, `kubectl delete service <name>`
 
-## 反模式 —— 不要这样做
+## Anti-patterns — do not do these
 
-- ❌ `openprogram login` —— 动词放在顶层，没有命名空间，一旦出现
-  第二个登录目标就会冲突。
-- ❌ `openprogram providerAuth login` —— camelCase 命名，违反
-  名词栈规则（应为两个词：`providers auth`）。
-- ❌ `openprogram list-providers` —— 带连字符的动名复合词，
-  把动词锁死在名词里。应用 `providers list`。
-- ❌ `openprogram providers listing` —— 错误的动词形式。
+- ❌ `openprogram login` — verb at top level, no namespace, clashes as
+  soon as we have a second login target.
+- ❌ `openprogram providerAuth login` — camelCase names, violates the
+  noun-stack rule (should be two words: `providers auth`).
+- ❌ `openprogram list-providers` — hyphenated compound verb-noun,
+  locks the verb into the noun. Use `providers list`.
+- ❌ `openprogram providers listing` — wrong verb form.
 
-## 如何添加新命令
+## How to add a new command
 
-1. 选定该命令所属的最深一层名词命名空间。如果还没有，
-   就创建一个 —— 但只要该命令是现有命令的同级兄弟，
-   就复用现有的命名空间。
-2. 选定动词。优先选用 CLI 中其他地方已用过的动词
-   （`list`、`add`、`remove`、`set`、`status`），而非发明新词。
-3. 将其挂接到合适的 `argparse` 子解析器树下，遵循
-   同样的双文件布局：
-   - 命令元数据 + argparse 接线：CLI 入口
-   - 逻辑：一个专门的模块（`cli.py` 中不放逻辑）
+1. Pick the deepest noun namespace the command belongs to. If none
+   exists, create one — but reuse existing namespaces whenever the
+   command is a siblings of existing commands.
+2. Pick the verb. Prefer verbs already used elsewhere in the CLI
+   (`list`, `add`, `remove`, `set`, `status`) over inventing new ones.
+3. Wire it under the appropriate `argparse` subparser tree, following
+   the same two-file layout:
+   - Command metadata + argparse wiring: the CLI entrypoint
+   - Logic: a dedicated module (no logic in `cli.py`)

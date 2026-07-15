@@ -23,11 +23,11 @@
 </p>
 
 <p align="center">
-  <a href="docs/GETTING_STARTED.md">Getting Started</a> &middot;
+  <a href="docs/start/GETTING_STARTED.md">Getting Started</a> &middot;
   <a href="docs/README.md">Docs</a> &middot;
-  <a href="docs/API.md">API Reference</a> &middot;
-  <a href="docs/philosophy/agentic-programming.md">Philosophy</a> &middot;
-  <a href="docs/README.md">中文</a>
+  <a href="docs/reference/API.md">API Reference</a> &middot;
+  <a href="docs/capabilities/agentic-programming/philosophy.md">Philosophy</a> &middot;
+  <a href="docs/README.zh.md">中文</a>
 </p>
 
 ---
@@ -35,7 +35,7 @@
 > *"The more constraints one imposes, the more one frees oneself."*
 > — **Igor Stravinsky**, *Poetics of Music*
 
-**We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/philosophy/agentic-programming.md))
+**We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/capabilities/agentic-programming/philosophy.md))
 
 > 🎉 **Paper:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**.
 
@@ -85,7 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/ins
 iwr -useb https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.ps1 | iex
 ```
 
-More options — flags, unattended / AI-agent install, installing from a checkout: **[docs/install.md](docs/install.md)**.
+More options — flags, unattended / AI-agent install, installing from a checkout: **[docs/install/install.md](docs/install/install.md)**.
 
 ### 2. Run
 
@@ -108,7 +108,7 @@ Harnesses are programs under `openprogram/functions/agentics/`. Anything cloned 
 
 Writing your own installable harness is one layout contract away — the
 full guide (install, manage, author, test, publish) is
-**[docs/installing-harnesses.md](docs/installing-harnesses.md)**.
+**[docs/capabilities/installing-harnesses.md](docs/capabilities/installing-harnesses.md)**.
 
 > Need a workflow of your own? Just ask the agent in chat — the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) handles the rest.
 
@@ -123,9 +123,9 @@ openprogram logs tail       # follow the worker log live
 openprogram providers doctor # OAuth tokens — expiring? refresh wired?
 ```
 
-`rescue` is the one to reach for first when something doesn't work — it doesn't depend on an LLM being reachable, walks through provider config, ports, dependencies, build artefacts, and prints the exact command to fix each finding. Case-by-case docs live in [docs/troubleshooting.md](docs/troubleshooting.md).
+`rescue` is the one to reach for first when something doesn't work — it doesn't depend on an LLM being reachable, walks through provider config, ports, dependencies, build artefacts, and prints the exact command to fix each finding. Case-by-case docs live in [docs/server/troubleshooting.md](docs/server/troubleshooting.md).
 
-For platform-builder topics (`Runtime` retry semantics, the full `@agentic_function` decorator API, the flat-DAG context model) see [docs/API.md](docs/API.md) and the per-topic notes under [docs/api/](docs/api/).
+For platform-builder topics (`Runtime` retry semantics, the full `@agentic_function` decorator API, the flat-DAG context model) see [docs/reference/API.md](docs/reference/API.md) and the per-topic notes under [docs/api/](docs/api/).
 
 ### Power-user commands
 
@@ -197,16 +197,16 @@ Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or 
 | **Mini-DAG execution view** | The right rail draws every node + edge of the active session, scrolls with the chat, and offers a d3-hierarchy layout for fan-out-heavy traces. |
 | **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Discord today, more coming). |
 
-The detailed tour of each one — code samples, design rationale, where to look in the codebase — lives in [**docs/features.md**](docs/features.md).
+The detailed tour of each one — code samples, design rationale, where to look in the codebase — lives in [**docs/start/features.md**](docs/start/features.md).
 
 ## Integration
 
 | Guide | Description |
 |-------|-------------|
-| [Getting Started](docs/GETTING_STARTED.md) | 3-minute setup and runnable examples |
-| [Claude Code](docs/INTEGRATION_CLAUDE_CODE.md) | Use without API key via Claude Code CLI |
-| [OpenClaw](docs/INTEGRATION_OPENCLAW.md) | Use as OpenClaw skill |
-| [API Reference](docs/API.md) | Full API documentation |
+| [Getting Started](docs/start/GETTING_STARTED.md) | 3-minute setup and runnable examples |
+| [Claude Code](docs/integrations/claude-code.md) | Use without API key via Claude Code CLI |
+| [OpenClaw](docs/integrations/openclaw.md) | Use as OpenClaw skill |
+| [API Reference](docs/reference/API.md) | Full API documentation |
 
 <details>
 <summary><strong>Project Structure</strong></summary>

@@ -1,35 +1,30 @@
-# 规则怎么写、怎么跑
+# How Rules Are Written and How They Run
 
-overview 讲了规则（Policy）是什么、分两类。这篇讲细节：一条规则完整长什么样、两类规则
-（挡路的 / 旁观的）各有什么讲究、框架怎么调用它们。读这篇前先读完 `overview.md` 和
-`events-and-state.md`。
+The overview explained what a rule (Policy) is and that there are two kinds. This doc covers the details: what a complete rule looks like, what's distinctive about each of the two kinds (the blocking ones / the watching ones), and how the framework invokes them. Read `overview.md` and `events-and-state.md` before this one.
 
-## 1. 一条规则完整长什么样
+## 1. What a Complete Rule Looks Like
 
-一条规则就是一个 Python 类，框架认这几样东西：
+A rule is just a Python class, and the framework recognizes these few things:
 
 ```python
 class Policy:
-    on: set[str]          # 我盯着哪几类事件
-    lane: str             # 我是"挡路的"(gate) 还是"旁观的"(observer)
-    cooldown_s: float     # 我出手后，至少隔多久才允许再出手（防刷屏）
+    on: set[str]          # which kinds of events I watch
+    lane: str             # am I a "blocker" (gate) or a "watcher" (observer)
+    cooldown_s: float     # after I act, how long before I'm allowed to act again (anti-spam)
 
     def evaluate(self, event, state) -> Action | None:
-        # 事件来了，看一眼当前事件 + 当前状态，决定出手还是不管
-        # 出手就 return 一个 Action；不管就 return None
+        # an event arrives; take a look at the current event + current state, decide whether to act or stay out of it
+        # to act, return an Action; to stay out, return None
         ...
 ```
 
-就这四样。`on` 和 `lane` 是声明（我关心什么、我是哪类），`evaluate` 是逻辑（来了怎么办），
-`cooldown_s` 是个防刷屏的简单旋钮。
+That's the four things. `on` and `lane` are declarations (what I care about, which kind I am), `evaluate` is the logic (what to do when something arrives), and `cooldown_s` is a simple anti-spam knob.
 
-框架启动时把所有规则**注册**进来，按 `on` 建个索引："tool.before 这类事件来了，该叫醒哪几条
-规则"。事件来了，框架查索引，只叫醒关心它的那几条，挨个调 `evaluate`。
+At startup the framework **registers** all rules, building an index keyed by `on`: "when a `tool.before` event arrives, which rules should be woken up." When an event arrives, the framework looks it up in the index, wakes only the rules that care about it, and calls `evaluate` on each one.
 
-## 2. 挡路的（gate）
+## 2. The Blocking Ones (gate)
 
-**在事情发生之前拦住。** 只盯一类事件：`tool.before`（工具即将执行）。因为"拦"只有在事情
-还没发生时才有意义——工具都跑完了再拦没意义。
+**Stop something before it happens.** They watch only one kind of event: `tool.before` (a tool is about to execute). Because "blocking" only makes sense before the thing has happened — blocking after the tool has already run is pointless.
 
 ```python
 class DangerousCommandGuard:
@@ -38,86 +33,71 @@ class DangerousCommandGuard:
     cooldown_s = 0
 
     def evaluate(self, event, state):
-        if event.payload["工具"] != "bash":
+        if event.payload["tool"] != "bash":
             return None
-        命令 = event.payload["命令"]
-        if "rm -rf" in 命令 or "git push --force" in 命令:
-            return Gate.ask(f"这条命令有风险：{命令}，确认执行吗？")
+        command = event.payload["command"]
+        if "rm -rf" in command or "git push --force" in command:
+            return Gate.ask(f"This command is risky: {command}, confirm execution?")
         return None
 ```
 
-挡路规则返回的动作只有三种：`Gate.allow()`（放行）、`Gate.deny(理由)`（拦死）、
-`Gate.ask(问题)`（问用户，用户说行才放）。
+A blocking rule can only return three actions: `Gate.allow()` (let it through), `Gate.deny(reason)` (block it outright), and `Gate.ask(question)` (ask the user, only let it through if the user says OK).
 
-### 挡路的两条讲究
+### Two Things to Keep in Mind for Blocking Rules
 
-**一、必须快。** 它挡在工具执行的路中间，agent 在等它给个准话才能继续。它慢，agent 就卡。
-所以挡路规则的 `evaluate` 里**不许干慢活**：不调 LLM、不读网络、不读那种要现场推断的复杂
-状态。就看眼前事件 + 现成的简单状态，立刻给答案。`DangerousCommandGuard` 就看一眼命令字符串，
-快得很。
+**One, it must be fast.** It sits in the middle of the path of tool execution, and the agent is waiting on its verdict before it can continue. If it's slow, the agent stalls. So a blocking rule's `evaluate` **must not do slow work**: no calling the LLM, no network reads, no reading the kind of complex state that requires on-the-spot inference. Just look at the event in front of you + simple ready-at-hand state, and give an answer immediately. `DangerousCommandGuard` only glances at the command string — very fast.
 
-**二、对子任务也生效。** OpenProgram 现在给 subagent 设了"免批准"（`permission_mode=bypass`），
-也就是子任务里的工具不走批准流程。但**挡路规则要绕过这个设置、照样拦**——否则危险命令只要塞进
-一个子任务就能溜过去。这是要堵的一个现有漏洞。
+**Two, it applies to subtasks as well.** OpenProgram currently sets "no approval" for subagents (`permission_mode=bypass`), meaning tools inside subtasks don't go through the approval flow. But **blocking rules must bypass this setting and block anyway** — otherwise a dangerous command could slip through simply by being stuffed into a subtask. This is an existing hole that needs to be plugged.
 
-## 3. 旁观的（observer）
+## 3. The Watching Ones (observer)
 
-**在事情发生之后看着，慢慢想，不耽误 agent。** 盯各种事件——工具完成了、模型回复完了、
-文件改了。
+**Watch after something happens, think it over slowly, don't hold up the agent.** They watch all kinds of events — a tool finished, the model finished replying, a file changed.
 
 ```python
 class StuckToolWatcher:
     on = {"tool.after"}
     lane = "observer"
-    cooldown_s = 300                 # 提醒过一次，5 分钟内别再提同一个
+    cooldown_s = 300                 # already reminded once, don't bring up the same thing again within 5 minutes
 
     def evaluate(self, event, state):
-        工具 = event.payload["工具"]
-        if state.该工具失败次数[工具] >= 3:
-            return Notify(f"{工具} 连续失败了，可能卡住", severity="info")
+        tool = event.payload["tool"]
+        if state.tool_failure_count[tool] >= 3:
+            return Notify(f"{tool} has failed repeatedly, might be stuck", severity="info")
         return None
 ```
 
-旁观规则返回的动作有：
+A watching rule can return these actions:
 
-| 动作 | 干什么 |
+| Action | What it does |
 |---|---|
-| `Notify(消息)` | 给用户一个非打扰的提醒（不打断 agent 干活） |
-| `Inject(文本)` | 在模型下次思考前，悄悄塞一句提示给模型（不打扰用户） |
-| `Prepare(任务)` | 起一个只读后台小任务先做功课，有结论了再决定要不要 Notify |
+| `Notify(message)` | Give the user a non-intrusive reminder (doesn't interrupt the agent's work) |
+| `Inject(text)` | Quietly slip a hint to the model before its next round of thinking (doesn't disturb the user) |
+| `Prepare(task)` | Spin up a read-only background task to do some homework first, and once it has a conclusion, decide whether to Notify |
 
-### 旁观的讲究：可以慢，但别拖慢 agent
+### What to Keep in Mind for Watching Rules: It Can Be Slow, but It Mustn't Slow the Agent Down
 
-旁观规则可以干慢活（甚至调 LLM 判断），因为它不挡路。但有个反向的要求：**它再慢也不能拖慢
-agent。** 做法是——agent 该干嘛干嘛、不等它；旁观规则在**旁边一条独立的线**上处理事件。
-事件流先记下来，旁观线慢慢消费，agent 这边毫无感知。
+A watching rule can do slow work (even call the LLM to judge), because it isn't blocking the path. But there's a reverse requirement: **no matter how slow it is, it must not slow the agent down.** The way this works is — the agent does its thing and doesn't wait on it; the watching rule processes events on a separate, independent lane alongside. The event stream is recorded first, the watching lane consumes it slowly, and the agent side is entirely unaware.
 
-`Prepare` 是旁观里最有意思的一招："先做功课再开口"。比如"没补测试"这件事，与其一看到就提醒
-（容易误报），不如先起个只读后台任务，让它真去看看这个改动到底缺不缺测试、缺得值不值得提，
-有了靠谱结论再 Notify。这个后台任务只读（不许改文件），用现有的后台任务机制跑。
+`Prepare` is the most interesting move among the watching ones: "do your homework before you speak up." Take "tests weren't added," for example: rather than reminding the moment you see it (easy to get false positives), it's better to spin up a read-only background task, let it actually go look at whether this change really lacks tests, and whether the gap is worth raising, and only Notify once it has a reliable conclusion. This background task is read-only (not allowed to modify files) and runs on the existing background-task mechanism.
 
-## 4. 框架怎么把这些串起来
+## 4. How the Framework Strings This All Together
 
-![事件分发：挡路同步 / 旁观异步](diagrams/execution-dispatch.svg)
+![Event dispatch: blocking synchronous / watching asynchronous](diagrams/execution-dispatch.svg)
 
-## 5. 几个简单的兜底（这版够用就行）
+## 5. A Few Simple Fallbacks (Good Enough for This Version)
 
-- **防刷屏**：每条规则有 `cooldown_s`，出手后这段时间内同一情况不再出手。最简单的去重就够了。
-- **多条规则撞同一个工具**：挡路时若多条规则都对同一个 `tool.before` 出手，取最严的——
-  `deny` > `ask` > `allow`。
-- **规则出错**：某条规则的 `evaluate` 抛异常，框架接住、记一笔、当它返回 None（别让一条规则
-  的 bug 弄崩整个 agent）。
+- **Anti-spam**: each rule has a `cooldown_s`; after acting, it won't act on the same situation again within that window. The simplest dedup is enough.
+- **Multiple rules hitting the same tool**: when blocking, if multiple rules act on the same `tool.before`, take the strictest — `deny` > `ask` > `allow`.
+- **A rule erroring out**: if a rule's `evaluate` throws an exception, the framework catches it, logs it, and treats it as returning None (don't let one rule's bug crash the whole agent).
 
-更复杂的打扰预算、自动熔断、出错时精细的兜底策略——这版**不做**，归档在 `_research_archive/`。
-现在就靠 `cooldown_s` 这一个旋钮顶着，够你把框架跑起来、加规则。
+More complex interruption budgets, automatic circuit-breaking, and fine-grained fallback strategies on error — this version **doesn't do** them; they're archived in `_research_archive/`. For now we lean on `cooldown_s` as the single knob, which is enough to get the framework running and to add rules.
 
-## 6. 加一条新规则要做什么
+## 6. What It Takes to Add a New Rule
 
-这是你以后最常做的事，记住它就行：
+This is what you'll be doing most often going forward, so just remember it:
 
-1. 写个新类，定 `on`（盯哪类事件）、`lane`（挡路还是旁观）、`cooldown_s`。
-2. 写 `evaluate`：看事件 + state，返回动作或 None。
-3. 注册进框架。
+1. Write a new class, defining `on` (which kind of event to watch), `lane` (blocking or watching), and `cooldown_s`.
+2. Write `evaluate`: look at the event + state, return an action or None.
+3. Register it with the framework.
 
-不用动框架内核，不用碰事件流、fold、落地逻辑。框架内核稳定，能力靠加规则长出来——
-这正是"做一个框架"而不是"挂几个钩子"的意义。
+No need to touch the framework core, no need to touch the event stream, fold, or persistence logic. The framework core stays stable, and capabilities grow by adding rules — this is exactly the point of "building a framework" rather than "hanging a few hooks."

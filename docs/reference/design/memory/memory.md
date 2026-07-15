@@ -1,24 +1,26 @@
-# 记忆子系统
+# Memory subsystem
 
-OpenProgram 如何让 agent 跨会话"记住"事情。
+How OpenProgram makes the agent "remember" things across conversations.
 
-## 为什么需要它
+## Why this exists
 
-原始的 LLM 在一段会话结束后会忘记一切。每次新对话都从零开始，于是用户
-不得不一遍又一遍地复述相同的事实（"我是产品经理，请避免使用术语"、
-"项目位于 `~/Projects/foo`"）。记忆子系统通过读取每一段已结束的对话、
-提炼出持久的事实、并把其中最重要的事实回填到下一段对话的提示词中，来
-解决这个问题。
+A vanilla LLM forgets everything when a conversation ends. Each new chat
+starts from zero, so the user retells the same facts ("I'm a product
+manager, please avoid jargon", "the project lives at `~/Projects/foo`")
+session after session. The Memory subsystem fixes that by reading every
+finished conversation, distilling durable facts, and feeding the most
+important ones back into the next conversation's prompt.
 
-我们关心两个产品层面的特性：
+Two product properties we care about:
 
-1. **模型无需提示就能拿到正确的事实。** 当你打开一段新对话时，你稳定
-   的偏好以及项目稳定的事实已经在模型的工作记忆中——无需手动执行
-   `/remember`。
-2. **存储保持小巧且可审阅。** 记忆是磁盘上的纯 Markdown 文件，人类可读，
-   便于手动编辑或清除。没有不透明的向量存储，没有微调后的权重。
+1. **The model gets the right facts unprompted.** When you open a new
+   chat, your stable preferences and the project's stable facts are
+   already in the model's working memory — no manual `/remember`.
+2. **Storage stays small and reviewable.** Memory is plain Markdown
+   files on disk, human-readable, easy to edit or wipe by hand. No
+   opaque vector store, no fine-tuned weights.
 
-## 三个层级
+## The three layers
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -50,16 +52,17 @@ OpenProgram 如何让 agent 跨会话"记住"事情。
 └────────────────────────────────────────────────────────────────┘
 ```
 
-一切都位于 `<state>/memory/` 之下，其默认值为
-`~/.openprogram/memory/`，并遵循 `--profile` / `OPENPROGRAM_STATE_DIR`。
+Everything lives under `<state>/memory/`, which defaults to
+`~/.openprogram/memory/` and follows `--profile` / `OPENPROGRAM_STATE_DIR`.
 
-## 端到端流程
+## End-to-end flow
 
-一条记忆观察进入系统有两条途径，外加一个把它们做合并整理的后台进程。
+There are two ways a memory observation enters the system, and one
+background process that consolidates them.
 
-### 流程 A —— 会话结束时的摘要（主路径）
+### Flow A — session-end summarization (the main one)
 
-由 `session_watcher`（`memory/session_watcher.py`）自动触发。
+Triggered automatically by `session_watcher` (`memory/session_watcher.py`).
 
 ```
 conversation ends ─────► poll every 5 min ─────► session idle ≥30 min?
@@ -78,35 +81,37 @@ conversation ends ─────► poll every 5 min ─────► session
                               append each entry to short-term/<today>.md
 ```
 
-提示词模板位于 `memory/builtin/summarizer.py:SYSTEM_PROMPT`。它要求模型
-给出 0–10 条简短事实，分类为：
+The prompt template lives in `memory/builtin/summarizer.py:SYSTEM_PROMPT`.
+It asks the model for 0–10 short facts, classified into:
 
-- `user-pref` —— "用户偏好简洁的回复"
-- `env` —— "项目位于 ~/Projects/foo, Python 3.12"
-- `project` —— "产品名为 OpenProgram"
-- `procedure` —— "用户通过 `pytest -q` 运行测试"
-- `fact` —— 任何其他持久的内容
+- `user-pref` — "user prefers concise responses"
+- `env` — "project lives at ~/Projects/foo, Python 3.12"
+- `project` — "product is called OpenProgram"
+- `procedure` — "user runs tests via `pytest -q`"
+- `fact` — anything else durable
 
-每条记录都带有一个置信度分数（0.0–1.0）——这在后面 deep-sleep 把高置信度
-的记录提升到 wiki 时很重要。
+Each entry carries a confidence score (0.0–1.0) — important later when
+deep-sleep promotes the high-confidence ones to wiki.
 
-哪些会话已经被处理过的状态保存在
-`<state>/memory/.state/session-end.json`，因此 worker 重启不会
-重新处理每一段对话。
+State of which sessions have already been processed sits at
+`<state>/memory/.state/session-end.json`, so a worker restart doesn't
+re-process every conversation.
 
-### 流程 B —— 压缩前的摘要
+### Flow B — pre-compression summarization
 
-当一段对话增长到超出上下文窗口时，运行时会压缩较旧的消息。在它们被丢弃
-之前，同一个摘要器会对即将被丢弃的那一段消息运行
-（`memory/builtin/provider.py` 中的 `on_pre_compress`）。提取出的事实会
-并入压缩摘要中，因此即便原始的对话轮次没有保留下来，洞见也能存活。
+When a conversation grows past the context window, the runtime compresses
+older messages. Before they're dropped, the same summarizer runs over the
+about-to-be-dropped slice (`on_pre_compress` in
+`memory/builtin/provider.py`). The extracted facts feed into the
+compression summary so insights survive even when the raw turns don't.
 
-这条路径是自动且静默的。它不是一个单独的文件，也不是一个单独的调度。
+This path is automatic and silent. Not a separate file, not a separate
+schedule.
 
-### Sleep —— 合并整理 worker
+### Sleep — the consolidation worker
 
-worker 中的一个守护线程（`memory/scheduler.py`）每天本地时间 03:00 唤醒，
-并按顺序运行三个协作的阶段：
+A daemon thread in the worker (`memory/scheduler.py`) wakes at 03:00
+local time every day and runs three cooperative phases in order:
 
 ```
 light  ─► dedupe + score short-term entries                  (no LLM)
@@ -123,26 +128,27 @@ rem    ─► scan wiki for themes / contradictions, append reflections.md (LLM)
           interest", "concepts/A says X but procedures/B implies Y".
 ```
 
-这些阶段是解耦的：light 无条件运行；deep 和 REM 需要接入一个可调用的 LLM
-（worker 在启动时通过 `build_default_llm` 传入一个）。如果没有可用的 LLM，
-light 仍会收集并打分；deep 则是空操作，直到下一次有 LLM 的扫描。
+The phases are decoupled: light runs unconditionally; deep and REM
+need an LLM callable to be wired (the worker passes one in at boot via
+`build_default_llm`). If no LLM is available, light still collects and
+scores; deep is a no-op until next sweep with an LLM.
 
-每个阶段涉及的文件：
+Files involved per phase:
 
-| 阶段 | 文件                              | 输出                                |
+| Phase | File                              | Output                                |
 |-------|-----------------------------------|---------------------------------------|
-| light | `memory/sleep/light.py`           | `.state/sleep-stage.json`（分数）    |
+| light | `memory/sleep/light.py`           | `.state/sleep-stage.json` (scores)    |
 | deep  | `memory/sleep/deep.py`            | `wiki/<kind>/<slug>.md` + `core.md`   |
 | rem   | `memory/sleep/rem.py`             | `wiki/reflections.md`                 |
 
-每次扫描后，`.state/last-sleep.json` 会记录 `{ts, phase,
-promoted, skipped}`，因此你可以 `cat` 它来查看记忆上一次运行的时间。
+After every sweep, `.state/last-sleep.json` records `{ts, phase,
+promoted, skipped}` so you can `cat` it to see when memory last ran.
 
-## 模型实际看到的内容
+## What the model actually sees
 
-在会话开始时，运行时会把 `core.md` 作为前缀块加入系统提示词。这个块足够
-小（<2 KB，约 512 tokens），不会扰乱缓存。格式仿照 Hermes 的
-`MEMORY.md / USER.md` 横幅：
+At session start, the runtime adds `core.md` to the system prompt as a
+prefix block. The block is small enough (<2 KB, ~512 tokens) not to
+disturb caching. Format mirrors Hermes' `MEMORY.md / USER.md` banner:
 
 ```
 ═════════════════════════════════════════════════════
@@ -157,23 +163,24 @@ ENTITY: Uses Ink for TUI
 [for full context use memory_recall <query>]
 ```
 
-页脚指向 `memory_recall`——一个模型可以在对话中途调用的工具，当它需要比
-`core.md` 所容纳的更多细节时，用来获取某个特定的 wiki 页面。实现位于
-`memory/tools/`（工具表层），背后由 `memory/builtin/recall.py`（FTS 搜索）
-支撑。
+The footer points to `memory_recall` — a tool the model can call mid-turn
+to fetch a specific wiki page when it needs more detail than `core.md`
+holds. Implementation in `memory/tools/` (the tool surface), backed by
+`memory/builtin/recall.py` (the FTS search).
 
-## 检索：用于召回的 FTS 索引
+## Retrieval: FTS index for recall
 
-`<state>/memory/index.sqlite` 持有一个覆盖 wiki 页面和 short-term 记录的
-SQLite FTS5 索引。两张表：
+`<state>/memory/index.sqlite` carries a SQLite FTS5 index over wiki
+pages and short-term entries. Two tables:
 
-- `wiki_fts` —— 每个 wiki 页面，按 title + body + claims + aliases 建立索引
-- `short_fts` —— 每条 short-term 记录，按 text + tags 建立索引
+- `wiki_fts` — every wiki page indexed on title + body + claims + aliases
+- `short_fts` — every short-term entry indexed on text + tags
 
-`memory_recall` 工具查询这个索引，按 BM25 + 时近度排序，返回排名最前的
-3-5 条匹配记录。索引在每次写入时增量重建（没有单独的同步步骤）。
+The `memory_recall` tool queries this index, ranks by BM25 + recency,
+returns the top 3-5 matching entries. Index is rebuilt incrementally
+on every write (no separate sync step).
 
-## 文件布局参考
+## File layout reference
 
 ```
 <state>/memory/
@@ -203,7 +210,7 @@ SQLite FTS5 索引。两张表：
         sleep.lock                    advisory lock for concurrent sweeps
 ```
 
-## 代码地图
+## Code map
 
 ```
 openprogram/memory/
@@ -232,12 +239,13 @@ openprogram/memory/
         scoring.py         signal heuristics (frequency, recency, etc.)
 ```
 
-## 插件接入点
+## Plugin point
 
-`MemoryProvider`（`memory/provider.py`）是抽象基类。默认实现是
-`BuiltinMemoryProvider`。要替换成另一种记忆后端（mem0、Honcho、Hindsight、
-某个向量存储……），注册一个子类，并通过 agent 配置把它接入运行时。运行时
-只会调用以下这些生命周期钩子：
+`MemoryProvider` (`memory/provider.py`) is the abstract base. The default
+is `BuiltinMemoryProvider`. To swap in a different memory backend (mem0,
+Honcho, Hindsight, a vector store, …) register a subclass and wire it
+into the runtime via the agent config. The runtime calls only these
+lifecycle hooks:
 
 ```python
 initialize(session_id, **kwargs)
@@ -247,29 +255,30 @@ on_session_end(messages) -> None        # after a turn ends idle
 on_pre_compress(messages) -> str        # before context compression drops messages
 ```
 
-其余的一切（文件布局、sleep 各阶段、FTS 索引）都是 builtin provider 的
-实现细节。插件不必照搬这套三层模型。
+Everything else (file layout, sleep phases, FTS index) is implementation
+detail of the builtin provider. A plugin doesn't have to mirror the
+three-layer model.
 
-## 失效模式与当前健康状况
+## Failure modes & current health
 
-| 症状                          | 可能原因                                   | 修复                                     |
+| Symptom                          | Likely cause                                   | Fix                                     |
 |----------------------------------|------------------------------------------------|-----------------------------------------|
-| 没有 `short-term/<today>.md`       | 会话结束摘要器没找到任何持久内容，或 LLM 调用返回为空 / 无法解析 | 检查 `.state/session-end.json`——如果今天的 session_ids 带着时间戳在里面，说明摘要器被调用了；只是这段对话缺少持久的事实 |
-| `core.md` 里只有框架级别的事实 | deep 阶段还没有任何高置信度的个人观察 | 围绕你的项目 / 偏好做几段真实的对话 |
-| `last-sleep.json` 显示 `promoted=0` | 同上——short-term 记录低于分数阈值 | 增加长对话的数量，或手动编辑一个 wiki 页面 |
-| 摘要器返回 []            | LLM 忽略了系统提示词（例如 `claude-code` provider——meridian 和较旧的 claude-max-api-proxy 都会丢弃 system 角色） | 当 provider 需要时，`build_default_llm` 会把 system 折叠进 user；用 `grep '_inline_system' openprogram/memory/llm_bridge.py` 验证 |
-| session-end 状态陈旧          | 之前的 worker 在处理过程中崩溃          | 删除 `.state/session-end.json`——会话会在下次轮询时被重新扫描 |
-| 昨晚 sleep 没有运行      | 03:00 时 worker 没在运行，或 LLM 不可用 | worker 启动时会调用 `scheduler.start_in_worker`；检查 `worker.log` 中是否有 `[worker] memory: sleep + session-end watcher running` |
+| No `short-term/<today>.md`       | Session-end summarizer found nothing durable, or LLM call returned empty / unparseable | Inspect `.state/session-end.json` — if today's session_ids are there with timestamps, summarizer was called; the conversation just lacked durable facts |
+| `core.md` only has framework facts | Deep-phase has no high-confidence personal observations yet | Have a few real conversations about your project / preferences |
+| `last-sleep.json` shows `promoted=0` | Same — short-term entries below score threshold | Raise count of long conversations or hand-edit a wiki page |
+| Summarizer returns []            | LLM ignored the system prompt (e.g. `claude-code` provider — both meridian and the older claude-max-api-proxy drop the system role) | `build_default_llm` folds system into user when provider needs it; verify with `grep '_inline_system' openprogram/memory/llm_bridge.py` |
+| Stale session-end state          | A previous worker crashed mid-process          | Delete `.state/session-end.json` — sessions get re-scanned next poll |
+| Sleep didn't run last night      | Worker wasn't running at 03:00 OR LLM unavailable | `scheduler.start_in_worker` is called at worker boot; check `worker.log` for `[worker] memory: sleep + session-end watcher running` |
 
-## 设计渊源
+## Design lineage
 
-- **三层拆分**（short / wiki / core）：借鉴自 Karpathy 的
-  "LLM Wiki" 模式，其中原始观察被提炼进一个 wiki，而 wiki 的 TL;DR
-  回填到提示词中。
-- **`MEMORY.md` 注入格式**：从 Hermes 复制而来，让在不同 agent 之间
-  迁移的用户看到熟悉的横幅。
-- **MemoryProvider 接口**：同样来自 Hermes（`memory_provider.py`），
-  以保留日后接入 mem0 / Honcho / 等等的选项。
-- **把 sleep 设计成带 light/deep/REM 阶段的每日 cron**：对真实睡眠周期的
-  一种致敬，主要是为了让 deep-LLM-pass 变得廉价（每天一批），而不是在
-  每一轮对话上都运行它。
+- **Three-layer split** (short / wiki / core): borrowed from Karpathy's
+  "LLM Wiki" pattern, where raw observations get distilled into a wiki
+  and the wiki's TL;DR feeds the prompt.
+- **`MEMORY.md` injection format**: copied from Hermes so users moving
+  between agents see familiar banners.
+- **MemoryProvider interface**: also from Hermes (`memory_provider.py`),
+  to keep the option of plugging in mem0 / Honcho / etc. later.
+- **Sleep as a daily cron with light/deep/REM phases**: a riff on actual
+  sleep cycles, mostly to make the deep-LLM-pass cheap (one batch per
+  day) instead of running it on every turn.

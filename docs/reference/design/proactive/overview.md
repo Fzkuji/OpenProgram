@@ -1,147 +1,134 @@
-# 总览：跟着一个场景走一遍
+# Overview: Walk Through One Scenario End to End
 
-不堆术语，先看一件事从头到尾怎么发生。看完这一篇，整层在干嘛你就懂了。
+No jargon piled up — let's first see how one thing happens from start to finish. Once you've read this page, you'll understand what the whole layer is for.
 
-## 场景：模型想跑 `rm -rf build`，框架把它拦下来
+## Scenario: the model wants to run `rm -rf build`, and the framework stops it
 
-agent 正在帮用户清理项目。某一刻，模型决定执行一条 shell 命令 `rm -rf build`。
-我们希望框架在这条命令真正跑起来**之前**，看一眼，发现它危险，拦下来问用户。
+The agent is helping the user clean up a project. At some point, the model decides to run the shell command `rm -rf build`.
+We want the framework to take a look **before** this command actually runs, notice that it's dangerous, stop it, and ask the user.
 
-整个过程是这样的：
+Here's how the whole process goes:
 
-![场景：拦下 rm -rf build 的五步](diagrams/overview-scenario.svg)
+![Scenario: the five steps that stop rm -rf build](diagrams/overview-scenario.svg)
 
-就这么简单。现在把这五步里出现的几个概念，逐个讲清楚。
+That's all there is to it. Now let's go through the few concepts that showed up in these five steps, one by one.
 
-## 概念 1：事件（Event）
+## Concept 1: Event
 
-**事件 = "刚刚发生了一件事"的一条记录。** 上面第②步那个带花括号的东西就是一条事件。
+**An event = a record that "something just happened."** That thing with curly braces in step ② above is an event.
 
-agent 干活的过程里，到处都在产生事件：
+While the agent works, events are produced everywhere:
 
-| 发生的事 | 事件 |
+| What happened | Event |
 |---|---|
-| 用户发了消息 | `user.prompt_submitted` |
-| 模型开始/说完回复 | `model.response_started` / `model.response_completed` |
-| 工具即将执行 | `tool.before` ← 第②步就是这条 |
-| 工具执行完了 | `tool.after` |
-| 某个文件被改了 | `file.changed` |
+| The user sent a message | `user.prompt_submitted` |
+| The model started / finished its reply | `model.response_started` / `model.response_completed` |
+| A tool is about to run | `tool.before` ← step ② is this one |
+| A tool finished running | `tool.after` |
+| A file was changed | `file.changed` |
 
-每条事件就是一个小数据包，记着"什么类型、什么时候、谁干的、相关的内容是什么"。
-事件长什么样、字段有哪些，下一篇 `events-and-state.md` 细讲。
+Each event is a small data packet that records "what type, when, who did it, and what the relevant content is."
+What an event looks like and what fields it has is covered in detail in the next page, `events-and-state.md`.
 
-**关键心智模型**：把事件想成一条不断变长的流水账，只往后记、不涂改。系统里发生的一切
-都在这条账上留一笔。你的主动规则不直接盯着 agent 内部，而是盯着这条流水账。
+**Key mental model**: think of events as an ever-growing ledger — append-only, never altered. Everything that happens in the system leaves an entry on this ledger. Your proactive rules don't watch the agent's internals directly; they watch this ledger.
 
-## 概念 2：规则（Policy）
+## Concept 2: Policy
 
-**规则 = "盯着某类事件，事件来了就判断要不要出手"的一段逻辑。** 第④步那条
-DangerousCommandGuard 就是一条规则。
+**A policy = a piece of logic that "watches a certain kind of event, and when one arrives, decides whether to step in."** That `DangerousCommandGuard` in step ④ is a policy.
 
-一条规则是一个普通 Python 类，说清三件事：
+A policy is an ordinary Python class that states three things:
 
 ```python
 class DangerousCommandGuard:
-    # 1. 我盯着哪类事件？
+    # 1. Which kind of event am I watching?
     on = {"tool.before"}
 
-    # 2. 事件来了，我怎么判断？
+    # 2. When an event arrives, how do I decide?
     def evaluate(self, event):
-        命令 = event.payload["command"]
-        if "rm -rf" in 命令:
-            return 拦下来("这条命令会删文件，先确认")  # 出手
-        return None                                    # 不出手，放它过去
+        command = event.payload["command"]
+        if "rm -rf" in command:
+            return block("This command will delete files; confirm first")  # step in
+        return None                                                        # don't step in, let it through
 ```
 
-`on` 说"我只关心工具即将执行这类事件"，框架就只在这类事件发生时唤起它。
-`evaluate` 拿到事件，看一眼，要么返回一个"动作"（出手），要么返回 `None`（不管）。
+`on` says "I only care about events where a tool is about to run," so the framework only wakes it up when that kind of event occurs.
+`evaluate` receives the event, takes a look, and either returns an "action" (steps in) or returns `None` (does nothing).
 
-整个框架就是一堆这样的规则。**加一条新主动能力 = 写一个新 Policy 类。** 你以后想让框架
-"发现没写测试就提醒""发现模型卡住了就介入"，都是再写一个这样的类，不用动框架内核。
+The whole framework is just a pile of rules like this. **Adding a new proactive capability = writing a new Policy class.** Later, if you want the framework to "remind when no tests were written" or "intervene when the model gets stuck," each is just another class like this — no need to touch the framework's core.
 
-## 概念 3：两种规则——"挡路的"和"旁观的"
+## Concept 3: Two kinds of policies — "blockers" and "observers"
 
-不是所有出手都一样。有两种本质不同的出手时机，框架把规则分成两类：
+Not all stepping-in is the same. There are two fundamentally different moments to step in, and the framework splits policies into two kinds:
 
-| | 挡路的（gate） | 旁观的（observer） |
+| | Blocker (gate) | Observer |
 |---|---|---|
-| 它在哪出手 | 在事情发生**之前**，拦住 | 在事情发生**之后**，看着 |
-| 例子 | "这命令危险，先别执行" | "你改了核心代码但没补测试，提醒一下" |
-| 必须很快吗 | **必须**。它挡在路中间，agent 在等它放行，它慢一毫秒 agent 就卡一毫秒 | 不必。它在旁边慢慢想，想完了再说，不耽误 agent |
-| 出手方式 | 拦下 / 放行 / 要用户确认 | 给个提醒 / 后台默默做点准备 |
+| Where it steps in | **Before** something happens, to block it | **After** something happens, watching |
+| Example | "This command is dangerous, don't run it yet" | "You changed core code but didn't add tests — a reminder" |
+| Must it be fast? | **Yes.** It stands in the middle of the path; the agent is waiting for it to give the green light, and every millisecond it's slow, the agent stalls a millisecond | No. It thinks slowly on the side and speaks up once it's done, without holding up the agent |
+| How it steps in | Block / allow / ask the user to confirm | Give a reminder / quietly do some prep in the background |
 
-为什么非要分两类、不能合成一套？因为**它们的时间要求是反的**：挡路的必须快（不能让 agent
-等），旁观的可以慢（慢点没关系，但不能反过来拖慢 agent）。把这两种揉一起，要么旁观的拖慢了
-agent，要么挡路的为了快牺牲了能力。分开各管各的，互不拖累。
+Why must there be two kinds — why not merge them into one? Because **their timing requirements are opposite**: blockers must be fast (they can't make the agent wait), while observers can be slow (slowness is fine, but they must not slow the agent down in return). Mash the two together and either the observer slows the agent down, or the blocker sacrifices capability for speed. Keep them separate, each minding its own business, neither dragging on the other.
 
-`DangerousCommandGuard` 是挡路的。"没补测试就提醒"是旁观的。规则怎么写、两类各有什么讲究，
-`execution-model.md` 细讲。
+`DangerousCommandGuard` is a blocker. "Remind when no tests were added" is an observer. How rules are written and what each kind cares about is covered in detail in `execution-model.md`.
 
-## 概念 4：出手的方式（Action）
+## Concept 4: How to step in (Action)
 
-规则的 `evaluate` 决定出手时，返回的不是随便什么东西，而是几种固定的"动作"之一：
+When a policy's `evaluate` decides to step in, it doesn't return just anything — it returns one of a few fixed "actions":
 
-| 动作 | 干什么 | 谁用 |
+| Action | What it does | Who uses it |
 |---|---|---|
-| **拦下/放行/问用户** | 挡住一个即将执行的工具 | 挡路的规则 |
-| **提醒用户** | 弹个非打扰的提示 | 旁观的规则 |
-| **给模型注入一句话** | 在模型下次思考前，悄悄塞一句提示（不打扰用户） | 旁观的规则 |
-| **后台默默做准备** | 起一个只读的后台小任务，先把功课做了，有结论再决定要不要提醒 | 旁观的规则 |
+| **Block / allow / ask the user** | Stop a tool that's about to run | Blocker policies |
+| **Remind the user** | Pop up a non-intrusive hint | Observer policies |
+| **Inject a line into the model** | Quietly slip a hint in before the model's next round of thinking (without disturbing the user) | Observer policies |
+| **Quietly prep in the background** | Spin up a read-only background task that does the homework first, and only decides whether to remind once it has a conclusion | Observer policies |
 
-规则只负责"决定出手 + 选哪种动作"，**具体怎么落地（怎么弹窗、怎么拦、怎么注入）由框架做**。
-规则不碰这些脏活，所以规则能写得很短、很专注。
+A policy is only responsible for "deciding to step in + choosing which action," while **how it actually lands (how to pop up, how to block, how to inject) is the framework's job.** Policies don't touch this grunt work, so they can be written short and focused.
 
-## 概念 5：状态（State）——这层为什么值得做
+## Concept 5: State — why this layer is worth building
 
-到这你可能想：这不就是"在工具执行前插一段检查代码"吗？我直接挂个钩子不就行了，要这么一套框架干嘛？
+By now you might be thinking: isn't this just "inserting a check before a tool runs"? Can't I just hang a hook and be done with it — why a whole framework?
 
-对，**如果每条规则都只看眼前这一件事，钩子确实够了，不需要这套框架。** 这套框架真正值钱的地方，
-在你要做这种规则的时候才显出来：
+Right — **if every rule only looks at the one thing in front of it, a hook really is enough, and you don't need this framework.** Where this framework truly earns its keep only shows up when you want to write a rule like this:
 
-> "模型**连续三次**调同一个工具都失败了，提醒用户它可能卡住了。"
+> "The model has called the same tool and failed **three times in a row** — remind the user it might be stuck."
 
-注意"连续三次"——这条规则要判断，得**记住前面发生过什么**，不是看眼前一下。
+Notice "three times in a row" — to judge this, the rule has to **remember what happened before**; it's not about glancing at one moment.
 
-钩子做这个会很别扭：你得自己在某个地方存一个计数器，每次失败手动加一、成功手动清零、还得管
-多个会话别串台。每加一条"需要记忆"的规则，就手搓一个这样的容器，三五条之后一团乱。
+A hook makes this awkward: you'd have to store a counter somewhere yourself, manually increment it on each failure, manually reset it on success, and also manage multiple sessions so they don't cross-talk. Every time you add a rule that "needs memory," you hand-roll another container like this, and after three or five of them it's a mess.
 
-事件驱动天然解决这个：**既然每件事都记成了事件（那条流水账），"当前状况"就是把流水账从头
-累一遍的结果。** 想知道"这个工具最近失败几次"？数一遍账上这个工具的失败事件就行——不用你
-手动维护计数器，它是事件的自然副产品。
+Event-driven design solves this naturally: **since every thing is recorded as an event (that ledger), the "current situation" is just the result of accumulating the ledger from the beginning.** Want to know "how many times this tool failed recently"? Just count the failure events for this tool on the ledger — you don't maintain a counter by hand; it's a natural byproduct of the events.
 
-这个"把一长串事件累加成当前状况"的动作，有个名字叫 **fold**（也叫 reduce）。别被词吓到，
-就是滚雪球：从空白开始，一条条事件滚过去，雪球（状态）越滚越大，滚完就是"现在的状况"。
+This act of "accumulating a long string of events into the current situation" has a name: **fold** (also called reduce). Don't be scared by the word — it's just rolling a snowball: start from blank, roll each event past it, and the snowball (state) grows bigger and bigger; when you're done rolling, that's "the current situation."
 
-![fold：事件一条条过，状况一步步长](diagrams/events-fold.svg)
+![fold: events pass one by one, the situation grows step by step](diagrams/events-fold.svg)
 
-这个累加出来的"当前状况"就叫 **State（状态）**。规则的 `evaluate` 除了看当前这条事件，
-还能读这个 State：
+This accumulated "current situation" is called **State**. Besides looking at the current event, a policy's `evaluate` can also read this State:
 
 ```python
 def evaluate(self, event, state):
-    if state.某工具连续失败次数 >= 3:
-        return 提醒("这个工具连续失败了，可能卡住了")
+    if state.consecutive_failures_of_a_tool >= 3:
+        return remind("This tool has failed repeatedly; it might be stuck")
 ```
 
-State 怎么从事件累加出来、为什么这么设计，`events-and-state.md` 细讲——那是整层的地基。
+How State is accumulated from events, and why it's designed this way, is covered in detail in `events-and-state.md` — that's the foundation of the whole layer.
 
-## 把五个概念串起来
+## Tying the five concepts together
 
-![五个概念怎么串起来](diagrams/overview-concepts.svg)
+![how the five concepts tie together](diagrams/overview-concepts.svg)
 
-这就是全部。剩下的文档都是把这张图里某一块讲细：
-- `events-and-state.md`：事件长啥样、State 怎么 fold 出来
-- `execution-model.md`：规则怎么写、两类规则的讲究
-- `policies-mvp.md`：三条真规则当样板
-- `invariants.md`：框架自己要守的底线（别绕成死循环）
+That's all of it. The rest of the docs each go into detail on one block of this diagram:
+- `events-and-state.md`: what an event looks like, how State is folded out
+- `execution-model.md`: how rules are written, the considerations for the two kinds of rules
+- `policies-mvp.md`: three real rules as templates
+- `invariants.md`: the bottom lines the framework itself must hold (don't loop into a deadlock)
 
-## 这版刻意不做的事
+## What this version deliberately leaves out
 
-为了让地基清爽，下面这些**砍掉了**（归档在 `_research_archive/`，以后想要再加，加得上不返工）：
+To keep the foundation clean, the following have been **cut** (archived in `_research_archive/`; if you want them later, they can be added without rework):
 
-- 把事件落盘做到防崩溃恢复、防篡改——研究/生产级的可靠性装修。
-- 离线回放（拿历史会话验证新规则误报率）——写论文才需要。
-- 对抗安全（防恶意注入、密钥脱敏）——把对手当善意用户的简化下不需要。
-- 复杂的打扰预算、自动熔断——先用最简单的冷却（同一提醒隔一阵才再来）顶着。
+- Persisting events to disk with crash-recovery and tamper resistance — research/production-grade reliability fit-out.
+- Offline replay (using historical sessions to validate a new rule's false-positive rate) — only needed for writing papers.
+- Adversarial security (preventing malicious injection, redacting secrets) — not needed under the simplification of treating the adversary as a well-meaning user.
+- Complex interruption budgets and automatic circuit breaking — for now, get by with the simplest cooldown (the same reminder only comes back after a while).
 
-这版的目标只有一个：**一个能跑、能不断加规则、规则能记住过去的事件驱动地基。**
+This version has just one goal: **an event-driven foundation that runs, that you can keep adding rules to, and whose rules can remember past events.**

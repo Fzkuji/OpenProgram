@@ -1,67 +1,67 @@
-# Provider 一览
+# Providers
 
-本页列出仓库内置的 provider 实现（`openprogram/providers/` 下每个子目录一个）、各自的接入方式，以及在 Python 代码里直接使用 provider 的方法。内置实现之外，`openprogram providers available` 还能列出几百个走 OpenAI 兼容协议的社区 provider 目录，配置方式相同。
+This page lists the provider implementations built into the repository (one subdirectory each under `openprogram/providers/`), how each one is accessed, and how to use providers directly from Python code. Beyond the built-in implementations, `openprogram providers available` also lists hundreds of community provider catalog entries that speak the OpenAI-compatible protocol; they are configured the same way.
 
-## 内置 provider
+## Built-in providers
 
-接入方式说明：**API key** = 存入凭据库的密钥（`providers login <id>`，也可从环境变量导入）；**OAuth** = 浏览器 / 设备码登录订阅账号；**CLI 凭据** = 直接读外部 CLI 已登录的凭据文件；**云凭据链** = 运行时自动走云厂商的标准凭据链。
+Access methods: **API key** = a key stored in the credential store (`providers login <id>`, also importable from environment variables); **OAuth** = browser / device-code login with a subscription account; **CLI credentials** = reads the credential file of an external CLI that is already logged in; **cloud credential chain** = resolved at runtime through the cloud vendor's standard credential chain.
 
-| Provider | 协议 | 接入方式 | 备注 |
+| Provider | Protocol | Access | Notes |
 |---|---|---|---|
-| `anthropic` | Anthropic Messages | API key（`ANTHROPIC_API_KEY`）或 OAuth（Claude 订阅，PKCE / `claude setup-token` 粘贴） | 显式 prompt caching（`cache_control`，支持 1h TTL） |
-| `openai` | OpenAI Responses | API key（`OPENAI_API_KEY`） | Responses 协议自动缓存（`prompt_cache_key`） |
-| `openai_responses` / `openai_completions` | OpenAI Responses / Chat Completions | —（共享协议实现，被众多 provider 复用） | |
-| `openai_codex` | ChatGPT 后端 | OAuth（ChatGPT 订阅），复用 `~/.codex/auth.json`，需 `codex` CLI 登录 | 模型清单从官方端点实时拉取 |
-| `azure_openai_responses` | Azure OpenAI Responses | API key（`AZURE_OPENAI_API_KEY`）+ 自填 base URL | |
-| `google` | Google Generative AI | API key（`GEMINI_API_KEY` / `GOOGLE_API_KEY`） | thinking 用 token budget 控制 |
-| `google_gemini_cli` | Cloud Code Assist | CLI 凭据：直接读 `~/.gemini/oauth_creds.json`，刷新由 Gemini CLI 负责 | |
-| `gemini_subscription` | Cloud Code Assist | Google 账号 OAuth（订阅） | 别名 `gemini`、`gemini-cli` |
-| `amazon_bedrock` | Bedrock Converse Stream | 云凭据链（`AWS_PROFILE` / access key / bearer token 等，运行时自动识别） | 显式 prompt caching（`cachePoint`） |
-| `github_copilot` | OpenAI Responses 等 | GitHub OAuth token（`GH_TOKEN` 等），按需换取 Copilot 短期 token，不落盘 | 不支持 thinking 档位 |
-| `deepseek` | OpenAI Completions | API key（`DEEPSEEK_API_KEY`） | reasoner 型号推理不可调档 |
-| `openrouter` | OpenAI Completions | API key（`OPENROUTER_API_KEY`) | 聚合网关 |
-| `vercel_ai_gateway` | Anthropic Messages | API key（`AI_GATEWAY_API_KEY`） | 聚合网关 |
-| `groq` | OpenAI Completions | API key（`GROQ_API_KEY`） | |
-| `cerebras` | OpenAI Completions | API key（`CEREBRAS_API_KEY`） | |
-| `mistral` | OpenAI Completions | API key（`MISTRAL_API_KEY`） | |
-| `xai` | OpenAI Completions | API key（`XAI_API_KEY`） | |
-| `zai` | OpenAI Completions | API key（`ZAI_API_KEY`） | |
-| `huggingface` | OpenAI Completions | API key（`HF_TOKEN`） | |
-| `minimax` / `minimax_cn` | Anthropic Messages | API key（`MINIMAX_API_KEY` / `MINIMAX_CN_API_KEY`） | 国际 / 国内两个端点 |
-| `minimax_cn_coding_plan` | Anthropic Messages | API key（`MINIMAX_API_KEY`） | 国内 coding plan 套餐 |
-| `kimi_coding` | Anthropic Messages | API key（`KIMI_API_KEY` / `MOONSHOT_API_KEY`） | |
-| `alibaba_token_plan_cn` | OpenAI Completions | 套餐 API key | 别名 `bailian` |
-| `opencode` | OpenAI Completions 等 | API key（`OPENCODE_API_KEY`） | |
+| `anthropic` | Anthropic Messages | API key (`ANTHROPIC_API_KEY`) or OAuth (Claude subscription, PKCE / pasting a `claude setup-token`) | Explicit prompt caching (`cache_control`, 1h TTL supported) |
+| `openai` | OpenAI Responses | API key (`OPENAI_API_KEY`) | Automatic caching on the Responses protocol (`prompt_cache_key`) |
+| `openai_responses` / `openai_completions` | OpenAI Responses / Chat Completions | — (shared protocol implementations, reused by many providers) | |
+| `openai_codex` | ChatGPT backend | OAuth (ChatGPT subscription), reuses `~/.codex/auth.json`; requires a `codex` CLI login | Model list pulled live from the official endpoint |
+| `azure_openai_responses` | Azure OpenAI Responses | API key (`AZURE_OPENAI_API_KEY`) + a base URL you supply | |
+| `google` | Google Generative AI | API key (`GEMINI_API_KEY` / `GOOGLE_API_KEY`) | Thinking controlled via a token budget |
+| `google_gemini_cli` | Cloud Code Assist | CLI credentials: reads `~/.gemini/oauth_creds.json` directly; the Gemini CLI handles refreshing | |
+| `gemini_subscription` | Cloud Code Assist | Google account OAuth (subscription) | Aliases `gemini`, `gemini-cli` |
+| `amazon_bedrock` | Bedrock Converse Stream | Cloud credential chain (`AWS_PROFILE` / access keys / bearer token, etc., detected at runtime) | Explicit prompt caching (`cachePoint`) |
+| `github_copilot` | OpenAI Responses and others | GitHub OAuth token (`GH_TOKEN`, etc.), exchanged on demand for a short-lived Copilot token that is never written to disk | No thinking-effort support |
+| `deepseek` | OpenAI Completions | API key (`DEEPSEEK_API_KEY`) | Reasoning is not adjustable on reasoner models |
+| `openrouter` | OpenAI Completions | API key (`OPENROUTER_API_KEY`) | Aggregation gateway |
+| `vercel_ai_gateway` | Anthropic Messages | API key (`AI_GATEWAY_API_KEY`) | Aggregation gateway |
+| `groq` | OpenAI Completions | API key (`GROQ_API_KEY`) | |
+| `cerebras` | OpenAI Completions | API key (`CEREBRAS_API_KEY`) | |
+| `mistral` | OpenAI Completions | API key (`MISTRAL_API_KEY`) | |
+| `xai` | OpenAI Completions | API key (`XAI_API_KEY`) | |
+| `zai` | OpenAI Completions | API key (`ZAI_API_KEY`) | |
+| `huggingface` | OpenAI Completions | API key (`HF_TOKEN`) | |
+| `minimax` / `minimax_cn` | Anthropic Messages | API key (`MINIMAX_API_KEY` / `MINIMAX_CN_API_KEY`) | International / China endpoints |
+| `minimax_cn_coding_plan` | Anthropic Messages | API key (`MINIMAX_API_KEY`) | China coding plan subscription |
+| `kimi_coding` | Anthropic Messages | API key (`KIMI_API_KEY` / `MOONSHOT_API_KEY`) | |
+| `alibaba_token_plan_cn` | OpenAI Completions | Plan API key | Alias `bailian` |
+| `opencode` | OpenAI Completions and others | API key (`OPENCODE_API_KEY`) | |
 
-流式输出所有 provider 都支持（整个层建立在流式接口上）。多模态输入按模型而非按 provider 决定，来自各 provider 的模型目录数据，界面上以模型实际标注为准。prompt caching 只在上表标注处经代码核实。
+Streaming output is supported by every provider (the whole layer is built on the streaming interface). Multimodal input is decided per model rather than per provider, based on each provider's model catalog data; trust what the UI shows for a given model. Prompt caching has been verified in code only where noted in the table above.
 
-`claude_code`、`chatgpt_subscription`、`claude_max_proxy` 等空目录是别名占位（如 `claude-max` → `claude-code`），行为由别名表决定，不是独立实现。
+Empty directories such as `claude_code`, `chatgpt_subscription`, and `claude_max_proxy` are alias placeholders (e.g. `claude-max` → `claude-code`); their behavior is decided by the alias table, not by a separate implementation.
 
-## 库方式使用
+## Using providers as a library
 
-在自己的 Python 代码里创建 runtime，首选自动检测：
+To create a runtime in your own Python code, prefer auto-detection:
 
 ```python
 from openprogram.providers.registry import create_runtime
 
-runtime = create_runtime()                                        # 自动选第一个可用 provider
+runtime = create_runtime()                                        # picks the first available provider
 runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")
 ```
 
-六个内置 runtime 类可直接导入：
+Six built-in runtime classes can be imported directly:
 
 ```python
 from openprogram.providers import (
     AnthropicRuntime,     # Anthropic API
     OpenAIRuntime,        # OpenAI Responses API
     GeminiRuntime,        # Google Generative AI
-    ClaudeCodeRuntime,    # Claude 订阅直连，无需 API key
-    OpenAICodexRuntime,   # ChatGPT 订阅（Codex OAuth）
-    GeminiCLIRuntime,     # 复用 Gemini CLI 登录态
+    ClaudeCodeRuntime,    # Claude subscription direct connection, no API key needed
+    OpenAICodexRuntime,   # ChatGPT subscription (Codex OAuth)
+    GeminiCLIRuntime,     # reuses the Gemini CLI login state
 )
 
 runtime = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
 runtime = OpenAICodexRuntime(model="gpt-5.5")
 ```
 
-上表其余 provider 没有专属 runtime 类：`create_runtime(provider=..., model=...)` 会按该模型的协议自动路由，与聊天界面走同一条路径。
+The remaining providers in the table above have no dedicated runtime class: `create_runtime(provider=..., model=...)` routes automatically by the model's protocol, using the same path as the chat UI.

@@ -1,42 +1,42 @@
-# Claude Code 集成指南
+# Claude Code Integration
 
-## 这是什么？
+## What Is This?
 
-`ClaudeCodeRuntime` 让你**无需任何 API key** 即可使用 Agentic Programming。它使用你的 Claude 订阅的 OAuth token，直连 `api.anthropic.com`——token 从 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) 的登录凭据（`~/.claude/.credentials.json`）解析而来，每次调用都重新读取，CLI 的 token 刷新自动生效。
+`ClaudeCodeRuntime` lets you use Agentic Programming **without any API key**. It uses your Claude subscription's OAuth token to connect directly to `api.anthropic.com` — the token is resolved from the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)'s login credentials (`~/.claude/.credentials.json`) and re-read on every call, so the CLI's token refreshes take effect automatically.
 
-只要你已安装并登录 `claude`，就可以直接上手。
+If you have `claude` installed and logged in, you're ready to go.
 
-## 前置条件
+## Prerequisites
 
-1. **安装 Claude Code CLI：**
+1. **Install the Claude Code CLI:**
    ```bash
    npm install -g @anthropic-ai/claude-code
    ```
 
-2. **登录：**
+2. **Log in:**
    ```bash
    claude login
    ```
 
-3. **验证可用：**
+3. **Verify it works:**
    ```bash
    claude -p "Hello, world!"
    ```
 
-需要的配置仅此而已。不需要 API key，也不需要环境变量。
+That's all the setup needed. No API keys, no environment variables.
 
-## 基本用法
+## Basic Usage
 
 ```python
 from openprogram import agentic_function
 from openprogram.providers import ClaudeCodeRuntime
 
-# 不需要 API key —— 使用 Claude Code 订阅
+# No API key needed — uses your Claude Code subscription
 runtime = ClaudeCodeRuntime(model="haiku")
 
 @agentic_function
 def explain(concept):
-    """清晰简洁地解释一个概念。"""
+    """Explain a concept clearly and concisely."""
     return runtime.exec(content=[
         {"type": "text", "text": f"Explain '{concept}' in 2-3 sentences. Be clear and concise."},
     ])
@@ -45,59 +45,59 @@ result = explain(concept="gradient descent")
 print(result)
 ```
 
-## 配置选项
+## Configuration Options
 
 ```python
 runtime = ClaudeCodeRuntime(
-    model="haiku",        # 模型名或家族别名（见下表）
-    api_key=None,         # 一般不传；不传时每次调用从凭据池重新解析
-    max_retries=2,        # API 层瞬态故障的重试次数
+    model="haiku",        # model name or family alias (see the table below)
+    api_key=None,         # usually omitted; when omitted, resolved from the credential pool on every call
+    max_retries=2,        # retries for transient API-layer failures
 )
 ```
 
-### 模型名称
+### Model Names
 
-`model` 接受家族别名或完整模型 id。别名展开为当前默认版本：
+`model` accepts a family alias or a full model id. Aliases expand to the current default version:
 
-| 取值 | 展开为 |
+| Value | Expands to |
 |-------|-------------|
-| `"sonnet"` | `claude-sonnet-4-6`（默认家族） |
+| `"sonnet"` | `claude-sonnet-4-6` (the default family) |
 | `"opus"` | `claude-opus-4-6` |
 | `"haiku"` | `claude-haiku-4-5` |
 
-更具体的 id（如 `claude-opus-4-5-20251101`）原样透传，由 Anthropic API 校验。
+More specific ids (such as `claude-opus-4-5-20251101`) are passed through as is and validated by the Anthropic API.
 
-## 工作原理
+## How It Works
 
-在底层，`ClaudeCodeRuntime` 的流程是：
+Under the hood, `ClaudeCodeRuntime`:
 
-1. 从凭据池解析 Claude 订阅的 OAuth token（`sk-ant-oat` 前缀），或普通 Anthropic API key
-2. 走标准的 Anthropic Messages 协议直连 `api.anthropic.com`，订阅 token 用 Bearer 认证 + Claude Code 身份 header
-3. 把回复写回 session DAG
+1. Resolves your Claude subscription's OAuth token (`sk-ant-oat` prefix), or a plain Anthropic API key, from the credential pool
+2. Connects directly to `api.anthropic.com` over the standard Anthropic Messages protocol, using Bearer auth plus the Claude Code identity header for subscription tokens
+3. Writes the reply back into the session DAG
 
 ```
-你的 Python 代码
-    → @agentic_function 装饰器（记录一个 DAG 节点）
-        → runtime.exec()（从 DAG 构建 prompt）
-            → api.anthropic.com（订阅 OAuth 直连）
-            ← 响应文本
-        ← 回复作为 DAG 节点写回
-    ← 返回值
+Your Python code
+    → @agentic_function decorator (records a DAG node)
+        → runtime.exec() (builds the prompt from the DAG)
+            → api.anthropic.com (direct subscription OAuth connection)
+            ← response text
+        ← reply written back as a DAG node
+    ← return value
 ```
 
-不再有子进程调用——它就是标准的 Anthropic 协议，只是凭据来自你的订阅。
+No more subprocess calls — it is the standard Anthropic protocol, just with credentials from your subscription.
 
-## 限制
+## Limitations
 
-- **需要有效凭据。** 构造时校验凭据池里存在 Claude 订阅 OAuth token 或 Anthropic API key，否则抛 `ValueError`。
-- **订阅 token 会过期**（约 8 小时）。runtime 每次调用重新解析，Claude Code CLI 侧的刷新自动生效；如果长时间没用过 `claude`，重新登录一次即可。
+- **Requires valid credentials.** Construction verifies that a Claude subscription OAuth token or an Anthropic API key exists in the credential pool, and raises `ValueError` otherwise.
+- **Subscription tokens expire** (roughly every 8 hours). The runtime re-resolves them on every call, so refreshes on the Claude Code CLI side take effect automatically; if you haven't used `claude` in a long time, just log in again.
 
-## 完整示例
+## Complete Example
 
 ```python
 """
-Claude Code 集成示例 —— 无需 API key。
-演示一个多步骤的 agentic 工作流。
+Claude Code integration demo — no API key needed.
+Demonstrates a multi-step agentic workflow.
 """
 from openprogram import agentic_function
 from openprogram.providers import ClaudeCodeRuntime
@@ -107,7 +107,7 @@ runtime = ClaudeCodeRuntime(model="haiku")
 
 @agentic_function
 def brainstorm(topic):
-    """围绕一个话题生成 3 个创意想法。"""
+    """Generate 3 creative ideas about a topic."""
     return runtime.exec(content=[
         {"type": "text", "text": f"Generate exactly 3 creative ideas about: {topic}\nNumber them 1-3, one per line."},
     ])
@@ -115,7 +115,7 @@ def brainstorm(topic):
 
 @agentic_function
 def evaluate(idea):
-    """以 1-10 分评价一个想法的可行性，并给出简短理由。"""
+    """Rate an idea's feasibility on a scale of 1-10 with brief reasoning."""
     return runtime.exec(content=[
         {"type": "text", "text": f"Rate this idea's feasibility (1-10) and explain in one sentence:\n{idea}"},
     ])
@@ -123,7 +123,7 @@ def evaluate(idea):
 
 @agentic_function
 def ideate(topic):
-    """头脑风暴想法，并逐一评估。"""
+    """Brainstorm ideas and evaluate each one."""
     ideas_text = brainstorm(topic=topic)
     print(f"Ideas:\n{ideas_text}\n")
 
@@ -142,10 +142,10 @@ if __name__ == "__main__":
     print(f"\nBest idea:\n{result}")
 ```
 
-## 故障排查
+## Troubleshooting
 
-| 错误 | 解决方案 |
+| Error | Solution |
 |-------|----------|
-| `ValueError: No Claude credential` | 运行 `claude login`（订阅），或在 Settings → Providers 添加 Anthropic API key |
-| 认证相关的 4xx 错误 | token 过期或失效——重新 `claude login`，或用 `openprogram providers doctor` 诊断 |
-| 模型 id 被 API 拒绝 | 别名（`sonnet`/`opus`/`haiku`）以外的 id 原样透传，检查拼写和版本号 |
+| `ValueError: No Claude credential` | Run `claude login` (subscription), or add an Anthropic API key under Settings → Providers |
+| Auth-related 4xx errors | Token expired or invalid — `claude login` again, or diagnose with `openprogram providers doctor` |
+| Model id rejected by the API | Ids other than the aliases (`sonnet`/`opus`/`haiku`) are passed through as is; check the spelling and version number |

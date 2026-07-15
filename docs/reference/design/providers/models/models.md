@@ -1,48 +1,48 @@
-# 模型目录与 Provider 配置（最终设计）
+# Model Catalog and Provider Configuration (Final Design)
 
-> 本文描述模型目录的**目标运行逻辑**：数据放哪、文件与代码怎么交互、后端和前端各自怎么消费。
-> 与当前代码的差距和迁移路径集中在第 8 节——第 1–7 节永远只写目标态，不写历史。
-> Thinking effort 的参数细节见 [thinking-effort.md](thinking-effort.md)。
+> This document describes the **target runtime logic** of the model catalog: where data lives, how files interact with code, and how the backend and frontend each consume it.
+> Gaps between this design and the current code, plus the migration path, live in section 8 — sections 1–7 only ever describe the target state, never history.
+> Thinking-effort parameter details are covered in [thinking-effort.md](thinking-effort.md).
 
-## 1. 一句话架构
+## 1. Architecture in one sentence
 
-**系统只长期记住用户启用的模型。** 设置页的层级是「先 provider、后模型」：第一层展示 provider 列表；点进某个 provider，才实时查询**该 provider** 有哪些模型可选——这个查询不落盘。「启用」的动作 = 把某个模型那一刻的完整规格写进 `config.json`。运行时注册表 `ENABLED_MODELS` 就是 config 里这几十行——`get_model()` 查的、聊天页显示的、用户勾选的，物理上是同一份数据。
+**The system only remembers the models the user enabled.** The settings page is hierarchical — providers first, then models: the first level shows the provider list; only after opening one provider does the page query, live, which models **that provider** offers — and that query is never persisted. The act of **enabling** copies a model's full spec, as of that moment, into `config.json`. The runtime registry `ENABLED_MODELS` is those few dozen config rows — what `get_model()` resolves, what the chat page shows, and what the user checked are physically the same data.
 
-**核心不变式：聊天页能选的 = 已启用的 = 后端能解析的。** 不是靠合并管线对齐两份清单，而是根本只有一份。
+**Core invariant: selectable in chat = enabled = resolvable by the backend.** Not because a merge pipeline keeps two lists aligned, but because there is only one list.
 
-由此自动获得的性质：
+Properties that follow automatically:
 
-- **没有大文件**：不存全量清单（models.dev 有 151 个 provider、上千个模型且大量重复），config 里只有用户启用的几个到几十个。
-- **不会过期**：过期的前提是存储。可选列表实时查询，永远是最新的；已启用模型的规格由设置页「Refresh」按需覆写——只刷新用户真正在用的。
-- **git 干净**：程序只写用户目录的 config；仓库里只有人写的 provider.json；安装包目录运行期只读。
+- **No big files**: no full catalog is stored (models.dev has 151 providers, thousands of largely duplicated models); config holds only the handful the user enabled.
+- **Nothing goes stale**: staleness requires storage. The available list is queried live, so it is always current; enabled models' specs are overwritten on demand via the settings page "Refresh" — refreshing only what the user actually uses.
+- **git stays clean**: the program writes only the user's config; the repository holds only hand-written provider.json; the installed package directory is read-only at runtime.
 
-## 2. 数据分布（按「谁写」分家）
+## 2. Data layout (split by author)
 
-| 谁写 | 放哪 | 是什么 | 大小 |
+| Author | Location | Content | Size |
 |---|---|---|---|
-| **人**（进 git） | `providers/<p>/provider.json`（+ 专属协议时的 `<p>.py`） | endpoints、thinking、cache、模型级 override | 每份几行到几十行 |
-| **程序**（用户机） | `config.json` → `providers.<p>.models` | 已启用模型的完整规格 + key、enabled 等用户状态 | 几十行 |
-| 第三方（网络） | models.dev + 官方 `/v1/models` | 设置页浏览用的实时数据源 | 不落盘 |
+| **Humans** (git) | `providers/<p>/provider.json` (+ `<p>.py` for dedicated protocols) | endpoints, thinking, cache, per-model overrides | a few lines each |
+| **The program** (user machine) | `config.json` → `providers.<p>.models` | full specs of enabled models + keys and other user state | tens of lines |
+| Third party (network) | models.dev + official `/v1/models` | live sources for settings-page browsing | never persisted |
 
 ```
-openprogram/providers/                 ← 全部进 git，运行期只读
+openprogram/providers/                 ← all git-tracked, read-only at runtime
 ├── deepseek/
-│   ├── provider.json                  ← 该 provider 全部手写配置（见第 3 节）
-│   └── deepseek.py                    ← wire/stream 实现（仅专属协议的 provider 有）
-├── enabled_models.py                  ← ENABLED_MODELS：从 config 加载 + endpoints 填充 + thinking 推导
+│   ├── provider.json                  ← all hand-written config for this provider (section 3)
+│   └── deepseek.py                    ← wire/stream implementation (only for dedicated protocols)
+├── enabled_models.py                  ← ENABLED_MODELS: loads config + endpoint fill + thinking derivation
 └── models.py                          ← get_model / get_providers / get_models
 
 ~/.openprogram/
-└── config.json                        ← 唯一的用户侧持久化
+└── config.json                        ← the only user-side persistence
 ```
 
-**命名规则：「catalog」一词整体退役**（历史上一词五用是命名混乱的根源）。`models_generated.py`、`thinking_catalog.py`、`_catalog_new.py`、webui `_model_catalog/`（→ `_model_listing/`）全部退役。**`ENABLED_MODELS` 这个名字成立的前提是它真的只装启用的模型**——语义先改，名字后改（见 8.2 迁移顺序）。
+**Naming rule: the word "catalog" is retired entirely** (historically one word for five things — the root of the naming confusion). `models_generated.py`, `thinking_catalog.py`, `_catalog_new.py`, and webui's `_model_catalog/` (→ `_model_listing/`) all retire. **The name `ENABLED_MODELS` is only valid once the dict truly holds enabled models only** — semantics change first, the name follows (see 8.2).
 
-**没有目录的 provider**（fireworks、together 等）：models.dev 实时数据里有它们，用户填 key、浏览、启用即可，包里不需要任何文件。
+**Providers without a directory** (fireworks, together, …): models.dev lists them live; the user enters a key, browses, enables — no file in the package is ever needed.
 
-## 3. provider.json：唯一的手写文件
+## 3. provider.json: the only hand-written file
 
-一个 provider 的所有人工配置集中一份，全部字段可省略：
+All human configuration for a provider in one file; every field optional:
 
 ```json
 {
@@ -63,128 +63,141 @@ openprogram/providers/                 ← 全部进 git，运行期只读
 }
 ```
 
-| 字段 | 作用 | 缺省行为 |
+| Field | Purpose | Default behaviour |
 |---|---|---|
-| `endpoints` | api/base_url 分组，模型按组名引用（opencode 4 组、copilot 3 组；单 wire 只有 `default`） | models.dev 给的 base_url + OpenAI 兼容协议 |
-| `thinking` | wire_format / effort 映射 / 模型级档位（原 thinking.json，详见 thinking-effort.md） | OpenAI 兼容 fallback（low/medium/high） |
-| `cache` | prompt-caching 声明（原 cache.json） | 不做显式缓存控制 |
-| `model_overrides` | 逐模型的 headers、compat、`endpoint` 引用、`key_prefix` 等机器拿不到的字段，**启用时叠进规格** | 无 override |
-| `models_from` | 订阅型 provider 借用浏览数据源（claude-code → anthropic） | 不借用 |
+| `endpoints` | api/base_url groups referenced by name (opencode has 4, copilot 3; single-wire has just `default`) | models.dev base_url + OpenAI-compatible protocol |
+| `thinking` | wire_format / effort maps / per-model levels (formerly thinking.json; see thinking-effort.md) | OpenAI-compatible fallback (low/medium/high) |
+| `cache` | prompt-caching declaration (formerly cache.json) | no explicit cache control |
+| `model_overrides` | per-model headers, compat, `endpoint` reference, `key_prefix` — fields machines cannot obtain, **folded into the spec at enable time** | none |
+| `models_from` | browsing-source borrowing for subscription providers (claude-code → anthropic) | no borrowing |
 
-**判断标准：机器拿得到的字段，人不写。** provider.json 里没有模型清单——清单是浏览时实时查的，规格是启用时复制的。
+**The test: if a machine can obtain a field, a human doesn't write it.** provider.json contains no model list — the list is browsed live, the spec is copied at enable time.
 
-目录名用下划线（`amazon_bedrock/`），`id` 存连字符原名（`amazon-bedrock`）。同服务多协议（百炼的 OpenAI 兼容 + Anthropic 兼容端点）= 同一 provider 两个 endpoint，不拆两个 provider。
+Directory names use underscores (`amazon_bedrock/`); `id` keeps the hyphenated name (`amazon-bedrock`). Same-service-multiple-protocols (Bailian's OpenAI-compatible + Anthropic-compatible endpoints) = two endpoints of one provider, not two providers.
 
-## 4. 两个动作：浏览、启用
+## 4. The two actions: browse, enable
 
-### 4.1 浏览（实时，不落盘）
+### 4.1 Browse (live, never persisted)
 
-浏览分两级。**第一级：provider 列表**（设置页首屏）= 本地有 `provider.json` 的 provider ∪ models.dev 的 provider 索引，只有名字、配置状态等元信息，不含模型。**第二级：模型列表**——用户点进某一个 provider 后，才对这一个 provider 发起查询：
+Browsing has two levels. **Level one: the provider list** (settings landing view) = providers with a local `provider.json` ∪ models.dev's provider index — names and configuration status only, no model names. **Level two: the model list** — only after the user opens one specific provider does the page query that provider:
 
 ```
 list_available_models(provider_id)
-  = 该 provider 的官方源（一个 fetcher，见下）
-  ⊕ models.dev（补价格/能力；无 key 时的完整兜底）
-  → 内存合并，直接返回给前端渲染
+  = the provider's official source (one fetcher, see below)
+  ⊕ models.dev (fills price/capabilities; full fallback when there is no key)
+  → merged in memory, returned straight to the frontend
 ```
 
-**fetcher 归位原则：接口偏离标准 OpenAI 格式的 provider，把它自己的 fetcher 放在自己目录里。** 每种源形态不同但**返回同一契约**：成功 → `list[dict]`（每行至少 id/name），失败 → `{"error": ...}`。
+**Fetcher placement rule: a provider whose interface departs from the standard
+OpenAI shape carries its own fetcher in its own directory.** Each source has a
+different shape but **returns the same contract**: success → `list[dict]`
+(each row has at least id/name), failure → `{"error": ...}`.
 
-| 源形态 | fetcher 位置 | 例子 |
+| Source shape | fetcher location | example |
 |---|---|---|
-| 标准 `/v1/models`（OpenAI 兼容） | 通用 `_model_listing/fetchers/openai_compat.py`（共享兜底，不属于任何单个 provider） | openai、openrouter、groq、自定义网关 |
-| Anthropic `GET /v1/models` + 逐模型 capabilities | `providers/anthropic/list_models.py` | anthropic、claude-code、minimax |
-| 账户级私有端点（`/v1/models` 被 Cloudflare 挡，改拉订阅账户的模型表） | `providers/openai_codex/list_models.py`（见 fast-tier.md §2.1） | openai-codex |
-| 厂商专用列表接口（响应形状 / 鉴权与 OpenAI 兼容不同） | `providers/<name>/list_models.py`：`google`（query-param key + `models/<id>` 前缀）/ `amazon_bedrock`（boto3 SigV4，非 HTTP）/ `github_copilot`（会话 bearer + capabilities 信封）/ `deepseek`（id-only 后补） | 对应 provider |
+| Standard `/v1/models` (OpenAI-compatible) | generic `_model_listing/fetchers/openai_compat.py` (shared fallback, owned by no single provider) | openai, openrouter, groq, custom gateways |
+| Anthropic `GET /v1/models` + per-model capabilities | `providers/anthropic/list_models.py` | anthropic, claude-code, minimax |
+| Account-level private endpoint (`/v1/models` is Cloudflare-blocked; read the subscription's model table instead) | `providers/openai_codex/list_models.py` (see fast-tier.md §2.1) | openai-codex |
+| Vendor-specific list API (shape / auth differ from OpenAI-compatible) | `providers/<name>/list_models.py`: `google` (query-param key + `models/<id>` prefix) / `amazon_bedrock` (boto3 SigV4, not HTTP) / `github_copilot` (session bearer + capabilities envelope) / `deepseek` (id-only, enriched after) | the matching provider |
 
-**约定加载**：接口偏离标准的 provider 在自己目录放一个 `list_models.py`，导出 `fetch(provider_id, timeout)`；分派器 `_load_fetcher` 按目录名 `__import__` 找它——和 `probe_thinking.probe()` 完全一套机制，新增 provider 零中心改动。接口标准的 provider 不放这个文件，走通用 `openai_compat`。**有没有这个文件 = 这个 provider 接口是否偏离标准**，是个自然的、按需的判据。
+**Convention loading**: a provider whose interface departs from standard ships
+a `list_models.py` in its own directory exposing `fetch(provider_id, timeout)`;
+the dispatcher's `_load_fetcher` `__import__`s it by directory name — the exact
+mechanism `probe_thinking.probe()` uses, so adding a provider needs no central
+edit. A standard-interface provider ships no such file and uses the generic
+`openai_compat`. Whether the file exists = whether the provider's interface
+departs from standard — a natural, on-demand test.
 
-无论哪种源，`fetch_and_normalize` 是**唯一的归一化收口**：它把 fetcher 千差万别的 key（`context_length`/`context_window`/`contextWindow` 等）统一成一份 entry dict，再叠 models.dev 补全。下游只看归一化后的统一行，看不到源的差异。
+Whatever the source, `fetch_and_normalize` is the **single normalisation choke
+point**: it collapses each fetcher's disparate keys (`context_length` /
+`context_window` / `contextWindow`, …) into one entry dict, then layers
+models.dev on top. Downstream only ever sees the normalised row — never the
+source differences.
 
-结果只进内存（可带一个短 TTL 缓存避免反复请求），关掉页面就没了。断网时浏览不可用——**发现新模型本来就需要网络**，这不是缺陷是事实。
+Results live in memory only (a short-TTL cache is fine); closing the page discards them. Browsing is unavailable offline — **discovering new models requires the network by definition**; that is a fact, not a defect.
 
-### 4.2 启用（复制规格进 config）
+### 4.2 Enable (copy the spec into config)
 
-用户在浏览列表里勾选一个模型：
+The user checks a model in the browse list:
 
 ```
 enable_model(provider_id, row)
-  → 规格 = 浏览行 ⊕ provider.json.model_overrides[id] ⊕ endpoints 解析的 api/base_url
-  → thinking 档位由 provider.json.thinking 推导后一并写入
-  → 追加到 config.json providers.<p>.models
-  → ENABLED_MODELS 重载
+  → spec = browse row ⊕ provider.json.model_overrides[id] ⊕ api/base_url from endpoints
+  → thinking levels derived from provider.json.thinking, written alongside
+  → appended to config.json providers.<p>.models
+  → ENABLED_MODELS reloads
 ```
 
-- **取消启用** = 从 config 删除该行。
-- **Refresh** = 对已启用模型重新执行浏览 + 覆写规格（治「规格随时间变旧」，且只刷新用户在用的）。
-- **手工添加模型**（provider 没列出的）= 用户在同一张表单里手填一行——和「启用」写的是同一个列表，原 `custom_models` 概念消失。
-- **订阅 provider 的动态注册**（如 claude-code 登录后自动出现 3 个模型）= 程序代替用户执行一次 enable，写的还是同一个列表。
+- **Disable** = delete the row from config.
+- **Refresh** = re-run browse for enabled models and overwrite their specs (handles spec drift over time; touches only what the user actually uses).
+- **Manually adding a model** (one the provider doesn't list) = the user fills in a row in the same form — it writes to the same list; the old `custom_models` concept dissolves.
+- **Dynamic registration for subscription providers** (e.g. claude-code auto-adds 3 models after login) = the program performs an enable on the user's behalf, writing to the same list.
 
-## 5. 后端怎么用
+## 5. How the backend uses it
 
 ```python
 # openprogram/providers/enabled_models.py
-ENABLED_MODELS: dict[str, Model]   # key = "<prefix>/<id>"，内容 = config 规格 + 推导字段
+ENABLED_MODELS: dict[str, Model]   # key = "<prefix>/<id>", content = config specs + derived fields
 ```
 
-启动时从 config 加载（几十行，瞬时），config 变更后重载。`get_model` / `get_providers` / `get_models` 三个查询函数接口不变，20+ 个运行时调用方（agent、runtime、failover…）零改动。`get_model` miss 时经 `auth.aliases` 试等价 provider 名。
+Loaded from config at startup (tens of rows, instant), reloaded when config changes. The three query functions `get_model` / `get_providers` / `get_models` keep their interfaces — the 20+ runtime callers (agent, runtime, failover, …) change nothing. `get_model` falls back through `auth.aliases` on a miss.
 
-**约定：系统只认启用的模型。** failover 链、agent 配置引用的模型必须在启用集里；引用未启用的模型 = 配置错误，报错信息提示去设置页启用。旧会话引用已删除的模型时正常显示历史，仅不能继续用该模型发消息。
+**Contract: the system only knows enabled models.** Failover chains and agent configs must reference enabled models; referencing a non-enabled model is a configuration error whose message points to the settings page. Old sessions referencing a deleted model still display history; they just cannot continue with that model.
 
-## 6. 前端怎么用
+## 6. How the frontend uses it
 
-| 前端位置 | API 路由 | 数据来源 |
+| Frontend surface | API route | Data source |
 |---|---|---|
-| 设置页首屏：provider 列表（无模型名） | `GET /api/providers` | provider.json 有的 + models.dev 实时列出的（社区 provider 可直接配置） |
-| provider 详情页：浏览/勾选**该 provider** 的模型 | `GET /api/providers/<id>/available` | **实时**：4.1 第二级的浏览结果 + 已启用标记 |
-| 聊天页模型选择器 | `GET /api/models/enabled` | **config**：ENABLED_MODELS 原样返回 |
-| thinking 档位选择器 | （`_thinking.py`） | ENABLED_MODELS 行里的 thinking_levels |
+| Settings landing view: provider list (no model names) | `GET /api/providers` | providers with a provider.json + those models.dev lists live (community providers configurable directly) |
+| Provider detail view: browse/check **that provider's** models | `GET /api/providers/<id>/available` | **live**: the level-two browse result of 4.1 + enabled flags |
+| Chat model picker | `GET /api/models/enabled` | **config**: ENABLED_MODELS as-is |
+| Thinking level picker | (`_thinking.py`) | thinking_levels from the ENABLED_MODELS rows |
 
-webui 展示层（`_model_listing/`）不做任何合并推导——浏览合并在 4.1 一个函数里，规格合并发生在启用那一刻。webui import providers，providers 永远不 import webui。
+The webui presentation layer (`_model_listing/`) does no merging or derivation — browse merging is one function (4.1), spec merging happens at enable time. webui imports providers; providers never import webui.
 
-**端到端**：填 key → 浏览（实时列表出现 `deepseek-v4-flash`）→ 勾选（完整规格写进 config，`ENABLED_MODELS["deepseek/deepseek-v4-flash"]` 出现）→ 聊天页选中发消息（`get_model` 命中同一条 config 记录）。任何时刻系统里都只有一份模型数据。
+**End to end**: enter a key → browse (live list shows `deepseek-v4-flash`) → check it (full spec written to config; `ENABLED_MODELS["deepseek/deepseek-v4-flash"]` appears) → pick it in chat and send (`get_model` hits the same config row). At every moment the system holds exactly one copy of model data.
 
-## 7. 不变式（改代码前先对照）
+## 7. Invariants (check before changing code)
 
-1. **只存启用的**：唯一持久化的模型数据是 config 里的启用规格。出现第二份持久化清单（全量快照、fetch 缓存文件、手写清单）即违约。
-2. **浏览不落盘**：可选列表是实时查询 + 内存缓存，永不写文件。
-3. **按谁写分家**：人写的进 git（provider.json）；程序写的进用户 config；包目录运行期只读。
-4. **手写最小化**：provider.json 只存机器拿不到的字段，且没有模型清单。
-5. **分层单向**：`openprogram.providers` 不 import `openprogram.webui`。
-6. **key 兼容**：`"<prefix>/<id>"`、alias 回退、`key_prefix`（gemini-subscription 双 key）保留；注册表是同一个可变 dict。
-7. **多源一格**：不管来源是官方 `/v1/models`、账户级私有端点（codex）、models.dev 社区目录还是用户手填，都在 `fetch_and_normalize` 一个函数里归一成同一份行结构；启用时经 `_upsert_spec_row` 一个收口写进 config（`_normalize_spec_row` 补全 Model schema 字段）；读取时经 `_build_model_from_row` 一个转换器建成 `Model`。三处收口各只有一个，谁也不许旁路自造格式。
+1. **Persist only what's enabled**: the only persisted model data is the enabled specs in config. Any second persisted list (full snapshot, fetch cache file, hand-written catalog) is a violation.
+2. **Browsing never persists**: the available list is a live query + in-memory cache, never written to a file.
+3. **Split by author**: human data in git (provider.json); program data in user config; the package directory is read-only at runtime.
+4. **Minimal hand-writing**: provider.json stores only what machines cannot obtain, and never a model list.
+5. **One-way layering**: `openprogram.providers` never imports `openprogram.webui`.
+6. **Key compatibility**: `"<prefix>/<id>"`, alias fallback, `key_prefix` (gemini-subscription dual keys) preserved; the registry stays one mutable dict.
+7. **Many sources, one shape**: whether a row comes from an official `/v1/models`, an account-level private endpoint (codex), the models.dev community catalogue, or a hand-typed entry, it is normalised into one row shape by the single `fetch_and_normalize` function; enabling routes through the single `_upsert_spec_row` choke point into config (`_normalize_spec_row` fills the Model-schema keys); reading routes through the single `_build_model_from_row` converter into a `Model`. Each of the three choke points is exactly one; nothing may bypass them to mint its own shape.
 
-## 8. 现状偏离与迁移
+## 8. Current deviations and migration
 
-> 记录日期 2026-07-08。问题现象的完整描述见 [../PROBLEM-models-and-bailian.md](../PROBLEM-models-and-bailian.md)。
+> Recorded 2026-07-08. Full problem description: [../PROBLEM-models-and-bailian.md](../PROBLEM-models-and-bailian.md).
 
-### 8.1 偏离（迁移已完成 ✅）
+### 8.1 Deviations (migration complete ✅)
 
-> 迁移步骤 1–7 已全部落地：以下偏离均已消除。注册表改名 `ENABLED_MODELS`、定义移入 `enabled_models.py`、`_model_catalog/` → `_model_listing/`、`models_generated.py` / `thinking_catalog.py` / `_catalog_new.py` 退役，代码里不再有「catalog」。
+> Migration steps 1–7 have all landed; every deviation below is resolved. The registry is renamed `ENABLED_MODELS` with its definition in `enabled_models.py`, `_model_catalog/` became `_model_listing/`, and `models_generated.py` / `thinking_catalog.py` / `_catalog_new.py` are retired — no "catalog" left in the code.
 
-1. **持久化了不该持久化的**：752 行手写 `models.json`（22 个 provider，已腐烂）+ `models.fetched.json`（Fetch 落盘在安装包目录，靠 .gitignore 遮掩）。目标态里两者都不存在。
-2. **两条数据链**：设置页走 webui 的 `combined_models`（fetched + models.dev），运行时注册表只读手写 `models.json`——设置页能选 `deepseek-v4-flash`，`get_model` 查不到。目标态里连合并管线都不需要：只有 config 一份。
-3. **每 provider 5 类文件**（provider.json / models.json / thinking.json / cache.json / models.fetched.json）。目标态收敛为 1 份 provider.json。
-4. **probe 结果回写 git 里的 thinking.json**——程序写版本控制文件。目标态 probe 只影响浏览结果和启用时写入 config 的规格。
-5. **层次倒置**：models.dev 源和合并逻辑在 `webui/_model_catalog/`，providers 层反过来读注册表补 api/base_url，循环依赖。
-6. **注册表装了 755 个模型**，名字先后叫过 `MODELS` / `MODEL_REGISTRY`。目标态只装启用的，改名 `ENABLED_MODELS`——**名字跟着语义走，语义没改完之前不换名**。
-7. **bailian 命名不标准**：models.dev 同 base_url 的 provider 叫 `alibaba-token-plan-cn`，已有预留空目录；用户已要求改标准名、删 `bailian/`。
+1. **Persisting what shouldn't be persisted**: 752 hand-written `models.json` rows (22 providers, already rotted) + `models.fetched.json` (Fetch persisted into the installed package, papered over with .gitignore). Neither exists in the target state.
+2. **Two data chains**: the settings page goes through webui's `combined_models` (fetched + models.dev) while the runtime registry reads only hand-written `models.json` — the settings page can select `deepseek-v4-flash`, `get_model` cannot find it. The target state needs no merge pipeline at all: config is the only copy.
+3. **Five file kinds per provider** (provider.json / models.json / thinking.json / cache.json / models.fetched.json). Converges to one provider.json.
+4. **Probe results write back into git-tracked thinking.json** — a program writing a version-controlled file. In the target state probe only affects browse results and the spec written to config at enable time.
+5. **Inverted layering**: models.dev source and merge logic in `webui/_model_catalog/`; the providers layer reads the registry back to fill api/base_url — a cycle.
+6. **The registry holds 755 models**, named `MODELS` then `MODEL_REGISTRY`. The target holds enabled models only, renamed `ENABLED_MODELS` — **the name follows the semantics; no rename before the semantics change**.
+7. **Non-standard bailian naming**: models.dev calls the same-base_url provider `alibaba-token-plan-cn`; the reserved empty directory exists; the user asked for the standard name and deletion of `bailian/`.
 
-### 8.2 迁移顺序（每步独立提交、系统不瘫）——全部完成 ✅
+### 8.2 Migration order (each step commits independently, nothing breaks) — all complete ✅
 
-1. **bailian → alibaba_token_plan_cn**：目录改名 + id 改 `alibaba-token-plan-cn`。独立小改，先做。✅
-2. **启用即复制规格**：设置页勾选模型时把完整规格（浏览行 ⊕ override ⊕ endpoints ⊕ thinking 推导）写进 config `providers.<p>.models`，与 `custom_models` 统一为一个列表。存量用户的 `enabled_models` id 列表一次性迁移：按当前注册表把 id 解析成完整规格写入。✅
-3. **运行时切换到 config**：注册表加载源改为「config 规格 + provider.json 填充」，`get_model` 语义不变。**两条链在这一步合一**——此后 752 行 `models.json` 和 `models.fetched.json` 机制成为死代码。✅
-4. **浏览改实时**：`list_models_for_provider` 拆成「available（实时浏览）」和「enabled（读 config）」两条路；Fetch 落盘逻辑删除（可留短 TTL 内存缓存）。✅
-5. **删除死数据**：`git rm` 22 份 `models.json`、fetched 文件机制、`.gitignore` 相关行。✅
-6. **配置合一**：`thinking.json`、`cache.json` 并入 `provider.json`；`thinking_spec`/`cache_spec` 改读新位置；`_default_api_for`/`_resolve_base_url` 改读 endpoints（循环依赖解除）。✅
-7. **命名收尾**：注册表改名 `ENABLED_MODELS`（此时语义已成立），定义移入 `enabled_models.py`；退役 `models_generated.py`、`thinking_catalog.py`（并入 `thinking_spec.py`）、`_catalog_new.py`、`_model_catalog/`（→ `_model_listing/`）。至此代码里不再有「catalog」。✅
+1. **bailian → alibaba_token_plan_cn**: rename directory + id. Small and independent — first. ✅
+2. **Enable = copy the spec**: checking a model writes the full spec (browse row ⊕ overrides ⊕ endpoints ⊕ thinking derivation) into config `providers.<p>.models`, unified with `custom_models` into one list. Existing users' `enabled_models` id lists migrate once: resolve each id against the current registry and write full specs. ✅
+3. **Runtime switches to config**: the registry loads from "config specs + provider.json fill"; `get_model` semantics unchanged. **The two chains become one here** — the 752-row `models.json` files and the fetched-file machinery become dead code. ✅
+4. **Browsing goes live**: `list_models_for_provider` splits into "available" (live browse) and "enabled" (read config); Fetch persistence is deleted (a short-TTL memory cache may remain). ✅
+5. **Delete dead data**: `git rm` the 22 `models.json` files, the fetched-file machinery, and the `.gitignore` line. ✅
+6. **Unify config**: fold `thinking.json` and `cache.json` into `provider.json`; `thinking_spec`/`cache_spec` read the new location; `_default_api_for`/`_resolve_base_url` read endpoints (cycle dissolves). ✅
+7. **Naming finish**: rename the registry to `ENABLED_MODELS` (semantics now true), definition in `enabled_models.py`; retire `models_generated.py`, `thinking_catalog.py` (folded into `thinking_spec.py`), `_catalog_new.py`, `_model_catalog/` (→ `_model_listing/`). No "catalog" left in the code. ✅
 
-### 8.3 迁移必须保住的点（历史审查所得）
+### 8.3 What the migration must preserve (from prior reviews)
 
-- **存量启用不能丢**：步骤 2 的 id → 规格迁移必须覆盖 22 个 provider 的现有 enabled_models 与 custom_models；迁移后逐条校验 `get_model` 结果与迁移前等价。
-- **alias / 双 key**：gemini-subscription 的 `google-gemini-cli/*` + `gemini-subscription/*` 共 10 key、name 各异——启用行各自携带完整 key 与 name，天然保留；alias 回退逻辑不动。
-- **claude-code 借用链**：浏览数据借 anthropic（`models_from`）、登录后自动 enable 3 个模型、fetcher 特殊——迁移时逐一保留。
-- **逐字段保真**：`cost` 嵌套对象、`input` 多模态、`headers`（copilot 依赖）、`compat`——启用时写入 config 的规格必须含全这些字段；删除手写清单前先确认每个启用行拿得到等价值。
-- **验证粒度**：多 wire provider 按每个 `(api, base_url, headers, compat)` 组合各 exec 一个模型。
-- 核心回归测试保持绿：`tests/unit/test_provider_wire_invariants.py`、`tests/unit/test_model_fetch_routing.py`。
+- **Existing enablement must survive**: step 2's id → spec migration must cover all 22 providers' current enabled_models and custom_models; verify per row that `get_model` results are equivalent before and after.
+- **Aliases / dual keys**: gemini-subscription's `google-gemini-cli/*` + `gemini-subscription/*` are 10 keys with distinct names — enabled rows carry their own key and name, so this survives naturally; alias fallback logic untouched.
+- **The claude-code borrowing chain**: browse data borrowed from anthropic (`models_from`), 3 models auto-enabled after login, special fetcher — preserve each.
+- **Field-by-field fidelity**: nested `cost`, multimodal `input`, `headers` (copilot depends on it), `compat` — the spec written to config at enable time must carry all of these; before deleting the hand-written catalogs confirm every enabled row has equivalent values.
+- **Verification granularity**: multi-wire providers need one exec per `(api, base_url, headers, compat)` combination.
+- Core regression tests stay green: `tests/unit/test_provider_wire_invariants.py`, `tests/unit/test_model_fetch_routing.py`.

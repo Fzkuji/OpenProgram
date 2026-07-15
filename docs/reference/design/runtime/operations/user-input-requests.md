@@ -1,101 +1,109 @@
-# 用户输入请求：暂停运行以向用户提问
+# User input requests: pausing a run to ask the user
 
-状态：**Phase 1 + Phase 2 已落地并验证**（2026-06-13）。Phase 1：
+Status: **Phase 1 + Phase 2 已落地并验证**（2026-06-13）。Phase 1：
 runtime.ask/confirm/can_ask、QuestionRegistry、WS question_reply/reject、前端
 QuestionPrompt 卡片，端到端 + 前端双向验证通过。Phase 2：@agentic_function
 子进程桥——子进程里的 runtime.ask 经 mp.Queue 把问题送回父进程、答案回流
 resume，真 spawn 子进程 e2e 通过。重连恢复也落地（load_session 重放 pending +
 REST /api/questions）。Phase 3（TUI）、4（审批合流+channels+form）待做。
-配套文档：[../cli/tui-upgrade.md](../../cli/tui-upgrade.md)（TUI 界面）。
+Companion: [../cli/tui-upgrade.md](../../cli/tui-upgrade.md) (TUI surface).
 
-## 问题
+## Problem
 
-某个函数（尤其是 `@agentic_function`）有时需要在运行中途求助用户：确认一个
-有破坏性的步骤、在多个备选项之间做选择、补上一个缺失的值。如今没有一条可用
-的途径来暂停执行、把问题呈现到 web/TUI/channels，并带着答案恢复运行。
+A function (especially an `@agentic_function`) sometimes needs the user
+mid-run: confirm a destructive step, pick between alternatives, supply a
+missing value. Today there is no working way to pause execution, surface
+the question in web/TUI/channels, and resume with the answer.
 
-## 现状盘点（审计结论）
+## What already exists (audit conclusion)
 
-存在三套相关机制，但没有一套在主聊天路径上端到端跑通：
+Three related mechanisms, none alive end-to-end on the main chat path:
 
-| 机制 | 状态 |
+| Mechanism | State |
 |---|---|
-| `ask_user` / `set_ask_user` / `FollowUp`（`openprogram/functions/agentics/ask_user/`） | 原语完整，DAG awaiting-node 簿记完整；但 worker 里没注册 handler，且 agentic 子进程桥是单向的——实际上返回 `None` |
-| webui follow-up 往返（`webui/server.py:234-270`、WS `follow_up_answer` action、web `handleFollowUpQuestion`） | 三段都在；发起方 `_web_follow_up` 在 `b39347fb` 中失去了它唯一的调用者——死代码。Web UI 那侧是往 `#runtime_pending` 做的旧式 DOM 注入（只在 runtime 块流式输出期间存在）。TUI 给信封定了类型却从不处理它 |
-| 审批门（`openprogram/agent/_approval.py`，已接进 dispatcher） | 等待机制完整且活着，但 `resolve()` 只在测试里被调用；没有 web/TUI UI；默认 `bypass` 把它遮住了；子 agent 强制 bypass 以避免 300s 挂起 |
+| `ask_user` / `set_ask_user` / `FollowUp` (`openprogram/functions/agentics/ask_user/`) | Primitive complete, DAG awaiting-node bookkeeping complete; but no handler registered in the worker, and the agentic subprocess bridge is one-way — returns `None` in practice |
+| webui follow-up round-trip (`webui/server.py:234-270`, WS `follow_up_answer` action, web `handleFollowUpQuestion`) | All three segments exist; the initiator `_web_follow_up` lost its only caller in `b39347fb` — dead code. Web UI side is legacy DOM injection into `#runtime_pending` (only exists while a runtime block streams). TUI types the envelope but never handles it |
+| Approval gate (`openprogram/agent/_approval.py`, wired in dispatcher) | Wait machinery complete and live, but `resolve()` is only called from tests; no web/TUI UI; default `bypass` masks it; sub-agents force bypass to avoid 300s hangs |
 
-所以骨架（阻塞队列、WS action、stop 哨兵解除阻塞、DAG awaiting 节点）全都在。
-缺的是 registry 的形态（按请求一份，而非一个全局 handler 槽位）、子进程答案
-通道、真正的前端 UI，以及诚实的超时语义。
+So the skeleton (blocking queue, WS action, stop-sentinel unblocking, DAG
+awaiting nodes) is all there. What's missing is the registry shape
+(per-request, not a global handler slot), the subprocess answer channel,
+real frontend UI, and honest timeout semantics.
 
-发现的关键约束：`@agentic_function` 函数体在一个 **spawn 出来的子进程**
-（`agent/process_runner.py`）里运行，其 mp.Queue 是 child→parent 单向的。任何
-设计都必须加一条 parent→child 的答案队列；再多的 worker 侧接线也绕不开这一点。
+Key constraint discovered: `@agentic_function` bodies run in a **spawned
+subprocess** (`agent/process_runner.py`) with an mp.Queue that is
+child→parent only. Any design must add a parent→child answer queue; no
+amount of worker-side wiring avoids this.
 
-## 参考设计（我们借鉴的部分）
+## Reference designs (what we take)
 
-- **opencode**：工具调用 `ctx.ask(...)` → 服务端 Deferred + pending map →
-  事件 `permission.asked` 下行、REST reply 上行，**外加一个列表 endpoint**，
-  让重连的客户端能恢复 pending 问题。Reject 可以带一条消息，成为模型看到的
-  tool-error 文本。
-- **Claude Code**：AskUserQuestion 搭在权限管线上；选项 + 始终存在的 "Other"
-  自由文本；pending 请求的*快照*持久化在 session metadata 里，好让远端 UI
-  重绘它（执行栈从不持久化）；当没有人接入时，需要交互的工具被禁用。
-- **openclaw**：30 分钟超时，带一个显式回退（绝不静默）；channel 按钮的值是
-  一条纯文本命令（`/approve <id> …`），这样纯文本 channel 也能一样工作；对于
-  channel 发起的运行，工具立即返回 "pending"，结果稍后再注回（非阻塞模式）。
-- **MCP elicitation**：三结果协议——accept / decline / cancel——以及面向
-  表单式提问的扁平对象 schema 约束。
+- **opencode**: tool calls `ctx.ask(...)` → server-side Deferred + pending
+  map → event `permission.asked` down, REST reply up, **plus a list
+  endpoint** so a reconnecting client can recover pending questions. Reject
+  may carry a message that becomes the tool-error text the model sees.
+- **Claude Code**: AskUserQuestion rides the permission pipeline; options +
+  always-present "Other" free-text; pending request *snapshot* persisted in
+  session metadata so remote UIs can redraw it (execution stack never
+  persisted); tools that require interaction are disabled when no human is
+  attached.
+- **openclaw**: 30-min timeout with an explicit fallback (never silent);
+  channel buttons whose value is a plain text command (`/approve <id> …`)
+  so text-only channels work identically; for channel-initiated runs, the
+  tool returns "pending" immediately and the result is re-injected later
+  (non-blocking mode).
+- **MCP elicitation**: the three-outcome protocol — accept / decline /
+  cancel — and flat-object schema constraints for form-style asks.
 
-这四者都实现了"执行点在一个原语上阻塞，UI 来解决它"——没有
-generator/coroutine 那套花活。我们的做法是阻塞一个线程（函数本就跑在
-线程/子进程里）。
+All four implement "execution point blocks on a primitive, UI resolves it"
+— no generator/coroutine acrobatics. Ours blocks a thread (functions
+already run in threads/subprocesses).
 
-## API（需要达成一致的部分）
+## API (the part to agree on)
 
-在 `runtime` 上，紧挨着 `runtime.exec` / `decision`：
+On `runtime`, next to `runtime.exec` / `decision`:
 
 ```python
-# 在任意 @agentic_function / @function 函数体内
+# Inside any @agentic_function / @function body
 answer = runtime.ask(
     "Which library for date formatting?",
-    options=["dayjs", "date-fns", "luxon"],  # 可选；None = 自由文本
-    multi=False,                # True -> 返回 list[str]
-    allow_custom=True,          # 除选项外还允许自由文本
-    timeout=1800,               # 秒，默认 30 分钟
-    default=None,               # 超时时返回；无 default -> AskTimeout
+    options=["dayjs", "date-fns", "luxon"],  # optional; None = free text
+    multi=False,                # True -> returns list[str]
+    allow_custom=True,          # free text allowed besides options
+    timeout=1800,               # seconds, default 30 min
+    default=None,               # returned on timeout; no default -> AskTimeout
 )
-# -> str（或 list[str]）；用户按下 Decline 抛 UserDeclined
+# -> str (or list[str]); user pressing Decline raises UserDeclined
 
 ok = runtime.confirm("Archive all 87 emails?", detail=preview,
-                     timeout=600, default=False)  # -> bool，超时永不抛异常
+                     timeout=600, default=False)  # -> bool, never raises on timeout
 
-runtime.can_ask()  # -> bool；无头运行时为 False，作者可据此分支
+runtime.can_ask()  # -> bool; False in headless runs so authors can branch
 ```
 
-- `ask_user(question)` 保留为 `runtime.ask(question)` 的一层薄别名。
+- `ask_user(question)` stays as a thin alias of `runtime.ask(question)`.
   ✅ 已落地（commit f0894546）：无全局 handler 时回退到 `runtime.ask`，
   UserDeclined/AskTimeout 归一为 None 保持老语义；CLI 的 set_ask_user 路径不变。
-- `clarify` 内置工具（LLM 可调用）顺带又能用了。✅ 随上条复活。
-- 三种显式结果（answered / declined / timeout）——当前"300 秒静默返回
-  None"的行为被移除。
-- `runtime.form(...)`（MCP-elicitation 风格的扁平 schema）暂缓。
+- The `clarify` built-in tool (LLM-callable) starts working again for free. ✅ 随上条复活。
+- Three explicit outcomes (answered / declined / timeout) — the current
+  "300 s silently returns None" behavior is removed.
+- `runtime.form(...)` (MCP-elicitation-style flat schema) is deferred.
 
-## 机制
+## Mechanism
 
-1. **Registry**（worker 进程）：`PendingQuestion {id, session_id, kind,
-   prompt, options, multi, allow_custom, created_at, expires_at}` + 一个
-   按请求一份的 `threading.Event`。取代全局 `set_ask_user` handler 槽位
-   （修掉并发 session 互相覆盖的 bug）。Resolve 是原子的认领一次；
-   `handle_stop` 像现有 follow-up 队列那样放入 cancel 哨兵。
-2. **协议** ✅（WS Phase 1；REST commit be6bb102）：WS 广播
-   `question.asked / question.replied / question.rejected`；REST `GET
+1. **Registry** (worker process): `PendingQuestion {id, session_id, kind,
+   prompt, options, multi, allow_custom, created_at, expires_at}` + a
+   per-request `threading.Event`. Replaces the global `set_ask_user`
+   handler slot (fixes the concurrent-session overwrite bug). Resolve is
+   atomic claim-once; `handle_stop` puts the cancel sentinel exactly like
+   the existing follow-up queues.
+2. **Protocol** ✅（WS Phase 1；REST commit be6bb102）: WS broadcast
+   `question.asked / question.replied / question.rejected`; REST `GET
    /api/questions?session_id=` + `POST /api/questions/{id}/reply` /
-   `.../reject` 用于重连恢复（`webui/routes/questions.py`）。
+   `.../reject` for reconnect recovery (`webui/routes/questions.py`).
    `handle_load_session` 还在(重)连时重放 still-pending 的 `question.asked`。
-   复用现有的 `_broadcast_chat_response` 管路（它在 stop 后的静默正是我们想要
-   的行为）。
-3. **子进程桥** ✅（Phase 2，commit 1c634b5f）："提问往哪条通道送"
+   Reuses the existing `_broadcast_chat_response` plumbing (its post-stop gag
+   is the behavior we want).
+3. **Subprocess bridge** ✅（Phase 2，commit 1c634b5f）: "提问往哪条通道送"
    做成 `QuestionTransport`，对齐 Python logging 的 Handler（`publish` 即
    `Handler.emit`）：`EventLayerTransport`（默认，事件层→前端卡片+总线，worker
    用）/ `QueueTransport`（经 mp.Queue 送回父进程，子进程用）。通道由 runtime
@@ -108,26 +116,28 @@ runtime.can_ask()  # -> bool；无头运行时为 False，作者可据此分支
    起 waiter，WS reply 经既有 `_resolve_question` resolve 父 registry → waiter
    把答案推回 answer_queue。子进程退出/被 stop 时父侧把残留待答按 declined
    收尾、撤回卡片（claim-once，重复 resolve 无害）。
-4. **持久化**：持久化请求快照，而非执行栈。DAG 已经写入
-   `status="awaiting"` 的 user 角色节点；worker 重启后，残留的 pending 被标记
-   为 expired，DAG 节点标为 `unanswered`。不做持久化执行恢复（四个参考都
-   有意跳过它）。
-5. **前端**：web 在消息流里得到一张 React 问题卡片（取代旧式 DOM 注入），
-   问题待答期间输入框兼作答案框；TUI 把问题渲染在输入槽位里
-   （tui-upgrade.md P2）。跨界面以第一个答案为准；`question.replied` 会撤回
-   其他界面上的 UI。
-6. **审批合流（后续阶段）**：`_approval.py` 迁移到同一个 registry，
-   `kind="approval"`，给那个形同虚设的 `ask` 权限模式一个真 UI，采用 opencode
-   的 reply 形态（allow once / always / reject 并带一条会成为 tool error 文本
-   的反馈）。
-7. **Channels（后续阶段）**：按钮即文本命令（`/answer <id>
-   <choice>`）；对于 channel 发起的运行，优先采用非阻塞的 `FollowUp` 形态
-   （回复结束本轮，用户的下一条消息恢复该函数），而不是把一个线程攥住 30
-   分钟。
+4. **Persistence**: persist the request snapshot, not the execution stack.
+   The DAG already writes `status="awaiting"` user-role nodes; on worker
+   restart, leftover pendings are marked expired and DAG nodes
+   `unanswered`. No durable-execution resume (all four references
+   deliberately skip it).
+5. **Frontends**: web gets a React question card in the message stream
+   (replacing the legacy DOM injection) and the composer doubles as the
+   answer box while a question is pending; TUI renders the question in the
+   input slot (tui-upgrade.md P2). First answer wins across surfaces;
+   `question.replied` retracts the UI elsewhere.
+6. **Approval merge (later phase)**: `_approval.py` migrates onto the same
+   registry as `kind="approval"`, giving the dead `ask` permission mode a
+   real UI, with opencode's reply shape (allow once / always / reject with
+   feedback that becomes the tool error text).
+7. **Channels (later phase)**: buttons-as-text-commands (`/answer <id>
+   <choice>`); for channel-initiated runs prefer the non-blocking
+   `FollowUp` shape (reply ends the turn, user's next message resumes the
+   function) instead of holding a thread for 30 minutes.
 
-## 阶段
+## Phases
 
-- **Phase 1 — 最小可用路径** ✅（2026-06-13 落地）：registry +
+- **Phase 1 — minimal live path** ✅（2026-06-13 落地）: registry +
   `runtime.ask`/`confirm`/`can_ask` + WS question_reply/reject 协议 + web
   question card。三态显式（answered / UserDeclined / AskTimeout）替代旧的
   300s 静默 None；stop 时 cancel_session 解除待答。as-built：
@@ -141,8 +151,8 @@ runtime.can_ask()  # -> bool；无头运行时为 False，作者可据此分支
   `question.asked` 帧重放（前端零改动重绘）；REST `GET /api/questions` +
   `POST /api/questions/{id}/reply|reject`（`webui/routes/questions.py`）给同一
   registry 的 API 对等，reply/reject 走与 WS 同一收口 `_resolve_question`。
-- **Phase 2 — 子进程桥** ✅（2026-06-13 落地，commit 1c634b5f）：
-  `@agentic_function` 函数体可以提问（真正的核心用例）。
+- **Phase 2 — subprocess bridge** ✅（2026-06-13 落地，commit 1c634b5f）:
+  `@agentic_function` bodies can ask (the actual headline use case)。
   `QuestionTransport`（EventLayerTransport / QueueTransport，对齐 logging
   Handler）+ `process_runner` 的 parent↔child 桥（event_queue 上行问题、
   answer_queue 回流答案）。as-built：`agent/questions.py`（transport 三类
@@ -152,12 +162,13 @@ runtime.can_ask()  # -> bool；无头运行时为 False，作者可据此分支
   _bridge_question_to_parent + _decline_bridged_question）。验证：
   `tests/agent/test_questions_subprocess_bridge.py`（8 单测）+ 真 spawn
   子进程 e2e（探针验证后删）。
-- **Phase 3 — TUI 界面**：question/approval 提示放在输入槽位里
-  （在 tui-upgrade.md 中跟踪）。
-- **Phase 4 — 审批合流 + channels + `runtime.form`**。
+- **Phase 3 — TUI surface**: question/approval prompt in the input slot
+  (tracked in tui-upgrade.md).
+- **Phase 4 — approval merge + channels + `runtime.form`**.
 
-## 待解问题
+## Open questions
 
-- 超时默认值：30 分钟（openclaw）还是为 web 优先的用法取更短。
-- 当决策对象是人而非模型时，`decision.make` 是否最终也应路由经同一个
-  registry（此处不在范围内，已记入 function-calling unification 文档）。
+- Timeout default: 30 min (openclaw) vs shorter for web-first usage.
+- Whether `decision.make` should eventually route through the same
+  registry when the decision target is the human rather than the model
+  (out of scope here, noted for the function-calling unification doc).

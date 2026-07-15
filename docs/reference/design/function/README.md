@@ -1,19 +1,19 @@
-# 函数设计
+# Function Design
 
-函数 / 工具调用框架的内部设计笔记。
+Internal design notes for the function/tool-calling framework.
 
-**要编写函数？** 面向编写者的文档（使用模式、metadata
-规则、三种“选择下一步”的机制、纯 python 辅助工具）
-已迁移至用户指南：
-[`docs/agentic-programming/`](../../../capabilities/agentic-programming/README.md)。
+**Writing functions?** The authoring-facing docs (usage patterns, metadata
+rules, the three "choose the next step" mechanisms, pure-python helpers)
+moved to the user guide:
+[`docs/agentic-programming/`](../../../capabilities/agentic-programming/README.md).
 
-## 当前来源
+## Current sources
 
-| 主题 | 来源 |
+| Topic | Source |
 |---|---|
-| 函数 / 工具调用框架（`@function` / `@agentic_function`、共享注册表、gating、延迟加载） | [`function-calling-unification.md`](function-calling-unification.md) |
+| Function/tool calling framework (`@function` / `@agentic_function`, shared registry, gating, deferred loading) | [`function-calling-unification.md`](function-calling-unification.md) |
 
-## 实现文件
+## Implementation files
 
 - `openprogram/agentic_programming/function.py`
 - `openprogram/agentic_programming/runtime.py`

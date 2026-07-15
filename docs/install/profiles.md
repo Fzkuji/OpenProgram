@@ -1,48 +1,48 @@
-# 多实例与 profile
+# Multiple Instances & Profiles
 
-这页说明如何在同一台机器上并行运行多个互不干扰的 OpenProgram 实例——常见场景是一个稳定实例日常用，一个开发实例改代码。
+This page explains how to run several independent OpenProgram instances side by side on one machine — the common case being a stable instance for daily use and a development instance for hacking on the code.
 
-## profile：隔离状态目录
+## Profiles: isolated state directories
 
-默认所有状态（config / sessions / logs / memory）都在 `~/.openprogram/`。指定 profile 后改存 `~/.openprogram-<name>/`，两个实例互不共享任何数据：
+By default all state (config / sessions / logs / memory) lives in `~/.openprogram/`. With a profile it moves to `~/.openprogram-<name>/`, and the two instances share no data:
 
 ```bash
-openprogram --profile dev            # CLI 全局参数
-OPENPROGRAM_PROFILE=dev openprogram  # 或环境变量，二者等价（环境变量优先）
+openprogram --profile dev            # CLI global flag
+OPENPROGRAM_PROFILE=dev openprogram  # or the env var — equivalent (the env var wins)
 ```
 
-`--profile` 是全局参数，放在子命令前，对所有子命令生效：`openprogram --profile dev sessions list`、`openprogram --profile dev restart` 等。
+`--profile` is a global flag: put it before the subcommand and it applies to every subcommand — `openprogram --profile dev sessions list`, `openprogram --profile dev restart`, and so on.
 
-## 端口：每个实例一对
+## Ports: one pair per instance
 
-默认前端 18100、后端 18109。改端口有三种方式：
+The defaults are frontend 18100, backend 18109. Three ways to change them:
 
 ```bash
-# 1. 持久化到该 profile 的配置（推荐，之后启动不用再带参数）
+# 1. Persist into that profile's config (recommended — no flags needed on later starts)
 openprogram --profile dev ports --backend 18209 --frontend 18200
 
-# 2. 环境变量，覆盖本次运行
+# 2. Environment variables, override one run
 OPENPROGRAM_BACKEND_PORT=18209 OPENPROGRAM_WEB_PORT=18200 openprogram web
 
-# 3. 命令行参数，只对这一次 `openprogram web` 生效
+# 3. Command-line flags, this `openprogram web` invocation only
 openprogram web --port 18209 --web-port 18200
 ```
 
-`ports` 的设置写进当前 profile 的 config，所以每个 profile 记住自己的端口。
+`ports` writes into the current profile's config, so each profile remembers its own ports.
 
-## 示例：稳定 + 开发双实例
+## Example: stable + development pair
 
-稳定实例用默认 profile 和默认端口，开发实例用 `dev` profile 和 18200/18209：
+The stable instance uses the default profile and default ports; the development instance uses the `dev` profile on 18200/18209:
 
 ```bash
-# 稳定实例（日常使用）
+# Stable instance (daily use)
 openprogram web                        # http://localhost:18100
 
-# 开发实例：先把端口写进 dev profile（一次性）
+# Development instance: write the ports into the dev profile (once)
 openprogram --profile dev ports --backend 18209 --frontend 18200
 
-# 之后每次这样启动
+# From then on, start it like this
 openprogram --profile dev web          # http://localhost:18200
 ```
 
-两个实例各有自己的会话、配置、日志和后台 worker；`openprogram status` 看的是默认实例，`openprogram --profile dev status` 看开发实例。
+Each instance has its own sessions, config, logs, and background worker; `openprogram status` reports on the default instance, `openprogram --profile dev status` on the development one.

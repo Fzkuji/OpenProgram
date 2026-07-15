@@ -1,151 +1,151 @@
-# 设计文档站（统一文档网页）
+# Design Docs Site (Unified Documentation Website)
 
-Status: **draft（待确认）** · Created: 2026-06-29
+Status: **draft (pending confirmation)** · Created: 2026-06-29
 
-> 把 `docs/` 下 154 篇 markdown + 11 篇手写 html 统一成同一套风格的静态文档站：
-> 左侧目录树 · 顶部搜索 · 右侧本页锚点 · 深浅双主题。一处改皮肤全站统一。
-> 同时把"以后能随便加动态动画"作为一等公民支持。
+> Unify the 154 markdown files + 11 hand-written html files under `docs/` into a single static documentation site with one consistent style:
+> left-side directory tree · top search bar · right-side per-page anchors · light/dark dual themes. Change the skin in one place and the whole site stays consistent.
+> At the same time, treat "being able to freely add dynamic animations later" as a first-class concern.
 
-## 一、目标与非目标
+## 1. Goals and Non-Goals
 
-### 目标
+### Goals
 
-1. **一套外壳，全站统一**：导航、配色、排版、代码块样式只定义一次，全部文档复用。
-2. **零运行时框架**：产物是纯静态 html/css/js，可直接由 worker（单端口路线）或任意静态服务器托管，不引入 Vite/Vue/React 运行时。
-3. **深浅双主题**：一套 CSS 变量两套配色，跟随系统 + 手动切换 + 记忆偏好（localStorage）。
-4. **自动导航**：左侧目录树从 `docs/` 目录结构自动生成，分组标题取自各级 `README.md` 的一级标题。
-5. **本页锚点**：右侧 "On this page" 从每篇的 `##/###` 标题自动生成，滚动高亮当前节。
-6. **全文搜索**：构建期生成轻量搜索索引（标题 + 正文），前端纯 JS 检索，无后端。
-7. **动态动画一等公民**：md 中内嵌的 `<script>/<canvas>/<svg>/<style>` 原样透传；11 篇手写 html 的图表能整块嵌入新壳不丢失。
+1. **One shell, consistent across the site**: navigation, color scheme, typography, and code-block styling are defined once and reused by every doc.
+2. **Zero runtime framework**: the output is pure static html/css/js, which can be served directly by the worker (single-port route) or any static server, without introducing a Vite/Vue/React runtime.
+3. **Light/dark dual themes**: one set of CSS variables driving two color schemes, following the system + manual toggle + remembered preference (localStorage).
+4. **Automatic navigation**: the left-side directory tree is generated automatically from the `docs/` directory structure; group titles come from the top-level heading of each level's `README.md`.
+5. **Per-page anchors**: the right-side "On this page" is generated automatically from each doc's `##/###` headings, highlighting the current section while scrolling.
+6. **Full-text search**: a lightweight search index (titles + body) is generated at build time, with pure-JS search on the front end and no backend.
+7. **Dynamic animations as a first-class concern**: `<script>/<canvas>/<svg>/<style>` embedded in md is passed through verbatim; charts from the 11 hand-written html files can be embedded into the new shell as whole blocks without loss.
 
-### 非目标
+### Non-Goals
 
-- 不做编辑器 / CMS，文档仍以源文件（md/html）为准，站点是只读产物。
-- 不做多语言切换框架（文档本身中英混排，不强制 i18n）。
-- 不替换 `docs/slides/`（演示稿是独立形态，保持原样）。
+- No editor / CMS; the docs are still authoritative as source files (md/html), and the site is a read-only output.
+- No multi-language switching framework (the docs themselves mix Chinese and English; i18n is not enforced).
+- No replacement of `docs/slides/` (slides are a separate format and stay as-is).
 
-## 二、为什么自建脚本，而非 VitePress / MkDocs
+## 2. Why a Custom Script Instead of VitePress / MkDocs
 
-| 维度 | 自建脚本 | VitePress | MkDocs Material |
+| Dimension | Custom script | VitePress | MkDocs Material |
 |---|---|---|---|
-| 后期加自定义动态动画 | **最高**：模板/CSS/JS 全自有，原生 html/js 直接写 | 高，但须按 Vue 组件写 | 低，主题封闭，与原始 html 打架 |
-| 运行时依赖 | 无（纯静态） | Vite/Vue | 无（但构建期重） |
-| 与单端口托管路线一致 | 是 | 需额外构建产物对接 | 是 |
-| 11 篇手写 html 嵌入 | 直接透传 | 需改写成组件 | 难 |
-| 标配（侧栏/搜索/锚点）成本 | 自己写一次 | 开箱 | 开箱 |
+| Adding custom dynamic animations later | **Highest**: templates/CSS/JS are all our own, native html/js written directly | High, but must be written as Vue components | Low, the theme is closed and fights with raw html |
+| Runtime dependencies | None (pure static) | Vite/Vue | None (but heavy at build time) |
+| Consistency with the single-port hosting route | Yes | Needs extra build-output integration | Yes |
+| Embedding the 11 hand-written html files | Direct passthrough | Must be rewritten as components | Hard |
+| Cost of standard features (sidebar/search/anchors) | Write it once yourself | Out of the box | Out of the box |
 
-决策依据：用户的核心诉求是"统一文档站" **且** "以后随便加动态动画"。框架方案要么限制动画（MkDocs），要么逼迁移到组件体系（VitePress）。现有 11 篇手写 html 已含自定义图表/动效 —— 这本身就证明需要的是"能自由写原生 html/js 的壳"。一次性自己写侧栏/搜索/锚点，换取第二阶段不被框架卡住，划算。
+Rationale for the decision: the user's core requirement is a "unified docs site" **and** "freely add dynamic animations later." A framework approach either limits animations (MkDocs) or forces a migration into a component system (VitePress). The existing 11 hand-written html files already contain custom charts/animations — which itself proves that what's needed is "a shell that lets you freely write native html/js." Writing the sidebar/search/anchors ourselves once, in exchange for not being blocked by a framework in the second phase, is worth it.
 
-## 三、技术选型
+## 3. Technology Choices
 
-- **构建语言：Python**。仓库主语言是 Python，worker 已是 Python，无需新增 Node 工具链。
-- **Markdown 渲染：`markdown-it-py`** + 插件（`mdit-py-plugins`：anchors、footnote、deflist、tasklists）。理由：保留原始 html 透传（`html=True`），这是动画一等公民的前提；GitHub 风格表格/代码围栏齐全。
-- **代码高亮：Pygments**（构建期渲染成带 class 的 span，运行时零开销；深浅主题各一套 Pygments 样式表）。
-- **搜索：构建期生成 `search-index.json`**，前端用极简倒排/子串匹配（数百篇规模无需 lunr/flexsearch 这种重库；够用即可，后期再升级）。
-- **数学公式（若需要）**：留 KaTeX 接入点，默认不启用。
+- **Build language: Python**. The repo's primary language is Python, the worker is already Python, and there's no need to add a Node toolchain.
+- **Markdown rendering: `markdown-it-py`** + plugins (`mdit-py-plugins`: anchors, footnote, deflist, tasklists). Reason: it preserves raw html passthrough (`html=True`), which is the prerequisite for animations as a first-class concern; GitHub-flavored tables/code fences are fully supported.
+- **Code highlighting: Pygments** (rendered at build time into class-tagged spans, with zero runtime cost; one Pygments stylesheet for each of the light/dark themes).
+- **Search: generate `search-index.json` at build time**, with a minimal inverted-index/substring match on the front end (a corpus of a few hundred docs doesn't need a heavy library like lunr/flexsearch; good enough for now, can be upgraded later).
+- **Math formulas (if needed)**: leave a KaTeX integration point, disabled by default.
 
-依赖控制：只新增 `markdown-it-py`、`mdit-py-plugins`、`Pygments` 三个纯 Python 包，放进一个独立 `docs-build` 可选依赖组，不污染主依赖。
+Dependency control: only three pure-Python packages are added — `markdown-it-py`, `mdit-py-plugins`, `Pygments` — placed in a separate optional `docs-build` dependency group so the main dependencies aren't polluted.
 
-## 四、目录与产物布局
+## 4. Directory and Output Layout
 
 ```
-docs/                         ← 源文件（不动）
+docs/                         ← source files (untouched)
   design/runtime/dag/dag-rendering.md
-  design/proactive/event-layer.html   ← 手写 html
+  design/proactive/event-layer.html   ← hand-written html
   ...
 
-tools/docs_site/              ← 新增：构建脚本（一个小模块）
-  build.py                    入口：扫描 docs/ → 渲染 → 写 _site/
-  template.py                 html 外壳模板（壳 + 注入点）
-  nav.py                      从目录树 + README 生成导航数据
-  search.py                   生成 search-index.json
+tools/docs_site/              ← new: build script (one small module)
+  build.py                    entry point: scan docs/ → render → write _site/
+  template.py                 html shell template (shell + injection points)
+  nav.py                      generate navigation data from directory tree + README
+  search.py                   generate search-index.json
   assets/
-    site.css                  全站样式 + 深浅双主题变量
-    site.js                   主题切换 + 锚点高亮 + 搜索 + 移动端抽屉
+    site.css                  site-wide styles + light/dark dual-theme variables
+    site.js                   theme toggle + anchor highlighting + search + mobile drawer
     pygments-light.css
     pygments-dark.css
 
-docs/_site/                   ← 构建产物（git 忽略或按需提交）
+docs/_site/                   ← build output (git-ignored or committed as needed)
   index.html
   design/runtime/dag/dag-rendering.html
   search-index.json
   assets/...
 ```
 
-构建命令：`python -m tools.docs_site.build`（可加 `--watch` 后期再做）。
+Build command: `python -m tools.docs_site.build` (a `--watch` mode can be added later).
 
-## 五、页面骨架（三栏）
+## 5. Page Skeleton (Three Columns)
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  OpenProgram Docs            [🔍 搜索 ⌘K]        [☀/🌙]      │  顶栏 固定
+│  OpenProgram Docs            [🔍 search ⌘K]      [☀/🌙]      │  top bar, fixed
 ├──────────────┬───────────────────────────────┬─────────────┤
-│ 目录树        │  # 页面标题                    │ On this page │
-│  Design       │  Status: draft                 │  · 一、目标  │
-│   Runtime     │  正文…                         │  · 二、…     │
-│    > 当前页   │  ```code```                    │  · 三、…     │
-│   Providers   │  <canvas> 动画原样透传         │             │
-│   Context     │                                │ 滚动高亮当前 │
-│ (可折叠分组)  │                                │             │
+│ dir tree      │  # page title                  │ On this page │
+│  Design       │  Status: draft                 │  · 1. Goals  │
+│   Runtime     │  body…                         │  · 2. …      │
+│    > current  │  ```code```                    │  · 3. …      │
+│   Providers   │  <canvas> animation passthrough│             │
+│   Context     │                                │ highlight    │
+│ (collapsible) │                                │ current sec. │
 └──────────────┴───────────────────────────────┴─────────────┘
-左栏可折叠/记忆展开态        正文 max-width≈820px       窄屏隐藏右栏
+left col collapsible/remembered expand state   body max-width≈820px   right col hidden on narrow screens
 ```
 
-窄屏（< 900px）：左栏收成抽屉（汉堡按钮唤出），右栏隐藏。
+Narrow screens (< 900px): the left column collapses into a drawer (toggled by a hamburger button), and the right column is hidden.
 
-## 六、深浅双主题
+## 6. Light/Dark Dual Themes
 
-一套 CSS 变量，`:root` 为浅色默认，`[data-theme="dark"]` 覆写为深色。切换逻辑：
+One set of CSS variables, with `:root` as the light default and `[data-theme="dark"]` overriding it for dark. Toggle logic:
 
-1. 首次访问读 `prefers-color-scheme` 跟随系统。
-2. 用户点切换 → 写 `localStorage.theme` → 设 `<html data-theme>`。
-3. 防闪烁：在 `<head>` 内联一小段同步脚本，DOM 渲染前就定好主题。
+1. On first visit, read `prefers-color-scheme` to follow the system.
+2. User clicks toggle → write `localStorage.theme` → set `<html data-theme>`.
+3. Anti-flicker: inline a small synchronous script in `<head>` that fixes the theme before the DOM renders.
 
-配色基调（待你确认，先给默认）：
+Color palette baseline (pending your confirmation; defaults given first):
 
-| 角色 | 浅色 | 深色 |
+| Role | Light | Dark |
 |---|---|---|
-| 背景 | `#ffffff` / 侧栏 `#f7f7f5` | `#16181d` / 侧栏 `#1b1e24` |
-| 正文 | `#1f2328` | `#d8dae0` |
-| 次要文字 | `#656d76` | `#8b929c` |
-| 强调色 | `#3b82f6`（蓝） | `#5aa2ff` |
-| 代码底 | `#f6f8fa` | `#21262d` |
-| 边框 | `#d0d7de` | `#30363d` |
+| Background | `#ffffff` / sidebar `#f7f7f5` | `#16181d` / sidebar `#1b1e24` |
+| Body text | `#1f2328` | `#d8dae0` |
+| Secondary text | `#656d76` | `#8b929c` |
+| Accent | `#3b82f6` (blue) | `#5aa2ff` |
+| Code background | `#f6f8fa` | `#21262d` |
+| Border | `#d0d7de` | `#30363d` |
 
-风格基调：浅色为主、对齐 Stripe/Vercel/Linear 那类技术文档的克制专业感；深色不是纯黑，避免刺眼。
+Style baseline: light-first, aligned with the restrained, professional feel of technical docs like Stripe/Vercel/Linear; dark is not pure black, to avoid eye strain.
 
-## 七、动态动画一等公民（关键设计）
+## 7. Dynamic Animations as a First-Class Concern (Key Design)
 
-这是与普通文档站的最大差异点，单独说明落地机制：
+This is the biggest difference from an ordinary docs site, so the implementation mechanism is described separately:
 
-1. **md 内嵌透传**：`markdown-it-py` 开 `html=True`，md 里写的 `<canvas>`、`<svg>`、`<script>`、`<style>` 块原样进入产物，不被转义。作者想给某篇加交互 demo，直接在该 md 内写即可。
-2. **页面级附加资源**：约定 md 文件可在 frontmatter 声明 `scripts: [foo.js]` / `styles: [foo.css]`，构建期把这些文件拷到产物并在该页注入 `<script>/<link>`。复杂动画拆成独立 js，不污染正文。
-3. **手写 html 的处理（保留内容嵌入新壳）**：11 篇手写 html 走专门管道 —— 提取其 `<body>` 内容 + 收集其 `<style>`（加页面级作用域前缀避免与全站样式冲突），整块塞进统一外壳的正文区，原图表/动效保留。其自带的 `<script>` 一并保留。这条管道单独实现，逐篇验证视觉无回归。
-4. **主题感知动画（可选后期）**：暴露一个全局事件 `documentThemeChange`，动画脚本可监听以适配深浅。首版不强制。
+1. **md embedded passthrough**: `markdown-it-py` runs with `html=True`, so `<canvas>`, `<svg>`, `<script>`, `<style>` blocks written in md go into the output verbatim, without being escaped. If an author wants to add an interactive demo to a given doc, they just write it inside that md.
+2. **Page-level extra resources**: by convention, an md file can declare `scripts: [foo.js]` / `styles: [foo.css]` in its frontmatter; at build time these files are copied to the output and `<script>/<link>` tags are injected into that page. Complex animations are split into separate js so the body isn't polluted.
+3. **Handling hand-written html (preserving content embedded into the new shell)**: the 11 hand-written html files go through a dedicated pipeline — extract their `<body>` content + collect their `<style>` (adding a page-level scoping prefix to avoid conflicts with site-wide styles), and stuff the whole thing into the body area of the unified shell, preserving the original charts/animations. Their own `<script>` is preserved as well. This pipeline is implemented separately and verified file by file for no visual regression.
+4. **Theme-aware animations (optional, later)**: expose a global `documentThemeChange` event that animation scripts can listen to in order to adapt to light/dark. Not enforced in the first version.
 
-## 八、导航生成规则
+## 8. Navigation Generation Rules
 
-- 扫描 `docs/` 下所有 `*.md` 与 11 篇手写 `*.html`。
-- 目录即分组：`docs/design/runtime/` → 分组 "Runtime"，组标题优先取该目录 `README.md` 的一级标题，无则用目录名美化。
-- 组内排序：`README.md` 置顶，其余按文件名；后期可支持 frontmatter `order`。
-- 排除：`docs/_site/`、`docs/images/`、`docs/slides/`、`*/archive/`（归档默认折叠或排除，待确认）。
-- 顶层散页（`docs/*.md` 如 GETTING_STARTED、install）归入 "Guides" 组。
+- Scan all `*.md` under `docs/` plus the 11 hand-written `*.html` files.
+- Directory = group: `docs/design/runtime/` → group "Runtime"; the group title prefers the top-level heading of that directory's `README.md`, falling back to a prettified directory name if absent.
+- Ordering within a group: `README.md` first, the rest by filename; a frontmatter `order` can be supported later.
+- Exclusions: `docs/_site/`, `docs/images/`, `docs/slides/`, `*/archive/` (archives collapsed or excluded by default, pending confirmation).
+- Top-level loose pages (`docs/*.md` such as GETTING_STARTED, install) go into the "Guides" group.
 
-## 九、实施步骤（每步可独立验证）
+## 9. Implementation Steps (Each Independently Verifiable)
 
-1. **脚手架 + 单页渲染** → verify：跑 `build.py`，`dag-rendering.md` 生成正确 html，标题/代码/表格无误。
-2. **三栏外壳 + 双主题** → verify：浏览器打开，切换深浅正常、防闪烁、排版克制专业。
-3. **导航树自动生成** → verify：左栏完整覆盖所有 md，分组/置顶/当前页高亮正确。
-4. **本页锚点 + 滚动高亮** → verify：右栏锚点点击跳转、滚动时高亮跟随。
-5. **搜索** → verify：输入关键词命中标题/正文，跳转正确。
-6. **手写 html 嵌入管道** → verify：11 篇逐篇打开，图表/动效保留，样式不污染全站。
-7. **全量构建 + 自检** → verify：154 篇全部生成无报错，抽查 5–8 篇（含含图表页、含表格页、深浅各一遍）。
+1. **Scaffolding + single-page rendering** → verify: run `build.py`, confirm `dag-rendering.md` produces correct html with titles/code/tables intact.
+2. **Three-column shell + dual themes** → verify: open in a browser, confirm light/dark switching works, anti-flicker works, and typography is restrained and professional.
+3. **Automatic navigation tree** → verify: the left column fully covers all md, with correct grouping/pinning/current-page highlighting.
+4. **Per-page anchors + scroll highlighting** → verify: right-column anchors jump on click, and highlighting follows while scrolling.
+5. **Search** → verify: entering a keyword hits titles/body and jumps correctly.
+6. **Hand-written html embedding pipeline** → verify: open all 11 files one by one, confirm charts/animations are preserved and styles don't pollute the rest of the site.
+7. **Full build + self-check** → verify: all 154 files generate without errors; spot-check 5–8 of them (including a page with charts, a page with tables, once each in light and dark).
 
-每步完成即 commit（遵循 main 直接提交）。
+Commit at the end of each step (following the commit-directly-to-main convention).
 
-## 十、开放项（已确认）
+## 10. Open Items (Confirmed)
 
-1. **配色** ✅：由实现方按"护眼"自定（浅色不刺眼、深色非纯黑）。
-2. **archive 目录** ✅：直接删除，不进站点。已删 `docs/archive/`、`docs/design/archive/`、`docs/design/proactive/_research_archive/` 共 18 文件。
-3. **产物入库** ✅：`docs/_site/` 提交进 git。
-4. **托管方式** ✅：做到最优 —— 接进 worker 单端口路由 `/docs`。
+1. **Color scheme** ✅: chosen by the implementer for "eye comfort" (light not glaring, dark not pure black).
+2. **archive directory** ✅: delete outright, don't include in the site. Already deleted `docs/archive/`, `docs/design/archive/`, `docs/design/proactive/_research_archive/`, 18 files in total.
+3. **Committing output** ✅: `docs/_site/` is committed into git.
+4. **Hosting** ✅: do it the optimal way — wire it into the worker's single-port route `/docs`.

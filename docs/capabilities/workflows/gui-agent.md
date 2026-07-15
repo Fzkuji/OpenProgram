@@ -1,47 +1,47 @@
 # GUI Agent
 
-给一句自然语言任务，它自主操作桌面：截图、识别界面组件、点击、输入、验证结果，循环直到任务完成或达到步数上限。适用于本机桌面，也可以通过 VM 接口操作远程虚拟机。感知层是 YOLO 组件检测（GPA-GUI-Detector）+ OCR（macOS 用 Apple Vision，Linux / Windows 用 EasyOCR）+ 模板匹配；动作层覆盖鼠标、键盘、剪贴板。
+Give it a natural-language task and it operates the desktop autonomously: taking screenshots, detecting UI components, clicking, typing, and verifying results, looping until the task completes or the step limit is reached. It works on the local desktop and can also drive remote virtual machines through a VM interface. The perception layer combines YOLO component detection (GPA-GUI-Detector), OCR (Apple Vision on macOS, EasyOCR on Linux / Windows), and template matching; the action layer covers mouse, keyboard, and clipboard.
 
-## 安装
+## Install
 
 ```bash
 openprogram programs install gui
 ```
 
-这是三个第一方 workflow 里最重的一个：依赖包含 `torch` / `torchvision`、`opencv-python`、`ultralytics`、`easyocr`、`pynput` 等。在无 GPU 的 Linux 上会自动选择 CPU 版 torch wheel（约 300 MB），而不是约 3 GB 的 CUDA 构建。
+This is the heaviest of the three first-party workflows: dependencies include `torch` / `torchvision`, `opencv-python`, `ultralytics`, `easyocr`, `pynput`, and more. On Linux without a GPU it automatically picks the CPU torch wheel (about 300 MB) instead of the roughly 3 GB CUDA build.
 
-pip 依赖之外还需要模型文件——YOLO 检测器权重（经 `huggingface-hub` 下载）和 OCR 模型不在 PyPI 上。安装完成后运行 harness 自带的安装器获取它们：
+Beyond the pip dependencies you also need model files — the YOLO detector weights (downloaded via `huggingface-hub`) and the OCR models are not on PyPI. After installing, run the harness's bundled installer to fetch them:
 
 ```bash
 openprogram/functions/agentics/GUI-Agent-Harness/scripts/install.sh --no-host
 # Windows: ...\scripts\install.ps1 -NoHost
 ```
 
-## 怎么用
+## Usage
 
-入口函数名为 **`gui_agent`**，以工具形式（`as_tool=True`，toolset `harness`）注册，聊天里直接描述桌面任务即可触发，例如"打开 Firefox 并访问 google.com"。
+The entry function is **`gui_agent`**, registered as a tool (`as_tool=True`, toolset `harness`). In chat, just describe a desktop task to trigger it, e.g. "Open Firefox and go to google.com".
 
-命令行直接运行：
+Run it directly from the command line:
 
 ```bash
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-参数（函数签名 `gui_agent(task, max_steps=15, app_name="desktop", ...)`）：
+Parameters (function signature `gui_agent(task, max_steps=15, app_name="desktop", ...)`):
 
-| 参数 | 说明 |
+| Parameter | Description |
 |---|---|
-| `task` | 要做什么（自然语言） |
-| `max_steps` | 放弃前的最大动作数，默认 15，可选 5 / 10 / 15 / 30 |
-| `app_name` | 用于组件记忆的应用名，如 `firefox`、`libreoffice_calc`，默认 `desktop` |
+| `task` | What to do, in natural language |
+| `max_steps` | Maximum number of actions before giving up; default 15, choices 5 / 10 / 15 / 30 |
+| `app_name` | Application name used for component memory, e.g. `firefox`, `libreoffice_calc`; default `desktop` |
 
-每一步执行 观察（截图 + 组件检测 + 状态识别）→ 验证上一步结果 → 规划下一动作 → 执行 → 构造下一轮反馈，步与步之间传递结构化反馈，进度不依赖 LLM 上下文记忆。已学过的界面转换会作为捷径复用（组件记忆）。
+Each step runs observe (screenshot + component detection + state recognition) → verify the previous step's result → plan the next action → execute → build feedback for the next round. Structured feedback is passed between steps, so progress does not depend on the LLM's context memory. Previously learned UI transitions are reused as shortcuts (component memory).
 
-## 依赖注意
+## Dependency notes
 
-- PyTorch + OpenCV 体积大，安装耗时以分钟计；不需要 transformers / accelerate。
-- 模型权重是独立下载步骤（见上），漏掉它函数能注册但无法感知屏幕。
-- 平台：macOS / Windows / Linux；OCR 后端按平台自动选择。
-- 运行前需要 runtime 配置好工作目录（截图与运行记录写在那里）。
+- PyTorch + OpenCV are large; installation takes minutes. No transformers / accelerate needed.
+- The model weights are a separate download step (see above); without them the function registers but cannot perceive the screen.
+- Platforms: macOS / Windows / Linux; the OCR backend is selected automatically per platform.
+- The runtime needs a working directory configured before running (screenshots and run records are written there).
 
-源码与 README：`openprogram/functions/agentics/GUI-Agent-Harness/`，上游仓库 [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)。
+Source and README: `openprogram/functions/agentics/GUI-Agent-Harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).

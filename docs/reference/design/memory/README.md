@@ -1,59 +1,60 @@
-# Memory — 记忆系统设计
+# Memory — Memory System Design
 
-## 定义
+## Definition
 
-记忆 = **实体记忆**（完整不可变的真实历史）+ **抽象记忆**（从实体提炼的紧凑索引）。
+Memory = **entity memory** (the complete, immutable, real history) + **abstract memory** (a compact index distilled from the entities).
 
-实体记忆是 ground truth，基于 git，每 turn 一 commit，不可篡改。抽象记忆是从实体层派生的导航地图，每条都带 provenance 指针回指实体层出处。LLM 只注入抽象记忆；需要细节时，LLM 自己顺着指针导航回实体层去取。
+Entity memory is the ground truth: backed by git, one commit per turn, tamper-proof. Abstract memory is a navigation map derived from the entity layer; every entry carries a provenance pointer back to its source in the entity layer. The LLM is injected with abstract memory only; when it needs details, the LLM follows the pointers to navigate back to the entity layer and fetch them itself.
 
-## 架构
+## Architecture
 
 ```
-实体记忆 (raw, git, immutable, complete)
-  ├─ Session-Git    每会话一个 repo，每 turn 一 commit
-  └─ Project-Git    绑用户工作目录，agent 改文件 → 自动 commit
+entity memory (raw, git, immutable, complete)
+  ├─ Session-Git    one repo per session, one commit per turn
+  └─ Project-Git    bound to the user's working directory; agent edits a file → auto commit
          │
-         │  提炼 (distillation)：5-stage pipeline, 带 provenance
+         │  distillation: 5-stage pipeline, with provenance
          ▼
-抽象记忆 (derived, compact, provenance-linked)
-  ├─ Timeline       时间轴事件流（何时发生了什么）
-  ├─ Graph          知识图谱（实体之间什么关系）
-  └─ Core.md        ≤2KB 注入快照（LLM 每次都看到）
+abstract memory (derived, compact, provenance-linked)
+  ├─ Timeline       timeline event stream (what happened when)
+  ├─ Graph          knowledge graph (what relationships hold between entities)
+  └─ Core.md        ≤2KB injected snapshot (the LLM sees it every time)
          │
-         │  召回 (recall)：只注入抽象，LLM 用工具导航回实体
+         │  recall: inject only the abstract layer; the LLM uses tools to navigate back to entities
          ▼
 LLM Context
 ```
 
-## 设计原则
+## Design Principles
 
-1. **Git-native** — 实体记忆直接用 git，不造轮子。commit 不可变、log 是时间线、checkout 是时光机。
-2. **Provenance-linked** — 抽象层不替代实体层，而是给它建索引。每条抽象记忆带坐标 `(project, session, commit, timestamp)` 指回出处。
-3. **Bi-temporal** — 每条记忆记两个时间：`event_time`（事情发生时）和 `ingestion_time`（记下来时）。支持时间旅行查询和矛盾检测。
-4. **LLM-navigated recall** — 不灌 raw chat 进 context。只注入紧凑地图，LLM 按需用工具走回实体层取细节。
+1. **Git-native** — entity memory uses git directly; no reinventing the wheel. Commits are immutable, the log is the timeline, and checkout is the time machine.
+2. **Provenance-linked** — the abstract layer does not replace the entity layer; it indexes it. Every abstract memory entry carries the coordinates `(project, session, commit, timestamp)` pointing back to its source.
+3. **Bi-temporal** — every memory records two times: `event_time` (when the thing happened) and `ingestion_time` (when it was written down). This supports time-travel queries and contradiction detection.
+4. **LLM-navigated recall** — never dump raw chat into the context. Inject only the compact map; the LLM walks back to the entity layer with tools on demand to fetch details.
 
-## 实施状态
+## Implementation Status
 
-| Phase | 内容 | 状态 |
+| Phase | Content | Status |
 |-------|------|------|
-| 0 | Baseline 修复（LLM 桥 / watcher / ingest） | ✅ |
-| 1 | 实体层：Project schema + session.project_id + project-git | ✅ |
-| 2 | 提炼管道重写：读 session-git DAG → timeline + graph | ❌ 未开始 |
-| 3 | 召回重写：只注入抽象 + 导航工具 | ❌ 未开始 |
-| 4 | 物化视图 + hybrid search（向量） | ❌ 未开始 |
-| 5 | UI：Projects 面板 / timeline / `/memory` | ⚠️ 部分 |
+| 0 | Baseline fixes (LLM bridge / watcher / ingest) | ✅ |
+| 1 | Entity layer: Project schema + session.project_id + project-git | ✅ |
+| 2 | Distillation pipeline rewrite: read the session-git DAG → timeline + graph | ❌ Not started |
+| 3 | Recall rewrite: inject only the abstract layer + navigation tools | ❌ Not started |
+| 4 | Materialized views + hybrid search (vector) | ❌ Not started |
+| 5 | UI: Projects panel / timeline / `/memory` | ⚠️ Partial |
 
-## 子文档
+## Sub-documents
 
-> 版本说明：`memory.md` 描述**当前已落地**的线性总结链（`journal → wiki → core`，见
-> `openprogram/memory/`）；`memory-v2.md` 是**目标设计**（实体/虚拟两级 + provenance 召回），
-> 取代 v1，仍在实施中。本 README 描述的是 v2 架构。
+> Versioning: `memory.md` describes the **currently shipped** linear summary
+> chain (`journal → wiki → core`, see `openprogram/memory/`); `memory-v2.md`
+> is the **target design** (entity/virtual two layers + provenance recall) that
+> supersedes v1 and is still being implemented. This README describes the v2
+> architecture.
 
-| 文档 | 内容 | 状态 |
+| Document | Content | Status |
 |------|------|------|
-| [`memory.md`](memory.md) | v1：线性总结链（journal/wiki/core） | ✅ 当前实现 |
-| [`memory-v2.md`](memory-v2.md) | v2：实体/虚拟两级 + provenance 召回（取代 v1） | 🚧 设计稿 + 实施中 |
-| [`git-as-entity-memory.md`](git-as-entity-memory.md) | 实体层最初设计（Session-Git + Project-Git 的由来） | 参考 |
-| [`entity-memory.md`](entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 | 子设计 |
-| [`virtual-memory.md`](virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 | 子设计 |
-
+| [`memory.md`](memory.md) | v1: linear summary chain (journal/wiki/core) | ✅ current |
+| [`memory-v2.md`](memory-v2.md) | v2: entity/virtual two layers + provenance recall (supersedes v1) | 🚧 design + WIP |
+| [`git-as-entity-memory.md`](git-as-entity-memory.md) | Origin of the entity layer (Session-Git + Project-Git) | reference |
+| [`entity-memory.md`](entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle | sub-design |
+| [`virtual-memory.md`](virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle | sub-design |

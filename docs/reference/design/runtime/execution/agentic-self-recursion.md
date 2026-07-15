@@ -1,49 +1,49 @@
-# Agentic 函数防自递归机制
+# Self-Recursion Guard for Agentic Functions
 
-> 现状：从「deny 屏蔽工具」改成「处境引导 + 递归深度上限兜底」(commit `1f6f5fce`)。
-> 本文档基于真实代码逐条对应 file:line，可照着核对。
-> 相关代码：
+> Current state: changed from "deny to hide the tool" to "situational guidance + recursion-depth ceiling as a backstop" (commit `1f6f5fce`).
+> This document maps to the real code line by line via file:line, so you can check along.
+> Related code:
 > - `openprogram/agentic_programming/function.py`
 > - `openprogram/agentic_programming/runtime.py`
-> - 测试：`tests/agentic_programming/test_self_recursion_guard.py`(8 用例)
+> - Tests: `tests/agentic_programming/test_self_recursion_guard.py` (8 cases)
 
 ---
 
-## 1. 问题：agentic 函数为什么会自递归
+## 1. The problem: why agentic functions self-recurse
 
-一个 agentic 函数(如 `wiki_agent`)的函数体里跑一个内层 agent loop——通过 `runtime.exec(content=[task])` 驱动内层 LLM。
+An agentic function (e.g. `wiki_agent`) runs an inner agent loop in its body — it drives the inner LLM via `runtime.exec(content=[task])`.
 
-两个诱因叠加：
+Two triggers compound:
 
-1. **默认 toolset = full，含函数自己。** 裸 `runtime.exec(content=...)` 不传 `tools=` / `toolset=`，`_call_via_providers` 把它解析成 `DEFAULT_TOOLSET = "full"`：
+1. **The default toolset = full, which includes the function itself.** A bare `runtime.exec(content=...)` passes no `tools=` / `toolset=`, so `_call_via_providers` resolves it to `DEFAULT_TOOLSET = "full"`:
    - `openprogram/agentic_programming/runtime.py:1467` `DEFAULT_TOOLSET = "full"`
-   - `runtime.py:1468-1483` `raw_tools is None` 分支 → `_resolve_agent_tools(toolset="full", ...)`
-   - 而 `full` 工具集列出了所有 harness 入口本身(`wiki_agent` / `research_agent` / `gui_agent` …，见 `openprogram.functions.TOOLSETS["full"]`)。所以内层模型的工具列表里**有它正在执行的那个函数**。
+   - `runtime.py:1468-1483` the `raw_tools is None` branch → `_resolve_agent_tools(toolset="full", ...)`
+   - and the `full` toolset lists all harness entry points themselves (`wiki_agent` / `research_agent` / `gui_agent` …, see `openprogram.functions.TOOLSETS["full"]`). So the inner model's tool list **contains the very function it is executing**.
 
-2. **模型看到 docstring 匹配任务，误以为该调。** 模型看到 `wiki_agent` 的工具描述("Maintain a wiki vault — route to ingest…")正好匹配当前任务，认为应该路由给 `wiki_agent` → 调自己 → 进去又是裸 exec、又看到自己 → 无限递归。
+2. **The model sees the docstring match the task and mistakenly thinks it should call it.** The model sees `wiki_agent`'s tool description ("Maintain a wiki vault — route to ingest…") match the current task exactly, decides it should route to `wiki_agent` → calls itself → enters another bare exec, sees itself again → infinite recursion.
 
-实战根因记录(7 层嵌套实例)：`docs/design/TODO-doc-code-gaps.md` §1。会话记录里 `context_tree` 展示了 7 层嵌套(`4d76→0c07→0964→c6f9→f1c9→4379→8746→100c`)。
-
----
-
-## 2. 设计理念：为什么用「引导」而非「deny」
-
-**让模型理解自己的处境、自主判断不调，而不是强行从工具列表里屏蔽掉它自己。**
-
-旧的 deny 方案(wrapper 把函数自己的名字推进 `_current_tool_policy["deny"]`，使内层模型看不到自己)的问题：
-
-- 模型学不会处境判断——它不知道「我正在 X 内部」这件事，只是「X 不在工具列表里」。换个上下文(deny 没生效、或跨函数环)它照样会犯。
-- 违背理念——框架替模型做了决定，而不是给模型足够信息让它自己做对的决定。这是用户明确要求的方向：模型该知道自己在哪、自己判断不调。
-
-新方案把「不调自己」变成模型能理解的一条处境信息(你正在 X 体内，调 X = 无限递归)，模型据此自主不调；同时保留一个与模型判断无关的**深度上限**作为止损兜底。
+Real-world root-cause record (a 7-level nesting instance): `docs/design/TODO-doc-code-gaps.md` §1. The session log's `context_tree` shows 7 levels of nesting (`4d76→0c07→0964→c6f9→f1c9→4379→8746→100c`).
 
 ---
 
-## 3. 三个机制怎么协同
+## 2. Design philosophy: why "guidance" instead of "deny"
 
-### (主) 处境提示 —— 防「发生」
+**Let the model understand its own situation and decide on its own not to call, rather than forcibly hiding the function from its own tool list.**
 
-`_situational_prefix(fn_name, fn_doc)`(`runtime.py:321-341`)生成一段英文处境提示：
+Problems with the old deny approach (the wrapper pushes the function's own name into `_current_tool_policy["deny"]` so the inner model can't see itself):
+
+- The model never learns situational judgment — it doesn't know "I'm inside X"; it just sees "X isn't in the tool list." In a different context (deny didn't take effect, or a cross-function cycle) it will make the same mistake.
+- It violates the philosophy — the framework decides for the model instead of giving the model enough information to make the right decision itself. This is the direction the user explicitly asked for: the model should know where it is and decide on its own not to call.
+
+The new approach turns "don't call yourself" into a piece of situational information the model can understand (you are inside X, calling X = infinite recursion); the model then decides on its own not to call. At the same time it keeps a **depth ceiling** independent of the model's judgment as a loss-limiting backstop.
+
+---
+
+## 3. How the three mechanisms work together
+
+### (Primary) Situational prompt — prevents it from "happening"
+
+`_situational_prefix(fn_name, fn_doc)` (`runtime.py:321-341`) generates an English situational prompt:
 
 ```
 [Execution context] You are currently running INSIDE the agentic function `{fn_name}`.
@@ -52,101 +52,101 @@ re-enters where you are now and causes infinite recursion. Use lower-level tools
 (search / read-write files / run code) to do the work directly.
 ```
 
-`fn_doc` 非空时，docstring 被**降级置后**(`text += f"\n\nThis function's job: {fn_doc.strip()}"`，`runtime.py:339-340`)——诱因(docstring 描述)不再盖过警告。
+When `fn_doc` is non-empty, the docstring is **demoted to the end** (`text += f"\n\nThis function's job: {fn_doc.strip()}"`, `runtime.py:339-340`) — the trigger (the docstring description) no longer outweighs the warning.
 
-**注入到哪：user turn 开头的 text block，不进 system 前缀。**
+**Where it is injected: the text block at the start of the user turn, not into the system prefix.**
 
-- DAG 路径：`runtime.py:578-587` 构造 `frame_prefix_blocks`(从当前 frame 节点读 `name` + `metadata.doc`)，然后 `runtime.py:597` `_build_pi_context(frame_prefix_blocks + (content or []))`——拼在当前轮 `content` 之前，作为当前轮 user 消息的开头 block。
-- standalone 回退路径(无 store)：`runtime.py:1518-1532`，从 `_recursion_depth` 取最深的函数名(`max(_depths, key=_depths.get)`，`runtime.py:1525`)，`_situational_prefix(_cur_fn, "")`(无 doc)，同样拼在 `content` 之前(`runtime.py:1532`)。
-- system 前缀单独组装(`runtime.py:1535-1539`：`self.system` + `_skills_block()`)，**处境提示不进 system**。
+- DAG path: `runtime.py:578-587` builds `frame_prefix_blocks` (reading `name` + `metadata.doc` from the current frame node), then `runtime.py:597` `_build_pi_context(frame_prefix_blocks + (content or []))` — prepended before the current turn's `content`, as the leading block of the current turn's user message.
+- standalone fallback path (no store): `runtime.py:1518-1532`, takes the deepest function name from `_recursion_depth` (`max(_depths, key=_depths.get)`, `runtime.py:1525`), calls `_situational_prefix(_cur_fn, "")` (no doc), and likewise prepends before `content` (`runtime.py:1532`).
+- The system prefix is assembled separately (`runtime.py:1535-1539`: `self.system` + `_skills_block()`); **the situational prompt does not go into system**.
 
-**为什么放 user turn、不放 system：** 决策6(`session-dag.md`)要求整个项目共用一个**统一且恒定**的 system prompt(身份 + 项目记忆 + 统一工具列表 + skills)以最大化 KV 缓存命中——前缀一变，长上下文后全不命中、成本爆。处境提示是**逐函数、逐调用点**变化的(每个函数名/docstring 不同)，放进 system 会破坏前缀恒定。放在 user turn 开头既能让模型看到，又不碰 system 前缀。
+**Why put it in the user turn, not in system:** Decision 6 (`session-dag.md`) requires the whole project to share a **unified and constant** system prompt (identity + project memory + unified tool list + skills) to maximize KV cache hits — change the prefix and a long context misses entirely afterward, blowing up cost. The situational prompt varies **per function, per call site** (each function name/docstring differs); putting it in system would break the constant prefix. Putting it at the start of the user turn lets the model see it without touching the system prefix.
 
-### 删 deny —— 工具列表含函数自己，靠引导不靠屏蔽
+### Removing deny — the tool list includes the function itself, relying on guidance rather than hiding
 
-wrapper 不再把函数自己的名字推进 `_current_tool_policy["deny"]`。内层模型的工具列表里**仍然能看到它自己**，靠处境提示让模型自主不调。
+The wrapper no longer pushes the function's own name into `_current_tool_policy["deny"]`. The inner model's tool list **still shows itself**; the situational prompt makes the model decide on its own not to call.
 
-`_current_tool_policy` 的**其它用途保留未动**：`source` / `allow` / `toolset` / unattended deny。具体见 `runtime.py:1451-1458`——`policy.get("deny")` 仍在用，与 unattended 的 `denied_ask_tools` 合并(`runtime.py:1457`)；`source`/`allow`/`toolset` 在 `runtime.py:1469`/`1479-1482` 仍生效。删的只是「把函数自己名字注入 deny」这一处。
+**The other uses of `_current_tool_policy` are kept untouched**: `source` / `allow` / `toolset` / unattended deny. See `runtime.py:1451-1458` — `policy.get("deny")` is still in use, merged with unattended's `denied_ask_tools` (`runtime.py:1457`); `source`/`allow`/`toolset` still take effect at `runtime.py:1469`/`1479-1482`. What was removed is only the one spot that "injects the function's own name into deny."
 
-### (兜底) 深度上限 —— 止损安全网
+### (Backstop) Depth ceiling — a loss-limiting safety net
 
-- `_MAX_AGENTIC_RECURSION_DEPTH = 5`(`function.py:48`)。
-- `_recursion_depth` 是一个 `ContextVar[Optional[dict]]`(`function.py:49-51`)，存 **per-function-name** 的当前嵌套深度 `{name: depth}`。
-- 进入 wrapper 时：取本函数名(`getattr(self, "tool_name", None) or fn.__name__`，sync `function.py:964`，async `function.py:852`)，读当前深度，**超限则抛 `RecursionError`**，否则 +1 写回(token 保存)：
-  - sync：`function.py:964-976`
-  - async：`function.py:852-864`
-- 抛错确切条件：`_cur_depth >= _MAX_AGENTIC_RECURSION_DEPTH`(即已经在第 5 层、要进第 6 层时抛)。消息：`f"agentic function {name} exceeded max nesting depth {5} — possible runaway recursion"`(sync `function.py:967-972`，async `function.py:855-860`)。
-- `finally` 复位：`_recursion_depth.reset(token)`(sync `function.py:989`，async `function.py:877`)——return / 异常都复位。
+- `_MAX_AGENTIC_RECURSION_DEPTH = 5` (`function.py:48`).
+- `_recursion_depth` is a `ContextVar[Optional[dict]]` (`function.py:49-51`) holding the current nesting depth **per function name** `{name: depth}`.
+- On entering the wrapper: take this function's name (`getattr(self, "tool_name", None) or fn.__name__`, sync `function.py:964`, async `function.py:852`), read the current depth, **raise `RecursionError` if over the limit**, otherwise +1 and write it back (saving the token):
+  - sync: `function.py:964-976`
+  - async: `function.py:852-864`
+- Exact raise condition: `_cur_depth >= _MAX_AGENTIC_RECURSION_DEPTH` (i.e. raise when already at level 5 and about to enter level 6). Message: `f"agentic function {name} exceeded max nesting depth {5} — possible runaway recursion"` (sync `function.py:967-972`, async `function.py:855-860`).
+- `finally` reset: `_recursion_depth.reset(token)` (sync `function.py:989`, async `function.py:877`) — reset on both return and exception.
 
-**正常调用永不触及上限**：处境提示先拦住「发生」，深度计数只在模型无视引导、连续 re-enter 同名函数 5 层后才触发。
+**Normal calls never reach the ceiling**: the situational prompt stops it from "happening" first; the depth counter only fires after the model ignores the guidance and re-enters the same-named function 5 levels in a row.
 
-**三者定位：** 处境提示 = 防发生(让模型自己不调)；删 deny = 配套(工具可见，引导才有对象)；深度上限 = 止损安全网(模型失控时不烧无限 token)。
+**Roles of the three:** situational prompt = prevent occurrence (let the model decide not to call); removing deny = the complement (the tool is visible, so the guidance has a subject); depth ceiling = loss-limiting safety net (don't burn infinite tokens when the model goes out of control).
 
 ---
 
-## 4. 关键代码位置表
+## 4. Key code-location table
 
-| 机制 | 代码 | file:line |
+| Mechanism | Code | file:line |
 |---|---|---|
-| 深度上限常量 | `_MAX_AGENTIC_RECURSION_DEPTH = 5` | `function.py:48` |
-| 深度计数 contextvar | `_recursion_depth` | `function.py:49-51` |
-| sync wrapper：本函数名 | `getattr(self,"tool_name",None) or fn.__name__` | `function.py:964` |
-| sync wrapper：超限抛错 | `if _cur_depth >= MAX: raise RecursionError` | `function.py:967-972` |
-| sync wrapper：+1 写回 | `_recursion_depth.set({**prev, name: cur+1})` | `function.py:973-976` |
-| sync wrapper：finally 复位 | `_recursion_depth.reset(token)` | `function.py:989` |
-| async wrapper：本函数名 | 同上 | `function.py:852` |
-| async wrapper：超限抛错 | 同上 | `function.py:855-860` |
-| async wrapper：+1 写回 | 同上 | `function.py:861-864` |
-| async wrapper：finally 复位 | 同上 | `function.py:877` |
-| 处境提示文案 | `_situational_prefix(fn_name, fn_doc)` | `runtime.py:321-341` |
-| 处境提示注入(DAG 路径) | `frame_prefix_blocks` → `_build_pi_context(prefix + content)` | `runtime.py:578-587`, `597` |
-| 处境提示注入(standalone 回退) | 从 `_recursion_depth` 取最深名 → 拼 content 前 | `runtime.py:1518-1532` |
-| system 前缀单独组装(不含提示) | `self.system` + `_skills_block()` | `runtime.py:1535-1539` |
-| `_current_tool_policy` 其它用途 | deny/source/allow/toolset 解析 | `runtime.py:1451-1483` |
+| Depth-ceiling constant | `_MAX_AGENTIC_RECURSION_DEPTH = 5` | `function.py:48` |
+| Depth-counter contextvar | `_recursion_depth` | `function.py:49-51` |
+| sync wrapper: this function's name | `getattr(self,"tool_name",None) or fn.__name__` | `function.py:964` |
+| sync wrapper: raise when over limit | `if _cur_depth >= MAX: raise RecursionError` | `function.py:967-972` |
+| sync wrapper: +1 write-back | `_recursion_depth.set({**prev, name: cur+1})` | `function.py:973-976` |
+| sync wrapper: finally reset | `_recursion_depth.reset(token)` | `function.py:989` |
+| async wrapper: this function's name | same as above | `function.py:852` |
+| async wrapper: raise when over limit | same as above | `function.py:855-860` |
+| async wrapper: +1 write-back | same as above | `function.py:861-864` |
+| async wrapper: finally reset | same as above | `function.py:877` |
+| Situational-prompt text | `_situational_prefix(fn_name, fn_doc)` | `runtime.py:321-341` |
+| Situational-prompt injection (DAG path) | `frame_prefix_blocks` → `_build_pi_context(prefix + content)` | `runtime.py:578-587`, `597` |
+| Situational-prompt injection (standalone fallback) | take deepest name from `_recursion_depth` → prepend before content | `runtime.py:1518-1532` |
+| System prefix assembled separately (no prompt) | `self.system` + `_skills_block()` | `runtime.py:1535-1539` |
+| Other uses of `_current_tool_policy` | deny/source/allow/toolset resolution | `runtime.py:1451-1483` |
 
 ---
 
-## 5. 行为契约(从测试提炼)
+## 5. Behavioral contract (distilled from the tests)
 
-来自 `tests/agentic_programming/test_self_recursion_guard.py`：
+From `tests/agentic_programming/test_self_recursion_guard.py`:
 
-| # | 契约 | 测试 |
+| # | Contract | Test |
 |---|---|---|
-| 1 | 处境提示含函数名、含 "do NOT call it"、含 "recursion"，docstring 降级到末尾(`recursion` 出现位置在 docstring 之前) | `test_situational_prefix_warns_against_self_call` |
-| 2 | 空 docstring 时不追加 "This function's job"，提示仍含函数名 | `test_situational_prefix_handles_empty_doc` |
-| 3 | 函数自己的名字**不再**进 `_current_tool_policy["deny"]`(self-deny 删干净) | `test_self_name_NOT_denied_during_call` |
-| 4 | 正常调用一层时，本函数名深度 = 1(进入即 +1) | `test_depth_increments_during_call` |
-| 5 | 无脑自调超限抛 `RecursionError`，消息含函数名 + 上限数字；进入函数体次数恰为 `_MAX_AGENTIC_RECURSION_DEPTH`(到上限止住、不再深入) | `test_depth_backstop_raises_past_limit` |
-| 6 | A→B 不同名独立计数：B 深 nesting 不计入 A 的限额，反之亦然(per-name 不误伤) | `test_distinct_subcalls_not_collateral_damage` |
-| 7 | return 后深度复位回调用前的值 | `test_depth_restored_after_return` |
-| 8 | 抛异常后深度也复位 | `test_depth_restored_after_exception` |
+| 1 | The situational prompt contains the function name, contains "do NOT call it", contains "recursion", and the docstring is demoted to the end (`recursion` appears before the docstring) | `test_situational_prefix_warns_against_self_call` |
+| 2 | With an empty docstring, "This function's job" is not appended, and the prompt still contains the function name | `test_situational_prefix_handles_empty_doc` |
+| 3 | The function's own name is **no longer** put into `_current_tool_policy["deny"]` (self-deny removed cleanly) | `test_self_name_NOT_denied_during_call` |
+| 4 | During a normal one-level call, this function's name has depth = 1 (+1 on entry) | `test_depth_increments_during_call` |
+| 5 | Mindless self-calling over the limit raises `RecursionError`, with the message containing the function name + the limit number; the number of times the function body is entered is exactly `_MAX_AGENTIC_RECURSION_DEPTH` (stops at the limit, doesn't go deeper) | `test_depth_backstop_raises_past_limit` |
+| 6 | A→B with different names count independently: B's deep nesting doesn't count toward A's quota, and vice versa (per-name, no collateral damage) | `test_distinct_subcalls_not_collateral_damage` |
+| 7 | After return, the depth resets back to its value before the call | `test_depth_restored_after_return` |
+| 8 | After an exception is raised, the depth also resets | `test_depth_restored_after_exception` |
 
-补充：测试用 `_deny()` helper(`test:51-53`)读 `_current_tool_policy.get(None).get("deny")`，`_depth(name)` helper(`test:55-56`)读 `_recursion_depth.get(None).get(name, 0)`——核对时可对照这两个读法确认计数/deny 形态。
+Supplement: the test uses a `_deny()` helper (`test:51-53`) that reads `_current_tool_policy.get(None).get("deny")`, and a `_depth(name)` helper (`test:55-56`) that reads `_recursion_depth.get(None).get(name, 0)` — when checking, you can use these two read patterns to confirm the count/deny shape.
 
 ---
 
-## 6. 与旧 deny 方案的对比
+## 6. Comparison with the old deny approach
 
-| 维度 | 旧:deny 屏蔽工具 | 新:处境引导 + 深度上限 |
+| Dimension | Old: deny to hide the tool | New: situational guidance + depth ceiling |
 |---|---|---|
-| 怎么做 | wrapper 把函数自己名字推进 `_current_tool_policy["deny"]`，内层模型看不到自己 | 工具列表含函数自己；user turn 开头注入处境提示让模型自主不调；超 5 层抛 `RecursionError` 兜底 |
-| 模型认知 | 不知道「我在 X 内部」，只是 X 不在列表 | 明确知道处境(你在 X 体内、调 X = 递归) |
-| 是否破坏 system 前缀缓存 | deny 在 policy 层、不动 system；但屏蔽是「替模型决定」 | 提示放 user turn、不进 system，前缀仍恒定(符合决策6) |
-| 失控止损 | 靠屏蔽间接挡(屏蔽失效就无底) | 显式深度上限 5 层硬止损 |
-| 优 | 直接、无需模型配合 | 模型学会处境判断；符合理念;兜底确定性强 |
-| 劣 | 模型学不会处境判断;违背理念;屏蔽一旦不生效就裸奔 | 纯引导对弱模型不 100% 可靠(故有深度上限兜底) |
+| How | the wrapper pushes the function's own name into `_current_tool_policy["deny"]`, so the inner model can't see itself | the tool list includes the function itself; a situational prompt is injected at the start of the user turn so the model decides on its own not to call; over 5 levels raises `RecursionError` as a backstop |
+| Model awareness | doesn't know "I'm inside X", just that X isn't in the list | explicitly knows the situation (you are inside X, calling X = recursion) |
+| Does it break the system-prefix cache | deny is at the policy layer, doesn't touch system; but hiding is "deciding for the model" | the prompt goes in the user turn, not into system, so the prefix stays constant (consistent with Decision 6) |
+| Loss-limiting on runaway | relies on hiding to block indirectly (bottomless if hiding fails) | an explicit 5-level depth ceiling as a hard stop |
+| Pros | direct, no model cooperation needed | the model learns situational judgment; consistent with the philosophy; strongly deterministic backstop |
+| Cons | the model never learns situational judgment; violates the philosophy; runs wild once hiding doesn't take effect | pure guidance isn't 100% reliable for weak models (hence the depth-ceiling backstop) |
 
 ---
 
-## 7. 已知局限
+## 7. Known limitations
 
-1. **纯引导对弱模型 / 长上下文不 100% 可靠。** 处境提示是让模型自主判断，弱模型或上下文过长稀释提示时可能仍会调自己——所以保留深度上限作为确定性兜底。
-2. **跨函数环(A→B→A 交替)第一版未覆盖。** 深度上限按**同名**计数(`_recursion_depth[name]`)，只挡直接自递归(A→A→A…)。A→B→A→B 这种交替环里 A 的深度每次只 +1 到一定层、B 同理，不会触发任一名的上限。整条调用链识别(把 A 在调用链上出现过就算环)是增强项，未做。
-3. **旧 deny 实现其实也只挡直接自递归、不挡跨函数环。** 旧 deny 把「当前函数自己」推进 deny，A 跑时 deny 的是 A，B 仍可被调、B 里再调 A 也不在 B 的 deny 里。所以新方案在「跨函数环」这点上**不是回退**——两版都只防直接自递归，跨链识别是两版共同的待办增强。
+1. **Pure guidance isn't 100% reliable for weak models / long contexts.** The situational prompt asks the model to judge on its own; a weak model, or a context so long it dilutes the prompt, may still call itself — so the depth ceiling is kept as a deterministic backstop.
+2. **Cross-function cycles (alternating A→B→A) are not covered in v1.** The depth ceiling counts **per same name** (`_recursion_depth[name]`) and only blocks direct self-recursion (A→A→A…). In an alternating cycle like A→B→A→B, A's depth only +1s to a certain level each time, and B likewise, so neither name's ceiling fires. Whole-call-chain detection (counting it as a cycle if A appears anywhere on the call chain) is an enhancement, not yet done.
+3. **The old deny implementation actually only blocked direct self-recursion too, not cross-function cycles.** The old deny pushes "the current function itself" into deny; when A runs, deny holds A, but B can still be called, and A called inside B isn't in B's deny either. So the new approach is **not a regression** on the "cross-function cycle" point — both versions only guard against direct self-recursion, and cross-chain detection is a shared TODO enhancement for both.
 
 ---
 
-## 关联文档
+## Related documents
 
-- `docs/design/runtime/session-dag.md` 决策6 —— 统一 system 前缀约束，本机制把处境提示放 user turn 正是为遵守该约束。
-- `docs/design/TODO-doc-code-gaps.md` §1 —— 7 层嵌套根因记录。
+- `docs/design/runtime/session-dag.md` Decision 6 — the unified-system-prefix constraint; this mechanism puts the situational prompt in the user turn precisely to obey that constraint.
+- `docs/design/TODO-doc-code-gaps.md` §1 — the 7-level nesting root-cause record.

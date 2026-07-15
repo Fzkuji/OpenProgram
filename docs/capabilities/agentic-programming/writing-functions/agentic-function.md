@@ -1,13 +1,13 @@
 # @agentic_function
 
-`@agentic_function` 包装一个 Python 函数，其函数体可以通过 `runtime.exec()`
-发起 LLM 调用。除非使用 `expose="hidden"`，否则该包装器会把这次函数调用记录到
-会话 DAG 中。
+`@agentic_function` wraps a Python function whose body may run LLM calls through
+`runtime.exec()`. The wrapper records the function call in the session DAG unless
+`expose="hidden"` is used.
 
-本页讲解使用模式。元数据规则见
-[`function-metadata.md`](function-metadata.md)。
+This page explains the usage patterns. Metadata rules live in
+[`function-metadata.md`](function-metadata.md).
 
-## 基本模式
+## Basic pattern
 
 ```python
 from openprogram import agentic_function
@@ -23,15 +23,18 @@ def translate_to_chinese(text: str, runtime=None) -> str:
     )}])
 ```
 
-给 `runtime` 参数一个 `None` 默认值。直接调用时 runtime 会被自动注入，但当模型
-通过 `tools=[...]` 选中该函数时，工具分发只会绑定模型提供的参数——没有默认值的
-`runtime` 参数会在注入发生之前就抛出 `TypeError`。
+Give the `runtime` parameter a `None` default. The runtime is injected
+automatically on direct calls, but when the model picks the function via
+`tools=[...]`, tool dispatch binds only the model-supplied arguments — a
+`runtime` parameter without a default raises a `TypeError` before injection
+happens.
 
-docstring 是函数级别的描述。`content` 块才是这次 LLM 调用真正的指令和数据。
+The docstring is the function-level description. The `content` block is the
+actual instruction and data for this LLM call.
 
-## 直接组合
+## Direct composition
 
-当顺序固定时，使用直接的 Python 调用。
+Use direct Python calls when the order is fixed.
 
 ```python
 @agentic_function(input={
@@ -45,12 +48,12 @@ def research_pipeline(task: str, runtime) -> dict:
     return {"survey": survey, "gaps": gaps, "ideas": ideas}
 ```
 
-## LLM 选择的工具
+## LLM-selected tools
 
-当应当由模型来决定调用哪个函数时，使用 `runtime.exec(tools=[...])`。工具是可选启用的：
-裸的 `runtime.exec(content=...)` 不带任何工具（不过工具函数体内部嵌套的 `exec`
-会继承外层的工具列表）——
-见 [`tool-calling.md`](../choosing-the-next-step/tool-calling.md)。
+Use `runtime.exec(tools=[...])` when the model should choose which function to
+call. Tools are opt-in: a bare `runtime.exec(content=...)` has no tools
+(although a nested `exec` inside a tool body inherits the outer tool list) —
+see [`tool-calling.md`](../choosing-the-next-step/tool-calling.md).
 
 ```python
 @agentic_function(input={
@@ -67,20 +70,21 @@ def research_assistant(task: str, runtime) -> str:
     )
 ```
 
-`@agentic_function` 提供了 `.spec` 和 `.execute`，因此被装饰的函数可以直接传入
-`tools=[...]`。
+`@agentic_function` provides `.spec` and `.execute`, so decorated functions can
+be passed directly into `tools=[...]`.
 
-除了直接组合和工具之外，挑选下一步的第三种方式是通过 `exec(choices=...)` 或
-`decision.make` 给出一个决策菜单——见
-[`next-step-decision.md`](../choosing-the-next-step/next-step-decision.md)。
+Besides direct composition and tools, a third way to pick the next step is a
+decision menu via `exec(choices=...)` or `decision.make` — see
+[`next-step-decision.md`](../choosing-the-next-step/next-step-decision.md).
 
-## 装饰器字段
+## Decorator fields
 
-装饰器字段（`expose`、`render_range`、`input`、
-`system`、`workdir_mode`……）的文档**只在一处**：
-[`function-metadata.md`](function-metadata.md) §3。位于
-[`../../../reference/api/agentic-function.md`](../../../reference/api/agentic-function.md) 的 API 参考
-附带一份精简的速查表。
+The decorator fields (`expose`, `render_range`, `input`,
+`system`, `workdir_mode`, …) are documented in **one place**:
+[`function-metadata.md`](function-metadata.md) §3. The API reference at
+[`../../../reference/api/agentic-function.md`](../../../reference/api/agentic-function.md) carries
+a condensed quick-reference table.
 
-本页讲解使用*模式*；它有意不重复逐字段的参考说明。如果你想知道某个字段的作用，
-请前往 `function-metadata.md`。
+This page covers usage *patterns*; it intentionally does not duplicate
+the field-by-field reference. If you're looking for what a field does,
+go to `function-metadata.md`.

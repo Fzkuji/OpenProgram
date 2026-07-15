@@ -1,62 +1,62 @@
-# 终端 TUI
+# Terminal TUI
 
-不离开终端使用 OpenProgram 的完整聊天界面。本页覆盖进入退出、按键和斜杠命令。
+The full chat interface for using OpenProgram without leaving the terminal. This page covers entering and exiting, keyboard shortcuts, and slash commands.
 
-![终端 TUI](../images/tui_hero.png)
+![Terminal TUI](../images/tui_hero.png)
 
-## 进入与退出
+## Entering and exiting
 
 ```bash
-openprogram          # 无参数即进入 TUI
+openprogram          # no arguments enters the TUI
 ```
 
-macOS / Linux 上的 TUI 是 Node.js（Ink）实现，通过 WebSocket 连接本地 worker（没有在跑会自动拉起）；Windows 上回退到一个较简单的 Rich REPL。会话与 Web UI 共用，见[界面总览](README.md)。
+On macOS / Linux the TUI is implemented in Node.js (Ink) and connects to the local worker over WebSocket (starting one automatically if none is running); on Windows it falls back to a simpler Rich REPL. Sessions are shared with the Web UI, see the [interfaces overview](README.md).
 
-退出：`/quit`，或空闲时快速按两次 `Ctrl-C`。
+Exit: `/quit`, or press `Ctrl-C` twice quickly while idle.
 
-续聊历史会话：TUI 内用 `/resume` 挑选；会话 id 可用 `openprogram sessions list` 查。
+To resume a past session: use `/resume` inside the TUI to pick one; session ids are listed by `openprogram sessions list`.
 
-## 按键
+## Keys
 
-| 按键 | 作用 |
+| Key | Action |
 |---|---|
-| `Enter` | 发送 |
-| `Alt+Enter` | 换行 |
-| `Esc` | 清空输入行；生成中则中止本轮 |
-| `Ctrl-C`（生成中） | 三段式停止：第一次提示、第二次优雅停止、第三次强制停止 |
-| `Ctrl-C` 双击（空闲） | 退出 |
-| `↑` / `↓` | 历史输入回溯；补全菜单打开时上下选择 |
-| `Tab` | 接受文件 / 斜杠命令补全 |
-| `→`（行尾）或 `Ctrl+E` | 接受自动补全建议 |
-| `Ctrl+R` | 搜索已保存上下文 |
-| `Shift+Tab` | 循环切换权限档（ask → acceptEdits → plan → auto） |
-| `Ctrl+K` | 命令面板（覆盖全部斜杠命令） |
-| `PageUp` / `PageDown`、`Ctrl+U` / `Ctrl+D` | 回滚翻页 / 半页 |
-| `Home` / `End` | 跳到最上 / 最下 |
+| `Enter` | Send |
+| `Alt+Enter` | Newline |
+| `Esc` | Clear the input line; abort the current turn while generating |
+| `Ctrl-C` (while generating) | Three-stage stop: first press warns, second stops gracefully, third forces |
+| `Ctrl-C` double press (idle) | Exit |
+| `↑` / `↓` | Input history; navigate up/down when the completion menu is open |
+| `Tab` | Accept file / slash-command completion |
+| `→` (at end of line) or `Ctrl+E` | Accept the autocomplete suggestion |
+| `Ctrl+R` | Search saved contexts |
+| `Shift+Tab` | Cycle permission profiles (ask → acceptEdits → plan → auto) |
+| `Ctrl+K` | Command palette (covers all slash commands) |
+| `PageUp` / `PageDown`, `Ctrl+U` / `Ctrl+D` | Scroll back by page / half page |
+| `Home` / `End` | Jump to top / bottom |
 
-## 斜杠命令
+## Slash commands
 
-输入 `/` 触发补全。常用：
+Type `/` to trigger completion. Common ones:
 
-| 命令 | 作用 |
+| Command | Action |
 |---|---|
-| `/help` | 命令列表 |
-| `/model`、`/fetch-models` | 切换模型、重新拉取模型列表 |
-| `/effort` | 调整 thinking effort（档位见 [thinking effort](../models/thinking-effort.md)） |
-| `/new`、`/resume`、`/sessions`、`/session` | 新会话、续聊、会话列表、当前会话信息 |
-| `/rewind` | 回退会话到某条消息 |
-| `/compact`、`/context`、`/clear` | 压缩上下文、查看上下文、清屏 |
-| `/permissions`、`/sandbox` | 权限档与沙箱 |
-| `/login <provider>`、`/logout` | provider 登录 / 登出（见[认证与凭据](../models/auth.md)） |
-| `/agents`、`/agent` | 管理 / 切换 agent |
-| `/mcp`、`/tools`、`/memory` | 与 Web UI 对应页面同源的数据 |
-| `/cost` | 本会话 token 用量 |
-| `/export`、`/copy` | 导出会话、复制回复 |
-| `/config`、`/theme`、`/bell` | 设置、主题、提示音 |
-| `/doctor` | 健康检查 |
-| `/channel`、`/attach`、`/detach`、`/connections` | 聊天渠道接入与会话路由 |
-| `/quit` | 退出 |
+| `/help` | Command list |
+| `/model`, `/fetch-models` | Switch model, re-fetch the model list |
+| `/effort` | Adjust thinking effort (levels in [thinking effort](../models/thinking-effort.md)) |
+| `/new`, `/resume`, `/sessions`, `/session` | New session, resume, session list, current session info |
+| `/rewind` | Roll the session back to a message |
+| `/compact`, `/context`, `/clear` | Compact context, view context, clear screen |
+| `/permissions`, `/sandbox` | Permission profiles and sandbox |
+| `/login <provider>`, `/logout` | Provider login / logout (see [auth and credentials](../models/auth.md)) |
+| `/agents`, `/agent` | Manage / switch agents |
+| `/mcp`, `/tools`, `/memory` | Same data as the corresponding Web UI pages |
+| `/cost` | Token usage for this session |
+| `/export`, `/copy` | Export the session, copy a reply |
+| `/config`, `/theme`, `/bell` | Settings, theme, notification sound |
+| `/doctor` | Health check |
+| `/channel`, `/attach`, `/detach`, `/connections` | Chat-channel hookup and session routing |
+| `/quit` | Exit |
 
-另有 `/search`、`/review`、`/diff`、`/init`、`/browser`、`/welcome`。完整清单以 `/help` 输出为准。
+Also available: `/search`, `/review`, `/diff`, `/init`, `/browser`, `/welcome`. The `/help` output is the authoritative full list.
 
-Windows 的 Rich REPL 只支持较小的子集（`/help`、`/web`、`/model`、`/functions`、`/login`、`/attach`、`/detach`、`/connections`、`/agent`、`/new`、`/copy`、`/quit`），退出也可用 `Ctrl-C` 或 `Ctrl-D`。
+The Windows Rich REPL supports only a smaller subset (`/help`, `/web`, `/model`, `/functions`, `/login`, `/attach`, `/detach`, `/connections`, `/agent`, `/new`, `/copy`, `/quit`); it can also exit via `Ctrl-C` or `Ctrl-D`.

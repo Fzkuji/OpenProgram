@@ -1,167 +1,167 @@
 # Slash Commands — Unified Design
 
-设计目标：把 OpenProgram 现在散落在 CLI 写死表、Web composer 写死表、`/api/plugins/commands`、MCP prompts、skills 这几条互不相通的"指令源"，合并成一份**统一的 slash 命令登记表**，五个层级、一份格式、一套渲染、一个 UI。
+Design goal: merge OpenProgram's currently scattered, mutually disconnected "command sources" — the CLI hardcoded table, the Web composer hardcoded table, `/api/plugins/commands`, MCP prompts, and skills — into a single **unified slash-command registry**: five layers, one format, one rendering pipeline, one UI.
 
-参照实现见 `docs/design/cli/slash-commands-references.md`。本文档凡是写"照搬 X"的地方，意思是直接复用那个项目的设计选择。
+For the reference implementations, see `docs/design/cli/slash-commands-references.md`. Wherever this document says "borrow from X," it means we directly reuse that project's design choice.
 
 ---
 
-## 1. 来源层级
+## 1. Source Layers
 
-加载顺序由低到高，**高优先级覆盖同名低优先级**；被覆盖的不丢失，仍可通过 `/source:name` 显式调用。
+Load order is low to high, with **a higher-priority layer overriding a lower-priority one of the same name**; the overridden command is not lost and can still be invoked explicitly via `/source:name`.
 
-| Layer | 来源 | 目录 / 接口 | 谁写 | 热重载 |
+| Layer | Source | Directory / Interface | Author | Hot reload |
 |---|---|---|---|---|
-| L0 | built-in | 源码硬编码 | OpenProgram 自己 | 否（要重启） |
-| L1 | plugins | `~/.openprogram/plugins/<pkg>/...` 的 `entrypoints.commands` | 插件作者 | 插件 reload 时 |
-| L2 | mcp-prompts | 已连接 MCP 服务的 `list_prompts()` | MCP 服务 | session 重连时 |
-| L3 | skills | `~/.openprogram/skills/<name>/SKILL.md` | 技能作者 / 用户 | watcher 监听 |
-| L4 | user | `~/.openprogram/commands/**/*.md` | 当前用户 | watcher 监听 |
-| L5 | project | `<cwd>/.openprogram/commands/**/*.md` | 项目维护者 | watcher 监听 |
+| L0 | built-in | hardcoded in source | OpenProgram itself | no (requires restart) |
+| L1 | plugins | `entrypoints.commands` under `~/.openprogram/plugins/<pkg>/...` | plugin authors | on plugin reload |
+| L2 | mcp-prompts | `list_prompts()` of connected MCP servers | MCP servers | on session reconnect |
+| L3 | skills | `~/.openprogram/skills/<name>/SKILL.md` | skill authors / users | via watcher |
+| L4 | user | `~/.openprogram/commands/**/*.md` | current user | via watcher |
+| L5 | project | `<cwd>/.openprogram/commands/**/*.md` | project maintainers | via watcher |
 
-覆盖规则照搬 claude-code：后加载者赢；同来源内同名按 realpath 去重防 symlink 重复加载。
+Override rules borrow from claude-code: the later-loaded one wins; within the same source, duplicates of the same name are deduplicated by realpath to prevent symlinks from loading the same file twice.
 
-显式命名空间格式：`/(plugin)name`、`/(mcp:linear)name`、`/(skill)name`、`/(user)name`、`/(project)name`。括号内是 source label。
+Explicit namespace format: `/(plugin)name`, `/(mcp:linear)name`, `/(skill)name`, `/(user)name`, `/(project)name`. The text inside the parentheses is the source label.
 
-冲突时菜单展示主条目 + 「这个名字还有 N 个其它来源，按 ⇥ 切换」的 hint，照搬 claude-code 的 disambiguation UI 思路。
+On conflict, the menu shows the primary entry plus a hint "this name has N other sources, press ⇥ to switch," borrowing the disambiguation UI approach from claude-code.
 
 ---
 
-## 2. 文件格式
+## 2. File Format
 
-照搬 claude-code 的 markdown + YAML frontmatter，字段集合并入 claude-code + opencode + openclaw + hermes 的并集，再裁掉对我们没意义的（i18n、provider routing、platform filter）。
+Borrow claude-code's markdown + YAML frontmatter; the field set is the union of claude-code + opencode + openclaw + hermes, then trimmed of what's meaningless to us (i18n, provider routing, platform filter).
 
 ```markdown
 ---
-# 标识 ----------------------------------------------------------
-name: review              # 可省，默认取文件名
-aliases: [r, rev]         # 可选；同名表里也走覆盖规则
-description: 按团队规范 review 当前 diff
-when-to-use: |            # 长描述；进入 picker 详情面板
-  当用户希望对未提交改动做一轮风格 + bug review 时用。
-hidden: false             # true 则不出现在补全菜单，但仍可显式触发
+# Identity ----------------------------------------------------------
+name: review              # optional; defaults to the file name
+aliases: [r, rev]         # optional; also subject to override rules in the name table
+description: Review the current diff per team conventions
+when-to-use: |            # long description; shown in the picker detail panel
+  Use when the user wants a round of style + bug review on uncommitted changes.
+hidden: false             # if true, does not appear in the completion menu, but can still be triggered explicitly
 
-# 参数 ----------------------------------------------------------
-arguments:                # 位置参数声明（opencode 风格）
+# Arguments ----------------------------------------------------------
+arguments:                # positional argument declarations (opencode style)
   - name: target
-    description: 文件路径或目录，默认当前 diff
+    description: File path or directory; defaults to the current diff
     required: false
-argument-hint: "[target]"  # 菜单里灰字提示（claude-code）
+argument-hint: "[target]"  # grayed-out hint in the menu (claude-code)
 
-# 执行 ----------------------------------------------------------
-type: prompt              # prompt | local | local-jsx，默认 prompt
-context: inline           # inline | fork，默认 inline
-agent: general-purpose    # 仅 context: fork 时生效
+# Execution ----------------------------------------------------------
+type: prompt              # prompt | local | local-jsx, default prompt
+context: inline           # inline | fork, default inline
+agent: general-purpose    # only takes effect when context: fork
 model: inherit            # inherit | opus | sonnet | haiku | <full id>
 effort: medium            # low | medium | high | max | <int>
-allowed-tools:            # fork 模式下传给子 agent 的工具白名单
+allowed-tools:            # tool allowlist passed to the sub-agent in fork mode
   - Read
   - Grep
 
-# 触发条件（claude-code 独有）-----------------------------------
-paths:                    # 通配；命中时该命令才出现在补全里
+# Trigger conditions (claude-code only) -----------------------------
+paths:                    # globs; the command only appears in completion when matched
   - "src/**/*.{ts,tsx}"
   - "**/*.py"
-requires:                 # openclaw 风格的前置依赖检查
+requires:                 # openclaw-style prerequisite checks
   any-bins: [git]
   config: [openai_api_key]
 
-# 钩子 ----------------------------------------------------------
-hooks:                    # 与 plugins/hooks 共用事件名
+# Hooks ----------------------------------------------------------
+hooks:                    # shares event names with plugins/hooks
   PreToolUse: ...
 
-# 元 -----------------------------------------------------------
+# Meta -----------------------------------------------------------
 version: 1.0.0
 ---
-请审查 {{target}} 这段代码：
-- 找潜在 bug
-- 检查是否符合 CONVENTIONS.md
-- 输出 patch 建议
+Please review this code at {{target}}:
+- Find potential bugs
+- Check whether it conforms to CONVENTIONS.md
+- Output patch suggestions
 
-附加上下文：
+Additional context:
 $ARGUMENTS
 
-最近 commit:
+Recent commits:
 !`git log -5 --oneline`
 
-当前 diff：
+Current diff:
 @`git diff --staged`
 ```
 
-字段权威表见第 7 节。
+The authoritative field table is in Section 7.
 
 ---
 
-## 3. 命令体模板语法
+## 3. Command Body Template Syntax
 
-照搬 claude-code 的全部，加 opencode 的 `$0..$9`，加 hermes 的 timeout-bounded shell。
+Borrow all of claude-code's, plus opencode's `$0..$9`, plus hermes's timeout-bounded shell.
 
-| 语法 | 含义 | 来源 |
+| Syntax | Meaning | Source |
 |---|---|---|
-| `$ARGUMENTS` | 用户输入命令后的整串文本 | claude-code |
-| `$0`..`$9` | 第 N 个位置参数（shell 风格分词） | opencode |
-| `{{name}}` | 按 `arguments:` 声明的命名参数 | opencode + 自创 |
-| `${OPENPROGRAM_COMMAND_DIR}` | 命令文件所在目录绝对路径 | claude-code |
-| `${OPENPROGRAM_SESSION_ID}` | 当前会话 id | claude-code |
-| `${OPENPROGRAM_CWD}` | 当前工作目录 | 新增 |
-| `` !`cmd` `` 或代码块 `` ```! ` ` | 在 host shell 执行，stdout 拼回 prompt；2s timeout | claude-code + hermes |
-| `` @`path` `` | 读文件内容拼回 prompt；路径必须在 trusted_roots 内 | 新增 |
-| `<<command-name>>name<</command-name>>` | 引用另一条命令并展开（递归保护，最多 3 层） | 新增 |
+| `$ARGUMENTS` | the entire text the user typed after the command | claude-code |
+| `$0`..`$9` | the Nth positional argument (shell-style tokenization) | opencode |
+| `{{name}}` | a named argument declared in `arguments:` | opencode + custom |
+| `${OPENPROGRAM_COMMAND_DIR}` | absolute path of the directory containing the command file | claude-code |
+| `${OPENPROGRAM_SESSION_ID}` | current session id | claude-code |
+| `${OPENPROGRAM_CWD}` | current working directory | new |
+| `` !`cmd` `` or code block `` ```! ` ` | execute in the host shell, splice stdout back into the prompt; 2s timeout | claude-code + hermes |
+| `` @`path` `` | read file contents and splice back into the prompt; the path must be inside trusted_roots | new |
+| `<<command-name>>name<</command-name>>` | reference another command and expand it (recursion guard, max 3 levels) | new |
 
-参数解析照搬 claude-code `tryParseShellCommand`：先 shell-quote 分词，失败 fallback 到 whitespace split。空参数返回空列表，模板里的 `$0..$9` 解析成空字符串。
+Argument parsing borrows claude-code's `tryParseShellCommand`: first tokenize with shell-quote, and on failure fall back to whitespace split. Empty arguments return an empty list, and `$0..$9` in the template resolve to empty strings.
 
-数字命名参数（`name: "0"`）拒绝注册，与 `$0` 冲突。
+Numeric named arguments (`name: "0"`) are rejected at registration time, as they conflict with `$0`.
 
-Shell 执行的安全模型：默认禁用，需要在配置里 `commands.allow_shell: true` 才能跑 `` !`...` ``。MCP 上下文里禁用所有 `!` 块。
+Security model for shell execution: disabled by default; you must set `commands.allow_shell: true` in the config before `` !`...` `` can run. All `!` blocks are disabled in the MCP context.
 
 ---
 
-## 4. 执行模式
+## 4. Execution Modes
 
-照搬 claude-code 的三态，加 opencode 的 subtask 概念。
+Borrow claude-code's three states, plus opencode's subtask concept.
 
 ```
-type: prompt            （默认）
-  渲染模板 → 当作用户消息塞进当前会话 → 走正常 agent loop
+type: prompt            (default)
+  render the template → inject it as a user message into the current session → run the normal agent loop
 
 type: local
-  调用 host 注册的 LocalCommandHandler；返回 LocalCommandResult
-  保留给内置命令：/compact /clear /new /web /model 等
+  call the host-registered LocalCommandHandler; returns a LocalCommandResult
+  reserved for built-in commands: /compact /clear /new /web /model etc.
 
 type: local-jsx
-  暂不实现。Web UI 可以渲染 React 组件作为命令结果（claude-code 用 ink）
-  我们这边走 server-pushed structured event，留接口
+  not implemented for now. The Web UI can render a React component as the command result (claude-code uses ink)
+  on our side we go through a server-pushed structured event; leave the interface open
 
-context: inline          （默认）
-  渲染后的 prompt 进当前会话上下文
+context: inline          (default)
+  the rendered prompt enters the current session context
 
 context: fork
-  开 task 子 agent 跑（已有 functions/tools/task）
-  agent 字段决定 subagent_type；allowed-tools 决定可见工具集
-  子 agent 返回的最终消息以「命令结果」形式呈现，不污染主上下文
+  run in a task sub-agent (uses existing functions/tools/task)
+  the agent field determines subagent_type; allowed-tools determines the visible tool set
+  the sub-agent's final message is presented as a "command result" and does not pollute the main context
 ```
 
-`context: fork` 等价于"敲 `/review` 自动转成调一次 `task(subagent_type=general-purpose, prompt=...)`"。这一步把 claude-code 的 fork 模式直接嫁接到我们已有的 subagent 机制上。
+`context: fork` is equivalent to "typing `/review` automatically turns into a single call to `task(subagent_type=general-purpose, prompt=...)`." This step grafts claude-code's fork mode directly onto our existing subagent mechanism.
 
 ---
 
-## 5. 触发条件（paths / requires）
+## 5. Trigger Conditions (paths / requires)
 
-照搬 claude-code 的 `paths`、openclaw 的 `requires`：在不满足条件时**从补全菜单隐藏**，但用户仍可手动敲完整命令触发——触发时再做一次硬校验，失败给清晰报错。
+Borrow claude-code's `paths` and openclaw's `requires`: when conditions are not met, **hide from the completion menu**, but the user can still trigger it by manually typing the full command — at which point a hard validation runs again, with a clear error on failure.
 
-`paths: ["src/**/*.py"]`：当前会话最近 touch 过的文件（或显式 `@file` 引用的）命中 glob 时才显示。
+`paths: ["src/**/*.py"]`: shown only when files recently touched in the current session (or explicitly referenced via `@file`) match the glob.
 
-`requires.any-bins: [git, rg]`：`which` 检查至少一个可用。失败则 hint「需要 `git` / `rg`，请先安装」。
+`requires.any-bins: [git, rg]`: a `which` check that at least one is available. On failure, hint "needs `git` / `rg`, please install first."
 
-`requires.config: [openai_api_key]`：当前 profile 配过该键。
+`requires.config: [openai_api_key]`: the current profile has this key configured.
 
-`requires.platform: [darwin, linux]`：从 hermes 借来的平台过滤。
+`requires.platform: [darwin, linux]`: a platform filter borrowed from hermes.
 
 ---
 
-## 6. 钩子绑定
+## 6. Hook Binding
 
-命令可以声明自己的临时 hook（仅在这条命令的执行期间生效）。事件名复用 `openprogram/plugins/hooks.py:HookEvent`。
+A command can declare its own temporary hook (effective only during that command's execution). Event names reuse `openprogram/plugins/hooks.py:HookEvent`.
 
 ```yaml
 hooks:
@@ -173,111 +173,111 @@ hooks:
       handler: built-in:auto-stage
 ```
 
-handler 形式两种：
+Two handler forms:
 
-- `!` 反引号块 → 跑 shell，stdout 进日志，exit code 决定 allow/deny
-- `built-in:<id>` → 调 host 注册的命名 handler（首发不做，留接口）
+- `!` backtick block → run shell, stdout goes to the log, exit code decides allow/deny
+- `built-in:<id>` → call a host-registered named handler (not in the first release; interface left open)
 
-需要等 hooks 子系统补齐"拦截 / 改写"语义后才完整可用。本节先把 schema 占住，避免后面破坏性变更。
+This is only fully usable once the hooks subsystem completes its "intercept / rewrite" semantics. This section reserves the schema first to avoid breaking changes later.
 
 ---
 
-## 7. Frontmatter 字段权威表
+## 7. Authoritative Frontmatter Field Table
 
-| 字段 | 类型 | 默认 | 含义 | 借自 |
+| Field | Type | Default | Meaning | Borrowed from |
 |---|---|---|---|---|
-| name | string | 文件名 stem | 命令名 | 通用 |
-| aliases | string[] | [] | 别名，独立走覆盖表 | claude-code |
-| description | string | "" | 一行说明，菜单展示 | 通用 |
-| when-to-use | string \| md | "" | 长说明，详情面板 | claude-code |
-| hidden | bool | false | 隐藏出补全 | claude-code (isHidden) |
-| arguments | list | [] | 位置参数声明 | opencode |
-| argument-hint | string | 自动生成 | 菜单灰字提示 | claude-code |
-| type | enum | prompt | 执行模式 | claude-code |
+| name | string | file name stem | command name | common |
+| aliases | string[] | [] | aliases, independently subject to the override table | claude-code |
+| description | string | "" | one-line description, shown in the menu | common |
+| when-to-use | string \| md | "" | long description, detail panel | claude-code |
+| hidden | bool | false | hide from completion | claude-code (isHidden) |
+| arguments | list | [] | positional argument declarations | opencode |
+| argument-hint | string | auto-generated | grayed-out menu hint | claude-code |
+| type | enum | prompt | execution mode | claude-code |
 | context | enum | inline | inline / fork | claude-code |
-| agent | string | "general-purpose" | fork 时的 subagent_type | claude-code |
-| model | enum/string | inherit | 模型覆盖 | claude-code |
-| effort | enum/int | inherit | 推理强度 | claude-code |
-| allowed-tools | string[] | inherit | 工具白名单 | claude-code |
-| paths | string[] | null | glob 条件激活 | claude-code |
-| requires | object | {} | 前置依赖 | openclaw |
-| hooks | object | {} | 临时钩子 | claude-code |
-| version | semver | null | 升级提示用 | claude-code |
-| user-invocable | bool | true | 是否对应 `/name` 触发，false 时只能模型调 | claude-code |
-| shell | enum | inherit | bash / powershell，`!` 块用 | claude-code |
+| agent | string | "general-purpose" | subagent_type when forking | claude-code |
+| model | enum/string | inherit | model override | claude-code |
+| effort | enum/int | inherit | reasoning effort | claude-code |
+| allowed-tools | string[] | inherit | tool allowlist | claude-code |
+| paths | string[] | null | glob-conditioned activation | claude-code |
+| requires | object | {} | prerequisites | openclaw |
+| hooks | object | {} | temporary hooks | claude-code |
+| version | semver | null | for upgrade prompts | claude-code |
+| user-invocable | bool | true | whether `/name` triggers it; when false, only the model can call it | claude-code |
+| shell | enum | inherit | bash / powershell, used by `!` blocks | claude-code |
 
-未声明的字段一律保留进 `extras` dict，不报错（向前兼容）。
+Any undeclared fields are preserved into an `extras` dict without error (forward compatible).
 
 ---
 
 ## 8. UI
 
-补全菜单按 source 分组，组内按字母序，跨组按 source 优先级（project > user > skill > mcp > plugin > builtin）。每条展示：
+The completion menu is grouped by source, alphabetically within a group, and across groups by source priority (project > user > skill > mcp > plugin > builtin). Each entry shows:
 
 ```
-/review                  按团队规范 review 当前 diff      [project]
+/review                  Review the current diff per team conventions      [project]
   [target]
 ```
 
-搜索按 fuzzy（name + description + when-to-use）。
+Search is fuzzy (name + description + when-to-use).
 
-详情面板（按 ⇥ 展开）：
+Detail panel (expand with ⇥):
 
 ```
 /review (project)
 ─────────────────────────────────────
-按团队规范 review 当前 diff
+Review the current diff per team conventions
 
-参数：[target] (optional)
-模式：inline · model: inherit · effort: medium
-来源：.openprogram/commands/review.md
+Arguments: [target] (optional)
+Mode: inline · model: inherit · effort: medium
+Source: .openprogram/commands/review.md
 ```
 
-冲突态：菜单条目右侧标 `(+2 more)`，⇥ 切换不同 source 的实现。
+Conflict state: the menu entry is tagged `(+2 more)` on the right; ⇥ switches between implementations from different sources.
 
-技能（L3）和 MCP prompts（L2）自动注入；技能命令默认 `context: fork`、`agent: general-purpose`，MCP prompts 默认 `type: prompt + inline`（因为它们本来就是 prompt 模板）。
-
----
-
-## 9. 安全
-
-- 路径加载：`realpath` 解析后必须落在 trusted_roots（`~/.openprogram/`、`$cwd/.openprogram/`）内，否则拒绝。
-- YAML 解析：`yaml.safe_load`，禁用任意类型构造。
-- Glob：`fnmatch` 风格，禁用 `..` 与绝对路径。
-- `!` shell 块：默认禁用，2s timeout，禁止 fork bomb，stdout 限制 64KB。
-- `@` 文件引用：必须在 trusted_roots 内或显式被 `--allow-file <abs>` 授权。
-- 来源标签固定由 loader 写入，不允许 frontmatter 自报 `source:`。
+Skills (L3) and MCP prompts (L2) are auto-injected; skill commands default to `context: fork`, `agent: general-purpose`, and MCP prompts default to `type: prompt + inline` (since they are prompt templates to begin with).
 
 ---
 
-## 10. 工程实现
+## 9. Security
 
-### 10.1 目录布局
+- Path loading: after `realpath` resolution, the path must fall within trusted_roots (`~/.openprogram/`, `$cwd/.openprogram/`), otherwise rejected.
+- YAML parsing: `yaml.safe_load`, with arbitrary-type construction disabled.
+- Glob: `fnmatch` style, with `..` and absolute paths disabled.
+- `!` shell blocks: disabled by default, 2s timeout, fork bombs forbidden, stdout capped at 64KB.
+- `@` file references: must be inside trusted_roots or explicitly authorized via `--allow-file <abs>`.
+- The source label is always written by the loader; frontmatter is not allowed to self-report `source:`.
+
+---
+
+## 10. Engineering Implementation
+
+### 10.1 Directory Layout
 
 ```
 openprogram/commands/
-├── __init__.py             # 对外 API: list_commands / get / dispatch
-├── loader.py               # 扫描 + 解析 + 合并五个 layer
-├── frontmatter.py          # YAML 解析 + 字段校验
-├── template.py             # $ARGUMENTS / {{name}} / !`...` / @`...` 渲染
-├── conditions.py           # paths / requires 评估
-├── registry.py             # 进程内合并表 + 冲突索引
-├── dispatch.py             # type/context 分支
-├── watcher.py              # inotify/fsevents 监听 L3-L5
-└── _ref.py                 # 给 web/cli 用的轻量 view 投影
+├── __init__.py             # public API: list_commands / get / dispatch
+├── loader.py               # scan + parse + merge the five layers
+├── frontmatter.py          # YAML parsing + field validation
+├── template.py             # $ARGUMENTS / {{name}} / !`...` / @`...` rendering
+├── conditions.py           # paths / requires evaluation
+├── registry.py             # in-process merged table + conflict index
+├── dispatch.py             # type/context branching
+├── watcher.py              # inotify/fsevents watch for L3-L5
+└── _ref.py                 # lightweight view projection for web/cli
 ```
 
-### 10.2 数据流
+### 10.2 Data Flow
 
 ```
-启动 / reload
+startup / reload
   → loader.scan_all_layers()
   → for each layer: read files / call provider (plugins, mcp.list_prompts)
   → frontmatter.parse + validate
-  → registry.merge(layer, items)        覆盖 + 别名 + 冲突索引
+  → registry.merge(layer, items)        override + aliases + conflict index
 
-用户敲 /review xxx
-  → cli or web 转发到 dispatch.invoke(name, raw_args, session_ctx)
+user types /review xxx
+  → cli or web forwards to dispatch.invoke(name, raw_args, session_ctx)
   → registry.resolve(name) → CommandSpec
   → conditions.check(spec, session_ctx) → ok / blocked-with-reason
   → template.render(spec.body, parsed_args, env)
@@ -289,68 +289,68 @@ openprogram/commands/
 
 ### 10.3 API
 
-后端：
+Backend:
 
 ```
-GET    /api/commands                    # 合并后的统一列表（含 source、metadata）
-GET    /api/commands/{name}             # 单条详情（含 body 模板预览）
+GET    /api/commands                    # the merged unified list (with source, metadata)
+GET    /api/commands/{name}             # single-entry detail (with body template preview)
 POST   /api/commands/{name}/invoke      # body: {session_id, raw_args}
-POST   /api/commands/reload             # 强制重扫
-GET    /api/commands/conflicts          # 冲突表（同名多源）
+POST   /api/commands/reload             # force a rescan
+GET    /api/commands/conflicts          # conflict table (same name, multiple sources)
 ```
 
-`/api/plugins/commands` 保留为兼容入口，内部 redirect 到 `/api/commands?source=plugin`。
+`/api/plugins/commands` is retained as a compatibility entry point, internally redirecting to `/api/commands?source=plugin`.
 
-前端：
+Frontend:
 
-`web/components/chat/composer/use-slash-menu.ts` 改读 `/api/commands`，删掉内部硬编码列表（保留 dispatcher 兼容层，把 client 侧 `/compact` `/clear` 等映射到 builtin local 命令）。
+`web/components/chat/composer/use-slash-menu.ts` is changed to read `/api/commands`, deleting the internal hardcoded list (keeping a dispatcher compatibility layer that maps client-side `/compact`, `/clear`, etc. to builtin local commands).
 
-CLI：
+CLI:
 
-`openprogram/_cli_chat/handlers.py:_handle_slash` 改造：先查 registry，命中后走 dispatch；未命中再走目前那串写死的 if/else（这部分逐步迁移成 type: local 的 builtin 命令）。
+`openprogram/_cli_chat/handlers.py:_handle_slash` is reworked: first check the registry, and on a hit go through dispatch; on a miss, fall back to the current hardcoded if/else chain (which is gradually migrated into type: local builtin commands).
 
-### 10.4 迁移路径
+### 10.4 Migration Path
 
 ```
-Phase 1  扫描器 + frontmatter + 渲染 + registry + /api/commands   [基础]
+Phase 1  scanner + frontmatter + rendering + registry + /api/commands   [foundation]
 Phase 2  L4 (~/.openprogram/commands) + L5 (.openprogram/commands)
-Phase 3  L3 skills 自动注入 (skills/loader 暴露 to_command_spec())
-Phase 4  L2 mcp prompts 自动注入 (mcp/registry 已有 list_prompts)
-Phase 5  L1 plugins 接入新表（plugins/loader 已有 _commands，做一层 adapter）
-Phase 6  context: fork 接 task 工具
-Phase 7  paths / requires 触发条件评估
-Phase 8  watcher 热重载
-Phase 9  builtin 命令逐步迁移成 type: local + frontmatter
-Phase 10 hooks 字段在 hooks 子系统升级后启用
+Phase 3  L3 skills auto-injection (skills/loader exposes to_command_spec())
+Phase 4  L2 mcp prompts auto-injection (mcp/registry already has list_prompts)
+Phase 5  L1 plugins onboarded onto the new table (plugins/loader already has _commands, add an adapter layer)
+Phase 6  context: fork wired to the task tool
+Phase 7  paths / requires trigger-condition evaluation
+Phase 8  watcher hot reload
+Phase 9  builtin commands gradually migrated to type: local + frontmatter
+Phase 10 hooks field enabled after the hooks subsystem is upgraded
 ```
 
-每个 Phase 独立可发布；Phase 1-2 + 5 完成时已经能给用户带来主要价值。
+Each Phase is independently shippable; once Phase 1-2 + 5 are done, most of the user value is already delivered.
 
 ---
 
-## 11. 不实现的部分（明确舍弃）
+## 11. What We Don't Implement (Explicitly Dropped)
 
-| 来源 | 设计 | 不抄的原因 |
+| Source | Design | Reason for not copying |
 |---|---|---|
-| openclaw | i18n (descriptionLocalizations) | 我们是英文 + 简中两套，运行时切换没价值 |
-| openclaw | provider routing (Slack vs Mattermost) | 单一 host，没有多 provider 命名 |
-| hermes | platforms 过滤 (darwin/linux/win32) | requires.platform 替代 |
-| hermes | 提示注入 134 pattern 检测 | 移到独立的 prompt-injection scanner 子系统 |
-| claude-code | local-jsx React 组件 | Web UI 用 structured event 替代，CLI 不实现 |
-| pi-mono | 纯硬编码 | 反例 |
+| openclaw | i18n (descriptionLocalizations) | we have just English + Simplified Chinese, runtime switching adds no value |
+| openclaw | provider routing (Slack vs Mattermost) | single host, no multi-provider naming |
+| hermes | platforms filter (darwin/linux/win32) | replaced by requires.platform |
+| hermes | prompt-injection 134-pattern detection | moved to a standalone prompt-injection scanner subsystem |
+| claude-code | local-jsx React components | the Web UI uses structured events instead, CLI does not implement it |
+| pi-mono | pure hardcoding | a counterexample |
 
 ---
 
-## 12. 版本与升级
+## 12. Versioning and Upgrades
 
-`version: 1.0.0` 字段 + 来源仓库的 git hash（如有）一起塞 registry。
+The `version: 1.0.0` field is stored in the registry together with the source repo's git hash (if any).
 
-L1（plugins）走插件 autoupdate 子系统（已有）。
+L1 (plugins) goes through the plugin autoupdate subsystem (already exists).
 
-L3（skills）走 skills discovery diff（已有）。
+L3 (skills) goes through skills discovery diff (already exists).
 
-L4 / L5 用户写的，不自动更新。
+L4 / L5 are user-written and do not auto-update.
 
-L0（builtin）跟随 OpenProgram 版本。
+L0 (builtin) tracks the OpenProgram version.
 
-`docs/design/cli/slash-commands-references.md` 周期性重扫五家参考项目的实现，发现新设计后回到本文档 §2/§3 增补字段，不破坏既有 frontmatter（额外字段进 extras）。
+`docs/design/cli/slash-commands-references.md` periodically rescans the implementations of the five reference projects; when new designs are found, return to §2/§3 of this document to add fields, without breaking existing frontmatter (extra fields go into extras).

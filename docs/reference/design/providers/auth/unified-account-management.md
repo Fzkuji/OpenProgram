@@ -1,183 +1,187 @@
-# 统一账号管理 + 凭据池轮换/回退
+# Unified account management + pool rotation/fallback
 
-**目标（用户）：** 在 CLI / web / TUI 之间提供一种一致的账号管理方式——
-对每个 provider 列出 / 添加 / 激活 / 重命名 / 删除多个账号，外加带开关的
-轮换 / 故障转移。每个 provider 背后的*后端*（claude-code 用 Meridian，
-其余用 AuthStore）只是实现细节；**管理界面是统一的**。本设计基于
-docs/design/providers/auth/unified-auth-storage.md（登录侧，P1）。
+**Goal (user):** one consistent way to manage accounts across CLI / web / TUI —
+list / add / activate / rename / remove multiple accounts per provider, plus
+rotation / failover with on/off switches. The *backend* per provider (Meridian
+for claude-code, AuthStore for the rest) is an implementation detail; the
+**management surface is unified**. Builds on docs/design/providers/auth/unified-auth-storage.md
+(the login side, P1).
 
-## 核心思路
+## Core idea
 
-一个**账号 = 一个具名 profile**。AuthStore 已经以
-`(provider_id, profile_id)` 为键管理每一个凭据池，并为每个池持久化一个文件
-（`~/.openprogram/auth/<provider>/<profile>.json`），而 `ProfileManager` 也
-已经实现了 profile 的 CRUD。所以"多账号"和"多 profile"是同一个
-概念——每个账号就是一个 profile id。claude-code 的 `ClaudeAccounts` 面板
-（列出 / 通过登录添加 / 激活 / 重命名 / 删除）就是要
-**推广到每个 provider** 的 UX 模板；claude-code 只是它的一个实例。
+An **account = a named profile**. AuthStore already keys every credential pool
+by `(provider_id, profile_id)` and persists one file per pool
+(`~/.openprogram/auth/<provider>/<profile>.json`), and `ProfileManager` already
+does profile CRUD. So "multiple accounts" and "multiple profiles" are the same
+concept — each account is a profile id. claude-code's `ClaudeAccounts` panel
+(list / add-via-login / activate / rename / remove) is the UX template to
+**generalize to every provider**; claude-code becomes just one instance of it.
 
-## 已有的部分（不要重建）
+## What's already there (don't rebuild)
 
-- 多 profile 存储 + `ProfileManager` CRUD（`auth/store.py`、`auth/profiles.py`）。
-- 凭据池策略模型——`PoolStrategy = fill_first | round_robin | random |
-  least_used`、`credentials[]`、`_rr_cursor`、`fallback_chain`、每个凭据的
-  `cooldown_until_ms` / `status`——全部已序列化（`auth/types.py:335-390`）。
-- 遵循策略 + 健康过滤 + 跳过冷却的凭据池选择
-  （`auth/pool.py:99-161`）；回退递归（`auth/manager.py:247-312`）；
-  冷却时长 + `mark_failure`/`mark_success`/`clear_cooldown`
-  （`auth/pool.py:57-276`）；manager 封装 `report_failure`/`report_success`
-  （`auth/manager.py:450-497`）。
-- 一套更丰富的多 profile REST 界面已经挂载（`webui/_auth_routes.py`：
-  `/profiles`、`/pools`、`/pools/.../credentials`、`/doctor`、SSE `/events`）——
-  目前只被一个页面使用。
-- P1 提供的统一登录端点（`/api/providers/{id}/login/{start,poll,
-  submit,cancel}`）+ `<ProviderLogin>`。
+- Multi-profile storage + `ProfileManager` CRUD (`auth/store.py`, `auth/profiles.py`).
+- Pool strategy model — `PoolStrategy = fill_first | round_robin | random |
+  least_used`, `credentials[]`, `_rr_cursor`, `fallback_chain`, per-cred
+  `cooldown_until_ms` / `status` — all serialized (`auth/types.py:335-390`).
+- Pool selection honoring strategy + health filter + cooldown skip
+  (`auth/pool.py:99-161`); fallback recursion (`auth/manager.py:247-312`);
+  cooldown durations + `mark_failure`/`mark_success`/`clear_cooldown`
+  (`auth/pool.py:57-276`); manager wrappers `report_failure`/`report_success`
+  (`auth/manager.py:450-497`).
+- A richer multi-profile REST surface already mounted (`webui/_auth_routes.py`:
+  `/profiles`, `/pools`, `/pools/.../credentials`, `/doctor`, SSE `/events`) —
+  used by only one page today.
+- The unified login endpoints from P1 (`/api/providers/{id}/login/{start,poll,
+  submit,cancel}`) + `<ProviderLogin>`.
 
-## 两个关键缺口（先修这两个——否则其余都只是表面文章）
+## The two load-bearing gaps (fix first — everything else is cosmetic without them)
 
-1. **请求时没有激活 profile 的选择。** `AuthManager.acquire`
-   默认 `profile_id="default"`，且请求路径从不进入
-   `auth_scope(...)`，所以用户实际上无法在"工作"和"个人"之间切换运行。
-   *唯一*能用的激活账号选择器是 claude-code 的，它通过
-   provider-config 值 `meridian_profile` 实现。需要：一个通用的
-   `get/set_active_profile(provider_id)` + 让 `acquire`/`resolver` 默认使用
-   它 + 让 chat/execute 入口进入该 scope。
-2. **轮换/冷却/回退从不生效。** `report_failure` / `report_success`
-   在其定义之外**没有任何调用方**——没有任何 provider 运行时把
-   429/402/5xx 反馈给凭据池，所以 `cooldown_until_ms` 一直为 0，`fill_first`
-   永远返回 #0 凭据，轮换/回退形同虚设。需要：运行时在失败时调用
-   `manager.report_failure(...)`，在 2xx 时调用 `report_success(...)`。
+1. **No active-profile selection at request time.** `AuthManager.acquire`
+   defaults `profile_id="default"` and the request path never enters
+   `auth_scope(...)`, so a user can't actually run on "work" vs "personal".
+   The *only* working active-account selector is claude-code's, via the
+   provider-config value `meridian_profile`. Needed: a generic
+   `get/set_active_profile(provider_id)` + make `acquire`/`resolver` default to
+   it + have the chat/execute entry enter the scope.
+2. **Rotation/cooldown/fallback never engage.** `report_failure` / `report_success`
+   have **zero callers** outside their definitions — no provider runtime feeds a
+   429/402/5xx back to the pool, so `cooldown_until_ms` stays 0, `fill_first`
+   always returns cred #0, and rotation/fallback are dead. Needed: runtimes call
+   `manager.report_failure(...)` on failure and `report_success(...)` on 2xx.
 
-（另外：第二次 OAuth 登录会被 `_prune_superseded_oauth` 裁掉，所以 OAuth
-凭据池无法积累两个凭据——这对*API key* 之间的轮换没问题，那才是真实场景；
-OAuth 多账号由多个 *profile* 来处理。）
+(Also: a second OAuth login is pruned by `_prune_superseded_oauth`, so OAuth
+pools can't accumulate two creds — fine for rotation across *API keys*, which is
+the real use case; OAuth multi-account is handled by multiple *profiles*.)
 
-## 目标架构
+## Target architecture
 
-- **激活账号 = 激活 profile**，可按 provider 设置，由运行时遵循（缺口 1）。
-- **通用账号 REST** `/api/providers/{id}/accounts/*`，与 claude-code 的形状
-  对齐，从而让前端可以原样复用：
-  `GET …/accounts` → `{active, accounts:[{name,label,email?,status,kind}]}`、
-  `POST …/accounts/use {name}`（""=取消激活）、`…/rename {old,new}`、添加（复用
-  `/login/start|poll|submit` 并带上目标账号名）、删除（复用现有的
-  凭据/池删除）。claude-code 在*相同*的路由后面保留其基于 Meridian 的
-  实现（适配器），所以 UI 不需要分支。
-- **一个 `<ProviderAccounts>` React 组件**（由
-  `claude-accounts.tsx` 推广而来）+ **一个 Ink 选择器**（由
-  `claudeAccounts.tsx` 推广而来），每个 provider 都复用。`detail.tsx` 为
-  所有 provider 渲染它；TUI `/login <prov>` 不再甩锅给 web。
-- **凭据池控制**——`PATCH /api/providers/pools/{prov}/{prof}` 用于设置
-  `strategy` + 开关 `fallback_chain`、`…/clear_cooldown`（"立即重试"）、一个
-  `…/health` 视图；在 web/TUI 中以策略下拉框 + 回退开关 + 每个凭据的
-  健康徽标呈现，并提供 `providers pool {strategy,fallback,retry}` CLI
-  动词。只有在缺口 2 接通之后才有意义。
+- **active account = active profile**, settable per provider, honored by the
+  runtime (gap 1).
+- **Generic accounts REST** `/api/providers/{id}/accounts/*` mirroring the
+  claude-code shape so the frontend is literally reused:
+  `GET …/accounts` → `{active, accounts:[{name,label,email?,status,kind}]}`,
+  `POST …/accounts/use {name}` (""=deactivate), `…/rename {old,new}`, add (reuse
+  `/login/start|poll|submit` with a target account name), remove (reuse the
+  existing credential/pool delete). claude-code keeps its Meridian-backed
+  implementation behind the *same* routes (adapter), so the UI doesn't branch.
+- **One `<ProviderAccounts>` React component** (generalized from
+  `claude-accounts.tsx`) + **one Ink picker** (generalized from
+  `claudeAccounts.tsx`), reused for every provider. `detail.tsx` renders it for
+  all; TUI `/login <prov>` stops punting to web.
+- **Pool controls** — `PATCH /api/providers/pools/{prov}/{prof}` to set
+  `strategy` + `fallback_chain` on/off, `…/clear_cooldown` ("retry now"), a
+  `…/health` view; surfaced as a strategy dropdown + fallback toggle + per-cred
+  health badge in web/TUI, and `providers pool {strategy,fallback,retry}` CLI
+  verbs. Meaningful only after gap 2 is wired.
 
-## 分阶段计划
+## Phased plan
 
-- **P-A——激活 profile 基础设施** ✅ 已完成（commit 836a4a9b、d8454d6a）。
-  `auth/active.py`（`get/set_active_profile(provider)` + `get_active_pin`）；
-  `acquire`/`resolver` 默认使用它；CLI `providers use <provider> [profile]`
-  + `providers list` 中的 `← active` 标记。默认仍为 `"default"`，完全
-  向后兼容。
-- **P-B——通用账号界面 + 统一 UI** ✅ 已完成（commit 45cac805、
-  4c98adcc、bedb3439）。
-  - 后端：`routes/accounts.py` 提供 `/api/providers/{id}/accounts/*`
-    （从 AuthStore 进行 list/use/rename/remove；添加则把登录方法
-    交给 UI）。claude-code 保留其字面的 Meridian 路由（先注册
-    以便覆盖 `{provider}`）；两者都上报 `add_mode`（`code_paste` 对
-    `login`）。
-  - Web：一个 `<ProviderAccounts>`（由 `claude-accounts.tsx` 推广而来）
-    为 claude-code + 仅登录的 provider 渲染；`<ProviderLogin>` 新增了
-    `profileId`/`bare`，使其成为内嵌的"添加账号"步骤。
-  - TUI：一个通用选择器（`providerAccounts.tsx`）+ 一个 TUI 内的登录流程
-    （`providerLoginFlow.tsx`），驱动共享的 `/login/*`；`/login <provider>`
-    为任意 provider 打开它（不再甩锅给 web）。
-- **P-C——轮换/故障转移接线 + 开关** ✅ 已完成（commit e0b04aa0、
-  ac9b7f53、adbbf8af）。
-  - P-C1 接线（`auth/usage.py` + `openai_completions.stream_simple`）：调用
-    路径按请求从凭据池获取并上报结果
-    （`report_failure`/`report_success`），所以 429 会让一个 key 进入冷却，外层
-    重试则轮换到下一个。带门控——除非该 provider 有真实的
-    AuthStore 凭据池，否则为空操作，所以 env-key / OAuth / claude-code 逐字节不变。
-  - P-C2 控制界面（`routes/accounts.py`）：`GET …/{name}/keys`（脱敏 +
-    每个 key 的健康 + 策略）、`POST …/{name}/strategy`、`…/{name}/retry`
-    （"清除冷却"）、`POST/DELETE …/{name}/keys`（添加/删除一个 key）；
-    账号记录新增了 `strategy` + `cooling`。
-  - P-C3 web（`pool-controls.tsx`）：api-key provider 上的"Keys & rotation"
-    面板——每个 key 的健康徽标、策略下拉框、"立即重试"、添加/删除。
+- **P-A — active-profile infrastructure** ✅ DONE (commits 836a4a9b, d8454d6a).
+  `auth/active.py` (`get/set_active_profile(provider)` + `get_active_pin`);
+  `acquire`/`resolver` default to it; CLI `providers use <provider> [profile]`
+  + `← active` marker in `providers list`. Default stays `"default"`, fully
+  backward compatible.
+- **P-B — generic accounts surface + unified UI** ✅ DONE (commits 45cac805,
+  4c98adcc, bedb3439).
+  - Backend: `routes/accounts.py` serves `/api/providers/{id}/accounts/*`
+    (list/use/rename/remove from the AuthStore; add hands the UI the login
+    methods). claude-code keeps its literal Meridian routes (registered first
+    so they shadow `{provider}`); both report `add_mode` (`code_paste` vs
+    `login`).
+  - Web: one `<ProviderAccounts>` (generalized from `claude-accounts.tsx`)
+    rendered for claude-code + login-only providers; `<ProviderLogin>` gained
+    `profileId`/`bare` so it's the embedded "add account" step.
+  - TUI: one generic picker (`providerAccounts.tsx`) + an in-TUI login flow
+    (`providerLoginFlow.tsx`) driving the shared `/login/*`; `/login <provider>`
+    opens it for ANY provider (no more punting to web).
+- **P-C — rotation/failover wiring + switches** ✅ DONE (commits e0b04aa0,
+  ac9b7f53, adbbf8af).
+  - P-C1 wiring (`auth/usage.py` + `openai_completions.stream_simple`): the call
+    path acquires per-request from the pool and reports the outcome
+    (`report_failure`/`report_success`), so a 429 cools a key down and the outer
+    retry rotates to the next. Gated — no-op unless the provider has a real
+    AuthStore pool, so env-key / OAuth / claude-code are byte-for-byte unchanged.
+  - P-C2 control surface (`routes/accounts.py`): `GET …/{name}/keys` (masked +
+    per-key health + strategy), `POST …/{name}/strategy`, `…/{name}/retry`
+    ("clear cooldowns"), `POST/DELETE …/{name}/keys` (add/remove a key); the
+    account record gained `strategy` + `cooling`.
+  - P-C3 web (`pool-controls.tsx`): a "Keys & rotation" panel on api-key
+    providers — per-key health badges, strategy dropdown, "Retry now", add/remove.
 
-  剩余项（次要，不阻塞主任务）：UI 中的 `fallback_chain` 开关；
-  TUI 凭据池控制（web + REST + 经 REST 的 CLI 已覆盖）；原生
-  `providers pool …` CLI 动词。
+  Remaining (secondary, not blocking the mandate): a `fallback_chain` toggle in
+  the UI; TUI pool controls (web + REST + CLI-via-REST already cover it); native
+  `providers pool …` CLI verbs.
 
-## 后端（claude-code 仍用 Meridian）
+## Backend (claude-code stays on Meridian)
 
-claude-code 继续以 Meridian 作为后端；它被适配到统一的
-`/accounts/*` 路由后面，使其管理 UX 与其他所有 provider 一致。（设计
-流程已确认，一条原生的 AnthropicRuntime+OAuth 路径同样存在并可工作——
-`utils/oauth/anthropic.py` + `anthropic.py` 中的 OAuth-token 供给
-——所以 claude-code 日后*可以*在不改变 UX 的情况下抛弃 Meridian；那是
-一项可选的未来简化，在此明确不在范围内，因为后端原则是"怎么能用怎么来"。）
+claude-code keeps Meridian as its backend; it's adapted behind the unified
+`/accounts/*` routes so the management UX matches every other provider. (The
+design workflow confirmed a native AnthropicRuntime+OAuth path also exists and
+works — `utils/oauth/anthropic.py` + the OAuth-token serving in `anthropic.py`
+— so claude-code *could* later drop Meridian with no UX change; that's an
+optional future simplification, explicitly out of scope here since the backend
+is "whatever works".)
 
-## 不破坏现有行为的护栏
+## Won't-break guardrails
 
-- `default` profile 在各处仍为默认；激活其他 profile 是
-  可选的。可用的 yzhang6294 claude-code 账号不受影响（仍用 Meridian）。
-- P-A 发布时沿用现有行为（active 默认为 "default"）；P-C 的
-  开关在选择 fill_first 以外的策略之前都处于惰性状态。
+- `default` profile stays the default everywhere; activating another profile is
+  opt-in. The working yzhang6294 claude-code account is untouched (still Meridian).
+- P-A ships behind the existing behavior (active defaults to "default"); P-C's
+  switches are inert until a strategy other than fill_first is chosen.
 
-## P-D——为每个 provider 提供一个管理组件（UI 统一）
+## P-D — one management component for every provider (UI unification)
 
-**问题（用户）：** api-key provider 和登录 provider 显示了*不同*的
-面板（`<ProviderKeys>` 对 `<ProviderAccounts>`）——不同的布局、标签、
-交互。这种差异是偶然的（是我分开写的两个组件），并非
-必要。每个 provider 真正不同的只有**怎么添加**（粘贴 key / 登录 /
-粘贴一个 code）和**一个身份长什么样**（一个脱敏的 key / 一个邮箱）。
+**Problem (user):** api-key providers and login providers showed *different*
+panels (`<ProviderKeys>` vs `<ProviderAccounts>`) — different layout, labels,
+interactions. That difference was incidental (two components I wrote
+separately), not necessary. The only things that genuinely differ per provider
+are **how you add** (paste a key / sign in / paste a code) and **what an
+identity looks like** (a masked key / an email).
 
-**模型。** 每个 provider 都有**账号** = 具名、可切换的凭据：
-- api-key provider → 一个账号是一个 **key**（id = credential_id，身份 =
-  脱敏的 key）。
-- 登录 provider（codex / copilot / gemini-sub）→ 一个账号是一次 **登录**
-  （id = profile_id，身份 = 邮箱）。
-- claude-code → 一个账号是一个 **Claude 订阅**（Meridian profile）。
+**Model.** Every provider has **accounts** = named, switchable credentials:
+- api-key provider → an account is a **key** (id = credential_id, identity =
+  masked key).
+- login provider (codex / copilot / gemini-sub) → an account is a **sign-in**
+  (id = profile_id, identity = email).
+- claude-code → an account is a **Claude subscription** (Meridian profile).
 
-各处统一的操作：**重命名**、**Use**（切换激活项）、
-**删除**，以及一个可选的**轮换开关**（默认关闭；开启 = 在账号之间进行
-限流故障转移，前提是后端支持）。只有**添加**会分支：
-粘贴 key（+校验）/ 共享的登录流程 / 粘贴 code。
+Uniform operations everywhere: **rename**, **Use** (switch the active one),
+**remove**, and an optional **rotation toggle** (off by default; on = rate-limit
+failover across the accounts, where the backend supports it). Only **add**
+branches: paste-key (+validate) / the shared sign-in flow / code-paste.
 
-**形态。** 一个 React `<AccountManager driver={…}>` 渲染列表 + 轮换
-开关 + 添加区域；每个后端有一个轻量的 **driver** 提供数据以及
-use/rename/remove/rotation 调用，封装现有的端点（api-key →
-`…/accounts/default/keys*`；login/claude-code → `…/accounts*`）。后端不需
-重构——claude-code 仍用 Meridian。`detail.tsx` 为每个 provider 恰好渲染一个
-`<AccountManager>`；`<ProviderKeys>` / `<ProviderAccounts>` /
-独立的 `<ProviderLogin>` 都坍缩进它。
+**Shape.** One React `<AccountManager driver={…}>` renders the list + rotation
+toggle + the add area; a thin **driver** per backend supplies the data and the
+use/rename/remove/rotation calls, wrapping the existing endpoints (api-key →
+`…/accounts/default/keys*`; login/claude-code → `…/accounts*`). No backend
+rearchitect — claude-code stays on Meridian. `detail.tsx` renders exactly one
+`<AccountManager>` for every provider; `<ProviderKeys>` / `<ProviderAccounts>` /
+the standalone `<ProviderLogin>` collapse into it.
 
-（未来，可选：把 api-key 的账号也提升为 profile + 跨 profile 轮换，
-这样后端也是统一的，而不只是 UI。）
+(Future, optional: lift accounts to profiles for api-key too + rotate across
+profiles, so the backend is uniform as well, not just the UI.)
 
-### P-E——一个后端模型：账号 = profile（由 OAuth 约束所强制）
+### P-E — one backend model: account = profile (forced by the OAuth constraint)
 
-UI 统一（P-D）把一个组件套在了两个*不同*的后端模型之上
-（api-key = 一个池里的多个凭据；login = 每个 profile 一个凭据）。
-用户说得对，那不是真正的统一。决定性的约束：
-`_prune_superseded_oauth`——OAuth refresh-token 轮换意味着**一个池里最多只能
-存活一个 OAuth 凭据**，所以 OAuth 多账号*必须*是分开的
-profile。因此唯一覆盖每个 provider 的模型是**账号 =
-profile**（每个 profile 持有一个凭据）。login、claude-code（Meridian
-profile）和 P-A 的 `set_active_profile` 已经在用它；api-key 的 key 也搬到
-它上面——每个具名 key 都是一个 profile。
+The UI unification (P-D) put one component over two *different* backend models
+(api-key = many credentials in one pool; login = one credential per profile).
+The user is right that's not real unification. The deciding constraint:
+`_prune_superseded_oauth` — OAuth refresh-token rotation means **at most one
+OAuth credential can live in a pool**, so OAuth multi-account *must* be separate
+profiles. Therefore the only model that covers every provider is **account =
+profile** (each profile holds one credential). login, claude-code (Meridian
+profiles) and P-A's `set_active_profile` already use it; api-key keys move onto
+it too — each named key is a profile.
 
-- **切换**激活账号 = `set_active_profile`（P-A），各处通用。
-- **轮换** = 一个按 provider 的开关，在该 provider 的 profile 之间轮换
-  （429 时让一个 profile 的凭据进入冷却、跳过它、继续）；关闭 ⇒ 仅使用
-  激活的 profile。它位于 `auth/usage.acquire_pooled` + 一个按 provider 的
-  轮换设置中，所以热路径 `manager.acquire` 不受影响。
-- 对 profile 凭据的**按账号操作**：reveal（显示完整 key）、
-  update（替换它）、validate（只探测这一个）+ validate-all。
-- api-key **添加** = 创建一个 profile + 添加 key；login 添加 = 共享的登录
-  流程并带 `profile=<name>`（已实现）。claude-code = Meridian（适配器）。
+- **Switch** the active account = `set_active_profile` (P-A), everywhere.
+- **Rotation** = a per-provider toggle that rotates across the provider's
+  profiles (cool a profile's credential on 429, skip it, move on); off ⇒ use the
+  active profile only. Lives in `auth/usage.acquire_pooled` + a per-provider
+  rotation setting, so the hot `manager.acquire` path is untouched.
+- **Per-account ops** on the profile's credential: reveal (show the full key),
+  update (replace it), validate (probe just this one) + validate-all.
+- api-key **add** = create a profile + add the key; login add = the shared login
+  flow with `profile=<name>` (already). claude-code = Meridian (adapter).
 
-随后 web + TUI 渲染这一个模型；api-key 的池内凭据界面
-（`…/accounts/default/keys*`、池的 `active_credential_id`/`fixed`）退役。
+Web + TUI then render this one model; the api-key creds-in-pool surface
+(`…/accounts/default/keys*`, pool `active_credential_id`/`fixed`) is retired.

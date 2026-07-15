@@ -1,90 +1,90 @@
-# 参考实现对比
+# Reference-implementation comparison
 
-我们研究过的三个框架是如何控制"某个 agent 可以使用哪些扩展"的。在考虑设计变更之前阅读本文，这样你就能知道哪些方案已经尝试过了。
+How the three frameworks we studied control "which extensions an agent can use". Read this when considering a design change so you know what's already been tried.
 
-## 横向对比
+## Side-by-side
 
-| 维度 | **claude-code-leaked** | **opencode** | **hermes** | **OpenProgram（我们）** |
+| Aspect | **claude-code-leaked** | **opencode** | **hermes** | **OpenProgram (ours)** |
 |---|---|---|---|---|
-| 是否存在按 agent 的门控 | ✅ | ✅ | 部分（仅 channel 级别） | ✅ |
-| 机制 | 按类型的显式列表 | 单个 `permission: Ruleset` | YAML adapter 配置 | 按类型的列表 + fnmatch 通配符 |
-| 通配符 | ✗ 仅精确名称 | ✅ glob 模式 | ✗ | ✅ fnmatch |
-| 被门控的类型 | tools、skills、mcpServers、hooks | 统一的模式空间（`tools:*`、`mcp:*`、…） | platform adapter | tools、skills、mcp |
-| 必需依赖 | `requiredMcpServers` | （通过默认 deny） | 无 | `mcp.required` |
-| 插件门控 | 仅信任级别 | 信任级别 + permission ruleset | manifest 权限 | 信任级别（host 级别，非按 agent） |
+| Per-agent gating exists | ✅ | ✅ | partial (channel-level only) | ✅ |
+| Mechanism | per-type explicit lists | single `permission: Ruleset` | YAML adapter config | per-type lists + fnmatch wildcards |
+| Wildcards | ✗ exact names only | ✅ glob patterns | ✗ | ✅ fnmatch |
+| Gated types | tools, skills, mcpServers, hooks | unified pattern space (`tools:*`, `mcp:*`, …) | platform adapters | tools, skills, mcp |
+| Required-deps | `requiredMcpServers` | (via deny by default) | n/a | `mcp.required` |
+| Plugin gating | trust level only | trust + permission ruleset | manifest perms | trust level (host-level, not per-agent) |
 
 ## claude-code-leaked
 
-来源：`references/claude-code-leaked/src/tools/AgentTool/loadAgentsDir.ts:75-100`
+Source: `references/claude-code-leaked/src/tools/AgentTool/loadAgentsDir.ts:75-100`
 
 ```typescript
 const AgentJsonSchema = z.object({
   description: z.string(),
   prompt: z.string(),
-  tools: z.array(z.string()).optional(),              // 白名单
-  disallowedTools: z.array(z.string()).optional(),    // 黑名单
-  skills: z.array(z.string()).optional(),             // 需预加载的名称
+  tools: z.array(z.string()).optional(),              // whitelist
+  disallowedTools: z.array(z.string()).optional(),    // blacklist
+  skills: z.array(z.string()).optional(),             // names to preload
   mcpServers: z.array(AgentMcpServerSpecSchema).optional(),
-  requiredMcpServers: z.array(z.string()).optional(), // 模式；缺失 = 不可用
+  requiredMcpServers: z.array(z.string()).optional(), // patterns; missing = unavailable
   hooks: HooksSchema().optional(),
   permissionMode: z.enum(PERMISSION_MODES).optional(),
   ...
 })
 ```
 
-**模式**：每种扩展类型都有自己的列表字段。列表是精确名称——没有通配符。阅读很容易（"这个 agent 用了这些工具"），但在覆盖宽泛场景时书写很啰嗦。
+**Pattern**: each extension type gets its own list field. Lists are exact names — no wildcards. Reading is easy ("this agent uses these tools"), writing for broad cases is verbose.
 
-**它们比我们做得更进一步的地方**：
+**Where they go beyond us**:
 
-- `mcpServers` 既可以是对一个现有 server 的*引用*（`"slack"`），也可以是一个*内联定义*——agent 可以自带 MCP 配置，而无需全局注册。
-- `requiredMcpServers` 在缺失时会让整个 agent 不可用（我们以 `mcp.required` 的形式采纳了这一点）。
-- `hooks` 是按 agent 的——它们在 agent 启动时注册 session 作用域的 hook。我们通过 `openprogram/plugins/hooks.py` 提供了全局 hook 分发，但尚无按 agent 的作用域。
+- `mcpServers` can be either a *reference* to an existing server (`"slack"`) or an *inline definition* — agents can bring their own MCP config without registering it globally.
+- `requiredMcpServers` makes the entire agent unavailable when missing (we adopted this as `mcp.required`).
+- `hooks` is per-agent — they register session-scoped hooks at agent start. We have global hook dispatch via `openprogram/plugins/hooks.py` but no per-agent scoping yet.
 
 ## opencode
 
-来源：`references/opencode/packages/opencode/src/agent/agent.ts:31-50` + `src/permission/index.ts:138-184`
+Source: `references/opencode/packages/opencode/src/agent/agent.ts:31-50` + `src/permission/index.ts:138-184`
 
 ```typescript
 Info = Schema.Struct({
   name, description, mode, model, prompt,
-  permission: Permission.Ruleset,    // 单个字段门控一切
+  permission: Permission.Ruleset,    // single field gates everything
   ...
 })
 
-// Ruleset = {pattern, action: "allow" | "deny"} 的列表
-// 针对 "tools:bash"、"mcp:slack/*" 这类权限键进行求值
+// Ruleset = list of {pattern, action: "allow" | "deny"}
+// evaluated against permission keys like "tools:bash", "mcp:slack/*"
 ```
 
-**模式**：每个 agent 一份 ruleset，按 glob 匹配带命名空间的权限键（`tools:`、`mcp:`、`skills:`）。每条规则是一个 `{pattern, action}` 对；首条匹配生效。
+**Pattern**: one ruleset per agent, glob-matched against namespaced permission keys (`tools:`, `mcp:`, `skills:`). Each rule is a `{pattern, action}` pair; first match wins.
 
-**它们比我们做得更进一步的地方**：
+**Where they go beyond us**:
 
-- 单一事实来源——新增一种扩展类型只需选定一个命名空间前缀（`prompts:*`）；无需改 schema。
-- 模式组合——一条规则就能表达在按类型方案里需要好几条才能表达的内容（`{pattern: "mcp:*", action: "deny"}` 会禁用所有 MCP）。
-- 权衡：更抽象——用户必须学习模式语法。
+- Single source of truth — adding a new extension type means picking a namespace prefix (`prompts:*`); no schema change.
+- Pattern composition — one rule can express what would take several entries in the per-type approach (`{pattern: "mcp:*", action: "deny"}` kills all MCP).
+- Trade-off: more abstract — users have to learn pattern grammar.
 
-**我们为什么没有采用 opencode 风格**：我们已经为 tools 提供了按类型的 `tools.disabled`，并且为对齐又加上了 `skills` 和 `mcp`。迁移到单一 ruleset 将是纯粹的重构，除了语法上的收益之外没有新能力。如果我们将来新增第 4 种被门控的类型，值得重新考虑。
+**Why we didn't go opencode-style**: we already had `tools.disabled` per type for tools, and we added `skills` and `mcp` to match. Migrating to a single ruleset would have been pure refactor with no new capability except syntactic. Worth revisiting if we ever add a 4th gated type.
 
 ## hermes
 
-来源：`references/hermes-agent/plugins/platforms/*/plugin.yaml`
+Source: `references/hermes-agent/plugins/platforms/*/plugin.yaml`
 
-Hermes 以 platform adapter 为中心（Discord、Slack、ntfy、…）。每个 adapter 都附带一个带权限的 `plugin.yaml`，但它是 **channel 级别**的（该 adapter 在网络上被允许做什么），而非 agent 级别的（该 agent 角色被允许做什么）。没有与 agent-profile 门控对应的东西。
+Hermes is platform-adapter focused (Discord, Slack, ntfy, …). Each adapter ships a `plugin.yaml` with permissions, but it's **channel-level** (what this adapter is allowed to do on the network) not agent-level (what this agent role is allowed). No equivalent of agent-profile gating.
 
-**我们从 hermes 采纳了什么**：在这一层没有采纳任何东西。
+**We adopted from hermes**: nothing in this layer.
 
-## 决策依据（我们为什么走到了这里）
+## Decision rationale (why we ended up here)
 
-我们一开始照搬了 claude-code 的按类型字段形态，因为：
+We started by mirroring claude-code's per-type field shape because:
 
-1. 在这次设计讨论之前，我们就已经有了 `AgentSpec.skills.disabled` 和 `AgentSpec.tools.disabled`——沉没成本偏向于延续。
-2. 这种形态是自解释的（`tools.disabled` 准确地说明了它的作用）。
-3. 往同一个结构体里加 `allowed` / `categories` / `required` 是机械化的工作。
+1. We already had `AgentSpec.skills.disabled` and `AgentSpec.tools.disabled` from before this design conversation — sunk-cost favoured continuity.
+2. The shape is self-documenting (`tools.disabled` says exactly what it does).
+3. Adding `allowed` / `categories` / `required` to the same struct is mechanical.
 
-随后我们加上了 fnmatch 通配符，因为：
+Then we added fnmatch wildcards because:
 
-1. 实现起来很简单（单个辅助函数 `match_any`）。
-2. 在不放弃"每类型一个字段"清晰性的前提下，解决了纯列表方案啰嗦的问题。
-3. 向后兼容——精确名称是 fnmatch 的平凡情形。
+1. Trivial to implement (single helper `match_any`).
+2. Solves the verbosity complaint about pure-list approach without giving up the field-per-type clarity.
+3. Backward compatible — exact names are the trivial case of fnmatch.
 
-最终结果是"claude-code 骨架 + opencode 通配符"。如果未来某个框架引入了一个有实质差异的模型，回头看本文并考虑迁移。
+The result is "claude-code skeleton + opencode wildcards". If a future framework introduces a meaningfully different model, revisit this doc and consider migration.

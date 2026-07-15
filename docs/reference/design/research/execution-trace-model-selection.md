@@ -1,123 +1,123 @@
-# 调研:agent 执行记录用什么数据模型 —— 选 span
+# Research: what data model to use for agent execution traces — choosing span
 
-类型:调研 / 路线选择(不是设计文档,不讲怎么实现,只讲"为什么走这条路 + 领域格局")
-日期:2026-06-19
+Type: research / route selection (not a design doc; it does not cover how to implement, only "why take this route + the state of the field")
+Date: 2026-06-19
 
-## 一句话结论
+## One-line conclusion
 
-agent 跑一次任务的执行记录(用户消息、LLM 调用、工具/函数调用、嵌套、循环),
-**采用 span 数据模型**(id + parent_id + 起止 + attributes + status,parent_id 连成树)。
-这是 observability 领域 15 年的行业共识,且整个 LLM-agent 追踪圈已经收敛到它。
-我们现有的 `Call` + `called_by` 本来就是半成品 span,方向对,按 span 规范理顺即可,
-**不引入重量级 OTel SDK**,只对齐数据形状 + 属性命名(`gen_ai.*`),保留未来互通。
+For the execution trace of a single agent task run (user messages, LLM calls, tool/function calls, nesting, loops),
+**adopt the span data model** (id + parent_id + start/end + attributes + status, with parent_id linking them into a tree).
+This is 15 years of industry consensus in the observability field, and the entire LLM-agent tracing community has already converged on it.
+Our existing `Call` + `called_by` is already a half-baked span — the direction is right, we just need to straighten it out according to the span spec,
+**without bringing in a heavyweight OTel SDK** — only align the data shape + attribute naming (`gen_ai.*`), preserving future interoperability.
 
-## 为什么需要调研(我们的问题)
+## Why this needs research (our problem)
 
-agent 系统本质是"大模型当解释器在跑代码":用户给任务 → 大模型反复调函数/工具 →
-函数内部又调大模型(嵌套 + 递归)。要把"这次到底跑了什么"记下来。纠结点:
-- **大模型调用必须是一种节点**,不能因为"被用户触发"还是"被函数触发"分裂成两种。
-- **调用是嵌套的**(父→子,有返回);**循环是平级的**(同父下的兄弟,不是谁调谁)。
-- 既要能画**聊天线**(时间流),又要能画**调用树**(嵌套)。
+An agent system is essentially "a large model running code as an interpreter": the user gives a task → the large model repeatedly calls functions/tools →
+the functions in turn call the large model (nesting + recursion). We need to record "what actually ran this time." The sticking points:
+- **An LLM call must be one kind of node**; it must not split into two kinds depending on whether it was "triggered by the user" or "triggered by a function."
+- **Calls are nested** (parent→child, with returns); **loops are siblings** (siblings under the same parent, not one calling the other).
+- We need to be able to draw both the **chat line** (the time flow) and the **call tree** (the nesting).
 
-这正是 observability 领域早就解决的问题——一个请求穿过多个服务,有嵌套调用,要追踪。
-形状跟我们的 agent 完全同构。
+This is exactly the problem the observability field solved long ago — one request passes through multiple services, with nested calls, and needs to be traced.
+The shape is completely isomorphic to our agent.
 
-## 领域格局
+## State of the field
 
-### 这是什么领域
+### What field is this
 
-**observability(可观测性)**,子领域 **distributed tracing(分布式追踪)**。
-三大支柱:metrics(数字统计)/ logs(日志)/ **traces(追踪)**。span 住在 traces 里——
-一个 trace = 一棵 span 树,一个 span = 一次有起止的操作。
+**observability**, sub-field **distributed tracing**.
+The three pillars: metrics (numeric statistics) / logs / **traces**. Spans live inside traces —
+one trace = one span tree, one span = one operation with a start and end.
 
-### 历史:分裂过,然后合并成一个标准
+### History: it fragmented, then merged into a single standard
 
-| 时间 | 事件 |
+| Time | Event |
 |---|---|
-| 2010 | Google **Dapper** 论文,定义 span |
-| 2012 | Twitter 开源 Zipkin |
-| 2015 | Uber 做 Jaeger;OpenTracing 标准 |
-| 2018 | Google/微软又搞 OpenCensus(**两个标准打架**) |
-| 2019 | 两者合并成 **OpenTelemetry(OTel)**,标准战结束 |
-| 2021 | OTel 追踪规范 v1.0 稳定 |
-| 2023-24 | OTel 成 CNCF 第二活跃项目(仅次于 Kubernetes) |
+| 2010 | Google **Dapper** paper, defines span |
+| 2012 | Twitter open-sources Zipkin |
+| 2015 | Uber builds Jaeger; OpenTracing standard |
+| 2018 | Google/Microsoft also create OpenCensus (**two standards fighting**) |
+| 2019 | The two merge into **OpenTelemetry (OTel)**, the standards war ends |
+| 2021 | OTel tracing spec v1.0 stabilizes |
+| 2023-24 | OTel becomes the second most active CNCF project (after Kubernetes) |
 
-对谨慎选型者的意义:**这个领域已经洗过牌**(曾有竞争标准),活下来的是 OTel。不是新东西、不是赌。
+What this means for a cautious selector: **this field has already been shaken out** (there were once competing standards), and OTel is what survived. It is not a new thing, not a gamble.
 
-### OTel 是不是真共识 —— 是
+### Is OTel real consensus — yes
 
-CNCF 项目,背后是 **AWS / Google / 微软 / Datadog / Splunk / Honeycomb / Grafana / Dynatrace** 共建。
-这些本是互相竞争的商业公司,却一起维护同一个标准——这是"真标准而非炒作"最强的信号。
+A CNCF project, built jointly by **AWS / Google / Microsoft / Datadog / Splunk / Honeycomb / Grafana / Dynatrace**.
+These are companies that compete with each other, yet they maintain the same standard together — this is the strongest signal of "a real standard rather than hype."
 
-### 竞品 —— 基本都用 span
+### Competitors — almost all use span
 
-| 方案 | 用 span 吗 |
+| Solution | Uses span? |
 |---|---|
-| 商业 APM(Datadog / New Relic / Honeycomb / Lightstep) | 全用,且原生兼容 OTel span;区别只在存储/查询 |
-| Chrome Trace / Perfetto(Google 另一套) | 不同血统(浏览器/安卓性能),但**也是 span 那种"带时间的嵌套区间"形状** |
-| eBPF 追踪(Pixie / Cilium) | 不同层(内核级);产出的也是 span,是采集手段不是竞争模型 |
-| "只用扁平日志,不要 span 树"(Honeycomb 早期 / Stripe) | **唯一真正不同的哲学**,但连主推者后来都转向 span |
+| Commercial APM (Datadog / New Relic / Honeycomb / Lightstep) | All do, and are natively compatible with OTel spans; they differ only in storage/query |
+| Chrome Trace / Perfetto (Google's other system) | Different lineage (browser/Android performance), but **also that "timed nested interval" span shape** |
+| eBPF tracing (Pixie / Cilium) | Different layer (kernel-level); what they produce is also spans — it is a collection method, not a competing model |
+| "Use only flat logs, no span tree" (early Honeycomb / Stripe) | **The only genuinely different philosophy**, but even its chief proponents later moved to span |
 
-**对"嵌套执行"的建模,span 是全行业共识,没有第二个可信模型。**
+**For modeling "nested execution," span is whole-industry consensus, with no second credible model.**
 
-### 决定性证据:LLM-agent 追踪圈已经收敛到 span
+### Decisive evidence: the LLM-agent tracing community has already converged on span
 
-专做 agent 追踪的新工具,全部用 span:
+New tools built specifically for agent tracing all use span:
 
-| 工具 | 用什么 |
+| Tool | Uses what |
 |---|---|
-| **OTel GenAI 规范** | 官方 `gen_ai.*` 属性(模型名、token 数…),给 LLM/工具/agent-step 专门的 span 约定 |
-| **Langfuse** | observation 树(span/generation/event),原生吃 OTel span |
-| **Arize Phoenix** | 直接建在 OTel 上(OpenInference 约定) |
-| **LangSmith**(LangChain) | "run tree"——嵌套 Run 带父子+起止,**就是 span 树**,加了 OTel 互通 |
-| **OpenLLMetry / W&B Weave / Braintrust** | 全是 OTel span |
+| **OTel GenAI spec** | Official `gen_ai.*` attributes (model name, token counts…), with dedicated span conventions for LLM/tool/agent-step |
+| **Langfuse** | observation tree (span/generation/event), natively ingests OTel spans |
+| **Arize Phoenix** | Built directly on OTel (OpenInference conventions) |
+| **LangSmith** (LangChain) | "run tree" — nested Runs with parent-child + start/end, **which is a span tree**, plus OTel interop |
+| **OpenLLMetry / W&B Weave / Braintrust** | All OTel span |
 
-我们要解决的问题,它们已经给出同一个答案:**一次 agent 运行 = 一棵 span 树**。
+For the problem we want to solve, they have all given the same answer: **one agent run = one span tree**.
 
-## span 模型怎么解决我们的纠结
+## How the span model resolves our sticking points
 
 ```
 span = { id, parent_id, name/kind, start, end, status, attributes, events[] }
 ```
 
-| 我们的需求 | span 怎么满足 |
+| Our requirement | How span satisfies it |
 |---|---|
-| 大模型一种节点不变身 | span 不因"谁调它"分裂——这是 OTel 铁律,HTTP/内部函数/后台任务都是 span,只是 kind/attributes 不同 |
-| 调用嵌套 | `parent_id` 指上层,子区间套在父里,返回=span 结束 |
-| 循环是平级 | 同一父下的多个兄弟 span,按时间排,兄弟间无父子——正是"循环不是调用" |
-| 聊天线 + 调用树 | parent_id 给树;start 时间给时间线;同一份数据两种视图 |
-| 上下文引用(reads) | 挂成 span 的 `events[]`,不另开子节点、不污染树 |
-| 异步/后台因果 | OTel 的 `links` 边(我们叫 `caused_by`),给非严格嵌套的情况 |
+| The large model is one node that does not change form | A span does not split based on "who called it" — this is an OTel iron rule; HTTP/internal-function/background-task are all spans, differing only in kind/attributes |
+| Nested calls | `parent_id` points to the parent; the child interval nests inside the parent; return = span end |
+| Loops are siblings | Multiple sibling spans under the same parent, ordered by time, with no parent-child relation between siblings — exactly "a loop is not a call" |
+| Chat line + call tree | parent_id gives the tree; the start time gives the timeline; the same data, two views |
+| Context references (reads) | Attached as the span's `events[]`, opening no extra child node and not polluting the tree |
+| Async/background causality | OTel's `links` edge (we call it `caused_by`), for cases that are not strictly nested |
 
-## span 的缺点(诚实记录)
+## Drawbacks of span (recorded honestly)
 
-1. **fan-out 开销**:每个小操作一个 span,agent 循环多了 span 会爆,需要采样/聚合。
-2. **树假设干净父子**:agent 有共享状态、重试、DAG 流(非严格树)时映射别扭——靠 `links`/`caused_by` 边部分解决,是已知糙点。
-3. **token/成本/评估**不是 span 原生,靠 attributes 挂(`gen_ai.*` 就是干这个)。
+1. **fan-out overhead**: one span per small operation; with many agent loops the spans explode, requiring sampling/aggregation.
+2. **The tree assumes clean parent-child**: when an agent has shared state, retries, or DAG flows (not a strict tree), the mapping is awkward — partially solved by `links`/`caused_by` edges; this is a known rough spot.
+3. **token/cost/evaluation** are not native to span; they are attached via attributes (`gen_ai.*` is exactly what does this).
 
-## 跟现状的距离 —— 很近
+## Distance from the current state — very close
 
-| 现状 | span | 差距 |
+| Current state | span | Gap |
 |---|---|---|
-| `Call.id` | span id | 一样 |
-| `called_by` | parent_id | 一样(就是它) |
-| `role` | name/kind | 类似 |
-| `output` | status + attributes | 有 |
-| `seq` | start(排序) | 大致 |
-| `metadata.parent_id`(对话顺序,藏着) | 兄弟靠 start 排,**不需要这条边** | 多了个该删的 |
-| `reads`(未启用) | span events[] | 概念对,实现待补 |
+| `Call.id` | span id | Same |
+| `called_by` | parent_id | Same (it is exactly this) |
+| `role` | name/kind | Similar |
+| `output` | status + attributes | Present |
+| `seq` | start (ordering) | Roughly |
+| `metadata.parent_id` (conversation order, hidden away) | siblings ordered by start, **this edge is not needed** | An extra one that should be deleted |
+| `reads` (not yet enabled) | span events[] | Concept matches, implementation still to be filled in |
 
-## 路线建议
+## Route recommendation
 
-1. **采用 span 数据模型**(id / parent_id / start-end / attributes / status)。
-2. **属性命名往 OTel `gen_ai.*` 靠**(模型、token、成本),保留未来导出到 OTel 的可能。
-3. **不上重量级 OTel SDK**——只借数据形状,内部存储自管,避免过早绑死 SDK。
-4. 现有 `Call` + `called_by` 按 span 规范理顺:删掉藏在 metadata 的对话边(兄弟靠时间排)、
-   理顺 role 的 wire 层、reads 挂成 span events、加一条 `caused_by` 给异步。
+1. **Adopt the span data model** (id / parent_id / start-end / attributes / status).
+2. **Align attribute naming toward OTel `gen_ai.*`** (model, token, cost), preserving the possibility of exporting to OTel in the future.
+3. **Do not bring in a heavyweight OTel SDK** — borrow only the data shape, manage internal storage ourselves, and avoid binding to the SDK prematurely.
+4. Straighten out the existing `Call` + `called_by` per the span spec: delete the conversation edge hidden in metadata (siblings ordered by time),
+   straighten out the wire layer of role, attach reads as span events, and add a `caused_by` edge for async.
 
-> 待核实(引用前确认当前版本):OTel 的 CNCF 毕业状态、GenAI 语义约定的稳定层级——这块迭代快。
+> To be verified (confirm the current version before citing): OTel's CNCF graduation status, and the stability tier of the GenAI semantic conventions — this area iterates fast.
 
-## 跟设计文档的关系
+## Relationship to the design doc
 
-本文是**选型调研**(为什么走 span)。具体的数据模型 + 上下文检索 + 两套调用路径合并的实现设计,
-在 `docs/design/runtime/dag/session-dag.md`(权威);调用流程骨架在 `agent-call-flow.md`。
+This document is a **selection study** (why go with span). The concrete data model + context retrieval + the implementation design for merging the two call paths
+is in `docs/design/runtime/session-dag.md` (authoritative); the call-flow skeleton is in `agent-call-flow.md`.

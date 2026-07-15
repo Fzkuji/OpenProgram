@@ -1,106 +1,106 @@
-# Runtime — 设计理由
+# Runtime — Design Rationale
 
-API 用法见 [`../api/runtime.md`](../../api/runtime.md)。本文档只讲**为什么**
-Runtime 长成这样、哪些备选方案被否决、哪些权衡是有意识做的。
+For API usage, see [`../api/runtime.md`](../../api/runtime.md). This document only explains **why**
+Runtime is shaped the way it is, which alternatives were rejected, and which trade-offs were made deliberately.
 
 ## 1 runtime = 1 session
 
-每个 `Runtime` 实例绑定一个 provider session,生命周期 1:1:
+Each `Runtime` instance is bound to one provider session, with a 1:1 lifecycle:
 
 ```
-create_runtime()      = 开 session
-runtime.exec()        = session 里发一次请求
-runtime.close()       = 关 session
+create_runtime()      = open session
+runtime.exec()        = send one request within the session
+runtime.close()       = close session
 ```
 
-不提供 `reset()` / `new_session()`,要新 session 就再 `create_runtime()`。
+There is no `reset()` / `new_session()`; to get a new session, call `create_runtime()` again.
 
-**为什么不让一个 Runtime 复用多 session?**
+**Why not let one Runtime reuse multiple sessions?**
 
-- CLI provider(Claude Code / Codex / Gemini CLI)的 session 状态在子进程里。
-  复用就要在 Runtime 上挂"当前哪个 session id"这种可变状态,引入并发竞态。
-- API provider 本身无状态,做"多 session"也只是上层 dict,跟"多个 Runtime"
-  等价,没新功能。
-- ContextVar 自动注入(下条)依赖"runtime 跟当前函数树绑定"这个简单模型;
-  多 session 会让注入语义复杂化。
+- For CLI providers (Claude Code / Codex / Gemini CLI), session state lives in the subprocess.
+  Reusing would require hanging mutable state like "which session id is current" on the Runtime, introducing concurrency races.
+- API providers are themselves stateless; doing "multiple sessions" is just an upper-layer dict, equivalent to "multiple Runtimes" —
+  no new capability.
+- ContextVar auto-injection (next item) relies on the simple model of "the runtime is bound to the current function tree";
+  multiple sessions would complicate the injection semantics.
 
-代价:用户想跑两套独立对话要管两个 runtime 对象。可以接受,因为这种场景少。
+The cost: a user who wants to run two independent conversations has to manage two runtime objects. This is acceptable, because such scenarios are rare.
 
-## ContextVar 自动注入 runtime
+## ContextVar auto-injects the runtime
 
-`@agentic_function` 装饰器读 `_current_runtime` ContextVar,如果当前函数
-没传 `runtime=` 参数就用它;入口函数也没有,就自动 `create_runtime()`。
+The `@agentic_function` decorator reads the `_current_runtime` ContextVar; if the current function
+was not passed a `runtime=` argument, it uses that. If the entry function has none either, it automatically calls `create_runtime()`.
 
-**为什么不让函数显式声明 runtime?**
+**Why not have functions declare the runtime explicitly?**
 
-显式声明的话每个 agentic function 都得在签名里加 `runtime: Runtime`,
-而且每次嵌套调用都得显式传 `runtime=runtime` 透传——纯粹是 plumbing
-样板代码,跟函数逻辑无关。ContextVar 把它隐去:子函数自然继承父函数的
-runtime,入口处自动起一个,出口处自动关。
+With explicit declaration, every agentic function would have to add `runtime: Runtime` to its signature,
+and every nested call would have to explicitly pass `runtime=runtime` through — pure plumbing
+boilerplate unrelated to the function logic. ContextVar hides it away: a child function naturally inherits its parent's
+runtime, one is created automatically at the entry point, and it is closed automatically at exit.
 
-**为什么不用 module-level singleton?**
+**Why not use a module-level singleton?**
 
-singleton 跨线程 / 跨协程共享,两个并发 agent 会互相踩 session 状态。
-ContextVar 按线程 + 协程隔离,天然并发安全。
+A singleton is shared across threads / coroutines, so two concurrent agents would step on each other's session state.
+ContextVar is isolated per thread + coroutine, making it naturally concurrency-safe.
 
-## Session-provider vs API-provider 共用一套抽象
+## Session-provider and API-provider share one abstraction
 
-无论底层是 Claude Code CLI(有 session)还是 Anthropic API(无 session),
-对 `@agentic_function` 作者都是一样的接口 `runtime.exec(content=[...])`。
-框架靠 `has_session` 属性区分两类 provider 在内部走不同路径:
+Whether the backend is the Claude Code CLI (has a session) or the Anthropic API (no session),
+`@agentic_function` authors see the same interface, `runtime.exec(content=[...])`.
+The framework uses the `has_session` attribute to distinguish the two provider classes and take different internal paths:
 
 | | session provider (CLI) | API provider |
 |---|---|---|
-| 对话记忆 | 子进程自己管 | 无,每次 exec 独立 |
-| 上下文注入 | 跳过 DAG render,只发 docstring + 当次 content | 通过 `render_context` + `render_dag_messages` 从 DAG 拼历史 |
-| `render_range.subcalls` | 不生效(session 自己记得对话) | 生效(用来限制注入历史的窗口) |
+| Conversation memory | managed by the subprocess itself | none; each exec is independent |
+| Context injection | skips DAG render, sends only the docstring + the current content | assembles history from the DAG via `render_context` + `render_dag_messages` |
+| `render_range.subcalls` | no effect (the session remembers the conversation itself) | takes effect (used to bound the window of injected history) |
 
-**为什么不分两套独立的 Runtime 类?**
+**Why not split into two separate Runtime classes?**
 
-作者写 `gui_agent` 时不应该关心后端是哪种 provider。强行分开就要每个函数
-两份实现,违背"函数描述任务、provider 描述执行通道"的分层。共用抽象的
-代价是 `has_session` 这点条件分支,值得。
+When writing `gui_agent`, the author should not care which kind of provider the backend is. Forcing a split would require two
+implementations per function, violating the layering of "functions describe the task, providers describe the execution channel." The cost of the shared abstraction is
+the single `has_session` conditional branch — worth it.
 
-## Retry 在 runtime 层,不在 provider 层
+## Retry lives in the runtime layer, not the provider layer
 
-`exec()` / `async_exec()` 内置 `max_retries` 默认 2,任何 provider 都
-享受重试。
+`exec()` / `async_exec()` have a built-in `max_retries`, defaulting to 2, so any provider
+gets retries.
 
-**为什么不在每个 provider 类里各自加 retry?**
+**Why not add retry to each provider class separately?**
 
-- 重试策略对所有 provider 一致(网络超时 / 速率限制 / 5xx),没必要重复
-- 失败报告统一格式(`Attempt N: ErrorType: msg`),便于排查
-- `TypeError` / `NotImplementedError` 这类编程错误统一不重试(只有
-  runtime 层知道"这是 provider 实现 bug,重试也没用")
+- The retry policy is consistent across all providers (network timeout / rate limit / 5xx); no need to duplicate it
+- Failure reports have a uniform format (`Attempt N: ErrorType: msg`), which aids debugging
+- Programming errors like `TypeError` / `NotImplementedError` are uniformly not retried (only the
+  runtime layer knows "this is a provider implementation bug, retrying won't help")
 
-provider 层只关心"把请求发出去、把回复拿回来"。重试 / 节流 / 缓存这种
-横切关注点全在 runtime。
+The provider layer only cares about "send the request out, get the reply back." Cross-cutting concerns like retry / throttling / caching
+all live in the runtime.
 
-## DAG 写入:进出函数都写 code 节点,exec 写 llm 节点
+## DAG writes: entering and exiting a function both write a code node, exec writes an llm node
 
 ```
-进入 @agentic_function       → 写一个 code 节点 (status=running)
-                              → 设 _call_id ContextVar 指向此节点
-函数体里 runtime.exec()      → 在当前 _call_id 下写一个 llm 节点
-                              → 节点的 called_by = _call_id
-退出函数(return / except)     → 回填同一 code 节点的 output / status
+enter @agentic_function       → write a code node (status=running)
+                              → set the _call_id ContextVar to point at this node
+runtime.exec() in the body    → write an llm node under the current _call_id
+                              → the node's called_by = _call_id
+exit the function (return / except) → backfill the same code node's output / status
 ```
 
-`expose="hidden"` 时跳过 code 节点写入(但 `_call_id` 仍设了一个 phantom
-id,以便函数体内 LLM 调用有 frame 可参照)。
+When `expose="hidden"`, the code node write is skipped (but a phantom `_call_id`
+is still set, so that LLM calls inside the function body have a frame to reference).
 
-**为什么不只在退出时写一个完成态节点?**
+**Why not write a single completed-state node only on exit?**
 
-- 函数还在跑时 webui visualizer 需要立刻能看到"它在跑"(显示 spinner)
-- 异常退出时也要有节点存在(才能记错误信息)
+- While the function is still running, the webui visualizer needs to immediately show "it's running" (display a spinner)
+- On an exceptional exit there must also be a node present (so the error information can be recorded)
 
-写两次(entry + exit 回填)比写一次(完成时)更适合实时可观察。
+Writing twice (entry + exit backfill) suits real-time observability better than writing once (on completion).
 
-## 相关实现文件
+## Related implementation files
 
-- `openprogram/agentic_programming/runtime.py` — Runtime 基类、`exec` / `_call` 协议、retry 循环
-- `openprogram/agentic_programming/function.py` — 装饰器 / `_inject_runtime` / `_call_id` / `_current_runtime` ContextVar
-- `openprogram/providers/__init__.py` — `detect_provider` / `create_runtime` 自动检测
-- `openprogram/providers/<vendor>/runtime.py` — 各 provider 的 `_call` 实现
-- `openprogram/context/nodes.py` `render_context` — DAG → reads 计算(`render_range` 的实际语义)
-- `openprogram/context/render.py` `render_dag_messages` — reads → provider messages 转换
+- `openprogram/agentic_programming/runtime.py` — Runtime base class, `exec` / `_call` protocol, retry loop
+- `openprogram/agentic_programming/function.py` — decorator / `_inject_runtime` / `_call_id` / `_current_runtime` ContextVar
+- `openprogram/providers/__init__.py` — `detect_provider` / `create_runtime` auto-detection
+- `openprogram/providers/<vendor>/runtime.py` — each provider's `_call` implementation
+- `openprogram/context/nodes.py` `render_context` — DAG → reads computation (the actual semantics of `render_range`)
+- `openprogram/context/render.py` `render_dag_messages` — reads → provider messages conversion

@@ -1,38 +1,42 @@
-# 将 `agent/dispatcher.py` 拆分为按职责划分的包
+# Splitting `agent/dispatcher.py` into a responsibility-scoped package
 
-状态：**进行中** · 已删除死代码（1fab7479） · 步骤 0 建包 · 步骤 1 types.py · 步骤 2 titles.py + forced_tool.py · 步骤 3a runtime_attach.py（`_wrap_agentic_runtime_block`） · 步骤 4 finalize.py（阶段 6） · 步骤 5a persistence.py（阶段 5 助手消息持久化） · `__init__.py` 现已 <1000 行 · 负责人：agent/runtime · 创建时间：2026-06-04
+Status: **in progress** · dead-code removed (1fab7479) · step 0 package · step 1 types.py · step 2 titles.py + forced_tool.py · step 3a runtime_attach.py (`_wrap_agentic_runtime_block`) · step 4 finalize.py (phase 6) · step 5a persistence.py (phase 5 assistant persist) · `__init__.py` now <1000 lines · Owner: agent/runtime · Created: 2026-06-04
 
-> **测试接缝说明（步骤 3 期间发现）。** dispatcher 的单元测试在**包**对象上
-> monkeypatch 了 `D._resolve_model` / `D._load_agent_profile` / `D._run_loop_blocking`，
-> 并捕获 `orig = D._run_loop_blocking` 以使用伪造的 `stream_fn` 运行真实循环。
-> 函数内部对辅助函数的查找会在*其所在*模块的全局命名空间中解析，因此把
-> `_run_loop_blocking` 移到 `loop.py` 会使其对 `_resolve_model` 的调用错过
-> `D.*` 补丁，从而破坏约 40 个测试。因此：内部调用了被测试 patch 的辅助函数
-> （`_run_loop_blocking`）的函数暂时保持原位；而函数内部的各**阶段**（持久化 /
-> 收尾）可以干净地抽出——做法是将已解析好的 model/profile 作为显式参数传入
-> （dispatcher 在补丁下解析它们一次，再向下传递），这样抽出的模块就永远不会
-> 调用被 patch 的辅助函数。不触及任何被 patch 辅助函数的独立函数
-> （`_wrap_agentic_runtime_block`）可以自由迁移。最终的 `loop.py` 迁移需要一个
-> 补丁稳定的辅助函数接缝（调用时通过 `_model_tools.<fn>` 访问），或更新测试的
-> patch 目标——这作为单独的一个步骤跟踪，不并入代码搬移的 commit。
+> **Test seam note (discovered during step 3).** The dispatcher unit tests
+> monkeypatch `D._resolve_model` / `D._load_agent_profile` / `D._run_loop_blocking`
+> on the **package** object, and capture `orig = D._run_loop_blocking` to run
+> the real loop with a fake `stream_fn`. A function's internal helper lookups
+> resolve in *its own* module globals, so moving `_run_loop_blocking` to
+> `loop.py` would make its `_resolve_model` call miss the `D.*` patch and break
+> ~40 tests. Therefore: functions that internally call the test-patched helpers
+> (`_run_loop_blocking`) stay put for now; in-function **phases** (persist /
+> finalize) extract cleanly by passing the already-resolved model/profile as
+> explicit args (the dispatcher resolves them once, under the patch, and hands
+> them down), so the extracted module never calls a patched helper. Standalone
+> functions that touch none of the patched helpers (`_wrap_agentic_runtime_block`)
+> move freely. The eventual `loop.py` move needs either a patch-stable helper
+> seam (access via `_model_tools.<fn>` at call time) or updated test patch
+> targets — tracked as its own step, not folded into a code-motion commit.
 
-这是「禁止 1000 行以上文件」规则及「层级化代码结构——按职责划分模块目录」约定下
-的一项路线图工作。`dispatcher.py` 是 webui 聊天轮次的真实执行路径；本文规划如何
-在不改变行为的前提下将其拆开。
+Roadmap item under the no-1000-line-files rule and the "hierarchical code
+structure — module dirs by responsibility" convention. `dispatcher.py` is the
+webui chat turn's real execution path; this plans how to break it apart without
+changing behavior.
 
-## 1. 问题
+## 1. Problem
 
-`openprogram/agent/dispatcher.py` 有 1928 行（原为 2059 行；死代码
-`_legacy_dispatch_forced_tool_call_unused` 已在 1fab7479 中删除）。一个文件
-承载了整个轮次的生命周期、两个约 300–830 行的函数，以及所有轮次收尾的记账逻辑。
-它难以阅读、难以独立测试，且每新增一项关注点（一个新的记账步骤、一处新的持久化
-细节）都会让同一个文件继续膨胀。
+`openprogram/agent/dispatcher.py` is 1928 lines (was 2059; the dead
+`_legacy_dispatch_forced_tool_call_unused` was deleted in 1fab7479). One file
+holds the whole turn lifecycle, two ~300–830-line functions, and all the
+turn-finalization bookkeeping. It is hard to read, hard to test in isolation,
+and every new concern (a new bookkeeping step, a new persistence detail) grows
+the same file.
 
-最严重的罪魁祸首是约 835 行的 `process_user_turn`（599–1433）。它本身已自带文档，
-分为七个编号阶段，因此接缝是清晰的；只是这些接缝处于同一个函数内部，而非可分离
-的独立单元。
+The single worst offender is `process_user_turn` at ~835 lines (599–1433). It is
+already self-documented as seven numbered phases, so the seams are clear; they
+just live inside one function instead of being separable units.
 
-## 2. 当前结构（基于实情，1fab7479 之后）
+## 2. Current structure (grounded, post-1fab7479)
 
 ```
 line   symbol                                  role
@@ -48,7 +52,7 @@ line   symbol                                  role
 1534   _run_loop_blocking (~395 ln)            the actual agent loop (chat main path)
 ```
 
-`process_user_turn` 的七个阶段（行号 → 阶段）：
+`process_user_turn`'s seven phases (line → phase):
 
 ```
 648    1. ensure session, load active-branch history
@@ -62,10 +66,10 @@ line   symbol                                  role
 1413   7. final TurnResult event
 ```
 
-## 3. 提议的包布局
+## 3. Proposed package layout
 
-把该模块转换为 `openprogram/agent/dispatcher/`（一个包），每个文件承担单一职责，
-没有一个超过约 500 行：
+Convert the module into `openprogram/agent/dispatcher/` (a package), each file a
+single responsibility, none over ~500 lines:
 
 ```
 dispatcher/
@@ -80,53 +84,53 @@ dispatcher/
   loop.py            _run_loop_blocking — the agent loop + its error boundary
 ```
 
-`turn.py` 中的 `process_user_turn` 变为一个编排器：加载 → 持久化用户消息 →
-挂载 runtime → 运行循环 → 持久化助手消息 → 收尾 → 发出结果，每一步都是对兄弟
-模块中一个具名函数的调用。错误分类（阶段 4 / 循环的 except）与循环一起保留在
-`loop.py` 中，与
-`docs/design/providers/reliability/error-taxonomy-propagation.md` 保持一致。
+`turn.py`'s `process_user_turn` becomes an orchestrator: load → persist user →
+attach runtime → run loop → persist assistant → finalize → emit result, each a
+named call into the sibling modules. The error taxonomy classification (phase 4
+/ the loop's except) stays co-located with the loop in `loop.py`, matching
+`docs/design/providers/reliability/error-taxonomy-propagation.md`.
 
-## 4. 迁移顺序（爆炸半径最小者优先）
+## 4. Migration order (smallest blast radius first)
 
-每个步骤都是独立的一个 commit，须在编译 + 导入 + worker-restart-healthz 全绿之后
-再进行下一步。纯代码搬移——同一个搬移 commit 中不做任何逻辑改动。
+Each step is its own commit, compiles + imports + worker-restart-healthz green
+before the next. Pure code-motion — no logic edits in the same commit as a move.
 
-1. **types.py** —— 移动三个 dataclass + sentinel。风险最低：它们没有内部依赖。
-   `__init__` 重新导出它们。
-2. **titles.py + forced_tool.py** —— 叶子级辅助函数，调用方很少。
-3. **persistence.py** —— 把阶段 2 与 5 抽成 `persist_user_turn(...)` /
-   `persist_assistant_message(...)`，接收显式参数（不隐式闭包捕获
-   `process_user_turn` 的局部变量）。这是最需要谨慎之处——这些阶段读写大量局部
-   变量，因此函数签名必须刻意精心设计。
-4. **finalize.py** —— 把阶段 6 抽成 `finalize_turn(...)`；它是最自成一体的块
-   （仅记账，且已细分编号为 6.1–6.95）。
-5. **runtime_attach.py** —— 阶段 3 + `_wrap_agentic_runtime_block`。
-6. **loop.py** —— `_run_loop_blocking` + 其错误边界。
-7. **turn.py** —— `process_user_turn` 剩下的部分就是编排器。
+1. **types.py** — move the three dataclasses + sentinel. Lowest risk: they have
+   no internal deps. `__init__` re-exports them.
+2. **titles.py + forced_tool.py** — leaf helpers, few callers.
+3. **persistence.py** — extract phases 2 & 5 as `persist_user_turn(...)` /
+   `persist_assistant_message(...)` taking explicit args (no hidden closure
+   over `process_user_turn` locals). This is where most care goes — the phases
+   read/write many locals, so the function signatures must be drawn deliberately.
+4. **finalize.py** — extract phase 6 as `finalize_turn(...)`; it is the most
+   self-contained block (bookkeeping only, already sub-numbered 6.1–6.95).
+5. **runtime_attach.py** — phase 3 + `_wrap_agentic_runtime_block`.
+6. **loop.py** — `_run_loop_blocking` + its error boundary.
+7. **turn.py** — what remains of `process_user_turn` is the orchestrator.
 
-如果某个阶段难以干净抽出（相互依赖的局部变量过多），就停下来在本文中记录原因，
-而非强行做一次有泄漏的拆分。
+If any phase resists clean extraction (too many interdependent locals), stop and
+record why in this doc rather than forcing a leaky split.
 
-## 5. 向后兼容
+## 5. Back-compat
 
-所有代码都通过 `from openprogram.agent.dispatcher import process_user_turn`
-（以及 `dispatch_forced_tool_call`、`TurnRequest`、`TurnResult`、
-`trigger_compaction`）导入。包的 `__init__.py` 重新导出当前完整的公共接口面，
-因此**所有调用方都无需改动**。在改动前后各做一次全仓库 grep
-`from openprogram.agent.dispatcher import` / `dispatcher\.` 来验证——导入集合
-必须完全一致。
+Everything imports `from openprogram.agent.dispatcher import process_user_turn`
+(and `dispatch_forced_tool_call`, `TurnRequest`, `TurnResult`,
+`trigger_compaction`). The package `__init__.py` re-exports the full current
+public surface so **no caller changes**. Verify with a repo-wide grep of
+`from openprogram.agent.dispatcher import` / `dispatcher\.` before and after — the
+import set must be identical.
 
-## 6. 验证
+## 6. Verification
 
-每一步：对该包执行 `py_compile`，运行 `python -c "from openprogram.agent import
-dispatcher; dispatcher.process_user_turn; dispatcher.dispatch_forced_tool_call"`，
-执行 `openprogram worker restart` + `/healthz` 正常 + `tools_registered` 不变
-（55），然后通过 webui 走一次真实聊天轮次（发送一条消息，得到流式回复，确认其在
-刷新后仍持久存在）。现有触及 dispatcher 的单元测试必须保持全绿。不改变任何行为
-断言——这只是结构调整。
+Per step: `py_compile` the package, `python -c "from openprogram.agent import
+dispatcher; dispatcher.process_user_turn; dispatcher.dispatch_forced_tool_call"`,
+`openprogram worker restart` + `/healthz` ok + `tools_registered` unchanged
+(55), then a real chat turn through the webui (send a message, get a streamed
+reply, confirm it persists across reload). The existing dispatcher-touching unit
+tests must stay green. No behavior assertion changes — this is structure only.
 
-## 7. 非目标
+## 7. Non-goals
 
-不改变轮次生命周期、错误分类体系、持久化 schema 或任何事件负载。不拆分
-`runtime.py` / `server.py`（属于另外的工作项）。不在当前为阻塞式的路径上引入
-async。
+Not changing the turn lifecycle, the error taxonomy, persistence schema, or any
+event payload. Not splitting `runtime.py` / `server.py` (separate items). Not
+introducing async where the path is currently blocking.

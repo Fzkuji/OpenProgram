@@ -1,8 +1,8 @@
-# Session 上下文
+# Session Context
 
-`session_context` 是统一的 per-turn 上下文管理器，负责装载 ContextVar（`_store` / `_current_turn_id` / `_current_runtime` / `_call_id`），让 docstring 进 prompt、DAG 持久化、ask_user 追踪等能力在所有入口生效。
+`session_context` is the unified per-turn context manager. It populates the ContextVars (`_store` / `_current_turn_id` / `_current_runtime` / `_call_id`) so that capabilities such as feeding docstrings into the prompt, DAG persistence, and ask_user tracking take effect across all entry points.
 
-## 接口
+## Interface
 
 ```python
 @contextmanager
@@ -35,29 +35,29 @@ def session_context(
             tok.var.reset(tok)
 ```
 
-`session_context` 在 session 不存在时会调 `create_session`——这是 [operations.md](operations.md) 中创建入口之一。
+When the session does not exist, `session_context` calls `create_session` — this is one of the creation entry points described in [operations.md](operations.md).
 
-## session 边界
+## Session boundaries
 
-由 `session_id` 的传递决定，不按调用次数。
+Boundaries are determined by how `session_id` is passed, not by the number of calls.
 
-| 调用方意图 | 传什么 | 行为 |
+| Caller intent | What to pass | Behavior |
 |---|---|---|
-| 跑一件新任务 | 不传 session_id | 新建，把 id 返回/打印给调用方 |
-| 接着同一任务（第 2、3 次调用） | 传上次返回的 id | 复用，历史接上 |
-| 另起无关的事 | 不传（或传别的 id） | 独立新 session |
+| Run a new task | Do not pass session_id | Creates a new one and returns/prints the id to the caller |
+| Continue the same task (2nd, 3rd call) | Pass the id returned last time | Reuses it, continuing the history |
+| Start something unrelated | Do not pass one (or pass a different id) | A separate, new session |
 
-CLI 对应：首跑不带 `--session` → 打印新 id；`--session <id>` 续。
+CLI equivalent: the first run without `--session` prints a new id; `--session <id>` continues.
 
-## session 的结束
+## Ending a session
 
-session 不需要显式"结束"——它是 append-only 的 git 历史，写完就停，下次带同 id 来就接着写。`session_context` 退出只 reset ContextVar，不删 session。
+A session does not need to be explicitly "ended" — it is an append-only git history. You write until you stop, and the next time you come back with the same id, you keep writing. Exiting `session_context` only resets the ContextVars; it does not delete the session.
 
-## 各入口的用法
+## Usage at each entry point
 
-| 入口 | 用法 |
+| Entry point | Usage |
 |------|------|
-| dispatcher | `with session_context(req.session_id, ...)` 替换现有内联 set/reset |
-| research harness | `with session_context(session_id="research_" + uuid, runtime=rt)` 包住 research_agent |
-| process_runner | 同一个 manager 取代手抄的 set/reset |
-| tests | 同上 |
+| dispatcher | `with session_context(req.session_id, ...)` replaces the existing inline set/reset |
+| research harness | `with session_context(session_id="research_" + uuid, runtime=rt)` wraps research_agent |
+| process_runner | The same manager replaces the hand-copied set/reset |
+| tests | Same as above |

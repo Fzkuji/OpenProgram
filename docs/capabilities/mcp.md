@@ -1,32 +1,32 @@
 # MCP
 
-接入任意 MCP（Model Context Protocol）server，它的工具会以 `<name>_` 前缀出现在聊天里供模型调用。这一页讲怎么加 server、配置存在哪、支持哪些传输方式。
+Connect any MCP (Model Context Protocol) server and its tools appear in chat under a `<name>_` prefix for the model to call. This page covers adding servers, where the configuration lives, and the supported transports.
 
-## 快速上手
+## Quick start
 
 ```bash
-openprogram mcp add drawio npx -y @drawio/mcp     # 加一个 stdio server，立即生效
-openprogram mcp list                              # 每个已配置 server 的状态
-openprogram mcp show drawio                       # 该 server 的工具与完整 schema
+openprogram mcp add drawio npx -y @drawio/mcp     # add a stdio server, effective immediately
+openprogram mcp list                              # status of every configured server
+openprogram mcp show drawio                       # that server's tools and full schemas
 ```
 
-`mcp add` 的选项：`--env KEY=VALUE`（注入子进程环境变量，可重复）、`--timeout`（启动与单次调用超时秒数）、`--disabled`（只写配置不启动）。`name` 会用作该 server 所有工具的前缀。
+`mcp add` options: `--env KEY=VALUE` (inject an environment variable into the subprocess, repeatable), `--timeout` (startup and per-call timeout in seconds), `--disabled` (write the config without starting the server). The `name` becomes the prefix for all of that server's tools.
 
-全部子命令：
+All subcommands:
 
 ```bash
 openprogram mcp list | show | add | rm | restart | enable | disable | edit | test
 ```
 
-- `rm` 停止并删除配置；`enable` / `disable` 切换（disable 保留配置）。
-- `edit` 用 `$EDITOR` 直接改配置文件——HTTP / SSE 类型的 server 目前通过它添加（`add` 只覆盖 stdio）。
-- `test` 用一份临时配置试拉起 server 并确认能返回工具列表，不写盘。
+- `rm` stops the server and deletes its config; `enable` / `disable` toggle it (disable keeps the config).
+- `edit` opens the config file in `$EDITOR` — HTTP / SSE servers are currently added this way (`add` only covers stdio).
+- `test` spins the server up with a throwaway config and confirms it returns a tool list, without writing anything to disk.
 
-管理命令与常驻的 OpenProgram 后台服务通信；服务未运行时先 `openprogram status` / 启动一次聊天。
+The management commands talk to the resident OpenProgram background service; if it is not running, check `openprogram status` or start a chat once.
 
-## 配置存哪
+## Where the config lives
 
-`~/.openprogram/mcp_servers.json`（使用 `--profile <name>` 时是 `~/.openprogram-<name>/mcp_servers.json`）。格式：
+`~/.openprogram/mcp_servers.json` (with `--profile <name>`, `~/.openprogram-<name>/mcp_servers.json`). Format:
 
 ```json
 {
@@ -48,14 +48,14 @@ openprogram mcp list | show | add | rm | restart | enable | disable | edit | tes
 }
 ```
 
-## 传输与认证
+## Transports and auth
 
-| `type` | 说明 | 用到的字段 |
+| `type` | Description | Fields used |
 |---|---|---|
-| `local` | stdio 子进程 | `command`、`env` |
-| `http` | Streamable HTTP | `url`、`headers`、`auth` |
-| `sse` | 旧式 SSE | `url`、`headers`、`auth` |
+| `local` | stdio subprocess | `command`, `env` |
+| `http` | Streamable HTTP | `url`, `headers`, `auth` |
+| `sse` | legacy SSE | `url`, `headers`, `auth` |
 
-`auth.kind` 支持 `none` / `bearer`（`token` 字段）/ `oauth`（OAuth 2.1 PKCE；支持动态客户端注册的 server 零配置即可，预注册客户端的 server 才需要填 `client_id` / `client_secret`）。
+`auth.kind` supports `none` / `bearer` (a `token` field) / `oauth` (OAuth 2.1 PKCE; servers with dynamic client registration work with zero config — only servers requiring a pre-registered client need `client_id` / `client_secret`).
 
-除了工具，MCP 的另外两类原语——resources 和 prompts——也通过内置的 meta 工具暴露给模型（见[内置工具](tools.md)的 `mcp_meta`）。
+Beyond tools, MCP's other two primitives — resources and prompts — are also exposed to the model through a built-in meta tool (see `mcp_meta` in [Built-in tools](tools.md)).

@@ -1,28 +1,28 @@
-# Channel 子系统设计审计
+# Channel Subsystem Design Audit
 
-记录 OpenProgram channel 子系统的现状、与 hermes (主要对标) 的设计差距、以及当前结构性缺陷。**只描述事实和判断，不写实施方案**——方案在后续讨论里定。
+Records the current state of the OpenProgram channel subsystem, the design gaps versus hermes (the primary benchmark), and the present structural defects. **Describes only facts and judgments, no implementation plans**—plans will be settled in later discussions.
 
-## 1. 我们现在的设计
+## 1. Our current design
 
-### 1.1 文件布局
+### 1.1 File layout
 
 ```
-openprogram/channels/        2500 行 / 9 个 py 文件
-├── base.py            21 行  Channel ABC, 仅 run(stop) 一个抽象方法
-├── _conversation.py  483 行  dispatch_inbound + session 路由 + 持久化 + webui 广播
-├── outbound.py       196 行  跨进程 send(channel, account, user, text) API
-├── _heartbeats.py     44 行
-├── accounts.py       278 行  per-platform 凭据存储
-├── bindings.py       274 行  (channel, account, peer) → agent_id 路由
-├── setup.py          289 行  setup wizard
-├── worker.py          26 行  shim → openprogram.worker
-├── discord.py        111 行  DiscordChannel adapter
-├── slack.py          119 行  SlackChannel adapter
-├── telegram.py       111 行  TelegramChannel adapter
-└── wechat.py         454 行  WechatChannel adapter (含 QR 登录 / cursor 持久化)
+openprogram/channels/        2500 lines / 9 py files
+├── base.py            21 lines  Channel ABC, only one abstract method run(stop)
+├── _conversation.py  483 lines  dispatch_inbound + session routing + persistence + webui broadcast
+├── outbound.py       196 lines  cross-process send(channel, account, user, text) API
+├── _heartbeats.py     44 lines
+├── accounts.py       278 lines  per-platform credential storage
+├── bindings.py       274 lines  (channel, account, peer) → agent_id routing
+├── setup.py          289 lines  setup wizard
+├── worker.py          26 lines  shim → openprogram.worker
+├── discord.py        111 lines  DiscordChannel adapter
+├── slack.py          119 lines  SlackChannel adapter
+├── telegram.py       111 lines  TelegramChannel adapter
+└── wechat.py         454 lines  WechatChannel adapter (with QR login / cursor persistence)
 ```
 
-### 1.2 抽象层（base.py）
+### 1.2 Abstraction layer (base.py)
 
 ```python
 class Channel(abc.ABC):
@@ -32,127 +32,127 @@ class Channel(abc.ABC):
     def run(self, stop: threading.Event) -> None: ...
 ```
 
-**就这些**。Channel 只规定了"必须能 run 起来直到 stop 被 set"——怎么读消息、怎么发消息、出错怎么处理、能不能 edit / react，base 完全不管。所有 platform-specific 行为下放到各 adapter 自由发挥。
+**That's all of it**. Channel only mandates "must be able to run until stop is set"—how to read messages, how to send messages, how to handle errors, whether edit / react is possible, base does not care at all. All platform-specific behavior is pushed down to each adapter to do as it pleases.
 
-### 1.3 入站消息处理（adapter 内）
+### 1.3 Inbound message handling (inside the adapter)
 
-每个 adapter 在自己的 `run()` 里跑 platform 原生 SDK 的事件循环，拿到 message → 抽出 `(chat_id, user, text)` → 调 `dispatch_inbound(...)` → 拿到完整 reply string → 用 SDK 把 reply 发回去。
+Each adapter runs the platform's native SDK event loop inside its own `run()`, gets a message → extracts `(chat_id, user, text)` → calls `dispatch_inbound(...)` → gets back a complete reply string → uses the SDK to send the reply back.
 
-| Platform | 入站读 | 出站发回 |
+| Platform | Inbound read | Outbound send-back |
 |---|---|---|
 | Discord | `discord.py` SDK `on_message` | `msg.channel.send(chunk)` |
 | Slack | `slack_sdk` Socket Mode | `web.chat_postMessage()` |
-| Telegram | 原始 HTTP `getUpdates` 长轮询 | 调 `outbound.send()` |
-| WeChat | iLink HTTP `getupdates` 长轮询 | 调 internal `_send` |
+| Telegram | raw HTTP `getUpdates` long polling | calls `outbound.send()` |
+| WeChat | iLink HTTP `getupdates` long polling | calls internal `_send` |
 
-注意 Telegram 和 WeChat 出站不走自己的 adapter 代码，而是间接调 `outbound.send()`——这本身已经是不一致。
+Note that Telegram and WeChat outbound do not go through their own adapter code, but instead indirectly call `outbound.send()`—this in itself is already an inconsistency.
 
-### 1.4 dispatch_inbound（_conversation.py）
+### 1.4 dispatch_inbound (_conversation.py)
 
-签名：`dispatch_inbound(channel, account_id, peer_kind, peer_id, user_text, user_display) -> str`
+Signature: `dispatch_inbound(channel, account_id, peer_kind, peer_id, user_text, user_display) -> str`
 
-一次性阻塞调用，返回完整 reply。流程：
+A one-shot blocking call that returns the complete reply. Flow:
 
-1. 查 `session_aliases` / `bindings` → 决定 agent_id
-2. 按 `agent.session_scope` 计算 `session_key`（per-account-channel-peer / per-peer / main / 等）
-3. 应用 `daily_reset` / `idle_minutes` reset policy
-4. `_load_or_init_session` 写 SessionDB
-5. 构造 `TurnRequest` 调 `process_user_turn` → 完整 turn
-6. 把 reply append 到 SessionDB
-7. broadcast `channel_turn` envelope 到 webui
+1. Look up `session_aliases` / `bindings` → decide agent_id
+2. Compute `session_key` per `agent.session_scope` (per-account-channel-peer / per-peer / main / etc.)
+3. Apply `daily_reset` / `idle_minutes` reset policy
+4. `_load_or_init_session` writes SessionDB
+5. Build `TurnRequest` and call `process_user_turn` → complete turn
+6. Append the reply to SessionDB
+7. Broadcast `channel_turn` envelope to webui
 
-里面有一个 `_on_event(env)` callback 已经在订阅 dispatcher 的 stream envelope：
+Inside there is an `_on_event(env)` callback that already subscribes to the dispatcher's stream envelopes:
 
 ```python
 def _on_event(env: dict) -> None:
-    srv._broadcast(json.dumps(env, default=str))   # 给 webui 看
-    if env.get("type") == "chat_ack":              # 抓 user_msg_id
+    srv._broadcast(json.dumps(env, default=str))   # for webui to see
+    if env.get("type") == "chat_ack":              # capture user_msg_id
         captured_user_id.append(...)
 ```
 
-但这个 callback 只对 webui 广播。channel 自己拿不到流式事件。
+But this callback only broadcasts to webui. The channel itself cannot get the streaming events.
 
-### 1.5 outbound.py 跨进程发送
+### 1.5 outbound.py cross-process send
 
 ```python
 outbound.send(channel, account_id, user_id, text) -> bool
 ```
 
-不走 adapter 实例。`_SENDERS` 是一个 4 项的 dict，每项独立用 raw HTTP（requests 库）调 platform API：
+Does not go through an adapter instance. `_SENDERS` is a 4-entry dict, each entry independently using raw HTTP (the requests library) to call the platform API:
 
 - `_send_telegram` → `POST /bot{token}/sendMessage`
 - `_send_discord`  → `POST /api/v10/channels/{ch}/messages`
 - `_send_slack`    → `POST /api/chat.postMessage`
 - `_send_wechat`   → `POST /ilink/bot/sendmessage`
 
-每个 sender 自己 load credentials、自己拼 headers、自己处理 chunking。
+Each sender loads credentials itself, assembles headers itself, and handles chunking itself.
 
-### 1.6 消息分块
+### 1.6 Message chunking
 
-`MAX_MSG_CHARS` 在 **5 个文件**里独立定义：
+`MAX_MSG_CHARS` is defined independently in **5 files**:
 
 ```
 discord.py    1800
 slack.py      3900
 telegram.py   4000
 wechat.py     1800
-outbound.py   1800   (跟 discord/wechat 重复，跟 slack/telegram 不一致)
+outbound.py   1800   (duplicates discord/wechat, inconsistent with slack/telegram)
 ```
 
-`_chunk(text, limit)` 同样的实现复制了 **5 次**。
+The same `_chunk(text, limit)` implementation is copied **5 times**.
 
-### 1.7 message 中性结构
+### 1.7 Neutral message structure
 
-**没有**。每个 adapter 直接处理 platform-native object：
+**None**. Each adapter directly handles the platform-native object:
 
-- Discord：`discord.Message` 对象 → 抽 `msg.content / msg.author.id / msg.channel.id`
-- Slack：events_api dict → 抽 `event["text"] / event["user"] / event["channel"]`
-- Telegram：update dict → 抽 `msg["text"] / msg["chat"]["id"]`
-- WeChat：iLink msg dict → 字段路径自定义
+- Discord: `discord.Message` object → extract `msg.content / msg.author.id / msg.channel.id`
+- Slack: events_api dict → extract `event["text"] / event["user"] / event["channel"]`
+- Telegram: update dict → extract `msg["text"] / msg["chat"]["id"]`
+- WeChat: iLink msg dict → custom field paths
 
-没有任何 `ChannelMessage` / `MessageEvent` 抽象。要支持 reply / quote / attachment 没有共同 schema。
+There is no `ChannelMessage` / `MessageEvent` abstraction at all. There is no shared schema for supporting reply / quote / attachment.
 
-### 1.8 反向依赖
+### 1.8 Reverse dependency
 
-`outbound._send_wechat` 里：
+In `outbound._send_wechat`:
 
 ```python
 from openprogram.channels.wechat import _make_wechat_uin
 ```
 
-outbound（应该是底层）反向 import wechat adapter（应该是叶子）的私有函数。
+outbound (which should be the lower layer) reverse-imports a private function of the wechat adapter (which should be a leaf).
 
 ---
 
-## 2. 其他项目的设计
+## 2. Other projects' designs
 
-可比的就两个：**OpenClaw**（我们 fork 来源，TS 写的）和 **hermes**（chat-bot 专门项目，Python）。opencode 和 claude-code 都没有 channel 子系统——它们的 surface 是 CLI/TUI/Web/IDE，对接的是坐在前端的人类用户，不接 Discord/Slack 群里。
+There are only two comparables: **OpenClaw** (the source we forked from, written in TS) and **hermes** (a dedicated chat-bot project, Python). Neither opencode nor claude-code has a channel subsystem—their surfaces are CLI/TUI/Web/IDE, interfacing with a human user sitting at the front end, not plugging into Discord/Slack groups.
 
-### 2.1 OpenClaw（fork 来源）
+### 2.1 OpenClaw (fork source)
 
-来源：`references/openclaw/src/channels/` + `references/openclaw/extensions/{discord,slack,telegram}/`。TS/Node.js，企业级模块化设计。
+Source: `references/openclaw/src/channels/` + `references/openclaw/extensions/{discord,slack,telegram}/`. TS/Node.js, enterprise-grade modular design.
 
-**布局**：核心 `src/channels/` 一堆细粒度文件（routing / account / approval / typing / draft-stream / health-check / thread-bindings-policy …），每个 platform 在 `extensions/{name}/` 独立目录，单 discord 70+ 文件、slack 40+、telegram 35+。
+**Layout**: the core `src/channels/` has a pile of fine-grained files (routing / account / approval / typing / draft-stream / health-check / thread-bindings-policy …), and each platform lives in its own directory under `extensions/{name}/`—discord alone has 70+ files, slack 40+, telegram 35+.
 
-**Plugin SDK** (`src/plugin-sdk/channel-*.ts` 50+ contract 文件) 完全隔离 core 和 platform 实现。Core 只看到抽象接口：
+**Plugin SDK** (`src/plugin-sdk/channel-*.ts`, 50+ contract files) fully isolates the core from the platform implementations. Core only sees abstract interfaces:
 
 ```typescript
-ChannelMessageSendAdapter        // 发送能力
-ChannelMessageLiveAdapterShape   // 实时消息编辑 (draft → live-preview → final)
-ChannelApprovalAdapter           // reaction ✓/✗ 确认 + timeout/retry
+ChannelMessageSendAdapter        // send capability
+ChannelMessageLiveAdapterShape   // live message editing (draft → live-preview → final)
+ChannelApprovalAdapter           // reaction ✓/✗ confirmation + timeout/retry
 ChannelMessageActionAdapter      // button/menu action handler
-ChannelOutboundAdapter           // 跨进程 send 也走 adapter, 不旁路
+ChannelOutboundAdapter           // cross-process send also goes through the adapter, not bypassed
 ```
 
-**Streaming edit** (`src/plugin-sdk/channel-streaming.ts` + `extensions/discord/src/draft-stream.*`)：消息生命周期三态：
+**Streaming edit** (`src/plugin-sdk/channel-streaming.ts` + `extensions/discord/src/draft-stream.*`): the message lifecycle has three states:
 
 ```
-draft → live-preview (节流 edit) → final
+draft → live-preview (throttled edit) → final
 ```
 
-发出 draft → tool 跑过程中持续 edit message → 最终 finalize。节流策略内置在 pipeline。
+Emit a draft → continuously edit the message while the tool runs → finalize at the end. The throttling policy is built into the pipeline.
 
-**Reaction approval** (`src/channels/ack-reactions.ts` + `extensions/discord/src/approval-native.ts`)：
+**Reaction approval** (`src/channels/ack-reactions.ts` + `extensions/discord/src/approval-native.ts`):
 
 ```typescript
 type ChannelApprovalAdapter {
@@ -160,21 +160,21 @@ type ChannelApprovalAdapter {
 }
 ```
 
-dangerous tool 触发时 bot 加 ✓/✗ emoji reaction → 用户点反应 → adapter 通知 dispatcher。完整 lifecycle（timeout / retry / cancel）。
+When a dangerous tool fires, the bot adds a ✓/✗ emoji reaction → the user clicks the reaction → the adapter notifies the dispatcher. Full lifecycle (timeout / retry / cancel).
 
-**DurableMessageSendResult**：send 返回值含 message_id、edited_ids、retry 策略——支持 receipt tracking + delivery confirmation。我们这边 send 只返回 `bool`。
+**DurableMessageSendResult**: the send return value contains message_id, edited_ids, and a retry policy—supporting receipt tracking + delivery confirmation. On our side send returns only a `bool`.
 
-**Health check** (`health-check-adapter.ts`)：启动时 probe 每个 adapter 可用性，失败 graceful degradation——不让一个挂掉的 platform 拖垮整个 worker。
+**Health check** (`health-check-adapter.ts`): probes each adapter's availability at startup, with graceful degradation on failure—so one dead platform does not drag down the whole worker.
 
-**注册**：plugin manifest（每个 extension 的 `openclaw.plugin.json` 声明 `channels` 能力），core loader 扫 `extensions/*/` 或 npm packages，动态加载 + lazy instantiation。
+**Registration**: plugin manifest (each extension's `openclaw.plugin.json` declares `channels` capabilities), the core loader scans `extensions/*/` or npm packages, with dynamic loading + lazy instantiation.
 
-### 2.2 Hermes（chat-bot 专门项目）
+### 2.2 Hermes (dedicated chat-bot project)
 
-Python 写的，对接 14+ 平台。设计哲学比 OpenClaw 简单——没有 Plugin SDK 那一层抽象，但单文件能塞下完整 adapter（base 1500 行）。
+Written in Python, interfacing with 14+ platforms. Its design philosophy is simpler than OpenClaw's—no Plugin SDK abstraction layer, but a single file can hold a complete adapter (base is 1500 lines).
 
 **BasePlatformAdapter ABC**
 
-`gateway/platforms/base.py`：
+`gateway/platforms/base.py`:
 
 ```python
 class BasePlatformAdapter(ABC):
@@ -195,17 +195,17 @@ class BasePlatformAdapter(ABC):
                                    name: str) -> Optional[str]
 ```
 
-5+ 个 async 抽象方法。统一返回 `SendResult` dataclass（含 `message_id` / `retryable` 标志）。
+5+ async abstract methods. Uniformly returns a `SendResult` dataclass (with `message_id` / `retryable` flags).
 
-**中性消息结构**
+**Neutral message structure**
 
 ```python
 @dataclass
 class MessageEvent:
     text: str
     message_type: MessageType = MessageType.TEXT
-    source: SessionSource         # 平台、聊天 ID、用户 ID、thread_id
-    media_urls: List[str] = []    # 下载到本地的缓存路径
+    source: SessionSource         # platform, chat ID, user ID, thread_id
+    media_urls: List[str] = []    # cache paths downloaded to local
     reply_to_message_id: Optional[str] = None
     auto_skill: Optional[str | list[str]] = None
     channel_prompt: Optional[str] = None
@@ -221,22 +221,22 @@ class SessionSource:
     parent_chat_id: Optional[str] = None
 ```
 
-`MessageEvent` 是所有平台 message 的中性结构，adapter 负责 platform-native → MessageEvent 的翻译。dispatcher 只看 MessageEvent。
+`MessageEvent` is the neutral structure for all platforms' messages; the adapter is responsible for the platform-native → MessageEvent translation. The dispatcher only sees MessageEvent.
 
-**Session key 二维隔离**
+**Two-dimensional session key isolation**
 
-`build_session_key(source, group_sessions_per_user, thread_sessions_per_user)`：
+`build_session_key(source, group_sessions_per_user, thread_sessions_per_user)`:
 
 ```
 DM:    agent:main:{platform}:dm:{chat_id}[:{thread_id}]
 Group: agent:main:{platform}:group:{chat_id}[:{thread_id}][:{user_id}]
 ```
 
-线程默认共享所有用户、组默认隔离每用户，可被 per-channel 配置覆盖。
+Threads share all users by default, groups isolate per user by default, and both can be overridden by per-channel configuration.
 
 **Progress Streaming**
 
-`gateway/run.py:_edit_progress_message()`：
+`gateway/run.py:_edit_progress_message()`:
 
 ```python
 async def _edit_progress_message(message_id: str, content: str):
@@ -247,13 +247,13 @@ async def _edit_progress_message(message_id: str, content: str):
     )
 ```
 
-工具开始 → adapter.send 占位消息 → 拿到 `message_id` → 工具 stream 事件触发 `_edit_progress_message(message_id, latest_text)` → 最终用 `finalize=True` 收尾。
+Tool starts → adapter.send a placeholder message → get the `message_id` → tool stream events trigger `_edit_progress_message(message_id, latest_text)` → finalize at the end with `finalize=True`.
 
-**Overflow 处理**：`_roll_progress_overflow_if_needed()`——当 progress 行超过 platform 字符限制时自动分组，第一组 edit 当前 bubble，后续组发新 bubble。
+**Overflow handling**: `_roll_progress_overflow_if_needed()`—when progress lines exceed the platform character limit, it automatically splits into groups: the first group edits the current bubble, subsequent groups send new bubbles.
 
-**高级机制**（这部分 hermes 真领先）
+**Advanced mechanisms** (this is where hermes genuinely leads)
 
-**Debounce 合并快速文本** (`base.py:2812-2876`)：
+**Debounce to merge rapid text** (`base.py:2812-2876`):
 
 ```python
 class TextDebounceState:
@@ -262,21 +262,21 @@ class TextDebounceState:
     first_ts, last_ts: float
 
 async def _queue_text_debounce(session_key, event):
-    """连续到达的同 session 文本合并成一条, delay 0.35s, hard cap 1.0s"""
+    """merge consecutively arriving texts of the same session into one, delay 0.35s, hard cap 1.0s"""
 ```
 
-用户连续发 3 条消息（"hi"、"你在吗"、"问个问题"），agent 收到的是合并后的一次 turn，不会触发 3 次 agent run。
+When a user sends 3 messages in a row ("hi", "you there", "got a question"), the agent receives a single merged turn instead of triggering 3 agent runs.
 
-**快速命令绕路** (`base.py:3205-3219`)：
+**Quick-command bypass** (`base.py:3205-3219`):
 
 ```python
 if should_bypass_active_session(cmd):   # /stop, /new, /reset, /approve
     await self._dispatch_active_session_command(...)
 ```
 
-`/stop` `/approve` 这类命令直接走快速路径，不进 session 队列、不等 agent 当前任务结束。
+Commands like `/stop` and `/approve` go straight down a fast path, not entering the session queue and not waiting for the agent's current task to finish.
 
-**Retryable 错误分类**：
+**Retryable error classification**:
 
 ```python
 @dataclass
@@ -285,23 +285,23 @@ class SendResult:
     retryable: bool = False
 ```
 
-adapter 区分 transient（网络 / timeout，可重试）vs permanent（auth / permission，不重试），统一信号交 dispatcher 处理。
+The adapter distinguishes transient (network / timeout, retryable) vs permanent (auth / permission, not retryable), handing a unified signal to the dispatcher to handle.
 
-**Attachment 本地缓存**：
+**Attachment local caching**:
 
 ```python
 def cache_document_from_bytes(data: bytes, filename: str) -> str:
-    """同步写到 cache_dir, 文件名 doc_{uuid12}_{原名}"""
+    """synchronously write to cache_dir, filename doc_{uuid12}_{original name}"""
 
 def cleanup_document_cache(max_age_hours: int = 24) -> int:
-    """删除 24h+ 的缓存"""
+    """delete caches older than 24h"""
 ```
 
-Telegram URL 1 小时过期前下载到本地 → 后续 agent 能反复读 → 24h 后清理。
+Download Telegram URLs locally before their 1-hour expiry → the agent can read them repeatedly afterward → clean up after 24h.
 
-**DeliveryRouter（跨进程发送）**
+**DeliveryRouter (cross-process send)**
 
-`gateway/delivery.py`：
+`gateway/delivery.py`:
 
 ```python
 class DeliveryTarget:
@@ -314,26 +314,26 @@ class DeliveryRouter:
         """Route to all targets via adapter instances."""
 ```
 
-`outbound.send`-equivalent 也走 adapter 实例，不另写 raw HTTP path。
+The `outbound.send`-equivalent also goes through adapter instances, without writing a separate raw HTTP path.
 
 **Approval flow**
 
-不用 reaction，用**文本命令**：
+Does not use reactions, uses **text commands**:
 
 ```python
 async def _handle_slash_approve(self, event):
     """Handle /approve — unblock waiting agent thread(s)."""
 
 _pending_approvals: Dict[str, Dict[str, Any]]   # session → pending
-# tool 线程: Event.wait() 阻塞
-# /approve 命令: Event.set() 唤醒
+# tool thread: Event.wait() blocks
+# /approve command: Event.set() wakes it up
 ```
 
-简单稳定。reaction 在 adapter 层有 `send_reaction` 实现但不是 approval 关键路径。
+Simple and stable. Reactions do have a `send_reaction` implementation at the adapter layer but are not on the approval critical path.
 
-**Platform 注册**
+**Platform registration**
 
-`gateway/platform_registry.py`：
+`gateway/platform_registry.py`:
 
 ```python
 @dataclass
@@ -345,287 +345,287 @@ platform_registry.register(PlatformEntry(...))
 adapter = platform_registry.create_adapter("slack", config)
 ```
 
-built-in 走硬编码 fast path，plugin platform 通过 registry 自注册。
+Built-ins go down a hardcoded fast path, plugin platforms self-register through the registry.
 
 ---
 
-## 3. 三方对比
+## 3. Three-way comparison
 
-### 3.1 抽象层面
+### 3.1 Abstraction level
 
-| 方面 | OpenProgram | OpenClaw (fork 来源) | Hermes |
+| Aspect | OpenProgram | OpenClaw (fork source) | Hermes |
 |---|---|---|---|
-| Base abstract method 数 | 1 (`run`) | 5+ (SendAdapter / LiveAdapter / ApprovalAdapter 等多接口) | 5+ (`send/edit/draft/typing/handoff`) |
-| 中性消息结构 | 无 (平台原生 obj) | `ChannelMeta` 含 media/richtext/components | `MessageEvent` + `SessionSource` dataclass |
-| Send 返回值 | bool | `DurableMessageSendResult` (含 message_id/edited_ids/retry 策略) | `SendResult` (含 message_id + retryable) |
-| Dispatch signature | 同步 → str | 异步 streaming pipeline (draft → live → final) | 异步 → 流式事件 |
-| Session 隔离 | `session_scope` 4 枚举 | `dmScope` hardcode + thread-bindings-policy | 二维 (chat × user × thread) |
-| Edit/Reaction 接口 | 无 | 完整 (ChannelMessageLiveAdapterShape + ApprovalAdapter) | 内建 |
-| 进度流 | 无 | 三阶段 (draft → live-preview → final, 节流内置) | edit_message + overflow 自动分组 |
-| Approval 机制 | 无 | reaction ✓/✗ + onApprove/onDecline/onTimeout lifecycle | `/approve` 文本命令 |
-| Debounce 合并 | 无 | 不详 | 0.35s delay + 1s hard cap |
-| Retryable 信号 | 无 | DurableMessageSendResult 含 backoff 策略 | `SendResult.retryable` |
-| Health check | 无 | `health-check-adapter.ts` 启动 probe | 不详 |
-| Receipt tracking | 无 | 有 (DurableMessageSendResult 含 delivery confirmation) | 不详 |
-| Structured replies | text only | embed/button/menu (ChannelMessageActionAdapter) | 部分 |
-| Attachment 缓存 | 无 | 有 | UUID-前缀 + 24h 清理 |
-| 出站 API | `outbound.send` 走 raw HTTP | 走 adapter 实例 (ChannelOutboundAdapter) | `DeliveryRouter(adapters: dict)` 走 adapter |
-| 进程模型假设 | 多部署形态 (lib + worker + script) | 单 daemon 进程 | 单 gateway 进程 |
-| Chunking 实现 | 5 份重复 | 平台 plugin 内统一 | 平台内统一 (`truncate_message`) |
-| Platform 注册 | 硬编码 dict | Plugin SDK (manifest + dynamic loader) | hybrid (built-in + registry) |
-| 语言 | Python | TypeScript | Python |
+| Number of base abstract methods | 1 (`run`) | 5+ (multiple interfaces: SendAdapter / LiveAdapter / ApprovalAdapter etc.) | 5+ (`send/edit/draft/typing/handoff`) |
+| Neutral message structure | none (platform-native obj) | `ChannelMeta` with media/richtext/components | `MessageEvent` + `SessionSource` dataclass |
+| Send return value | bool | `DurableMessageSendResult` (with message_id/edited_ids/retry policy) | `SendResult` (with message_id + retryable) |
+| Dispatch signature | sync → str | async streaming pipeline (draft → live → final) | async → streaming events |
+| Session isolation | `session_scope` 4 enums | `dmScope` hardcoded + thread-bindings-policy | two-dimensional (chat × user × thread) |
+| Edit/Reaction interface | none | complete (ChannelMessageLiveAdapterShape + ApprovalAdapter) | built-in |
+| Progress stream | none | three stages (draft → live-preview → final, throttling built in) | edit_message + automatic overflow splitting |
+| Approval mechanism | none | reaction ✓/✗ + onApprove/onDecline/onTimeout lifecycle | `/approve` text command |
+| Debounce merging | none | unknown | 0.35s delay + 1s hard cap |
+| Retryable signal | none | DurableMessageSendResult with backoff policy | `SendResult.retryable` |
+| Health check | none | `health-check-adapter.ts` startup probe | unknown |
+| Receipt tracking | none | yes (DurableMessageSendResult with delivery confirmation) | unknown |
+| Structured replies | text only | embed/button/menu (ChannelMessageActionAdapter) | partial |
+| Attachment caching | none | yes | UUID-prefix + 24h cleanup |
+| Outbound API | `outbound.send` uses raw HTTP | goes through adapter instances (ChannelOutboundAdapter) | `DeliveryRouter(adapters: dict)` goes through adapters |
+| Process model assumption | multiple deployment forms (lib + worker + script) | single daemon process | single gateway process |
+| Chunking implementation | 5 duplicates | unified within the platform plugin | unified within the platform (`truncate_message`) |
+| Platform registration | hardcoded dict | Plugin SDK (manifest + dynamic loader) | hybrid (built-in + registry) |
+| Language | Python | TypeScript | Python |
 
-### 3.2 直接后果
+### 3.2 Direct consequences
 
-| 我们想做的 feature | OpenProgram 改的范围 | hermes / OpenClaw 改的范围 |
+| Feature we want to build | Scope of change in OpenProgram | Scope of change in hermes / OpenClaw |
 |---|---|---|
-| Progress streaming | 改 base + 4 adapter + outbound + `_conversation` = 6 处 | dispatcher 调 `adapter.edit_message` 一处 |
-| Reaction approval | 4 adapter 各加 listener + adapter ↔ approval bridge | hermes: 一个 `/approve` slash handler; OpenClaw: ApprovalAdapter lifecycle 现成 |
-| Edit message | base + 4 adapter + outbound = 6 处 | `adapter.edit_message` 一处 (已有) |
-| 加新 platform (whatsapp) | adapter + `outbound._send_xx` + chunk + bindings + accounts | hermes: adapter + registry.register; OpenClaw: 新 extension 目录 + plugin.json |
-| 修 chunking bug | 5 个文件同步改 | 1 个工具函数 |
+| Progress streaming | change base + 4 adapters + outbound + `_conversation` = 6 places | dispatcher calls `adapter.edit_message` in one place |
+| Reaction approval | each of the 4 adapters adds a listener + an adapter ↔ approval bridge | hermes: one `/approve` slash handler; OpenClaw: ApprovalAdapter lifecycle ready-made |
+| Edit message | base + 4 adapters + outbound = 6 places | `adapter.edit_message` in one place (already exists) |
+| Add a new platform (whatsapp) | adapter + `outbound._send_xx` + chunk + bindings + accounts | hermes: adapter + registry.register; OpenClaw: new extension directory + plugin.json |
+| Fix a chunking bug | change 5 files in sync | 1 utility function |
 
-### 3.3 我们 fork OpenClaw 后做的"减法"和"加法"
+### 3.3 The "subtractions" and "additions" we made after forking OpenClaw
 
-**减法（漏掉的）**：
+**Subtractions (what we dropped)**:
 
-| OpenClaw 有 | 我们继承时丢了 |
+| OpenClaw has | What we lost when inheriting |
 |---|---|
-| Plugin SDK (50+ contract 文件) | 全部丢 — base.py 退化到 21 行 |
-| ChannelMessageLiveAdapterShape (streaming edit) | 丢 |
-| ChannelApprovalAdapter (reaction ✓/✗) | 丢 |
-| DurableMessageSendResult (含 message_id + retry) | 退化成 bool |
-| health-check-adapter | 丢 |
-| Reconnection + exponential backoff | 丢 |
-| Receipt tracking | 丢 |
-| Message actions (button/menu) | 丢 |
-| Thread binding policy | 退化成 peer_kind 字符串 |
-| Structured replies (embed) | 退化成 text only |
+| Plugin SDK (50+ contract files) | all dropped — base.py degenerated to 21 lines |
+| ChannelMessageLiveAdapterShape (streaming edit) | dropped |
+| ChannelApprovalAdapter (reaction ✓/✗) | dropped |
+| DurableMessageSendResult (with message_id + retry) | degenerated to bool |
+| health-check-adapter | dropped |
+| Reconnection + exponential backoff | dropped |
+| Receipt tracking | dropped |
+| Message actions (button/menu) | dropped |
+| Thread binding policy | degenerated to a peer_kind string |
+| Structured replies (embed) | degenerated to text only |
 
-**加法（我们引入的）**：
+**Additions (what we introduced)**:
 
-| OpenProgram 有 | OpenClaw 对应物 |
+| OpenProgram has | OpenClaw counterpart |
 |---|---|
-| `session_scope` 4 枚举可配置 | `dmScope` 在 channel runtime 写死 |
-| `outbound.py` 无状态 cross-process sender | 没有独立 outbound，走 adapter 实例 |
-| `setup.py` 一键交互式 enrollment | descriptor-driven setup plugin seam |
+| `session_scope` 4 configurable enums | `dmScope` hardcoded in the channel runtime |
+| `outbound.py` stateless cross-process sender | no separate outbound, goes through adapter instances |
+| `setup.py` one-click interactive enrollment | descriptor-driven setup plugin seam |
 
-第二项—— `outbound.py`——值得单独说：从 fork 视角看是我们**主动加的**，OpenClaw 当初设计是 cross-process send 也走 adapter。但 OpenProgram 是双范式系统（详见 5.F），`outbound.send` 这个无状态、cron-friendly 入口正好对应 agentic-programming 范式（Python 主控同步调用），不该删。真正的问题是**实现层重复**（chunking 5 份、HTTP 调用各写一遍）而不是**入口存在性**——重构方向应是"两入口共享实现层"，不是"删一条入口"。
+The second item—`outbound.py`—deserves a separate note: from a fork perspective it is something **we actively added**, since OpenClaw's original design had cross-process send go through the adapter too. But OpenProgram is a dual-paradigm system (see 5.F), and `outbound.send`, a stateless, cron-friendly entry point, maps precisely to the agentic-programming paradigm (Python-driven synchronous calls), and should not be removed. The real problem is **implementation-layer duplication** (chunking duplicated 5 times, the HTTP call written out once per platform) rather than **the existence of the entry point**—the refactoring direction should be "two entry points sharing one implementation layer", not "remove one entry point".
 
 ---
 
-## 4. 当前的结构性缺陷（按严重度排序）
+## 4. Current structural defects (sorted by severity)
 
-### 缺陷 1：base.py 是空壳
+### Defect 1: base.py is an empty shell
 
-只规定 `run(stop)`，不规定 send/edit/react/chunk。导致每个 adapter "自由发挥"，平台间没有可强制的统一接口。
+It only mandates `run(stop)`, not send/edit/react/chunk. As a result each adapter "does as it pleases", and there is no enforceable unified interface across platforms.
 
-**症状**：4 个 adapter 的代码风格、错误处理、credentials 加载方式都不一样；type checker 没法发现 adapter 漏实现某个能力。
+**Symptoms**: the 4 adapters differ in code style, error handling, and how they load credentials; the type checker cannot detect when an adapter fails to implement some capability.
 
-### 缺陷 2：两套发消息代码路径
+### Defect 2: two send-message code paths
 
 ```
-Path A (adapter on_message 回复路径)    Path B (跨进程 outbound.send)
+Path A (adapter on_message reply path)    Path B (cross-process outbound.send)
 ─────────────────────────────────────────────────────────────
 discord.py  → discord.py SDK            outbound.py → raw HTTP
 slack.py    → slack_sdk SDK             outbound.py → raw HTTP
-telegram.py → outbound.send (HTTP)      outbound.py → raw HTTP  ← 已经走 B
-wechat.py   → 内部 _send                outbound.py → raw HTTP
+telegram.py → outbound.send (HTTP)      outbound.py → raw HTTP  ← already goes through B
+wechat.py   → internal _send           outbound.py → raw HTTP
 ```
 
-`MAX_MSG_CHARS` 5 份、`_chunk` 函数 5 份、credentials 加载 8+ 份。任何"如何把字节送到 platform"的修改都要在两条路上各做一遍。
+`MAX_MSG_CHARS` 5 copies, `_chunk` function 5 copies, credential loading 8+ copies. Any change to "how to get bytes to the platform" must be made twice, once on each path.
 
-注意：**两条入口的存在是合理的**（详见 5.F——它们服务两种范式：adapter 路径给 dispatcher 用、outbound 路径给 agentic-programming 主控用），问题不在"有两条入口"而在"两份独立实现"。重构应该让两条入口共享一份实现层，不是合并入口。
+Note: **the existence of two entry points is reasonable** (see 5.F—they serve two paradigms: the adapter path for the dispatcher, the outbound path for the agentic-programming driver), the problem is not "having two entry points" but "two independent implementations". The refactoring should let the two entry points share one implementation layer, not merge the entry points.
 
-### 缺陷 3：dispatch_inbound 同步签名堵死 streaming
+### Defect 3: dispatch_inbound's synchronous signature blocks streaming
 
-`(...) -> str` 一次性返回完整 reply。adapter 拿不到中间事件，因此：
+`(...) -> str` returns the complete reply in one shot. The adapter cannot get intermediate events, and therefore:
 
-- 不可能做 progress streaming（adapter 不知道 tool 在跑）
-- 不可能做 typing indicator（adapter 不知道 LLM 在思考）
-- 不可能做实时 edit（adapter 拿不到 token stream）
+- Progress streaming is impossible (the adapter does not know a tool is running)
+- A typing indicator is impossible (the adapter does not know the LLM is thinking)
+- Real-time edit is impossible (the adapter cannot get the token stream)
 
-讽刺的是 dispatcher 内部 `_on_event` 已经 emit `tool_use` / `stream_event` / `tool_result` envelope（见 `agent/_event_parsing.py`），只是没回流给 channel——只对 webui 广播。
+Ironically, the dispatcher's internal `_on_event` already emits `tool_use` / `stream_event` / `tool_result` envelopes (see `agent/_event_parsing.py`), they just are not fed back to the channel—only broadcast to webui.
 
-### 缺陷 4：没有 ChannelMessage 中性结构（✓ 已修，commit faaeb1ee）
+### Defect 4: no neutral ChannelMessage structure (✓ fixed, commit faaeb1ee)
 
-每个 adapter 自己处理 platform-native object → 直接传 `(chat_id, user, text)` 三个字符串给 dispatch_inbound。要支持 reply / quote / thread / attachment 没有共同 schema 可挂。
+Each adapter handles the platform-native object itself → passes the three strings `(chat_id, user, text)` straight to dispatch_inbound. There is no shared schema to hang reply / quote / thread / attachment support on.
 
-如果将来 agent 想"引用之前那条消息"或"读图片附件"，每个 adapter 都要单独写一遍。
+If in the future the agent wants to "quote that earlier message" or "read an image attachment", each adapter would have to write it out separately.
 
-**修复**：加 `_message.py:ChannelMessage` frozen dataclass，含 `text` / `chat_id` / `user_id` / `user_display` / `chat_type` / `ts` / `reply_to_id` / `thread_id` / `attachments` 字段。4 个 adapter 入口都 parse 出 ChannelMessage 再展开传给 dispatch_inbound。dispatch_inbound 签名不变（兼容现有 caller），ChannelMessage 当前是 adapter 内部工具——但 `reply_to_id` / `thread_id` / `attachments` 已经在每个 adapter 里抽出来，等 dispatch_inbound 将来消费这些字段时 parse step 已就位。
+**Fix**: add `_message.py:ChannelMessage`, a frozen dataclass with `text` / `chat_id` / `user_id` / `user_display` / `chat_type` / `ts` / `reply_to_id` / `thread_id` / `attachments` fields. All 4 adapter entry points parse out a ChannelMessage and then unpack it to pass to dispatch_inbound. The dispatch_inbound signature is unchanged (compatible with existing callers), and ChannelMessage is currently an adapter-internal tool—but `reply_to_id` / `thread_id` / `attachments` are already extracted in each adapter, so when dispatch_inbound consumes these fields in the future the parse step is already in place.
 
-### 缺陷 5：_conversation.py 单文件 483 行 5 个职责
+### Defect 5: _conversation.py is a single 483-line file with 5 responsibilities
 
-- 路由（binding + alias 查询）
-- session_key 计算（scope + reset policy）
-- session 创建 / 加载 / 持久化
-- dispatcher 调用
+- Routing (binding + alias lookup)
+- session_key computation (scope + reset policy)
+- session creation / loading / persistence
+- dispatcher invocation
 - webui broadcast
 
-按 OpenProgram 既定的 "hierarchical code structure" 偏好，这个量级该拆。但要等抽象层确定后再拆，不然拆完还要再返工。
+Per OpenProgram's established "hierarchical code structure" preference, something of this size should be split. But it should wait until the abstraction layer is settled, otherwise splitting it now means reworking it afterward.
 
-### 缺陷 6：account_id 双重传递
+### Defect 6: account_id passed twice
 
 ```python
-DiscordChannel(account_id="default")          # 构造参数
+DiscordChannel(account_id="default")          # constructor argument
 ...
-dispatch_inbound(..., account_id="default")    # 调用参数
+dispatch_inbound(..., account_id="default")    # call argument
 ```
 
-同一个值在 adapter 实例和 dispatch 调用里各保管一份。如果以后想"一个进程一个 adapter 多个 account"，这设计是个 trip wire。
+The same value is kept once in the adapter instance and once in the dispatch call. If we later want "one adapter, multiple accounts per process", this design is a trip wire.
 
-### 缺陷 7：反向依赖
+### Defect 7: reverse dependency
 
-`outbound._send_wechat` 反向 import `wechat._make_wechat_uin`。底层模块依赖叶子模块的私有函数——任何 wechat 内部重构都可能 break outbound。
+`outbound._send_wechat` reverse-imports `wechat._make_wechat_uin`. A lower-layer module depending on a leaf module's private function—any internal wechat refactor can break outbound.
 
-### 缺陷 8：Session 隔离粒度单一
+### Defect 8: single session-isolation granularity
 
 ```python
 peer_id = "{channel_id}_{user_id}"   # discord / slack
 peer_id = "{chat_id}"                # telegram
 ```
 
-把 chat 和 user 拼成一个字符串 peer_id，丢失了二维信息。`agent.session_scope` 只有 4 个枚举值（main / per-peer / per-channel-peer / per-account-channel-peer），不支持 "线程内共享" 这种 hermes 默认开启的模式。
+Joining chat and user into a single peer_id string loses the two-dimensional information. `agent.session_scope` has only 4 enum values (main / per-peer / per-channel-peer / per-account-channel-peer), and does not support the "share within a thread" mode that hermes enables by default.
 
-### 缺陷 9：错误信号没分类（✓ 已修，commit f4b7ca9f）
+### Defect 9: error signals not classified (✓ fixed, commit f4b7ca9f)
 
-adapter `send` 返回 `bool`。失败原因（网络瞬时 vs auth 永久 vs rate limit）无法上传到 dispatcher。dispatcher 无法智能重试，也无法在 UI 上正确显示原因。
+The adapter `send` returns a `bool`. The failure cause (transient network vs permanent auth vs rate limit) cannot be propagated up to the dispatcher. The dispatcher cannot retry intelligently, nor display the cause correctly in the UI.
 
-**修复**：加 `SendResult` dataclass (`_transport.py:SendResult`)，含 `ok` / `message_id` / `error_kind` / `error_detail` / `retryable` 字段。`error_kind` 枚举 `auth` / `rate_limit` / `bad_target` / `network` / `not_supported` / `unknown`。`_transport.post_message` / `patch_message` 现在返回 `SendResult`；`outbound.send` 保留 bool 签名，新增 `outbound.send_full()` 暴露完整结果；`Channel.send_text` / `edit_text` 同理，加 `send_text_full` / `edit_text_full` 变体。Telegram / Discord / Slack 的业务错误描述分别有 `_telegram_kind_from_description` / `_slack_kind_from_error` 推断 `error_kind`，HTTP 状态码走 `_classify_http_status`。
+**Fix**: add a `SendResult` dataclass (`_transport.py:SendResult`) with `ok` / `message_id` / `error_kind` / `error_detail` / `retryable` fields. `error_kind` enumerates `auth` / `rate_limit` / `bad_target` / `network` / `not_supported` / `unknown`. `_transport.post_message` / `patch_message` now return `SendResult`; `outbound.send` keeps the bool signature, with a new `outbound.send_full()` exposing the full result; `Channel.send_text` / `edit_text` likewise, adding `send_text_full` / `edit_text_full` variants. Telegram / Discord / Slack business-error descriptions have `_telegram_kind_from_description` / `_slack_kind_from_error` respectively to infer `error_kind`, and HTTP status codes go through `_classify_http_status`.
 
-### 缺陷 10：Platform 注册硬编码（✓ 已修，commit 0cac6004）
+### Defect 10: platform registration hardcoded (✓ fixed, commit 0cac6004)
 
-`channels/__init__.py:CHANNEL_CLASSES` 是硬编码 dict。要加新 platform 必须改 4 处（channels/、accounts/、bindings/、setup/）。无法做 plugin-provided platform。
+`channels/__init__.py:CHANNEL_CLASSES` is a hardcoded dict. Adding a new platform requires changing 4 places (channels/, accounts/, bindings/, setup/). Plugin-provided platforms are impossible.
 
-**修复**：拆 `CHANNEL_CLASSES` 成 `_BUILTIN_CHANNEL_CLASSES`（4 个内置永远存在）+ `_PLUGIN_CHANNEL_CLASSES`（外部注册）。Plugin 两种方式注册：(1) `pyproject.toml` 写 `[project.entry-points."openprogram.channels"]` 声明（启动时 `importlib.metadata.entry_points` 扫描）；(2) imperative `register_channel(name, cls)` 调用（在 plugin hooks 里用）。内置优先——同名 plugin 被无声忽略，不允许 override 内置。`CHANNEL_CLASSES` 保留成 dict-like proxy（保留所有现有 caller 兼容）。
+**Fix**: split `CHANNEL_CLASSES` into `_BUILTIN_CHANNEL_CLASSES` (the 4 built-ins always present) + `_PLUGIN_CHANNEL_CLASSES` (externally registered). Plugins register in two ways: (1) declaring `[project.entry-points."openprogram.channels"]` in `pyproject.toml` (scanned at startup via `importlib.metadata.entry_points`); (2) an imperative `register_channel(name, cls)` call (used inside plugin hooks). Built-ins take priority—a plugin with the same name is silently ignored, overriding a built-in is not allowed. `CHANNEL_CLASSES` is retained as a dict-like proxy (preserving compatibility with all existing callers).
 
 ---
 
-## 5. 几个推论
+## 5. A few inferences
 
-**A. progress streaming 不是"加一个 feature"，是"把已经存在的事件流接到 channel"**
+**A. Progress streaming is not "adding a feature", it's "wiring an already-existing event stream to the channel"**
 
-Dispatcher 已经 emit `tool_use` / `stream_event` envelope。`dispatch_inbound._on_event` 已经在订阅。差的只是：(1) channel 怎么订阅、(2) channel 怎么 edit 已发出去的消息。第二点要求 base.py 有 `edit_message`、adapter.send 要返回 message_id——这是 **抽象层重构**，不是 feature 加法。
+The dispatcher already emits `tool_use` / `stream_event` envelopes. `dispatch_inbound._on_event` is already subscribing. The only things missing are: (1) how the channel subscribes, and (2) how the channel edits a message it has already sent. The second requires base.py to have `edit_message` and adapter.send to return a message_id—this is an **abstraction-layer refactor**, not a feature addition.
 
-**B. 直接给 4 个 adapter 各加 `edit_message` 会让缺陷 2 翻倍**
+**B. Adding `edit_message` to each of the 4 adapters directly would double Defect 2**
 
-不重构 base 直接在 adapter 加方法：现在 4 个 send 实现 + 4 个 edit 实现 + 4 个 react 实现 = 12 份 platform code，再加 outbound 的 12 份 = 24 份。这是堆"两套代码"乘以"三种操作"的灾难。
+Adding methods directly in the adapters without refactoring base: now 4 send implementations + 4 edit implementations + 4 react implementations = 12 copies of platform code, plus outbound's 12 = 24 copies. This is the disaster of stacking "two sets of code" times "three operations".
 
-**C. hermes 那些"高级"机制（debounce / 快速命令绕路 / retryable）不是必须现在做的**
+**C. Those "advanced" mechanisms in hermes (debounce / quick-command bypass / retryable) are not required to do now**
 
-它们是 hermes 跑大量产 traffic 后摸出来的优化。OpenProgram 现阶段没那个 QPS，可以先做对的抽象，等问题出现了再加。
+They are optimizations hermes figured out after running large volumes of production traffic. OpenProgram does not have that QPS at this stage, so we can build the right abstraction first and add them when the problems show up.
 
-**D. OpenClaw 为什么不能直接照搬——三层真实原因**
+**D. Why OpenClaw cannot be copied wholesale—three real reasons, in layers**
 
-按重要性从低到高：
+From least to most important:
 
-*第一层（最浅）：没有 Python 实现可以 copy-paste。* 整个 OpenClaw 是 TypeScript/Node.js（`pnpm-workspaces` + `tsdown` build），`src/bindings/` 只有 1 个 TS 文件，`packages/sdk/` 和 `packages/plugin-sdk/` 全是 TS。仅有的 5 个 `.py` 是 CI 脚本 / skill 工具，跟 channel 子系统无关。**OpenClaw 不提供 Python binding 也不提供 Python SDK。** 要复用 OpenClaw 必须把它的设计用 Python 重新实现一遍，不可能 import 进来。
+*Layer one (shallowest): there is no Python implementation to copy-paste.* The whole of OpenClaw is TypeScript/Node.js (`pnpm-workspaces` + `tsdown` build), `src/bindings/` has only 1 TS file, and `packages/sdk/` and `packages/plugin-sdk/` are all TS. The only 5 `.py` files are CI scripts / skill tooling, unrelated to the channel subsystem. **OpenClaw provides neither a Python binding nor a Python SDK.** To reuse OpenClaw we would have to re-implement its design in Python from scratch; importing it is impossible.
 
-但语言本身不构成借鉴障碍——TS interface → Python `Protocol` / `abc.ABC`，TS dataclass → `@dataclass`，TS async → asyncio，TS plugin manifest → `plugin.json`（我们 `openprogram/plugins/` 已经在做了）。设计模式跨语言通用。
+But language by itself is not a barrier to borrowing—TS interface → Python `Protocol` / `abc.ABC`, TS dataclass → `@dataclass`, TS async → asyncio, TS plugin manifest → `plugin.json` (which we are already doing in `openprogram/plugins/`). Design patterns are universal across languages.
 
-*第二层：静态类型 vs 动态类型，影响"50+ contract 文件"的价值。* OpenClaw 在 TS 里写 50+ 个 `channel-*.ts` interface 文件，编译期能强制 plugin 实现完整，IDE 提示也准。同样的拆分用 Python `Protocol` 写出来——运行期不强制、IDE 提示弱（mypy 不是默认开的）。所以"50 个 contract 文件那种粒度"的拆分在 Python 里收益打折。这不影响**接口形状是否值得学**（值得），只影响**是否把每个接口拆成独立文件**（不值得）。
+*Layer two: static typing vs dynamic typing, which affects the value of "50+ contract files".* OpenClaw writes 50+ `channel-*.ts` interface files in TS, where the compiler can enforce that a plugin implements them all and IDE hints are accurate too. The same split written in Python `Protocol`—not enforced at runtime, weak IDE hints (mypy is not on by default). So a split at "the granularity of 50 contract files" yields diminished returns in Python. This does not affect **whether the interface shapes are worth learning** (they are), only **whether each interface should be split into a separate file** (it isn't worth it).
 
-*第三层（最深）：async-first vs sync-with-threading 范式。* OpenClaw 全套 `async send/edit/typing/handoff`，dispatch 是 streaming pipeline（draft → live-preview → final）。Hermes 也是 async-first。我们 channel 当前是同步 + threading（每 adapter 一个 thread，`dispatch_inbound(...) -> str` 阻塞返回）。如果照搬 OpenClaw 的 async 设计，dispatch 流程要重写——不只是 base.py 改方法签名，而是 `dispatch_inbound` 改成 async generator，4 个 adapter 的事件循环要重新接入 asyncio。这是个真实的迁移成本，不是抽象层简单换名。
+*Layer three (deepest): async-first vs sync-with-threading paradigm.* OpenClaw is fully `async send/edit/typing/handoff`, with dispatch being a streaming pipeline (draft → live-preview → final). Hermes is async-first too. Our channel is currently synchronous + threading (one thread per adapter, `dispatch_inbound(...) -> str` returning blockingly). If we copy OpenClaw's async design wholesale, the dispatch flow must be rewritten—not just changing method signatures in base.py, but turning `dispatch_inbound` into an async generator and re-wiring all 4 adapters' event loops into asyncio. This is a real migration cost, not a simple rename at the abstraction layer.
 
-**E. 学什么、不学什么的分割线**
+**E. The dividing line between what to learn and what not to learn**
 
 ```
-                          学 OpenClaw   学 hermes
+                          learn from OpenClaw   learn from hermes
 ─────────────────────────────────────────────────
-接口设计 (what)
-  send/edit/typing/approve  ✓ (更全)    ✓
-  SendResult 含 retry        ✓           ✓
-  Streaming lifecycle        ✓ (三态)    ✓ (单次 edit)
-  Approval lifecycle         ✓ (完整)    ✓ (/approve 命令)
-  Health check / probe       ✓           —
+Interface design (what)
+  send/edit/typing/approve  ✓ (more complete)   ✓
+  SendResult with retry      ✓                   ✓
+  Streaming lifecycle        ✓ (three-state)     ✓ (single edit)
+  Approval lifecycle         ✓ (complete)        ✓ (/approve command)
+  Health check / probe       ✓                   —
 
-代码组织 (how)
-  Plugin SDK 50+ contracts  ✗ 过度       —
-  每 platform 70+ files     ✗ 过度       —
-  单文件 base + adapter      —           ✓ 匹配
-  async-first dispatch       ✓           ✓
+Code organization (how)
+  Plugin SDK 50+ contracts  ✗ overkill           —
+  70+ files per platform    ✗ overkill           —
+  single-file base + adapter —                   ✓ matches
+  async-first dispatch       ✓                   ✓
 ```
 
-两个项目可以分别学不同层面。接口形状 OpenClaw 做得更完整、更系统，照搬 method 签名 / lifecycle / 返回值结构没问题。代码组织规模 hermes 跟我们匹配——base ABC 一个文件、每 platform 一个文件、不搞 plugin manifest。这两个不冲突：拿 OpenClaw 的 `ChannelApprovalAdapter` / `ChannelMessageLiveAdapterShape` 的方法签名，落到 hermes-style 的 "base + 4 adapter 文件" 组织里，是最合理的方案。
+The two projects can be learned from at different levels. OpenClaw's interface shapes are more complete and more systematic, so copying its method signatures / lifecycles / return-value structures is fine. Hermes's code-organization scale matches ours—one file for the base ABC, one file per platform, no plugin manifest. These two do not conflict: taking the method signatures of OpenClaw's `ChannelApprovalAdapter` / `ChannelMessageLiveAdapterShape` and landing them in a hermes-style "base + 4 adapter files" organization is the most reasonable plan.
 
-**F. 兼容性——channel 重构 vs OpenProgram 既有范式**
+**F. Compatibility—channel refactor vs OpenProgram's existing paradigms**
 
-这是真正最大的设计风险。OpenProgram 内部已经有两条范式并存：
+This is the truly biggest design risk. OpenProgram already has two paradigms coexisting internally:
 
 ```
-范式 A: agentic programming (主推, README 第一段就是这个)
-  Python 主控 → if/else/for/while 控制流
-  @agentic_function 创建 Context 节点
-  Runtime.exec 在被显式调用时才请求 LLM
-  入口: 程序员写的 Python 代码
+Paradigm A: agentic programming (the main pitch, the first paragraph of the README)
+  Python-driven → if/else/for/while control flow
+  @agentic_function creates a Context node
+  Runtime.exec requests the LLM only when explicitly called
+  entry point: Python code written by the programmer
 
-范式 B: agent loop (channel/webui chat 的实际路径)
-  LLM 决定调什么工具、何时调
+Paradigm B: agent loop (the actual path for channel/webui chat)
+  the LLM decides what tools to call and when
   process_user_turn → agent_loop → tool streaming
-  Channel adapter 收到 user message → dispatch_inbound → 这条路
-  入口: 外部 message
+  Channel adapter receives a user message → dispatch_inbound → this path
+  entry point: external message
 ```
 
-Channel 目前**只挂在范式 B 上**。这意味着：
+The channel currently **hangs only off Paradigm B**. This means:
 
-1. **`outbound.send` 不是"错位的加法"**——它正是范式 A 需要的路径。一个 cron-driven @agentic_function 想给用户发"早上好"，不需要起 adapter instance、不需要订阅 stream 事件、不需要绑定 session lifecycle——raw HTTP 直接发就对。OpenClaw 的"统一走 adapter"、hermes 的 `DeliveryRouter(adapters: dict)` 都是**单 daemon 进程模型**下的合理设计——它们假设 cron scheduler + platform adapter + agent runtime 全在同一进程里跑，cron job 能从 dependency injection 拿到 adapter dict。
+1. **`outbound.send` is not a "misplaced addition"**—it is exactly the path Paradigm A needs. A cron-driven @agentic_function that wants to send the user "good morning" does not need to spin up an adapter instance, does not need to subscribe to stream events, does not need to bind to a session lifecycle—just send it directly over raw HTTP. OpenClaw's "everything goes through the adapter" and hermes's `DeliveryRouter(adapters: dict)` are both reasonable designs **under a single-daemon-process model**—they assume the cron scheduler + platform adapter + agent runtime all run in the same process, so a cron job can get the adapter dict from dependency injection.
 
-   我前面 audit 第 4 节缺陷 2 把 `outbound.send` 标为"两套发送代码"问题——这个判断对**实现层重复**是对的（chunking 复制 5 次、HTTP 调用各写一遍、credentials 加载多份），但**保留两个入口**本身是范式分工的合理结果，不该删。
+   In Section 4 of my earlier audit, Defect 2 labeled `outbound.send` as a "two sets of send code" problem—that judgment is correct for **implementation-layer duplication** (chunking copied 5 times, the HTTP call written out per platform, credential loading in multiple copies), but **keeping two entry points** is itself a reasonable result of the paradigm division of labor, and should not be removed.
 
-   OpenProgram 多部署形态把这个进程模型假设给打破了：
+   OpenProgram's multiple deployment forms break this process-model assumption:
 
    ```
-   部署场景                              adapter instance 在哪
+   Deployment scenario                         where is the adapter instance
    ──────────────────────────────────────────────────────────
-   openprogram worker 跑                   有 (worker 进程持有)
-   用户写 Python 脚本 import @agentic     无
-   cron 跑在 worker 外的另一个进程         无
-   Jupyter notebook 实验                  无
-   pytest 测试                            无
+   openprogram worker running               yes (the worker process holds it)
+   user writes a Python script importing @agentic     no
+   cron running in a separate process outside worker  no
+   Jupyter notebook experiment              no
+   pytest test                              no
    ```
 
-   范式 A 设计上就是"library 模式"——用户在自己的脚本里 import 用，**不假设 worker 进程存在**。所以 hermes / OpenClaw 那种"所有发送都走 adapter 实例"的组织方式在我们的多部署形态下行不通。outbound.send 这条路必须保留。
+   Paradigm A is by design "library mode"—the user imports it in their own script, **not assuming a worker process exists**. So the hermes / OpenClaw style of "all sends go through an adapter instance" does not work under our multiple deployment forms. The outbound.send path must be kept.
 
-2. **正确的重构形状是：两个入口、一份实现**
+2. **The correct refactoring shape is: two entry points, one implementation**
 
    ```
-   范式 A 入口: outbound.send_one_shot(channel, account, target, text)
-   范式 B 入口: adapter.send_text(target, text) -> msg_handle
+   Paradigm A entry: outbound.send_one_shot(channel, account, target, text)
+   Paradigm B entry: adapter.send_text(target, text) -> msg_handle
                 adapter.edit_text(msg_handle, text)
 
-                       ↓ 都调
+                       ↓ both call
 
-   实现层: _post_message(channel, account, target, text, *, edit_of=None)
-           HTTP 调用 + chunking + credentials 加载, 只一份
+   implementation layer: _post_message(channel, account, target, text, *, edit_of=None)
+           HTTP call + chunking + credential loading, only one copy
    ```
 
-   这样 chunking 不再有 5 份、credentials 不再加载 8+ 次，但两条入口路径各自保留，分别服务两种范式。
+   This way chunking is no longer in 5 copies and credentials are no longer loaded 8+ times, but the two entry-point paths are each retained, serving the two paradigms respectively.
 
-3. **base.py 抽象重构不能"独占" channel**
+3. **The base.py abstraction refactor must not "monopolize" the channel**
 
-   如果按 OpenClaw / hermes 的方式把 channel 重构成 async-first streaming pipeline，要确保**范式 A 仍然能用同步的方式发消息**。具体：base.py 的抽象方法是 async 没问题，但要在模块顶层暴露同步包装（`outbound.send_one_shot`），让 agentic_function 不必懂 asyncio 也能调。
+   If the channel is refactored into an async-first streaming pipeline the OpenClaw / hermes way, we must ensure **Paradigm A can still send messages synchronously**. Concretely: it is fine for base.py's abstract methods to be async, but a synchronous wrapper (`outbound.send_one_shot`) must be exposed at the module top level so that an agentic_function can call it without understanding asyncio.
 
-4. **streaming edit 跟 agentic_function 兼容**
+4. **Streaming edit is compatible with agentic_function**
 
-   范式 A 里一个 @agentic_function 可能要给 user 发中间进展（"已观察到登录页"、"已点击登录按钮"）。当前没有 API 让它这么做。重构后应当让这个能力可用——不是绑死给 dispatcher 的 stream pipeline 用，而是 agentic_function 也能拿到 msg_handle 自己 edit。
+   In Paradigm A an @agentic_function may want to send the user intermediate progress ("observed the login page", "clicked the login button"). There is currently no API for it to do so. After the refactor this capability should be made available—not locked to the dispatcher's stream pipeline, but with an agentic_function also able to get a msg_handle and edit it itself.
 
-**G. WeChat 抽象适配最难**
+**G. WeChat is the hardest to fit into the abstraction**
 
-iLink API 看起来不支持 edit_message（消息发出去不能改）。这意味着 base.py 加 `edit_message` 抽象后，wechat adapter 要么实现假的 `edit_message`（删旧发新）要么 raise NotImplementedError——前者改变语义，后者破坏统一接口。Hermes 怎么处理这种限制需要再调研（IRC 也有类似问题）。
+The iLink API appears not to support edit_message (a sent message cannot be changed). This means that after base.py adds an `edit_message` abstraction, the wechat adapter must either implement a fake `edit_message` (delete the old, send a new one) or raise NotImplementedError—the former changes the semantics, the latter breaks the unified interface. How hermes handles such a limitation needs further investigation (IRC has a similar problem).
 
 ---
 
-## 6. 待定的问题
+## 6. Open questions
 
-下一步讨论时要决的事：
+Things to decide at the next discussion:
 
-1. 要不要做 base.py 抽象重构？工作量 3-4h，没新 feature，但是后续所有 feature 的地基
-2. 重构粒度：抽到 hermes 那样（async send/edit/typing/draft 5+ 方法）还是先做最小（send 返回 message_id + edit_message）？
-3. 中性 ChannelMessage 结构现在加还是等 reply/quote 需求出现再加？
-4. `outbound.send` 不删（它服务范式 A），但实现层要不要跟 adapter 的 send 合并到一个 `_post_message` 函数，去掉 5 处重复？
-5. Approval 机制走 hermes 的 `/approve` 命令（简单稳）还是 OpenClaw 的 reaction lifecycle（UX 直观但状态复杂）？
-6. WeChat 不支持 edit 怎么处理——`edit_message` raise vs 假实现 vs base 接口本身做成 optional？
-7. session_scope 要不要扩成 hermes 的二维（chat × user × thread）？OpenClaw 的 thread-bindings-policy 提供另一种思路
+1. Should we do the base.py abstraction refactor? It is 3-4h of work, no new feature, but it is the foundation for all subsequent features
+2. Refactor granularity: abstract it to hermes's level (async send/edit/typing/draft, 5+ methods) or do the minimum first (send returns message_id + edit_message)?
+3. Add the neutral ChannelMessage structure now, or wait until the reply/quote need arises?
+4. `outbound.send` stays (it serves Paradigm A), but should the implementation layer be merged with the adapter's send into a single `_post_message` function, removing the 5 duplicates?
+5. Should the approval mechanism use hermes's `/approve` command (simple and stable) or OpenClaw's reaction lifecycle (intuitive UX but complex state)?
+6. How to handle WeChat not supporting edit—`edit_message` raise vs fake implementation vs making the base interface itself optional?
+7. Should session_scope be expanded into hermes's two dimensions (chat × user × thread)? OpenClaw's thread-bindings-policy offers another line of thinking
 
-这份文档先到这里。具体方案等你看完反馈后再定。
+This document stops here. The concrete plan will be settled after you read it and give feedback.

@@ -1,61 +1,61 @@
-# 认证与凭据
+# Authentication and credentials
 
-本页说明 provider 凭据从哪来、存在哪、如何从已登录的其他 CLI 导入。
+This page covers where provider credentials come from, where they are stored, and how to import them from other CLIs you are already logged in to.
 
-## 存放位置
+## Storage location
 
-所有凭据统一存在凭据库：`~/.openprogram/auth/<provider>/<profile>.json`（权限 0600；使用 `--profile <name>` 时根目录换成 `~/.openprogram-<name>/`）。
+All credentials live in one credential store: `~/.openprogram/auth/<provider>/<profile>.json` (permissions 0600; with `--profile <name>` the root directory becomes `~/.openprogram-<name>/`).
 
-运行时**只从凭据库取密钥，不直接读环境变量**。环境变量里的 key（如 `OPENAI_API_KEY`）需要先导入（见下文 discover），之后改环境变量不影响已导入的凭据。两个例外是云凭据链：Amazon Bedrock（`AWS_PROFILE` / access key / bearer token 等）和 Google Vertex（ADC），它们在运行时自动识别。
+At runtime, keys are **read from the credential store only — environment variables are not read directly**. A key in an environment variable (such as `OPENAI_API_KEY`) must be imported first (see discover below); changing the environment variable afterwards does not affect the imported credential. The two exceptions are cloud credential chains: Amazon Bedrock (`AWS_PROFILE` / access keys / bearer token, etc.) and Google Vertex (ADC), both detected automatically at runtime.
 
-## 凭据的几种来源
+## Credential sources
 
-### API key 登录
-
-```bash
-openprogram providers login deepseek                       # 交互式输入
-printf %s "$KEY" | openprogram providers login deepseek --api-key-stdin   # 脚本
-```
-
-`--api-key` 也可以直接传值，但会留在 shell 历史里，脚本优先用 `--api-key-stdin`。
-
-### OAuth 登录
-
-订阅类 provider 用浏览器 / 设备码登录，`login` 自动选择方式（`--method` 可强制指定）：
-
-- `anthropic` / `claude-code`：Claude 订阅 PKCE 登录，或粘贴 `claude setup-token` 的产物
-- `openai-codex`：ChatGPT 订阅，需要 `codex` CLI（`codex login`）
-- `gemini-subscription`：Google 账号登录
-- `github-copilot`：GitHub OAuth token，Copilot 短期 token 按需换取、不落盘
-
-### 从本机已有凭据导入
+### API key login
 
 ```bash
-openprogram providers discover        # 只扫描列出，不写入
-openprogram providers adopt codex_cli # 导入某一项；--all 全部导入
+openprogram providers login deepseek                       # interactive input
+printf %s "$KEY" | openprogram providers login deepseek --api-key-stdin   # scripts
 ```
 
-扫描的来源：
+`--api-key` also accepts the value directly, but it ends up in shell history; prefer `--api-key-stdin` in scripts.
 
-| 来源 | 位置 | 导入到 |
+### OAuth login
+
+Subscription providers log in via browser or device code; `login` picks the method automatically (`--method` forces one):
+
+- `anthropic` / `claude-code`: Claude subscription PKCE login, or paste the output of `claude setup-token`
+- `openai-codex`: ChatGPT subscription; requires the `codex` CLI (`codex login`)
+- `gemini-subscription`: Google account login
+- `github-copilot`: GitHub OAuth token; the short-lived Copilot token is exchanged on demand and never written to disk
+
+### Importing credentials already on this machine
+
+```bash
+openprogram providers discover        # scan and list only, writes nothing
+openprogram providers adopt codex_cli # import one entry; --all imports everything
+```
+
+Scanned sources:
+
+| Source | Location | Imported into |
 |---|---|---|
 | Codex CLI | `~/.codex/auth.json` | `openai-codex` |
 | Qwen CLI | `~/.qwen/oauth_creds.json` | `qwen` |
 | gh CLI | `~/.config/gh/hosts.yml` | `github` |
-| 环境变量 | 进程环境里的 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 等 | 对应 provider |
+| Environment variables | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc. in the process environment | The matching provider |
 
-导入有两种形态：外部 CLI 还在机器上时记指针（每次调用现读外部文件，外部 CLI 自己刷新的 token 自动生效）；否则拷贝 token 进凭据库、由 OpenProgram 负责刷新。
+Imports take one of two forms: while the external CLI is still on the machine, a pointer is stored (the external file is re-read on every call, so tokens the external CLI refreshes itself take effect automatically); otherwise the token is copied into the credential store and OpenProgram handles refreshing.
 
-Gemini CLI 的登录态不走 discover：`google-gemini-cli` provider 直接读 `~/.gemini/oauth_creds.json`，装好 Gemini CLI 并登录即可用。Claude 订阅同样不在扫描列表里，走上面的 OAuth 登录。
+The Gemini CLI login state does not go through discover: the `google-gemini-cli` provider reads `~/.gemini/oauth_creds.json` directly — install the Gemini CLI, log in, and it works. Claude subscriptions are likewise not on the scan list; use the OAuth login above.
 
-## 管理与排障
+## Management and troubleshooting
 
 ```bash
-openprogram providers status <provider>    # 当前凭据是否可用
-openprogram providers doctor               # 过期、刷新失败、冷却、冲突
-openprogram providers logout <provider>    # 删除凭据
-openprogram providers use <provider> [profile]   # 多账号切换
-openprogram providers list                 # 按 profile 列出凭据池
+openprogram providers status <provider>    # are the current credentials usable
+openprogram providers doctor               # expiry, refresh failures, cooldown, conflicts
+openprogram providers logout <provider>    # delete credentials
+openprogram providers use <provider> [profile]   # switch between multiple accounts
+openprogram providers list                 # list credential pools by profile
 ```
 
-每个 provider 支持多账号（命名 profile），一个账号可以放多个 API key 自动轮询——某个 key 被限流会冷却并切到下一个。
+Every provider supports multiple accounts (named profiles), and one account can hold multiple API keys rotated automatically — a rate-limited key cools down and the next one takes over.

@@ -1,135 +1,135 @@
-# 事件与状态（地基）
+# Events and State (The Foundation)
 
-这是整层最底下的两块砖：**事件**长什么样，**状态**怎么从事件累加出来。
-overview 里点到为止，这里讲透。读这篇前先读完 `overview.md`。
+These are the two bottom-most bricks of the whole layer: what an **event** looks like, and how **state** is accumulated from events.
+The overview only touches on this; here we go all the way. Read `overview.md` before this one.
 
-## 1. 事件长什么样
+## 1. What an Event Looks Like
 
-一条事件就是一个小数据包，记着"刚刚发生了一件什么事"。字段如下：
+An event is a small data packet that records "something that just happened." Its fields are as follows:
 
 ```python
 @dataclass
 class Event:
-    id: str            # 这条事件的唯一编号
-    ts: float          # 发生时间（时间戳）
-    type: str          # 什么类型的事，见下表
-    origin: str        # 谁引起的：user / agent / tool / proactive / system
-    session_id: str    # 属于哪个会话
-    payload: dict      # 这类事件的具体内容（命令是什么、改了哪个文件……）
+    id: str            # unique id for this event
+    ts: float          # when it happened (timestamp)
+    type: str          # what kind of event, see the table below
+    origin: str        # who caused it: user / agent / tool / proactive / system
+    session_id: str    # which session it belongs to
+    payload: dict      # the specifics of this event (what command, which file was changed, ...)
 ```
 
-`type` 可能的值（够用就行，以后能加）：
+Possible values for `type` (enough for now; more can be added later):
 
-| type | 什么时候产生 | payload 里有什么 |
+| type | When it's produced | What's in payload |
 |---|---|---|
-| `user.prompt_submitted` | 用户发了消息 | 消息文本 |
-| `model.response_started` | 模型开始回复 | — |
-| `model.response_completed` | 模型回复完 | 回复文本、是否声称完成 |
-| `tool.before` | 工具即将执行 | 工具名、参数（如命令字符串） |
-| `tool.after` | 工具执行完 | 工具名、结果、是否出错 |
-| `file.changed` | 某文件被改 | 文件路径 |
+| `user.prompt_submitted` | The user sent a message | The message text |
+| `model.response_started` | The model began replying | — |
+| `model.response_completed` | The model finished replying | Reply text, and whether it claims completion |
+| `tool.before` | A tool is about to execute | Tool name, arguments (e.g. the command string) |
+| `tool.after` | A tool finished executing | Tool name, result, and whether it errored |
+| `file.changed` | A file was changed | File path |
 
-`origin` 这个字段很重要，记着"这件事是谁引起的"。大多数事件是 user / agent / tool 引起的，
-但**框架自己出手时也会产生事件**（比如它弹了个提醒，就记一条 `origin=proactive` 的事件）。
-为什么要区分？因为框架自己产生的事件，不能反过来又触发框架出手，否则会绕成死循环——
-这个底线在 `invariants.md` 讲。
+The `origin` field matters a lot — it records "who caused this event." Most events are caused by user / agent / tool,
+but **the framework also produces events when it acts on its own** (for example, when it pops up a reminder, it records a `origin=proactive` event).
+Why distinguish? Because events the framework produces itself must not in turn trigger the framework to act again, or it would loop into a deadlock —
+that bottom line is covered in `invariants.md`.
 
-## 2. 事件从哪来
+## 2. Where Events Come From
 
-事件不是凭空写的，是把 agent 干活过程中**本来就发生的事**翻译成统一格式。你的框架现在
-已经在这些位置"知道"事情发生了，只是没统一记成事件：
+Events aren't written out of thin air; they translate the things that **already happen** while the agent works into a unified format. Your framework already
+"knows" things are happening at these points; it just doesn't yet record them uniformly as events:
 
-- 工具执行前后，`agent_loop` 本来就会触发 `tool.before_use` / `tool.after_use`（现有 hooks）。
-- 模型流式回复时，本来就有"开始/结束"的信号。
-- 用户发消息进来，dispatcher 本来就在处理。
+- Before and after a tool runs, `agent_loop` already fires `tool.before_use` / `tool.after_use` (the existing hooks).
+- When the model streams a reply, there are already "start/end" signals.
+- When a user message comes in, the dispatcher is already handling it.
 
-proactive 层做的，就是在这些已有的点上，把发生的事**翻译成一条 Event，丢进事件流**。
-（具体在哪几行接，是实现细节，见 [实施规划](../plans/proactive-implementation.md)。）
+What the proactive layer does is, at these existing points, **translate** what happened **into an Event and drop it into the event stream**.
+(Exactly which lines to hook in is an implementation detail; see [the implementation plan](../plans/proactive-implementation.md).)
 
-## 3. 事件流：一条只往后记的流水账
+## 3. The Event Stream: An Append-Only Ledger
 
-所有事件汇成一条**流**——按发生顺序排好，只往后追加，已经记下的不改。
+All events flow together into one **stream** — ordered by occurrence, appended to only, never altering what's already recorded.
 
-"只往后记、不涂改"这个性质（英文叫 **append-only**）带来一个很舒服的结果：**任何时刻的
-"当前状况"，都能由这条流从头算出来。** 这就引出下一块——状态。
+This "only append, never overwrite" property (called **append-only** in English) yields a very pleasant result: **the "current situation" at any moment
+can be computed from this stream from scratch.** And that leads to the next brick — state.
 
-## 4. 状态：把事件流累加成"当前状况"
+## 4. State: Accumulating the Event Stream into the "Current Situation"
 
-### 4.1 fold 是什么
+### 4.1 What fold Is
 
-规则做判断时，经常不只看眼前这条事件，还要看"积累下来的状况"——改了哪些文件、某工具
-失败几次、模型是不是刚说了完成。这个"状况"不单独存，而是**从事件流算出来**。
+When a policy makes a decision, it often looks not just at the event in front of it but also at "the situation that has built up" — which files were changed, how many times a tool
+has failed, whether the model just claimed completion. This "situation" isn't stored separately; it's **computed from the event stream**.
 
-算的方式叫 **fold**（滚雪球）：从一个空状况开始，事件一条条过，每过一条就更新一下状况，
-过完就是当前状况。
+The way it's computed is called **fold** (rolling a snowball): start from an empty situation, run through the events one by one, update the situation after each one,
+and when you're done you have the current situation.
 
 ```python
-def fold(事件流):
-    状况 = 空状况()                    # 雪球从零开始
-    for e in 事件流:                   # 一条条滚过去
-        状况 = 更新(状况, e)            # 每条事件让雪球长一点
-    return 状况                        # 滚完 = 当前状况
+def fold(event_stream):
+    state = empty_state()              # snowball starts from zero
+    for e in event_stream:             # roll through one by one
+        state = update(state, e)       # each event grows the snowball a little
+    return state                       # done rolling = current state
 
-def 更新(状况, e):
+def update(state, e):
     if e.type == "file.changed":
-        状况.改过的文件.add(e.payload["path"])
-    elif e.type == "tool.after" and e.payload["出错"]:
-        状况.该工具失败次数[e.payload["工具"]] += 1
-    elif e.type == "tool.after" and not e.payload["出错"]:
-        状况.该工具失败次数[e.payload["工具"]] = 0   # 成功就清零
-    # ... 每种关心的事件，更新对应的状况
-    return 状况
+        state.changed_files.add(e.payload["path"])
+    elif e.type == "tool.after" and e.payload["errored"]:
+        state.tool_failure_count[e.payload["tool"]] += 1
+    elif e.type == "tool.after" and not e.payload["errored"]:
+        state.tool_failure_count[e.payload["tool"]] = 0   # reset on success
+    # ... for each event you care about, update the corresponding state
+    return state
 ```
 
-具体走一遍，看雪球怎么长：
+Walk through it concretely and watch the snowball grow:
 
-![fold：事件一条条过，状况一步步长](diagrams/events-fold.svg)
+![fold: events pass one by one, the situation grows step by step](diagrams/events-fold.svg)
 
-到这里"当前状况"就是 `{改过的文件: {auth.py}, bash失败: 2}`——**没有谁手动维护这个计数，
-它纯粹是事件累加的副产品。** 这就是 overview 里说的"事件驱动帮你统一管了记忆"。
+At this point the "current situation" is `{changed files: {auth.py}, bash failures: 2}` — **nobody maintains this count by hand;
+it's purely a byproduct of accumulating events.** This is what the overview means by "event-driven manages memory for you in one place."
 
-### 4.2 规则怎么用状态
+### 4.2 How Policies Use State
 
-规则的 `evaluate` 拿到当前事件**和**当前状态，两个一起看：
+A policy's `evaluate` receives the current event **and** the current state, and looks at both together:
 
 ```python
 class StuckToolWatcher:
     on = {"tool.after"}
     def evaluate(self, event, state):
-        工具 = event.payload["工具"]
-        if state.该工具失败次数[工具] >= 3:        # 读累加出来的状态
-            return 提醒(f"{工具} 连续失败了，可能卡住")
+        tool = event.payload["tool"]
+        if state.tool_failure_count[tool] >= 3:     # read the accumulated state
+            return remind(f"{tool} has failed repeatedly, may be stuck")
         return None
 ```
 
-"连续三次失败"这种需要记忆的判断，因为有了 fold 出来的 state，写起来就这么直白。
+A memory-dependent judgment like "three failures in a row" is this straightforward to write precisely because of the fold-derived state.
 
-### 4.3 不用每次从头算
+### 4.3 No Need to Recompute from Scratch Every Time
 
-你可能担心：每来一条事件就从头 fold 整条流，流很长不就很慢？
+You might worry: if you fold the entire stream from scratch on every incoming event, won't it be slow when the stream is long?
 
-不用。实际实现是**增量**的：维护一份"当前 state"，新事件来了只在它上面更新一步（就是调一次
-`更新(状况, e)`），不重算历史。"从头 fold"只是**定义**——它定义了 state 应该等于什么；
-增量更新是这个定义的高效实现。两者结果必须一致，这是唯一要守的规矩。
+No need. The actual implementation is **incremental**: keep one "current state" around, and when a new event arrives just update it one step (that is, one call to
+`update(state, e)`), without recomputing history. "Folding from scratch" is only the **definition** — it defines what the state should equal;
+incremental update is the efficient implementation of that definition. The two must produce the same result, and that's the only rule to uphold.
 
-## 5. 一个要注意的坑：多个子任务同时跑
+## 5. A Pitfall to Watch: Multiple Subtasks Running at the Same Time
 
-OpenProgram 支持同时跑多个 subagent（后台并行的子任务）。如果它们的事件全堆进一条流、
-一起 fold，会串味：子任务 A 改的文件和子任务 B 改的文件混在一个"改过的文件"集合里，
-规则就会拿 A 的改动配 B 的情况，判断全乱。
+OpenProgram supports running multiple subagents (background, parallel subtasks) at the same time. If all their events pile into one stream and
+get folded together, they cross-contaminate: the files changed by subtask A and the files changed by subtask B get mixed into one "changed files" set,
+and policies will then pair A's changes with B's situation, throwing off every judgment.
 
-解决办法：**按"哪个执行流"分开 fold。** 每个 subagent 有自己的一份状态，互不污染。事件里
-带着"我属于哪条执行流"的标记（用 `session_id` 加一个子任务标识），fold 时按这个分组。
+The fix: **fold separately per "execution flow."** Each subagent has its own copy of state, with no cross-contamination. Each event carries
+a marker of "which execution flow I belong to" (using `session_id` plus a subtask identifier), and the fold groups by it.
 
-这是这版唯一需要认真处理的并发问题。其余的（崩溃恢复、防篡改）这版不做。
+This is the only concurrency problem this version needs to handle seriously. The rest (crash recovery, tamper-proofing) is out of scope for this version.
 
-## 6. 小结
+## 6. Summary
 
-| 概念 | 一句话 | 心智模型 |
+| Concept | In one sentence | Mental model |
 |---|---|---|
-| 事件 Event | "刚发生了一件事"的小数据包 | 流水账上的一笔 |
-| 事件流 | 所有事件按序排好，只往后记 | 不断变长的流水账 |
-| fold | 把事件流累加成当前状况 | 滚雪球 |
-| 状态 State | 累加出来的"当前状况" | 雪球滚到现在的样子 |
+| Event | A small data packet of "something just happened" | An entry in the ledger |
+| Event stream | All events ordered and appended to only | An ever-growing ledger |
+| fold | Accumulate the event stream into the current situation | Rolling a snowball |
+| State | The "current situation" that's accumulated | What the snowball looks like by now |
 
-下一篇 `execution-model.md`：规则（Policy）具体怎么写，两类规则（挡路的 / 旁观的）各有什么讲究。
+Next up, `execution-model.md`: how to actually write policies (Policy), and the considerations for the two kinds of policies (blocking / observing).

@@ -99,12 +99,12 @@ def _make_unique_slug(text: str) -> str:
 
 # ── callouts (GitHub-style > [!NOTE] / [!WARNING] / [!TIP] / [!IMPORTANT]) ───
 
-_CALLOUT_KINDS = {
-    "NOTE": ("note", "ℹ", "提示"),
-    "TIP": ("tip", "✓", "建议"),
-    "IMPORTANT": ("important", "★", "重要"),
-    "WARNING": ("warning", "⚠", "注意"),
-    "CAUTION": ("caution", "⛔", "警告"),
+_CALLOUT_KINDS = {  # kind -> (css class, icon, English label, 中文 label)
+    "NOTE": ("note", "ℹ", "Note", "提示"),
+    "TIP": ("tip", "✓", "Tip", "建议"),
+    "IMPORTANT": ("important", "★", "Important", "重要"),
+    "WARNING": ("warning", "⚠", "Warning", "注意"),
+    "CAUTION": ("caution", "⛔", "Caution", "警告"),
 }
 _BLOCKQUOTE_RE = re.compile(r"<blockquote>\s*(.*?)\s*</blockquote>", re.DOTALL)
 _CALLOUT_HEAD_RE = re.compile(
@@ -120,12 +120,13 @@ def apply_callouts(html: str) -> str:
         if not head:
             return m.group(0)
         kind = head.group(1).upper()
-        cls, icon, label = _CALLOUT_KINDS[kind]
+        cls, icon, label, label_zh = _CALLOUT_KINDS[kind]
         rest_first = head.group(2).strip()  # text on the same line after [!KIND]
         rest = inner[head.end():]
         first = f"<p>{rest_first}</p>" if rest_first else ""
         return (f'<div class="callout callout-{cls}">'
-                f'<div class="callout-head"><span class="callout-icon">{icon}</span>{label}</div>'
+                f'<div class="callout-head"><span class="callout-icon">{icon}</span>'
+                f'<span data-title-zh="{label_zh}">{label}</span></div>'
                 f'<div class="callout-body">{first}{rest}</div></div>')
     return _BLOCKQUOTE_RE.sub(repl, html)
 
@@ -147,7 +148,7 @@ def extract_toc(body_html: str) -> str:
         items.append((level, hid, text))
     if not items:
         return ""
-    rows = ['<div class="toc-title" data-i18n="on_this_page">本页内容</div>',
+    rows = ['<div class="toc-title" data-i18n="on_this_page">On this page</div>',
             '<div class="toc-list">']
     for level, hid, text in items:
         cls = "lvl-3" if level == "3" else ""
@@ -279,8 +280,8 @@ def flatten_pages(groups):
     out = []
 
     def walk(g, chain):
-        # each chain entry is (zh_title, en_title) so breadcrumbs can be bilingual
-        new_chain = chain if not g.title else chain + [(g.title, g.title_en or g.title)]
+        # each chain entry is (en_title, zh_title) so breadcrumbs can be bilingual
+        new_chain = chain if not g.title else chain + [(g.title, g.title_zh or g.title)]
         for c in navmod.ordered_children(g):
             if isinstance(c, navmod.Page):
                 out.append((c, new_chain))
@@ -292,20 +293,20 @@ def flatten_pages(groups):
     return out
 
 
-def _bc_span(zh, en, cls=""):
+def _bc_span(en, zh, cls=""):
     c = f' {cls}' if cls else ""
-    if en and en != zh:
-        return (f'<span class="bc-seg{c}" data-title-en="{_html.escape(en, quote=True)}"'
-                f' data-title-zh="{_html.escape(zh, quote=True)}">{_html.escape(zh)}</span>')
-    return f'<span class="bc-seg{c}">{_html.escape(zh)}</span>'
+    if zh and zh != en:
+        return (f'<span class="bc-seg{c}" data-title-zh="{_html.escape(zh, quote=True)}"'
+                f'>{_html.escape(en)}</span>')
+    return f'<span class="bc-seg{c}">{_html.escape(en)}</span>'
 
 
-def render_breadcrumb(chain, title, title_en=""):
+def render_breadcrumb(chain, title, title_zh=""):
     if not chain:
         return ""
     sep = " <span class='bc-sep'>›</span> "
-    segs = [_bc_span(zh, en) for (zh, en) in chain]
-    segs.append(_bc_span(title, title_en or title, cls="bc-current"))
+    segs = [_bc_span(en, zh) for (en, zh) in chain]
+    segs.append(_bc_span(title, title_zh or title, cls="bc-current"))
     return f'<nav class="breadcrumb">{sep.join(segs)}</nav>'
 
 
@@ -316,12 +317,12 @@ def render_prevnext(prev_p, next_p):
     if prev_p:
         href = DEPLOY_BASE + str(prev_p.out).replace("\\", "/")
         left = (f'<a class="pn-link pn-prev" href="{href}">'
-                f'<span class="pn-dir" data-i18n="prev">上一篇</span>'
+                f'<span class="pn-dir" data-i18n="prev">Previous</span>'
                 f'<span class="pn-title">{_html.escape(prev_p.title)}</span></a>')
     if next_p:
         href = DEPLOY_BASE + str(next_p.out).replace("\\", "/")
         right = (f'<a class="pn-link pn-next" href="{href}">'
-                 f'<span class="pn-dir" data-i18n="next">下一篇</span>'
+                 f'<span class="pn-dir" data-i18n="next">Next</span>'
                  f'<span class="pn-title">{_html.escape(next_p.title)}</span></a>')
     return f'<div class="prevnext">{left}{right}</div>'
 
@@ -353,9 +354,9 @@ def render_tabbar(tabs, active_key: str, base: str) -> str:
     for t in tabs:
         href = base + str(t.landing).replace("\\", "/")
         cls = " active" if t.key == active_key else ""
-        en = (f' data-title-en="{_html.escape(t.title_en, quote=True)}"'
-              if t.title_en and t.title_en != t.title else "")
-        links.append(f'<a class="tablink{cls}" href="{href}"{en}>{_html.escape(t.title)}</a>')
+        zh = (f' data-title-zh="{_html.escape(t.title_zh, quote=True)}"'
+              if t.title_zh and t.title_zh != t.title else "")
+        links.append(f'<a class="tablink{cls}" href="{href}"{zh}>{_html.escape(t.title)}</a>')
     return "".join(links)
 
 
@@ -370,13 +371,13 @@ def render_nav(groups, current_out: Path, base: str) -> str:
         href = base + str(p.out).replace("\\", "/")
         active = " active" if p.out == current_out else ""
         i18n = f' data-i18n="{p.i18n_key}"' if p.i18n_key else ""
-        # If an English version exists, carry its label + URL so the language
-        # toggle can switch this sidebar entry to English.
+        # If a Chinese version exists, carry its label + URL so the language
+        # toggle can switch this sidebar entry to Chinese.
         extra = ""
-        if p.en_out is not None:
-            en_href = base + str(p.en_out).replace("\\", "/")
-            extra = (f' data-title-en="{_html.escape(p.title_en or p.title, quote=True)}"'
-                     f' data-href-zh="{href}" data-href-en="{en_href}"')
+        if p.zh_out is not None:
+            zh_href = base + str(p.zh_out).replace("\\", "/")
+            extra = (f' data-title-zh="{_html.escape(p.title_zh or p.title, quote=True)}"'
+                     f' data-href-en="{href}" data-href-zh="{zh_href}"')
         return f'<a class="navlink{active}" href="{href}"{i18n}{extra}>{_html.escape(p.title)}</a>'
 
     def render_pages_and_subs(g) -> str:
@@ -398,7 +399,7 @@ def render_nav(groups, current_out: Path, base: str) -> str:
         i18n = f' data-i18n="{g.i18n_key}"' if g.i18n_key else ""
         # real directory groups carry their English label so the toggle can
         # switch the section header (synthetic groups use i18n_key instead).
-        ten = f' data-title-en="{_html.escape(g.title_en, quote=True)}"' if (g.title_en and not g.i18n_key) else ""
+        ten = f' data-title-zh="{_html.escape(g.title_zh, quote=True)}"' if (g.title_zh and not g.i18n_key) else ""
         return (
             f'<details class="group" data-key="{_html.escape(key)}"{open_attr}>'
             f'<summary class="group-title"{i18n}{ten}>{_html.escape(g.title)}</summary>'
@@ -476,7 +477,7 @@ def _build_into_out_root() -> int:
     tab_key_of: dict[Path, str] = {}
     for tab in tabs:
         for pg, chain in flatten_pages([tab.root]):
-            ordered.append((pg, [(tab.title, tab.title_en)] + chain))
+            ordered.append((pg, [(tab.title, tab.title_zh)] + chain))
             tab_key_of[pg.out] = tab.key
     tab_by_key = {t.key: t for t in tabs}
     seq = [pg for pg, _chain in ordered]
@@ -517,22 +518,22 @@ def _build_into_out_root() -> int:
 
         # breadcrumb + prev/next + last-updated
         chain = chain_of.get(p.out, [])
-        breadcrumb = render_breadcrumb(chain, p.title, p.title_en)
+        breadcrumb = render_breadcrumb(chain, p.title, p.title_zh)
         i = idx_of.get(p.out)
         prev_p = seq[i - 1] if i and i > 0 else None
         next_p = seq[i + 1] if i is not None and i + 1 < len(seq) else None
         prevnext = render_prevnext(prev_p, next_p)
         updated = git_mtime(p.src)
-        meta_html = (f'<div class="page-updated"><span data-i18n="updated">最后更新</span>'
+        meta_html = (f'<div class="page-updated"><span data-i18n="updated">Last updated</span>'
                      f' · {updated}</div>') if updated else ""
 
-        # bilingual: if an English version exists, its URL lets the language
-        # toggle jump straight to it (and vice-versa from the EN page).
-        alt_url = (DEPLOY_BASE + str(p.en_out).replace("\\", "/")) if p.en_out else ""
+        # bilingual: if a Chinese version exists, its URL lets the language
+        # toggle jump straight to it (and vice-versa from the zh page).
+        alt_url = (DEPLOY_BASE + str(p.zh_out).replace("\\", "/")) if p.zh_out else ""
 
         full = render_page(
             title=p.title, body_html=body, nav_html=nav_html,
-            toc_html=toc, base=base, page_lang="zh", alt_lang_url=alt_url,
+            toc_html=toc, base=base, page_lang="en", alt_lang_url=alt_url,
             breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
             tabbar_html=tabbar_html,
         )
@@ -541,22 +542,22 @@ def _build_into_out_root() -> int:
         out_path.write_text(full, encoding="utf-8")
         rendered += 1
 
-        # English version (same shell, English body), if present.
-        if p.en_src is not None and p.en_out is not None:
+        # Chinese version (same shell, Chinese body), if present.
+        if p.zh_src is not None and p.zh_out is not None:
             _SLUG_DEDUP = {}
-            en_text = p.en_src.read_text(encoding="utf-8", errors="replace")
-            en_body = relink_internal(apply_callouts(md.render(en_text)), p.en_out.parent)
-            en_toc = extract_toc(en_body)
-            en_back = DEPLOY_BASE + str(p.out).replace("\\", "/")
-            en_full = render_page(
-                title=p.title, body_html=en_body, nav_html=nav_html,
-                toc_html=en_toc, base=base, page_lang="en", alt_lang_url=en_back,
+            zh_text = p.zh_src.read_text(encoding="utf-8", errors="replace")
+            zh_body = relink_internal(apply_callouts(md.render(zh_text)), p.zh_out.parent)
+            zh_toc = extract_toc(zh_body)
+            zh_back = DEPLOY_BASE + str(p.out).replace("\\", "/")
+            zh_full = render_page(
+                title=p.title_zh or p.title, body_html=zh_body, nav_html=nav_html,
+                toc_html=zh_toc, base=base, page_lang="zh", alt_lang_url=zh_back,
                 breadcrumb_html=breadcrumb, prevnext_html=prevnext, meta_html=meta_html,
                 tabbar_html=tabbar_html,
             )
-            en_path = OUT_ROOT / p.en_out
-            en_path.parent.mkdir(parents=True, exist_ok=True)
-            en_path.write_text(en_full, encoding="utf-8")
+            zh_path = OUT_ROOT / p.zh_out
+            zh_path.parent.mkdir(parents=True, exist_ok=True)
+            zh_path.write_text(zh_full, encoding="utf-8")
             rendered += 1
 
         search_records.append({

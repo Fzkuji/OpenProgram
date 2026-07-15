@@ -1,39 +1,39 @@
-# Agentic Workflows
+# Agentic workflows
 
-这一页告诉你 OpenProgram 自带哪些现成的 agent、怎么装、怎么管理。如果你想直接用而不是自己写函数，从这里开始。
+This page covers the ready-made agents that ship with OpenProgram: how to install them and how to manage them. If you want to use agents directly instead of writing your own functions, start here.
 
-## 是什么
+## What they are
 
-Agentic Workflow 是用 [Agentic Programming](../agentic-programming/README.md) 写成的成品工作流——代码里叫 **harness** 或 **agentic program**：一个自包含的 git 仓库，里面是一组 `@agentic_function`。安装后其函数注册进 OpenProgram，像内置函数一样出现在聊天、Web UI 的 Functions 页和 `openprogram programs run` 里。
+An agentic workflow is a finished workflow built with [Agentic Programming](../agentic-programming/README.md) — called a **harness** or **agentic program** in the code: a self-contained git repository holding a set of `@agentic_function`s. Once installed, its functions register into OpenProgram and appear like built-in functions in chat, on the Web UI Functions page, and in `openprogram programs run`.
 
-三个第一方 workflow：
+Three first-party workflows:
 
-| Workflow | 安装名 | 一句话 |
+| Workflow | Install name | In one line |
 |---|---|---|
-| [GUI Agent](gui-agent.md) | `gui` | 给一句任务，自主操作桌面（截图 → 识别 → 点击 → 验证循环） |
-| [Research Agent](research-agent.md) | `research` | 从研究选题到可提交论文，带确定性核查层 |
-| [Wiki Agent](wiki-agent.md) | `wiki` | 把会话 / 笔记沉淀成模板化 HTML 知识库 |
+| [GUI Agent](gui-agent.md) | `gui` | Give it a task in one sentence and it operates the desktop autonomously (screenshot, detect, click, verify loop) |
+| [Research Agent](research-agent.md) | `research` | From research topic to submission-ready paper, with a deterministic verification layer |
+| [Wiki Agent](wiki-agent.md) | `wiki` | Distills sessions and notes into a templated HTML knowledge base |
 
-## 管理命令
+## Management commands
 
 ```bash
-openprogram programs list          # 所有已注册的函数与 program
-openprogram programs available     # 可安装项 + 已装第三方 harness 的状态
+openprogram programs list          # all registered functions and programs
+openprogram programs available     # installable items + status of installed third-party harnesses
 openprogram programs install gui   # gui | research | wiki | all
-openprogram programs install <owner>/<repo>   # 任意第三方 harness（git URL 亦可）
-openprogram programs install <ref> --upgrade  # 重装 / 升级
-openprogram programs uninstall research       # 卸载
-openprogram programs run <name> -a key=value  # 直接运行一个 program
+openprogram programs install <owner>/<repo>   # any third-party harness (git URL also works)
+openprogram programs install <ref> --upgrade  # reinstall / upgrade
+openprogram programs uninstall research       # uninstall
+openprogram programs run <name> -a key=value  # run a program directly
 ```
 
-`programs run` 还接受 `--provider`（claude-code / openai-codex / gemini-cli / anthropic / openai / gemini，默认自动探测）和 `--model` 覆盖模型。
+`programs run` also accepts `--provider` (claude-code / openai-codex / gemini-cli / anthropic / openai / gemini, auto-detected by default) and `--model` to override the model.
 
-## 用哪种方式触发
+## How to trigger them
 
-- **聊天里**：入口函数以 `as_tool=True` 注册为工具，直接用自然语言描述任务，模型会调用它（如 `gui_agent`、`research_agent`、`wiki_agent`）。
-- **命令行**：`openprogram programs run gui_agent -a task="Open Firefox"`。
-- **Python 里**：harness 的函数就是普通可 import 的 Python 函数。
+- **In chat**: entry functions register as tools (`as_tool=True`). Describe the task in natural language and the model calls them (e.g. `gui_agent`, `research_agent`, `wiki_agent`).
+- **From the command line**: `openprogram programs run gui_agent -a task="Open Firefox"`.
+- **From Python**: harness functions are ordinary importable Python functions.
 
-## 编写你自己的
+## Writing your own
 
-任何满足目录契约（`<package>/agentics/__init__.py` 暴露 `AGENTIC_FUNCTIONS`）的仓库都能被同一条 `programs install` 命令安装。契约、最小模板和发布流程见[安装与编写 Harness](../installing-harnesses.md)。
+Any repository that follows the directory contract (`<package>/agentics/__init__.py` exposing `AGENTIC_FUNCTIONS`) can be installed with the same `programs install` command. See [Installing and writing harnesses](../installing-harnesses.md) for the contract, a minimal template, and the publishing flow.

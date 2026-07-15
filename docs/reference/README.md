@@ -1,23 +1,23 @@
-# 参考总览
+# Reference overview
 
-查参数、查命令、查配置键时来这里。本 Tab 收录 Python API、CLI 命令、配置项的完整参考，以及工程设计文档的归档。
+Come here to look up parameters, commands, and configuration keys. This tab holds the complete reference for the Python API, the CLI commands, and the configuration entries, plus the engineering design-notes archive.
 
 ## Python API
 
-- [API 总览](API.md) —— 核心组件一页看全：`agentic_function`、`Runtime`、providers
-- [agentic_function](api/agentic-function.md) —— 装饰器本身：参数、元数据、行为
-- [Runtime](api/runtime.md) —— `runtime.exec()` 的全部参数与语义
-- [Providers](api/providers.md) —— `create_runtime` 与各内置 provider runtime
+- [API overview](API.md) — the core components on one page: `agentic_function`, `Runtime`, providers
+- [agentic_function](api/agentic-function.md) — the decorator itself: parameters, metadata, behavior
+- [Runtime](api/runtime.md) — every parameter of `runtime.exec()` and its semantics
+- [Providers](api/providers.md) — `create_runtime` and the built-in provider runtimes
 
-## CLI 与配置
+## CLI and configuration
 
-- [CLI 命令参考](cli.md) —— `openprogram` 每个子命令的作用与关键参数
-- [配置参考](config.md) —— `config.json` 的键、`openprogram config` 的用法、环境变量汇总
+- [CLI reference](cli.md) — what every `openprogram` subcommand does and its key flags
+- [Configuration reference](config.md) — the keys in `config.json`, how to use `openprogram config`, and the environment variable roundup
 
-## 专题笔记
+## Topic notes
 
-- [Claude Code 的上下文压缩机制](claude-code-compaction.md) —— 对 Claude Code compaction 行为的分析笔记
+- [Claude Code context compaction](claude-code-compaction.md) — an analysis of Claude Code's compaction behavior
 
-## 设计文档归档
+## Design-notes archive
 
-[`design/`](design/README.md) 是工程设计笔记的归档：写给开发者自己看，按子系统组织（runtime、providers、function、memory、channels、cli、ui 等），只增不改。它记录决策当时的思路，不保证与当前代码逐行一致——面向使用者的准确说明以本 Tab 其余页面和代码为准。
+[`design/`](design/README.md) is the archive of engineering design notes: written for the developers themselves, organized by subsystem (runtime, providers, function, memory, channels, cli, ui, etc.), append-only. It records the thinking at decision time and is not guaranteed to match the current code line by line — for accurate user-facing information, trust the other pages in this tab and the code.

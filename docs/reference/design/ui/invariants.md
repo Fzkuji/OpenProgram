@@ -1,128 +1,156 @@
-# UI 跨模块不变量
+# Cross-module UI invariants
 
-> 单模块文档写"这个模块怎么工作"，这份文档写"模块之间必须共同遵守什么"。
-> 这里的每一条都曾经因为没写下来而出过真实 bug（每条附出处）。改动任何
-> 一个相关模块前，对着这份清单过一遍；新增会打破清单的功能时，先改清单
-> 再改代码。每条不变量都应有钉子测试（tests/unit/），文档和测试一起是
-> 规则的两半：文档说给人听，测试挡住回归。
+> Per-module docs describe how one module works; this document states
+> what the modules must jointly guarantee. Every rule here caused a
+> real bug before it was written down (source commit cited). Walk this
+> list before touching any related module; when a new feature must
+> break a rule, change the list first, then the code. Each invariant
+> should have a pinning test under tests/unit/ — the doc tells humans,
+> the test blocks regressions.
 
-## 1. 启用集合是模型可用性的唯一门控
+## 1. The enabled set is the single gate on model availability
 
-`list_enabled_models()`（providers 配置里的 spec 行）是"用户启用了哪些
-模型"的单一事实源。**任何**展示或使用模型的地方都必须以它为准：
+`list_enabled_models()` (the spec rows in the providers config) is the
+single source of truth for "which models did the user enable". EVERY
+surface that shows or uses a model must obey it:
 
-- 聊天顶栏的 chat/exec chip（`GET /api/agent_settings` 门控后的值）；
-- 模型选择下拉（`/api/models/enabled`）；
-- 发送路径的默认解析（`_resolve_session_provider_model`——包括
-  agent.json 的 agent 配置模型这条**曾经不门控**的路径）；
-- 函数执行用的 exec runtime。
+- the chat/exec chips in the top bar (the gated `GET /api/agent_settings`);
+- the model picker dropdowns (`/api/models/enabled`);
+- default resolution on the send path (`_resolve_session_provider_model`
+  — including the agent.json agent-model path, which historically did
+  NOT gate);
+- the exec runtime used for function execution.
 
-推论：一个模型被禁用后，它**不得**出现在任何选择器里、**不得**作为任何
-默认被解析、**不得**被任何 chip 展示。"picker 空 ⇔ 顶栏无模型 ⇔ 发送
-报 enable-a-model" 三者必须同步成立。
+Corollary: once a model is disabled it must not appear in any picker,
+must not resolve as any default, and must not be shown on any chip.
+"Picker empty ⇔ top bar shows no model ⇔ send raises enable-a-model"
+must hold in lockstep.
 
-出处：禁用后 chip 仍显示旧模型（2026-07-10，commit 66cb7f73）；agent.json
-路径不门控导致禁用模型继续跑（cb78dde1）。
+Source: chip kept showing a disabled model (2026-07-10, 66cb7f73);
+ungated agent.json path kept running a disabled model (cb78dde1).
 
-## 2. 启用集合变化必须广播，且所有消费者响应
+## 2. Enabled-set changes broadcast, and every consumer reacts
 
-设置页可能开在**另一个浏览器标签页**。模型/Provider 启停、自定义
-Provider 删除，后端必须经事件总线发 `agent_settings_changed`
-（`ws.frame`），前端 ws 处理器收到后：
+The settings page may live in a DIFFERENT browser tab. Model/provider
+toggles and custom-provider deletion must emit
+`agent_settings_changed` through the event bus (`ws.frame`); the
+frontend WS handler then:
 
-- 重新拉取 agent settings（更新 chip）；
-- 失效 `["models-enabled"]` react-query 缓存（更新所有下拉）。
+- refetches agent settings (updates the chips);
+- invalidates the `["models-enabled"]` react-query cache (updates
+  every dropdown).
 
-只在发起操作的那个标签页里本地刷新是不够的。新增会改变启用集合的入口
-（导入配置、批量操作、CLI 写配置……）时必须挂同一个广播。
+Refreshing only the tab that performed the action is not enough. Any
+new entry point that mutates the enabled set (config import, bulk ops,
+CLI writes, …) must hook the same broadcast.
 
-出处：跨标签页 chip / 下拉不同步（66cb7f73）。
+Source: cross-tab chip/dropdown desync (66cb7f73).
 
-## 3. 禁用当前默认 = 清除默认，不是隐藏默认
+## 3. Disabling the current default CLEARS the default, not hides it
 
-默认模型存在三处：`_runtime_management` 的 chat 全局、exec 全局、默认
-agent 的 agent.json `model`。当前默认掉出启用集合时，三处必须**全部清
-空**（`_clear_stale_defaults`），由用户显式选下一个。只在展示层把它
-藏起来会留下僵尸默认：重新启用时它自动复活，禁用期间会话还在偷偷用它。
+The default model lives in three places: the chat global and exec
+global in `_runtime_management`, and the default agent's `model` in
+agent.json. When the current default falls out of the enabled set, all
+three must be cleared (`_clear_stale_defaults`); the user picks the
+next model explicitly. Hiding it at display level leaves a zombie
+default: it resurrects on re-enable and keeps serving conversations
+while disabled.
 
-出处：cb78dde1。
+Source: cb78dde1.
 
-## 4. 前端 store 的"清除"必须可表达
+## 4. The frontend store must be able to express "cleared"
 
-`setAgentSettings` 语义：对象=替换，`null`=清除，`undefined`=保留。
-"保留旧值"的合并语义（`??`）会让"设置已变空"永远覆盖不掉旧值——凡是
-后端可能回传"此项现在没有了"的 store 字段，setter 必须区分"没提这个字
-段"和"这个字段清空了"。
+`setAgentSettings` semantics: object = replace, `null` = clear,
+`undefined` = keep. A keep-previous merge (`??`) makes "this setting
+is now empty" permanently unable to overwrite the stale value — any
+store field whose backend can legitimately report "gone now" needs a
+setter that distinguishes "field not mentioned" from "field cleared".
 
-出处：chip 清不掉，整页刷新掩盖了这个 bug（66cb7f73）。
+Source: the chip could never clear; full page reloads masked it
+(66cb7f73).
 
-## 5. 后端→前端的帧一律走事件总线
+## 5. Backend→frontend frames go through the event bus
 
-外部源和 webui 路由都用 `emit_ws_frame({"type": ..., "data": ...})`
-发帧，server 里唯一的订阅者转发给 socket（event-layer.md）。不要直接
-调 `_s._broadcast`——绕过总线的帧对事件层的消费者（proactive、日志）
-不可见，也让"哪些地方在发什么"无处可查。
-（`_broadcast_envelope` / `_broadcast_chat_response` 是带会话路由逻辑
-的 server 内部辅助，不在此列。）
+External sources AND webui routes emit frames via
+`emit_ws_frame({"type": ..., "data": ...})`; the single subscriber in
+server.py forwards to the sockets (event-layer.md). Never call
+`_s._broadcast` directly — frames that bypass the bus are invisible to
+event-layer consumers (proactive, logging) and unauditable.
+(`_broadcast_envelope` / `_broadcast_chat_response` are server-side
+helpers with session routing logic, not raw frames — exempt.)
 
-出处：6d93ce4a（routes 迁移，event-layer 步 4 的 routes 部分）。
+Source: 6d93ce4a (routes migration, the routes part of event-layer
+step 4).
 
-## 6. spawn 的三个入口语义必须一致
+## 6. The three spawn entry points share one semantics
 
-spawn 一个 sub-agent 分支有三个入口：`task()` 同步路径
-（functions/tools/task/task.py）、异步 runner
-（agent/task/runner.py）、`message_branch`
-（functions/tools/agent_collab/）。三者对 clean 模式必须一致地传
-`spawn_caller=<发起节点>`，使分支根节点 `caller` 指向发起它的那轮
-（session-dag.md §2.3），而不是挂在 ROOT 上。改 spawn 语义时三个入口
-一起改，一起测。
+A sub-agent branch spawns via three entry points: the sync `task()`
+path (functions/tools/task/task.py), the async runner
+(agent/task/runner.py), and `message_branch`
+(functions/tools/agent_collab/). For clean mode all three must pass
+`spawn_caller=<spawning node>`, so the branch root's `caller` points
+at the turn that opened it (session-dag.md §2.3) instead of hanging
+off ROOT. Change spawn semantics in all three together, test all
+three together.
 
-被 spawn 的 agent **一律不得再委托**——根治手段是工具清单级的：
-task/await_task/cancel_task 标 `unsafe_in=["agent_spawn"]`，dispatcher
-按 `req.source` 过滤后，被 spawn 的 agent 的工具清单里**根本没有**这些
-工具（工具摆在清单里模型就会想用，先给再拒是浪费一轮的坏设计）。
-`MAX_TASK_DEPTH=1` 的深度守卫只是兜底（挡 tools_override 之类的旁路）；
-message_branch 保留宽松的 `MAX_SPAWN_DEPTH=8`（预算给分支间多轮对话，
-不是委托链），两者共用一个链上深度计数器。实测教训：连"协调者"这一层
-都会退化成推活儿，出现过 5 代天气查询委托链。
+A spawned agent NEVER re-delegates — enforced at the toolset level:
+task/await_task/cancel_task carry `unsafe_in=["agent_spawn"]`, so after
+the dispatcher's `req.source` filter a spawned agent's tool list simply
+does not contain them (a tool sitting in the list invites the model to
+use it; offering it and then refusing wastes a turn — bad design). The
+`MAX_TASK_DEPTH=1` depth guard is only a backstop (catches bypass paths
+like tools_override); message_branch keeps the looser
+`MAX_SPAWN_DEPTH=8` (budgeted for multi-round branch-to-branch
+dialogue, not delegation), both sharing one per-chain depth counter.
+Live lesson: even a single "coordinator" hop degenerated into
+buck-passing — a 5-generation weather-query delegation chain.
 
-出处：同步路径漏传导致 DAG 分支从头分叉（1d1fe016）；异步 task()
-漏传 caller + 深度不计数（后续修复）。
+Source: the sync path omitted it, so DAG branches forked from the
+root (1d1fe016); the async task() path dropped the caller and never
+counted depth (follow-up fix).
 
-## 7. 聊天兄弟切换器只在"真实的分叉"上出现
+## 7. The chat sibling switcher appears only on REAL forks
 
-`< N/M >` 兄弟集按**分叉点**分组（`predecessor`，缺失退回
-`caller`，ROOT 归一为无），且只包含对话轮次：
+`< N/M >` sibling sets group by fork point (`predecessor`, falling
+back to `caller`; ROOT normalizes to none) and contain conversation
+turns only:
 
-- tool/code 子调用行不参与（它们天然无 predecessor，会污染根集合）；
-- `source=agent_spawn` 的分支根不和用户的轮次混组（那是 agent 开的
-  分支，不是用户可翻页的替代版本）；
-- `display=runtime` 卡片不参与（fn-run 卡有自己的 fn-run 域导航）。
+- tool/code sub-call rows never join (they carry no predecessor and
+  would pollute the root set);
+- `source=agent_spawn` branch roots never mix with the user's own
+  turns (an agent-opened branch is not a pageable alternative);
+- `display=runtime` cards never join (fn-run cards have their own
+  fn-run-scoped nav).
 
-出处：新会话的"你好"显示 1/6（1d1fe016；更早还有过 1/12 一次）。
+Source: a fresh session's first turn showed 1/6 (1d1fe016; an earlier
+incarnation showed 1/12).
 
-## 8. 交互即时反馈（0ms 乐观态）
+## 8. Instant interaction feedback (0ms optimistic state)
 
-任何点击立即渲染乐观过渡态（pending 卡、按钮态、切换后的索引），真实
-数据到达后回填；超时回滚并 toast。长操作（函数运行有 ~1s 子进程冷启）
-绝不允许"点了没反应"。实现入口：`optimisticAction`
-（web/lib/runtime-bridge/optimistic-action.ts）。
+Every click renders an optimistic transition immediately (pending
+card, button state, switched index); real data backfills; a timeout
+reverts and toasts. Long operations (function runs pay ~1s subprocess
+cold start) must never feel like a dead click. Entry point:
+`optimisticAction` (web/lib/runtime-bridge/optimistic-action.ts).
 
-出处：retry / fn-form / checkout 全套乐观化（0b3b9c2e）。
+Source: the retry / fn-form / checkout optimistic pass (0b3b9c2e).
 
-## 9. 显示顺序可以调，数据顺序不可以
+## 9. Display order may be adjusted; data order may not
 
-attach 指针节点必须留在对话链尾（head 移动依赖它），但聊天里 Spawned
-卡片显示在它喂给的那轮回复**之前**——这类需求一律在渲染层调序
-（conv-mapper），不改落盘顺序、不改 head 语义。
+The attach pointer node must stay at the tail of the conversation
+chain (head movement depends on it), yet the chat renders the Spawned
+card BEFORE the reply it fed — requirements like this are always
+solved by reordering at render time (conv-mapper), never by changing
+persisted order or head semantics.
 
-出处：1d1fe016。
+Source: 1d1fe016.
 
-## 10. SSR 边界：模块顶层不碰 window
+## 10. SSR boundary: no window at module scope
 
-`web/lib/runtime-bridge/*` 在模块作用域读 `window`，被 App Router 页面
-静态 import 会炸 prerender。settings/页面组件需要它们时用动态
-`import()`（例：`refreshAgentChip`）。新写 runtime-bridge 模块时守住
-这条，或者把 window 访问推迟到函数体内。
+`web/lib/runtime-bridge/*` reads `window` at module scope; a static
+import from an App Router page breaks prerendering. Page/settings
+components that need them use dynamic `import()` (example:
+`refreshAgentChip`). New runtime-bridge modules either keep this rule
+in mind or defer window access into function bodies.
 
-出处：f09ed1c2 期间 settings 页 prerender 崩溃。
+Source: settings-page prerender crash during f09ed1c2.

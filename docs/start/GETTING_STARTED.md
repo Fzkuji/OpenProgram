@@ -1,27 +1,27 @@
-# 快速上手
+# Getting Started
 
-这页带你在五分钟内完成：安装、接入一个 LLM provider、打开界面、发出第一条消息，并装上第一个现成的 agent 程序。
+This page takes you through five minutes of setup: install, connect an LLM provider, open the interfaces, send your first message, and install your first ready-made agent program.
 
-## 第 1 步：安装
+## Step 1: Install
 
-一条命令的安装脚本会装好 Python 包、网页 UI、终端 UI、浏览器工具和 channels：
+The one-command install script sets up the Python package, web UI, terminal UI, browser tools, and channels:
 
 ```bash
 git clone https://github.com/Fzkuji/OpenProgram.git && cd OpenProgram
 ./scripts/install.sh              # macOS/Linux   ·   Windows:  .\scripts\install.ps1
 ```
 
-需要 Python ≥ 3.11、Node ≥ 20、git（缺了脚本会尽力代装）。脚本幂等，任何时候都可以重跑。agent 程序（GUI / Research / Wiki）默认不装，安装时的交互菜单里可挑选，也可以之后再补（见第 5 步）。完整参数与依赖矩阵见 [安装](../install/install.md)。
+Requires Python ≥ 3.11, Node ≥ 20, and git (the script makes a best effort to install what's missing). The script is idempotent — re-run it any time. Agent programs (GUI / Research / Wiki) are not installed by default; pick them in the interactive menu during install, or add them later (see Step 5). Full flags and the dependency matrix: [Install](../install/install.md).
 
-## 第 2 步：首次运行，接入 provider
+## Step 2: First run — connect a provider
 
 ```bash
 openprogram
 ```
 
-第一次运行会进入 setup 向导，引导你完成 provider 配置——从已登录的 Claude Code / Codex / Gemini CLI 导入凭据，或输入一个 API key——随后直接打开终端聊天界面。随时可以用 `openprogram setup` 重新运行向导。
+The first run enters a setup wizard that walks you through provider configuration — import credentials from a logged-in Claude Code / Codex / Gemini CLI, or paste an API key — then drops you straight into the terminal chat. Re-run the wizard any time with `openprogram setup`.
 
-也可以用环境变量跳过向导：
+You can also skip the wizard with environment variables:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...     # Claude
@@ -29,40 +29,40 @@ export OPENAI_API_KEY=sk-...            # GPT
 export GOOGLE_API_KEY=...               # Gemini
 ```
 
-确认检查：`openprogram providers` 会列出检测到的凭据。
+Sanity check: `openprogram providers` lists the detected credentials.
 
-## 第 3 步：打开 web 界面
+## Step 3: Open the web UI
 
 ```bash
 openprogram web
 ```
 
-它会同时启动后端和 Next.js 前端，并打开浏览器到 **http://localhost:18100**（不是 :18109，那是后端 API 端口）。改端口用 `openprogram ports --backend <p> --frontend <p>`。
+This starts the backend and the Next.js frontend together and opens your browser at **http://localhost:18100** (not :18109 — that's the backend API port). Change ports with `openprogram ports --backend <p> --frontend <p>`.
 
-## 第 4 步：发第一条消息
+## Step 4: Send your first message
 
-在终端聊天界面或 web 输入框里直接输入即可。想快速验证一条命令也行：
-
-```bash
-openprogram --print "用一句话介绍你自己"
-```
-
-它发送一条消息、打印回复、然后退出。之前的会话可以用 `openprogram --resume <session_id>` 续上，id 来自 `openprogram sessions list` 或 web 侧栏。
-
-## 第 5 步：装一个现成的 agent 程序
-
-OpenProgram 是宿主，agent 程序装进来就能在 web UI 和函数列表里出现：
+Type directly into the terminal chat or the web input box. To quickly verify from the command line:
 
 ```bash
-openprogram programs install research     # 或 wiki / gui
-openprogram programs available            # 查看安装状态
+openprogram --print "Introduce yourself in one sentence"
 ```
 
-`research` / `wiki` 是纯 Python，装得很快；`gui` 会下载 PyTorch 和模型权重，体积较大。装完后 `openprogram restart`（或在 Functions 页面点 Refresh），程序就会出现在界面里。
+It sends one message, prints the reply, and exits. Resume an earlier session with `openprogram --resume <session_id>` — ids come from `openprogram sessions list` or the web sidebar.
 
-## 下一步
+## Step 5: Install a ready-made agent program
 
-- [模型与 provider](../models/README.md) — 各 provider 的接入方式、多账户与密钥轮换
-- [Agentic Programming](../capabilities/agentic-programming/README.md) — 写你自己的 `@agentic_function`
-- [界面](../interfaces/README.md) — 终端 TUI、web UI 与 channels
-- [日常操作](daily-use.md) — 会话管理、分支与回退
+OpenProgram is the host; agent programs installed into it show up in the web UI and the function list:
+
+```bash
+openprogram programs install research     # or wiki / gui
+openprogram programs available            # check install status
+```
+
+`research` / `wiki` are pure Python and install quickly; `gui` downloads PyTorch and model weights, which is much larger. After installing, run `openprogram restart` (or hit Refresh on the Functions page) and the program appears in the UI.
+
+## Next steps
+
+- [Models & providers](../models/README.md) — how each provider connects, multi-account, key rotation
+- [Agentic Programming](../capabilities/agentic-programming/README.md) — write your own `@agentic_function`
+- [Interfaces](../interfaces/README.md) — terminal TUI, web UI, and channels
+- [Daily use](daily-use.md) — session management, branching, and rollback

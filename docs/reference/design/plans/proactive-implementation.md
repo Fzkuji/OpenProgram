@@ -1,91 +1,91 @@
-# 落地规划：Proactive Layer 接入现有代码
+# Implementation Plan: Wiring the Proactive Layer into the Existing Code
 
-> 设计见 [`../design/proactive/`](../proactive/README.md)。本文只讲**怎么把那套设计
-> 接进现有 OpenProgram 代码**：接线点（file:line）、复用哪些现成机制、分几阶段、验证方式。
-> 设计的"是什么/为什么"不在这里，冲突以设计文档为准。
+> See [`../design/proactive/`](../proactive/README.md) for the design. This document only covers **how to wire that
+> design into the existing OpenProgram code**: wiring points (file:line), which existing mechanisms to reuse, the phasing, and how to verify.
+> The "what/why" of the design is not here; if there is a conflict, the design docs take precedence.
 
-代码落点：事件层就地升级 `openprogram/agent/event_bus.py`（Event + 类型订阅 + 进程级单例），
-taps 加在各源文件里；`openprogram/proactive/` 包到"新消费者进场"那步（规则层）才新建。
-Event 模型 = 核心三样 + metadata 开放口袋（见设计 `event-layer.md` §1，turn/session 不是固定字段）。
+Code landing spots: upgrade the event layer in place at `openprogram/agent/event_bus.py` (Event + type-based subscription + process-level singleton),
+with taps added in the individual source files; the `openprogram/proactive/` package is only created at the "new consumer enters" step (the rule layer).
+Event model = the three core fields + an open metadata pocket (see design `event-layer.md` §1; turn/session are not fixed fields).
 
-## 复用的现有机制
+## Existing mechanisms to reuse
 
-设计里反复提到的"现有可复用件"，对应的真实位置：
+The "existing reusable parts" the design repeatedly mentions, with their real locations:
 
-| 设计中的角色 | 现有机制 | 位置 |
+| Role in the design | Existing mechanism | Location |
 |---|---|---|
-| 进程内事件扇出 | `EventBus`（已实现但闲置，dispatcher/agent_loop 直接用回调绕过了它） | `openprogram/agent/event_bus.py:14-60` |
-| gate 的 `ask` 路径 | `ApprovalRegistry` + `_wrap_with_approval`（请求→阻塞等待→批准/拒绝，deny 回 is_error tool result） | `openprogram/agent/_approval.py:77-174` |
-| observer 的 `Prepare` 后台 task | `TaskRunner.spawn_task`（ThreadPoolExecutor，状态机，task_status 广播） | `openprogram/agent/task/runner.py` |
-| `Inject` 落地槽位 | memory prefetch 注入 system prompt + steering messages | `openprogram/agent/agent_loop.py:343-354` |
-| 事件因果 / rewind / 分支 | session git DAG（节点带 parent_id / caller） | `openprogram/contextgit/` |
-| gate 的 hard enforcement 点 | 所有 chat tool 调用的单点 | `openprogram/agent/agent_loop.py` `_execute_tool_calls` |
+| In-process event fan-out | `EventBus` (already implemented but idle; dispatcher/agent_loop bypass it with direct callbacks) | `openprogram/agent/event_bus.py:14-60` |
+| The gate's `ask` path | `ApprovalRegistry` + `_wrap_with_approval` (request → block and wait → approve/deny; deny returns an is_error tool result) | `openprogram/agent/_approval.py:77-174` |
+| The observer's `Prepare` background task | `TaskRunner.spawn_task` (ThreadPoolExecutor, state machine, task_status broadcast) | `openprogram/agent/task/runner.py` |
+| The landing slot for `Inject` | memory prefetch injected into the system prompt + steering messages | `openprogram/agent/agent_loop.py:343-354` |
+| Event causality / rewind / branching | session git DAG (nodes carry parent_id / caller) | `openprogram/contextgit/` |
+| The gate's hard enforcement point | the single point through which all chat tool calls pass | `openprogram/agent/agent_loop.py` `_execute_tool_calls` |
 
-## 事件 tap 接线点
+## Event tap wiring points
 
-把设计里的 Event 从现有代码的这些位置发出（多数是把现有回调/事件转成 CanonicalEvent）：
+Emit the design's Event from these locations in the existing code (most of these convert an existing callback/event into a CanonicalEvent):
 
-| Event | 接线点 | 现状 |
+| Event | Wiring point | Current state |
 |---|---|---|
-| `user.prompt_submitted` | `dispatcher/__init__.py` phase 2（persist user message） | 已有 chat_ack/chat_response 广播，加 tap |
-| `model.response_started` | `agent_loop.py:429`（AgentEventMessageStart） | 已有事件，转 CanonicalEvent |
-| `model.response_completed` | `agent_loop.py:452`（AgentEventMessageEnd） | 同上 |
-| `tool.before` | `agent_loop.py:495`（现有 no-op `dispatch_hook(TOOL_BEFORE_USE)`） | 把 observe-only hook 升级成 PRL gate tap |
-| `tool.after` | `agent_loop.py:564`（`dispatch_hook(TOOL_AFTER_USE)`） | 同上 |
-| `subagent.started/completed` | `task/runner.py:96-113`（task_status 广播） | 转 CanonicalEvent |
-| `permission.requested` | `_approval.py`（approval_request 信封） | 加 tap |
-| `artifact.file.changed` | `file_backup.backup_before_edit` + `project_commit` | 新增 emit |
+| `user.prompt_submitted` | `dispatcher/__init__.py` phase 2 (persist user message) | chat_ack/chat_response broadcast already exists; add a tap |
+| `model.response_started` | `agent_loop.py:429` (AgentEventMessageStart) | event already exists; convert to CanonicalEvent |
+| `model.response_completed` | `agent_loop.py:452` (AgentEventMessageEnd) | same as above |
+| `tool.before` | `agent_loop.py:495` (existing no-op `dispatch_hook(TOOL_BEFORE_USE)`) | upgrade the observe-only hook into a PRL gate tap |
+| `tool.after` | `agent_loop.py:564` (`dispatch_hook(TOOL_AFTER_USE)`) | same as above |
+| `subagent.started/completed` | `task/runner.py:96-113` (task_status broadcast) | convert to CanonicalEvent |
+| `permission.requested` | `_approval.py` (approval_request envelope) | add a tap |
+| `artifact.file.changed` | `file_backup.backup_before_edit` + `project_commit` | add a new emit |
 
-## gate 接入点
+## gate integration points
 
-- **chat 路径（hard）**：`agent_loop.py` 的 `_execute_tool_calls`，gate 串在 `tool.execute`
-  之前。所有 chat tool 过这一点，是 hard enforcement。
-- **agentic 嵌套路径**：`function.py:50-89` 的 `_pre_invocation_hooks`（cancel 检查已在用此
-  挂载点）。这是可选挂载点，覆盖率如实声明，不假装全覆盖。
-- gate 对 subagent turn 生效，**独立于 `permission_mode`**，不被 `sub_agent_run.py:88` 的
-  `permission_mode="bypass"` 关掉（堵现有漏洞，见设计 `invariants.md` 与 `execution-model.md` §2）。
+- **chat path (hard)**: `_execute_tool_calls` in `agent_loop.py`; the gate is chained in before `tool.execute`.
+  All chat tools pass through this point, so it is hard enforcement.
+- **agentic nested path**: `_pre_invocation_hooks` in `function.py:50-89` (the cancel check is already mounted at this
+  point). This is an optional mount point; declare its coverage truthfully and don't pretend it covers everything.
+- The gate takes effect on subagent turns, **independently of `permission_mode`**, and is not turned off by the
+  `permission_mode="bypass"` at `sub_agent_run.py:88` (this plugs an existing hole; see design `invariants.md` and `execution-model.md` §2).
 
-## Prepare 接入
+## Prepare integration
 
-复用 `TaskRunner.spawn_task`，但注入受限 tool allowlist（不含 bash/write/network）。独立小池
-并发 1-2，可被用户任务抢占，429 时让路（见设计 `execution-model.md` §3）。
+Reuse `TaskRunner.spawn_task`, but inject a restricted tool allowlist (no bash/write/network). A separate small pool
+with concurrency 1-2, preemptible by user tasks, yielding on 429 (see design `execution-model.md` §3).
 
-## 附带要修的洞
+## Holes to fix along the way
 
-`@function` tool 执行目前**不写 DAG 节点**（只有 `@agentic_function` 写），DAG 树不完整。
-如果审计要靠 DAG 做因果回溯，需先补；本设计改为 `events.jsonl` 独立记全量，DAG 洞列为已知项、
-不阻塞 proactive 落地。
+`@function` tool execution currently **does not write a DAG node** (only `@agentic_function` does), so the DAG tree is incomplete.
+If auditing needs to rely on the DAG for causal traceback, this must be filled first; this design instead records the full set independently in `events.jsonl`, listing the DAG hole as a known item that
+does not block the proactive rollout.
 
-## 分阶段（对应 `framework-evolution.md` §4 的五步迁移）
+## Phasing (corresponds to the five-step migration in `framework-evolution.md` §4)
 
-| 步 | 内容 | 性质 | 状态 |
+| Step | Content | Nature | Status |
 |---|---|---|---|
-| **1** | 总线启用 + A 类源接入 | 纯加法 | ✅ 2026-06-13 落地（commits e06b2db6 / 2915849b / 9b15ccac / dd8cb843），真实 turn 验收过完整序列 |
-| **2** | `file.changed` + `tool.before` 同步问询点 | 纯加法 | ✅ 2026-06-13 落地（commit 89e16a10），file.changed live 验证、gate 端到端测试 |
-| **3** | B 类源桥接：auth 真桥 + context/channels/memory/webui 源头 tap | 纯加法 | ✅ 2026-06-13 落地（commit 5cc967df），skills.changed live 验证，auth 桥 5 单测。注意 worker cwd=home，project skills 目录是 ~/skills |
-| **4** | webui 切换为订阅者：外部源 emit `ws.frame`、webui 订阅原样广播 | 动旧路 | ✅ 2026-06-13 落地（commits 99678165 + 4c5a5ede），WS 探针验证 task_status 四态经新链路到前端 |
-| **5** | 新消费者进场：`openprogram/proactive/` 规则层（Policy/挡路/旁观） | 纯加法 | ⏳ 验收：proactive 不碰子系统内部，仅靠订阅工作 |
+| **1** | Enable the bus + integrate class-A sources | pure addition | ✅ Landed 2026-06-13 (commits e06b2db6 / 2915849b / 9b15ccac / dd8cb843); a real turn validated the full sequence |
+| **2** | `file.changed` + the `tool.before` synchronous query point | pure addition | ✅ Landed 2026-06-13 (commit 89e16a10); file.changed live-verified, gate end-to-end tested |
+| **3** | Class-B source bridging: real auth bridge + context/channels/memory/webui source taps | pure addition | ✅ Landed 2026-06-13 (commit 5cc967df); skills.changed live-verified, 5 unit tests for the auth bridge. Note: worker cwd=home, so the project skills directory is ~/skills |
+| **4** | Switch webui to a subscriber: external sources emit `ws.frame`, webui subscribes and broadcasts as-is | reroute existing path | ✅ Landed 2026-06-13 (commits 99678165 + 4c5a5ede); WS probe verified that task_status's four states reach the frontend through the new chain |
+| **5** | New consumer enters: the `openprogram/proactive/` rule layer (Policy / blocking / observing) | pure addition | ⏳ Acceptance: proactive does not touch subsystem internals and works purely via subscription |
 
-## 已落地的实现（步 1–2 as-built）
+## Implementation already landed (steps 1–2 as-built)
 
-| 件 | 位置 |
+| Part | Location |
 |---|---|
-| Event / make_event / emit_safe / subscribe(types=) / get_event_bus / 事件日志订阅者 | `openprogram/agent/event_bus.py` |
-| 同步问询点（register_tool_gate / decide_tool_gate / ToolGateDenied） | `openprogram/agent/tool_gate.py` |
-| tool.before 观察+问询、tool.after、model.\*、turn.ended taps | `openprogram/agent/agent_loop.py` |
-| user.prompt_submitted（持久化分支外，两条路径都发） | `openprogram/agent/dispatcher/__init__.py` |
-| subagent.started/ended（状态漏斗） | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
-| file.changed（写成功后，懒 import） | write / edit / apply_patch 三工具五处 |
-| B 类桥（auth 订阅翻译，幂等安装于 worker 启动） | `openprogram/agent/event_bridges.py` + `worker/runner.py` |
-| B 类源头 taps | `context/engine.py`(compaction ×2)、`channels/_conversation.py`、`memory/session_watcher.py`(×2)、`webui/server.py`(skills/plugins) |
-| 步4 透传信封 emit_ws_frame + webui `_subscribe_event_bus` 订阅转发 | `agent/event_bus.py`、`webui/server.py` |
-| 步4 外部源解耦（不再 import webui） | `task/runner.py`、`sub_agent_run.py`、`worktree/manager.py`、`functions/watcher.py`、`channels/_broadcast.py` |
-| 单测（30 个） | `tests/agent/test_event_bus.py`、`test_tool_gate.py`、`test_event_bridges.py` |
+| Event / make_event / emit_safe / subscribe(types=) / get_event_bus / event-log subscriber | `openprogram/agent/event_bus.py` |
+| Synchronous query point (register_tool_gate / decide_tool_gate / ToolGateDenied) | `openprogram/agent/tool_gate.py` |
+| tool.before observe+query, tool.after, model.\*, turn.ended taps | `openprogram/agent/agent_loop.py` |
+| user.prompt_submitted (emitted on both paths, outside the persistence branch) | `openprogram/agent/dispatcher/__init__.py` |
+| subagent.started/ended (status funnel) | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
+| file.changed (after a successful write, lazy import) | five spots across the write / edit / apply_patch tools |
+| Class-B bridge (auth subscribe-and-translate, idempotently installed at worker startup) | `openprogram/agent/event_bridges.py` + `worker/runner.py` |
+| Class-B source taps | `context/engine.py` (compaction ×2), `channels/_conversation.py`, `memory/session_watcher.py` (×2), `webui/server.py` (skills/plugins) |
+| Step-4 passthrough-envelope emit_ws_frame + webui `_subscribe_event_bus` subscribe-and-forward | `agent/event_bus.py`, `webui/server.py` |
+| Step-4 external-source decoupling (no longer imports webui) | `task/runner.py`, `sub_agent_run.py`, `worktree/manager.py`, `functions/watcher.py`, `channels/_broadcast.py` |
+| Unit tests (30) | `tests/agent/test_event_bus.py`, `test_tool_gate.py`, `test_event_bridges.py` |
 
-## 验证
+## Verification
 
-每步通用：`py_compile` + 相关单测 + `openprogram worker restart` + `/healthz` 正常 +
-webui 发一条真实消息（前端改动需 `cd web && npm run build`）。
-步 1 专属：`OPENPROGRAM_EVENT_LOG=1` 重启 worker，跑一个带工具调用的 turn，确认日志里
-依序出现 `user.prompt_submitted → model.response_started → tool.before → tool.after →
-model.response_completed → turn.ended`，且 metadata 带 session/turn。
+Common to every step: `py_compile` + the relevant unit tests + `openprogram worker restart` + `/healthz` healthy +
+send a real message through webui (frontend changes need `cd web && npm run build`).
+Step 1 specific: restart the worker with `OPENPROGRAM_EVENT_LOG=1`, run a turn with a tool call, and confirm that the log
+shows, in order, `user.prompt_submitted → model.response_started → tool.before → tool.after →
+model.response_completed → turn.ended`, with metadata carrying session/turn.

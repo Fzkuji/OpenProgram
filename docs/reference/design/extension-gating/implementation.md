@@ -1,47 +1,47 @@
-# 实现地图
+# Implementation map
 
-门控模型在代码中的所在位置。改动实现时请参考本文。
+Where the gating model lives in the code. Use this when touching the implementation.
 
-## 文件地图
+## File map
 
 ```
 openprogram/agent/management/
-  ├─ gating.py              ← 共享辅助模块 (NEW)
-  └─ manager.py             ← AgentSpec schema (规范结构体)
+  ├─ gating.py              ← shared helper module (NEW)
+  └─ manager.py             ← AgentSpec schema (the canonical struct)
 
 openprogram/agent/
-  └─ _model_tools.py        ← 门控点：tools、MCP
+  └─ _model_tools.py        ← gate site for: tools, MCP
 
 openprogram/webui/ws_actions/
-  └─ chat.py                ← 门控点：skills (/skill X 命令)
+  └─ chat.py                ← gate site for: skills (/skill X command)
 
 openprogram/functions/
-  └─ __init__.py            ← agent_tools() 遵循解析后的名称列表
+  └─ __init__.py            ← agent_tools() honours the resolved name list
 ```
 
-## 共享辅助模块
+## Shared helper module
 
-**`openprogram/agent/management/gating.py`** —— 三个导出项，无其他依赖。
+**`openprogram/agent/management/gating.py`** — three exports, no other dependencies.
 
 ```python
 def match_any(name: str, patterns: Iterable[str]) -> bool
-    # fnmatch.fnmatchcase 通配符匹配
-    # 空/假值 patterns → False（调用方意为“无约束”）
+    # fnmatch.fnmatchcase wildcard match
+    # empty/falsy patterns → False (caller meant "no constraint")
 
 def gate(*, name, category="", disabled=(), allowed=(), categories=()) -> str | None
-    # 项目通过则返回 None，否则返回拒绝原因字符串
-    # 解析顺序：disabled → allowed → categories
+    # Returns None if the item passes, or a rejection-reason string
+    # Resolution order: disabled → allowed → categories
 
 def check_required(installed, required) -> list[str]
-    # 返回 installed 中没有任何项匹配的 required 模式
-    # 用于 MCP “此 agent 需要服务器 X” 的硬性要求
+    # Returns required patterns that nothing in installed matches
+    # Used for MCP "this agent needs server X" hard requirement
 ```
 
-这些都是纯函数 —— 无副作用、无全局状态 —— 可从任意层（web、dispatcher、CLI）导入。
+These are pure functions — no side effects, no globals — and importable from any layer (web, dispatcher, CLI).
 
-## 规范 schema
+## Canonical schema
 
-**`openprogram/agent/management/manager.py:63-86`** —— `AgentSpec` dataclass：
+**`openprogram/agent/management/manager.py:63-86`** — `AgentSpec` dataclass:
 
 ```python
 @dataclass
@@ -60,19 +60,19 @@ class AgentSpec:
     })
 ```
 
-每个块都是普通的 `dict`，因此 JSON 可轻松往返序列化。默认值全部为空（无约束）。
+Each block is a plain `dict` so JSON round-trips trivially. Defaults are all-empty (no constraint).
 
-## 门控点 1 —— skills (/skill 命令)
+## Gate site 1 — skills (/skill command)
 
 **`openprogram/webui/ws_actions/chat.py:90-116`**
 
-当用户输入 `/skill X` 时，处理器会：
+When the user types `/skill X` the handler:
 
-1. 将 `X` 解析为一个 `Skill` 对象（`_skill_resolve`）。
-2. 加载 agent 配置，取出 `skills` 块。
-3. 调用 `gate(name=resolved.name, category=resolved.category, disabled=..., allowed=..., categories=...)`。
-4. 若 `gate()` 返回了拒绝字符串，该聊天消息变为一条 `[error] skill X: <reason>` 系统消息，且不会展开 skill 正文。
-5. 否则像以往一样将 SKILL.md 展开进用户回合。
+1. Resolves `X` to a `Skill` object (`_skill_resolve`).
+2. Loads the agent profile, pulls the `skills` block.
+3. Calls `gate(name=resolved.name, category=resolved.category, disabled=..., allowed=..., categories=...)`.
+4. If `gate()` returned a rejection string, the chat message becomes a `[error] skill X: <reason>` system message and the skill body is NOT expanded.
+5. Otherwise expands SKILL.md into the user turn as before.
 
 ```python
 from openprogram.agents.gating import gate as _gate
@@ -87,16 +87,16 @@ if gate_error:
     raise PermissionError(gate_error)
 ```
 
-## 门控点 2 —— tools
+## Gate site 2 — tools
 
-**`openprogram/agent/_model_tools.py:174-272`** —— `resolve_tools()`。
+**`openprogram/agent/_model_tools.py:174-272`** — `resolve_tools()`.
 
-该函数接受以下任一形式：
-- `wanted: list[str]` —— 每回合的显式覆盖（不施加门控，调用方已自行选择）。
-- `wanted: dict` —— 来自 agent 配置的 `{enabled?, disabled, allowed, toolset?}` 结构。
-- `wanted: None` —— 回退到 `agent_tools(source=..., only_available=True)`。
+The function accepts either:
+- `wanted: list[str]` — explicit per-turn override (no gating applied, caller already chose).
+- `wanted: dict` — `{enabled?, disabled, allowed, toolset?}` shape from the agent profile.
+- `wanted: None` — fall through to `agent_tools(source=..., only_available=True)`.
 
-通配符门控发生在 238-262 行：
+Wildcard gating happens at lines 238-262:
 
 ```python
 if isinstance(wanted, dict):
@@ -110,13 +110,13 @@ if isinstance(wanted, dict):
     ]
 ```
 
-更早的 `enabled: list[str]` 形式仍然优先（它是显式覆盖）。新的 `disabled`/`allowed` 模式仅在 `enabled` 缺失时才生效。
+The earlier `enabled: list[str]` form still wins (it's the explicit override). New `disabled`/`allowed` patterns kick in only when `enabled` is absent.
 
-## 门控点 3 —— MCP
+## Gate site 3 — MCP
 
-**`openprogram/agent/_model_tools.py:192-224`** —— `_apply_mcp_gate()`，一个在 `resolve_tools` 的每个返回路径上都会调用的内部辅助函数。
+**`openprogram/agent/_model_tools.py:192-224`** — `_apply_mcp_gate()`, an inner helper invoked at every return path of `resolve_tools`.
 
-MCP 工具从 `agent_tools()` 中以 `slack__send_message` 或 `github-mcp__create_issue`（服务器名 + `__` + 工具名）这样的名称浮现。门控按 `<server>` 前缀过滤：
+MCP tools surface from `agent_tools()` with names like `slack__send_message` or `github-mcp__create_issue` (server name + `__` + tool name). The gate filters by the `<server>` prefix:
 
 ```python
 def _apply_mcp_gate(tool_list):
@@ -126,12 +126,12 @@ def _apply_mcp_gate(tool_list):
     seen_servers = {_server_of(t.name) for t in tool_list if _server_of(t.name)}
     missing = check_required(seen_servers, required)
     if missing:
-        return None   # 硬性失败 —— agent 回合在无工具状态下运行
+        return None   # hard fail — agent turn runs with no tools
     out = []
     for t in tool_list:
         srv = _server_of(t.name)
         if not srv:
-            out.append(t)             # 原生工具，无 MCP 命名空间
+            out.append(t)             # native tool, no MCP namespace
             continue
         if disabled and match_any(srv, disabled): continue
         if allowed and not match_any(srv, allowed): continue
@@ -139,31 +139,31 @@ def _apply_mcp_gate(tool_list):
     return out
 ```
 
-`required` 是**硬性**检查 —— 若有任何 required 模式在 `seen_servers` 中无任何匹配，整个工具列表都会被替换为 `None`。dispatcher 会记录缺失列表，agent 在该回合以工具禁用状态运行。
+`required` is the **hard** check — if any required pattern matches nothing in `seen_servers`, the whole tool list is replaced with `None`. The dispatcher logs the missing list and the agent runs as tools-disabled for the turn.
 
-## 为何是三个门控点，而非一个
+## Why three sites, not one
 
-每个门控都运行在 LLM 即将看到该扩展的那一刻：
+Each gate runs at the point where the LLM is about to see the extension:
 
-| 扩展 | LLM 何时看到它？ | 门控点 |
+| Extension | When does the LLM see it? | Gate site |
 |---|---|---|
-| Skill | 当 `/skill X` 运行且 SKILL.md 被注入回合时 | `chat.py` handler |
-| Tool | 当 `resolve_tools()` 为 `agent_loop` 构建 `tools=[...]` 参数时 | `_model_tools.py` |
-| MCP | 同 tool（MCP 工具通过同一条 `agent_tools()` 流水线浮现） | `_model_tools.py` (`_apply_mcp_gate`) |
+| Skill | When `/skill X` runs and SKILL.md gets injected into the turn | `chat.py` handler |
+| Tool | When `resolve_tools()` builds the `tools=[...]` arg for `agent_loop` | `_model_tools.py` |
+| MCP | Same as tool (MCP tools surface through the same `agent_tools()` pipeline) | `_model_tools.py` (`_apply_mcp_gate`) |
 
-我们曾考虑在调用栈更早处放置单一的 `apply_all_gates(profile, ...)` 收口点。我们否决了它，因为这三个点的“输入列表长什么样”各不相同 —— skills 是带有 category 字段的 `Skill` 对象，tools 是裸字符串，MCP 工具是带命名空间的字符串。共享辅助函数（`match_any`、`gate`、`check_required`）覆盖了约 90% 的逻辑；各调用点之间仅输入形态不同。
+We considered putting a single `apply_all_gates(profile, ...)` chokepoint earlier in the stack. We rejected it because the three sites have different "what does the input list look like" — skills have a `Skill` object with a category field, tools are bare strings, MCP tools are namespaced strings. The shared helpers (`match_any`, `gate`, `check_required`) cover ~90% of the logic; only the input shape differs per call site.
 
-## 向后兼容
+## Backward compatibility
 
-带有 `skills: ["pdf", "drawio"]`（裸列表而非 dict）的旧 agent 配置会在加载时被规范化。我们已在 `AgentSpec.from_dict` 中将 `skills: list` → `skills: {disabled: list}` 迁移，因此现有配置无需任何修改即可继续工作。
+Old agent profiles with `skills: ["pdf", "drawio"]` (a bare list, not a dict) are normalised at load time. We already migrate `skills: list` → `skills: {disabled: list}` in `AgentSpec.from_dict`, so existing profiles keep working with no edits.
 
-同样，`tools: ["bash", "read"]` 仍然有效 —— 列表形式被视为白名单（旧的 `enabled` 语义）。
+Similarly `tools: ["bash", "read"]` continues to be valid — the list form is treated as a whitelist (the old `enabled` semantics).
 
-## 测试
+## Testing
 
-目前尚无针对 `gating.py` 的专门单元测试 —— `match_any` 是 `fnmatch.fnmatchcase` + 迭代，逻辑简单到只有一行。集成测试通过以下方式进行：
+There are no dedicated unit tests for `gating.py` yet — `match_any` is `fnmatch.fnmatchcase` + iteration so the logic is one-liner trivial. Integration testing happens through:
 
-- `openprogram/_cli_cmds/doctor.py` —— 健康检查会枚举已安装的 skills/tools/MCP，并在启动时暴露门控错误。
-- WS 冒烟测试 —— 在带有 disabled 模式的配置下运行 `/skill X`，会在聊天记录中返回拒绝消息。
+- `openprogram/_cli_cmds/doctor.py` — health check enumerates installed skills/tools/MCP and surfaces gating errors at start-up.
+- WS smoke test — `/skill X` with a disabled-pattern profile returns the rejection message in the chat transcript.
 
-若 `match_any` 的语义某天偏离 `fnmatch.fnmatchcase`（例如我们某天加入 `**` 递归 glob 支持），再补充正式的单元测试。
+Add proper unit tests if `match_any` semantics ever diverge from `fnmatch.fnmatchcase` (e.g. if we ever add `**` recursive-glob support).

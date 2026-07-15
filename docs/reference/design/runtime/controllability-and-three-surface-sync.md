@@ -1,62 +1,62 @@
-# 长跑 agent 任务的可控性 + 三端一致性
+# Controllability of long-running agent tasks + three-surface consistency
 
-用户需求(原话整理):
-1. **值守开关**:无人值守时(我睡觉了)别问我;观察时可以问我。做法已定 —— 无人值守就**不把"询问用户"工具给 agent**,它拿不到就不问,顶多生成点不确定内容,靠后续模型思考自解。
-2. **中途干预/切换方向**:任务跑一半发现路线错了,我能插一条新指令让它调整。做法方向已定 —— **基于事件层**,程序时刻监控外部事件,有用户额外消息就注入进去。
-3. **中途提问显示**:agent 要问我时,三端都能看到、能答。
-4. **三端会话同步**:一端后台跑的会话,CLI/TUI/网页端三端同步显示,不能一端做了另一端看不到。
+User requirements (paraphrased from the original):
+1. **Attended/unattended switch**: when unattended (I'm asleep), don't ask me; when watching, you may ask. The approach is settled — when unattended, simply **don't give the agent the "ask the user" tool**; it can't ask if it can't reach it, and at worst it produces some uncertain content that later model reasoning resolves on its own.
+2. **Mid-run intervention / redirection**: if I notice halfway through the task that the direction is wrong, I can inject a new instruction to make it adjust. The direction is settled — **built on the event layer**, the program continuously monitors external events, and any extra user message gets injected.
+3. **Mid-run question display**: when the agent wants to ask me, all three surfaces can see it and answer.
+4. **Three-surface session sync**: a session running in the background on one surface displays in sync across CLI/TUI/web; one surface acting must not leave another surface unaware.
 
-## 地基盘点(已有,可复用)
+## Foundation inventory (existing, reusable)
 
-| 能力 | 现状 | file:line |
+| Capability | Current state | file:line |
 |---|---|---|
-| steering 注入点 | agent_loop 已有 3 个检查点(turn 头、每个工具后、follow-up 前)可插消息 | `agent/agent_loop.py:218-310,620-629` |
-| 提问框架 | QuestionRegistry(进程级、线程安全、claim-once)+ 两种 Transport(EventLayer / Queue)+ 子进程桥 | `agent/questions.py:34-198`、`agent/process_runner.py` 的 answer_queue/QueueTransport |
-| 事件广播 | EventBus + emit_ws_frame:一处 emit,所有 WS 客户端收到 | `agent/event_bus.py:115-125`、`webui/server.py` `_broadcast` |
-| 共享存储 | git-backed SessionDB,三端共享同一真值;worker 单例(WorkerLock) | `agent/session_db.py`、`worker/lock.py` |
-| 工具目录策略 | apply_tool_policy 有 deny/allow;toolset 分级(default 不含 ask_user_question,full 含) | `functions/__init__.py` apply_tool_policy |
-| 取消/优雅停 | cancel_event 全链路 + 子进程 graceful stop IPC(本轮新加) | `agent/process_runner.py` request_graceful_stop |
+| steering injection points | agent_loop already has 3 checkpoints (turn head, after each tool, before follow-up) where messages can be inserted | `agent/agent_loop.py:218-310,620-629` |
+| question framework | QuestionRegistry (process-level, thread-safe, claim-once) + two Transports (EventLayer / Queue) + subprocess bridge | `agent/questions.py:34-198`, the answer_queue/QueueTransport in `agent/process_runner.py` |
+| event broadcast | EventBus + emit_ws_frame: emit in one place, all WS clients receive it | `agent/event_bus.py:115-125`, `_broadcast` in `webui/server.py` |
+| shared storage | git-backed SessionDB, one source of truth shared by all three surfaces; worker singleton (WorkerLock) | `agent/session_db.py`, `worker/lock.py` |
+| tool catalog policy | apply_tool_policy supports deny/allow; toolset tiering (default excludes ask_user_question, full includes it) | `functions/__init__.py` apply_tool_policy |
+| cancel / graceful stop | cancel_event end-to-end + subprocess graceful stop IPC (added this round) | `agent/process_runner.py` request_graceful_stop |
 
-**关键结论**:三端共享 worker+DB+EventBus,同步根基已成立;steering 和提问的管道都现成。真正的真空是「闸门」和「协调层」。
+**Key conclusion**: all three surfaces share worker + DB + EventBus, so the foundation for sync is already in place; the pipes for steering and asking questions are both ready-made. The real vacuum is the "gate" and the "coordination layer".
 
-## 重要发现:值守开关的真正落点
+## Important finding: where the attended switch actually lands
 
-research_harness 的自主 loop **已经事实上是无人值守**:
-- `oversight="interactive"` 已把 socratic_plan 等排除出 catalog(`registry.py:357`)。
-- 实验子函数用 `toolset="default"`,而 default **不含** `ask_user_question`。
+The autonomous loop in research_harness is **already unattended in practice**:
+- `oversight="interactive"` already excludes socratic_plan and the like from the catalog (`registry.py:357`).
+- The experiment sub-functions use `toolset="default"`, and default **does not include** `ask_user_question`.
 
-所以"无人值守不给 ask 工具"这条,在 research_harness 自主路径上**已经天然成立**。值守开关真正有意义的是 **OpenProgram 通用 chat/agent 路径**(那里 `full` toolset 含 `ask_user_question` + clarify 工具)。
+So the rule "don't give the ask tool when unattended" **already holds naturally** on the research_harness autonomous path. Where the attended switch actually matters is the **OpenProgram general chat/agent path** (there the `full` toolset includes `ask_user_question` + the clarify tools).
 
-→ P1 落点 = dispatcher 给 turn 选工具时,按会话级 `attended` 标志决定是否 deny 掉 `ask_user_question` / clarify 类工具。
+→ P1 landing point = when dispatcher selects tools for a turn, decide whether to deny `ask_user_question` / clarify-type tools based on the session-level `attended` flag.
 
-## 分阶段计划(每步独立可验证、独立交付)
+## Phased plan (each step independently verifiable, independently shippable)
 
-### P1 — 值守开关(attended/unattended)
-- **会话级标志** `attended`(默认 attended=True,即可问)。存哪:会话 metadata(SessionDB)+ 内存态,三端可读可改。
-- **闸门**:dispatcher 组装 turn 工具时,`attended=False` → `apply_tool_policy(deny=["ask_user_question","clarify",...问询类])`。agent 拿不到工具 = 不会问。
-- **三端设开关**:CLI flag(`--unattended`)、TUI 一个快捷键/状态、网页端一个 toggle。三端改的是同一个会话标志(走 worker)。
-- **验证**:unattended 下跑一个本会去问的任务,确认 catalog 无 ask 工具、agent 不弹问题、照样产出。
+### P1 — attended switch (attended/unattended)
+- **Session-level flag** `attended` (default attended=True, i.e. asking is allowed). Where it lives: session metadata (SessionDB) + in-memory state, readable and writable by all three surfaces.
+- **Gate**: when dispatcher assembles a turn's tools, `attended=False` → `apply_tool_policy(deny=["ask_user_question","clarify",...inquiry-type])`. The agent has no such tool = it won't ask.
+- **Set the switch from all three surfaces**: a CLI flag (`--unattended`), a TUI shortcut/status, a web toggle. All three change the same session flag (via the worker).
+- **Verification**: under unattended, run a task that would normally ask, and confirm the catalog has no ask tool, the agent pops no questions, and it still produces output.
 
-### P2 — 中途干预(事件注入 steering)
-- **机制**:把"用户中途消息"做成一个事件,research_agent / agent_loop 在循环检查点(就是 max_runtime_s/stop_event 那两个点)poll 一个**会话级 steering 队列**,有就把消息作为新指令注入下一步的 context / 重新 _pick_stage。
-- **入口**:三端发"干预消息" → WS/CLI → 投进该会话的 steering 队列(复用 server 的 `_follow_up_queues` 或新建)。
-- **注入语义**:不打断当前 step(优雅),当前 step 完成后,把用户的新指令喂给下一轮 stage 决策("用户中途说:改成 X,据此调整")。
-- **复用**:agent_loop 已有 steering_messages 管道;research_agent 循环加一个 `_steering_pending()` 检查,和 `_stop_requested()` 并列。
-- **验证**:任务跑到 stage 2 时发"别写实验了,先补文献",确认下一轮 stage 决策吃到了这条、转向了。
+### P2 — mid-run intervention (event-injected steering)
+- **Mechanism**: turn a "user mid-run message" into an event; research_agent / agent_loop poll a **session-level steering queue** at the loop checkpoints (the same two points as max_runtime_s/stop_event), and if there is one, inject the message as a new instruction into the next step's context / re-run _pick_stage.
+- **Entry point**: any surface sends an "intervention message" → WS/CLI → push it into that session's steering queue (reuse the server's `_follow_up_queues` or create a new one).
+- **Injection semantics**: don't interrupt the current step (graceful); once the current step finishes, feed the user's new instruction into the next round's stage decision ("the user said mid-run: change to X, adjust accordingly").
+- **Reuse**: agent_loop already has a steering_messages pipe; the research_agent loop adds a `_steering_pending()` check, alongside `_stop_requested()`.
+- **Verification**: when the task reaches stage 2, send "stop writing experiments, do the literature review first", and confirm the next round's stage decision picks this up and pivots.
 
-### P3 — 三端同步补全
-- **running 状态位**:会话加"正在计算"标志(谁在跑、跑到哪),写进可广播的会话状态,三端能看到"这个会话正忙"。
-- **新连接回放**:新 WS 客户端 join 时,若该会话有正在 streaming 的 turn,补发已发生的中间事件(或至少发"正在跑+当前阶段")。现在新连接只能看 final。
-- **验证**:A 端发起任务,B 端中途连上,B 能看到正在跑 + 进度,不是空白等 final。
+### P3 — completing three-surface sync
+- **running status bit**: add a "computing now" flag to the session (who is running, how far along), written into broadcastable session state, so all three surfaces can see "this session is busy".
+- **Replay on new connection**: when a new WS client joins, if the session has a turn that is currently streaming, resend the intermediate events that have already occurred (or at least send "running now + current stage"). Right now a new connection can only see the final.
+- **Verification**: surface A starts a task, surface B connects midway, and B can see "running now + progress" rather than blank-waiting for the final.
 
-### P4 — 提问显示对齐
-- CLI / TUI 把 `question.asked` 事件渲染成可答的卡片(网页端已有)。CLI 走 stdin 提示,TUI 走 follow_up 卡片组件。
-- **验证**:attended 下 agent 提问,三端都弹得出、答得了,答案回到同一个 registry。
+### P4 — aligning question display
+- CLI / TUI render the `question.asked` event as an answerable card (web already has it). CLI uses a stdin prompt, TUI uses the follow_up card component.
+- **Verification**: under attended, the agent asks a question, all three surfaces can pop it and answer it, and the answer goes back to the same registry.
 
-## 跨切面:三端一致性是贯穿原则
-P1 的开关、P2 的干预、P4 的提问 —— 状态都存在**会话级**(worker 内 + DB),三端只是这同一状态的不同视图。任何一端的操作走 worker → 广播 → 三端同步。绝不做某端本地、不同步的状态。
+## Cross-cutting: three-surface consistency is a pervasive principle
+P1's switch, P2's intervention, P4's questions — their state all lives at the **session level** (inside the worker + DB), and the three surfaces are just different views of this same state. An action on any surface goes through the worker → broadcast → all three surfaces sync. Never create state that is local to one surface and unsynced.
 
-## 待用户拍板的设计点
-- P1 默认值:attended=True(默认可问)还是 unattended=True(默认别打扰)?
-- P2 注入时机:只在 step 边界优雅注入(推荐),还是要支持"立即打断当前 step"?
-- 顺序:是否就按 P1→P2→P3→P4。
+## Design points awaiting the user's decision
+- P1 default: attended=True (asking allowed by default) or unattended=True (don't disturb by default)?
+- P2 injection timing: only graceful injection at step boundaries (recommended), or also support "interrupt the current step immediately"?
+- Order: whether to follow exactly P1→P2→P3→P4.

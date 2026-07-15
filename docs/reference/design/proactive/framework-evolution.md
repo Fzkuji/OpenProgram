@@ -1,77 +1,65 @@
-# 框架演进：现状 → 目标
+# Framework Evolution: Current State → Target
 
-有了事件层（`event-layer.md`），整个框架怎么调整。三件事：现状什么样、目标什么样、怎么迁过去。
+With the event layer in place (`event-layer.md`), how does the whole framework change? Three things: what it looks like today, what it should look like, and how to get there.
 
-## 1. 现状：webui 被迫当信号中枢
+## 1. Current State: webui Forced to Act as the Signal Hub
 
-![现状：六套机制各自为政](diagrams/framework-asis.svg)
+![Current state: six mechanisms each going their own way](diagrams/framework-asis.svg)
 
-病根一句话：**几乎所有信号存在的目的都是"让前端看到"，所以全部硬连到 webui server 的
-`_broadcast`**——task_status、channel_turn、skills:changed 各用各的 JSON 直连它；agent 事件经
-dispatcher 回调链到它。webui 是个 UI 组件，却成了事实上的中枢。其余的更糟：auth 的事件做对了
-但几乎没人订阅，memory 和文件改动根本无信号，hooks 返回值被丢弃（能看不能拦），EventBus 闲置。
+The root cause in one sentence: **almost every signal exists for the sole purpose of "letting the frontend see it," so they're all hardwired into the webui server's `_broadcast`**—task_status, channel_turn, and skills:changed each connect to it directly with their own JSON; agent events reach it through the dispatcher callback chain. webui is a UI component, yet it has become the de facto hub. The rest is worse: auth's events are done right but almost nobody subscribes to them, memory and file changes emit no signal at all, hooks' return values are discarded (you can observe but can't intercept), and the EventBus sits idle.
 
-结果：想加一个新消费者（proactive 就是第一个），得分别对接五六套机制，有的时机根本没信号可接。
+The result: to add a new consumer (proactive is the first), you have to integrate with five or six separate mechanisms, and for some moments there's simply no signal to hook into.
 
-## 2. 目标：总线当中枢，三个角色变化
+## 2. Target: the Bus as the Hub, Three Roles Change
 
-![目标：一条总线当中枢](diagrams/framework-tobe.svg)
+![Target: a single bus as the hub](diagrams/framework-tobe.svg)
 
-| 角色变化 | 谁 | 怎么变 |
+| Role change | Who | How it changes |
 |---|---|---|
-| **↑ 上位** | EventBus | 从闲置死码升为唯一中枢（进程级单例，统一 Event 格式，按类型订阅） |
-| **↓ 降级** | webui server | 从被迫的中枢降为普通订阅者：订阅总线 → 转发前端 WS |
-| **＋ 进场** | proactive 及未来任何功能 | 只是又一个订阅者，一行 `subscribe(types=…)` 接入 |
+| **↑ Promoted** | EventBus | From idle dead code to the sole hub (process-level singleton, unified Event format, subscribe by type) |
+| **↓ Demoted** | webui server | From the forced hub down to an ordinary subscriber: subscribe to the bus → forward to the frontend WS |
+| **＋ Entering** | proactive and any future feature | Just another subscriber, plugging in with one line of `subscribe(types=…)` |
 
-外加一处新能力：`tool.before` 同步问询点——全框架唯一的拦截位（复用 `_approval`，对 subagent
-生效）。其余一切交互都是异步观察。
+Plus one new capability: the `tool.before` synchronous interrogation point—the only interception site in the whole framework (reuses `_approval`, takes effect for subagents). Every other interaction is asynchronous observation.
 
-## 3. 各子系统怎么变
+## 3. How Each Subsystem Changes
 
-| 子系统 | 现在 | 将来 | 改动量 |
+| Subsystem | Now | Future | Change size |
 |---|---|---|---|
-| agent loop | AgentEvent 内部流；hooks 返回值被丢 | 关键节点同时 emit 总线；tool.before 加同步问询 | 小 |
-| dispatcher | on_event 回调链直达 webui | 保留（过渡期），另 emit `user.prompt_submitted` 等 | 小 |
-| task runner | 直连 `_broadcast` task_status | emit `subagent.*`；前端广播由 webui 订阅转发 | 小 |
-| auth | 自己的 `_emit/subscribe`（规范） | **自身不动**，一段桥接把 AuthEvent 翻成 Event emit 进总线 | 极小 |
-| context | on_event 回调 | 回调里顺手 emit `context.*` | 极小 |
-| channels | broadcast_channel_turn 直连 | emit `channel.*`；直连保留过渡 | 小 |
-| memory | 定时 poll，无信号 | 处理起止 emit，把"定时"包装成事件 | 极小 |
-| 文件改动 | 默默备份，无信号 | `backup_for_current_turn` 处 emit `file.changed` | 极小 |
-| plugin hooks | observe-only，6 个 fire 点 | 内部统一走总线；hooks 保留为插件 API（包一层订阅）或逐步退役 | 决策点 |
-| webui server | 中枢 | 订阅者；旧直连逐源退役 | 中 |
-| EventBus | 闲置 | 升级（类型订阅 + 单例）并启用 | 核心 |
+| agent loop | AgentEvent internal stream; hooks' return values discarded | Also emit to the bus at key points; tool.before adds synchronous interrogation | Small |
+| dispatcher | on_event callback chain reaching webui directly | Kept (transition period), and additionally emits `user.prompt_submitted` etc. | Small |
+| task runner | Connects directly to `_broadcast` task_status | Emits `subagent.*`; frontend broadcast handled by webui subscribing and forwarding | Small |
+| auth | Its own `_emit/subscribe` (the standard) | **Itself unchanged**, with a bridge that translates AuthEvent into Event and emits it onto the bus | Minimal |
+| context | on_event callback | Emits `context.*` alongside in the callback | Minimal |
+| channels | broadcast_channel_turn direct connection | Emits `channel.*`; direct connection kept during transition | Small |
+| memory | Periodic poll, no signal | Emits at processing start/end, wrapping the "periodic" into events | Minimal |
+| file changes | Silently backs up, no signal | Emits `file.changed` at `backup_for_current_turn` | Minimal |
+| plugin hooks | observe-only, 6 fire points | Internally unified onto the bus; hooks kept as a plugin API (wrapped in a subscription layer) or gradually retired | Decision point |
+| webui server | Hub | Subscriber; old direct connections retired source by source | Medium |
+| EventBus | Idle | Upgraded (type subscription + singleton) and enabled | Core |
 
-## 4. 怎么迁：新旧并行，逐源切换
+## 4. How to Migrate: Old and New in Parallel, Switch Source by Source
 
-不大爆炸重写。总线先**并行**于现有路径跑起来，每一步独立可验证、可回退：
+No big-bang rewrite. The bus first runs **in parallel** with the existing paths, with each step independently verifiable and reversible:
 
-1. ✅ **总线启用 + A 类源接入**（已落地，2026-06-13）——纯增量，零行为变化，旧路径原样跑。
-   已验收：真实 turn 打出完整序列 `user.prompt_submitted → model.response_started →
-   tool.before → tool.after → turn.ended`，metadata 自动带 session/turn。
-2. ✅ **补两个洞**（已落地，2026-06-13）——`file.changed`（write/edit/apply_patch 写成功后，
-   live 验证）、`tool.before` 同步问询点（`tool_gate.py`，端到端测试证明工具真不执行、
-   理由回给模型、bypass 关不掉）。
-3. ✅ **B 类源桥接**（已落地，2026-06-13）——auth 走真桥（`event_bridges.py`，worker 启动装上），
-   context / channels / memory / webui watcher 源头直接 tap。`skills.changed` 已 live 验证。
-4. ✅ **webui 切换**（已落地，2026-06-13）——5 个外部源（task runner / sub_agent / worktree /
-   functions watcher / channels）不再 import webui，改 emit `ws.frame` 事件；webui 订阅它原样
-   广播。帧 type/字段一字不变，前端零改动。webui 至此从信号中枢降级为总线订阅者。
-   live 验证：spawn_task 的 task_status 四态全经新链路到前端。
-5. ⏳ **新消费者进场**——proactive 等，从此只面对总线。
+1. ✅ **Bus enabled + Class A sources connected** (landed, 2026-06-13)—purely additive, zero behavior change, old paths run as-is. Verified: a real turn produces the full sequence `user.prompt_submitted → model.response_started → tool.before → tool.after → turn.ended`, with metadata automatically carrying session/turn.
+2. ✅ **Fill two holes** (landed, 2026-06-13)—`file.changed` (after write/edit/apply_patch succeeds, live-verified) and the `tool.before` synchronous interrogation point (`tool_gate.py`, end-to-end tests prove the tool truly doesn't execute, the reason is returned to the model, and bypass can't turn it off).
+3. ✅ **Class B source bridging** (landed, 2026-06-13)—auth goes through a real bridge (`event_bridges.py`, installed at worker startup), while context / channels / memory / webui watcher tap directly at the source. `skills.changed` is live-verified.
+4. ✅ **webui switchover** (landed, 2026-06-13)—5 external sources (task runner / sub_agent / worktree / functions watcher / channels) no longer import webui; they instead emit `ws.frame` events, and webui subscribes and broadcasts them as-is. Frame type/fields are byte-for-byte unchanged, frontend untouched. With this, webui is demoted from signal hub to bus subscriber. Live-verified: spawn_task's task_status all four states reach the frontend over the new path.
+5. ⏳ **New consumers entering**—proactive and others, which from now on face only the bus.
 
-第 1–3 步全是加法；第 4 步动旧路径，用透传信封（帧逐字不变）替代影子比对，前端无感切换。
+Steps 1–3 are all additive; step 4 touches the old paths, using a pass-through envelope (frames byte-for-byte unchanged) instead of shadow comparison, so the frontend switches over seamlessly.
 
-## 5. 刻意不动的东西
+## 5. What Is Deliberately Left Untouched
 
-动什么和不动什么一样重要。这些**不在**本次演进范围：
+What changes and what doesn't are equally important. These are **not** in scope for this evolution:
 
-- dispatcher 的七阶段 turn 编排、`process_user_turn` 的对外签名
-- session git DAG 存储与 contextgit
-- TaskRunner 的线程池模型
-- `ApprovalRegistry` 批准机制（被复用，不被改写）
-- AuthStore 自身（桥接，不动它）
-- 前端 WS 协议（webui 切换为订阅者后对前端透明）
+- The dispatcher's seven-stage turn orchestration and the external signature of `process_user_turn`
+- session git DAG storage and contextgit
+- TaskRunner's thread-pool model
+- The `ApprovalRegistry` approval mechanism (reused, not rewritten)
+- AuthStore itself (bridged, not touched)
+- The frontend WS protocol (transparent to the frontend once webui becomes a subscriber)
 
-> 具体接线点（file:line）与分步验证见 [实施规划](../plans/proactive-implementation.md)。
-> 可视化版本：[`framework-evolution.html`](framework-evolution.html)。
+> For specific wiring points (file:line) and step-by-step verification, see the [implementation plan](../plans/proactive-implementation.md).
+> Visual version: [`framework-evolution.html`](framework-evolution.html).

@@ -1,12 +1,12 @@
-# LLM 标题生成
+# LLM Title Generation
 
-命名的完整流程（首轮自动命名、用户主动重命名、竞态保护、锁标记）见 [operations.md](operations.md) 的"命名"段。权威实现在 `openprogram/agent/dispatcher/titles.py`，是所有入口共用的唯一命名实现。本文件只描述 `_generate_llm_title()`（阶段 2）的实现细节。
+For the full naming flow (automatic naming on the first turn, user-initiated rename, race protection, lock markers), see the "Naming" section of [operations.md](operations.md). The authoritative implementation lives in `openprogram/agent/dispatcher/titles.py`, the single naming implementation shared by all entry points. This document only describes the implementation details of `_generate_llm_title()` (stage 2).
 
-阶段 1 的截断（`_title_from_text` / `_default_title`）也在 titles.py：剥 `[attachment:]` / `<attachment-preview>` / `<file>` 标记 → 取首行 → 截 50 字（超出加 `…`）。
+The stage 1 truncation (`_title_from_text` / `_default_title`) also lives in titles.py: strip the `[attachment:]` / `<attachment-preview>` / `<file>` markers → take the first line → truncate to 50 characters (append `…` if it exceeds that).
 
-## 输入
+## Input
 
-用户消息前 500 字符 + assistant 回复前 500 字符。包裹在 `<session>` 标签中。
+The first 500 characters of the user message plus the first 500 characters of the assistant reply. Wrapped in `<session>` tags.
 
 ## Prompt
 
@@ -20,30 +20,30 @@ If the content is just a URL or reference, describe what the user is asking abou
 Return ONLY the title text, no quotes, no prefix, no explanation.
 ```
 
-语言跟随：prompt 要求模型用对话语言生成标题。title 存储在 meta.json（JSON UTF-8）、通过 WebSocket JSON 广播、在浏览器渲染，三处均无编码限制。
+Language follows the content: the prompt instructs the model to generate the title in the conversation's language. The title is stored in meta.json (JSON UTF-8), broadcast as JSON over WebSocket, and rendered in the browser; none of these three places impose any encoding restriction.
 
-## 参数
+## Parameters
 
 - `max_tokens=50`
 - `temperature=0.3`
 
-## 模型
+## Model
 
-优先使用小模型，fallback 到默认模型：
+Prefer the small model, falling back to the default model:
 
-1. 配置了 `small_model` → 使用它（如 claude-haiku-4-5、gpt-4o-mini）
-2. 未配置 → `llm_bridge.build_default_llm()`（复用默认 agent 配置的 provider/model）
+1. `small_model` is configured → use it (e.g. claude-haiku-4-5, gpt-4o-mini)
+2. Not configured → `llm_bridge.build_default_llm()` (reuses the provider/model from the default agent configuration)
 
-## 后处理
+## Post-processing
 
-1. 去 `<think>...</think>` 标签（兼容推理模型）
-2. 取第一个非空行
-3. 去首尾空白
-4. 去引号包裹（`"title"` → `title`）
-5. 去 `Title:` / `标题：` 等前缀
-6. 截断到 80 字符
-7. 空结果 → 保留当前标题不变
+1. Remove `<think>...</think>` tags (for compatibility with reasoning models)
+2. Take the first non-empty line
+3. Trim leading and trailing whitespace
+4. Strip wrapping quotes (`"title"` → `title`)
+5. Strip prefixes such as `Title:` / `标题：`
+6. Truncate to 80 characters
+7. Empty result → keep the current title unchanged
 
-## 展示层 fallback
+## Presentation-layer fallback
 
-当 title 为空/"New conversation"/"Untitled" 时，前端用 preview（第一条消息前 80 字符）替代显示。
+When the title is empty / "New conversation" / "Untitled", the frontend displays the preview (the first 80 characters of the first message) instead.

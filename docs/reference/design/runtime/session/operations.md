@@ -1,71 +1,71 @@
-# Session 操作流程
+# Session Operations
 
-每个操作从触发到磁盘到前端，完整写一遍。
-
----
-
-## 启动
-
-进程启动时 SessionStore 做一次初始化：
-
-1. 读 `index.json` 加载到内存 `_index` dict
-2. 如果文件不存在或 JSON parse 失败 → 扫描所有 session 目录的 meta.json 重建 `_index`，写入 `index.json`
-3. 遍历 `_index`，把所有 `status=running` 重置为 `idle`（崩溃恢复）
-4. 清理空壳：0 条消息 + 创建超过 1 小时的 session → 删除目录 + 删注册表条目
-5. 清理过期归档：`archived=True` 且 `updated_at` 超过 90 天 → 删除
-6. 容量检查：注册表超过 1000 条 → 按 `updated_at` 升序删最旧的已归档 session
-
-半残 session 的处理：
-- 有 meta.json 没 history/ → 等同空壳，步骤 4 删除
-- 有 history/ 没 meta.json → 步骤 2 扫描时读不到 meta.json，不注册，等同不存在
+Each operation is written out end to end, from trigger to disk to frontend.
 
 ---
 
-## 创建 session
+## Startup
 
-3 个入口可以触发创建：
+When the process starts, SessionStore runs a one-time initialization:
 
-| 入口 | 场景 |
+1. Read `index.json` and load it into the in-memory `_index` dict
+2. If the file does not exist or JSON parsing fails → scan the meta.json of every session directory to rebuild `_index`, then write `index.json`
+3. Iterate over `_index` and reset every `status=running` to `idle` (crash recovery)
+4. Clean up empty shells: a session with 0 messages and created more than 1 hour ago → delete the directory + delete the registry entry
+5. Clean up expired archives: `archived=True` and `updated_at` older than 90 days → delete
+6. Capacity check: if the registry exceeds 1000 entries → delete the oldest archived sessions in ascending `updated_at` order
+
+Handling of half-broken sessions:
+- Has meta.json but no history/ → treated as an empty shell, deleted in step 4
+- Has history/ but no meta.json → the scan in step 2 cannot read meta.json, so it is not registered and is treated as nonexistent
+
+---
+
+## Creating a session
+
+Three entry points can trigger creation:
+
+| Entry point | Scenario |
 |------|------|
-| `dispatcher.process_user_turn` | 用户发消息时，session 不存在则创建 |
-| `channel handler` | 渠道消息到达时创建 |
-| `session_context` | CLI / research harness 进入上下文时，session 不存在则创建 |
+| `dispatcher.process_user_turn` | When a user sends a message and the session does not exist, create it |
+| `channel handler` | Create it when a channel message arrives |
+| `session_context` | When the CLI / research harness enters the context and the session does not exist, create it |
 
-其他地方不创建 session。
+No other place creates a session.
 
-### 完整流程
+### Full flow
 
 ```
-调用方调 create_session(session_id, agent_id, source=..., ...)
-  → 创建 <state>/sessions/<session_id>/ 目录
-  → 写 meta.json（id, agent_id, title, created_at, updated_at, source, status="idle", ...）
-  → 写注册表：_index[session_id] = 摘要条目
-  → 注册表原子写磁盘（临时文件 → os.rename）
-  → 不广播（前端通过 list_sessions 发现新 session）
+Caller calls create_session(session_id, agent_id, source=..., ...)
+  → Create the <state>/sessions/<session_id>/ directory
+  → Write meta.json (id, agent_id, title, created_at, updated_at, source, status="idle", ...)
+  → Write the registry: _index[session_id] = summary entry
+  → Atomically write the registry to disk (temp file → os.rename)
+  → No broadcast (the frontend discovers the new session via list_sessions)
 ```
 
-### 原子性
+### Atomicity
 
-dispatcher 和 channel handler 的创建与写入第一条消息是原子的——创建后立即 `append_message`，不会产生空壳。
+For the dispatcher and the channel handler, creation and writing the first message are atomic — `append_message` is called immediately after creation, so no empty shell is produced.
 
-`session_context` 在 `__enter__` 时创建（因为后续 ContextVar 装载需要有效的 session），如果后续没写消息就异常退出，会产生空壳，由启动时清理处理。
+`session_context` creates the session in `__enter__` (because the subsequent ContextVar loading needs a valid session). If it exits abnormally before writing any message, an empty shell is produced, which is handled by the startup cleanup.
 
 ---
 
-## 写消息
+## Writing a message
 
 ```
-调用方调 append_message(session_id, msg)
-  → 写消息到 DAG（Git history/）
-  → 如果 msg.role == "user"：
-      → preview = 截取 msg.content 前 80 字符
+Caller calls append_message(session_id, msg)
+  → Write the message to the DAG (Git history/)
+  → If msg.role == "user":
+      → preview = take the first 80 characters of msg.content
       → _index[session_id]["preview"] = preview
       → _index[session_id]["updated_at"] = time.time()
-      → 标记注册表脏（5 秒 debounce 写磁盘）
-  → 不广播（消息内容通过独立的 streaming 通道推送）
+      → Mark the registry dirty (write to disk with a 5-second debounce)
+  → No broadcast (message content is pushed through a separate streaming channel)
 ```
 
-### preview 截取
+### preview truncation
 
 ```python
 def _truncate(text: str | None, max_len: int = 80) -> str | None:
@@ -75,164 +75,164 @@ def _truncate(text: str | None, max_len: int = 80) -> str | None:
     return t[:77] + "…" if len(t) > max_len else t
 ```
 
-### 注册表写磁盘节流
+### Throttling registry writes to disk
 
-`append_message` 更新注册表时，内存立即更新，磁盘写入 debounce（5 秒内最多写一次）。进程退出时 flush。如果进程被 SIGKILL 导致 flush 失败，启动时从 meta.json 重建即可恢复，最多丢失 5 秒的 preview 更新。
+When `append_message` updates the registry, memory is updated immediately, but the disk write is debounced (at most one write per 5 seconds). The registry is flushed on process exit. If the process is SIGKILLed and the flush fails, recovery is simply a matter of rebuilding from meta.json at startup, losing at most 5 seconds of preview updates.
 
-其他操作（create、update、delete）立即原子写磁盘。
+Other operations (create, update, delete) write to disk atomically and immediately.
 
 ---
 
-## 更新字段
+## Updating fields
 
-标题、状态、置顶、归档、未读等字段的更新都走同一条路径：
-
-```
-调用方调 update_session(session_id, title="新标题", pinned=True, ...)
-  → 写 meta.json（只更新传入的字段）
-  → 更新 _index[session_id] 中对应字段 + updated_at
-  → 注册表原子写磁盘
-```
-
-广播由 WebSocket handler 层在调用 `update_session` 之后通过 `_broadcast` 发起（已实现，rename + flags 均走广播）：
+Updates to the title, status, pinned, archived, unread, and other fields all go through the same path:
 
 ```
-→ 广播 session_updated：
-  {"type": "session_updated", "data": {"id": "<session_id>", "title": "新标题", "pinned": true}}
-→ 前端 handleSessionUpdated 收到后 patch 对应 session 并重渲染
+Caller calls update_session(session_id, title="New title", pinned=True, ...)
+  → Write meta.json (only the fields that were passed in are updated)
+  → Update the corresponding fields in _index[session_id] + updated_at
+  → Atomically write the registry to disk
 ```
 
-`data` 只包含变更的字段，前端做增量 patch。
+The broadcast is initiated by the WebSocket handler layer via `_broadcast` after it calls `update_session` (already implemented; both rename and flags go through the broadcast):
 
-### status 的写入时机
+```
+→ Broadcast session_updated:
+  {"type": "session_updated", "data": {"id": "<session_id>", "title": "New title", "pinned": true}}
+→ After the frontend's handleSessionUpdated receives it, it patches the corresponding session and re-renders
+```
 
-dispatcher 在 turn 生命周期中写 status：
+`data` contains only the changed fields, and the frontend does an incremental patch.
 
-| 时机 | 写入值 |
+### When status is written
+
+The dispatcher writes status during the turn lifecycle:
+
+| Timing | Value written |
 |------|--------|
-| turn 开始 | `update_session(session_id, status="running")` |
-| turn 正常结束（前台） | `update_session(session_id, status="idle")` |
-| turn 正常结束（后台） | `update_session(session_id, status="done", unread=True)` |
-| turn 失败 | `update_session(session_id, status="failed")` |
-| 等待用户输入 | `update_session(session_id, status="needs_input")` |
+| Turn start | `update_session(session_id, status="running")` |
+| Turn ends normally (foreground) | `update_session(session_id, status="idle")` |
+| Turn ends normally (background) | `update_session(session_id, status="done", unread=True)` |
+| Turn fails | `update_session(session_id, status="failed")` |
+| Waiting for user input | `update_session(session_id, status="needs_input")` |
 
 ---
 
-## 命名
+## Naming
 
-命名只有**一套权威实现**：`openprogram/agent/dispatcher/titles.py`。所有入口（WS / fn-form / channel / CLI / spawn）的命名都汇到 `finalize_turn 末尾 → _maybe_auto_title`，没有第二套截断/锁死逻辑。标题写入都通过 `update_session(session_id, title=...)`，走上面"更新字段"的完整流程。
+Naming has only **one authoritative implementation**: `openprogram/agent/dispatcher/titles.py`. Naming from all entry points (WS / fn-form / channel / CLI / spawn) converges on `finalize_turn end → _maybe_auto_title`; there is no second truncation/lock logic. Title writes all go through `update_session(session_id, title=...)`, following the full "Updating fields" flow above.
 
-### 锁标记（权威，仅两把 + 一个内部计数）
+### Lock markers (authoritative, only two + one internal counter)
 
-| 标记 | 类型 | 含义 | 谁来设 |
+| Marker | Type | Meaning | Who sets it |
 |------|------|------|--------|
-| `_user_titled` | bool | 用户手动改名 → 永久锁，自动命名永不再跑 | **只有** rename 操作在用户输入了名字时设 |
-| `_auto_titled` | bool | 自动命名已产出过至少一个标题（首轮截断或任意 LLM 写入）→ "别重复截断"去重位 | **只有** `_maybe_auto_title` 设 |
-| `_title_gen_count` | int | 渐进式重命名内部计数（命中到 `_RETITLE_AT_TURNS` 第几个）| `_maybe_auto_title` 内部，非入口锁 |
+| `_user_titled` | bool | User manually renamed → permanent lock, auto-naming never runs again | **Only** the rename operation sets it, when the user has entered a name |
+| `_auto_titled` | bool | Auto-naming has produced at least one title (first-round truncation or any LLM write) → a "don't re-truncate" dedup bit | **Only** `_maybe_auto_title` sets it |
+| `_title_gen_count` | int | Internal counter for progressive renaming (which entry of `_RETITLE_AT_TURNS` was hit) | Internal to `_maybe_auto_title`, not an entry-point lock |
 
-历史上存在的第三个叫法 `_titled` 已废除——它既做截断又做永久锁，与两阶段流程冲突。各入口**不再**自己做截断 + 设 `_titled`，统一让 `_maybe_auto_title` 完成阶段 1（截断）+ 阶段 2（LLM）。入口唯一可设的锁是 `_user_titled`（rename 操作）。
+A historical third name, `_titled`, has been abolished — it did both truncation and a permanent lock, which conflicts with the two-phase flow. The entry points **no longer** do their own truncation and set `_titled`; instead, `_maybe_auto_title` uniformly handles phase 1 (truncation) + phase 2 (LLM). The only lock an entry point may set is `_user_titled` (the rename operation).
 
-### 自动命名（渐进式，两阶段）
+### Auto-naming (progressive, two phases)
 
-自动命名在对话演进过程中多次触发，随着上下文增多生成更精确的标题。
-触发阈值：第 1、6、16、40 轮 assistant 回复时（`_RETITLE_AT_TURNS`）。
+Auto-naming triggers multiple times as the conversation evolves, producing more precise titles as context accumulates.
+Trigger thresholds: at the 1st, 6th, 16th, and 40th assistant reply (`_RETITLE_AT_TURNS`).
 
 ```
-finalize_turn 末尾 → _maybe_auto_title：
-  1. 检查 _user_titled → 用户手动改过名则永不自动重命名
-  2. 统计当前 assistant 消息数 → 未命中阈值则跳过
-  3. 首次（turn 1，阶段 1 立即截断）：
-     a. title = _title_from_text(用户首条消息)
-        （剥 [attachment:]/<attachment-preview>/<file> 标记 → 取首行 → 截 50 字，超出加 …）
-        → update_session(session_id, title=截取值, _auto_titled=True, _title_gen_count=1)
-     b. 启动后台 daemon 线程调 LLM（阶段 2）
-  4. 后续阈值（turn 6/16/40）：
-     a. 直接启动后台 daemon 线程
-     b. LLM 输入取最近 20 条消息（而非仅首轮）
-  5. 后台线程（阶段 2）：
-     → 竞态检查：_user_titled 则放弃
-     → 首次还检查 title 是否仍为阶段 1 截取值（被改过就放弃写入）
-     → 写入 update_session(session_id, title=LLM结果, _auto_titled=True, _title_gen_count=N+1)
-     → 广播 session_updated
+finalize_turn end → _maybe_auto_title:
+  1. Check _user_titled → if the user manually renamed, never auto-rename
+  2. Count the current number of assistant messages → skip if no threshold is hit
+  3. First time (turn 1, phase 1 immediate truncation):
+     a. title = _title_from_text(user's first message)
+        (strip [attachment:]/<attachment-preview>/<file> markers → take the first line → truncate to 50 chars, appending … if it overflows)
+        → update_session(session_id, title=truncated value, _auto_titled=True, _title_gen_count=1)
+     b. Start a background daemon thread to call the LLM (phase 2)
+  4. Subsequent thresholds (turn 6/16/40):
+     a. Directly start a background daemon thread
+     b. The LLM input takes the most recent 20 messages (not just the first round)
+  5. Background thread (phase 2):
+     → Race check: give up if _user_titled
+     → On the first time, also check whether title is still the phase 1 truncated value (give up writing if it has been changed)
+     → Write update_session(session_id, title=LLM result, _auto_titled=True, _title_gen_count=N+1)
+     → Broadcast session_updated
 ```
 
-### channel（微信 / Discord 等）
+### channel (WeChat / Discord, etc.)
 
-channel 会话命名与普通会话**完全一样**，走同一套两阶段 LLM 命名，channel 端**不**对标题内容做任何额外操作 / 锁定 / 干预（不设 `_user_titled`、不设 `_auto_titled`、不预截断）。来源标识只在前端显示层加方括号品牌前缀（如 `[WeChat] 周末计划讨论`），不进 title 本体。
+Channel conversation naming is **exactly the same** as for ordinary conversations, going through the same two-phase LLM naming. The channel side does **not** perform any additional operation / lock / intervention on the title content (it does not set `_user_titled`, does not set `_auto_titled`, and does not pre-truncate). The source identifier is only added as a bracketed brand prefix in the frontend display layer (e.g. `[WeChat] Weekend plan discussion`); it does not go into the title itself.
 
-### 空会话
+### Empty conversations
 
-创建即写第一条消息是原子的，正常不产生空会话；万一产生由启动清理或手动删除处理。命名层不对空会话做特殊过滤。
+Creation and writing the first message are atomic, so empty conversations are not normally produced; should one occur, it is handled by startup cleanup or manual deletion. The naming layer does no special filtering for empty conversations.
 
-### 用户主动重命名
+### User-initiated rename
 
-- 手动输入新名字 → `update_session(session_id, title=新名字, _user_titled=True)`
-  设 `_user_titled` 后自动命名永久停止。
-- 让 LLM 重新生成（点按钮，title 为空）→ `_llm_rename()` → `update_session(session_id, title=LLM结果)`
-  不设 `_user_titled`，自动命名继续。
+- Manually enter a new name → `update_session(session_id, title=new name, _user_titled=True)`
+  After `_user_titled` is set, auto-naming stops permanently.
+- Have the LLM regenerate (click the button, title is empty) → `_llm_rename()` → `update_session(session_id, title=LLM result)`
+  `_user_titled` is not set, and auto-naming continues.
 
-LLM 标题生成的细节（prompt、参数、后处理）见 [name.md](name.md)。
+For the details of LLM title generation (prompt, parameters, post-processing), see [name.md](name.md).
 
 ---
 
-## 列举
+## Listing
 
 ```
-前端发送 WebSocket 消息 {"action": "list_sessions"}
-  → handle_list_sessions：
-      → session_store.list_sessions()：
-          → 遍历内存 _index.values()
-          → 按 filters 过滤
-          → 按 updated_at 降序排序
-          → 返回 rows[offset:offset+limit]
-      → 补充 project 字段（从项目目录映射）
-      → 发送 {"type": "sessions_list", "data": rows}
-  → 前端渲染侧边栏和 Chats 页面
+The frontend sends the WebSocket message {"action": "list_sessions"}
+  → handle_list_sessions:
+      → session_store.list_sessions():
+          → Iterate over the in-memory _index.values()
+          → Filter by filters
+          → Sort by updated_at in descending order
+          → Return rows[offset:offset+limit]
+      → Fill in the project field (mapped from the project directory)
+      → Send {"type": "sessions_list", "data": rows}
+  → The frontend renders the sidebar and the Chats page
 ```
 
-纯内存操作，不碰磁盘。
+Purely an in-memory operation; it does not touch disk.
 
-### 每条 session 返回的字段
+### Fields returned per session
 
-注册表中的 15 个字段 + preview + project（列举时补充），共 17 个。完整列表见 [storage.md](storage.md)。
+The 15 fields in the registry + preview + project (filled in during listing), 17 in total. See [storage.md](storage.md) for the complete list.
 
 ---
 
-## 删除
+## Deleting
 
 ```
-调用方调 delete_session(session_id)
-  → 删除 <state>/sessions/<session_id>/ 整个目录
-  → 删除 _index[session_id]
-  → 注册表原子写磁盘
-  → 广播 session_deleted：
+Caller calls delete_session(session_id)
+  → Delete the entire <state>/sessions/<session_id>/ directory
+  → Delete _index[session_id]
+  → Atomically write the registry to disk
+  → Broadcast session_deleted:
     {"type": "session_deleted", "session_id": "<session_id>"}
-  → 前端收到后从列表中移除
+  → After the frontend receives it, remove it from the list
 ```
 
-注册表操作已内化到 `delete_session`。广播由 WebSocket handler 层通过 `_broadcast` 发起。
+The registry operation has been internalized into `delete_session`. The broadcast is initiated by the WebSocket handler layer via `_broadcast`.
 
 ---
 
-## 归档
+## Archiving
 
 ```
-调用方调 update_session(session_id, archived=True)
-  → 走"更新字段"的完整流程
-  → 前端收到广播后过滤显示
+Caller calls update_session(session_id, archived=True)
+  → Follows the full "Updating fields" flow
+  → After the frontend receives the broadcast, it filters the display
 ```
 
-已归档的 session 受启动时数据维护约束：90 天过期 + 1000 容量上限。活跃 session 不受影响。
+Archived sessions are subject to the startup-time data maintenance constraints: 90-day expiration + the 1000 capacity cap. Active sessions are not affected.
 
 ---
 
-## 注册表写磁盘（通用）
+## Writing the registry to disk (general)
 
-所有注册表写磁盘操作都用原子写：
+All registry-to-disk writes use atomic writes:
 
 ```
-写入临时文件 index.json.tmp
+Write to the temp file index.json.tmp
   → os.rename(index.json.tmp, index.json)
 ```
 
-防止崩溃导致文件损坏。
+This prevents file corruption caused by crashes.

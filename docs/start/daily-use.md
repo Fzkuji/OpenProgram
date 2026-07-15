@@ -1,57 +1,57 @@
-# 日常操作
+# Daily Use
 
-这页覆盖装好之后每天会用到的操作：终端与 web 两个入口、会话的续用与管理、web 界面里的分支与回退。
+This page covers the operations you'll use every day once installed: the two entry points (terminal and web), resuming and managing sessions, and branching / rollback in the web UI.
 
-## 两个入口，同一份会话
+## Two entry points, one set of sessions
 
-- `openprogram` — 终端聊天界面（TUI）。
-- `openprogram web` — 浏览器界面，http://localhost:18100。
+- `openprogram` — terminal chat interface (TUI).
+- `openprogram web` — browser interface, http://localhost:18100.
 
-会话数据统一存在 `~/.openprogram/sessions/`，终端和 web 看到的是同一份历史：在终端开的会话可以在 web 侧栏找到，反过来也一样。
+Session data lives in `~/.openprogram/sessions/`, and the terminal and the web see the same history: a session started in the terminal shows up in the web sidebar, and vice versa.
 
-一次性提问不必进入界面：
-
-```bash
-openprogram --print "帮我总结这个错误信息：..."
-```
-
-后台服务的常用命令：
+One-off questions don't need an interface:
 
 ```bash
-openprogram status      # 服务是否在跑（PID、端口、运行时长）
-openprogram restart     # 改了代码或配置后重启
-openprogram stop        # 停止
+openprogram --print "Summarise this error message for me: ..."
 ```
 
-## 续用会话
+Common commands for the background service:
 
 ```bash
-openprogram sessions list          # 列出所有 agent 的所有会话
-openprogram --resume <session_id>  # 在终端续上某个会话
+openprogram status      # is the service running (PID, ports, uptime)
+openprogram restart     # restart after code or config changes
+openprogram stop        # stop
 ```
 
-session id 也可以从 web 侧栏拿到。另有 `openprogram sessions resume`，用于回答一个正在等待用户输入的会话。
-
-## 会话与 channel 绑定
-
-如果你配置了聊天 channel（Telegram / Discord / Slack / WeChat），可以把某个 channel 用户的消息固定路由进一个会话：
+## Resuming sessions
 
 ```bash
-openprogram sessions attach    # 把 channel 用户的消息路由进指定会话
-openprogram sessions detach    # 解除绑定，恢复默认路由
-openprogram sessions aliases   # 列出所有会话与 channel 用户的绑定
+openprogram sessions list          # list all sessions across all agents
+openprogram --resume <session_id>  # resume a session in the terminal
 ```
 
-## web 界面里的会话操作
+Session ids are also visible in the web sidebar. There is also `openprogram sessions resume`, used to answer a session that is currently waiting for user input.
 
-会话历史按 git DAG 存储，分支是一等公民。悬停在任意一条消息上会出现操作按钮：
+## Binding sessions to channels
 
-- **复制** — 复制消息内容。
-- **从这里重试** — 从这条消息重新生成后续回复。
-- **编辑消息** — 修改你发过的消息并重新生成。
-- **分支到新会话** — 从这条消息分叉出一个新会话，原线索不受影响。
-- **回退到这里** — 把会话回退到这条消息的状态。
+If you have configured a chat channel (Telegram / Discord / Slack / WeChat), you can pin a channel user's messages to a specific session:
 
-编辑或重试之后同一位置会有多个版本，用消息旁的上一个 / 下一个版本箭头切换。顶栏的 branch 菜单用于查看和切换当前会话的分支。
+```bash
+openprogram sessions attach    # route a channel user's messages into a given session
+openprogram sessions detach    # unbind, back to default routing
+openprogram sessions aliases   # list all session-to-channel-user bindings
+```
 
-右侧栏是本次会话的 DAG 视图：每个节点是一条用户消息、一次 LLM 调用或一次函数调用，视图随聊天滚动，点击节点会把对话滚动到对应的消息。涉及文件的分支底层运行在独立的 git worktree 中，不同分支上的并发操作不会争抢同一份源码树。
+## Session operations in the web UI
+
+Session history is stored as a git DAG, and branches are first-class. Hovering over any message reveals action buttons:
+
+- **Copy** — copy the message content.
+- **Retry from here** — regenerate everything after this message.
+- **Edit message** — modify a message you sent and regenerate.
+- **Branch to new session** — fork a new session from this message; the original thread is untouched.
+- **Roll back to here** — reset the session to the state at this message.
+
+After an edit or retry, the same slot holds multiple versions — switch with the previous / next version arrows beside the message. The branch menu in the top bar lists and switches the current session's branches.
+
+The right sidebar is the session's DAG view: each node is a user message, an LLM call, or a function call. The view scrolls with the chat, and clicking a node scrolls the conversation to the corresponding message. Branches that touch files run in isolated git worktrees under the hood, so concurrent work on different branches never fights over the same source tree.

@@ -1,99 +1,99 @@
-# 配置参考
+# Configuration reference
 
-`~/.openprogram/config.json` 的键、`openprogram config` 能读写什么、以及环境变量汇总。日常改设置的入口见[配置与数据目录](../server/configuration.md)。
+The keys in `~/.openprogram/config.json`, what `openprogram config` can read and write, and the environment variable roundup. For the everyday entry point to changing settings, see [Configuration and data directory](../server/configuration.md).
 
-## openprogram config 能读写什么
+## What openprogram config can read and write
 
 ```bash
-openprogram config list              # 全部设置：值、分组、生效方式
+openprogram config list              # every setting: value, group, apply mode
 openprogram config get ui.port
 openprogram config set ui.web_port 8101
 ```
 
-设置注册表定义在 `openprogram/config_schema.py`（单一事实来源，setup 向导、TUI 设置页、Web 设置页都从它渲染）。每个设置标注生效方式：`live` 立即生效，`next_start` 下次启动 worker 生效。
+The settings registry is defined in `openprogram/config_schema.py` (the single source of truth; the setup wizard, the TUI settings page, and the Web settings page all render from it). Every setting is labeled with an apply mode: `live` takes effect immediately, `next_start` takes effect the next time the worker starts.
 
-| key | 分组 | 含义 | 默认 | 生效 |
+| key | Group | Meaning | Default | Applies |
 |-----|------|------|------|------|
-| `ui.port` | Ports | backend（FastAPI，API + WebSocket）端口 | 18109 | next start |
-| `ui.web_port` | Ports | frontend（Web UI）端口 | 18100 | next start |
-| `ui.open_browser` | Ports | `openprogram web` 是否自动开浏览器 | true | next start |
-| `search.default_provider` | Search | 默认 web 搜索 provider，`auto` 选优先级最高的已配置项 | auto | live |
-| `memory.backend` | Memory | `local`（磁盘记忆工具）或 `none`（禁用） | local | next start |
-| `tools.disabled.<name>` | Tools | 逐工具开关；写入的是 `tools.disabled` 列表的成员 | 全部启用 | live |
-| `providers.<name>` | Providers | 只读状态行（是否已配置）；用 `openprogram providers login` 或 Web UI 配置 | — | — |
+| `ui.port` | Ports | backend (FastAPI, API + WebSocket) port | 18109 | next start |
+| `ui.web_port` | Ports | frontend (Web UI) port | 18100 | next start |
+| `ui.open_browser` | Ports | whether `openprogram web` opens the browser automatically | true | next start |
+| `search.default_provider` | Search | default web search provider; `auto` picks the highest-priority configured one | auto | live |
+| `memory.backend` | Memory | `local` (on-disk memory tools) or `none` (disabled) | local | next start |
+| `tools.disabled.<name>` | Tools | per-tool switch; written as members of the `tools.disabled` list | all enabled | live |
+| `providers.<name>` | Providers | read-only status row (configured or not); configure with `openprogram providers login` or the Web UI | — | — |
 
-## config.json 顶层键
+## Top-level keys in config.json
 
-实际写入 `~/.openprogram/config.json` 的顶层键（不要手改，走 `openprogram config set` / setup 向导 / Web UI）：
+The top-level keys actually written to `~/.openprogram/config.json` (do not edit by hand — go through `openprogram config set`, the setup wizard, or the Web UI):
 
-| 键 | 含义 | 代码 |
+| Key | Meaning | Code |
 |----|------|------|
-| `ui` | `{port, web_port, open_browser}`，见上表 | `openprogram/config_schema.py` |
+| `ui` | `{port, web_port, open_browser}`, see the table above | `openprogram/config_schema.py` |
 | `search` | `{default_provider}` | `openprogram/setup.py` |
-| `tools` | `{disabled: [工具名, ...]}` | `openprogram/setup.py`、`openprogram/config_schema.py` |
-| `default_provider` | 默认 LLM provider（setup 向导写入） | `openprogram/setup.py` |
-| `default_model` | 默认模型（setup 向导写入） | `openprogram/setup.py` |
-| `default_workdir` | agent 的默认工作目录 | `openprogram/paths.py` |
-| `providers` | 每个 provider 的设置子树（启用的模型、自定义模型等），由 Web UI 模型列表管理 | `openprogram/providers/_config_read.py`、`openprogram/webui/_model_listing/storage.py` |
-| `api_keys` | 环境变量名 → API key 的映射，setup 向导写入，worker 启动时导出到环境 | `openprogram/_setup_sections/sections.py`、`openprogram/webui/server.py` |
-| `spec_migration_version` | 模型 spec 迁移的一次性标记，含义见代码 | `openprogram/webui/_model_listing/storage.py` |
+| `tools` | `{disabled: [tool name, ...]}` | `openprogram/setup.py`, `openprogram/config_schema.py` |
+| `default_provider` | Default LLM provider (written by the setup wizard) | `openprogram/setup.py` |
+| `default_model` | Default model (written by the setup wizard) | `openprogram/setup.py` |
+| `default_workdir` | Default working directory for agents | `openprogram/paths.py` |
+| `providers` | Per-provider settings subtree (enabled models, custom models, etc.), managed by the Web UI model listing | `openprogram/providers/_config_read.py`, `openprogram/webui/_model_listing/storage.py` |
+| `api_keys` | Environment variable name → API key mapping, written by the setup wizard and exported into the environment at worker startup | `openprogram/_setup_sections/sections.py`, `openprogram/webui/server.py` |
+| `spec_migration_version` | One-time marker for the model-spec migration; see the code for its meaning | `openprogram/webui/_model_listing/storage.py` |
 
-## 环境变量
+## Environment variables
 
-在启动 `openprogram`（或 worker）的 shell 里设置。全部逐个在代码里核实过；每行给出定义处。
+Set these in the shell that launches `openprogram` (or the worker). Every one has been verified against the code; each row names where it is defined.
 
-### 路径与实例
+### Paths and instances
 
-| 变量 | 用途 | 代码 |
+| Variable | Purpose | Code |
 |------|------|------|
-| `OPENPROGRAM_PROFILE` | 状态目录 profile，等价 `--profile`，改道到 `~/.openprogram-<name>/` | `openprogram/paths.py` |
-| `OPENPROGRAM_STATE_DIR` | 直接覆盖状态目录路径 | `openprogram/paths.py`（memory、rescue 提示均引用） |
-| `OPENPROGRAM_HOME` | auth profiles 的替代基目录 | `openprogram/auth/profiles.py` |
-| `OPENPROGRAM_WORKDIR` | agent 默认工作目录（优先于 config 的 `default_workdir`） | `openprogram/paths.py` |
+| `OPENPROGRAM_PROFILE` | State-directory profile, equivalent to `--profile`, reroutes to `~/.openprogram-<name>/` | `openprogram/paths.py` |
+| `OPENPROGRAM_STATE_DIR` | Directly overrides the state directory path | `openprogram/paths.py` (referenced by memory and the rescue hints) |
+| `OPENPROGRAM_HOME` | Alternative base directory for auth profiles | `openprogram/auth/profiles.py` |
+| `OPENPROGRAM_WORKDIR` | Default agent working directory (takes precedence over the config's `default_workdir`) | `openprogram/paths.py` |
 
-### 端口与 web
+### Ports and web
 
-| 变量 | 用途 | 代码 |
+| Variable | Purpose | Code |
 |------|------|------|
-| `OPENPROGRAM_BACKEND_PORT` | backend 端口（默认 18109）；优先级低于显式参数、高于持久化偏好 | `openprogram/worker/lifecycle.py`、`openprogram/_cli_cmds/web.py` |
-| `OPENPROGRAM_WEB_PORT` | frontend 端口（默认 18100） | `openprogram/_cli_cmds/web.py` |
-| `OPENPROGRAM_BACKEND_URL` | 前端访问 backend 的 URL（Next.js rewrites 读取），一般自动设置 | `openprogram/worker/web.py` |
-| `OPENPROGRAM_NO_WEB` | `1` = worker 不启动 web 前端 | `openprogram/worker/web.py` |
-| `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` 跳过前端只起 backend | `openprogram/_cli_cmds/web.py` |
-| `OPENPROGRAM_DOCS_BASE` | 文档站的挂载路径（默认 `/docs/`，须以 `/` 开头和结尾） | `tools/docs_site/build.py` |
+| `OPENPROGRAM_BACKEND_PORT` | backend port (default 18109); below explicit flags, above the persisted preference | `openprogram/worker/lifecycle.py`, `openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_WEB_PORT` | frontend port (default 18100) | `openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_BACKEND_URL` | URL the frontend uses to reach the backend (read by Next.js rewrites); normally set automatically | `openprogram/worker/web.py` |
+| `OPENPROGRAM_NO_WEB` | `1` = the worker does not start the web frontend | `openprogram/worker/web.py` |
+| `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` skips the frontend and starts only the backend | `openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_DOCS_BASE` | Mount path of the docs site (default `/docs/`; must start and end with `/`) | `tools/docs_site/build.py` |
 
-### 行为开关
+### Behavior switches
 
-| 变量 | 用途 | 代码 |
+| Variable | Purpose | Code |
 |------|------|------|
-| `OPENPROGRAM_NO_AUTO_WORKER` | `1` = TUI 不自动拉起 worker，只连已有的 | `openprogram/cli_ink.py` |
-| `OPENPROGRAM_NO_AUTO_UPDATE` | `1` = 禁用自动更新 | `openprogram/updater/runner.py` |
-| `OPENPROGRAM_NO_SLEEP` | `1` = 禁用记忆的 sleep 整理调度器 | `openprogram/memory/scheduler.py` |
-| `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = 禁用 programs 目录的文件监听 | `openprogram/functions/watcher.py` |
-| `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = 关闭项目自动 commit | `openprogram/store/project/project_commit.py` |
-| `OPENPROGRAM_WEBSEARCH_DISABLE` | 按名禁用某个 web 搜索 provider（如 `ollama`） | `openprogram/functions/tools/web_search/providers/ollama.py` |
+| `OPENPROGRAM_NO_AUTO_WORKER` | `1` = the TUI does not auto-launch a worker; connects only to an existing one | `openprogram/cli_ink.py` |
+| `OPENPROGRAM_NO_AUTO_UPDATE` | `1` = disable auto-update | `openprogram/updater/runner.py` |
+| `OPENPROGRAM_NO_SLEEP` | `1` = disable the memory sleep-consolidation scheduler | `openprogram/memory/scheduler.py` |
+| `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = disable the file watcher on the programs directory | `openprogram/functions/watcher.py` |
+| `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = turn off project auto-commit | `openprogram/store/project/project_commit.py` |
+| `OPENPROGRAM_WEBSEARCH_DISABLE` | Disable a web search provider by name (e.g. `ollama`) | `openprogram/functions/tools/web_search/providers/ollama.py` |
 
-### LLM 调用
+### LLM calls
 
-| 变量 | 用途 | 代码 |
+| Variable | Purpose | Code |
 |------|------|------|
-| `OPENPROGRAM_MAX_RETRIES` | Runtime 的 API 瞬态故障重试次数（默认 6） | `openprogram/agentic_programming/runtime.py` |
-| `OPENPROGRAM_EXEC_TIMEOUT_S` | 单次 `runtime.exec` 的时间预算（秒） | `openprogram/agentic_programming/runtime.py` |
-| `OPENPROGRAM_FALLBACK_MODELS` | 逗号分隔的 `provider/model` 列表，主模型失败时按序切换 | `openprogram/providers/utils/failover.py` |
-| `OPENPROGRAM_PROVIDER_STREAM_RETRIES` | 流式请求的最大重试次数 | `openprogram/providers/utils/stream_retry.py` |
-| `OPENPROGRAM_STRICT_TOOLS` | `0` = 关闭严格工具 schema（默认开） | `openprogram/providers/_schema/__init__.py` |
-| `OPENPROGRAM_FORCE_IPV4` | `1` = 强制 IPv4 源地址（IPv6 网络异常时用） | `openprogram/providers/utils/http_client.py` |
+| `OPENPROGRAM_MAX_RETRIES` | Runtime retry count for transient API failures (default 6) | `openprogram/agentic_programming/runtime.py` |
+| `OPENPROGRAM_EXEC_TIMEOUT_S` | Time budget in seconds for a single `runtime.exec` | `openprogram/agentic_programming/runtime.py` |
+| `OPENPROGRAM_FALLBACK_MODELS` | Comma-separated `provider/model` list; switched to in order when the main model fails | `openprogram/providers/utils/failover.py` |
+| `OPENPROGRAM_PROVIDER_STREAM_RETRIES` | Maximum retries for streaming requests | `openprogram/providers/utils/stream_retry.py` |
+| `OPENPROGRAM_STRICT_TOOLS` | `0` = turn off strict tool schemas (on by default) | `openprogram/providers/_schema/__init__.py` |
+| `OPENPROGRAM_FORCE_IPV4` | `1` = force an IPv4 source address (for broken IPv6 networks) | `openprogram/providers/utils/http_client.py` |
 
-### 调试
+### Debugging
 
-| 变量 | 用途 | 代码 |
+| Variable | Purpose | Code |
 |------|------|------|
-| `OPENPROGRAM_DEBUG_RUNTIME` | `1` = runtime 日志镜像到 stderr | `openprogram/webui/server.py` |
-| `OPENPROGRAM_DEBUG_REGISTRY` | `1` = 显示函数注册表的导入失败 | `openprogram/functions/_registry.py` |
-| `OPENPROGRAM_DEBUG_DISPATCHER` | `1` = dispatcher 调试日志 | `openprogram/agent/dispatcher/runtime_attach.py` |
-| `OPENPROGRAM_DEBUG_PROVIDER` | `1` = provider 层调试日志 | `openprogram/providers/openai_codex/openai_codex.py` |
-| `OPENPROGRAM_EVENT_LOG` | `1` 或文件路径 = 把每个类型化事件追加为 JSON 行 | `openprogram/agent/event_bus.py` |
+| `OPENPROGRAM_DEBUG_RUNTIME` | `1` = mirror runtime logs to stderr | `openprogram/webui/server.py` |
+| `OPENPROGRAM_DEBUG_REGISTRY` | `1` = show function-registry import failures | `openprogram/functions/_registry.py` |
+| `OPENPROGRAM_DEBUG_DISPATCHER` | `1` = dispatcher debug logs | `openprogram/agent/dispatcher/runtime_attach.py` |
+| `OPENPROGRAM_DEBUG_PROVIDER` | `1` = provider-layer debug logs | `openprogram/providers/openai_codex/openai_codex.py` |
+| `OPENPROGRAM_EVENT_LOG` | `1` or a file path = append every typed event as a JSON line | `openprogram/agent/event_bus.py` |
 
-### 其他
+### Others
 
-代码里还有一批更内部的变量（HTTP/SSE 超时细调 `OPENPROGRAM_HTTPX_*` / `OPENPROGRAM_SSE_*`、TCP keepalive `OPENPROGRAM_TCP_*`、各 provider 单独的重试次数 `OPENPROGRAM_<PROVIDER>_MAX_RETRIES`、`OPENPROGRAM_TASK_WORKERS`、`OPENPROGRAM_IMAGE_DIR`、`OPENPROGRAM_BROWSER_CDP_URL` 等）。用 `grep -rn "OPENPROGRAM_" openprogram/` 可以列出全集；每个变量在定义处都有注释。
+The code holds a further batch of more internal variables (HTTP/SSE timeout tuning `OPENPROGRAM_HTTPX_*` / `OPENPROGRAM_SSE_*`, TCP keepalive `OPENPROGRAM_TCP_*`, per-provider retry counts `OPENPROGRAM_<PROVIDER>_MAX_RETRIES`, `OPENPROGRAM_TASK_WORKERS`, `OPENPROGRAM_IMAGE_DIR`, `OPENPROGRAM_BROWSER_CDP_URL`, etc.). `grep -rn "OPENPROGRAM_" openprogram/` lists the full set; every variable is commented where it is defined.

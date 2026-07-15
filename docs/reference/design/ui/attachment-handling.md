@@ -1,136 +1,136 @@
-# 附件处理设计（Web 聊天）
+# Attachment Handling Design (Web Chat)
 
-综合 Claude Code / opencode / openclaw 三家做法 + OpenProgram 自身约束的统一设计。
-现状基线已提交于 `c29ef3dd`（图片→vision、文档→绝对路径引用、agent 按需读）；本文是它的下一步演进。
+A unified design that combines the approaches of Claude Code / opencode / openclaw with OpenProgram's own constraints.
+The current baseline is committed at `c29ef3dd` (image→vision, document→absolute-path reference, agent reads on demand); this document is its next step of evolution.
 
-## 一句话原则
+## One-Sentence Principle
 
 **materialize once to a path; deliver the best block the active model accepts plus a small head preview; let the agent page the rest with its bounded tools.**
 
-附件字节最多落盘一次，用**一个绝对路径**标识；它的内容**怎么**到达模型，每一轮按 `(文件类型 × 当前模型声明的输入模态)` 重新计算，按 `原生 block → ≤4KB 首部预览 → 路径 + agent 分页读` 逐级降级。**每个文件的 prompt 成本是 O(1)，与文件大小无关**。同一次上传在 codex/gpt-5.5 上现在就能用，将来换 PDF-native 的 Claude/Gemini 也直接生效，**前端零改动**。
+Attachment bytes hit disk at most once and are identified by **a single absolute path**; **how** their content reaches the model is recomputed every turn based on `(file kind × the input modalities the current model declares)`, degrading step by step through `native block → ≤4KB head preview → path + agent paged read`. **The prompt cost per file is O(1), independent of file size.** The same upload works on codex/gpt-5.5 today, and when you later switch to a PDF-native Claude/Gemini it just takes effect, with **zero frontend changes**.
 
-三层判断（前两层是基线直觉，第三层是新增）：
-1. 是不是图片？→ vision block。
-2. 有没有现成的本机路径？上传/远程渠道 = 没有 → 落盘；`@`提及/打路径 = 有 → 原地引用。
-3. 能力叠加层：只有当模型声明支持 `document` 时，才把 PDF 的交付升级成原生 document block。
+Three layers of judgment (the first two are baseline intuition, the third is new):
+1. Is it an image? → vision block.
+2. Is there an existing local path? Upload/remote channel = no → write to disk; `@`-mention/typed path = yes → reference in place.
+3. Capability overlay: only when the model declares support for `document` do we upgrade the PDF's delivery to a native document block.
 
-## 决策矩阵（权威，纯文本对齐列，非 markdown 表）
+## Decision Matrix (authoritative; plain-text aligned columns, not a markdown table)
 
-`DELIVER (now)` 基于默认 codex/gpt-5.5：`model.input=["text","image"]`，无 `document`。
-某一行的交付方式**只有**当 `model.input` 声明了对应模态时才会翻转。
+`DELIVER (now)` is based on the default codex/gpt-5.5: `model.input=["text","image"]`, no `document`.
+A row's delivery method flips **only** when `model.input` declares the corresponding modality.
 
 ```
-来源          文件类型      落盘?                     DELIVER(现在, codex/gpt-5.5)                  READ 路径
+source        file kind     write to disk?            DELIVER(now, codex/gpt-5.5)                  READ path
 ------------  ------------  ------------------------  -------------------------------------------  ----------------------------
-upload        image         否 (内存→b64 直发)        ImageContent block (像素)                    模型 vision 原生
-upload        text/code     是 attachments/<safe>     [attachment:..@/abs] + ≤4KB 首部预览         read 工具 2000行/200KB 分页
-upload        pdf           是 attachments/<safe>     [attachment:..(P页)@/abs] + 第1页首部+大纲   pdf 工具 80KB/页窗口
-upload        其它二进制    是 attachments/<safe>     [attachment:..@/abs] 仅提及（无预览）        bash file/strings/xxd
-@-mention     image         否 (重读+b64)             ImageContent block                           模型 vision 原生
-@-mention     text/code     否 (已在磁盘)             [attachment:..@/abs] + ≤4KB 首部             read 分页
-@-mention     pdf           否 (已在磁盘)             [attachment:..(P页)@/abs] + 第1页首部        pdf 分页
-@-mention     其它二进制    否 (已在磁盘)             [attachment:..@/abs] 仅提及                  bash
-打路径        任意          = @-mention               file-resolve 把裸路径按对应类型同等处理
-远程渠道      image         是 attachments/<safe>     ImageContent（从落盘字节重读）               模型 vision 原生
-远程渠道      text/pdf      是 attachments/<safe>     [attachment:..@/abs] + 首部预览（同 upload）  read/pdf 分页
-远程渠道      其它二进制    是 attachments/<safe>     [attachment:..@/abs] 仅提及                  bash
+upload        image         no (in-memory→b64 direct) ImageContent block (pixels)                  model vision native
+upload        text/code     yes attachments/<safe>    [attachment:..@/abs] + ≤4KB head preview     read tool 2000 lines/200KB paging
+upload        pdf           yes attachments/<safe>    [attachment:..(P pages)@/abs] + page1 head+outline   pdf tool 80KB/page window
+upload        other binary  yes attachments/<safe>    [attachment:..@/abs] mention only (no preview)       bash file/strings/xxd
+@-mention     image         no (re-read+b64)          ImageContent block                           model vision native
+@-mention     text/code     no (already on disk)      [attachment:..@/abs] + ≤4KB head             read paging
+@-mention     pdf           no (already on disk)      [attachment:..(P pages)@/abs] + page1 head    pdf paging
+@-mention     other binary  no (already on disk)      [attachment:..@/abs] mention only            bash
+typed path    any           = @-mention               file-resolve treats a bare path identically by its kind
+remote channel image         yes attachments/<safe>    ImageContent (re-read from on-disk bytes)    model vision native
+remote channel text/pdf      yes attachments/<safe>    [attachment:..@/abs] + head preview (same as upload)  read/pdf paging
+remote channel other binary  yes attachments/<safe>    [attachment:..@/abs] mention only            bash
 ```
 
-**能力更强的模型上会翻转的格子（单一规则，任意来源）：**
+**Cells that flip on more capable models (single rule, any source):**
 
 ```
-pdf, model.input 含 "document", size ≤ NATIVE_DOC_INLINE_CAP(10MB 且 provider 页数上限)
-    → DELIVER 变成原生 document content block（整文件 base64，从落盘路径读出来构建）；
-      [attachment:..@/abs] 提及保留（驱动 chip + 让 agent 还能再读一段）；
-      首部预览被抑制（模型已拿到整文件）。
-pdf, 含 "document" 但 size > NATIVE_DOC_INLINE_CAP
-    → 留在"现在"那列（路径 + 首部预览）；不构建原生 block（避免炸上下文）。
-image, model.input 不含 "image"（退化的 codex 配置）
-    → png 存盘 + [attachment:..@/abs — 用 image_analyze 查看]
-      （修掉 providers/_shared/openai_responses.py:120-121 在 image 不在 model.input 时静默丢弃 input_image 的 bug）。
+pdf, model.input contains "document", size ≤ NATIVE_DOC_INLINE_CAP(10MB and the provider's page-count cap)
+    → DELIVER becomes a native document content block (whole file base64, built by reading from the on-disk path);
+      the [attachment:..@/abs] mention is kept (drives the chip + lets the agent still read another slice);
+      the head preview is suppressed (the model already has the whole file).
+pdf, contains "document" but size > NATIVE_DOC_INLINE_CAP
+    → stays in the "now" column (path + head preview); no native block is built (avoid blowing up the context).
+image, model.input does not contain "image" (a degraded codex config)
+    → store the png + [attachment:..@/abs — view with image_analyze]
+      (fixes the bug at providers/_shared/openai_responses.py:120-121 where input_image is silently dropped when image is not in model.input).
 ```
 
-**轴的纪律**：`来源`轴只决定字节**落在哪**（落盘 vs 原地引用）；`(文件类型 × 能力)` 这一对是**唯一**决定 DELIVER 的东西。
+**Axis discipline**: the `source` axis only decides **where the bytes land** (write to disk vs. reference in place); the `(file kind × capability)` pair is the **only** thing that decides DELIVER.
 
-## 与 Claude Code/opencode/openclaw 的关系
+## Relationship to Claude Code/opencode/openclaw
 
-- **图片走 vision**：三家 + 我们一致。
-- **PDF 原生 document block**：Claude Code/opencode/openclaw 的首选路径。OpenProgram 的能力叠加层让这条路在配置了 doc-capable 模型时**自动生效**——这就是"博采"的核心，把它们最好的那条路接进来但不强求。
-- **路径 + 分页工具读**：所有人在 agent **自己任务中途**探索文件时都这么做。OpenProgram 在 codex 上把**用户附件**也走这条，是因为 codex 收不了 document block——但有了 P0 的首部预览，可靠性差距被补上。
-- **落盘到管理目录**：openclaw 的 claim-check（入站只有字节没有路径）。我们用 per-session git workdir 而非全局 + TTL，更适合 agentic（就是 agent 的 cwd、每轮 git 提交、可重放）。
-- **被否决的做法**：opencode/P3 的"提交时合成一个假的 read() tool_use+tool_result 把内容塞进去"——否决，因为(a)要镜像真实 read/pdf 工具的上限会漂移、(b)一旦换成原生 block 就成死重、(c)增加提交时同步延迟。改用被动的 `<attachment-preview>` 内容片段，常数成本给模型第一眼。
+- **Images go through vision**: all three plus us agree.
+- **PDF native document block**: the preferred path for Claude Code/opencode/openclaw. OpenProgram's capability overlay makes this path **take effect automatically** when a doc-capable model is configured — this is the heart of "borrowing the best": wiring in their best path without forcing it.
+- **Path + paged tool read**: everyone does this when the agent explores files **mid-task on its own**. OpenProgram routes **user attachments** through this path on codex too, because codex can't accept a document block — but with P0's head preview, the reliability gap is closed.
+- **Write to a managed directory**: openclaw's claim-check (inbound has only bytes, no path). We use a per-session git workdir rather than a global one + TTL, which suits agentic better (it is the agent's cwd, committed to git every turn, replayable).
+- **Rejected approach**: opencode/P3's "synthesize a fake read() tool_use+tool_result at submit time to stuff the content in" — rejected, because (a) mirroring the real read/pdf tool caps drifts, (b) once you switch to a native block it becomes dead weight, and (c) it adds sync latency at submit time. Instead we use a passive `<attachment-preview>` content snippet that gives the model a constant-cost first glance.
 
-## 大文件保证（no-context-blowup invariant）
+## Large-File Guarantee (no-context-blowup invariant)
 
-后端塞进 prompt 的**只可能**是：(a) 一个 image block，(b) 一次性 ≤4KB 首部预览（仅首轮），(c) 一条约 90 字节的路径提及，或 (d) 同时受"模型能力 + size≤10MB"双重门控的原生 doc block。其它一切只通过 agent 自己的**有界分页工具**逐页进上下文。
+What the backend can possibly stuff into the prompt is **only**: (a) one image block, (b) a one-time ≤4KB head preview (first turn only), (c) an ~90-byte path mention, or (d) a native doc block double-gated by "model capability + size≤10MB". Everything else enters the context page by page only through the agent's own **bounded paging tools**.
 
-实测上限（源码核验）：`pdf` 工具 80KB 字符/次（按页 offset/limit）；`read` 工具 2000 行/次、结果上限 200KB；`file_search.py` 的 256KB 只喂预览、永不喂交付。
+Measured caps (verified against source): the `pdf` tool is 80KB of characters per call (offset/limit by page); the `read` tool is 2000 lines per call, with a 200KB result cap; `file_search.py`'s 256KB only feeds the preview, never the delivery.
 
-十个 30MB PDF 一起拖进来：那一轮约 `10×(90B 提及 + 4KB 预览) ≈ 41KB`，之后为零——**与大小无关**。500 页 PDF 在 codex 上：落盘一次，提及带"500 pages"，预览 = 第1页文本 + 每页首行大纲（截到约 50 条后"…(450 more pages)"），attach 时 prompt 成本 ≤4KB+90B，8MB 本体永不进上下文；agent 用 `pdf(offset=N,limit=20)` 窗口、靠大纲**直接跳到**相关页区，而不是顺序扫。
+Drag in ten 30MB PDFs at once: that one turn is about `10×(90B mention + 4KB preview) ≈ 41KB`, and zero afterward — **independent of size**. A 500-page PDF on codex: written to disk once, the mention carries "500 pages", the preview = page-1 text + the first line of each page as an outline (truncated to about 50 entries, then "…(450 more pages)"); at attach time the prompt cost is ≤4KB+90B, the 8MB body never enters the context; the agent uses a `pdf(offset=N,limit=20)` window and **jumps directly** to the relevant page range via the outline, rather than scanning sequentially.
 
-## 存储 / 去重 / 安全 / 生命周期
+## Storage / Dedup / Security / Lifecycle
 
-- **位置**：per-session `<state_dir>/sessions/<id>/workdir/attachments/<safe-name>`（不变）。它就是 agent 的 cwd、每轮 git 提交——附件成为会话可重放状态的一部分。全局 media store 会破坏这两个不变式。
-- **谁落盘**：只有无路径来源（浏览器上传、远程渠道）。`@`提及/打路径已在磁盘，原地引用、零复制。
-- **命名**：保持基线 `_safe_attach_name()`——`os.path.basename` + 非 `alnum._- 空格` 替成 `_`、120 字符上限、永不空。人类可读，让 agent 的 `./attachments/spec.pdf` 直觉成立。不用 sha 前缀名。
-- **去重（新增）**：写盘前对解码字节 sha256，维护 `attachments/.opdedup.json {sha256: 相对名}`。命中则重新 stat+hash 确认同一文件后**复用**，不写重复。幂等：重复拖同一篇论文、或一轮重试，都是 no-op。**修掉基线 bug**：当前 `-N` no-clobber 循环对同名文件无字节比较，重拖相同文件会产生第二份副本。仅会话内去重（workdir 是独立 git 仓库，不做跨会话）。索引尽力而为：丢失/损坏只会多写一份（无害），绝不会错映射（复用前必校验）。
-- **超限（新增）**：硬上限 `MAX_ATTACH_BYTES=32MB`/文件，在 `write_bytes` 前**和** WS intake（base64 过 socket 之前）双重检查。超限：跳过保存，提及改写成"— too large (>32MB), not stored"，**告诉模型**，绝不给死路径。图片 5MB/≤2000px（先降采样）。每轮聚合上限 64MB。注意 b64 ~1.33× 膨胀。
-- **安全/逃逸**（源码核验）：上传/远程根本不带源路径（沙箱）+ basename 清洗 → 结构上无法逃逸；`@`/打路径走 `/api/file-resolve` 的 `(cwd/path).resolve()` + `is_relative_to(cwd)` → 越界 400。`.resolve()` 会完整解析符号链接，所以"根内符号链接指向根外"**已经**被拒——P1/P4 担心的 symlink gap 在现有代码里不存在。
-- **GC**：附件已 git 提交，删它会破坏重放——所以 GC 是会话级懒回收：删会话 → `rm -rf workdir` 连附件一起带走。无 web 路径 TTL。会话加载时清理 dedup 索引中目标已失踪的条目。openclaw 的 2 分钟入站 TTL 只适用于将来远程渠道落盘前的 staging 区。
+- **Location**: per-session `<state_dir>/sessions/<id>/workdir/attachments/<safe-name>` (unchanged). This is the agent's cwd, committed to git every turn — attachments become part of the session's replayable state. A global media store would break both of these invariants.
+- **Who writes to disk**: only path-less sources (browser upload, remote channel). `@`-mention/typed path is already on disk; reference in place, zero copy.
+- **Naming**: keep the baseline `_safe_attach_name()` — `os.path.basename` + replace non-`alnum._- space` with `_`, 120-char cap, never empty. Human-readable, so the agent's intuition about `./attachments/spec.pdf` holds. No sha-prefixed names.
+- **Dedup (new)**: sha256 the decoded bytes before writing, and maintain `attachments/.opdedup.json {sha256: relative name}`. On a hit, re-stat+hash to confirm it's the same file, then **reuse** it instead of writing a duplicate. Idempotent: re-dragging the same paper, or retrying a turn, is a no-op. **Fixes a baseline bug**: the current `-N` no-clobber loop has no byte comparison for same-named files, so re-dragging an identical file produces a second copy. Dedup is within-session only (the workdir is an isolated git repo; no cross-session dedup). The index is best-effort: losing/corrupting it only writes one extra copy (harmless) and never mis-maps (it always verifies before reuse).
+- **Over-limit (new)**: a hard cap of `MAX_ATTACH_BYTES=32MB`/file, checked **both** before `write_bytes` **and** at WS intake (before the base64 crosses the socket). Over the limit: skip saving, rewrite the mention to "— too large (>32MB), not stored", **tell the model**, never hand it a dead path. Images: 5MB/≤2000px (downsample first). Aggregate cap of 64MB per turn. Note that b64 inflates ~1.33×.
+- **Security/escape** (verified against source): upload/remote carry no source path at all (sandbox) + basename sanitization → structurally impossible to escape; `@`/typed path goes through `/api/file-resolve`'s `(cwd/path).resolve()` + `is_relative_to(cwd)` → out-of-bounds 400. `.resolve()` fully resolves symlinks, so "a symlink inside the root pointing outside the root" is **already** rejected — the symlink gap P1/P4 worried about does not exist in the current code.
+- **GC**: attachments are already committed to git, and deleting one would break replay — so GC is session-level lazy reclamation: delete the session → `rm -rf workdir` takes the attachments with it. No web-path TTL. On session load, clean up dedup-index entries whose target has gone missing. openclaw's 2-minute inbound TTL applies only to the staging area before a future remote channel writes to disk.
 
-## 显示层
+## Display Layer
 
-- **chip**：解析 `[attachment: name (type, KB[, P pages|L lines]) @ /abs]` → 文件名 + 类型徽章 + 大小 + **新增 scope 徽章**（"500 pages"/"200K lines"）；`@ /abs` 后缀显示时剥掉。`<attachment-preview>…</…>` 片段像提及一样从气泡里剥掉——用户看到 chip,不是 4KB 首部。
-- **交付模式子标签**（UX 诚实）：从 `delivery_mode` 派生"read on demand"/"sent inline"/"previewed first N lines",让用户明确知道模型到底拿到了什么,不用猜"它看见我的文件没"。
-- **乐观气泡时序**（关键）：前端**永远不知道**落盘后的绝对路径(`@/abs` 是 `_persist_doc_attachments` 在 WS 消息处理后追加的)。所以乐观气泡的 chip 必须用**客户端数据**(file.name/size/type/b64)渲染,而非提及文本;重载时再用最终存储文本的提及解析。两者必须渲染成同一个 chip,对账键 = 客户端算的 sha8。因此前端发的 `[attachment: name (type, KB)]` 是**故意无路径**的,chip 解析器要对**无路径(在途)和有路径(改写后)两种形式都渲染 chip**。
-- **预览弹窗**:本地完整解码,永不发送。HUMAN 客户端滚完整文件,MODEL 只看了 4KB 首部——这就是回报。
-- **侧边栏标题**:`_title_from_text` 在 50 字截断前剥掉提及(不变);新增也剥掉 `<attachment-preview>`。
+- **chip**: parse `[attachment: name (type, KB[, P pages|L lines]) @ /abs]` → file name + type badge + size + **a new scope badge** ("500 pages"/"200K lines"); strip the `@ /abs` suffix on display. The `<attachment-preview>…</…>` snippet is stripped from the bubble like a mention — the user sees the chip, not the 4KB head.
+- **delivery-mode sub-label** (UX honesty): derive "read on demand"/"sent inline"/"previewed first N lines" from `delivery_mode`, so the user knows exactly what the model actually got and doesn't have to guess "did it see my file".
+- **optimistic-bubble timing** (critical): the frontend **never knows** the post-disk absolute path (`@/abs` is appended by `_persist_doc_attachments` after WS message handling). So the optimistic bubble's chip must render from **client-side data** (file.name/size/type/b64), not the mention text; on reload it re-parses the mention from the final stored text. Both must render into the same chip, with the reconciliation key = the client-computed sha8. Therefore the `[attachment: name (type, KB)]` the frontend sends is **intentionally path-less**, and the chip parser must **render the chip for both forms: path-less (in flight) and path-bearing (after rewrite)**.
+- **preview popup**: decode the full file locally, never send it. The HUMAN client scrolls the whole file, the MODEL only saw the 4KB head — that's the payoff.
+- **sidebar title**: `_title_from_text` strips mentions before its 50-char truncation (unchanged); new: also strip `<attachment-preview>`.
 
-## 与基线 c29ef3dd 的 diff
+## Diff Against Baseline c29ef3dd
 
-**基线已做（源码核验,不要重建）**:上传字节落盘到 workdir/attachments;`_safe_attach_name` 清洗 + 120 上限;`-N` no-clobber;`[attachment: name (type, KB) @ /abs]` 提及 + 后端补 @path;首轮 workdir 竞态 fallback;image→ImageContent;`@`/打路径零复制 + file-resolve 逃逸检查(含 symlink);`_title_from_text` 截断前剥提及;`user_msg["extra"]` 附件清单;文档在进 dispatcher 前从 req.attachments 剥除;validate 只查 user 消息。
+**Already done in the baseline (verified against source; do not rebuild)**: upload bytes written to disk under workdir/attachments; `_safe_attach_name` sanitization + 120 cap; `-N` no-clobber; `[attachment: name (type, KB) @ /abs]` mention + backend-appended @path; first-turn workdir-race fallback; image→ImageContent; `@`/typed path zero-copy + file-resolve escape check (including symlink); `_title_from_text` strips mentions before truncation; `user_msg["extra"]` attachment manifest; documents stripped from req.attachments before entering the dispatcher; validate only inspects user messages.
 
-**净新增**:
-1. `providers/types.py` Model.input Literal 加 `"document"`。
-2. `validate_modalities.py` `_MODALITY_TYPES` 加 `"document"`。
-3. 新纯函数 `choose_delivery(file_kind, size, model) → "native_image"|"native_document"|"path_preview"|"path_only"`。
-4. dispatcher ~1888 把 image-only 循环换成按 `choose_delivery` 的逐附件 switch。
-5. `_persist_doc_attachments` 加:32MB 上限 + "too large" 改写;sha256 会话内去重;页/行数**注入到改写正则捕获的括号组里**(不是括号外追加,保持单 token 不变式 + 各 strip 正则继续匹配);一次性 `<attachment-preview>`(≤4KB 首部,先字节后行截断;二进制→bash 提示无预览);image-on-incapable-model 存盘+analyze 提示。
-6. `handle_chat` intake 加 32MB/64MB 上限。
-7. `handle_chat` ~307 让"进 dispatcher 前剥文档"**按能力条件化**(模型支持 document 时保留,以便下游构建原生 block)。
-8. `/api/file-resolve` 返回里加页/行数 + 截断首部,让 `@`提及预览和上传预览一致(无需改 symlink)。
-9. `user-attachments.tsx` 解析 count 成 scope 徽章;剥 `<attachment-preview>`;加交付模式子标签;无路径/有路径两形式都渲染 chip。
-10. `use-composer-attachments.ts`/`file-tiles.tsx` 每 chip 状态/错误徽章 + "counting…"乐观占位 + "already attached"去重反馈(键=客户端 sha8);弹窗"模型预览了前 N 行"。
-11. `_title_from_text` 扩展 strip 也去掉 `<attachment-preview>`。
+**Net new**:
+1. `providers/types.py` Model.input Literal: add `"document"`.
+2. `validate_modalities.py` `_MODALITY_TYPES`: add `"document"`.
+3. A new pure function `choose_delivery(file_kind, size, model) → "native_image"|"native_document"|"path_preview"|"path_only"`.
+4. dispatcher ~1888: replace the image-only loop with a per-attachment switch driven by `choose_delivery`.
+5. `_persist_doc_attachments` adds: 32MB cap + "too large" rewrite; sha256 within-session dedup; page/line count **injected into the parenthesized group captured by the rewrite regex** (not appended outside the parentheses, preserving the single-token invariant + keeping the various strip regexes matching); a one-time `<attachment-preview>` (≤4KB head, truncated by bytes first then lines; binary → bash hint, no preview); image-on-incapable-model store+analyze hint.
+6. `handle_chat` intake: add the 32MB/64MB caps.
+7. `handle_chat` ~307: make "strip documents before entering the dispatcher" **conditional on capability** (keep them when the model supports document, so the downstream can build the native block).
+8. `/api/file-resolve` returns: add page/line count + truncated head, so the `@`-mention preview and the upload preview are consistent (no symlink change needed).
+9. `user-attachments.tsx`: parse count into a scope badge; strip `<attachment-preview>`; add the delivery-mode sub-label; render the chip for both path-less and path-bearing forms.
+10. `use-composer-attachments.ts`/`file-tiles.tsx`: per-chip status/error badge + "counting…" optimistic placeholder + "already attached" dedup feedback (key = client sha8); popup "the model previewed the first N lines".
+11. `_title_from_text`: extend strip to also remove `<attachment-preview>`.
 
-**线上保持不变**:`[attachment: … @ /abs]` token(仅在括号内可选加 count)。codex/gpt-5.5 行为与今天逐字节相同,**外加**首部预览 + count;原生 document 分支在配置 doc-capable 模型前休眠。
+**Stays identical on the wire**: the `[attachment: … @ /abs]` token (with count optionally added only inside the parentheses). codex/gpt-5.5 behavior is byte-for-byte the same as today, **plus** the head preview + count; the native document branch stays dormant until a doc-capable model is configured.
 
-## 分阶段计划
+## Phased Plan
 
-**P0 — 现在就建（对默认 codex/gpt-5.5 端到端可用，全部相对基线净新增）**
-- `_persist_doc_attachments`:32MB 上限 + "too large";sha256 会话内去重;页/行数注入括号组;一次性 `<attachment-preview>`(≤4KB,先字节后行;二进制→bash 提示);image-on-incapable 存盘+analyze。
-- `handle_chat`:WS intake 32MB/64MB 上限。
-- `choose_delivery()` 纯函数 + 接进 dispatcher switch(native_image 不变;path_preview/path_only 为活分支;native_document 是降级到 path_preview 的守卫桩)。
-- `types.py` + `validate_modalities.py` 加 `"document"`(定义接缝;codex 上无害,因为没有模型声明它)。
-- `/api/file-resolve` 返回 count + 截断首部。
-- 前端:scope 徽章 + 剥 `<attachment-preview>` + 每 chip 状态/错误 + "counting…"乐观 + "already attached" + 无路径/有路径 chip 一致。
-- `_title_from_text` 扩展 strip。
-- **价值**:中小文档免费拿到首部预览(降延迟、模型有 gist);大文件靠路径+有界工具保持 O(1) prompt 成本;超限被告知-不存储;去重修掉基线相同字节双拷;能力接缝就位。
-- **验证**(按 hard self-verify 规则):重启 worker、curl healthz,再用 chrome MCP 在 fresh session 上走真实 WS:小 .txt(预览出现、chip 干净)、500 页 PDF(count 徽章、第1页大纲、不炸上下文)、超限文件("too large" chip)、`@`提及(零复制、count+预览),确认侧边栏标题干净、无 500/build overlay。
+**P0 — Build now (end-to-end usable for the default codex/gpt-5.5; all net-new relative to the baseline)**
+- `_persist_doc_attachments`: 32MB cap + "too large"; sha256 within-session dedup; page/line count injected into the parenthesized group; a one-time `<attachment-preview>` (≤4KB, bytes first then lines; binary → bash hint); image-on-incapable store+analyze.
+- `handle_chat`: WS intake 32MB/64MB caps.
+- `choose_delivery()` pure function + wired into the dispatcher switch (native_image unchanged; path_preview/path_only are the live branches; native_document is a guarded stub that degrades to path_preview).
+- `types.py` + `validate_modalities.py`: add `"document"` (defines the seam; harmless on codex since no model declares it).
+- `/api/file-resolve`: return count + truncated head.
+- frontend: scope badge + strip `<attachment-preview>` + per-chip status/error + "counting…" optimistic + "already attached" + path-less/path-bearing chip consistency.
+- `_title_from_text`: extend strip.
+- **Value**: small and medium documents get a free head preview (lower latency, the model has the gist); large files keep O(1) prompt cost via path + bounded tools; over-limit is reported, not stored; dedup fixes the baseline same-byte double copy; the capability seam is in place.
+- **Verification** (per the hard self-verify rule): restart the worker, curl healthz, then use the chrome MCP to walk a real WS on a fresh session: a small .txt (preview appears, chip clean), a 500-page PDF (count badge, page-1 outline, no context blowup), an over-limit file ("too large" chip), an `@`-mention (zero-copy, count+preview); confirm the sidebar title is clean and there is no 500/build overlay.
 
-**P1 — 推迟（需配置 doc-capable 模型；接缝在 P0 已建）**
-- 各 provider 的原生 document block 构建器(Anthropic document / Gemini inline_data application/pdf 线格式),挂在 `choose_delivery=="native_document"` + size 守卫后。
-- 让 `chat.py:307` 的"进 dispatcher 前剥文档"按能力条件化。
-- 推迟原因:今天没有配置的模型 input 含 document,无法对真实默认端到端测;且需各 provider 请求构建器 + 核实原生 size 上限。
+**P1 — Deferred (requires a doc-capable model configured; the seam is built in P0)**
+- Each provider's native document block builder (the Anthropic document / Gemini inline_data application/pdf wire format), hung after `choose_delivery=="native_document"` + the size guard.
+- Make `chat.py:307`'s "strip documents before entering the dispatcher" conditional on capability.
+- Reason for deferral: no configured model today has document in its input, so it can't be tested end-to-end against the real default; and it needs a per-provider request builder + verification of the native size cap.
 
-**P2 — 推迟（需远程渠道上线）**
-- openclaw 式远程入站 staging 目录 + 2 分钟 TTL GC + claim-check + `media://` 间接 + 渠道适配器(discord download_attachment / wechat)把入站字节接进同一个 `_persist` 保存调用。保存+提及+预览的表示已能容纳"只有字节"的来源,只差入站管道 + staging 生命周期。
-- 同时推迟:扫描版/纯图 PDF 的页图 fallback;xlsx/docx 结构化抽取(当二进制→路径);接近 32MB 的分块/可续传上传 + WS 最大帧上调;每会话附件配额提示 UI;跨会话全局去重(故意永不做——per-session-workdir 不变式)。
+**P2 — Deferred (requires remote channels to ship)**
+- openclaw-style remote inbound staging directory + 2-minute TTL GC + claim-check + `media://` indirection + channel adapters (discord download_attachment / wechat) wiring inbound bytes into the same `_persist` save call. The save+mention+preview representation can already accommodate "bytes only" sources; all that's missing is the inbound pipeline + staging lifecycle.
+- Also deferred: a page-image fallback for scanned / image-only PDFs; xlsx/docx structured extraction (when binary → path); chunked/resumable uploads near 32MB + raising the WS max frame; a per-session attachment-quota hint UI; cross-session global dedup (intentionally never done — the per-session-workdir invariant).
 
-## 待定（不阻塞 P0）
+## Open Questions (do not block P0)
 
-两个可调常量，都有可辩护的默认、都是单一配置旋钮而非架构分叉：
-1. `PREVIEW_CAP`（建议 4KB / ~60 行）。太低给将将超标的小文档多一次 read 往返;太高每次 attach 多漏点正文。先 4KB,可调。
-2. `MAX_ATTACH_BYTES`（建议 32MB）。压制 git workdir blob 膨胀(提交进 git 的 blob 在历史里永久,是真实成本)vs 容纳更大真实 PDF。先 32MB,可调。
+Two tunable constants, both with defensible defaults, both a single config knob rather than an architectural fork:
+1. `PREVIEW_CAP` (suggested 4KB / ~60 lines). Too low gives just-over-the-limit small documents an extra read round-trip; too high leaks a bit more body on every attach. Start at 4KB, tunable.
+2. `MAX_ATTACH_BYTES` (suggested 32MB). Curbing git-workdir blob bloat (a blob committed to git is permanent in history — a real cost) vs. accommodating larger real PDFs. Start at 32MB, tunable.
 
-唯一真正面向产品、可推迟到实际触发时再定的问题:大二进制永久累积在 per-session git 历史里(是"workdir = 自包含已提交状态"不变式的代价)是否可接受,还是将来要一个 git 之外的内容存储——但那会牺牲重放可复现性,所以现在的设计**有意保留**这个不变式,不是 P0 的待决项。
+The only genuinely product-facing question, deferrable until it actually fires: whether the permanent accumulation of large binaries in per-session git history (the cost of the "workdir = self-contained committed state" invariant) is acceptable, or whether a content store outside git is needed in the future — but that would sacrifice replay reproducibility, so the current design **intentionally keeps** this invariant, and it is not a P0 open item.

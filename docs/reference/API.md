@@ -2,21 +2,21 @@
 
 > Source: [`openprogram/`](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/)
 
-## 核心组件
+## Core Components
 
-| 组件 | 源文件 | 说明 |
+| Component | Source File | Description |
 |------|--------|------|
-| [`agentic_function`](api/agentic-function.md) | `agentic_programming/function.py` | 装饰器。把普通函数变成 Agentic Function,每次调用记录为 session DAG 的一个节点 |
-| [`Runtime`](api/runtime.md) | `agentic_programming/runtime.py` | LLM 运行时。从 DAG 算上下文、调用 LLM、把回复写回 DAG |
-| [`create_runtime` 与内置 providers](api/providers.md) | `providers/` | 自动检测或显式创建 Runtime,支持 Anthropic / OpenAI / Gemini / CLI providers |
+| [`agentic_function`](api/agentic-function.md) | `agentic_programming/function.py` | A decorator. Turns a plain function into an Agentic Function; each call is recorded as a node in the session DAG |
+| [`Runtime`](api/runtime.md) | `agentic_programming/runtime.py` | The LLM runtime. Computes context from the DAG, calls the LLM, and writes the response back to the DAG |
+| [`create_runtime` and the built-in providers](api/providers.md) | `providers/` | Automatically detect or explicitly create a Runtime; supports Anthropic / OpenAI / Gemini / CLI providers |
 
-会话上下文是一张扁平 DAG(节点 = 用户消息 / LLM 调用 / 函数调用),架构见 [`openprogram/context/README.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/context/README.md)。
+The session context is a flat DAG (nodes = user messages / LLM calls / function calls); for the architecture see [`openprogram/context/README.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/context/README.md).
 
-## 编写函数
+## Writing Functions
 
-没有 `create()` / `fix()` 这类 meta 函数——编写、修改、校验 `@agentic_function` 直接用普通文件编辑工具完成,遵循 [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)。该 skill 是完整规范:文件布局、装饰器元数据、docstring 与 `content` 的分工、校验清单、冒烟测试。
+There are no meta functions like `create()` / `fix()` — writing, modifying, and validating an `@agentic_function` is done directly with ordinary file-editing tools, following [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md). That skill is the complete specification: file layout, decorator metadata, the division of labor between the docstring and `content`, the validation checklist, and smoke tests.
 
-## 导入
+## Imports
 
 ```python
 from openprogram import agentic_function
@@ -24,9 +24,9 @@ from openprogram.agentic_programming.runtime import Runtime
 from openprogram.providers.registry import create_runtime
 ```
 
-只有 `agentic_function` 是 `openprogram` 顶层再导出的符号；`Runtime` 和 `create_runtime` 等都需要按完整路径导入。
+Only `agentic_function` is re-exported as a top-level `openprogram` symbol; `Runtime`, `create_runtime`, and the rest must be imported by their full paths.
 
-## 快速示例
+## Quick Example
 
 ```python
 from openprogram import agentic_function

@@ -1,41 +1,41 @@
 # Providers
 
-LLM provider 层的设计文档。providers 把框架内部的统一上下文(`Context`:system / messages / tools)翻译成各家 API 的请求,处理认证、缓存、错误与模型目录。
+Design docs for the LLM provider layer. Providers translate the framework's internal unified context (`Context`: system / messages / tools) into each vendor's API request, handling authentication, caching, errors, and the model catalog.
 
-文档按职责分四组(三个已有子目录 + 一个待补的核心组):
+The docs are organized into four groups by responsibility (three existing subdirectories plus one core group still to be filled in):
 
-## 翻译 + 缓存(核心,部分待补)
+## Translation + Caching (core, partially to be filled in)
 
-provider 无关的统一格式如何翻译成各家 wire 格式,以及 prompt 缓存如何按 provider 落地 —— providers 层的核心机制。
+How the provider-agnostic unified format is translated into each vendor's wire format, and how prompt caching is implemented per provider — the core mechanism of the providers layer.
 
-- [`request-build`](request-build.md) — **总设计**:统一格式 Context、每 provider 翻译、缓存三 mode、现状与三个缺口。
-- [`cache-control-passthrough`](../plans/cache-control-passthrough.md)(在 `docs/plans/`)— 已落地:Anthropic `cache_control` 逐块透传。
-- 上游(内容怎么分层组装,L0/L1/L2)见 [`context/context-composition.md`](../context/context-composition.md)。
+- [`request-build`](request-build.md) — **Overall design**: the unified-format Context, per-provider translation, the three caching modes, current state, and three gaps.
+- [`cache-control-passthrough`](../plans/cache-control-passthrough.md) (in `docs/plans/`) — landed: per-block passthrough of Anthropic `cache_control`.
+- For upstream (how content is layered and assembled, L0/L1/L2) see [`context/context-composition.md`](../context/context-composition.md).
 
-## [auth/](auth/) — 凭证 · 认证 · 账号
+## [auth/](auth/) — Credentials · Authentication · Accounts
 
-API key 与订阅 OAuth 的解析、校验、存储,以及多账号池与轮换。
+Resolution, validation, and storage of API keys and subscription OAuth, plus the multi-account pool and rotation.
 
-- [`credential-validation-unification`](auth/credential-validation-unification.md) — 统一的凭证校验入口
-- [`credential-status-redesign`](auth/credential-status-redesign.md) — 凭证状态("可用 / 停用",去掉 COOLING)
-- [`api-key-resolution-unification`](auth/api-key-resolution-unification.md) — API key 解析链统一
-- [`unified-auth-storage`](auth/unified-auth-storage.md) — 自包含的认证存储
-- [`unified-account-management`](auth/unified-account-management.md) — 多账号管理 + 池轮换/回退
-- [`claude-code-direct-oauth`](auth/claude-code-direct-oauth.md) — claude-code 订阅 OAuth 直连(砍 Meridian)
+- [`credential-validation-unification`](auth/credential-validation-unification.md) — Unified credential-validation entry point
+- [`credential-status-redesign`](auth/credential-status-redesign.md) — Credential status ("available / disabled", dropping COOLING)
+- [`api-key-resolution-unification`](auth/api-key-resolution-unification.md) — Unified API key resolution chain
+- [`unified-auth-storage`](auth/unified-auth-storage.md) — Self-contained auth storage
+- [`unified-account-management`](auth/unified-account-management.md) — Multi-account management + pool rotation/fallback
+- [`claude-code-direct-oauth`](auth/claude-code-direct-oauth.md) — claude-code subscription OAuth direct connection (dropping Meridian)
 
-## [reliability/](reliability/) — 容错 · 错误 · 重试 · 超时
+## [reliability/](reliability/) — Fault tolerance · Errors · Retries · Timeouts
 
-模型调用失败时的分类、重试、超时与错误向上传播。
+Classification, retries, timeouts, and upward propagation of errors when a model call fails.
 
-- [`llm-fault-tolerance`](reliability/llm-fault-tolerance.md) — 容错与超时总设计
-- [`error-retry`](reliability/error-retry.md) — 错误处理与重试决策
-- [`error-taxonomy-propagation`](reliability/error-taxonomy-propagation.md) — 结构化错误一路传到 UI
-- [`error-and-timeout-mechanism.html`](reliability/error-and-timeout-mechanism.html) — 错误/超时机制可视化
+- [`llm-fault-tolerance`](reliability/llm-fault-tolerance.md) — Overall design for fault tolerance and timeouts
+- [`error-retry`](reliability/error-retry.md) — Error handling and retry decisions
+- [`error-taxonomy-propagation`](reliability/error-taxonomy-propagation.md) — Structured errors propagated all the way to the UI
+- [`error-and-timeout-mechanism.html`](reliability/error-and-timeout-mechanism.html) — Visualization of the error/timeout mechanism
 
-## [models/](models/) — 模型目录 · 能力
+## [models/](models/) — Model catalog · Capabilities
 
-模型清单的数据布局、配置结构,以及 thinking/effort 等能力的声明式映射。每个模型都绑定在它所属的 provider 下,所以归在 providers 内。
+The data layout and configuration structure of the model list, plus the declarative mapping of capabilities like thinking/effort. Every model is bound to the provider it belongs to, so it lives under providers.
 
-- [`models`](models/models.md) — 模型目录与 provider 配置(数据布局、fetch、合并)
-- [`thinking-effort`](models/thinking-effort.md) — thinking/effort 子系统(声明式 per-provider 映射)
-- [`fast-tier`](models/fast-tier.md) — Fast(高速)档:两层判定(订阅入口手写 / models.dev 自动)、存储与线路
+- [`models`](models/models.md) — Model catalog and provider configuration (data layout, fetch, merge)
+- [`thinking-effort`](models/thinking-effort.md) — The thinking/effort subsystem (declarative per-provider mapping)
+- [`fast-tier`](models/fast-tier.md) — the Fast tier: two-tier detection (hand-written subscription entries / models.dev auto), storage, wires

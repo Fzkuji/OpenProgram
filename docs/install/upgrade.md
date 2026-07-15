@@ -1,37 +1,37 @@
-# 升级
+# Upgrading
 
-这页说明如何把已安装的 OpenProgram 更新到最新版本，以及什么时候需要重跑安装脚本。
+This page covers updating an existing OpenProgram install to the latest version, and when to re-run the install script.
 
 ## openprogram update
 
 ```bash
-openprogram update           # 检查并应用更新
-openprogram update --check   # 只检查，不应用
-openprogram update --force   # 绕过 6 小时节流，立即检查
+openprogram update           # check and apply updates
+openprogram update --check   # check only, don't apply
+openprogram update --force   # bypass the 6-hour throttle, check now
 ```
 
-更新策略按安装方式区分。从 git clone 装的（`pip install -e .`，即安装脚本的默认方式）走 `git fetch` + `git pull --ff-only`：
+The update strategy depends on how you installed. A git-clone install (`pip install -e .`, the install script's default) updates via `git fetch` + `git pull --ff-only`:
 
-- 工作树有未提交改动时**拒绝 pull**，避免在你改过的代码上制造合并冲突；
-- 只做 fast-forward，本地有自己的提交时不会强行合并。
+- The pull is **refused when the working tree has uncommitted changes**, to avoid creating merge conflicts on top of your edits;
+- Only fast-forwards are applied — if you have local commits of your own, nothing is force-merged.
 
-更新成功后会写入一条记录，下次启动 `openprogram` 时显示"updated to X"的提示。更新的是代码，正在运行的服务要 `openprogram restart` 才用上新版本。
+A successful update writes a record, and the next `openprogram` start shows an "updated to X" notice. The update only changes the code on disk — a running service needs `openprogram restart` to pick up the new version.
 
-## 自动更新
+## Automatic updates
 
-worker 启动时会在后台自动检查并应用更新，每 6 小时至多查一次，失败静默、不影响服务。设置 `OPENPROGRAM_NO_AUTO_UPDATE=1` 可关闭。
+The worker checks for and applies updates in the background at startup, at most once every 6 hours; failures are silent and never affect the service. Disable with `OPENPROGRAM_NO_AUTO_UPDATE=1`.
 
-## 什么时候重跑安装脚本
+## When to re-run the install script
 
-`openprogram update` 只拉代码，不重装依赖、不重新构建 web 前端。更新后如果出现依赖缺失或页面异常，重跑安装脚本：
+`openprogram update` only pulls code — it doesn't reinstall dependencies or rebuild the web frontend. If an update leaves you with missing dependencies or a broken page, re-run the install script:
 
 ```bash
 cd OpenProgram && ./scripts/install.sh    # Windows: .\scripts\install.ps1
 ```
 
-脚本的每一步都是幂等的，任何时候重跑都安全——已装好的步骤会跳过或原地刷新，不会破坏现有配置和会话数据（它们在 `~/.openprogram/`，脚本不碰）。
+Every step of the script is idempotent, so re-running is safe at any time — completed steps are skipped or refreshed in place, and your existing configuration and session data are untouched (they live in `~/.openprogram/`, which the script never touches).
 
-手动升级等价于这两步：
+A manual upgrade is equivalent to these steps:
 
 ```bash
 git pull
