@@ -25,6 +25,10 @@ git push origin stable
 # Rebuild the bundled frontend (no-op ~seconds when nothing changed).
 ( cd web && npm install --silent && npm run build )
 
+# Prebuild the docs site (gitignored build artifact) so the first /docs visit
+# after a promote serves immediately instead of waiting on the auto-rebuild.
+"$HOME/.openprogram-stable-env/bin/python" -m tools.docs_site.build
+
 # Snapshot the live data dir's config before the new code touches it,
 # so a bad release can be rolled back together with its config.
 cp ~/.openprogram/config.json ~/.openprogram/config.json.pre-promote 2>/dev/null || true
