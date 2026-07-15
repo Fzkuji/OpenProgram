@@ -1,4 +1,4 @@
-# Key Features — detailed tour
+# Features
 
 The README's [Detailed features](../README.md#detailed-features) table
 points here for the longer story behind each one. The

@@ -362,7 +362,7 @@ def _archive_entry(first_page: Page, docs_root: Path) -> Page:
         zh = docs_root / (str(readme_rel)[:-3] + ".zh.md")
         return Page(
             src=src, rel=readme_rel, out=readme_rel.with_suffix(".html"),
-            title="Design notes archive", is_readme=True, kind="md",
+            title="Design notes", is_readme=True, kind="md",
             title_zh="设计文档归档",
             zh_src=zh if zh.exists() else None,
             zh_out=readme_rel.with_name("README.zh.html") if zh.exists() else None,

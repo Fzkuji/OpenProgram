@@ -1,4 +1,4 @@
-# Pure Python functions
+# Pure Python
 
 ## When to use
 

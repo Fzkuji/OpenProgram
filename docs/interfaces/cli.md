@@ -1,4 +1,4 @@
-# CLI one-shot and scripting
+# CLI
 
 Call OpenProgram from scripts or other programs and get one reply per command.
 

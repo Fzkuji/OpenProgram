@@ -1,4 +1,4 @@
-# @agentic_function calling sub-functions in a fixed order
+# Fixed-order calls
 
 Call the LLM (optionally) while invoking multiple sub-functions in an order
 hard-coded in Python.

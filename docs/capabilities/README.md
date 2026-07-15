@@ -1,4 +1,4 @@
-# Capabilities overview
+# Overview
 
 This page answers one question: what OpenProgram can do, and which page covers each capability. Capabilities come in three layers: the programming paradigm, ready-made workflows, and extension mechanisms.
 

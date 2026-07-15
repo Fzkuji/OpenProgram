@@ -1,4 +1,4 @@
-# Claude Code Context Compaction Mechanism — Full Pipeline Reference
+# Claude Code Compaction
 
 > Research document (not a design document). Reverse-engineered from source, documenting Claude Code's compaction mechanism.
 >

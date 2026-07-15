@@ -1,4 +1,4 @@
-# Server overview
+# Overview
 
 OpenProgram's Web UI, TUI, and CLI all sit on top of one resident local service, called the worker in code and logs. This page covers how it starts, how to check its status, and where the ports and logs are.
 

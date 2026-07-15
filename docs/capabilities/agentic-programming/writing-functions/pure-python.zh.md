@@ -1,4 +1,4 @@
-# 纯 Python 函数
+# 纯 Python
 
 ## 何时使用
 

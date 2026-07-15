@@ -1,4 +1,4 @@
-# Multiple Instances & Profiles
+# Profiles
 
 This page explains how to run several independent OpenProgram instances side by side on one machine — the common case being a stable instance for daily use and a development instance for hacking on the code.
 

@@ -1,4 +1,4 @@
-# Harness：安装、管理、自行编写
+# Harness
 
 **harness**（一个 *agentic program*）是一个自包含的、由 agentic
 function 组成的 git 仓库——OpenProgram 在

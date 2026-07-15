@@ -1,4 +1,4 @@
-# Configuration reference
+# Configuration
 
 The keys in `~/.openprogram/config.json`, what `openprogram config` can read and write, and the environment variable roundup. For the everyday entry point to changing settings, see [Configuration and data directory](../server/configuration.md).
 

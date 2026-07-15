@@ -1,4 +1,4 @@
-# Claude Code 集成指南
+# Claude Code
 
 ## 这是什么？
 

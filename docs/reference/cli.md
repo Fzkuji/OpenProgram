@@ -1,4 +1,4 @@
-# CLI reference
+# CLI
 
 A quick reference for every `openprogram` subcommand. Each command has its own help via `openprogram <command> -h`; subcommand verbs nest one level deeper, e.g. `openprogram logs tail -h`.
 

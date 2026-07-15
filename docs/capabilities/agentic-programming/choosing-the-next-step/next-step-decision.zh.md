@@ -1,4 +1,4 @@
-# 下一步决策（decision.make / exec(choices=)）
+# 下一步决策
 
 本文档描述 OpenProgram 的**下一步决策**机制：一个 agentic
 function 把"接下来发生什么"交给 LLM —— 给它一组选项，它选出一个，框架直接把这个选择解析成"下一步的结果"。该机制是一条独立于

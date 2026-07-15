@@ -1,4 +1,4 @@
-# Claude Code Integration
+# Claude Code
 
 ## What Is This?
 

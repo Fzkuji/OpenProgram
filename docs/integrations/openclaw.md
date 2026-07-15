@@ -1,4 +1,4 @@
-# OpenClaw Integration
+# OpenClaw
 
 ## What Is This?
 

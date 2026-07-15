@@ -1,4 +1,4 @@
-# Agentic Programming 指南
+# 指南
 
 本目录是 OpenProgram **自有编程模型**的主场——这些概念你在通用的 LLM
 框架教程里找不到，在此集中呈现。如果你要为 OpenProgram 编写函数（或正在

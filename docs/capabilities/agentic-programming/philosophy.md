@@ -1,4 +1,4 @@
-# Agentic Programming — Design Philosophy
+# Design philosophy
 
 > OpenProgram is the productized implementation of the Agentic Programming paradigm.
 > This document is about the paradigm itself: what problem it solves, why it inverts control, and what its core primitives are.

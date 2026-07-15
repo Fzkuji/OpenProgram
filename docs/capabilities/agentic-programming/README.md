@@ -1,4 +1,4 @@
-# Agentic Programming Guide
+# Guide
 
 This directory is the home of OpenProgram's **own programming model** — the
 concepts you will not find in a generic LLM-framework tutorial, collected in

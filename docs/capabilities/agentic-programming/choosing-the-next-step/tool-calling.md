@@ -1,4 +1,4 @@
-# How the model picks the next step (the tool-call loop)
+# Tool-call loop
 
 This document describes how, within one model call, the LLM "chooses" on
 every round — pick a function to run, or emit text and finish.

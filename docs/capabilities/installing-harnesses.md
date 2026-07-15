@@ -1,4 +1,4 @@
-# Harnesses: install, manage, write your own
+# Harnesses
 
 A **harness** (an *agentic program*) is a self-contained git repo of
 agentic functions — OpenProgram discovers it under

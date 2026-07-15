@@ -1,4 +1,4 @@
-# OpenClaw 集成指南
+# OpenClaw
 
 ## 这是什么？
 

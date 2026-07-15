@@ -1,4 +1,4 @@
-# Next-step decision making (decision.make / exec(choices=))
+# Next-step decision
 
 This document describes OpenProgram's **next-step decision** mechanism: an
 agentic function hands "what happens next" to the LLM — give it a set of

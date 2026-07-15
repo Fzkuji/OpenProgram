@@ -1,4 +1,4 @@
-# Claude Code 上下文压缩机制 — 完整流程参考
+# Claude Code 压缩机制
 
 > 调研文档（非设计文档）。基于源码逆向分析，记录 Claude Code 的压缩机制。
 >

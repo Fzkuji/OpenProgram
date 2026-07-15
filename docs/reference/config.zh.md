@@ -1,4 +1,4 @@
-# 配置参考
+# 配置
 
 `~/.openprogram/config.json` 的键、`openprogram config` 能读写什么、以及环境变量汇总。日常改设置的入口见[配置与数据目录](../server/configuration.md)。
 

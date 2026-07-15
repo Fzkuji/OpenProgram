@@ -1,4 +1,4 @@
-# Provider Token Tracking
+# Token tracking
 
 ## Unified Format (Anthropic Convention)
 

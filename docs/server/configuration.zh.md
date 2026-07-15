@@ -1,4 +1,4 @@
-# 配置与数据目录
+# 配置
 
 OpenProgram 的全部状态存在 `~/.openprogram/` 一个目录里。本页说明目录里有什么、`openprogram config` 怎么读写设置，以及如何用 profile 隔离多套状态。
 

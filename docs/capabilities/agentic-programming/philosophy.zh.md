@@ -1,4 +1,4 @@
-# Agentic Programming — 设计哲学
+# 设计哲学
 
 > OpenProgram 是 Agentic Programming 这一编程范式的产品化实现。
 > 这篇文档讲的是范式本身：它解决什么问题、为什么要反转控制权、核心原语是什么。

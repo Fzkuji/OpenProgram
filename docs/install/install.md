@@ -1,4 +1,4 @@
-# Installing OpenProgram
+# Installation
 
 ## The model — read this first
 

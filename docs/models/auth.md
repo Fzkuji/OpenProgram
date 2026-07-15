@@ -1,4 +1,4 @@
-# Authentication and credentials
+# Authentication
 
 This page covers where provider credentials come from, where they are stored, and how to import them from other CLIs you are already logged in to.
 

@@ -1,4 +1,4 @@
-# Function Metadata Specification
+# Function metadata
 
 This document defines what metadata a function in this framework must carry — whether or not it calls an LLM — where that metadata lives, and which components consume it.
 
