@@ -104,7 +104,9 @@ nav.tabbar::-webkit-scrollbar { display: none; }
   border-bottom: 2px solid transparent;
 }
 .tablink:hover { color: var(--tx); }
-.tablink.active { color: var(--acc); border-bottom-color: var(--acc); font-weight: 600; }
+/* active state must not change font-weight — bold text is wider and would
+   shift the whole row on every tab switch */
+.tablink.active { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── layout ── */
 .layout { display: flex; padding-top: 96px; }
