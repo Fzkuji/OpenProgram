@@ -27,7 +27,7 @@
   <a href="docs/README.md">Docs</a> &middot;
   <a href="docs/API.md">API Reference</a> &middot;
   <a href="docs/philosophy/agentic-programming.md">Philosophy</a> &middot;
-  <a href="docs/README_CN.md">中文</a>
+  <a href="docs/README.md">中文</a>
 </p>
 
 ---
