@@ -6,7 +6,7 @@ Status: design · Created: 2026-06-18
 
 ## Overview Diagram
 
-[`agent-call-flow.svg`](agent-call-flow.svg) depicts the **target (after unification)**: two entry points (user message / inside a function body) converge onto **one shared trunk** — ① render_context reads the context → ② open_call_node → ③ agent_loop → ④ close_call_node; calling exec from inside a tool body returns to the top of the trunk (nesting). The special handling of each entry point (chat's front-end streaming / title / compaction, the shared retry / metering) hangs off the trunk as **optional hooks**. The bottom lists "what is already shared today" and "the 7 steps the merge requires".
+[`agent-call-flow.svg`](../agent-call-flow.svg) depicts the **target (after unification)**: two entry points (user message / inside a function body) converge onto **one shared trunk** — ① render_context reads the context → ② open_call_node → ③ agent_loop → ④ close_call_node; calling exec from inside a tool body returns to the top of the trunk (nesting). The special handling of each entry point (chat's front-end streaming / title / compaction, the shared retry / metering) hangs off the trunk as **optional hooks**. The bottom lists "what is already shared today" and "the 7 steps the merge requires".
 
 > **Current state vs target**: the prose below describes the **current state** (the two entry points each manage their own periphery, each write their own records, and only converge at agent_loop) — serving as the starting reference for the merge. For the concrete steps to unify into the single trunk above, see section 8 of `session-dag.md`.
 

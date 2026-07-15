@@ -1,6 +1,6 @@
 # API Reference
 
-> Source: [`openprogram/`](../openprogram/)
+> Source: [`openprogram/`](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/)
 
 ## 核心组件
 
@@ -10,11 +10,11 @@
 | [`Runtime`](api/runtime.md) | `agentic_programming/runtime.py` | LLM 运行时。从 DAG 算上下文、调用 LLM、把回复写回 DAG |
 | [`create_runtime` 与内置 providers](api/providers.md) | `providers/` | 自动检测或显式创建 Runtime,支持 Anthropic / OpenAI / Gemini / CLI providers |
 
-会话上下文是一张扁平 DAG(节点 = 用户消息 / LLM 调用 / 函数调用),架构见 [`openprogram/context/README.md`](../openprogram/context/README.md)。
+会话上下文是一张扁平 DAG(节点 = 用户消息 / LLM 调用 / 函数调用),架构见 [`openprogram/context/README.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/context/README.md)。
 
 ## 编写函数
 
-没有 `create()` / `fix()` 这类 meta 函数——编写、修改、校验 `@agentic_function` 直接用普通文件编辑工具完成,遵循 [`skills/agentic-programming/SKILL.md`](../skills/agentic-programming/SKILL.md)。该 skill 是完整规范:文件布局、装饰器元数据、docstring 与 `content` 的分工、校验清单、冒烟测试。
+没有 `create()` / `fix()` 这类 meta 函数——编写、修改、校验 `@agentic_function` 直接用普通文件编辑工具完成,遵循 [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)。该 skill 是完整规范:文件布局、装饰器元数据、docstring 与 `content` 的分工、校验清单、冒烟测试。
 
 ## 导入
 

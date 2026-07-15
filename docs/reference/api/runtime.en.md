@@ -1,6 +1,6 @@
 # Runtime
 
-> Source: [`openprogram/agentic_programming/runtime.py`](../../openprogram/agentic_programming/runtime.py)
+> Source: [`openprogram/agentic_programming/runtime.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agentic_programming/runtime.py)
 
 The LLM runtime. Wraps an LLM provider, automatically computes context from the session DAG, calls the LLM, and writes the reply back to the DAG.
 
@@ -64,7 +64,7 @@ A single `@agentic_function` can call `exec()` multiple times; each call is a ne
 | `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / `{"type":"function","name":"X"}` to force a specific tool. Passed through to the provider (OpenAI / Anthropic / Gemini / Bedrock each map it to their own protocol form) |
 | `parallel_tool_calls` | `bool` | `True` | Allow multiple tool calls in a single turn; `False` is passed through to providers that support the switch |
 | `max_iterations` | `int` | `20` | Upper bound on tool-loop iterations (one iteration = one model call plus its tool execution). The effective value is `min(50, max_iterations)`, where 50 is the hard limit in `agent_loop.py` |
-| `choices` | `dict \| list \| None` | `None` | If set, constrains the **end** of the turn: after the model finishes the full turn, its final reply must pick one of `choices`; `exec` parses and returns the result of that choice. See [next-step-decision](../agentic-programming/choosing-the-next-step/next-step-decision.md) for details |
+| `choices` | `dict \| list \| None` | `None` | If set, constrains the **end** of the turn: after the model finishes the full turn, its final reply must pick one of `choices`; `exec` parses and returns the result of that choice. See [next-step-decision](../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.md) for details |
 | `timeout_s` | `float \| None` | `None` | The wall-clock time budget for the entire `exec()` (including all retries); on timeout, raises `LLMError` (`reason=timeout`) |
 | `on_retry` | `Callable \| None` | `None` | An observation callback invoked before each retry, receiving a `RetryInfo`; exceptions raised inside the callback are ignored |
 
@@ -238,7 +238,7 @@ Attempt 3: ConnectionError: timeout
 
 ### The boundaries of retrying
 
-`max_retries` only handles transient failures at the API level (network timeouts, rate limits, etc.). If the problem lies in the function's own logic or output format, retrying won't fix it — edit the function code directly; see [`skills/agentic-programming/SKILL.md`](../../skills/agentic-programming/SKILL.md).
+`max_retries` only handles transient failures at the API level (network timeouts, rate limits, etc.). If the problem lies in the function's own logic or output format, retrying won't fix it — edit the function code directly; see [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md).
 
 ```python
 runtime = Runtime(call=my_llm, max_retries=3)

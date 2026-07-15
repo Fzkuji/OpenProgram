@@ -131,5 +131,5 @@ only read what they care about), while it is changing an old structure that affe
 ## 8. Landing It
 
 For the wiring points (file:line), the approach to bridging the six sources into the bus, and the step-by-step plan with verification, see
-[the implementation plan](../../plans/proactive-implementation.md). Order: first consolidate type A into the bus and verify it can emit a complete
+[the implementation plan](../plans/proactive-implementation.md). Order: first consolidate type A into the bus and verify it can emit a complete
 event sequence, then add file-change events and before-tool interception, then bridge in type-B system events, and finally add lane distinction for concurrency.

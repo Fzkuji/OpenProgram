@@ -94,7 +94,7 @@ provider 走 `none` 兜底(和 thinking 的 OpenAI 兼容兜底同理)。
 ### 断点打在哪(explicit 模式)
 
 调用方可在某个 content block 上显式标 `cache_control`,原样透传到该 block 之后
-(见 [`../../plans/cache-control-passthrough.md`](../../plans/cache-control-passthrough.md));
+(见 [`../../plans/cache-control-passthrough.md`](../plans/cache-control-passthrough.md));
 未标时 provider 自动在最后一块打。断点上限(Anthropic 4 个)由 cache_spec 的
 `max_breakpoints` 约束,超了按 `tools > system > messages` 优先级丢低的。
 

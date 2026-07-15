@@ -2,7 +2,7 @@
 
 ## 这是什么？
 
-`ClaudeCodeRuntime` 让你**无需任何 API key** 即可使用 Agentic Programming。它通过 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) 路由 LLM 调用，使用你的 Claude Code 订阅。
+`ClaudeCodeRuntime` 让你**无需任何 API key** 即可使用 Agentic Programming。它使用你的 Claude 订阅的 OAuth token，直连 `api.anthropic.com`——token 从 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) 的登录凭据（`~/.claude/.credentials.json`）解析而来，每次调用都重新读取，CLI 的 token 刷新自动生效。
 
 只要你已安装并登录 `claude`，就可以直接上手。
 
@@ -49,47 +49,48 @@ print(result)
 
 ```python
 runtime = ClaudeCodeRuntime(
-    model="haiku",       # 模型名称（传给 --model 参数）
-    timeout=120,          # 每次 CLI 调用的最长秒数（默认 120）
-    cli_path=None,        # claude 二进制文件路径（自动检测）
+    model="haiku",        # 模型名或家族别名（见下表）
+    api_key=None,         # 一般不传；不传时每次调用从凭据池重新解析
+    max_retries=2,        # API 层瞬态故障的重试次数
 )
 ```
 
 ### 模型名称
 
-`model` 参数会直接传给 `claude -p --model <model>`。常用取值：
+`model` 接受家族别名或完整模型 id。别名展开为当前默认版本：
 
-| 模型 | 说明 |
+| 取值 | 展开为 |
 |-------|-------------|
-| `"sonnet"` | Claude Sonnet（默认，快速且能力强） |
-| `"opus"` | Claude Opus（能力最强） |
-| `"haiku"` | Claude Haiku（最快、最便宜） |
+| `"sonnet"` | `claude-sonnet-4-6`（默认家族） |
+| `"opus"` | `claude-opus-4-6` |
+| `"haiku"` | `claude-haiku-4-5` |
+
+更具体的 id（如 `claude-opus-4-5-20251101`）原样透传，由 Anthropic API 校验。
 
 ## 工作原理
 
 在底层，`ClaudeCodeRuntime` 的流程是：
 
-1. 把所有 content block 合并为一段文本 prompt
-2. 以子进程方式调用 `claude -p <prompt>`
-3. 返回 CLI 的 stdout 作为结果
+1. 从凭据池解析 Claude 订阅的 OAuth token（`sk-ant-oat` 前缀），或普通 Anthropic API key
+2. 走标准的 Anthropic Messages 协议直连 `api.anthropic.com`，订阅 token 用 Bearer 认证 + Claude Code 身份 header
+3. 把回复写回 session DAG
 
 ```
 你的 Python 代码
     → @agentic_function 装饰器（记录一个 DAG 节点）
         → runtime.exec()（从 DAG 构建 prompt）
-            → claude -p "..."（CLI 调用）
-                → Claude API（经由订阅）
+            → api.anthropic.com（订阅 OAuth 直连）
             ← 响应文本
         ← 回复作为 DAG 节点写回
     ← 返回值
 ```
 
+不再有子进程调用——它就是标准的 Anthropic 协议，只是凭据来自你的订阅。
+
 ## 限制
 
-- **仅支持文本。** 图片、音频和文件 block 会被转换为文本占位符（`[Image: path]`）。如需多模态输入，请使用带 API key 的 `AnthropicRuntime`。
-- **子进程开销。** 每次调用都会启动一个新进程（约 0.5-1 秒开销）。对延迟敏感的应用请使用直连 API 的 provider。
-- **不支持流式输出。** 结果在完整响应生成后才返回。
-- **超时。** 较长的响应可能触发默认的 120 秒超时。可用 `timeout=300` 提高上限。
+- **需要有效凭据。** 构造时校验凭据池里存在 Claude 订阅 OAuth token 或 Anthropic API key，否则抛 `ValueError`。
+- **订阅 token 会过期**（约 8 小时）。runtime 每次调用重新解析，Claude Code CLI 侧的刷新自动生效；如果长时间没用过 `claude`，重新登录一次即可。
 
 ## 完整示例
 
@@ -124,12 +125,12 @@ def evaluate(idea):
 def ideate(topic):
     """头脑风暴想法，并逐一评估。"""
     ideas_text = brainstorm(topic=topic)
-    print(f"💡 Ideas:\n{ideas_text}\n")
+    print(f"Ideas:\n{ideas_text}\n")
 
     lines = [l.strip() for l in ideas_text.split("\n") if l.strip() and l.strip()[0].isdigit()]
     for line in lines[:3]:
         rating = evaluate(idea=line)
-        print(f"  📊 {rating}\n")
+        print(f"  {rating}\n")
 
     return runtime.exec(content=[
         {"type": "text", "text": "Pick the best idea from the evaluation above and explain why in 2 sentences."},
@@ -138,14 +139,13 @@ def ideate(topic):
 
 if __name__ == "__main__":
     result = ideate(topic="improving developer productivity with AI")
-    print(f"\n🏆 Best idea:\n{result}")
+    print(f"\nBest idea:\n{result}")
 ```
 
 ## 故障排查
 
 | 错误 | 解决方案 |
 |-------|----------|
-| `FileNotFoundError: Claude Code CLI not found` | 安装：`npm install -g @anthropic-ai/claude-code` |
-| `ConnectionError: Claude Code CLI not logged in` | 运行：`claude login` |
-| `TimeoutError: Claude Code CLI timed out` | 提高超时：`ClaudeCodeRuntime(timeout=300)` |
-| `RuntimeError: Claude Code CLI error` | 手动检查 `claude -p "test"` 是否正常工作 |
+| `ValueError: No Claude credential` | 运行 `claude login`（订阅），或在 Settings → Providers 添加 Anthropic API key |
+| 认证相关的 4xx 错误 | token 过期或失效——重新 `claude login`，或用 `openprogram providers doctor` 诊断 |
+| 模型 id 被 API 拒绝 | 别名（`sonnet`/`opus`/`haiku`）以外的 id 原样透传，检查拼写和版本号 |

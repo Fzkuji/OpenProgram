@@ -10,7 +10,7 @@
 > 状态：**实施中**。五步迁移的步 1（总线 + A 类源 taps）、步 2（file.changed +
 > tool.before 同步问询点）、步 3（B 类源桥接）、步 4（webui 降级为总线订阅者）
 > 已落地并验证；只剩步 5（proactive 规则层）。各步接线与验收见
-> [`../../plans/proactive-implementation.md`](../../plans/proactive-implementation.md)。
+> [`../../plans/proactive-implementation.md`](../plans/proactive-implementation.md)。
 > 想亲眼看事件流：`OPENPROGRAM_EVENT_LOG=1 openprogram worker restart`，发条消息，
 > 读 `/tmp/openprogram-events.jsonl`。
 

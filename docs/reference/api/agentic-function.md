@@ -1,10 +1,10 @@
 # agentic_function
 
-> Source: [`openprogram/agentic_programming/function.py`](../../openprogram/agentic_programming/function.py)
+> Source: [`openprogram/agentic_programming/function.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agentic_programming/function.py)
 
 `@agentic_function` 把普通 Python 函数变成 Agentic Function:每次调用记录为 session DAG 的一个 `code` 节点,函数体内的 `runtime.exec` 调用记录为 `llm` 节点。
 
-完整的编写规范——文件布局、docstring 与 `content` 的分工、参数元数据、校验清单、冒烟测试——见 [`skills/agentic-programming/SKILL.md`](../../skills/agentic-programming/SKILL.md)。本文只列装饰器本身。
+完整的编写规范——文件布局、docstring 与 `content` 的分工、参数元数据、校验清单、冒烟测试——见 [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)。本文只列装饰器本身。
 
 ## 用法
 

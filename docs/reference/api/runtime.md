@@ -1,6 +1,6 @@
 # Runtime
 
-> Source: [`openprogram/agentic_programming/runtime.py`](../../openprogram/agentic_programming/runtime.py)
+> Source: [`openprogram/agentic_programming/runtime.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agentic_programming/runtime.py)
 
 LLM 运行时。封装 LLM provider,自动从 session DAG 算上下文、调用 LLM、把回复写回 DAG。
 
@@ -64,7 +64,7 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 | `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / `{"type":"function","name":"X"}` 强制某工具。透传到 provider（OpenAI / Anthropic / Gemini / Bedrock 各自映射协议形态） |
 | `parallel_tool_calls` | `bool` | `True` | 允许一轮多个工具调用；`False` 透传到支持该开关的 provider |
 | `max_iterations` | `int` | `20` | 工具循环轮数上限（一轮 = 一次模型调用 + 其工具执行）。生效值为 `min(50, max_iterations)`，50 是 `agent_loop.py` 的硬上限 |
-| `choices` | `dict \| list \| None` | `None` | 设了则约束 turn 的**收尾**:模型跑完整 turn 后,最终回复必须从 `choices` 里选一个;`exec` 解析并返回该选择的结果。详见 [next-step-decision](../agentic-programming/choosing-the-next-step/next-step-decision.md) |
+| `choices` | `dict \| list \| None` | `None` | 设了则约束 turn 的**收尾**:模型跑完整 turn 后,最终回复必须从 `choices` 里选一个;`exec` 解析并返回该选择的结果。详见 [next-step-decision](../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.md) |
 | `timeout_s` | `float \| None` | `None` | 整个 `exec()`（含全部重试）的 wall-clock 时间预算,超时抛 `LLMError`（`reason=timeout`） |
 | `on_retry` | `Callable \| None` | `None` | 每次重试前调用的观测回调,入参 `RetryInfo`;回调内抛出的异常被忽略 |
 
@@ -238,7 +238,7 @@ Attempt 3: ConnectionError: timeout
 
 ### 重试的边界
 
-`max_retries` 只处理 API 层面的瞬态故障(网络超时、速率限制等)。如果是函数本身的逻辑或输出格式有问题,重试解决不了——直接修改函数代码,参见 [`skills/agentic-programming/SKILL.md`](../../skills/agentic-programming/SKILL.md)。
+`max_retries` 只处理 API 层面的瞬态故障(网络超时、速率限制等)。如果是函数本身的逻辑或输出格式有问题,重试解决不了——直接修改函数代码,参见 [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)。
 
 ```python
 runtime = Runtime(call=my_llm, max_retries=3)

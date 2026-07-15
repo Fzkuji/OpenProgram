@@ -61,5 +61,5 @@ What changes and what doesn't are equally important. These are **not** in scope 
 - AuthStore itself (bridged, not touched)
 - The frontend WS protocol (transparent to the frontend once webui becomes a subscriber)
 
-> For specific wiring points (file:line) and step-by-step verification, see the [implementation plan](../../plans/proactive-implementation.md).
+> For specific wiring points (file:line) and step-by-step verification, see the [implementation plan](../plans/proactive-implementation.md).
 > Visual version: [`framework-evolution.html`](framework-evolution.html).

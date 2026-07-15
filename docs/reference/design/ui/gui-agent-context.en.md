@@ -5,7 +5,7 @@ This document records how context flows through `gui_agent` under the current
 decorator arguments are set the way they are.
 
 References:
-- Decorator semantics: [`agentic-programming/function-metadata.md`](../../agentic-programming/writing-functions/function-metadata.md)
+- Decorator semantics: [`agentic-programming/function-metadata.md`](../../../capabilities/agentic-programming/writing-functions/function-metadata.md)
 - render_context implementation: `openprogram/context/nodes.py`
 - Code: `openprogram/functions/agentics/GUI-Agent-Harness/gui_harness/`
 

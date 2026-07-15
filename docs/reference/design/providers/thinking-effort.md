@@ -1,6 +1,6 @@
 # Thinking / Effort 子系统设计
 
-> 模型目录和 provider 配置的整体设计见 [models.md](models.md)。本文只讲 thinking effort 的控制逻辑。
+> 模型目录和 provider 配置的整体设计见 [models.md](models/models.md)。本文只讲 thinking effort 的控制逻辑。
 
 ## 1. 问题
 

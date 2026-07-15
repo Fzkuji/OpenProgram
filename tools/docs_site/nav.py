@@ -36,6 +36,13 @@ FALLBACK_TAB = "reference"
 # Display-name overrides for pages whose H1 doesn't make a good sidebar label.
 ROOT_PAGE_GROUPS: dict[str, tuple[str, str]] = {
     "README.md": ("项目总览", "start"),
+    "capabilities/agentic-programming/philosophy.md": ("设计哲学", ""),
+}
+
+# Sidebar titles for directories that have no README.md of their own.
+DIR_TITLES: dict[str, tuple[str, str]] = {  # rel dir -> (中文, English)
+    "capabilities/agentic-programming/writing-functions": ("编写函数", "Writing functions"),
+    "capabilities/agentic-programming/choosing-the-next-step": ("选择下一步", "Choosing the next step"),
 }
 # Per-page i18n key (bilingual sidebar labels for pages the toggle must switch).
 ROOT_PAGE_I18N = {
@@ -191,19 +198,62 @@ def tab_of(p: Page) -> str:
 PAGE_ORDER: dict[str, int] = {
     "README.md": 0,
     "start/GETTING_STARTED.md": 1,
-    "start/features.md": 2,
-    "capabilities/agentic-programming": 0,
-    "capabilities/installing-harnesses.md": 10,
+    "start/daily-use.md": 2,
+    "start/features.md": 3,
+    "start/faq.md": 4,
+    "install/install.md": 0,
+    "install/upgrade.md": 1,
+    "install/profiles.md": 2,
+    "capabilities/README.md": 0,
+    "capabilities/agentic-programming": 1,
+    "capabilities/workflows": 2,
+    "capabilities/installing-harnesses.md": 3,
+    "capabilities/skills.md": 4,
+    "capabilities/plugins.md": 5,
+    "capabilities/mcp.md": 6,
+    "capabilities/tools.md": 7,
+    "capabilities/agentic-programming/philosophy.md": 1,
+    "capabilities/agentic-programming/writing-functions": 2,
+    "capabilities/agentic-programming/choosing-the-next-step": 3,
+    "capabilities/workflows/gui-agent.md": 1,
+    "capabilities/workflows/research-agent.md": 2,
+    "capabilities/workflows/wiki-agent.md": 3,
+    "interfaces/README.md": 0,
+    "interfaces/web.md": 1,
+    "interfaces/tui.md": 2,
+    "interfaces/cli.md": 3,
+    "models/README.md": 0,
+    "models/providers.md": 1,
+    "models/auth.md": 2,
+    "models/fast-tier.md": 3,
+    "models/thinking-effort.md": 4,
+    "models/token-tracking.md": 5,
     "integrations/claude-code.md": 0,
     "integrations/openclaw.md": 1,
-    "reference/API.md": 0,
-    "reference/api": 1,
+    "server/README.md": 0,
+    "server/configuration.md": 1,
+    "server/troubleshooting.md": 2,
+    "reference/README.md": 0,
+    "reference/API.md": 1,
+    "reference/api": 2,
+    "reference/cli.md": 3,
+    "reference/config.md": 4,
+    "reference/claude-code-compaction.md": 5,
     "reference/design": 900,  # design-notes archive always last
 }
 
 
 def _order_key(rel: Path) -> int:
     return PAGE_ORDER.get(str(rel).replace("\\", "/"), 999)
+
+
+def ordered_children(g: "Group") -> list:
+    """Pages and subgroups of a group, merged into sidebar display order:
+    by PAGE_ORDER rank, loose pages before groups at equal rank."""
+    items = [(_order_key(p.rel), 0, str(p.rel), p) for p in g.pages]
+    items += [(_order_key(sg.rel_dir), 1, str(sg.rel_dir), sg) for sg in g.subgroups]
+    items.sort(key=lambda t: t[:3])
+    return [x for _, _, _, x in items]
 
 
 def build_tabs(docs_root: Path, pages: list[Page]) -> list[Tab]:
@@ -241,8 +291,12 @@ def _tree_for_tab(docs_root: Path, tab_key: str, pages: list[Page]) -> Group:
             return groups[rel_dir]
         readme = docs_root / rel_dir / "README.md"
         readme_en = docs_root / rel_dir / "README.en.md"
-        title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
-        title_en = extract_title(readme_en) if readme_en.exists() else ""
+        override = DIR_TITLES.get(str(rel_dir).replace("\\", "/"))
+        if override:
+            title, title_en = override
+        else:
+            title = extract_title(readme) if readme.exists() else prettify(rel_dir.name)
+            title_en = extract_title(readme_en) if readme_en.exists() else ""
         g = Group(title=title, rel_dir=rel_dir, title_en=title_en)
         groups[rel_dir] = g
         group_for(rel_dir.parent).subgroups.append(g)

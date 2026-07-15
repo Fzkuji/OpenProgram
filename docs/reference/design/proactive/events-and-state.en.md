@@ -44,7 +44,7 @@ Events aren't written out of thin air; they translate the things that **already 
 - When a user message comes in, the dispatcher is already handling it.
 
 What the proactive layer does is, at these existing points, **translate** what happened **into an Event and drop it into the event stream**.
-(Exactly which lines to hook in is an implementation detail; see [the implementation plan](../../plans/proactive-implementation.md).)
+(Exactly which lines to hook in is an implementation detail; see [the implementation plan](../plans/proactive-implementation.md).)
 
 ## 3. The Event Stream: An Append-Only Ledger
 

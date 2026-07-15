@@ -121,7 +121,7 @@ cd <Harness>
 
 **GUI agent** 有原生依赖（PyTorch、检测器权重、OCR），因此它附带了
 自己的分平台安装脚本 —— 按上面的步骤使用它；完整指南见它的
-[安装章节](../openprogram/functions/agentics/GUI-Agent-Harness#1-install)。
+[安装章节](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/functions/agentics/GUI-Agent-Harness#1-install)。
 （选装了 GUI 时 —— 菜单里勾选或 `--programs gui`/`all` —— 安装脚本会把它克隆进来并拉 PyTorch；之后运行该 harness 自己的安装脚本来配资产或指定 CUDA/CPU torch。）
 
 对于**纯 Python** 的已编目 harness，有一条单行快捷命令，会为你完成克隆、
@@ -136,7 +136,7 @@ GUI agent 改用它自己的安装脚本（见上文）。
 
 执行上述任意操作后，重启 worker（或在 Functions 页面点击 **Refresh**），
 该程序就会出现在 web UI 中。第三方 harness 的方式相同：
-[installing-harnesses.md](installing-harnesses.md)。
+[installing-harnesses.md](../capabilities/installing-harnesses.md)。
 
 ---
 
@@ -217,7 +217,7 @@ export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $en
 
 \* EasyOCR 作为跨平台回退方案被安装，所以 GUI agent 在
 没有 Xcode CLT 的 macOS 上也能工作 —— Apple Vision 只是更快而已。完整的 GUI 细节：
-[GUI-Agent-Harness/docs/install.md](../openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)。
+[GUI-Agent-Harness/docs/install.md](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md)。
 
 ---
 
@@ -250,4 +250,4 @@ python -c "import easyocr; easyocr.Reader(['en','ch_sim'], gpu=False)"
 ```
 
 多 repo 本地开发（并排编辑多个 harness）：
-[troubleshooting.md → Local-development install](troubleshooting.md#local-development-install-multi-repo)。
+[troubleshooting.md → 本地开发安装（多仓库）](../server/troubleshooting.md)。

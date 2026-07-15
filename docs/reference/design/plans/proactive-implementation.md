@@ -1,6 +1,6 @@
 # 落地规划：Proactive Layer 接入现有代码
 
-> 设计见 [`../design/proactive/`](../design/proactive/README.md)。本文只讲**怎么把那套设计
+> 设计见 [`../design/proactive/`](../proactive/README.md)。本文只讲**怎么把那套设计
 > 接进现有 OpenProgram 代码**：接线点（file:line）、复用哪些现成机制、分几阶段、验证方式。
 > 设计的"是什么/为什么"不在这里，冲突以设计文档为准。
 

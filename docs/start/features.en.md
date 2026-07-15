@@ -2,7 +2,7 @@
 
 The README's [Key Features](../README.md#key-features) table
 points here for the longer story behind each one. The
-[Agentic Programming philosophy](philosophy/agentic-programming.md)
+[Agentic Programming philosophy](../capabilities/agentic-programming/philosophy.md)
 note covers the *why*; this page covers the *how it shows up
 in everyday use*.
 
@@ -48,7 +48,7 @@ so interrupted work resumes where it left off.
 Writing, fixing and scaffolding `@agentic_function`s is itself
 agent work — done with ordinary file-editing tools, guided by
 the **`agentic-programming` skill**
-([`skills/agentic-programming/SKILL.md`](../skills/agentic-programming/SKILL.md)).
+([`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)).
 There are no dedicated `create()` / `fix()` framework calls:
 they only ever wrapped one LLM call plus a file write, which an
 agent does directly.
@@ -106,7 +106,7 @@ between them. The view scrolls with the chat: clicking a node
 scrolls the conversation to the corresponding message, and the
 panel keeps the currently-viewed range highlighted. d3-hierarchy
 layout is available behind a toggle for fan-out-heavy traces;
-see [`design/runtime/dag/dag-rendering.md`](design/runtime/dag/dag-rendering.md) when adding new
+see [`design/runtime/dag/dag-rendering.md`](../reference/design/runtime/dag/dag-rendering.md) when adding new
 node kinds.
 
 ## Multi-account + key rotation
@@ -141,7 +141,7 @@ rate-limited key cools down while the next takes over (`429` → cooldown + rota
 `spread evenly` / `random` / `least used`) and ↑ / ↓ priority. A key you'd
 already set the old way (env var / config) is migrated into the list so nothing
 is lost. Design + status:
-[`design/providers/auth/unified-account-management.md`](design/providers/auth/unified-account-management.md).
+[`design/providers/auth/unified-account-management.md`](../reference/design/providers/auth/unified-account-management.md).
 
 ## Multi-agent + multi-channel (where this is going)
 

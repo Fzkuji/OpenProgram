@@ -1,6 +1,6 @@
 # Implementation Plan: Wiring the Proactive Layer into the Existing Code
 
-> See [`../design/proactive/`](../design/proactive/README.md) for the design. This document only covers **how to wire that
+> See [`../design/proactive/`](../proactive/README.md) for the design. This document only covers **how to wire that
 > design into the existing OpenProgram code**: wiring points (file:line), which existing mechanisms to reuse, the phasing, and how to verify.
 > The "what/why" of the design is not here; if there is a conflict, the design docs take precedence.
 

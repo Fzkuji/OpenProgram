@@ -101,7 +101,7 @@ cd <Harness>
 
 The **GUI agent** has native deps (PyTorch, detector weight, OCR), so it ships its
 own per-platform installer — use it via the steps above; full guide in its
-[install section](../openprogram/functions/agentics/GUI-Agent-Harness#1-install).
+[install section](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/functions/agentics/GUI-Agent-Harness#1-install).
 (The default `./scripts/install.sh` already clones it via `openprogram programs install all`; run the harness's own installer afterwards only if you need its asset setup or an explicit CUDA/CPU torch.)
 
 For **pure-Python** catalogued harnesses there's a one-line shortcut that clones,
@@ -116,7 +116,7 @@ the GUI agent uses its own installer (above) instead.
 
 After any of these, restart the worker (or hit **Refresh** on the Functions page)
 and the program shows in the web UI. Third-party harnesses work the same way:
-[installing-harnesses.md](installing-harnesses.md).
+[installing-harnesses.md](../capabilities/installing-harnesses.md).
 
 ---
 
@@ -197,7 +197,7 @@ Everything beyond `pip`. The installer handles every "auto" row.
 
 \* EasyOCR is installed as a cross-platform fallback, so the GUI agent works on
 macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
-[GUI-Agent-Harness/docs/install.md](../openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md).
+[GUI-Agent-Harness/docs/install.md](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/functions/agentics/GUI-Agent-Harness/docs/install.md).
 
 ---
 
@@ -230,4 +230,4 @@ python -c "import easyocr; easyocr.Reader(['en','ch_sim'], gpu=False)"
 ```
 
 Multi-repo local development (editing several harnesses side-by-side):
-[troubleshooting.md → Local-development install](troubleshooting.md#local-development-install-multi-repo).
+[troubleshooting.md → Local-development install](../server/troubleshooting.md#local-development-install-multi-repo).

@@ -1,7 +1,7 @@
 # Troubleshooting
 
 Common gotchas. The full operator runbook for a fresh install /
-upgrade is in [`GETTING_STARTED.md`](GETTING_STARTED.md); this
+upgrade is in [`GETTING_STARTED.md`](../start/GETTING_STARTED.md); this
 page collects the recurring "it doesn't work" cases.
 
 ## "No provider available"

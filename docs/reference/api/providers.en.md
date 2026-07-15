@@ -1,6 +1,6 @@
 # Providers
 
-> Source: [`openprogram/providers/`](../../openprogram/providers/)
+> Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/)
 
 Built-in Runtime subclasses, ready to use out of the box. Every provider is an **optional dependency** — you only need to install the SDK when you import the corresponding class.
 

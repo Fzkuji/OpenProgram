@@ -281,10 +281,11 @@ def flatten_pages(groups):
     def walk(g, chain):
         # each chain entry is (zh_title, en_title) so breadcrumbs can be bilingual
         new_chain = chain if not g.title else chain + [(g.title, g.title_en or g.title)]
-        for p in g.pages:
-            out.append((p, new_chain))
-        for sg in g.subgroups:
-            walk(sg, new_chain)
+        for c in navmod.ordered_children(g):
+            if isinstance(c, navmod.Page):
+                out.append((c, new_chain))
+            else:
+                walk(c, new_chain)
 
     for g in groups:
         walk(g, [])
@@ -379,17 +380,16 @@ def render_nav(groups, current_out: Path, base: str) -> str:
         return f'<a class="navlink{active}" href="{href}"{i18n}{extra}>{_html.escape(p.title)}</a>'
 
     def render_pages_and_subs(g) -> str:
-        out = [navlink(p) for p in g.pages]
-        out += [render_group(sg) for sg in g.subgroups]
-        return "\n".join(out)
+        return "\n".join(
+            navlink(c) if isinstance(c, navmod.Page) else render_group(c)
+            for c in navmod.ordered_children(g)
+        )
 
     def render_group(g, top=False) -> str:
-        # Root group: render any loose pages directly, then each subgroup as a
-        # top-level collapsible section.
+        # Root group: render its children directly (loose pages and
+        # collapsible sections interleaved in PAGE_ORDER).
         if top:
-            parts = [navlink(p) for p in g.pages]
-            parts += [render_group(sg) for sg in g.subgroups]
-            return "\n".join(parts)
+            return render_pages_and_subs(g)
         key = str(g.rel_dir).replace("\\", "/")
         # synthetic root subgroups (快速上手/集成/参考) default-open on the home page
         is_synthetic = key.startswith("__")

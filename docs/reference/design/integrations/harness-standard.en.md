@@ -6,7 +6,7 @@
 > with no host edits**. The three first-party harnesses (GUI / Research /
 > Wiki) are the reference implementations; third parties follow the same
 > rules.
-> Related: [`../installing-harnesses.md`](../../installing-harnesses.md)
+> Related: [`../installing-harnesses.md`](../../../capabilities/installing-harnesses.md)
 > (install procedure), `openprogram/functions/_registry.py` (the loader),
 > `openprogram/functions/_programs.py` (first-party catalogue).
 

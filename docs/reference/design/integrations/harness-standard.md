@@ -5,7 +5,7 @@
 > `agentics/` 文件夹后即可 **被自动检测并直接使用，无需改动 host**。
 > 三个第一方 harness（GUI / Research / Wiki）是参考实现；第三方遵循同样的
 > 规则。
-> 相关：[`../installing-harnesses.md`](../../installing-harnesses.md)
+> 相关：[`../installing-harnesses.md`](../../../capabilities/installing-harnesses.md)
 > （安装流程）、`openprogram/functions/_registry.py`（加载器）、
 > `openprogram/functions/_programs.py`（第一方目录）。
 

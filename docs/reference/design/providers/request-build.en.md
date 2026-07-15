@@ -95,7 +95,7 @@ falls back to `none` (same as thinking's OpenAI-compatible fallback).
 ### Where breakpoints go (explicit mode)
 
 The caller can explicitly mark `cache_control` on a content block, and it passes through verbatim to apply after that block
-(see [`../../plans/cache-control-passthrough.md`](../../plans/cache-control-passthrough.md));
+(see [`../../plans/cache-control-passthrough.md`](../plans/cache-control-passthrough.md));
 when unmarked, the provider automatically marks the last block. The breakpoint limit (4 for Anthropic) is
 constrained by cache_spec's `max_breakpoints`; on overflow, the lower-priority ones are dropped by the `tools > system > messages` priority.
 

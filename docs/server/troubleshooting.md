@@ -1,16 +1,16 @@
 # 故障排查
 
 常见的坑。全新安装 / 升级的完整运维手册在
-[`GETTING_STARTED.md`](GETTING_STARTED.md) 中；本
+[`GETTING_STARTED.md`](../start/GETTING_STARTED.md) 中；本
 页汇总反复出现的"它不工作"场景。
 
 ## "No provider available"
 
 `openprogram providers` 会显示检测到了哪些 provider。常见原因：
 
-- 忘记执行 `claude login` / `codex auth` / `gemini auth login`
+- 忘记执行 `openprogram providers login <provider>`（或对应外部 CLI 的登录）
 - API key 设置在了与运行 worker 不同的 shell 中
-- token 过期 —— 重新运行 CLI 登录
+- token 过期 —— 重新登录；`openprogram providers doctor` 可以诊断凭据的过期 / 刷新 / 冲突
 
 ## "command not found: openprogram"
 
@@ -33,7 +33,7 @@ export OPENPROGRAM_WEB_PORT=8101         # 前端（默认 18100）
 export OPENPROGRAM_BACKEND_PORT=8102     # FastAPI（默认 18109）
 ```
 
-或持久化该偏好：`openprogram config ui`。
+或持久化该偏好：`openprogram ports --backend 8102 --frontend 8101`。
 
 ## 本地开发安装（多仓库）
 
@@ -62,10 +62,11 @@ rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Har
 ## worker 无法启动 / 启动在了错误的端口
 
 `openprogram doctor` 会运行一次快速的端到端检查：Python 依赖、
-Node bundle、provider、MCP、插件、端口。在提 issue 之前先读一遍
-它的输出。
+Node bundle、provider、MCP、插件、端口。`openprogram rescue`
+在诊断之外还会直接打印修复命令。在提 issue 之前先读一遍
+它们的输出。
 
-## `python -m openprogram._meta agentics_dir` 没有任何返回
+## `import openprogram` 报 ModuleNotFoundError
 
 该包没有安装在当前激活的 Python 中。要么运行安装程序
 （克隆 OpenProgram + `./scripts/install.sh`），要么激活安装了它的

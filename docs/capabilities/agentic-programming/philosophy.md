@@ -75,7 +75,7 @@ LLM 调用的运行时抽象。负责：
 
 ### LLM 也写代码
 
-LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、修改、修复符合规范的 `@agentic_function`。这件事不需要专门的 `create()` / `fix()` 框架函数(它们以前也只是包了一次 LLM 调用加一次文件写入);agent 直接用普通的文件编辑工具完成,遵循 [`agentic-programming` skill](../../skills/agentic-programming/SKILL.md) 这份规范——文件放哪、装饰器元数据、docstring 与 `content` 的分工、校验清单。
+LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、修改、修复符合规范的 `@agentic_function`。这件事不需要专门的 `create()` / `fix()` 框架函数(它们以前也只是包了一次 LLM 调用加一次文件写入);agent 直接用普通的文件编辑工具完成,遵循 [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) 这份规范——文件放哪、装饰器元数据、docstring 与 `content` 的分工、校验清单。
 
 代码是数据，LLM 是编译器，函数是产品 —— 循环闭合。
 
@@ -107,6 +107,6 @@ Agentic Programming 同时是：
 ---
 
 延伸阅读：
-- [快速开始](../GETTING_STARTED.md)
-- [API 参考](../api/)
-- [设计细节](../design/)
+- [快速开始](../../start/GETTING_STARTED.md)
+- [API 参考](../../reference/api/)
+- [设计细节](../../reference/design/)

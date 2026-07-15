@@ -1,6 +1,6 @@
 # API Reference
 
-> Source: [`openprogram/`](../openprogram/)
+> Source: [`openprogram/`](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/)
 
 ## Core Components
 
@@ -10,11 +10,11 @@
 | [`Runtime`](api/runtime.md) | `agentic_programming/runtime.py` | The LLM runtime. Computes context from the DAG, calls the LLM, and writes the response back to the DAG |
 | [`create_runtime` and the built-in providers](api/providers.md) | `providers/` | Automatically detect or explicitly create a Runtime; supports Anthropic / OpenAI / Gemini / CLI providers |
 
-The session context is a flat DAG (nodes = user messages / LLM calls / function calls); for the architecture see [`openprogram/context/README.md`](../openprogram/context/README.md).
+The session context is a flat DAG (nodes = user messages / LLM calls / function calls); for the architecture see [`openprogram/context/README.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/context/README.md).
 
 ## Writing Functions
 
-There are no meta functions like `create()` / `fix()` — writing, modifying, and validating an `@agentic_function` is done directly with ordinary file-editing tools, following [`skills/agentic-programming/SKILL.md`](../skills/agentic-programming/SKILL.md). That skill is the complete specification: file layout, decorator metadata, the division of labor between the docstring and `content`, the validation checklist, and smoke tests.
+There are no meta functions like `create()` / `fix()` — writing, modifying, and validating an `@agentic_function` is done directly with ordinary file-editing tools, following [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md). That skill is the complete specification: file layout, decorator metadata, the division of labor between the docstring and `content`, the validation checklist, and smoke tests.
 
 ## Imports
 

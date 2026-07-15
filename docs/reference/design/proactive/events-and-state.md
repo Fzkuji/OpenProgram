@@ -44,7 +44,7 @@ class Event:
 - 用户发消息进来，dispatcher 本来就在处理。
 
 proactive 层做的，就是在这些已有的点上，把发生的事**翻译成一条 Event，丢进事件流**。
-（具体在哪几行接，是实现细节，见 [实施规划](../../plans/proactive-implementation.md)。）
+（具体在哪几行接，是实现细节，见 [实施规划](../plans/proactive-implementation.md)。）
 
 ## 3. 事件流：一条只往后记的流水账
 

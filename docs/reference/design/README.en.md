@@ -93,7 +93,7 @@ supporting notes / investigations that should not override it.
 
 > Authoring-facing docs (`@agentic_function` usage, function metadata,
 > tool-calling loop, next-step decision, pure-python helpers) moved to the
-> user guide at [`../agentic-programming/README.md`](../agentic-programming/README.md).
+> user guide at [`../agentic-programming/README.md`](../../capabilities/agentic-programming/README.md).
 
 ## cli/ — CLI / TUI, slash commands, ports
 
@@ -130,7 +130,7 @@ supporting notes / investigations that should not override it.
 
 | Doc | Topic |
 |---|---|
-| [`integrations/harness-standard.md`](integrations/harness-standard.md) | Harness standard (plug-in + auto-detect); install: [`../installing-harnesses.md`](../installing-harnesses.md) |
+| [`integrations/harness-standard.md`](integrations/harness-standard.md) | Harness standard (plug-in + auto-detect); install: [`../installing-harnesses.md`](../../capabilities/installing-harnesses.md) |
 | [`integrations/mcp-integration.md`](integrations/mcp-integration.md) | MCP integration |
 | [`integrations/skills-and-plugins.md`](integrations/skills-and-plugins.md) | Skills and plugins |
 
@@ -148,7 +148,7 @@ Extension gating design + reference comparison — see
 ## archive/
 
 Historical audits, demos, and superseded docs live in
-[`archive/`](archive/) for traceability, not as implementation guidance.
+`archive/`（已随迭代清理） for traceability, not as implementation guidance.
 
 Recently archived:
 - `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — 迭代草稿，被 `models.md` 取代

@@ -1,6 +1,6 @@
 # Providers
 
-> Source: [`openprogram/providers/`](../../openprogram/providers/)
+> Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/)
 
 内置 Runtime 子类，开箱即用。每个 provider 都是**可选依赖**——只在你 import 对应类时才需要安装 SDK。
 

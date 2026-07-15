@@ -5,7 +5,7 @@ This adds a layer of "proactivity" to OpenProgram: while the agent is working, t
 The core of this layer is **event-driven**: every thing that happens while the agent works (user sends a message, model replies, calls a tool, a tool fails, a file gets changed) is recorded as an "event"; your proactive rules aren't welded to some fixed location, but instead "subscribe" to these events — when an event fires, they're woken up, make a judgment, and decide whether to step in.
 
 > Status: **In progress**. Of the five migration steps, step 1 (the bus + class-A source taps), step 2 (file.changed + tool.before synchronous query points), step 3 (class-B source bridging), and step 4 (webui downgraded to a bus subscriber) have all landed and been verified; only step 5 (the proactive rule layer) remains. For each step's wiring and acceptance criteria, see
-> [`../../plans/proactive-implementation.md`](../../plans/proactive-implementation.md).
+> [`../../plans/proactive-implementation.md`](../plans/proactive-implementation.md).
 > To see the event stream with your own eyes: `OPENPROGRAM_EVENT_LOG=1 openprogram worker restart`, send a message, and
 > read `/tmp/openprogram-events.jsonl`.
 

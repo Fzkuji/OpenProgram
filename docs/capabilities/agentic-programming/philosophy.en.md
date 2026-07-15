@@ -75,7 +75,7 @@ The context isn't the selling point; it's a byproduct of LLM calls. The selling 
 
 ### The LLM Writes Code Too
 
-The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the spec. This doesn't need dedicated `create()` / `fix()` framework functions (they too used to just wrap one LLM call plus one file write); the agent does it directly with ordinary file-editing tools, following the [`agentic-programming` skill](../../skills/agentic-programming/SKILL.md) as the spec — where files go, decorator metadata, the division of labor between the docstring and `content`, and the validation checklist.
+The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the spec. This doesn't need dedicated `create()` / `fix()` framework functions (they too used to just wrap one LLM call plus one file write); the agent does it directly with ordinary file-editing tools, following the [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) as the spec — where files go, decorator metadata, the division of labor between the docstring and `content`, and the validation checklist.
 
 Code is data, the LLM is the compiler, and functions are the product — the loop closes.
 
@@ -107,6 +107,6 @@ The paradigm comes first; the product exists to use it.
 ---
 
 Further reading:
-- [Getting Started](../GETTING_STARTED.md)
-- [API Reference](../api/)
-- [Design Details](../design/)
+- [Getting Started](../../start/GETTING_STARTED.md)
+- [API Reference](../../reference/api/)
+- [Design Details](../../reference/design/)

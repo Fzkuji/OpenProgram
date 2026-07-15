@@ -131,5 +131,5 @@ deny 理由经现有错误路径作为 error tool result 回给模型；多 gate
 ## 8. 落地
 
 接线点（file:line）、把六套源桥进总线的做法、分步与验证，见
-[实施规划](../../plans/proactive-implementation.md)。顺序：先把 A 类收口成总线并验证能打出完整
+[实施规划](../plans/proactive-implementation.md)。顺序：先把 A 类收口成总线并验证能打出完整
 事件序列，再补文件改动事件和工具前可截，再桥进 B 类系统事件，最后补并发的 lane 区分。

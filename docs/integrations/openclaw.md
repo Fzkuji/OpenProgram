@@ -46,8 +46,8 @@ Agent 通过 exec 工具调用。
 import sys
 import os
 
-# 把 Agentic Programming 加到 path（根据安装方式调整）
-sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/Agentic-Programming"))
+# 把 OpenProgram 加到 path（已 pip install -e 时不需要这行）
+sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/OpenProgram"))
 
 from openprogram import agentic_function
 from openprogram.providers import ClaudeCodeRuntime
@@ -194,13 +194,13 @@ if __name__ == "__main__":
 | 不用 Agentic Programming | 用 Agentic Programming |
 |---|---|
 | Agent 在一次 LLM 调用中完成所有推理 | 推理拆分为聚焦的函数调用 |
-| 上下文无限增长 | 上下文是结构化的树，自动摘要 |
-| 难以调试 agent "想了什么" | 完整执行树：`context.tree()`、`context.save()` |
+| 上下文无限增长 | 上下文是结构化的 DAG，按函数作用域裁剪 |
+| 难以调试 agent "想了什么" | 每次调用都记录为 session DAG 的节点，可在 Web UI 或 session 文件里回看 |
 | 重试 = 重试整个 agent 回合 | 重试 = 只重试失败的函数 |
 
 ## 建议
 
-1. **用 `ClaudeCodeRuntime` 快速上手** — 不需要额外 API key，装了 Claude Code 就行。
-2. **生产环境用 `AnthropicRuntime`** — 更快，支持图片，支持 prompt caching。
-3. **保存执行 trace** — `context.save("trace.jsonl")` 对调试非常有价值。
+1. **用 `ClaudeCodeRuntime` 快速上手** — 不需要额外 API key，登录过 Claude Code 就行，直接用订阅额度。详见 [Claude Code 集成](claude-code.md)。
+2. **按计费方式选 runtime** — `ClaudeCodeRuntime` 走 Claude 订阅，`AnthropicRuntime` 走 Anthropic API key 计费。
+3. **回看执行 trace** — 每次函数调用都记录在 session DAG 里，用 Web UI 或 `openprogram sessions list` 找到会话后回看。
 4. **保持函数小而精** — 每个 `@agentic_function` 只做一件事，用 Python 组合它们。

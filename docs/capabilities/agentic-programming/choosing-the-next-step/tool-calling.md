@@ -2,7 +2,7 @@
 
 本文描述在一次模型调用内，LLM 在每一轮如何"做出选择"——挑选一个函数去执行，或者输出文本并结束。
 
-> 配套文档：[`function-calling-unification.md`](../../design/function/function-calling-unification.md)
+> 配套文档：[`function-calling-unification.md`](../../../reference/design/function/function-calling-unification.md)
 > 介绍了整个函数调用框架的设计——`@function` / `@agentic_function` 装饰器、共享注册表、6 层
 > 门控、延迟加载等。本页只涵盖"挑选下一步"这部分的循环机制。
 

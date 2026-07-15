@@ -34,7 +34,7 @@ last_update_at:  float (epoch)
 - LLM streaming reply: dispatcher 调 LLM 之前
 - tool call: tool dispatcher 调函数之前
 - agentic function: `_execute/run.py` 跑 function 之前
-- task spawn: 已经有 ([`runner.py`](../../../openprogram/agent/task/runner.py))
+- task spawn: 已经有 ([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/task/runner.py))
 - merge: `_execute/_run_merge` 之前
 
 ### 2. 增量节流持久化

@@ -5,7 +5,7 @@
 **要编写函数？** 面向编写者的文档（使用模式、metadata
 规则、三种“选择下一步”的机制、纯 python 辅助工具）
 已迁移至用户指南：
-[`docs/agentic-programming/`](../../agentic-programming/README.md)。
+[`docs/agentic-programming/`](../../../capabilities/agentic-programming/README.md)。
 
 ## 当前来源
 

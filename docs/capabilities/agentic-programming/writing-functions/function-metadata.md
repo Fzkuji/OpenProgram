@@ -55,7 +55,7 @@
 
 **核心原则**：凡是可通过签名 / 注解表达的内容，就不在装饰器中重复；凡是可通过 `input=` 表达的内容，就不在 docstring 中重复。
 
-装饰器还接受共享的工具注册 / 门控 kwargs（`name`、`description`、`toolset`、`unsafe_in`、`requires_approval`、`available_if`、`defer` 等），详见 `docs/design/function/function-calling-unification.md`；`cache` / `cache_ttl`（按 name + args 记忆化结果）和 `timeout`（N 秒后强行终止函数体并返回一个错误结果）的行为与 `@function` 中一致。
+装饰器还接受共享的工具注册 / 门控 kwargs（`name`、`description`、`toolset`、`unsafe_in`、`requires_approval`、`available_if`、`defer` 等），详见 `docs/reference/design/function/function-calling-unification.md`；`cache` / `cache_ttl`（按 name + args 记忆化结果）和 `timeout`（N 秒后强行终止函数体并返回一个错误结果）的行为与 `@function` 中一致。
 
 ### 一个裸 `@agentic_function` 的有效默认值
 
@@ -277,6 +277,6 @@ WebUI 表单按下列规则渲染每个参数（实现见 `web/components/chat/c
 
 - `openprogram/agentic_programming/function.py` —— `@agentic_function` 装饰器实现
 - `openprogram/agentic_programming/decision.py` —— 选项菜单渲染、回复解析，以及下一步决策原语（`decision.make`、`render_options`、`parse_args`、`DecisionError`）
-- `docs/agentic-programming/writing-functions/agentic-function.md` —— 装饰器使用指南
-- `docs/design/function/function-calling-unification.md` —— 函数 / 工具调用框架
-- `docs/agentic-programming/choosing-the-next-step/tool-calling.md` —— 单轮原生 tool-use 循环机制
+- `docs/capabilities/agentic-programming/writing-functions/agentic-function.md` —— 装饰器使用指南
+- `docs/reference/design/function/function-calling-unification.md` —— 函数 / 工具调用框架
+- `docs/capabilities/agentic-programming/choosing-the-next-step/tool-calling.md` —— 单轮原生 tool-use 循环机制

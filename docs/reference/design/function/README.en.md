@@ -5,7 +5,7 @@ Internal design notes for the function/tool-calling framework.
 **Writing functions?** The authoring-facing docs (usage patterns, metadata
 rules, the three "choose the next step" mechanisms, pure-python helpers)
 moved to the user guide:
-[`docs/agentic-programming/`](../../agentic-programming/README.md).
+[`docs/agentic-programming/`](../../../capabilities/agentic-programming/README.md).
 
 ## Current sources
 

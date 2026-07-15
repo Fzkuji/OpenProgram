@@ -12,7 +12,7 @@ Read in order; each step builds on the previous one.
 
 | # | Doc | What it teaches |
 |---|---|---|
-| 1 | [`../philosophy/agentic-programming.md`](../philosophy/agentic-programming.md) | Why "agentic programming" — the rationale behind the model |
+| 1 | [`../philosophy/agentic-programming.md`](philosophy.md) | Why "agentic programming" — the rationale behind the model |
 | 2 | [`writing-functions/agentic-function.md`](writing-functions/agentic-function.md) | `@agentic_function`: wrap a Python function whose body runs LLM calls via `runtime.exec()`; composition patterns |
 | 3 | [`writing-functions/function-metadata.md`](writing-functions/function-metadata.md) | Parameter descriptions, placeholders, hidden arguments, `render_range` — the source of truth for function metadata |
 | 4 | [`writing-functions/pure-python.md`](writing-functions/pure-python.md) | When NOT to use the decorator: plain deterministic helpers |
@@ -31,7 +31,7 @@ right one per task is the core skill:
 
 ## Reference
 
-- [`../api/agentic-function.md`](../api/agentic-function.md) — decorator API quick reference
-- [`../api/runtime.md`](../api/runtime.md) — `Runtime.exec()` parameters and behaviour
-- [`../../skills/agentic-programming/SKILL.md`](../../skills/agentic-programming/SKILL.md) — the in-repo skill an agent follows to write/validate functions (file layout, rule checklist, smoke tests)
-- [`../design/function/function-calling-unification.md`](../design/function/function-calling-unification.md) — internal design notes on the function-calling framework (evolution / refactor plans, not needed for authoring)
+- [`../api/agentic-function.md`](../../reference/api/agentic-function.md) — decorator API quick reference
+- [`../api/runtime.md`](../../reference/api/runtime.md) — `Runtime.exec()` parameters and behaviour
+- [`../../skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) — the in-repo skill an agent follows to write/validate functions (file layout, rule checklist, smoke tests)
+- [`../design/function/function-calling-unification.md`](../../reference/design/function/function-calling-unification.md) — internal design notes on the function-calling framework (evolution / refactor plans, not needed for authoring)

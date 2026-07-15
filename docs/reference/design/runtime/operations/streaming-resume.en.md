@@ -35,7 +35,7 @@ last_update_at:  float (epoch)
 - LLM streaming reply: before the dispatcher calls the LLM
 - tool call: before the tool dispatcher calls the function
 - agentic function: before `_execute/run.py` runs the function
-- task spawn: already in place ([`runner.py`](../../../openprogram/agent/task/runner.py))
+- task spawn: already in place ([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/task/runner.py))
 - merge: before `_execute/_run_merge`
 
 ### 2. Throttled incremental persistence

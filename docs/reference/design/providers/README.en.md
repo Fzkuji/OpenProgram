@@ -9,7 +9,7 @@ The docs are organized into four groups by responsibility (three existing subdir
 How the provider-agnostic unified format is translated into each vendor's wire format, and how prompt caching is implemented per provider — the core mechanism of the providers layer.
 
 - [`request-build`](request-build.md) — **Overall design**: the unified-format Context, per-provider translation, the three caching modes, current state, and three gaps.
-- [`cache-control-passthrough`](../../plans/cache-control-passthrough.md) (in `docs/plans/`) — landed: per-block passthrough of Anthropic `cache_control`.
+- [`cache-control-passthrough`](../plans/cache-control-passthrough.md) (in `docs/plans/`) — landed: per-block passthrough of Anthropic `cache_control`.
 - For upstream (how content is layered and assembled, L0/L1/L2) see [`context/context-composition.md`](../context/context-composition.md).
 
 ## [auth/](auth/) — Credentials · Authentication · Accounts
