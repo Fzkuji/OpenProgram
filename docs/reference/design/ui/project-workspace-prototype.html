@@ -2,206 +2,193 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>Project Workspace 原型 v2 — 模式切换</title>
+<title>OpenProgram 浏览器式界面原型 v3</title>
 <style>
   :root{
     --bg:#141416; --bg2:#1c1c1f; --bg3:#232327; --border:#2c2c31;
     --text:#e8e8ea; --text2:#9b9ba3; --text3:#66666e;
-    --accent:#7aa2f7; --green:#4ec97f; --radius:10px;
+    --accent:#7aa2f7; --green:#4ec97f;
     font-family:-apple-system,"SF Pro","PingFang SC",sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-size:13.5px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
   .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+  .app{flex:1;display:flex;min-height:0}
 
-  /* ── 顶部：原型界面切换 ─────────────────────── */
-  .proto-bar{display:flex;gap:6px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0}
-  .proto-bar b{font-size:12px;color:var(--text3);margin-right:8px;font-weight:500}
-  .proto-btn{padding:5px 14px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:12.5px}
-  .proto-btn.on{background:var(--accent);border-color:var(--accent);color:#0c0c10;font-weight:600}
-  .proto-note{margin-left:auto;font-size:11.5px;color:var(--text3)}
+  /* ═══ 左侧栏：按项目分组的会话 ═══ */
+  .left{width:240px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column}
+  .left .brand{height:44px;display:flex;align-items:center;padding:0 14px;font-weight:700;font-size:15px;flex-shrink:0}
+  .left .brand i{color:var(--accent);font-style:normal}
+  .lsearch{margin:0 10px 10px;display:flex;gap:8px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text3);font-size:12.5px}
+  .lbody{flex:1;overflow-y:auto;padding:0 8px 8px}
+  .pgroup{margin-bottom:4px}
+  .phead{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:8px;cursor:pointer;color:var(--text)}
+  .phead:hover{background:var(--bg3)}
+  .phead .pc{font-size:9px;color:var(--text3);width:10px;transition:transform .15s}
+  .pgroup.open .phead .pc{transform:rotate(90deg)}
+  .phead .pname{font-size:13px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .phead .padd{color:var(--text3);font-size:14px;padding:0 3px;border-radius:5px}
+  .phead .padd:hover{color:var(--text);background:var(--bg)}
+  .ppath{padding:0 8px 4px 25px;font-size:10.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .plist{display:none}
+  .pgroup.open .plist{display:block}
+  .sess{display:flex;align-items:center;gap:8px;padding:6px 8px 6px 25px;border-radius:8px;cursor:pointer;color:var(--text2);font-size:12.5px;white-space:nowrap;overflow:hidden}
+  .sess:hover{background:var(--bg3)}
+  .sess.on{background:var(--bg3);color:var(--text)}
+  .sess .dot{width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0}
+  .sess.running .dot{background:var(--green);animation:pulse 1.4s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  .lfoot{border-top:1px solid var(--border);padding:8px 10px;display:flex;gap:12px;color:var(--text3);font-size:12px;flex-shrink:0}
+  .lfoot span{cursor:pointer}
+  .lfoot span:hover{color:var(--text)}
 
-  .screen{flex:1;display:none;min-height:0}
-  .screen.on{display:flex}
+  /* ═══ 中央：浏览器式 tab 容器 ═══ */
+  .center{flex:1;display:flex;flex-direction:column;min-width:0}
+  /* tab 条（浏览器顶部） */
+  .tabbar{height:40px;display:flex;align-items:flex-end;gap:2px;padding:6px 8px 0;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
+  .tb{display:flex;align-items:center;gap:7px;padding:0 10px 0 12px;height:34px;border:1px solid var(--border);border-bottom:none;border-radius:9px 9px 0 0;background:transparent;color:var(--text2);cursor:pointer;font-size:12.5px;max-width:200px;flex-shrink:0}
+  .tb.on{background:var(--bg);color:var(--text)}
+  .tb .ti{font-size:12px}
+  .tb .tn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tb .x{color:var(--text3);font-size:11px;padding:0 2px;border-radius:4px}
+  .tb .x:hover{color:var(--text);background:var(--bg3)}
+  .tab-plus{color:var(--text2);padding:4px 10px;cursor:pointer;font-size:15px;align-self:center}
+  .tab-plus:hover{color:var(--text)}
+  /* 当前 tab 的工具栏（第二行，内容随 tab 类型变） */
+  .toolbar{height:40px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border);flex-shrink:0;font-size:12px;color:var(--text2)}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:7px;padding:3px 9px;font-size:11.5px;color:var(--text2);cursor:pointer;white-space:nowrap}
+  .chip:hover{color:var(--text);border-color:var(--text3)}
+  .chip.green{color:var(--green);border-color:#2e4636}
+  .tspacer{flex:1}
+  .ticon{width:26px;height:26px;display:grid;place-items:center;border-radius:6px;cursor:pointer;color:var(--text2)}
+  .ticon:hover{background:var(--bg3);color:var(--text)}
+  .ticon.hl{color:var(--accent)}
+  .crumbs{display:flex;gap:5px;align-items:center;color:var(--text2)}
+  .crumbs .sep{color:var(--text3)}
 
-  /* ── 通用 48px 头部行 ── */
-  .hrow{height:48px;display:flex;align-items:center;flex-shrink:0;border-bottom:1px solid var(--border);box-sizing:border-box}
-
-  /* ── 左导航（两种状态：完整 / rail） ── */
-  .nav{width:210px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;padding:8px;gap:2px;transition:width .18s ease}
-  .nav.rail{width:48px;padding:8px 6px}
-  .navitem{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:8px;color:var(--text2);cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden}
-  .navitem:hover{background:var(--bg3)}
-  .navitem .ni{width:18px;text-align:center;flex-shrink:0}
-  .nav.rail .navitem span:not(.ni){display:none}
-
-  /* ── 聊天列 ── */
-  .chatcol{display:flex;flex-direction:column;min-width:0;flex:1}
-  .chatcol.fixed{flex:0 0 380px;border-right:1px solid var(--border)}
-  .chat-top{gap:8px;padding:0 10px}
-  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:12px;color:var(--text2)}
-  .msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:14px}
-  .m-user{align-self:flex-end;background:var(--bg3);border-radius:14px 14px 4px 14px;padding:9px 13px;max-width:85%;font-size:13px}
-  .m-ai{color:var(--text);font-size:13px;line-height:1.65;max-width:95%}
+  /* tab 内容 */
+  .content{flex:1;min-height:0;position:relative}
+  .pane{position:absolute;inset:0;display:none;flex-direction:column}
+  .pane.on{display:flex}
+  .msgs{flex:1;overflow-y:auto;padding:20px 8vw;display:flex;flex-direction:column;gap:14px}
+  .m-user{align-self:flex-end;background:var(--bg3);border-radius:14px 14px 4px 14px;padding:9px 13px;max-width:75%;font-size:13px}
+  .m-ai{color:var(--text);font-size:13.5px;line-height:1.7;max-width:92%}
   .m-tool{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text2);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;width:fit-content;cursor:pointer}
   .m-tool:hover{border-color:var(--accent)}
   .m-tool .fp{color:var(--accent)}
-  .composer{margin:12px;border:1px solid var(--border);border-radius:14px;background:var(--bg2);padding:10px 12px;color:var(--text3);font-size:13px;flex-shrink:0}
-  .composer .crow{display:flex;justify-content:space-between;margin-top:14px;align-items:center;font-size:12px}
-  .send{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#0c0c10;display:grid;place-items:center;font-size:13px}
-
-  /* ── tab（会话 tab 和文件 tab 同一套） ── */
-  .tabrow{gap:2px;padding:0 8px;background:var(--bg2);align-items:flex-end}
-  .tb{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-bottom:none;border-radius:9px 9px 0 0;background:transparent;color:var(--text2);cursor:pointer;font-size:12.5px;max-width:200px;height:38px}
-  .tb.on{background:var(--bg);color:var(--text)}
-  .tb .x{color:var(--text3);font-size:11px;padding:0 2px}
-  .tb .x:hover{color:var(--text)}
-  .tab-plus{color:var(--text2);padding:6px 10px;cursor:pointer}
-  .tabrow .spacer{flex:1}
-  .exit-ws{display:flex;align-items:center;gap:6px;color:var(--text2);cursor:pointer;font-size:12px;padding:6px 10px;border-radius:8px;align-self:center}
-  .exit-ws:hover{background:var(--bg3);color:var(--text)}
-
-  /* ── 中央查看器 ── */
-  .center{flex:1;display:flex;flex-direction:column;min-width:0}
-  .crumb{display:flex;align-items:center;gap:6px;padding:9px 16px;color:var(--text2);font-size:12px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .composer{margin:10px 8vw 14px;border:1px solid var(--border);border-radius:14px;background:var(--bg2);padding:10px 12px;color:var(--text3);font-size:13px;flex-shrink:0}
+  .composer .crow{display:flex;justify-content:space-between;margin-top:12px;align-items:center;font-size:12px}
+  .send{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#0c0c10;display:grid;place-items:center}
   .viewer{flex:1;overflow:auto;padding:14px 0}
   .cl{display:flex;line-height:1.7;font-size:12.5px}
-  .cl .ln{width:52px;text-align:right;padding-right:18px;color:var(--text3);user-select:none;flex-shrink:0}
+  .cl .ln{width:56px;text-align:right;padding-right:18px;color:var(--text3);user-select:none;flex-shrink:0}
   .k{color:#bb9af7}.s{color:#9ece6a}.c{color:#565f89}.f{color:#7aa2f7}
-  .md-view{padding:10px 28px;max-width:720px;line-height:1.7}
-  .md-view h2{font-size:17px;margin:10px 0 8px}
-  .md-view p{color:var(--text2);margin:8px 0}
+  /* 新标签页 */
+  .ntp{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
+  .ntp h2{font-size:18px;font-weight:650}
+  .ntp .qrow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .qcard{border:1px solid var(--border);border-radius:12px;padding:14px 18px;cursor:pointer;color:var(--text2);font-size:13px;display:flex;gap:9px;align-items:center}
+  .qcard:hover{border-color:var(--accent);color:var(--text)}
 
-  /* ── 文件树 ── */
-  .tree{width:250px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg2)}
-  .tree .hrow{padding:0 10px;gap:8px}
-  .filter{flex:1;display:flex;gap:8px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text3);font-size:12.5px}
-  .treebody{flex:1;overflow-y:auto;padding:8px}
-  .tnode{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;cursor:pointer;color:var(--text2);font-size:12.5px}
+  /* ═══ 右侧栏：纯文件树（可被 History DAG 临时覆盖） ═══ */
+  .right{width:250px;flex-shrink:0;border-left:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;position:relative}
+  .rhead{height:40px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .filter{flex:1;display:flex;gap:7px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:5px 9px;color:var(--text3);font-size:12px}
+  .rbody{flex:1;overflow-y:auto;padding:8px}
+  .tnode{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:7px;cursor:pointer;color:var(--text2);font-size:12.5px}
   .tnode:hover{background:var(--bg3)}
   .tnode.on{background:var(--bg3);color:var(--text)}
   .tnode .tc{width:10px;font-size:9px;color:var(--text3);transition:transform .15s}
   .tnode.open .tc{transform:rotate(90deg)}
-  .tkids{margin-left:16px;display:none}
+  .tkids{margin-left:15px;display:none}
   .tkids.show{display:block}
+  /* History DAG 覆盖层（context/viewport 只活在这里面） */
+  .dagpanel{position:absolute;inset:0;background:var(--bg2);display:none;flex-direction:column;z-index:5}
+  .dagpanel.on{display:flex}
+  .daghead{height:40px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text)}
+  .daghead .x{margin-left:auto;cursor:pointer;color:var(--text3);padding:4px 6px;border-radius:6px}
+  .daghead .x:hover{color:var(--text);background:var(--bg3)}
+  .dagtools{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--border)}
+  .dagtools .chip.on{color:var(--accent);border-color:var(--accent)}
+  .dagbody{flex:1;display:grid;place-items:center;color:var(--text3);font-size:12px}
+  .dagbody svg circle{fill:var(--bg3);stroke:var(--text3)}
+  .dagbody svg circle.a{stroke:var(--accent);fill:#1f2940}
+  .dagbody svg line{stroke:var(--text3)}
 
-  /* ── 普通模式的右 dock rail ── */
-  .rdock{width:48px;flex-shrink:0;border-left:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;align-items:center;padding-top:10px;gap:6px}
-  .rd{width:34px;height:34px;display:grid;place-items:center;border-radius:8px;color:var(--text2);cursor:pointer;font-size:15px}
-  .rd:hover{background:var(--bg3)}
-  .rd.hl{outline:1px solid var(--accent);color:var(--accent)}
-
-  .hint{position:fixed;bottom:14px;right:16px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:11.5px;color:var(--text3);z-index:9}
-  .callout{position:absolute;background:var(--accent);color:#0c0c10;font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px;z-index:8;pointer-events:none}
+  .hint{position:fixed;bottom:12px;right:262px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:11.5px;color:var(--text3);z-index:9}
 </style>
 </head>
 <body>
+<div class="app">
 
-<div class="proto-bar">
-  <b>原型 v2</b>
-  <button class="proto-btn on" data-m="normal">普通聊天模式</button>
-  <button class="proto-btn" data-m="ws">工作区模式</button>
-  <span class="proto-note">核心变化：工作区是接管全屏的模式，不是叠在聊天旁边的面板 · 右 dock 的 📁 或这里都能切</span>
-</div>
-
-<!-- ════ 普通模式：今天的 chat 页原样 ════ -->
-<div class="screen on" id="normal">
-  <div class="nav" id="nav-n">
-    <div class="navitem"><span class="ni">＋</span><span>New chat</span></div>
-    <div class="navitem"><span class="ni">🧩</span><span>Functions</span></div>
-    <div class="navitem"><span class="ni">🖥</span><span>Programs</span></div>
-    <div class="navitem"><span class="ni">📂</span><span>Projects</span></div>
-    <div class="navitem"><span class="ni">🧠</span><span>Memory</span></div>
-    <div class="navitem"><span class="ni">💬</span><span>Chats</span></div>
-  </div>
-  <div class="chatcol">
-    <div class="hrow chat-top">
-      <span class="chip">🖥 Local</span><span class="chip">📁 OpenProgram</span><span class="chip">⚡ frontier</span>
-      <span style="flex:1"></span><span class="chip" style="color:var(--green);border-color:#2e4636">🛡 Ask permissions</span>
+  <!-- ═══ 左：项目分组的会话 ═══ -->
+  <div class="left">
+    <div class="brand">Open<i>Program</i></div>
+    <div class="lsearch">🔍 搜索会话 / 项目…</div>
+    <div class="lbody">
+      <div class="pgroup open">
+        <div class="phead"><span class="pc">▶</span><span>📁</span><span class="pname">OpenProgram</span><span class="padd" title="此项目新会话">＋</span></div>
+        <div class="ppath">~/Documents/LLM Agent Harness/OpenProgram</div>
+        <div class="plist">
+          <div class="sess running on" data-tab="t-sess1"><span class="dot"></span>proxy 重构与测试修复</div>
+          <div class="sess" data-tab="t-sess2"><span class="dot"></span>docs 站样式升级</div>
+        </div>
+      </div>
+      <div class="pgroup open">
+        <div class="phead"><span class="pc">▶</span><span>📁</span><span class="pname">NativeMem</span><span class="padd">＋</span></div>
+        <div class="ppath">~/Documents/NativeMem</div>
+        <div class="plist">
+          <div class="sess"><span class="dot"></span>v8 双视图评测</div>
+        </div>
+      </div>
+      <div class="pgroup">
+        <div class="phead"><span class="pc">▶</span><span>💬</span><span class="pname">未绑定项目</span><span class="padd">＋</span></div>
+        <div class="plist">
+          <div class="sess"><span class="dot"></span>随手问的一个问题</div>
+        </div>
+      </div>
     </div>
-    <div class="msgs">
-      <div class="m-user">把 socksio 的问题修一下，顺便整理 proxy 设计</div>
-      <div class="m-ai">根因是 ALL_PROXY=socks5 时 httpx 在构造客户端就要求 socksio。依赖收进 <span class="mono" style="color:var(--accent)">httpx[socks]</span>，代理解析统一到一个入口。改完了，1594 个测试全过。</div>
-      <div class="m-tool">✏️ Edit <span class="fp mono">providers/utils/http_proxy.py</span></div>
-      <div class="m-ai" style="color:var(--text3);font-size:12px">→ 点右侧 dock 的 📁 进入工作区模式（本原型里顶部按钮也可以）</div>
-    </div>
-    <div class="composer">Ask for follow-up changes…
-      <div class="crow"><span>＋</span><span class="send">↑</span></div>
-    </div>
-  </div>
-  <div class="rdock">
-    <div class="rd" title="History">🕘</div>
-    <div class="rd" title="Context">≡</div>
-    <div class="rd" title="Executions">〰</div>
-    <div class="rd hl" id="enter-ws" title="Files — 进入工作区">📁</div>
-  </div>
-</div>
-
-<!-- ════ 工作区模式：全屏三列 ════ -->
-<div class="screen" id="ws">
-  <!-- 左导航自动收成 rail -->
-  <div class="nav rail">
-    <div class="navitem"><span class="ni">＋</span><span>New chat</span></div>
-    <div class="navitem"><span class="ni">🧩</span><span>Functions</span></div>
-    <div class="navitem"><span class="ni">🖥</span><span>Programs</span></div>
-    <div class="navitem"><span class="ni">📂</span><span>Projects</span></div>
-    <div class="navitem"><span class="ni">🧠</span><span>Memory</span></div>
-    <div class="navitem"><span class="ni">💬</span><span>Chats</span></div>
+    <div class="lfoot"><span>🧩 Functions</span><span>🎓 Skills</span><span>⚙️ 设置</span></div>
   </div>
 
-  <!-- 会话列：会话也是 tab（多聊天并列，v2 兑现 chat-as-tab） -->
-  <div class="chatcol fixed">
-    <div class="hrow tabrow">
-      <div class="tb on">💬 proxy 重构 <span class="x">✕</span></div>
-      <div class="tb">💬 docs 样式</div>
-      <div class="tab-plus" title="新会话">＋</div>
-    </div>
-    <div class="msgs">
-      <div class="m-user">把 socksio 的问题修一下，顺便整理 proxy 设计</div>
-      <div class="m-ai">根因是 ALL_PROXY=socks5 时 httpx 构造客户端就要求 socksio。已统一代理解析入口。</div>
-      <div class="m-tool" data-open="http_proxy.py">✏️ Edit <span class="fp mono">providers/utils/http_proxy.py</span></div>
-      <div class="m-tool" data-open="network-proxy.md">📄 Write <span class="fp mono">design/network-proxy.md</span></div>
-      <div class="m-ai" style="color:var(--text3);font-size:12px">↑ 点文件路径，在中间打开对应 tab</div>
-    </div>
-    <div class="composer">Ask for follow-up changes…
-      <div class="crow"><span>＋ 🖐</span><span style="display:flex;gap:10px;align-items:center"><span style="color:var(--text2)">⚡ frontier</span><span class="send">↑</span></span></div>
-    </div>
-  </div>
-
-  <!-- 中央：文件 tab + 查看器；tab 条右端 = 退出工作区 -->
+  <!-- ═══ 中：浏览器式 tab 容器 ═══ -->
   <div class="center">
-    <div class="hrow tabrow" id="tabbar"></div>
-    <div class="crumb"><span id="crumb-path" class="mono">…</span></div>
-    <div class="viewer" id="viewer"></div>
+    <div class="tabbar" id="tabbar"></div>
+    <div class="toolbar" id="toolbar"></div>
+    <div class="content" id="content"></div>
   </div>
 
-  <!-- 文件树 -->
-  <div class="tree">
-    <div class="hrow"><div class="filter">🔍 Filter files…</div></div>
-    <div class="treebody" id="ftree"></div>
+  <!-- ═══ 右：纯文件树 ═══ -->
+  <div class="right">
+    <div class="rhead"><div class="filter">🔍 Filter files…</div></div>
+    <div class="rbody" id="ftree"></div>
+    <div class="dagpanel" id="dagpanel">
+      <div class="daghead">🕘 History — proxy 重构 <span class="x" onclick="dag(false)">✕</span></div>
+      <div class="dagtools">
+        <span class="chip on">Viewport</span><span class="chip">Context</span>
+      </div>
+      <div class="dagbody">
+        <svg width="150" height="210">
+          <line x1="75" y1="20" x2="75" y2="60"/><line x1="75" y1="60" x2="40" y2="105"/>
+          <line x1="75" y1="60" x2="110" y2="105"/><line x1="40" y1="105" x2="40" y2="150"/>
+          <line x1="110" y1="105" x2="40" y2="150"/><line x1="40" y1="150" x2="40" y2="190"/>
+          <circle cx="75" cy="20" r="9"/><circle cx="75" cy="60" r="9"/>
+          <circle cx="40" cy="105" r="9"/><circle cx="110" cy="105" r="9"/>
+          <circle cx="40" cy="150" r="9"/><circle class="a" cx="40" cy="190" r="9"/>
+        </svg>
+      </div>
+    </div>
   </div>
 </div>
-
-<div class="hint">普通 ⇄ 工作区：右 dock 📁 进入 · 文件 tab 条右端 ✕ 退出</div>
+<div class="hint">会话/文件都是中间的 tab · 🕘 在会话工具栏里，点开才出现 DAG（Context/Viewport 只活在里面）</div>
 
 <script>
-// ── 模式切换 ──
-function setMode(m){
-  document.querySelectorAll('.proto-btn').forEach(x=>x.classList.toggle('on',x.dataset.m===m));
-  document.querySelectorAll('.screen').forEach(x=>x.classList.remove('on'));
-  document.getElementById(m).classList.add('on');
-}
-document.querySelectorAll('.proto-btn').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
-document.getElementById('enter-ws').onclick=()=>setMode('ws');
-
-// ── 文件数据 ──
+/* ── tab 模型：type = session | file | ntp ── */
 const FILES = {
-  "http_proxy.py":{path:"providers › utils › http_proxy.py",kind:"code",lines:[
+  "http_proxy.py":{crumb:["openprogram","providers","utils","http_proxy.py"],lines:[
     ['<span class="c"># Unified proxy resolution — env semantics live in httpx.</span>'],
-    ['<span class="k">from</span> httpx._utils <span class="k">import</span> get_environment_proxies'],
-    [''],
-    ['_LOOPBACK_BYPASS = {<span class="s">"all://localhost"</span>: <span class="k">None</span>}'],
-    [''],
+    ['<span class="k">from</span> httpx._utils <span class="k">import</span> get_environment_proxies'],[''],
+    ['_LOOPBACK_BYPASS = {<span class="s">"all://localhost"</span>: <span class="k">None</span>}'],[''],
     ['<span class="k">def</span> <span class="f">get_proxy_mounts</span>():'],
     ['    override = os.environ.get(<span class="s">"OPENPROGRAM_PROXY_URL"</span>)'],
     ['    env_map = get_environment_proxies()'],
@@ -209,52 +196,113 @@ const FILES = {
     ['        <span class="k">return</span> {**_LOOPBACK_BYPASS, <span class="s">"all://"</span>: override}'],
     ['    <span class="k">return</span> {**_LOOPBACK_BYPASS, **env_map} <span class="k">or None</span>'],
   ]},
-  "network-proxy.md":{path:"design › providers › network-proxy.md",kind:"md",html:
-    '<h2>Network proxy — unified design</h2><p>Resolution order: OPENPROGRAM_PROXY_URL override → httpx environment semantics → built-in loopback bypass.</p><p>Invariant: always go through <code>get_proxy_mounts()</code>.</p>'},
-  "README.md":{path:"OpenProgram › README.md",kind:"md",html:'<h2>OpenProgram</h2><p>Agentic programming harness — DAG context, agentic workflow, event infrastructure.</p>'},
-  "cli.py":{path:"openprogram › cli.py",kind:"code",lines:[
-    ['<span class="k">def</span> <span class="f">build_parser</span>() -> argparse.ArgumentParser:'],
-    ['    <span class="c"># extracted from main() so docs generation can walk the tree</span>'],
-    ['    ...'],
-  ]},
+  "README.md":{crumb:["OpenProgram","README.md"],lines:[['<span class="c"># OpenProgram — agentic programming harness</span>'],['DAG context · agentic workflow · event infrastructure']]},
+  "cli.py":{crumb:["openprogram","cli.py"],lines:[['<span class="k">def</span> <span class="f">build_parser</span>():'],['    ...']]},
 };
-let tabs=["http_proxy.py"], active="http_proxy.py";
+let tabs=[
+  {id:"t-sess1",type:"session",name:"proxy 重构",icon:"💬"},
+  {id:"t-sess2",type:"session",name:"docs 样式",icon:"💬"},
+];
+let active="t-sess1";
+
 function renderTabs(){
   const bar=document.getElementById('tabbar'); bar.innerHTML='';
-  tabs.forEach(n=>{
-    const t=document.createElement('div'); t.className='tb'+(n===active?' on':'');
-    t.innerHTML=`📄 <span>${n}</span> <span class="x">✕</span>`;
-    t.onclick=e=>{ if(e.target.className==='x'){tabs=tabs.filter(x=>x!==n); if(active===n)active=tabs[0]; }
-      else active=n; renderTabs(); };
-    bar.appendChild(t);
+  tabs.forEach(t=>{
+    const el=document.createElement('div'); el.className='tb'+(t.id===active?' on':'');
+    el.innerHTML=`<span class="ti">${t.icon}</span><span class="tn">${t.name}</span><span class="x">✕</span>`;
+    el.onclick=e=>{
+      if(e.target.className==='x'){ tabs=tabs.filter(x=>x.id!==t.id); if(active===t.id)active=tabs[0]?.id||null; }
+      else active=t.id;
+      renderAll();
+    };
+    bar.appendChild(el);
   });
-  const p=document.createElement('div'); p.className='tab-plus'; p.textContent='＋'; bar.appendChild(p);
-  const sp=document.createElement('div'); sp.className='spacer'; bar.appendChild(sp);
-  const ex=document.createElement('div'); ex.className='exit-ws'; ex.innerHTML='退出工作区 ⏏';
-  ex.title='回到普通聊天'; ex.onclick=()=>setMode('normal'); bar.appendChild(ex);
-  renderViewer();
+  const p=document.createElement('div'); p.className='tab-plus'; p.textContent='＋'; p.title="新标签页";
+  p.onclick=()=>{ if(!tabs.find(t=>t.id==='t-ntp')) tabs.push({id:"t-ntp",type:"ntp",name:"新标签页",icon:"⊕"}); active="t-ntp"; renderAll(); };
+  bar.appendChild(p);
 }
-function renderViewer(){
-  const v=document.getElementById('viewer'), f=FILES[active];
-  document.getElementById('crumb-path').textContent = f? f.path : '—';
-  if(!f){v.innerHTML='<div class="md-view"><p>从右侧文件树选一个文件。</p></div>';return;}
-  if(f.kind==='md'){ v.innerHTML=`<div class="md-view">${f.html}</div>`; return; }
-  v.innerHTML=f.lines.map((l,i)=>`<div class="cl mono"><span class="ln">${i+1}</span><span>${l[0]||'&nbsp;'}</span></div>`).join('');
-}
-function openFile(n){ if(!FILES[n])return; if(!tabs.includes(n))tabs.push(n); active=n; renderTabs(); }
-document.querySelectorAll('.m-tool').forEach(t=>{ if(t.dataset.open) t.onclick=()=>openFile(t.dataset.open); });
 
-// ── 文件树 ──
+/* 工具栏随 tab 类型切换 —— 设置跟着 tab 走 */
+function renderToolbar(){
+  const tb=document.getElementById('toolbar'); const t=tabs.find(x=>x.id===active);
+  if(!t){ tb.innerHTML=''; return; }
+  if(t.type==='session'){
+    tb.innerHTML=`<span class="chip">📁 OpenProgram</span>
+      <span class="chip">⚡ frontier · GPT-5.5</span>
+      <span class="chip">🧠 thinking: auto</span>
+      <span class="chip green">🛡 Ask permissions</span>
+      <span class="tspacer"></span>
+      <span class="ticon" title="History DAG" onclick="dag(true)">🕘</span>
+      <span class="ticon" title="本会话设置">⚙️</span>`;
+  } else if(t.type==='file'){
+    const f=FILES[t.name];
+    tb.innerHTML=`<div class="crumbs">${f.crumb.map((c,i)=>`<span${i===f.crumb.length-1?' style="color:var(--text)"':''}>${c}</span>`).join('<span class="sep">›</span>')}</div>
+      <span class="tspacer"></span>
+      <span class="chip">Source</span><span class="ticon" title="下载">⬇</span>`;
+  } else {
+    tb.innerHTML=`<span style="color:var(--text3)">新标签页</span>`;
+  }
+}
+
+function renderContent(){
+  const host=document.getElementById('content'); host.innerHTML='';
+  const t=tabs.find(x=>x.id===active); if(!t) return;
+  const pane=document.createElement('div'); pane.className='pane on';
+  if(t.type==='session'){
+    pane.innerHTML=`
+      <div class="msgs">
+        <div class="m-user">把 socksio 的问题修一下，顺便整理 proxy 设计</div>
+        <div class="m-ai">根因是 ALL_PROXY=socks5 时 httpx 在构造客户端就要求 socksio。依赖收进 <span class="mono" style="color:var(--accent)">httpx[socks]</span>，代理解析统一到一个入口，1594 个测试全过。</div>
+        <div class="m-tool" onclick="openFile('http_proxy.py')">✏️ Edit <span class="fp mono">providers/utils/http_proxy.py</span></div>
+        <div class="m-ai" style="color:var(--text3);font-size:12px">↑ 点文件路径 → 右边树高亮 + 新开一个文件 tab（就像浏览器点链接）</div>
+      </div>
+      <div class="composer">Ask for follow-up changes…
+        <div class="crow"><span>＋ 🖐</span><span class="send">↑</span></div>
+      </div>`;
+  } else if(t.type==='file'){
+    const f=FILES[t.name];
+    pane.innerHTML=`<div class="viewer">${f.lines.map((l,i)=>`<div class="cl mono"><span class="ln">${i+1}</span><span>${l[0]||'&nbsp;'}</span></div>`).join('')}</div>`;
+  } else {
+    pane.innerHTML=`<div class="ntp">
+      <h2>新标签页</h2>
+      <div class="qrow">
+        <div class="qcard">💬 新会话（当前项目）</div>
+        <div class="qcard">🖥 Run gui_agent</div>
+        <div class="qcard">🔍 Run research_agent</div>
+        <div class="qcard">⚙️ 项目设置</div>
+      </div>
+      <div style="color:var(--text3);font-size:12px">以后 workflow run 也从这里开：run 也是一种 tab</div>
+    </div>`;
+  }
+  host.appendChild(pane);
+}
+
+function renderAll(){ renderTabs(); renderToolbar(); renderContent(); }
+function openFile(n){
+  if(!FILES[n]) return;
+  let t=tabs.find(x=>x.type==='file'&&x.name===n);
+  if(!t){ t={id:"t-f-"+n,type:"file",name:n,icon:"📄"}; tabs.push(t); }
+  active=t.id; renderAll();
+  document.querySelectorAll('.tnode').forEach(x=>x.classList.toggle('on',x.dataset.f===n));
+}
+function dag(show){ document.getElementById('dagpanel').classList.toggle('on',show); }
+
+/* 左侧栏 */
+document.querySelectorAll('.phead').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
+document.querySelectorAll('.sess[data-tab]').forEach(s=>s.onclick=()=>{
+  document.querySelectorAll('.sess').forEach(x=>x.classList.remove('on')); s.classList.add('on');
+  active=s.dataset.tab; renderAll();
+});
+
+/* 右侧文件树 */
 const TREE=[
   {n:"openprogram",d:1,kids:[{n:"cli.py"},{n:"providers",d:1,kids:[{n:"utils",d:1,kids:[{n:"http_proxy.py"}]}]}]},
-  {n:"docs",d:1,kids:[{n:"reference",d:1,kids:[{n:"network-proxy.md"}]}]},
-  {n:"web",d:1,kids:[]},
-  {n:"tests",d:1,kids:[]},
+  {n:"docs",d:1,kids:[]},{n:"web",d:1,kids:[]},{n:"tests",d:1,kids:[]},
   {n:"README.md"},{n:"pyproject.toml"},
 ];
 function buildTree(nodes,host){
   nodes.forEach(node=>{
-    const el=document.createElement('div'); el.className='tnode';
+    const el=document.createElement('div'); el.className='tnode'; if(!node.d) el.dataset.f=node.n;
     el.innerHTML=(node.d?'<span class="tc">▶</span>':'<span class="tc"></span>')+(node.d?'📁':'📄')+` <span>${node.n}</span>`;
     host.appendChild(el);
     if(node.d){
@@ -262,12 +310,12 @@ function buildTree(nodes,host){
       buildTree(node.kids||[],kids);
       el.onclick=()=>{el.classList.toggle('open');kids.classList.toggle('show');};
     } else {
-      el.onclick=()=>{document.querySelectorAll('.tnode').forEach(x=>x.classList.remove('on'));el.classList.add('on');openFile(node.n);};
+      el.onclick=()=>openFile(node.n);
     }
   });
 }
 buildTree(TREE,document.getElementById('ftree'));
-renderTabs();
+renderAll();
 </script>
 </body>
 </html>
