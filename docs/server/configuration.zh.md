@@ -52,6 +52,22 @@ openprogram ports                        # 查看
 openprogram ports --backend 8102 --frontend 8101   # 持久化修改
 ```
 
+## 网络代理
+
+所有 LLM provider 流量按同一套规则解析代理，优先级如下：
+
+1. **`OPENPROGRAM_PROXY_URL`** —— 显式覆盖。设置后所有 provider 请求都走它，
+   接受 `http://`、`https://` 或 `socks5://` 地址。`NO_PROXY` 白名单仍然生效。
+2. **标准环境变量** —— `http_proxy` / `HTTP_PROXY`、`https_proxy` /
+   `HTTPS_PROXY`、`all_proxy` / `ALL_PROXY`，直连白名单用 `no_proxy` /
+   `NO_PROXY`（主机名、域名后缀或 `*`）。macOS 和 Windows 上，这些变量都没设时
+   会退回操作系统的代理设置——与 Python 标准库的行为一致。
+
+SOCKS 代理开箱即用（`httpx[socks]` 是硬依赖）。CLI 型 provider（Claude Code、
+Codex CLI、Gemini CLI）以子进程运行、继承你的 shell 环境，代理由外部 CLI 自行处理。
+
+`openprogram rescue` 会报告解析出的代理配置，并在 SOCKS 代理缺少支持包时给出警告。
+
 ## 多实例：--profile
 
 `--profile <name>`（或环境变量 `OPENPROGRAM_PROFILE`）把 config、sessions、logs 全部改道到 `~/.openprogram-<name>/`，让并行的工作区互不共享状态：

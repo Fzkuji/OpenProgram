@@ -116,7 +116,7 @@ full guide (install, manage, author, test, publish) is
 Two diagnostic commands cover most "it broke and I don't know why" situations:
 
 ```bash
-openprogram rescue          # 11 platform-agnostic probes, each with a fix command
+openprogram rescue          # 12 platform-agnostic probes, each with a fix command
 openprogram doctor          # quick "is the install healthy?" check
 openprogram logs tail       # follow the worker log live
 openprogram providers doctor # OAuth tokens — expiring? refresh wired?

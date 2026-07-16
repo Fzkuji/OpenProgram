@@ -182,10 +182,16 @@ def _create_client(
     # Azure and copilot endpoints that share this client factory).
     sdk_max_retries = int(os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
 
+    # Shared hardened httpx client: unified proxy semantics + keepalive,
+    # one connection pool per event loop (the SDK never closes
+    # externally-supplied clients).
+    from ..utils.http_client import get_shared_async_client
+
     kwargs: dict[str, Any] = {
         "api_key": api_key or "dummy",
         "default_headers": headers if headers else None,
         "max_retries": sdk_max_retries,
+        "http_client": get_shared_async_client("openai-sdk"),
     }
     if base_url:
         kwargs["base_url"] = base_url

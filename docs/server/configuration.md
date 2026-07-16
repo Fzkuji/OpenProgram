@@ -52,6 +52,28 @@ openprogram ports                        # view
 openprogram ports --backend 8102 --frontend 8101   # persist a change
 ```
 
+## Network proxy
+
+All LLM provider traffic resolves its proxy the same way, in this order:
+
+1. **`OPENPROGRAM_PROXY_URL`** — explicit override. When set, every provider
+   request goes through it. Accepts `http://`, `https://`, or `socks5://`
+   URLs. `NO_PROXY` bypasses still apply.
+2. **Standard environment variables** — `http_proxy` / `HTTP_PROXY`,
+   `https_proxy` / `HTTPS_PROXY`, `all_proxy` / `ALL_PROXY`, with
+   `no_proxy` / `NO_PROXY` as the bypass list (hostnames, domain suffixes,
+   or `*`). On macOS and Windows, the operating system's proxy settings are
+   used when none of these variables are set — the same fallback Python's
+   standard library applies.
+
+SOCKS proxies are supported out of the box (`httpx[socks]` is a hard
+dependency). CLI-backed providers (Claude Code, Codex CLI, Gemini CLI) run
+as subprocesses that inherit your shell environment, so the external CLI
+applies its own proxy handling.
+
+`openprogram rescue` reports the resolved proxy configuration and flags a
+SOCKS proxy whose support package is missing.
+
 ## Multiple instances: --profile
 
 `--profile <name>` (or the environment variable `OPENPROGRAM_PROFILE`) reroutes config, sessions, and logs to `~/.openprogram-<name>/`, so parallel workspaces share no state:

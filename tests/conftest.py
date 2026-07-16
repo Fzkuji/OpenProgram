@@ -1,5 +1,6 @@
 """Shared pytest configuration, fixtures, and markers for the test suite."""
 
+import os
 from pathlib import Path
 import sys
 
@@ -9,6 +10,40 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+# ---------------------------------------------------------------------------
+# Network isolation: the suite must not depend on the host's proxy setup.
+# A developer shell with HTTP(S)_PROXY / a socks ALL_PROXY / a macOS
+# system-level proxy would otherwise route the integration tests' localhost
+# requests through the proxy (hanging them) and flip httpx's proxy-mount
+# construction. Applied at import time so it precedes every client built
+# during collection. Tests that exercise proxy resolution itself
+# (tests/test_http_proxy.py) set their own env via monkeypatch.
+#
+# Live smoke tests (``-m slow``) DO need the host's real network, proxy
+# included — run those as ``OPENPROGRAM_TEST_LIVE=1 pytest -m slow`` to
+# keep the proxy environment intact.
+# ---------------------------------------------------------------------------
+if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
+    for _var in (
+        "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy",
+        "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy",
+        "OPENPROGRAM_PROXY_URL",
+    ):
+        os.environ.pop(_var, None)
+
+    # Pin urllib's OS-settings fallback (macOS System Preferences / Windows
+    # registry) to env-only, both for httpx's already-imported copy and for
+    # late imports.
+    import urllib.request  # noqa: E402
+
+    urllib.request.getproxies = urllib.request.getproxies_environment
+    try:
+        import httpx._utils as _httpx_utils  # noqa: E402
+
+        _httpx_utils.getproxies = urllib.request.getproxies_environment
+    except Exception:  # pragma: no cover - httpx always present in practice
+        pass
 
 
 # ---------------------------------------------------------------------------

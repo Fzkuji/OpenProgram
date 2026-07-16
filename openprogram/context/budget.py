@@ -90,56 +90,52 @@ class BudgetAllocator:
 
     @staticmethod
     def _estimate_tools(tools: list[Any]) -> int:
-        """Tool schemas are JSON dicts. We dump them and estimate text
-        weight. Adds the per-tool overhead the provider charges
-        (~5 tokens/tool for the metadata wrapper)."""
-        import json as _json
-        total = 0
-        for t in tools:
-            schema = getattr(t, "schema", None) or getattr(t, "spec", None)
-            if schema is None:
-                total += 20  # unknown tool — guess
-                continue
-            try:
-                text = _json.dumps(schema, default=str, ensure_ascii=False)
-            except Exception:
-                text = str(schema)
-            total += estimate_message_tokens(
-                {"role": "tool", "content": text}
-            ) + 5  # per-tool overhead
-        return total
+        """Sum of the single-tool estimates — same pricing as the per-tool
+        breakdown (:func:`estimate_tools_breakdown`), by construction."""
+        return sum(_estimate_one_tool(t)[0] for t in tools)
+
+
+def _estimate_one_tool(t: Any) -> tuple[int, bool]:
+    """(tokens, deferred) for one tool — THE single pricing rule.
+
+    Deferred tools only occupy a catalog line ``name: description`` in the
+    system prompt (the schema is loaded on demand, never resident), same
+    accounting as breakdown._catalog_tokens / tools_deferred_catalog.
+    Resident tools cost their full JSON schema plus ~5 tokens of provider
+    metadata wrapper; a missing schema is guessed at 20.
+    """
+    import json as _json
+
+    deferred = bool(getattr(t, "_defer", False))
+    if deferred:
+        name = getattr(t, "name", "") or ""
+        desc = getattr(t, "description", "") or ""
+        tokens = estimate_message_tokens(
+            {"role": "system", "content": f"{name}: {desc}"}
+        )
+        return tokens, True
+    schema = getattr(t, "schema", None) or getattr(t, "spec", None)
+    if schema is None:
+        return 20, False  # unknown tool — guess
+    try:
+        text = _json.dumps(schema, default=str, ensure_ascii=False)
+    except Exception:
+        text = str(schema)
+    return estimate_message_tokens({"role": "tool", "content": text}) + 5, False
 
 
 def estimate_tools_breakdown(tools: list[Any]) -> list[dict]:
-    """Per-tool token 明细。口径与 BudgetAllocator._estimate_tools 完全一致：
-    每个工具 = estimate_message_tokens({"role":"tool","content":<schema json>}) + 5；
-    schema 缺失记 20。返回 [{"name","tokens","deferred"}, ...]，顺序同入参。"""
-    import json as _json
+    """Per-tool token 明细。口径 = _estimate_one_tool（与
+    BudgetAllocator._estimate_tools 共用同一条计价规则）。
+    返回 [{"name","tokens","deferred"}, ...]，顺序同入参。"""
     out: list[dict] = []
     for t in tools:
-        name = getattr(t, "name", "") or ""
-        deferred = bool(getattr(t, "_defer", False))
-        if deferred:
-            # deferred 工具当前只占系统提示里的 catalog 一行
-            # `name: description`（正文按需加载、不常驻），与
-            # breakdown._catalog_tokens / tools_deferred_catalog 同口径。
-            # 若按满载 schema 算，逐条明细会远大于总览 deferred 档、误导用户。
-            desc = getattr(t, "description", "") or ""
-            tokens = estimate_message_tokens(
-                {"role": "system", "content": f"{name}: {desc}"}
-            )
-            out.append({"name": name, "tokens": tokens, "deferred": True})
-            continue
-        schema = getattr(t, "schema", None) or getattr(t, "spec", None)
-        if schema is None:
-            out.append({"name": name, "tokens": 20, "deferred": deferred})
-            continue
-        try:
-            text = _json.dumps(schema, default=str, ensure_ascii=False)
-        except Exception:
-            text = str(schema)
-        tokens = estimate_message_tokens({"role": "tool", "content": text}) + 5
-        out.append({"name": name, "tokens": tokens, "deferred": deferred})
+        tokens, deferred = _estimate_one_tool(t)
+        out.append({
+            "name": getattr(t, "name", "") or "",
+            "tokens": tokens,
+            "deferred": deferred,
+        })
     return out
 
 

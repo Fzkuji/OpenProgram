@@ -106,6 +106,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "pytest-timeout>=2.3",
 ]
 # The LLM SDKs (anthropic / openai / google-genai) and the web stack are
 # in the base `dependencies` above — installed by default, no separate
@@ -182,3 +183,7 @@ markers = [
     "slow: real-subprocess integration tests (deselect with '-m \"not slow\"')",
 ]
 addopts = "-m 'not slow'"
+# Any single test that runs 120 s is hung, not slow — fail it instead of
+# freezing the whole suite (a blind ws receive_text did exactly that once).
+timeout = 120
+timeout_method = "thread"

@@ -268,11 +268,36 @@ def _probe_disk_state_dir() -> Finding:
     return Finding("OK", "State dir writable", str(p))
 
 
+def _probe_proxy_env() -> Finding:
+    """Outbound proxy: report what will be used; fail on socks w/o socksio."""
+    try:
+        from openprogram.providers.utils.http_proxy import get_proxy_mounts
+        mounts = get_proxy_mounts()
+    except Exception as e:  # noqa: BLE001
+        return Finding("WARN", "Outbound proxy", f"resolution failed: {e}")
+    if not mounts:
+        return Finding("OK", "Outbound proxy", "none configured (direct)")
+    proxies = sorted({u for u in mounts.values() if u})
+    detail = ", ".join(proxies) or "bypass-only NO_PROXY entries"
+    if any(u.startswith("socks") for u in proxies):
+        try:
+            import socksio  # noqa: F401
+        except ImportError:
+            return Finding(
+                "FAIL", "Outbound proxy",
+                f"{detail} — socks proxy configured but 'socksio' is missing; "
+                "every HTTP provider call will fail at client construction",
+                fix="pip install 'httpx[socks]'",
+            )
+    return Finding("OK", "Outbound proxy", detail)
+
+
 PROBES = (
     _probe_python,
     _probe_node,
     _probe_npm,
     _probe_git,
+    _probe_proxy_env,
     _probe_disk_state_dir,
     _probe_providers,
     _probe_default_agent,

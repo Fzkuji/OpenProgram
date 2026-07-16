@@ -32,8 +32,13 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def _drain_bootstrap(ws) -> None:
-    for _ in range(4):
-        ws.receive_text()
+    """Read until the final bootstrap frame (provider_info) — by type,
+    not count, so bootstrap changes fail loudly instead of hanging."""
+    import json as _json
+    for _ in range(20):
+        if _json.loads(ws.receive_text()).get("type") == "provider_info":
+            return
+    raise AssertionError("provider_info never arrived in bootstrap")
 
 
 def test_search_returns_matching_messages(env) -> None:

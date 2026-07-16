@@ -285,11 +285,18 @@ async def stream_simple(
                 model=model.id,
             )
 
+    # Shared hardened httpx client: same proxy semantics (env + override),
+    # keepalive/IPv4 hardening, and one connection pool per event loop
+    # instead of a fresh SDK-built client per call. The SDK never closes
+    # externally-supplied clients.
+    from ..utils.http_client import get_shared_async_client
+
     client = _openai.AsyncOpenAI(
         api_key=_client_api_key,
         base_url=base_url,
         default_headers=extra_headers or None,
         max_retries=sdk_max_retries,
+        http_client=get_shared_async_client("openai-sdk"),
     )
 
     # Transform messages for cross-provider compatibility

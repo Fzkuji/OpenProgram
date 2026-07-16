@@ -1,46 +1,60 @@
-"""
-HTTP proxy configuration for httpx-based SDK calls.
+"""Outbound proxy resolution — one semantics for every provider call.
 
-Reads HTTP_PROXY / HTTPS_PROXY environment variables and provides
-a pre-configured httpx client factory that respects them.
+Resolution order (design record: docs/reference/design/providers/network-proxy.md):
 
-Mirrors http-proxy.ts (which configures undici for Node.js fetch).
+1. ``OPENPROGRAM_PROXY_URL`` — explicit first-party override. All traffic
+   routes through it (``http://``, ``https://`` or ``socks5://``);
+   ``NO_PROXY`` bypasses still apply.
+2. Standard environment variables, parsed by httpx's own
+   ``get_environment_proxies()`` — ``http(s)_proxy`` / ``all_proxy`` /
+   ``no_proxy`` in both cases, lowercase winning. Reusing httpx's parser
+   (instead of a reimplementation) keeps the hardened clients byte-for-byte
+   consistent with every plain ``httpx.AsyncClient()`` and SDK-built client
+   in the process.
+
+The only consumer is :mod:`.http_client`, which turns the mount map into
+hardened per-pattern transports. Provider code never resolves proxies
+itself.
 """
 
 from __future__ import annotations
 
 import os
 
-try:
-    import httpx
-    _HTTPX_AVAILABLE = True
-except ImportError:
-    _HTTPX_AVAILABLE = False
+
+# Loopback never goes through a proxy, NO_PROXY or not: local services
+# (the worker, a localhost ollama, the provider "test" button against a
+# local endpoint) break behind forward proxies like Clash, which refuse
+# or misroute loopback CONNECTs.
+_LOOPBACK_BYPASS: dict[str, None] = {
+    "all://localhost": None,
+    "all://127.0.0.1": None,
+    "all://[::1]": None,
+}
 
 
-def get_proxy_url() -> str | None:
-    """Return the proxy URL from environment variables, or None."""
-    return os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
+def get_proxy_mounts() -> dict[str, str | None] | None:
+    """httpx mount map: URL pattern -> proxy URL (``None`` = bypass).
 
-
-def get_proxies() -> dict[str, str] | None:
-    """Return an httpx-compatible proxies dict, or None if no proxy configured."""
-    proxy = get_proxy_url()
-    if not proxy:
-        return None
-    return {"http://": proxy, "https://": proxy}
-
-
-def make_httpx_client(**kwargs) -> "httpx.AsyncClient":
-    """Create an httpx.AsyncClient with proxy settings applied.
-
-    NOTE: httpx 0.28 removed the ``proxies=`` mapping kwarg; the supported
-    form is a single ``proxy=`` URL. Passing ``proxies=`` raises
-    ``TypeError`` on 0.28+, so we use ``proxy=`` here. For the fully
-    hardened client (keepalive / IPv4 / timeouts) prefer
-    :func:`openprogram.providers.utils.http_client.build_async_client`.
+    Returns ``None`` when no proxy is configured at all, so callers can
+    skip building mounts entirely.
     """
-    proxy = get_proxy_url()
-    if proxy:
-        kwargs.setdefault("proxy", proxy)
-    return httpx.AsyncClient(**kwargs)
+    # httpx's parser is private but stable across our supported range
+    # (>=0.27); invariant #3 in the design doc says mirror it, never
+    # invent different semantics, if it ever moves.
+    from httpx._utils import get_environment_proxies
+
+    env_map: dict[str, str | None] = dict(get_environment_proxies())
+
+    override = os.environ.get("OPENPROGRAM_PROXY_URL", "").strip()
+    if override:
+        # Keep the NO_PROXY bypass entries (value None), replace the rest.
+        mounts: dict[str, str | None] = {
+            pattern: None for pattern, url in env_map.items() if url is None
+        }
+        mounts["all://"] = override
+        return {**_LOOPBACK_BYPASS, **mounts}
+
+    if not env_map:
+        return None
+    return {**_LOOPBACK_BYPASS, **env_map}

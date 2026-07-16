@@ -2,9 +2,9 @@
 
 Two scenarios covered here, matching what the real browser client does:
 
-1. **Initial connect** — server pushes the four bootstrap frames in a
-   stable order (full_tree, functions_list, history_list, provider_info)
-   regardless of how many times the client reconnects.
+1. **Initial connect** — server pushes the bootstrap frames in a stable
+   order (functions_list, provider_info) regardless of how many times the
+   client reconnects.
 2. **Sync after disconnect** — after a message has been committed into
    the MessageStore while the client was away, sending
    ``{"action": "sync", "conv_id", "known_seqs"}`` replays the frames
@@ -31,11 +31,10 @@ from openprogram.webui.messages import (
 )
 
 
-# Four frame types the server guarantees on every /ws accept.
+# Frame types the server guarantees on every /ws accept, in order.
+# provider_info is the LAST bootstrap frame — drain helpers key off it.
 _BOOTSTRAP_TYPES = (
-    "full_tree",
     "functions_list",
-    "history_list",
     "provider_info",
 )
 
@@ -56,12 +55,22 @@ def client(tmp_path):
 
 
 def _drain_bootstrap(ws) -> list[dict]:
-    """Read exactly the initial four frames and return them."""
+    """Read frames until the final bootstrap frame (provider_info).
+
+    Reads by type instead of a hardcoded count, so a bootstrap frame
+    added or removed on the server turns into an assertion diff in
+    ``test_initial_connect_sends_bootstrap_frames`` rather than an
+    unbounded ``receive_text()`` hang (the failure mode that froze the
+    whole suite when the old four-frame bootstrap shrank to two).
+    """
     frames = []
-    for _ in _BOOTSTRAP_TYPES:
-        raw = ws.receive_text()
-        frames.append(json.loads(raw))
-    return frames
+    for _ in range(20):  # safety bound, far above any realistic bootstrap
+        frames.append(json.loads(ws.receive_text()))
+        if frames[-1]["type"] == "provider_info":
+            return frames
+    raise AssertionError(
+        f"provider_info never arrived; got {[f['type'] for f in frames]}"
+    )
 
 
 def _seed_message(store: MessageStore, msg_id: str, conv_id: str, text: str) -> None:

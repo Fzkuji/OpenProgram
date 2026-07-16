@@ -45,9 +45,6 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     set_store_for_testing(None)
 
 
-def _drain_bootstrap(ws) -> None:
-    for _ in range(4):
-        ws.receive_text()
 
 
 def test_attach_creates_missing_session(env) -> None:
@@ -59,7 +56,6 @@ def test_attach_creates_missing_session(env) -> None:
     assert db.get_session(NEW_ID) is None  # baseline
 
     with client.websocket_connect("/ws") as ws:
-        _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "attach_session",
             "session_id": NEW_ID,
@@ -70,7 +66,7 @@ def test_attach_creates_missing_session(env) -> None:
         }))
         # Read frames until we see session_alias_changed (success)
         # or error.
-        for _ in range(10):
+        for _ in range(50):  # tolerate any number of bootstrap frames
             env_msg = json.loads(ws.receive_text())
             t = env_msg.get("type")
             if t == "session_alias_changed":
@@ -102,7 +98,6 @@ def test_attach_does_not_disturb_existing_session(env) -> None:
                        source="web")
 
     with client.websocket_connect("/ws") as ws:
-        _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "attach_session",
             "session_id": "c1",
@@ -111,7 +106,7 @@ def test_attach_does_not_disturb_existing_session(env) -> None:
             "peer_kind": "direct",
             "peer_id": "*",
         }))
-        for _ in range(10):
+        for _ in range(50):  # tolerate any number of bootstrap frames
             env_msg = json.loads(ws.receive_text())
             if env_msg.get("type") == "session_alias_changed":
                 break
@@ -131,7 +126,6 @@ def test_attach_reports_replaced_binding(env) -> None:
     db.create_session("conv-b", "main", title="B", source="tui")
 
     with client.websocket_connect("/ws") as ws:
-        _drain_bootstrap(ws)
         # First attach: peer=* → conv-a. No replaced.
         ws.send_text(json.dumps({
             "action": "attach_session",
@@ -141,7 +135,7 @@ def test_attach_reports_replaced_binding(env) -> None:
             "peer_kind": "direct",
             "peer_id": "*",
         }))
-        for _ in range(10):
+        for _ in range(50):  # tolerate any number of bootstrap frames
             env_msg = json.loads(ws.receive_text())
             if env_msg.get("type") == "session_alias_changed":
                 assert env_msg["data"].get("replaced") is None
@@ -157,7 +151,7 @@ def test_attach_reports_replaced_binding(env) -> None:
             "peer_kind": "direct",
             "peer_id": "*",
         }))
-        for _ in range(10):
+        for _ in range(50):  # tolerate any number of bootstrap frames
             env_msg = json.loads(ws.receive_text())
             if env_msg.get("type") == "session_alias_changed":
                 replaced = env_msg["data"].get("replaced")
@@ -169,14 +163,13 @@ def test_attach_reports_replaced_binding(env) -> None:
 def test_attach_rejects_empty_session_id(env) -> None:
     client, _ = env
     with client.websocket_connect("/ws") as ws:
-        _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "attach_session",
             "session_id": "",
             "channel": "wechat",
             "account_id": "default",
         }))
-        for _ in range(10):
+        for _ in range(50):  # tolerate any number of bootstrap frames
             env_msg = json.loads(ws.receive_text())
             if env_msg.get("type") == "error":
                 assert "session_id" in env_msg["data"]["message"]
