@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>左侧栏层级设计 mock</title>
+<style>
+  /* 数值全部取自真实代码：base.css .ui-list-item（32px 行高、6px 8px 内边距、
+     gap 12px、radius 9px、font 14px）+ nav-classes.ts（图标槽 16px 宽）。
+     → 一级行文字起点 = 8 + 16 + 12 = 36px。 */
+  :root{
+    --bg:#141416; --bg2:#1c1c1f; --bg-hover:#232327; --border:#2c2c31;
+    --text:#e8e8ea; --text2:#9b9ba3; --text3:#66666e; --accent:#7aa2f7; --green:#4ec97f;
+    --list-h:32px; --list-radius:9px;
+    font-family:-apple-system,"SF Pro","PingFang SC",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-size:14px;min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px}
+  h1{font-size:16px;font-weight:650}
+  .note{font-size:12.5px;color:var(--text2);max-width:560px;text-align:center;line-height:1.7}
+  .toggle{font-size:12px;color:var(--text2);cursor:pointer;border:1px solid var(--border);border-radius:999px;padding:4px 14px}
+  .toggle.on{color:var(--accent);border-color:var(--accent)}
+
+  .sidebar{width:248px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:10px 8px;position:relative;overflow:hidden}
+
+  /* ── 一级行：ui-list-item 原配方 ── */
+  .row{display:flex;align-items:center;gap:12px;height:var(--list-h);padding:6px 8px;border-radius:var(--list-radius);font-size:14px;cursor:pointer;color:var(--text2);position:relative}
+  .row:hover{background:var(--bg-hover);color:var(--text)}
+  .row .ic{width:16px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px}
+  .row .lb{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:20px}
+  .sect{padding:12px 8px 4px;font-size:11px;color:var(--text3);letter-spacing:.4px}
+
+  /* 项目行 = 一级行 + 行尾 chevron/＋（悬停显示 ＋） */
+  .proj .chev{font-size:9px;color:var(--text3);transition:transform .15s;flex-shrink:0}
+  .proj.open .chev{transform:rotate(90deg)}
+  .proj .plus{display:none;color:var(--text3);font-size:14px;width:18px;text-align:center;border-radius:5px;flex-shrink:0}
+  .proj:hover .plus{display:block}
+  .proj .plus:hover{color:var(--text);background:var(--bg)}
+
+  /* ── 二级行：会话 ──
+     文字左缘 = 36px（一级行文字起点）；引导线 x=16px（图标槽中心）。 */
+  .kids{position:relative;display:none}
+  .proj-group.open .kids{display:block}
+  .kids::before{content:"";position:absolute;left:16px;top:2px;bottom:2px;width:1px;background:var(--border)}
+  .sess{display:flex;align-items:center;height:28px;padding:4px 8px 4px 36px;border-radius:7px;font-size:13px;color:var(--text2);cursor:pointer;position:relative}
+  .sess:hover{background:var(--bg-hover);color:var(--text)}
+  .sess.active{background:var(--bg-hover);color:var(--text)}
+  .sess .lb{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sess .run{width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:8px;flex-shrink:0;animation:pulse 1.4s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+
+  /* 对齐标尺 */
+  .guides{position:absolute;inset:0;pointer-events:none;display:none}
+  .sidebar.showguides .guides{display:block}
+  .guides .g36{position:absolute;left:44px;top:0;bottom:0;width:0;border-left:1px dashed rgba(122,162,247,.55)}
+  .guides .g16{position:absolute;left:24px;top:0;bottom:0;width:0;border-left:1px dashed rgba(78,201,127,.45)}
+  .legend{font-size:11.5px;color:var(--text3);display:flex;gap:16px}
+  .legend .b{color:var(--accent)} .legend .g{color:var(--green)}
+</style>
+</head>
+<body>
+  <h1>左侧栏层级设计</h1>
+  <div class="note">项目行 = 和 Functions/Chats 一字不差的一级行（同 32px 行高/字号/悬停），图标槽放📁，行尾 chevron；
+    会话行 = 二级：文字精确对齐 x=36（一级文字起点），28px 矮一档、13px 小一号、图标槽中心 x=16 画竖引导线。</div>
+  <div class="toggle on" onclick="this.classList.toggle('on');document.getElementById('sb').classList.toggle('showguides')">对齐标尺</div>
+
+  <div class="sidebar showguides" id="sb">
+    <div class="guides"><div class="g16"></div><div class="g36"></div></div>
+
+    <div class="row"><span class="ic">＋</span><span class="lb">New chat</span></div>
+    <div class="row"><span class="ic">🧩</span><span class="lb">Functions</span></div>
+    <div class="row"><span class="ic">🖥</span><span class="lb">Programs</span></div>
+    <div class="row"><span class="ic">💬</span><span class="lb">Chats</span></div>
+
+    <div class="sect">PROJECTS</div>
+
+    <div class="proj-group open">
+      <div class="row proj open" onclick="this.parentElement.classList.toggle('open');this.classList.toggle('open')">
+        <span class="ic">📁</span><span class="lb">OpenProgram</span><span class="plus" title="新会话">＋</span><span class="chev">▶</span>
+      </div>
+      <div class="kids">
+        <div class="sess active"><span class="lb">proxy 重构与测试修复</span><span class="run"></span></div>
+        <div class="sess"><span class="lb">docs 站样式升级</span></div>
+        <div class="sess"><span class="lb">Design tab 与生成参考页</span></div>
+      </div>
+    </div>
+
+    <div class="proj-group">
+      <div class="row proj" onclick="this.parentElement.classList.toggle('open');this.classList.toggle('open')">
+        <span class="ic">📁</span><span class="lb">NativeMem</span><span class="plus">＋</span><span class="chev">▶</span>
+      </div>
+      <div class="kids">
+        <div class="sess"><span class="lb">v8 双视图评测</span></div>
+      </div>
+    </div>
+
+    <div class="sect">RECENTS</div>
+    <div class="sess" style="padding-left:8px"><span class="lb">随手问的一个问题</span></div>
+    <div class="sess" style="padding-left:8px"><span class="lb">另一个未绑定项目的会话</span></div>
+  </div>
+
+  <div class="legend"><span class="b">─ ─ 蓝线 x=36：一级文字起点 = 二级文字左缘</span><span class="g">─ ─ 绿线 x=16：图标槽中心 = 引导线</span></div>
+  <div class="note">未绑定项目的会话不伪装成文件夹——按今天 recents 的原样放在弱分区标题下，左缘回到 8px。<br>
+    展开状态记忆到 localStorage；含当前会话的项目自动展开。项目行悬停出现 ＋（该项目新会话）。</div>
+</body>
+</html>
