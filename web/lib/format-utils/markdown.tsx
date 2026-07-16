@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { marked as npmMarked } from "marked";
+import { marked as npmMarked, Marked } from "marked";
 
 // Markdown + KaTeX rendering. Mirrors `renderMd()` and
 // `renderMathInChat()` from web/public/js/shared/helpers.js.
@@ -17,15 +17,26 @@ import { marked as npmMarked } from "marked";
 // TODO: once every caller of legacy `renderMd()` is migrated, swap the
 // CDN `marked` for the npm import and drop the global lookup.
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Dedicated marked instance for untrusted sources (repo files): raw HTML
+// tokens — block and inline both surface as `html` tokens — are escaped
+// instead of passed through. Separate instance so the override can never
+// leak into window.marked / npmMarked and change chat rendering.
+const escapingMarked = new Marked({
+  renderer: {
+    html(token) {
+      return escapeHtml(token.text);
+    },
+  },
+});
+
 /** Replace LaTeX blocks with placeholder tokens so marked doesn't mangle
  * them, then restore the originals after parsing. */
-function markdownToHtml(src: string): string {
+function markdownToHtml(src: string, escapeRawHtml?: boolean): string {
   let s = typeof src === "string" ? src : String(src ?? "");
-  // Prefer window.marked (legacy chat CSS targets its exact output); fall
-  // back to the npm-bundled marked so detail pages render even before the
-  // CDN <script> has loaded. Both produce compatible HTML.
-  const marked =
-    (typeof window !== "undefined" ? window.marked : undefined) ?? npmMarked;
 
   const mathBlocks: string[] = [];
   const stash = (m: string) => {
@@ -41,7 +52,17 @@ function markdownToHtml(src: string): string {
   // $...$ (inline, single line only)
   s = s.replace(/\$([^$\n]+?)\$/g, (m) => stash(m));
 
-  let html = marked.parse(s, { breaks: true });
+  let html: string;
+  if (escapeRawHtml) {
+    html = escapingMarked.parse(s, { breaks: true, async: false });
+  } else {
+    // Prefer window.marked (legacy chat CSS targets its exact output); fall
+    // back to the npm-bundled marked so detail pages render even before the
+    // CDN <script> has loaded. Both produce compatible HTML.
+    const marked =
+      (typeof window !== "undefined" ? window.marked : undefined) ?? npmMarked;
+    html = marked.parse(s, { breaks: true });
+  }
   for (let i = 0; i < mathBlocks.length; i++) {
     html = html.replace("%%MATH" + i + "%%", mathBlocks[i]);
   }
@@ -71,10 +92,21 @@ export function renderMathIn(el: HTMLElement): void {
 }
 
 /** Render a markdown + LaTeX string. Produces the same DOM shape
- * (`<span class="md-rendered">...</span>`) the legacy CSS targets. */
-export function Markdown({ source }: { source: string }) {
+ * (`<span class="md-rendered">...</span>`) the legacy CSS targets.
+ *
+ * `escapeRawHtml` is for untrusted sources (e.g. arbitrary repo .md files
+ * in the files panel): raw HTML in the markdown is escaped and shown as
+ * text instead of injected into the DOM. Leave it unset for trusted
+ * chat/doc content — that path is byte-identical to the original. */
+export function Markdown({
+  source,
+  escapeRawHtml,
+}: {
+  source: string;
+  escapeRawHtml?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  const html = markdownToHtml(source);
+  const html = markdownToHtml(source, escapeRawHtml);
 
   // KaTeX auto-render mutates the DOM after marked has produced HTML.
   // Run it after every render of the host node so streaming text gets
@@ -83,9 +115,11 @@ export function Markdown({ source }: { source: string }) {
     if (ref.current) renderMathIn(ref.current);
   });
 
-  // `dangerouslySetInnerHTML` is intentional — the source HTML comes
-  // from our own marked invocation (the only untrusted bit is the
-  // markdown body, which marked sanitizes internally).
+  // `dangerouslySetInnerHTML` is intentional — the HTML comes from our
+  // own marked invocation. Note marked does NOT sanitize: raw HTML in
+  // the markdown body passes straight through to the DOM. Callers with
+  // untrusted input must set `escapeRawHtml`, which escapes raw HTML
+  // tokens at parse time; no sanitization happens anywhere else.
   return (
     <div
       ref={ref}

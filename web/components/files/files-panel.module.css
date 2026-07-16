@@ -1,0 +1,317 @@
+/* Files panel — in-chat project file browser.
+   Same token vocabulary as skills-page.module.css: var(--border),
+   var(--bg-*), var(--text-*). The panel is a flex item of `.app`
+   (via a display:contents wrapper in AppShell); `order: 50` slots it
+   between `.main` (order 2) and the right sidebar (order 99). */
+
+.panel {
+  order: 50;
+  width: 55vw;
+  min-width: 520px;
+  height: 100%;
+  display: flex;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* ---- Center column: tabs + breadcrumb + viewer ------------------- */
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tabStrip {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  flex-shrink: 0;
+  min-height: 34px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tab:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.tabActive {
+  color: var(--text-bright);
+  background: var(--bg-primary);
+}
+
+.tabName {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-dim);
+}
+.tabClose:hover {
+  color: var(--text-bright);
+  background: var(--bg-tertiary);
+}
+
+.breadcrumb {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  font-size: 11px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crumb { color: var(--text-secondary); }
+.crumbSep { margin: 0 4px; opacity: 0.5; }
+
+.viewerHost {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewerScroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+}
+
+.viewerHint,
+.centerHint {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 24px;
+  text-align: center;
+}
+
+/* ---- Text / code rendering --------------------------------------- */
+
+.code {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.codeLine {
+  display: flex;
+  white-space: pre;
+}
+.codeLine:hover { background: var(--bg-hover); }
+
+.lineNo {
+  flex-shrink: 0;
+  width: 42px;
+  padding-right: 12px;
+  text-align: right;
+  color: var(--text-dim);
+  opacity: 0.6;
+  user-select: none;
+}
+
+.lineText {
+  white-space: pre;
+}
+
+.mdToggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.mdToggleBtn {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mdToggleBtn:hover { color: var(--text-bright); }
+.mdToggleActive {
+  color: var(--text-bright);
+  background: var(--bg-tertiary);
+}
+
+.mdBody {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.truncatedNote {
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--accent-yellow);
+}
+
+.binaryCard {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.binaryName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+  word-break: break-all;
+}
+
+.binaryMeta {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.downloadLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--accent-orange);
+  text-decoration: none;
+}
+.downloadLink:hover { text-decoration: underline; }
+
+/* ---- Right column: file tree -------------------------------------- */
+
+.treeCol {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.treeHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.treeFilter {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 5px 8px;
+  color: var(--text-bright);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+.treeFilter:focus { border-color: var(--text-dim); }
+.treeFilter::placeholder { color: var(--text-dim); }
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.iconBtn:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+.treeBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 4px;
+  scrollbar-width: thin;
+}
+
+.treeRow {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.treeRow:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.treeRowActive {
+  color: var(--text-bright);
+  background: var(--bg-tertiary);
+}
+.treeRowDim { opacity: 0.45; }
+
+.chevron {
+  flex-shrink: 0;
+  transition: transform 120ms ease-out;
+}
+.chevronOpen { transform: rotate(90deg); }
+
+.treeName,
+.treePath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.treePath { font-size: 12px; }
+
+.treeHint {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}

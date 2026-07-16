@@ -1089,6 +1089,7 @@ def _build_ws_action_registry() -> dict:
         session as _ws_session,
         context_commits as _ws_commits,
         turn_files as _ws_turn_files,
+        files as _ws_files,
         sub_agent as _ws_sub_agent,
         merge as _ws_merge,
         task as _ws_task,
@@ -1105,6 +1106,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_chat.ACTIONS)
     table.update(_ws_commits.ACTIONS)
     table.update(_ws_turn_files.ACTIONS)
+    table.update(_ws_files.ACTIONS)
     table.update(_ws_sub_agent.ACTIONS)
     table.update(_ws_merge.ACTIONS)
     table.update(_ws_task.ACTIONS)
@@ -1293,6 +1295,34 @@ def create_app():
     # WebSocket — use Starlette's raw WebSocketRoute to avoid FastAPI routing issues
     from starlette.routing import WebSocketRoute
     app.routes.insert(0, WebSocketRoute("/ws", _websocket_handler))
+
+    # GET /files/raw — raw project-file bytes (images / downloads) for the
+    # files panel. Same _resolve guard as the project_file_* WS actions.
+    from fastapi.responses import FileResponse, Response as _PlainResponse
+
+    @app.get("/files/raw")
+    async def _files_raw(project_id: str = "", path: str = ""):
+        import mimetypes
+        from openprogram.webui.ws_actions.files import _resolve
+        target, error = _resolve(project_id, path)
+        if target is None:
+            status = 403 if error == "path escapes project root" else 404
+            return _PlainResponse(error, status_code=status, media_type="text/plain")
+        if not os.path.isfile(target):
+            return _PlainResponse("not found", status_code=404, media_type="text/plain")
+        # Untrusted repo bytes: never let the browser sniff or execute them.
+        headers = {
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+        }
+        guessed = mimetypes.guess_type(target)[0]
+        if guessed and guessed.startswith("image/"):
+            # Real type kept so the panel's <img> works; CSP sandbox still
+            # neuters the file if it's opened as a top-level document.
+            return FileResponse(target, media_type=guessed, headers=headers)
+        # Everything else is a download, never rendered by the browser.
+        return FileResponse(target, media_type="application/octet-stream",
+                            filename=os.path.basename(target), headers=headers)
 
     # REST endpoints
     # Read-only catalog routes (tree, functions, tokens, programs meta)

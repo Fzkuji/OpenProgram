@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
+import { FilesPanel } from "./files/files-panel";
 import { ToastHost } from "./ui/toast-host";
 import { Composer } from "./chat/composer";
 import { TopBar } from "./chat/top-bar";
@@ -425,6 +426,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       {/* Non-chat routes render their own page content via the router. */}
       {!showChat && children}
+      {/* In-chat project files panel — same persistent-surface pattern
+         as the chat shell / right sidebar. Renders null while its
+         store says closed, so closed chat looks exactly as before. */}
+      <div style={{ display: showChat ? "contents" : "none" }}>
+        <FilesPanel />
+      </div>
       {/* Right sidebar — persistent across conversations. Hidden (not
          unmounted) on non-chat routes so its state survives. */}
       <div style={{ display: showChat ? "contents" : "none" }}>
