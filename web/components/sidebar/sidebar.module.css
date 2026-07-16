@@ -26,3 +26,34 @@
   text-align: center;
 }
 .clearAll:hover { color: var(--accent-red); }
+
+/* Level-2 session block under a project header (browser model).
+   The rows inside are plain ConvItems (ui-list-item: 8px padding +
+   16px marker slot + 12px gap → text left edge lands at 36px, the
+   exact x where the header's label starts); this wrapper only steps
+   them down a size — 28px tall, 13px text — and draws the 1px
+   vertical guide at x=16px, the icon slot's optical center. */
+.projectKids {
+  position: relative;
+}
+.projectKids::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.projectKids :global(.ui-list-item) {
+  height: 28px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 13px;
+}
+/* The row label carries its own `text-fs-base` (14px) utility —
+   out-specificity it so level-2 text really is 13px. */
+.projectKids :global(.ui-list-item .truncate) {
+  font-size: 13px;
+}

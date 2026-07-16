@@ -1,104 +1,7 @@
-/* Files panel — in-chat project file browser.
+/* File tree (right sidebar) + file viewer (center file tab) styles.
    Same token vocabulary as skills-page.module.css: var(--border),
-   var(--bg-*), var(--text-*). The panel is a flex item of `.app`
-   (via a display:contents wrapper in AppShell); `order: 50` slots it
-   between `.main` (order 2) and the right sidebar (order 99). */
-
-.panel {
-  order: 50;
-  width: 48vw;
-  min-width: 480px;
-  height: 100%;
-  display: flex;
-  flex-shrink: 0;
-  border-left: 1px solid var(--border);
-  background: var(--bg-primary);
-  overflow: hidden;
-}
-
-/* ---- Center column: tabs + breadcrumb + viewer ------------------- */
-
-.main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.tabStrip {
-  display: flex;
-  align-items: stretch;
-  overflow-x: auto;
-  flex-shrink: 0;
-  /* 48px = chat topbar row height; the bottom border of both rows
-     lines up into one continuous seam across chat + files panel. */
-  height: 48px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
-  scrollbar-width: thin;
-}
-
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 12px;
-  font-size: 12px;
-  color: var(--text-dim);
-  border-right: 1px solid var(--border);
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.tab:hover {
-  color: var(--text-bright);
-  background: var(--bg-hover);
-}
-.tabActive {
-  color: var(--text-bright);
-  background: var(--bg-primary);
-}
-
-.tabName {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tabClose {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  color: var(--text-dim);
-}
-.tabClose:hover {
-  color: var(--text-bright);
-  background: var(--bg-tertiary);
-}
-
-.breadcrumb {
-  flex-shrink: 0;
-  padding: 5px 14px;
-  font-size: 11px;
-  color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.crumb { color: var(--text-secondary); }
-.crumbSep { margin: 0 4px; opacity: 0.5; }
-
-.viewerHost {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
+   var(--bg-*), var(--text-*). The v1 files-panel shell is gone; the
+   tab strip / toolbar styles live in center-tabs.module.css. */
 
 .viewerScroll {
   flex: 1;
@@ -107,8 +10,7 @@
   padding: 12px 14px;
 }
 
-.viewerHint,
-.centerHint {
+.viewerHint {
   flex: 1;
   display: flex;
   align-items: center;
@@ -147,30 +49,6 @@
 
 .lineText {
   white-space: pre;
-}
-
-.mdToggle {
-  display: inline-flex;
-  gap: 4px;
-  margin-bottom: 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px;
-}
-
-.mdToggleBtn {
-  padding: 3px 10px;
-  font-size: 12px;
-  color: var(--text-dim);
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.mdToggleBtn:hover { color: var(--text-bright); }
-.mdToggleActive {
-  color: var(--text-bright);
-  background: var(--bg-tertiary);
 }
 
 .mdBody {
@@ -219,14 +97,14 @@
 }
 .downloadLink:hover { text-decoration: underline; }
 
-/* ---- Right column: file tree -------------------------------------- */
+/* ---- File tree (fills the right sidebar) --------------------------- */
 
 .treeCol {
-  width: 260px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border);
   background: var(--bg-secondary);
 }
 
@@ -234,8 +112,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 10px;
-  /* 与 .tabStrip / chat topbar 同一 48px 行高，三段顶缝连成一条线 */
+  padding: 0 10px 0 8px;
+  /* 与左侧栏头部同一 48px 行高，顶缝连成一条线 */
   height: 48px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);

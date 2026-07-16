@@ -1,7 +1,9 @@
 "use client";
 
 /**
- * FileTree — right column of the files panel.
+ * FileTree — the right sidebar's resident content: a lazy directory
+ * tree over the active tab's project. Clicking a file opens (or
+ * focuses) its center file tab.
  *
  * Lazily loads one directory listing per expand via the worker's
  * ``project_file_tree`` action (root "" on mount). The filter input
@@ -12,11 +14,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, RotateCw } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
-import {
-  filesWsRequest,
-  latestFileMtime,
-  useFilesPanel,
-} from "@/lib/state/files-panel-store";
+import { filesWsRequest, latestFileMtime } from "@/lib/state/files-shared";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import styles from "./files-panel.module.css";
 
 export interface TreeEntry {
@@ -42,10 +41,26 @@ function joinPath(dir: string, name: string): string {
 
 type DirState = TreeEntry[] | "loading" | "error";
 
-export function FileTree({ projectId }: { projectId: string }) {
+export function FileTree({
+  projectId,
+  headerExtra,
+}: {
+  projectId: string;
+  /** Slot rendered before the filter input (the right sidebar puts
+   *  its collapse toggle here so header stays a single row). */
+  headerExtra?: React.ReactNode;
+}) {
   const { text } = useTranslation();
-  const openFile = useFilesPanel((s) => s.openFile);
-  const activePath = useFilesPanel((s) => s.activePath);
+  const openFileTab = useCenterTabs((s) => s.openFileTab);
+  // Highlight the file whose center tab is active (primitive selector,
+  // so recomputing per store change is re-render-safe).
+  const activePath = useCenterTabs((s) => {
+    const t = s.tabs.find((x) => x.id === s.activeId);
+    return t?.kind === "file" && t.projectId === projectId
+      ? (t.path ?? null)
+      : null;
+  });
+  const openFile = (path: string) => openFileTab(projectId, path);
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
@@ -173,6 +188,7 @@ export function FileTree({ projectId }: { projectId: string }) {
   return (
     <div className={styles.treeCol}>
       <div className={styles.treeHeader}>
+        {headerExtra}
         <input
           className={styles.treeFilter}
           value={filter}

@@ -41,15 +41,15 @@ import {
 } from "../sidebar/nav-classes";
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
-  ActivityIcon,
-  AlignLeftIcon,
   type AnimatedNavIconHandle,
   FolderOpenIcon,
   GitGraphIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
 } from "../animated-icons";
-import { useFilesPanel } from "@/lib/state/files-panel-store";
+import { FileTree } from "../files/file-tree";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useCurrentProject } from "@/lib/state/files-shared";
 
 // View IDs that round-trip through the `data-view` attribute. Matches
 // the legacy template exactly: "history" picks `<div data-view="history">`,
@@ -57,6 +57,7 @@ import { useFilesPanel } from "@/lib/state/files-panel-store";
 const VIEW_HISTORY = "history";
 const VIEW_DETAIL = "detail";
 const VIEW_CONTEXT = "context";
+const VIEW_FILES = "files";
 
 // Right sidebar mirrors the left's default width (288px) so the page
 // loads symmetric. Users can drag-widen the right side for the History
@@ -78,13 +79,17 @@ export function RightSidebar() {
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const historyIconRef = useRef<AnimatedNavIconHandle>(null);
-  const contextIconRef = useRef<AnimatedNavIconHandle>(null);
-  const detailIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
-  // Files 面板不是 rightDock 的一个 view——它是独立的中栏面板，
-  // 这里只挂它的开关，与另外三个 view 按钮共用一套导航行样式。
-  const filesOpen = useFilesPanel((s) => s.open);
-  const toggleFiles = useFilesPanel((s) => s.toggleOpen);
+  // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
+  // projectId；会话/新标签页回落到会话绑定的项目）。
+  const activeTab = useCenterTabs((s) =>
+    s.tabs.find((tab) => tab.id === s.activeId),
+  );
+  const currentProject = useCurrentProject();
+  const treeProjectId =
+    activeTab?.kind === "file"
+      ? (activeTab.projectId ?? null)
+      : (currentProject?.id ?? null);
 
   const onResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -303,49 +308,19 @@ export function RightSidebar() {
           </span>
           <span className={sidebarNavLabelClass}>{t("right.history")}</span>
         </div>
+        {/* Context / Executions 的导航按钮不再显示（只在看 History DAG 时
+            有意义）；它们的视图 div 保留在下方 view host 里，legacy 的
+            rightDock.show("detail"/"context") 仍能切过去。 */}
         <div
           className={
             sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_CONTEXT ? " " + sidebarNavItemActiveClass : "")
+            (view === VIEW_FILES ? " " + sidebarNavItemActiveClass : "")
           }
-          data-view={VIEW_CONTEXT}
-          onClick={() => onNavClick(VIEW_CONTEXT)}
-          onMouseEnter={() => contextIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => contextIconRef.current?.stopAnimation?.()}
-          role="button"
-          title={t("right.context_tooltip")}
-        >
-          <span className={sidebarNavIconClass}>
-            <AlignLeftIcon ref={contextIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("right.context")}</span>
-        </div>
-        <div
-          className={
-            sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_DETAIL ? " " + sidebarNavItemActiveClass : "")
-          }
-          data-view={VIEW_DETAIL}
-          onClick={() => onNavClick(VIEW_DETAIL)}
-          onMouseEnter={() => detailIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => detailIconRef.current?.stopAnimation?.()}
-          role="button"
-        >
-          <span className={sidebarNavIconClass}>
-            <ActivityIcon ref={detailIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("right.executions")}</span>
-        </div>
-        <div
-          className={
-            sidebarNavItemClass + " right-nav-item" +
-            (filesOpen ? " " + sidebarNavItemActiveClass : "")
-          }
-          onClick={toggleFiles}
+          data-view={VIEW_FILES}
+          onClick={() => onNavClick(VIEW_FILES)}
           onMouseEnter={() => filesIconRef.current?.startAnimation?.()}
           onMouseLeave={() => filesIconRef.current?.stopAnimation?.()}
           role="button"
-          aria-pressed={filesOpen}
           title={text("Project files", "项目文件")}
         >
           <span className={sidebarNavIconClass}>
@@ -356,6 +331,16 @@ export function RightSidebar() {
       </div>
 
       <div className="right-view-host">
+        {/* Files view — the default: a plain project file tree. */}
+        <div className="right-view" data-view={VIEW_FILES}>
+          {treeProjectId ? (
+            <FileTree projectId={treeProjectId} />
+          ) : (
+            <div style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}>
+              {text("Bind a project to browse files", "绑定项目后可浏览文件")}
+            </div>
+          )}
+        </div>
         {/* History view: branches panel (top, conversations.js fills it)
             + history graph body (history-graph.js renders the DAG into
             `.history-body`). Both IDs/classes match the legacy template

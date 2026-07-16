@@ -6,8 +6,10 @@ import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
-import { FilesPanel } from "./files/files-panel";
-import { useFilesPanel } from "@/lib/state/files-panel-store";
+import { CenterTabStrip } from "./center-tabs/center-tab-strip";
+import { FileTabPane } from "./center-tabs/file-tab-pane";
+import { NewTabPage } from "./center-tabs/new-tab-page";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { ToastHost } from "./ui/toast-host";
 import { Composer } from "./chat/composer";
 import { TopBar } from "./chat/top-bar";
@@ -412,42 +414,59 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     direction: -1,
     minWidth: 200,
   });
-  useColResize({
-    handleId: "filesResize",
-    targetId: "filesPanel",
-    direction: -1,
-    minWidth: 480,
-  });
-  const filesOpen = useFilesPanel((s) => s.open);
+
+  // Center tab container — which pane the center column shows. The
+  // chat surface is a SINGLETON: session tabs merely reveal it (it
+  // stays mounted, display:none, under file / new-tab panes).
+  const activeTab = useCenterTabs((s) =>
+    s.tabs.find((t) => t.id === s.activeId),
+  );
+  const activeKind = activeTab?.kind ?? "session";
 
   const showChat = isChatRoute(pathname);
   return (
     <div className="app">
       <Sidebar />
       <div className="col-resize" id="sidebarResize"></div>
-      {/* Chat shell is mounted ONCE at the layout level and kept alive
-         across /chat ↔ /c/:id navigations. Hidden (not unmounted) when
-         visiting non-chat routes. This is what makes the WS + DOM +
-         right sidebar state persist — same pattern as the left sidebar. */}
-      <div style={{ display: showChat ? "contents" : "none" }}>
-        <PageShell page="chat" />
+      {/* Center column: browser-style tab strip over the active tab's
+         pane. `order: 2` slots it where `.app .main` used to sit (the
+         chat .main is now a grandchild, flexing inside .center-body).
+         Hidden (not unmounted) on non-chat routes. */}
+      <div
+        className="center-col"
+        style={{
+          display: showChat ? "flex" : "none",
+          flexDirection: "column",
+          flex: "1 1 auto",
+          minWidth: 0,
+          order: 2,
+        }}
+      >
+        <CenterTabStrip />
+        <div
+          className="center-body"
+          style={{ flex: 1, minHeight: 0, display: "flex" }}
+        >
+          {/* Chat shell is mounted ONCE at the layout level and kept
+             alive across session switches AND non-session tabs. This
+             is what makes the WS + DOM + right sidebar state persist. */}
+          <div
+            style={{ display: activeKind === "session" ? "contents" : "none" }}
+          >
+            <PageShell page="chat" />
+          </div>
+          {activeKind === "file" && activeTab?.projectId && activeTab?.path ? (
+            <FileTabPane
+              key={activeTab.id}
+              projectId={activeTab.projectId}
+              path={activeTab.path}
+            />
+          ) : null}
+          {activeKind === "ntp" ? <NewTabPage /> : null}
+        </div>
       </div>
       {/* Non-chat routes render their own page content via the router. */}
       {!showChat && children}
-      {/* In-chat project files panel — same persistent-surface pattern
-         as the chat shell / right sidebar. Renders null while its
-         store says closed, so closed chat looks exactly as before.
-         The resize handle stays mounted (display:none while closed) so
-         useColResize's one-shot mousedown binding always finds it;
-         order 49 slots it just left of the panel's order 50. */}
-      <div style={{ display: showChat ? "contents" : "none" }}>
-        <div
-          className="col-resize"
-          id="filesResize"
-          style={{ order: 49, display: filesOpen ? undefined : "none" }}
-        ></div>
-        <FilesPanel />
-      </div>
       {/* Right sidebar — persistent across conversations. Hidden (not
          unmounted) on non-chat routes so its state survives. */}
       <div style={{ display: showChat ? "contents" : "none" }}>

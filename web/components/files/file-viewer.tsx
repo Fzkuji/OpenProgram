@@ -1,11 +1,13 @@
 "use client";
 
 /**
- * FileViewer — center pane of the files panel. Dispatches on the
- * active file's extension:
+ * FileViewer — body of a center file tab. Dispatches on the file's
+ * extension:
  *
  *   images   → <img> straight off the backend raw endpoint
- *   markdown → Rendered (existing <Markdown>, marked-based) / Source toggle
+ *   markdown → Rendered (existing <Markdown>, marked-based) or Source,
+ *              controlled by the `mdRendered` prop (the toggle lives
+ *              in the file tab's toolbar — see FileTabPane)
  *   other    → line-numbered <pre> (no syntax highlight in v1)
  *   binary / >1 MB replies → name + size card with a download link
  *
@@ -21,7 +23,7 @@ import {
   filesWsRequest,
   latestFileMtime,
   rawFileUrl,
-} from "@/lib/state/files-panel-store";
+} from "@/lib/state/files-shared";
 import styles from "./files-panel.module.css";
 
 interface ReadResult {
@@ -57,9 +59,13 @@ const readCache = new Map<string, ReadResult>();
 export function FileViewer({
   projectId,
   path,
+  mdRendered = true,
 }: {
   projectId: string;
   path: string;
+  /** Markdown files: true → <Markdown> render, false → source lines.
+   *  The toggle UI lives in the file tab's toolbar. */
+  mdRendered?: boolean;
 }) {
   const ext = extOf(path);
   if (IMAGE_EXTS.has(ext)) {
@@ -73,22 +79,30 @@ export function FileViewer({
       </div>
     );
   }
-  return <TextViewer projectId={projectId} path={path} isMarkdown={ext === "md"} />;
+  return (
+    <TextViewer
+      projectId={projectId}
+      path={path}
+      isMarkdown={ext === "md"}
+      rendered={mdRendered}
+    />
+  );
 }
 
 function TextViewer({
   projectId,
   path,
   isMarkdown,
+  rendered,
 }: {
   projectId: string;
   path: string;
   isMarkdown: boolean;
+  rendered: boolean;
 }) {
   const { text } = useTranslation();
   const [data, setData] = useState<ReadResult | null>(null);
   const [failed, setFailed] = useState(false);
-  const [rendered, setRendered] = useState(true); // markdown: Rendered vs Source
 
   useEffect(() => {
     let cancelled = false;
@@ -158,24 +172,6 @@ function TextViewer({
 
   return (
     <div className={styles.viewerScroll}>
-      {isMarkdown ? (
-        <div className={styles.mdToggle}>
-          <button
-            type="button"
-            className={`${styles.mdToggleBtn} ${rendered ? styles.mdToggleActive : ""}`}
-            onClick={() => setRendered(true)}
-          >
-            {text("Rendered", "渲染")}
-          </button>
-          <button
-            type="button"
-            className={`${styles.mdToggleBtn} ${!rendered ? styles.mdToggleActive : ""}`}
-            onClick={() => setRendered(false)}
-          >
-            {text("Source", "源码")}
-          </button>
-        </div>
-      ) : null}
       {data.truncated ? (
         <div className={styles.truncatedNote}>
           {text("Truncated at 1 MB", "已在 1 MB 处截断")}

@@ -34,15 +34,18 @@ import os
 
 
 def _project_dict(p, alive: set[str] | None = None) -> dict:
-    # session_count 只数**存活**会话，不裸信可能含孤立引用的 session_ids。
-    sids = p.session_ids or []
-    count = len([s for s in sids if s in alive]) if alive is not None else len(sids)
+    # session_ids/session_count 只含**存活**会话，不裸信可能含孤立引用的
+    # p.session_ids。count 与 ids 同源；count 保留是老前端兼容。
+    sids = list(p.session_ids or [])
+    if alive is not None:
+        sids = [s for s in sids if s in alive]
     return {
         "id": p.id,
         "name": p.name,
         "path": p.path,
         "is_default": p.is_default,
-        "session_count": count,
+        "session_count": len(sids),
+        "session_ids": sids,
         "status": p.status,
     }
 

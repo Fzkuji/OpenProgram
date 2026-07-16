@@ -1,15 +1,26 @@
 "use client";
 
 /**
- * Sessions list (the "Recents" panel in the sidebar).
+ * Sessions list — the left sidebar's project-grouped conversation panel
+ * (the "browser model": sessions grouped by owning project, like a
+ * bookmarks bar of workspaces).
  *
  * Reads conversations from the React store (`store.conversations`), which
  * the runtime-bridge keeps authoritative from the `sessions_list` WS event
- * (see conv-store-mirror). Layers Claude.ai-style management on top:
+ * (see conv-store-mirror), and joins them client-side against the project
+ * registry (`list_projects` → `projects_list`, whose `session_ids` are
+ * alive-filtered server-side). Sessions no project claims render as a
+ * plain flat run under a trailing "Recents" section label.
+ *
+ * Management stays as before:
  *   - per-row right-click / ⋯ context menu (rename, pin, move to group,
  *     copy link, archive, delete) — see `conv-menu.tsx`
- *   - Recents-header filter (status / group-by / sort) — see
- *     `recents-filter.tsx`, read here via `useRecentsView`
+ *   - the filter dropdown (status / sort / activity) — see
+ *     `recents-filter.tsx`, read here via `useRecentsView`; it rides the
+ *     "Projects" section header's right, exactly like it used to ride
+ *     the first Recents bucket header. While a narrowing filter is
+ *     active, groups auto-expand around their matches and empty groups
+ *     hide.
  *
  * Flags (pinned / archived / group) and renames are persisted server-
  * side (meta.json) through WS actions; we optimistically patch the store
@@ -17,31 +28,33 @@
  * reads) for instant feedback before the server's echo lands.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { ChevronRight, Plus } from "lucide-react";
 import { useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import type { ConvSummary } from "@/lib/session-store";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { useRecentsView } from "@/lib/prefs/recents-view";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { wsRequest } from "@/lib/net/ws-request";
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
-import { parseUserAttachments } from "@/components/chat/messages/user-attachments";
+import {
+  FoldersIcon,
+  type AnimatedNavIconHandle,
+} from "@/components/animated-icons";
 import { ConvMenu } from "./conv-menu";
 import { RecentsFilter } from "./recents-filter";
 import { SectionHeader } from "./section-header";
+import {
+  sidebarNavIconClass,
+  sidebarNavItemClass,
+  sidebarNavLabelClass,
+} from "./nav-classes";
 import styles from "./sidebar.module.css";
 
 import { ConfirmDialog } from "./sessions-list/confirm-dialog";
@@ -49,15 +62,36 @@ import {
   type LegacyConv,
   type SessionWindow,
   wsSend,
-  channelBrand,
-  displayTitle,
   labelFor,
 } from "./sessions-list/helpers";
 
-export function SessionsList() {
+/** One registry project as `projects_list` ships it. `session_ids` is
+ *  alive-filtered server-side (same filter as `session_count`). */
+interface SidebarProject {
+  id: string;
+  name: string;
+  path: string;
+  is_default: boolean;
+  session_count: number;
+  session_ids?: string[];
+  status?: string;
+}
+
+const COLLAPSED_PROJECTS_KEY = "sidebar_collapsed_projects";
+
+function readCollapsedProjects(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_PROJECTS_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { t, locale } = useTranslation();
+  const { t, text, locale } = useTranslation();
   // The sidebar's source of truth is the React store. The runtime-bridge
   // mirrors every window.conversations summary write into it (see
   // conv-store-mirror), so subscribing here re-renders the list the moment
@@ -70,8 +104,97 @@ export function SessionsList() {
   const runningTasks = useSessionStore((s) => s.runningTasks);
   const view = useRecentsView();
 
-  // Collapsed group names (only relevant when grouping is on).
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  /* ---- project registry (grouping key) --------------------------- */
+
+  const [projects, setProjects] = useState<SidebarProject[]>([]);
+  const refreshProjects = useCallback(async (): Promise<boolean> => {
+    const data = await wsRequest<{ projects: SidebarProject[] }>(
+      "list_projects",
+      { session_id: "" },
+      "projects_list",
+    );
+    if (data?.projects) {
+      setProjects(data.projects);
+      return true;
+    }
+    return false;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let tries = 0;
+    // On a fresh page load the WebSocket may not be OPEN yet, so
+    // `wsRequest` resolves null — retry (~6s) until it answers. The same
+    // retry pattern as the topbar ProjectBadge.
+    const attempt = () => {
+      if (cancelled) return;
+      refreshProjects().then((ok) => {
+        if (!ok && !cancelled && tries++ < 20) setTimeout(attempt, 300);
+      });
+    };
+    attempt();
+    const onChanged = () => void refreshProjects();
+    window.addEventListener("project-changed", onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("project-changed", onChanged);
+    };
+  }, [refreshProjects]);
+
+  // Re-join whenever the session SET changes (create / delete — also
+  // what a WS reconnect's list_sessions replay produces): the registry's
+  // reverse index may have gained/lost bindings for those ids.
+  const convIdsKey = Object.keys(conversations).sort().join(",");
+  useEffect(() => {
+    void refreshProjects();
+  }, [convIdsKey, refreshProjects]);
+
+  /* ---- collapse state (persisted per browser) --------------------- */
+
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
+    new Set(),
+  );
+  useEffect(() => setCollapsedProjects(readCollapsedProjects()), []);
+  function writeCollapsedProjects(next: Set<string>) {
+    try {
+      localStorage.setItem(
+        COLLAPSED_PROJECTS_KEY,
+        JSON.stringify(Array.from(next)),
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+  function toggleProjectCollapse(id: string) {
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      writeCollapsedProjects(next);
+      return next;
+    });
+  }
+
+  // Auto-expand the group that owns the ACTIVE session — once per
+  // session switch (the ref guard), so the user can still collapse it
+  // manually afterwards without a projects refetch re-expanding it.
+  const autoExpandedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentId || autoExpandedFor.current === currentId) return;
+    const owner = projects.find((p) =>
+      (p.session_ids || []).includes(currentId),
+    );
+    if (!owner) return; // registry not loaded yet — retry on next answer
+    autoExpandedFor.current = currentId;
+    setCollapsedProjects((prev) => {
+      if (!prev.has(owner.id)) return prev;
+      const next = new Set(prev);
+      next.delete(owner.id);
+      writeCollapsedProjects(next);
+      return next;
+    });
+  }, [currentId, projects]);
+
   // Transient "Link copied" toast.
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,9 +205,28 @@ export function SessionsList() {
   }
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  function switchTo(id: string) {
+  function switchTo(id: string, title: string) {
+    // Focus-or-recreate the session's center tab BEFORE the navigation
+    // guard: when the clicked session IS the current one but its tab
+    // was closed (user parked on a file tab), the early return below
+    // would otherwise leave nothing re-opened. openSessionTab is
+    // focus-or-create, so this is a no-op when the tab already exists.
+    useCenterTabs.getState().openSessionTab(id, title);
     if (id === currentId && pathname === "/s/" + id) return;
     router.push("/s/" + id);
+  }
+
+  // ＋ on a group header: run the EXACT New-chat path the nav item uses
+  // (passed down from Sidebar — it clears any stale pending project),
+  // THEN stash this project for the to-be-created session (same
+  // pending-choice flow as the topbar project picker).
+  function newSessionInProject(projectId: string) {
+    onNewChat();
+    (window as unknown as { _pendingProjectId?: string })._pendingProjectId =
+      projectId;
+    // Same event the project picker fires — the topbar chip re-reads
+    // the pending choice.
+    window.dispatchEvent(new Event("project-changed"));
   }
 
   const [confirm, setConfirm] = useState<{
@@ -162,7 +304,7 @@ export function SessionsList() {
     });
   }
 
-  /* ---- filter / sort / group ------------------------------------ */
+  /* ---- filter / sort --------------------------------------------- */
 
   // `conversations` is the React store map: every write replaces the
   // object (immutable updates), so the component re-renders on any change
@@ -179,7 +321,6 @@ export function SessionsList() {
 
   const visible = (() => {
     let arr = convArr;
-    // All sessions are shown — no filtering of empty/placeholder rows.
     if (view.status === "active") arr = arr.filter((c) => !c.archived);
     else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
     // Last-activity window — updated_at（后端随消息追加维护），老行
@@ -189,10 +330,10 @@ export function SessionsList() {
       const cutoff = nowTs - days * 86400;
       arr = arr.filter((c) => (c.updated_at || c.created_at || 0) >= cutoff);
     }
-    // Project filter — each conv carries a project NAME (home-folder
-    // name for ad-hoc chats), so "All projects" shows everything and a
-    // specific pick narrows to that folder's chats. (Environment is
-    // still UI-only — no per-conversation environment field yet.)
+    // Project filter (from the filter dropdown) — each conv carries a
+    // project NAME (home-folder name for ad-hoc chats), so "All
+    // projects" shows everything and a specific pick narrows to that
+    // folder's chats.
     if (view.project && view.project !== "all") {
       arr = arr.filter((c) => c.project === view.project);
     }
@@ -214,122 +355,169 @@ export function SessionsList() {
     return [...arr].sort(cmp);
   })();
 
-  function toggleGroupCollapse(name: string) {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
+  /* ---- project grouping ------------------------------------------- */
+
+  // Any narrowing filter active → matched-only view: groups auto-expand
+  // around their matches, empty groups hide. (status "all" widens, so it
+  // doesn't count; "archived" narrows.)
+  const filtering =
+    view.status === "archived" ||
+    view.lastActivity !== "all" ||
+    (view.project !== "" && view.project !== "all");
+
+  interface ProjectGroup {
+    key: string; // registry project id
+    name: string;
+    path: string;
+    items: LegacyConv[];
   }
 
-  // No empty-state early return here: an empty list is rendered as a
-  // plain (non-collapsible) section header reading "No conversations
-  // yet" — same font / size / indent as the Recents bucket headers, so
-  // it reads as a peer of Favorite Functions / Recents rather than a
-  // stray hint. (Handled below where `visible.length === 0`.)
+  // Recomputed per render like `visible` — the list is small and the
+  // inputs (visible, projects) change together anyway. Sessions no
+  // project claims come out as `unbound` and render as a plain flat run
+  // under the "Recents" section label (never dressed up as a folder).
+  const { groups, unbound } = (() => {
+    // Join: session id → owning project (first registry claim wins,
+    // mirroring the backend's project_for_session).
+    const owner = new Map<string, string>();
+    for (const p of projects) {
+      for (const sid of p.session_ids || []) {
+        if (!owner.has(sid)) owner.set(sid, p.id);
+      }
+    }
+    const byProject = new Map<string, LegacyConv[]>();
+    const unbound: LegacyConv[] = [];
+    for (const c of visible) {
+      const pid = owner.get(c.id);
+      if (pid) {
+        const arr = byProject.get(pid);
+        if (arr) arr.push(c);
+        else byProject.set(pid, [c]);
+      } else unbound.push(c);
+    }
 
-  const renderRow = (c: LegacyConv) => (
-    <ConvItem
-      key={c.id}
-      conv={c}
-      label={labelFor(c, t("sidebar.untitled"))}
-      active={c.id === currentId}
-      running={!!runningTasks[c.id]}
-      groups={allGroups}
-      onClick={() => switchTo(c.id)}
-      onRename={(title) => renameSession(c.id, title)}
-      onTogglePin={() => setFlags(c.id, { pinned: !c.pinned })}
-      onToggleArchive={() => setFlags(c.id, { archived: !c.archived })}
-      onMoveToGroup={(g) => setFlags(c.id, { group: g })}
-      onCopyLink={() => copyLink(c.id)}
-      onDelete={() => del(c.id)}
-    />
-  );
+    // Most-recent activity across ALL of a project's alive sessions (not
+    // just the filtered view) so ordering is stable while filtering.
+    const activity = (p: SidebarProject): number => {
+      let m = 0;
+      for (const sid of p.session_ids || []) {
+        const c = conversations[sid] as LegacyConv | undefined;
+        if (c) m = Math.max(m, c.updated_at || c.created_at || 0);
+      }
+      return m;
+    };
+    const ordered = [...projects].sort((a, b) => {
+      const d = activity(b) - activity(a);
+      if (d) return d;
+      if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
 
-  // Build the sectioned list. Each section is { key, label, items };
-  // an empty label renders a flat (header-less) run of rows. Mirrors
-  // Claude's rich Recents logic — date buckets by default, Working /
-  // Completed when grouping by state, project paths when grouping by
-  // project.
-  const isWorking = (id: string) => !!runningTasks[id];
-  const sections = buildSections(visible, {
-    groupBy: view.groupBy,
-    sort: view.sort,
-    nowTs,
-    isWorking,
-    labels: {
-      pinned: t("sidebar.pinned"),
-      recents: t("sidebar.recents"),
-      today: t("sidebar.today"),
-      yesterday: t("sidebar.yesterday"),
-      older: t("sidebar.older"),
-      working: t("sidebar.working"),
-      completed: t("sidebar.completed"),
-      ungrouped: t("sidebar.ungrouped"),
-    },
-    dateLocale: locale === "zh" ? "zh-CN" : undefined,
-  });
+    const out: ProjectGroup[] = ordered.map((p) => ({
+      key: p.id,
+      name: p.name,
+      path: p.path,
+      items: byProject.get(p.id) ?? [],
+    }));
+    return {
+      groups: filtering ? out.filter((g) => g.items.length > 0) : out,
+      unbound,
+    };
+  })();
 
-  // The filter button rides on the FIRST section header's right (Claude
-  // layout — no separate "Recents" bar). When the list is flat (title
-  // sort → one header-less section) or empty, a thin right-aligned row
-  // carries it instead so it's always reachable.
-  // Every labelled section is collapsible — date buckets (Today /
-  // Yesterday / …) just as much as State / Project — each with the
-  // small right-side ⌄ toggle. (A flat title-sort run has no header,
-  // so nothing to collapse there.)
-  const collapsible = true;
-  const isEmpty = visible.length === 0;
-  const firstHasHeader = sections.length > 0 && sections[0].label !== "";
-  const body = (
-    <>
-      {isEmpty ? (
-        // Empty list: render the "Recents" slot as a plain section header
-        // that reads "No conversations yet" — identical font / size /
-        // indent to the real Recents bucket headers, with the filter
-        // button on its right just like a populated Recents header. Not
-        // collapsible (nothing to collapse), so no chevron.
-        <SectionHeader
-          name={t("sidebar.no_conversations")}
-          collapsible={false}
-          collapsed={false}
-          onToggle={() => {}}
-          actions={<RecentsFilter />}
-        />
-      ) : !firstHasHeader ? (
-        <div className="flex h-[24px] items-center justify-end px-[8px]">
-          <RecentsFilter />
-        </div>
-      ) : null}
-      {sections.map((sec, i) =>
-        sec.label === "" ? (
-          // Flat run (title sort, no grouping) — no header.
-          <div key={sec.key} className="flex flex-col gap-px">{sec.items.map(renderRow)}</div>
-        ) : (
-          // group/sec → hovering anywhere in the section reveals its
-          // collapse chevron (hidden otherwise).
-          <div key={sec.key} className="group/sec flex flex-col gap-px">
-            <SectionHeader
-              name={sec.label}
-              collapsible={collapsible}
-              collapsed={collapsedGroups.has(sec.key)}
-              onToggle={() => toggleGroupCollapse(sec.key)}
-              actions={i === 0 ? <RecentsFilter /> : undefined}
-            />
-            {(!collapsible || !collapsedGroups.has(sec.key)) &&
-              sec.items.map(renderRow)}
-          </div>
-        ),
-      )}
-    </>
-  );
+  const renderRow = (c: LegacyConv) => {
+    const label = labelFor(c, t("sidebar.untitled"));
+    return (
+      <ConvItem
+        key={c.id}
+        conv={c}
+        label={label}
+        active={c.id === currentId}
+        running={!!runningTasks[c.id]}
+        groups={allGroups}
+        onClick={() => switchTo(c.id, label)}
+        onRename={(title) => renameSession(c.id, title)}
+        onTogglePin={() => setFlags(c.id, { pinned: !c.pinned })}
+        onToggleArchive={() => setFlags(c.id, { archived: !c.archived })}
+        onMoveToGroup={(g) => setFlags(c.id, { group: g })}
+        onCopyLink={() => copyLink(c.id)}
+        onDelete={() => del(c.id)}
+      />
+    );
+  };
+
+  const isEmpty = convArr.length === 0;
 
   return (
     <>
-      {body}
-      {/* "Clear all" only when there are conversations to clear — an
-          empty list shows just the "No conversations yet" header. */}
+      {projects.length === 0 ? (
+        // projects_list hasn't answered yet (the registry always holds at
+        // least the default project) — render a flat run instead of
+        // flashing everything under a wrong header.
+        visible.map(renderRow)
+      ) : (
+        <>
+          {/* Weak section label above the project groups — the exact
+              SectionHeader the Favorite Functions section uses, with the
+              filter dropdown riding its right (its pre-grouping home was
+              the first Recents bucket header — same mechanism). */}
+          <SectionHeader
+            name={text("Projects", "项目")}
+            collapsible={false}
+            collapsed={false}
+            onToggle={() => {}}
+            actions={<RecentsFilter />}
+          />
+
+          {groups.map((g) => {
+            const expanded = filtering ? true : !collapsedProjects.has(g.key);
+            return (
+              <div key={g.key} className="flex flex-col gap-px">
+                <ProjectGroupHeader
+                  name={g.name}
+                  path={g.path}
+                  collapsed={!expanded}
+                  onToggle={() => toggleProjectCollapse(g.key)}
+                  onNewSession={() => newSessionInProject(g.key)}
+                  newSessionTitle={text(
+                    "New session in this project",
+                    "在此项目新建会话",
+                  )}
+                />
+                {expanded && g.items.length > 0 ? (
+                  // Level-2 block: dense 28px rows + the 1px vertical
+                  // guide at x=16px (see .projectKids in the module CSS).
+                  <div className={`${styles.projectKids} flex flex-col gap-px`}>
+                    {g.items.map(renderRow)}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+
+          {/* Unbound sessions — today's plain recents rows under a weak
+              section label, never dressed up as a folder group. */}
+          {unbound.length > 0 ? (
+            <>
+              <SectionHeader
+                name={text("Recents", "最近")}
+                collapsible={false}
+                collapsed={false}
+                onToggle={() => {}}
+              />
+              {unbound.map(renderRow)}
+            </>
+          ) : null}
+        </>
+      )}
+
+      {filtering && groups.length === 0 && unbound.length === 0 ? (
+        <div className="px-[16px] py-[10px] text-[12px] text-[var(--text-muted)]">
+          {text("No matches", "没有匹配的会话")}
+        </div>
+      ) : null}
+
+      {/* "Clear all" only when there are conversations to clear. */}
       {!isEmpty ? (
         <div className={styles.clearAll} onClick={clearAll}>
           {t("sidebar.clear_all")}
@@ -359,124 +547,64 @@ export function SessionsList() {
   );
 }
 
-/* ---- sectioning --------------------------------------------------
- * Turns the filtered+sorted conversation list into labelled sections,
- * mirroring Claude's Recents:
- *   - groupBy "state"   → Working (a task running) / Completed
- *   - groupBy "project" → one section per project path (+ Ungrouped)
- *   - groupBy "none"    → date buckets when sorted by recency
- *                         (Pinned / Today / Yesterday / <date> / Older),
- *                         or a single flat header-less run when sorted
- *                         by title
- * `items` keep the incoming order (already pinned-first + sorted), so
- * date buckets come out most-recent-first via insertion order.
- */
-interface Section {
-  key: string;
-  label: string; // "" → flat, no header
-  items: LegacyConv[];
-}
-interface SectionOpts {
-  groupBy: "none" | "state" | "project" | "flat";
-  sort: "recency" | "created" | "title";
-  nowTs: number;
-  isWorking: (id: string) => boolean;
-  labels: {
-    pinned: string;
-    recents: string;
-    today: string;
-    yesterday: string;
-    older: string;
-    working: string;
-    completed: string;
-    ungrouped: string;
-  };
-  dateLocale?: string;
-}
-
-function _dateBucket(
-  ts: number,
-  nowTs: number,
-  labels: SectionOpts["labels"],
-  dateLocale?: string,
-): { key: string; label: string } {
-  const d = new Date((ts || nowTs) * 1000);
-  const now = new Date(nowTs * 1000);
-  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const diff = Math.round((today - day) / 86_400_000);
-  if (diff <= 0) return { key: "b0_today", label: labels.today };
-  if (diff === 1) return { key: "b1_yesterday", label: labels.yesterday };
-  if (diff <= 30) {
-    const sameYear = d.getFullYear() === now.getFullYear();
-    return {
-      key: "b2_" + day,
-      label: d.toLocaleDateString(dateLocale, {
-        month: "short",
-        day: "numeric",
-        ...(sameYear ? {} : { year: "numeric" }),
-      }),
-    };
-  }
-  return { key: "b9_older", label: labels.older };
-}
-
-function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
-  if (o.groupBy === "state") {
-    const working = visible.filter((c) => o.isWorking(c.id));
-    const done = visible.filter((c) => !o.isWorking(c.id));
-    return [
-      { key: "st_working", label: o.labels.working, items: working },
-      { key: "st_completed", label: o.labels.completed, items: done },
-    ].filter((s) => s.items.length > 0);
-  }
-
-  if (o.groupBy === "project") {
-    const byProject = new Map<string, LegacyConv[]>();
-    const ungrouped: LegacyConv[] = [];
-    for (const c of visible) {
-      if (c.project) {
-        (byProject.get(c.project) ?? byProject.set(c.project, []).get(c.project)!).push(c);
-      } else ungrouped.push(c);
-    }
-    const names = Array.from(byProject.keys()).sort((a, b) => a.localeCompare(b));
-    const out: Section[] = names.map((n) => ({
-      key: "pj_" + n,
-      label: n,
-      items: byProject.get(n)!,
-    }));
-    if (ungrouped.length) {
-      out.push({ key: "pj__ungrouped", label: o.labels.ungrouped, items: ungrouped });
-    }
-    return out;
-  }
-
-  if (o.groupBy === "flat") {
-    // "None" — one flat "Recents" run: a single header, no date sub-
-    // buckets (order follows the sort). Always headed so the list is
-    // never an empty / header-less strip.
-    return [{ key: "flat", label: o.labels.recents, items: visible }];
-  }
-
-  // groupBy "none" → "Date": Pinned (if any) + date buckets; insertion
-  // order within each bucket follows the chosen sort.
-  const pinned = visible.filter((c) => c.pinned);
-  const rest = visible.filter((c) => !c.pinned);
-  const buckets = new Map<string, Section>();
-  for (const c of rest) {
-    // 日期分桶按最后活跃时间："Today" = 今天动过的会话，与 recency
-    // 排序一致（否则今天聊过的老会话会挂在旧日期桶里）。
-    const b = _dateBucket(
-      c.updated_at || c.created_at || 0, o.nowTs, o.labels, o.dateLocale,
-    );
-    if (!buckets.has(b.key)) buckets.set(b.key, { key: b.key, label: b.label, items: [] });
-    buckets.get(b.key)!.items.push(c);
-  }
-  const out: Section[] = [];
-  if (pinned.length) out.push({ key: "pinned", label: o.labels.pinned, items: pinned });
-  const sorted = Array.from(buckets.values()).sort((a, b) => a.key.localeCompare(b.key));
-  out.push(...sorted);
-  return out;
+/* ---- project group header ---------------------------------------
+ * The EXACT nav-row recipe the Functions/Chats links use: `ui-list-item`
+ * box (32px) via sidebarNavItemClass, animated FoldersIcon in the
+ * standard 16px icon slot, normal-weight label — plus this row's two
+ * trailing extras: a hover-revealed ＋ (new session bound to this
+ * project) and a small chevron at the row end that rotates 90° when the
+ * group is open. The project's path lives in the row's title tooltip. */
+function ProjectGroupHeader({
+  name,
+  path,
+  collapsed,
+  onToggle,
+  onNewSession,
+  newSessionTitle,
+}: {
+  name: string;
+  path: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  onNewSession: () => void;
+  newSessionTitle: string;
+}) {
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
+  return (
+    <div
+      className={sidebarNavItemClass + " select-none"}
+      role="button"
+      title={path || undefined}
+      onClick={onToggle}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+    >
+      <span className={sidebarNavIconClass}>
+        <FoldersIcon ref={iconRef} size={20} />
+      </span>
+      <span className={sidebarNavLabelClass}>{name}</span>
+      <button
+        type="button"
+        title={newSessionTitle}
+        aria-label={newSessionTitle}
+        onClick={(e) => {
+          e.stopPropagation();
+          onNewSession();
+        }}
+        className="flex size-[20px] shrink-0 items-center justify-center rounded-[5px]
+          text-text-muted opacity-0 transition-opacity duration-150
+          group-hover:opacity-100 hover:bg-[var(--bg-selected)] hover:text-text-bright"
+      >
+        <Plus size={14} strokeWidth={2} />
+      </button>
+      <ChevronRight
+        size={12}
+        aria-hidden="true"
+        className="shrink-0 text-[var(--text-muted)] transition-transform duration-150"
+        style={{ transform: collapsed ? "none" : "rotate(90deg)" }}
+      />
+    </div>
+  );
 }
 
 /* ---- leading status marker ------------------------------------- */

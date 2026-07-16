@@ -30,7 +30,8 @@
 }
 .right-sidebar[data-view="history"] .right-view[data-view="history"],
 .right-sidebar[data-view="detail"] .right-view[data-view="detail"],
-.right-sidebar[data-view="context"] .right-view[data-view="context"] {
+.right-sidebar[data-view="context"] .right-view[data-view="context"],
+.right-sidebar[data-view="files"] .right-view[data-view="files"] {
   display: flex;
 }
 

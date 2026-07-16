@@ -245,10 +245,10 @@ export interface DetailNode {
 
 const RIGHT_LS_OPEN = "rightSidebarOpen";
 const RIGHT_LS_VIEW = "rightSidebarView";
-const VALID_VIEWS = new Set(["history", "context", "detail"]);
+const VALID_VIEWS = new Set(["history", "context", "detail", "files"]);
 
 function readRightDock(): { open: boolean; view: string } {
-  if (typeof window === "undefined") return { open: false, view: "history" };
+  if (typeof window === "undefined") return { open: false, view: "files" };
   let open = false;
   try {
     const o = localStorage.getItem(RIGHT_LS_OPEN);
@@ -257,13 +257,11 @@ function readRightDock(): { open: boolean; view: string } {
   } catch {
     /* ignore */
   }
-  // Persist history / commits (Context tab) across reload — both have
-  // content that is meaningful as soon as the panel mounts. "detail" is
-  // intentionally excluded: it needs a node selection that doesn't
-  // survive a page reload, so restoring it would land on a blank
-  // "No execution selected" panel. Anything we don't recognise (legacy
-  // value, future tab) collapses back to history.
-  let view = "history";
+  // Persist the chosen view across reload. "detail" needs a node
+  // selection that doesn't survive a reload, but restoring it is
+  // harmless (empty-state panel). Anything we don't recognise (legacy
+  // value, future tab) collapses back to files — the default view.
+  let view = "files";
   try {
     const v = localStorage.getItem(RIGHT_LS_VIEW);
     if (v && VALID_VIEWS.has(v)) view = v;

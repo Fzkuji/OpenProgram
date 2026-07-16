@@ -190,6 +190,12 @@ export function Sidebar() {
   }, []);
 
   function newChat() {
+    // Drop any project stashed by an earlier group-＋ click that never
+    // produced a session — a PLAIN New chat starts unbound (default
+    // project) until the user assigns one. The group ＋ re-stashes its
+    // project AFTER calling this, so its binding survives.
+    delete (window as unknown as { _pendingProjectId?: string })
+      ._pendingProjectId;
     setCurrentConv(null);
     if (pathname !== "/chat") {
       router.push("/chat");
@@ -540,14 +546,15 @@ export function Sidebar() {
       )}
 
       {open && (
-        // No "Recents" wrapper / collapse — the conversation list is a
-        // SINGLE-LEVEL grouped list (date buckets / Working-Completed /
-        // project), so the section headers ARE the top level. The
-        // filter button lives on the first section header inside
-        // SessionsList, right-aligned (Claude's layout).
+        // Browser-model left sidebar: the conversation list is grouped
+        // by project (nav-style group rows + dense session rows), with
+        // the filter dropdown on the "Projects" section header — all
+        // inside SessionsList. The group headers' ＋ buttons run the
+        // same newChat flow as the nav item above (after stashing
+        // window._pendingProjectId).
         <div id="convSection" className="flex flex-col">
           <div id="convList" className="flex flex-col gap-px px-[8px]">
-            <SessionsList />
+            <SessionsList onNewChat={newChat} />
           </div>
         </div>
       )}
