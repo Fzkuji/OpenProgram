@@ -120,7 +120,26 @@ Next 路由 `web/app/(shell)/projects/[id]/page.tsx`，三栏：
 每期独立可发布；v1 单独就兑现核心诉求——接入项目、浏览、管理文件、
 多 tab 查看。
 
-## 7. 暂不做
+## 7. 补充 2026-07-16 —— 统一 tab 模型、run tab
+
+看过原型后定下：
+
+* **一切皆 tab，一个工作区一个项目。** Tab 类型：`session`（聊天）、
+  `file`、以及后续的 `run`（program/workflow 运行）。同一套 Tab 组件
+  与交互；但是**两个 tab 组**而非一条 tab 条——会话组停靠左侧，文件组
+  在中右——聊天和它正在改的文件保持同屏（核心使用回路）。以后把会话
+  tab 拖进另一组即可实现双聊天并排。工作区硬绑单个项目，跨项目混排
+  在设计上就不可能发生。
+* **不设独立工作区路由。** 面板都活在持久的 chat 表面（AppShell）内
+  收放；§3 里的聊天视图解耦重构取消。v2 从"会话下拉"改为"会话 tab 组"。
+* **Run tab / workflow 可视化**（后续阶段）：workflow 保持纯 Python
+  函数（prompt 在 docstring、单一入口），不引入图 DSL。执行图从框架
+  本就记录的事件流**派生**（`webui/_exec_dag.py`、`graph_builder.py`、
+  session DAG 渲染器），run tab 是活视图：哪个节点在跑、哪些完成、
+  点节点看输入输出。与 LangGraph 的刻意对照：先声明再执行 vs
+  记录先行——任意 Python 控制流零埋点自动成图。
+
+## 8. 暂不做
 
 * 不做内嵌终端、不做 git 面板——这些 agent 在聊天里就能干。
 * 不引入 CodeMirror/Monaco；编辑复用 memory 页的 textarea

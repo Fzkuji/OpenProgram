@@ -141,7 +141,33 @@ incrementally from the event stream while the session runs.
 Each phase is independently shippable; v1 alone already delivers the
 core ask — attach a project, browse it, view files in multiple tabs.
 
-## 7. Non-goals (for now)
+## 7. Addendum 2026-07-16 — unified tab model, run tabs
+
+Decided after reviewing the prototype:
+
+* **Everything is a tab, one project per workspace.** Tab kinds:
+  `session` (a chat), `file`, and later `run` (a program/workflow
+  execution). One shared Tab component and interaction set; **two tab
+  groups**, not one strip — sessions dock left, files center-right — so
+  a chat and the file it is editing stay visible side by side (the core
+  loop). Dragging a session tab into the other group can come later for
+  two-chats-side-by-side. The workspace is hard-scoped to a single
+  project; cross-project mixing is intentionally impossible.
+* **No separate workspace route.** The panes live inside the persistent
+  chat surface (AppShell) and slide in/out; the chat-view decoupling
+  refactor from §3 is dropped. v2 becomes "session tab group" instead
+  of a session dropdown.
+* **Run tabs / workflow visualization** (future phase): workflows stay
+  plain Python functions (prompts in docstrings, single entry point) —
+  no graph DSL. The execution graph is *derived* from the event stream
+  the harness already records (`webui/_exec_dag.py`, `graph_builder.py`,
+  session DAG renderer), so a run tab is a live view: which node is
+  running, what finished, click a node for inputs/outputs. This is the
+  deliberate contrast with LangGraph: declare-then-execute vs
+  record-first — arbitrary Python control flow becomes a graph with
+  zero instrumentation.
+
+## 8. Non-goals (for now)
 
 * No embedded terminal, no git panel — the agent does those through chat.
 * No CodeMirror/Monaco dependency; editing reuses the textarea
