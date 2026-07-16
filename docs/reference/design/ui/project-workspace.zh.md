@@ -139,7 +139,31 @@ Next 路由 `web/app/(shell)/projects/[id]/page.tsx`，三栏：
   点节点看输入输出。与 LangGraph 的刻意对照：先声明再执行 vs
   记录先行——任意 Python 控制流零埋点自动成图。
 
-## 8. 暂不做
+## 8. 补充 2026-07-16（后）—— 浏览器模型，定稿形态
+
+两个中间方案（叠加侧面板、全屏工作区模式）都显得杂乱。定稿方案不再
+有"模式"，只有一个心智模型：**应用就是浏览器。**
+
+* **中央 = tab 容器。** 会话 tab 和文件 tab（以后还有 run tab）共用
+  一条浏览器式 tab 条；＋ 打开"新标签页"（新会话 / 跑 agent / 项目
+  设置）。tab 条下一行是**当前 tab 的工具栏**——会话 tab 显示它自己
+  的项目/模型/thinking/权限设置，文件 tab 显示面包屑 + 查看控件。
+  设置跟着 tab 走。会话 tab 是聊天单例之上的书签（切 tab 走既有的
+  会话切换路径），多会话不需要重造聊天引擎。
+* **左侧栏 = 按项目分组的会话。** 项目是分组头（名字 + 淡色路径 +
+  组内新建会话 ＋）；未绑定的会话归尾部"未绑定项目"组。项目/会话
+  切换全在这里。
+* **右侧栏 = 纯文件树。** 不常驻任何别的东西。Context / Viewport
+  （detail）只在读 History DAG 时有意义，所以 History/Context/
+  Executions 收进会话工具栏 🕘 打开的覆盖层；legacy DOM 挂载点和
+  `window.rightDock` shim 在下面保持存活。
+* 没有"工作区模式"：三列布局是唯一布局，永远不需要再开辟第二个内容
+  区——任何新东西都是一个 tab，而不是一个新窗格。
+
+原型：`project-workspace-prototype.html`（v3）。本节取代 §7 的双
+tab 组布局；§7 里 run tab 与单项目 scoping 的决定继续有效。
+
+## 9. 暂不做
 
 * 不做内嵌终端、不做 git 面板——这些 agent 在聊天里就能干。
 * 不引入 CodeMirror/Monaco；编辑复用 memory 页的 textarea

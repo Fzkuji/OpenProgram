@@ -167,7 +167,39 @@ Decided after reviewing the prototype:
   record-first — arbitrary Python control flow becomes a graph with
   zero instrumentation.
 
-## 8. Non-goals (for now)
+## 8. Addendum 2026-07-16 (later) — the browser model, final shape
+
+Two intermediate layouts (stacked side panel; fullscreen workspace mode)
+both read as cluttered. The approved end state drops modes entirely and
+adopts one mental model: **the app is a browser.**
+
+* **Center = tab container.** Session tabs and file tabs (later run
+  tabs) share one browser-style strip; ＋ opens a new-tab page (new
+  session / run agent / project settings). The row under the strip is
+  the *active tab's* toolbar — a session tab shows its own project /
+  model / thinking / permission settings, a file tab shows breadcrumb +
+  view controls. Settings travel with the tab. Session tabs are
+  bookmarks over the singleton chat surface (switching a tab drives the
+  existing session-switch path), so multi-session costs no chat-engine
+  rework.
+* **Left sidebar = sessions grouped by project.** The project is the
+  group header (name + dim path + per-group new-session ＋); unbound
+  sessions fall into a trailing "No project" group. All project/session
+  switching lives here.
+* **Right sidebar = a plain file tree.** Nothing else resident. The
+  Context / Viewport(detail) views only matter when reading the History
+  DAG, so History/Context/Executions retreat into an overlay opened
+  from a 🕘 button in the session toolbar; legacy DOM mounts and
+  `window.rightDock` shims stay alive underneath.
+* No "workspace mode": the three-column layout is the only layout, and
+  a second content region never has to be carved out — anything new
+  becomes a tab, not a pane.
+
+Prototype: `project-workspace-prototype.html` (v3). This supersedes the
+two-tab-group layout from §7; the run-tab and one-project scoping
+decisions there still stand.
+
+## 9. Non-goals (for now)
 
 * No embedded terminal, no git panel — the agent does those through chat.
 * No CodeMirror/Monaco dependency; editing reuses the textarea
