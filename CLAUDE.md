@@ -2,8 +2,10 @@
 
 ## 文档管理规则
 
-`docs/` 是**产品文档站**（http://localhost:18100/docs），按用户问题组织成八个 Tab：
-start / install / capabilities / interfaces / models / integrations / server / reference。
+`docs/` 是**产品文档站**（http://localhost:18100/docs），按用户问题组织成九个 Tab：
+start / install / capabilities / interfaces / models / integrations / server / reference / design。
+design 是虚拟 Tab——没有 docs/design/ 目录，nav.py 的 tab_of() 把 reference/design/ 下的
+工程记录归档路由到它。
 两类文字，去处不同：
 
 1. **产品文档**（写给读者）：落到对应 Tab 目录。每一页因为"用户会问这个问题"而存在，
