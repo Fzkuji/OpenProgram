@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Project Workspace 原型</title>
+<style>
+  :root{
+    --bg:#141416; --bg2:#1c1c1f; --bg3:#232327; --border:#2c2c31;
+    --text:#e8e8ea; --text2:#9b9ba3; --text3:#66666e;
+    --accent:#7aa2f7; --green:#4ec97f; --radius:10px;
+    font-family:-apple-system,"SF Pro","PingFang SC",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-size:13.5px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+
+  /* ── 顶部：原型界面切换 ─────────────────────── */
+  .proto-bar{display:flex;gap:6px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0}
+  .proto-bar b{font-size:12px;color:var(--text3);margin-right:8px;font-weight:500}
+  .proto-btn{padding:5px 14px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:12.5px}
+  .proto-btn.on{background:var(--accent);border-color:var(--accent);color:#0c0c10;font-weight:600}
+  .proto-note{margin-left:auto;font-size:11.5px;color:var(--text3)}
+
+  .screen{flex:1;display:none;min-height:0}
+  .screen.on{display:flex}
+
+  /* ── 界面1：项目列表 ─────────────────────── */
+  #s1{flex-direction:column;padding:40px max(60px,12vw)}
+  #s1 h1{font-size:20px;font-weight:650;margin-bottom:4px}
+  #s1 .sub{color:var(--text2);margin-bottom:24px;font-size:13px}
+  table{width:100%;border-collapse:collapse}
+  thead td{color:var(--text3);font-size:12px;padding:0 10px 10px;border-bottom:1px solid var(--border)}
+  tr.proj td{padding:14px 10px;cursor:pointer}
+  tr.proj:hover{background:var(--bg2)}
+  tr.proj .name{display:flex;align-items:center;gap:10px;font-weight:550}
+  .chev{transition:transform .15s;color:var(--text3);font-size:10px;display:inline-block;width:12px}
+  tr.proj.open .chev{transform:rotate(90deg)}
+  .pill{border:1px solid var(--border);border-radius:999px;padding:3px 12px;font-size:12px;color:var(--text2);display:inline-flex;gap:6px;align-items:center}
+  .rowops{opacity:0;display:flex;gap:14px;color:var(--text3);justify-content:flex-end}
+  tr.proj:hover .rowops{opacity:1}
+  .rowops span:hover{color:var(--text)}
+  tr.sess td{padding:9px 10px 9px 10px;color:var(--text2);cursor:pointer;font-size:13px}
+  tr.sess:hover{background:var(--bg2);color:var(--text)}
+  tr.sess .st{padding-left:44px}
+  tr.sess .go{text-align:right;color:var(--text3)}
+  td.time{color:var(--text3);font-size:12.5px}
+  tr.sess.hide{display:none}
+
+  /* ── 界面2：工作区三栏 ─────────────────────── */
+  #s2{min-width:0}
+  .pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .chat{width:340px;flex-shrink:0;border-right:1px solid var(--border)}
+  .chat-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
+  .sess-pick{display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12.5px}
+  .sess-pick .cv{color:var(--text3);font-size:9px}
+  .plus{margin-left:auto;color:var(--text2);cursor:pointer;border:1px solid var(--border);border-radius:7px;width:26px;height:26px;display:grid;place-items:center}
+  .msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:14px}
+  .m-user{align-self:flex-end;background:var(--bg3);border-radius:14px 14px 4px 14px;padding:9px 13px;max-width:85%;font-size:13px}
+  .m-ai{color:var(--text);font-size:13px;line-height:1.65;max-width:95%}
+  .m-tool{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text2);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;width:fit-content;cursor:pointer}
+  .m-tool:hover{border-color:var(--accent)}
+  .m-tool .fp{color:var(--accent)}
+  .composer{margin:12px;border:1px solid var(--border);border-radius:14px;background:var(--bg2);padding:10px 12px;color:var(--text3);font-size:13px}
+  .composer .crow{display:flex;justify-content:space-between;margin-top:14px;align-items:center;font-size:12px}
+  .send{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#0c0c10;display:grid;place-items:center;font-size:13px}
+
+  .center{flex:1}
+  .tabbar{display:flex;align-items:center;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--border)}
+  .ftab{display:flex;align-items:center;gap:8px;padding:7px 12px;border:1px solid var(--border);border-bottom:none;border-radius:9px 9px 0 0;background:var(--bg2);color:var(--text2);cursor:pointer;font-size:12.5px;max-width:180px}
+  .ftab.on{background:var(--bg3);color:var(--text)}
+  .ftab .x{color:var(--text3);font-size:11px;padding:0 2px}
+  .ftab .x:hover{color:var(--text)}
+  .tab-plus{color:var(--text2);padding:6px 10px;cursor:pointer}
+  .crumb{display:flex;align-items:center;gap:6px;padding:10px 16px;color:var(--text2);font-size:12.5px;border-bottom:1px solid var(--border)}
+  .crumb .sep{color:var(--text3)}
+  .crumb .ops{margin-left:auto;display:flex;gap:10px;align-items:center}
+  .openbtn{border:1px solid var(--border);border-radius:8px;padding:4px 12px;background:var(--bg3);color:var(--text);cursor:pointer;font-size:12px}
+  .viewer{flex:1;overflow:auto;padding:14px 0}
+  .cl{display:flex;gap:0;line-height:1.7;font-size:12.5px}
+  .cl .ln{width:52px;text-align:right;padding-right:18px;color:var(--text3);user-select:none;flex-shrink:0}
+  .k{color:#bb9af7}.s{color:#9ece6a}.c{color:#565f89}.f{color:#7aa2f7}
+  .md-view{padding:10px 28px;max-width:720px;line-height:1.7}
+  .md-view h2{font-size:17px;margin:10px 0 8px}
+  .md-view p{color:var(--text2);margin:8px 0}
+
+  .tree{width:280px;flex-shrink:0;border-left:1px solid var(--border);padding:10px}
+  .filter{display:flex;gap:8px;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text3);font-size:12.5px;margin-bottom:8px}
+  .tnode{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;cursor:pointer;color:var(--text2);font-size:12.5px}
+  .tnode:hover{background:var(--bg2)}
+  .tnode.on{background:var(--bg3);color:var(--text)}
+  .tnode .tc{width:10px;font-size:9px;color:var(--text3);transition:transform .15s}
+  .tnode.open .tc{transform:rotate(90deg)}
+  .tkids{margin-left:16px;display:none}
+  .tkids.show{display:block}
+  .badge-dim{font-size:10.5px;color:var(--text3);margin-left:auto}
+
+  /* ── 界面3：聊天 + 概览面板 ─────────────────────── */
+  #s3 .chat{flex:1;border-right:none;width:auto}
+  #s3 .msgs{padding:24px max(40px,8vw)}
+  .ovpanel{width:320px;flex-shrink:0;border-left:1px solid var(--border);padding:18px 16px;overflow-y:auto}
+  .ovh{display:flex;align-items:center;justify-content:space-between;color:var(--text2);font-size:13px;font-weight:600;margin:14px 0 10px}
+  .ovh:first-child{margin-top:0}
+  .ovh .pl{color:var(--text3);cursor:pointer;font-weight:400}
+  .ovitem{display:flex;gap:10px;align-items:center;padding:7px 8px;border-radius:8px;cursor:pointer;color:var(--text);font-size:13px}
+  .ovitem:hover{background:var(--bg2)}
+  .ovitem .ic{width:18px;text-align:center;flex-shrink:0}
+  .ovitem .meta{margin-left:auto;color:var(--text3);font-size:11px}
+  .more{color:var(--text3);font-size:12px;padding:6px 8px;cursor:pointer}
+  .subrow{display:flex;gap:6px;flex-wrap:wrap;padding:2px 8px}
+  .subchip{border:1px solid var(--border);border-radius:999px;padding:4px 11px;font-size:12px;color:var(--text2);display:flex;gap:6px;align-items:center}
+  .dotg{width:7px;height:7px;border-radius:50%;background:var(--green)}
+  .dotb{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.2s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  .hint{position:fixed;bottom:14px;right:16px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:11.5px;color:var(--text3)}
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <b>原型</b>
+  <button class="proto-btn on" data-s="s1">① /projects 项目列表</button>
+  <button class="proto-btn" data-s="s2">② 项目工作区（三栏）</button>
+  <button class="proto-btn" data-s="s3">③ /chat 概览面板</button>
+  <span class="proto-note">静态原型 · 树/tab/展开都可以点</span>
+</div>
+
+<!-- ════ 界面1：项目列表 ════ -->
+<div class="screen on" id="s1">
+  <h1>Projects</h1>
+  <div class="sub">项目行点击展开会话 · 点会话进工作区</div>
+  <table>
+    <thead><tr><td style="width:45%">Name</td><td>Sources</td><td style="width:110px">Updated ▾</td><td style="width:110px"></td></tr></thead>
+    <tbody id="ptable">
+      <tr class="proj open" data-p="a">
+        <td><span class="name"><span class="chev">▶</span>📁 OpenProgram</span></td>
+        <td><span class="pill">~/Documents/LLM Agent Harness/OpenProgram</span></td>
+        <td class="time">14m</td>
+        <td><div class="rowops" title="打开工作区/新会话/更多"><span>⤢</span><span>✎</span><span>⋯</span></div></td>
+      </tr>
+      <tr class="sess" data-p="a"><td class="st">proxy 重构与测试修复</td><td></td><td class="time">14m</td><td class="go">›</td></tr>
+      <tr class="sess" data-p="a"><td class="st">docs 站样式升级</td><td></td><td class="time">2h</td><td class="go">›</td></tr>
+      <tr class="sess" data-p="a"><td class="st">Design tab 与生成参考页</td><td></td><td class="time">1d</td><td class="go">›</td></tr>
+      <tr class="proj" data-p="b">
+        <td><span class="name"><span class="chev">▶</span>📁 NativeMem</span></td>
+        <td><span class="pill">~/Documents/NativeMem</span></td>
+        <td class="time">3h</td>
+        <td><div class="rowops"><span>⤢</span><span>✎</span><span>⋯</span></div></td>
+      </tr>
+      <tr class="sess hide" data-p="b"><td class="st">v8 双视图评测</td><td></td><td class="time">3h</td><td class="go">›</td></tr>
+      <tr class="sess hide" data-p="b"><td class="st">SUMMARY_PAGE 消融</td><td></td><td class="time">2d</td><td class="go">›</td></tr>
+      <tr class="proj" data-p="c">
+        <td><span class="name"><span class="chev">▶</span>📁 default</span></td>
+        <td><span class="pill">~/.openprogram</span></td>
+        <td class="time">5d</td>
+        <td><div class="rowops"><span>⤢</span><span>✎</span><span>⋯</span></div></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ════ 界面2：工作区 ════ -->
+<div class="screen" id="s2">
+  <!-- 左：聊天 -->
+  <div class="pane chat">
+    <div class="chat-head">
+      <div class="sess-pick">📁 OpenProgram · proxy 重构 <span class="cv">▼</span></div>
+      <div class="plus" title="新会话">＋</div>
+    </div>
+    <div class="msgs">
+      <div class="m-user">把 socksio 的问题修一下，顺便整理 proxy 设计</div>
+      <div class="m-ai">根因是 ALL_PROXY=socks5 时 httpx 在构造客户端就要求 socksio。我把依赖收进 <span class="mono" style="color:var(--accent)">httpx[socks]</span>，并统一了代理解析层。</div>
+      <div class="m-tool" data-open="http_proxy.py">✏️ Edit <span class="fp mono">providers/utils/http_proxy.py</span></div>
+      <div class="m-tool" data-open="network-proxy.md">📄 Write <span class="fp mono">design/providers/network-proxy.md</span></div>
+      <div class="m-ai">改完了，测试 1594 全过。← 点上面的文件路径，会在中间打开对应 tab。</div>
+    </div>
+    <div class="composer">Ask for follow-up changes…
+      <div class="crow"><span>＋ &nbsp;🖐 Ask for approval</span><span style="display:flex;gap:10px;align-items:center"><span style="color:var(--text2)">⚡ frontier</span><span class="send">↑</span></span></div>
+    </div>
+  </div>
+
+  <!-- 中：tabs + 查看器 -->
+  <div class="pane center">
+    <div class="tabbar" id="tabbar"></div>
+    <div class="crumb"><span id="crumb-path" class="mono">OpenProgram › …</span>
+      <span class="ops"><span style="color:var(--text3)">⋯</span><button class="openbtn">Open ▾</button></span>
+    </div>
+    <div class="viewer" id="viewer"></div>
+  </div>
+
+  <!-- 右：文件树 -->
+  <div class="pane tree">
+    <div class="filter">🔍 Filter files…</div>
+    <div id="ftree"></div>
+  </div>
+</div>
+
+<!-- ════ 界面3：聊天+概览 ════ -->
+<div class="screen" id="s3">
+  <div class="pane chat">
+    <div class="chat-head"><div class="sess-pick">📁 OpenProgram · proxy 重构 <span class="cv">▼</span></div></div>
+    <div class="msgs">
+      <div class="m-user">把整个 proxy 重构一下，更新设计文档</div>
+      <div class="m-ai">统一走 <span class="mono">get_proxy_mounts()</span>：环境变量语义交给 httpx，loopback 永不代理，设计文档已落 design 归档。右侧 Overview 面板列出了本会话的全部产出、子 agent 和来源——点文件直接跳进工作区。</div>
+    </div>
+    <div class="composer">Ask for follow-up changes…
+      <div class="crow"><span>＋</span><span class="send">↑</span></div>
+    </div>
+  </div>
+  <div class="ovpanel">
+    <div class="ovh">Outputs <span class="pl">＋</span></div>
+    <div class="ovitem"><span class="ic">📄</span> network-proxy.md <span class="meta">write</span></div>
+    <div class="ovitem"><span class="ic">🐍</span> http_proxy.py <span class="meta">edit ×3</span></div>
+    <div class="ovitem"><span class="ic">🐍</span> http_client.py <span class="meta">edit</span></div>
+    <div class="ovitem"><span class="ic">🧪</span> test_http_proxy.py <span class="meta">write</span></div>
+    <div class="more">Show 4 more</div>
+    <div class="ovh">Subagents</div>
+    <div class="subrow">
+      <span class="subchip"><span class="dotg"></span>verify proxy</span>
+      <span class="subchip"><span class="dotg"></span>docs sweep</span>
+      <span class="subchip"><span class="dotb"></span>test fixer</span>
+      <span class="subchip" style="color:var(--text3)">44 done</span>
+    </div>
+    <div class="ovh">Sources</div>
+    <div class="ovitem"><span class="ic">🔗</span> docs.openclaw.ai/cli/proxy <span class="meta">fetch</span></div>
+    <div class="ovitem"><span class="ic">📖</span> httpx/_utils.py <span class="meta">read</span></div>
+    <div class="ovitem"><span class="ic">📖</span> rescue.py <span class="meta">read</span></div>
+    <div class="more">View all</div>
+  </div>
+</div>
+
+<div class="hint">↑ 顶部切换三个界面</div>
+
+<script>
+// ── 界面切换 ──
+document.querySelectorAll('.proto-btn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.proto-btn').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.screen').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); document.getElementById(b.dataset.s).classList.add('on');
+});
+
+// ── 界面1：展开/收起 + 会话跳工作区 ──
+document.querySelectorAll('tr.proj').forEach(r=>r.onclick=()=>{
+  r.classList.toggle('open');
+  document.querySelectorAll(`tr.sess[data-p="${r.dataset.p}"]`)
+    .forEach(s=>s.classList.toggle('hide',!r.classList.contains('open')));
+});
+document.querySelectorAll('tr.sess').forEach(r=>r.onclick=()=>document.querySelector('[data-s="s2"]').click());
+
+// ── 界面2：文件树 + tabs ──
+const FILES = {
+  "http_proxy.py":{path:"providers › utils › http_proxy.py",kind:"code",lines:[
+    ['<span class="c"># Unified proxy resolution — env semantics live in httpx.</span>'],
+    ['<span class="k">from</span> httpx._utils <span class="k">import</span> get_environment_proxies'],
+    [''],
+    ['_LOOPBACK_BYPASS = {<span class="s">"all://localhost"</span>: <span class="k">None</span>, <span class="s">"all://127.0.0.1"</span>: <span class="k">None</span>}'],
+    [''],
+    ['<span class="k">def</span> <span class="f">get_proxy_mounts</span>():'],
+    ['    override = os.environ.get(<span class="s">"OPENPROGRAM_PROXY_URL"</span>)'],
+    ['    env_map = get_environment_proxies()'],
+    ['    <span class="k">if</span> override:'],
+    ['        <span class="k">return</span> {**_LOOPBACK_BYPASS, <span class="s">"all://"</span>: override}'],
+    ['    <span class="k">return</span> {**_LOOPBACK_BYPASS, **env_map} <span class="k">or None</span>'],
+  ]},
+  "network-proxy.md":{path:"design › providers › network-proxy.md",kind:"md",html:
+    '<h2>Network proxy — unified design</h2><p>Resolution order: OPENPROGRAM_PROXY_URL override → httpx environment semantics (ALL_PROXY / NO_PROXY, lowercase precedence) → built-in loopback bypass.</p><p>Invariant: never reimplement proxy semantics; always go through <code>get_proxy_mounts()</code>.</p>'},
+  ".bashrc":{path:"~ › .bashrc",kind:"code",lines:[['<span class="k">export</span> PATH=~/.npm-global/bin:$PATH'],['']]},
+  "README.md":{path:"OpenProgram › README.md",kind:"md",html:'<h2>OpenProgram</h2><p>Agentic programming harness — DAG context, agentic workflow, event infrastructure.</p>'},
+  "cli.py":{path:"openprogram › cli.py",kind:"code",lines:[
+    ['<span class="k">def</span> <span class="f">build_parser</span>() -> argparse.ArgumentParser:'],
+    ['    <span class="c"># extracted from main() so docs generation can walk the tree</span>'],
+    ['    ...'],
+  ]},
+};
+let tabs=["http_proxy.py"], active="http_proxy.py";
+function renderTabs(){
+  const bar=document.getElementById('tabbar'); bar.innerHTML='';
+  tabs.forEach(n=>{
+    const t=document.createElement('div'); t.className='ftab'+(n===active?' on':'');
+    t.innerHTML=`📄 <span>${n}</span> <span class="x">✕</span>`;
+    t.onclick=e=>{ if(e.target.className==='x'){tabs=tabs.filter(x=>x!==n); if(active===n)active=tabs[0]; }
+      else active=n; renderTabs(); };
+    bar.appendChild(t);
+  });
+  const p=document.createElement('div'); p.className='tab-plus'; p.textContent='＋'; bar.appendChild(p);
+  renderViewer();
+}
+function renderViewer(){
+  const v=document.getElementById('viewer'), f=FILES[active];
+  document.getElementById('crumb-path').textContent = f? f.path.replaceAll('›','›') : '—';
+  if(!f){v.innerHTML='<div class="md-view"><p>没有打开的文件 — 从右侧文件树选一个。</p></div>';return;}
+  if(f.kind==='md'){ v.innerHTML=`<div class="md-view">${f.html}</div>`; return; }
+  v.innerHTML=f.lines.map((l,i)=>`<div class="cl mono"><span class="ln">${i+1}</span><span>${l[0]||'&nbsp;'}</span></div>`).join('');
+}
+function openFile(n){ if(!FILES[n])return; if(!tabs.includes(n))tabs.push(n); active=n; renderTabs(); }
+document.querySelectorAll('.m-tool').forEach(t=>t.onclick=()=>openFile(t.dataset.open));
+
+// 文件树
+const TREE=[
+  {n:"openprogram",d:1,kids:[{n:"cli.py"},{n:"providers",d:1,kids:[{n:"utils",d:1,kids:[{n:"http_proxy.py"},{n:"http_client.py",dim:1}]}]}]},
+  {n:"docs",d:1,kids:[{n:"reference",d:1,kids:[{n:"network-proxy.md"}]}]},
+  {n:"web",d:1,kids:[{n:"components",d:1,kids:[]}]},
+  {n:"tests",d:1,kids:[{n:"test_http_proxy.py",dim:1}]},
+  {n:".gitignore",dim:1},{n:"README.md"},{n:"pyproject.toml",dim:1},
+];
+function buildTree(nodes,host){
+  nodes.forEach(node=>{
+    const el=document.createElement('div'); el.className='tnode'+(node.d?'':' leaf');
+    el.innerHTML=(node.d?'<span class="tc">▶</span>':'<span class="tc"></span>')+(node.d?'📁':'📄')+` <span${node.dim?' style="color:var(--text3)"':''}>${node.n}</span>`;
+    host.appendChild(el);
+    if(node.d){
+      const kids=document.createElement('div'); kids.className='tkids'; host.appendChild(kids);
+      buildTree(node.kids||[],kids);
+      el.onclick=()=>{el.classList.toggle('open');kids.classList.toggle('show');};
+    } else {
+      el.onclick=()=>{document.querySelectorAll('.tnode').forEach(x=>x.classList.remove('on'));el.classList.add('on');openFile(node.n);};
+    }
+  });
+}
+buildTree(TREE,document.getElementById('ftree'));
+// 默认展开到 http_proxy.py
+document.querySelectorAll('.tnode').forEach(el=>{
+  const t=el.textContent.trim();
+  if(['openprogram','providers','utils','docs','reference'].some(x=>t.includes(x)&&el.querySelector('.tc').textContent))
+    el.click&&el.classList.contains('leaf')===false&&el.click();
+});
+renderTabs();
+</script>
+</body>
+</html>
