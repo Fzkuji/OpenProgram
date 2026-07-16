@@ -14,6 +14,10 @@ design 是虚拟 Tab——没有 docs/design/ 目录，nav.py 的 tab_of() 把 r
    新页要在 `tools/docs_site/nav.py` 的 `PAGE_ORDER` 里登记侧栏顺序。
 2. **工程记录**（设计稿、方案对比、实施计划、研究笔记，写给开发者自己）：
    追加到 `docs/reference/design/` 归档，按子系统放，只增不改。不要把它们写进产品 Tab。
+3. **生成参考页**（`docs/reference/cli/`、`config-keys.md`、`provider-registry.md`）：
+   构建时由 `tools/docs_site/generate_reference.py` 从代码（argparse 树、
+   config_schema.SETTINGS、provider.json）重新生成，已 gitignore，禁止手改——
+   要改内容就改代码里的 help/说明文字。
 
 双语约定：`xxx.md` 是**英文默认版**（站点主体，必须 100% 英文，不掺任何中文），
 `xxx.zh.md` 是中文对照版（语言切换按钮跳转）。英文版为准；改内容先改英文版，再同步中文版。

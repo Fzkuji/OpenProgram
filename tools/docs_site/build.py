@@ -388,6 +388,13 @@ def render_nav(sections, current_out: Path, base: str) -> str:
 # ── main build ──────────────────────────────────────────────────────────────
 
 def build() -> int:
+    # Regenerate the code-derived reference pages first (CLI / config keys /
+    # provider registry) so discover() picks them up. Idempotent writes —
+    # unchanged content never touches mtimes, so the worker's mtime-based
+    # auto-rebuild can't loop on the generator's own output.
+    from .generate_reference import generate_all
+    generate_all()
+
     # Build into _site.tmp, then swap it in with two renames. The worker
     # rebuilds in a background thread while still serving _site; without the
     # swap, readers would see a half-deleted tree for the ~10s a build takes.

@@ -48,6 +48,7 @@ DIR_TITLES: dict[str, tuple[str, str]] = {  # rel dir -> (English, 中文)
     "capabilities/agentic-programming/writing-functions": ("Writing functions", "编写函数"),
     "capabilities/agentic-programming/choosing-the-next-step": ("Choosing the next step", "选择下一步"),
     "reference/design": ("Overview", "概览"),
+    "reference/cli": ("CLI commands", "CLI 命令"),
 }
 
 
@@ -259,7 +260,9 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/API.md", "reference/api/runtime.md",
             "reference/api/providers.md", "reference/api/agentic-function.md"]),
         ("CLI and configuration", "CLI 与配置", [
-            "reference/cli.md", "reference/config.md"]),
+            "reference/cli.md", "reference/config.md",
+            # generated from code at build time (generate_reference.py):
+            "reference/config-keys.md", "reference/provider-registry.md"]),
         ("Notes", "笔记", ["reference/claude-code-compaction.md"]),
     ],
 }

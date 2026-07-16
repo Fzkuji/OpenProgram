@@ -86,3 +86,8 @@ openprogram/providers/_catalog/fetched/
 .superpowers/
 docs/_site/
 merge-x/
+
+# Generated reference pages (rebuilt by tools/docs_site/generate_reference.py)
+docs/reference/cli/
+docs/reference/config-keys.md
+docs/reference/provider-registry.md

@@ -2,6 +2,12 @@
 
 A quick reference for every `openprogram` subcommand. Each command has its own help via `openprogram <command> -h`; subcommand verbs nest one level deeper, e.g. `openprogram logs tail -h`.
 
+> [!NOTE]
+> The **CLI commands** section in the sidebar holds one generated page per
+> command — full flag tables, rebuilt from the argument parser on every
+> docs build, so they can never drift from the code. This page is the
+> curated overview.
+
 ## Global usage
 
 ```bash

@@ -262,8 +262,12 @@ def _choose_surface() -> str:
             return "tui"
 
 
-def main():
-    _ensure_utf8_stdio()
+def build_parser() -> argparse.ArgumentParser:
+    """The full ``openprogram`` argument parser.
+
+    Separate from ``main()`` so tools (docs reference generator, tests)
+    can walk the command tree without running the CLI.
+    """
     parser = argparse.ArgumentParser(
         prog="openprogram",
         description="OpenProgram — build, run, and chat with agentic programs.",
@@ -877,6 +881,13 @@ def main():
              "search / tts / channels / backend) jumps to that section; "
              "omit for the full first-run wizard.",
     )
+
+    return parser
+
+
+def main():
+    _ensure_utf8_stdio()
+    parser = build_parser()
 
     # ``openprogram help`` → ``openprogram --help`` (bare ``help`` isn't a
     # subcommand; users type it anyway). Only when it's the first token, so
