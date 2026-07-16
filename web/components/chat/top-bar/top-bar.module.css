@@ -35,23 +35,3 @@
   gap: 8px;
 }
 
-/* Icon-only toggle in the right group (files panel). `.menu-btn` is
-   mobile-only (display:none on desktop), so this gets its own class. */
-.iconToggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  padding: 0;
-}
-.iconToggle:hover { color: var(--text-bright); }
-.iconToggleActive {
-  color: var(--text-bright);
-  background: var(--bg-tertiary);
-}

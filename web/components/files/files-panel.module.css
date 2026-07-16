@@ -6,8 +6,8 @@
 
 .panel {
   order: 50;
-  width: 55vw;
-  min-width: 520px;
+  width: 48vw;
+  min-width: 480px;
   height: 100%;
   display: flex;
   flex-shrink: 0;
@@ -30,7 +30,10 @@
   align-items: stretch;
   overflow-x: auto;
   flex-shrink: 0;
-  min-height: 34px;
+  /* 48px = chat topbar row height; the bottom border of both rows
+     lines up into one continuous seam across chat + files panel. */
+  height: 48px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
   scrollbar-width: thin;
@@ -231,7 +234,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 0 10px;
+  /* 与 .tabStrip / chat topbar 同一 48px 行高，三段顶缝连成一条线 */
+  height: 48px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }

@@ -7,6 +7,7 @@ import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { FilesPanel } from "./files/files-panel";
+import { useFilesPanel } from "@/lib/state/files-panel-store";
 import { ToastHost } from "./ui/toast-host";
 import { Composer } from "./chat/composer";
 import { TopBar } from "./chat/top-bar";
@@ -411,6 +412,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     direction: -1,
     minWidth: 200,
   });
+  useColResize({
+    handleId: "filesResize",
+    targetId: "filesPanel",
+    direction: -1,
+    minWidth: 480,
+  });
+  const filesOpen = useFilesPanel((s) => s.open);
 
   const showChat = isChatRoute(pathname);
   return (
@@ -428,8 +436,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {!showChat && children}
       {/* In-chat project files panel — same persistent-surface pattern
          as the chat shell / right sidebar. Renders null while its
-         store says closed, so closed chat looks exactly as before. */}
+         store says closed, so closed chat looks exactly as before.
+         The resize handle stays mounted (display:none while closed) so
+         useColResize's one-shot mousedown binding always finds it;
+         order 49 slots it just left of the panel's order 50. */}
       <div style={{ display: showChat ? "contents" : "none" }}>
+        <div
+          className="col-resize"
+          id="filesResize"
+          style={{ order: 49, display: filesOpen ? undefined : "none" }}
+        ></div>
         <FilesPanel />
       </div>
       {/* Right sidebar — persistent across conversations. Hidden (not

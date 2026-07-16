@@ -22,14 +22,12 @@ import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,
-  FolderOpenIcon,
   GitBranchIcon,
   MessageCircleIcon,
   MonitorIcon,
   PanelLeftOpenIcon,
   TerminalIcon,
 } from "@/components/animated-icons";
-import { useFilesPanel } from "@/lib/state/files-panel-store";
 
 import {
   Popover,
@@ -141,7 +139,6 @@ export function TopBar() {
       </div>
 
       <div className={`topbar-right ${styles.right}`}>
-        <FilesToggleButton />
         <PermissionBadge />
       </div>
     </div>
@@ -149,29 +146,6 @@ export function TopBar() {
 }
 
 /* ---- Sub-components --------------------------------------------- */
-
-/** Folder button toggling the in-chat project files panel. */
-function FilesToggleButton() {
-  const { text } = useTranslation();
-  const iconRef = useRef<AnimatedNavIconHandle>(null);
-  const open = useFilesPanel((s) => s.open);
-  const toggleOpen = useFilesPanel((s) => s.toggleOpen);
-  return (
-    <HoverTip label={text("Project files", "项目文件")}>
-      <button
-        type="button"
-        className={`${styles.iconToggle} ${open ? styles.iconToggleActive : ""}`}
-        aria-label={text("Toggle project files panel", "切换项目文件面板")}
-        aria-pressed={open}
-        onClick={toggleOpen}
-        onMouseEnter={() => iconRef.current?.startAnimation?.()}
-        onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-      >
-        <FolderOpenIcon ref={iconRef} size={16} />
-      </button>
-    </HoverTip>
-  );
-}
 
 function HamburgerButton() {
   const { t } = useTranslation();

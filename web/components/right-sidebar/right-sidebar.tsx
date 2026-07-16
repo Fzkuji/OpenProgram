@@ -44,10 +44,12 @@ import {
   ActivityIcon,
   AlignLeftIcon,
   type AnimatedNavIconHandle,
+  FolderOpenIcon,
   GitGraphIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
 } from "../animated-icons";
+import { useFilesPanel } from "@/lib/state/files-panel-store";
 
 // View IDs that round-trip through the `data-view` attribute. Matches
 // the legacy template exactly: "history" picks `<div data-view="history">`,
@@ -65,7 +67,7 @@ const RIGHT_W_MAX = 720;
 const RIGHT_W_DEFAULT = 288;
 
 export function RightSidebar() {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
   const view = useSessionStore((s) => s.rightDock.view);
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
@@ -78,6 +80,11 @@ export function RightSidebar() {
   const historyIconRef = useRef<AnimatedNavIconHandle>(null);
   const contextIconRef = useRef<AnimatedNavIconHandle>(null);
   const detailIconRef = useRef<AnimatedNavIconHandle>(null);
+  const filesIconRef = useRef<AnimatedNavIconHandle>(null);
+  // Files 面板不是 rightDock 的一个 view——它是独立的中栏面板，
+  // 这里只挂它的开关，与另外三个 view 按钮共用一套导航行样式。
+  const filesOpen = useFilesPanel((s) => s.open);
+  const toggleFiles = useFilesPanel((s) => s.toggleOpen);
 
   const onResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -328,6 +335,23 @@ export function RightSidebar() {
             <ActivityIcon ref={detailIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{t("right.executions")}</span>
+        </div>
+        <div
+          className={
+            sidebarNavItemClass + " right-nav-item" +
+            (filesOpen ? " " + sidebarNavItemActiveClass : "")
+          }
+          onClick={toggleFiles}
+          onMouseEnter={() => filesIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => filesIconRef.current?.stopAnimation?.()}
+          role="button"
+          aria-pressed={filesOpen}
+          title={text("Project files", "项目文件")}
+        >
+          <span className={sidebarNavIconClass}>
+            <FolderOpenIcon ref={filesIconRef} size={20} />
+          </span>
+          <span className={sidebarNavLabelClass}>{text("Files", "文件")}</span>
         </div>
       </div>
 
