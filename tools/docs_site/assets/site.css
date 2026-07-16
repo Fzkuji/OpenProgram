@@ -417,9 +417,3 @@ article:has(.viz-frame) { max-width: none; }
   text-transform: uppercase; color: var(--tx-faint);
   padding: 0 9px; margin-bottom: 4px;
 }
-a.nav-back {
-  display: block; font-size: 12.5px; color: var(--tx-soft);
-  padding: 4px 9px; margin-bottom: 4px;
-}
-a.nav-back::before { content: "← "; }
-a.nav-back:hover { color: var(--acc); text-decoration: none; }

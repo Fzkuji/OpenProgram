@@ -447,19 +447,13 @@ def _build_into_out_root() -> int:
     rendered = 0
 
     # ordered sequence (for prev/next) + per-page section chain (breadcrumbs),
-    # tab by tab so reading order follows the navbar; archive sections follow
-    # the product sections of their tab.
+    # tab by tab so reading order follows the navbar.
     ordered = []
     tab_key_of: dict[Path, str] = {}
-    in_archive: set[Path] = set()
     for tab in tabs:
         for pg, chain in flatten_pages(tab.sections):
             ordered.append((pg, [(tab.title, tab.title_zh)] + chain))
             tab_key_of[pg.out] = tab.key
-        for pg, chain in flatten_pages(tab.archive_sections):
-            ordered.append((pg, [(tab.title, tab.title_zh)] + chain))
-            tab_key_of[pg.out] = tab.key
-            in_archive.add(pg.out)
     tab_by_key = {t.key: t for t in tabs}
     seq = [pg for pg, _chain in ordered]
     chain_of = {pg.out: chain for pg, chain in ordered}
@@ -494,15 +488,7 @@ def _build_into_out_root() -> int:
                 toc = extract_toc(body)
 
         tab = tab_by_key[tab_key_of[p.out]]
-        # Inside the design-notes archive the sidebar shows the archive's own
-        # sections (with a way back); everywhere else, the tab's product pages.
-        if p.out in in_archive:
-            nav_html = render_nav(tab.archive_sections, p.out, base)
-            nav_html = (f'<a class="nav-back" href="{base}reference/README.html">'
-                        f'<span data-title-zh="返回参考">Back to Reference</span></a>\n'
-                        + nav_html)
-        else:
-            nav_html = render_nav(tab.sections, p.out, base)
+        nav_html = render_nav(tab.sections, p.out, base)
         tabbar_html = render_tabbar(tabs, tab.key, base)
 
         # breadcrumb + prev/next + last-updated

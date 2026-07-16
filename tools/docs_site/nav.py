@@ -26,6 +26,10 @@ TABS: dict[str, tuple[str, str]] = {  # dir -> (English label, 中文 label)
     "integrations": ("Integrations", "集成"),
     "server":       ("Server & Ops", "服务与运维"),
     "reference":    ("Reference", "参考"),
+    # Virtual tab: no docs/design/ directory — pages under reference/design/
+    # (the engineering-notes archive) are routed here by tab_of(), so the
+    # archive gets a first-class navbar tab without moving 130+ file pairs.
+    "design":       ("Design", "设计"),
 }
 # Loose files directly under docs/ belong to a tab too.
 ROOT_PAGE_TAB = {"README.md": "start"}
@@ -43,6 +47,7 @@ ROOT_PAGE_GROUPS: dict[str, tuple[str, str]] = {
 DIR_TITLES: dict[str, tuple[str, str]] = {  # rel dir -> (English, 中文)
     "capabilities/agentic-programming/writing-functions": ("Writing functions", "编写函数"),
     "capabilities/agentic-programming/choosing-the-next-step": ("Choosing the next step", "选择下一步"),
+    "reference/design": ("Overview", "概览"),
 }
 
 
@@ -176,12 +181,14 @@ class Tab:
     key: str            # top-level dir name ("start", "models", …)
     title: str          # English (default) label
     title_zh: str
-    sections: list      # list[Section] — the tab's product sidebar
-    archive_sections: list  # list[Section] — reference tab only: design notes
+    sections: list      # list[Section] — the tab's sidebar
     landing: Path       # out path the navbar tab links to
 
 
 def tab_of(p: Page) -> str:
+    rel = str(p.rel).replace("\\", "/")
+    if rel.startswith(ARCHIVE_PREFIX):
+        return "design"
     parts = p.rel.parts
     if len(parts) == 1:
         return ROOT_PAGE_TAB.get(parts[0], FALLBACK_TAB)
@@ -323,8 +330,7 @@ def build_tabs(docs_root: Path, pages: list[Page]) -> list[Tab]:
             continue
         rel_str = lambda p: str(p.rel).replace("\\", "/")
         by_rel = {rel_str(p): p for p in tab_pages}
-        archive = [p for p in tab_pages if rel_str(p).startswith(ARCHIVE_PREFIX)]
-        placed: set[str] = set(rel_str(p) for p in archive)
+        placed: set[str] = set()
 
         sections: list[Section] = []
         for sec_en, sec_zh, paths in TAB_SECTIONS.get(key, []):
@@ -334,40 +340,16 @@ def build_tabs(docs_root: Path, pages: list[Page]) -> list[Tab]:
                 sections.append(Section(title=sec_en, title_zh=sec_zh, pages=sec_pages))
 
         # Anything unlisted lands in an automatic section named after its
-        # directory, so new files never vanish from the sidebar.
+        # directory, so new files never vanish from the sidebar. The design
+        # tab is fully automatic — one section per archive subsystem dir.
         leftovers = [p for p in tab_pages if rel_str(p) not in placed]
-        sections.extend(_auto_sections(docs_root, leftovers, base_dir=Path(key)))
-
-        archive_sections = _auto_sections(
-            docs_root, archive, base_dir=Path(ARCHIVE_PREFIX.rstrip("/")))
-        if archive_sections:
-            # entry point from the product sidebar into the archive
-            first = archive_sections[0].pages[0]
-            sections.append(Section(
-                title="Design notes", title_zh="设计文档",
-                pages=[_archive_entry(first, docs_root)]))
+        auto_base = Path(ARCHIVE_PREFIX.rstrip("/")) if key == "design" else Path(key)
+        sections.extend(_auto_sections(docs_root, leftovers, base_dir=auto_base))
 
         landing = sections[0].pages[0].out if sections and sections[0].pages else Path("index.html")
         tabs.append(Tab(key=key, title=en, title_zh=zh, sections=sections,
-                        archive_sections=archive_sections, landing=landing))
+                        landing=landing))
     return tabs
-
-
-def _archive_entry(first_page: Page, docs_root: Path) -> Page:
-    """The single 'Design notes' link in the Reference sidebar: points at the
-    archive's README (or its first page)."""
-    readme_rel = Path(ARCHIVE_PREFIX) / "README.md"
-    src = docs_root / readme_rel
-    if src.exists():
-        zh = docs_root / (str(readme_rel)[:-3] + ".zh.md")
-        return Page(
-            src=src, rel=readme_rel, out=readme_rel.with_suffix(".html"),
-            title="Design notes", is_readme=True, kind="md",
-            title_zh="设计文档归档",
-            zh_src=zh if zh.exists() else None,
-            zh_out=readme_rel.with_name("README.zh.html") if zh.exists() else None,
-        )
-    return first_page
 
 
 def _dir_title(docs_root: Path, rel_dir: Path) -> tuple[str, str]:
