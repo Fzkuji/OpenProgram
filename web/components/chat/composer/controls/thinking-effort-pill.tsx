@@ -27,6 +27,7 @@
 import React, { useRef, useState } from "react";
 
 import { Slider } from "@/components/ui/slider";
+import { UltraRain } from "./ultra-rain";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -287,6 +288,9 @@ const ThinkingEffortSliderPill = React.forwardRef<
                 step={1}
                 stops={options.length}
                 value={[valueIndex]}
+                // 最高档：滑过区叠紫色像素矩阵动画（入场辐射 + 逐格随机
+                // 闪烁）。canvas 每次进入 max 时重新挂载 → 重播入场。
+                rangeChildren={value === "max" ? <UltraRain key="ultra" /> : null}
                 onValueChange={(v) => {
                   const idx = v[0] ?? 0;
                   const next = options[idx];

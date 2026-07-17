@@ -2232,44 +2232,15 @@
 
 
 
-/* ─── Effort 最高档（Ultracode）：代码雨式星点 ──────────────────────
-   两层白格瓦片同向【右→左】流动：亮而稀的"星星层"快速掠过、暗而密的
-   底纹层缓慢垫底；互质宽度(65/90)+互质周期+大幅错相位呼吸 → 星星点点
-   随机闪烁。Ultra 态下档位刻度点隐藏（Claude 同款：整条只有马赛克）。 */
+/* ─── Effort 最高档（Ultracode）：紫色像素矩阵 ─────────────────────
+   底色为左灰右紫的水平渐变；像素矩阵动画由 <UltraRain> canvas 绘制
+   （固定格子矩阵、逐格随机亮灭、入场从右往左辐射）。刻度点隐藏。 */
 .effort-ultra .slider-range {
-  background-image: linear-gradient(90deg,
-    color-mix(in srgb, #8e6bd9 12%, transparent),
-    color-mix(in srgb, #8e6bd9 62%, transparent));
+  background: linear-gradient(90deg,
+    color-mix(in srgb, #8e6bd9 8%, transparent),
+    color-mix(in srgb, #8e6bd9 55%, transparent));
 }
 .effort-ultra ~ .slider-tick,
 .effort-ultra .slider-tick {
   display: none;
-}
-.effort-ultra .slider-range::before,
-.effort-ultra .slider-range::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-repeat: repeat;
-}
-.effort-ultra .slider-range::before {
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'65'%20height%3D'20'%3E%3Cg%20fill%3D'%23ffffff'%3E%3Crect%20x%3D'5'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.73'%2F%3E%3Crect%20x%3D'10'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.64'%2F%3E%3Crect%20x%3D'10'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.86'%2F%3E%3Crect%20x%3D'15'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.94'%2F%3E%3Crect%20x%3D'20'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.51'%2F%3E%3Crect%20x%3D'20'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.59'%2F%3E%3Crect%20x%3D'20'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.51'%2F%3E%3Crect%20x%3D'35'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.95'%2F%3E%3Crect%20x%3D'40'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.63'%2F%3E%3Crect%20x%3D'40'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.84'%2F%3E%3Crect%20x%3D'50'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.59'%2F%3E%3Crect%20x%3D'55'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.78'%2F%3E%3Crect%20x%3D'55'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.54'%2F%3E%3Crect%20x%3D'60'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.61'%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
-  animation: ultraStars 2.8s linear infinite;
-}
-.effort-ultra .slider-range::after {
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'90'%20height%3D'20'%3E%3Cg%20fill%3D'%23ffffff'%3E%3Crect%20x%3D'0'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.14'%2F%3E%3Crect%20x%3D'0'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.18'%2F%3E%3Crect%20x%3D'0'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.15'%2F%3E%3Crect%20x%3D'5'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.16'%2F%3E%3Crect%20x%3D'5'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.14'%2F%3E%3Crect%20x%3D'10'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.2'%2F%3E%3Crect%20x%3D'10'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.23'%2F%3E%3Crect%20x%3D'10'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.09'%2F%3E%3Crect%20x%3D'10'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.15'%2F%3E%3Crect%20x%3D'15'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.1'%2F%3E%3Crect%20x%3D'15'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.18'%2F%3E%3Crect%20x%3D'20'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.15'%2F%3E%3Crect%20x%3D'20'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.24'%2F%3E%3Crect%20x%3D'25'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.21'%2F%3E%3Crect%20x%3D'25'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.2'%2F%3E%3Crect%20x%3D'25'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.28'%2F%3E%3Crect%20x%3D'30'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.08'%2F%3E%3Crect%20x%3D'30'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.14'%2F%3E%3Crect%20x%3D'30'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.15'%2F%3E%3Crect%20x%3D'30'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.21'%2F%3E%3Crect%20x%3D'35'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.28'%2F%3E%3Crect%20x%3D'35'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.27'%2F%3E%3Crect%20x%3D'40'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.12'%2F%3E%3Crect%20x%3D'45'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.28'%2F%3E%3Crect%20x%3D'45'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.09'%2F%3E%3Crect%20x%3D'55'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.05'%2F%3E%3Crect%20x%3D'55'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.27'%2F%3E%3Crect%20x%3D'60'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.05'%2F%3E%3Crect%20x%3D'60'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.16'%2F%3E%3Crect%20x%3D'60'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.06'%2F%3E%3Crect%20x%3D'60'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.17'%2F%3E%3Crect%20x%3D'65'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.08'%2F%3E%3Crect%20x%3D'65'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.06'%2F%3E%3Crect%20x%3D'70'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.21'%2F%3E%3Crect%20x%3D'70'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.13'%2F%3E%3Crect%20x%3D'75'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.25'%2F%3E%3Crect%20x%3D'75'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.13'%2F%3E%3Crect%20x%3D'80'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.13'%2F%3E%3Crect%20x%3D'80'%20y%3D'10'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.27'%2F%3E%3Crect%20x%3D'80'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.22'%2F%3E%3Crect%20x%3D'85'%20y%3D'0'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.14'%2F%3E%3Crect%20x%3D'85'%20y%3D'5'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.27'%2F%3E%3Crect%20x%3D'85'%20y%3D'15'%20width%3D'4'%20height%3D'4'%20rx%3D'1'%20opacity%3D'0.09'%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
-  animation: ultraBase 7.3s linear infinite;
-}
-@keyframes ultraStars {
-  0%   { background-position: 0 0;      opacity: 1; }
-  22%  { opacity: 0.25; }
-  47%  { opacity: 0.9; }
-  71%  { opacity: 0.35; }
-  100% { background-position: -65px 0; opacity: 1; }
-}
-@keyframes ultraBase {
-  0%   { background-position: 0 0;      opacity: 0.7; }
-  50%  { opacity: 1; }
-  100% { background-position: -90px 0; opacity: 0.7; }
 }

@@ -29,12 +29,16 @@ type SliderProps = React.ComponentPropsWithoutRef<
       over the visual (e.g. an icon that travels with the thumb).
       Thumb keeps its 14px hit-area for click/drag. */
   thumb?: React.ReactNode;
+  /** Content rendered INSIDE the filled Range (clipped to it). Used for
+      the effort ultra-level pixel-matrix canvas so the animation only
+      paints over the passed portion of the track. */
+  rangeChildren?: React.ReactNode;
 };
 
 const Slider = React.forwardRef<
   React.ElementRef<typeof SliderPrimitive.Root>,
   SliderProps
->(({ className, stops, innerTicksOnly, startIcon, endIcon, thumb, ...props }, ref) => {
+>(({ className, stops, innerTicksOnly, startIcon, endIcon, thumb, rangeChildren, ...props }, ref) => {
   // Read current step value so each tick (and downstream coloured
   // elements) can know if it sits in the filled half or the unfilled
   // half. Filled = i < currentValue → blue; otherwise grey.
@@ -63,7 +67,9 @@ const Slider = React.forwardRef<
         （#EDECE8 → 用 6% ink mix 适配双主题）；已滑过左段是 10% 黑的
         方形覆盖层。 */}
     <SliderPrimitive.Track className="slider-track relative h-[20px] w-full grow overflow-hidden rounded-[6px] bg-[color-mix(in_srgb,var(--text-bright)_6%,transparent)]">
-      <SliderPrimitive.Range className="slider-range absolute h-full bg-[color-mix(in_srgb,var(--text-bright)_10%,transparent)]" />
+      <SliderPrimitive.Range className="slider-range absolute h-full overflow-hidden bg-[color-mix(in_srgb,var(--text-bright)_10%,transparent)]">
+        {rangeChildren}
+      </SliderPrimitive.Range>
     </SliderPrimitive.Track>
     {stops && stops > 1
       ? Array.from({ length: stops }).map((_, i) => {
