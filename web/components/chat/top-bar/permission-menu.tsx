@@ -131,9 +131,9 @@ export function PermissionBadge() {
         <PopoverContent
           align="start"
           side="top"
-          /* 10 = 控件行到输入框的 band gap：弹层底缘正好压到输入框底缘
-             （底部一排弹层统一对齐输入框，用户定的规则）。 */
-          sideOffset={10}
+          /* 9 = 10px band gap − 1px：输入框的 ring 画在盒外 1px，弹层
+             再下沉 1px 才与可见边缘完全贴合（底部一排弹层统一规则）。 */
+          sideOffset={9}
           onOpenAutoFocus={(e) => e.preventDefault()}
           className="w-auto border-0 bg-transparent p-0 shadow-none"
         >

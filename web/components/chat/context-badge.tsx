@@ -55,11 +55,12 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
       const el = ringRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      // 卡片右缘对齐圆环右缘；底缘抬到输入框底缘（圆环行顶再上 10px
-      // 的 band gap）——底部一排弹层统一压到输入框上，控件行保持可见。
+      // 卡片右缘对齐圆环右缘；底缘抬到输入框可见边缘（圆环行顶再上
+      // 10px band gap − 1px 外扩 ring = 9）——底部一排弹层统一压到
+      // 输入框上，控件行保持可见。
       setAnchor({
         right: window.innerWidth - r.right,
-        bottom: window.innerHeight - r.top + 10,
+        bottom: window.innerHeight - r.top + 9,
       });
     };
     measure();

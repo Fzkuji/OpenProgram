@@ -238,8 +238,9 @@ export function AgentBadge({
       <PopoverContent
         side="top"
         align="end"
-        /* 10 = band gap：底部一排的弹层底缘统一压到输入框底缘。 */
-        sideOffset={10}
+        /* 9 = 10px band gap − 1px 输入框外扩 ring：底部一排弹层底缘
+           与输入框可见边缘完全贴合。 */
+        sideOffset={9}
         onOpenAutoFocus={(e) => e.preventDefault()}
         className="w-auto border-0 bg-transparent p-0 shadow-none"
       >

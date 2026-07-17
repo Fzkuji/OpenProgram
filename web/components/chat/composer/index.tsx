@@ -1191,7 +1191,8 @@ export function Composer() {
                     Popup is the actual panel that wears `.plusMenu`. The
                     static reset stops the old absolute props from fighting
                     the Positioner. */}
-                <Menu.Positioner side="top" align="start" sideOffset={10} style={{ zIndex: 200 }}>
+                {/* 9 = 10px band gap − 1px 输入框外扩 ring（底部弹层统一）。 */}
+                <Menu.Positioner side="top" align="start" sideOffset={9} style={{ zIndex: 200 }}>
                   <Menu.Popup
                     className={styles.plusMenu}
                     style={POPUP_STATIC_RESET}

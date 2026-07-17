@@ -1760,9 +1760,9 @@
   bottom: 100%;
   left: auto;
   right: 0;
-  /* 10 = band gap，兼 hover 桥：卡片底缘正好压到输入框底缘
-     （底部一排弹层统一对齐输入框）。 */
-  padding-bottom: 10px;
+  /* 9 = 10px band gap − 1px 输入框外扩 ring，兼 hover 桥：卡片底缘
+     与输入框可见边缘完全贴合（底部一排弹层统一规则）。 */
+  padding-bottom: 9px;
   z-index: 30;
 }
 
