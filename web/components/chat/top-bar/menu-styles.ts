@@ -49,7 +49,8 @@ export const CHECK_SLOT_PAD = "w-[14px] shrink-0";
 /** Right-aligned single-key shortcut hint (e.g. the R / P / C / A / D in
  *  the Recents context menu). Stays muted — doesn't brighten with the
  *  row on hover. */
-export const SHORTCUT = "shrink-0 text-[12px] text-text-muted";
+// 13px 与行文本同字号（菜单内字号统一），弱化只靠 muted 色。
+export const SHORTCUT = "shrink-0 text-[13px] text-text-muted";
 
 /** Full-bleed divider between menu groups. The negative inline margin
  *  cancels MENU_PANEL's 6px padding so the line spans edge to edge. */
