@@ -39,10 +39,28 @@ interface HoverTipProps {
   side?: "top" | "right" | "bottom" | "left"
 }
 function HoverTip({ label, children, side = "top" }: HoverTipProps) {
+  const [open, setOpen] = React.useState(false)
+  const triggerRef = React.useRef<HTMLElement | null>(null)
   return (
     <TooltipProvider delayDuration={600}>
-      <Tooltip>
-        <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <Tooltip
+        open={open}
+        onOpenChange={(next) => {
+          // trigger 挂着已打开的弹层（PopoverTrigger/Menu 会标
+          // aria-expanded="true"）时不再冒提示——弹窗里自带解释，
+          // 提示只会和弹窗叠在一起。
+          if (
+            next &&
+            triggerRef.current?.getAttribute("aria-expanded") === "true"
+          ) {
+            return
+          }
+          setOpen(next)
+        }}
+      >
+        <TooltipTrigger asChild ref={triggerRef as React.Ref<HTMLButtonElement>}>
+          {children}
+        </TooltipTrigger>
         <TooltipContent side={side}>{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
