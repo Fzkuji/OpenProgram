@@ -197,6 +197,10 @@ const ThinkingEffortSliderPill = React.forwardRef<
       }}
       onMouseLeave={(e) => {
         onMouseLeave?.(e);
+        // 点选档位时 radix 滑块会 setPointerCapture，浏览器随即给宿主
+        // 补发一次 mouseleave（指针其实没离开）——按着键（buttons≠0）
+        // 的"离开"一律忽略，否则每次选择卡片都会消失。
+        if (e.buttons !== 0) return;
         setExpanded(false);
         effortIconChipRef.current?.stopAnimation?.();
         caretRef.current?.stopAnimation?.();
