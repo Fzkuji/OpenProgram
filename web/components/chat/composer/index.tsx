@@ -488,8 +488,8 @@ export function Composer() {
   const thinkingTriggerRef = useRef<HTMLDivElement>(null);
   // Bumping this remounts <ThinkingEffortPill/>, resetting its INTERNAL
   // expanded state to false — the only way to force-collapse it from
-  // outside (it ignores the expanded prop and only collapses on host
-  // mouseleave).
+  // outside (it ignores the expanded prop and never self-closes; the
+  // card dwells open until this remount fires on an outside click).
   const [effortEpoch, setEffortEpoch] = useState(0);
   // effort 卡真实开合（pill 内部 state 回传）——驱动 effortText 的
   // aria-expanded，卡开着时 HoverTip 不再冒 "Thinking effort" 黑提示。
@@ -566,10 +566,9 @@ export function Composer() {
         !thinkingTriggerRef.current.contains(t)
       ) {
         setThinkingMenuOpen(false);
-        // The floating slider (detached row) collapses on host
-        // mouseleave — a pointer that opened it via the text trigger
-        // and clicked elsewhere without touching the slider would
-        // leave it stuck open. Remount the pill to reset it.
+        // The pill never self-closes (no mouseleave collapse anymore) —
+        // this outside-click IS the only way to shut the card. Remount
+        // the pill to reset its internal expanded state to false.
         if (thinkingTriggerRef.current.querySelector("[data-effort-expanded]")) {
           setEffortEpoch((e) => e + 1);
           // remount 会把 pill 内部 expanded 归零，回传不会触发——手动同步。
@@ -1435,10 +1434,9 @@ export function Composer() {
                   )}
                   <ThinkingEffortPill
                     // Remount on epoch bump = force-collapse (see the
-                    // outside-click handler): the pill only collapses on
-                    // host mouseleave, which never fires if the pointer
-                    // opened it from the external text trigger and then
-                    // clicked elsewhere without touching the slider.
+                    // outside-click handler): the pill never self-closes,
+                    // so this remount is the sole way to shut the card —
+                    // fired when composer detects a click outside it.
                     key={effortEpoch}
                     expanded={thinkingMenuOpen}
                     onToggle={() => {

@@ -2235,11 +2235,9 @@
 /* ─── Effort 最高档（Ultracode）：紫色像素矩阵 ─────────────────────
    底色为左灰右紫的水平渐变；像素矩阵动画由 <UltraRain> canvas 绘制
    （固定格子矩阵、逐格随机亮灭、入场从右往左辐射）。刻度点隐藏。 */
-.effort-ultra .slider-range {
-  background: linear-gradient(90deg,
-    color-mix(in srgb, #8e6bd9 8%, transparent),
-    color-mix(in srgb, #8e6bd9 55%, transparent));
-}
+/* ─── Effort 最高档（Ultracode）：紫底 + 白方块矩阵动画 ────────────
+   底色与像素矩阵动画全部由 <UltraRain> canvas 逐帧绘制（紫渐变底 +
+   满铺白方块的从右往左流动 + 入场辐射）。这里只隐藏档位刻度点。 */
 .effort-ultra ~ .slider-tick,
 .effort-ultra .slider-tick {
   display: none;

@@ -3,29 +3,143 @@
 /**
  * UltraRain — Effort 最高档滑轨的紫色像素矩阵动画。
  *
- * 固定的格子矩阵（4px 方块 + 1px 间隙），坐标永不移动；每格靠各自的
- * 随机亮灭营造"往左跑"的错觉，而非平移传送带。两条规律：
+ * 满铺的白色小方块矩阵盖在紫色渐变底上（底左灰白→右深紫）。每个方块
+ * 的白色亮度由一道从右往左行进的波 + 各自随机相位决定：波峰扫到的方块
+ * 泛白凸出，其余融进紫底 —— 肉眼看是白色亮块成群地从右往左流动。入场
+ * 时整条从右往左点亮。
  *
- * 1. 入场辐射：挂载时整片从右往左逐列点亮（appear ~600ms），一开始
- *    透明、最终稳态。
- * 2. 无规律闪烁：每格独立的正弦相位 + 随机周期决定亮度，相邻格之间
- *    无关联；再叠一层"亮点向左跳"——被选中的格子瞬间拉满再衰减，选中
- *    位置每帧随机，看起来像白点在矩阵里没规律地往左蹦。
- *
- * 底色：左端淡灰、右端明确紫（水平渐变），格子叠在其上。
+ * 用一个模块级的全局 rAF 循环遍历所有存活 canvas 来画：该 canvas 在
+ * Radix Slider 的 Range 里，Slider 频繁重渲染会反复 mount/unmount 组件，
+ * 若把 rAF 放进各自的 useEffect 会被 cleanup 掐死（动画整片不动）。全局
+ * 循环只认「canvas 是否还挂在文档上」。document.hidden 时暂停。
  */
 import { useEffect, useRef } from "react";
 
-const CELL = 4;
-const GAP = 1;
-const STEP = CELL + GAP; // 5
-const RADIATE_MS = 650;
+// 固定 5 排：行高/列距由轨道尺寸在 paint 里反推，格子小、密排。
+const GAP = 1; // 方块间隙 —— 露出紫底的细缝
+const RADIATE_MS = 1100; // 入场时长
 
-// 一个确定性的伪随机（不依赖 Math.random —— 组件可在任意时刻挂载，
-// 用格子索引 + 固定盐产生稳定的每格参数）。
+const easeOut = (p: number) => 1 - Math.pow(1 - p, 3);
+
 function hash(n: number): number {
   const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
   return x - Math.floor(x);
+}
+
+const startAt = new WeakMap<HTMLCanvasElement, number>();
+const live = new Set<HTMLCanvasElement>();
+let globalRaf = 0;
+
+function paint(canvas: HTMLCanvasElement, now: number) {
+  const parent = canvas.parentElement;
+  if (!parent) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = parent.clientWidth;
+  const h = parent.clientHeight;
+  if (w === 0 || h === 0) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  let start = startAt.get(canvas);
+  if (start == null) {
+    start = now;
+    startAt.set(canvas, now);
+  }
+  const t = (now - start) / 1000;
+  const radiate = easeOut(Math.min(1, (now - start) / RADIATE_MS));
+  // 入场已铺到的最左 x（右端先亮，往左推进的前沿）。
+  const frontX = w * (1 - radiate);
+
+  ctx.clearRect(0, 0, w, h);
+
+  // 固定 5 排（用户要求）。行高 = (轨道高 − 上下微边距) / 5；格子占行高
+  // 的大部分、留细缝。列按同一格距水平铺满。
+  const PAD = 2;
+  const usableH = h - PAD * 2;
+  const rows = 5;
+  const rowStep = usableH / rows; // 每行占的高度（含缝）
+  const cellH = Math.max(1, rowStep - GAP); // 方块高
+  const offY = PAD;
+  // 列用和行相近的格距，让方块接近正方、密排。
+  const colStep = rowStep;
+  const cellW = Math.max(1, colStep - GAP);
+  const cols = Math.ceil(w / colStep);
+
+  // 底色目标：左灰白 → 右深紫（按水平位置 px）。
+  function baseColor(px: number): [number, number, number] {
+    // 灰白 (228,226,234) → 深紫 (122,86,204)，中段偏亮紫。
+    const p = Math.max(0, Math.min(1, (px - 0.05) / 0.95));
+    const r = 228 - (228 - 122) * p;
+    const g = 226 - (226 - 86) * p;
+    const b = 234 - (234 - 204) * p;
+    return [r, g, b];
+  }
+
+  // ── 逐列绘制：紫色靠一列一列铺开（列已入场则底色 = 平滑紫）；
+  //    推进前沿附近有一条方块带（方块随前沿往左移），前沿扫过后方块
+  //    淡出、只剩平滑紫。前沿宽度 = 若干列的过渡。
+  const FRONT_W = w * 0.22; // 前沿方块带的宽度
+  for (let cx = 0; cx < cols; cx++) {
+    const x = cx * colStep;
+    const px = x / Math.max(1, w);
+    // distFront>0 表示在前沿右侧（已铺）。
+    const distFront = x - frontX;
+    if (distFront < -colStep) continue; // 前沿左侧还没到
+
+    const [bR, bG, bB] = baseColor(px);
+
+    // 底色淡入：刚被前沿扫到时从 0 起、越往右越实。
+    const baseIn = Math.max(0, Math.min(1, (distFront + colStep) / (colStep * 2)));
+
+    // 方块带强度：前沿附近明显、向右淡出；入场结束后整条常驻流动波。
+    const frontFactor = radiate < 1 ? Math.max(0, 1 - distFront / FRONT_W) : 1;
+
+    for (let cy = 0; cy < rows; cy++) {
+      const y = offY + cy * rowStep;
+      // 底色方块（平滑紫，格间留缝）。
+      ctx.fillStyle = `rgba(${bR|0},${bG|0},${bB|0},${baseIn.toFixed(3)})`;
+      ctx.fillRect(x, y, cellW, cellH);
+
+      // 白亮波：从右往左流动（相位 +cx −t），乘 frontFactor → 前沿最亮。
+      const id = cx * 131 + cy * 17;
+      const indiv = hash(id) * Math.PI * 2;
+      const wave = Math.pow(0.5 + 0.5 * Math.sin(cx * 0.5 - t * 3.0 + indiv), 2.0);
+      const a = wave * 0.85 * frontFactor * baseIn;
+      if (a > 0.02) {
+        ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+        ctx.fillRect(x, y, cellW, cellH);
+      }
+    }
+  }
+}
+
+function tick(now: number) {
+  for (const canvas of live) {
+    if (!canvas.isConnected) {
+      live.delete(canvas);
+      continue;
+    }
+    if (!document.hidden) paint(canvas, now);
+  }
+  globalRaf = live.size > 0 ? requestAnimationFrame(tick) : 0;
+}
+
+function register(canvas: HTMLCanvasElement) {
+  live.add(canvas);
+  if (globalRaf === 0) globalRaf = requestAnimationFrame(tick);
+}
+
+function unregister(canvas: HTMLCanvasElement) {
+  live.delete(canvas);
+  startAt.delete(canvas);
 }
 
 export function UltraRain() {
@@ -34,112 +148,9 @@ export function UltraRain() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    let raf = 0;
-    let start = performance.now();
-    let cols = 0;
-    let rows = 0;
-
-    function resize() {
-      const parent = canvas.parentElement;
-      if (!parent) return;
-      const w = parent.clientWidth;
-      const h = parent.clientHeight;
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(h * dpr);
-      canvas.style.width = w + "px";
-      canvas.style.height = h + "px";
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      cols = Math.ceil(w / STEP);
-      rows = Math.ceil(h / STEP);
-    }
-
-    function frame(now: number) {
-      // 先登记下一帧再干活：中途 return（父容器一时不可测/StrictMode
-      // 二次挂载）也不会断链，这是之前动画整片空白的根因。
-      raf = requestAnimationFrame(frame);
-      const parent = canvas.parentElement;
-      if (!parent || parent.clientWidth === 0) return;
-      const w = parent.clientWidth;
-      const h = parent.clientHeight;
-      // canvas 尺寸随父容器变化（宽度依档位，动态）——每帧对齐。
-      if (canvas.width !== Math.round(w * dpr)) resize();
-      const t = (now - start) / 1000;
-      // 入场进度 0→1（从右往左点亮：列越靠右越早亮）。
-      const radiate = Math.min(1, (now - start) / RADIATE_MS);
-
-      ctx.clearRect(0, 0, w, h);
-
-      // 亮点"向左跳"的当前列 —— 每 ~90ms 换一次随机目标列，制造无规律
-      // 往左蹦的白点，而不是匀速滑动。
-      const tick = Math.floor((now - start) / 90);
-
-      for (let cx = 0; cx < cols; cx++) {
-        // 该列的入场阈值：最右列 threshold≈0 最先亮，最左列≈1 最后亮。
-        const colThresh = 1 - cx / Math.max(1, cols - 1);
-        const colReveal = Math.max(
-          0,
-          Math.min(1, (radiate - colThresh) / 0.35 + 0.0001),
-        );
-        if (colReveal <= 0) continue;
-
-        // 水平位置比例（0 左 → 1 右）决定底/格的紫色浓度。
-        const px = (cx * STEP) / Math.max(1, w);
-
-        for (let cy = 0; cy < rows; cy++) {
-          const id = cx * 131 + cy * 17;
-          const r = hash(id);
-          // 稀疏：约 62% 的格子才画（其余是底色）。
-          if (r > 0.62) continue;
-
-          // 每格独立闪烁：随机相位 + 随机速度的正弦，映射到 [0.08, 1]。
-          const speed = 0.6 + hash(id + 1) * 2.2;
-          const phase = hash(id + 2) * Math.PI * 2;
-          let br = 0.5 + 0.5 * Math.sin(t * speed + phase);
-          br = 0.08 + br * 0.55;
-
-          // 向左跳的白点：若本 tick 随机命中该格，瞬间拉满亮度。
-          const jump = hash(tick * 2.3 + cy * 7.7);
-          const jumpCol = Math.floor(jump * cols);
-          if (cx === jumpCol && hash(id + tick) > 0.55) {
-            br = Math.min(1, br + 0.55);
-          }
-
-          br *= colReveal;
-
-          // 颜色：左端偏白灰、右端偏紫。用 px 在白与紫之间插值。
-          // 白 (245,245,250) → 紫 (142,107,217)
-          const rr = Math.round(245 - (245 - 142) * px);
-          const gg = Math.round(245 - (245 - 107) * px);
-          const bb = Math.round(250 - (250 - 217) * px);
-          ctx.fillStyle = `rgba(${rr},${gg},${bb},${br.toFixed(3)})`;
-          ctx.beginPath();
-          const x = cx * STEP;
-          const y = cy * STEP;
-          // 圆角小方块。
-          const rad = 1;
-          ctx.moveTo(x + rad, y);
-          ctx.arcTo(x + CELL, y, x + CELL, y + CELL, rad);
-          ctx.arcTo(x + CELL, y + CELL, x, y + CELL, rad);
-          ctx.arcTo(x, y + CELL, x, y, rad);
-          ctx.arcTo(x, y, x + CELL, y, rad);
-          ctx.fill();
-        }
-      }
-    }
-
-    resize();
-    start = performance.now();
-    raf = requestAnimationFrame(frame);
-    const ro = new ResizeObserver(resize);
-    if (canvas.parentElement) ro.observe(canvas.parentElement);
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
+    startAt.delete(canvas); // 重新进入 max = 重播入场
+    register(canvas);
+    return () => unregister(canvas);
   }, []);
 
   return (

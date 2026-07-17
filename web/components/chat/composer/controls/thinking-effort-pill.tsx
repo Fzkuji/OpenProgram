@@ -10,9 +10,9 @@
  * white `--surface-popover` panel, radius 12, `--shadow-popover`, 16px
  * padding): header row = muted "Effort" + bright current level + (?)
  * HoverTip; body = Faster / Smarter end labels over the dotted-track
- * slider. Mouse-leave on the host collapses (the shell's 8px
- * padding-bottom bridges the visual gap so the pointer never "exits"
- * on the way up).
+ * slider. Stays open until the user clicks OUTSIDE the card (same
+ * dwell behaviour as every other popover) — mouse-leave never
+ * collapses it; that outside-click close is owned by composer/index.
  *
  * Layout: the pill is wrapped in a ``position: relative`` host. The
  * shell is absolute so neither state resizes the row. Collapsed widths
@@ -125,11 +125,13 @@ const ThinkingEffortSliderPill = React.forwardRef<
   },
   ref,
 ) {
-  // Click-to-open, leave-to-close. The `expanded` / `onToggle` props
-  // from the parent are intentionally ignored: the pill manages its own
-  // state — click on the collapsed pill opens the card, mouseleave on
-  // the relative wrapper collapses it. Hover alone only slides out the
-  // caret (chips-style affordance) and animates the icon.
+  // Click-to-open. The `expanded` / `onToggle` props from the parent are
+  // intentionally ignored: the pill manages its own state — click on the
+  // collapsed pill opens the card. It never self-closes; the card stays
+  // open until an outside click, which composer/index detects and
+  // force-collapses by remounting the pill (effortEpoch bump). Hover
+  // alone only slides out the caret (chips-style affordance) and animates
+  // the icon.
   const [expanded, setExpandedState] = useState(false);
   // 内部开合是权威状态；同步回传给 composer（effortText 的
   // aria-expanded 由它驱动，卡开着时 HoverTip 不冒提示）。
@@ -198,11 +200,9 @@ const ThinkingEffortSliderPill = React.forwardRef<
       }}
       onMouseLeave={(e) => {
         onMouseLeave?.(e);
-        // 点选档位时 radix 滑块会 setPointerCapture，浏览器随即给宿主
-        // 补发一次 mouseleave（指针其实没离开）——按着键（buttons≠0）
-        // 的"离开"一律忽略，否则每次选择卡片都会消失。
-        if (e.buttons !== 0) return;
-        setExpanded(false);
+        // 鼠标移开不再收起卡片——和其它弹层一致，只有点击卡片外部才关
+        // （outside-click 由 composer 的 pointerdown 侦听负责）。这里只
+        // 停掉折叠 chip 的图标 / caret 悬停动画。
         effortIconChipRef.current?.stopAnimation?.();
         caretRef.current?.stopAnimation?.();
       }}
