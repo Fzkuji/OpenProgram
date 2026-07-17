@@ -147,14 +147,14 @@ export function PermissionBadge() {
                 onClick={() => pick(o.value)}
               >
                 <span className="flex-1 truncate">{o.label}</span>
-                {/* 数字快捷键右对齐、弱化，排在勾之前。 */}
-                {o.key ? <span className={SHORTCUT}>{o.key}</span> : null}
-                {/* 右侧：仅当前选中档显示勾；未选中留同宽占位保持对齐。 */}
+                {/* Claude 实测顺序：勾在前、数字快捷键在最右
+                    （"Opus 4.8 ✓ 2"）。未选中留同宽占位保持数字列对齐。 */}
                 {o.value === mode ? (
                   <Check size={14} className={CHECK_SLOT} aria-hidden="true" />
                 ) : (
                   <span className={CHECK_SLOT_PAD} />
                 )}
+                {o.key ? <span className={SHORTCUT}>{o.key}</span> : null}
               </div>
             ))}
           </div>

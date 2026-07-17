@@ -160,16 +160,19 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
                 className={itemCls(false)}
                 onClick={() => pick(r.channel, r.account_id)}
               >
-                <span className="flex-1 truncate">{r.account_id}</span>
-                {/* 右侧弱化元数据（账号别名）排在勾之前。 */}
-                {meta ? (
-                  <Badge
-                    variant="secondary"
-                    className="h-[18px] shrink-0 rounded-[4px] px-[5px] py-0 text-[12px] font-normal text-[var(--text-secondary)]"
-                  >
-                    {meta}
-                  </Badge>
-                ) : null}
+                {/* Claude 实测：别名 badge 紧贴账号名左侧成簇（"Fable 5
+                    [Included until July 19]" 的形制），右缘只留勾位。 */}
+                <span className="flex min-w-0 flex-1 items-center gap-[6px]">
+                  <span className="truncate">{r.account_id}</span>
+                  {meta ? (
+                    <Badge
+                      variant="secondary"
+                      className="h-[18px] shrink-0 rounded-[4px] px-[5px] py-0 text-[12px] font-normal text-[var(--text-secondary)]"
+                    >
+                      {meta}
+                    </Badge>
+                  ) : null}
+                </span>
                 {active ? (
                   <Check size={14} className={CHECK_SLOT} />
                 ) : (

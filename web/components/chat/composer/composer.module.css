@@ -1187,12 +1187,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 32px;
-  padding: 6px 8px;
-  /* 10px — Claude's small-control rounding (matches .slashMenuItem). */
-  border-radius: 10px;
-  font-size: 14px;
-  line-height: 20px;
+  /* 24 / 13px / 18px = claude.ai/code 菜单行实测——与 itemCls 同刻度。 */
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--text-primary);
   cursor: pointer;
   user-select: none;
@@ -1202,12 +1202,9 @@
   background: var(--bg-hover);
 }
 /* Selected = the label + its check turn the accent colour. No full-row
-   colour fill (that read as garish when several rows were on) — just a
-   tinted label + a trailing checkmark, like ChatGPT's menu. Colour var
-   kept exactly as before (renders as the app accent); only the
-   background fill is dropped. */
+   colour fill — Claude 语义：选中态唯一信号是右侧勾，标签不变色。 */
 .plusMenuItem.active {
-  color: var(--accent-blue);
+  color: var(--text-primary);
 }
 .plusMenuDivider {
   height: 1px;

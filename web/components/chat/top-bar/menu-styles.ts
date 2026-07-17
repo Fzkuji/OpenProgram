@@ -28,7 +28,8 @@ export const MENU_PANEL =
   "bg-[var(--surface-popover)] p-[6px] shadow-(--shadow-popover)";
 
 export const GROUP_LABEL =
-  "flex items-center gap-[6px] px-[10px] py-[8px] " +
+  // py 收到 6：配 24px 的 Claude 菜单行刻度。
+  "flex items-center gap-[6px] px-[10px] py-[6px] " +
   "text-[12px] text-text-muted";
 
 export const CHECK = "shrink-0 text-[var(--accent-blue)]";
@@ -56,10 +57,10 @@ export const MENU_SEPARATOR = "-mx-[6px] my-[6px] h-px shrink-0 bg-[var(--border
  *  Claude's generous picker rows. */
 export function itemCls(active: boolean, danger = false): string {
   const base =
-    // 32 = --ui-list-h：菜单项与侧栏行同一刻度（全局高度刻度表：
-    // 20 控件 / 24 图标钮 / 28 tab·二级行 / 32 列表行·菜单项 / 40 工具栏 / 44 输入行）
-    "flex min-h-[32px] shrink-0 cursor-pointer items-center gap-[8px] rounded-[8px] " +
-    "px-[10px] text-[14px] leading-[20px] transition-colors duration-75 ";
+    // 24 / 13px / 18px = claude.ai/code 菜单行实测（repo 菜单）。侧栏
+    // 列表行仍是 32（--ui-list-h）——菜单行是更紧的 Claude 刻度。
+    "flex min-h-[24px] shrink-0 cursor-pointer items-center gap-[8px] rounded-[6px] " +
+    "px-[10px] text-[13px] leading-[18px] transition-colors duration-75 ";
   if (danger) {
     return (
       base +

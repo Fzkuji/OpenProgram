@@ -106,14 +106,17 @@ export function AgentSelector({
                   // 选中不铺底色（hover 是唯一底色），选中态只靠右侧勾。
                   className={`${itemCls(false)} w-full text-left`}
                 >
-                  <span className="flex-1 truncate">{m.name}</span>
-                  {/* 右侧弱化元数据（能力图标、上下文窗）排在勾之前。 */}
-                  <CapIcons caps={m.capabilities} />
-                  {m.context ? (
-                    <span className="shrink-0 font-mono text-[11px] text-text-muted">
-                      {fmtCtx(m.context)}
-                    </span>
-                  ) : null}
+                  {/* Claude 实测：元数据（badge/能力/上下文窗）紧贴名字
+                      左侧成簇，不推到右缘——右缘只留勾位。 */}
+                  <span className="flex min-w-0 flex-1 items-center gap-[6px]">
+                    <span className="truncate">{m.name}</span>
+                    <CapIcons caps={m.capabilities} />
+                    {m.context ? (
+                      <span className="shrink-0 font-mono text-[11px] text-text-muted">
+                        {fmtCtx(m.context)}
+                      </span>
+                    ) : null}
+                  </span>
                   {active ? (
                     <Check size={14} className={CHECK_SLOT} />
                   ) : (
