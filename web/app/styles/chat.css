@@ -19,50 +19,17 @@
   position: relative;
 }
 
-/* Top bar */
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  height: 48px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  background: var(--bg-primary);
-  z-index: 5;
-  /* Container query target — badges below adapt in stages based on
-     this element's inline-size, so the four chips never overlap or
-     push siblings off-screen. */
-  container-type: inline-size;
-  container-name: topbar;
-}
-
-.topbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /* min-width: 0 lets the flex children shrink properly so the
-     ellipsis on individual badges activates instead of pushing
-     siblings off-screen. */
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-/* Each badge in the topbar (status / branch / chat / exec) is a
-   two-part chip: an always-visible short label + an optional details
-   span that shrinks-then-disappears as the topbar narrows. Making
-   the badge itself an inline-flex container lets the details span
+/* Each badge (status / branch / chat / exec) is a two-part chip: an
+   always-visible short label + an optional details span. Making the
+   badge itself an inline-flex container lets the details span
    ellipsis-truncate independently of the short label. */
 .status-badge,
 .runtime-badge {
   display: inline-flex;
   align-items: center;
-  /* Chips do NOT shrink: a chip is shown at its full content width or its
-     label is hidden wholesale by the @container thresholds below. Letting
-     it shrink (flex-shrink:1) squeezed labels down to a 0-width / 1-char
-     stub, which is exactly what we're avoiding. */
+  /* Chips do NOT shrink: a chip is shown at its full content width.
+     Letting it shrink (flex-shrink:1) squeezed labels down to a
+     0-width / 1-char stub, which is exactly what we're avoiding. */
   flex-shrink: 0;
   box-sizing: border-box;
   /* Uniform fixed height for EVERY topbar chip. Without this, icon-only
@@ -87,8 +54,7 @@
   flex-shrink: 0;
   /* Generous fixed cap: a normal model name shows in full; only a
      pathologically long id ellipsizes. We never shrink it down to a
-     meaningless stub — instead the whole label is hidden once the bar is
-     too narrow (see the @container thresholds below). */
+     meaningless stub. */
   max-width: 32ch;
 }
 
@@ -101,50 +67,6 @@
   flex-shrink: 0;
   max-width: 24ch;
 }
-
-/* Overflow-driven label collapse. The actual fit is measured in JS
-   (top-bar/index.tsx via ResizeObserver), which sets data-compact on
-   .topbar-left ONLY when the chips would genuinely overflow — never
-   prematurely while there's still room. Labels drop longest-first:
-   level 1 = agent models, 2 = + branch name, 3 = + status/project →
-   a clean row of icons. Full-or-hidden, never a truncated stub. */
-.topbar-left[data-compact="1"] .agent-badge .badge-details,
-.topbar-left[data-compact="2"] .agent-badge .badge-details,
-.topbar-left[data-compact="3"] .agent-badge .badge-details {
-  display: none;
-}
-.topbar-left[data-compact="2"] .branch-badge .branch-name,
-.topbar-left[data-compact="3"] .branch-badge .branch-name {
-  display: none;
-}
-.topbar-left[data-compact="3"] .status-badge .badge-short,
-.topbar-left[data-compact="3"] .project-badge .badge-short,
-.topbar-left[data-compact="3"] .project-badge .project-caret {
-  display: none;
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.menu-btn {
-  display: none;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  align-items: center;
-  justify-content: center;
-}
-.menu-btn svg { flex-shrink: 0; }
-
-.menu-btn:hover { color: var(--text-bright); }
 
 .status-badge {
   font-size: 12px;

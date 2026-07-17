@@ -190,42 +190,6 @@
   background: var(--bg-hover);
 }
 
-/* Connection-status dot pinned to the strip's right end — the old
-   topbar StatusBadge chip reduced to 8px; background color (tone) is
-   set inline by <StatusDot>, clicking opens the same ChannelMenu.
-   The 24px wrapper restores a clickable hit target and carries the
-   strip background so scrolling tabs slide UNDER it, never over;
-   z-index outranks the active tab's 1. */
-.statusDot {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  align-self: stretch;
-  margin-left: auto;
-  flex-shrink: 0;
-  cursor: pointer;
-  position: sticky;
-  right: 0;
-  z-index: 2;
-  background: var(--bg-secondary);
-}
-.statusDot::before {
-  /* mask the 1px gap tabs would show through on the wrapper's left */
-  content: "";
-  position: absolute;
-  left: -6px;
-  top: 0;
-  bottom: 1px; /* keep the strip's bottom line visible */
-  width: 6px;
-  background: linear-gradient(to right, transparent, var(--bg-secondary));
-}
-.statusDot > * ,
-.statusDotInner {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
 /* ---- File tab pane ------------------------------------------------ */
 
 .filePane {

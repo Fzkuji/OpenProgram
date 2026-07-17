@@ -368,8 +368,6 @@ button, input, select, textarea, optgroup {
    main first shrink (sidebar entering flow at full width) and then
    expand back as the sidebar's width animated to 48px. */
 @media (max-width: 900px) {
-  .menu-btn { display: block; }
-
   .sidebar {
     position: fixed; top: 0; bottom: 0; z-index: 100;
   }

@@ -164,29 +164,6 @@ export function Sidebar() {
     };
   }, []);
 
-  // Expose the toggle as a window global so the legacy TopBar
-  // hamburger button (and any other legacy caller) keeps working
-  // after the migration. `window.restoreSidebarState` is a no-op
-  // now — the React sidebar restores from localStorage in its own
-  // mount effect — but we install a stub so any straggler calls
-  // don't crash.
-  useEffect(() => {
-    const w = window as unknown as {
-      toggleSidebar?: () => void;
-      restoreSidebarState?: () => void;
-    };
-    const prevToggle = w.toggleSidebar;
-    const prevRestore = w.restoreSidebarState;
-    w.toggleSidebar = toggleSidebar;
-    w.restoreSidebarState = () => {
-      /* no-op: state is restored by the mount useEffect above */
-    };
-    return () => {
-      w.toggleSidebar = prevToggle;
-      w.restoreSidebarState = prevRestore;
-    };
-  }, []);
-
   function newChat() {
     // Drop any project stashed by an earlier group-＋ click that never
     // produced a session — a PLAIN New chat starts unbound (default

@@ -94,17 +94,6 @@ function extractMainArea(bodyHtml: string): { main: string; inlineScripts: strin
    so the React portals (<Composer />, <WelcomeScreen />) land in the
    right spots inside #chatView. */
 function stripLegacyChatChrome(host: HTMLElement) {
-  // TopBar: index.html now ships a bare `<div id="topbar-mount"></div>`
-  // where `<div class="topbar" id="mainTopbar">` used to live. Replace
-  // it with a fresh empty div on every mount so the React portal renders
-  // into a clean node (no stale dataset / handlers / etc. surviving across
-  // re-injections).
-  const topbar = host.querySelector("#topbar-mount");
-  if (topbar) {
-    const fresh = document.createElement("div");
-    fresh.id = "topbar-mount";
-    topbar.replaceWith(fresh);
-  }
   const inputArea = host.querySelector(".input-area");
   if (inputArea) {
     const mount = document.createElement("div");

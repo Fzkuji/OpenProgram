@@ -5,7 +5,8 @@
  *
  *   - ProjectBadge / AgentBadge ×2 / PermissionBadge → composer bottom
  *     row (see composer/index.tsx, `.sessionChips`)
- *   - StatusDot → tab strip right corner (center-tab-strip.tsx)
+ *   - connection status → composer status chip (composer/index.tsx,
+ *     which hosts the ChannelMenu popover)
  *   - BranchBadge → right sidebar History view header
  *
  * `LegacyTopbarBridge` (rendered unconditionally by AppShell) keeps the
@@ -39,7 +40,6 @@ import { HoverTip } from "@/components/ui/tooltip";
 
 import { AgentSelector } from "./agent-selector";
 import { BranchMenu } from "./branch-menu";
-import { ChannelMenu } from "./channel-menu";
 import { installLegacyWrappers, legacyTopbarReady } from "./window-bridge";
 
 export { ProjectBadge } from "./project-menu";
@@ -76,69 +76,6 @@ export function LegacyTopbarBridge() {
 }
 
 /* ---- Chips --------------------------------------------------------- */
-
-/**
- * StatusDot — the old StatusBadge chip reduced to an 8px dot that sits
- * at the tab strip's right end. Same popover content (ChannelMenu),
- * same store slice; only the trigger shrank. Keeps `id="statusBadge"`
- * so the legacy ui.ts updaters' element guards still pass (they only
- * push to the store — no DOM mutation reaches the dot).
- */
-export function StatusDot({ className }: { className?: string }) {
-  const statusBadge = useSessionStore((s) => s.statusBadge);
-  const [open, setOpen] = useState(false);
-  const { text } = useTranslation();
-
-  useEffect(() => {
-    const close = () => setOpen(false);
-    window.addEventListener("topbar-close-menus", close);
-    return () => window.removeEventListener("topbar-close-menus", close);
-  }, []);
-
-  function onOpenChange(next: boolean) {
-    if (next) {
-      window.dispatchEvent(new Event("topbar-close-menus"));
-      (
-        window as unknown as { _closeAllPopovers?: () => void }
-      )._closeAllPopovers?.();
-    }
-    setOpen(next);
-  }
-
-  const color =
-    statusBadge.tone === "ok"
-      ? "var(--accent-green)"
-      : statusBadge.tone === "err"
-        ? "var(--accent-red)"
-        : "var(--accent-yellow)"; // connecting / warn / paused
-  const label =
-    statusBadge.label || text("Conversation channel", "会话渠道");
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <HoverTip label={label}>
-        <PopoverTrigger asChild>
-          {/* 外层是 24px 点击区（module css 提供背景/sticky），内层
-              才是 8px 着色圆点——inline 色值放外层会把整个点击区染色。 */}
-          <span
-            id="statusBadge"
-            role="button"
-            aria-label={label}
-            className={className}
-          >
-            <span style={{ background: color }} />
-          </span>
-        </PopoverTrigger>
-      </HoverTip>
-      <PopoverContent
-        align="end"
-        sideOffset={4}
-        className="w-auto border-0 bg-transparent p-0 shadow-none"
-      >
-        <ChannelMenu onClose={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 export function BranchBadge({
   branchInfo,

@@ -227,11 +227,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // placeholders into the legacy template; we portal React into each.
   // Re-checked on pathname changes because the chat page re-injects
   // its HTML on route entry.
-  // Note: the `#topbar-mount` placeholder in index.html stays empty —
-  // the 48px topbar row is gone (chat chrome is just the 40px tab
-  // strip); its chips moved to the composer bottom row / tab strip
-  // dot / History header. Nothing in the legacy JS looks up
-  // `#mainTopbar`, so no hidden stand-in element is needed.
+  // Note: there is no topbar mount — the 48px topbar row is gone
+  // (chat chrome is just the 40px tab strip); its chips moved to the
+  // composer bottom row / History header. Nothing in the legacy JS
+  // looks up `#mainTopbar`, so no hidden stand-in element is needed.
   const [composerMount, setComposerMount] = useState<HTMLElement | null>(null);
   const [welcomeMount, setWelcomeMount] = useState<HTMLElement | null>(null);
   const [messagesMount, setMessagesMount] = useState<HTMLElement | null>(null);
