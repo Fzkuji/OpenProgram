@@ -249,6 +249,271 @@ def test_write_non_string_content_rejected(project_root):
     assert data["error"] == "content must be a string"
 
 
+# ---- project_file_create ----------------------------------------------------
+
+def test_create_file_and_dir(project_root):
+    frame = _run(ws_files.handle_project_file_create,
+                 {"project_id": "p1", "path": "src/born.txt", "kind": "file"})
+    assert frame["type"] == "project_file_create_result"
+    assert frame["data"]["ok"] is True
+    assert (project_root / "src" / "born.txt").read_bytes() == b""  # empty
+
+    data = _run(ws_files.handle_project_file_create,
+                {"project_id": "p1", "path": "src/newdir", "kind": "dir"})["data"]
+    assert data["ok"] is True
+    assert (project_root / "src" / "newdir").is_dir()
+
+
+def test_create_exists_rejected(project_root):
+    for path, kind in (("apple.txt", "file"), ("src", "dir")):
+        data = _run(ws_files.handle_project_file_create,
+                    {"project_id": "p1", "path": path, "kind": kind})["data"]
+        assert data["error"] == f"already exists: {path!r}"
+    assert (project_root / "apple.txt").read_text() == "aaa"  # untouched
+
+
+def test_create_parent_missing(project_root):
+    data = _run(ws_files.handle_project_file_create,
+                {"project_id": "p1", "path": "ghost/child.txt", "kind": "file"})["data"]
+    assert "parent directory" in data["error"]
+    assert not (project_root / "ghost").exists()  # no implicit mkdir
+
+
+def test_create_escape_rejected(project_root):
+    for bad in ("../outside/evil.txt", "/etc/evil"):
+        data = _run(ws_files.handle_project_file_create,
+                    {"project_id": "p1", "path": bad, "kind": "file"})["data"]
+        assert data["error"] == "path escapes project root", bad
+    assert not (project_root.parent / "outside" / "evil.txt").exists()
+
+
+def test_create_bad_kind_rejected(project_root):
+    data = _run(ws_files.handle_project_file_create,
+                {"project_id": "p1", "path": "x.txt", "kind": "symlink"})["data"]
+    assert data["error"] == "kind must be 'file' or 'dir'"
+
+
+# ---- project_file_rename ----------------------------------------------------
+
+def test_rename_in_place(project_root):
+    frame = _run(ws_files.handle_project_file_rename,
+                 {"project_id": "p1", "path": "apple.txt",
+                  "new_path": "banana.txt"})
+    assert frame["type"] == "project_file_rename_result"
+    data = frame["data"]
+    assert data["ok"] is True
+    assert data["path"] == "apple.txt" and data["new_path"] == "banana.txt"
+    assert not (project_root / "apple.txt").exists()
+    assert (project_root / "banana.txt").read_text() == "aaa"
+
+
+def test_rename_moves_across_subdirs(project_root):
+    data = _run(ws_files.handle_project_file_rename,
+                {"project_id": "p1", "path": "src/x.py",
+                 "new_path": "Alpha_dir/x_moved.py"})["data"]
+    assert data["ok"] is True
+    assert not (project_root / "src" / "x.py").exists()
+    assert (project_root / "Alpha_dir" / "x_moved.py").read_text() == "print('hi')\n"
+
+
+def test_rename_source_missing(project_root):
+    data = _run(ws_files.handle_project_file_rename,
+                {"project_id": "p1", "path": "nope.txt",
+                 "new_path": "other.txt"})["data"]
+    assert data["error"] == "source does not exist: 'nope.txt'"
+
+
+def test_rename_destination_exists(project_root):
+    data = _run(ws_files.handle_project_file_rename,
+                {"project_id": "p1", "path": "apple.txt",
+                 "new_path": "zeta.txt"})["data"]
+    assert data["error"] == "destination already exists: 'zeta.txt'"
+    assert (project_root / "apple.txt").read_text() == "aaa"  # untouched
+    assert (project_root / "zeta.txt").read_text() == "zzz"
+
+
+def test_rename_case_only(project_root, tmp_path):
+    # Probe: two case-variant names hitting the same entry means the
+    # filesystem is case-insensitive (macOS default). On a
+    # case-sensitive fs the plain rename path already covers this.
+    probe = tmp_path / "CaseProbe.txt"
+    probe.write_text("x", encoding="utf-8")
+    insensitive = (tmp_path / "caseprobe.txt").exists()
+    probe.unlink()
+    if not insensitive:
+        pytest.skip("case-sensitive filesystem: case-only rename is a plain rename")
+    data = _run(ws_files.handle_project_file_rename,
+                {"project_id": "p1", "path": "apple.txt",
+                 "new_path": "Apple.txt"})["data"]
+    assert data["ok"] is True
+    names = os.listdir(project_root)
+    assert "Apple.txt" in names and "apple.txt" not in names
+    assert not any(".casetmp." in n for n in names)  # no temp residue
+    assert (project_root / "Apple.txt").read_text() == "aaa"
+
+
+def test_rename_escape_either_side(project_root):
+    # Escaping source.
+    data = _run(ws_files.handle_project_file_rename,
+                {"project_id": "p1", "path": "../outside/secret.txt",
+                 "new_path": "stolen.txt"})["data"]
+    assert data["error"] == "path escapes project root"
+    # Escaping destination.
+    data = _run(ws_files.handle_project_file_rename,
+                {"project_id": "p1", "path": "apple.txt",
+                 "new_path": "../outside/leaked.txt"})["data"]
+    assert data["error"] == "path escapes project root"
+    assert (project_root / "apple.txt").read_text() == "aaa"
+    assert (project_root.parent / "outside" / "secret.txt").read_text() == "secret"
+
+
+# ---- project_file_copy ------------------------------------------------------
+
+def test_copy_file(project_root):
+    frame = _run(ws_files.handle_project_file_copy,
+                 {"project_id": "p1", "path": "apple.txt",
+                  "new_path": "src/apple_copy.txt"})
+    assert frame["type"] == "project_file_copy_result"
+    assert frame["data"]["ok"] is True
+    assert (project_root / "apple.txt").read_text() == "aaa"  # source kept
+    assert (project_root / "src" / "apple_copy.txt").read_text() == "aaa"
+
+
+def test_copy_dir_recursive(project_root):
+    data = _run(ws_files.handle_project_file_copy,
+                {"project_id": "p1", "path": "src",
+                 "new_path": "src_copy"})["data"]
+    assert data["ok"] is True
+    assert (project_root / "src_copy" / "x.py").read_text() == "print('hi')\n"
+    assert (project_root / "src" / "x.py").exists()  # source kept
+
+
+def test_copy_destination_exists(project_root):
+    data = _run(ws_files.handle_project_file_copy,
+                {"project_id": "p1", "path": "apple.txt",
+                 "new_path": "zeta.txt"})["data"]
+    assert data["error"] == "destination already exists: 'zeta.txt'"
+    assert (project_root / "zeta.txt").read_text() == "zzz"  # untouched
+
+
+def test_copy_source_missing(project_root):
+    data = _run(ws_files.handle_project_file_copy,
+                {"project_id": "p1", "path": "nope.txt",
+                 "new_path": "copy.txt"})["data"]
+    assert data["error"] == "source does not exist: 'nope.txt'"
+
+
+def test_copy_escape_either_side(project_root):
+    data = _run(ws_files.handle_project_file_copy,
+                {"project_id": "p1", "path": "../outside/secret.txt",
+                 "new_path": "stolen.txt"})["data"]
+    assert data["error"] == "path escapes project root"
+    assert not (project_root / "stolen.txt").exists()
+    data = _run(ws_files.handle_project_file_copy,
+                {"project_id": "p1", "path": "apple.txt",
+                 "new_path": "../outside/leaked.txt"})["data"]
+    assert data["error"] == "path escapes project root"
+    assert not (project_root.parent / "outside" / "leaked.txt").exists()
+
+
+# ---- project_file_delete ----------------------------------------------------
+
+def test_delete_file(project_root):
+    frame = _run(ws_files.handle_project_file_delete,
+                 {"project_id": "p1", "path": "apple.txt"})
+    assert frame["type"] == "project_file_delete_result"
+    assert frame["data"]["ok"] is True
+    assert not (project_root / "apple.txt").exists()
+
+
+def test_delete_dir_recursive(project_root):
+    data = _run(ws_files.handle_project_file_delete,
+                {"project_id": "p1", "path": "src"})["data"]
+    assert data["ok"] is True
+    assert not (project_root / "src").exists()
+
+
+def test_delete_project_root_refused(project_root):
+    # "" and "." and "src/.." all resolve to the root itself.
+    for path in ("", ".", "src/.."):
+        data = _run(ws_files.handle_project_file_delete,
+                    {"project_id": "p1", "path": path})["data"]
+        assert data["error"] == "refusing to delete project root", path
+    assert project_root.is_dir()
+    assert (project_root / "apple.txt").read_text() == "aaa"
+
+
+def test_delete_missing(project_root):
+    data = _run(ws_files.handle_project_file_delete,
+                {"project_id": "p1", "path": "nope.txt"})["data"]
+    assert data["error"] == "does not exist: 'nope.txt'"
+
+
+def test_delete_escape_rejected(project_root):
+    data = _run(ws_files.handle_project_file_delete,
+                {"project_id": "p1", "path": "../outside/secret.txt"})["data"]
+    assert data["error"] == "path escapes project root"
+    assert (project_root.parent / "outside" / "secret.txt").read_text() == "secret"
+
+
+# ---- project_file_reveal ----------------------------------------------------
+
+@pytest.fixture
+def popen_spy(monkeypatch):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(ws_files.subprocess, "Popen",
+                        lambda argv: calls.append(argv))
+    return calls
+
+
+def test_reveal_per_platform(project_root, popen_spy, monkeypatch):
+    target = os.path.realpath(str(project_root / "apple.txt"))
+    for platform, argv in (
+        ("darwin", ["open", "-R", target]),
+        ("win32", ["explorer", "/select," + target]),
+        ("linux", ["xdg-open", os.path.dirname(target)]),
+    ):
+        popen_spy.clear()
+        monkeypatch.setattr(ws_files.sys, "platform", platform)
+        frame = _run(ws_files.handle_project_file_reveal,
+                     {"project_id": "p1", "path": "apple.txt"})
+        assert frame["type"] == "project_file_reveal_result"
+        assert frame["data"]["ok"] is True
+        assert popen_spy == [argv], platform
+
+
+def test_reveal_dir_on_linux_opens_dir_itself(project_root, popen_spy, monkeypatch):
+    monkeypatch.setattr(ws_files.sys, "platform", "linux")
+    data = _run(ws_files.handle_project_file_reveal,
+                {"project_id": "p1", "path": "src"})["data"]
+    assert data["ok"] is True
+    assert popen_spy == [["xdg-open", os.path.realpath(str(project_root / "src"))]]
+
+
+def test_reveal_escape_rejected(project_root, popen_spy):
+    data = _run(ws_files.handle_project_file_reveal,
+                {"project_id": "p1", "path": "../outside/secret.txt"})["data"]
+    assert data["error"] == "path escapes project root"
+    assert popen_spy == []  # nothing launched
+
+
+def test_reveal_missing(project_root, popen_spy):
+    data = _run(ws_files.handle_project_file_reveal,
+                {"project_id": "p1", "path": "nope.txt"})["data"]
+    assert data["error"] == "does not exist: 'nope.txt'"
+    assert popen_spy == []
+
+
+def test_reveal_launch_failure_reported_not_raised(project_root, monkeypatch):
+    def boom(argv):
+        raise OSError("no file manager")
+    monkeypatch.setattr(ws_files.subprocess, "Popen", boom)
+    data = _run(ws_files.handle_project_file_reveal,
+                {"project_id": "p1", "path": "apple.txt"})["data"]
+    assert "no file manager" in data["error"]
+    assert "ok" not in data
+
+
 # ---- GET /files/raw --------------------------------------------------------
 
 @pytest.fixture

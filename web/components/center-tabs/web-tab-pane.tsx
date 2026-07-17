@@ -1,28 +1,237 @@
 "use client";
 
 /**
- * WebTabPane — center-column content of a web tab (kind "web"): a
- * 40px address toolbar (mono URL input · reload · open-external) over
- * a sandboxed <iframe>, with a persistent slim hint bar in between —
- * many sites refuse framing (X-Frame-Options / CSP frame-ancestors)
- * and a cross-origin load failure is not reliably detectable from
- * here, so the open-externally escape hatch stays always visible.
+ * WebTabPane — center-column content of a web tab (kind "web").
  *
- * Long-term path: a sidecar browser + CDP screencast rendering into
- * this pane (agent-driven browsing shares the same surface). The tab
- * model — kind "web" with {url, title} in the center-tabs store — is
- * the stable contract; only this pane's rendering backend changes.
+ * Two rendering backends behind one tab contract ({url, title} in the
+ * center-tabs store):
  *
- * No back/forward buttons: iframe history is unreliable cross-origin.
+ *  - Desktop shell (window.openprogramDesktop present): a native
+ *    Electron WebContentsView positioned by the main process over the
+ *    body area of this pane. The pane renders only the toolbar plus an
+ *    empty body div whose viewport rect is reported to
+ *    webTab.setBounds; show/hide follows mount/unmount (only the
+ *    active tab's pane is mounted). Real back/forward/reload, no
+ *    framing restrictions, so no hint bar.
+ *
+ *  - Browser fallback: a 40px address toolbar (mono URL input · reload
+ *    · open-external) over a sandboxed <iframe>, with a persistent
+ *    slim hint bar in between — many sites refuse framing
+ *    (X-Frame-Options / CSP frame-ancestors) and a cross-origin load
+ *    failure is not reliably detectable from here, so the
+ *    open-externally escape hatch stays always visible. No
+ *    back/forward buttons: iframe history is unreliable cross-origin.
  */
-import { useEffect, useState } from "react";
-import { ExternalLink, RotateCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from "lucide-react";
 
+import {
+  desktopBridge,
+  destroyStaleWebViews,
+  ensureWebView,
+  installDesktopMenuHandlers,
+  type DesktopBridge,
+} from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import styles from "./center-tabs.module.css";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
+  // Bridge presence is fixed for the lifetime of the page (preload
+  // ran or it didn't), so branching in render is stable. Web tabs
+  // never server-render (the tabs store is empty during SSR).
+  const bridge = desktopBridge();
+  if (bridge) {
+    return <DesktopWebTabPane bridge={bridge} tabId={tabId} url={url} />;
+  }
+  return <IframeWebTabPane tabId={tabId} url={url} />;
+}
+
+/* ---- Desktop shell: native WebContentsView ------------------------- */
+
+function DesktopWebTabPane({
+  bridge,
+  tabId,
+  url,
+}: {
+  bridge: DesktopBridge;
+  tabId: string;
+  url: string;
+}) {
+  const { text } = useTranslation();
+  const updateWebTab = useCenterTabs((s) => s.updateWebTab);
+  const [address, setAddress] = useState(url);
+  const [loading, setLoading] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
+  // Last URL the native view is known to be at (our navigate calls +
+  // onState reports). The store-url effect below only steers the view
+  // on real drift, so onState → updateWebTab echoes never re-navigate.
+  const viewUrlRef = useRef(url);
+
+  // View lifecycle. Visibility model: this pane is mounted only while
+  // its tab is active, so show on mount / hide on unmount. destroy
+  // lives elsewhere — the store subscription installed by
+  // installDesktopMenuHandlers destroys views as their tabs close,
+  // and the mount-time reconcile sweeps anything that slipped through.
+  useEffect(() => {
+    installDesktopMenuHandlers();
+    destroyStaleWebViews(
+      bridge,
+      useCenterTabs.getState().tabs.map((t) => t.id),
+    );
+    ensureWebView(bridge, tabId, viewUrlRef.current);
+    bridge.webTab.show(tabId);
+    return () => bridge.webTab.hide(tabId);
+  }, [bridge, tabId]);
+
+  // Bounds: main positions the native view from the DIP rect of the
+  // body div. getBoundingClientRect is viewport-relative CSS px ==
+  // DIP relative to the window content area. Report on mount, when
+  // the div resizes, and on window resize / any ancestor scroll.
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const report = () => {
+      const r = el.getBoundingClientRect();
+      bridge.webTab.setBounds(tabId, {
+        x: Math.round(r.left),
+        y: Math.round(r.top),
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+      });
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    window.addEventListener("resize", report);
+    window.addEventListener("scroll", report, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", report);
+      window.removeEventListener("scroll", report, true);
+    };
+  }, [bridge, tabId]);
+
+  // Main → renderer state: address bar (unless the user is typing in
+  // it), tab title, loading spinner, history-button enablement. URL
+  // changes also flow into the store so the tab persists (and later
+  // remounts restore) the page actually being viewed.
+  useEffect(() => {
+    return bridge.webTab.onState((state) => {
+      if (state.id !== tabId) return;
+      if (state.url !== undefined) {
+        viewUrlRef.current = state.url;
+        if (document.activeElement !== addressRef.current) {
+          setAddress(state.url);
+        }
+        updateWebTab(tabId, { url: state.url });
+      }
+      if (state.title !== undefined) updateWebTab(tabId, { title: state.title });
+      if (state.loading !== undefined) setLoading(state.loading);
+      if (state.canGoBack !== undefined) setCanGoBack(state.canGoBack);
+      if (state.canGoForward !== undefined) setCanGoForward(state.canGoForward);
+    });
+  }, [bridge, tabId, updateWebTab]);
+
+  // Store url changed by someone else (session restore, future agent
+  // navigation) → steer the view. Our own updates (navigate() below,
+  // onState echoes) already advanced viewUrlRef, so they no-op here.
+  useEffect(() => {
+    if (url === viewUrlRef.current) return;
+    viewUrlRef.current = url;
+    bridge.webTab.navigate(tabId, url);
+    if (document.activeElement !== addressRef.current) setAddress(url);
+  }, [bridge, tabId, url]);
+
+  function navigate() {
+    const normalized = normalizeWebUrl(address);
+    if (!normalized) {
+      setAddress(viewUrlRef.current); // invalid input → snap back
+      return;
+    }
+    setAddress(normalized);
+    if (normalized === viewUrlRef.current) {
+      bridge.webTab.reload(tabId); // same URL → treat Enter as reload
+    } else {
+      viewUrlRef.current = normalized;
+      bridge.webTab.navigate(tabId, normalized);
+      updateWebTab(tabId, { url: normalized });
+    }
+  }
+
+  const disabledStyle = { opacity: 0.35, cursor: "default" } as const;
+
+  return (
+    <div className={styles.webPane}>
+      <div className={styles.webToolbar}>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onClick={() => bridge.webTab.goBack(tabId)}
+          disabled={!canGoBack}
+          style={canGoBack ? undefined : disabledStyle}
+          title={text("Back", "后退")}
+        >
+          <ArrowLeft size={14} />
+        </button>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onClick={() => bridge.webTab.goForward(tabId)}
+          disabled={!canGoForward}
+          style={canGoForward ? undefined : disabledStyle}
+          title={text("Forward", "前进")}
+        >
+          <ArrowRight size={14} />
+        </button>
+        <input
+          ref={addressRef}
+          className={styles.webAddress}
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") navigate();
+          }}
+          spellCheck={false}
+          autoComplete="off"
+          aria-label={text("Address", "地址")}
+        />
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onClick={() => bridge.webTab.reload(tabId)}
+          title={text("Reload", "重新加载")}
+        >
+          <RotateCw
+            size={14}
+            style={
+              loading ? { animation: "opWebTabSpin 0.8s linear infinite" } : undefined
+            }
+          />
+        </button>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onClick={() => bridge.openExternal(viewUrlRef.current)}
+          title={text("Open in browser", "在浏览器中打开")}
+        >
+          <ExternalLink size={14} />
+        </button>
+      </div>
+      <style>{`@keyframes opWebTabSpin { to { transform: rotate(360deg); } }`}</style>
+      {/* Empty body — the native view is drawn here by the main
+          process at the bounds reported above. */}
+      <div ref={bodyRef} className={styles.webFrame} />
+    </div>
+  );
+}
+
+/* ---- Browser fallback: sandboxed iframe ---------------------------- */
+
+function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
   const [address, setAddress] = useState(url);

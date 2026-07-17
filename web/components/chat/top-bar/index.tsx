@@ -1,20 +1,23 @@
 /**
- * TopBar — chat-page header strip.
+ * Top-bar chip components — the session-scope chips that used to live
+ * in the 48px `.topbar` row above the chat. That row is gone (chat
+ * chrome is just the 40px tab strip now); the chips live on elsewhere:
  *
- * Renders the hamburger button + four badges (status, branch, chat
- * agent, exec agent) that used to live in the legacy `<div class="topbar"
- * id="mainTopbar">` template. Each piece reads its state from the
- * zustand session store; the store is populated by `window-bridge.ts`
- * wrapping the legacy DOM-mutating updaters and pushing through.
+ *   - ProjectBadge / AgentBadge ×2 / PermissionBadge → composer bottom
+ *     row (see composer/index.tsx, `.sessionChips`)
+ *   - StatusDot → tab strip right corner (center-tab-strip.tsx)
+ *   - BranchBadge → right sidebar History view header
  *
- * Dropdowns (channel / branch / chat-agent / exec-agent pickers) are
- * still owned by `conversations.js` / `providers.js`; the click
- * handlers below delegate to the legacy `window.open…` globals.
+ * `LegacyTopbarBridge` (rendered unconditionally by AppShell) keeps the
+ * window-bridge wrappers installed: legacy DOM-mutating updaters are
+ * wrapped so their state lands in the zustand store, which these chips
+ * read. Dropdowns still delegate to the submodules here
+ * (project-menu / agent-selector / permission-menu / channel-menu /
+ * branch-menu).
  */
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
@@ -24,8 +27,6 @@ import {
   type AnimatedNavIconHandle,
   GitBranchIcon,
   MessageCircleIcon,
-  MonitorIcon,
-  PanelLeftOpenIcon,
   TerminalIcon,
 } from "@/components/animated-icons";
 
@@ -39,15 +40,20 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { AgentSelector } from "./agent-selector";
 import { BranchMenu } from "./branch-menu";
 import { ChannelMenu } from "./channel-menu";
-import { ProjectBadge } from "./project-menu";
-import { PermissionBadge } from "./permission-menu";
 import { installLegacyWrappers, legacyTopbarReady } from "./window-bridge";
-import styles from "./top-bar.module.css";
 
-export function TopBar() {
-  // Install legacy-updater wrappers once the legacy globals have
-  // loaded. Polled on a short interval because providers.js / ui.js
-  // are inserted asynchronously by PageShell.
+export { ProjectBadge } from "./project-menu";
+export { PermissionBadge } from "./permission-menu";
+
+/**
+ * Headless bridge — installs the legacy-updater wrappers once the
+ * legacy globals have loaded. Polled on a short interval because
+ * providers.js / ui.js are inserted asynchronously by PageShell.
+ * Must stay mounted for the whole session (AppShell renders it
+ * unconditionally next to the portals); without it the status /
+ * branch / agent state never reaches the store.
+ */
+export function LegacyTopbarBridge() {
   useEffect(() => {
     let cancelled = false;
     if (legacyTopbarReady()) {
@@ -66,118 +72,22 @@ export function TopBar() {
       clearInterval(t);
     };
   }, []);
-
-  const { agentSettings, branchInfo, statusBadge } = useSessionStore(
-    useShallow((s) => ({
-      agentSettings: s.agentSettings,
-      branchInfo: s.branchInfo,
-      statusBadge: s.statusBadge,
-    })),
-  );
-
-  const chat = agentSettings.chat || {};
-  const exec = agentSettings.exec || {};
-  const chatLocked = !!chat.locked;
-
-  // Collapse chip labels by MEASURED overflow, not fixed width breakpoints.
-  // `fit()` tries compaction levels 0→3 and stops at the first that keeps
-  // the last chip inside the row, so labels are dropped (longest first)
-  // only when they genuinely don't fit — never while there's still room.
-  const leftRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const left = leftRef.current;
-    const bar = left?.parentElement; // the .topbar
-    if (!left || !bar || typeof ResizeObserver === "undefined") return;
-    const fit = () => {
-      const last = document.getElementById("execAgentBadge");
-      if (!last) {
-        left.dataset.compact = "0";
-        return;
-      }
-      // Available room = the topbar's inner right edge minus its right
-      // padding and anything pinned to the right. The chips overflow this
-      // edge before they overflow `left` (which shrink-wraps its content),
-      // so we must measure against the bar, not against `left`.
-      const cs = getComputedStyle(bar);
-      const rightSide = bar.querySelector(".topbar-right");
-      const reserved =
-        (parseFloat(cs.paddingRight) || 0) +
-        (rightSide ? rightSide.getBoundingClientRect().width : 0);
-      const limit = bar.getBoundingClientRect().right - reserved;
-      for (let lvl = 0; lvl <= 3; lvl++) {
-        left.dataset.compact = String(lvl);
-        if (last.getBoundingClientRect().right <= limit + 0.5) break;
-      }
-    };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(bar);
-    return () => ro.disconnect();
-  }, [agentSettings, branchInfo, statusBadge]);
-
-  return (
-    <div className={`topbar ${styles.bar}`} id="mainTopbar">
-      <div ref={leftRef} className={`topbar-left ${styles.left}`}>
-        <HamburgerButton />
-        <StatusBadge statusBadge={statusBadge} />
-        <ProjectBadge />
-        {branchInfo.visible ? <BranchBadge branchInfo={branchInfo} /> : null}
-        <AgentBadge
-          id="chatAgentBadge"
-          kind="chat"
-          locked={chatLocked}
-          provider={chat.provider}
-          model={chat.model}
-        />
-        <AgentBadge
-          id="execAgentBadge"
-          kind="exec"
-          locked={false}
-          provider={exec.provider}
-          model={exec.model}
-        />
-      </div>
-
-      <div className={`topbar-right ${styles.right}`}>
-        <PermissionBadge />
-      </div>
-    </div>
-  );
+  return null;
 }
 
-/* ---- Sub-components --------------------------------------------- */
+/* ---- Chips --------------------------------------------------------- */
 
-function HamburgerButton() {
-  const { t } = useTranslation();
-  const iconRef = useRef<AnimatedNavIconHandle>(null);
-
-  function onClick() {
-    const w = window as unknown as { toggleSidebar?: () => void };
-    w.toggleSidebar?.();
-  }
-  return (
-    <button
-      type="button"
-      className="menu-btn"
-      id="menuBtn"
-      onClick={onClick}
-      onMouseEnter={() => iconRef.current?.startAnimation?.()}
-      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-      aria-label={t("sidebar.toggle")}
-    >
-      <PanelLeftOpenIcon ref={iconRef} size={20} />
-    </button>
-  );
-}
-
-function StatusBadge({
-  statusBadge,
-}: {
-  statusBadge: ReturnType<typeof useSessionStore.getState>["statusBadge"];
-}) {
+/**
+ * StatusDot — the old StatusBadge chip reduced to an 8px dot that sits
+ * at the tab strip's right end. Same popover content (ChannelMenu),
+ * same store slice; only the trigger shrank. Keeps `id="statusBadge"`
+ * so the legacy ui.ts updaters' element guards still pass (they only
+ * push to the store — no DOM mutation reaches the dot).
+ */
+export function StatusDot({ className }: { className?: string }) {
+  const statusBadge = useSessionStore((s) => s.statusBadge);
   const [open, setOpen] = useState(false);
   const { text } = useTranslation();
-  const iconRef = useRef<AnimatedNavIconHandle>(null);
 
   useEffect(() => {
     const close = () => setOpen(false);
@@ -187,7 +97,6 @@ function StatusBadge({
 
   function onOpenChange(next: boolean) {
     if (next) {
-      // Close every other top-bar dropdown first.
       window.dispatchEvent(new Event("topbar-close-menus"));
       (
         window as unknown as { _closeAllPopovers?: () => void }
@@ -195,40 +104,33 @@ function StatusBadge({
     }
     setOpen(next);
   }
-  const cls =
-    "status-badge" +
-    (statusBadge.tone === "connecting" ? " connecting" : "") +
-    (statusBadge.tone === "err" ? " disconnected" : "") +
-    (statusBadge.paused ? " paused" : "");
-  // Always show the channel label beside the icon (e.g. "Local") — the
-  // chip is never icon-only; "Local" is a real value, not "unset".
-  const showLabel = !!statusBadge.label;
+
+  const color =
+    statusBadge.tone === "ok"
+      ? "var(--accent-green)"
+      : statusBadge.tone === "err"
+        ? "var(--accent-red)"
+        : "var(--accent-yellow)"; // connecting / warn / paused
+  const label =
+    statusBadge.label || text("Conversation channel", "会话渠道");
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <HoverTip label={text("Conversation channel", "会话渠道")}>
+      <HoverTip label={label}>
         <PopoverTrigger asChild>
+          {/* 外层是 24px 点击区（module css 提供背景/sticky），内层
+              才是 8px 着色圆点——inline 色值放外层会把整个点击区染色。 */}
           <span
             id="statusBadge"
-            className={cls}
-            onMouseEnter={() => iconRef.current?.startAnimation?.()}
-            onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+            role="button"
+            aria-label={label}
+            className={className}
           >
-            {/* Monitor = "Local" (this machine). Animated (pqoqubbw set);
-                inherits the chip's status colour via currentColor. */}
-            <MonitorIcon
-              ref={iconRef}
-              size={14}
-              className={showLabel ? "shrink-0 mr-[4px]" : "shrink-0"}
-              aria-hidden="true"
-            />
-            {showLabel ? (
-              <span className="badge-short">{statusBadge.label}</span>
-            ) : null}
+            <span style={{ background: color }} />
           </span>
         </PopoverTrigger>
       </HoverTip>
       <PopoverContent
-        align="start"
+        align="end"
         sideOffset={4}
         className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
@@ -238,7 +140,7 @@ function StatusBadge({
   );
 }
 
-function BranchBadge({
+export function BranchBadge({
   branchInfo,
 }: {
   branchInfo: ReturnType<typeof useSessionStore.getState>["branchInfo"];
@@ -302,7 +204,7 @@ function bareModelId(provider?: string, model?: string): string {
     : model;
 }
 
-/** Topbar agent-chip label: the model's display name (e.g. "GPT-5.5",
+/** Agent-chip label: the model's display name (e.g. "GPT-5.5",
  *  "Claude Opus 4.8") — NOT the provider prefix or the lowercase id.
  *  Looks the bare id up in the enabled-models list (which carries each
  *  model's `name`); falls back to the bare id when the model isn't in
@@ -317,7 +219,7 @@ function fmtAgentLabel(
   return nameById.get(`${provider ?? ""}:${bare}`) ?? nameById.get(bare) ?? bare;
 }
 
-function AgentBadge({
+export function AgentBadge({
   id,
   kind,
   locked,

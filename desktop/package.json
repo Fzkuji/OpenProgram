@@ -1,0 +1,34 @@
+{
+  "name": "openprogram-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron desktop shell for OpenProgram",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "dist": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "ai.openprogram.desktop",
+    "productName": "OpenProgram",
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "mac": {
+      "target": [
+        "dir",
+        "zip"
+      ],
+      "icon": "build/icon.png"
+    }
+  }
+}

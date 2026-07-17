@@ -387,6 +387,31 @@
   position: relative;
 }
 
+/* Session-scope chips (project / chat model / exec model / permission)
+   relocated from the dismantled topbar row. The reused chip components
+   keep their own classes + popovers; this wrapper only compacts them
+   to the mock's 11.5px so the composer bottom row stays low. */
+.sessionChips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  /* Narrow composer (side panels open): chips scroll horizontally
+     inside their own box instead of colliding with the tool chips /
+     effort pill on the same absolute-positioned row. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sessionChips::-webkit-scrollbar { display: none; }
+.sessionChips > * { flex-shrink: 0; }
+.sessionChips :global(.runtime-badge),
+.sessionChips :global(.status-badge) {
+  height: 22px;
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border-radius: 7px;
+}
+
 /* Send / stop button — a single absolute-positioned circle anchored
    to the wrapper. Its `top` is driven by inline style (set in
    composer/index.tsx) so it interpolates linearly between the chat

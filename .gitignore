@@ -91,3 +91,7 @@ merge-x/
 docs/reference/cli/
 docs/reference/config-keys.md
 docs/reference/provider-registry.md
+
+# Electron desktop shell
+desktop/node_modules/
+desktop/dist/

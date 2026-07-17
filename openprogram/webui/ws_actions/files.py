@@ -19,6 +19,32 @@ Wire format::
           "data": {"project_id", "path", "ok"?, "mtime"?,
                    "conflict"?: true, "error"?}}
 
+    in:  {"action": "project_file_create", "project_id": "...",
+          "path": "src/new.py", "kind": "file"|"dir"}
+    out: {"type": "project_file_create_result",
+          "data": {"project_id", "path", "kind", "ok"?, "error"?}}
+
+    in:  {"action": "project_file_rename", "project_id": "...",
+          "path": "old.py", "new_path": "sub/new.py"}   # rename AND move
+    out: {"type": "project_file_rename_result",
+          "data": {"project_id", "path", "new_path", "ok"?, "error"?}}
+
+    in:  {"action": "project_file_copy", "project_id": "...",
+          "path": "a.py", "new_path": "b.py"}   # copy2 file / copytree dir
+    out: {"type": "project_file_copy_result",
+          "data": {"project_id", "path", "new_path", "ok"?, "error"?}}
+
+    in:  {"action": "project_file_delete", "project_id": "...", "path": "a.py"}
+    out: {"type": "project_file_delete_result",
+          "data": {"project_id", "path", "ok"?, "error"?}}
+    # unlink file / rmtree dir (UI confirms first); project root refused.
+
+    in:  {"action": "project_file_reveal", "project_id": "...", "path": "a.py"}
+    out: {"type": "project_file_reveal_result",
+          "data": {"project_id", "path", "ok"?, "error"?}}
+    # Opens the OS file manager selecting the entry; never blocks,
+    # launch failures come back as ``error``, never raised.
+
 ``path`` is always project-relative ("" = project root). Entries are
 sorted dirs-first, then files, each alphabetically (case-insensitive);
 dotfiles are included. Reads are capped at 1 MB (beyond → no content,
@@ -41,6 +67,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
+import subprocess
+import sys
 
 # Hard cap on a single text read — the panel shows sources, not dumps.
 _READ_MAX_BYTES = 1_000_000  # 1 MB
@@ -158,6 +187,133 @@ def _write_file(project_id: str, path: str, content: str,
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+def _create_entry(project_id: str, path: str, kind: str) -> dict:
+    if kind not in ("file", "dir"):
+        return {"error": "kind must be 'file' or 'dir'"}
+    target, error = _resolve(project_id, path)
+    if error:
+        return {"error": error}
+    if not os.path.isdir(os.path.dirname(target)):
+        return {"error": f"parent directory does not exist for {path!r}"}
+    try:
+        if kind == "dir":
+            os.makedirs(target, exist_ok=False)
+        else:
+            with open(target, "x"):
+                pass
+    except FileExistsError:
+        return {"error": f"already exists: {path!r}"}
+    except OSError as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    return {"ok": True}
+
+
+def _rename_entry(project_id: str, path: str, new_path: str) -> dict:
+    src, error = _resolve(project_id, path)
+    if error:
+        return {"error": error}
+    dst, error = _resolve(project_id, new_path)
+    if error:
+        return {"error": error}
+    if not os.path.exists(src):
+        return {"error": f"source does not exist: {path!r}"}
+    # Case-only rename (apple.txt → Apple.txt) on a case-insensitive
+    # filesystem (macOS default): the destination "exists" because it
+    # IS the source. Detect via samefile + case-only basename diff and
+    # rename through a temporary sibling name — a direct rename is a
+    # no-op on some such filesystems.
+    src_base, dst_base = os.path.basename(src), os.path.basename(dst)
+    case_only = (
+        src != dst
+        and src_base != dst_base
+        and src_base.lower() == dst_base.lower()
+        and os.path.exists(dst)
+        and os.path.samefile(src, dst)
+    )
+    if os.path.exists(dst) and not case_only:
+        return {"error": f"destination already exists: {new_path!r}"}
+    try:
+        if case_only:
+            tmp = f"{src}.casetmp.{os.getpid()}"
+            os.rename(src, tmp)
+            try:
+                os.rename(tmp, dst)
+            except OSError:
+                os.rename(tmp, src)  # roll back — never strand the file
+                raise
+        else:
+            os.rename(src, dst)
+    except OSError as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    return {"ok": True}
+
+
+def _copy_entry(project_id: str, path: str, new_path: str) -> dict:
+    src, error = _resolve(project_id, path)
+    if error:
+        return {"error": error}
+    dst, error = _resolve(project_id, new_path)
+    if error:
+        return {"error": error}
+    if not os.path.exists(src):
+        return {"error": f"source does not exist: {path!r}"}
+    if os.path.exists(dst):
+        return {"error": f"destination already exists: {new_path!r}"}
+    try:
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy2(src, dst)
+    except OSError as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    return {"ok": True}
+
+
+def _delete_entry(project_id: str, path: str) -> dict:
+    target, error = _resolve(project_id, path)
+    if error:
+        return {"error": error}
+    # ``""``, ``"."``, ``"src/.."`` all resolve to the root — compare
+    # resolved paths, not the raw string.
+    root, _ = _resolve(project_id, "")
+    if target == root:
+        return {"error": "refusing to delete project root"}
+    if not os.path.exists(target):
+        return {"error": f"does not exist: {path!r}"}
+    try:
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+        else:
+            os.unlink(target)
+    except OSError as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    return {"ok": True}
+
+
+def _reveal_entry(project_id: str, path: str) -> dict:
+    target, error = _resolve(project_id, path)
+    if error:
+        return {"error": error}
+    if not os.path.exists(target):
+        return {"error": f"does not exist: {path!r}"}
+    try:
+        # Popen (never run/call): the file manager must not block the
+        # executor thread. argv lists only — no shell.
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", target])
+        elif sys.platform == "win32":
+            subprocess.Popen(["explorer", "/select," + target])
+        else:
+            # No cross-desktop "select this file" verb on Linux — open
+            # the containing directory instead.
+            subprocess.Popen(["xdg-open",
+                              target if os.path.isdir(target)
+                              else os.path.dirname(target)])
+    except OSError as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    return {"ok": True}
+
+
 async def handle_project_file_tree(ws, cmd: dict) -> None:
     project_id = (cmd.get("project_id") or "").strip()
     # No .strip(): filenames with leading/trailing whitespace must
@@ -214,8 +370,91 @@ async def handle_project_file_write(ws, cmd: dict) -> None:
     }, default=str))
 
 
+async def handle_project_file_create(ws, cmd: dict) -> None:
+    project_id = (cmd.get("project_id") or "").strip()
+    path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
+    kind = cmd.get("kind") or "file"
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, lambda: _create_entry(project_id, path, kind),
+    )
+    payload = {"project_id": project_id, "path": path, "kind": kind}
+    payload.update(result)
+    await ws.send_text(json.dumps({
+        "type": "project_file_create_result",
+        "data": payload,
+    }, default=str))
+
+
+async def handle_project_file_rename(ws, cmd: dict) -> None:
+    project_id = (cmd.get("project_id") or "").strip()
+    path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
+    new_path = cmd.get("new_path") or ""
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, lambda: _rename_entry(project_id, path, new_path),
+    )
+    payload = {"project_id": project_id, "path": path, "new_path": new_path}
+    payload.update(result)
+    await ws.send_text(json.dumps({
+        "type": "project_file_rename_result",
+        "data": payload,
+    }, default=str))
+
+
+async def handle_project_file_copy(ws, cmd: dict) -> None:
+    project_id = (cmd.get("project_id") or "").strip()
+    path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
+    new_path = cmd.get("new_path") or ""
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, lambda: _copy_entry(project_id, path, new_path),
+    )
+    payload = {"project_id": project_id, "path": path, "new_path": new_path}
+    payload.update(result)
+    await ws.send_text(json.dumps({
+        "type": "project_file_copy_result",
+        "data": payload,
+    }, default=str))
+
+
+async def handle_project_file_delete(ws, cmd: dict) -> None:
+    project_id = (cmd.get("project_id") or "").strip()
+    path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, lambda: _delete_entry(project_id, path),
+    )
+    payload = {"project_id": project_id, "path": path}
+    payload.update(result)
+    await ws.send_text(json.dumps({
+        "type": "project_file_delete_result",
+        "data": payload,
+    }, default=str))
+
+
+async def handle_project_file_reveal(ws, cmd: dict) -> None:
+    project_id = (cmd.get("project_id") or "").strip()
+    path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, lambda: _reveal_entry(project_id, path),
+    )
+    payload = {"project_id": project_id, "path": path}
+    payload.update(result)
+    await ws.send_text(json.dumps({
+        "type": "project_file_reveal_result",
+        "data": payload,
+    }, default=str))
+
+
 ACTIONS = {
     "project_file_tree": handle_project_file_tree,
     "project_file_read": handle_project_file_read,
     "project_file_write": handle_project_file_write,
+    "project_file_create": handle_project_file_create,
+    "project_file_rename": handle_project_file_rename,
+    "project_file_copy": handle_project_file_copy,
+    "project_file_delete": handle_project_file_delete,
+    "project_file_reveal": handle_project_file_reveal,
 }

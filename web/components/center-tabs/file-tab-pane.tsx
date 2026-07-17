@@ -10,12 +10,18 @@
  * swaps to a full-pane <textarea>; Save calls ``project_file_write``
  * with the mtime from the last read, so a concurrent on-disk change
  * surfaces as a conflict notice + Reload instead of a silent clobber.
- * ponytail: v1 — switching/closing the tab while dirty loses changes.
+ * ponytail: closing the tab — or just switching to another tab —
+ * while dirty still discards the edits: only the ACTIVE file tab
+ * mounts this pane, so the draft unmounts with it. The ● shows in
+ * the strip, but a guard needs strip cooperation (closeTab/setActive
+ * don't consult tab.dirty); out of scope here.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Pencil } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
+import { fileTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { ConfirmDialog } from "@/components/sidebar/sessions-list/confirm-dialog";
 import {
   type FileReadResult,
   filesWsRequest,
@@ -46,10 +52,13 @@ export function FileTabPane({
   const [rendered, setRendered] = useState(true);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // Content as of enterEdit — dirty means draft drifted from this.
+  const [baseline, setBaseline] = useState("");
   const [baseMtime, setBaseMtime] = useState(0);
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   // Keyed by the read's own path instead of being reset on path change:
   // on a cache hit the child viewer reports synchronously BEFORE this
   // component's reset effect would run, so a reset-after-report wipes
@@ -81,7 +90,21 @@ export function FileTabPane({
     setEditing(false);
     setConflict(false);
     setSaveFailed(false);
+    setConfirmingCancel(false);
   }, [projectId, path]);
+
+  // Mirror the unsaved-changes state into the tab strip's ● dot. The
+  // cleanup clears the OLD tab's dot on path change and on unmount;
+  // the guard keeps false→true flips to a single store update.
+  const tabId = fileTabId(projectId, path);
+  const setTabDirty = useCenterTabs((s) => s.setTabDirty);
+  const dirty = editing && draft !== baseline;
+  useEffect(() => {
+    setTabDirty(tabId, dirty);
+    return () => {
+      if (dirty) setTabDirty(tabId, false);
+    };
+  }, [tabId, dirty, setTabDirty]);
 
   const enterEdit = async () => {
     // Fresh read on entry — its mtime is the optimistic-lock token.
@@ -93,13 +116,22 @@ export function FileTabPane({
     if (!res || res.error || res.content === undefined || res.path !== path)
       return;
     setDraft(res.content);
+    setBaseline(res.content);
     setBaseMtime(res.mtime);
     setConflict(false);
     setSaveFailed(false);
     setEditing(true);
   };
 
+  const exitEdit = () => {
+    setEditing(false);
+    setConflict(false);
+    setSaveFailed(false);
+    setConfirmingCancel(false);
+  };
+
   const save = async () => {
+    if (saving || conflict) return; // Cmd+S has no disabled state
     setSaving(true);
     setSaveFailed(false);
     const res = await filesWsRequest<WriteResult>(
@@ -110,7 +142,7 @@ export function FileTabPane({
     setSaving(false);
     if (res?.ok) {
       invalidateFileRead(projectId, path);
-      setEditing(false);
+      exitEdit();
       setViewerEpoch((e) => e + 1); // remount viewer → refetch
     } else if (res?.conflict) {
       setConflict(true);
@@ -118,6 +150,24 @@ export function FileTabPane({
       setSaveFailed(true);
     }
   };
+
+  // Cmd/Ctrl+S saves — listener exists only while editing, so normal
+  // browser Save is untouched everywhere else. save() re-reads the
+  // latest draft via saveRef; the guard inside save() absorbs repeats
+  // while a write is in flight.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!editing) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        void saveRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editing]);
 
   return (
     <div className={styles.filePane}>
@@ -151,9 +201,8 @@ export function FileTabPane({
               type="button"
               className={fileStyles.editCancelBtn}
               onClick={() => {
-                setEditing(false);
-                setConflict(false);
-                setSaveFailed(false);
+                if (dirty) setConfirmingCancel(true);
+                else exitEdit();
               }}
             >
               {text("Cancel", "取消")}
@@ -238,6 +287,17 @@ export function FileTabPane({
           />
         )}
       </div>
+      {confirmingCancel ? (
+        <ConfirmDialog
+          title={text("Discard unsaved changes?", "放弃未保存的修改？")}
+          message={text(
+            "Your edits to this file will be lost.",
+            "对该文件的编辑将丢失。",
+          )}
+          onConfirm={exitEdit}
+          onCancel={() => setConfirmingCancel(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -11,9 +11,10 @@ import { FileTabPane } from "./center-tabs/file-tab-pane";
 import { NewTabPage } from "./center-tabs/new-tab-page";
 import { WebTabPane } from "./center-tabs/web-tab-pane";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { desktopBridge, installDesktopMenuHandlers } from "@/lib/desktop-bridge";
 import { ToastHost } from "./ui/toast-host";
 import { Composer } from "./chat/composer";
-import { TopBar } from "./chat/top-bar";
+import { LegacyTopbarBridge } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
 import { MessageList } from "./chat/messages/message-list";
 import { useSessionStore } from "@/lib/session-store";
@@ -226,27 +227,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // placeholders into the legacy template; we portal React into each.
   // Re-checked on pathname changes because the chat page re-injects
   // its HTML on route entry.
+  // Note: the `#topbar-mount` placeholder in index.html stays empty —
+  // the 48px topbar row is gone (chat chrome is just the 40px tab
+  // strip); its chips moved to the composer bottom row / tab strip
+  // dot / History header. Nothing in the legacy JS looks up
+  // `#mainTopbar`, so no hidden stand-in element is needed.
   const [composerMount, setComposerMount] = useState<HTMLElement | null>(null);
   const [welcomeMount, setWelcomeMount] = useState<HTMLElement | null>(null);
-  const [topbarMount, setTopbarMount] = useState<HTMLElement | null>(null);
   const [messagesMount, setMessagesMount] = useState<HTMLElement | null>(null);
   useEffect(() => {
     let cancelled = false;
     setComposerMount(null);
     setWelcomeMount(null);
-    setTopbarMount(null);
     setMessagesMount(null);
     function findMounts() {
       const composer = document.getElementById("composer-mount");
       const welcome = document.getElementById("welcome-mount");
-      const topbar = document.getElementById("topbar-mount");
       const messages = document.getElementById("messages-mount");
       if (cancelled) return false;
       if (composer) setComposerMount(composer);
       if (welcome) setWelcomeMount(welcome);
-      if (topbar) setTopbarMount(topbar);
       if (messages) setMessagesMount(messages);
-      return !!(composer && welcome && topbar && messages);
+      return !!(composer && welcome && messages);
     }
     if (findMounts()) return;
     const t = setInterval(() => {
@@ -416,6 +418,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     minWidth: 200,
   });
 
+  // Desktop shell (Electron): wire File > New Tab / Close Tab menu
+  // accelerators at startup — installing only from the web-tab pane
+  // would leave Cmd+T dead until a web tab was opened once.
+  useEffect(() => {
+    if (desktopBridge()) installDesktopMenuHandlers();
+  }, []);
+
   // Center tab container — which pane the center column shows. The
   // chat surface is a SINGLETON: session tabs merely reveal it (it
   // stays mounted, display:none, under file / new-tab panes).
@@ -478,8 +487,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       {composerMount && createPortal(<Composer />, composerMount)}
       {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}
-      {topbarMount && createPortal(<TopBar />, topbarMount)}
       {messagesMount && createPortal(<MessageList />, messagesMount)}
+      {/* Headless — keeps the legacy topbar-updater wrappers installed
+         (status / branch / agent state → zustand store) now that the
+         visible topbar row is gone. Must live outside the chat-route
+         conditional so the wrappers survive route switches. */}
+      <LegacyTopbarBridge />
       {/* App-wide transient toasts — mounted at the shell so they show on
          every route (chat AND settings), not just where the TopBar is. */}
       <ToastHost />

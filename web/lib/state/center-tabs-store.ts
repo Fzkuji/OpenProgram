@@ -143,6 +143,11 @@ interface CenterTabsState {
   /** Unsaved-changes marker groundwork — content owners call this;
    *  the strip renders ● instead of ✕ while dirty. */
   setTabDirty: (id: string, dirty: boolean) => void;
+  /** Retarget a file tab after its file was renamed/moved on disk:
+   *  new deterministic id + title (basename), order and active state
+   *  preserved. If a tab already exists at the new id, the stale tab
+   *  closes instead (focus moves to the survivor if it was active). */
+  retargetFileTab: (oldId: string, newProjectId: string, newPath: string) => void;
   /** Single-instance new-tab page — reused if already open. */
   openNewTabPage: () => void;
   /** Close a tab; closing the active one activates the right
@@ -273,6 +278,42 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         if (!tab || !!tab.dirty === dirty) return {};
         const tabs = s.tabs.map((t) => (t.id === id ? { ...t, dirty } : t));
         const next = { tabs, activeId: s.activeId };
+        persist(next);
+        return next;
+      }),
+
+    retargetFileTab: (oldId, newProjectId, newPath) =>
+      set((s) => {
+        const tab = s.tabs.find((t) => t.id === oldId && t.kind === "file");
+        if (!tab) return {};
+        const newId = fileTabId(newProjectId, newPath);
+        if (newId === oldId) return {};
+        if (s.tabs.some((t) => t.id === newId)) {
+          // Target already open — drop the stale tab; if it was the
+          // active one, the surviving tab at the new path takes focus.
+          const tabs = s.tabs.filter((t) => t.id !== oldId);
+          const next = {
+            tabs,
+            activeId: s.activeId === oldId ? newId : s.activeId,
+          };
+          persist(next);
+          return next;
+        }
+        const tabs = s.tabs.map((t) =>
+          t.id === oldId
+            ? {
+                ...t,
+                id: newId,
+                projectId: newProjectId,
+                path: newPath,
+                title: newPath.split("/").pop() || newPath,
+              }
+            : t,
+        );
+        const next = {
+          tabs,
+          activeId: s.activeId === oldId ? newId : s.activeId,
+        };
         persist(next);
         return next;
       }),

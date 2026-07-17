@@ -32,6 +32,10 @@ import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 
 import { ContextBadge } from "../context-badge";
+// Session-scope chips relocated from the dismantled 48px topbar row —
+// each carries its own popover menu (project-menu / agent-selector /
+// permission-menu submodules under ../top-bar).
+import { AgentBadge, PermissionBadge, ProjectBadge } from "../top-bar";
 import { FunctionForm, visibleParams } from "./modes/fn-form/fn-form";
 import { QuestionMode, type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -350,8 +354,14 @@ export function Composer() {
   // store means the chip's switch is reflected here immediately.
   const { mode: permMode } = usePermissionMode();
   // The effort picker only appears once a chat model is actually
-  // selected at the top; with no model picked it stays hidden.
+  // selected; with no model picked it stays hidden.
   const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
+  // Agent settings feed the relocated chat/exec model chips below —
+  // same store slice the old topbar row read (populated by the
+  // window-bridge wrappers via <LegacyTopbarBridge />).
+  const agentSettings = useSessionStore((s) => s.agentSettings);
+  const chatAgent = agentSettings.chat || {};
+  const execAgent = agentSettings.exec || {};
   // Authoritative "is there a model to run at all" signal — the SAME
   // enabled-models list the top-bar picker reads. ``providerInfo.model``
   // is NOT enough: it reflects whatever model the last runtime used
@@ -1389,6 +1399,29 @@ export function Composer() {
                 </Menu.Positioner>
               </Menu.Portal>
             </Menu.Root>
+
+            {/* Session-scope chips (ex-topbar) — order per the density
+                mock: project · chat model · exec model · permission.
+                The wrapper class compacts the reused chips' padding /
+                font for the composer row without forking them. */}
+            <div className={styles.sessionChips}>
+              <ProjectBadge />
+              <AgentBadge
+                id="chatAgentBadge"
+                kind="chat"
+                locked={!!chatAgent.locked}
+                provider={chatAgent.provider}
+                model={chatAgent.model}
+              />
+              <AgentBadge
+                id="execAgentBadge"
+                kind="exec"
+                locked={false}
+                provider={execAgent.provider}
+                model={execAgent.model}
+              />
+              <PermissionBadge />
+            </div>
 
             <div className={styles.activeToolChips}>
               {/* Only ENABLED tools show as a chip here. The off ones are

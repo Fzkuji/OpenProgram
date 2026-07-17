@@ -19,6 +19,7 @@ import { Globe, X } from "lucide-react";
 import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { StatusDot } from "@/components/chat/top-bar";
 import styles from "./center-tabs.module.css";
 
 function isChatRoute(pathname: string) {
@@ -175,6 +176,9 @@ export function CenterTabStrip() {
       >
         ＋
       </button>
+      {/* Right-corner connection dot — the old topbar status chip.
+         Green ok / yellow connecting / red err; click = ChannelMenu. */}
+      <StatusDot className={styles.statusDot} />
     </div>
   );
 }

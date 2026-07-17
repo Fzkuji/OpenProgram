@@ -95,9 +95,6 @@ export function Sidebar() {
 
   const [open, setOpen] = useState<boolean>(true);
   const [favCollapsed, setFavCollapsed] = useState(false);
-  // True once the scroll area below New chat has scrolled — drives the
-  // Claude-style divider line under the pinned header.
-  const [navScrolled, setNavScrolled] = useState(false);
   // Refresh-button states (matches legacy spin → checkmark → revert).
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
@@ -116,6 +113,7 @@ export function Sidebar() {
   const chatsIconRef = useRef<AnimatedNavIconHandle>(null);
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const newChatIconRef = useRef<AnimatedNavIconHandle>(null);
+  const headerNewChatIconRef = useRef<AnimatedNavIconHandle>(null);
 
   const { availableFunctions, programsMeta } = useWindowGlobals();
   const favSet = new Set(programsMeta.favorites || []);
@@ -276,7 +274,7 @@ export function Sidebar() {
           : "w-[49px] min-w-[49px] collapsed")
       }
     >
-      <div className="flex h-[48px] shrink-0 items-center justify-between p-[8px] box-border">
+      <div className="flex h-[48px] shrink-0 items-center justify-between gap-[4px] p-[8px] box-border">
         <div
           className={
             "flex h-[var(--ui-list-h)] min-w-0 flex-1 items-center overflow-hidden " +
@@ -298,6 +296,26 @@ export function Sidebar() {
             </span>
           </span>
         </div>
+        {/* Always-reachable New-chat shortcut — same recipe as the
+            collapse toggle but 28px (design v4 brand-row hbtn). Hidden
+            when collapsed: the 49px rail only fits the toggle. */}
+        <button
+          className={
+            "flex h-[28px] w-[28px] shrink-0 cursor-pointer items-center justify-center " +
+            "rounded-[var(--ui-list-radius)] border-none bg-transparent p-0 " +
+            "text-nav-color transition-colors duration-150 ease-out " +
+            "hover:bg-bg-hover hover:text-nav-color-hover " +
+            "active:bg-[rgba(0,0,0,0.2)]" +
+            (open ? "" : " hidden")
+          }
+          onClick={newChat}
+          onMouseEnter={() => headerNewChatIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => headerNewChatIconRef.current?.stopAnimation?.()}
+          title={t("nav.new_chat")}
+          type="button"
+        >
+          <PlusIcon ref={headerNewChatIconRef} size={16} />
+        </button>
         <button
           className={sidebarToggleClass}
           onClick={toggleSidebar}
@@ -314,10 +332,16 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* py-8: 48(brand)+8+32(row)+8 = 96 — the pinned block's bottom edge
-          (and the scroll divider that appears there) lands on the same
-          y=96 line as the center pane's toolbar border. */}
-      <div className="flex flex-col gap-px shrink-0 px-[8px] py-[8px]">
+      {/* Everything below the brand header scrolls together (design v4):
+          New chat + nav links + favourites + conversations are one scroll
+          area with uniform 1px gaps — nothing pinned, no divider. The
+          brand-row ＋ above is the always-reachable New-chat fallback once
+          the list scrolls. */}
+      <div
+        className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
+          [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
         <div
           className={sidebarNavItemClass}
           id="navNewChat"
@@ -341,26 +365,6 @@ export function Sidebar() {
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.new_chat")}</span>
         </div>
-      </div>
-
-      {/* Everything below New chat scrolls together (Claude-style): the
-          nav links + favourites + conversations are one scroll area, so a
-          short window never hides the bottom. Only New chat (above) and the
-          footer (below) stay pinned. */}
-      <div
-        className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
-          [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        onScroll={(e) => {
-          const s = e.currentTarget.scrollTop > 0;
-          setNavScrolled((prev) => (prev === s ? prev : s));
-        }}
-        style={{
-          // A 1px divider at the top edge once scrolled (Claude-style) —
-          // inset box-shadow so it never shifts the layout.
-          boxShadow: navScrolled ? "inset 0 1px 0 0 var(--border)" : undefined,
-        }}
-      >
-        <div className="flex flex-col gap-px shrink-0 px-[8px] pt-px">
         <Link
           href="/functions"
           className={

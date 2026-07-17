@@ -48,6 +48,7 @@ import {
   PanelLeftOpenIcon,
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
+import { BranchBadge } from "../chat/top-bar";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 
@@ -262,7 +263,9 @@ export function RightSidebar() {
       {/* Header — same 48px row + 8px padding as the left sidebar
           header, but `justify-start` keeps the toggle pinned to the
           LEFT edge so it mirrors the left sidebar's toggle (which
-          sits flush against the RIGHT edge there). */}
+          sits flush against the RIGHT edge there).
+          TODO(sidebar-headers): still 48px while the center strip is
+          40px now — the sidebar-header team owns shrinking these. */}
       <div className="flex h-[48px] shrink-0 items-center justify-start p-[8px] box-border">
         <button
           className={sidebarToggleClass}
@@ -370,8 +373,25 @@ export function RightSidebar() {
  * `#historyPanel .history-body` and replaces its children.
  */
 function HistoryGraphPanel() {
+  // Branch chip (ex-topbar BranchBadge) — shown above the history
+  // content, only when the conversation actually has branches. Same
+  // component + BranchMenu popover as before, just relocated.
+  const branchInfo = useSessionStore((s) => s.branchInfo);
   return (
     <>
+      {branchInfo.visible ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            padding: "8px 10px",
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
+          <BranchBadge branchInfo={branchInfo} />
+        </div>
+      ) : null}
       <BranchesPanel />
       <WorktreesPanel />
       <HighlightModeToggle />

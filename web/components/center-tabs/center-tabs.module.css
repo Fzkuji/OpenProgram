@@ -1,14 +1,15 @@
 /* Center tab container — Chrome-style tab strip + file/new-tab panes.
-   Strip is the shared 48px header band (box-border, 1px border-bottom)
-   so its bottom line sits on the same y=48 as the left sidebar header
-   and the right tree header. Tabs are 36px rounded rects centered in
-   the band; active = page bg lifted off the strip bg, no outline.
-   Token vocabulary matches the rest of the app. */
+   Strip is a 40px band (box-border, 1px bottom line): the session tab
+   has NO second toolbar under it (chat chrome = the strip alone), and
+   the file/web toolbars below are 40px too, so their second line lands
+   at y=80. Tabs are 30px rounded rects centered in the band; active =
+   page bg lifted off the strip bg, no outline. Token vocabulary
+   matches the rest of the app. */
 
 /* ---- Tab strip ---------------------------------------------------- */
 
 .strip {
-  height: 48px;
+  height: 40px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -33,7 +34,7 @@
   align-items: center;
   gap: 7px;
   padding: 0 8px 0 12px;
-  height: 36px;
+  height: 30px;
   box-sizing: border-box;
   border-radius: 8px;
   background: transparent;
@@ -51,13 +52,15 @@
 }
 /* Active tab — Chrome merge effect: same background as the pane
    below, bottom corners squared, and the tab grows down to sit on the
-   strip's bottom edge (strip 48 − top gap 6 = 42px), covering the
-   strip's background bottom line so tab and pane read as one surface. */
+   strip's bottom edge (strip 40 − top gap 5 = 35px), covering the
+   strip's background bottom line so tab and pane read as one surface.
+   35 keeps the active tab's TOP flush with the 30px-centered inactive
+   tabs (both top gaps 5px) — 34 made it jiggle 1px on switch. */
 .tabActive,
 .tab.tabActive:hover {
   background: var(--bg-primary);
   color: var(--text-bright);
-  height: 42px;
+  height: 35px;
   align-self: flex-end;
   border-radius: 8px 8px 0 0;
   z-index: 1; /* corners + body paint over neighbor separators/hover bg */
@@ -187,6 +190,42 @@
   background: var(--bg-hover);
 }
 
+/* Connection-status dot pinned to the strip's right end — the old
+   topbar StatusBadge chip reduced to 8px; background color (tone) is
+   set inline by <StatusDot>, clicking opens the same ChannelMenu.
+   The 24px wrapper restores a clickable hit target and carries the
+   strip background so scrolling tabs slide UNDER it, never over;
+   z-index outranks the active tab's 1. */
+.statusDot {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  align-self: stretch;
+  margin-left: auto;
+  flex-shrink: 0;
+  cursor: pointer;
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--bg-secondary);
+}
+.statusDot::before {
+  /* mask the 1px gap tabs would show through on the wrapper's left */
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0;
+  bottom: 1px; /* keep the strip's bottom line visible */
+  width: 6px;
+  background: linear-gradient(to right, transparent, var(--bg-secondary));
+}
+.statusDot > * ,
+.statusDotInner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
 /* ---- File tab pane ------------------------------------------------ */
 
 .filePane {
@@ -199,9 +238,9 @@
 }
 
 .fileToolbar {
-  /* 48px like #mainTopbar so the second header line also shares one y
-     (strip 48 + toolbar 48 = 96 in both the chat and file panes). */
-  height: 48px;
+  /* 40px — strip 40 + toolbar 40 = the file pane's second header line
+     at y=80. (The chat pane has no second line at all anymore.) */
+  height: 40px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -278,9 +317,9 @@
 }
 
 .webToolbar {
-  /* 48px box-border — same row height as the chat topbar and the file
-     toolbar, so all three tab kinds share one second header line. */
-  height: 48px;
+  /* 40px box-border — same row height as the file toolbar, so both
+     toolbar-bearing tab kinds share one second header line at y=80. */
+  height: 40px;
   box-sizing: border-box;
   display: flex;
   align-items: center;

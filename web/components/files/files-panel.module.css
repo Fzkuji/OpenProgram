@@ -272,6 +272,28 @@
 }
 .treeRowDim { opacity: 0.45; }
 
+/* Row selected via click / right-click (targets the header's New
+   File/Folder buttons) — bg only, no accent bar (that marks the
+   active file tab). */
+.treeRowSelected {
+  color: var(--text-bright);
+  background: var(--bg-tertiary);
+}
+
+/* Inline create/rename editor sitting in a 22px row. */
+.treeInput {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  padding: 0 3px;
+  font-size: 13px;
+  color: var(--text-bright);
+  background: var(--bg-input);
+  border: 1px solid var(--accent-orange);
+  border-radius: 3px;
+  outline: none;
+}
+
 .chevron {
   flex-shrink: 0;
   transition: transform 120ms ease-out;
