@@ -9,8 +9,9 @@
  * the runtime-bridge keeps authoritative from the `sessions_list` WS event
  * (see conv-store-mirror), and joins them client-side against the project
  * registry (`list_projects` → `projects_list`, whose `session_ids` are
- * alive-filtered server-side). Sessions no project claims render as a
- * plain flat run under a trailing "Recents" section label.
+ * alive-filtered server-side). Sessions with no explicit claim belong to
+ * the DEFAULT project group — the same fallback the backend's
+ * project_for_session applies; there is no separate "Recents" bucket.
  *
  * Management stays as before:
  *   - per-row right-click / ⋯ context menu (rename, pin, move to group,
@@ -373,10 +374,11 @@ export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
   }
 
   // Recomputed per render like `visible` — the list is small and the
-  // inputs (visible, projects) change together anyway. Sessions no
-  // project claims come out as `unbound` and render as a plain flat run
-  // under the "Recents" section label (never dressed up as a folder).
-  const { groups, unbound } = (() => {
+  // inputs (visible, projects) change together anyway. Sessions with no
+  // explicit project claim belong to the DEFAULT project (the backend's
+  // project_for_session falls back to it) — there is no separate
+  // "Recents" bucket.
+  const groups = (() => {
     // Join: session id → owning project (first registry claim wins,
     // mirroring the backend's project_for_session).
     const owner = new Map<string, string>();
@@ -385,24 +387,30 @@ export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
         if (!owner.has(sid)) owner.set(sid, p.id);
       }
     }
+    const defaultId = projects.find((p) => p.is_default)?.id ?? null;
     const byProject = new Map<string, LegacyConv[]>();
-    const unbound: LegacyConv[] = [];
     for (const c of visible) {
-      const pid = owner.get(c.id);
-      if (pid) {
-        const arr = byProject.get(pid);
-        if (arr) arr.push(c);
-        else byProject.set(pid, [c]);
-      } else unbound.push(c);
+      const pid = owner.get(c.id) ?? defaultId;
+      if (!pid) continue; // no default project answered yet — flat run path
+      const arr = byProject.get(pid);
+      if (arr) arr.push(c);
+      else byProject.set(pid, [c]);
     }
 
     // Most-recent activity across ALL of a project's alive sessions (not
-    // just the filtered view) so ordering is stable while filtering.
+    // just the filtered view) so ordering is stable while filtering. The
+    // default project also owns every unclaimed conversation.
+    const claimed = new Set(owner.keys());
     const activity = (p: SidebarProject): number => {
       let m = 0;
       for (const sid of p.session_ids || []) {
         const c = conversations[sid] as LegacyConv | undefined;
         if (c) m = Math.max(m, c.updated_at || c.created_at || 0);
+      }
+      if (p.is_default) {
+        for (const c of Object.values(conversations) as LegacyConv[]) {
+          if (!claimed.has(c.id)) m = Math.max(m, c.updated_at || c.created_at || 0);
+        }
       }
       return m;
     };
@@ -419,10 +427,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
       path: p.path,
       items: byProject.get(p.id) ?? [],
     }));
-    return {
-      groups: filtering ? out.filter((g) => g.items.length > 0) : out,
-      unbound,
-    };
+    return filtering ? out.filter((g) => g.items.length > 0) : out;
   })();
 
   const renderRow = (c: LegacyConv) => {
@@ -495,23 +500,10 @@ export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
             );
           })}
 
-          {/* Unbound sessions — today's plain recents rows under a weak
-              section label, never dressed up as a folder group. */}
-          {unbound.length > 0 ? (
-            <>
-              <SectionHeader
-                name={text("Recents", "最近")}
-                collapsible={false}
-                collapsed={false}
-                onToggle={() => {}}
-              />
-              {unbound.map(renderRow)}
-            </>
-          ) : null}
         </>
       )}
 
-      {filtering && groups.length === 0 && unbound.length === 0 ? (
+      {filtering && groups.length === 0 ? (
         <div className="px-[16px] py-[10px] text-[12px] text-[var(--text-muted)]">
           {text("No matches", "没有匹配的会话")}
         </div>
