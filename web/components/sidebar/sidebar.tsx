@@ -301,9 +301,15 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* 固定在顶部的 New chat 行（不随下面列表滚动）。它与下面的
-          导航区之间的分隔由滚动区顶边的 inset 分隔线负责——一旦滚动就出现。 */}
-      <div className="flex flex-col gap-px shrink-0 px-[8px] py-[8px]">
+      {/* 固定在顶部的 New chat 行（不随下面列表滚动）。默认它紧贴下面的
+          Functions（底 padding 1px），只有向下滚动时才拉开 8px 空白 +
+          由滚动区顶边的 inset 分隔线分组；滚回顶部又收回 1px。间隔是
+          「滚动时后加的」，不常驻占位。 */}
+      {/* New chat 块：默认与下面 Functions 只隔 1px（下面滚动区的 pt-px），
+          自身无底 padding——不占任何额外空白。滚动时的空白+分隔线由一个
+          绝对定位浮层盖上（见下方 navScrolled 浮层），与本块无关、不占
+          布局、默认不存在。 */}
+      <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
         <div
           className={sidebarNavItemClass}
           id="navNewChat"
@@ -329,18 +335,26 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* New chat 以下（导航链接 + 收藏 + 会话列表）一起滚动。滚动区顶边
-          一旦向下滚就出现 1px inset 分隔线（Claude 风格），把固定的
-          New chat 行和下面的滚动内容分开；用 inset box-shadow 保证不挤占布局。 */}
+      {/* New chat 以下（导航链接 + 收藏 + 会话列表）一起滚动。滚动区外
+          包一层 relative 容器，用来锚定「滚动时才出现的浮层」。 */}
+      <div className="relative flex flex-1 min-h-0 flex-col">
+      {/* 滚动时才出现的浮层：绝对定位贴在滚动区顶部，画一小段空白 +
+          底部分隔线，盖在滚动内容之上。默认（未滚动）display:none —— 完全
+          不存在、不占布局、不与任何组件产生间距。滚回顶部即消失。 */}
+      {navScrolled && (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[8px]
+            bg-[var(--bg-sidebar,var(--bg-secondary))]"
+          style={{ boxShadow: "inset 0 -1px 0 0 var(--border)" }}
+          aria-hidden="true"
+        />
+      )}
       <div
         className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
           [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(e) => {
           const s = e.currentTarget.scrollTop > 0;
           setNavScrolled((prev) => (prev === s ? prev : s));
-        }}
-        style={{
-          boxShadow: navScrolled ? "inset 0 1px 0 0 var(--border)" : undefined,
         }}
       >
         <div className="flex flex-col gap-px shrink-0 px-[8px] pt-px">
@@ -544,6 +558,7 @@ export function Sidebar() {
         </div>
       )}
       </div>
+      </div>{/* /relative 浮层容器 */}
 
       {/* User menu footer — rendered directly here (no portal). The
          AppShell's `#userMenuFooterMount` portal logic is now a no-op
