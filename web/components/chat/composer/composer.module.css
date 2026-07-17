@@ -484,9 +484,13 @@
   /* Pill fill: dark = filled tertiary; light = --bg-input (#fdfcf9 —
      near-white, matches the measured solid #ffffff). */
   --env-pill-bg: var(--bg-tertiary);
+  --env-pill-ring: var(--border-light);
 }
 :global([data-theme="light"]) .envChips {
   --env-pill-bg: #ffffff; /* 实测 Claude pill = 纯白 */
+  /* 实测 Claude ring：中性黑 10%——不能用暖灰 #dedcd1，
+     那个和奶油背景同色，白底上等于没描边。 */
+  --env-pill-ring: rgba(10, 10, 10, 0.1);
 }
 .envChips::-webkit-scrollbar { display: none; }
 .envChips > * { flex-shrink: 0; }
@@ -512,9 +516,11 @@
   font-size: 13px;
   line-height: 22px;
   background: var(--env-pill-bg);
-  /* Claude 三要素：纯白底 + 清晰 1px 描边 + 下缘微投影。
-     ring 走 box-shadow,不动盒模型,两枚 pill 永远同高。 */
-  box-shadow: 0 0 0 1px var(--border-light), 0 1px 2px rgba(20, 20, 19, 0.06);
+  /* Claude 三要素（实测抄值）：纯白底 + inset 1px 描边 + 下缘微投影。
+     inset 让描边压在内缘、边界清晰;外扩 ring 会和投影糊在一起。 */
+  box-shadow:
+    inset 0 0 0 1px var(--env-pill-ring),
+    0 1px 2px rgba(10, 10, 10, 0.04);
   color: var(--ink-80);
 }
 /* pill 内部件统一：图标 14px、状态点 8px——杜绝视觉高差 */
