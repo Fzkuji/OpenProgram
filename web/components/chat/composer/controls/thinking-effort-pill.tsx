@@ -234,11 +234,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
           </span>
         </div>
         {expanded && (
-          /* Claude grammar C card: 16px-padded popover panel — header
-             (muted dimension + bright value + help), Faster/Smarter end
-             labels, dotted-track slider. */
-          <div className="effort-card rounded-[10px] border border-[var(--border-popover)] bg-[var(--surface-popover)] p-[16px] shadow-(--shadow-popover)">
-            <div className="flex items-center gap-[6px] text-[14px] leading-[20px]">
+          /* Claude 实测规格：卡 220×101、衬 10、圆角 12；标题 13px；
+             标题→标签 16、标签→轨 10。header（muted 维度 + bright 值
+             + help）、Faster/Smarter 两端标签、点刻度滑轨。 */
+          <div className="effort-card rounded-[12px] border border-[var(--border-popover)] bg-[var(--surface-popover)] p-[10px] shadow-(--shadow-popover)">
+            <div className="flex items-center gap-[6px] text-[13px] leading-[18px]">
               <span className="text-text-muted">{text("Effort", "思考力度")}</span>
               <span className="font-medium text-text-bright">{capEffort(value)}</span>
               <HoverTip
@@ -252,11 +252,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
                 </span>
               </HoverTip>
             </div>
-            <div className="mt-[12px] flex items-center justify-between text-[14px] leading-[20px] text-text-muted">
+            <div className="mt-[16px] flex items-center justify-between text-[12px] leading-[15px] text-text-muted">
               <span>{text("Faster", "更快")}</span>
               <span>{text("Smarter", "更强")}</span>
             </div>
-            <div className="h-[28px]">
+            <div className="mt-[10px] h-[20px]">
               <Slider
                 min={0}
                 max={maxIndex}
@@ -270,11 +270,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
                 }}
                 onClick={(e) => e.stopPropagation()}
                 thumb={
-                  // Claude 实拍：白色圆钮 + 细描边 + 投影，骑在灰色
-                  // 胶囊轨上；档位不再给钮上色。
+                  // Claude 实测：16×20 白色圆角矩形钮（radius 6），
+                  // 与轨同高；档位不给钮上色。
                   <span
                     aria-hidden="true"
-                    className="absolute left-1/2 top-1/2 size-[20px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white pointer-events-none shadow-[0_1px_4px_rgba(10,10,10,0.25),0_0_0_1px_rgba(10,10,10,0.06)]"
+                    className="absolute left-1/2 top-1/2 h-[20px] w-[16px] -translate-x-1/2 -translate-y-1/2 rounded-[6px] bg-white pointer-events-none shadow-[0_1px_3px_rgba(10,10,10,0.2)]"
                   />
                 }
               />

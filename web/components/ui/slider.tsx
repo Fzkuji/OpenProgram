@@ -59,10 +59,11 @@ const Slider = React.forwardRef<
     )}
     {...props}
   >
-    {/* Claude 效果器滑轨（实拍复刻）：24px 中性浅灰胶囊轨；已滑过的
-        左段只深一档（灰，不上彩色）；点/白钮浮在轨上。 */}
-    <SliderPrimitive.Track className="relative h-[24px] w-full grow overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--text-bright)_5%,transparent)]">
-      <SliderPrimitive.Range className="absolute h-full bg-[color-mix(in_srgb,var(--text-bright)_9%,transparent)]" />
+    {/* Claude 效果器滑轨（实测）：轨 20px 高、6px 方圆角、暖灰面
+        （#EDECE8 → 用 6% ink mix 适配双主题）；已滑过左段是 10% 黑的
+        方形覆盖层。 */}
+    <SliderPrimitive.Track className="relative h-[20px] w-full grow overflow-hidden rounded-[6px] bg-[color-mix(in_srgb,var(--text-bright)_6%,transparent)]">
+      <SliderPrimitive.Range className="absolute h-full bg-[color-mix(in_srgb,var(--text-bright)_10%,transparent)]" />
     </SliderPrimitive.Track>
     {stops && stops > 1
       ? Array.from({ length: stops }).map((_, i) => {

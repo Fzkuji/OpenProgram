@@ -1754,7 +1754,7 @@
    the pointer crosses the visual gap); the .effort-card inside paints
    the popover surface. */
 .effort-pill-shell[data-expanded="true"] {
-  width: 280px;
+  width: 220px; /* Claude 实测卡宽 */
   height: auto;
   top: auto;
   bottom: 100%;
@@ -1829,7 +1829,7 @@
    the right-aligned trigger). */
 @container composer-row (max-width: 520px) {
   .effort-pill-shell[data-expanded="true"] {
-    width: min(280px, calc(100cqw - 16px));
+    width: min(220px, calc(100cqw - 16px));
   }
 }
 
