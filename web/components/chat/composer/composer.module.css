@@ -583,9 +583,7 @@
   background: transparent;
   color: var(--text-primary);
 }
-.agentChips :global(.agent-badge:has(.badge-details) svg) {
-  display: none;
-}
+/* 角色图标（chat=气泡 / 执行=终端）常驻——用户要求模型名旁保留 logo。 */
 
 /* MORPHED internal band only: the effort pill's absolute shell must
    expand LEFTWARD into the row's empty middle (right edge pinned to
@@ -1157,12 +1155,12 @@
   min-width: 192px;
   max-width: 320px;
   /* 弹层统一配方：popover 白面 + 10px 圆角（=输入框刻度）+ 真 border。
-     竖衬 6 / 横衬 0——行通铺到边（Claude 实测）。 */
+     行保持圆角"按钮"hover——四周 6px 衬。 */
   background: var(--surface-popover);
   border: 1px solid var(--border-popover);
   border-radius: 10px;
   box-shadow: var(--shadow-popover);
-  padding: 6px 0;
+  padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -1188,11 +1186,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  /* 24 / 13px / 18px / 通铺无圆角 = claude.ai/code 菜单行实测——与
-     itemCls 同刻度，hover 底色铺到面板边缘。 */
+  /* 24 / 13px / 18px = claude.ai/code 菜单行实测高度；行保持圆角
+     "按钮"hover——与 itemCls 同刻度。 */
   min-height: 24px;
-  padding: 3px 12px;
-  border-radius: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
   font-size: 13px;
   line-height: 18px;
   color: var(--text-primary);
@@ -1210,8 +1208,8 @@
 }
 .plusMenuDivider {
   height: 1px;
-  /* 面板横衬为 0，分隔线自然通铺。 */
-  margin: 6px 0;
+  /* 负外边距抵掉面板 6px 衬——分隔线通铺，行保持内缩按钮。 */
+  margin: 6px -6px;
   background: var(--border);
 }
 .plusMenuLeft {
