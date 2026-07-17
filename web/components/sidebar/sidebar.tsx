@@ -95,6 +95,9 @@ export function Sidebar() {
 
   const [open, setOpen] = useState<boolean>(true);
   const [favCollapsed, setFavCollapsed] = useState(false);
+  // 下面滚动区一旦向下滚动就为 true —— 驱动固定 New chat 行底部的
+  // 分隔线（Claude 风格）。
+  const [navScrolled, setNavScrolled] = useState(false);
   // Refresh-button states (matches legacy spin → checkmark → revert).
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
@@ -113,7 +116,6 @@ export function Sidebar() {
   const chatsIconRef = useRef<AnimatedNavIconHandle>(null);
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const newChatIconRef = useRef<AnimatedNavIconHandle>(null);
-  const headerNewChatIconRef = useRef<AnimatedNavIconHandle>(null);
 
   const { availableFunctions, programsMeta } = useWindowGlobals();
   const favSet = new Set(programsMeta.favorites || []);
@@ -251,12 +253,22 @@ export function Sidebar() {
           : "w-[49px] min-w-[49px] collapsed")
       }
     >
-      <div className="flex h-[48px] shrink-0 items-center justify-between gap-[4px] p-[8px] box-border">
+      {/* 收起态（49px 窄轨）只剩收起按钮：改用 justify-center 并去掉左右
+          padding，让唯一按钮在窄轨里水平居中，否则 justify-between + p-[8px]
+          会把它推到右边（靠右 bug）。 */}
+      <div
+        className={
+          "flex h-[48px] shrink-0 items-center box-border " +
+          (open
+            ? "justify-between p-[8px]"
+            : "justify-center px-0 py-[8px]")
+        }
+      >
         <div
           className={
             "flex h-[var(--ui-list-h)] min-w-0 flex-1 items-center overflow-hidden " +
             "[transition:opacity_0.15s_ease,padding-left_0.3s_ease] " +
-            (open ? "opacity-100 pl-[8px]" : "opacity-0 pl-0")
+            (open ? "opacity-100 pl-[8px]" : "hidden opacity-0 pl-0")
           }
         >
           <span className="text-[20px] font-bold tracking-[-0.01em] whitespace-nowrap">
@@ -273,26 +285,6 @@ export function Sidebar() {
             </span>
           </span>
         </div>
-        {/* Always-reachable New-chat shortcut — same recipe as the
-            collapse toggle but 28px (design v4 brand-row hbtn). Hidden
-            when collapsed: the 49px rail only fits the toggle. */}
-        <button
-          className={
-            "flex h-[var(--ui-list-h)] w-[var(--ui-list-h)] shrink-0 cursor-pointer items-center justify-center " +
-            "rounded-[var(--ui-list-radius)] border-none bg-transparent p-0 " +
-            "text-nav-color transition-colors duration-150 ease-out " +
-            "hover:bg-bg-hover hover:text-nav-color-hover " +
-            "active:bg-[rgba(0,0,0,0.2)]" +
-            (open ? "" : " hidden")
-          }
-          onClick={newChat}
-          onMouseEnter={() => headerNewChatIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => headerNewChatIconRef.current?.stopAnimation?.()}
-          title={t("nav.new_chat")}
-          type="button"
-        >
-          <PlusIcon ref={headerNewChatIconRef} size={16} />
-        </button>
         <button
           className={sidebarToggleClass}
           onClick={toggleSidebar}
@@ -309,16 +301,9 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Everything below the brand header scrolls together (design v4):
-          New chat + nav links + favourites + conversations are one scroll
-          area with uniform 1px gaps — nothing pinned, no divider. The
-          brand-row ＋ above is the always-reachable New-chat fallback once
-          the list scrolls. */}
-      <div
-        className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
-          [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
+      {/* 固定在顶部的 New chat 行（不随下面列表滚动）。它与下面的
+          导航区之间的分隔由滚动区顶边的 inset 分隔线负责——一旦滚动就出现。 */}
+      <div className="flex flex-col gap-px shrink-0 px-[8px] py-[8px]">
         <div
           className={sidebarNavItemClass}
           id="navNewChat"
@@ -342,6 +327,23 @@ export function Sidebar() {
           </span>
           <span className={sidebarNavLabelClass}>{t("nav.new_chat")}</span>
         </div>
+      </div>
+
+      {/* New chat 以下（导航链接 + 收藏 + 会话列表）一起滚动。滚动区顶边
+          一旦向下滚就出现 1px inset 分隔线（Claude 风格），把固定的
+          New chat 行和下面的滚动内容分开；用 inset box-shadow 保证不挤占布局。 */}
+      <div
+        className="flex flex-1 min-h-0 flex-col overflow-y-auto overflow-x-hidden
+          [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onScroll={(e) => {
+          const s = e.currentTarget.scrollTop > 0;
+          setNavScrolled((prev) => (prev === s ? prev : s));
+        }}
+        style={{
+          boxShadow: navScrolled ? "inset 0 1px 0 0 var(--border)" : undefined,
+        }}
+      >
+        <div className="flex flex-col gap-px shrink-0 px-[8px] pt-px">
         <Link
           href="/functions"
           className={
