@@ -397,26 +397,12 @@ export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
       else byProject.set(pid, [c]);
     }
 
-    // Most-recent activity across ALL of a project's alive sessions (not
-    // just the filtered view) so ordering is stable while filtering. The
-    // default project also owns every unclaimed conversation.
-    const claimed = new Set(owner.keys());
-    const activity = (p: SidebarProject): number => {
-      let m = 0;
-      for (const sid of p.session_ids || []) {
-        const c = conversations[sid] as LegacyConv | undefined;
-        if (c) m = Math.max(m, c.updated_at || c.created_at || 0);
-      }
-      if (p.is_default) {
-        for (const c of Object.values(conversations) as LegacyConv[]) {
-          if (!claimed.has(c.id)) m = Math.max(m, c.updated_at || c.created_at || 0);
-        }
-      }
-      return m;
-    };
+    // Group order is FIXED — default project first, the rest by name.
+    // The sidebar is the stable bookmark shelf; recency lives inside a
+    // group (sessions are time-sorted) and in the center tab strip.
+    // Activity-based group ordering was tried and rejected: groups that
+    // jump around give neither spatial memory nor a clean timeline.
     const ordered = [...projects].sort((a, b) => {
-      const d = activity(b) - activity(a);
-      if (d) return d;
       if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
