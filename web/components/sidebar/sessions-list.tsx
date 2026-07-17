@@ -478,16 +478,24 @@ export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
   const collapsible = true;
   const isEmpty = visible.length === 0;
   const firstHasHeader = sections.length > 0 && sections[0].label !== "";
+  // Whole-tree fold for project mode — same SectionHeader affordance as
+  // the "Recents" bucket header, same transient collapsedGroups set.
+  const PROJECTS_SECTION_KEY = "__projects__";
+  const projectsFolded = collapsedGroups.has(PROJECTS_SECTION_KEY);
   const body = projectMode ? (
     <>
-      {/* Group-by → Project: the folder tree. The group headers are
-          nav rows (not SectionHeaders), so the filter rides the same
-          thin right-aligned row the header-less flat run uses — it must
-          stay reachable, it's the way back to the other modes. */}
-      <div className="flex h-[24px] items-center justify-end px-[8px]">
-        <RecentsFilter />
-      </div>
-      {projects.length === 0
+      {/* Group-by → Project: a top-level collapsible "Projects" header
+          (the way "Recents" heads the date view) that folds ALL groups
+          at once; the filter rides its right — it must stay reachable,
+          it's the way back to the other modes. */}
+      <SectionHeader
+        name={text("Projects", "项目")}
+        collapsible
+        collapsed={projectsFolded}
+        onToggle={() => toggleGroupCollapse(PROJECTS_SECTION_KEY)}
+        actions={<RecentsFilter />}
+      />
+      {projectsFolded ? null : projects.length === 0
         ? // projects_list hasn't answered yet (the registry always holds
           // at least the default project) — render a flat run instead of
           // flashing everything under a wrong group.
@@ -570,8 +578,10 @@ export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
     <>
       {body}
       {/* "Clear all" only when there are conversations to clear — an
-          empty list shows just the "No conversations yet" header. */}
-      {!isEmpty ? (
+          empty list shows just the "No conversations yet" header. It
+          folds away with the Projects section: a folded section leaves
+          no rows for it to act on visually. */}
+      {!isEmpty && !(projectMode && projectsFolded) ? (
         <div className={styles.clearAll} onClick={clearAll}>
           {t("sidebar.clear_all")}
         </div>
