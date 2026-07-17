@@ -39,7 +39,12 @@
 .projectKids::before {
   content: "";
   position: absolute;
+  /* 竖线要正好穿过子项圆点的圆心：圆点在 8px 左内边距 + 16px 标记槽内居中，
+     圆心 x = 8 + 16/2 = 16px；上方项目头文件夹图标中心也在 16px。1px 宽的线
+     若用 left:16px 会落在 x=[16,17]（中心 16.5px，偏右半像素），所以 left 定
+     在 16px 再 translateX(-50%) 让线跨在 16px 轴上，与圆心 / 图标中心同轴。 */
   left: 16px;
+  transform: translateX(-50%);
   top: 2px;
   bottom: 2px;
   width: 1px;
