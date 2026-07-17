@@ -1,122 +1,38 @@
-/* Welcome screen — logo / title / description.
-   Visual mirrors what the legacy .welcome block looked like in
-   05-chat.css, scoped via CSS Module. */
+/* Welcome — Claude Code style greeting header: 24px app icon + a
+   plain-sans H1, top-left on the SAME 768px content column as the
+   composer bands. No centered logo block, no serif title, no tagline —
+   clean empty space below until the composer. */
 
 .welcome {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* `.top` (logo / title / description) is vertically centered in the
-     visible area (top bar → composer top) via `justify-content: center`.
-     No vertical padding, so it centers cleanly. */
-  justify-content: center;
-  position: relative;
-  color: var(--text-secondary);
-  padding: 0 40px;
-}
-
-/* Logo + title + description, kept as a tight unit (`flex-shrink: 0`
-   so it never compresses), vertically centered as one group. */
-.top {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* Compact, centered stack — Claude's greeting keeps logo / title /
-     tagline tight. */
-  gap: 12px;
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  /* .chat-messages already pads 24px at the top; +16 here puts the
+     header ~40px from the top of the chat area (Claude Code offset). */
+  padding-top: 16px;
   flex-shrink: 0;
 }
 
-.logo {
-  font-size: 48px;
-  color: var(--accent-blue);
-  font-weight: 700;
-  font-family: var(--font-mono);
-  white-space: nowrap;
-}
-.l1,
-.l2,
-.m {
-  font-size: 0;
-}
-.l1 {
-  animation: logoType1 4s steps(1, end) infinite;
-}
-.l2 {
-  animation: logoType2 4s steps(1, end) infinite;
-}
-.m {
-  animation: logoType3 4s steps(1, end) infinite;
-}
-@keyframes logoType1 {
-  0%, 12% {
-    font-size: 0;
-  }
-  15%, 82% {
-    font-size: 48px;
-  }
-  85%, 100% {
-    font-size: 0;
-  }
-}
-@keyframes logoType2 {
-  0%, 22% {
-    font-size: 0;
-  }
-  25%, 77% {
-    font-size: 48px;
-  }
-  80%, 100% {
-    font-size: 0;
-  }
-}
-@keyframes logoType3 {
-  0%, 32% {
-    font-size: 0;
-  }
-  35%, 72% {
-    font-size: 48px;
-  }
-  75%, 100% {
-    font-size: 0;
-  }
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.caret {
-  display: inline-block;
-  width: 0.08em;
-  height: 0.7em;
-  background: currentColor;
-  vertical-align: -0.04em;
-  margin: 0 0.04em;
-  animation: logoCaretBlink 0.9s steps(2) infinite;
-}
-@keyframes logoCaretBlink {
-  0%, 50% {
-    opacity: 0.85;
-  }
-  51%, 100% {
-    opacity: 0;
-  }
+.icon {
+  width: 24px;
+  height: 24px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .title {
-  /* Display serif greeting (Claude style). The global `.display-serif`
-     utility (base.css) carries the canonical stack; this duplicate
-     font-family is the fallback in case that utility isn't loaded. */
-  font-family: 'Copernicus', 'Tiempos Text', 'Charter', 'Iowan Old Style',
-    Georgia, 'Songti SC', 'SimSun', serif;
-  font-size: 30px;
-  letter-spacing: -0.01em;
+  margin: 0;
+  /* Normal sans — NOT the display-serif greeting face. */
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 28px;
+  letter-spacing: normal;
   color: var(--text-bright);
-  font-weight: 500;
-}
-
-.text {
-  font-size: 14px;
-  text-align: center;
-  max-width: 500px;
-  line-height: 1.7;
-  color: var(--text-secondary);
 }

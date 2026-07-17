@@ -71,7 +71,9 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  max-width: 800px;
+  /* Claude Code measured: 768px content column, shared by all three
+     bands (env pills / box / controls). */
+  max-width: 768px;
   margin: 0 auto;
   background: var(--bg-tertiary);
   border: none;
@@ -164,8 +166,8 @@
   min-height: 44px;
   /* Right padding reserves space for the absolute-positioned action
      button (send / stop) that lives at the wrapper level in chat mode:
-     6 (right offset) + 32 (button-size) + 8 (breathing space) = 46. */
-  padding: 13px 46px 13px 16px;
+     10 (right offset) + 24 (button size) + 8 (breathing space) = 42. */
+  padding: 13px 42px 13px 16px;
   flex-shrink: 0;
 }
 .inputField {
@@ -462,17 +464,20 @@
 /* Env chips — floating row ABOVE the input box (Claude Code
    arrangement): FILLED pills [Local] [📁 project] — measured from
    claude.ai/code: solid near-white fill, NO border, 24px tall, 6px
-   radius, 13px text at 80% ink. Left-aligned on the wrapper's 800px
-   column, 6px gap below (the measured inter-row gap). Lives inside
-   the bottom-anchored absolute .inputArea, so it grows the composer
-   upward over the transcript instead of pushing it. Narrow composer:
-   the row scrolls horizontally inside its own box. */
+   radius, 13px text at 80% ink. Left-aligned on the wrapper's 768px
+   column — ZERO horizontal padding so the first pill's BOX left edge
+   sits exactly on the input box's left edge (measured claude.ai/code:
+   pill.x == promptBox.x). 10px visual gap below (measured pills-row
+   bottom → box top). Lives inside the bottom-anchored absolute
+   .inputArea, so it grows the composer upward over the transcript
+   instead of pushing it. Narrow composer: the row scrolls
+   horizontally inside its own box. */
 .envChips {
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 800px;
-  margin: 0 auto 6px;
+  max-width: 768px;
+  margin: 0 auto 10px;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
@@ -573,17 +578,19 @@
    motion instead of the previous two-row teleport. */
 .actionBtn {
   position: absolute;
-  /* Chat mode: centered inside the 44px single-line box — (44−32)/2 =
-     6px offsets, so the 32px circle never pokes past the box edge.
-     fn-form mode restores the legacy 16px offsets below (the hook in
-     use-fn-form-wrapper.ts drives `top` inline in that mode anyway;
-     index.tsx clears the inline value when returning to chat mode so
-     this 6px wins again). */
-  right: 6px;
-  top: 6px;
-  width: var(--composer-button-size);
-  height: var(--composer-button-size);
-  border-radius: 50%;
+  /* Chat mode (claude.ai/code measured): 24×24 square with 6px radius,
+     10px inset from the box's right edge, vertically centered in the
+     44px single-line row — (44−24)/2 = 10px top. fn-form / morphed
+     modes restore the legacy 32px circle at 16px offsets below (the
+     glide hook in use-fn-form-wrapper.ts depends on that geometry and
+     drives `top` inline in that mode anyway; index.tsx clears the
+     inline value when returning to chat mode so this 10px wins
+     again). */
+  right: 10px;
+  top: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   border: none;
   cursor: pointer;
   display: inline-flex;
@@ -598,6 +605,9 @@
      the same curve when the wrapper morphs. */
   transition: top var(--composer-height-transition),
     right var(--composer-height-transition),
+    width var(--composer-height-transition),
+    height var(--composer-height-transition),
+    border-radius var(--composer-height-transition),
     background 0.15s,
     opacity 180ms ease;
   /* Bottom-row sits at z-index 1 to hide the form body retracting
@@ -605,11 +615,15 @@
      visible while it's mid-glide through that band. */
   z-index: 2;
 }
-/* Morphed mode keeps the legacy 16px corner offsets (concentric with
-   the internal bottom row's geometry). */
+/* Morphed mode keeps the legacy 32px circle at 16px corner offsets
+   (concentric with the internal bottom row's geometry — the glide
+   hook's ACTION_BTN_BOTTOM_OFFSET constant assumes 16 + 32). */
 .fnFormMode .actionBtn {
   right: var(--composer-button-offset);
   top: var(--composer-button-offset);
+  width: var(--composer-button-size);
+  height: var(--composer-button-size);
+  border-radius: 50%;
 }
 .actionBtn svg {
   width: 14px;
@@ -925,7 +939,7 @@
 /* ===== Detached controls row (chat mode) ===========================
    Claude Code's three-band composer: env pills / small input box /
    quiet controls on the page background. In chat mode the controls
-   render HERE — a static sibling row 6px below the wrapper — instead
+   render HERE — a static sibling row 10px below the wrapper — instead
    of inside it. Morphed modes (fn-form / question / approval) keep
    the internal `.inputBottomRow` so the wrapper height animation and
    the button-glide mechanics stay untouched. */
@@ -934,9 +948,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  max-width: 800px;
-  margin: 6px auto 0;
-  padding: 0 8px;
+  /* Same 768px column as the box and the env pills. ZERO horizontal
+     padding: the permission button's BOX left edge == box left edge,
+     and the context ring (last item) ends flush with the box's right
+     edge (measured claude.ai/code: acceptBtn.x == promptBox.x,
+     ring.right == box.right). 10px visual gap above (measured box
+     bottom → controls-row top). */
+  max-width: 768px;
+  margin: 10px auto 0;
+  padding: 0;
   min-height: 20px;
   position: relative;
 }
@@ -1090,22 +1110,18 @@
   height: 14px;
 }
 
-/* Context ring: ~12px ring (14px svg in a 20px hit target), stroke in
-   the app accent per the measured spec. */
+/* Context ring: 12px svg in a 20px hit target (measured spec). The
+   ring is the LAST item of the row, flush with the box's right edge.
+   Colours (track var(--border) / progress var(--accent-orange)) are
+   painted by the component itself (context-badge.tsx). */
 .controlsRow :global(.context-ring-badge) {
   width: 20px;
   height: 20px;
   border-radius: 5px;
 }
 .controlsRow :global(.context-ring-badge) svg {
-  width: 14px;
-  height: 14px;
-}
-/* ponytail: flattens the usage-tier colours (blue/yellow/red) to the
-   measured accent-orange; re-split by pct if the warning tint is
-   missed. Second circle = the progress arc. */
-.controlsRow :global(.context-ring-badge) circle + circle {
-  stroke: var(--accent-orange);
+  width: 12px;
+  height: 12px;
 }
 
 /* Plus dropdown. Shadow stack mirrors shadcn's `shadow-md` (a soft 1-2px

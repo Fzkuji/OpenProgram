@@ -10,17 +10,15 @@
  * `{input, output, cache_read}` tuple into the Zustand store via
  * `setContextStats`; this component is the sole renderer.
  *
- * Visual: a `.context-stats-label` pill (rule lives in
- * `app/styles/05-chat.css`) showing the compact
- * "{tokens-in} in · {tokens-out} out" summary built by
- * `buildUsageText`. Tooltip carries the longer breakdown
- * (base / cache hit / out). Returns ``null`` — i.e. emits no DOM —
- * whenever the active session has no usage yet, matching the legacy
- * `:empty { display:none }` behavior with one fewer reflow.
+ * Visual: a small progress ring (Claude Code style — 12px svg in a
+ * 20px button, var(--border) track, var(--accent-orange) arc starting
+ * at 12 o'clock). ALWAYS renders: a session with no usage yet (or no
+ * session at all) shows the empty ring at 0 progress instead of
+ * vanishing from the controls row. Tooltip carries the
+ * "Context used / window (pct)" breakdown.
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { buildUsageText } from "@/lib/format-utils/format";
 import { useSessionStore } from "@/lib/session-store";
 import { ContextBreakdownPanel } from "./context-breakdown-panel";
 
@@ -77,29 +75,18 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const fallbackProvider = useSessionStore((s) => s.agentSettings.chat?.provider);
   const fallbackModel = useSessionStore((s) => s.agentSettings.chat?.model);
 
-  if (!sid || !usage) return null;
-
-  const text = buildUsageText(
-    {
-      input_tokens: usage.input,
-      output_tokens: usage.output,
-      cache_read: usage.cache_read,
-      cache_create: usage.cache_create,
-    },
-    usage.provider ?? fallbackProvider ?? null,
-  );
-  if (!text) return null;
-
+  // 永远渲染圆环：还没有 usage 的会话（或还没有会话）显示 0 进度的空环，
+  // 而不是整个消失（“圆环不见了”就是以前 return null 造成的）。
   // tooltip: 详细 breakdown + 模型/provider 元信息. usage 里的 model 来自
   // backend context_stats 事件, 比 agentSettings 更精确 (单 turn 内可能
   // 切了 provider, agentSettings 是最终值).
-  const modelLabel = usage.model || fallbackModel || "";
-  const providerLabel = usage.provider || fallbackProvider || "";
+  const modelLabel = usage?.model || fallbackModel || "";
+  const providerLabel = usage?.provider || fallbackProvider || "";
   const metaLine = [providerLabel, modelLabel].filter(Boolean).join(" · ");
 
   // 用量百分比：input tokens / context window（拿不到 window 时给个保守默认）
   const win = ctxWindow && ctxWindow > 0 ? ctxWindow : 200_000;
-  const used = usage.input || 0;
+  const used = usage?.input || 0;
   const pct = Math.max(0, Math.min(1, used / win));
 
   // tooltip 用 Claude Code 那种「Context 用了多少/共多少 (百分比)」格式
@@ -109,13 +96,11 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
     `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)` +
     (metaLine ? ` · ${metaLine}` : "");
 
-  // 环形进度（对齐 Claude Code 那种小圆环）
-  const R = 8;               // 半径（描边变粗后收一点，避免超出 22 box）
-  const SW = 3.5;            // 描边宽度（加粗 2.5 -> 3.5）
+  // 环形进度（Claude Code 实测：12px svg、描边 2、轨道 var(--border)、
+  // 进度 var(--accent-orange)、-90° 起点）
+  const R = 5;               // 半径 — 12px viewBox 里留 1px 描边余量
+  const SW = 2;              // 描边宽度
   const C = 2 * Math.PI * R; // 周长
-  // 颜色按用量：够用蓝、偏满黄、快满红（对齐 Claude Code）
-  const ringColor =
-    pct >= 0.9 ? "#e5534b" : pct >= 0.7 ? "#e0a33c" : "#3b9eff";
 
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
@@ -126,26 +111,26 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
         onClick={() => setPanelOpen(!panelOpen)}
         aria-label="Context usage"
       >
-        <svg width="22" height="22" viewBox="0 0 22 22">
+        <svg width="12" height="12" viewBox="0 0 12 12">
           <circle
-            cx="11"
-            cy="11"
+            cx="6"
+            cy="6"
             r={R}
             fill="none"
             stroke="var(--border)"
             strokeWidth={SW}
           />
           <circle
-            cx="11"
-            cy="11"
+            cx="6"
+            cy="6"
             r={R}
             fill="none"
-            stroke={ringColor}
+            stroke="var(--accent-orange)"
             strokeWidth={SW}
             strokeLinecap="round"
             strokeDasharray={C}
             strokeDashoffset={C * (1 - pct)}
-            transform="rotate(-90 11 11)"
+            transform="rotate(-90 6 6)"
           />
         </svg>
       </button>

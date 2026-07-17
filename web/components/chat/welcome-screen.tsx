@@ -1,10 +1,12 @@
 /**
- * WelcomeScreen — empty-chat onboarding panel.
+ * WelcomeScreen — empty-chat greeting header (Claude Code style).
  *
- * Renders the `{LLM}` logo, the "Agentic Programming" title, and the
- * help text. Visible whenever the session store says so; mounted as a
- * portal inside #welcome-mount placeholder that PageShell leaves in
- * the chat area.
+ * Renders the bubble-ring app icon (app/icon.svg, served at /icon.svg)
+ * next to a plain-sans "What's up next?" heading, top-left aligned to
+ * the same 768px content column as the composer. Nothing below it —
+ * clean empty space until the input box. Visible whenever the session
+ * store says so; mounted as a portal inside the #welcome-mount
+ * placeholder that PageShell leaves in the chat area.
  */
 "use client";
 
@@ -21,22 +23,19 @@ export function WelcomeScreen() {
 
   return (
     <div className={styles.welcome}>
-      <div className={styles.top}>
-        <div className={styles.logo}>
-          {"{"}
-          <span className={styles.l1}>L</span>
-          <span className={styles.l2}>L</span>
-          <span className={styles.m}>M</span>
-          <span className={styles.caret} />
-          {"}"}
-        </div>
-        <div className={`${styles.title} display-serif`}>Agentic Programming</div>
-        <div className={styles.text}>
-          {text(
-            "Run agentic functions, create new ones, or ask questions. Type a command or natural language below.",
-            "运行 Agentic 函数、创建新函数，或直接提问。可以在下方输入命令或自然语言。",
-          )}
-        </div>
+      <div className={styles.header}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- static
+            24px svg; next/image adds nothing here */}
+        <img
+          src="/icon.svg"
+          alt=""
+          width={24}
+          height={24}
+          className={styles.icon}
+        />
+        <h1 className={styles.title}>
+          {text("What's up next?", "接下来做什么？")}
+        </h1>
       </div>
     </div>
   );

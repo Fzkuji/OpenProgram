@@ -515,8 +515,8 @@ export function Composer() {
     decisionKey: activeDecision?.id ?? null,
   });
 
-  // Chat-mode resting spot for the action button is CSS top:6px (it
-  // centers in the 44px single-line box). use-fn-form-wrapper resets
+  // Chat-mode resting spot for the action button is CSS top:10px (the
+  // 24px button centers in the 44px single-line box). use-fn-form-wrapper resets
   // the inline top to the legacy 16px whenever a morphed state ends —
   // clear it here (this effect runs after the hook's, they share the
   // morphed trigger) so the stylesheet value wins again in chat mode.

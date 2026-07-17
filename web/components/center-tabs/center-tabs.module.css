@@ -2,9 +2,9 @@
    Strip is a 40px band (box-border, 1px bottom line): the session tab
    has NO second toolbar under it (chat chrome = the strip alone), and
    the file/web toolbars below are 40px too, so their second line lands
-   at y=80. Tabs are 30px rounded rects centered in the band; active =
-   page bg lifted off the strip bg, no outline. Token vocabulary
-   matches the rest of the app. */
+   at y=80. Tabs are 28px rounded rects centered in the band with 6px
+   gaps between them; active = page bg lifted off the strip bg, no
+   outline. Token vocabulary matches the rest of the app. */
 
 /* ---- Tab strip ---------------------------------------------------- */
 
@@ -13,6 +13,7 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
+  gap: 6px;
   padding: 0 8px;
   /* The 1px bottom line is a background layer (not border-bottom) so
      the active tab — a child, painted above the parent background —
@@ -34,14 +35,14 @@
   align-items: center;
   gap: 7px;
   padding: 0 8px 0 12px;
-  height: 30px;
+  height: 28px;
   box-sizing: border-box;
   border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 12.5px;
-  min-width: 96px;
+  min-width: 84px;
   max-width: 200px;
   flex-shrink: 0;
   white-space: nowrap;
@@ -52,36 +53,18 @@
 }
 /* Active tab — Chrome merge effect: same background as the pane
    below, bottom corners squared, and the tab grows down to sit on the
-   strip's bottom edge (strip 40 − top gap 5 = 35px), covering the
+   strip's bottom edge (strip 40 − top gap 6 = 34px), covering the
    strip's background bottom line so tab and pane read as one surface.
-   35 keeps the active tab's TOP flush with the 30px-centered inactive
-   tabs (both top gaps 5px) — 34 made it jiggle 1px on switch. */
+   34 keeps the active tab's TOP flush with the 28px-centered inactive
+   tabs (both top gaps 6px), so switching never jiggles the row. */
 .tabActive,
 .tab.tabActive:hover {
   background: var(--bg-primary);
   color: var(--text-bright);
-  height: 35px;
+  height: 34px;
   align-self: flex-end;
   border-radius: 8px 8px 0 0;
-  z-index: 1; /* corners + body paint over neighbor separators/hover bg */
-}
-
-/* Chrome-style 1×20px separators between adjacent inactive tabs —
-   suppressed on both sides of the active tab and the hovered tab. */
-.tab + .tab::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1px;
-  height: 20px;
-  background: var(--border);
-}
-.tab:hover::before,
-.tab:hover + .tab::before,
-.tabActive + .tab::before {
-  background: transparent;
+  z-index: 1; /* corners + body paint over neighbor hover bg */
 }
 
 /* Chrome's signature concave (inverted) bottom corners: an 8px square
@@ -97,9 +80,6 @@
   bottom: 0;
   width: 8px;
   height: 8px;
-  /* reset the separator's centering (::before is shared with it) */
-  top: auto;
-  transform: none;
 }
 .tab.tabActive::before {
   left: -8px;
