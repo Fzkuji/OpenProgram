@@ -212,10 +212,11 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
     <div
       className="context-breakdown-panel flex max-h-[70vh] w-[380px] flex-col overflow-hidden"
       style={{
-        // Claude grammar C 卡片：--surface-popover 白卡 + 12px 圆角 +
-        // --shadow-popover（阴影自带 1px ring，无需 border）。
+        // Grammar C 卡片：白卡 + 10px 圆角（=输入框刻度）+ 真 border
+        // + 投影——弹层统一配方。
         background: "var(--surface-popover)",
-        borderRadius: 12,
+        borderRadius: 10,
+        border: "1px solid var(--border-popover)",
         boxShadow: "var(--shadow-popover)",
       }}
     >

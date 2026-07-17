@@ -151,7 +151,8 @@
      uses (see components/chat/top-bar/menu-styles.ts MENU_PANEL). The
      shadow carries its own 1px ring, so panels need no border. */
   --surface-popover: #30302e;
-  --shadow-popover: 0 0 0 1px rgba(255, 255, 255, 0.10), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --border-popover: rgba(255, 255, 255, 0.12);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
   --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
   --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
@@ -206,9 +207,11 @@
   /* Popover / menu surface — pure white card, visibly raised off the
      cream page (Claude style), ring baked into the shadow. */
   --surface-popover: #ffffff;
-  /* ring 对齐全站实测发丝线 rgba(10,10,10,.1)（pill / 输入框同值），
-     投影加重一档——0.08/0.12 在奶油底上边界几乎不可见。 */
-  --shadow-popover: 0 0 0 1px rgba(10, 10, 10, 0.1), 0 8px 24px rgba(20, 20, 19, 0.16);
+  /* 弹层边缘 = 真 border（--border-popover）而非藏在 shadow 里的
+     ring——ring 反复被反馈"看不见"。0.12 比 pill 发丝线(0.1)深半档，
+     浮层需要更明确的边界。shadow 只负责投影。 */
+  --border-popover: rgba(10, 10, 10, 0.12);
+  --shadow-popover: 0 8px 24px rgba(20, 20, 19, 0.16);
   --shadow-dialog: 0 10px 30px rgba(20, 20, 19, 0.10);
   --shadow-sidebar-left: 4px 0 16px rgba(20, 20, 19, 0.06);
   --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);

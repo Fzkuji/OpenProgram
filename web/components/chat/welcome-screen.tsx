@@ -1,11 +1,10 @@
 /**
- * WelcomeScreen — empty-chat greeting header (Claude Code style).
+ * WelcomeScreen — empty-chat centered greeting.
  *
- * Renders the bubble-ring app icon (app/icon.svg, served at /icon.svg)
- * next to a plain-sans "What's up next?" heading, top-left aligned to
- * the same 768px content column as the composer. Nothing below it —
- * clean empty space until the input box. Visible whenever the session
- * store says so; mounted as a portal inside the #welcome-mount
+ * OpenProgram 自己的问候组合：居中的 {LLM} 打字动画 logo + 一句自家
+ * tagline。不用 claude.ai 的"图标 + What's up next?"左上角组合——那是
+ * 它的商标性排布，句子和位置都得是我们自己的。Visible whenever the
+ * session store says so; mounted as a portal inside the #welcome-mount
  * placeholder that PageShell leaves in the chat area.
  */
 "use client";
@@ -23,19 +22,21 @@ export function WelcomeScreen() {
 
   return (
     <div className={styles.welcome}>
-      <div className={styles.header}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- static
-            24px svg; next/image adds nothing here */}
-        <img
-          src="/icon.svg"
-          alt=""
-          width={24}
-          height={24}
-          className={styles.icon}
-        />
-        <h1 className={styles.title}>
-          {text("What's up next?", "接下来做什么？")}
-        </h1>
+      <div className={styles.top}>
+        <div className={styles.logo}>
+          {"{"}
+          <span className={styles.l1}>L</span>
+          <span className={styles.l2}>L</span>
+          <span className={styles.m}>M</span>
+          <span className={styles.caret} />
+          {"}"}
+        </div>
+        <div className={styles.tagline}>
+          {text(
+            "Run functions, build agents, or just ask.",
+            "运行函数、搭建 agent，或者直接提问。",
+          )}
+        </div>
       </div>
     </div>
   );

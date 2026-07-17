@@ -1156,9 +1156,10 @@
   margin-bottom: 4px;
   min-width: 192px;
   max-width: 320px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  /* 弹层统一配方：popover 白面 + 10px 圆角（=输入框刻度）+ 真 border。 */
+  background: var(--surface-popover);
+  border: 1px solid var(--border-popover);
+  border-radius: 10px;
   box-shadow: var(--shadow-popover);
   padding: 6px;
   display: flex;

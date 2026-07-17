@@ -21,7 +21,10 @@
  */
 
 export const MENU_PANEL =
-  "flex max-h-[60vh] flex-col overflow-y-auto rounded-[12px] " +
+  // 10px 圆角 = 输入框同刻度（用户定的统一规则）；边缘走真 border
+  // （--border-popover），shadow 只投影。
+  "flex max-h-[60vh] flex-col overflow-y-auto rounded-[10px] " +
+  "border border-[var(--border-popover)] " +
   "bg-[var(--surface-popover)] p-[6px] shadow-(--shadow-popover)";
 
 export const GROUP_LABEL =

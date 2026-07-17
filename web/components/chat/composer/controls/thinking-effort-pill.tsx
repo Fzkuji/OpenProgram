@@ -237,7 +237,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
           /* Claude grammar C card: 16px-padded popover panel — header
              (muted dimension + bright value + help), Faster/Smarter end
              labels, dotted-track slider. */
-          <div className="effort-card rounded-[12px] bg-[var(--surface-popover)] p-[16px] shadow-(--shadow-popover)">
+          <div className="effort-card rounded-[10px] border border-[var(--border-popover)] bg-[var(--surface-popover)] p-[16px] shadow-(--shadow-popover)">
             <div className="flex items-center gap-[6px] text-[14px] leading-[20px]">
               <span className="text-text-muted">{text("Effort", "思考力度")}</span>
               <span className="font-medium text-text-bright">{capEffort(value)}</span>
