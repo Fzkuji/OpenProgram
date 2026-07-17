@@ -120,3 +120,25 @@ export function invalidateFileRead(projectId: string, path: string): void {
 export function rawFileUrl(projectId: string, path: string): string {
   return `/files/raw?project_id=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`;
 }
+
+/* ---- Unsaved editor drafts ---------------------------------------- */
+
+/** One file tab's unsaved editor buffer: the user's draft plus the
+ * content+mtime of the read it drifted from (the mtime is the
+ * optimistic-lock token a later save presents as expected_mtime). */
+export interface FileDraft {
+  draft: string;
+  baselineContent: string;
+  baselineMtime: number;
+}
+
+export function fileDraftKey(projectId: string, path: string): string {
+  return `${projectId}:${path}`;
+}
+
+/** Unsaved drafts surviving tab switches (the pane unmounts when its
+ * tab loses focus). The pane mirrors its buffer in while dirty and
+ * removes the entry on save / revert / confirmed discard.
+ * ponytail: in-memory only — a page reload loses drafts (the strip's
+ * persisted `dirty` flag is reset on restore for the same reason). */
+export const fileDrafts = new Map<string, FileDraft>();

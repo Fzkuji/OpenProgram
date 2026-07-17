@@ -385,31 +385,121 @@
   align-items: center;
   gap: 8px;
   position: relative;
-}
-
-/* Session-scope chips (project / chat model / exec model / permission)
-   relocated from the dismantled topbar row. The reused chip components
-   keep their own classes + popovers; this wrapper only compacts them
-   to the mock's 11.5px so the composer bottom row stays low. */
-.sessionChips {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  /* Narrow composer (side panels open): the left cluster scrolls
+     horizontally inside its own box instead of wrapping or colliding
+     with the right cluster on the same absolute-positioned row.
+     (Popovers/menus are portaled, so nothing here gets clipped.) */
   min-width: 0;
-  /* Narrow composer (side panels open): chips scroll horizontally
-     inside their own box instead of colliding with the tool chips /
-     effort pill on the same absolute-positioned row. */
   overflow-x: auto;
   scrollbar-width: none;
 }
-.sessionChips::-webkit-scrollbar { display: none; }
-.sessionChips > * { flex-shrink: 0; }
-.sessionChips :global(.runtime-badge),
-.sessionChips :global(.status-badge) {
+.inputOptions::-webkit-scrollbar { display: none; }
+.inputOptions > * { flex-shrink: 0; }
+
+/* Permission control — Claude's borderless "Accept edits ⌄" text form.
+   The reused <PermissionBadge> keeps its popover + id; these overrides
+   only strip the chip look (border / bg / fixed height). Its tone
+   colour arrives as an INLINE style, so hover brightening uses filter
+   instead of a color override. */
+.inputOptions :global(.runtime-badge.permission-badge) {
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  height: auto;
+}
+.inputOptions :global(.runtime-badge.permission-badge:hover),
+.inputOptions :global(.runtime-badge.permission-badge[data-state="open"]) {
+  background: transparent;
+  filter: brightness(1.2);
+}
+/* Text-only: drop the shield glyph, append a small chevron. */
+.inputOptions :global(.permission-badge svg) {
+  display: none;
+}
+.inputOptions :global(.permission-badge)::after {
+  content: "⌄";
+  margin-left: 3px;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+/* Env chips — floating row ABOVE the input box (Claude Code
+   arrangement): bordered pill chips [Local] [📁 project], quiet, thin
+   1px border, left-aligned on the wrapper's 800px column, ~8px gap
+   below. Lives inside the bottom-anchored absolute .inputArea, so it
+   grows the composer upward over the transcript instead of pushing
+   it. Narrow composer: the row scrolls horizontally inside its own
+   box — no wrap, no collision, scrollbar hidden. */
+.envChips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 800px;
+  margin: 0 auto 8px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.envChips::-webkit-scrollbar { display: none; }
+.envChips > * { flex-shrink: 0; }
+
+/* Compact sizing for the relocated chips: 22px / 11.5px / ~10px
+   rounding (Claude's small pill look). The reused chip components
+   keep their own classes + popovers; this wrapper only compacts them. */
+.envChips :global(.runtime-badge),
+.envChips :global(.status-badge) {
   height: 22px;
   font-size: 11.5px;
   padding: 2px 8px;
-  border-radius: 7px;
+  border-radius: 10px;
+}
+/* The status chip's dot + label need a gap the legacy `.status-badge`
+   never declared (its old markup relied on a text space). */
+.envChips :global(.status-badge) {
+  gap: 5px;
+}
+
+/* Agent-model cluster — right side of the bottom row, restyled into
+   Claude's quiet borderless text ("Opus 4.8"): no border / bg /
+   padding, muted colour, model name only (the role glyph is dropped
+   whenever a label exists; with no model picked the glyph stays so
+   the popover trigger remains visible). Scrolls in its own box when
+   narrow. */
+.agentChips {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.agentChips::-webkit-scrollbar { display: none; }
+.agentChips > * { flex-shrink: 0; }
+.agentChips :global(.runtime-badge.agent-badge) {
+  border: none;
+  background: transparent;
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.agentChips :global(.runtime-badge.agent-badge:hover),
+.agentChips :global(.runtime-badge.agent-badge[data-state="open"]) {
+  background: transparent;
+  color: var(--text-primary);
+}
+.agentChips :global(.agent-badge:has(.badge-details) svg) {
+  display: none;
+}
+
+/* Effort pill lives in the RIGHT cluster: its absolute shell must
+   expand LEFTWARD into the row's empty middle (right edge pinned to
+   the 32px host) — expanding rightward would clip on the wrapper's
+   overflow:hidden edge next to the context ring. */
+.inputBottomRight :global(.effort-pill-shell) {
+  left: auto;
+  right: 0;
 }
 
 /* Send / stop button — a single absolute-positioned circle anchored
@@ -589,13 +679,17 @@
   color: var(--text-bright);
 }
 
-/* Right-aligned group in the bottom row (context badge + optional
-   send button in fn-form mode). */
+/* Right-aligned group in the bottom row (agent text chips + effort
+   pill + context badge). min-width:0 lets it shrink on narrow
+   composers; the shrink is absorbed by .agentChips' own overflow-x
+   scroll while the fixed-size pill / ring stay visible. */
 .inputBottomRight {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
+.inputBottomRight > :not(.agentChips) { flex-shrink: 0; }
 
 /* Plus button — 32×32 circle. Sits at bottomRow padding (12px), so its
    centre is `--composer-corner` away from the wrapper's bottom-left

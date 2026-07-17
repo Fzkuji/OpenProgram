@@ -1,21 +1,15 @@
-/* Welcome screen — logo / title / description / example buttons.
-   Visual mirrors what the legacy .welcome + .welcome-examples
-   blocks looked like in 05-chat.css, scoped via CSS Module. */
+/* Welcome screen — logo / title / description.
+   Visual mirrors what the legacy .welcome block looked like in
+   05-chat.css, scoped via CSS Module. */
 
 .welcome {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Two INDEPENDENT anchors, NOT one group:
-       - `.top` (logo / title / description) is vertically centered here
-         via `justify-content: center`. The chips leave normal flow
-         (absolute), so they don't drag the centering down.
-       - `.examples` is `position: absolute; bottom: 0`, pinned to the
-         bottom of this box so it hugs the composer.
-     `position: relative` makes this the containing block for that pin.
-     No vertical padding, so `.top` centers cleanly in the visible area
-     (top bar → composer top). */
+  /* `.top` (logo / title / description) is vertically centered in the
+     visible area (top bar → composer top) via `justify-content: center`.
+     No vertical padding, so it centers cleanly. */
   justify-content: center;
   position: relative;
   color: var(--text-secondary);
@@ -23,12 +17,7 @@
 }
 
 /* Logo + title + description, kept as a tight unit (`flex-shrink: 0`
-   so it never compresses). It used to be pinned at `margin-top: 20vh`
-   while the examples row anchored to the bottom — that split the panel
-   into a high block and a low block with a big void between them. Now
-   the whole welcome group is vertically centered as one unit (see
-   `.welcome { justify-content: center }`), so the description and the
-   example chips read as a single cluster. */
+   so it never compresses), vertically centered as one group. */
 .top {
   display: flex;
   flex-direction: column;
@@ -121,67 +110,4 @@
   text-align: center;
   max-width: 500px;
   line-height: 1.6;
-}
-
-/* Example-button row — an INDEPENDENT bottom-pinned strip, NOT part of
-   the centered logo group. Absolutely anchored to the bottom of
-   `.welcome`, whose bottom edge sits at the chat area's 150px
-   bottom-padding (`.chat-messages:has(#welcome-mount > *)`) — i.e. right
-   above the composer — so the chips hug the input box regardless of
-   where the logo group centers. `left/right: 0` + `margin: 0 auto`
-   centers the (max-800px) strip horizontally. */
-.examples {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  margin: 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 24px;
-  justify-content: center;
-  max-width: 800px;
-  opacity: 1;
-  transition: opacity 0.18s ease;
-}
-/* Collapsed state — the fn-form expands over the welcome screen, so
-   the examples row just fades out in place (no slide — the welcome
-   layout is fixed and doesn't move). */
-.examples[data-collapsed="true"] {
-  opacity: 0;
-  pointer-events: none;
-}
-:global(body.slash-menu-open) .examples {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.example {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px;
-  background: var(--bg-primary);
-  border: 0.5px solid var(--border);
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-  white-space: nowrap;
-  font-family: inherit;
-}
-.example svg {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
-.example:hover {
-  border-color: transparent;
-  background: var(--bg-hover-contrast);
-  color: var(--text-bright);
-}
-.example:hover svg {
-  color: var(--text-bright);
 }

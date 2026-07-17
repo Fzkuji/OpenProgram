@@ -108,22 +108,53 @@
   background: var(--bg-primary);
 }
 
-/* ---- Edit mode (file tab toolbar + body, see FileTabPane) ---------- */
+/* ---- Editor (default text body of a file tab, see FileTabPane) -----
+   Gutter and textarea MUST share font/size/line-height/top-padding so
+   line numbers stay pixel-aligned with their lines; the gutter scrolls
+   by mirroring the textarea's scrollTop. */
 
-.editTextarea {
+.editorWrap {
   flex: 1;
   min-height: 0;
-  width: 100%;
+  display: flex;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.editorGutter {
+  flex-shrink: 0;
+  width: 54px;
+  box-sizing: border-box;
+  overflow: hidden;
+  /* Extra bottom padding: the textarea's horizontal scrollbar adds to
+     its max scrollTop; without this slack the gutter clamps early and
+     drifts on the last lines. */
+  padding: 12px 12px 40px 0;
+  text-align: right;
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  opacity: 0.6;
+  user-select: none;
+}
+
+.editorTextarea {
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
   resize: none;
   border: none;
   outline: none;
-  padding: 12px 14px;
+  padding: 12px 14px 12px 12px;
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.6;
+  white-space: pre;
+  overflow: auto;
   tab-size: 2;
 }
 

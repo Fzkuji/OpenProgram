@@ -36,6 +36,12 @@ import { ContextBadge } from "../context-badge";
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
 import { AgentBadge, PermissionBadge, ProjectBadge } from "../top-bar";
+import { ChannelMenu } from "../top-bar/channel-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { FunctionForm, visibleParams } from "./modes/fn-form/fn-form";
 import { QuestionMode, type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -1136,6 +1142,18 @@ export function Composer() {
             document.body,
           )
         : null}
+      {/* Env chips — floating row ABOVE the input box (Claude Code
+          arrangement): bordered pill chips [Local] [📁 project] only.
+          The add-folder entry stays inside the ProjectMenu popover
+          ("Open folder…"), it is not a standalone control. Sits
+          OUTSIDE .composerStack so the slash menu's bottom:100% anchor
+          still lands on the wrapper top edge; .inputArea is bottom-
+          anchored absolute, so this row grows the composer upward
+          without shifting the transcript. */}
+      <div className={styles.envChips}>
+        <StatusChip />
+        <ProjectBadge />
+      </div>
       {/* composerStack wraps {slashClip, inputWrapper} so the slash
           menu's vertical anchor is the wrapper's top edge — not a
           magic-number offset from the inputArea bottom. composerStack
@@ -1256,6 +1274,10 @@ export function Composer() {
 
         <div key="bottom-row" className={`${styles.inputBottomRow} composer-bottom-row`}>
           <div className={styles.inputOptions}>
+            {/* Permission control leads the left cluster, restyled by
+                the wrapper CSS into Claude's borderless "Accept edits ⌄"
+                text form (no border / bg; popover + id untouched). */}
+            <PermissionBadge />
             <Menu.Root
               open={plusMenuOpen}
               onOpenChange={(o) => {
@@ -1400,29 +1422,6 @@ export function Composer() {
               </Menu.Portal>
             </Menu.Root>
 
-            {/* Session-scope chips (ex-topbar) — order per the density
-                mock: project · chat model · exec model · permission.
-                The wrapper class compacts the reused chips' padding /
-                font for the composer row without forking them. */}
-            <div className={styles.sessionChips}>
-              <ProjectBadge />
-              <AgentBadge
-                id="chatAgentBadge"
-                kind="chat"
-                locked={!!chatAgent.locked}
-                provider={chatAgent.provider}
-                model={chatAgent.model}
-              />
-              <AgentBadge
-                id="execAgentBadge"
-                kind="exec"
-                locked={false}
-                provider={execAgent.provider}
-                model={execAgent.model}
-              />
-              <PermissionBadge />
-            </div>
-
             <div className={styles.activeToolChips}>
               {/* Only ENABLED tools show as a chip here. The off ones are
                   not rendered at all — they live in the + menu and are
@@ -1473,13 +1472,35 @@ export function Composer() {
               )}
             </div>
 
-            {/* Effort picker only shows when a chat model is selected at
-                the top; hidden otherwise. The `thinking` value still flows
-                to submit (uses the model default). */}
+          </div>
+          <div className={styles.inputBottomRight}>
+            {/* Claude-style right cluster before the send affordance:
+                chat + exec models as quiet borderless text ("Opus 4.8"
+                form, restyled via .agentChips overrides — components
+                and their popovers untouched), effort pill, context
+                ring last. The chatAgentBadge / execAgentBadge ids must
+                survive — the window-bridge looks elements up by id. */}
+            <div className={styles.agentChips}>
+              <AgentBadge
+                id="chatAgentBadge"
+                kind="chat"
+                locked={!!chatAgent.locked}
+                provider={chatAgent.provider}
+                model={chatAgent.model}
+              />
+              <AgentBadge
+                id="execAgentBadge"
+                kind="exec"
+                locked={false}
+                provider={execAgent.provider}
+                model={execAgent.model}
+              />
+            </div>
             {/* Effort picker only when a chat model is selected. No
                 persistent "no model" indicator here by design — a
                 blocked send/run fires a transient top toast instead
-                (see ``promptNeedModel``). */}
+                (see ``promptNeedModel``). The `thinking` value still
+                flows to submit (uses the model default) when hidden. */}
             {chatModel && !noEnabledModels ? (
               <HoverTip label={text("Thinking effort", "思考力度")}>
                 <ThinkingEffortPill
@@ -1495,8 +1516,6 @@ export function Composer() {
                 />
               </HoverTip>
             ) : null}
-          </div>
-          <div className={styles.inputBottomRight}>
             <ContextBadge />
           </div>
         </div>
@@ -1590,6 +1609,89 @@ export function Composer() {
   );
 }
 
+
+/** Status chip — the old topbar StatusBadge chip form (tone-tinted
+ *  chip + indicator dot + channel label, ChannelMenu popover), re-hosted
+ *  in the env-chip row above the input box (Claude's "Local" position).
+ *  Reads the same store slice the tab-strip StatusDot reads; renders
+ *  the legacy `.status-badge` classes so the tone modifiers
+ *  (connecting / disconnected / paused) and `.indicator-dot` styling
+ *  come from the global sheet.
+ *
+ *  This instance HOLDS `id="statusBadge"`: the legacy ui.ts updaters
+ *  (lib/runtime-bridge/ui.ts) guard on that id before pushing status
+ *  into the store, and `setStatusDotHealth` looks up `.indicator-dot`
+ *  inside it. Exactly one element may carry the id — the tab strip's
+ *  StatusDot copy is being removed. */
+function StatusChip() {
+  const { text } = useTranslation();
+  const statusBadge = useSessionStore((s) => s.statusBadge);
+  const [open, setOpen] = useState(false);
+
+  // Another top-bar-family dropdown opening closes this one, so only
+  // one is ever open (same coordination event as the other chips).
+  useEffect(() => {
+    const close = () => setOpen(false);
+    window.addEventListener("topbar-close-menus", close);
+    return () => window.removeEventListener("topbar-close-menus", close);
+  }, []);
+
+  function onOpenChange(next: boolean) {
+    if (next) {
+      window.dispatchEvent(new Event("topbar-close-menus"));
+      (
+        window as unknown as { _closeAllPopovers?: () => void }
+      )._closeAllPopovers?.();
+    }
+    setOpen(next);
+  }
+
+  // Tone → the legacy `.status-badge` modifier (green default, yellow
+  // connecting/paused, red disconnected) + the matching indicator-dot
+  // colour class. `paused` wins over the raw tone, mirroring the type's
+  // contract in lib/session-store/types.ts.
+  const toneClass = statusBadge.paused
+    ? " paused"
+    : statusBadge.tone === "connecting"
+      ? " connecting"
+      : statusBadge.tone === "err"
+        ? " disconnected"
+        : statusBadge.tone === "warn"
+          ? " paused"
+          : "";
+  const dotMod =
+    statusBadge.tone === "ok"
+      ? "--ok"
+      : statusBadge.tone === "err"
+        ? "--err"
+        : "--warn";
+  const label = statusBadge.label || text("Local", "本地");
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <HoverTip
+        label={statusBadge.title || text("Conversation channel", "会话渠道")}
+      >
+        <PopoverTrigger asChild>
+          <span
+            id="statusBadge"
+            role="button"
+            className={`status-badge${toneClass}`}
+          >
+            <span className={`indicator-dot sm ${dotMod}`} aria-hidden="true" />
+            <span className="badge-short">{label}</span>
+          </span>
+        </PopoverTrigger>
+      </HoverTip>
+      <PopoverContent
+        align="start"
+        sideOffset={4}
+        className="w-auto border-0 bg-transparent p-0 shadow-none"
+      >
+        <ChannelMenu onClose={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 /** Drop-overlay positioned over the central chat column rather than
  *  the whole window. Anchored to ``#chatArea`` by bounding rect so

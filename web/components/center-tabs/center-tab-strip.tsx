@@ -11,15 +11,25 @@
  *     new chat) upserts + focuses its tab
  *   - /chat with no session focuses the draft new-chat tab
  *   - conversation title changes rename their tab
+ *
+ * Closing a tab with unsaved edits (dirty=true, set by the file
+ * editor) asks for confirmation first and, on discard, drops the
+ * surviving fileDrafts buffer so reopening starts clean.
+ * ponytail: window.confirm — the strip has no dialog host; swap for
+ * ConfirmDialog if one ever lands at this level.
  */
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Globe, X } from "lucide-react";
+import { CirclePlus, FileText, Globe, Plus, X } from "lucide-react";
 
+import {
+  MessageCircleIcon,
+  type AnimatedNavIconHandle,
+} from "@/components/animated-icons";
 import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
+import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import { StatusDot } from "@/components/chat/top-bar";
 import styles from "./center-tabs.module.css";
 
 function isChatRoute(pathname: string) {
@@ -100,6 +110,14 @@ export function CenterTabStrip() {
 
   function onTabClose(e: React.MouseEvent, tab: CenterTab) {
     e.stopPropagation();
+    if (tab.dirty) {
+      if (!window.confirm(text("Discard unsaved changes?", "放弃未保存的修改？")))
+        return;
+      // Discard confirmed — drop the surviving draft buffer too, so
+      // reopening the file starts from disk, not the "discarded" edit.
+      if (tab.kind === "file" && tab.projectId && tab.path)
+        fileDrafts.delete(fileDraftKey(tab.projectId, tab.path));
+    }
     closeTab(tab.id);
     // Closing the active tab hands focus to a neighbor; if that
     // neighbor is a session tab, bring the chat surface to it.
@@ -121,52 +139,15 @@ export function CenterTabStrip() {
   return (
     <div className={styles.strip}>
       {tabs.map((tab) => (
-        <div
+        <TabItem
           key={tab.id}
-          className={`${styles.tab} ${tab.id === activeId ? styles.tabActive : ""}`}
-          title={
-            tab.kind === "file" ? tab.path : tab.kind === "web" ? tab.url : labelOf(tab)
-          }
+          tab={tab}
+          active={tab.id === activeId}
+          label={labelOf(tab)}
+          closeLabel={text("Close tab", "关闭标签")}
           onClick={() => onTabClick(tab)}
-          // Middle-click closes (browser convention). preventDefault on
-          // mousedown stops the autoscroll cursor; the close itself
-          // fires on auxclick.
-          onMouseDown={(e) => {
-            if (e.button === 1) e.preventDefault();
-          }}
-          onAuxClick={(e) => {
-            if (e.button === 1) {
-              e.preventDefault();
-              onTabClose(e, tab);
-            }
-          }}
-        >
-          <span className={styles.tabIcon} aria-hidden="true">
-            {tab.kind === "session" ? (
-              "💬"
-            ) : tab.kind === "file" ? (
-              "📄"
-            ) : tab.kind === "web" ? (
-              <Globe size={13} />
-            ) : (
-              "⊕"
-            )}
-          </span>
-          <span className={styles.tabName}>{labelOf(tab)}</span>
-          {tab.dirty ? (
-            <span className={styles.tabDirtyDot} aria-hidden="true">
-              ●
-            </span>
-          ) : null}
-          <span
-            role="button"
-            className={styles.tabClose}
-            aria-label={text("Close tab", "关闭标签")}
-            onClick={(e) => onTabClose(e, tab)}
-          >
-            <X size={12} />
-          </span>
-        </div>
+          onClose={(e) => onTabClose(e, tab)}
+        />
       ))}
       <button
         type="button"
@@ -174,11 +155,83 @@ export function CenterTabStrip() {
         title={text("New tab", "新标签页")}
         onClick={openNewTabPage}
       >
-        ＋
+        <Plus size={15} />
       </button>
-      {/* Right-corner connection dot — the old topbar status chip.
-         Green ok / yellow connecting / red err; click = ChannelMenu. */}
-      <StatusDot className={styles.statusDot} />
+    </div>
+  );
+}
+
+/** One strip tab. A component (not map-inline JSX) so each session
+ *  tab owns the ref that drives its animated icon from row hover. */
+function TabItem({
+  tab,
+  active,
+  label,
+  closeLabel,
+  onClick,
+  onClose,
+}: {
+  tab: CenterTab;
+  active: boolean;
+  label: string;
+  closeLabel: string;
+  onClick: () => void;
+  onClose: (e: React.MouseEvent) => void;
+}) {
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
+  return (
+    <div
+      className={`${styles.tab} ${active ? styles.tabActive : ""}`}
+      title={tab.kind === "file" ? tab.path : tab.kind === "web" ? tab.url : label}
+      onClick={onClick}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+      // Middle-click closes (browser convention). preventDefault on
+      // mousedown stops the autoscroll cursor; the close itself
+      // fires on auxclick.
+      onMouseDown={(e) => {
+        if (e.button === 1) e.preventDefault();
+      }}
+      onAuxClick={(e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          onClose(e);
+        }
+      }}
+    >
+      <span className={styles.tabIcon} aria-hidden="true">
+        {tab.kind === "session" ? (
+          <MessageCircleIcon ref={iconRef} size={14} />
+        ) : tab.kind === "file" ? (
+          <FileText size={13} />
+        ) : tab.kind === "web" ? (
+          <Globe size={13} />
+        ) : (
+          <CirclePlus size={13} />
+        )}
+      </span>
+      <span className={styles.tabName}>{label}</span>
+      {tab.dirty ? (
+        <span className={styles.tabDirtyDot} aria-hidden="true">
+          {/* 8px round marker via currentColor — no text glyph */}
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "currentColor",
+            }}
+          />
+        </span>
+      ) : null}
+      <span
+        role="button"
+        className={styles.tabClose}
+        aria-label={closeLabel}
+        onClick={onClose}
+      >
+        <X size={12} />
+      </span>
     </div>
   );
 }

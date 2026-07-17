@@ -338,11 +338,12 @@
    `.welcome`, which is CSS-Module-hashed and so untargetable from this
    global sheet. (That dead `:has(.welcome)` is why the row used to fall
    through to the 25vh base rule and float ~50px too high once the legacy
-   inline 150px stopped being stamped.) 150px matches the composer's
-   occupied height so the chips land right above it — same position the
-   legacy framework gave. Bump toward ~165px for a larger visible gap. */
+   inline 150px stopped being stamped.) 180px matches the composer's
+   occupied height — 150px box + the ~30px env-chip row now floating
+   above it (composer .envChips: 22px chip + 8px gap) — so the welcome
+   examples land right above the whole composer. */
 .chat-messages:has(#welcome-mount > *) {
-  padding-bottom: 150px;
+  padding-bottom: 180px;
 }
 
 .message {

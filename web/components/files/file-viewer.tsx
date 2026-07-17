@@ -7,17 +7,19 @@
  *   images   → <img> straight off the backend raw endpoint
  *   pdf      → <iframe> off the raw endpoint (renders in the browser's
  *              built-in PDF viewer)
- *   markdown → Rendered (existing <Markdown>, marked-based) or Source,
- *              controlled by the `mdRendered` prop (the toggle lives
- *              in the file tab's toolbar — see FileTabPane)
- *   other    → line-numbered <pre> (no syntax highlight in v1)
+ *   markdown → Rendered (existing <Markdown>, marked-based, read-only)
+ *              or Source, controlled by the `mdRendered` prop (the
+ *              toggle lives in the file tab's toolbar — see FileTabPane)
+ *   other    → EDITABLE gutter+textarea when the pane supplies a
+ *              draft (the default for text files), else a read-only
+ *              line-numbered <pre> (truncated reads, load gap)
  *   binary / >1 MB replies → name + size card with a download link
  *
  * Content comes over WS (``project_file_read``) with the shared
  * files-shared readCache, invalidated by the mtime the tree listing
- * last reported (and by the editor after a save).
+ * last reported (and refreshed by the editor after a save).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
@@ -50,6 +52,8 @@ export function FileViewer({
   projectId,
   path,
   mdRendered = true,
+  draft,
+  onDraftChange,
   onLoaded,
 }: {
   projectId: string;
@@ -57,8 +61,14 @@ export function FileViewer({
   /** Markdown files: true → <Markdown> render, false → source lines.
    *  The toggle UI lives in the file tab's toolbar. */
   mdRendered?: boolean;
+  /** The pane's editor buffer. When set (together with onDraftChange)
+   *  the text body renders as the editable gutter+textarea and — for
+   *  markdown in Rendered mode — the preview renders the draft, so an
+   *  unsaved buffer never shows stale disk content. */
+  draft?: string;
+  onDraftChange?: (value: string) => void;
   /** Text files: fires when the read lands (null on failure) so the
-   *  tab toolbar can tell editable text from binary / too-large. */
+   *  tab pane can seed its editor buffer / tell text from binary. */
   onLoaded?: (data: FileReadResult | null) => void;
 }) {
   const ext = extOf(path);
@@ -90,6 +100,8 @@ export function FileViewer({
       path={path}
       isMarkdown={ext === "md"}
       rendered={mdRendered}
+      draft={draft}
+      onDraftChange={onDraftChange}
       onLoaded={onLoaded}
     />
   );
@@ -100,12 +112,16 @@ function TextViewer({
   path,
   isMarkdown,
   rendered,
+  draft,
+  onDraftChange,
   onLoaded,
 }: {
   projectId: string;
   path: string;
   isMarkdown: boolean;
   rendered: boolean;
+  draft?: string;
+  onDraftChange?: (value: string) => void;
   onLoaded?: (data: FileReadResult | null) => void;
 }) {
   const { text } = useTranslation();
@@ -184,6 +200,25 @@ function TextViewer({
     );
   }
 
+  if (isMarkdown && rendered) {
+    return (
+      <div className={styles.viewerScroll}>
+        {/* message-content 复用 chat.css 的 markdown 元素样式（标题/列表/表格） */}
+        <div className={`${styles.mdBody} message-content`}>
+          <Markdown source={draft ?? data.content} escapeRawHtml />
+        </div>
+      </div>
+    );
+  }
+
+  // Default for text files: the editable buffer. Falls back to the
+  // read-only listing for truncated reads (saving a 1 MB-cut buffer
+  // would destroy the tail) and for the one frame before the pane
+  // seeds its draft from this read.
+  if (draft !== undefined && onDraftChange) {
+    return <EditorArea value={draft} onChange={onDraftChange} />;
+  }
+
   return (
     <div className={styles.viewerScroll}>
       {data.truncated ? (
@@ -191,14 +226,50 @@ function TextViewer({
           {text("Truncated at 1 MB", "已在 1 MB 处截断")}
         </div>
       ) : null}
-      {isMarkdown && rendered ? (
-        // message-content 复用 chat.css 的 markdown 元素样式（标题/列表/表格）
-        <div className={`${styles.mdBody} message-content`}>
-          <Markdown source={data.content} escapeRawHtml />
-        </div>
-      ) : (
-        <NumberedCode content={data.content} />
-      )}
+      <NumberedCode content={data.content} />
+    </div>
+  );
+}
+
+/**
+ * EditorArea — plain-text editor: line-number gutter + <textarea>,
+ * same mono metrics on both sides, gutter scroll mirrored from the
+ * textarea. wrap="off" so long lines scroll horizontally like a code
+ * editor.
+ * ponytail: no syntax highlight, whole-buffer re-render per keystroke;
+ * swap for CodeMirror when highlighting or huge files measurably hurt.
+ */
+function EditorArea({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const gutterRef = useRef<HTMLDivElement>(null);
+  // Trailing "\n" opens a real (editable) empty last line in a
+  // textarea, so plain split length — unlike NumberedCode — is right.
+  const lineCount = value.split("\n").length;
+  const gutter = useMemo(
+    () => Array.from({ length: lineCount }, (_, i) => i + 1).join("\n"),
+    [lineCount],
+  );
+  return (
+    <div className={styles.editorWrap}>
+      <div ref={gutterRef} className={styles.editorGutter} aria-hidden="true">
+        {gutter}
+      </div>
+      <textarea
+        className={styles.editorTextarea}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onScroll={(e) => {
+          if (gutterRef.current)
+            gutterRef.current.scrollTop = e.currentTarget.scrollTop;
+        }}
+        wrap="off"
+        spellCheck={false}
+      />
     </div>
   );
 }
@@ -213,7 +284,7 @@ function NumberedCode({ content }: { content: string }) {
       {lines.map((l, i) => (
         <div key={i} className={styles.codeLine}>
           <span className={styles.lineNo}>{i + 1}</span>
-          <span className={styles.lineText}>{l || " "}</span>
+          <span className={styles.lineText}>{l || " "}</span>
         </div>
       ))}
     </pre>
