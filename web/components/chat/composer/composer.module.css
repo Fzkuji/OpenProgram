@@ -486,7 +486,7 @@
   --env-pill-bg: var(--bg-tertiary);
 }
 :global([data-theme="light"]) .envChips {
-  --env-pill-bg: var(--bg-input);
+  --env-pill-bg: #ffffff; /* 实测 Claude pill = 纯白 */
 }
 .envChips::-webkit-scrollbar { display: none; }
 .envChips > * { flex-shrink: 0; }
@@ -502,17 +502,32 @@
 .envChips :global(.status-badge.paused),
 .envChips :global(.runtime-badge.project-badge) {
   height: 24px;
-  padding: 0 6px;
+  min-height: 24px;
+  max-height: 24px;
+  box-sizing: border-box;
+  padding: 0 8px;
   gap: 6px;
   border: none;
   border-radius: 6px;
   font-size: 13px;
+  line-height: 22px;
   background: var(--env-pill-bg);
-  /* Claude 的 pill 不是悬空白块：带一圈极淡描边（他们的
-     effect-contained-default）。用 ring 而非 border,不动盒模型。 */
-  box-shadow: 0 0 0 1px var(--border);
+  /* Claude 三要素：纯白底 + 清晰 1px 描边 + 下缘微投影。
+     ring 走 box-shadow,不动盒模型,两枚 pill 永远同高。 */
+  box-shadow: 0 0 0 1px var(--border-light), 0 1px 2px rgba(20, 20, 19, 0.06);
   color: var(--ink-80);
 }
+/* pill 内部件统一：图标 14px、状态点 8px——杜绝视觉高差 */
+.envChips :global(.status-badge) svg,
+.envChips :global(.runtime-badge.project-badge) svg {
+  width: 14px;
+  height: 14px;
+}
+.envChips :global(.indicator-dot) {
+  width: 8px;
+  height: 8px;
+}
+
 /* Measured: 0 6px pill padding + the label's own breathing room. */
 .envChips :global(.badge-short) {
   padding: 0 2px;

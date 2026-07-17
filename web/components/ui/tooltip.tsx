@@ -40,7 +40,7 @@ interface HoverTipProps {
 }
 function HoverTip({ label, children, side = "top" }: HoverTipProps) {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delayDuration={600}>
       <Tooltip>
         <TooltipTrigger asChild>{children}</TooltipTrigger>
         <TooltipContent side={side}>{label}</TooltipContent>
