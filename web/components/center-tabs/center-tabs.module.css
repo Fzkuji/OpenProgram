@@ -42,7 +42,9 @@
   align-items: center;
   gap: 7px;
   padding: 0 10px;
-  height: 34px;
+  /* 38px 于 40px 栏内 flex-end 贴底：顶部剩 2px、底部融合处 ~2px，
+     上下留白对称（Chrome 观感），不再上空下紧。 */
+  height: 38px;
   box-sizing: border-box;
   border-radius: 8px 8px 0 0;
   background: transparent;
@@ -55,28 +57,12 @@
   white-space: nowrap;
 }
 
-/* 相邻非活动标签之间的 1px 竖分隔线（照 Chrome：静止态短竖线分界）。
-   画在每个标签左缘、上下各内缩 9px 只占中段。当本标签或前一个被
-   悬停、或相邻活动标签时隐藏——此时该缝由完整圆角轮廓块接管。 */
-.tab::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 1px;
-  background: var(--border-light);
-}
-.tab:first-child::before,
-.tab:hover::before,
-.tab:hover + .tab::before,
-.tabActive::before,
-.tabActive + .tab::before {
-  opacity: 0;
-}
+/* 标签之间不画竖分隔线（用户定：删掉）。非活动靠文字/hover pill 区分，
+   活动靠融入内容区的填充区分。活动标签的左 fillet 由 .tab.tabActive
+   ::before 单独绘制，与此无关。 */
 
-/* 悬停：非活动标签浮起一个四角都圆的浅色 pill，比栏高矮一点（28px）、
-   垂直居中，不落到栏底——只有活动标签才接内容区。 */
+/* 悬停：非活动标签浮起一个四角都圆的浅色 pill，比栏高矮一点、垂直
+   居中，不落到栏底——只有活动标签才接内容区。 */
 .tab:not(.tabActive):hover {
   color: var(--text-bright);
 }
@@ -87,15 +73,15 @@
   position: absolute;
   left: 2px;
   right: 2px;
-  top: 3px;
-  bottom: 3px;
+  top: 4px;
+  bottom: 4px;
   border-radius: 8px;
   z-index: -1;
   pointer-events: none;
 }
 
 /* 活动标签 — Chrome 融合效果：页面底色填充，顶部圆角，标签贴到栏底
-   盖住栏底线，和下方内容区读作同一片面。34px 与非活动标签同高，切换
+   盖住栏底线，和下方内容区读作同一片面。38px 与非活动标签同高，切换
    不跳动。 */
 .tabActive,
 .tab.tabActive:hover {
@@ -122,15 +108,15 @@
     var(--bg-primary) 7px
   );
 }
-/* 左下 fillet：复用 ::before（非活动态它是分隔线，活动态改成 fillet）。 */
+/* 左下 fillet：自包含（分隔线已删，::before 不再另有他用，这里补全
+   全部属性，不再依赖任何基础规则，杜绝左下角掉成直角）。 */
 .tab.tabActive::before {
   content: "";
+  position: absolute;
   left: -7px;
-  top: auto;
   bottom: 0;
   width: 7px;
   height: 7px;
-  opacity: 1;
   background: radial-gradient(
     circle 7px at 0 0,
     transparent 6.5px,
