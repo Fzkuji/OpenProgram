@@ -484,6 +484,11 @@ export function Composer() {
   // which owns its own placement + outside-click close — no trigger/menu
   // refs or measured position needed.
   const thinkingTriggerRef = useRef<HTMLDivElement>(null);
+  // Bumping this remounts <ThinkingEffortPill/>, resetting its INTERNAL
+  // expanded state to false — the only way to force-collapse it from
+  // outside (it ignores the expanded prop and only collapses on host
+  // mouseleave).
+  const [effortEpoch, setEffortEpoch] = useState(0);
   const plusIconRef = useRef<AnimatedNavIconHandle>(null);
 
   // Wrapper height transition (open / close / A→B switch crossfade)
@@ -556,6 +561,13 @@ export function Composer() {
         !thinkingTriggerRef.current.contains(t)
       ) {
         setThinkingMenuOpen(false);
+        // The floating slider (detached row) collapses on host
+        // mouseleave — a pointer that opened it via the text trigger
+        // and clicked elsewhere without touching the slider would
+        // leave it stuck open. Remount the pill to reset it.
+        if (thinkingTriggerRef.current.querySelector("[data-effort-expanded]")) {
+          setEffortEpoch((e) => e + 1);
+        }
       }
     }
     document.addEventListener("click", onDoc);
@@ -1373,17 +1385,47 @@ export function Composer() {
                 flows to submit (uses the model default) when hidden. */}
             {chatModel && !noEnabledModels ? (
               <HoverTip label={text("Thinking effort", "思考力度")}>
-                <ThinkingEffortPill
-                  ref={thinkingTriggerRef}
-                  expanded={thinkingMenuOpen}
-                  onToggle={() => {
-                    setThinkingMenuOpen((v) => !v);
-                    setPlusMenuOpen(false);
-                  }}
-                  options={thinkingOptions}
-                  value={thinking}
-                  onChange={setThinking}
-                />
+                {/* Wrapper is the outside-click boundary AND the anchor
+                    for the pill's floating slider (detached row). The
+                    text trigger only shows in the detached row (CSS);
+                    the morphed internal band keeps the icon pill. */}
+                <div ref={thinkingTriggerRef} className={styles.effortControl}>
+                  {thinkingOptions.length > 1 && (
+                    <button
+                      type="button"
+                      className={styles.effortText}
+                      // ponytail: the pill ignores its expanded/onToggle
+                      // props (internal useState) — a programmatic click
+                      // on its own (hidden) collapsed chip is the only
+                      // public "open". Lift the state into the pill if a
+                      // second caller ever needs it.
+                      onClick={() => {
+                        setPlusMenuOpen(false);
+                        thinkingTriggerRef.current
+                          ?.querySelector<HTMLElement>(".effort-pill-collapsed")
+                          ?.click();
+                      }}
+                    >
+                      {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : ""}
+                    </button>
+                  )}
+                  <ThinkingEffortPill
+                    // Remount on epoch bump = force-collapse (see the
+                    // outside-click handler): the pill only collapses on
+                    // host mouseleave, which never fires if the pointer
+                    // opened it from the external text trigger and then
+                    // clicked elsewhere without touching the slider.
+                    key={effortEpoch}
+                    expanded={thinkingMenuOpen}
+                    onToggle={() => {
+                      setThinkingMenuOpen((v) => !v);
+                      setPlusMenuOpen(false);
+                    }}
+                    options={thinkingOptions}
+                    value={thinking}
+                    onChange={setThinking}
+                  />
+                </div>
               </HoverTip>
             ) : null}
             <ContextBadge />

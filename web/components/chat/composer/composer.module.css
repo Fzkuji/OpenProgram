@@ -552,10 +552,13 @@
   display: none;
 }
 
-/* Effort pill lives in the RIGHT cluster: its absolute shell must
+/* MORPHED internal band only: the effort pill's absolute shell must
    expand LEFTWARD into the row's empty middle (right edge pinned to
    the 32px host) — expanding rightward would clip on the wrapper's
-   overflow:hidden edge next to the context ring. */
+   overflow:hidden edge next to the context ring. In the detached chat
+   row this rule is inert: the collapsed shell is display:none and the
+   expanded shell is repositioned into a floating layer (see the
+   .controlsRow effort rules). */
 .inputBottomRight :global(.effort-pill-shell) {
   left: auto;
   right: 0;
@@ -937,6 +940,13 @@
   min-height: 20px;
   position: relative;
 }
+/* Right cluster order is chat model · exec model · effort · ring
+   (JSX order); one 12px rhythm across both nesting levels, every
+   item 20px tall on the same centerline. */
+.controlsRow .inputBottomRight,
+.controlsRow .agentChips {
+  gap: 12px;
+}
 
 /* Compact control metrics (measured from claude.ai/code): every text
    control 20px tall, 12px font, 0 6px padding, 5px radius, transparent
@@ -975,9 +985,11 @@
 .controlsRow .plusBtn.hasActive {
   color: var(--accent-blue);
 }
-/* Active tool chips: transparent 20px squares, icon keeps the accent
-   tint as the ON signal; hover tints + slides the × out (2 + 16 + 4 +
-   12 + 2 = 36). */
+/* Active tool chips: transparent 20px squares in normal flow, icon
+   keeps the accent tint as the ON signal. The internal band's ×-slide
+   (hover width-expand) is suppressed here — it would shift the row's
+   neighbours on every hover; the chip body click already toggles the
+   tool off (ToolChip's onClick={onToggle}). */
 .controlsRow .toolChip {
   width: 20px;
   height: 20px;
@@ -987,48 +999,84 @@
   background: transparent;
 }
 .controlsRow .toolChip:hover {
-  width: 36px;
+  width: 20px;
   padding-right: 2px;
   background: var(--bg-hover);
 }
+.controlsRow .toolChip:hover .toolChipClose {
+  max-width: 0;
+  margin-left: 0;
+  opacity: 0;
+}
 
-/* Effort pill trigger: 20px / 5px-radius / transparent, ink-toned icon.
-   The expanded 32px slider shell recenters over the 20px host
-   (top: −6px) and keeps its full-size slider mechanics. Inline
-   collapsed tint from the component needs the !important. */
+/* Effort control — wrapper around the text trigger + the reused
+   <ThinkingEffortPill/>. In the detached row the pill's own icon chip
+   is hidden (display:none below) and the compact TEXT trigger opens
+   it; the expanded slider floats ABOVE the row as its own layer, so
+   nothing in the row moves or gets painted over. The morphed internal
+   band keeps the original 32px icon pill (the text trigger is
+   display:none by default). */
+.effortControl {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+.effortText {
+  display: none;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-80);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.controlsRow .effortText {
+  display: inline-flex;
+}
+.controlsRow .effortText:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+/* The host is a zero-width anchor at the wrapper's right edge — the
+   floating shell right-aligns to it. */
 .controlsRow :global(.effort-pill-host) {
   height: 20px;
-  width: 20px;
+  width: 0;
 }
 .controlsRow :global(.effort-pill-shell) {
   font-size: 12px;
 }
+/* Collapsed chip hidden — the text trigger replaces it (it still
+   receives the trigger's programmatic .click(); display:none doesn't
+   block that). */
 .controlsRow :global(.effort-pill-shell:not([data-expanded])) {
-  height: 20px;
-  width: 20px;
-  border-radius: 5px;
-  background-color: transparent !important;
+  display: none;
 }
-.controlsRow :global(.effort-pill-host:hover .effort-pill-shell:not([data-expanded])) {
-  /* 3 + 14 icon + 4 gap + 12 caret + 3 = 36. */
-  width: 36px;
-  background-color: var(--bg-hover) !important;
-}
+/* Expanded: floating layer above the row — own surface, 1px ring,
+   8px radius, right-aligned to the trigger. Never expands in-row. */
 .controlsRow :global(.effort-pill-shell[data-expanded]) {
-  top: -6px;
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: auto;
+  right: 0;
+  height: 32px;
+  border-radius: 8px;
+  background-color: var(--surface-solid);
+  box-shadow: 0 0 0 1px var(--border-light), var(--shadow-popover);
+  z-index: 30;
 }
-.controlsRow :global(.effort-pill-collapsed) {
-  padding: 0 3px;
+/* The slider thumb's biceps glyph masks the track behind it by
+   filling its interior with the pill background — chat.css tunes that
+   to the in-row bg-hover; the floating layer is surface-solid. */
+.controlsRow :global(.effort-pill-thumb-icon) svg path {
+  fill: var(--surface-solid);
 }
-.controlsRow :global(.effort-pill-collapsed .effort-pill-compact-icon),
-.controlsRow :global(.effort-pill-collapsed .effort-pill-caret) {
-  color: var(--ink-80);
-}
-.controlsRow :global(.effort-pill-compact-icon),
-.controlsRow :global(.effort-pill-compact-icon) svg {
-  width: 14px;
-  height: 14px;
-}
+/* Single-option variant (no slider): quiet 20px icon chip. */
 .controlsRow :global(.effort-pill-fixed) {
   width: 20px;
   height: 20px;
@@ -1036,6 +1084,7 @@
   background-color: transparent !important;
   color: var(--ink-80);
 }
+.controlsRow :global(.effort-pill-fixed .effort-pill-compact-icon),
 .controlsRow :global(.effort-pill-fixed) svg {
   width: 14px;
   height: 14px;
