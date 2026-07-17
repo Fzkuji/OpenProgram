@@ -30,8 +30,9 @@ export const MENU_PANEL =
 
 export const GROUP_LABEL =
   // Claude 实测：标题块整高 21px（12px 字、无上下 padding），底缘
-  // 直接贴第一行——这 9px 就是"标题上下空白太多"的差值。
-  "flex items-center gap-[6px] px-[10px] py-0 leading-[21px] " +
+  // 直接贴第一行。左衬 9 = 行的 10 − 1px 光学补偿：12px 浅灰字的
+  // 字形左留白比 13px 深字大，同一起点会显得靠右。
+  "flex items-center gap-[6px] pl-[9px] pr-[10px] py-0 leading-[21px] " +
   "text-[12px] text-text-muted";
 
 export const CHECK = "shrink-0 text-[var(--accent-blue)]";
