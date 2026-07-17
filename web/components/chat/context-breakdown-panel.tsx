@@ -178,17 +178,18 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
   const pct = (v: number) => (win > 0 ? (v / win) * 100 : 0);
 
   const rows = useMemo(() => {
-    if (!data) return [];
+    // 无数据（新会话还没 id）时不出空态文案，照常渲染全 0 面板。
+    const d = data ?? ({} as Breakdown);
     const defs: [string, number][] = [
-      [text("System prompt", "系统提示"), data.system_prompt || 0],
-      [text("System tools", "工具"), data.tools_schema || 0],
-      [text("System tools (deferred)", "工具(延迟)"), data.tools_deferred_catalog || 0],
-      [text("MCP tools", "MCP 工具"), data.mcp_tools || 0],
-      [text("MCP tools (deferred)", "MCP 工具(延迟)"), data.mcp_tools_deferred || 0],
-      [text("Memory files", "记忆文件"), data.memory || 0],
-      [text("Skills", "技能"), data.skills || 0],
-      [text("Messages", "对话消息"), data.messages || 0],
-      [text("Free space", "空闲"), data.free_space || 0],  // free 行不画消耗条
+      [text("System prompt", "系统提示"), d.system_prompt || 0],
+      [text("System tools", "工具"), d.tools_schema || 0],
+      [text("System tools (deferred)", "工具(延迟)"), d.tools_deferred_catalog || 0],
+      [text("MCP tools", "MCP 工具"), d.mcp_tools || 0],
+      [text("MCP tools (deferred)", "MCP 工具(延迟)"), d.mcp_tools_deferred || 0],
+      [text("Memory files", "记忆文件"), d.memory || 0],
+      [text("Skills", "技能"), d.skills || 0],
+      [text("Messages", "对话消息"), d.messages || 0],
+      [text("Free space", "空闲"), d.free_space || 0],  // free 行不画消耗条
     ];
     // 全部分类都显示（含 0），不过滤 —— 让用户看到每一档存在与否。
     const freeLabel = text("Free space", "空闲");
@@ -222,13 +223,6 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
         {loading ? (
           <div className="p-6 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
             {text("Loading…", "加载中…")}
-          </div>
-        ) : !data ? (
-          <div className="p-6 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
-            {text(
-              "No context yet — send the first message.",
-              "还没有上下文——发送第一条消息后可见。",
-            )}
           </div>
         ) : data?.error ? (
           <div className="p-4 text-[12px]" style={{ color: "var(--accent-red)" }}>

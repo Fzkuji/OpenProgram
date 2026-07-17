@@ -305,8 +305,6 @@ export function ProjectBadge() {
           <span
             id="projectBadge"
             className="runtime-badge project-badge"
-            onMouseEnter={() => iconRef.current?.startAnimation?.()}
-            onMouseLeave={() => iconRef.current?.stopAnimation?.()}
           >
           <span className="project-icon" aria-hidden="true">
             <FolderOpenIcon ref={iconRef} size={14} />

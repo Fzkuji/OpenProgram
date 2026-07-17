@@ -1710,6 +1710,9 @@ function StatusChip() {
   const { text } = useTranslation();
   const statusBadge = useSessionStore((s) => s.statusBadge);
   const [open, setOpen] = useState(false);
+  // Ref 挂上即进入受控模式：图标不再对自身 hover 自动播动画——
+  // 环境 pill 的图标（monitor / folder）统一静态。
+  const monitorIconRef = useRef<AnimatedNavIconHandle>(null);
 
   // Another top-bar-family dropdown opening closes this one, so only
   // one is ever open (same coordination event as the other chips).
@@ -1782,6 +1785,7 @@ function StatusChip() {
               aria-hidden="true"
             />
             <MonitorIcon
+              ref={monitorIconRef}
               size={14}
               style={{ color: iconColor }}
               aria-hidden="true"

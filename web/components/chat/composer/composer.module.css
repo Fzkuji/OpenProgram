@@ -4,7 +4,8 @@
    approved before this React migration. */
 
 .inputArea {
-  padding: 12px 24px 24px;
+  /* 底部留白实测 Claude = 13px（控件行到视口底），原 24 太空。 */
+  padding: 12px 24px 13px;
   background: transparent;
   /* 80%-ink text token shared by env pills + compact controls (measured
      from claude.ai/code: rgba(10,10,10,0.8) on light). --text-bright is
@@ -177,6 +178,9 @@
 }
 .chatInput {
   width: 100%;
+  /* textarea 默认 inline-block，基线下会多出 ~6px 降部空隙，把
+     44px 的单行盒撑到 50 并让文字/发送键偏上。block 消除它。 */
+  display: block;
   background: none;
   border: none;
   color: var(--text-bright);
