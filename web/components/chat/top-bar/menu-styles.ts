@@ -29,11 +29,11 @@ export const MENU_PANEL =
   "bg-[var(--surface-popover)] p-[6px] shadow-(--shadow-popover)";
 
 export const GROUP_LABEL =
-  // 标题块整高 21px、底缘贴第一行（Claude 的紧凑节奏）。字号与行
-  // 统一 13px（用户定的规则）：同字号同字形留白，天然对齐，
-  // 不需要光学补偿。
+  // Claude 实测：标题 12px / 行 13px，块高 21px、底缘贴第一行。
+  // 不做光学补偿——Claude 也没做，圆弧首字母的微小内缩感是字形
+  // 固有属性，接受它。
   "flex items-center gap-[6px] px-[10px] py-0 leading-[21px] " +
-  "text-[13px] text-text-muted";
+  "text-[12px] text-text-muted";
 
 export const CHECK = "shrink-0 text-[var(--accent-blue)]";
 
