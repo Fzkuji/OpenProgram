@@ -270,11 +270,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
                 }}
                 onClick={(e) => e.stopPropagation()}
                 thumb={
-                  // Filled round thumb on the dotted track (Claude's
-                  // effort slider) — level colour via the shared var.
+                  // Claude 实拍：白色圆钮 + 细描边 + 投影，骑在灰色
+                  // 胶囊轨上；档位不再给钮上色。
                   <span
                     aria-hidden="true"
-                    className="absolute left-1/2 top-1/2 size-[14px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--slider-active-solid)] pointer-events-none"
+                    className="absolute left-1/2 top-1/2 size-[20px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white pointer-events-none shadow-[0_1px_4px_rgba(10,10,10,0.25),0_0_0_1px_rgba(10,10,10,0.06)]"
                   />
                 }
               />

@@ -59,13 +59,10 @@ const Slider = React.forwardRef<
     )}
     {...props}
   >
-    {/* Unfilled track uses `border-light` — a translucent neutral
-        that's softer than `text-muted` and reads as "background
-        scale, not a hard line". The filled range ON TOP is a soft
-        accent-blue (mixed 70% with transparent), so it sits gently
-        on the surface instead of pinning the eye. */}
-    <SliderPrimitive.Track className="relative h-[4px] w-full grow overflow-hidden rounded-full bg-[var(--border-light)]">
-      <SliderPrimitive.Range className="absolute h-full bg-[var(--slider-active)]" />
+    {/* Claude 效果器滑轨（实拍复刻）：24px 中性浅灰胶囊轨；已滑过的
+        左段只深一档（灰，不上彩色）；点/白钮浮在轨上。 */}
+    <SliderPrimitive.Track className="relative h-[24px] w-full grow overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--text-bright)_5%,transparent)]">
+      <SliderPrimitive.Range className="absolute h-full bg-[color-mix(in_srgb,var(--text-bright)_9%,transparent)]" />
     </SliderPrimitive.Track>
     {stops && stops > 1
       ? Array.from({ length: stops }).map((_, i) => {
@@ -78,7 +75,9 @@ const Slider = React.forwardRef<
           // way right). Selected ticks paint accent-blue and melt
           // into the filled range; unselected ticks paint
           // text-muted and melt into the grey track.
-          const isFilled = i < currentValue;
+          // Claude：轨内圆点统一中性灰、不随滑过变色；唯独最右一档
+          // （最强）是蓝紫点。
+          const isMax = i === stops - 1;
           return (
           <span
             key={i}
@@ -89,11 +88,11 @@ const Slider = React.forwardRef<
             // onto that point. `pointer-events-none` keeps the track
             // click area uninterrupted.
             className={cn(
-              "pointer-events-none absolute top-1/2 size-[6px] rounded-full",
+              "pointer-events-none absolute top-1/2 size-[4px] rounded-full",
               "-translate-x-1/2 -translate-y-1/2",
-              isFilled
-                ? "bg-[var(--slider-active)]"
-                : "bg-[var(--border-light)]",
+              isMax
+                ? "bg-[#7b7cf7]"
+                : "bg-[color-mix(in_srgb,var(--text-bright)_22%,transparent)]",
             )}
             style={{ left: `calc(${i / (stops - 1)} * (100% - 14px) + 7px)` }}
             aria-hidden="true"
