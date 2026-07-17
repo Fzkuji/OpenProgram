@@ -21,7 +21,9 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { Menu } from "@base-ui-components/react/menu";
-import { FileTextIcon } from "@/components/animated-icons";
+import { MonitorIcon } from "@/components/animated-icons";
+import { ChevronRight, Paperclip } from "lucide-react";
+import { GROUP_LABEL } from "../top-bar/menu-styles";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -1195,13 +1197,15 @@ export function Composer() {
                     style={POPUP_STATIC_RESET}
                   >
                     {/* Attach file — a plain action; clicking it closes the
-                        menu (default Menu.Item closeOnClick behaviour). */}
+                        menu (default Menu.Item closeOnClick behaviour).
+                        Grammar B row: 16px line icon + label. No shortcut
+                        hint — the app registers none for attach. */}
                     <Menu.Item className={styles.plusMenuRow} onClick={() => onPickImages()}>
                       <PlusMenuItem
                         active={pendingImages.length > 0 || pendingDocs.length > 0}
                         onClick={noop}
-                        icon={<FileTextIcon size={20} />}
-                        label={text("Attach file", "添加照片和文件")}
+                        icon={<Paperclip size={16} />}
+                        label={text("Add files or photos", "添加文件或照片")}
                       />
                     </Menu.Item>
 
@@ -1219,8 +1223,9 @@ export function Composer() {
                         <PlusMenuItem
                           active={toolsEnabled}
                           onClick={toggleTools}
-                          icon={<ToolsIcon />}
+                          icon={<ToolsIcon size={16} />}
                           label={text("Tools", "工具")}
+                          trailing={<ChevronRight size={14} aria-hidden="true" />}
                         />
                       </Menu.SubmenuTrigger>
                       <Menu.Portal>
@@ -1229,9 +1234,10 @@ export function Composer() {
                             className={styles.plusMenu}
                             style={POPUP_STATIC_RESET}
                           >
-                            <div style={{ padding: "4px 8px", fontSize: "11px",
-                              color: "var(--text-muted)", textTransform: "uppercase",
-                              letterSpacing: "0.05em" }}>
+                            {/* Selection submenu (grammar A): GROUP_LABEL
+                                header naming the dimension, plain rows,
+                                check on the selected one. */}
+                            <div className={GROUP_LABEL}>
                               {text("Tool Profile", "工具配置")}
                             </div>
                             {Object.keys(toolProfiles).sort().map((pName) => (
@@ -1265,7 +1271,7 @@ export function Composer() {
                       <PlusMenuItem
                         active={webSearchEnabled}
                         onClick={noop}
-                        icon={<WebSearchIcon />}
+                        icon={<WebSearchIcon size={16} />}
                         label={text("Web Search", "网页搜索")}
                       />
                     </Menu.Item>
@@ -1278,7 +1284,7 @@ export function Composer() {
                         <PlusMenuItem
                           active={fastEnabled}
                           onClick={noop}
-                          icon={<FastIcon />}
+                          icon={<FastIcon size={16} />}
                           label={text("Fast", "高速")}
                         />
                       </Menu.Item>
@@ -1295,7 +1301,7 @@ export function Composer() {
                       <PlusMenuItem
                         active={unattended}
                         onClick={noop}
-                        icon={<UnattendedIcon />}
+                        icon={<UnattendedIcon size={16} />}
                         label={text("Unattended", "无人值守")}
                       />
                     </Menu.Item>
@@ -1690,8 +1696,10 @@ export function Composer() {
  *  in the env-chip row above the input box (Claude's "Local" position).
  *  Reads the same store slice the tab-strip StatusDot reads; renders
  *  the legacy `.status-badge` classes so the tone modifiers
- *  (connecting / disconnected / paused) and `.indicator-dot` styling
- *  come from the global sheet.
+ *  (connecting / disconnected / paused) come from the global sheet.
+ *  The visible glyph is the Monitor icon (Claude's laptop) carrying
+ *  the connection tone on its colour; a hidden `.indicator-dot` stays
+ *  inside purely for the runtime bridge (see inline comment).
  *
  *  This instance HOLDS `id="statusBadge"`: the legacy ui.ts updaters
  *  (lib/runtime-bridge/ui.ts) guard on that id before pushing status
@@ -1740,6 +1748,17 @@ function StatusChip() {
       : statusBadge.tone === "err"
         ? "--err"
         : "--warn";
+  // Connection tone lives on the Monitor icon's colour (Claude's laptop
+  // glyph): ok inherits the pill's ink; connecting / warn / paused go
+  // yellow; disconnected goes red.
+  const iconColor =
+    statusBadge.tone === "err"
+      ? "var(--accent-red)"
+      : statusBadge.paused ||
+          statusBadge.tone === "warn" ||
+          statusBadge.tone === "connecting"
+        ? "var(--accent-yellow)"
+        : undefined;
   const label = statusBadge.label || text("Local", "本地");
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -1752,7 +1771,21 @@ function StatusChip() {
             role="button"
             className={`status-badge${toneClass}`}
           >
-            <span className={`indicator-dot sm ${dotMod}`} aria-hidden="true" />
+            {/* Hidden dot kept ONLY for lib/runtime-bridge/ui.ts
+                setStatusDotHealth(), which queries `#statusBadge
+                .indicator-dot` and rewrites its className wholesale —
+                the inline display:none survives that rewrite. The
+                visible state is the Monitor icon above. */}
+            <span
+              className={`indicator-dot sm ${dotMod}`}
+              style={{ display: "none" }}
+              aria-hidden="true"
+            />
+            <MonitorIcon
+              size={14}
+              style={{ color: iconColor }}
+              aria-hidden="true"
+            />
             <span className="badge-short">{label}</span>
           </span>
         </PopoverTrigger>

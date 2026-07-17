@@ -31,7 +31,7 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
-import { CHECK, GROUP_LABEL, MENU_PANEL, MENU_SEPARATOR, itemCls } from "./menu-styles";
+import { CHECK_SLOT, CHECK_SLOT_PAD, GROUP_LABEL, MENU_PANEL, MENU_SEPARATOR, itemCls } from "./menu-styles";
 
 /** Fired whenever the conversation's project changes so the topbar chip
  * re-fetches its label without a store round-trip. */
@@ -166,7 +166,7 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
         return (
           <div
             key={p.id}
-            className={`group ${itemCls(active)}`}
+            className={`group ${itemCls(false)}`}
             title={
               p.path ||
               (p.is_default
@@ -189,7 +189,11 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
                 <XIcon size={13} />
               </span>
             ) : null}
-            {active ? <Check size={14} className={CHECK} /> : null}
+            {active ? (
+              <Check size={14} className={CHECK_SLOT} />
+            ) : (
+              <span className={CHECK_SLOT_PAD} aria-hidden="true" />
+            )}
           </div>
         );
       })}

@@ -13,13 +13,21 @@
  * <Popover> in `index.tsx`; this component just renders the rows.
  */
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
-import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
+import { SettingsIcon } from "@/components/animated-icons";
+import {
+  CHECK_SLOT,
+  CHECK_SLOT_PAD,
+  GROUP_LABEL,
+  MENU_PANEL,
+  MENU_SEPARATOR,
+  itemCls,
+} from "./menu-styles";
 
 interface ChannelAccount {
   channel: string;
@@ -116,18 +124,19 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
 
   return (
     <div className={`${MENU_PANEL} min-w-[300px] max-w-[480px]`}>
-      <div className={itemCls(!cur.channel)} onClick={() => pick("", "")}>
-        <span className="flex-1 truncate">{text("Local", "本地")}</span>
-        {!cur.channel ? <Check size={14} className={CHECK} /> : null}
-      </div>
+      {/* Grammar-A header naming the dimension. Platform names below
+          stay as sub-section labels. */}
+      <div className={GROUP_LABEL}>{text("Channel", "渠道")}</div>
 
-      {rows !== null && enabled.length === 0 ? (
-        <div className={GROUP_LABEL}>
-          <a href="/settings" className="text-[var(--accent-blue)] no-underline">
-            {text("Add a channel in Settings", "在设置中添加渠道")} →
-          </a>
-        </div>
-      ) : null}
+      {/* 选中不铺底色（hover 是唯一底色），选中态只靠右侧勾。 */}
+      <div className={itemCls(false)} onClick={() => pick("", "")}>
+        <span className="flex-1 truncate">{text("Local", "本地")}</span>
+        {!cur.channel ? (
+          <Check size={14} className={CHECK_SLOT} />
+        ) : (
+          <span className={CHECK_SLOT_PAD} />
+        )}
+      </div>
 
       {groups.map((g) => (
         <div key={g.plat}>
@@ -148,10 +157,11 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
             return (
               <div
                 key={r.channel + ":" + r.account_id}
-                className={itemCls(active)}
+                className={itemCls(false)}
                 onClick={() => pick(r.channel, r.account_id)}
               >
                 <span className="flex-1 truncate">{r.account_id}</span>
+                {/* 右侧弱化元数据（账号别名）排在勾之前。 */}
                 {meta ? (
                   <Badge
                     variant="secondary"
@@ -160,12 +170,31 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
                     {meta}
                   </Badge>
                 ) : null}
-                {active ? <Check size={14} className={CHECK} /> : null}
+                {active ? (
+                  <Check size={14} className={CHECK_SLOT} />
+                ) : (
+                  <span className={CHECK_SLOT_PAD} />
+                )}
               </div>
             );
           })}
         </div>
       ))}
+
+      {/* Grammar-B action row：设置图标 + 文案 + ChevronRight，常驻
+          菜单底部，hover 才上强调色。 */}
+      <div className={MENU_SEPARATOR} />
+      <a
+        href="/settings"
+        onClick={onClose}
+        className={`${itemCls(false)} no-underline`}
+      >
+        <SettingsIcon size={16} className="shrink-0" aria-hidden="true" />
+        <span className="flex-1 truncate">
+          {text("Add a channel in Settings", "在设置中添加渠道")}
+        </span>
+        <ChevronRight size={14} className="shrink-0 text-text-muted" />
+      </a>
     </div>
   );
 }

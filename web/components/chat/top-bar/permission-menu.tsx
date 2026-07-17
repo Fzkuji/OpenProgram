@@ -6,13 +6,13 @@
  * as PopoverTrigger, PopoverContent dropdown, `topbar-close-menus` mutual
  * exclusion, animated iconRef). Lives in the top-bar `.right` region.
  *
- * The dropdown is a single-select list of the 5 permission tiers:
- *   - number shortcut hint on the LEFT (1/2/3/4; bypass has none)
- *   - the LABEL TEXT itself is coloured by danger tier (no colour dots):
- *       ask / plan       → green  (--success)
- *       acceptEdits/auto → orange (--warning)
- *       bypass           → red    (--danger)
- *   - a trailing check on the currently-selected tier only.
+ * The dropdown follows the Claude selection-menu grammar: a "Mode"
+ * GROUP_LABEL header, then the 5 permission tiers as plain 14px rows —
+ * number shortcut hint right-aligned in muted text (1/2/3/4; bypass has
+ * none), and a right-aligned ink Check on the currently-selected tier
+ * only (hover tint is the only row background; selection is never a
+ * filled row). The danger-tier colour lives on the topbar chip, not in
+ * the menu rows.
  * Picking a tier switches to it and closes the menu. Picking `bypass`
  * (when not already bypass) opens a confirmation dialog instead — the
  * switch only lands after the user confirms.
@@ -25,9 +25,10 @@ import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
+import { Check } from "lucide-react";
+
 import {
   type AnimatedNavIconHandle,
-  CheckIcon,
   ShieldCheckIcon,
 } from "@/components/animated-icons";
 import {
@@ -41,11 +42,19 @@ import {
   usePermissionMode,
   type PermissionMode,
 } from "../composer/controls/use-permission-mode";
-import { CHECK, MENU_PANEL, SHORTCUT, itemCls } from "./menu-styles";
+import {
+  CHECK_SLOT,
+  CHECK_SLOT_PAD,
+  GROUP_LABEL,
+  MENU_PANEL,
+  SHORTCUT,
+  itemCls,
+} from "./menu-styles";
 
 // 权限档危险度配色：绿=安全、橙=需留意、红=危险。用柔和的浅色调
-// （比原始 --success/--warning/--danger 淡一档），既当下拉行文字色、
-// 也当顶栏芯片选中态的文字/图标/边框色，所以选完能一眼看出当前档。
+// （比原始 --success/--warning/--danger 淡一档），只用在顶栏芯片
+// 选中态的文字/图标/边框色，所以选完能一眼看出当前档；菜单行按
+// Claude 选择菜单语法保持素色。
 const PERM_COLOR: Record<PermissionMode, string> = {
   ask: "var(--success-soft, #57b47a)",
   plan: "var(--success-soft, #57b47a)",
@@ -127,27 +136,23 @@ export function PermissionBadge() {
           className="w-auto border-0 bg-transparent p-0 shadow-none"
         >
           <div className={`${MENU_PANEL} min-w-[220px]`}>
+            <div className={GROUP_LABEL}>{text("Mode", "模式")}</div>
             {options.map((o) => (
               <div
                 key={o.value}
-                className={itemCls(o.value === mode)}
+                // 选中不铺底色（hover 是唯一底色），选中态只靠右侧勾。
+                className={itemCls(false)}
                 onClick={() => pick(o.value)}
               >
-                {/* 数字快捷键在最左；bypass 无数字，留一格占位保持对齐。 */}
-                <span className={`${SHORTCUT} w-[10px] text-center`}>
-                  {o.key ?? ""}
-                </span>
-                {/* 整行文字用危险度颜色（不加色点）。 */}
-                <span
-                  className="flex-1 truncate"
-                  style={{ color: PERM_COLOR[o.value] }}
-                >
-                  {o.label}
-                </span>
-                {/* 右侧：仅当前选中档显示勾。单选语义。 */}
+                <span className="flex-1 truncate">{o.label}</span>
+                {/* 数字快捷键右对齐、弱化，排在勾之前。 */}
+                {o.key ? <span className={SHORTCUT}>{o.key}</span> : null}
+                {/* 右侧：仅当前选中档显示勾；未选中留同宽占位保持对齐。 */}
                 {o.value === mode ? (
-                  <CheckIcon size={15} className={CHECK} aria-hidden="true" />
-                ) : null}
+                  <Check size={14} className={CHECK_SLOT} aria-hidden="true" />
+                ) : (
+                  <span className={CHECK_SLOT_PAD} />
+                )}
               </div>
             ))}
           </div>

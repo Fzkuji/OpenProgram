@@ -30,6 +30,15 @@ export const GROUP_LABEL =
 
 export const CHECK = "shrink-0 text-[var(--accent-blue)]";
 
+/** Grammar-A selection check — the Claude pattern for single-select
+ *  menus: the SELECTED row shows a right-aligned lucide Check (14px) in
+ *  ink colour; selection is NEVER a filled/shaded row (hover is the only
+ *  bg tint). Any muted metadata (shortcut digit, badge) sits right-
+ *  aligned BEFORE this check. Non-selected rows render CHECK_SLOT_PAD so
+ *  right-side metadata stays column-aligned across rows. */
+export const CHECK_SLOT = "shrink-0 text-text-bright";
+export const CHECK_SLOT_PAD = "w-[14px] shrink-0";
+
 /** Right-aligned single-key shortcut hint (e.g. the R / P / C / A / D in
  *  the Recents context menu). Stays muted — doesn't brighten with the
  *  row on hover. */

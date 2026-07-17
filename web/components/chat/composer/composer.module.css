@@ -1100,28 +1100,11 @@
 }
 /* Collapsed chip hidden — the text trigger replaces it (it still
    receives the trigger's programmatic .click(); display:none doesn't
-   block that). */
+   block that). Expanded needs NO overrides here anymore: the shared
+   floating-card geometry in chat.css (bottom: 100% / right: 0 /
+   .effort-card surface) already floats it above the row. */
 .controlsRow :global(.effort-pill-shell:not([data-expanded])) {
   display: none;
-}
-/* Expanded: floating layer above the row — own surface, 1px ring,
-   8px radius, right-aligned to the trigger. Never expands in-row. */
-.controlsRow :global(.effort-pill-shell[data-expanded]) {
-  top: auto;
-  bottom: calc(100% + 6px);
-  left: auto;
-  right: 0;
-  height: 32px;
-  border-radius: 8px;
-  background-color: var(--surface-solid);
-  box-shadow: 0 0 0 1px var(--border-light), var(--shadow-popover);
-  z-index: 30;
-}
-/* The slider thumb's biceps glyph masks the track behind it by
-   filling its interior with the pill background — chat.css tunes that
-   to the in-row bg-hover; the floating layer is surface-solid. */
-.controlsRow :global(.effort-pill-thumb-icon) svg path {
-  fill: var(--surface-solid);
 }
 /* Single-option variant (no slider): quiet 20px icon chip. */
 .controlsRow :global(.effort-pill-fixed) {
@@ -1223,8 +1206,15 @@
   align-items: center;
   gap: 10px;
 }
+/* Fixed 16px icon column (Claude action-menu grammar: every row leads
+   with a 16px line icon) so labels align across rows regardless of a
+   glyph's intrinsic box. */
 .plusMenuIcon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   color: currentColor;
 }
 .plusMenuLabel {

@@ -122,7 +122,7 @@ function BranchRowItem({
 
   return (
     <div
-      className={itemCls(branch.active ?? false)}
+      className={itemCls(false)}
       style={{ gap: 0, position: "relative", paddingRight: 64 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

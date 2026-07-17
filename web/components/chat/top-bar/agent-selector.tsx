@@ -19,7 +19,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useSessionStore } from "@/lib/session-store";
 import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
-import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
+import {
+  CHECK_SLOT,
+  CHECK_SLOT_PAD,
+  GROUP_LABEL,
+  MENU_PANEL,
+  itemCls,
+} from "./menu-styles";
 import { Check } from "lucide-react";
 
 export function AgentSelector({
@@ -34,7 +40,7 @@ export function AgentSelector({
   onClose: () => void;
 }) {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const { data: models } = useQuery({
     queryKey: ["models-enabled"],
     queryFn: api.listEnabledModels,
@@ -69,6 +75,9 @@ export function AgentSelector({
 
   return (
     <div className={`${MENU_PANEL} w-[300px]`}>
+      {/* Grammar-A header naming the dimension. Provider names below
+          stay as sub-section labels. */}
+      <div className={GROUP_LABEL}>{text("Models", "模型")}</div>
       {(models ?? []).length === 0 ? (
         <div className="px-[10px] py-[8px] text-[12px] text-text-muted">
           {t("agent.no_enabled_models")}{" "}
@@ -94,16 +103,22 @@ export function AgentSelector({
                   key={m.id}
                   type="button"
                   onClick={() => pick(m.provider, m.id)}
-                  className={`${itemCls(active)} w-full text-left`}
+                  // 选中不铺底色（hover 是唯一底色），选中态只靠右侧勾。
+                  className={`${itemCls(false)} w-full text-left`}
                 >
                   <span className="flex-1 truncate">{m.name}</span>
+                  {/* 右侧弱化元数据（能力图标、上下文窗）排在勾之前。 */}
                   <CapIcons caps={m.capabilities} />
                   {m.context ? (
                     <span className="shrink-0 font-mono text-[11px] text-text-muted">
                       {fmtCtx(m.context)}
                     </span>
                   ) : null}
-                  {active ? <Check size={14} className={CHECK} /> : null}
+                  {active ? (
+                    <Check size={14} className={CHECK_SLOT} />
+                  ) : (
+                    <span className={CHECK_SLOT_PAD} />
+                  )}
                 </button>
               );
             })}

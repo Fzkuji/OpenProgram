@@ -4,28 +4,36 @@
  * Collapsed: a 32px round chip showing just the biceps icon, tinted by
  * the current effort level. Hovering slides out a right-caret (the same
  * gesture as the neighbouring tool chips' ×). CLICK to expand — hover
- * alone never opens the slider.
+ * alone never opens the card.
  *
- * Expanded: the same pill expands to the right into the current value
- * plus an inline slider. Mouse-leave collapses.
+ * Expanded: a Claude-style floating card ABOVE the trigger (grammar C —
+ * white `--surface-popover` panel, radius 12, `--shadow-popover`, 16px
+ * padding): header row = muted "Effort" + bright current level + (?)
+ * HoverTip; body = Faster / Smarter end labels over the dotted-track
+ * slider. Mouse-leave on the host collapses (the shell's 8px
+ * padding-bottom bridges the visual gap so the pointer never "exits"
+ * on the way up).
  *
  * Layout: the pill is wrapped in a ``position: relative`` host. The
- * visible pill is absolute so expanding it does not resize the row.
- * All widths (32 collapsed / 48 hovered / 260 expanded) live in
- * chat.css on `.effort-pill-shell`.
+ * shell is absolute so neither state resizes the row. Collapsed widths
+ * (32 / 48 hover) and the expanded card geometry live in chat.css on
+ * `.effort-pill-shell`.
  *
  * Extracted from composer/index.tsx to keep that file under the
  * project's no-1000-line-files rule.
  */
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 
 import { Slider } from "@/components/ui/slider";
+import { HoverTip } from "@/components/ui/tooltip";
+import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,
   BicepsFlexedIcon,
   ChevronRightIcon,
+  CircleHelpIcon,
 } from "@/components/animated-icons";
 
 const capEffort = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
@@ -112,23 +120,16 @@ const ThinkingEffortSliderPill = React.forwardRef<
 ) {
   // Click-to-open, leave-to-close. The `expanded` / `onToggle` props
   // from the parent are intentionally ignored: the pill manages its own
-  // state — click on the collapsed pill opens the slider, mouseleave on
+  // state — click on the collapsed pill opens the card, mouseleave on
   // the relative wrapper collapses it. Hover alone only slides out the
   // caret (chips-style affordance) and animates the icon.
   const [expanded, setExpanded] = useState(false);
+  const { text } = useTranslation();
   const valueIndex = Math.max(
     0,
     options.findIndex((o) => o.value === value),
   );
   const maxIndex = Math.max(0, options.length - 1);
-  // Effort icon size scales linearly with effort: from 14px at the
-  // low end to 22px at `xhigh`. The icon is rendered at the slider
-  // thumb; position and size both encode the current value. `off`
-  // doesn't use it — its thumb is a plain dot, not the biceps.
-  const effortIconSize =
-    maxIndex > 0
-      ? Math.round(14 + (valueIndex / maxIndex) * 8)
-      : 14;
   // Warm hue per effort level, interpolated continuously so EVERY level
   // gets its own colour: hsl hue runs 48° (yellow, lowest) → 0° (red,
   // highest) across the non-off stops, with saturation/lightness easing
@@ -165,23 +166,11 @@ const ThinkingEffortSliderPill = React.forwardRef<
   // distinct from the half-alpha `--slider-active` track color.
   const activeColorSolid = warmHue;
 
-  // Effort icons (collapsed chip + slider thumb) are pqoqubbw animated
-  // icons, driven from the pill host's hover — same controlled-ref
-  // pattern as the sidebar nav rows.
+  // The collapsed chip's icons are pqoqubbw animated icons, driven from
+  // the pill host's hover — same controlled-ref pattern as the sidebar
+  // nav rows.
   const effortIconChipRef = useRef<AnimatedNavIconHandle>(null);
-  const effortIconThumbRef = useRef<AnimatedNavIconHandle>(null);
   const caretRef = useRef<AnimatedNavIconHandle>(null);
-
-  // The thumb biceps flexes for as long as the slider is open. It can't
-  // be driven from mouseenter like the chip icon: picking `off` unmounts
-  // it, and the fresh icon mounted on the next value change would sit
-  // frozen until the next re-hover. Re-keying on [expanded, value]
-  // restarts the loop after every such remount.
-  useEffect(() => {
-    if (expanded && value !== "off") {
-      effortIconThumbRef.current?.startAnimation?.();
-    }
-  }, [expanded, value]);
 
   return (
     <div
@@ -198,33 +187,30 @@ const ThinkingEffortSliderPill = React.forwardRef<
         onMouseLeave?.(e);
         setExpanded(false);
         effortIconChipRef.current?.stopAnimation?.();
-        effortIconThumbRef.current?.stopAnimation?.();
         caretRef.current?.stopAnimation?.();
       }}
     >
-      {/* Visible pill. It stays in the bottom row and expands to the
-          right. Widths (32 / 48 hover / 260 expanded) come from
-          chat.css so collapsed always matches the neighbouring round
-          controls. */}
+      {/* Shell. Collapsed = the 32px round chip (48px on hover — widths
+          in chat.css). Expanded = repositioned by chat.css into a
+          floating layer above the trigger; the visible surface is the
+          .effort-card inside. */}
       <div
         data-expanded={expanded ? "true" : undefined}
         className={[
-          "effort-pill-shell absolute left-0 top-0 h-[32px] overflow-hidden",
-          "rounded-full select-none",
-          "text-[14px]",
-          "transition-[width,background-color] duration-[220ms] ease-out",
-          expanded ? "bg-bg-hover text-text-bright" : "text-text-primary",
+          "effort-pill-shell absolute select-none",
+          expanded
+            ? "" // floating-card geometry comes from chat.css
+            : "left-0 top-0 h-[32px] overflow-hidden rounded-full text-[14px] text-text-primary transition-[width,background-color] duration-[220ms] ease-out",
         ].join(" ")}
         style={{
           // Tint the collapsed pill by current effort level (neutral
-          // white-grey at `off`, ramps to soft red at `xhigh`). When
-          // expanded we hand the bg back to the Tailwind class
-          // (`bg-bg-hover`) above and skip the inline override.
+          // white-grey at `off`, ramps to soft red at `xhigh`). The
+          // expanded card paints its own popover surface instead.
           ...(expanded ? {} : { backgroundColor: collapsedTint }),
           // CSS variables inherited by the slider inside:
           //   --slider-active        →  range / ticks / focus ring
           //                              (soft, ~70% alpha)
-          //   --slider-active-solid  →  effort-icon thumb
+          //   --slider-active-solid  →  thumb dot
           //                              (opaque, full-strength hue)
           ["--slider-active" as string]: activeColor,
           ["--slider-active-solid" as string]: activeColorSolid,
@@ -247,50 +233,54 @@ const ThinkingEffortSliderPill = React.forwardRef<
             <ChevronRightIcon ref={caretRef} size={12} />
           </span>
         </div>
-        <div
-          className={[
-            "effort-pill-expanded h-full flex items-center gap-[10px] px-[12px]",
-            !expanded ? "hidden" : "",
-          ].join(" ")}
-        >
-          <span className="shrink-0 min-w-[56px] text-center text-text-primary">
-            {capEffort(value)}
-          </span>
-          <Slider
-            min={0}
-            max={maxIndex}
-            step={1}
-            stops={options.length}
-            value={[valueIndex]}
-            onValueChange={(v) => {
-              const idx = v[0] ?? 0;
-              const next = options[idx];
-              if (next) onChange(next.value);
-            }}
-            onClick={(e) => e.stopPropagation()}
-            thumb={
-              value === "off" ? (
-                // No effort → no muscle. A plain dot, slightly larger
-                // than the track's tick dots, marks the off position.
-                <span
-                  aria-hidden="true"
-                  className="absolute left-1/2 top-1/2 size-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--slider-active-solid)] pointer-events-none"
-                />
-              ) : (
-                // Solid-filled glyph: the fill itself masks the track
-                // behind the thumb (see .effort-pill-thumb-icon), so no
-                // backing disc is needed.
-                <BicepsFlexedIcon
-                  ref={effortIconThumbRef}
-                  size={effortIconSize}
-                  className="effort-pill-thumb-icon absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[var(--slider-active-solid)] pointer-events-none transition-[width,height] duration-150 ease-out"
-                  aria-hidden="true"
-                />
-              )
-            }
-            className="flex-1"
-          />
-        </div>
+        {expanded && (
+          /* Claude grammar C card: 16px-padded popover panel — header
+             (muted dimension + bright value + help), Faster/Smarter end
+             labels, dotted-track slider. */
+          <div className="effort-card rounded-[12px] bg-[var(--surface-popover)] p-[16px] shadow-(--shadow-popover)">
+            <div className="flex items-center gap-[6px] text-[14px] leading-[20px]">
+              <span className="text-text-muted">{text("Effort", "思考力度")}</span>
+              <span className="font-medium text-text-bright">{capEffort(value)}</span>
+              <HoverTip
+                label={text(
+                  "Higher effort lets the model think longer before answering.",
+                  "力度越高，模型回答前思考越久。",
+                )}
+              >
+                <span className="ml-auto inline-flex cursor-default text-text-muted">
+                  <CircleHelpIcon size={16} aria-hidden="true" />
+                </span>
+              </HoverTip>
+            </div>
+            <div className="mt-[12px] flex items-center justify-between text-[14px] leading-[20px] text-text-muted">
+              <span>{text("Faster", "更快")}</span>
+              <span>{text("Smarter", "更强")}</span>
+            </div>
+            <div className="h-[28px]">
+              <Slider
+                min={0}
+                max={maxIndex}
+                step={1}
+                stops={options.length}
+                value={[valueIndex]}
+                onValueChange={(v) => {
+                  const idx = v[0] ?? 0;
+                  const next = options[idx];
+                  if (next) onChange(next.value);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                thumb={
+                  // Filled round thumb on the dotted track (Claude's
+                  // effort slider) — level colour via the shared var.
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-1/2 top-1/2 size-[14px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--slider-active-solid)] pointer-events-none"
+                  />
+                }
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

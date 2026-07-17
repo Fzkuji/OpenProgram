@@ -140,11 +140,18 @@ export function PlusMenuItem({
         <span className={styles.plusMenuLabel}>{label}</span>
       </div>
       <div className={styles.plusMenuRight}>
-        {active
-          ? <CheckIcon ref={checkRef} size={18} />
-          : (trailing != null
-              ? <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{trailing}</span>
-              : null)}
+        {/* 文法 A：勾 = 14px ink；trailing（子菜单箭头/提示）常驻，
+            不再被勾顶掉——Tools 行开着时也要能看见 › 子菜单提示。 */}
+        {active ? (
+          <CheckIcon
+            ref={checkRef}
+            size={14}
+            style={{ color: "var(--text-bright)" }}
+          />
+        ) : null}
+        {trailing != null ? (
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{trailing}</span>
+        ) : null}
       </div>
     </div>
   );

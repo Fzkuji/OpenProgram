@@ -10,6 +10,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
+import { MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 
 interface ToolItem {
   name: string;
@@ -66,16 +67,27 @@ function fmt(n: number): string {
   return String(n);
 }
 
-const CAT_COLORS: Record<string, string> = {
-  system: "#8a94a6",
-  tools: "#5aa469",
-  deferred: "#c98a3c",
-  mcp: "#4a90d9",
-  memory: "#c07ba0",
-  skills: "#b08a3c",
-  messages: "#a06fd0",
-  free: "#3a3f47",
-};
+/* Claude 用法：所有用量条统一 BLUE（--usage-bar / --usage-track，定义在
+   chat.css 的 .context-breakdown-panel 上，light/dark 各一档）；不再按
+   分类配色。*/
+
+/** 6px 圆角蓝色用量条 —— 顶部总量条和每行分解条共用。*/
+function UsageBar({ pct }: { pct: number }) {
+  return (
+    <div
+      className="h-[6px] w-full overflow-hidden rounded-full"
+      style={{ background: "var(--usage-track)" }}
+    >
+      <div
+        className="h-full rounded-full"
+        style={{
+          width: `${Math.max(0, Math.min(100, pct))}%`,
+          background: "var(--usage-bar)",
+        }}
+      />
+    </div>
+  );
+}
 
 // Row / Section 提到模块级（不再定义在组件体内）—— 否则每次组件 render 都会
 // 把它们当成全新组件类型，导致 59+54+24 个子行整棵子树卸载重挂而非 diff 更新，
@@ -167,32 +179,25 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
 
   const rows = useMemo(() => {
     if (!data) return [];
-    const defs: [string, string, number][] = [
-      [text("System prompt", "系统提示"), "system", data.system_prompt || 0],
-      [text("System tools", "工具"), "tools", data.tools_schema || 0],
-      [
-        text("System tools (deferred)", "工具(延迟)"),
-        "deferred",
-        data.tools_deferred_catalog || 0,
-      ],
-      [text("MCP tools", "MCP 工具"), "mcp", data.mcp_tools || 0],
-      [
-        text("MCP tools (deferred)", "MCP 工具(延迟)"),
-        "deferred",
-        data.mcp_tools_deferred || 0,
-      ],
-      [text("Memory files", "记忆文件"), "memory", data.memory || 0],
-      [text("Skills", "技能"), "skills", data.skills || 0],
-      [text("Messages", "对话消息"), "messages", data.messages || 0],
-      [text("Free space", "空闲"), "free", data.free_space || 0],
+    const defs: [string, number][] = [
+      [text("System prompt", "系统提示"), data.system_prompt || 0],
+      [text("System tools", "工具"), data.tools_schema || 0],
+      [text("System tools (deferred)", "工具(延迟)"), data.tools_deferred_catalog || 0],
+      [text("MCP tools", "MCP 工具"), data.mcp_tools || 0],
+      [text("MCP tools (deferred)", "MCP 工具(延迟)"), data.mcp_tools_deferred || 0],
+      [text("Memory files", "记忆文件"), data.memory || 0],
+      [text("Skills", "技能"), data.skills || 0],
+      [text("Messages", "对话消息"), data.messages || 0],
+      [text("Free space", "空闲"), data.free_space || 0],  // free 行不画消耗条
     ];
     // 全部分类都显示（含 0），不过滤 —— 让用户看到每一档存在与否。
-    return defs.map(([label, key, v]) => ({
+    const freeLabel = text("Free space", "空闲");
+    return defs.map(([label, v]) => ({
       label,
       tokens: v,
       pct: pct(v),
-      color: CAT_COLORS[key] || "#888",
       zero: v <= 0,
+      free: label === freeLabel,
     }));
   }, [data, text]);
 
@@ -204,14 +209,12 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
 
   return (
     <div
-      className="flex max-h-[70vh] w-[380px] flex-col overflow-hidden border"
+      className="context-breakdown-panel flex max-h-[70vh] w-[380px] flex-col overflow-hidden"
       style={{
-        // 背景用 --bg-tertiary（比页面背景亮一点的灰，对齐左侧 plus 菜单）。
-        // 圆角 16px = 底部圆形按钮的半径（--composer-button-size 32 / 2），
-        // 让卡片右下圆角弧度与那排圆形按钮/圆环一致。阴影用统一 popover 阴影。
-        background: "var(--bg-tertiary)",
-        borderColor: "var(--border)",
-        borderRadius: 16,
+        // Claude grammar C 卡片：--surface-popover 白卡 + 12px 圆角 +
+        // --shadow-popover（阴影自带 1px ring，无需 border）。
+        background: "var(--surface-popover)",
+        borderRadius: 12,
         boxShadow: "var(--shadow-popover)",
       }}
     >
@@ -233,47 +236,41 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
           </div>
         ) : (
           <>
-            {/* 顶部总用量 —— 作为唯一的标题行（去掉了单独的 Context 标题），
-                字号加大以充当标题。*/}
-            <div className="mb-1.5 flex items-baseline justify-between">
-              <span
-                className="text-[13px] font-semibold"
-                style={{ color: "var(--text-primary)" }}
-              >
+            {/* 标题行 —— Claude grammar C：muted 维度名 + 右对齐 BRIGHT 总量。*/}
+            <div className="mb-[10px] flex items-baseline justify-between">
+              <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
                 {text("Context window", "上下文窗口")}
               </span>
-              <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+              <span
+                className="text-[13px] font-medium"
+                style={{ color: "var(--text-bright)" }}
+              >
                 {fmt(totalUsed)} / {fmt(win)} ({(usedPct * 100).toFixed(1)}%)
               </span>
             </div>
-            <div className="mb-1 flex h-2 w-full overflow-hidden rounded" style={{ background: CAT_COLORS.free }}>
-              {rows
-                .filter((r) => r.label !== text("Free space", "空闲"))
-                .map((r) => (
-                  <div key={r.label} style={{ width: `${r.pct}%`, background: r.color }} />
-                ))}
-            </div>
+            <UsageBar pct={usedPct * 100} />
 
-            {/* 分类总览 */}
-            <div className="mt-3 space-y-1.5">
+            <div className={MENU_SEPARATOR} style={{ marginTop: 14, marginBottom: 14 }} />
+
+            {/* 分类分解 —— 每行：标签左 / muted 数值右 / 下方细蓝条
+                （Claude 用量面板 5-hour / weekly 行的形制）。*/}
+            <div className="space-y-[10px]">
               {rows.map((r) => (
-                <div
-                  key={r.label}
-                  className="flex items-center justify-between text-[12px]"
-                  style={{ opacity: r.zero ? 0.4 : 1 }}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-sm" style={{ background: r.color }} />
+                <div key={r.label} style={{ opacity: r.zero ? 0.4 : 1 }}>
+                  <div className="mb-[4px] flex items-center justify-between text-[12px]">
                     <span style={{ color: "var(--text-primary)" }}>{r.label}</span>
-                  </span>
-                  <span style={{ color: "var(--text-muted)" }}>
-                    {fmt(r.tokens)} · {r.pct.toFixed(1)}%
-                  </span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {fmt(r.tokens)} · {r.pct.toFixed(1)}%
+                    </span>
+                  </div>
+                  {/* Free space 不是消耗——蓝条语义是"用掉多少"，空闲行
+                      画满条会反向误导，只留空轨。 */}
+                  <UsageBar pct={r.free ? 0 : r.pct} />
                 </div>
               ))}
             </div>
 
-            <div className="my-3 border-t" style={{ borderColor: "var(--border)" }} />
+            <div className={MENU_SEPARATOR} style={{ marginTop: 14, marginBottom: 8 }} />
 
             {/* Per-tool */}
             <Section

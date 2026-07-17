@@ -1707,6 +1707,20 @@
   outline-offset: 1px;
 }
 
+/* Context breakdown card — usage meters are BLUE (Claude uses blue for
+   usage bars; coral stays the action colour, and --accent-blue is
+   aliased to coral so it can't be reused here). Track: --bg-tertiary
+   on the light white card; in dark, --bg-tertiary EQUALS
+   --surface-popover, so a translucent white step keeps it visible. */
+.context-breakdown-panel {
+  --usage-bar: #5b9cf8;
+  --usage-track: rgba(255, 255, 255, 0.08);
+}
+[data-theme="light"] .context-breakdown-panel {
+  --usage-bar: #3b82f6;
+  --usage-track: var(--bg-tertiary);
+}
+
 /* Composer bottom-row container. Declared globally (not in the CSS
    module) because CSS Modules in this project scope `container-name`
    into a hashed identifier, which makes the `@container` rule below
@@ -1722,7 +1736,7 @@
 /* Effort pill — collapsed it's a 32px round chip like the neighbouring
    tool chips: icon pinned left, hovering widens the pill to 48px and
    slides the caret out the right edge (the chips do the same with
-   their ×). Click expands the shell to 260px for the slider.
+   their ×). Click opens the floating effort CARD above the trigger.
    7 + 18 + 7 = 32 collapsed; 7 + 18 + 4 + 12 + 7 = 48 hovered. */
 .effort-pill-host {
   flex: 0 0 auto;
@@ -1733,8 +1747,21 @@
   width: var(--composer-button-size);
 }
 
+/* Expanded: the shell leaves the row and becomes a floating layer
+   anchored above the host, right-aligned. The shell itself is a
+   transparent carrier — its 8px padding-bottom is the hover bridge
+   between trigger and card (mouseleave-to-close must not fire while
+   the pointer crosses the visual gap); the .effort-card inside paints
+   the popover surface. */
 .effort-pill-shell[data-expanded="true"] {
-  width: 260px;
+  width: 280px;
+  height: auto;
+  top: auto;
+  bottom: 100%;
+  left: auto;
+  right: 0;
+  padding-bottom: 8px;
+  z-index: 30;
 }
 
 .effort-pill-shell:not([data-expanded="true"]):hover {
@@ -1745,10 +1772,6 @@
   width: 12px;
   margin-left: 4px;
   opacity: 1;
-}
-
-.effort-pill-expanded {
-  width: 260px;
 }
 
 .effort-pill-compact-icon {
@@ -1784,14 +1807,6 @@
   flex-shrink: 0;
 }
 
-/* Slider-thumb biceps: coloured outline, interior filled with the
-   expanded pill's own background — the body of the glyph masks the
-   track behind it without turning into a coloured silhouette, and no
-   backing disc is needed. */
-.effort-pill-thumb-icon svg path {
-  fill: var(--bg-hover);
-}
-
 /* Narrow composer row → drop the token-usage pill entirely instead of
    letting it clip past the right edge (the previous behavior showed
    half a "5.1k in" pill cut off mid-character). */
@@ -1807,15 +1822,12 @@
   }
 }
 
-/* Narrow composer row → the expanded slider can't afford its full
-   260px; clamp it to the remaining composer row width. */
+/* Narrow composer row → the floating effort card can't afford its full
+   280px; clamp it to the composer row width (it extends leftward from
+   the right-aligned trigger). */
 @container composer-row (max-width: 520px) {
   .effort-pill-shell[data-expanded="true"] {
-    width: min(260px, calc(100cqw - 136px));
-  }
-
-  .effort-pill-expanded {
-    width: min(260px, calc(100cqw - 136px));
+    width: min(280px, calc(100cqw - 16px));
   }
 }
 
