@@ -1156,12 +1156,13 @@
   margin-bottom: 4px;
   min-width: 192px;
   max-width: 320px;
-  /* 弹层统一配方：popover 白面 + 10px 圆角（=输入框刻度）+ 真 border。 */
+  /* 弹层统一配方：popover 白面 + 10px 圆角（=输入框刻度）+ 真 border。
+     竖衬 6 / 横衬 0——行通铺到边（Claude 实测）。 */
   background: var(--surface-popover);
   border: 1px solid var(--border-popover);
   border-radius: 10px;
   box-shadow: var(--shadow-popover);
-  padding: 6px;
+  padding: 6px 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -1187,10 +1188,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  /* 24 / 13px / 18px = claude.ai/code 菜单行实测——与 itemCls 同刻度。 */
+  /* 24 / 13px / 18px / 通铺无圆角 = claude.ai/code 菜单行实测——与
+     itemCls 同刻度，hover 底色铺到面板边缘。 */
   min-height: 24px;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 3px 12px;
+  border-radius: 0;
   font-size: 13px;
   line-height: 18px;
   color: var(--text-primary);
@@ -1208,7 +1210,8 @@
 }
 .plusMenuDivider {
   height: 1px;
-  margin: 4px 6px;
+  /* 面板横衬为 0，分隔线自然通铺。 */
+  margin: 6px 0;
   background: var(--border);
 }
 .plusMenuLeft {
