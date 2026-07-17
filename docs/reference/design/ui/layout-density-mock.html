@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>布局密度设计 v4 — 左栏结构 / 纵向空间 / 真浏览器</title>
+<style>
+  :root{
+    --bg:#141416; --bg2:#1c1c1f; --bg3:#232327; --border:#2c2c31;
+    --text:#e8e8ea; --text2:#9b9ba3; --text3:#66666e; --accent:#7aa2f7; --green:#4ec97f;
+    font-family:-apple-system,"SF Pro","PingFang SC",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-size:13.5px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+  .bar{display:flex;gap:6px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;font-size:12px;color:var(--text3)}
+  .bar b{color:var(--text2)}
+  .swbtn{padding:4px 12px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:12px}
+  .swbtn.on{background:var(--accent);border-color:var(--accent);color:#0c0c10;font-weight:600}
+  .app{flex:1;display:flex;min-height:0}
+
+  /* ═══ 左栏：无固定块，间距统一 ═══ */
+  .left{width:232px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column}
+  .brand{height:48px;display:flex;align-items:center;padding:0 10px 0 14px;flex-shrink:0;gap:8px}
+  .brand .name{font-weight:700;font-size:14.5px;flex:1}
+  .brand .name i{color:var(--accent);font-style:normal}
+  .brand .hbtn{width:28px;height:28px;display:grid;place-items:center;border-radius:7px;color:var(--text2);cursor:pointer;font-size:15px}
+  .brand .hbtn:hover{background:var(--bg3);color:var(--text)}
+  .lscroll{flex:1;overflow-y:auto;padding:2px 8px 8px}
+  .row{display:flex;align-items:center;gap:12px;height:32px;padding:6px 8px;border-radius:9px;font-size:13.5px;cursor:pointer;color:var(--text2);margin-bottom:1px}
+  .row:hover{background:var(--bg3);color:var(--text)}
+  .row .ic{width:16px;text-align:center;flex-shrink:0}
+  .sect{padding:12px 8px 4px;font-size:11px;color:var(--text3)}
+
+  /* ═══ 中央 ═══ */
+  .center{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+  /* tab 条 40px——聊天 tab 下面没有第二条栏 */
+  .strip{height:40px;display:flex;align-items:flex-end;padding:0 8px;background:var(--bg2);flex-shrink:0;position:relative}
+  .strip::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--border)}
+  .tb{display:flex;align-items:center;gap:7px;padding:0 10px 0 12px;height:34px;border-radius:9px 9px 0 0;color:var(--text2);cursor:pointer;font-size:12.5px;position:relative}
+  .tb.on{background:var(--bg);color:var(--text);z-index:1}
+  .tb.on::before,.tb.on::after{content:"";position:absolute;bottom:0;width:8px;height:8px;z-index:1}
+  .tb.on::before{left:-8px;background:radial-gradient(circle 8px at 0 0,transparent 7.5px,var(--bg) 8px)}
+  .tb.on::after{right:-8px;background:radial-gradient(circle 8px at 100% 0,transparent 7.5px,var(--bg) 8px)}
+  .tb .x{color:var(--text3);font-size:11px}
+  .plus{color:var(--text2);padding:4px 10px;cursor:pointer;align-self:center}
+  .statusdot{margin-left:auto;align-self:center;width:8px;height:8px;border-radius:50%;background:var(--green)}
+
+  .content{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
+  .pane{position:absolute;inset:0;display:none;flex-direction:column}
+  .pane.on{display:flex}
+  .msgs{flex:1;overflow-y:auto;padding:22px 9vw;display:flex;flex-direction:column;gap:14px}
+  .m-user{align-self:flex-end;background:var(--bg3);border-radius:14px 14px 4px 14px;padding:9px 13px;max-width:75%}
+  .m-ai{line-height:1.7;max-width:92%}
+  .note{color:var(--text3);font-size:12px}
+
+  /* composer 接管会话设置 */
+  .composer{margin:8px 9vw 14px;border:1px solid var(--border);border-radius:14px;background:var(--bg2);padding:10px 12px;flex-shrink:0}
+  .composer .in{color:var(--text3);font-size:13px;padding:2px 2px 10px}
+  .crow{display:flex;gap:6px;align-items:center;font-size:11.5px}
+  .chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:7px;padding:3px 9px;color:var(--text2);cursor:pointer;white-space:nowrap}
+  .chip:hover{color:var(--text);border-color:var(--text3)}
+  .chip.green{color:var(--green);border-color:#2e4636}
+  .crow .send{margin-left:auto;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#0c0c10;display:grid;place-items:center;flex-shrink:0}
+
+  /* 文件 / 网页 tab 的 40px 工具栏 */
+  .toolbar40{height:40px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border);flex-shrink:0;font-size:12px;color:var(--text2)}
+  .addr{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:12px;color:var(--text)}
+  .viewer{flex:1;display:grid;place-items:center;color:var(--text3);font-size:12.5px;text-align:center;line-height:2}
+  .browser-live{flex:1;margin:0;background:
+    repeating-linear-gradient(45deg,var(--bg2),var(--bg2) 12px,var(--bg) 12px,var(--bg) 24px);
+    display:grid;place-items:center;color:var(--text2);font-size:13px;text-align:center;line-height:2}
+  .badge{display:inline-block;border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:2px 10px;font-size:11px;margin-top:6px}
+
+  /* 右侧标注 */
+  .anno{position:fixed;right:14px;bottom:12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--text2);line-height:1.9;z-index:9;max-width:330px}
+  .anno b{color:var(--text)}
+  .anno .old{color:var(--text3);text-decoration:line-through}
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>设计 v4</b><span>三个问题一次解：左栏固定块矛盾 · 纵向空间 · 真浏览器</span>
+  <span style="flex:1"></span>
+  <button class="swbtn on" data-p="chat">会话 tab</button>
+  <button class="swbtn" data-p="file">文件 tab</button>
+  <button class="swbtn" data-p="web">网页 tab</button>
+</div>
+<div class="app">
+
+  <!-- 左栏：品牌行右侧 ＋（永远可达的新会话）；下面全部统一滚动、统一 1px 间距 -->
+  <div class="left">
+    <div class="brand">
+      <span class="name">Open<i>Program</i></span>
+      <span class="hbtn" title="新会话（常驻，列表滚走也在）">＋</span>
+      <span class="hbtn">⎔</span>
+    </div>
+    <div class="lscroll">
+      <div class="row"><span class="ic">＋</span>New chat</div>
+      <div class="row"><span class="ic">🧩</span>Functions</div>
+      <div class="row"><span class="ic">🖥</span>Programs</div>
+      <div class="row"><span class="ic">🎓</span>Skills</div>
+      <div class="row"><span class="ic">📂</span>Projects</div>
+      <div class="row"><span class="ic">🧠</span>Memory</div>
+      <div class="row"><span class="ic">💬</span>Chats</div>
+      <div class="sect">PROJECTS</div>
+      <div class="row"><span class="ic">📁</span>fzkuji</div>
+      <div class="sect">RECENTS…</div>
+    </div>
+  </div>
+
+  <!-- 中央 -->
+  <div class="center">
+    <div class="strip">
+      <div class="tb on" id="t-chat">💬 proxy 重构 <span class="x">✕</span></div>
+      <div class="tb" id="t-file">📄 http_proxy.py</div>
+      <div class="tb" id="t-web">🌐 google.com</div>
+      <div class="plus">＋</div>
+      <span class="statusdot" title="Local · 连接正常（原顶栏 status chip 缩成角落状态点）"></span>
+    </div>
+    <div class="content">
+
+      <!-- 会话 tab：40px tab 条下面直接是对话，没有第二条栏 -->
+      <div class="pane on" id="p-chat">
+        <div class="msgs">
+          <div class="m-user">把 socksio 的问题修一下</div>
+          <div class="m-ai">根因是 ALL_PROXY=socks5 时 httpx 构造客户端就要求 socksio，已统一代理解析入口。</div>
+          <div class="m-ai note">↑ 注意：对话区从 tab 条底(y=40)一直到 composer——原来这里还有一条 48px 的设置栏。
+            模型 / 权限 / thinking 全部住进 composer（↓），和 Claude/ChatGPT 同一惯例。</div>
+        </div>
+        <div class="composer">
+          <div class="in">Ask for follow-up changes…</div>
+          <div class="crow">
+            <span class="chip">📁 OpenProgram</span>
+            <span class="chip">⚡ frontier · GPT-5.5</span>
+            <span class="chip">🧠 auto</span>
+            <span class="chip green">🛡 Ask</span>
+            <span class="chip">🕘</span>
+            <span class="send">↑</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 文件 tab：保留 40px 工具栏（面包屑是内容的一部分） -->
+      <div class="pane" id="p-file">
+        <div class="toolbar40"><span class="mono">providers › utils › http_proxy.py</span>
+          <span style="flex:1"></span><span>✏️</span><span>⬇</span></div>
+        <div class="viewer">代码查看器（行号 / markdown / 图片 / PDF 同现状）</div>
+      </div>
+
+      <!-- 网页 tab：40px 地址栏 + 真浏览器投屏 -->
+      <div class="pane" id="p-web">
+        <div class="toolbar40">
+          <span>←</span><span>→</span><span>⟳</span>
+          <input class="addr mono" value="https://www.google.com/">
+          <span title="外部打开">⧉</span>
+        </div>
+        <div class="browser-live">
+          <div>
+            <b>sidecar Chrome 投屏（CDP screencast）</b><br>
+            后端复用已有 playwright + openprogram browser 的 sidecar：<br>
+            Page.startScreencast → 帧流走 WS → 这里 canvas 渲染；<br>
+            鼠标/键盘事件回传 Input.dispatch*。真 Google、真登录态。<br>
+            <span class="badge">人看的 = agent 操作的同一个浏览器 → 操作网页的地基</span><br>
+            <span class="note">iframe 只做 sidecar 不可用时的降级</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="anno">
+  <b>数字对账</b><br>
+  聊天顶部 chrome：<span class="old">48+48 = 96px</span> → <b>40px</b>（内容高度 +56px）<br>
+  文件/网页 tab：40 + 40 = 80px（面包屑/地址栏属于内容）<br>
+  左栏：<span class="old">固定 New chat + 分界线</span> → 全部统一滚动、1px 间距；
+  品牌行 ＋ 常驻兜底<br>
+  原顶栏五枚 chip 去向：模型×2/权限/项目 → composer；status → tab 条角落绿点；branch → History 面板头部
+</div>
+
+<script>
+document.querySelectorAll('.swbtn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.swbtn').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));
+  document.getElementById('p-'+b.dataset.p).classList.add('on');
+  document.querySelectorAll('.tb').forEach(x=>x.classList.remove('on'));
+  document.getElementById('t-'+b.dataset.p).classList.add('on');
+});
+document.getElementById('t-chat').onclick=()=>document.querySelector('[data-p="chat"]').click();
+document.getElementById('t-file').onclick=()=>document.querySelector('[data-p="file"]').click();
+document.getElementById('t-web').onclick=()=>document.querySelector('[data-p="web"]').click();
+</script>
+</body>
+</html>
