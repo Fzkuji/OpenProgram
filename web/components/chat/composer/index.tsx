@@ -572,8 +572,11 @@ export function Composer() {
         }
       }
     }
-    document.addEventListener("click", onDoc);
-    return () => document.removeEventListener("click", onDoc);
+    // pointerdown 而非 click：点击滑轨档位会让 React 立刻重排刻度点，
+    // click 冒泡到 document 时目标已被卸载，contains() 误判成"点了
+    // 外面"而收起卡片。pointerdown 发生在重排前，判定可靠。
+    document.addEventListener("pointerdown", onDoc);
+    return () => document.removeEventListener("pointerdown", onDoc);
   }, [setThinkingMenuOpen]);
 
   // /context 面板开关放 store —— badge（右下角圆环）负责渲染浮动弹窗，
@@ -1412,6 +1415,8 @@ export function Composer() {
                           ?.querySelector<HTMLElement>(".effort-pill-collapsed")
                           ?.click();
                       }}
+                      // 最高档 = 紫色标识（Claude 的 Ultracode 形制）。
+                      style={thinking === "max" ? { color: "#8E6BD9" } : undefined}
                     >
                       {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : ""}
                     </button>

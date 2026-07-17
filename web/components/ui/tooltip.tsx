@@ -41,6 +41,10 @@ interface HoverTipProps {
 function HoverTip({ label, children, side = "top" }: HoverTipProps) {
   const [open, setOpen] = React.useState(false)
   const triggerRef = React.useRef<HTMLElement | null>(null)
+  // 指针是否真的悬在 trigger 上。radix 在 trigger 拿到焦点时也会请求
+  // 打开提示——弹层里选完选项后焦点回到 trigger，就是"选完反而冒
+  // 提示"的来源。纯 focus（指针不在）一律不冒。
+  const pointerInside = React.useRef(false)
   return (
     <TooltipProvider delayDuration={600}>
       <Tooltip
@@ -51,14 +55,24 @@ function HoverTip({ label, children, side = "top" }: HoverTipProps) {
           // 提示只会和弹窗叠在一起。
           if (
             next &&
-            triggerRef.current?.getAttribute("aria-expanded") === "true"
+            (triggerRef.current?.getAttribute("aria-expanded") === "true" ||
+              !pointerInside.current)
           ) {
             return
           }
           setOpen(next)
         }}
       >
-        <TooltipTrigger asChild ref={triggerRef as React.Ref<HTMLButtonElement>}>
+        <TooltipTrigger
+          asChild
+          ref={triggerRef as React.Ref<HTMLButtonElement>}
+          onPointerEnter={() => {
+            pointerInside.current = true
+          }}
+          onPointerLeave={() => {
+            pointerInside.current = false
+          }}
+        >
           {children}
         </TooltipTrigger>
         <TooltipContent side={side}>{label}</TooltipContent>

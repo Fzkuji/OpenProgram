@@ -188,13 +188,13 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
           菜单底部，hover 才上强调色。 */}
       <div className={MENU_SEPARATOR} />
       <a
-        href="/settings"
+        href="/settings/channels"
         onClick={onClose}
         className={`${itemCls(false)} no-underline`}
       >
         <SettingsIcon size={16} className="shrink-0" aria-hidden="true" />
         <span className="flex-1 truncate">
-          {text("Add a channel in Settings", "在设置中添加渠道")}
+          {text("Add channels", "添加渠道")}
         </span>
         <ChevronRight size={14} className="shrink-0 text-text-muted" />
       </a>

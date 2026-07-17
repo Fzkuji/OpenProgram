@@ -2229,3 +2229,24 @@
   color: var(--text-muted);
   flex-shrink: 0;
 }
+
+/* ─── Effort 最高档（Ultracode 形制）：滑过区变紫色马赛克 ────────────
+   两层内容：左淡右浓的紫色渐变打底 + 平铺的小方块 speckle（白/深紫
+   两组、圆角 1px），动画让两层 speckle 以不同速度漂移，产生 Claude
+   Ultracode 那种微闪的像素尘效果。 */
+.effort-ultra .slider-range {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='20'%3E%3Cg fill='%23ffffff'%3E%3Crect x='2' y='3' width='3' height='3' rx='1' opacity='.5'/%3E%3Crect x='9' y='8' width='3' height='3' rx='1' opacity='.35'/%3E%3Crect x='16' y='2' width='3' height='3' rx='1' opacity='.55'/%3E%3Crect x='20' y='12' width='3' height='3' rx='1' opacity='.3'/%3E%3Crect x='5' y='13' width='3' height='3' rx='1' opacity='.45'/%3E%3Crect x='13' y='15' width='3' height='3' rx='1' opacity='.25'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='20'%3E%3Cg fill='%235B3FA8'%3E%3Crect x='4' y='6' width='3' height='3' rx='1' opacity='.4'/%3E%3Crect x='14' y='12' width='3' height='3' rx='1' opacity='.3'/%3E%3Crect x='22' y='4' width='3' height='3' rx='1' opacity='.35'/%3E%3Crect x='9' y='16' width='3' height='3' rx='1' opacity='.25'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(90deg,
+      color-mix(in srgb, #8e6bd9 10%, transparent),
+      color-mix(in srgb, #8e6bd9 60%, transparent));
+  background-size: 24px 20px, 30px 20px, 100% 100%;
+  animation: effortUltraShimmer 2.6s linear infinite;
+}
+/* 两层 speckle 都从右往左流（Smarter → Faster，Claude 的方向），
+   速度不同制造闪烁；位移为各自 tile 宽的整数倍保证无缝循环。 */
+@keyframes effortUltraShimmer {
+  from { background-position: 0 0, 0 0, 0 0; }
+  to   { background-position: -24px 0, -60px 0, 0 0; }
+}

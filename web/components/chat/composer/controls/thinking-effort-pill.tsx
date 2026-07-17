@@ -237,10 +237,18 @@ const ThinkingEffortSliderPill = React.forwardRef<
           /* Claude 实测规格：卡 220×101、衬 10、圆角 12；标题 13px；
              标题→标签 16、标签→轨 10。header（muted 维度 + bright 值
              + help）、Faster/Smarter 两端标签、点刻度滑轨。 */
-          <div className="effort-card rounded-[12px] border border-[var(--border-popover)] bg-[var(--surface-popover)] p-[10px] shadow-(--shadow-popover)">
+          <div
+            className={`effort-card ${value === "max" ? "effort-ultra" : ""} rounded-[12px] border border-[var(--border-popover)] bg-[var(--surface-popover)] p-[10px] shadow-(--shadow-popover)`}
+          >
             <div className="flex items-center gap-[6px] text-[13px] leading-[18px]">
               <span className="text-text-muted">{text("Effort", "思考力度")}</span>
-              <span className="font-medium text-text-bright">{capEffort(value)}</span>
+              {/* 最高档：紫色标识 + 滑轨紫色马赛克（Claude Ultracode 形制）。 */}
+              <span
+                className="font-medium text-text-bright"
+                style={value === "max" ? { color: "#8E6BD9" } : undefined}
+              >
+                {capEffort(value)}
+              </span>
               <HoverTip
                 label={text(
                   "Higher effort lets the model think longer before answering.",

@@ -62,8 +62,8 @@ const Slider = React.forwardRef<
     {/* Claude 效果器滑轨（实测）：轨 20px 高、6px 方圆角、暖灰面
         （#EDECE8 → 用 6% ink mix 适配双主题）；已滑过左段是 10% 黑的
         方形覆盖层。 */}
-    <SliderPrimitive.Track className="relative h-[20px] w-full grow overflow-hidden rounded-[6px] bg-[color-mix(in_srgb,var(--text-bright)_6%,transparent)]">
-      <SliderPrimitive.Range className="absolute h-full bg-[color-mix(in_srgb,var(--text-bright)_10%,transparent)]" />
+    <SliderPrimitive.Track className="slider-track relative h-[20px] w-full grow overflow-hidden rounded-[6px] bg-[color-mix(in_srgb,var(--text-bright)_6%,transparent)]">
+      <SliderPrimitive.Range className="slider-range absolute h-full bg-[color-mix(in_srgb,var(--text-bright)_10%,transparent)]" />
     </SliderPrimitive.Track>
     {stops && stops > 1
       ? Array.from({ length: stops }).map((_, i) => {
@@ -83,9 +83,9 @@ const Slider = React.forwardRef<
           <span
             key={i}
             // Each tick sits at the same x as the thumb-center for that
-            // step. `calc(ratio * (100% - 23px) + 11.5px)` mirrors Radix's
-            // own thumb-position math (23px thumb hit, half-width 11.5 —
-            // Claude 实测：末端点心距轨缘 11.5px).
+            // step. `calc(ratio * (100% - 16px) + 8px)` mirrors Radix's
+            // own thumb-position math (16px thumb hit = 视觉宽，端点钮心 8px：
+            // 端档时钮体贴死轨缘、点在钮正中——严丝合缝).
             // `translate(-50%, -50%)` then pulls the tick's own centre
             // onto that point. `pointer-events-none` keeps the track
             // click area uninterrupted.
@@ -96,7 +96,7 @@ const Slider = React.forwardRef<
                 ? "bg-[#8E6BD9]"
                 : "bg-[color-mix(in_srgb,var(--text-bright)_20%,transparent)]",
             )}
-            style={{ left: `calc(${i / (stops - 1)} * (100% - 23px) + 11.5px)` }}
+            style={{ left: `calc(${i / (stops - 1)} * (100% - 16px) + 8px)` }}
             aria-hidden="true"
           />
         );
@@ -111,7 +111,7 @@ const Slider = React.forwardRef<
     {startIcon ? (
       <div
         className="pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-        style={{ left: "11.5px" }}
+        style={{ left: "8px" }}
       >
         {startIcon}
       </div>
@@ -119,7 +119,7 @@ const Slider = React.forwardRef<
     {endIcon ? (
       <div
         className="pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-        style={{ left: "calc(100% - 11.5px)" }}
+        style={{ left: "calc(100% - 8px)" }}
       >
         {endIcon}
       </div>
@@ -134,7 +134,7 @@ const Slider = React.forwardRef<
         // ring would draw a second concentric circle around the
         // custom thumb element). Without a child, fall back to the
         // default soft round bullet + standard focus ring.
-        "relative block h-[20px] w-[23px] rounded-full",
+        "relative block h-[20px] w-[16px] rounded-full",
         "transition-transform duration-150 ease-out",
         "outline-none",
         "disabled:pointer-events-none disabled:opacity-50",
