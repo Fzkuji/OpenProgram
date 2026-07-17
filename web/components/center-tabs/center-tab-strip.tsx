@@ -199,6 +199,9 @@ function TabItem({
         }
       }}
     >
+      {/* 悬停浮起的浅色 pill，绝对定位铺在标签内容之下（z-index:-1），
+          非活动标签悬停时点亮；活动标签下它保持透明。 */}
+      <span className={styles.tabPill} aria-hidden="true" />
       <span className={styles.tabIcon} aria-hidden="true">
         {tab.kind === "session" ? (
           <MessageCircleIcon ref={iconRef} size={14} />

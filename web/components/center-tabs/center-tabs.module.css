@@ -1,10 +1,14 @@
 /* Center tab container — Chrome-style tab strip + file/new-tab panes.
-   Strip is a 40px band (box-border, 1px bottom line): the session tab
-   has NO second toolbar under it (chat chrome = the strip alone), and
-   the file/web toolbars below are 40px too, so their second line lands
-   at y=80. Tabs are 28px rounded rects centered in the band with 6px
-   gaps between them; active = page bg lifted off the strip bg, no
-   outline. Token vocabulary matches the rest of the app. */
+   Strip is a 40px band; the session tab has NO second toolbar under it
+   (chat chrome = the strip alone), and the file/web toolbars below are
+   40px too, so their second line lands at y=80.
+
+   跟真实 Chrome 标签栏对齐（观察当前浏览器 + GM3 规范）：
+   - 标签之间贴着排、无外间距，靠 1px 竖分隔线区分（相邻活动/悬停时隐藏）；
+   - 非活动标签透明贴底、悬停才浮起一个四角圆的浅色 pill；
+   - 活动标签用页面底色填充、顶部圆角、下外角做外扩凹形圆角(fillet)，
+     一直落到栏底盖掉分隔线，和下方内容区融为一体。
+   Token 词汇沿用全站。 */
 
 /* ---- Tab strip ---------------------------------------------------- */
 
@@ -12,14 +16,12 @@
   height: 40px;
   box-sizing: border-box;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-end; /* 标签贴栏底，活动标签才能无缝接内容区 */
+  /* 首个标签前留一点内缩气口，其余标签贴着排（分隔线负责分组） */
   padding: 0 8px;
-  /* The 1px bottom line is a background layer (not border-bottom) so
-     the active tab — a child, painted above the parent background —
-     covers it and visually fuses with the pane below. background-
-     attachment defaults to scroll (fixed to the element), so the line
-     stays put when the tab row overflow-scrolls. */
+  /* 1px 栏底线用背景层画（非 border-bottom），这样活动标签这个子元素
+     绘制在父背景之上时能盖住它、和下方内容区融合。background-attachment
+     默认 scroll(锚在元素上)，横向溢出滚动时线不动。 */
   background:
     linear-gradient(var(--border), var(--border)) left bottom / 100% 1px
       no-repeat,
@@ -29,72 +31,110 @@
   scrollbar-width: none;
 }
 
+/* 非活动标签：透明贴底、无外间距；下方 fillet 高度 6px 决定分隔线的
+   上下留白，让竖线只占中段（Chrome 观感）。 */
 .tab {
   position: relative;
+  /* 自成层叠上下文：pill(z-index:-1) 只压在本标签文字下方，不会掉到
+     栏背景后面被裁掉，也不影响其它标签。 */
+  isolation: isolate;
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 0 8px 0 12px;
-  height: 28px;
+  padding: 0 10px;
+  height: 34px;
   box-sizing: border-box;
-  border-radius: 8px;
+  border-radius: 8px 8px 0 0;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 12.5px;
-  min-width: 84px;
-  max-width: 200px;
+  font-size: 13px;
+  min-width: 88px;
+  max-width: 220px;
   flex-shrink: 0;
   white-space: nowrap;
 }
-.tab:hover {
+
+/* 相邻非活动标签之间的 1px 竖分隔线（照 Chrome：静止态短竖线分界）。
+   画在每个标签左缘、上下各内缩 9px 只占中段。当本标签或前一个被
+   悬停、或相邻活动标签时隐藏——此时该缝由完整圆角轮廓块接管。 */
+.tab::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--border-light);
+}
+.tab:first-child::before,
+.tab:hover::before,
+.tab:hover + .tab::before,
+.tabActive::before,
+.tabActive + .tab::before {
+  opacity: 0;
+}
+
+/* 悬停：非活动标签浮起一个四角都圆的浅色 pill，比栏高矮一点（28px）、
+   垂直居中，不落到栏底——只有活动标签才接内容区。 */
+.tab:not(.tabActive):hover {
   color: var(--text-bright);
+}
+.tab:not(.tabActive):hover .tabPill {
   background: var(--bg-hover);
 }
-/* Active tab — Chrome merge effect: same background as the pane
-   below, bottom corners squared, and the tab grows down to sit on the
-   strip's bottom edge (strip 40 − top gap 6 = 34px), covering the
-   strip's background bottom line so tab and pane read as one surface.
-   34 keeps the active tab's TOP flush with the 28px-centered inactive
-   tabs (both top gaps 6px), so switching never jiggles the row. */
+.tabPill {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 8px;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* 活动标签 — Chrome 融合效果：页面底色填充，顶部圆角，标签贴到栏底
+   盖住栏底线，和下方内容区读作同一片面。34px 与非活动标签同高，切换
+   不跳动。 */
 .tabActive,
 .tab.tabActive:hover {
   background: var(--bg-primary);
   color: var(--text-bright);
-  height: 34px;
-  align-self: flex-end;
-  border-radius: 8px 8px 0 0;
-  z-index: 1; /* corners + body paint over neighbor hover bg */
+  z-index: 1; /* fillet + 主体盖过邻居悬停 pill 与分隔线 */
 }
+.tabActive .tabPill { background: transparent; }
 
-/* Chrome's signature concave (inverted) bottom corners: an 8px square
-   flanks each bottom-outer edge of the active tab, painted in the tab
-   background EXCEPT a quarter-disc centered on the square's top-outer
-   corner — the radial gradient is the exact fillet geometry, and the
-   strip's 1px line stays visible under the transparent part of the
-   arc right up to where the flare meets the bottom edge. */
-.tab.tabActive::before,
+/* Chrome 招牌的下外角凹形圆角(fillet)：活动标签每个下外角外侧贴一个
+   7px 方块，填成标签底色，只在方块「上外角」抠掉一个 1/4 圆——radial
+   gradient 就是精确的 fillet 几何，栏底 1px 线在弧线透明处一直露到
+   flare 接触栏底为止。7px 比原 8px 收一档，弧线更利落不发胖。 */
 .tab.tabActive::after {
   content: "";
   position: absolute;
   bottom: 0;
-  width: 8px;
-  height: 8px;
-}
-.tab.tabActive::before {
-  left: -8px;
+  right: -7px;
+  width: 7px;
+  height: 7px;
   background: radial-gradient(
-    circle 8px at 0 0,
-    transparent 7.5px,
-    var(--bg-primary) 8px
+    circle 7px at 100% 0,
+    transparent 6.5px,
+    var(--bg-primary) 7px
   );
 }
-.tab.tabActive::after {
-  right: -8px;
+/* 左下 fillet：复用 ::before（非活动态它是分隔线，活动态改成 fillet）。 */
+.tab.tabActive::before {
+  content: "";
+  left: -7px;
+  top: auto;
+  bottom: 0;
+  width: 7px;
+  height: 7px;
+  opacity: 1;
   background: radial-gradient(
-    circle 8px at 100% 0,
-    transparent 7.5px,
-    var(--bg-primary) 8px
+    circle 7px at 0 0,
+    transparent 6.5px,
+    var(--bg-primary) 7px
   );
 }
 
@@ -149,10 +189,14 @@
 .tabDirtyDot + .tabClose { display: none; }
 .tab:hover .tabDirtyDot + .tabClose { display: flex; }
 
+/* ＋ 新建：紧跟最后一个标签、比标签矮的安静圆角钮，悬停才有底色。
+   align-self:center 让它在 40px 栏里垂直居中（栏本身 align-items 是
+   flex-end，标签贴底，＋ 钮居中不受影响）。 */
 .plusBtn {
   display: flex;
   align-items: center;
   justify-content: center;
+  align-self: center;
   width: 28px;
   height: 28px;
   margin-left: 4px;
@@ -161,7 +205,7 @@
   color: var(--text-secondary);
   background: transparent;
   border: none;
-  border-radius: 50%;
+  border-radius: 8px;
   cursor: pointer;
   flex-shrink: 0;
 }
