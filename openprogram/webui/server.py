@@ -1320,6 +1320,15 @@ def create_app():
             # Real type kept so the panel's <img> works; CSP sandbox still
             # neuters the file if it's opened as a top-level document.
             return FileResponse(target, media_type=guessed, headers=headers)
+        if guessed == "application/pdf":
+            # Inline, real content-type, and deliberately NO CSP sandbox
+            # header: a sandboxed response blocks the browser's built-in
+            # PDF viewer. The PDF renders in the browser's isolated
+            # viewer, not the page DOM, so sandboxing buys nothing here.
+            # No Content-Disposition either — attachment would force a
+            # download instead of the <iframe> render.
+            return FileResponse(target, media_type=guessed,
+                                headers={"X-Content-Type-Options": "nosniff"})
         # Everything else is a download, never rendered by the browser.
         return FileResponse(target, media_type="application/octet-stream",
                             filename=os.path.basename(target), headers=headers)

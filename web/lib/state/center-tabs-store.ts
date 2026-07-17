@@ -7,6 +7,8 @@
  * Deterministic ids make focus-or-create trivial:
  *   session  →  "s:<sessionId>"   (draft new chat → "s:draft")
  *   file     →  "f:<projectId>:<path>"
+ *   web      →  "w:<url>"         (id is fixed at open; in-pane
+ *                                  navigation updates url, not id)
  *   ntp      →  "ntp"
  *
  * Navigation side effects (router.push on session-tab activation) are
@@ -15,13 +17,14 @@
  */
 import { create } from "zustand";
 
-export type CenterTabKind = "session" | "file" | "ntp";
+export type CenterTabKind = "session" | "file" | "web" | "ntp";
 
 export interface CenterTab {
   id: string;
   kind: CenterTabKind;
   /** Session tabs: conversation title (may lag; synced from the
-   *  session store). File tabs: basename. NTP: unused (i18n label). */
+   *  session store). File tabs: basename. Web tabs: hostname until
+   *  updateWebTab sets a real title. NTP: unused (i18n label). */
   title: string;
   /** Session tabs only. Absent on the draft (not-yet-created) chat. */
   sessionId?: string;
@@ -29,6 +32,12 @@ export interface CenterTab {
   projectId?: string;
   /** File tabs only — project-relative, "/"-separated. */
   path?: string;
+  /** Web tabs only — current http(s) URL (may drift from the id
+   *  after in-pane navigation). */
+  url?: string;
+  /** Unsaved-changes marker — strip shows ● instead of ✕. Set via
+   *  setTabDirty by whoever owns the tab's content (file editor). */
+  dirty?: boolean;
 }
 
 export const DRAFT_SESSION_TAB_ID = "s:draft";
@@ -39,6 +48,36 @@ export function sessionTabId(sessionId: string): string {
 }
 export function fileTabId(projectId: string, path: string): string {
   return `f:${projectId}:${path}`;
+}
+export function webTabId(url: string): string {
+  return `w:${url}`;
+}
+
+/** Normalize user input into a browsable http(s) URL: trims, prefixes
+ *  bare domains with https://, and rejects every other scheme
+ *  (javascript:, data:, file:, …). Returns null when not navigable. */
+export function normalizeWebUrl(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)
+    ? raw
+    : `https://${raw}`;
+  try {
+    const u = new URL(withScheme);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (!u.hostname) return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname || url;
+  } catch {
+    return url;
+  }
 }
 
 const LS_KEY = "centerTabs";
@@ -55,6 +94,10 @@ function readPersisted(): Persisted {
     if (!raw) return { tabs: [], activeId: null };
     const parsed = JSON.parse(raw) as Persisted;
     if (!Array.isArray(parsed.tabs)) return { tabs: [], activeId: null };
+    // Dirty never survives a reload — the unsaved buffer that set it
+    // is gone. Older persisted entries (no "web" kind, no dirty) pass
+    // through untouched.
+    parsed.tabs = parsed.tabs.map((t) => (t.dirty ? { ...t, dirty: false } : t));
     return {
       tabs: parsed.tabs,
       activeId: parsed.tabs.some((t) => t.id === parsed.activeId)
@@ -91,6 +134,15 @@ interface CenterTabsState {
    *  yet). An active new-tab page is navigated in place. */
   openDraftSessionTab: () => void;
   openFileTab: (projectId: string, path: string) => void;
+  /** Focus-or-create a web tab for `url` (must already be a valid
+   *  http(s) URL — run user input through normalizeWebUrl first). */
+  openWebTab: (url: string) => void;
+  /** Update a web tab's url/title in place (address-bar navigation,
+   *  later title reporting from the sidecar browser). Id stays fixed. */
+  updateWebTab: (id: string, patch: { url?: string; title?: string }) => void;
+  /** Unsaved-changes marker groundwork — content owners call this;
+   *  the strip renders ● instead of ✕ while dirty. */
+  setTabDirty: (id: string, dirty: boolean) => void;
   /** Single-instance new-tab page — reused if already open. */
   openNewTabPage: () => void;
   /** Close a tab; closing the active one activates the right
@@ -182,6 +234,48 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           [NTP_TAB_ID],
         ),
       ),
+
+    openWebTab: (url) =>
+      set((s) =>
+        focusOrCreate(
+          s,
+          webTabId(url),
+          () => ({
+            id: webTabId(url),
+            kind: "web",
+            title: hostnameOf(url),
+            url,
+          }),
+          [NTP_TAB_ID],
+        ),
+      ),
+
+    updateWebTab: (id, patch) =>
+      set((s) => {
+        const tab = s.tabs.find((t) => t.id === id && t.kind === "web");
+        if (!tab) return {};
+        const url = patch.url ?? tab.url;
+        // Navigating to a new site resets a stale title to the new
+        // hostname unless the caller supplies one.
+        const title =
+          patch.title ??
+          (patch.url && patch.url !== tab.url ? hostnameOf(patch.url) : tab.title);
+        if (url === tab.url && title === tab.title) return {};
+        const tabs = s.tabs.map((t) => (t.id === id ? { ...t, url, title } : t));
+        const next = { tabs, activeId: s.activeId };
+        persist(next);
+        return next;
+      }),
+
+    setTabDirty: (id, dirty) =>
+      set((s) => {
+        const tab = s.tabs.find((t) => t.id === id);
+        if (!tab || !!tab.dirty === dirty) return {};
+        const tabs = s.tabs.map((t) => (t.id === id ? { ...t, dirty } : t));
+        const next = { tabs, activeId: s.activeId };
+        persist(next);
+        return next;
+      }),
 
     openNewTabPage: () =>
       set((s) =>

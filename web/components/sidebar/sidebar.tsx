@@ -314,7 +314,10 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
+      {/* py-8: 48(brand)+8+32(row)+8 = 96 — the pinned block's bottom edge
+          (and the scroll divider that appears there) lands on the same
+          y=96 line as the center pane's toolbar border. */}
+      <div className="flex flex-col gap-px shrink-0 px-[8px] py-[8px]">
         <div
           className={sidebarNavItemClass}
           id="navNewChat"

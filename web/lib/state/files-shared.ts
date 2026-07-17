@@ -90,6 +90,31 @@ export function filesWsRequest<T>(
  * listing) — lets the viewer cache invalidate on refetch. */
 export const latestFileMtime = new Map<string, number>();
 
+/** Wire shape of a ``project_file_read_result`` reply. */
+export interface FileReadResult {
+  project_id: string;
+  path: string;
+  content?: string;
+  size: number;
+  mtime: number;
+  truncated?: boolean;
+  binary?: boolean;
+  too_large?: boolean;
+  error?: string;
+}
+
+/** Read-result cache keyed `${projectId}:${path}` — shared between the
+ * viewer (fills it) and the editor (invalidates it after a save). */
+// ponytail: unbounded per-session cache; add LRU if memory ever matters.
+export const readCache = new Map<string, FileReadResult>();
+
+/** Drop the cached read (and known mtime) for one file so the next
+ * viewer mount refetches — called after a successful save. */
+export function invalidateFileRead(projectId: string, path: string): void {
+  readCache.delete(`${projectId}:${path}`);
+  latestFileMtime.delete(path);
+}
+
 /** URL of the backend raw-bytes endpoint (proxied by
  * app/files/[...path]/route.ts so the worker port stays live). */
 export function rawFileUrl(projectId: string, path: string): string {

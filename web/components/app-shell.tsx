@@ -9,6 +9,7 @@ import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { CenterTabStrip } from "./center-tabs/center-tab-strip";
 import { FileTabPane } from "./center-tabs/file-tab-pane";
 import { NewTabPage } from "./center-tabs/new-tab-page";
+import { WebTabPane } from "./center-tabs/web-tab-pane";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { ToastHost } from "./ui/toast-host";
 import { Composer } from "./chat/composer";
@@ -461,6 +462,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               projectId={activeTab.projectId}
               path={activeTab.path}
             />
+          ) : null}
+          {activeKind === "web" && activeTab?.url ? (
+            <WebTabPane key={activeTab.id} tabId={activeTab.id} url={activeTab.url} />
           ) : null}
           {activeKind === "ntp" ? <NewTabPage /> : null}
         </div>

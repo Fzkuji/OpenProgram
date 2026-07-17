@@ -5,11 +5,15 @@ Covers the wire contract:
 * ``project_file_tree`` — dirs-first case-insensitive listing, dotfiles in
 * ``project_file_read`` — text content, ``binary`` / ``too_large`` flags,
   whitespace filenames round-trip un-stripped
+* ``project_file_write`` — utf-8 write + round-trip, ``expected_mtime``
+  conflict gate (no clobber), 5 MB cap, parent dir must exist
 * ``_resolve`` guard — ``..``, absolute paths (even inside the root) and
   symlink escapes rejected, unknown project rejected
-* ``GET /files/raw`` — nosniff + CSP sandbox always; images keep the real
-  content-type, everything else is octet-stream + attachment; 403 on
-  escape, 404 on missing file / unknown project
+* ``GET /files/raw`` — nosniff everywhere; images and PDFs keep the real
+  content-type inline (PDFs additionally skip the CSP sandbox so the
+  browser's built-in viewer works), everything else is octet-stream +
+  attachment + sandbox; 403 on escape, 404 on missing file / unknown
+  project
 """
 from __future__ import annotations
 
@@ -180,6 +184,71 @@ def test_read_whitespace_filename_roundtrip(project_root):
     assert data["content"] == "pad"
 
 
+# ---- project_file_write ----------------------------------------------------
+
+def _write(cmd: dict) -> dict:
+    frame = _run(ws_files.handle_project_file_write, cmd)
+    assert frame["type"] == "project_file_write_result"
+    return frame["data"]
+
+
+def test_write_roundtrip(project_root):
+    read = _run(ws_files.handle_project_file_read,
+                {"project_id": "p1", "path": "apple.txt"})["data"]
+    data = _write({"project_id": "p1", "path": "apple.txt",
+                   "content": "fresh\n", "expected_mtime": read["mtime"]})
+    assert data["ok"] is True
+    assert data["mtime"] > 0
+    assert "conflict" not in data and "error" not in data
+    again = _run(ws_files.handle_project_file_read,
+                 {"project_id": "p1", "path": "apple.txt"})["data"]
+    assert again["content"] == "fresh\n"
+    assert again["mtime"] == data["mtime"]
+
+
+def test_write_conflict_does_not_write(project_root):
+    stale = os.stat(project_root / "apple.txt").st_mtime - 100
+    data = _write({"project_id": "p1", "path": "apple.txt",
+                   "content": "clobber", "expected_mtime": stale})
+    assert data["conflict"] is True
+    assert "ok" not in data
+    assert (project_root / "apple.txt").read_text() == "aaa"  # untouched
+
+
+def test_write_no_expected_mtime_creates_new_file(project_root):
+    data = _write({"project_id": "p1", "path": "src/new.txt",
+                   "content": "born"})
+    assert data["ok"] is True
+    assert (project_root / "src" / "new.txt").read_text() == "born"
+
+
+def test_write_traversal_rejected(project_root):
+    for bad in ("../outside/evil.txt", "/etc/evil", "sneaky_link"):
+        data = _write({"project_id": "p1", "path": bad, "content": "x"})
+        assert data["error"] == "path escapes project root", bad
+    assert (project_root.parent / "outside" / "secret.txt").read_text() == "secret"
+
+
+def test_write_oversize_rejected(project_root):
+    data = _write({"project_id": "p1", "path": "apple.txt",
+                   "content": "a" * 5_000_001})
+    assert data["error"] == "content exceeds 5 MB"
+    assert (project_root / "apple.txt").read_text() == "aaa"  # untouched
+
+
+def test_write_parent_dir_must_exist(project_root):
+    data = _write({"project_id": "p1", "path": "no_such_dir/new.txt",
+                   "content": "x"})
+    assert "parent directory" in data["error"]
+    assert not (project_root / "no_such_dir").exists()  # no mkdir
+
+
+def test_write_non_string_content_rejected(project_root):
+    data = _write({"project_id": "p1", "path": "apple.txt",
+                   "content": None})
+    assert data["error"] == "content must be a string"
+
+
 # ---- GET /files/raw --------------------------------------------------------
 
 @pytest.fixture
@@ -210,6 +279,18 @@ def test_raw_non_image_is_octet_stream_attachment(client, project_root):
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["content-security-policy"] == "sandbox"
     assert r.content == b"<script>alert(1)</script>"
+
+
+def test_raw_pdf_inline_no_sandbox(client, project_root):
+    (project_root / "doc.pdf").write_bytes(b"%PDF-1.4 fake body")
+    r = client.get("/files/raw", params={"project_id": "p1", "path": "doc.pdf"})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["x-content-type-options"] == "nosniff"
+    # Inline (no attachment) and no CSP sandbox — a sandboxed response
+    # blocks the browser's built-in PDF viewer.
+    assert "content-disposition" not in r.headers
+    assert "content-security-policy" not in r.headers
 
 
 def test_raw_escape_403(client, project_root):

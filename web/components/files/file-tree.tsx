@@ -11,7 +11,16 @@
  * it never triggers fetches; matches render as a flat path list.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, RotateCw } from "lucide-react";
+import {
+  ChevronRight,
+  File,
+  FileCode,
+  FileImage,
+  FileJson,
+  FileText,
+  Folder,
+  RotateCw,
+} from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { filesWsRequest, latestFileMtime } from "@/lib/state/files-shared";
@@ -37,6 +46,39 @@ const DIM_DIRS = new Set([".git", "node_modules", ".venv", "__pycache__"]);
 
 function joinPath(dir: string, name: string): string {
   return dir ? `${dir}/${name}` : name;
+}
+
+/* VS Code-ish geometry: 12px per depth level; folder rows lead with a
+   14px chevron + 4px gap, so file rows (no chevron) indent 18px extra
+   to align their icon with the folder glyph. */
+const INDENT = 12;
+const ROW_PAD = 4;
+const FILE_PAD = ROW_PAD + 18;
+
+/** Extension bucket → icon + colour (existing accent tokens only). */
+const ICON_BUCKETS: [Set<string>, typeof File, string | undefined][] = [
+  [
+    new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "c", "cpp", "h", "hpp", "java", "sh"]),
+    FileCode,
+    "var(--accent-cyan)",
+  ],
+  [new Set(["json", "yaml", "yml", "toml", "csv"]), FileJson, "var(--accent-yellow)"],
+  [new Set(["md", "markdown", "txt", "rst", "log"]), FileText, undefined],
+  [new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"]), FileImage, "var(--accent-purple)"],
+  [new Set(["pdf"]), FileText, "var(--accent-red)"],
+];
+
+function FileGlyph({ name }: { name: string }) {
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  for (const [exts, Icon, color] of ICON_BUCKETS) {
+    if (exts.has(ext)) {
+      return (
+        <Icon size={14} className={styles.treeIcon} style={color ? { color } : undefined} />
+      );
+    }
+  }
+  return <File size={14} className={styles.treeIcon} />;
 }
 
 type DirState = TreeEntry[] | "loading" | "error";
@@ -128,23 +170,24 @@ export function FileTree({
 
   function renderDir(dir: string, depth: number): React.ReactNode {
     const state = dirs[dir];
+    const hintPad = FILE_PAD + depth * INDENT;
     if (state === "loading" || state === undefined) {
       return (
-        <div className={styles.treeHint} style={{ paddingLeft: 14 + depth * 14 }}>
+        <div className={styles.treeHint} style={{ paddingLeft: hintPad }}>
           {text("Loading…", "加载中…")}
         </div>
       );
     }
     if (state === "error") {
       return (
-        <div className={styles.treeHint} style={{ paddingLeft: 14 + depth * 14 }}>
+        <div className={styles.treeHint} style={{ paddingLeft: hintPad }}>
           {text("Failed to load", "加载失败")}
         </div>
       );
     }
     if (state.length === 0) {
       return (
-        <div className={styles.treeHint} style={{ paddingLeft: 14 + depth * 14 }}>
+        <div className={styles.treeHint} style={{ paddingLeft: hintPad }}>
           {text("Empty", "空目录")}
         </div>
       );
@@ -157,17 +200,28 @@ export function FileTree({
           <div key={full}>
             <div
               className={`${styles.treeRow} ${DIM_DIRS.has(e.name) ? styles.treeRowDim : ""}`}
-              style={{ paddingLeft: depth * 14 }}
+              style={{ paddingLeft: ROW_PAD + depth * INDENT }}
               onClick={() => toggleDir(full)}
               title={full}
             >
               <ChevronRight
-                size={13}
+                size={14}
                 className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ""}`}
               />
+              <Folder size={14} className={styles.treeIcon} />
               <span className={styles.treeName}>{e.name}</span>
             </div>
-            {isOpen ? renderDir(full, depth + 1) : null}
+            {isOpen ? (
+              // Indent guide under this folder's chevron center; the
+              // kids container is full-width so row hover still spans
+              // the whole panel (guide is an ::before in the CSS).
+              <div
+                className={styles.treeKids}
+                style={{ "--guide-x": `${ROW_PAD + 7 + depth * INDENT}px` } as React.CSSProperties}
+              >
+                {renderDir(full, depth + 1)}
+              </div>
+            ) : null}
           </div>
         );
       }
@@ -175,10 +229,11 @@ export function FileTree({
         <div
           key={full}
           className={`${styles.treeRow} ${full === activePath ? styles.treeRowActive : ""}`}
-          style={{ paddingLeft: 13 + depth * 14 }}
+          style={{ paddingLeft: FILE_PAD + depth * INDENT }}
           onClick={() => openFile(full)}
           title={full}
         >
+          <FileGlyph name={e.name} />
           <span className={styles.treeName}>{e.name}</span>
         </div>
       );
@@ -217,7 +272,8 @@ export function FileTree({
                     onClick={() => toggleDir(path)}
                     title={path}
                   >
-                    <ChevronRight size={13} className={styles.chevron} />
+                    <ChevronRight size={14} className={styles.chevron} />
+                    <Folder size={14} className={styles.treeIcon} />
                     <span className={styles.treePath}>{path}</span>
                   </div>
                 ) : (
@@ -227,6 +283,7 @@ export function FileTree({
                     onClick={() => openFile(path)}
                     title={path}
                   >
+                    <FileGlyph name={path} />
                     <span className={styles.treePath}>{path}</span>
                   </div>
                 ),

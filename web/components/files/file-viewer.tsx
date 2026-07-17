@@ -5,40 +5,33 @@
  * extension:
  *
  *   images   → <img> straight off the backend raw endpoint
+ *   pdf      → <iframe> off the raw endpoint (renders in the browser's
+ *              built-in PDF viewer)
  *   markdown → Rendered (existing <Markdown>, marked-based) or Source,
  *              controlled by the `mdRendered` prop (the toggle lives
  *              in the file tab's toolbar — see FileTabPane)
  *   other    → line-numbered <pre> (no syntax highlight in v1)
  *   binary / >1 MB replies → name + size card with a download link
  *
- * Content comes over WS (``project_file_read``) with a small in-memory
- * cache invalidated by the mtime the tree listing last reported.
+ * Content comes over WS (``project_file_read``) with the shared
+ * files-shared readCache, invalidated by the mtime the tree listing
+ * last reported (and by the editor after a save).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { Markdown } from "@/lib/format-utils/markdown";
 import {
+  type FileReadResult,
   filesWsRequest,
   latestFileMtime,
   rawFileUrl,
+  readCache,
 } from "@/lib/state/files-shared";
 import styles from "./files-panel.module.css";
 
-interface ReadResult {
-  project_id: string;
-  path: string;
-  content?: string;
-  size: number;
-  mtime: number;
-  truncated?: boolean;
-  binary?: boolean;
-  too_large?: boolean;
-  error?: string;
-}
-
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"]);
+export const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"]);
 
 function extOf(path: string): string {
   const base = path.split("/").pop() || "";
@@ -53,19 +46,20 @@ function fmtSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// ponytail: unbounded per-session cache; add LRU if memory ever matters.
-const readCache = new Map<string, ReadResult>();
-
 export function FileViewer({
   projectId,
   path,
   mdRendered = true,
+  onLoaded,
 }: {
   projectId: string;
   path: string;
   /** Markdown files: true → <Markdown> render, false → source lines.
    *  The toggle UI lives in the file tab's toolbar. */
   mdRendered?: boolean;
+  /** Text files: fires when the read lands (null on failure) so the
+   *  tab toolbar can tell editable text from binary / too-large. */
+  onLoaded?: (data: FileReadResult | null) => void;
 }) {
   const ext = extOf(path);
   if (IMAGE_EXTS.has(ext)) {
@@ -79,12 +73,24 @@ export function FileViewer({
       </div>
     );
   }
+  if (ext === "pdf") {
+    // The browser's built-in PDF viewer renders this in its own
+    // isolated process, not the page DOM.
+    return (
+      <iframe
+        src={rawFileUrl(projectId, path)}
+        title={path}
+        className={styles.pdfFrame}
+      />
+    );
+  }
   return (
     <TextViewer
       projectId={projectId}
       path={path}
       isMarkdown={ext === "md"}
       rendered={mdRendered}
+      onLoaded={onLoaded}
     />
   );
 }
@@ -94,15 +100,20 @@ function TextViewer({
   path,
   isMarkdown,
   rendered,
+  onLoaded,
 }: {
   projectId: string;
   path: string;
   isMarkdown: boolean;
   rendered: boolean;
+  onLoaded?: (data: FileReadResult | null) => void;
 }) {
   const { text } = useTranslation();
-  const [data, setData] = useState<ReadResult | null>(null);
+  const [data, setData] = useState<FileReadResult | null>(null);
   const [failed, setFailed] = useState(false);
+  // Ref so a changing callback identity never re-triggers the fetch.
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
 
   useEffect(() => {
     let cancelled = false;
@@ -112,10 +123,11 @@ function TextViewer({
     const hit = readCache.get(key);
     if (hit && (knownMtime === undefined || hit.mtime === knownMtime)) {
       setData(hit);
+      onLoadedRef.current?.(hit);
       return;
     }
     setData(null);
-    filesWsRequest<ReadResult>(
+    filesWsRequest<FileReadResult>(
       "project_file_read",
       { project_id: projectId, path },
       "project_file_read_result",
@@ -123,10 +135,12 @@ function TextViewer({
       if (cancelled) return;
       if (!res || res.error || res.path !== path) {
         setFailed(true);
+        onLoadedRef.current?.(null);
         return;
       }
       readCache.set(key, res);
       setData(res);
+      onLoadedRef.current?.(res);
     });
     return () => {
       cancelled = true;

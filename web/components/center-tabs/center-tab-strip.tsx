@@ -14,7 +14,7 @@
  */
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { Globe, X } from "lucide-react";
 
 import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { useSessionStore } from "@/lib/session-store";
@@ -112,6 +112,7 @@ export function CenterTabStrip() {
   function labelOf(tab: CenterTab): string {
     if (tab.kind === "ntp") return text("New tab", "新标签页");
     if (tab.kind === "file") return tab.title;
+    if (tab.kind === "web") return tab.title || tab.url || "";
     if (!tab.sessionId) return text("New chat", "新会话");
     return tab.title || t("sidebar.untitled");
   }
@@ -122,13 +123,40 @@ export function CenterTabStrip() {
         <div
           key={tab.id}
           className={`${styles.tab} ${tab.id === activeId ? styles.tabActive : ""}`}
-          title={tab.kind === "file" ? tab.path : labelOf(tab)}
+          title={
+            tab.kind === "file" ? tab.path : tab.kind === "web" ? tab.url : labelOf(tab)
+          }
           onClick={() => onTabClick(tab)}
+          // Middle-click closes (browser convention). preventDefault on
+          // mousedown stops the autoscroll cursor; the close itself
+          // fires on auxclick.
+          onMouseDown={(e) => {
+            if (e.button === 1) e.preventDefault();
+          }}
+          onAuxClick={(e) => {
+            if (e.button === 1) {
+              e.preventDefault();
+              onTabClose(e, tab);
+            }
+          }}
         >
           <span className={styles.tabIcon} aria-hidden="true">
-            {tab.kind === "session" ? "💬" : tab.kind === "file" ? "📄" : "⊕"}
+            {tab.kind === "session" ? (
+              "💬"
+            ) : tab.kind === "file" ? (
+              "📄"
+            ) : tab.kind === "web" ? (
+              <Globe size={13} />
+            ) : (
+              "⊕"
+            )}
           </span>
           <span className={styles.tabName}>{labelOf(tab)}</span>
+          {tab.dirty ? (
+            <span className={styles.tabDirtyDot} aria-hidden="true">
+              ●
+            </span>
+          ) : null}
           <span
             role="button"
             className={styles.tabClose}
