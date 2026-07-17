@@ -39,6 +39,7 @@ import {
   setRecentsView,
   DEFAULT_RECENTS_VIEW,
   type RecentsStatus,
+  type RecentsGroupBy,
   type RecentsSort,
   type RecentsActivity,
 } from "@/lib/prefs/recents-view";
@@ -94,6 +95,7 @@ export function RecentsFilter() {
     view.project !== DEFAULT_RECENTS_VIEW.project ||
     view.environment !== DEFAULT_RECENTS_VIEW.environment ||
     view.lastActivity !== DEFAULT_RECENTS_VIEW.lastActivity ||
+    view.groupBy !== DEFAULT_RECENTS_VIEW.groupBy ||
     view.sort !== DEFAULT_RECENTS_VIEW.sort;
 
   return (
@@ -165,9 +167,19 @@ export function RecentsFilter() {
 
           <DM.Separator className="-mx-[4px] my-[4px] h-px bg-[var(--border)]" />
 
-          {/* No Group-by row: the sidebar list is grouped by project by
-              design (the browser model) — grouping is not a view pref
-              anymore. `view.groupBy` stays in stored prefs, unused. */}
+          <Row<RecentsGroupBy>
+            label={t("sidebar.group_by")}
+            value={view.groupBy}
+            options={[
+              ["none", t("sidebar.group_date")],
+              ["project", t("sidebar.group_project")],
+              ["state", t("sidebar.group_state")],
+              ["flat", t("sidebar.group_none")],
+            ]}
+            // "None" (flat) sits last, set off by a divider — like Claude.
+            separateLast
+            onPick={(groupBy) => setRecentsView({ groupBy })}
+          />
           <Row<RecentsSort>
             label={t("sidebar.sort_by")}
             value={view.sort}

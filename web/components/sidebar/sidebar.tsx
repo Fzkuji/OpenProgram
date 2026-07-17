@@ -546,12 +546,11 @@ export function Sidebar() {
       )}
 
       {open && (
-        // Browser-model left sidebar: the conversation list is grouped
-        // by project (nav-style group rows + dense session rows), with
-        // the filter dropdown on the "Projects" section header — all
-        // inside SessionsList. The group headers' ＋ buttons run the
-        // same newChat flow as the nav item above (after stashing
-        // window._pendingProjectId).
+        // The conversation list — classic Recents (date buckets by
+        // default; State / Flat via the filter's Group-by row), or the
+        // project folder tree when Group-by → Project. In project mode
+        // the group headers' ＋ buttons run the same newChat flow as
+        // the nav item above (after stashing window._pendingProjectId).
         <div id="convSection" className="flex flex-col">
           <div id="convList" className="flex flex-col gap-px px-[8px]">
             <SessionsList onNewChat={newChat} />
