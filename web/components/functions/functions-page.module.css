@@ -128,7 +128,7 @@
   color: var(--nav-color-hover);
 }
 .profileItem.dragOver {
-  background: rgba(24, 169, 107, 0.08);
+  background: color-mix(in srgb, var(--accent-green) 8%, transparent);
   color: var(--accent-green);
 }
 .profileNew {

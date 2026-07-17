@@ -6,6 +6,15 @@
 .inputArea {
   padding: 12px 24px 24px;
   background: transparent;
+  /* 80%-ink text token shared by env pills + compact controls (measured
+     from claude.ai/code: rgba(10,10,10,0.8) on light). --text-bright is
+     the theme's ink, so one mix covers both themes. */
+  --ink-80: color-mix(in srgb, var(--text-bright) 80%, transparent);
+  /* Opaque version of the input-box surface — used by the fn-form
+     bottom row, the outgoing overlay and the slash menu, which must
+     visually match the box. Dark surface is already opaque; light is
+     0.8 white over --bg-primary, composited below. */
+  --surface-solid: var(--bg-tertiary);
   /* Anchored to the bottom of `#chatView` and floated OVER the chat
      area, not pushed into the flex flow — so growing the fn-form
      overlaps the chat content instead of squeezing it shorter (which
@@ -15,6 +24,9 @@
   right: 0;
   bottom: 0;
   z-index: 5;
+}
+:global([data-theme="light"]) .inputArea {
+  --surface-solid: color-mix(in srgb, #ffffff 80%, var(--bg-primary));
 }
 /* Bottom fade mask: solid at the bottom (hides chat content scrolling
    behind the composer) fading to transparent at the top — so there's no
@@ -47,10 +59,11 @@
 /* Wrapper layout strategy:
    - top row (textarea OR fn-form header): in normal flow at the top.
    - body (fn-form only): in normal flow below the top row.
-   - bottom row: `position: absolute; bottom: 0` so it's anchored to
-     the wrapper's bottom edge regardless of how the wrapper's height
-     changes. wrapper.padding-bottom equals the bottom row's height,
-     reserving space below the in-flow content.
+   - bottom row (MORPHED modes only): `position: absolute; bottom: 0`
+     anchored to the wrapper's bottom edge regardless of how the
+     wrapper's height changes; `.fnFormMode`'s padding-bottom reserves
+     its space. Chat mode has no internal bottom row — the controls
+     render in the detached `.controlsRow` below the wrapper.
    Effect: when the wrapper height transitions (fn-form open/close),
    the bottom row stays put at the wrapper's bottom edge while the
    top portion expands or collapses. */
@@ -62,18 +75,38 @@
   margin: 0 auto;
   background: var(--bg-tertiary);
   border: none;
-  border-radius: var(--composer-corner);
-  padding: 0 0 var(--composer-bottom-row-h);
-  /* Keep the edge transparent until the textarea or an inner control
-     receives focus. Using box-shadow avoids layout shifts from a real
-     border while preserving the wrapper's rounded geometry. */
-  box-shadow: 0 0 0 1px transparent;
+  /* Claude Code measured: 10px box radius (was 32px concentric-corner
+     geometry — the corner buttons keep their own 50% radius). */
+  border-radius: 10px;
+  /* Chat mode: the controls row lives OUTSIDE the wrapper now, so no
+     bottom band is reserved. fn-form mode restores it (below). */
+  padding: 0;
+  /* Claude Code measured ring: 1px hairline via box-shadow (no layout
+     shift), slightly stronger on focus. */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
   overflow: hidden;
   transition: box-shadow 180ms ease,
     height var(--composer-height-transition);
 }
 .inputWrapper:focus-within {
-  box-shadow: 0 0 0 1px var(--border-light);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+:global([data-theme="light"]) .inputWrapper {
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(10, 10, 10, 0.1),
+    0 2px 8px rgba(20, 20, 19, 0.04);
+}
+:global([data-theme="light"]) .inputWrapper:focus-within {
+  box-shadow: 0 0 0 1px rgba(10, 10, 10, 0.18),
+    0 2px 8px rgba(20, 20, 19, 0.04);
+}
+/* fn-form / question / approval keep the OLD internal layout: the
+   controls row renders inside the wrapper (absolute, bottom-anchored)
+   and this padding reserves its 64px band — the wrapper height
+   animation in use-fn-form-wrapper.ts measures computed paddingBottom,
+   so the whole open/close mechanic is untouched in morphed mode. */
+.fnFormMode {
+  padding-bottom: var(--composer-bottom-row-h);
 }
 
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
@@ -91,8 +124,8 @@
   overflow: hidden;
   pointer-events: none;
   z-index: 1;
-  background: var(--bg-tertiary);
-  border-radius: var(--composer-corner) var(--composer-corner) 0 0;
+  background: var(--surface-solid);
+  border-radius: 10px 10px 0 0;
   animation: outgoingLayerFade var(--composer-fade-duration) ease forwards;
 }
 /* Suppress the cloned header/body's own fadeIn animation — we want
@@ -117,28 +150,22 @@
    between near-black (light) and near-white (dark) via the theme
    tokens in 01-base.css, so a single rule covers both. */
 
-/* Top row — chat mode only. Mirrors `.inputBottomRow` except for
-   `padding-bottom: 0`. The bottom row's `padding-top: 16` provides
-   the visible 16px gap between the textarea and the input-options
-   strip; if the top row also added its own 16px padding-bottom the
-   gap would visually double to 32px and the whole wrapper would
-   look unnecessarily tall. Skipping the top row's bottom padding
-   collapses them into a single shared 16px breathing zone — the
-   "overlapping padding" effect that keeps the chat-mode wrapper
-   compact while still leaving room for the bottom row's controls. */
+/* Top row — chat mode only. The whole chat-mode box is just this row
+   (plus the wrapper-level send button): 13px vertical padding around
+   an 18px line = the measured 44px single-line box. */
 .inputTopRow {
   position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 30px;
+  /* Claude Code measured: single line sits in a 44px min-height row —
+     13px vertical padding + 18px line-height. */
+  min-height: 44px;
   /* Right padding reserves space for the absolute-positioned action
-     button (send / stop) that lives at the wrapper level: 16 (right
-     offset) + 32 (button-size) + 8 (breathing space) = 56. */
-  padding: var(--composer-bottom-row-pad)
-    calc(var(--composer-bottom-row-pad) + var(--composer-button-size) + 8px) 0
-    var(--composer-bottom-row-pad);
+     button (send / stop) that lives at the wrapper level in chat mode:
+     6 (right offset) + 32 (button-size) + 8 (breathing space) = 46. */
+  padding: 13px 46px 13px 16px;
   flex-shrink: 0;
 }
 .inputField {
@@ -155,25 +182,24 @@
   font-family: var(--font-sans);
   outline: none;
   resize: none;
-  min-height: var(--composer-button-size);
+  /* Claude Code measured: 14px / 18px text; the 44px single-line row
+     comes from the top row's 13px vertical padding. */
+  min-height: 18px;
   max-height: 200px;
   /* Inner padding so the caret / text sits noticeably inside the
      wrapper's rounded edge. The row already pads 16px from the
      wrapper; an extra 8px on each side puts the text at 24px from
      the edge so it never reads as touching the rounded curve. */
   padding: 0 8px;
-  /* `line-height` equal to the row's button-size token so a single
-     line of placeholder/value renders vertically centered inside the
-     32px-tall textarea instead of sitting at the top. */
-  line-height: var(--composer-button-size);
+  line-height: 18px;
   flex: 1;
   overflow: hidden;
 }
 .chatPlaceholder {
   position: absolute;
   inset: 0 8px auto;
-  height: var(--composer-button-size);
-  line-height: var(--composer-button-size);
+  height: 18px;
+  line-height: 18px;
   color: var(--text-muted);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -211,8 +237,8 @@
 .pasteChip.missing {
   /* Visually distinct when the backing content is gone (reload past
      the persistence cap, manual store clear). Submit will refuse. */
-  border-color: var(--accent-red, #b34242);
-  color: var(--accent-red, #b34242);
+  border-color: var(--accent-red);
+  color: var(--accent-red);
 }
 .pasteChipRemove {
   margin-left: 2px;
@@ -260,7 +286,7 @@
   transition: box-shadow 120ms ease;
 }
 .imageAttachChip:hover {
-  box-shadow: 0 0 0 1px rgba(226,225,218,0.40);
+  box-shadow: 0 0 0 1px var(--border-light);
 }
 .imageAttachImg {
   height: 64px;
@@ -290,8 +316,8 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  border-top-color: rgba(255, 255, 255, 0.65);
+  border: 2px solid var(--border);
+  border-top-color: var(--text-secondary);
   animation: composerAttachSpin 0.8s linear infinite;
 }
 @keyframes imageSkeletonShimmer {
@@ -346,8 +372,11 @@
   line-height: 1;
 }
 
-/* Bottom row — anchored to the wrapper's bottom edge via absolute
-   positioning. Stays in place when the wrapper height transitions. */
+/* Bottom row — the OLD internal controls row, now rendered ONLY in
+   morphed (fn-form / question / approval) mode. Anchored to the
+   wrapper's bottom edge via absolute positioning; stays in place when
+   the wrapper height transitions. Chat mode renders the same controls
+   in the detached `.controlsRow` below the wrapper instead. */
 .inputBottomRow {
   display: flex;
   align-items: center;
@@ -358,27 +387,25 @@
   bottom: 0;
   min-height: 30px;
   padding: var(--composer-bottom-row-pad);
+  /* The wrapper-level action button glides into the bottom-right
+     corner of this row. Reserve right-side padding equal to
+     `--composer-bottom-row-pad + button-size + 8 (gap)` so the
+     ContextBadge can never sit under it. */
+  padding-right: calc(var(--composer-bottom-row-pad)
+    + var(--composer-button-size) + 8px);
   flex-shrink: 0;
   /* Solid wrapper background so the form body sliding behind the row
      during a height transition stays hidden — without it the body's
      content shows through the row. Bottom corners match the wrapper's
      radius so they don't poke past it. */
-  background: var(--bg-tertiary);
-  border-radius: 0 0 var(--composer-corner) var(--composer-corner);
+  background: var(--surface-solid);
+  border-radius: 0 0 10px 10px;
   z-index: 1;
   /* The container declaration lives in chat.css under the global
      `.composer-bottom-row` class (also applied in composer/index.tsx).
      CSS Modules scope `container-name`, which broke `@container` rules
      that lived in non-module stylesheets — moving the declaration to a
      global class avoids that mismatch. */
-}
-/* In fn-form mode the wrapper-level action button glides into the
-   bottom-right corner of the row. Reserve right-side padding equal to
-   `--composer-bottom-row-pad + button-size + 8 (gap)` so the
-   ContextBadge can never sit under it. */
-.fnFormMode .inputBottomRow {
-  padding-right: calc(var(--composer-bottom-row-pad)
-    + var(--composer-button-size) + 8px);
 }
 .inputOptions {
   display: flex;
@@ -433,39 +460,63 @@
 }
 
 /* Env chips — floating row ABOVE the input box (Claude Code
-   arrangement): bordered pill chips [Local] [📁 project], quiet, thin
-   1px border, left-aligned on the wrapper's 800px column, ~8px gap
-   below. Lives inside the bottom-anchored absolute .inputArea, so it
-   grows the composer upward over the transcript instead of pushing
-   it. Narrow composer: the row scrolls horizontally inside its own
-   box — no wrap, no collision, scrollbar hidden. */
+   arrangement): FILLED pills [Local] [📁 project] — measured from
+   claude.ai/code: solid near-white fill, NO border, 24px tall, 6px
+   radius, 13px text at 80% ink. Left-aligned on the wrapper's 800px
+   column, 6px gap below (the measured inter-row gap). Lives inside
+   the bottom-anchored absolute .inputArea, so it grows the composer
+   upward over the transcript instead of pushing it. Narrow composer:
+   the row scrolls horizontally inside its own box. */
 .envChips {
   display: flex;
   align-items: center;
   gap: 6px;
   max-width: 800px;
-  margin: 0 auto 8px;
+  margin: 0 auto 6px;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  /* Pill fill: dark = filled tertiary; light = --bg-input (#fdfcf9 —
+     near-white, matches the measured solid #ffffff). */
+  --env-pill-bg: var(--bg-tertiary);
+}
+:global([data-theme="light"]) .envChips {
+  --env-pill-bg: var(--bg-input);
 }
 .envChips::-webkit-scrollbar { display: none; }
 .envChips > * { flex-shrink: 0; }
 
-/* Compact sizing for the relocated chips: 22px / 11.5px / ~10px
-   rounding (Claude's small pill look). The reused chip components
-   keep their own classes + popovers; this wrapper only compacts them. */
-.envChips :global(.runtime-badge),
-.envChips :global(.status-badge) {
-  height: 22px;
-  font-size: 11.5px;
-  padding: 2px 8px;
-  border-radius: 10px;
+/* Tone-class variants (.connecting / .disconnected / .paused) are
+   listed explicitly so this beats chat.css's tinted chip rules on
+   specificity, independent of stylesheet order. The connection tone
+   still shows through the indicator dot; the pill itself stays the
+   quiet filled form. */
+.envChips :global(.status-badge),
+.envChips :global(.status-badge.connecting),
+.envChips :global(.status-badge.disconnected),
+.envChips :global(.status-badge.paused),
+.envChips :global(.runtime-badge.project-badge) {
+  height: 24px;
+  padding: 0 6px;
+  gap: 6px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--env-pill-bg);
+  color: var(--ink-80);
 }
-/* The status chip's dot + label need a gap the legacy `.status-badge`
-   never declared (its old markup relied on a text space). */
-.envChips :global(.status-badge) {
-  gap: 5px;
+/* Measured: 0 6px pill padding + the label's own breathing room. */
+.envChips :global(.badge-short) {
+  padding: 0 2px;
+}
+.envChips :global(.status-badge:hover),
+.envChips :global(.status-badge[data-state="open"]),
+.envChips :global(.status-badge.connecting:hover),
+.envChips :global(.status-badge.connecting[data-state="open"]),
+.envChips :global(.runtime-badge.project-badge:hover),
+.envChips :global(.runtime-badge.project-badge[data-state="open"]) {
+  background: color-mix(in srgb, var(--text-bright) 6%, var(--env-pill-bg));
+  color: var(--text-bright);
 }
 
 /* Agent-model cluster — right side of the bottom row, restyled into
@@ -519,8 +570,14 @@
    motion instead of the previous two-row teleport. */
 .actionBtn {
   position: absolute;
-  right: var(--composer-button-offset);
-  top: var(--composer-button-offset);
+  /* Chat mode: centered inside the 44px single-line box — (44−32)/2 =
+     6px offsets, so the 32px circle never pokes past the box edge.
+     fn-form mode restores the legacy 16px offsets below (the hook in
+     use-fn-form-wrapper.ts drives `top` inline in that mode anyway;
+     index.tsx clears the inline value when returning to chat mode so
+     this 6px wins again). */
+  right: 6px;
+  top: 6px;
   width: var(--composer-button-size);
   height: var(--composer-button-size);
   border-radius: 50%;
@@ -534,14 +591,22 @@
   flex-shrink: 0;
   /* `top` and the wrapper's `height` share the same transition curve
      so they advance in lockstep — the button glides between rows
-     instead of snapping. */
+     instead of snapping. `right` animates the 6px↔16px offset swap on
+     the same curve when the wrapper morphs. */
   transition: top var(--composer-height-transition),
+    right var(--composer-height-transition),
     background 0.15s,
     opacity 180ms ease;
   /* Bottom-row sits at z-index 1 to hide the form body retracting
      behind it; we need a higher value so the action button stays
      visible while it's mid-glide through that band. */
   z-index: 2;
+}
+/* Morphed mode keeps the legacy 16px corner offsets (concentric with
+   the internal bottom row's geometry). */
+.fnFormMode .actionBtn {
+  right: var(--composer-button-offset);
+  top: var(--composer-button-offset);
 }
 .actionBtn svg {
   width: 14px;
@@ -604,11 +669,11 @@
 }
 
 .sendBtn {
-  background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 14%, transparent);
-  color: var(--accent-blue, #6cb4ff);
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--accent-blue);
 }
 .sendBtn:hover {
-  background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 22%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
 }
 .sendBtn[data-fn-missing="true"] {
   opacity: 0.58;
@@ -623,7 +688,7 @@
 
 .stopBtn {
   background: var(--accent-red);
-  color: #fff;
+  color: var(--destructive-foreground);
   opacity: 0.85;
 }
 .stopBtn:hover {
@@ -720,7 +785,7 @@
   color: var(--text-bright);
 }
 .plusBtn.hasActive {
-  color: var(--accent-blue, #6cb4ff);
+  color: var(--accent-blue);
 }
 
 /* Active tool chips — circular icon by default, hover expands to reveal
@@ -751,8 +816,8 @@
   padding-left: 8px;
   padding-right: 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 14%, transparent);
-  color: var(--accent-blue, #6cb4ff);
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--accent-blue);
   cursor: pointer;
   transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1),
               padding-right 180ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -761,7 +826,7 @@
   overflow: hidden;
 }
 .toolChip:hover {
-  background: color-mix(in srgb, var(--accent-blue, #6cb4ff) 22%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
   /* Tight fit: 8 (padding-left) + 16 (icon) + 4 (gap) + 12 (× hit
      box at the narrower 10px stroke) + 6 (padding-right) = 46. */
   width: 46px;
@@ -854,6 +919,146 @@
   opacity: 1;
 }
 
+/* ===== Detached controls row (chat mode) ===========================
+   Claude Code's three-band composer: env pills / small input box /
+   quiet controls on the page background. In chat mode the controls
+   render HERE — a static sibling row 6px below the wrapper — instead
+   of inside it. Morphed modes (fn-form / question / approval) keep
+   the internal `.inputBottomRow` so the wrapper height animation and
+   the button-glide mechanics stay untouched. */
+.controlsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  max-width: 800px;
+  margin: 6px auto 0;
+  padding: 0 8px;
+  min-height: 20px;
+  position: relative;
+}
+
+/* Compact control metrics (measured from claude.ai/code): every text
+   control 20px tall, 12px font, 0 6px padding, 5px radius, transparent
+   bg, hover = subtle tint, 80%-ink text. The permission control's tone
+   colour arrives as an inline style, hence the !important. */
+.controlsRow :global(.runtime-badge.permission-badge),
+.controlsRow :global(.runtime-badge.agent-badge) {
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink-80) !important;
+}
+.controlsRow :global(.runtime-badge.permission-badge:hover),
+.controlsRow :global(.runtime-badge.permission-badge[data-state="open"]),
+.controlsRow :global(.runtime-badge.agent-badge:hover),
+.controlsRow :global(.runtime-badge.agent-badge[data-state="open"]) {
+  background: var(--bg-hover);
+  color: var(--text-bright) !important;
+  filter: none;
+}
+
+/* Round buttons go quiet: 20px, 5px radius, no filled circles. */
+.controlsRow .plusBtn {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--ink-80);
+}
+.controlsRow .plusBtn svg {
+  width: 15px;
+  height: 15px;
+}
+.controlsRow .plusBtn.hasActive {
+  color: var(--accent-blue);
+}
+/* Active tool chips: transparent 20px squares, icon keeps the accent
+   tint as the ON signal; hover tints + slides the × out (2 + 16 + 4 +
+   12 + 2 = 36). */
+.controlsRow .toolChip {
+  width: 20px;
+  height: 20px;
+  padding-left: 2px;
+  padding-right: 2px;
+  border-radius: 5px;
+  background: transparent;
+}
+.controlsRow .toolChip:hover {
+  width: 36px;
+  padding-right: 2px;
+  background: var(--bg-hover);
+}
+
+/* Effort pill trigger: 20px / 5px-radius / transparent, ink-toned icon.
+   The expanded 32px slider shell recenters over the 20px host
+   (top: −6px) and keeps its full-size slider mechanics. Inline
+   collapsed tint from the component needs the !important. */
+.controlsRow :global(.effort-pill-host) {
+  height: 20px;
+  width: 20px;
+}
+.controlsRow :global(.effort-pill-shell) {
+  font-size: 12px;
+}
+.controlsRow :global(.effort-pill-shell:not([data-expanded])) {
+  height: 20px;
+  width: 20px;
+  border-radius: 5px;
+  background-color: transparent !important;
+}
+.controlsRow :global(.effort-pill-host:hover .effort-pill-shell:not([data-expanded])) {
+  /* 3 + 14 icon + 4 gap + 12 caret + 3 = 36. */
+  width: 36px;
+  background-color: var(--bg-hover) !important;
+}
+.controlsRow :global(.effort-pill-shell[data-expanded]) {
+  top: -6px;
+}
+.controlsRow :global(.effort-pill-collapsed) {
+  padding: 0 3px;
+}
+.controlsRow :global(.effort-pill-collapsed .effort-pill-compact-icon),
+.controlsRow :global(.effort-pill-collapsed .effort-pill-caret) {
+  color: var(--ink-80);
+}
+.controlsRow :global(.effort-pill-compact-icon),
+.controlsRow :global(.effort-pill-compact-icon) svg {
+  width: 14px;
+  height: 14px;
+}
+.controlsRow :global(.effort-pill-fixed) {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background-color: transparent !important;
+  color: var(--ink-80);
+}
+.controlsRow :global(.effort-pill-fixed) svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Context ring: ~12px ring (14px svg in a 20px hit target), stroke in
+   the app accent per the measured spec. */
+.controlsRow :global(.context-ring-badge) {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+.controlsRow :global(.context-ring-badge) svg {
+  width: 14px;
+  height: 14px;
+}
+/* ponytail: flattens the usage-tier colours (blue/yellow/red) to the
+   measured accent-orange; re-split by pct if the warning tint is
+   missed. Second circle = the progress arc. */
+.controlsRow :global(.context-ring-badge) circle + circle {
+  stroke: var(--accent-orange);
+}
+
 /* Plus dropdown. Shadow stack mirrors shadcn's `shadow-md` (a soft 1-2px
    ambient + a wider 12-24px diffuse) instead of one heavy 16px / 0.32 alpha
    drop, which read as too dark on the light theme's beige surface. */
@@ -896,7 +1101,8 @@
   gap: 16px;
   min-height: 32px;
   padding: 6px 8px;
-  border-radius: 8px;
+  /* 10px — Claude's small-control rounding (matches .slashMenuItem). */
+  border-radius: 10px;
   font-size: 14px;
   line-height: 20px;
   color: var(--text-primary);
@@ -913,7 +1119,7 @@
    kept exactly as before (renders as the app accent); only the
    background fill is dropped. */
 .plusMenuItem.active {
-  color: var(--accent-blue, #6cb4ff);
+  color: var(--accent-blue);
 }
 .plusMenuDivider {
   height: 1px;
@@ -983,8 +1189,10 @@
      compensate with an extra 1px of bottom padding to keep the
      gap identical. */
   padding: 8px 8px 9px 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid rgba(0, 0, 0, 0.18);
+  /* Same surface as the input box it docks onto — with the light
+     theme's near-white box, --bg-tertiary would show a seam. */
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
   border-radius: 14px 14px 0 0;
   border-bottom: none;
   box-shadow: none;
@@ -1040,7 +1248,7 @@
 .slashMenuName {
   font-family: var(--font-mono, monospace);
   font-size: 13px;
-  color: var(--text-bright, #111);
+  color: var(--text-bright);
   font-weight: 600;
 }
 .slashMenuArgs {
@@ -1053,15 +1261,6 @@
   color: var(--text-muted);
   margin-top: 3px;
   line-height: 1.4;
-}
-
-@media (prefers-color-scheme: dark) {
-  .slashMenu {
-    border-color: rgba(255, 255, 255, 0.10);
-  }
-  .slashMenuName {
-    color: var(--text-bright, #fff);
-  }
 }
 
 /* ===== Function-form mode ==========================================

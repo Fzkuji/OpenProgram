@@ -4,7 +4,7 @@
 
 .errorBar {
   padding: 8px 24px;
-  color: var(--danger, #d72518);
+  color: var(--accent-red);
   font-size: 13px;
 }
 
@@ -53,8 +53,8 @@
 }
 
 .removeBtn:hover {
-  color: var(--danger, #d72518);
-  border-color: var(--danger, #d72518);
+  color: var(--accent-red);
+  border-color: var(--accent-red);
 }
 
 .tabs {

@@ -256,7 +256,7 @@
 }
 
 .fileRowActive {
-  background: rgba(99, 155, 255, 0.12) !important;
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent) !important;
   color: var(--text-bright) !important;
 }
 
@@ -404,12 +404,12 @@
 
 .saveOk {
   font-size: 12px;
-  color: #4caf50;
+  color: var(--accent-green);
 }
 
 .saveErr {
   font-size: 12px;
-  color: #f44336;
+  color: var(--accent-red);
 }
 
 .saveBtn {
@@ -568,11 +568,11 @@
 }
 
 .metaOk {
-  color: #4caf50;
+  color: var(--accent-green);
 }
 
 .metaWarn {
-  color: #f59e0b;
+  color: var(--accent-yellow);
 }
 
 
@@ -667,9 +667,9 @@
 }
 
 .dangerBtn:hover {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.35);
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  color: var(--accent-red);
+  border-color: color-mix(in srgb, var(--accent-red) 35%, transparent);
 }
 
 .editorFooter {
@@ -740,16 +740,16 @@
 .markdown a:hover { text-decoration: underline; }
 
 .markdown a.wikilink {
-  color: #7c6fcd;
-  background: rgba(124, 111, 205, 0.08);
+  color: var(--accent-purple);
+  background: color-mix(in srgb, var(--accent-purple) 8%, transparent);
   padding: 1px 5px;
   border-radius: 3px;
   cursor: pointer;
-  border: 1px solid rgba(124, 111, 205, 0.2);
+  border: 1px solid color-mix(in srgb, var(--accent-purple) 20%, transparent);
   font-size: 0.95em;
 }
 .markdown a.wikilink:hover {
-  background: rgba(124, 111, 205, 0.18);
+  background: color-mix(in srgb, var(--accent-purple) 18%, transparent);
   text-decoration: none;
 }
 

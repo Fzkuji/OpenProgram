@@ -497,7 +497,7 @@
 /* Dark theme: lighter plate so black/mono SVGs read clearly.
  * --bg-tertiary in dark mode is too close to bg-primary. */
 :global([data-theme="dark"]) .providerIcon {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
 }
 .providerIconLetter {
   width: 20px;
@@ -547,8 +547,8 @@
   text-transform: uppercase;
   padding: 2px 6px;
   border-radius: 4px;
-  background: var(--accent-blue-bg, rgba(79, 142, 247, 0.16));
-  color: var(--accent-blue, #4f8ef7);
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  color: var(--accent-blue);
   flex-shrink: 0;
 }
 
@@ -806,10 +806,10 @@
   font-size: 12px;
 }
 .capBadge.vision {
-  color: var(--accent-cyan, #56b6c2);
+  color: var(--accent-cyan);
 }
 .capBadge.video {
-  color: var(--accent-blue, #4d9fe8);
+  color: var(--accent-blue);
 }
 .capBadge.tools {
   color: var(--accent-green);

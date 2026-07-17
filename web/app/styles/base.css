@@ -24,16 +24,14 @@
        rounder so the pill silhouette is unmistakeable against
        the surrounding text. */
   --ui-list-h: 32px;
-  /* 9px matches claude.ai's sidebar rows (`!rounded-[9px]`). With the 1px
-     row gap, a softer corner reads as rounded separation instead of a
-     sharp thin seam between adjacent pills. */
-  --ui-list-radius: 9px;
+  /* 10px — Claude shape language: list rows and small buttons sit at
+     10px; cards/panels at 12px (--radius-lg). */
+  --ui-list-radius: 10px;
   /* Button height intentionally a touch SHORTER than list height —
      a pill on the panel surface should not visually outweigh the
-     sidebar rows it sits next to. The slightly larger radius
-     differentiates the two without competing on height. */
+     sidebar rows it sits next to. */
   --ui-button-h: 30px;
-  --ui-button-radius: 8px;
+  --ui-button-radius: 10px;
   /* No `var(--font-jetbrains-mono)` lead: that var is never defined
      (next/font was removed, see layout.tsx). A `var()` with no
      fallback that resolves to nothing makes the WHOLE declaration
@@ -52,21 +50,28 @@
   /* Accent colors (shared)
      ---------------------------------------------------------------
      ``--accent-orange`` is the canonical "primary action" colour —
-     the warm amber sampled from Claude's own UI. All buttons /
-     active states / focus rings / links that used to be blue resolve
-     here now. The historical ``--accent-blue`` token is kept as an
-     alias so the 300+ existing references update in one place; new
-     code should prefer ``--accent-orange`` directly. Blue is no
-     longer a UI colour in this product — only used informationally
-     in chrome (file paths, hashes) where it survives via the alias.
+     Claude's coral, same value in both themes. All buttons / active
+     states / focus rings / links that used to be blue resolve here
+     now. The historical ``--accent-blue`` token is kept as an alias
+     so the 300+ existing references update in one place; new code
+     should prefer ``--accent-orange`` directly. Blue is no longer a
+     UI colour in this product — only used informationally in chrome
+     (file paths, hashes) where it survives via the alias.
      --------------------------------------------------------------- */
-  --accent-orange: #d19a66;
+  --accent-orange: #d97757;
+  /* Coral as a FILL (primary buttons, avatar chips). Same value in
+     both themes — light mode darkens ``--accent-orange`` for
+     text-contrast, but a solid coral tile with white text on top
+     keeps the brand-bright fill. */
+  --accent-fill: #d97757;
+  --accent-orange-hover: #c86a4a; /* hover/pressed state of the coral fill */
   --accent-blue: var(--accent-orange);
-  --accent-green: #18a96b;
-  --accent-red: #e5534b;
-  --accent-yellow: #c69026;
+  --accent-green: #6e9b76;
+  --accent-red: #c24e42;
+  --accent-yellow: #d4a346;
   --accent-purple: #a371f7;
   --accent-cyan: #3bc9db;
+  accent-color: var(--accent-orange); /* native checkbox/radio tint */
 
   /* ===== Composer / fn-form geometry tokens ============================
      The chat input wrapper, its corner buttons (send / stop / close /
@@ -119,94 +124,106 @@
   --fs-lg: 20px;
 }
 
-/* Dark theme (default) — based on Claude dark */
+/* Dark theme (default) — Claude dark palette */
 :root, [data-theme="dark"] {
-  --bg-primary: #1f1f1e;
-  --bg-secondary: #171716;
-  --bg-tertiary: #252524;
-  --bg-hover: #2e2e2c;
+  --bg-primary: #262624;
+  --bg-secondary: #1f1e1b;
+  --bg-tertiary: #30302e;
+  --bg-hover: rgba(255, 255, 255, 0.06);
   --bg-hover-contrast: #141413;
-  --bg-input: #1a1a19;
-  --border: rgba(226, 225, 218, 0.12);
-  --border-light: rgba(226, 225, 218, 0.2);
-  --text-primary: #c3c2b7;
-  --text-secondary: #97958c;
-  --text-bright: #f8f8f6;
-  --text-muted: #6b6a63;
-  --nav-color: #c3c2b7;       /* nav default — same as text-primary in dark */
-  --nav-color-hover: #f8f8f6; /* nav hover — same as text-bright */
-  --bg-selected: #4a4a47;     /* selection bg with clear contrast from bg-primary */
-  /* Two distinguishable tints over `--bg-primary` (#1f1f1e):
-     user goes warm (greenish-grey, matches the chat agent avatar),
-     assistant goes cool (slate). Both stay subtle so the chat reads
-     calm but the two surfaces are immediately tellable apart. */
-  --user-msg-bg: #2e2f29;
-  --assistant-msg-bg: #25282e;
+  --bg-input: #333331;
+  --border: rgba(255, 255, 255, 0.06);       /* subtle hairline */
+  --border-light: rgba(255, 255, 255, 0.10); /* strong hairline */
+  --text-primary: #b8b5ad;
+  --text-secondary: #94928b; /* 4.87:1 on --bg-primary (#84827c was 3.95) */
+  --text-bright: #f0efea;
+  --text-muted: #757370; /* 3.21:1 on --bg-primary (#6a6864 was 2.73) */
+  --nav-color: #b8b5ad;       /* nav default — same as text-primary in dark */
+  --nav-color-hover: #f0efea; /* nav hover — same as text-bright */
+  --bg-selected: rgba(255, 255, 255, 0.10); /* selected row, one step above hover */
+  /* Claude chat surfaces: user bubble is a raised warm grey; the
+     assistant message sits flat on the page (no bubble tint). */
+  --user-msg-bg: #30302e;
+  --assistant-msg-bg: #262624;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
   --shadow-popover: 0 6px 18px rgba(0, 0, 0, 0.24);
   --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
   --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
   --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
-  /* Collapsed `off` effort-pill chip. Lighter than --bg-hover so it
-     reads as a distinct chip on the dark composer rather than blending
-     into the surface. */
-  --effort-off-bg: #3c3c39;
-  /* Text colour for hover-fill primary buttons. Near-black so warm
-     orange reads as a "press me" tile rather than a glowing neon
-     pill — pure white on the warm brand colour has too much chroma
-     in dark mode. */
-  --primary-foreground: #1a1a19;
+  /* Collapsed `off` effort-pill chip. Solid, a step above --bg-input
+     so it reads as a distinct chip on the dark composer. */
+  --effort-off-bg: #3a3a38;
+  /* Text colour on coral primary buttons — Claude uses white-on-coral
+     in both themes. */
+  --primary-foreground: #ffffff;
   /* Soft danger-tier accents — used for the permission chip + menu so
-     the tier colour reads calm (a step lighter than a saturated
+     the tier colour reads calm (a step lighter than the base
      success/warning/danger) on the dark surface. */
-  --success-soft: #57b47a;
-  --warning-soft: #e0a54a;
-  --danger-soft: #e05b52;
+  --success-soft: #82a98a;
+  --warning-soft: #ddb25f;
+  --danger-soft: #d06a5f;
+  /* Stream-terminal text colours (chat.css .stream-terminal). Bright
+     accents read fine on the dark inset; light overrides below. */
+  --stream-tool: var(--accent-cyan);
+  --stream-info: var(--accent-yellow);
   color-scheme: dark;
 }
 
-/* Light theme — based on Claude light */
+/* Light theme — Claude light palette */
 [data-theme="light"] {
   --bg-primary: #faf9f5;
-  --bg-secondary: #f5f4ed;
-  --bg-tertiary: #f0eee6;
-  --bg-hover: #e8e6dc;
+  --bg-secondary: #f0eee5;
+  --bg-tertiary: #e8e6dc;
+  --bg-hover: rgba(20, 20, 19, 0.05);
   --bg-hover-contrast: #ffffff;
-  --bg-input: #ffffff;
-  --border: rgba(31, 30, 29, 0.12);
-  --border-light: rgba(31, 30, 29, 0.2);
+  --bg-input: #fdfcf9;
+  --border: rgba(20, 20, 19, 0.08); /* subtle hairline */
+  --border-light: #dedcd1;          /* strong hairline */
+  /* Claude light text tiers: ink #141413 (bright), body #3d3d3a
+     (Claude's text-200 tier — the brief's four tiers skip it),
+     secondary #5e5d59, muted #91908c. The dim tier #b0aea7 has no
+     token; use it inline for placeholders if a component needs it. */
   --text-primary: #3d3d3a;
-  --text-secondary: #73726c;
+  --text-secondary: #5e5d59;
   --text-bright: #141413;
-  --text-muted: #97958c;
-  --nav-color: #73726c;       /* lighter than text-primary so light-mode icons aren't black */
+  --text-muted: #91908c;
+  --nav-color: #5e5d59;       /* lighter than text-primary so light-mode icons aren't black */
   --nav-color-hover: #141413; /* same as text-bright */
-  --bg-selected: #d0cec0;     /* selection bg with clear contrast from bg-primary */
-  /* Light theme: same warm/cool split as dark, but lighter. */
-  --user-msg-bg: #ece9d8;
-  --assistant-msg-bg: #e2e7f0;
-  --shadow-sm: 0 1px 2px rgba(31, 30, 29, 0.08);
-  --shadow: 0 3px 10px rgba(31, 30, 29, 0.08);
-  --shadow-popover: 0 8px 20px rgba(31, 30, 29, 0.12);
-  --shadow-dialog: 0 14px 34px rgba(31, 30, 29, 0.16);
-  --shadow-sidebar-left: 4px 0 20px rgba(31, 30, 29, 0.18);
-  --shadow-sidebar-right: -4px 0 20px rgba(31, 30, 29, 0.18);
+  --bg-selected: rgba(20, 20, 19, 0.08); /* selected row, one step above hover */
+  /* Claude chat surfaces: user bubble is the raised warm grey; the
+     assistant message sits flat on the page (no bubble tint). */
+  --user-msg-bg: #f0eee5;
+  --assistant-msg-bg: #faf9f5;
+  /* Claude light is flat: hairlines + tint carry elevation, shadows
+     stay barely-there. */
+  --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.04);
+  --shadow: 0 2px 8px rgba(20, 20, 19, 0.05);
+  --shadow-popover: 0 4px 16px rgba(20, 20, 19, 0.08);
+  --shadow-dialog: 0 10px 30px rgba(20, 20, 19, 0.10);
+  --shadow-sidebar-left: 4px 0 16px rgba(20, 20, 19, 0.06);
+  --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);
   /* Collapsed `off` effort-pill chip — light-theme counterpart. */
   --effort-off-bg: #e8e6dc;
-  /* Deeper orange in light mode — the default `#d19a66` reads as a
-     wash against the cream background; this burnt-orange has enough
-     contrast for the function-name token + the user / pg-card icons
-     in the various theme-aware components that reference it. */
-  --accent-orange: #b8651f;
-  /* Light mode keeps the white-on-brand convention — the deeper
-     burnt orange above is dark enough that white still reads. */
+  /* Deeper coral in light mode — the shared `#d97757` only reaches
+     2.96:1 as TEXT against the cream background; this darker coral
+     hits 4.01:1 on --bg-primary. Fills that must stay brand-bright
+     use `--accent-fill` (see :root), which does not flip per theme. */
+  --accent-orange: #c15f3c;
+  /* Deeper amber for the same reason — `#d4a346` is 2.18:1 as text
+     on cream; this one is 3.60:1. */
+  --accent-yellow: #a67c2e;
+  /* White-on-coral, same as dark. */
   --primary-foreground: #ffffff;
   /* Soft danger-tier accents — a touch deeper than the dark-theme set
      so they hold contrast against the cream light background. */
-  --success-soft: #3f9b64;
-  --warning-soft: #c2841f;
-  --danger-soft: #cc4a41;
+  --success-soft: #5f8a67;
+  --warning-soft: #b98f3d;
+  --danger-soft: #b04a3f;
+  /* Stream-terminal text on the light --bg-tertiary inset: bright
+     cyan/amber wash out (1.6–1.8:1), so drop to darker tones. */
+  --stream-tool: #0d6e77; /* teal, 4.78:1 on #e8e6dc */
+  --stream-info: var(--text-secondary);
   color-scheme: light;
 }
 
@@ -266,6 +283,23 @@ button, input, select, textarea, optgroup {
 }
 .ui-list-item:hover { background: var(--bg-hover); }
 .ui-list-item.active { background: var(--bg-hover); }
+
+/* ===== Shared Claude-style primitives ===== */
+/* Warm coral-tinted text selection, readable in both themes. */
+::selection { background: rgba(217, 119, 87, 0.25); }
+/* Keyboard focus ring — coral at low alpha instead of the browser
+   blue. :focus-visible only, so mouse clicks stay ring-free.
+   Component rules with their own focus styling override this. */
+:focus-visible {
+  outline: 2px solid rgba(217, 119, 87, 0.5);
+  outline-offset: 2px;
+}
+/* Display serif for hero text (welcome title). System serif only —
+   no font files shipped. */
+.display-serif {
+  font-family: ui-serif, Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.01em;
+}
 
 /* ===== Layout: 3-column ===== */
 .app {

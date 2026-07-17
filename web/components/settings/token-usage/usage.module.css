@@ -55,7 +55,7 @@
   gap: 4px;
   padding: 3px;
   border-radius: 8px;
-  background: var(--bg-secondary, #f0ede8);
+  background: var(--bg-secondary);
   width: fit-content;
 }
 
@@ -74,10 +74,10 @@
 }
 
 .dimTabActive {
-  background: var(--bg-primary, #fff);
+  background: var(--bg-primary);
   color: var(--text-bright);
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ── legend ──────────────────────────────────────────────────────────────── */
@@ -136,13 +136,13 @@
   transform: translateX(-50%);
   padding: 4px 8px;
   border-radius: 6px;
-  background: var(--bg-tertiary, #2a2a2a);
+  background: var(--bg-tertiary);
   border: 1px solid var(--border);
   color: var(--text-primary);
   font-size: 12px;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow);
   z-index: 2;
 }
 
@@ -186,7 +186,7 @@
 .barFill {
   height: 100%;
   border-radius: 4px;
-  background: var(--accent-blue, #b8651f);
+  background: var(--accent-blue);
   transition: width 0.3s ease;
 }
 

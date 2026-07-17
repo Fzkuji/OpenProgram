@@ -104,10 +104,10 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
-.dotReady    { background: var(--accent-green, #18a96b); }
-.dotError    { background: var(--accent-red, #ef4444); }
+.dotReady    { background: var(--accent-green); }
+.dotError    { background: var(--accent-red); }
 .dotDisabled { background: var(--text-muted); }
-.dotStarting { background: var(--accent-yellow, #eab308); }
+.dotStarting { background: var(--accent-yellow); }
 
 .serverName {
   flex: 1;
@@ -179,7 +179,7 @@
   color: var(--accent-blue);
 }
 .actionBtnPrimary:hover:not(:disabled) {
-  color: #fff;
+  color: var(--primary-foreground);
   background: var(--accent-blue);
   border-color: transparent;
 }

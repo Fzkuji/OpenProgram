@@ -510,6 +510,15 @@ export function Composer() {
     decisionKey: activeDecision?.id ?? null,
   });
 
+  // Chat-mode resting spot for the action button is CSS top:6px (it
+  // centers in the 44px single-line box). use-fn-form-wrapper resets
+  // the inline top to the legacy 16px whenever a morphed state ends —
+  // clear it here (this effect runs after the hook's, they share the
+  // morphed trigger) so the stylesheet value wins again in chat mode.
+  useEffect(() => {
+    if (!morphed && sendBtnRef.current) sendBtnRef.current.style.top = "";
+  }, [morphed]);
+
   // Auto-resize the textarea as content changes.
   useEffect(() => {
     const t = textareaRef.current;
@@ -1127,152 +1136,13 @@ export function Composer() {
   const anyToolActive =
     toolsEnabled || webSearchEnabled || (fastEnabled && fastSupported) || unattended;
 
-  return (
-    <div className={styles.inputArea}>
-      {/* Drop overlay scoped to the chat main column (#chatArea) —
-          covers the conversation surface but lets the sidebars stay
-          interactive. ``dragActive`` is set by the window-level
-          drag listeners in useComposerAttachments; the actual file
-          handling lives there too. ``mainRect`` is recomputed on
-          drag enter so the overlay tracks layout / window-resize
-          changes between drags. */}
-      {dragActive && typeof document !== "undefined"
-        ? createPortal(
-            <ScopedDropOverlay />,
-            document.body,
-          )
-        : null}
-      {/* Env chips — floating row ABOVE the input box (Claude Code
-          arrangement): bordered pill chips [Local] [📁 project] only.
-          The add-folder entry stays inside the ProjectMenu popover
-          ("Open folder…"), it is not a standalone control. Sits
-          OUTSIDE .composerStack so the slash menu's bottom:100% anchor
-          still lands on the wrapper top edge; .inputArea is bottom-
-          anchored absolute, so this row grows the composer upward
-          without shifting the transcript. */}
-      <div className={styles.envChips}>
-        <StatusChip />
-        <ProjectBadge />
-      </div>
-      {/* composerStack wraps {slashClip, inputWrapper} so the slash
-          menu's vertical anchor is the wrapper's top edge — not a
-          magic-number offset from the inputArea bottom. composerStack
-          is position:relative and naturally takes inputWrapper's
-          height (slashClip is absolute, doesn't contribute), so
-          slashClip's bottom:100% lands exactly at the wrapper top. */}
-      <div className={styles.composerStack}>
-      <div className={styles.slashClip}>
-        <SlashMenu
-          visible={slash.visible}
-          closing={slash.closing}
-          matches={slash.matches}
-          activeIndex={slash.activeIndex}
-          onPick={onMenuItemClick}
-        />
-      </div>
-
-      <div
-        ref={(el) => {
-          // wrapperRef tracks the styled box; composerRootRef is the
-          // outer drop zone — same element here.
-          wrapperRef.current = el;
-          composerRootRef.current = el;
-        }}
-        className={`${styles.inputWrapper} ${morphed ? styles.fnFormMode : ""}`}
-      >
-        <ImageAttachStrip
-          pendingImages={pendingImages}
-          imageError={imageError}
-          fileInputRef={fileInputRef}
-          onFileInputChange={onFileInputChange}
-          onRemove={removeImage}
-          onDismissError={() => setImageError(null)}
-        />
-        <FileTiles docs={pendingDocs} onRemove={removeDoc} />
-
-        {/* 按当前 mode 渲染输入区主体。所有「问用户」的形态（ask/confirm/
-            approval/form/ask_many）都由唯一的 QuestionMode 承接，不再分组件。 */}
-        {activeDecision ? (
-          <QuestionMode
-            key={activeDecision.id}
-            decision={activeDecision}
-            onResolve={dequeueDecision}
-            onAction={setDecisionAction}
-          />
-        ) : composerMode === "fn-form" && fnFormFunction ? (
-          <FunctionForm
-            // `key` ties to fn name so React re-mounts on every
-            // switch — the freshly mounted header/body run their own
-            // fadeIn animation, completing the crossfade with the
-            // outgoing overlay below.
-            key={fnFormFunction.name}
-            fn={fnFormFunction}
-            values={fnForm.values}
-            setValue={fnForm.setValue}
-            workdir={fnForm.workdir}
-            setWorkdir={fnForm.setWorkdir}
-            errorParam={fnForm.error}
-            closing={fnForm.closing}
-            onClose={handleFnFormClose}
-            onSubmit={submitFnForm}
-          />
-        ) : (
-          <ChatInputRow
-            textareaRef={textareaRef}
-            input={input}
-            setInput={setInput}
-            placeholder={isRunning
-              ? text("type to steer the running task…", "输入以干预正在运行的任务…")
-              : undefined}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-            onFocus={() => slash.setFocused(true)}
-            onBlur={() => slash.setFocused(false)}
-            setCaretPos={setCaretPos}
-            pastedEntries={pastedEntries}
-            pasteMissing={pasteMissing}
-            removePaste={removePaste}
-            atToken={atToken}
-            fileMatches={fileMatches}
-            fileMenuIndex={fileMenuIndex}
-            setFileMenuIndex={setFileMenuIndex}
-            fileMenuLoading={fileMenuLoading}
-            fileMenuPos={fileMenuPos}
-            pickFile={pickFile}
-          />
-        )}
-        {/* Outgoing fn-form overlay — only present during a fn → fn
-            switch. Rendered AFTER the main form so that
-            `querySelector('[data-fn-form-header]')` in the wrapper
-            height measurement matches the main form first (the
-            outgoing layer's cloned header/body would otherwise lock
-            wrapper height to the previous form's size). Absolute +
-            z-index 1 still puts it visually on top during the fade. */}
-        {outgoingFn && (
-          <div
-            key={`${outgoingFn.name}-outgoing`}
-            className={styles.outgoingLayer}
-            aria-hidden="true"
-          >
-            <FunctionForm
-              fn={outgoingFn}
-              values={{}}
-              setValue={noop}
-              workdir=""
-              setWorkdir={noop}
-              errorParam={null}
-              onClose={noop}
-              onSubmit={noop}
-              // Outgoing crossfade copy — strip input `id`s so the
-              // browser doesn't complain about duplicate-id form
-              // fields while both the live and ghost forms are
-              // mounted simultaneously during the fade.
-              ghost
-            />
-          </div>
-        )}
-
-        <div key="bottom-row" className={`${styles.inputBottomRow} composer-bottom-row`}>
+  // Controls cluster — permission / plus menu / tool chips on the
+  // left; model texts + effort pill + context ring on the right.
+  // Rendered in exactly ONE of two containers per mode: the detached
+  // .controlsRow below the wrapper (chat mode) or the legacy internal
+  // .inputBottomRow (fn-form / question / approval).
+  const controlsCluster = (
+    <>
           <div className={styles.inputOptions}>
             {/* Permission control leads the left cluster, restyled by
                 the wrapper CSS into Claude's borderless "Accept edits ⌄"
@@ -1518,7 +1388,165 @@ export function Composer() {
             ) : null}
             <ContextBadge />
           </div>
-        </div>
+    </>
+  );
+
+  return (
+    <div className={styles.inputArea}>
+      {/* Drop overlay scoped to the chat main column (#chatArea) —
+          covers the conversation surface but lets the sidebars stay
+          interactive. ``dragActive`` is set by the window-level
+          drag listeners in useComposerAttachments; the actual file
+          handling lives there too. ``mainRect`` is recomputed on
+          drag enter so the overlay tracks layout / window-resize
+          changes between drags. */}
+      {dragActive && typeof document !== "undefined"
+        ? createPortal(
+            <ScopedDropOverlay />,
+            document.body,
+          )
+        : null}
+      {/* Env chips — floating row ABOVE the input box (Claude Code
+          arrangement): filled pill chips [Local] [📁 project] only.
+          The add-folder entry stays inside the ProjectMenu popover
+          ("Open folder…"), it is not a standalone control. Sits
+          OUTSIDE .composerStack so the slash menu's bottom:100% anchor
+          still lands on the wrapper top edge; .inputArea is bottom-
+          anchored absolute, so this row grows the composer upward
+          without shifting the transcript. */}
+      <div className={styles.envChips}>
+        <StatusChip />
+        <ProjectBadge />
+      </div>
+      {/* composerStack wraps {slashClip, inputWrapper} so the slash
+          menu's vertical anchor is the wrapper's top edge — not a
+          magic-number offset from the inputArea bottom. composerStack
+          is position:relative and naturally takes inputWrapper's
+          height (slashClip is absolute, doesn't contribute), so
+          slashClip's bottom:100% lands exactly at the wrapper top. */}
+      <div className={styles.composerStack}>
+      <div className={styles.slashClip}>
+        <SlashMenu
+          visible={slash.visible}
+          closing={slash.closing}
+          matches={slash.matches}
+          activeIndex={slash.activeIndex}
+          onPick={onMenuItemClick}
+        />
+      </div>
+
+      <div
+        ref={(el) => {
+          // wrapperRef tracks the styled box; composerRootRef is the
+          // outer drop zone — same element here.
+          wrapperRef.current = el;
+          composerRootRef.current = el;
+        }}
+        className={`${styles.inputWrapper} ${morphed ? styles.fnFormMode : ""}`}
+      >
+        <ImageAttachStrip
+          pendingImages={pendingImages}
+          imageError={imageError}
+          fileInputRef={fileInputRef}
+          onFileInputChange={onFileInputChange}
+          onRemove={removeImage}
+          onDismissError={() => setImageError(null)}
+        />
+        <FileTiles docs={pendingDocs} onRemove={removeDoc} />
+
+        {/* 按当前 mode 渲染输入区主体。所有「问用户」的形态（ask/confirm/
+            approval/form/ask_many）都由唯一的 QuestionMode 承接，不再分组件。 */}
+        {activeDecision ? (
+          <QuestionMode
+            key={activeDecision.id}
+            decision={activeDecision}
+            onResolve={dequeueDecision}
+            onAction={setDecisionAction}
+          />
+        ) : composerMode === "fn-form" && fnFormFunction ? (
+          <FunctionForm
+            // `key` ties to fn name so React re-mounts on every
+            // switch — the freshly mounted header/body run their own
+            // fadeIn animation, completing the crossfade with the
+            // outgoing overlay below.
+            key={fnFormFunction.name}
+            fn={fnFormFunction}
+            values={fnForm.values}
+            setValue={fnForm.setValue}
+            workdir={fnForm.workdir}
+            setWorkdir={fnForm.setWorkdir}
+            errorParam={fnForm.error}
+            closing={fnForm.closing}
+            onClose={handleFnFormClose}
+            onSubmit={submitFnForm}
+          />
+        ) : (
+          <ChatInputRow
+            textareaRef={textareaRef}
+            input={input}
+            setInput={setInput}
+            placeholder={isRunning
+              ? text("type to steer the running task…", "输入以干预正在运行的任务…")
+              : undefined}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            onFocus={() => slash.setFocused(true)}
+            onBlur={() => slash.setFocused(false)}
+            setCaretPos={setCaretPos}
+            pastedEntries={pastedEntries}
+            pasteMissing={pasteMissing}
+            removePaste={removePaste}
+            atToken={atToken}
+            fileMatches={fileMatches}
+            fileMenuIndex={fileMenuIndex}
+            setFileMenuIndex={setFileMenuIndex}
+            fileMenuLoading={fileMenuLoading}
+            fileMenuPos={fileMenuPos}
+            pickFile={pickFile}
+          />
+        )}
+        {/* Outgoing fn-form overlay — only present during a fn → fn
+            switch. Rendered AFTER the main form so that
+            `querySelector('[data-fn-form-header]')` in the wrapper
+            height measurement matches the main form first (the
+            outgoing layer's cloned header/body would otherwise lock
+            wrapper height to the previous form's size). Absolute +
+            z-index 1 still puts it visually on top during the fade. */}
+        {outgoingFn && (
+          <div
+            key={`${outgoingFn.name}-outgoing`}
+            className={styles.outgoingLayer}
+            aria-hidden="true"
+          >
+            <FunctionForm
+              fn={outgoingFn}
+              values={{}}
+              setValue={noop}
+              workdir=""
+              setWorkdir={noop}
+              errorParam={null}
+              onClose={noop}
+              onSubmit={noop}
+              // Outgoing crossfade copy — strip input `id`s so the
+              // browser doesn't complain about duplicate-id form
+              // fields while both the live and ghost forms are
+              // mounted simultaneously during the fade.
+              ghost
+            />
+          </div>
+        )}
+
+        {/* Controls cluster placement: morphed modes keep the legacy
+            internal bottom row — the wrapper height animation and the
+            action-button glide measure against its 64px band. Chat
+            mode renders the same cluster in the detached row below
+            the wrapper instead (after .composerStack), matching the
+            Claude Code three-band layout. */}
+        {morphed && (
+          <div key="bottom-row" className={`${styles.inputBottomRow} composer-bottom-row`}>
+            {controlsCluster}
+          </div>
+        )}
 
         {/* Single send/stop button anchored at the wrapper level.
             `top` is mutated via inline style by the wrapper-height
@@ -1605,6 +1633,11 @@ export function Composer() {
         )}
       </div>
       </div>{/* /.composerStack */}
+      {!morphed && (
+        <div className={`${styles.controlsRow} composer-bottom-row`}>
+          {controlsCluster}
+        </div>
+      )}
     </div>
   );
 }

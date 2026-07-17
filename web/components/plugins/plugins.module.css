@@ -66,15 +66,15 @@
 
 .btnPrimary {
   composes: btn;
-  background: var(--accent, #7c6fcd);
-  color: white;
+  background: var(--accent-orange);
+  color: var(--primary-foreground);
   border-color: transparent;
 }
 
 .btnDanger {
   composes: btn;
-  color: #ef4444;
-  border-color: #ef444444;
+  color: var(--accent-red);
+  border-color: color-mix(in srgb, var(--accent-red) 27%, transparent);
 }
 
 .body {
@@ -139,30 +139,30 @@
 
 .badgeVerified {
   composes: badge;
-  color: #10b981;
-  border-color: #10b98144;
-  background: #10b98111;
+  color: var(--accent-green);
+  border-color: color-mix(in srgb, var(--accent-green) 27%, transparent);
+  background: color-mix(in srgb, var(--accent-green) 7%, transparent);
 }
 
 .badgeCommunity {
   composes: badge;
-  color: #f59e0b;
-  border-color: #f59e0b44;
-  background: #f59e0b11;
+  color: var(--accent-yellow);
+  border-color: color-mix(in srgb, var(--accent-yellow) 27%, transparent);
+  background: color-mix(in srgb, var(--accent-yellow) 7%, transparent);
 }
 
 .badgeUntrusted {
   composes: badge;
-  color: #ef4444;
-  border-color: #ef444444;
-  background: #ef444411;
+  color: var(--accent-red);
+  border-color: color-mix(in srgb, var(--accent-red) 27%, transparent);
+  background: color-mix(in srgb, var(--accent-red) 7%, transparent);
 }
 
 .toggle {
   width: 36px;
   height: 20px;
   border-radius: 10px;
-  background: var(--bg-tertiary, #2a2a2a);
+  background: var(--bg-tertiary);
   border: 1px solid var(--border);
   position: relative;
   cursor: pointer;
@@ -170,8 +170,8 @@
 
 .toggleOn {
   composes: toggle;
-  background: #10b981;
-  border-color: #10b981;
+  background: var(--accent-green);
+  border-color: var(--accent-green);
 }
 
 .toggleKnob {
@@ -192,10 +192,10 @@
 
 .errorBox {
   padding: 12px 16px;
-  border: 1px solid #ef444444;
+  border: 1px solid color-mix(in srgb, var(--accent-red) 27%, transparent);
   border-radius: 8px;
-  background: #ef444411;
-  color: #ef4444;
+  background: color-mix(in srgb, var(--accent-red) 7%, transparent);
+  color: var(--accent-red);
   font-size: 13px;
   margin-bottom: 8px;
   white-space: pre-wrap;
@@ -294,9 +294,9 @@
 }
 
 .checkOk {
-  color: #10b981;
+  color: var(--accent-green);
 }
 
 .checkFail {
-  color: #ef4444;
+  color: var(--accent-red);
 }

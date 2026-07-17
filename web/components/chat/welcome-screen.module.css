@@ -22,7 +22,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  /* Compact, centered stack — Claude's greeting keeps logo / title /
+     tagline tight. */
+  gap: 12px;
   flex-shrink: 0;
 }
 
@@ -100,14 +102,21 @@
 }
 
 .title {
-  font-size: 20px;
+  /* Display serif greeting (Claude style). The global `.display-serif`
+     utility (base.css) carries the canonical stack; this duplicate
+     font-family is the fallback in case that utility isn't loaded. */
+  font-family: 'Copernicus', 'Tiempos Text', 'Charter', 'Iowan Old Style',
+    Georgia, 'Songti SC', 'SimSun', serif;
+  font-size: 30px;
+  letter-spacing: -0.01em;
   color: var(--text-bright);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .text {
   font-size: 14px;
   text-align: center;
   max-width: 500px;
-  line-height: 1.6;
+  line-height: 1.7;
+  color: var(--text-secondary);
 }

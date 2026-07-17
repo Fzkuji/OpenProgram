@@ -30,7 +30,7 @@ export function WelcomeScreen() {
           <span className={styles.caret} />
           {"}"}
         </div>
-        <div className={styles.title}>Agentic Programming</div>
+        <div className={`${styles.title} display-serif`}>Agentic Programming</div>
         <div className={styles.text}>
           {text(
             "Run agentic functions, create new ones, or ask questions. Type a command or natural language below.",

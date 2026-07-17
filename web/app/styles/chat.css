@@ -72,9 +72,9 @@
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 3px;
-  background: rgba(152, 195, 121, 0.10);
+  background: color-mix(in srgb, var(--accent-green) 10%, transparent);
   color: var(--accent-green);
-  border: 1px solid rgba(152, 195, 121, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent-green) 22%, transparent);
   cursor: pointer;
 }
 /* `[data-state="open"]` keeps the trigger lit while its popover is open
@@ -82,19 +82,19 @@
    the whole time the menu is showing — not just on hover. */
 .status-badge:hover,
 .status-badge[data-state="open"] {
-  background: rgba(152, 195, 121, 0.18);
+  background: color-mix(in srgb, var(--accent-green) 18%, transparent);
 }
 /* Initial / probing state — yellow until the worker has actually
    answered (set in HTML as the bootstrap class, removed by
    updateStatus once the WS receives its first envelope). */
 .status-badge.connecting {
-  background: rgba(198, 144, 38, 0.10);
+  background: color-mix(in srgb, var(--accent-yellow) 10%, transparent);
   color: var(--accent-yellow);
-  border-color: rgba(198, 144, 38, 0.22);
+  border-color: color-mix(in srgb, var(--accent-yellow) 22%, transparent);
 }
 .status-badge.connecting:hover,
 .status-badge.connecting[data-state="open"] {
-  background: rgba(198, 144, 38, 0.18);
+  background: color-mix(in srgb, var(--accent-yellow) 18%, transparent);
 }
 /* Status badge carries a source name (potentially long, e.g.
    "WeChat (xxx) · run analyze_sentiment") inside its short label.
@@ -122,9 +122,9 @@
   border-radius: 3px;
   /* Orange — same family as git's branch / tag color so the
      "this is a VCS-ish branch" association reads quickly. */
-  background: rgba(209, 154, 102, 0.10);
+  background: color-mix(in srgb, var(--accent-orange) 10%, transparent);
   color: var(--accent-orange);
-  border: 1px solid rgba(209, 154, 102, 0.25);
+  border: 1px solid color-mix(in srgb, var(--accent-orange) 25%, transparent);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -132,7 +132,7 @@
 }
 .runtime-badge.branch-badge:hover,
 .runtime-badge.branch-badge[data-state="open"] {
-  background: rgba(209, 154, 102, 0.18);
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
 }
 .branch-badge .branch-icon {
   display: inline-flex;
@@ -198,15 +198,15 @@
    rules were removed. */
 
 .status-badge.disconnected {
-  background: rgba(224, 108, 117, 0.12);
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
   color: var(--accent-red);
-  border-color: rgba(224, 108, 117, 0.25);
+  border-color: color-mix(in srgb, var(--accent-red) 25%, transparent);
 }
 
 .status-badge.paused {
-  background: rgba(229, 192, 123, 0.12);
+  background: color-mix(in srgb, var(--accent-yellow) 12%, transparent);
   color: var(--accent-yellow);
-  border-color: rgba(229, 192, 123, 0.25);
+  border-color: color-mix(in srgb, var(--accent-yellow) 25%, transparent);
 }
 
 
@@ -335,11 +335,8 @@
   padding: 0;
 }
 .message-action-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--bg-hover);
   color: var(--text-primary);
-}
-@media (prefers-color-scheme: dark) {
-  .message-action-btn:hover { background: rgba(255, 255, 255, 0.1); }
 }
 .message-action-btn[disabled] {
   opacity: 0.4;
@@ -382,11 +379,8 @@
   padding: 0;
 }
 .message-nav-btn:hover:not([disabled]) {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--bg-hover);
   color: var(--text-primary);
-}
-@media (prefers-color-scheme: dark) {
-  .message-nav-btn:hover:not([disabled]) { background: rgba(255, 255, 255, 0.1); }
 }
 .message-nav-btn[disabled] {
   opacity: 0.35;
@@ -459,12 +453,13 @@
   cursor: not-allowed;
 }
 .message-edit-btn.message-edit-save {
-  background: var(--accent-blue);
-  color: #fff;
-  border-color: var(--accent-blue);
+  background: var(--accent-fill);
+  color: var(--primary-foreground);
+  border-color: var(--accent-fill);
 }
 .message-edit-btn.message-edit-save:hover:not([disabled]) {
-  filter: brightness(1.08);
+  background: var(--accent-orange-hover);
+  border-color: var(--accent-orange-hover);
 }
 .message-action-btn svg {
   width: 16px;
@@ -482,8 +477,8 @@
 
 /* Three message roles render with three distinct surfaces so the
    eye can sort them at a glance:
-   - user      → ``--user-msg-bg``       (slightly warmer/darker tint)
-   - assistant → ``--assistant-msg-bg``  (slightly cooler tint)
+   - user      → ``--bg-tertiary`` bubble (raised warm grey, right)
+   - assistant → transparent (flows flat on the page, left)
    - system    → transparent (chat background bleed-through;
                   these are typically attach pointers / runtime
                   blocks / tool-call cards rendered as standalone
@@ -523,17 +518,16 @@
      with where the assistant text ends (same 36px content inset), so the
      bubble shares the assistant's content column — just right-aligned, not
      jammed against the viewport edge. */
-  background: var(--user-msg-bg);
-  /* Fixed corner radius (not height-dependent): a single-line bubble is
-     ~38px tall, so 19px makes its ends exact half-circles (a pill); a
-     multi-line bubble keeps the SAME radius and reads as a rounded
-     rectangle with the same curve. */
-  border-radius: 19px;
-  padding: 8px 16px;
+  /* Claude look: soft warm tint, no border, 16px corners with a 4px
+     "tail" at the bottom-right (the side the bubble hangs from). */
+  background: var(--bg-tertiary);
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 16px;
   width: fit-content;
-  max-width: 80%;
+  max-width: 75%;
   margin-right: 36px;               /* align right edge to assistant text's right edge */
   text-align: left;
+  color: var(--text-bright);
 }
 
 .message.assistant {
@@ -564,13 +558,13 @@
 }
 
 .message-avatar.user-avatar {
-  background: var(--accent-blue);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--primary-foreground);
 }
 
 .message-avatar.bot-avatar {
   background: var(--accent-green);
-  color: #fff;
+  color: var(--primary-foreground);
 }
 
 .message-sender {
@@ -582,21 +576,23 @@
 .message-content {
   padding-left: 36px;
   padding-right: 36px;
-  font-size: 14px;
-  line-height: 1.6;
+  /* Claude body copy: 15px / 1.7, generous and airy. */
+  font-size: 15px;
+  line-height: 1.7;
   color: var(--text-primary);
   word-wrap: break-word;
 }
 
 .message-content pre {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
-  margin: 8px 0;
+  /* Paper inset: soft tint, hairline border, quiet. */
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 10px 0;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: var(--text-primary);
   white-space: pre-wrap;
@@ -605,14 +601,15 @@
 
 .message-content code {
   font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--bg-secondary);
-  padding: 1px 5px;
-  border-radius: 3px;
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 6px;
 }
-.message-content pre code { background: none; padding: 0; }
-.message-content p { margin: 4px 0; }
-.message-content ul, .message-content ol { margin: 4px 0; padding-left: 20px; }
+.message-content pre code { background: none; padding: 0; font-size: inherit; }
+.message-content p { margin: 0 0 12px; }
+.message-content p:last-child { margin-bottom: 0; }
+.message-content ul, .message-content ol { margin: 8px 0; padding-left: 20px; }
 .message-content li { margin: 2px 0; }
 .message-content h1, .message-content h2, .message-content h3 { margin: 12px 0 6px; color: var(--text-bright); }
 .message-content h1 { font-size: 18px; } .message-content h2 { font-size: 16px; } .message-content h3 { font-size: 14px; }
@@ -621,7 +618,7 @@
 .message-content blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 4px 12px; color: var(--text-secondary); }
 .message-content table { border-collapse: collapse; margin: 8px 0; font-size: 14px; }
 .message-content th, .message-content td { border: 1px solid var(--border); padding: 4px 8px; }
-.message-content th { background: var(--bg-secondary); }
+.message-content th { background: var(--bg-tertiary); }
 
 .spinner {
   width: 16px;
@@ -640,9 +637,9 @@
 /* Execution log */
 .exec-log {
   margin: 4px 24px 4px 48px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: transparent;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
   font-family: var(--font-mono);
   font-size: 12px;
   overflow: hidden;
@@ -652,7 +649,7 @@
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; cursor: pointer;
   color: var(--text-secondary); user-select: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-light);
 }
 .exec-log-header:hover { background: var(--bg-hover); }
 .exec-log-header .spinner-sm { width: 12px; height: 12px; border: 1.5px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
@@ -805,7 +802,7 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: conic-gradient(from 180deg, #3B9EFF, #A855F7, #3B9EFF);
+  background: conic-gradient(from 180deg, var(--accent-blue), var(--accent-purple), var(--accent-blue));
   /* 外环环宽 ~2px，和内圈 border(2px) 一样粗：内壁半径 6.8px，
      环从 ~7.2 到 9(box边) ≈ 2px。 */
   -webkit-mask: radial-gradient(circle, transparent 6.8px, #000 7.2px);
@@ -828,7 +825,7 @@
   margin-left: -4px;
   border-radius: 50%;
   background: transparent;  /* hollow */
-  border: 2px solid #B98CF5;
+  border: 2px solid var(--accent-purple);
   box-sizing: border-box;
   /* 绕 box 中心(9,9) 转：相对小圈自身左上角(5,3) → (9-5, 9-3) = (4, 6) */
   transform-origin: 4px 6px;
@@ -859,25 +856,28 @@
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 3px;
-  background: rgba(152,195,121,0.12);
+  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
   color: var(--accent-green);
-  border: 1px solid rgba(152,195,121,0.25);
+  border: 1px solid color-mix(in srgb, var(--accent-green) 25%, transparent);
   white-space: nowrap;
 }
 .runtime-badge.session {
-  background: rgba(86,182,194,0.12);
-  color: #56b6c2;
+  background: color-mix(in srgb, var(--accent-cyan) 12%, transparent);
+  /* Cyan tint carries the hue; cyan TEXT washes out on the light
+     theme (~1.7:1), so the label reads in text-primary instead —
+     5.82:1 dark / 9.53:1 light on the tinted chip. */
+  color: var(--text-primary);
   font-family: monospace;
   font-size: 12px;
 }
 .runtime-badge.model {
-  background: rgba(198,120,221,0.12);
+  background: color-mix(in srgb, var(--accent-purple) 12%, transparent);
   color: var(--accent-purple);
-  border-color: rgba(198,120,221,0.25);
+  border-color: color-mix(in srgb, var(--accent-purple) 25%, transparent);
   cursor: pointer;
 }
 .runtime-badge.model:hover {
-  background: rgba(198,120,221,0.2);
+  background: color-mix(in srgb, var(--accent-purple) 20%, transparent);
 }
 .runtime-badge.agent-badge {
   cursor: pointer;
@@ -929,9 +929,9 @@
 .context-card {
   margin: 12px 0;
   margin-left: 36px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: transparent;
   overflow: hidden;
 }
 #liveExecTree { margin: 12px 24px 16px; }
@@ -941,7 +941,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: var(--bg-tertiary);
+  background: transparent;
   cursor: pointer;
   user-select: none;
 }
@@ -977,8 +977,8 @@
 .inline-tree {
   margin: 8px 0 4px;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  border-radius: 10px;
+  background: transparent;
   overflow: hidden;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1266,7 +1266,8 @@
   border-radius: 12px;
   padding: 6px;
   display: none;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  /* Claude is flat — hairline + faint lift only. */
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
 }
 .msg-minimap:hover .msg-minimap-panel { display: block; }
 .msg-minimap-row {
@@ -1289,10 +1290,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  /* `--bg-hover` (lighter) instead of `--bg-tertiary` — the runtime
-     block body is already `--bg-tertiary`, so a same-colour header
-     vanished into it. */
-  background: var(--bg-hover);
+  /* Quiet hairline card: no fill at rest, tint only on hover. */
+  background: transparent;
   cursor: pointer;
   user-select: none;
   color: var(--text-secondary);
@@ -1302,7 +1301,7 @@
      smaller sizes. */
   font-size: 14px;
 }
-.inline-tree-header:hover { background: var(--bg-selected); }
+.inline-tree-header:hover { background: var(--bg-hover); }
 .inline-tree-toggle {
   color: var(--text-secondary);
   font-size: 12px;
@@ -1352,9 +1351,9 @@
 /* Stream terminal */
 .stream-terminal-wrap {
   margin: 4px 0 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: transparent;
   overflow: hidden;
 }
 .stream-terminal-header {
@@ -1362,7 +1361,7 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background: var(--bg-tertiary);
+  background: transparent;
   cursor: pointer;
   font-size: 12px;
   color: var(--text-secondary);
@@ -1379,25 +1378,26 @@
 .stream-terminal-wrap.collapsed .stream-terminal { display: none; }
 .stream-terminal {
   padding: 8px 10px;
-  background: #1a1a1a;
+  /* Paper inset (was a hardcoded near-black panel) — follows theme. */
+  background: var(--bg-tertiary);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
   max-height: 200px;
   overflow-y: auto;
-  color: #a0a0a0;
+  color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
 }
-.stream-terminal .stream-text { color: #e0e0e0; }
-.stream-terminal .stream-tool { color: #56b6c2; font-weight: 600; }
-.stream-terminal .stream-status { color: #e5c07b; font-style: italic; }
+.stream-terminal .stream-text { color: var(--text-primary); }
+.stream-terminal .stream-tool { color: var(--stream-tool); font-weight: 600; }
+.stream-terminal .stream-status { color: var(--stream-info); font-style: italic; }
 .stream-terminal .stream-time { color: var(--text-muted); font-size: 12px; }
 
 /* Error card */
 .error-content {
-  background: rgba(224,108,117,0.08);
-  border: 1px solid rgba(224,108,117,0.2);
+  background: color-mix(in srgb, var(--accent-red) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-red) 20%, transparent);
   border-radius: var(--radius);
   padding: 12px;
   margin: 8px 0;
@@ -1425,13 +1425,13 @@
   display: inline-block;
 }
 .bubble-badge-interrupted {
-  background: rgba(224,170,80,0.10);
-  border: 1px solid rgba(224,170,80,0.25);
-  color: #c98a30;
+  background: color-mix(in srgb, var(--accent-yellow) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-yellow) 25%, transparent);
+  color: var(--accent-yellow);
 }
 .bubble-badge-cancelled {
-  background: rgba(160,160,160,0.10);
-  border: 1px solid rgba(160,160,160,0.25);
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 25%, transparent);
   color: var(--text-muted);
 }
 
@@ -1486,20 +1486,17 @@
    cancel it here since .chat-stream-body is already offset the same amount. */
 .chat-stream-body .chat-text { margin-left: 0; padding-left: 0; padding-right: 0; }
 .chat-thinking {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: 10px;
-  background: var(--bg-secondary);
+  background: transparent;
   overflow: hidden;
   font-size: 12px;
 }
-/* Make the Thinking header visually match the @agentic_function
- * runtime-block header (mono + bold + bright) so the assistant's
- * pre-tool reasoning and tool call card read as one consistent
- * family, not "small muted sans" next to "big bold mono". */
+/* Thinking header — quiet sans row, same family as the tool cards
+ * (Claude keeps these hairline chips understated, no mono shouting). */
 .chat-thinking > .chat-fold-btn {
-  font-family: var(--font-mono);
-  color: var(--text-bright);
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 /* Tool calls render as a single bordered "card" containing dense
    rows separated by hairlines, instead of each call being its own
@@ -1508,9 +1505,9 @@
 .chat-tools {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light);
   border-radius: 10px;
-  background: var(--bg-secondary);
+  background: transparent;
   overflow: hidden;
   font-size: 12px;
 }
@@ -1522,9 +1519,9 @@
   font-size: 12px;
 }
 .chat-tool + .chat-tool {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-light);
 }
-.chat-tool.is-error { background: rgba(201, 75, 75, 0.06); }
+.chat-tool.is-error { background: color-mix(in srgb, var(--accent-red) 6%, transparent); }
 /* The outer .chat-tools card is now itself collapsible. Its
    .chat-fold-content carries the row list; kill the generic content
    padding so rows still sit flush, and add a divider between the
@@ -1540,7 +1537,7 @@
    so most of the visual style comes from those classes — these
    overrides only handle the count badge + hide/show the body. */
 .chat-tools .chat-tools-count {
-  background: var(--bg-secondary);
+  background: var(--bg-tertiary);
   color: var(--text-muted);
   border-radius: 10px;
   padding: 0 7px;
@@ -1553,7 +1550,7 @@
 }
 .chat-tools[data-collapsed="1"] > .chat-tools-body { display: none; }
 .chat-tools[data-collapsed="0"] > .chat-tools-body { display: block; }
-.chat-tools[data-collapsed="0"] > .inline-tree-header { border-bottom: 1px solid var(--border); }
+.chat-tools[data-collapsed="0"] > .inline-tree-header { border-bottom: 1px solid var(--border-light); }
 /* The .inline-tree-body rules (padding) are for execution-tree
    content; for our flat tool-row list keep zero outer padding so
    rows sit flush to the card edges (their own row padding handles
@@ -1619,9 +1616,9 @@
 .chat-fold-content {
   display: none;
   padding: 8px 12px 10px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-light);
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: transparent;
 }
 [data-collapsed="0"] > .chat-fold-content { display: block; }
 .chat-thinking .chat-fold-content {
@@ -1648,7 +1645,7 @@
   margin: 0;
   padding: 6px 8px;
   background: var(--bg-tertiary);
-  border-radius: 6px;
+  border-radius: 8px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-primary);
@@ -1858,8 +1855,8 @@
 .attach-card {
   margin-top: 0;
   padding: 10px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid var(--border-light);
   border-radius: 10px;
   display: flex;
   flex-direction: column;
@@ -1905,19 +1902,19 @@
 }
 .attach-card-status-pending,
 .attach-card-status-queued {
-  background: rgba(160, 160, 160, 0.2);
+  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
   color: var(--text-secondary);
 }
 .attach-card-status-running {
-  background: rgba(108, 180, 255, 0.18);
-  color: var(--accent-blue, #6cb4ff);
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  color: var(--accent-blue);
 }
 .attach-card-status-errored {
-  background: rgba(229, 83, 75, 0.18);
-  color: var(--accent-red, #e5534b);
+  background: color-mix(in srgb, var(--accent-red) 18%, transparent);
+  color: var(--accent-red);
 }
 .attach-card-status-cancelled {
-  background: rgba(160, 160, 160, 0.18);
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
   color: var(--text-muted);
 }
 /* Cancel button — only shown while the attach's task is still
@@ -1964,12 +1961,12 @@
   padding: 0 10px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: var(--bg-secondary);
+  background: transparent;
   color: var(--text-bright);
   font-size: 12px;
   cursor: pointer;
 }
-.attach-card-open:hover { background: var(--bg-primary); }
+.attach-card-open:hover { background: var(--bg-hover); }
 .attach-card-open svg { width: 12px; height: 12px; }
 /* Drop-in replacement when the chat is already on the branch this
    card points at — same slot as the Switch button, neutral colour
@@ -2058,7 +2055,7 @@
  * its owner's runtime block). Pure visual cue, no layout effect. */
 @keyframes dagFlash {
   0%   { background-color: transparent; }
-  20%  { background-color: rgba(255, 196, 92, 0.28); }
+  20%  { background-color: color-mix(in srgb, var(--accent-yellow) 28%, transparent); }
   100% { background-color: transparent; }
 }
 .dag-flash {

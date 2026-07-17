@@ -109,6 +109,6 @@
 .errorBar {
   padding: 8px 24px;
   font-size: 12px;
-  color: var(--accent-red, #ef4444);
+  color: var(--accent-red);
   border-bottom: 1px solid var(--border);
 }
