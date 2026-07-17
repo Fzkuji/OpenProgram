@@ -83,19 +83,20 @@ const Slider = React.forwardRef<
           <span
             key={i}
             // Each tick sits at the same x as the thumb-center for that
-            // step. `calc(ratio * (100% - 14px) + 7px)` mirrors Radix's
-            // own thumb-position math (14px thumb, half-width 7).
+            // step. `calc(ratio * (100% - 23px) + 11.5px)` mirrors Radix's
+            // own thumb-position math (23px thumb hit, half-width 11.5 —
+            // Claude 实测：末端点心距轨缘 11.5px).
             // `translate(-50%, -50%)` then pulls the tick's own centre
             // onto that point. `pointer-events-none` keeps the track
             // click area uninterrupted.
             className={cn(
-              "pointer-events-none absolute top-1/2 size-[4px] rounded-full",
+              "pointer-events-none absolute top-1/2 size-[3px] rounded-full",
               "-translate-x-1/2 -translate-y-1/2",
               isMax
-                ? "bg-[#7b7cf7]"
-                : "bg-[color-mix(in_srgb,var(--text-bright)_22%,transparent)]",
+                ? "bg-[#8E6BD9]"
+                : "bg-[color-mix(in_srgb,var(--text-bright)_20%,transparent)]",
             )}
-            style={{ left: `calc(${i / (stops - 1)} * (100% - 14px) + 7px)` }}
+            style={{ left: `calc(${i / (stops - 1)} * (100% - 23px) + 11.5px)` }}
             aria-hidden="true"
           />
         );
@@ -110,7 +111,7 @@ const Slider = React.forwardRef<
     {startIcon ? (
       <div
         className="pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-        style={{ left: "7px" }}
+        style={{ left: "11.5px" }}
       >
         {startIcon}
       </div>
@@ -118,7 +119,7 @@ const Slider = React.forwardRef<
     {endIcon ? (
       <div
         className="pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-        style={{ left: "calc(100% - 7px)" }}
+        style={{ left: "calc(100% - 11.5px)" }}
       >
         {endIcon}
       </div>
@@ -133,7 +134,7 @@ const Slider = React.forwardRef<
         // ring would draw a second concentric circle around the
         // custom thumb element). Without a child, fall back to the
         // default soft round bullet + standard focus ring.
-        "relative block size-[14px] rounded-full",
+        "relative block h-[20px] w-[23px] rounded-full",
         "transition-transform duration-150 ease-out",
         "outline-none",
         "disabled:pointer-events-none disabled:opacity-50",
