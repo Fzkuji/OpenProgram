@@ -441,8 +441,10 @@
   background: transparent;
   filter: brightness(1.2);
 }
-/* Text-only: drop the shield glyph, append a small chevron. */
-.inputOptions :global(.permission-badge svg) {
+/* Text-only: drop the shield glyph, append a small chevron. 隐藏的
+   必须是图标的整个 wrapper——它带 mr-[4px]，只藏 svg 会留下 4px 幽灵
+   边距，把文本推离 768px 列左缘（Claude 实测文本缩进 = 6px padding）。 */
+.inputOptions :global(.permission-badge > :has(svg)) {
   display: none;
 }
 .inputOptions :global(.permission-badge)::after {
