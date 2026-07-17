@@ -1399,12 +1399,19 @@ export function Composer() {
                 (see ``promptNeedModel``). The `thinking` value still
                 flows to submit (uses the model default) when hidden. */}
             {chatModel && !noEnabledModels ? (
-              <>
+              <HoverTip label={text("Thinking effort", "思考力度")}>
                 {/* Wrapper is the outside-click boundary AND the anchor
                     for the pill's floating slider (detached row). The
                     text trigger only shows in the detached row (CSS);
-                    the morphed internal band keeps the icon pill. */}
-                <div ref={thinkingTriggerRef} className={styles.effortControl}>
+                    the morphed internal band keeps the icon pill.
+                    aria-expanded 挂在这个 div（HoverTip 的真正 trigger
+                    元素）上，卡开着时 tooltip.tsx 的拦截才生效——之前标
+                    到里层按钮，HoverTip 看的是这个 div，所以拦不住。 */}
+                <div
+                  ref={thinkingTriggerRef}
+                  className={styles.effortControl}
+                  aria-expanded={effortCardOpen}
+                >
                   {thinkingOptions.length > 1 && (
                     <button
                       type="button"
@@ -1422,9 +1429,6 @@ export function Composer() {
                       }}
                       // 最高档 = 紫色标识（Claude 的 Ultracode 形制）。
                       style={thinking === "max" ? { color: "#8E6BD9" } : undefined}
-                      // 卡开着时 HoverTip 靠这个不冒提示（pill 是自绘浮
-                      // 层，radix 不会替我们标）。
-                      aria-expanded={effortCardOpen}
                     >
                       {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : ""}
                     </button>
@@ -1447,9 +1451,7 @@ export function Composer() {
                     onExpandedChange={setEffortCardOpen}
                   />
                 </div>
-              {/* effort 控件不再挂黑提示——用户点名禁用（卡片自身
-                  就是全部说明）。 */}
-              </>
+              </HoverTip>
             ) : null}
             <ContextBadge />
           </div>
