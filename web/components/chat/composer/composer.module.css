@@ -508,6 +508,9 @@
   border-radius: 6px;
   font-size: 13px;
   background: var(--env-pill-bg);
+  /* Claude 的 pill 不是悬空白块：带一圈极淡描边（他们的
+     effect-contained-default）。用 ring 而非 border,不动盒模型。 */
+  box-shadow: 0 0 0 1px var(--border);
   color: var(--ink-80);
 }
 /* Measured: 0 6px pill padding + the label's own breathing room. */
@@ -685,12 +688,21 @@
   fill: none;
 }
 
+/* Claude 语义：空输入时发送键是安静的灰箭头（透明底），
+   有内容可发才亮珊瑚填充 + 白箭头。 */
 .sendBtn {
-  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
-  color: var(--accent-blue);
+  background: transparent;
+  color: var(--text-muted);
 }
-.sendBtn:hover {
-  background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
+.sendBtn:disabled {
+  cursor: default;
+}
+.sendBtn:not(:disabled) {
+  background: var(--accent-fill, var(--accent-orange));
+  color: #fff;
+}
+.sendBtn:not(:disabled):hover {
+  background: var(--accent-orange-hover, var(--accent-orange));
 }
 .sendBtn[data-fn-missing="true"] {
   opacity: 0.58;

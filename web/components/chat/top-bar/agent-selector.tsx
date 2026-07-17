@@ -70,7 +70,7 @@ export function AgentSelector({
   return (
     <div className={`${MENU_PANEL} w-[300px]`}>
       {(models ?? []).length === 0 ? (
-        <div className="px-[8px] py-[6px] text-[12px] text-text-muted">
+        <div className="px-[10px] py-[8px] text-[12px] text-text-muted">
           {t("agent.no_enabled_models")}{" "}
           <a
             href="/settings"

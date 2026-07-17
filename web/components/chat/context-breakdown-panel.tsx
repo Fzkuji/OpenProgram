@@ -146,7 +146,13 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      // 新会话还没有 id：没有东西可取，直接落空态——否则初始
+      // loading=true 永远悬着，空会话点开就是一张永久 Loading 卡。
+      setData(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const qs = headId ? `?head_id=${encodeURIComponent(headId)}` : "";
     fetch(`/api/sessions/${encodeURIComponent(sessionId)}/context${qs}`)
@@ -213,6 +219,13 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
         {loading ? (
           <div className="p-6 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
             {text("Loading…", "加载中…")}
+          </div>
+        ) : !data ? (
+          <div className="p-6 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
+            {text(
+              "No context yet — send the first message.",
+              "还没有上下文——发送第一条消息后可见。",
+            )}
           </div>
         ) : data?.error ? (
           <div className="p-4 text-[12px]" style={{ color: "var(--accent-red)" }}>

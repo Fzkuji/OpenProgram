@@ -236,8 +236,9 @@ export function AgentBadge({
         </PopoverTrigger>
       </HoverTip>
       <PopoverContent
-        align="start"
-        sideOffset={4}
+        side="top"
+        align="end"
+        sideOffset={6}
         onOpenAutoFocus={(e) => e.preventDefault()}
         className="w-auto border-0 bg-transparent p-0 shadow-none"
       >

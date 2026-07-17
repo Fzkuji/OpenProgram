@@ -120,9 +120,9 @@ export function PermissionBadge() {
           </PopoverTrigger>
         </HoverTip>
         <PopoverContent
-          align="end"
-          side="bottom"
-          sideOffset={4}
+          align="start"
+          side="top"
+          sideOffset={6}
           onOpenAutoFocus={(e) => e.preventDefault()}
           className="w-auto border-0 bg-transparent p-0 shadow-none"
         >

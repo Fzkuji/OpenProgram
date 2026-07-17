@@ -147,7 +147,11 @@
   --assistant-msg-bg: #262624;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
-  --shadow-popover: 0 6px 18px rgba(0, 0, 0, 0.24);
+  /* Popover / menu surface — the ONE elevated card every floating menu
+     uses (see components/chat/top-bar/menu-styles.ts MENU_PANEL). The
+     shadow carries its own 1px ring, so panels need no border. */
+  --surface-popover: #30302e;
+  --shadow-popover: 0 0 0 1px rgba(255, 255, 255, 0.10), 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
   --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
   --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
@@ -199,7 +203,10 @@
      stay barely-there. */
   --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.04);
   --shadow: 0 2px 8px rgba(20, 20, 19, 0.05);
-  --shadow-popover: 0 4px 16px rgba(20, 20, 19, 0.08);
+  /* Popover / menu surface — pure white card, visibly raised off the
+     cream page (Claude style), ring baked into the shadow. */
+  --surface-popover: #ffffff;
+  --shadow-popover: 0 0 0 1px rgba(10, 10, 10, 0.08), 0 8px 24px rgba(20, 20, 19, 0.12);
   --shadow-dialog: 0 10px 30px rgba(20, 20, 19, 0.10);
   --shadow-sidebar-left: 4px 0 16px rgba(20, 20, 19, 0.06);
   --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);

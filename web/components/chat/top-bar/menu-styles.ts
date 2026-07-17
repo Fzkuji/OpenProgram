@@ -4,17 +4,16 @@
  * visually identical: topbar pickers (channel / branch / project /
  * agent), the sidebar Recents context menu, and any future one.
  *
- * ── Design spec ──────────────────────────────────────────────────────
- *  Panel (MENU_PANEL): 10px radius · 1px `--border` · `--bg-tertiary` ·
- *    4px padding (the inset gap between rows and the frame) ·
- *    `--shadow-popover` · 1px gap between rows · scrolls past 60vh.
- *  Row (itemCls):      min 28px tall · 6px radius · 8px/4px padding ·
- *    13px/18px text · 7px icon↔label gap · hover & active = `--bg-hover`
- *    + `--text-bright`. danger = red text + faint red hover. One tier
- *    shorter / smaller than the sidebar nav rows, matching Claude's
- *    compact pickers.
- *  Section label (GROUP_LABEL) · key hint (SHORTCUT) · divider
- *    (MENU_SEPARATOR, full-bleed) · trailing check (CHECK).
+ * ── Design spec (Claude-style elevated card) ─────────────────────────
+ *  Panel (MENU_PANEL): 12px radius · `--surface-popover` (white in
+ *    light, #30302e in dark) · 6px padding · `--shadow-popover` (which
+ *    bakes in a 1px ring — no border class) · scrolls past 60vh.
+ *  Row (itemCls):      min 34px tall · 8px radius · 0 10px padding ·
+ *    14px/20px text · 8px icon↔label gap · hover & active = `--bg-hover`
+ *    warm tint + `--text-bright`. danger = red text + faint red hover.
+ *  Section label (GROUP_LABEL): 12px `--text-muted`, 8px 10px padding.
+ *  Separator (MENU_SEPARATOR): 1px `--border`, 6px vertical margin,
+ *    full-bleed. Key hint (SHORTCUT) · trailing check (CHECK).
  *
  *  The radix PopoverContent wrapper MUST be transparent
  *  (`border-0 bg-transparent p-0 shadow-none`) — the frame is always
@@ -22,35 +21,33 @@
  */
 
 export const MENU_PANEL =
-  "flex max-h-[60vh] flex-col gap-px overflow-y-auto rounded-[10px] " +
-  "border border-[var(--border)] bg-bg-tertiary p-[4px] shadow-(--shadow-popover)";
+  "flex max-h-[60vh] flex-col overflow-y-auto rounded-[12px] " +
+  "bg-[var(--surface-popover)] p-[6px] shadow-(--shadow-popover)";
 
 export const GROUP_LABEL =
-  "flex items-center gap-[6px] px-[8px] pb-[2px] pt-[5px] " +
-  "text-[11px] text-text-muted";
+  "flex items-center gap-[6px] px-[10px] py-[8px] " +
+  "text-[12px] text-text-muted";
 
 export const CHECK = "shrink-0 text-[var(--accent-blue)]";
 
 /** Right-aligned single-key shortcut hint (e.g. the R / P / C / A / D in
  *  the Recents context menu). Stays muted — doesn't brighten with the
  *  row on hover. */
-export const SHORTCUT = "shrink-0 text-[11px] text-text-muted";
+export const SHORTCUT = "shrink-0 text-[12px] text-text-muted";
 
 /** Full-bleed divider between menu groups. The negative inline margin
- *  cancels MENU_PANEL's 4px padding so the line spans edge to edge. */
-export const MENU_SEPARATOR = "-mx-[4px] my-[4px] h-px bg-[var(--border)]";
+ *  cancels MENU_PANEL's 6px padding so the line spans edge to edge. */
+export const MENU_SEPARATOR = "-mx-[6px] my-[6px] h-px shrink-0 bg-[var(--border)]";
 
 /** A selectable menu row — `active` swaps the resting / hover colours;
- *  `danger` makes it a destructive (red) action. ~28px tall (one tier
- *  shorter than the sidebar nav rows). */
+ *  `danger` makes it a destructive (red) action. Min 34px tall —
+ *  Claude's generous picker rows. */
 export function itemCls(active: boolean, danger = false): string {
-  // Fixed 26px height (NOT min-height) so a row's inner content — model
-  // capability icons, context-size labels, checkmarks — can never stretch
-  // it taller than its neighbours. Every selection row in every dropdown
-  // is therefore exactly the same height, matching a compact small menu.
   const base =
-    "flex h-[26px] shrink-0 cursor-pointer items-center gap-[8px] rounded-[6px] " +
-    "px-[8px] text-[13px] leading-[18px] transition-colors duration-75 ";
+    // 32 = --ui-list-h：菜单项与侧栏行同一刻度（全局高度刻度表：
+    // 20 控件 / 24 图标钮 / 28 tab·二级行 / 32 列表行·菜单项 / 40 工具栏 / 44 输入行）
+    "flex min-h-[32px] shrink-0 cursor-pointer items-center gap-[8px] rounded-[8px] " +
+    "px-[10px] text-[14px] leading-[20px] transition-colors duration-75 ";
   if (danger) {
     return (
       base +

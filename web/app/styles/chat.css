@@ -188,9 +188,14 @@
    crisp text. Geometry / shadow / animation live on the Tailwind
    classes in components/ui/tooltip.tsx. */
 .hover-tip {
-  background: color-mix(in srgb, var(--text-primary) 14%, var(--bg-secondary));
-  color: var(--text-bright);
+  /* Claude 实物是深墨底白字（浅色主题反色）：#141413 底、白字、13px。
+     深色主题给一块更亮的灰底保持反差。 */
+  background: var(--surface-tooltip, #141413);
+  color: #fff;
   border: none;
+}
+[data-theme="dark"] .hover-tip {
+  background: #4a4a47;
 }
 
 /* The topbar branch dropdown is the React <BranchMenu /> (shadcn

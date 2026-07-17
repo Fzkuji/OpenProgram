@@ -122,7 +122,7 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
       </div>
 
       {rows !== null && enabled.length === 0 ? (
-        <div className={`${GROUP_LABEL} text-[11px]`}>
+        <div className={GROUP_LABEL}>
           <a href="/settings" className="text-[var(--accent-blue)] no-underline">
             {text("Add a channel in Settings", "在设置中添加渠道")} →
           </a>

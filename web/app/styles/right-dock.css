@@ -180,10 +180,10 @@
   /* 24×24 matches the topbar branch-dropdown's inline-styled
      buttons (see conversations.js: `var BTN = 24`). The CSS
      22×22 you'll find in 05-chat.css is overridden there. */
-  width: 22px;
-  height: 22px;
+  width: 24px; /* 刻度：24 = 图标钮 */
+  height: 24px;
   flex-shrink: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text-muted);
   cursor: pointer;
   transition: background 75ms, color 75ms;

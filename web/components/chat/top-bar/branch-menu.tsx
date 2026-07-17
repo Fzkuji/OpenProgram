@@ -239,7 +239,7 @@ export function BranchMenu({ onClose }: { onClose: () => void }) {
   return (
     <div className={`${MENU_PANEL} w-auto`}>
       {rows !== null && rows.length === 0 ? (
-        <div className={`${GROUP_LABEL} text-[11px]`}>
+        <div className={GROUP_LABEL}>
           <span>{text("No branches yet. Retry or edit a message to fork.", "还没有分支。重试或编辑消息后会创建分支。")}</span>
         </div>
       ) : null}

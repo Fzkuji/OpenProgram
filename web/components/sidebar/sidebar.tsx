@@ -278,7 +278,7 @@ export function Sidebar() {
             when collapsed: the 49px rail only fits the toggle. */}
         <button
           className={
-            "flex h-[28px] w-[28px] shrink-0 cursor-pointer items-center justify-center " +
+            "flex h-[var(--ui-list-h)] w-[var(--ui-list-h)] shrink-0 cursor-pointer items-center justify-center " +
             "rounded-[var(--ui-list-radius)] border-none bg-transparent p-0 " +
             "text-nav-color transition-colors duration-150 ease-out " +
             "hover:bg-bg-hover hover:text-nav-color-hover " +

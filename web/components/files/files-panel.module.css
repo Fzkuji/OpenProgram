@@ -237,8 +237,10 @@
 .treeFilter {
   flex: 1;
   min-width: 0;
+  height: 28px; /* 刻度：28 = tab/二级行/紧凑输入 */
+  box-sizing: border-box;
   font-size: 12px;
-  padding: 5px 8px;
+  padding: 0 8px;
   color: var(--text-bright);
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -252,8 +254,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 24px; /* 刻度：24 = 图标钮 */
+  height: 24px;
   flex-shrink: 0;
   color: var(--text-dim);
   background: transparent;

@@ -31,7 +31,7 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
-import { CHECK, GROUP_LABEL, MENU_PANEL, itemCls } from "./menu-styles";
+import { CHECK, GROUP_LABEL, MENU_PANEL, MENU_SEPARATOR, itemCls } from "./menu-styles";
 
 /** Fired whenever the conversation's project changes so the topbar chip
  * re-fetches its label without a store round-trip. */
@@ -194,7 +194,7 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
         );
       })}
 
-      <div className="mx-[4px] my-[3px] h-px bg-[var(--border)]" />
+      <div className={MENU_SEPARATOR} />
 
       <div className={itemCls(false)} onClick={() => !busy && openFolder()}>
         <Folder size={14} strokeWidth={2} className="shrink-0 opacity-70" />
@@ -326,8 +326,9 @@ export function ProjectBadge() {
         </PopoverTrigger>
       </HoverTip>
       <PopoverContent
+        side="top"
         align="start"
-        sideOffset={4}
+        sideOffset={6}
         className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
         <ProjectMenu onClose={() => setOpen(false)} />

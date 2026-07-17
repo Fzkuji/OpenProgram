@@ -27,7 +27,7 @@ import { Fragment, useMemo, useRef, useState } from "react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronRight } from "lucide-react";
 
-import { MENU_PANEL, itemCls } from "@/components/chat/top-bar/menu-styles";
+import { MENU_PANEL, MENU_SEPARATOR, itemCls } from "@/components/chat/top-bar/menu-styles";
 import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import {
@@ -165,7 +165,7 @@ export function RecentsFilter() {
             onPick={(lastActivity) => setRecentsView({ lastActivity })}
           />
 
-          <DM.Separator className="-mx-[4px] my-[4px] h-px bg-[var(--border)]" />
+          <DM.Separator className={MENU_SEPARATOR} />
 
           <Row<RecentsGroupBy>
             label={t("sidebar.group_by")}
@@ -231,7 +231,7 @@ function Row<T extends string>({
             return (
               <Fragment key={val}>
                 {divider ? (
-                  <DM.Separator className="-mx-[4px] my-[4px] h-px bg-[var(--border)]" />
+                  <DM.Separator className={MENU_SEPARATOR} />
                 ) : null}
                 <DM.Item onSelect={() => onPick(val)} className={rowCls}>
                   <span className="flex-1 text-left">{optLabel}</span>

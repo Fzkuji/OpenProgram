@@ -1758,8 +1758,9 @@ function StatusChip() {
         </PopoverTrigger>
       </HoverTip>
       <PopoverContent
+        side="top"
         align="start"
-        sideOffset={4}
+        sideOffset={6}
         className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
         <ChannelMenu onClose={() => setOpen(false)} />
