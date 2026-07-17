@@ -20,6 +20,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSessionStore } from "@/lib/session-store";
+import { HoverTip } from "@/components/ui/tooltip";
 import { ContextBreakdownPanel } from "./context-breakdown-panel";
 
 interface ContextBadgeProps {
@@ -106,12 +107,15 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
 
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
+      {/* HoverTip = 全站统一黑提示（原生 title 又慢又不是黑卡）；
+          aria-expanded 让面板开着时不冒提示。 */}
+      <HoverTip label={ringTooltip}>
       <button
         ref={ringRef}
         className="context-ring-badge"
-        title={ringTooltip}
         onClick={() => setPanelOpen(!panelOpen)}
         aria-label="Context usage"
+        aria-expanded={panelOpen}
       >
         <svg width="12" height="12" viewBox="0 0 12 12">
           <circle
@@ -136,6 +140,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
           />
         </svg>
       </button>
+      </HoverTip>
       {panelOpen &&
         anchor &&
         typeof document !== "undefined" &&

@@ -90,7 +90,7 @@ const Slider = React.forwardRef<
             // onto that point. `pointer-events-none` keeps the track
             // click area uninterrupted.
             className={cn(
-              "pointer-events-none absolute top-1/2 size-[3px] rounded-full",
+              "slider-tick pointer-events-none absolute top-1/2 size-[3px] rounded-full",
               "-translate-x-1/2 -translate-y-1/2",
               isMax
                 ? "bg-[#8E6BD9]"

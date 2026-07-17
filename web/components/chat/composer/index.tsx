@@ -491,6 +491,9 @@ export function Composer() {
   // outside (it ignores the expanded prop and only collapses on host
   // mouseleave).
   const [effortEpoch, setEffortEpoch] = useState(0);
+  // effort 卡真实开合（pill 内部 state 回传）——驱动 effortText 的
+  // aria-expanded，卡开着时 HoverTip 不再冒 "Thinking effort" 黑提示。
+  const [effortCardOpen, setEffortCardOpen] = useState(false);
   const plusIconRef = useRef<AnimatedNavIconHandle>(null);
 
   // Wrapper height transition (open / close / A→B switch crossfade)
@@ -569,6 +572,8 @@ export function Composer() {
         // leave it stuck open. Remount the pill to reset it.
         if (thinkingTriggerRef.current.querySelector("[data-effort-expanded]")) {
           setEffortEpoch((e) => e + 1);
+          // remount 会把 pill 内部 expanded 归零，回传不会触发——手动同步。
+          setEffortCardOpen(false);
         }
       }
     }
@@ -1417,6 +1422,9 @@ export function Composer() {
                       }}
                       // 最高档 = 紫色标识（Claude 的 Ultracode 形制）。
                       style={thinking === "max" ? { color: "#8E6BD9" } : undefined}
+                      // 卡开着时 HoverTip 靠这个不冒提示（pill 是自绘浮
+                      // 层，radix 不会替我们标）。
+                      aria-expanded={effortCardOpen}
                     >
                       {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : ""}
                     </button>
@@ -1436,6 +1444,7 @@ export function Composer() {
                     options={thinkingOptions}
                     value={thinking}
                     onChange={setThinking}
+                    onExpandedChange={setEffortCardOpen}
                   />
                 </div>
               </HoverTip>
