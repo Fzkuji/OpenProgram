@@ -1399,7 +1399,7 @@ export function Composer() {
                 (see ``promptNeedModel``). The `thinking` value still
                 flows to submit (uses the model default) when hidden. */}
             {chatModel && !noEnabledModels ? (
-              <HoverTip label={text("Thinking effort", "思考力度")}>
+              <>
                 {/* Wrapper is the outside-click boundary AND the anchor
                     for the pill's floating slider (detached row). The
                     text trigger only shows in the detached row (CSS);
@@ -1447,7 +1447,9 @@ export function Composer() {
                     onExpandedChange={setEffortCardOpen}
                   />
                 </div>
-              </HoverTip>
+              {/* effort 控件不再挂黑提示——用户点名禁用（卡片自身
+                  就是全部说明）。 */}
+              </>
             ) : null}
             <ContextBadge />
           </div>
