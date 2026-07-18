@@ -29,6 +29,48 @@ from typing import Optional
 
 DEFAULT_PORT = 9222
 
+# The OpenProgram desktop shell (Electron) exposes its own CDP endpoint on
+# 9223 — see desktop/main.js. 9222 stays reserved for the sidecar Chrome so
+# the two never fight over a port.
+APP_DEBUG_PORT = 9223
+
+
+def desktop_app_cdp_url(timeout: float = 0.6) -> Optional[str]:
+    """Probe the desktop app's CDP endpoint; return its URL or None.
+
+    A live /json/version on 9223 means the Electron shell is running with
+    remote debugging enabled — the browser tool can attach to its visible
+    web tabs instead of booting a sidecar Chrome.
+    """
+    import urllib.request
+    base = f"http://127.0.0.1:{APP_DEBUG_PORT}"
+    try:
+        # 环境常带 HTTP_PROXY（代理上网），urllib 默认会把 127.0.0.1 也发去
+        # 代理导致探测永远失败——回环探测必须绕过代理。
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(f"{base}/json/version", timeout=timeout):
+            return base
+    except Exception:
+        return None
+
+
+def desktop_app_ws_url(timeout: float = 0.6) -> Optional[str]:
+    """/json/version 里的 webSocketDebuggerUrl，连桌面应用必须用它。
+
+    Electron 的调试服务不认 Playwright 对 http 端点追加的握手路径
+    （GET /json/version/ 返回 400），connect_over_cdp 要直接给
+    browser-level 的 ws:// URL。
+    """
+    import json as _json
+    import urllib.request
+    base = f"http://127.0.0.1:{APP_DEBUG_PORT}"
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(f"{base}/json/version", timeout=timeout) as resp:
+            return _json.load(resp).get("webSocketDebuggerUrl")
+    except Exception:
+        return None
+
 
 def chrome_binary() -> Optional[str]:
     """Best-effort Chrome (or Chromium / Edge) path lookup, cross-platform."""

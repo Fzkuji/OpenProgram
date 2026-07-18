@@ -120,6 +120,24 @@ export function installDesktopMenuHandlers(): void {
     const s = useCenterTabs.getState();
     if (s.activeId) s.closeTab(s.activeId);
   });
+  // Agent 控制面：后端广播 webtab.command(op=open) → 在可见 UI 里开
+  // web tab，并经同一条 WS 回执 webtab_result(req_id)。非桌面客户端不装
+  // 本 handler（上面 bridge 为空即返回），该消息自然被忽略。
+  window.addEventListener("op:ws-message", (e) => {
+    const detail = (e as CustomEvent).detail as
+      | { type?: string; data?: { op?: string; url?: string; req_id?: string } }
+      | undefined;
+    if (detail?.type !== "webtab.command") return;
+    const d = detail.data;
+    if (!d?.url || d.op !== "open") return;
+    useCenterTabs.getState().openWebTab(d.url);
+    const ws = (window as unknown as { ws?: WebSocket }).ws;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(
+        JSON.stringify({ action: "webtab_result", req_id: d.req_id, ok: true }),
+      );
+    }
+  });
   useCenterTabs.subscribe((s) => {
     destroyStaleWebViews(
       bridge,

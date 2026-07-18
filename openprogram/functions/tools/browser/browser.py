@@ -146,8 +146,8 @@ SPEC: dict[str, Any] = {
             },
             "engine": {
                 "type": "string",
-                "enum": ["auto", "chromium", "patchright", "camoufox"],
-                "description": "For ``open``: which browser backend to use. Default 'auto' connects to a sidecar copy of the user's real Chrome (logged into all their accounts) — first call may take a minute on first run while the profile copies, subsequent calls are instant. Override with 'chromium' (stock Playwright), 'patchright' (stealth Chromium fork — useful when 'auto' Chrome isn't installed), or 'camoufox' (stealth Firefox).",
+                "enum": ["auto", "app", "chromium", "patchright", "camoufox"],
+                "description": "For ``open``: which browser backend to use. Default 'auto' prefers the visible browser inside the OpenProgram desktop app when it is running (the user sees every page you drive), otherwise connects to a sidecar copy of the user's real Chrome (logged into all their accounts) — first call may take a minute on first run while the profile copies, subsequent calls are instant. 'app' forces the desktop app's visible browser and errors if the app isn't running. Override with 'chromium' (stock Playwright), 'patchright' (stealth Chromium fork — useful when 'auto' Chrome isn't installed), or 'camoufox' (stealth Firefox).",
             },
             "timeout_ms": {
                 "type": "integer",

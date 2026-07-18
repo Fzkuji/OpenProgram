@@ -26,6 +26,14 @@ def _new_tab(session_id: str) -> str:
     sess = _b._require_session(session_id)
     if isinstance(sess, str):
         return sess
+    if sess.get("is_app"):
+        # Electron 上 CDP 的 new_page 会弹裸窗口而不是应用内 tab —— app
+        # 会话的可见新 tab 只能经 open 动作的控制面（openWebTab）创建。
+        return (
+            "Error: this session drives the desktop app's visible tabs — "
+            "open another one with the `open` action (engine='app', url=...), "
+            "or `navigate` the current tab."
+        )
     try:
         page = sess["context"].new_page()
         page.set_default_timeout(sess.get("default_timeout", 30_000))

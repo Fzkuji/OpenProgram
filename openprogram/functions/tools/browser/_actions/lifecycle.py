@@ -34,7 +34,8 @@ def _close(session_id: str) -> str:
     is_cdp = sess.get("is_cdp", False)
     if is_cdp:
         # Just close our own page — never tear down the user's real Chrome.
-        page = sess.get("page")
+        # app 模式更进一步：页面是桌面应用里用户可见的 tab，只断开、不关页。
+        page = None if sess.get("is_app") else sess.get("page")
         if page is not None:
             try:
                 page.close()
@@ -46,9 +47,10 @@ def _close(session_id: str) -> str:
                 pw.stop()
             except Exception as e:
                 errors.append(f"playwright: {e}")
+        target = "the desktop app" if sess.get("is_app") else "Chrome"
         if errors:
-            return f"Detached from Chrome (session {session_id}) with warnings: {'; '.join(errors)}"
-        return f"Detached from Chrome (session {session_id}). Your Chrome window stays open."
+            return f"Detached from {target} (session {session_id}) with warnings: {'; '.join(errors)}"
+        return f"Detached from {target} (session {session_id}). The window/tab stays open."
     for key in ("context", "browser"):
         obj = sess.get(key)
         if obj is None:
