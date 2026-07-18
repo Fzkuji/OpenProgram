@@ -472,7 +472,12 @@ button, input, select, textarea, optgroup {
   --tabrow-bg: var(--bg-secondary);
 }
 html.is-desktop {
-  --tabrow-bg: color-mix(in srgb, var(--bg-secondary) 88%, #000 12%);
+  /* Mix toward a warm brown-black in oklch, not srgb+#000: the theme is a
+     warm cream palette, and srgb-mixing pure black drags chroma down with
+     lightness — the frame goes muddy grey. oklch keeps the hue/chroma, so
+     the cream base just steps down to a warm beige-grey; in dark themes the
+     same mix only lowers lightness. */
+  --tabrow-bg: color-mix(in oklch, var(--bg-secondary) 91%, #2a2117 9%);
 }
 .desktop-tab-row {
   display: flex;

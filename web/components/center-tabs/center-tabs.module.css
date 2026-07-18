@@ -193,6 +193,31 @@
   );
 }
 
+/* ── 桌面（Electron）全宽栏：活动 tab 改悬浮胶囊 ──────────────────────
+   融合式 fillet 在全宽栏下会撞上内容区/右栏的竖向分界缝（tab 底角的
+   内凹弧对着一条竖缝，成了错位倒角），桌面模式放弃"长进内容区"的
+   造型：所有 tab 都是 30px 高的垂直居中胶囊（40px 栏，上下各 5px 缝，
+   strip 的 align-items:center 直接给出），活动胶囊靠 --bg-primary 底
+   色 + 轻投影浮在 frame 色上。浏览器模式不受影响。 */
+:global(html.is-desktop) .tab {
+  height: 30px;
+  border-radius: 8px;
+}
+:global(html.is-desktop) .tab.tabActive,
+:global(html.is-desktop) .tab.tabActive:hover {
+  height: 30px;
+  align-self: center; /* 覆盖 flex-end：不再贴 strip 底边 */
+  padding-bottom: 0;
+  border-radius: 8px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+:global(html.is-desktop) .tab.tabActive::before,
+:global(html.is-desktop) .tab.tabActive::after {
+  content: none; /* 胶囊无 fillet */
+}
+
 .tabIcon {
   display: flex;
   align-items: center;
