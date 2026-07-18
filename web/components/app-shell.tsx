@@ -417,14 +417,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     minWidth: 200,
   });
 
-  // Desktop shell (Electron): tag <html> with `is-desktop` so global CSS
-  // can carve out the macOS traffic-light zone (drag strip / wider
-  // collapsed rail), and wire File > New Tab / Close Tab menu
-  // accelerators at startup — installing only from the web-tab pane
-  // would leave Cmd+T dead until a web tab was opened once.
+  // Desktop shell (Electron): tag <html> with `is-desktop` for global CSS,
+  // flip the React layout to Chrome-macOS style (full-width tab row above
+  // all three columns, traffic lights living in that row), and wire
+  // File > New Tab / Close Tab menu accelerators at startup — installing
+  // only from the web-tab pane would leave Cmd+T dead until a web tab was
+  // opened once. First frame renders the browser layout, then snaps to
+  // desktop — acceptable one-time flash inside Electron.
+  const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     if (desktopBridge()) {
       document.documentElement.classList.add("is-desktop");
+      setIsDesktop(true);
       installDesktopMenuHandlers();
     }
   }, []);
@@ -439,7 +443,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const showChat = isChatRoute(pathname);
   return (
-    <div className="app">
+    <div
+      className={isDesktop ? "desktop-frame" : undefined}
+      style={
+        isDesktop
+          ? { display: "flex", flexDirection: "column", height: "100vh" }
+          : undefined
+      }
+    >
+      {/* Desktop (Electron): the tab strip is window chrome — one full-width
+         row across the top with the macOS traffic lights at its left end
+         (Chrome-style). Always visible, even on non-chat routes. The strip
+         is a singleton; when it lives here it must NOT also render inside
+         center-col below. */}
+      {isDesktop ? (
+        <div className="desktop-tab-row">
+          <CenterTabStrip />
+        </div>
+      ) : null}
+      <div className="app">
       <Sidebar />
       <div className="col-resize" id="sidebarResize"></div>
       {/* Center column: browser-style tab strip over the active tab's
@@ -456,7 +478,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           order: 2,
         }}
       >
-        <CenterTabStrip />
+        {!isDesktop ? <CenterTabStrip /> : null}
         <div
           className="center-body"
           style={{ flex: 1, minHeight: 0, display: "flex" }}
@@ -500,6 +522,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* App-wide transient toasts — mounted at the shell so they show on
          every route (chat AND settings), not just where the TopBar is. */}
       <ToastHost />
+      </div>
     </div>
   );
 }

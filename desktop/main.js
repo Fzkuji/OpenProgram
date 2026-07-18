@@ -273,6 +273,8 @@ async function createWindow() {
     height: state.height,
     backgroundColor: "#141416",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
+    // macOS only: center the traffic lights vertically in the 40px tab row.
+    trafficLightPosition: { x: 18, y: 13 },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

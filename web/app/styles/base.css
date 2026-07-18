@@ -453,24 +453,26 @@ button, input, select, textarea, optgroup {
   transform: translateX(0);
 }
 
-/* ===== Desktop (Electron) traffic-light avoidance =====
-   macOS hiddenInset floats the traffic lights over web content at
-   x≈8–64, vertical center ≈22px. `html.is-desktop` is set by AppShell
-   when the preload bridge exists. The strip pushes the sidebar logo
-   row down 38px and doubles as a window-drag handle; browsers never
-   see it (display:none). */
-.desktop-drag-strip { display: none; }
-html.is-desktop .desktop-drag-strip {
-  display: block;
-  height: 38px;
+/* ===== Desktop (Electron) window chrome =====
+   Chrome-macOS layout: the center tab strip becomes a full-width row
+   across the top of the window, and the traffic lights (hiddenInset,
+   x≈8–64) live at its left end. AppShell renders CenterTabStrip inside
+   .desktop-tab-row when the preload bridge exists; the three columns
+   (.app) sit below it. The strip's own height/background come from
+   center-tabs.module.css — the row only reserves the traffic-light
+   zone and repeats the strip's background so the 76px gap isn't
+   transparent. */
+.desktop-tab-row {
+  display: flex;
   flex-shrink: 0;
+  padding-left: 76px; /* macOS traffic lights (x≈8–64) + breathing room */
+  background: var(--bg-secondary); /* same as .strip — covers the 76px gap */
   -webkit-app-region: drag;
 }
-/* Collapsed rail is 49px in the browser; under Electron the traffic
-   lights reach ~64px and would float onto the center tab strip, so
-   widen the rail. Header row is justify-center — button re-centers
-   on its own. Beats Tailwind's w-[49px]/min-w-[49px] on specificity. */
-html.is-desktop .sidebar.collapsed { width: 70px; min-width: 70px; }
+.desktop-tab-row > * { flex: 1; min-width: 0; }
+/* Inside the desktop-frame column, .app fills the height left over
+   under the tab row instead of forcing its own 100vh. */
+html.is-desktop .app { height: auto; flex: 1 1 auto; min-height: 0; }
 
 /* ===== Sidebar collapsed-state cascade (was 02-sidebar.css) =====
    These target descendant stable classes across the sidebar tree, so

@@ -253,10 +253,6 @@ export function Sidebar() {
           : "w-[49px] min-w-[49px] collapsed")
       }
     >
-      {/* 桌面（Electron hiddenInset）：38px 拖拽空条，把 logo 行压到
-          macOS 红绿灯（竖直中心 ~22px）下方；浏览器里 display:none 零影响。
-          样式在 base.css 的 .desktop-drag-strip。 */}
-      <div className="desktop-drag-strip" aria-hidden="true" />
       {/* 收起态（49px 窄轨）只剩收起按钮：改用 justify-center 并去掉左右
           padding，让唯一按钮在窄轨里水平居中，否则 justify-between + p-[8px]
           会把它推到右边（靠右 bug）。 */}
