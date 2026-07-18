@@ -27,10 +27,14 @@ import {
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
 import {
-  DRAFT_SESSION_TAB_ID,
   useCenterTabs,
   type CenterTab,
 } from "@/lib/state/center-tabs-store";
+import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
+import {
+  dropDraftChannelChoice,
+  type DraftChannelChoiceHost,
+} from "@/lib/runtime-bridge/draft-channel-choice";
 import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -70,7 +74,7 @@ export function CenterTabStrip() {
     // intended destination, so do not resurrect the stale route's session.
     if (
       currentSessionId === null &&
-      activeTab?.id === DRAFT_SESSION_TAB_ID &&
+      activeTab?.draft &&
       pathname.startsWith("/s/")
     ) return;
     // 会话 id 以路由为准：关 tab 后 activateSession 推新路由时，pathname
@@ -86,8 +90,11 @@ export function CenterTabStrip() {
       const title =
         useSessionStore.getState().conversations[currentSessionId]?.title ?? "";
       openSessionTab(currentSessionId, title);
+    } else if (activeTab?.kind === "session" && activeTab.draft && activeTab.sessionId) {
+      useSessionStore.getState().setCurrentDraft(activeTab.sessionId);
     } else {
-      openDraftSessionTab();
+      const draftId = openDraftSessionTab();
+      useSessionStore.getState().setCurrentDraft(draftId);
     }
   }, [currentSessionId, pathname, openSessionTab, openDraftSessionTab]);
 
@@ -99,17 +106,14 @@ export function CenterTabStrip() {
   // restore or a not-yet-loaded list must not close tabs.
   const prevConvIds = useRef<Set<string> | null>(null);
   // 退场动画按 id 维持，标题/dirty 等 immutable 更新不能取消关闭；同时
-  // 保存开始关闭时的实例，防止固定 id 的旧 draft 删除后来新建的 draft。
+  // 保存开始关闭时的实例，标题/dirty 等 immutable 更新不能取消关闭。
   const closingInstances = useRef<Map<string, CenterTab>>(new Map());
   const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     const invalid: string[] = [];
     for (const [id, original] of closingInstances.current) {
       const current = tabs.find((tab) => tab.id === id);
-      if (
-        !current ||
-        (id === DRAFT_SESSION_TAB_ID && current !== original)
-      ) {
+      if (!current) {
         invalid.push(id);
       }
     }
@@ -151,6 +155,11 @@ export function CenterTabStrip() {
   /** Navigate the live chat to a session tab's conversation — the
    *  exact call path sessions-list uses (router.push on /s/<id>). */
   function activateSession(tab: CenterTab) {
+    if (tab.draft && tab.sessionId) {
+      (window as unknown as { newSession?: (draftId?: string) => void })
+        .newSession?.(tab.sessionId);
+      return;
+    }
     const sid = useSessionStore.getState().currentSessionId;
     if (tab.sessionId) {
       if (tab.sessionId !== sid || !pathname.startsWith("/s/")) {
@@ -193,11 +202,16 @@ export function CenterTabStrip() {
     });
     if (!closingInstance) return;
     const currentTab = useCenterTabs.getState().tabs.find((x) => x.id === tab.id);
-    if (
-      !currentTab ||
-      (tab.id === DRAFT_SESSION_TAB_ID && currentTab !== closingInstance)
-    ) return;
+    if (!currentTab) return;
     closeTab(tab.id);
+    if (tab.draft && tab.sessionId) {
+      useSessionStore.getState().dropChatDraft(tab.sessionId);
+      dropDraftChannelChoice(
+        window as unknown as DraftChannelChoiceHost,
+        tab.sessionId,
+      );
+      void deleteAttachments(tab.sessionId);
+    }
     // Closing the active tab hands focus to a neighbor; if that
     // neighbor is a session tab, bring the chat surface to it.
     const s = useCenterTabs.getState();
@@ -211,7 +225,7 @@ export function CenterTabStrip() {
     if (tab.kind === "ntp") return text("New tab", "新标签页");
     if (tab.kind === "file") return tab.title;
     if (tab.kind === "web") return tab.title || tab.url || "";
-    if (!tab.sessionId) return text("New chat", "新会话");
+    if (tab.draft) return text("New chat", "新会话");
     return tab.title || t("sidebar.untitled");
   }
 
@@ -226,11 +240,7 @@ export function CenterTabStrip() {
             tab={tab}
             active={tab.id === activeId}
             enter={enteringIds.has(tab.id)}
-            closing={
-              closingIds.has(tab.id) &&
-              (tab.id !== DRAFT_SESSION_TAB_ID ||
-                closingInstances.current.get(tab.id) === tab)
-            }
+            closing={closingIds.has(tab.id)}
             label={labelOf(tab)}
             closeLabel={text("Close tab", "关闭标签")}
             onClick={() => onTabClick(tab)}

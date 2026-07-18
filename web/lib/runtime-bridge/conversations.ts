@@ -13,6 +13,7 @@
  */
 
 import { mirrorUpsertConv } from "./conv-store-mirror";
+import { switchDraftChannelChoice } from "./draft-channel-choice";
 
 interface LegacyConv {
   id?: string;
@@ -75,6 +76,10 @@ interface ConvWindow {
   _skipScrollToBottom?: boolean;
   _hasActiveSession?: boolean;
   _pendingChannelChoice?: { channel: string | null; account_id: string | null } | null;
+  __pendingChannelChoices?: Record<
+    string,
+    { channel: string | null; account_id: string | null }
+  >;
   _branchesPanelCollapsed?: boolean;
   _postCheckoutScrollTo?: string | null;
   _allMessages?: LegacyMessage[];
@@ -82,7 +87,10 @@ interface ConvWindow {
   __navigate?: (path: string) => void;
   __sessionStore?: {
     getState: () => {
+      activeChatKey: string | null;
+      currentSessionId: string | null;
       setCurrentConv: (id: string | null) => void;
+      setCurrentDraft: (key: string) => void;
       setHead?: (sessionId: string, headId: string | null) => void;
       transcriptLoadingId?: string | null;
       setTranscriptLoading?: (id: string | null) => void;
@@ -412,14 +420,21 @@ function refreshBranchBadge(): void {
 
 /* ===== New session =============================================== */
 
-export function newSession(): void {
+export function newSession(draftId?: string): void {
   const needsNavigation = window.location.pathname !== "/chat";
   // Clear both session sources synchronously before SPA navigation. Otherwise
   // CenterTabStrip can observe /chat with the previous session id and replace
   // a newly claimed draft tab with that stale session.
   W.currentSessionId = null;
   try {
-    W.__sessionStore?.getState().setCurrentConv(null);
+    const store = W.__sessionStore?.getState();
+    switchDraftChannelChoice(
+      W,
+      store?.activeChatKey ?? store?.currentSessionId,
+      draftId,
+    );
+    if (draftId) store?.setCurrentDraft(draftId);
+    else store?.setCurrentConv(null);
   } catch {
     /* ignore */
   }
@@ -443,7 +458,6 @@ export function newSession(): void {
       container.removeChild(ch);
     });
   }
-  W._pendingChannelChoice = null;
   refreshChannelBadge();
   W.setWelcomeVisible?.(true);
   renderSessions();

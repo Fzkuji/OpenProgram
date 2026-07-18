@@ -20,6 +20,11 @@ import {
   mirrorSetConvs,
   mirrorUpsertConv,
 } from "./conv-store-mirror";
+import {
+  responseSessionId,
+  responseTargetsActiveChat,
+} from "./chat-response-routing";
+import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 
 interface ChatWindow {
   ws?: WebSocket | null;
@@ -103,9 +108,14 @@ interface ChatAckData {
 export function wsHandleChatAck(data: ChatAckData): void {
   if (data.session_id) {
     const sid = data.session_id;
-    W.currentSessionId = sid;
-    if (window.location.pathname !== "/s/" + sid) {
-      history.pushState(null, "", "/s/" + sid);
+    const tabs = useCenterTabs.getState();
+    const isActive = sessionAckIsActive(sid);
+    tabs.markSessionReady(sid);
+    if (isActive) {
+      W.currentSessionId = sid;
+      if (window.location.pathname !== "/s/" + sid) {
+        history.pushState(null, "", "/s/" + sid);
+      }
     }
     const convs = W.conversations || (W.conversations = {});
     if (!convs[sid]) {
@@ -116,7 +126,9 @@ export function wsHandleChatAck(data: ChatAckData): void {
       // with a preview at turn end — which read as "the chat only appears
       // after it's done".
       const pending =
-        (W as unknown as { __pendingUserText?: string }).__pendingUserText || "";
+        (W as unknown as {
+          __pendingUserTextBySession?: Record<string, string>;
+        }).__pendingUserTextBySession?.[sid] || "";
       const preview = pending.trim().replace(/\s+/g, " ").slice(0, 80);
       convs[sid] = {
         id: sid,
@@ -126,6 +138,9 @@ export function wsHandleChatAck(data: ChatAckData): void {
         created_at: Date.now() / 1000,
       };
     }
+    delete (W as unknown as {
+      __pendingUserTextBySession?: Record<string, string>;
+    }).__pendingUserTextBySession?.[sid];
     // Mirror the (seeded or pre-existing) conv into the React store so the
     // sidebar row appears IMMEDIATELY — store.conversations is the
     // sidebar's source of truth.
@@ -144,17 +159,18 @@ export function wsHandleChatAck(data: ChatAckData): void {
     }).__sessionStore?.getState();
     _store?.setRunningTaskFor?.(sid, { session_id: sid, msg_id: data.msg_id || "" });
     W.renderSessions?.();
-    W.loadAgentSettings?.();
-    W.refreshChannelBadge?.();
+    if (isActive) {
+      W.loadAgentSettings?.();
+      W.refreshChannelBadge?.();
+    }
     // A fresh session never went through `load_session`, so fetch the
     // branch list now that the server registered the user turn.
     if (W._branchesByConv) delete W._branchesByConv[sid];
     fetchBranches(sid).then(() => {
-      W.refreshBranchBadge?.();
+      if (isActive) W.refreshBranchBadge?.();
     });
+    if (isActive) setRunActive(true);
   }
-  // A fresh chat_ack means a run just started — grey out Edit/Retry.
-  setRunActive(true);
 
   // Function dispatch (Retry): the top-level code node is already on disk
   // (pre-created at dispatch time), so hydrate the transcript NOW rather
@@ -178,12 +194,16 @@ export function wsHandleChatAck(data: ChatAckData): void {
 
 interface ChatResponseData {
   type?: string;
+  session_id?: string;
   [k: string]: unknown;
 }
 
 export function wsHandleChatResponse(data: ChatResponseData): void {
   // Cancelled envelope without a msg_id is the force-stop signal.
   if (data && data.type === "cancelled") {
+    const sid = responseSessionId(data, W.currentSessionId);
+    handleRunningTaskClear(sid ?? undefined);
+    if (!responseTargetsActiveChat(data, W.currentSessionId)) return;
     try {
       const rp = document.getElementById("runtime_pending");
       if (rp && rp.parentNode) rp.parentNode.removeChild(rp);
@@ -203,7 +223,9 @@ export function wsHandleChatResponse(data: ChatResponseData): void {
   }
   handleChatResponse(data);
   if (data && (data.type === "result" || data.type === "error")) {
-    setRunActive(false);
+    if (responseTargetsActiveChat(data, W.currentSessionId)) {
+      setRunActive(false);
+    }
   }
 }
 
@@ -518,21 +540,23 @@ export function handleRunningTaskClear(sessionId: string | undefined): void {
 
 export function handleChatResponse(data: ChatResponseData): void {
   const type = data.type;
+  const sid = responseSessionId(data, W.currentSessionId);
+  const targetsActive = responseTargetsActiveChat(data, W.currentSessionId);
 
   if (type === "context_stats") {
-    handleContextStats(data as ContextStatsData);
+    handleContextStats(data as ContextStatsData, sid);
     return;
   }
   if (type === "status") {
-    handleStatusResponse(data as StatusResponseData);
+    handleStatusResponse(data as StatusResponseData, sid, targetsActive);
     return;
   }
   if (type === "follow_up_question") {
-    handleFollowUpQuestion(data as { question?: string });
+    if (targetsActive) handleFollowUpQuestion(data as { question?: string });
     return;
   }
   if (type === "stream_event" || type === "tree_update" || type === "user_message") {
-    if (type === "tree_update") hydrateTranscriptForTreeUpdate(data);
+    if (type === "tree_update" && targetsActive) hydrateTranscriptForTreeUpdate(data);
     return;
   }
 
@@ -541,34 +565,34 @@ export function handleChatResponse(data: ChatResponseData): void {
   // (NOT W.currentSessionId — the user may have switched away while
   // the background turn was finishing). The clear helper itself
   // flips the legacy button if the cleared session is the active one.
-  const respSid = (data as { session_id?: string }).session_id;
-  handleRunningTaskClear(respSid || W.currentSessionId || undefined);
-  W.loadAgentSettings?.();
-  if (typeof W.refreshTokenBadge === "function") {
-    try {
-      W.refreshTokenBadge();
-    } catch {
-      /* ignore */
+  handleRunningTaskClear(sid ?? undefined);
+  if (targetsActive) {
+    W.loadAgentSettings?.();
+    if (typeof W.refreshTokenBadge === "function") {
+      try {
+        W.refreshTokenBadge();
+      } catch {
+        /* ignore */
+      }
     }
-  }
-  const sid = W.currentSessionId;
-  if (sid) {
-    try {
-      fetchBranches(sid, { force: true }).then(() => {
-        try {
-          W._refreshBranchTokens?.();
-        } catch {
-          /* ignore */
-        }
-      });
-    } catch {
-      /* ignore */
+    if (sid) {
+      try {
+        fetchBranches(sid, { force: true }).then(() => {
+          try {
+            W._refreshBranchTokens?.();
+          } catch {
+            /* ignore */
+          }
+        });
+      } catch {
+        /* ignore */
+      }
     }
-  }
 
-  if (W._elapsedTimer) {
-    clearInterval(W._elapsedTimer);
-    W._elapsedTimer = null;
+    if (W._elapsedTimer) {
+      clearInterval(W._elapsedTimer);
+      W._elapsedTimer = null;
+    }
   }
 
   const isRuntimeResult =
@@ -599,7 +623,9 @@ export function handleChatResponse(data: ChatResponseData): void {
     // producing a second card. Only plain chat replies belong in the
     // legacy `conv.messages` mirror.
     if (!isRuntimeResult) conv.messages.push(storedMsg);
-    (W.updateContextStats as ((m: unknown[]) => void) | undefined)?.(conv.messages);
+    if (targetsActive) {
+      (W.updateContextStats as ((m: unknown[]) => void) | undefined)?.(conv.messages);
+    }
 
     // Conversation title.
     if (!conv.title || conv.title === "New conversation") {
@@ -607,7 +633,7 @@ export function handleChatResponse(data: ChatResponseData): void {
       if (msgs.length > 0) {
         conv.title = String((msgs[0].content as string) || "").slice(0, 50);
         W.renderSessions?.();
-        W.refreshStatusSource?.();
+        if (targetsActive) W.refreshStatusSource?.();
       }
     }
   }
@@ -635,7 +661,7 @@ interface ContextStatsData {
   source_mix?: unknown;
 }
 
-function handleContextStats(data: ContextStatsData): void {
+function handleContextStats(data: ContextStatsData, sid: string | null): void {
   let chat = data.chat || {};
   if (!data.chat && (data.input_tokens || data.output_tokens)) {
     chat = {
@@ -644,8 +670,6 @@ function handleContextStats(data: ContextStatsData): void {
       cache_read: data.cache_read || 0,
     };
   }
-  const sid = W.currentSessionId;
-
   const cacheWrite = chat.cache_write || data.cache_write_tokens || 0;
   if (cacheWrite > 0 && sid) W._recordCacheWrite?.(sid);
 
@@ -668,7 +692,8 @@ function handleContextStats(data: ContextStatsData): void {
     }
   }
 
-  if (typeof W._renderTokenBadge === "function" && sid) {
+  const targetsActive = sid !== null && sid === W.currentSessionId;
+  if (typeof W._renderTokenBadge === "function" && targetsActive) {
     W._renderTokenBadge(
       {
         current_tokens:
@@ -690,7 +715,7 @@ function handleContextStats(data: ContextStatsData): void {
     );
   }
 
-  if (sid) W.refreshHistoryContextRange?.(sid);
+  if (targetsActive) W.refreshHistoryContextRange?.(sid);
 }
 
 /* ===== status response =========================================== */
@@ -699,7 +724,12 @@ interface StatusResponseData {
   context_tree?: { path?: string; name?: string };
 }
 
-function handleStatusResponse(data: StatusResponseData): void {
+function handleStatusResponse(
+  data: StatusResponseData,
+  sid: string | null,
+  targetsActive: boolean,
+): void {
+  if (!targetsActive) return;
   if (data.context_tree) {
     const ct = data.context_tree;
     const rootKey = ct.path || ct.name;
@@ -707,7 +737,6 @@ function handleStatusResponse(data: StatusResponseData): void {
     const idx = trees.findIndex((t) => t.path === rootKey || t.name === ct.name);
     if (idx >= 0) trees[idx] = ct;
     else trees.push(ct);
-    const sid = W.currentSessionId;
     if (sid && W.conversations?.[sid]) {
       const conv = W.conversations[sid] as { messages?: unknown[] };
       conv.messages = extractMessagesFromTree(ct as never);

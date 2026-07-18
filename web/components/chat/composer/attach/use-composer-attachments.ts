@@ -67,49 +67,44 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
   // crosses child elements — a counter is the documented workaround).
   const dragCounter = useRef(0);
 
-  // Per-session persistence (IndexedDB). Attachments are bound to the
-  // session they were staged in: switching chats loads that chat's
-  // pending attachments; refresh restores them. A not-yet-created chat
-  // (no sessionId) is NOT persisted — those are the one exception the
-  // user asked for (New chat draft attachments may vanish on refresh).
-  const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  // The session whose attachments are currently held in state. Used to
-  // know which session to SAVE under before switching to a new one.
-  const heldSessionRef = useRef<string | null>(null);
+  // Per-chat persistence (IndexedDB). Provisional local_* draft ids are
+  // stable too, so multiple unsent chats keep independent attachments.
+  const activeChatKey = useSessionStore((s) => s.activeChatKey);
   // Guards the first save-effect run per session-load so loading a
   // session's attachments doesn't immediately re-save them.
   const loadedRef = useRef<string | null>(null);
 
   // Load this session's attachments on switch; stash the outgoing one.
   useEffect(() => {
-    const sid = currentSessionId;
+    const sid = activeChatKey;
     let cancelled = false;
     if (!sid) {
       // New-chat / no session: don't persist, just start clean. (Don't
       // wipe the previous held session — it was already saved by its
       // own change-effect below.)
-      heldSessionRef.current = null;
       loadedRef.current = null;
       setPendingImages([]);
       setPendingDocs([]);
       return;
     }
+    // Mark the incoming key before the save effect from this render runs;
+    // otherwise it can persist the outgoing chat's arrays under `sid`.
+    loadedRef.current = sid;
     void loadAttachments(sid).then((data) => {
       if (cancelled) return;
-      heldSessionRef.current = sid;
       loadedRef.current = sid;
       setPendingImages(data.images);
       setPendingDocs(data.docs);
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSessionId]);
+  }, [activeChatKey]);
 
   // Persist the current session's attachments whenever they change.
   // Skip the run triggered by the load-effect itself (loadedRef guard),
   // and skip when there's no session (New chat draft isn't persisted).
   useEffect(() => {
-    const sid = currentSessionId;
+    const sid = activeChatKey;
     if (!sid) return;
     // The load-effect set loadedRef to sid right before populating
     // state. Let that initial populate through without re-saving it.
@@ -120,7 +115,7 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
     const payload: StoredAttachments = { images: pendingImages, docs: pendingDocs };
     void saveAttachments(sid, payload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingImages, pendingDocs, currentSessionId]);
+  }, [pendingImages, pendingDocs, activeChatKey]);
 
   const addImages = useCallback((imgs: PendingImage[]) => {
     if (imgs.length === 0) return;

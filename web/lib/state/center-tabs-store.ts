@@ -5,7 +5,7 @@
  * reusable new-tab page.
  *
  * Deterministic ids make focus-or-create trivial:
- *   session  →  "s:<sessionId>"   (draft new chat → "s:draft")
+ *   session  →  "s:<sessionId>"   (drafts pre-allocate a local_* id)
  *   file     →  "f:<projectId>:<path>"
  *   web      →  "w:<url>"         (id is fixed at open; in-pane
  *                                  navigation updates url, not id)
@@ -26,8 +26,10 @@ export interface CenterTab {
    *  session store). File tabs: basename. Web tabs: hostname until
    *  updateWebTab sets a real title. NTP: unused (i18n label). */
   title: string;
-  /** Session tabs only. Absent on the draft (not-yet-created) chat. */
+  /** Session tabs only. Drafts use a provisional local_* id. */
   sessionId?: string;
+  /** Session tabs only — true until the first server acknowledgement. */
+  draft?: boolean;
   /** File tabs only. */
   projectId?: string;
   /** File tabs only — project-relative, "/"-separated. */
@@ -40,12 +42,27 @@ export interface CenterTab {
   dirty?: boolean;
 }
 
+/** Legacy singleton id, kept only to migrate persisted pre-multi-draft tabs. */
 export const DRAFT_SESSION_TAB_ID = "s:draft";
 /** New-tab 页不再是单例（Chrome 行为：＋ 想开几个开几个），每个实例一个
  *  唯一 id。时间戳 + 自增序号，避免与持久化恢复的旧 id 撞车。 */
 let ntpSeq = 0;
 function nextNtpId(): string {
   return `ntp:${Date.now().toString(36)}:${(ntpSeq++).toString(36)}`;
+}
+
+function nextDraftSessionId(): string {
+  return `local_${crypto.randomUUID()}`;
+}
+
+function draftTab(sessionId = nextDraftSessionId()): CenterTab {
+  return {
+    id: sessionTabId(sessionId),
+    kind: "session",
+    title: "",
+    sessionId,
+    draft: true,
+  };
 }
 
 export function sessionTabId(sessionId: string): string {
@@ -126,7 +143,10 @@ function readPersisted(): Persisted {
     // Dirty never survives a reload — the unsaved buffer that set it
     // is gone. Older persisted entries (no "web" kind, no dirty) pass
     // through untouched.
-    parsed.tabs = parsed.tabs.map((t) => (t.dirty ? { ...t, dirty: false } : t));
+    parsed.tabs = parsed.tabs.map((t) => {
+      if (t.id === DRAFT_SESSION_TAB_ID) return draftTab();
+      return t.dirty ? { ...t, dirty: false } : t;
+    });
     return {
       tabs: parsed.tabs,
       activeId: parsed.tabs.some((t) => t.id === parsed.activeId)
@@ -159,13 +179,13 @@ interface CenterTabsState {
    *  session "navigates" that tab (replaces it in place) instead of
    *  opening a new one. */
   openSessionTab: (sessionId: string, title: string) => void;
-  /** Focus-or-create the draft new-chat tab (session without an id
-   *  yet). An active new-tab page is navigated in place. */
-  openDraftSessionTab: () => void;
-  /** NTP 的 New session：草稿会话 tab 落在当前位置（活动 tab 原地变身），
-   *  别处已有的草稿 tab 收掉。区别于 openDraftSessionTab 的"引导到已有
-   *  草稿"（那是侧栏 New chat 的语义）。 */
-  claimDraftSessionTab: () => void;
+  /** Create a distinct draft. An active NTP is replaced in place;
+   *  otherwise the draft is appended. Returns its provisional id. */
+  openDraftSessionTab: () => string;
+  /** NTP New session: replace only the active NTP with a distinct draft. */
+  claimDraftSessionTab: () => string;
+  /** First acknowledgement: keep the same tab/id and clear draft state. */
+  markSessionReady: (sessionId: string) => void;
   openFileTab: (projectId: string, path: string) => void;
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
@@ -246,42 +266,61 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       }),
 
     openSessionTab: (sessionId, title) =>
-      set((s) =>
-        focusOrCreate(
-          s,
-          sessionTabId(sessionId),
-          () => ({
-            id: sessionTabId(sessionId),
-            kind: "session",
-            title,
-            sessionId,
-          }),
-          [DRAFT_SESSION_TAB_ID],
-        ),
-      ),
+      set((s) => {
+        const id = sessionTabId(sessionId);
+        const existing = s.tabs.find((tab) => tab.id === id);
+        if (!existing) {
+          return focusOrCreate(
+            s,
+            id,
+            () => ({ id, kind: "session", title, sessionId }),
+            [],
+          );
+        }
+        const tabs = s.tabs.map((tab) =>
+          tab.id === id ? { ...tab, title, sessionId, draft: false } : tab,
+        );
+        const next = { tabs, activeId: id };
+        persist(next);
+        return next;
+      }),
 
-    openDraftSessionTab: () =>
-      set((s) =>
-        focusOrCreate(
-          s,
-          DRAFT_SESSION_TAB_ID,
-          () => ({ id: DRAFT_SESSION_TAB_ID, kind: "session", title: "" }),
-          [],
-        ),
-      ),
+    openDraftSessionTab: () => {
+      const tab = draftTab();
+      set((s) => {
+        const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
+        const tabs =
+          activeIdx >= 0 && s.tabs[activeIdx].kind === "ntp"
+            ? s.tabs.map((item, i) => (i === activeIdx ? tab : item))
+            : [...s.tabs, tab];
+        const next = { tabs, activeId: tab.id };
+        persist(next);
+        return next;
+      });
+      return tab.sessionId!;
+    },
 
-    claimDraftSessionTab: () =>
+    claimDraftSessionTab: () => {
+      const tab = draftTab();
       set((s) => {
         const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
         if (activeIdx < 0) return {};
-        const tabs = s.tabs
-          .filter((t, i) => t.id !== DRAFT_SESSION_TAB_ID || i === activeIdx)
-          .map((t) =>
-            t.id === s.activeId
-              ? ({ id: DRAFT_SESSION_TAB_ID, kind: "session", title: "" } as CenterTab)
-              : t,
-          );
-        const next = { tabs, activeId: DRAFT_SESSION_TAB_ID };
+        const tabs = s.tabs.map((item, i) => (i === activeIdx ? tab : item));
+        const next = { tabs, activeId: tab.id };
+        persist(next);
+        return next;
+      });
+      return tab.sessionId!;
+    },
+
+    markSessionReady: (sessionId) =>
+      set((s) => {
+        const id = sessionTabId(sessionId);
+        if (!s.tabs.some((tab) => tab.id === id && tab.draft)) return {};
+        const tabs = s.tabs.map((tab) =>
+          tab.id === id ? { ...tab, draft: false } : tab,
+        );
+        const next = { tabs, activeId: s.activeId };
         persist(next);
         return next;
       }),
@@ -422,3 +461,12 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       }),
   };
 });
+
+/** Whether an acknowledgement may activate its session. Missing tabs are
+ *  legacy/non-tab callers; existing background tabs never take focus. */
+export function sessionAckIsActive(sessionId: string): boolean {
+  const state = useCenterTabs.getState();
+  const hasTab = state.tabs.some((tab) => tab.sessionId === sessionId);
+  if (!hasTab && sessionId.startsWith("local_")) return false;
+  return !hasTab || state.activeId === sessionTabId(sessionId);
+}

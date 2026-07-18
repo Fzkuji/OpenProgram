@@ -72,6 +72,9 @@ interface ConvState {
   messageOrder: Record<string, string[]>;
   /** Currently active conversation id. */
   currentSessionId: string | null;
+  /** Active chat surface key. Real sessions use their id; unsent tabs use
+   *  a provisional local_* id while currentSessionId stays null. */
+  activeChatKey: string | null;
   /** Currently running task (show Stop button).
    *  Deprecated single-session field — read ``runningTasks[sid]``
    *  instead. Kept here so legacy ``setRunning(false)`` keeps working
@@ -126,6 +129,8 @@ interface ConvState {
   removeConversation: (id: string) => void;
   clearConversations: () => void;
   setCurrentConv: (id: string | null) => void;
+  setCurrentDraft: (key: string) => void;
+  dropChatDraft: (key: string) => void;
   setMessages: (sessionId: string, msgs: ChatMsg[]) => void;
   appendMessage: (sessionId: string, msg: ChatMsg) => void;
   updateMessage: (sessionId: string, msgId: string, patch: Partial<ChatMsg>) => void;
@@ -391,6 +396,50 @@ function persistComposerSettingsMap(map: Record<string, ComposerSettings>) {
   }
 }
 
+function switchChat(
+  state: ConvState,
+  nextKey: string,
+  currentSessionId: string | null,
+): Partial<ConvState> {
+  const oldKey = state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
+  const drafts = { ...state.composerDrafts };
+  if (oldKey === COMPOSER_NEW_KEY && nextKey !== COMPOSER_NEW_KEY) {
+    if (!(nextKey in drafts)) drafts[nextKey] = state.composerInput;
+    delete drafts[COMPOSER_NEW_KEY];
+  } else {
+    drafts[oldKey] = state.composerInput;
+  }
+  const nextInput = drafts[nextKey] ?? "";
+  persistComposerDrafts(drafts);
+
+  const settingsMap = { ...state.composerSettingsBySession };
+  if (oldKey === COMPOSER_NEW_KEY && nextKey !== COMPOSER_NEW_KEY) {
+    if (!(nextKey in settingsMap)) settingsMap[nextKey] = state.composerSettings;
+    delete settingsMap[COMPOSER_NEW_KEY];
+  } else {
+    settingsMap[oldKey] = state.composerSettings;
+  }
+  const nextSettings = settingsMap[nextKey] ?? { ...DEFAULT_COMPOSER_SETTINGS };
+  persistComposerSettingsMap(settingsMap);
+
+  return {
+    currentSessionId,
+    activeChatKey: nextKey === COMPOSER_NEW_KEY ? null : nextKey,
+    runningTask: currentSessionId
+      ? (state.runningTasks[currentSessionId] ?? null)
+      : null,
+    composerInput: nextInput,
+    composerDrafts: drafts,
+    composerSettings: nextSettings,
+    composerSettingsBySession: settingsMap,
+    fnFormFunction: null,
+    fnFormClosing: false,
+    fnFormPrefill: null,
+    fnFormForkOf: null,
+    welcomeVisible: currentSessionId === null,
+  };
+}
+
 export const useSessionStore = create<ConvState>((set) => ({
   wsStatus: "connecting",
   agentSettings: {},
@@ -415,6 +464,7 @@ export const useSessionStore = create<ConvState>((set) => ({
   messagesById: {},
   messageOrder: {},
   currentSessionId: null,
+  activeChatKey: null,
   runningTask: null,
   runningTasks: {},
   paused: false,
@@ -486,79 +536,56 @@ export const useSessionStore = create<ConvState>((set) => ({
         messageOrder: order,
         messagesById: byId,
         currentSessionId: s.currentSessionId === id ? null : s.currentSessionId,
+        activeChatKey: s.activeChatKey === id ? null : s.activeChatKey,
         composerDrafts: nextDrafts,
       };
     }),
 
   clearConversations: () =>
     set((s) => {
-      // Wipe every per-session draft too, but keep the "__new__" draft
-      // (the textarea content for the not-yet-created next session) —
-      // the user is still looking at the composer and would lose what
-      // they're typing otherwise.
-      const newDraft = s.composerDrafts[COMPOSER_NEW_KEY];
-      const nextDrafts: Record<string, string> = newDraft
-        ? { [COMPOSER_NEW_KEY]: newDraft }
-        : {};
+      // Clear persisted conversations without deleting independent unsent tabs.
+      const nextDrafts = Object.fromEntries(
+        Object.entries(s.composerDrafts).filter(([key]) =>
+          key === COMPOSER_NEW_KEY || key.startsWith("local_"),
+        ),
+      );
       persistComposerDrafts(nextDrafts);
       return {
         conversations: {},
         messagesById: {},
         messageOrder: {},
         currentSessionId: null,
+        activeChatKey:
+          s.activeChatKey?.startsWith("local_") ? s.activeChatKey : null,
         composerDrafts: nextDrafts,
       };
     }),
 
   setCurrentConv: (id) =>
+    set((s) => switchChat(s, id ?? COMPOSER_NEW_KEY, id)),
+
+  setCurrentDraft: (key) =>
+    set((s) => switchChat(s, key, null)),
+
+  dropChatDraft: (key) =>
     set((s) => {
-      // Stash the currently-visible draft under its owning session
-      // (or under the "new" placeholder if no session was active),
-      // then load the incoming session's draft.
-      const oldSid = s.currentSessionId ?? COMPOSER_NEW_KEY;
-      const drafts = { ...s.composerDrafts, [oldSid]: s.composerInput };
-      const nextSid = id ?? COMPOSER_NEW_KEY;
-      const nextInput = drafts[nextSid] ?? "";
+      const drafts = { ...s.composerDrafts };
+      const settings = { ...s.composerSettingsBySession };
+      delete drafts[key];
+      delete settings[key];
       persistComposerDrafts(drafts);
-      // Same stash/load for composer settings (tool toggles + thinking):
-      // park the current session's live settings under its id, load the
-      // incoming session's (default if it has none).
-      const settingsMap = {
-        ...s.composerSettingsBySession,
-        [oldSid]: s.composerSettings,
-      };
-      const nextSettings =
-        settingsMap[nextSid]
-        ?? (oldSid === COMPOSER_NEW_KEY ? s.composerSettings : null)
-        ?? { ...DEFAULT_COMPOSER_SETTINGS };
-      persistComposerSettingsMap(settingsMap);
+      persistComposerSettingsMap(settings);
       return {
-        currentSessionId: id,
-        // Keep the legacy single-task mirror pointed at whatever the
-        // newly-active session's task is. This is what makes the
-        // composer flip between send/stop instantly on session switch.
-        runningTask: id ? (s.runningTasks[id] ?? null) : null,
-        composerInput: nextInput,
         composerDrafts: drafts,
-        composerSettings: nextSettings,
-        composerSettingsBySession: settingsMap,
-        // fn-form is a transient "I'm about to run this function" state
-        // the user opened in a specific chat. Switching chats closes it
-        // so it never lingers showing another session's half-filled
-        // values. (Like New-chat attachments, half-filled fn-forms are
-        // not carried across the switch — they're throwaway.)
-        fnFormFunction: null,
-        fnFormClosing: false,
-        fnFormPrefill: null,
-        fnFormForkOf: null,
-        // Reset the welcome screen visibility on session switch:
-        //   - null id  → New chat clicked, show the welcome panel.
-        //   - non-null → entering an existing session, hide it (the
-        //     message list takes over).
-        // Without this, ``sendChatMessage`` set welcomeVisible=false
-        // on the previous turn and nothing flipped it back when the
-        // user hit New chat — they saw an empty chat area.
-        welcomeVisible: id === null,
+        composerSettingsBySession: settings,
+        ...(s.activeChatKey === key
+          ? {
+              activeChatKey: null,
+              currentSessionId: null,
+              composerInput: "",
+              composerSettings: { ...DEFAULT_COMPOSER_SETTINGS },
+            }
+          : {}),
       };
     }),
 
@@ -644,7 +671,7 @@ export const useSessionStore = create<ConvState>((set) => ({
   composerDrafts: readComposerDrafts(),
   setComposerInput: (s) =>
     set((state) => {
-      const sid = state.currentSessionId ?? COMPOSER_NEW_KEY;
+      const sid = state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
       const drafts = { ...state.composerDrafts, [sid]: s };
       // Persist on every keystroke. Cheap (one JSON.stringify per
       // session-count) and matches the "right dock" pattern above.
@@ -656,7 +683,7 @@ export const useSessionStore = create<ConvState>((set) => ({
     readComposerSettingsMap()[COMPOSER_NEW_KEY] ?? { ...DEFAULT_COMPOSER_SETTINGS },
   setComposerSettings: (patch) =>
     set((state) => {
-      const sid = state.currentSessionId ?? COMPOSER_NEW_KEY;
+      const sid = state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
       const next = { ...state.composerSettings, ...patch };
       const map = { ...state.composerSettingsBySession, [sid]: next };
       persistComposerSettingsMap(map);

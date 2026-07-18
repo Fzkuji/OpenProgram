@@ -301,7 +301,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // with the route so <MessageList /> shows the right stream. A
       // brand-new chat (/chat → sid null) gets its real id later from
       // the `chat_ack` reducer.
-      useSessionStore.getState().setCurrentConv(sid);
+      const sessionStore = useSessionStore.getState();
+      if (sid) {
+        sessionStore.setCurrentConv(sid);
+      } else {
+        const tabs = useCenterTabs.getState();
+        const active = tabs.tabs.find((tab) => tab.id === tabs.activeId);
+        if (active?.kind === "session" && active.draft && active.sessionId) {
+          sessionStore.setCurrentDraft(active.sessionId);
+        } else {
+          sessionStore.setCurrentConv(null);
+        }
+      }
       // Tell the backend which conversation we're now viewing, so it clears
       // this conv's unread (blue) dot and won't re-mark it unread when a
       // background run here finishes. Opening a conv is otherwise pure
@@ -507,7 +518,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               url={activeTab.url ?? ""}
             />
           ) : null}
-          {activeKind === "ntp" ? <NewTabPage /> : null}
+          {activeKind === "ntp" && activeTab ? <NewTabPage key={activeTab.id} /> : null}
         </div>
       </div>
       {/* Non-chat routes render their own page content via the router. */}

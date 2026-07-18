@@ -123,6 +123,7 @@ const POPUP_STATIC_RESET: React.CSSProperties = {
 export function Composer() {
   const { text } = useTranslation();
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const activeChatKey = useSessionStore((s) => s.activeChatKey);
   // Per-session running state: send/stop button binds to the current
   // session's running task, not a global flag. This is what lets the
   // user switch from a running session A to session B and immediately
@@ -696,11 +697,11 @@ export function Composer() {
     // before the WS payload goes out. Composer is just the trigger.
     const handled = sendChatMessage({
       text: expanded,
+      sessionId: activeChatKey,
       attachments: attachmentsPayload.length > 0 ? attachmentsPayload : undefined,
       thinking,
       toolsEnabled,
       webSearchEnabled,
-      activeProfile,
       serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
     });
     if (!handled) {
@@ -710,7 +711,7 @@ export function Composer() {
       const ok = send({
         action: "chat",
         text: expanded,
-        session_id: currentSessionId ?? null,
+        session_id: activeChatKey,
         thinking_effort: thinking,
         tools: toolsEnabled,
         web_search: webSearchEnabled,
@@ -728,6 +729,7 @@ export function Composer() {
     slash.close();
   }, [
     clearAttachmentsAfterSubmit,
+    activeChatKey,
     currentSessionId,
     input,
     isRunning,

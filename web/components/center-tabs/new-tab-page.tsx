@@ -46,11 +46,9 @@ export function NewTabPage() {
   }, []);
 
   function onNewSession() {
-    (window as unknown as { newSession?: () => void }).newSession?.();
-    // 路由已在 /chat 时 newSession 只重置聊天面、不动 tab —— 本 NTP 仍
-    // 压在前台，看起来"点了没反应"。语义：草稿会话就落在**这个** tab
-    // 上（原地变身），别处已有的草稿收掉；不跳走。
-    useCenterTabs.getState().claimDraftSessionTab();
+    const draftId = useCenterTabs.getState().claimDraftSessionTab();
+    (window as unknown as { newSession?: (draftId?: string) => void })
+      .newSession?.(draftId);
   }
 
   function go() {

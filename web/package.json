@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "check:center-tabs": "node scripts/check-center-tabs.mjs",
+    "check:multi-draft": "node --no-warnings --experimental-strip-types scripts/check-multi-draft.mjs",
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",

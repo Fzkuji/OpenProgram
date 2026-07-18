@@ -37,6 +37,7 @@ import {
   type ChatMsg,
   type ChatToolCall,
 } from "@/lib/session-store";
+import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 
 interface StreamEvent {
   type: "text" | "thinking" | "tool_use" | "tool_result";
@@ -101,6 +102,8 @@ interface WsEnvelope {
   data?: unknown;
 }
 
+const sessionByMsgId = new Map<string, string>();
+
 /** Store key for an assistant turn's reply bubble. The user turn is
  *  keyed by its bare `msg_id`; the reply gets a `_reply` suffix so the
  *  two never collide in `messagesById`. */
@@ -127,21 +130,27 @@ export function applyChatWsMessage(msg: WsEnvelope): void {
  *  by which point the user turn is already in place. */
 function handleAck(d: { session_id?: string; msg_id?: string } | undefined): void {
   if (!d?.session_id) return;
-  useSessionStore.getState().setCurrentConv(d.session_id);
+  const sid = d.session_id;
+  const tabs = useCenterTabs.getState();
+  const isActive = sessionAckIsActive(sid);
+  tabs.markSessionReady(sid);
+  if (isActive) useSessionStore.getState().setCurrentConv(sid);
+  if (d.msg_id) sessionByMsgId.set(d.msg_id, sid);
 
   // The server does NOT echo a web-originated user turn back as a
   // `user_message` broadcast (only channel/peer turns get that). So the
   // user bubble is created here, from the text the composer stashed on
-  // `window.__pendingUserText` just before sending. `chat_ack.msg_id`
+  // `window.__pendingUserTextBySession` just before sending. `chat_ack.msg_id`
   // IS the user turn's id — keying it here lets the reply (`_reply`
   // suffix) and the later result anchor to the same turn.
-  const w = window as unknown as { __pendingUserText?: string };
-  const text = w.__pendingUserText;
+  const w = window as unknown as {
+    __pendingUserTextBySession?: Record<string, string>;
+  };
+  const text = w.__pendingUserTextBySession?.[sid];
   if (d.msg_id && typeof text === "string" && text) {
-    w.__pendingUserText = undefined;
     const isRun = /^(run|create|fix)\s/i.test(text);
     appendLocalUserTurn(
-      d.session_id,
+      sid,
       d.msg_id,
       text,
       isRun ? "runtime" : undefined,
@@ -150,11 +159,11 @@ function handleAck(d: { session_id?: string; msg_id?: string } | undefined): voi
     // order is right) — gives an immediate typing indicator / pending
     // runtime block instead of a gap until the first stream event.
     const rid = replyId(d.msg_id);
-    ensureReply(d.session_id, rid);
+    ensureReply(sid, rid);
     if (isRun) {
       useSessionStore
         .getState()
-        .updateMessage(d.session_id, rid, { display: "runtime" });
+        .updateMessage(sid, rid, { display: "runtime" });
     }
   }
 }
@@ -180,8 +189,12 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // legacy renderer only ever keyed off `msg_id`. Fall back to the
   // store's current conversation (set by the preceding `chat_ack`).
   const sid =
-    d.session_id || useSessionStore.getState().currentSessionId || undefined;
+    d.session_id || sessionByMsgId.get(d.msg_id)
+    || useSessionStore.getState().currentSessionId || undefined;
   if (!sid) return;
+  if (d.type === "result" || d.type === "error" || d.type === "cancelled") {
+    sessionByMsgId.delete(d.msg_id);
+  }
 
   // A user turn — either echoed back by the server or broadcast from a
   // peer. Keyed by the bare `msg_id` (the reply takes the `_reply`

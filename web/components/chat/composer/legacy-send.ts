@@ -7,7 +7,7 @@
  * (chat.js), which built the user bubble / assistant placeholder DOM
  * before writing the socket. Those bubbles are now rendered by the
  * React message store — the chat-stream reducer's `handleAck` builds
- * the user turn from `window.__pendingUserText`. So this just writes
+ * the user turn from the per-session pending-text map. So this just writes
  * the WS payload directly and flips the visible run state.
  *
  * What still rides `window.*`:
@@ -36,6 +36,9 @@ export interface ChatAttachment {
 
 interface SendMessageBridgeArgs {
   text: string;
+  /** Real or provisional chat key. Drafts send their local_* key so the
+   *  existing server protocol can acknowledge the correct tab. */
+  sessionId: string | null;
   thinking: string;
   toolsEnabled: boolean;
   webSearchEnabled: boolean;
@@ -52,12 +55,14 @@ interface SendWindow {
   _execThinkingEffort?: string;
   _lastRunCommand?: string | null;
   _pendingChannelChoice?: { channel: string | null; account_id?: string | null } | null;
+  __pendingChannelChoices?: Record<
+    string,
+    { channel: string | null; account_id: string | null }
+  >;
   setWelcomeVisible?: (show: boolean) => void;
   setRunning?: (running: boolean) => void;
-  /** Stashed for the chat-stream reducer: the server never echoes a
-   *  web-originated user turn back, so `handleAck` reads this to build
-   *  the user bubble once `chat_ack` assigns the msg_id. */
-  __pendingUserText?: string;
+  /** Pending web-originated user text, isolated by real/provisional id. */
+  __pendingUserTextBySession?: Record<string, string>;
 }
 
 /**
@@ -67,6 +72,7 @@ interface SendWindow {
  */
 export function sendChatMessage({
   text,
+  sessionId,
   thinking,
   toolsEnabled,
   webSearchEnabled,
@@ -76,8 +82,6 @@ export function sendChatMessage({
   const w = window as unknown as SendWindow;
   const ws = w.ws;
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-
-  const sessionId = w.currentSessionId ?? null;
 
   // Hide the welcome panel right away — before the ack round-trip.
   w.setWelcomeVisible?.(false);
@@ -114,14 +118,22 @@ export function sendChatMessage({
   // First message of a brand-new conversation: attach the channel
   // choice from the welcome-screen picker, if any. Ignored by the
   // backend for existing convs.
-  if (!sessionId && w._pendingChannelChoice?.channel) {
-    payload.channel = w._pendingChannelChoice.channel;
-    payload.account_id = w._pendingChannelChoice.account_id || "";
+  const channelChoice =
+    (sessionId ? w.__pendingChannelChoices?.[sessionId] : null)
+    ?? w._pendingChannelChoice;
+  if (!w.currentSessionId && channelChoice?.channel) {
+    payload.channel = channelChoice.channel;
+    payload.account_id = channelChoice.account_id || "";
   }
 
   // The reducer's `handleAck` builds the user bubble from this once
   // the server assigns a msg_id.
-  w.__pendingUserText = text;
+  if (sessionId) {
+    w.__pendingUserTextBySession = {
+      ...w.__pendingUserTextBySession,
+      [sessionId]: text,
+    };
+  }
   ws.send(JSON.stringify(payload));
   w.setRunning?.(true);
   return true;

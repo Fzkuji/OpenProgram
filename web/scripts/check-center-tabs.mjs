@@ -24,15 +24,15 @@ assert.match(css, /:global\(html\.is-desktop\) \.tabsFlow > \.tab \{[^}]*width: 
 assert.match(css, /@keyframes desktopTabEnter \{\s*from \{ opacity: 0; \}\s*\}/);
 assert.match(css, /:global\(html\.is-desktop\) \.tabEnter \{[^}]*animation: desktopTabEnter 120ms ease-out;/s);
 assert.match(css, /:global\(html\.is-desktop\) \.tabExit \{[^}]*animation: tabExit 160ms ease-in forwards;/s);
-assert.match(ntp, /newSession\?\.\(\);[\s\S]*claimDraftSessionTab\(\);/);
-assert.match(strip, /currentSessionId === null[\s\S]*activeTab\?\.id === DRAFT_SESSION_TAB_ID/);
+assert.match(ntp, /const draftId = useCenterTabs\.getState\(\)\.claimDraftSessionTab\(\);[\s\S]*\.newSession\?\.\(draftId\);/);
+assert.match(strip, /currentSessionId === null[\s\S]*activeTab\?\.draft/);
 assert.match(strip, /closingInstances = useRef<Map<string, CenterTab>>/);
 assert.match(strip, /const \[closingIds, setClosingIds\] = useState<Set<string>>/);
 assert.match(
   strip,
-  /closingIds\.has\(tab\.id\)[\s\S]*closingInstances\.current\.get\(tab\.id\) === tab/,
+  /closing=\{closingIds\.has\(tab\.id\)\}/,
 );
-assert.match(strip, /tab\.id === DRAFT_SESSION_TAB_ID && currentTab !== closingInstance/);
+assert.match(strip, /if \(!currentTab\) return;/);
 assert.doesNotMatch(
   strip,
   /\}, \[activeId, currentSessionId, pathname, openSessionTab, openDraftSessionTab\]\);/,
@@ -45,9 +45,9 @@ assert.ok(
   "newSession must clear the current session before SPA navigation",
 );
 assert.ok(
-  newSession.indexOf("setCurrentConv(null)") <
+  newSession.indexOf("setCurrentDraft(draftId)") <
     newSession.indexOf("if (needsNavigation)"),
-  "newSession must clear the React session store before SPA navigation",
+  "newSession must select the distinct React draft before SPA navigation",
 );
 
 console.log("center-tabs checks passed");

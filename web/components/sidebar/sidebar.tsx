@@ -61,8 +61,8 @@ import {
   WorkflowIcon,
   MonitorCheckIcon,
 } from "../animated-icons";
-import { useSessionStore } from "@/lib/session-store";
 import { refreshFunctionsList } from "@/lib/state/functions-actions";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";
@@ -90,7 +90,6 @@ function readPersistedSidebarOpen(): boolean {
 export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
   const { t } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
@@ -173,15 +172,13 @@ export function Sidebar() {
     // project AFTER calling this, so its binding survives.
     delete (window as unknown as { _pendingProjectId?: string })
       ._pendingProjectId;
-    setCurrentConv(null);
-    if (pathname !== "/chat") {
+    const draftId = useCenterTabs.getState().openDraftSessionTab();
+    const w = window as unknown as { newSession?: (draftId?: string) => void };
+    if (typeof w.newSession === "function") {
+      w.newSession(draftId);
+    } else if (pathname !== "/chat") {
       router.push("/chat");
-      return;
     }
-    // Already on /chat — fall through to the legacy reset so the
-    // chat-area welcome screen / tree state / message list all clear.
-    const w = window as unknown as { newSession?: () => void };
-    if (typeof w.newSession === "function") w.newSession();
   }
 
   function doRefresh() {
