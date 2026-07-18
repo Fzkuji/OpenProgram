@@ -162,6 +162,10 @@ interface CenterTabsState {
   /** Focus-or-create the draft new-chat tab (session without an id
    *  yet). An active new-tab page is navigated in place. */
   openDraftSessionTab: () => void;
+  /** NTP 的 New session：草稿会话 tab 落在当前位置（活动 tab 原地变身），
+   *  别处已有的草稿 tab 收掉。区别于 openDraftSessionTab 的"引导到已有
+   *  草稿"（那是侧栏 New chat 的语义）。 */
+  claimDraftSessionTab: () => void;
   openFileTab: (projectId: string, path: string) => void;
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
@@ -265,6 +269,22 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           [],
         ),
       ),
+
+    claimDraftSessionTab: () =>
+      set((s) => {
+        const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
+        if (activeIdx < 0) return {};
+        const tabs = s.tabs
+          .filter((t, i) => t.id !== DRAFT_SESSION_TAB_ID || i === activeIdx)
+          .map((t) =>
+            t.id === s.activeId
+              ? ({ id: DRAFT_SESSION_TAB_ID, kind: "session", title: "" } as CenterTab)
+              : t,
+          );
+        const next = { tabs, activeId: DRAFT_SESSION_TAB_ID };
+        persist(next);
+        return next;
+      }),
 
     openFileTab: (projectId, path) =>
       set((s) =>

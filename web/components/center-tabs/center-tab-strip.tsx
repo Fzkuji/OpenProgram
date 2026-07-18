@@ -174,20 +174,24 @@ export function CenterTabStrip() {
 
   return (
     <div className={styles.strip}>
-      {tabs.map((tab) => (
-        <TabItem
-          key={tab.id}
-          tab={tab}
-          active={tab.id === activeId}
-          enter={enteringIds.has(tab.id)}
-          closing={closingIds.has(tab.id)}
-          label={labelOf(tab)}
-          closeLabel={text("Close tab", "关闭标签")}
-          onClick={() => onTabClick(tab)}
-          onClose={(e) => onTabClose(e, tab)}
-          onExited={() => finishClose(tab)}
-        />
-      ))}
+      {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
+         让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
+      <div className={styles.tabsFlow}>
+        {tabs.map((tab) => (
+          <TabItem
+            key={tab.id}
+            tab={tab}
+            active={tab.id === activeId}
+            enter={enteringIds.has(tab.id)}
+            closing={closingIds.has(tab.id)}
+            label={labelOf(tab)}
+            closeLabel={text("Close tab", "关闭标签")}
+            onClick={() => onTabClick(tab)}
+            onClose={(e) => onTabClose(e, tab)}
+            onExited={() => finishClose(tab)}
+          />
+        ))}
+      </div>
       <button
         type="button"
         className={styles.plusBtn}

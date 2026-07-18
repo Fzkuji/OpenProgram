@@ -39,10 +39,25 @@
    仍要接收点击，标回 no-drag。 */
 :global(html.is-desktop) .strip {
   -webkit-app-region: drag;
-  /* 右端整列预留 49px（= 右侧收起轨全宽，含 1px 边框）：tab 和随行的
-     ＋号再多也压不进这一列，最多停在「内容区/右栏」竖缝上，不会越界
-     盖到右栏头顶。＋号跟随最后一个 tab（Chrome 原版行为），不钉右。 */
-  padding-right: 49px;
+  /* 10px 右缘留白：＋号（28px）顶满时中心距窗口右缘 10+14=24px，正好
+     落在右侧收起轨的图标轴上。 */
+  padding-right: 10px;
+}
+/* tab 流容器：浏览器模式不参与布局（display:contents，行为与从前
+   完全一致）。 */
+.tabsFlow {
+  display: contents;
+}
+/* 桌面模式：真 flex 容器 + 限宽 —— 给随行的＋号永远留出 38px
+   （28px 钮 + 10px 缘），tab 再多＋号也不会被挤出窗口，最深顶到
+   与右栏图标同轴；tab 少时＋号照常紧跟最后一个 tab（Chrome 行为）。 */
+:global(html.is-desktop) .tabsFlow {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* 与 .strip 的 tab 间距一致（真容器后不再继承 strip 的 gap） */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 38px);
 }
 :global(html.is-desktop) .tab,
 :global(html.is-desktop) .plusBtn {
@@ -307,6 +322,10 @@
 }
 .tabActive + .plusBtn::before,
 .tab:hover + .plusBtn::before,
+/* tab 包进 .tabsFlow 后邻接选择器隔着容器失效，用 :has 恢复同一语义：
+   末位 tab 选中或 hover 时，＋号左侧的分隔条不画（Chrome 规矩）。 */
+.tabsFlow:has(> .tabActive:last-child) + .plusBtn::before,
+.tabsFlow:has(> .tab:last-child:hover) + .plusBtn::before,
 .plusBtn:hover::before {
   background: transparent;
 }
