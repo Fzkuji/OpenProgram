@@ -249,7 +249,7 @@ function DesktopWebTabPane({
             }
           />
         </button>
-        <BookmarkButton url={url} title={title} />
+        <BookmarkButton url={effectiveUrl} title={title || effectiveUrl} />
         <button
           type="button"
           className={styles.webToolbarBtn}

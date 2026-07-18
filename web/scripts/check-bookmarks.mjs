@@ -12,6 +12,7 @@ const webTab = readFileSync(webTabPath, "utf8");
 const newTab = readFileSync(newTabPath, "utf8");
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
+assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
 assert.match(newTab, /readBookmarks/);
 assert.match(newTab, /removeBookmark/);
 const compiled = ts.transpileModule(source, {
@@ -53,5 +54,9 @@ assert.equal(
 );
 assert.deepEqual(bookmarks.readBookmarks(), [first, second]);
 assert.equal(changes, 4);
+
+assert.deepEqual(bookmarks.removeBookmark(first.url), [second]);
+assert.equal(storage.get(bookmarks.BOOKMARKS_STORAGE_KEY), JSON.stringify([second]));
+assert.equal(changes, 5);
 
 console.log("bookmark storage checks passed");
