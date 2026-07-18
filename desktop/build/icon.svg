@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="OpenProgram">
+  <defs>
+    <linearGradient id="op-background" x1="176" y1="132" x2="856" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#29374D"/>
+      <stop offset="0.52" stop-color="#19243A"/>
+      <stop offset="1" stop-color="#101622"/>
+    </linearGradient>
+    <radialGradient id="op-background-light" cx="0.3" cy="0.18" r="0.92">
+      <stop offset="0" stop-color="#536784" stop-opacity="0.28"/>
+      <stop offset="0.58" stop-color="#25324A" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#101622" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="op-ring" x1="322" y1="314" x2="718" y2="724" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4CA7FF"/>
+      <stop offset="0.48" stop-color="#687AF5"/>
+      <stop offset="1" stop-color="#A35AF4"/>
+    </linearGradient>
+    <radialGradient id="op-node-blue" cx="0.34" cy="0.28" r="0.86">
+      <stop offset="0" stop-color="#83CBFF"/>
+      <stop offset="0.52" stop-color="#4D9CEF"/>
+      <stop offset="1" stop-color="#3677D5"/>
+    </radialGradient>
+    <radialGradient id="op-node-purple" cx="0.34" cy="0.28" r="0.86">
+      <stop offset="0" stop-color="#C6A3FF"/>
+      <stop offset="0.54" stop-color="#9565E8"/>
+      <stop offset="1" stop-color="#7442C7"/>
+    </radialGradient>
+    <radialGradient id="op-node-indigo" cx="0.34" cy="0.28" r="0.86">
+      <stop offset="0" stop-color="#9BAFF8"/>
+      <stop offset="0.54" stop-color="#6879DC"/>
+      <stop offset="1" stop-color="#4B52B7"/>
+    </radialGradient>
+    <clipPath id="op-mark-interior">
+      <circle cx="512" cy="512" r="231"/>
+    </clipPath>
+  </defs>
+
+  <path
+    id="op-squircle"
+    d="M512 100C736 100 808 100 866 158C924 216 924 288 924 512C924 736 924 808 866 866C808 924 736 924 512 924C288 924 216 924 158 866C100 808 100 736 100 512C100 288 100 216 158 158C216 100 288 100 512 100Z"
+    fill="url(#op-background)"
+  />
+  <path
+    d="M512 100C736 100 808 100 866 158C924 216 924 288 924 512C924 736 924 808 866 866C808 924 736 924 512 924C288 924 216 924 158 866C100 808 100 736 100 512C100 288 100 216 158 158C216 100 288 100 512 100Z"
+    fill="url(#op-background-light)"
+  />
+
+  <circle cx="512" cy="512" r="258" fill="none" stroke="url(#op-ring)" stroke-width="52"/>
+  <g clip-path="url(#op-mark-interior)">
+    <circle id="op-node-a" cx="442" cy="442" r="132" fill="url(#op-node-blue)"/>
+    <circle id="op-node-b" cx="610" cy="584" r="100" fill="url(#op-node-purple)"/>
+    <circle id="op-node-c" cx="456" cy="650" r="64" fill="url(#op-node-indigo)"/>
+  </g>
+</svg>
