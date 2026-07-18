@@ -48,16 +48,23 @@
 .tabsFlow {
   display: contents;
 }
-/* 桌面模式：真 flex 容器 + 限宽 —— 给随行的＋号永远留出 38px
-   （28px 钮 + 10px 缘），tab 再多＋号也不会被挤出窗口，最深顶到
-   与右栏图标同轴；tab 少时＋号照常紧跟最后一个 tab（Chrome 行为）。 */
+/* 桌面模式：真 flex 容器 + 限宽。tab 少时＋号按 8px gap 跟随最后一个
+   tab；占满时给＋号留 36px（8px gap + 28px 按钮），按钮右缘落在
+   10px padding 上，中心距窗口右缘 24px，与右栏图标同轴。 */
 :global(html.is-desktop) .tabsFlow {
   display: flex;
   align-items: center;
   gap: 8px; /* 与 .strip 的 tab 间距一致（真容器后不再继承 strip 的 gap） */
   flex: 0 1 auto;
   min-width: 0;
-  max-width: calc(100% - 38px);
+  max-width: calc(100% - 36px);
+}
+/* tabsFlow 本身是 shrink-to-fit flex item；width 参与其 intrinsic size，
+   让少量 tab 真正达到 240px。空间不足时仍按同一基准等比收缩。 */
+:global(html.is-desktop) .tabsFlow > .tab {
+  width: 240px;
+  flex: 0 1 240px;
+  max-width: 240px;
 }
 :global(html.is-desktop) .tab,
 :global(html.is-desktop) .plusBtn {
@@ -105,6 +112,14 @@
   animation: tabEnter 180ms ease-out;
   overflow: hidden;
 }
+/* 桌面新增 tab 直接采用最终宽度，只淡入内容；已有 tab 的宽度一次重排，
+   不再由 flex-basis 动画逐帧压缩。浏览器模式保留原动画。 */
+@keyframes desktopTabEnter {
+  from { opacity: 0; }
+}
+:global(html.is-desktop) .tabEnter {
+  animation: desktopTabEnter 120ms ease-out;
+}
 
 /* 关闭 tab 退场动画：入场的镜像 —— 宽度收缩到 0，邻居平滑回填。真正从
    store 移除发生在 animationend 之后（strip 组件里延迟 closeTab），
@@ -122,6 +137,10 @@
   animation: tabExit 160ms ease-in forwards;
   overflow: hidden;
   pointer-events: none; /* 退场中不可再点 */
+}
+/* 刚新增的桌面 tab 若立即关闭，退场应覆盖上面的桌面淡入动画。 */
+:global(html.is-desktop) .tabExit {
+  animation: tabExit 160ms ease-in forwards;
 }
 
 /* 非活动 tab 之间的竖分隔条（2px 宽、圆角、竖直居中，用户 Chrome 同款）。

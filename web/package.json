@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check:center-tabs": "node scripts/check-center-tabs.mjs",
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",

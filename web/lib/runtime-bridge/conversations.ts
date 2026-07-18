@@ -413,20 +413,26 @@ function refreshBranchBadge(): void {
 /* ===== New session =============================================== */
 
 export function newSession(): void {
-  if (window.location.pathname !== "/chat") {
-    if (W.__navigate) {
-      W.__navigate("/chat");
-      return;
-    }
-    window.location.href = "/chat";
-    return;
-  }
+  const needsNavigation = window.location.pathname !== "/chat";
+  // Clear both session sources synchronously before SPA navigation. Otherwise
+  // CenterTabStrip can observe /chat with the previous session id and replace
+  // a newly claimed draft tab with that stale session.
   W.currentSessionId = null;
-  history.replaceState(null, "", "/chat");
   try {
     W.__sessionStore?.getState().setCurrentConv(null);
   } catch {
     /* ignore */
+  }
+
+  if (needsNavigation) {
+    if (W.__navigate) {
+      W.__navigate("/chat");
+    } else {
+      window.location.href = "/chat";
+      return;
+    }
+  } else {
+    history.replaceState(null, "", "/chat");
   }
   W.pendingResponses = {};
   W.trees = [];

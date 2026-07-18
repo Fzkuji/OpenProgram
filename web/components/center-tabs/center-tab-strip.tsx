@@ -26,7 +26,11 @@ import {
   MessageCircleIcon,
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
-import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
+import {
+  DRAFT_SESSION_TAB_ID,
+  useCenterTabs,
+  type CenterTab,
+} from "@/lib/state/center-tabs-store";
 import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -59,6 +63,16 @@ export function CenterTabStrip() {
   // by a sidebar session click).
   useEffect(() => {
     if (!isChatRoute(pathname)) return;
+    const centerTabs = useCenterTabs.getState();
+    const activeTab = centerTabs.tabs.find((t) => t.id === centerTabs.activeId);
+    // newSession clears the session store before router.push('/chat'). During
+    // that render pathname can still be /s/<old>; the claimed draft is the
+    // intended destination, so do not resurrect the stale route's session.
+    if (
+      currentSessionId === null &&
+      activeTab?.id === DRAFT_SESSION_TAB_ID &&
+      pathname.startsWith("/s/")
+    ) return;
     // 会话 id 以路由为准：关 tab 后 activateSession 推新路由时，pathname
     // 和 currentSessionId 分两次渲染更新 —— 若用 currentSessionId，中间那
     // 帧会把刚关掉的会话 tab 重新插回来（"关一个弹回一个"）。路由是唯一
@@ -84,9 +98,29 @@ export function CenterTabStrip() {
   // in the previous list and gone now — a merely stale localStorage
   // restore or a not-yet-loaded list must not close tabs.
   const prevConvIds = useRef<Set<string> | null>(null);
-  // 正在播退场动画的 tab id：仍在 store 里、DOM 上挂 .tabExit，动画结束
-  // 才真正 closeTab。
+  // 退场动画按 id 维持，标题/dirty 等 immutable 更新不能取消关闭；同时
+  // 保存开始关闭时的实例，防止固定 id 的旧 draft 删除后来新建的 draft。
+  const closingInstances = useRef<Map<string, CenterTab>>(new Map());
   const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const invalid: string[] = [];
+    for (const [id, original] of closingInstances.current) {
+      const current = tabs.find((tab) => tab.id === id);
+      if (
+        !current ||
+        (id === DRAFT_SESSION_TAB_ID && current !== original)
+      ) {
+        invalid.push(id);
+      }
+    }
+    if (invalid.length === 0) return;
+    for (const id of invalid) closingInstances.current.delete(id);
+    setClosingIds((prev) => {
+      const next = new Set(prev);
+      for (const id of invalid) next.delete(id);
+      return next;
+    });
+  }, [tabs]);
   // 入场动画：上一次提交后的 tab id 集合。本次渲染里不在集合中的 = 新增，
   // 挂 .tabEnter 播"从 0 长宽、挤开邻居"的动画；首次渲染（null）不播。
   // tab 总数没变多 = NTP 原地变身（id 换了但位置复用，如空 tab 上点侧栏
@@ -144,16 +178,25 @@ export function CenterTabStrip() {
     }
     // 先播退场动画（.tabExit 收缩到 0），animationend 再 finishClose 真正
     // 移除 —— 和新建 tab 的挤压动画成镜像。
+    closingInstances.current.set(tab.id, tab);
     setClosingIds((prev) => new Set(prev).add(tab.id));
   }
 
   /** 退场动画播完后的真正关闭：移出 store + 焦点交给邻居。 */
   function finishClose(tab: CenterTab) {
+    const closingInstance = closingInstances.current.get(tab.id);
+    closingInstances.current.delete(tab.id);
     setClosingIds((prev) => {
       const next = new Set(prev);
       next.delete(tab.id);
       return next;
     });
+    if (!closingInstance) return;
+    const currentTab = useCenterTabs.getState().tabs.find((x) => x.id === tab.id);
+    if (
+      !currentTab ||
+      (tab.id === DRAFT_SESSION_TAB_ID && currentTab !== closingInstance)
+    ) return;
     closeTab(tab.id);
     // Closing the active tab hands focus to a neighbor; if that
     // neighbor is a session tab, bring the chat surface to it.
@@ -183,7 +226,11 @@ export function CenterTabStrip() {
             tab={tab}
             active={tab.id === activeId}
             enter={enteringIds.has(tab.id)}
-            closing={closingIds.has(tab.id)}
+            closing={
+              closingIds.has(tab.id) &&
+              (tab.id !== DRAFT_SESSION_TAB_ID ||
+                closingInstances.current.get(tab.id) === tab)
+            }
             label={labelOf(tab)}
             closeLabel={text("Close tab", "关闭标签")}
             onClick={() => onTabClick(tab)}
