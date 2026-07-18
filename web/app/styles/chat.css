@@ -112,40 +112,11 @@
 
 /* Connection-state dot inside .status-badge is now an
    .indicator-dot — see the indicator-dot section below. */
-/* Double-class selector so this beats `.runtime-badge`'s green
-   default (defined later in the file at L886). Without the extra
-   `.runtime-badge` qualifier these rules and that block tie on
-   specificity and the later one wins. */
-.runtime-badge.branch-badge {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  /* Orange — same family as git's branch / tag color so the
-     "this is a VCS-ish branch" association reads quickly. */
-  background: color-mix(in srgb, var(--accent-orange) 10%, transparent);
-  color: var(--accent-orange);
-  border: 1px solid color-mix(in srgb, var(--accent-orange) 25%, transparent);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.runtime-badge.branch-badge:hover,
-.runtime-badge.branch-badge[data-state="open"] {
-  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
-}
-.branch-badge .branch-icon {
-  display: inline-flex;
-  align-items: center;
-  opacity: 0.85;
-}
-.branch-badge .branch-icon svg { display: block; }
-
 /* Project chip — the "where am I" anchor, mirrors Claude's composer
    project pill. Deliberately NEUTRAL (not a loud accent colour) so it
    reads as the calm context label that the louder green status / orange
-   branch+agent chips hang off. Double-class qualifier beats the green
-   `.runtime-badge` default at L886, same as branch-badge above. */
+   agent chips hang off. Double-class qualifier beats the green
+   `.runtime-badge` default at L886. */
 .runtime-badge.project-badge {
   font-size: 12px;
   padding: 2px 8px;

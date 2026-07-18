@@ -7,14 +7,14 @@
  *     row (see composer/index.tsx, `.sessionChips`)
  *   - connection status → composer status chip (composer/index.tsx,
  *     which hosts the ChannelMenu popover)
- *   - BranchBadge → right sidebar History view header
  *
  * `LegacyTopbarBridge` (rendered unconditionally by AppShell) keeps the
  * window-bridge wrappers installed: legacy DOM-mutating updaters are
  * wrapped so their state lands in the zustand store, which these chips
  * read. Dropdowns still delegate to the submodules here
- * (project-menu / agent-selector / permission-menu / channel-menu /
- * branch-menu).
+ * (project-menu / agent-selector / permission-menu / channel-menu).
+ * 分支入口只剩右栏 History 的 BranchesPanel（原 BranchBadge chip 已删，
+ * 与列表重复）。
  */
 "use client";
 
@@ -26,7 +26,6 @@ import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,
-  GitBranchIcon,
   MessageCircleIcon,
   TerminalIcon,
 } from "@/components/animated-icons";
@@ -39,7 +38,6 @@ import {
 import { HoverTip } from "@/components/ui/tooltip";
 
 import { AgentSelector } from "./agent-selector";
-import { BranchMenu } from "./branch-menu";
 import { installLegacyWrappers, legacyTopbarReady } from "./window-bridge";
 
 export { ProjectBadge } from "./project-menu";
@@ -76,60 +74,6 @@ export function LegacyTopbarBridge() {
 }
 
 /* ---- Chips --------------------------------------------------------- */
-
-export function BranchBadge({
-  branchInfo,
-}: {
-  branchInfo: ReturnType<typeof useSessionStore.getState>["branchInfo"];
-}) {
-  const [open, setOpen] = useState(false);
-  const { text } = useTranslation();
-  const iconRef = useRef<AnimatedNavIconHandle>(null);
-
-  useEffect(() => {
-    const close = () => setOpen(false);
-    window.addEventListener("topbar-close-menus", close);
-    return () => window.removeEventListener("topbar-close-menus", close);
-  }, []);
-
-  function onOpenChange(next: boolean) {
-    if (next) {
-      window.dispatchEvent(new Event("topbar-close-menus"));
-      (
-        window as unknown as { _closeAllPopovers?: () => void }
-      )._closeAllPopovers?.();
-    }
-    setOpen(next);
-  }
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <HoverTip label={text("Conversation branch", "对话分支")}>
-        <PopoverTrigger asChild>
-          <span
-            id="branchBadge"
-            className="runtime-badge branch-badge"
-            onMouseEnter={() => iconRef.current?.startAnimation?.()}
-            onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-          >
-            <span className="branch-icon" aria-hidden="true">
-              <GitBranchIcon ref={iconRef} size={14} />
-            </span>
-            <span className="branch-name">
-              {branchInfo.name} ({branchInfo.count})
-            </span>
-          </span>
-        </PopoverTrigger>
-      </HoverTip>
-      <PopoverContent
-        align="start"
-        sideOffset={4}
-        className="w-auto border-0 bg-transparent p-0 shadow-none"
-      >
-        <BranchMenu onClose={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 /** Strip a leading `provider:` qualifier from a model string. The chat
  *  model often arrives provider-qualified ("openai-codex:gpt-5.5") while

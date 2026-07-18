@@ -48,7 +48,6 @@ import {
   PanelLeftOpenIcon,
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
-import { BranchBadge } from "../chat/top-bar";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 
@@ -373,25 +372,10 @@ export function RightSidebar() {
  * `#historyPanel .history-body` and replaces its children.
  */
 function HistoryGraphPanel() {
-  // Branch chip (ex-topbar BranchBadge) — shown above the history
-  // content, only when the conversation actually has branches. Same
-  // component + BranchMenu popover as before, just relocated.
-  const branchInfo = useSessionStore((s) => s.branchInfo);
+  // 分支入口只保留下方的 BranchesPanel（带 HEAD 标记的列表）。原顶栏搬来
+  // 的 BranchBadge chip 与它信息重复，已删。
   return (
     <>
-      {branchInfo.visible ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            padding: "8px 10px",
-            borderBottom: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
-        >
-          <BranchBadge branchInfo={branchInfo} />
-        </div>
-      ) : null}
       <BranchesPanel />
       <WorktreesPanel />
       <HighlightModeToggle />
