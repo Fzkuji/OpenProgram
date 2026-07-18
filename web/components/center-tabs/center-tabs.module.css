@@ -610,3 +610,43 @@
   color: var(--text-bright);
   background: var(--bg-hover);
 }
+
+.ntpBookmarks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: min(560px, 82%);
+}
+.ntpBookmark {
+  display: flex;
+  align-items: center;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ntpBookmarkOpen,
+.ntpBookmarkDelete {
+  display: flex;
+  align-items: center;
+  border: none;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.ntpBookmarkOpen {
+  min-width: 0;
+  gap: 5px;
+  padding: 6px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ntpBookmarkDelete {
+  padding: 6px;
+}
+.ntpBookmarkOpen:hover,
+.ntpBookmarkDelete:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}

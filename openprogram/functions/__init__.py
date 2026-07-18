@@ -83,6 +83,7 @@ DEFAULT_TOOLS: list[str] = [
     "list_branches",
     "todo_read",
     "todo_write",
+    "playwright_browser",
     # Plan-mode gate — the LLM is allowed to enter plan mode on its
     # own when it judges the task warrants it (mirrors claude-code's
     # EnterPlanMode tool). The "plan" pseudo-channel filter in

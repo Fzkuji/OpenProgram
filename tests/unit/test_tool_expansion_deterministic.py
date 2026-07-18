@@ -22,6 +22,12 @@ def test_default_expansion_deterministic():
     assert a == b, "DEFAULT_TOOLS expansion must be order-stable across calls"
 
 
+def test_fresh_default_includes_playwright_browser_only():
+    names = _names(agent_tools())
+    assert "playwright_browser" in names
+    assert "agent_browser" not in names
+
+
 def test_default_names_arg_deterministic():
     a = _names(agent_tools(names=list(DEFAULT_TOOLS)))
     b = _names(agent_tools(names=list(DEFAULT_TOOLS)))

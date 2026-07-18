@@ -7,7 +7,9 @@
  * place) and a URL row that IS the browser entry (globe + input + Go,
  * opens a web tab). No separate Browse-web button, no caption.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { Bookmark, X } from "lucide-react";
 
 import {
   EarthIcon,
@@ -16,6 +18,12 @@ import {
 } from "@/components/animated-icons";
 
 import { useTranslation } from "@/lib/i18n";
+import {
+  BOOKMARKS_CHANGE_EVENT,
+  readBookmarks,
+  removeBookmark,
+  type Bookmark as BookmarkItem,
+} from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import styles from "./center-tabs.module.css";
 
@@ -28,6 +36,14 @@ export function NewTabPage() {
   // wiring as the sidebar nav rows).
   const sessionIconRef = useRef<AnimatedNavIconHandle>(null);
   const webIconRef = useRef<AnimatedNavIconHandle>(null);
+  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(readBookmarks);
+
+  useEffect(() => {
+    const refresh = () => setBookmarks(readBookmarks());
+    refresh();
+    window.addEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
+    return () => window.removeEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
+  }, []);
 
   function onNewSession() {
     (window as unknown as { newSession?: () => void }).newSession?.();
@@ -80,6 +96,31 @@ export function NewTabPage() {
           {text("Go", "打开")}
         </button>
       </div>
+      {bookmarks.length > 0 && (
+        <div className={styles.ntpBookmarks}>
+          {bookmarks.map((bookmark) => (
+            <div key={bookmark.url} className={styles.ntpBookmark}>
+              <button
+                type="button"
+                className={styles.ntpBookmarkOpen}
+                onClick={() => openWebTab(bookmark.url)}
+                title={bookmark.url}
+              >
+                <Bookmark size={13} aria-hidden="true" />
+                {bookmark.title || bookmark.url}
+              </button>
+              <button
+                type="button"
+                className={styles.ntpBookmarkDelete}
+                onClick={() => removeBookmark(bookmark.url)}
+                aria-label={text("Delete bookmark", "删除书签")}
+              >
+                <X size={13} aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

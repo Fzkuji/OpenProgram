@@ -23,7 +23,7 @@
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, RotateCw, Star } from "lucide-react";
 
 import {
   desktopBridge,
@@ -33,6 +33,11 @@ import {
   type DesktopBridge,
 } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
+import {
+  BOOKMARKS_CHANGE_EVENT,
+  isBookmarked,
+  toggleBookmark,
+} from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import styles from "./center-tabs.module.css";
 
@@ -45,6 +50,30 @@ export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
     return <DesktopWebTabPane bridge={bridge} tabId={tabId} url={url} />;
   }
   return <IframeWebTabPane tabId={tabId} url={url} />;
+}
+
+function BookmarkButton({ url, title }: { url: string; title: string }) {
+  const { text } = useTranslation();
+  const [bookmarked, setBookmarked] = useState(() => isBookmarked(url));
+
+  useEffect(() => {
+    const refresh = () => setBookmarked(isBookmarked(url));
+    refresh();
+    window.addEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
+    return () => window.removeEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
+  }, [url]);
+
+  return (
+    <button
+      type="button"
+      className={styles.webToolbarBtn}
+      onClick={() => toggleBookmark({ url, title })}
+      title={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
+      aria-label={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
+    >
+      <Star size={14} fill={bookmarked ? "currentColor" : "none"} />
+    </button>
+  );
 }
 
 /* ---- Desktop shell: native WebContentsView ------------------------- */
@@ -60,6 +89,7 @@ function DesktopWebTabPane({
 }) {
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
+  const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
   // 历史遗留的白屏竞态可能把 store 里的 url 冲成空串；tab id 本身带着
   // 原始 URL（"w:<url>"），空 url 时从 id 找回，老 tab 自愈。
   const effectiveUrl =
@@ -219,6 +249,7 @@ function DesktopWebTabPane({
             }
           />
         </button>
+        <BookmarkButton url={url} title={title} />
         <button
           type="button"
           className={styles.webToolbarBtn}
@@ -241,6 +272,7 @@ function DesktopWebTabPane({
 function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
+  const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
   const [address, setAddress] = useState(url);
   // Bumping remounts the iframe — that's the reload button.
   const [frameEpoch, setFrameEpoch] = useState(0);
@@ -289,6 +321,7 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
         >
           <RotateCw size={14} />
         </button>
+        <BookmarkButton url={url} title={title} />
         <button
           type="button"
           className={styles.webToolbarBtn}
