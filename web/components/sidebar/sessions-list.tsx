@@ -841,10 +841,16 @@ function StatusMarker({
       />
     );
   }
-  // idle / done & seen → hollow ring.
+  // idle / done & seen → 圆环。圆心用侧栏背景色实心填充，盖住底下穿过的
+  // 竖导线（不能整体 opacity-50：填充会半透、线又透出来），描边的半透明
+  // 单独调在边框色上。
   return (
     <span
-      className="block size-[7px] shrink-0 rounded-full border border-[var(--text-secondary)] opacity-50"
+      className="block size-[7px] shrink-0 rounded-full"
+      style={{
+        background: "var(--bg-sidebar, var(--bg-secondary))",
+        border: "1px solid color-mix(in srgb, var(--text-secondary) 50%, transparent)",
+      }}
       aria-hidden="true"
     />
   );
