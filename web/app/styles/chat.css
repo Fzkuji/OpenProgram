@@ -1857,6 +1857,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 项目内的文件 chip 可点开中间栏文件 tab（button 形态），hover
+   反馈沿用 .tl-btn 的 bg-hover 惯例。 */
+.turn-files-chip.is-clickable {
+  cursor: pointer;
+}
+.turn-files-chip.is-clickable:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 
 
 /* AttachCard — a pointer row written when this turn referenced a
