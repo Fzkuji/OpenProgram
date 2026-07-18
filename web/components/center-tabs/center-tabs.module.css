@@ -39,19 +39,26 @@
    仍要接收点击，标回 no-drag。 */
 :global(html.is-desktop) .strip {
   -webkit-app-region: drag;
-  padding-right: 0; /* 右缘留白由 .desktop-tab-row 的 padding-right:6px 负责 */
+  position: relative; /* ＋号绝对定位的锚 */
+  /* 右端整列预留 49px（= 右侧收起轨全宽，含 1px 边框）：tab 再多也
+     压不进这一列，最后一个 tab 的右缘最多停在「内容区/右栏」竖缝上，
+     不会越界盖到右栏头顶。 */
+  padding-right: 49px;
 }
 :global(html.is-desktop) .tab,
 :global(html.is-desktop) .plusBtn {
   -webkit-app-region: no-drag;
 }
-/* 桌面模式：＋ 钉到最右，与右侧收起轨的图标同轴。右轨 49px（含 1px 左边框）
-   → 内容 48px，图标钮 32px 居中（两侧 8px）→ 图标中心距窗口右缘 24px。
-   ＋ 钮 28px 宽：row padding-right 6 + margin-right 4 + 半宽 14 = 24。
-   ＋ 与最后一个 tab 之间的空档属于 strip（drag），窗口可拖。 */
+/* 桌面模式：＋ 绝对定位在右端 49px 预留列里，与右侧收起轨的图标同轴
+   （轨内容 48px、图标钮居中 → 图标中心距窗口右缘 24px；＋ 28px 宽，
+   right:10 + 半宽 14 = 24）。圆两侧空隙 11/10px 基本对称。＋ 与 tab
+   之间的空档属于 strip（drag），窗口可拖。 */
 :global(html.is-desktop) .plusBtn {
-  margin-left: auto;
-  margin-right: 4px;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
 }
 /* ＋ 被推到最右后，它左侧 5px 处的竖分隔条会悬在空档里（不再紧贴 tab），
    桌面模式下不画。 */

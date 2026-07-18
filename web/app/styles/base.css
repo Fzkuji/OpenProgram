@@ -482,11 +482,12 @@ html.is-desktop {
 .desktop-tab-row {
   display: flex;
   flex-shrink: 0;
-  padding-left: 76px; /* macOS traffic lights (x≈8–64) + breathing room */
-  /* 6px right inset: strip content never touches the window edge, so the
-     tab-row/right-rail corner is a clean straight seam. Counted into the
-     ＋-button axis math in center-tabs.module.css (6 + 4 + 14 = 24). */
-  padding-right: 6px;
+  /* 红绿灯 x:18 起、灯径 12/间距 20 → 绿灯右缘 x≈70。左留白 88 使
+     「绿灯→首 tab」= 「窗口左缘→红灯」= 18px，两侧呼吸感一致。 */
+  padding-left: 88px;
+  /* 右缘不留 padding：最右 49px（= 右栏收起轨全宽）由 .strip 的
+     padding-right 整列预留，＋号绝对定位在列内 —— 见
+     center-tabs.module.css。 */
   background: var(--tabrow-bg); /* same as .strip — covers the 76px gap */
   -webkit-app-region: drag;
 }
