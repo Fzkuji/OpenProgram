@@ -269,9 +269,43 @@ export function PageShell({ page }: { page: Page }) {
     // TODO(store-migration): reads the legacy heavy conv (messages/graph)
     // for the legacy renderSessionMessages DOM path — stays on
     // window.conversations until that renderer moves into the store.
-    const cached = w.conversations?.[target];
-    if (cached && w.renderSessionMessages) {
+    //
+    // Only render when the cache holds a FULL capture (messages
+    // present). Sidebar entries are lightweight (no messages) — feeding
+    // one to renderSessionMessages wipes the transcript and flashes the
+    // welcome screen for a frame. In that case flip to the skeleton
+    // state instead and let loadSessionData clear it when the WS reply
+    // lands.
+    const cached = w.conversations?.[target] as
+      | { messages?: unknown[] }
+      | undefined;
+    const store = (window as unknown as {
+      __sessionStore?: {
+        getState: () => {
+          setTranscriptLoading: (id: string | null) => void;
+          setWelcomeVisible: (v: boolean) => void;
+        };
+      };
+    }).__sessionStore;
+    if (
+      cached
+      && Array.isArray(cached.messages)
+      && cached.messages.length > 0
+      && w.renderSessionMessages
+    ) {
       try { w.renderSessionMessages(cached); } catch {}
+      try { store?.getState().setTranscriptLoading(null); } catch {}
+    } else {
+      try {
+        store?.getState().setTranscriptLoading(target);
+        store?.getState().setWelcomeVisible(false);
+      } catch {}
+      // Clear the DAG panel to a skeleton too — otherwise the previous
+      // session's graph lingers next to the transcript skeleton.
+      try {
+        (window as unknown as { __historyGraphSkeleton?: () => void })
+          .__historyGraphSkeleton?.();
+      } catch {}
     }
     if (w.ws && w.ws.readyState === WebSocket.OPEN) {
       w.ws.send(JSON.stringify({

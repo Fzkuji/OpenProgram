@@ -451,6 +451,37 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 会话切换：数据未到时的骨架占位（claude.ai 式）——右上一个用户气泡
+   占位块 + 若干渐短灰条脉冲；capture 到达后 #chatMessages 整体淡入
+   （.session-enter 由 MessageList 加、220ms 后移除）。 */
+.transcript-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 0;
+}
+.transcript-skeleton .skeleton-bubble {
+  align-self: flex-end;
+  width: 42%;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  margin-bottom: 10px;
+}
+.transcript-skeleton .skeleton-bar {
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+#chatMessages.session-enter { animation: session-fade-in 180ms ease-out; }
+@keyframes session-fade-in { from { opacity: 0; } }
+
 /* Three message roles render with three distinct surfaces so the
    eye can sort them at a glance:
    - user      → ``--bg-tertiary`` bubble (raised warm grey, right)

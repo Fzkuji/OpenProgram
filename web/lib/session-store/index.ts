@@ -146,6 +146,13 @@ interface ConvState {
   welcomeVisible: boolean;
   setWelcomeVisible: (v: boolean) => void;
 
+  /** Session id whose transcript is still in flight (load_session sent,
+   *  no full capture cached). MessageList shows a skeleton for it
+   *  instead of flashing the welcome screen. Cleared by
+   *  ``loadSessionData`` when the capture lands. */
+  transcriptLoadingId: string | null;
+  setTranscriptLoading: (id: string | null) => void;
+
   /** Controlled value of the Composer's textarea. Lifted into the
    *  store so outside callers (welcome example buttons, retry
    *  helpers, etc.) can fill the input. */
@@ -625,6 +632,9 @@ export const useSessionStore = create<ConvState>((set) => ({
   // it back true on New chat.
   welcomeVisible: true,
   setWelcomeVisible: (v) => set({ welcomeVisible: v }),
+
+  transcriptLoadingId: null,
+  setTranscriptLoading: (id) => set({ transcriptLoadingId: id }),
 
   // Hydrate the live draft for the "new session" placeholder at module
   // load — same pattern as ``rightDock`` above. SSR sees an empty

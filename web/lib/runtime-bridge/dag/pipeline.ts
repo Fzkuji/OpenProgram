@@ -79,6 +79,32 @@ import {
   setVisibleIds,
 } from "./store/globals";
 
+// Which session the panel currently shows (undefined = never rendered).
+// First render after a session switch gets the ``dag-enter`` fade-in;
+// subsequent re-renders of the same session swap in place, no flash.
+let _lastRenderedSession: string | null | undefined;
+
+/** Session switch, no capture yet: replace the DAG with pulsing
+ *  placeholder bars so the previous session's graph doesn't linger.
+ *  Must bust the signature dedup — otherwise the next render() of an
+ *  identical graph early-returns and the skeleton never goes away. */
+export function showHistorySkeleton(): void {
+  const panel = document.getElementById("historyPanel");
+  const body = panel && (panel.querySelector(".history-body") as HTMLElement | null);
+  if (!body) return;
+  setLastSignature(null);
+  _lastRenderedSession = "__loading__";
+  const el = document.createElement("div");
+  el.className = "history-skeleton";
+  for (const w of [70, 52, 61]) {
+    const bar = document.createElement("div");
+    bar.className = "history-skeleton-bar";
+    bar.style.width = w + "%";
+    el.appendChild(bar);
+  }
+  body.replaceChildren(el);
+}
+
 function _signature(graph: GNode[], headId: string | null): string {
   if (!graph || !graph.length) return "empty|" + (headId || "");
   const parts = graph.map(
@@ -150,6 +176,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     body.replaceChildren(empty);
     _resetTooltip();
     setLeafOfNode(Object.create(null));
+    _lastRenderedSession = (HGW.currentSessionId as string | undefined) || null;
     return;
   }
 
@@ -284,6 +311,12 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   graphIn.forEach((m) => { fullById[m.id] = m; });
   drawBadges(svg, tree, pos, stableLeafOfNode, HGW.currentSessionId || null,
     fullById);
+
+  // 会话切换后的首次绘制淡入（配合 transcript 的 session-enter），
+  // 同会话的增量重绘原地替换，不闪。
+  const sess = (HGW.currentSessionId as string | undefined) || null;
+  if (_lastRenderedSession !== sess) svg.classList.add("dag-enter");
+  _lastRenderedSession = sess;
 
   body.replaceChildren(svg);
   _resetTooltip();

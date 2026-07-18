@@ -14,7 +14,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, HGW, type HighlightMode } from "./types";
-import { render } from "./pipeline";
+import { render, showHistorySkeleton } from "./pipeline";
 import { _recomputeVisibility } from "./render/visibility";
 import { _installInteractionHandlers } from "./render/interaction";
 import {
@@ -101,6 +101,7 @@ export function setHistoryHighlightMode(mode: HighlightMode): void {
 /* ===== window bridges ============================================ */
 
 HGW.renderHistoryGraph = renderHistoryGraph;
+HGW.__historyGraphSkeleton = showHistorySkeleton;
 HGW.repaintBranchTags = repaintBranchTags;
 HGW.setHistoryContextRange = setHistoryContextRange;
 HGW.refreshHistoryContextRange = refreshHistoryContextRange;

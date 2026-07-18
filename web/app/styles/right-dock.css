@@ -283,6 +283,23 @@
   display: block;
   margin: 0 auto;
 }
+/* 会话切换后的首次 DAG 绘制淡入（pipeline.ts 按 session 变化加类），
+   等待 capture 期间 .history-body 里是脉冲骨架条（showHistorySkeleton）。 */
+.history-svg.dag-enter { animation: dag-fade-in 200ms ease-out; }
+@keyframes dag-fade-in { from { opacity: 0; } }
+.history-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 14px;
+}
+.history-skeleton-bar {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  animation: skeleton-pulse-dag 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse-dag { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
 
 /* Edge colour / stroke-width are set inline per-lane in history-graph.js
    so every branch reads as its own continuous ribbon. No CSS overrides

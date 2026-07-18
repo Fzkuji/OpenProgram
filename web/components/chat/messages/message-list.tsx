@@ -13,7 +13,7 @@
  * `app-shell.tsx`. Each `MessageRow` subscribes to its own message
  * entry so a streaming delta re-renders only the affected bubble.
  */
-import { memo, useEffect } from "react";
+import { memo, useEffect, useLayoutEffect, useRef } from "react";
 
 import {
   useMessageById,
@@ -132,7 +132,12 @@ function useChatAreaStick(newTurnSeed: number) {
   // pulls scroll back to the latest content. After this, the user can
   // freely scroll up; the ResizeObserver only auto-pins while still
   // within 80px of the bottom.
-  useEffect(() => {
+  //
+  // useLayoutEffect, NOT useEffect: on session switch the transcript
+  // must already be at the bottom on its first painted frame —
+  // useEffect runs after paint, so the user saw the top of the
+  // conversation for one frame before the jump.
+  useLayoutEffect(() => {
     const area = document.getElementById("chatArea");
     if (!area) return;
     area.scrollTop = area.scrollHeight;
@@ -182,6 +187,23 @@ function PendingReplyIndicator() {
   );
 }
 
+/** claude.ai-style transcript skeleton — one user-bubble block top
+ *  right, then progressively shorter grey bars. Shown while a session
+ *  switch is waiting on the load_session reply (no full cache). */
+function TranscriptSkeleton() {
+  return (
+    <div className="transcript-skeleton" aria-hidden="true">
+      <div className="skeleton-bubble" />
+      <div className="skeleton-bar" style={{ width: "88%" }} />
+      <div className="skeleton-bar" style={{ width: "95%" }} />
+      <div className="skeleton-bar" style={{ width: "72%" }} />
+      <div className="skeleton-bar" style={{ width: "90%" }} />
+      <div className="skeleton-bar" style={{ width: "58%" }} />
+      <div className="skeleton-bar" style={{ width: "34%" }} />
+    </div>
+  );
+}
+
 export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const ids = useMessageIds(sessionId);
@@ -189,7 +211,26 @@ export function MessageList() {
     sessionId ? s.runningTasks[sessionId] ?? null : null,
   );
   const messagesById = useSessionStore((s) => s.messagesById);
+  const loadingId = useSessionStore((s) => s.transcriptLoadingId);
   useChatAreaStick(ids.length);
+
+  // Fade the transcript in once per session switch. The ref remembers
+  // which session already faded, so streaming updates (ids.length
+  // growing) inside the same session don't re-trigger the animation.
+  const lastFadedSession = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sessionId || ids.length === 0) return;
+    if (lastFadedSession.current === sessionId) return;
+    lastFadedSession.current = sessionId;
+    const el = document.getElementById("chatMessages");
+    if (!el) return;
+    el.classList.add("session-enter");
+    const t = setTimeout(() => el.classList.remove("session-enter"), 220);
+    return () => {
+      clearTimeout(t);
+      el.classList.remove("session-enter");
+    };
+  }, [sessionId, ids.length]);
 
   // Show the standalone indicator while we're still waiting on the
   // turn — either:
@@ -212,6 +253,12 @@ export function MessageList() {
     && lastMsg !== null
     && lastMsg !== undefined
     && lastMsg.role === "user";
+
+  // Session switch with nothing cached yet: skeleton placeholder
+  // instead of an empty area / welcome flash. Minimap etc. wait too.
+  if (sessionId && loadingId === sessionId && ids.length === 0) {
+    return <TranscriptSkeleton />;
+  }
 
   return (
     <>

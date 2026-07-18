@@ -84,6 +84,8 @@ interface ConvWindow {
     getState: () => {
       setCurrentConv: (id: string | null) => void;
       setHead?: (sessionId: string, headId: string | null) => void;
+      transcriptLoadingId?: string | null;
+      setTranscriptLoading?: (id: string | null) => void;
     };
   };
   __feedStoreFromConv?: (conv: LegacyConv) => void;
@@ -483,6 +485,14 @@ export function loadSessionData(data: LegacyConv): void {
   // session's summary fields (title / channel / preview / flags).
   mirrorUpsertConv(convs[id] as Record<string, unknown>);
   renderSessions();
+  // 清 transcript skeleton — 不能只在 currentSessionId 分支里清:
+  // 回包晚到、用户已切走时, loading 态若还指着这个 id 也要释放。
+  try {
+    const st = W.__sessionStore?.getState();
+    if (st?.transcriptLoadingId === id) st.setTranscriptLoading?.(null);
+  } catch {
+    /* ignore */
+  }
   W._branchesPanelCollapsed = true;
   if (id === W.currentSessionId) {
     W.refreshStatusSource?.();
