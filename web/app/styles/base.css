@@ -453,6 +453,25 @@ button, input, select, textarea, optgroup {
   transform: translateX(0);
 }
 
+/* ===== Desktop (Electron) traffic-light avoidance =====
+   macOS hiddenInset floats the traffic lights over web content at
+   x≈8–64, vertical center ≈22px. `html.is-desktop` is set by AppShell
+   when the preload bridge exists. The strip pushes the sidebar logo
+   row down 38px and doubles as a window-drag handle; browsers never
+   see it (display:none). */
+.desktop-drag-strip { display: none; }
+html.is-desktop .desktop-drag-strip {
+  display: block;
+  height: 38px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+/* Collapsed rail is 49px in the browser; under Electron the traffic
+   lights reach ~64px and would float onto the center tab strip, so
+   widen the rail. Header row is justify-center — button re-centers
+   on its own. Beats Tailwind's w-[49px]/min-w-[49px] on specificity. */
+html.is-desktop .sidebar.collapsed { width: 70px; min-width: 70px; }
+
 /* ===== Sidebar collapsed-state cascade (was 02-sidebar.css) =====
    These target descendant stable classes across the sidebar tree, so
    they stay a single global cascade rather than threading an `open`

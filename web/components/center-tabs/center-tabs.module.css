@@ -35,6 +35,16 @@
   flex-shrink: 0;
 }
 
+/* 桌面（Electron）：tab 条空白处可拖拽窗口（Chrome 同款）；tab 与 ＋号
+   仍要接收点击，标回 no-drag。 */
+:global(html.is-desktop) .strip {
+  -webkit-app-region: drag;
+}
+:global(html.is-desktop) .tab,
+:global(html.is-desktop) .plusBtn {
+  -webkit-app-region: no-drag;
+}
+
 /* 单个 tab —— 默认（非活动）：透明、四角全圆，悬浮在灰底上（Chrome 式：
    灰底属于栏，非活动 tab 本身无底色，靠竖分隔条分组、hover 才亮块）。 */
 .tab {

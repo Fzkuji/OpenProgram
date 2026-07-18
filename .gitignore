@@ -7,6 +7,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# desktop/build 是 electron-builder 的源资产目录（应用图标），不是构建产物
+!desktop/build/
 .pytest_cache/
 .DS_Store
 

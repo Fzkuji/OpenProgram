@@ -417,11 +417,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     minWidth: 200,
   });
 
-  // Desktop shell (Electron): wire File > New Tab / Close Tab menu
+  // Desktop shell (Electron): tag <html> with `is-desktop` so global CSS
+  // can carve out the macOS traffic-light zone (drag strip / wider
+  // collapsed rail), and wire File > New Tab / Close Tab menu
   // accelerators at startup — installing only from the web-tab pane
   // would leave Cmd+T dead until a web tab was opened once.
   useEffect(() => {
-    if (desktopBridge()) installDesktopMenuHandlers();
+    if (desktopBridge()) {
+      document.documentElement.classList.add("is-desktop");
+      installDesktopMenuHandlers();
+    }
   }, []);
 
   // Center tab container — which pane the center column shows. The
