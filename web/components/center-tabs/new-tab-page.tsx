@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * NewTabPage — the new-tab button's content. One big "New session"
- * action that triggers the existing new-chat flow (window.newSession,
- * same as the left sidebar's New chat); the resulting draft session tab
- * replaces this page in place, browser-style. Below it, a Browse-web
- * card + URL row opens a web tab (kind "web") the same way.
+ * NewTabPage — the new-tab button's content. Exactly two entries:
+ * a "New session" card (triggers window.newSession, same as the left
+ * sidebar's New chat — the draft session tab replaces this page in
+ * place) and a URL row that IS the browser entry (globe + input + Go,
+ * opens a web tab). No separate Browse-web button, no caption.
  */
 import { useRef, useState } from "react";
 
@@ -53,17 +53,13 @@ export function NewTabPage() {
         <MessageCircleIcon ref={sessionIconRef} size={14} aria-hidden="true" />
         {text("New session", "新会话")}
       </button>
-      <button
-        type="button"
-        className={styles.ntpCard}
-        onClick={() => urlInputRef.current?.focus()}
+      {/* 浏览器入口 = 这一行本身：地球图标 + 网址输入 + 打开。 */}
+      <div
+        className={styles.ntpUrlRow}
         onMouseEnter={() => webIconRef.current?.startAnimation()}
         onMouseLeave={() => webIconRef.current?.stopAnimation()}
       >
         <EarthIcon ref={webIconRef} size={14} aria-hidden="true" />
-        {text("Browse web", "浏览网页")}
-      </button>
-      <div className={styles.ntpUrlRow}>
         <input
           ref={urlInputRef}
           className={styles.ntpUrlInput}
@@ -79,12 +75,6 @@ export function NewTabPage() {
         <button type="button" className={styles.ntpUrlGo} onClick={go}>
           {text("Go", "打开")}
         </button>
-      </div>
-      <div className={styles.ntpHint}>
-        {text(
-          "Sessions, files and web pages all open as tabs here",
-          "会话、文件和网页都会在这里以标签页打开",
-        )}
       </div>
     </div>
   );

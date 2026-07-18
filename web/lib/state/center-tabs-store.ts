@@ -41,7 +41,12 @@ export interface CenterTab {
 }
 
 export const DRAFT_SESSION_TAB_ID = "s:draft";
-export const NTP_TAB_ID = "ntp";
+/** New-tab 页不再是单例（Chrome 行为：＋ 想开几个开几个），每个实例一个
+ *  唯一 id。时间戳 + 自增序号，避免与持久化恢复的旧 id 撞车。 */
+let ntpSeq = 0;
+function nextNtpId(): string {
+  return `ntp:${Date.now().toString(36)}:${(ntpSeq++).toString(36)}`;
+}
 
 export function sessionTabId(sessionId: string): string {
   return `s:${sessionId}`;
@@ -161,23 +166,36 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
   const initial = readPersisted();
 
   /** Focus tab `id` if present; otherwise insert `make()` — replacing
-   *  the active tab when it's one of `replaceable` (in-place browser
-   *  navigation), else appending at the end. */
+   *  the active tab when it's a New-tab page or one of `replaceable`
+   *  (in-place browser navigation), else appending at the end.
+   *
+   *  New-tab 页永远原地变身（按 kind 判断，Chrome 语义：NTP 一旦导航就
+   *  不存在了）——目标 tab 已在别处打开时也一样：聚焦目标并把当前 NTP
+   *  移除，绝不把空 New tab 留在原地。 */
   function focusOrCreate(
     s: CenterTabsState,
     id: string,
     make: () => CenterTab,
     replaceable: string[],
   ): Partial<CenterTabsState> {
+    const active = s.tabs.find((t) => t.id === s.activeId);
     const existing = s.tabs.find((t) => t.id === id);
     if (existing) {
-      const next = { tabs: s.tabs, activeId: id };
+      const tabs =
+        active && active.kind === "ntp" && active.id !== id
+          ? s.tabs.filter((t) => t.id !== active.id)
+          : s.tabs;
+      const next = { tabs, activeId: id };
       persist(next);
       return next;
     }
     const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
     let tabs: CenterTab[];
-    if (activeIdx >= 0 && replaceable.includes(s.tabs[activeIdx].id)) {
+    if (
+      activeIdx >= 0 &&
+      (s.tabs[activeIdx].kind === "ntp" ||
+        replaceable.includes(s.tabs[activeIdx].id))
+    ) {
       tabs = s.tabs.map((t, i) => (i === activeIdx ? make() : t));
     } else {
       tabs = [...s.tabs, make()];
@@ -210,7 +228,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
             title,
             sessionId,
           }),
-          [DRAFT_SESSION_TAB_ID, NTP_TAB_ID],
+          [DRAFT_SESSION_TAB_ID],
         ),
       ),
 
@@ -220,7 +238,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           s,
           DRAFT_SESSION_TAB_ID,
           () => ({ id: DRAFT_SESSION_TAB_ID, kind: "session", title: "" }),
-          [NTP_TAB_ID],
+          [],
         ),
       ),
 
@@ -236,7 +254,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
             projectId,
             path,
           }),
-          [NTP_TAB_ID],
+          [],
         ),
       ),
 
@@ -251,7 +269,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
             title: hostnameOf(url),
             url,
           }),
-          [NTP_TAB_ID],
+          [],
         ),
       ),
 
@@ -318,15 +336,16 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         return next;
       }),
 
+    // ＋ 永远追加一个新的 New-tab 页并聚焦（Chrome：想开几个开几个，不做
+    // 单例限制；也不走 focusOrCreate 的 NTP 原地替换——从 NTP 上点＋就该
+    // 多出一个）。
     openNewTabPage: () =>
-      set((s) =>
-        focusOrCreate(
-          s,
-          NTP_TAB_ID,
-          () => ({ id: NTP_TAB_ID, kind: "ntp", title: "" }),
-          [],
-        ),
-      ),
+      set((s) => {
+        const tab: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
+        const next = { tabs: [...s.tabs, tab], activeId: tab.id };
+        persist(next);
+        return next;
+      }),
 
     closeTab: (id) =>
       set((s) => {
@@ -338,8 +357,10 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           activeId = (tabs[idx] ?? tabs[idx - 1])?.id ?? null;
         }
         if (tabs.length === 0) {
-          tabs = [{ id: NTP_TAB_ID, kind: "ntp", title: "" }];
-          activeId = NTP_TAB_ID;
+          // 关掉最后一个 tab → 兜底给一个新 New-tab 页（栏不能空）。
+          const ntp: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
+          tabs = [ntp];
+          activeId = ntp.id;
         }
         const next = { tabs, activeId };
         persist(next);

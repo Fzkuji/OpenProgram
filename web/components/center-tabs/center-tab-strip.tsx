@@ -18,7 +18,7 @@
  * ponytail: window.confirm — the strip has no dialog host; swap for
  * ConfirmDialog if one ever lands at this level.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CirclePlus, FileText, Globe, Plus, X } from "lucide-react";
 
@@ -59,11 +59,20 @@ export function CenterTabStrip() {
   // by a sidebar session click).
   useEffect(() => {
     if (!isChatRoute(pathname)) return;
-    if (currentSessionId) {
+    // 会话 id 以路由为准：关 tab 后 activateSession 推新路由时，pathname
+    // 和 currentSessionId 分两次渲染更新 —— 若用 currentSessionId，中间那
+    // 帧会把刚关掉的会话 tab 重新插回来（"关一个弹回一个"）。路由是唯一
+    // 不滞后的真值。
+    if (pathname.startsWith("/s/")) {
+      const sid = decodeURIComponent(pathname.slice("/s/".length));
+      const title = useSessionStore.getState().conversations[sid]?.title ?? "";
+      openSessionTab(sid, title);
+    } else if (currentSessionId) {
+      // /chat 且 chat_ack 已分配 id → 草稿 tab 原地转正。
       const title =
         useSessionStore.getState().conversations[currentSessionId]?.title ?? "";
       openSessionTab(currentSessionId, title);
-    } else if (pathname === "/chat") {
+    } else {
       openDraftSessionTab();
     }
   }, [currentSessionId, pathname, openSessionTab, openDraftSessionTab]);
@@ -75,6 +84,21 @@ export function CenterTabStrip() {
   // in the previous list and gone now — a merely stale localStorage
   // restore or a not-yet-loaded list must not close tabs.
   const prevConvIds = useRef<Set<string> | null>(null);
+  // 正在播退场动画的 tab id：仍在 store 里、DOM 上挂 .tabExit，动画结束
+  // 才真正 closeTab。
+  const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
+  // 入场动画：上一次提交后的 tab id 集合。本次渲染里不在集合中的 = 新增，
+  // 挂 .tabEnter 播"从 0 长宽、挤开邻居"的动画；首次渲染（null）不播。
+  // tab 总数没变多 = NTP 原地变身（id 换了但位置复用，如空 tab 上点侧栏
+  // 会话），不是真追加 —— 也不播，避免原地弹一下。
+  const prevTabIds = useRef<Set<string> | null>(null);
+  const enteringIds =
+    prevTabIds.current === null || tabs.length <= prevTabIds.current.size
+      ? new Set<string>()
+      : new Set(tabs.filter((t) => !prevTabIds.current!.has(t.id)).map((t) => t.id));
+  useEffect(() => {
+    prevTabIds.current = new Set(tabs.map((t) => t.id));
+  }, [tabs]);
   useEffect(() => {
     const ids = new Set(Object.keys(conversations));
     const prev = prevConvIds.current;
@@ -118,6 +142,18 @@ export function CenterTabStrip() {
       if (tab.kind === "file" && tab.projectId && tab.path)
         fileDrafts.delete(fileDraftKey(tab.projectId, tab.path));
     }
+    // 先播退场动画（.tabExit 收缩到 0），animationend 再 finishClose 真正
+    // 移除 —— 和新建 tab 的挤压动画成镜像。
+    setClosingIds((prev) => new Set(prev).add(tab.id));
+  }
+
+  /** 退场动画播完后的真正关闭：移出 store + 焦点交给邻居。 */
+  function finishClose(tab: CenterTab) {
+    setClosingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(tab.id);
+      return next;
+    });
     closeTab(tab.id);
     // Closing the active tab hands focus to a neighbor; if that
     // neighbor is a session tab, bring the chat surface to it.
@@ -143,10 +179,13 @@ export function CenterTabStrip() {
           key={tab.id}
           tab={tab}
           active={tab.id === activeId}
+          enter={enteringIds.has(tab.id)}
+          closing={closingIds.has(tab.id)}
           label={labelOf(tab)}
           closeLabel={text("Close tab", "关闭标签")}
           onClick={() => onTabClick(tab)}
           onClose={(e) => onTabClose(e, tab)}
+          onExited={() => finishClose(tab)}
         />
       ))}
       <button
@@ -166,22 +205,36 @@ export function CenterTabStrip() {
 function TabItem({
   tab,
   active,
+  enter,
+  closing,
   label,
   closeLabel,
   onClick,
   onClose,
+  onExited,
 }: {
   tab: CenterTab;
   active: boolean;
+  enter: boolean;
+  closing: boolean;
   label: string;
   closeLabel: string;
   onClick: () => void;
   onClose: (e: React.MouseEvent) => void;
+  onExited: () => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
+  // 入场动画只在挂载那一次播；播完摘掉 class（.tabEnter 的 overflow:hidden
+  // 不能留着，否则会裁掉活动 tab 的 fillet）。
+  const [entering, setEntering] = useState(enter);
   return (
     <div
-      className={`${styles.tab} ${active ? styles.tabActive : ""}`}
+      className={`${styles.tab} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
+      onAnimationEnd={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (closing) onExited();
+        else setEntering(false);
+      }}
       title={tab.kind === "file" ? tab.path : tab.kind === "web" ? tab.url : label}
       onClick={onClick}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
@@ -199,9 +252,6 @@ function TabItem({
         }
       }}
     >
-      {/* 悬停浮起的浅色 pill，绝对定位铺在标签内容之下（z-index:-1），
-          非活动标签悬停时点亮；活动标签下它保持透明。 */}
-      <span className={styles.tabPill} aria-hidden="true" />
       <span className={styles.tabIcon} aria-hidden="true">
         {tab.kind === "session" ? (
           <MessageCircleIcon ref={iconRef} size={14} />
@@ -233,7 +283,7 @@ function TabItem({
         aria-label={closeLabel}
         onClick={onClose}
       >
-        <X size={12} />
+        <X size={14} />
       </span>
     </div>
   );

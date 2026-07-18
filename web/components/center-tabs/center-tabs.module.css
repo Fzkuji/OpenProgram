@@ -2,125 +2,170 @@
    Strip is a 40px band; the session tab has NO second toolbar under it
    (chat chrome = the strip alone), and the file/web toolbars below are
    40px too, so their second line lands at y=80.
-
-   跟真实 Chrome 标签栏对齐（观察当前浏览器 + GM3 规范）：
-   - 标签之间贴着排、无外间距，靠 1px 竖分隔线区分（相邻活动/悬停时隐藏）；
-   - 非活动标签透明贴底、悬停才浮起一个四角圆的浅色 pill；
-   - 活动标签用页面底色填充、顶部圆角、下外角做外扩凹形圆角(fillet)，
-     一直落到栏底盖掉分隔线，和下方内容区融为一体。
-   Token 词汇沿用全站。 */
+   设计细节（几何/颜色）见下方 .strip 前的说明块。Token 词汇沿用全站。 */
 
 /* ---- Tab strip ---------------------------------------------------- */
 
+/* 布局对齐用户 Chrome 参照（图83/84），全部整数算术，无桥接 hack：
+
+   ── 几何 ────────────────────────────────────────────────────────────
+   strip 40px 高、无纵向 padding。非活动 tab 28px 垂直居中 → 上下各 6px
+   （矮按钮、多留白，Chrome 观感）。活动 tab 高 34px = 28 + 6、
+   align-self:flex-end → 它的底边【就是】strip 底边(y=40)，元素本体直接
+   贴到内容区，无需 box-shadow 桥接、不存在细缝。padding-bottom:6px 把
+   活动 tab 的内容压回上方 28px 区，图标/文字和邻居完全同一水平线。
+
+   ── 溢出 ────────────────────────────────────────────────────────────
+   tab 多时【压缩宽度】而不是横向滚动（Chrome 逻辑）：tab 允许 flex 收缩
+   到 min-width，标题省略号；＋ 号是最后一个 flex 项，因此永远可见。
+
+   ── 颜色 ────────────────────────────────────────────────────────────
+   strip 满铺实色灰（--bg-secondary），四边直抵边缘，底边与内容区直接相接
+   （Chrome 同款的干净区域边界，不加线、不加渐变、不加阴影）。活动 tab 用
+   --bg-primary(=内容区色) + 底部两侧 fillet，从灰底里"长"进内容区，衔接
+   处全部同色。切 tab 不做任何过渡动画，瞬时切换。 */
 .strip {
   height: 40px;
   box-sizing: border-box;
   display: flex;
-  align-items: flex-end; /* 标签贴栏底，活动标签才能无缝接内容区 */
-  /* 首个标签前留一点内缩气口，其余标签贴着排（分隔线负责分组） */
+  align-items: center; /* 非活动 tab 垂直居中：(40-28)/2 = 上下各 6px */
+  gap: 8px; /* tab 之间的间距 */
   padding: 0 8px;
-  /* 1px 栏底线用背景层画（非 border-bottom），这样活动标签这个子元素
-     绘制在父背景之上时能盖住它、和下方内容区融合。background-attachment
-     默认 scroll(锚在元素上)，横向溢出滚动时线不动。 */
-  background:
-    linear-gradient(var(--border), var(--border)) left bottom / 100% 1px
-      no-repeat,
-    var(--bg-secondary);
+  background: var(--bg-secondary); /* 实色灰底，底边干净直接（Chrome 同款） */
   flex-shrink: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-/* 非活动标签：透明贴底、无外间距；下方 fillet 高度 6px 决定分隔线的
-   上下留白，让竖线只占中段（Chrome 观感）。 */
+/* 单个 tab —— 默认（非活动）：透明、四角全圆，悬浮在灰底上（Chrome 式：
+   灰底属于栏，非活动 tab 本身无底色，靠竖分隔条分组、hover 才亮块）。 */
 .tab {
   position: relative;
-  /* 自成层叠上下文：pill(z-index:-1) 只压在本标签文字下方，不会掉到
-     栏背景后面被裁掉，也不影响其它标签。 */
   isolation: isolate;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  /* 38px 于 40px 栏内 flex-end 贴底：顶部剩 2px、底部融合处 ~2px，
-     上下留白对称（Chrome 观感），不再上空下紧。 */
-  height: 38px;
+  gap: 8px;
+  padding: 0 12px;
+  height: 28px; /* 矮按钮：上下各留 6px（Chrome 观感） */
   box-sizing: border-box;
-  border-radius: 8px 8px 0 0;
+  border-radius: 8px; /* 四角全圆 */
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 13px;
-  min-width: 88px;
-  max-width: 220px;
-  flex-shrink: 0;
+  /* 等宽（Chrome 逻辑）：所有 tab 同一基准宽 200px，与标题长短无关；空间
+     不足时等基准 → 等比收缩到 min-width，标题省略号，不横向滚动。 */
+  flex: 0 1 200px;
+  min-width: 48px;
   white-space: nowrap;
+  /* 不做 background 过渡：切换 tab 必须瞬时（Chrome 同款）。之前 120ms 的
+     淡入让活动白底在灰底上"闪一下亮"。 */
 }
 
-/* 标签之间不画竖分隔线（用户定：删掉）。非活动靠文字/hover pill 区分，
-   活动靠融入内容区的填充区分。活动标签的左 fillet 由 .tab.tabActive
-   ::before 单独绘制，与此无关。 */
+/* 新建 tab 入场动画：宽度从 0 长到基准宽，flex 布局逐帧回流，邻居被平滑
+   挤开（Chrome 式）。只在【新增】的 tab 上挂 .tabEnter（初始加载的不播），
+   动画结束由 onAnimationEnd 摘掉 class —— overflow:hidden 只在入场期间
+   裁一下内容，摘掉后不会裁活动 tab 的 fillet。 */
+@keyframes tabEnter {
+  from {
+    flex-basis: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+.tabEnter {
+  animation: tabEnter 180ms ease-out;
+  overflow: hidden;
+}
 
-/* 悬停：非活动标签浮起一个四角都圆的浅色 pill，比栏高矮一点、垂直
-   居中，不落到栏底——只有活动标签才接内容区。 */
-.tab:not(.tabActive):hover {
-  color: var(--text-bright);
+/* 关闭 tab 退场动画：入场的镜像 —— 宽度收缩到 0，邻居平滑回填。真正从
+   store 移除发生在 animationend 之后（strip 组件里延迟 closeTab），
+   forwards 保住收缩完的终态、避免移除前闪回原宽。 */
+@keyframes tabExit {
+  to {
+    flex-basis: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+  }
 }
-.tab:not(.tabActive):hover .tabPill {
-  background: var(--bg-hover);
+.tabExit {
+  animation: tabExit 160ms ease-in forwards;
+  overflow: hidden;
+  pointer-events: none; /* 退场中不可再点 */
 }
-.tabPill {
+
+/* 非活动 tab 之间的竖分隔条（2px 宽、圆角、竖直居中，用户 Chrome 同款）。
+   画在非活动 tab 左侧 gap 里（gap 8px → 条心在 -4px，条宽 2px → left:-5px）。
+   首个 tab、紧贴活动 tab 右侧、以及分隔条两侧任一 tab 悬停时淡出。 */
+.tab:not(.tabActive)::before {
+  content: "";
   position: absolute;
-  left: 2px;
-  right: 2px;
-  top: 4px;
-  bottom: 4px;
-  border-radius: 8px;
-  z-index: -1;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--border);
   pointer-events: none;
 }
+.tab:first-child::before,
+.tabActive + .tab::before,
+.tab:not(.tabActive):hover::before,
+.tab:hover + .tab:not(.tabActive)::before {
+  background: transparent;
+}
 
-/* 活动标签 — Chrome 融合效果：页面底色填充，顶部圆角，标签贴到栏底
-   盖住栏底线，和下方内容区读作同一片面。38px 与非活动标签同高，切换
-   不跳动。 */
+/* 悬停：非活动 tab 浮起一层四角圆浅色块 + 文字提亮。 */
+.tab:not(.tabActive):hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+/* 活动 tab —— 顶圆底方、内容区同色，自身延伸到 strip 底边（见文件头几何
+   说明），底部两侧 fillet 平滑弯进内容区。z-index:1 盖过邻居的分隔条。 */
 .tabActive,
 .tab.tabActive:hover {
+  height: 34px; /* 28 + 底部 6px 延伸段 */
+  align-self: flex-end; /* 底边贴 strip 底边（y=40），与内容区零距离 */
+  padding-bottom: 6px; /* 内容压回上方 28px 区，与邻居文字同线 */
+  border-radius: 8px 8px 0 0;
   background: var(--bg-primary);
   color: var(--text-bright);
-  z-index: 1; /* fillet + 主体盖过邻居悬停 pill 与分隔线 */
+  z-index: 1;
 }
-.tabActive .tabPill { background: transparent; }
-
-/* Chrome 招牌的下外角凹形圆角(fillet)：活动标签每个下外角外侧贴一个
-   7px 方块，填成标签底色，只在方块「上外角」抠掉一个 1/4 圆——radial
-   gradient 就是精确的 fillet 几何，栏底 1px 线在弧线透明处一直露到
-   flare 接触栏底为止。7px 比原 8px 收一档，弧线更利落不发胖。 */
+/* 右下 fillet：贴活动 tab 右下角外侧的 8px 方块，抠掉上外角 1/4 圆。
+   bottom:0 就是 strip 底边，弧线直接落在内容区顶线上。 */
 .tab.tabActive::after {
   content: "";
   position: absolute;
+  right: -8px;
   bottom: 0;
-  right: -7px;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   background: radial-gradient(
-    circle 7px at 100% 0,
-    transparent 6.5px,
-    var(--bg-primary) 7px
+    circle 8px at 100% 0,
+    transparent 7.5px,
+    var(--bg-primary) 8px
   );
 }
-/* 左下 fillet：自包含（分隔线已删，::before 不再另有他用，这里补全
-   全部属性，不再依赖任何基础规则，杜绝左下角掉成直角）。 */
+/* 左下 fillet（活动 tab 不画分隔条，::before 空闲；全属性自包含，覆盖掉
+   分隔条规则里的 top/transform）。 */
 .tab.tabActive::before {
   content: "";
   position: absolute;
-  left: -7px;
+  left: -8px;
+  top: auto;
   bottom: 0;
-  width: 7px;
-  height: 7px;
+  transform: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
   background: radial-gradient(
-    circle 7px at 0 0,
-    transparent 6.5px,
-    var(--bg-primary) 7px
+    circle 8px at 0 0,
+    transparent 7.5px,
+    var(--bg-primary) 8px
   );
 }
 
@@ -134,26 +179,32 @@
 .tabActive .tabIcon { color: var(--text-bright); }
 
 .tabName {
+  /* 撑满图标和 ✕ 之间的全部空间：短标题够不到右缘 → 渐隐不生效、✕ 紧随
+     其位；长标题溢出 → 正好在 ✕ 前渐隐消失（Chrome 式），中间无死留白。
+     不撑满的话容器贴文字宽，右缘 mask 会把每个标题的尾巴都淡掉。 */
+  flex: 1 1 auto;
   overflow: hidden;
-  text-overflow: ellipsis;
   min-width: 0;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black calc(100% - 12px),
+    transparent
+  );
+  mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
 }
 
-/* Close ✕ — hover-only on inactive tabs, always on the active one. */
+/* Close ✕ — 常驻显示（等宽 tab 右侧本就留有它的位置，Chrome 同款）。 */
 .tabClose {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   margin-left: auto;
   flex-shrink: 0;
   border-radius: 50%;
   color: var(--text-dim);
-  opacity: 0;
 }
-.tab:hover .tabClose,
-.tabActive .tabClose { opacity: 1; }
 .tabClose:hover {
   color: var(--text-bright);
   background: var(--bg-hover);
@@ -164,8 +215,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   margin-left: auto;
   flex-shrink: 0;
   font-size: 8px;
@@ -178,26 +229,47 @@
 /* ＋ 新建：紧跟最后一个标签、比标签矮的安静圆角钮，悬停才有底色。
    align-self:center 让它在 40px 栏里垂直居中（栏本身 align-items 是
    flex-end，标签贴底，＋ 钮居中不受影响）。 */
+/* ＋ 新建：当作一个"窄 tab"（Chrome 式）—— 与前面 tab 的间距就是 flex
+   gap（同 tab 间距，无额外 margin），左侧有同款竖分隔条。 */
 .plusBtn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   align-self: center;
   width: 28px;
   height: 28px;
-  margin-left: 4px;
   padding: 0;
   font-size: 15px;
   color: var(--text-secondary);
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: 50%; /* 圆形（Chrome 的 ＋ 是正圆） */
   cursor: pointer;
-  flex-shrink: 0;
+  flex-shrink: 0; /* tab 压缩时 ＋ 不缩、永远可见 */
 }
 .plusBtn:hover {
   color: var(--text-bright);
   background: var(--bg-hover);
+}
+/* ＋ 左侧的竖分隔条：与 tab 间分隔条同款；前邻 tab 活动/悬停或 ＋ 自身
+   悬停时淡出（同 tab 规则）。 */
+.plusBtn::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.tabActive + .plusBtn::before,
+.tab:hover + .plusBtn::before,
+.plusBtn:hover::before {
+  background: transparent;
 }
 
 /* ---- File tab pane ------------------------------------------------ */
@@ -399,10 +471,13 @@
   color: var(--text-bright);
 }
 
+/* 两个入口（新会话卡片 / 网址行）同宽同高同圆角，堆叠成一列。 */
 .ntpCard {
   display: flex;
   align-items: center;
   gap: 9px;
+  width: min(380px, 80%);
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px 18px;
@@ -416,35 +491,34 @@
   color: var(--text-bright);
 }
 
-.ntpHint {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-/* URL row under the Browse-web card. */
+/* 浏览器入口：本身就是一张卡片（地球 + 输入 + 打开），和上面的卡片同宽。 */
 .ntpUrlRow {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: min(420px, 80%);
+  gap: 9px;
+  width: min(380px, 80%);
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 8px 8px 18px;
+  color: var(--text-secondary);
+}
+.ntpUrlRow:focus-within {
+  border-color: var(--accent-orange, var(--text-dim));
 }
 .ntpUrlInput {
   flex: 1;
   min-width: 0;
-  height: 32px;
-  box-sizing: border-box;
-  padding: 0 12px;
   font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--text-bright);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: none;
   outline: none;
+  padding: 0;
 }
-.ntpUrlInput:focus { border-color: var(--text-dim); }
 .ntpUrlGo {
-  height: 32px;
+  height: 30px;
   box-sizing: border-box;
   padding: 0 14px;
   font-size: 12.5px;
