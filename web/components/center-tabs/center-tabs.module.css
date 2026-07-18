@@ -31,7 +31,7 @@
   align-items: center; /* 非活动 tab 垂直居中：(40-28)/2 = 上下各 6px */
   gap: 8px; /* tab 之间的间距 */
   padding: 0 8px;
-  background: var(--bg-secondary); /* 实色灰底，底边干净直接（Chrome 同款） */
+  background: var(--tabrow-bg); /* 实色灰底（桌面模式比侧栏深一档，见 base.css） */
   flex-shrink: 0;
 }
 
@@ -39,10 +39,24 @@
    仍要接收点击，标回 no-drag。 */
 :global(html.is-desktop) .strip {
   -webkit-app-region: drag;
+  padding-right: 0; /* 右缘留白由 .desktop-tab-row 的 padding-right:6px 负责 */
 }
 :global(html.is-desktop) .tab,
 :global(html.is-desktop) .plusBtn {
   -webkit-app-region: no-drag;
+}
+/* 桌面模式：＋ 钉到最右，与右侧收起轨的图标同轴。右轨 49px（含 1px 左边框）
+   → 内容 48px，图标钮 32px 居中（两侧 8px）→ 图标中心距窗口右缘 24px。
+   ＋ 钮 28px 宽：row padding-right 6 + margin-right 4 + 半宽 14 = 24。
+   ＋ 与最后一个 tab 之间的空档属于 strip（drag），窗口可拖。 */
+:global(html.is-desktop) .plusBtn {
+  margin-left: auto;
+  margin-right: 4px;
+}
+/* ＋ 被推到最右后，它左侧 5px 处的竖分隔条会悬在空档里（不再紧贴 tab），
+   桌面模式下不画。 */
+:global(html.is-desktop) .plusBtn::before {
+  content: none;
 }
 
 /* 单个 tab —— 默认（非活动）：透明、四角全圆，悬浮在灰底上（Chrome 式：

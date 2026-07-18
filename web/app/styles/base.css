@@ -462,11 +462,27 @@ button, input, select, textarea, optgroup {
    center-tabs.module.css — the row only reserves the traffic-light
    zone and repeats the strip's background so the 76px gap isn't
    transparent. */
+/* Tab-row surface colour. Browser mode: identical to --bg-secondary (no
+   visual change). Desktop mode: one step darker than the sidebars below,
+   like Chrome's frame vs. toolbar — mixing toward black works for both
+   themes (Chrome's dark frame is darker than its content too). Declared
+   on html (same element as [data-theme]), so var(--bg-secondary) resolves
+   per theme. */
+:root {
+  --tabrow-bg: var(--bg-secondary);
+}
+html.is-desktop {
+  --tabrow-bg: color-mix(in srgb, var(--bg-secondary) 88%, #000 12%);
+}
 .desktop-tab-row {
   display: flex;
   flex-shrink: 0;
   padding-left: 76px; /* macOS traffic lights (x≈8–64) + breathing room */
-  background: var(--bg-secondary); /* same as .strip — covers the 76px gap */
+  /* 6px right inset: strip content never touches the window edge, so the
+     tab-row/right-rail corner is a clean straight seam. Counted into the
+     ＋-button axis math in center-tabs.module.css (6 + 4 + 14 = 24). */
+  padding-right: 6px;
+  background: var(--tabrow-bg); /* same as .strip — covers the 76px gap */
   -webkit-app-region: drag;
 }
 .desktop-tab-row > * { flex: 1; min-width: 0; }
