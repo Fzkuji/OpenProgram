@@ -498,8 +498,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               path={activeTab.path}
             />
           ) : null}
-          {activeKind === "web" && activeTab?.url ? (
-            <WebTabPane key={activeTab.id} tabId={activeTab.id} url={activeTab.url} />
+          {/* url 为空也要挂载：白屏竞态会把 store url 冲空，面板自己能
+             从 tab id 找回地址（见 web-tab-pane）；不挂载就只剩白屏。 */}
+          {activeKind === "web" && activeTab ? (
+            <WebTabPane
+              key={activeTab.id}
+              tabId={activeTab.id}
+              url={activeTab.url ?? ""}
+            />
           ) : null}
           {activeKind === "ntp" ? <NewTabPage /> : null}
         </div>

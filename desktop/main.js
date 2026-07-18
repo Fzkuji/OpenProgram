@@ -12,6 +12,11 @@ const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
 const WORKER_COMMAND = "openprogram worker start";
 
+// agent 接管内置浏览器的数据面通道：后端 browser 工具（engine=auto/app）经
+// CDP attach 这里的可见 web tab。Electron 默认只绑 127.0.0.1，不对外暴露；
+// 9222 留给后端 sidecar Chrome，互不冲突。必须在 app ready 之前设置。
+app.commandLine.appendSwitch("remote-debugging-port", "9223");
+
 const ERROR_PAGE =
   "data:text/html;charset=utf-8," +
   encodeURIComponent(
@@ -130,10 +135,14 @@ function sendState(id, extra) {
   const view = views.get(id);
   if (!view) return;
   const wc = view.webContents;
+  // 加载初期 URL 未 commit 时 getURL()/getTitle() 返回空串——发出去会把
+  // 渲染端 store 里的 url 冲成空，导致面板被卸载（白屏竞态）。空则不发。
+  const u = wc.getURL();
+  const ti = wc.getTitle();
   mainWindow.webContents.send("webtab:state", {
     id,
-    url: wc.getURL(),
-    title: wc.getTitle(),
+    ...(u ? { url: u } : {}),
+    ...(ti ? { title: ti } : {}),
     loading: wc.isLoading(),
     canGoBack: wc.navigationHistory.canGoBack(),
     canGoForward: wc.navigationHistory.canGoForward(),

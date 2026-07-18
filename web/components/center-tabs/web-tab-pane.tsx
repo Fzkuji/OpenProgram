@@ -60,7 +60,11 @@ function DesktopWebTabPane({
 }) {
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
-  const [address, setAddress] = useState(url);
+  // 历史遗留的白屏竞态可能把 store 里的 url 冲成空串；tab id 本身带着
+  // 原始 URL（"w:<url>"），空 url 时从 id 找回，老 tab 自愈。
+  const effectiveUrl =
+    url || (tabId.startsWith("w:") ? tabId.slice(2) : "");
+  const [address, setAddress] = useState(effectiveUrl);
   const [loading, setLoading] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -69,7 +73,7 @@ function DesktopWebTabPane({
   // Last URL the native view is known to be at (our navigate calls +
   // onState reports). The store-url effect below only steers the view
   // on real drift, so onState → updateWebTab echoes never re-navigate.
-  const viewUrlRef = useRef(url);
+  const viewUrlRef = useRef(effectiveUrl);
 
   // View lifecycle. Visibility model: this pane is mounted only while
   // its tab is active, so show on mount / hide on unmount. destroy
@@ -122,14 +126,17 @@ function DesktopWebTabPane({
   useEffect(() => {
     return bridge.webTab.onState((state) => {
       if (state.id !== tabId) return;
-      if (state.url !== undefined) {
+      // 空串一律忽略（加载初期 getURL/getTitle 为空；写进 store 会把
+      // url 冲空、面板被 app-shell 卸载 → 白屏）。主进程侧已过滤，这里
+      // 是第二道保险。
+      if (state.url) {
         viewUrlRef.current = state.url;
         if (document.activeElement !== addressRef.current) {
           setAddress(state.url);
         }
         updateWebTab(tabId, { url: state.url });
       }
-      if (state.title !== undefined) updateWebTab(tabId, { title: state.title });
+      if (state.title) updateWebTab(tabId, { title: state.title });
       if (state.loading !== undefined) setLoading(state.loading);
       if (state.canGoBack !== undefined) setCanGoBack(state.canGoBack);
       if (state.canGoForward !== undefined) setCanGoForward(state.canGoForward);
@@ -140,7 +147,7 @@ function DesktopWebTabPane({
   // navigation) → steer the view. Our own updates (navigate() below,
   // onState echoes) already advanced viewUrlRef, so they no-op here.
   useEffect(() => {
-    if (url === viewUrlRef.current) return;
+    if (!url || url === viewUrlRef.current) return; // 空串不算漂移
     viewUrlRef.current = url;
     bridge.webTab.navigate(tabId, url);
     if (document.activeElement !== addressRef.current) setAddress(url);
