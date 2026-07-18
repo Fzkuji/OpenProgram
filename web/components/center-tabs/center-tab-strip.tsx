@@ -175,7 +175,7 @@ export function CenterTabStrip() {
     if (tab.kind === "session") activateSession(tab);
   }
 
-  function onTabClose(e: React.MouseEvent, tab: CenterTab) {
+  function onTabClose(e: React.SyntheticEvent, tab: CenterTab) {
     e.stopPropagation();
     if (tab.dirty) {
       if (!window.confirm(text("Discard unsaved changes?", "放弃未保存的修改？")))
@@ -229,11 +229,38 @@ export function CenterTabStrip() {
     return tab.title || t("sidebar.untitled");
   }
 
+  function onTabListKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[role="tab"]');
+    if (!target || target !== e.target || !e.currentTarget.contains(target)) return;
+    const items = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'),
+    );
+    const index = items.indexOf(target);
+    if (index < 0 || items.length === 0) return;
+    const nextIndex =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? items.length - 1
+          : e.key === "ArrowRight"
+            ? (index + 1) % items.length
+            : (index - 1 + items.length) % items.length;
+    e.preventDefault();
+    items[nextIndex].focus();
+    items[nextIndex].click();
+  }
+
   return (
     <div className={styles.strip}>
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
-      <div className={styles.tabsFlow}>
+      <div
+        className={styles.tabsFlow}
+        role="tablist"
+        aria-label={text("Open tabs", "打开的标签")}
+        onKeyDown={onTabListKeyDown}
+      >
         {tabs.map((tab) => (
           <TabItem
             key={tab.id}
@@ -253,6 +280,7 @@ export function CenterTabStrip() {
         type="button"
         className={styles.plusBtn}
         title={text("New tab", "新标签页")}
+        aria-label={text("New tab", "新标签页")}
         onClick={openNewTabPage}
       >
         <Plus size={15} />
@@ -281,7 +309,7 @@ function TabItem({
   label: string;
   closeLabel: string;
   onClick: () => void;
-  onClose: (e: React.MouseEvent) => void;
+  onClose: (e: React.SyntheticEvent) => void;
   onExited: () => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
@@ -313,18 +341,31 @@ function TabItem({
         }
       }}
     >
-      <span className={styles.tabIcon} aria-hidden="true">
-        {tab.kind === "session" ? (
-          <MessageCircleIcon ref={iconRef} size={14} />
-        ) : tab.kind === "file" ? (
-          <FileText size={13} />
-        ) : tab.kind === "web" ? (
-          <Globe size={13} />
-        ) : (
-          <CirclePlus size={13} />
-        )}
-      </span>
-      <span className={styles.tabName}>{label}</span>
+      <div
+        className={styles.tabTarget}
+        role="tab"
+        aria-selected={active}
+        aria-label={label}
+        tabIndex={active ? 0 : -1}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          onClick();
+        }}
+      >
+        <span className={styles.tabIcon} aria-hidden="true">
+          {tab.kind === "session" ? (
+            <MessageCircleIcon ref={iconRef} size={14} />
+          ) : tab.kind === "file" ? (
+            <FileText size={13} />
+          ) : tab.kind === "web" ? (
+            <Globe size={13} />
+          ) : (
+            <CirclePlus size={13} />
+          )}
+        </span>
+        <span className={styles.tabName}>{label}</span>
+      </div>
       {tab.dirty ? (
         <span className={styles.tabDirtyDot} aria-hidden="true">
           {/* 8px round marker via currentColor — no text glyph */}
@@ -338,14 +379,16 @@ function TabItem({
           />
         </span>
       ) : null}
-      <span
-        role="button"
+      <button
+        type="button"
         className={styles.tabClose}
         aria-label={closeLabel}
+        title={closeLabel}
+        tabIndex={active ? 0 : -1}
         onClick={onClose}
       >
         <X size={14} />
-      </span>
+      </button>
     </div>
   );
 }

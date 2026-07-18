@@ -170,6 +170,11 @@
   background: var(--bg-hover);
   color: var(--text-bright);
 }
+.tab:has(.tabTarget:focus-visible) {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+  z-index: 2;
+}
 
 /* 活动 tab —— 顶圆底方、内容区同色，自身延伸到 strip 底边（见文件头几何
    说明），底部两侧 fillet 平滑弯进内容区。z-index:1 盖过邻居的分隔条。 */
@@ -242,6 +247,17 @@
   content: none; /* 胶囊无 fillet */
 }
 
+.tabTarget {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  outline: none;
+  cursor: pointer;
+}
+
 .tabIcon {
   display: flex;
   align-items: center;
@@ -273,14 +289,22 @@
   justify-content: center;
   width: 20px;
   height: 20px;
+  padding: 0;
+  border: 0;
   margin-left: auto;
   flex-shrink: 0;
   border-radius: 50%;
   color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
 }
 .tabClose:hover {
   color: var(--text-bright);
   background: var(--bg-hover);
+}
+.tabClose:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 
 /* Dirty marker ● — shown instead of ✕ until hover swaps them back. */
@@ -298,6 +322,8 @@
 .tab:hover .tabDirtyDot { display: none; }
 .tabDirtyDot + .tabClose { display: none; }
 .tab:hover .tabDirtyDot + .tabClose { display: flex; }
+.tab:focus-within .tabDirtyDot { display: none; }
+.tab:focus-within .tabDirtyDot + .tabClose { display: flex; }
 
 /* ＋ 新建：紧跟最后一个标签、比标签矮的安静圆角钮，悬停才有底色。
    align-self:center 让它在 40px 栏里垂直居中（栏本身 align-items 是

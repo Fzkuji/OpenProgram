@@ -25,6 +25,7 @@ import {
   responseTargetsActiveChat,
 } from "./chat-response-routing";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { writeChatScroll } from "@/lib/state/chat-scroll";
 
 interface ChatWindow {
   ws?: WebSocket | null;
@@ -44,6 +45,7 @@ interface ChatWindow {
   _lastRunCommand?: string | null;
   __sessionStore?: {
     getState: () => {
+      activeChatKey: string | null;
       setContextStats: (
         sid: string,
         t: {
@@ -840,7 +842,10 @@ export function initChatPage(): void {
 // beforeunload — persist scroll position. Installed once.
 window.addEventListener("beforeunload", () => {
   const area = document.getElementById("chatArea");
-  if (area) sessionStorage.setItem("agentic_scroll", String(area.scrollTop));
+  const chatKey = W.__sessionStore?.getState().activeChatKey ?? W.currentSessionId;
+  if (area && chatKey) {
+    writeChatScroll(sessionStorage, chatKey, area.scrollTop);
+  }
 });
 
 /* ===== window bridges ============================================ */

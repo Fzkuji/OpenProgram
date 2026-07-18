@@ -1,11 +1,10 @@
 /**
  * WelcomeScreen — empty-chat centered greeting.
  *
- * OpenProgram 自己的问候组合：居中的 {LLM} 打字动画 logo + 一句自家
- * tagline。不用 claude.ai 的"图标 + What's up next?"左上角组合——那是
- * 它的商标性排布，句子和位置都得是我们自己的。Visible whenever the
- * session store says so; mounted as a portal inside the #welcome-mount
- * placeholder that PageShell leaves in the chat area.
+ * Uses the same static three-node mark as the app icon, followed by one
+ * short capability sentence. Visible whenever the session store says so;
+ * mounted as a portal inside the #welcome-mount placeholder that PageShell
+ * leaves in the chat area.
  */
 "use client";
 
@@ -23,14 +22,15 @@ export function WelcomeScreen() {
   return (
     <div className={styles.welcome}>
       <div className={styles.top}>
-        <div className={styles.logo}>
-          {"{"}
-          <span className={styles.l1}>L</span>
-          <span className={styles.l2}>L</span>
-          <span className={styles.m}>M</span>
-          <span className={styles.caret} />
-          {"}"}
-        </div>
+        <img
+          className={styles.mark}
+          src="/icon.svg"
+          width={34}
+          height={34}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
         <div className={styles.tagline}>
           {text(
             "Run functions, build agents, or just ask.",

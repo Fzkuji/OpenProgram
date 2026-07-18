@@ -24,6 +24,11 @@ import {
 
 import { useTranslation } from "@/lib/i18n";
 import { useAgentProfile } from "@/lib/format-utils/agent-style";
+import {
+  readChatScroll,
+  resolveChatScrollTop,
+  writeChatScroll,
+} from "@/lib/state/chat-scroll";
 import { Avatar } from "@/components/avatar";
 
 import { AssistantBubble } from "./assistant-bubble";
@@ -95,28 +100,39 @@ const MessageRow = memo(function MessageRow({ id }: { id: string }) {
  *  the stuck flag — sending or receiving a new turn pulls focus back
  *  to the bottom even if the user had scrolled up earlier.
  */
-function useChatAreaStick(newTurnSeed: number) {
+function useChatAreaStick(chatKey: string | null, newTurnSeed: number) {
+  const activeKeyRef = useRef<string | null>(chatKey);
+  const previousKeyRef = useRef<string | null>(null);
+  const previousSeedRef = useRef(newTurnSeed);
+  const stuckRef = useRef(true);
+  const lastPointerRef = useRef(0);
+  const scrollTopRef = useRef(0);
+
   useEffect(() => {
     const area = document.getElementById("chatArea");
     const msgs = document.getElementById("chatMessages");
     if (!area || !msgs) return;
-    let stuck = true;
     // A click that expands/collapses something (execution strip, thinking
     // row) resizes the container; pinning then yanks the clicked element
     // upward. Suppress the pin briefly after any pointer interaction so
     // user-initiated growth expands downward in place.
-    let lastPointer = 0;
     const pin = () => {
       const w = window as unknown as { renderMathInChat?: () => void };
       try { w.renderMathInChat?.(); } catch { /* ignore */ }
-      if (stuck && performance.now() - lastPointer > 600) {
+      if (stuckRef.current && performance.now() - lastPointerRef.current > 600) {
         area.scrollTop = area.scrollHeight;
+        scrollTopRef.current = area.scrollTop;
+        const key = activeKeyRef.current;
+        if (key) writeChatScroll(window.sessionStorage, key, area.scrollTop);
       }
     };
     const onScroll = () => {
-      stuck = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+      stuckRef.current = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+      scrollTopRef.current = area.scrollTop;
+      const key = activeKeyRef.current;
+      if (key) writeChatScroll(window.sessionStorage, key, area.scrollTop);
     };
-    const onPointer = () => { lastPointer = performance.now(); };
+    const onPointer = () => { lastPointerRef.current = performance.now(); };
     area.addEventListener("scroll", onScroll, { passive: true });
     area.addEventListener("pointerdown", onPointer, { passive: true });
     const ro = new ResizeObserver(pin);
@@ -127,21 +143,41 @@ function useChatAreaStick(newTurnSeed: number) {
       ro.disconnect();
     };
   }, []);
-  // Force re-stick whenever a new turn arrives — chat composer / a
-  // streamed assistant reply both bump ``newTurnSeed`` so this hook
-  // pulls scroll back to the latest content. After this, the user can
-  // freely scroll up; the ResizeObserver only auto-pins while still
-  // within 80px of the bottom.
-  //
-  // useLayoutEffect, NOT useEffect: on session switch the transcript
-  // must already be at the bottom on its first painted frame —
-  // useEffect runs after paint, so the user saw the top of the
-  // conversation for one frame before the jump.
+
+  // Save the outgoing position and restore the incoming one before paint.
+  // `chatKey` is part of the dependency so equal-length conversations still
+  // switch correctly. A new turn in the same chat intentionally returns to
+  // the bottom; later manual scrolling updates that chat's saved position.
   useLayoutEffect(() => {
     const area = document.getElementById("chatArea");
     if (!area) return;
-    area.scrollTop = area.scrollHeight;
-  }, [newTurnSeed]);
+    const keyChanged = previousKeyRef.current !== chatKey;
+    const seedChanged = previousSeedRef.current !== newTurnSeed;
+    if (previousKeyRef.current && keyChanged) {
+      writeChatScroll(
+        window.sessionStorage,
+        previousKeyRef.current,
+        scrollTopRef.current,
+      );
+    }
+    activeKeyRef.current = chatKey;
+    previousKeyRef.current = chatKey;
+    previousSeedRef.current = newTurnSeed;
+
+    const saved = keyChanged && chatKey
+      ? readChatScroll(window.sessionStorage, chatKey)
+      : null;
+    area.scrollTop = resolveChatScrollTop({
+      keyChanged,
+      seedChanged,
+      saved,
+      scrollHeight: area.scrollHeight,
+      currentTop: area.scrollTop,
+    });
+    scrollTopRef.current = area.scrollTop;
+    stuckRef.current =
+      area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+  }, [chatKey, newTurnSeed]);
 }
 
 /** Breathing "<Agent> is thinking…" indicator shown between a user
@@ -206,13 +242,14 @@ function TranscriptSkeleton() {
 
 export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const chatKey = useSessionStore((s) => s.activeChatKey);
   const ids = useMessageIds(sessionId);
   const runningTask = useSessionStore((s) =>
     sessionId ? s.runningTasks[sessionId] ?? null : null,
   );
   const messagesById = useSessionStore((s) => s.messagesById);
   const loadingId = useSessionStore((s) => s.transcriptLoadingId);
-  useChatAreaStick(ids.length);
+  useChatAreaStick(chatKey, ids.length);
 
   // Fade the transcript in once per session switch. The ref remembers
   // which session already faded, so streaming updates (ids.length

@@ -14,6 +14,10 @@
 
 import { mirrorUpsertConv } from "./conv-store-mirror";
 import { switchDraftChannelChoice } from "./draft-channel-choice";
+import {
+  readChatScroll,
+  restoreChatScrollIfCurrent,
+} from "@/lib/state/chat-scroll";
 
 interface LegacyConv {
   id?: string;
@@ -522,7 +526,8 @@ export function loadSessionData(data: LegacyConv): void {
   }
   if (id === W.currentSessionId) {
     const area = document.getElementById("chatArea");
-    const hasSavedScroll = !!sessionStorage.getItem("agentic_scroll");
+    const savedScroll = readChatScroll(sessionStorage, id);
+    const hasSavedScroll = savedScroll !== null;
     if (hasSavedScroll) W._skipScrollToBottom = true;
     renderSessionMessages(convs[id]);
     const fts = (data.function_trees as TreeNode[] | undefined) || [];
@@ -539,11 +544,14 @@ export function loadSessionData(data: LegacyConv): void {
     } else {
       W.updateContextStats?.(data.messages || []);
     }
-    const savedScroll = parseInt(sessionStorage.getItem("agentic_scroll") || "0", 10);
-    if (area && savedScroll > 0) {
+    if (area && savedScroll !== null) {
       requestAnimationFrame(() => {
-        area.scrollTop = savedScroll;
-        sessionStorage.removeItem("agentic_scroll");
+        restoreChatScrollIfCurrent(
+          area,
+          id,
+          W.currentSessionId ?? null,
+          savedScroll,
+        );
       });
     }
   }
