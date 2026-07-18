@@ -39,31 +39,14 @@
    仍要接收点击，标回 no-drag。 */
 :global(html.is-desktop) .strip {
   -webkit-app-region: drag;
-  position: relative; /* ＋号绝对定位的锚 */
-  /* 右端整列预留 49px（= 右侧收起轨全宽，含 1px 边框）：tab 再多也
-     压不进这一列，最后一个 tab 的右缘最多停在「内容区/右栏」竖缝上，
-     不会越界盖到右栏头顶。 */
+  /* 右端整列预留 49px（= 右侧收起轨全宽，含 1px 边框）：tab 和随行的
+     ＋号再多也压不进这一列，最多停在「内容区/右栏」竖缝上，不会越界
+     盖到右栏头顶。＋号跟随最后一个 tab（Chrome 原版行为），不钉右。 */
   padding-right: 49px;
 }
 :global(html.is-desktop) .tab,
 :global(html.is-desktop) .plusBtn {
   -webkit-app-region: no-drag;
-}
-/* 桌面模式：＋ 绝对定位在右端 49px 预留列里，与右侧收起轨的图标同轴
-   （轨内容 48px、图标钮居中 → 图标中心距窗口右缘 24px；＋ 28px 宽，
-   right:10 + 半宽 14 = 24）。圆两侧空隙 11/10px 基本对称。＋ 与 tab
-   之间的空档属于 strip（drag），窗口可拖。 */
-:global(html.is-desktop) .plusBtn {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  margin: 0;
-}
-/* ＋ 被推到最右后，它左侧 5px 处的竖分隔条会悬在空档里（不再紧贴 tab），
-   桌面模式下不画。 */
-:global(html.is-desktop) .plusBtn::before {
-  content: none;
 }
 
 /* 单个 tab —— 默认（非活动）：透明、四角全圆，悬浮在灰底上（Chrome 式：

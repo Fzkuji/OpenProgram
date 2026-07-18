@@ -61,20 +61,44 @@ export function webTabId(url: string): string {
 /** Normalize user input into a browsable http(s) URL: trims, prefixes
  *  bare domains with https://, and rejects every other scheme
  *  (javascript:, data:, file:, …). Returns null when not navigable. */
+/** Chrome 地址栏（omnibox）语义：像 URL 的输入按 URL 打开，其余一律
+ *  转搜索，绝不静默失败。此前 "bilibili"（无点）会拼成 https://bilibili
+ *  → DNS 白屏，含空格的中文词直接被忽略——两种都表现为"浏览器打不开"。
+ *  返回 null 仅当输入为空。 */
 export function normalizeWebUrl(input: string): string | null {
   const raw = input.trim();
   if (!raw) return null;
-  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)
-    ? raw
-    : `https://${raw}`;
-  try {
-    const u = new URL(withScheme);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    if (!u.hostname) return null;
-    return u.href;
-  } catch {
-    return null;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) {
+    try {
+      const u = new URL(raw);
+      if ((u.protocol === "http:" || u.protocol === "https:") && u.hostname) {
+        return u.href;
+      }
+    } catch {
+      /* 有 scheme 但解析不了 → 当搜索词 */
+    }
+    return webSearchUrl(raw);
   }
+  // 无 scheme：无空格且主机段像域名（带点 / localhost / IPv6）才按 URL
+  const hostish = raw.split("/")[0];
+  const urlLike =
+    !/\s/.test(raw) &&
+    (hostish.includes(".") ||
+      /^localhost(:\d+)?$/i.test(hostish) ||
+      /^\[[0-9a-f:]+\]/i.test(hostish));
+  if (urlLike) {
+    try {
+      const u = new URL(`https://${raw}`);
+      if (u.hostname) return u.href;
+    } catch {
+      /* fall through to search */
+    }
+  }
+  return webSearchUrl(raw);
+}
+
+function webSearchUrl(query: string): string {
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
 
 function hostnameOf(url: string): string {
