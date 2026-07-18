@@ -59,7 +59,16 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
     const data = await wsRequest<{
       projects: Project[];
       current_project_id: string | null;
-    }>("list_projects", { session_id: sessionId ?? "" }, "projects_list");
+      session_id: string | null;
+    }>(
+      "list_projects",
+      { session_id: sessionId ?? "" },
+      "projects_list",
+      // 只认后端回显 session_id 匹配的回复——其他组件（侧栏 Projects
+      // 分组等）并发发的 list_projects 不带会话，其 current_project_id
+      // 恒为 null，误收会把选中态画到默认项目上。
+      (d) => (d.session_id ?? null) === (sessionId || null),
+    );
     if (data) {
       setProjects(data.projects || []);
       setCurrentId(data.current_project_id ?? null);
@@ -240,7 +249,15 @@ export function ProjectBadge() {
     const data = await wsRequest<{
       projects: Project[];
       current_project_id: string | null;
-    }>("list_projects", { session_id: sessionId ?? "" }, "projects_list");
+      session_id: string | null;
+    }>(
+      "list_projects",
+      { session_id: sessionId ?? "" },
+      "projects_list",
+      // 同 ProjectMenu.refresh：并发的无会话 list_projects 回复会把
+      // 徽标误置回默认项目，按回显的 session_id 只认自己那条。
+      (d) => (d.session_id ?? null) === (sessionId || null),
+    );
     if (!data) return false;
     const projects = data.projects || [];
     const w = window as unknown as { _pendingProjectId?: string };

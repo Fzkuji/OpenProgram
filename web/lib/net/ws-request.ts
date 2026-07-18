@@ -14,6 +14,11 @@ export function wsRequest<T = unknown>(
   action: string,
   payload: Record<string, unknown>,
   responseType: string,
+  // 为什么要 match：同一类型的请求可能并发（例如侧栏 Projects 分组、
+  // topbar 项目徽标、右栏文件树各发一条 list_projects），仅按 type 匹配
+  // 会拿到"别人"那条请求的回复。传 match 后只认谓词通过的帧（通常校验
+  // 后端回显的请求参数），其余同类型帧跳过、继续等自己的回复。
+  match?: (data: T) => boolean,
   timeoutMs = 4000,
 ): Promise<T | null> {
   const ws = (window as unknown as WsWindow).ws;
@@ -26,7 +31,7 @@ export function wsRequest<T = unknown>(
     const onMsg = (e: MessageEvent) => {
       try {
         const m = JSON.parse(e.data as string);
-        if (m && m.type === responseType) {
+        if (m && m.type === responseType && (!match || match(m.data as T))) {
           done = true;
           ws.removeEventListener("message", onMsg);
           resolve(m.data as T);

@@ -262,6 +262,14 @@ export function FileTree({
   useEffect(() => {
     setDirs({});
     setExpanded(new Set());
+    // 组件跨项目复用（右栏不带 key 渲染）：上一个项目的选中行、
+    // 内联新建/重命名、筛选词都指向旧根目录下的相对路径，留着会
+    // 误指到新项目里同名路径上，切根时一并清掉。
+    setSelected(null);
+    setCreating(null);
+    setRenaming(null);
+    setMenu(null);
+    setFilter("");
     load("");
   }, [load]);
 

@@ -32,7 +32,18 @@ export function useCurrentProject(): Project | null | undefined {
     const data = await wsRequest<{
       projects: Project[];
       current_project_id: string | null;
-    }>("list_projects", { session_id: sessionId ?? "" }, "projects_list");
+      session_id: string | null;
+    }>(
+      "list_projects",
+      { session_id: sessionId ?? "" },
+      "projects_list",
+      // 为什么要认领回复：侧栏 Projects 分组、/projects 页也会并发发
+      // list_projects（session_id 为空），那些回复的 current_project_id
+      // 恒为 null。wsRequest 仅按帧类型匹配时会拿到别人的空回复，导致
+      // 这里误回落到默认项目——右栏文件树被钉死在默认根目录。后端会
+      // 回显请求的 session_id（空串回显 null），据此只认自己那条。
+      (d) => (d.session_id ?? null) === (sessionId || null),
+    );
     if (!data) return false;
     const projects = data.projects || [];
     const w = window as unknown as { _pendingProjectId?: string };
