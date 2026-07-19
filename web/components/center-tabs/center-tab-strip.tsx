@@ -39,7 +39,6 @@ import {
 import {
   dragCoordinator,
   resolveTabDropIntent,
-  type PreparedTabDrag,
   type TabDragSubject,
   type TabDropIntent,
 } from "@/lib/tab-drag-coordinator";
@@ -67,10 +66,6 @@ interface TabMenuState {
   tabId: string;
   left: number;
   top: number;
-}
-
-interface DesktopTabTransferApi {
-  moveToNewWindow(prepared: PreparedTabDrag): void;
 }
 
 function removeReleaseListener() {
@@ -109,13 +104,6 @@ function snapshotTabDragSubject(subject: TabDragSubject): TabDragSubject {
       visibleIds: [...subject.sourceGroup.visibleIds],
     },
   };
-}
-
-function desktopTabTransfer(): DesktopTabTransferApi | null {
-  if (typeof window === "undefined") return null;
-  return (window as unknown as {
-    openprogramDesktop?: { tabTransfer?: DesktopTabTransferApi };
-  }).openprogramDesktop?.tabTransfer ?? null;
 }
 
 function isChatRoute(pathname: string) {
@@ -166,8 +154,7 @@ export function CenterTabStrip() {
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
-  const tabTransfer = desktopTabTransfer();
-  const canMoveToNewWindow = Boolean(tabTransfer?.moveToNewWindow);
+  const canMoveToNewWindow = Boolean(desktopBridge());
 
   // In desktop mode the + follows short tab lists, but reaches the fixed
   // 49px right rail once the tab flow fills the row. Expose that geometric
@@ -464,32 +451,44 @@ export function CenterTabStrip() {
     });
   }
 
+  // Same coordinator + token lifecycle as pointer drag: synchronous
+  // main-process prepare on the menu action, then detach into a new
+  // window (the dragend outside-drop path, minus the drag).
   function moveMenuTabToNewWindow(tabId: string) {
     const subject = menuDragSubject(tabId);
-    if (!subject || !tabTransfer) return;
+    const bridge = desktopBridge();
+    if (!subject || !bridge) return;
     removeReleaseListener();
-    dragCoordinator.cancel();
+    cancelCoordinator();
+    const payload = buildTransferPayload(subject, bridge.windowId);
+    const token = (payload && bridge.tabTransfer.prepare(payload)) || null;
+    if (!token) {
+      finishMenuAction(tabId, text("Tab move cancelled", "标签移动已取消"));
+      return;
+    }
     dragCoordinator.prepare({
       subject,
+      transferToken: token,
       started: false,
       cancelled: false,
       committed: false,
     });
-    const prepared = dragCoordinator.start();
-    if (!prepared) return;
-    try {
-      tabTransfer.moveToNewWindow(prepared);
-      dragCoordinator.commit();
-      clearDragState();
-      finishMenuAction(
-        tabId,
-        text("Tab moved to new window", "标签已移至新窗口"),
-      );
-    } catch {
-      dragCoordinator.cancel();
-      clearDragState();
-      finishMenuAction(tabId, text("Tab move cancelled", "标签移动已取消"));
-    }
+    dragCoordinator.start();
+    dragCoordinator.clear();
+    clearDragState();
+    setTabMenu(null);
+    setFocusedTabId(tabId);
+    returnFocusToMenuInvoker(tabId);
+    bridge.tabTransfer.detach(token).then(
+      (detachedWindowId) =>
+        setDragAnnouncement(
+          detachedWindowId
+            ? text("Tab moved to new window", "标签已移至新窗口")
+            : text("Tab move cancelled", "标签移动已取消"),
+        ),
+      () =>
+        setDragAnnouncement(text("Tab move cancelled", "标签移动已取消")),
+    );
   }
 
   function onOpenNewTab() {
