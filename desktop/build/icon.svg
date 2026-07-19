@@ -31,8 +31,22 @@
       <stop offset="0.52" stop-color="#7283DE"/>
       <stop offset="1" stop-color="#5059B8"/>
     </linearGradient>
+    <linearGradient id="op-rim-light" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.28" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.88" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.18"/>
+    </linearGradient>
+    <linearGradient id="op-top-sheen" x1="400" y1="100" x2="560" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
     <clipPath id="op-mark-interior">
       <circle cx="512" cy="512" r="228"/>
+    </clipPath>
+    <clipPath id="op-squircle-clip">
+      <path d="M512 100C736 100 808 100 866 158C924 216 924 288 924 512C924 736 924 808 866 866C808 924 736 924 512 924C288 924 216 924 158 866C100 808 100 736 100 512C100 288 100 216 158 158C216 100 288 100 512 100Z"/>
     </clipPath>
   </defs>
 
@@ -51,5 +65,18 @@
     <circle id="op-node-a" cx="432" cy="432" r="112" fill="url(#op-node-blue)" stroke="#D9EEFF" stroke-opacity="0.16" stroke-width="6"/>
     <circle id="op-node-b" cx="612" cy="572" r="84" fill="url(#op-node-purple)" stroke="#EFE3FF" stroke-opacity="0.16" stroke-width="6"/>
     <circle id="op-node-c" cx="456" cy="650" r="44" fill="url(#op-node-indigo)" stroke="#E0E5FF" stroke-opacity="0.16" stroke-width="6"/>
+  </g>
+
+  <g clip-path="url(#op-squircle-clip)">
+    <path
+      d="M512 100C736 100 808 100 866 158C924 216 924 288 924 512C924 736 924 808 866 866C808 924 736 924 512 924C288 924 216 924 158 866C100 808 100 736 100 512C100 288 100 216 158 158C216 100 288 100 512 100Z"
+      fill="url(#op-top-sheen)"
+    />
+    <path
+      d="M512 100C736 100 808 100 866 158C924 216 924 288 924 512C924 736 924 808 866 866C808 924 736 924 512 924C288 924 216 924 158 866C100 808 100 736 100 512C100 288 100 216 158 158C216 100 288 100 512 100Z"
+      fill="none"
+      stroke="url(#op-rim-light)"
+      stroke-width="10"
+    />
   </g>
 </svg>
