@@ -91,16 +91,37 @@ function SplitButton({ tabId }: { tabId: string }) {
       state.setSplitWebTab(null);
       return;
     }
-    const sid = window.location.pathname.startsWith("/s/")
+    const routeSessionId = window.location.pathname.startsWith("/s/")
       ? decodeURIComponent(window.location.pathname.slice(3))
-      : useSessionStore.getState().activeChatKey;
-    const session = state.tabs.find(
-      (tab) => tab.kind === "session" && tab.sessionId === sid,
-    );
+      : null;
+    const sessionState = useSessionStore.getState();
+    const routeSession = routeSessionId
+      ? state.tabs.find(
+          (tab) => tab.kind === "session" && tab.sessionId === routeSessionId,
+        )
+      : undefined;
+    const activeDraft = !routeSessionId
+      ? state.tabs.find(
+          (tab) =>
+            tab.kind === "session" &&
+            tab.draft &&
+            tab.sessionId === sessionState.activeChatKey,
+        )
+      : undefined;
     state.setSplitWebTab(tabId);
-    useSessionStore.getState().setRightDockOpen(false);
-    if (session) {
-      state.setActive(session.id);
+    sessionState.setRightDockOpen(false);
+    if (routeSession) {
+      state.setActive(routeSession.id);
+    } else if (routeSessionId) {
+      const title = sessionState.conversations[routeSessionId]?.title ?? "";
+      state.openSessionTab(routeSessionId, title);
+      const openedState = useCenterTabs.getState();
+      const openedSession = openedState.tabs.find(
+        (tab) => tab.kind === "session" && tab.sessionId === routeSessionId,
+      );
+      if (openedSession) openedState.setActive(openedSession.id);
+    } else if (activeDraft) {
+      state.setActive(activeDraft.id);
     } else {
       const draftId = state.openDraftSessionTab();
       (window as unknown as { newSession?: (id?: string) => void })

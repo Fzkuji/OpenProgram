@@ -26,6 +26,7 @@ import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/net/chat-stream";
 import { convToChatMsgs } from "@/lib/conv-mapper";
 import { useColResize } from "@/lib/use-col-resize";
 import { useTranslation } from "@/lib/i18n";
+import { clampSplitRatioForWidth } from "@/lib/split-layout";
 // Migrated legacy modules — imported for side effects (they install
 // their `window.*` bridges for the still-legacy scripts).
 import "@/lib/runtime-bridge/state";
@@ -473,6 +474,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect();
   }, []);
   const splitAvailable = centerBodyWidth >= 846;
+  const effectiveSplitRatio = clampSplitRatioForWidth(
+    splitRatio,
+    centerBodyWidth,
+  );
   const showSplit =
     isDesktop && activeKind === "session" && !!splitTab && splitAvailable;
   useEffect(() => {
@@ -480,13 +485,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       isDesktop && activeKind === "session" && splitAvailable,
     );
   }, [isDesktop, activeKind, splitAvailable]);
+  useEffect(() => {
+    if (!splitAvailable) return;
+    if (effectiveSplitRatio !== splitRatio) setSplitRatio(effectiveSplitRatio);
+  }, [effectiveSplitRatio, setSplitRatio, splitAvailable, splitRatio]);
 
   function updateSplitRatio(ratio: number) {
     const rect = centerBodyRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0) return;
-    const minRatio = 360 / rect.width;
-    const maxRatio = (rect.width - 480 - 6) / rect.width;
-    setSplitRatio(Math.min(maxRatio, Math.max(minRatio, ratio)));
+    setSplitRatio(clampSplitRatioForWidth(ratio, rect.width));
   }
 
   const showChat = isChatRoute(pathname);
@@ -541,7 +548,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               activeKind !== "session"
                 ? { display: "none" }
                 : showSplit
-                  ? { width: `${splitRatio * 100}%` }
+                  ? { width: `${effectiveSplitRatio * 100}%` }
                   : undefined
             }
           >
@@ -553,7 +560,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className="center-split-divider"
                 role="separator"
                 aria-orientation="vertical"
-                aria-valuenow={Math.round(splitRatio * 100)}
+                aria-valuenow={Math.round(effectiveSplitRatio * 100)}
                 tabIndex={0}
                 onPointerDown={(e) => {
                   if (e.button !== 0) return;
@@ -574,7 +581,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 onKeyDown={(e) => {
                   if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
                   e.preventDefault();
-                  updateSplitRatio(splitRatio + (e.key === "ArrowLeft" ? -0.02 : 0.02));
+                  updateSplitRatio(
+                    effectiveSplitRatio + (e.key === "ArrowLeft" ? -0.02 : 0.02),
+                  );
                 }}
               />
               <div className="center-split-web">

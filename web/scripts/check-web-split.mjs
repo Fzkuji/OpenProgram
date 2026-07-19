@@ -28,12 +28,31 @@ globalThis.localStorage = {
 
 const { useCenterTabs } = await import("../lib/state/center-tabs-store.ts");
 const {
+  SPLIT_CHAT_MIN_WIDTH,
+  SPLIT_DIVIDER_WIDTH,
+  SPLIT_WEB_MIN_WIDTH,
+  clampSplitRatioForWidth,
+} = await import("../lib/split-layout.ts");
+const {
   isDesktopSplitLayoutAvailable,
   isWebTabReady,
   setDesktopSplitLayoutAvailable,
   setWebTabReady,
   waitForWebTabReady,
 } = await import("../lib/desktop-bridge.ts");
+
+assert.equal(SPLIT_CHAT_MIN_WIDTH, 360);
+assert.equal(SPLIT_WEB_MIN_WIDTH, 480);
+assert.equal(SPLIT_DIVIDER_WIDTH, 6);
+const thresholdWidth = 846;
+const thresholdRatio = SPLIT_CHAT_MIN_WIDTH / thresholdWidth;
+assert.equal(clampSplitRatioForWidth(0.44, thresholdWidth), thresholdRatio);
+assert.equal(clampSplitRatioForWidth(0.70, thresholdWidth), thresholdRatio);
+assert.equal(clampSplitRatioForWidth(0.44, 1200), 0.44);
+assert.equal(
+  clampSplitRatioForWidth(0.70, 1200),
+  (1200 - SPLIT_WEB_MIN_WIDTH - SPLIT_DIVIDER_WIDTH) / 1200,
+);
 
 setWebTabReady("already-ready", true);
 assert.equal(isWebTabReady("already-ready"), true);
@@ -100,8 +119,14 @@ assert.match(appShellSource, /"center-split-chat"/);
 assert.match(appShellSource, /className="center-split-divider"/);
 assert.match(appShellSource, /className="center-split-web"/);
 assert.match(appShellSource, /setDesktopSplitLayoutAvailable/);
-assert.match(appShellSource, /360 \/ rect\.width/);
-assert.match(appShellSource, /\(rect\.width - 480 - 6\) \/ rect\.width/);
+assert.match(appShellSource, /clampSplitRatioForWidth/);
+assert.match(appShellSource, /const effectiveSplitRatio = clampSplitRatioForWidth/);
+assert.match(
+  appShellSource,
+  /if \(effectiveSplitRatio !== splitRatio\) setSplitRatio\(effectiveSplitRatio\);/,
+);
+assert.match(appShellSource, /width: `\$\{effectiveSplitRatio \* 100\}%`/);
+assert.match(appShellSource, /aria-valuenow=\{Math\.round\(effectiveSplitRatio \* 100\)\}/);
 assert.match(appShellSource, /onPointerDown=/);
 assert.match(appShellSource, /onPointerMove=/);
 assert.match(appShellSource, /role="separator"/);
@@ -116,6 +141,19 @@ assert.match(webTabPaneSource, /setSplitWebTab\(null\)/);
 assert.match(webTabPaneSource, /setRightDockOpen\(false\)/);
 assert.match(webTabPaneSource, /openDraftSessionTab\(\)/);
 assert.match(webTabPaneSource, /\.newSession\?\.\(draftId\)/);
+assert.match(
+  webTabPaneSource,
+  /const title = sessionState\.conversations\[routeSessionId\]\?\.title \?\? "";/,
+);
+assert.match(webTabPaneSource, /state\.openSessionTab\(routeSessionId, title\);/);
+assert.match(
+  webTabPaneSource,
+  /if \(openedSession\) openedState\.setActive\(openedSession\.id\);/,
+);
+assert.match(
+  webTabPaneSource,
+  /if \(routeSession\) \{[\s\S]*?state\.setActive\(routeSession\.id\);[\s\S]*?\} else if \(routeSessionId\) \{[\s\S]*?state\.openSessionTab\(routeSessionId, title\);[\s\S]*?\} else if \(activeDraft\) \{[\s\S]*?state\.setActive\(activeDraft\.id\);[\s\S]*?\} else \{[\s\S]*?state\.openDraftSessionTab\(\)/,
+);
 
 assert.match(tabStripSource, /data-split-pinned=\{splitPinned \|\| undefined\}/);
 assert.match(tabStripSource, /active=\{tab\.id === activeId\}/);
