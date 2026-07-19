@@ -196,6 +196,38 @@ assert.match(
   /\.bookmark-title-input:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
 );
 
+for (const [selector, declaration] of [
+  ["right-sidebar-rail", /width:\s*49px/],
+  ["right-sidebar-panel", /margin:\s*8px/],
+  ["right-sidebar-panel", /border:\s*1px solid var\(--border-popover\)/],
+  ["right-sidebar-panel", /border-radius:\s*16px/],
+  ["right-sidebar-panel", /box-shadow:\s*var\(--shadow-popover\)/],
+  ["right-sidebar-panel-header", /height:\s*40px/],
+]) {
+  const rule = new RegExp(`\\.${selector}\\s*\\{[^}]*${declaration.source}`, "s");
+  assert.match(rightDockCss, rule, `${selector} geometry missing`);
+}
+
+assert.match(
+  rightDockCss,
+  /\.right-sidebar-panel\[hidden\]\s*\{\s*display:\s*none;/,
+);
+assert.match(
+  rightDockCss,
+  /\.right-sidebar\[data-resizing="true"\]\s*\{\s*transition:\s*none;/,
+  "pointer resizing must disable the shell transition",
+);
+assert.match(
+  rightDockCss,
+  /\.right-sidebar\s*\{[^}]*display:\s*flex;[^}]*flex:\s*0 0 auto;/s,
+  "right panel shell must occupy flex layout space",
+);
+assert.match(
+  rightDockCss,
+  /@media\s*\(max-width:\s*900px\)[\s\S]*\.right-sidebar[\s\S]*position:\s*relative;/,
+  "narrow right panel must remain a layout participant",
+);
+
 function parseTsx(text, name) {
   return ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
 }
