@@ -911,3 +911,73 @@ export const FileTextIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconPro
 );
 FileTextIcon.displayName = "FileTextIcon";
 
+
+// ─── bookmark (right sidebar — Bookmarks view) ──────────────────────
+// Same controlled-ref pattern as FolderOpenIcon; the glyph dips down
+// and springs back on hover (the "stamp a bookmark" motion). Path is
+// lucide's official `bookmark` glyph, untouched.
+const BOOKMARK_VARIANTS: Variants = {
+  normal: { y: 0 },
+  animate: {
+    y: [0, 3, -1.5, 0],
+    transition: { duration: 0.5, ease: "easeInOut" },
+  },
+};
+
+export const BookmarkIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const isControlledRef = useRef(false);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return {
+        startAnimation: () => controls.start("animate"),
+        stopAnimation: () => controls.start("normal"),
+      };
+    });
+
+    const handleMouseEnter = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseEnter?.(e);
+        else controls.start("animate");
+      },
+      [controls, onMouseEnter],
+    );
+    const handleMouseLeave = useCallback(
+      (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isControlledRef.current) onMouseLeave?.(e);
+        else controls.start("normal");
+      },
+      [controls, onMouseLeave],
+    );
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        {...props}
+      >
+        <svg
+          fill="none"
+          height={size}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width={size}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <motion.path
+            animate={controls}
+            variants={BOOKMARK_VARIANTS}
+            d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"
+          />
+        </svg>
+      </div>
+    );
+  },
+);
+BookmarkIcon.displayName = "BookmarkIcon";

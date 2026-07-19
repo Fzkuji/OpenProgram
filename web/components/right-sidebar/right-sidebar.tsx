@@ -27,7 +27,6 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Bookmark } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { BranchesPanel } from "./branches";
@@ -44,6 +43,7 @@ import {
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
   type AnimatedNavIconHandle,
+  BookmarkIcon,
   FolderOpenIcon,
   GitGraphIcon,
   PanelLeftCloseIcon,
@@ -83,6 +83,7 @@ export function RightSidebar() {
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const historyIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
+  const bookmarksIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
   const activeTab = useCenterTabs((s) =>
@@ -321,11 +322,13 @@ export function RightSidebar() {
           }
           data-view={VIEW_BOOKMARKS}
           onClick={() => onNavClick(VIEW_BOOKMARKS)}
+          onMouseEnter={() => bookmarksIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => bookmarksIconRef.current?.stopAnimation?.()}
           title={text("Bookmarks", "书签")}
           aria-label={text("Bookmarks", "书签")}
         >
           <span className={sidebarNavIconClass}>
-            <Bookmark size={20} aria-hidden="true" />
+            <BookmarkIcon ref={bookmarksIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{text("Bookmarks", "书签")}</span>
         </button>
