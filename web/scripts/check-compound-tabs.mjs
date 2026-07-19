@@ -15,6 +15,107 @@ registerHooks({
 });
 
 const groups = await import("../lib/state/center-tab-groups.ts");
+const drag = await import("../lib/tab-drag-coordinator.ts");
+
+const coordinator = drag.createTabDragCoordinator();
+const tabPrepared = {
+  subject: { kind: "tab", tabIds: ["a"] },
+  started: false,
+  cancelled: false,
+  committed: false,
+};
+assert.equal(coordinator.prepare(tabPrepared), tabPrepared, "prepare returns its payload synchronously");
+assert.equal(coordinator.current(), tabPrepared, "prepare must expose the same payload synchronously");
+assert.equal(coordinator.start(), tabPrepared);
+assert.equal(tabPrepared.started, true);
+assert.equal(coordinator.start(), null, "start is single-use");
+assert.equal(coordinator.commit(), tabPrepared);
+assert.equal(tabPrepared.committed, true);
+assert.equal(coordinator.current(), null);
+assert.equal(coordinator.commit(), null, "commit is single-use");
+
+const clickPrepared = {
+  subject: { kind: "tab", tabIds: ["click"] },
+  started: false,
+  cancelled: false,
+  committed: false,
+};
+coordinator.prepare(clickPrepared);
+assert.equal(coordinator.cancel(), clickPrepared, "pointer release before start cancels");
+assert.equal(clickPrepared.cancelled, true);
+assert.equal(coordinator.current(), null, "cancellation clears the prepared entry");
+assert.equal(coordinator.cancel(), null, "cancel is single-use");
+
+coordinator.prepare({
+  subject: { kind: "tab", tabIds: ["clear"] },
+  started: false,
+  cancelled: false,
+  committed: false,
+});
+coordinator.clear();
+assert.equal(coordinator.current(), null, "clear removes the prepared entry");
+
+const segmentGroup = {
+  id: "g:segment",
+  memberIds: ["a", "b", "c"],
+  visibleIds: ["a", "c"],
+  focusedId: "c",
+};
+const segmentPrepared = {
+  subject: {
+    kind: "segment",
+    tabIds: ["b"],
+    sourceGroup: segmentGroup,
+    memberIndex: 1,
+  },
+  started: false,
+  cancelled: false,
+  committed: false,
+};
+coordinator.prepare(segmentPrepared);
+assert.equal(coordinator.current()?.subject.memberIndex, 1);
+assert.deepEqual(coordinator.current()?.subject.sourceGroup.visibleIds, ["a", "c"]);
+assert.equal(coordinator.current()?.subject.sourceGroup.focusedId, "c");
+
+const groupPrepared = {
+  subject: { kind: "group", tabIds: [...segmentGroup.memberIds], sourceGroup: segmentGroup },
+  started: false,
+  cancelled: false,
+  committed: false,
+};
+coordinator.prepare(groupPrepared);
+assert.deepEqual(coordinator.current()?.subject.tabIds, ["a", "b", "c"]);
+
+const rect = { left: 100, width: 200 };
+const target = { tabId: "target", groupId: "g:target", memberIndex: 2 };
+assert.deepEqual(drag.resolveTabDropIntent(rect, 100, target), {
+  mode: "before",
+  targetTabId: "target",
+});
+assert.deepEqual(drag.resolveTabDropIntent(rect, 149.999, target), {
+  mode: "before",
+  targetTabId: "target",
+});
+assert.deepEqual(drag.resolveTabDropIntent(rect, 150, target), {
+  mode: "merge",
+  targetTabId: "target",
+  groupId: "g:target",
+  memberIndex: 2,
+});
+assert.deepEqual(drag.resolveTabDropIntent(rect, 249.999, target), {
+  mode: "merge",
+  targetTabId: "target",
+  groupId: "g:target",
+  memberIndex: 2,
+});
+assert.deepEqual(drag.resolveTabDropIntent(rect, 250, target), {
+  mode: "after",
+  targetTabId: "target",
+});
+assert.deepEqual(drag.resolveTabDropIntent(rect, 300, target), {
+  mode: "after",
+  targetTabId: "target",
+});
 
 const broken = groups.normalizeCenterTabLayout({
   tabIds: ["a", "b", "c", "d"],

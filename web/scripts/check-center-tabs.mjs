@@ -34,6 +34,48 @@ const fileTree = readFileSync(
   "utf8",
 );
 
+const dragStart = strip.slice(
+  strip.indexOf("function onDragStart"),
+  strip.indexOf("function onDragEnd"),
+);
+assert.ok(dragStart.length > 0, "the strip must define one synchronous drag-start path");
+assert.doesNotMatch(strip, /async function\s+\w*DragStart/);
+assert.doesNotMatch(dragStart, /\bawait\b/);
+assert.match(dragStart, /dragCoordinator\.start\(\)/);
+assert.match(dragStart, /const prepared = dragCoordinator\.current\(\)/);
+assert.match(dragStart, /dataTransfer\.effectAllowed\s*=\s*"move"/);
+assert.match(dragStart, /dataTransfer\.setData\(/);
+assert.equal(
+  strip.match(/dataTransfer\.setData\(/g)?.length,
+  dragStart.match(/dataTransfer\.setData\(/g)?.length,
+  "every transfer payload must be written by the synchronous coordinator-backed drag start",
+);
+assert.ok(
+  strip.indexOf("function onPrepareDrag") < strip.indexOf("function onDragStart"),
+  "pointer preparation must be defined before native drag start",
+);
+assert.match(strip, /onPointerDown=\{[^}]*onPrepareDrag/s);
+assert.match(strip, /onDragStart=\{onDragStart\}/);
+assert.match(strip, /resolveTabDropIntent\(/);
+assert.match(strip, /moveGroupMember\(/);
+assert.match(strip, /moveGroup\(/);
+assert.match(strip, /ungroupTab\(/);
+assert.match(strip, /groupTab\(/);
+assert.match(strip, /className=\{styles\.groupDragHandle\}[\s\S]*kind: "group"/);
+assert.match(strip, /onMoveGroup\(group\.id,/);
+assert.match(strip, /window\.addEventListener\("pointerup",[^;]+\{ once: true \}\)/s);
+assert.match(strip, /if \(e\.key !== "Escape"\) return;/);
+
+const closeButton = strip.slice(strip.indexOf("<button\n        type=\"button\"", strip.indexOf("function TabItem")), strip.indexOf("<X size={14} />"));
+assert.match(closeButton, /draggable=\{false\}/);
+assert.match(closeButton, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
+assert.match(closeButton, /onMouseDown=\{\(event\) => event\.stopPropagation\(\)\}/);
+assert.doesNotMatch(closeButton, /onPrepareDrag/);
+assert.match(css, /\[data-drag-source="true"\][^{]*\{[^}]*opacity:/s);
+assert.match(css, /\[data-drop-intent="before"\]/);
+assert.match(css, /\[data-drop-intent="merge"\]/);
+assert.match(css, /\[data-drop-intent="after"\]/);
+
 assert.match(css, /max-width: calc\(100% - 36px\);/);
 assert.match(css, /:global\(html\.is-desktop\) \.strip \{[^}]*padding-right: 10px;/s);
 assert.match(

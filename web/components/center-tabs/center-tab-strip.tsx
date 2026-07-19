@@ -20,7 +20,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { CirclePlus, FileText, Globe, Plus, X } from "lucide-react";
+import { CirclePlus, FileText, Globe, GripVertical, Plus, X } from "lucide-react";
 
 import {
   MessageCircleIcon,
@@ -32,8 +32,15 @@ import {
 } from "@/lib/state/center-tabs-store";
 import {
   centerTabStripEntries,
+  findCenterTabGroup,
   type CenterTabGroup,
 } from "@/lib/state/center-tab-groups";
+import {
+  dragCoordinator,
+  resolveTabDropIntent,
+  type TabDragSubject,
+  type TabDropIntent,
+} from "@/lib/tab-drag-coordinator";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   dropDraftChannelChoice,
@@ -43,6 +50,14 @@ import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./center-tabs.module.css";
+
+const TAB_DRAG_MIME = "application/x-openprogram-tab";
+let removePreparedReleaseListener: (() => void) | null = null;
+
+function removeReleaseListener() {
+  removePreparedReleaseListener?.();
+  removePreparedReleaseListener = null;
+}
 
 function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
@@ -74,10 +89,18 @@ export function CenterTabStrip() {
   const openNewTabPage = useCenterTabs((s) => s.openNewTabPage);
   const closeTab = useCenterTabs((s) => s.closeTab);
   const renameSessionTab = useCenterTabs((s) => s.renameSessionTab);
+  const moveTab = useCenterTabs((s) => s.moveTab);
+  const moveGroup = useCenterTabs((s) => s.moveGroup);
+  const moveGroupMember = useCenterTabs((s) => s.moveGroupMember);
+  const groupTab = useCenterTabs((s) => s.groupTab);
+  const ungroupTab = useCenterTabs((s) => s.ungroupTab);
 
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const conversations = useSessionStore((s) => s.conversations);
   const [sessionActivationRequest, setSessionActivationRequest] = useState(0);
+  const [draggedIds, setDraggedIds] = useState<ReadonlySet<string>>(new Set());
+  const [dropMarker, setDropMarker] = useState<TabDropIntent | null>(null);
+  const [dragAnnouncement, setDragAnnouncement] = useState("");
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
@@ -241,6 +264,7 @@ export function CenterTabStrip() {
 
   function onTabClose(e: React.SyntheticEvent, tab: CenterTab) {
     e.stopPropagation();
+    cancelDrag();
     if (tab.dirty) {
       if (!window.confirm(text("Discard unsaved changes?", "放弃未保存的修改？")))
         return;
@@ -312,6 +336,205 @@ export function CenterTabStrip() {
     groups,
   });
 
+  function clearDragState() {
+    removeReleaseListener();
+    setDraggedIds(new Set());
+    setDropMarker(null);
+  }
+
+  function cancelDrag(announce = false) {
+    dragCoordinator.cancel();
+    clearDragState();
+    if (announce) setDragAnnouncement(text("Tab drag cancelled", "标签拖动已取消"));
+  }
+
+  function onPrepareDrag(subject: TabDragSubject) {
+    removeReleaseListener();
+    dragCoordinator.cancel();
+    const snapshot: TabDragSubject = subject.kind === "tab"
+      ? { kind: "tab", tabIds: [subject.tabIds[0]] }
+      : subject.kind === "segment"
+        ? {
+          ...subject,
+          tabIds: [subject.tabIds[0]],
+          sourceGroup: {
+            ...subject.sourceGroup,
+            memberIds: [...subject.sourceGroup.memberIds],
+            visibleIds: [...subject.sourceGroup.visibleIds],
+          },
+        }
+        : {
+            ...subject,
+            tabIds: [...subject.tabIds],
+            sourceGroup: {
+              ...subject.sourceGroup,
+              memberIds: [...subject.sourceGroup.memberIds],
+              visibleIds: [...subject.sourceGroup.visibleIds],
+            },
+          };
+    dragCoordinator.prepare({
+      subject: snapshot,
+      started: false,
+      cancelled: false,
+      committed: false,
+    });
+    const cancelUnstarted = () => {
+      const prepared = dragCoordinator.current();
+      if (prepared && !prepared.started) dragCoordinator.cancel();
+      removeReleaseListener();
+    };
+    window.addEventListener("pointerup", cancelUnstarted, { once: true });
+    removePreparedReleaseListener = () =>
+      window.removeEventListener("pointerup", cancelUnstarted);
+  }
+
+  function onDragStart(e: React.DragEvent<HTMLElement>) {
+    const started = dragCoordinator.start();
+    removeReleaseListener();
+    const prepared = dragCoordinator.current();
+    if (!started || !prepared) {
+      e.preventDefault();
+      cancelDrag(true);
+      return;
+    }
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify(prepared));
+    e.dataTransfer.setData("text/plain", prepared.subject.tabIds.join("\n"));
+    setDraggedIds(new Set(prepared.subject.tabIds));
+    setDragAnnouncement(text("Dragging tab", "正在拖动标签"));
+  }
+
+  function onDragEnd() {
+    cancelDrag();
+  }
+
+  function targetBeforeId(targetTabId: string, after: boolean): string | null {
+    const state = useCenterTabs.getState();
+    const targetGroup = findCenterTabGroup(state.groups, targetTabId);
+    if (!after) return targetGroup?.memberIds[0] ?? targetTabId;
+    const lastTargetId = targetGroup?.memberIds.at(-1) ?? targetTabId;
+    const targetIndex = state.tabs.findIndex((tab) => tab.id === lastTargetId);
+    return state.tabs[targetIndex + 1]?.id ?? null;
+  }
+
+  function applyDrop(prepared: NonNullable<ReturnType<typeof dragCoordinator.current>>, intent: TabDropIntent) {
+    const subject = prepared.subject;
+    if (intent.mode === "merge") {
+      if (subject.kind === "group") return false;
+      if (subject.kind === "segment" && intent.groupId === subject.sourceGroup.id) {
+        const currentGroup = useCenterTabs.getState().groups.find(
+          (group) => group.id === subject.sourceGroup.id,
+        );
+        if (!currentGroup) return false;
+        let toIndex = intent.memberIndex ?? currentGroup.memberIds.length;
+        const sourceIndex = currentGroup.memberIds.indexOf(subject.tabIds[0]);
+        if (sourceIndex >= 0 && sourceIndex < toIndex) toIndex -= 1;
+        moveGroupMember(subject.sourceGroup.id, subject.tabIds[0], toIndex);
+        return true;
+      }
+      return groupTab(
+        subject.tabIds[0],
+        intent.targetTabId,
+        intent.memberIndex ?? 1,
+        intent.groupId,
+      );
+    }
+
+    const beforeId = targetBeforeId(intent.targetTabId, intent.mode === "after");
+    if (subject.kind === "group") {
+      if (subject.tabIds.includes(intent.targetTabId)) return true;
+      moveGroup(subject.sourceGroup.id, beforeId);
+      return true;
+    }
+    if (subject.kind === "segment") {
+      const targetGroup = findCenterTabGroup(
+        useCenterTabs.getState().groups,
+        intent.targetTabId,
+      );
+      if (targetGroup?.id === subject.sourceGroup.id) {
+        const targetIndex = targetGroup.memberIds.indexOf(intent.targetTabId);
+        let toIndex = targetIndex + (intent.mode === "after" ? 1 : 0);
+        const sourceIndex = targetGroup.memberIds.indexOf(subject.tabIds[0]);
+        if (sourceIndex >= 0 && sourceIndex < toIndex) toIndex -= 1;
+        moveGroupMember(subject.sourceGroup.id, subject.tabIds[0], toIndex);
+      } else {
+        ungroupTab(subject.tabIds[0]);
+        moveTab(subject.tabIds[0], beforeId);
+      }
+      return true;
+    }
+    moveTab(subject.tabIds[0], beforeId);
+    return true;
+  }
+
+  function onDragOver(
+    e: React.DragEvent<HTMLElement>,
+    target: { tabId: string; groupId?: string; memberIndex?: number },
+  ) {
+    const prepared = dragCoordinator.current();
+    if (!prepared?.started) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropMarker(resolveTabDropIntent(e.currentTarget.getBoundingClientRect(), e.clientX, target));
+  }
+
+  function onDragLeave(e: React.DragEvent<HTMLElement>) {
+    if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+    setDropMarker(null);
+  }
+
+  function onDrop(
+    e: React.DragEvent<HTMLElement>,
+    target: { tabId: string; groupId?: string; memberIndex?: number },
+  ) {
+    e.preventDefault();
+    const prepared = dragCoordinator.current();
+    if (!prepared?.started) {
+      cancelDrag(true);
+      return;
+    }
+    const intent = resolveTabDropIntent(
+      e.currentTarget.getBoundingClientRect(),
+      e.clientX,
+      target,
+    );
+    if (applyDrop(prepared, intent)) {
+      dragCoordinator.commit();
+      setDragAnnouncement(text("Tab moved", "标签已移动"));
+      clearDragState();
+    } else {
+      cancelDrag(true);
+    }
+  }
+
+  function moveGroupByKeyboard(groupId: string, direction: -1 | 1) {
+    const index = stripEntries.findIndex(
+      (entry) => entry.kind === "group" && entry.group.id === groupId,
+    );
+    const target = stripEntries[index + direction];
+    if (!target) return;
+    const targetTabId = target.kind === "group" ? target.group.memberIds[0] : target.tabId;
+    const beforeId = direction < 0 ? targetTabId : targetBeforeId(targetTabId, true);
+    moveGroup(groupId, beforeId);
+  }
+
+  useEffect(() => {
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      dragCoordinator.cancel();
+      removeReleaseListener();
+      setDraggedIds(new Set());
+      setDropMarker(null);
+      setDragAnnouncement(text("Tab drag cancelled", "标签拖动已取消"));
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      window.removeEventListener("keydown", onEscape);
+      dragCoordinator.cancel();
+      removeReleaseListener();
+    };
+  }, [text]);
+
   return (
     <div ref={stripRef} className={styles.strip}>
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
@@ -337,6 +560,15 @@ export function CenterTabStrip() {
                 onActivate={onTabClick}
                 onClose={onTabClose}
                 onExited={finishClose}
+                draggedIds={draggedIds}
+                dropMarker={dropMarker}
+                onPrepareDrag={onPrepareDrag}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+                onMoveGroup={moveGroupByKeyboard}
               />
             );
           }
@@ -354,6 +586,16 @@ export function CenterTabStrip() {
               onActivate={onTabClick}
               onClose={onTabClose}
               onExited={finishClose}
+              dragSubject={{ kind: "tab", tabIds: [tab.id] }}
+              dragSource={draggedIds.has(tab.id)}
+              dropIntent={dropMarker?.targetTabId === tab.id ? dropMarker.mode : undefined}
+              dropTarget={{ tabId: tab.id }}
+              onPrepareDrag={onPrepareDrag}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
             />
           );
         })}
@@ -368,6 +610,9 @@ export function CenterTabStrip() {
       >
         <Plus size={15} />
       </button>
+      <span className={styles.dragAnnouncement} role="status" aria-live="polite">
+        {dragAnnouncement}
+      </span>
     </div>
   );
 }
@@ -381,6 +626,21 @@ interface CompoundTabItemProps {
   onActivate(tab: CenterTab): void;
   onClose(event: React.SyntheticEvent, tab: CenterTab): void;
   onExited(tab: CenterTab): void;
+  draggedIds: ReadonlySet<string>;
+  dropMarker: TabDropIntent | null;
+  onPrepareDrag(subject: TabDragSubject): void;
+  onDragStart(event: React.DragEvent<HTMLElement>): void;
+  onDragEnd(): void;
+  onDragOver(
+    event: React.DragEvent<HTMLElement>,
+    target: { tabId: string; groupId?: string; memberIndex?: number },
+  ): void;
+  onDragLeave(event: React.DragEvent<HTMLElement>): void;
+  onDrop(
+    event: React.DragEvent<HTMLElement>,
+    target: { tabId: string; groupId?: string; memberIndex?: number },
+  ): void;
+  onMoveGroup(groupId: string, direction: -1 | 1): void;
 }
 
 function CompoundTabItem({
@@ -392,6 +652,15 @@ function CompoundTabItem({
   onActivate,
   onClose,
   onExited,
+  draggedIds,
+  dropMarker,
+  onPrepareDrag,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onMoveGroup,
 }: CompoundTabItemProps) {
   const { t, text } = useTranslation();
   const active = group.memberIds.includes(activeId ?? "");
@@ -399,17 +668,51 @@ function CompoundTabItem({
     closingIds.has(tabId),
   ).length;
   const remainingCount = group.memberIds.length - closingCount;
+  const groupDragged = group.memberIds.every((tabId) => draggedIds.has(tabId));
+  const groupDropIntent = dropMarker && group.memberIds.includes(dropMarker.targetTabId)
+      && dropMarker.mode !== "merge"
+    ? dropMarker.mode
+    : undefined;
   return (
     <div
       className={`${styles.compoundTab} ${active ? styles.compoundTabActive : ""}`}
       data-member-count={group.memberIds.length}
       data-closing-count={closingCount || undefined}
       data-remaining-count={remainingCount}
+      data-drag-source={groupDragged || undefined}
+      data-drop-intent={groupDropIntent}
       role="presentation"
     >
+      <button
+        type="button"
+        className={styles.groupDragHandle}
+        draggable
+        aria-label={text("Move tab group", "移动标签组")}
+        title={text("Move tab group", "移动标签组")}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.stopPropagation();
+          onPrepareDrag({
+            kind: "group",
+            tabIds: [...group.memberIds],
+            sourceGroup: group,
+          });
+        }}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onMoveGroup(group.id, event.key === "ArrowLeft" ? -1 : 1);
+        }}
+      >
+        <GripVertical size={10} aria-hidden="true" />
+      </button>
       {group.memberIds.map((tabId) => {
         const tab = tabs.find((candidate) => candidate.id === tabId);
         if (!tab) return null;
+        const memberIndex = group.memberIds.indexOf(tabId);
         return (
           <TabItem
             key={tab.id}
@@ -423,6 +726,23 @@ function CompoundTabItem({
             onActivate={onActivate}
             onClose={onClose}
             onExited={onExited}
+            dragSubject={{
+              kind: "segment",
+              tabIds: [tab.id],
+              sourceGroup: group,
+              memberIndex,
+            }}
+            dragSource={!groupDragged && draggedIds.has(tab.id)}
+            dropIntent={dropMarker?.targetTabId === tab.id && dropMarker.mode === "merge"
+              ? "merge"
+              : undefined}
+            dropTarget={{ tabId: tab.id, groupId: group.id, memberIndex: memberIndex + 1 }}
+            onPrepareDrag={onPrepareDrag}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
           />
         );
       })}
@@ -443,6 +763,16 @@ function TabItem({
   onActivate,
   onClose,
   onExited,
+  dragSubject,
+  dragSource,
+  dropIntent,
+  dropTarget,
+  onPrepareDrag,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: {
   tab: CenterTab;
   active: boolean;
@@ -454,6 +784,22 @@ function TabItem({
   onActivate: (tab: CenterTab) => void;
   onClose: (e: React.SyntheticEvent, tab: CenterTab) => void;
   onExited: (tab: CenterTab) => void;
+  dragSubject: TabDragSubject;
+  dragSource: boolean;
+  dropIntent?: TabDropIntent["mode"];
+  dropTarget: { tabId: string; groupId?: string; memberIndex?: number };
+  onPrepareDrag: (subject: TabDragSubject) => void;
+  onDragStart: (event: React.DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  onDragOver: (
+    event: React.DragEvent<HTMLElement>,
+    target: { tabId: string; groupId?: string; memberIndex?: number },
+  ) => void;
+  onDragLeave: (event: React.DragEvent<HTMLElement>) => void;
+  onDrop: (
+    event: React.DragEvent<HTMLElement>,
+    target: { tabId: string; groupId?: string; memberIndex?: number },
+  ) => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   const tabRef = useRef<HTMLDivElement>(null);
@@ -475,6 +821,9 @@ function TabItem({
     <div
       ref={tabRef}
       className={`${styles.tab} ${segment ? styles.compoundSegment : ""} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
+      draggable
+      data-drag-source={dragSource || undefined}
+      data-drop-intent={dropIntent}
       onAnimationEnd={(e) => {
         if (e.target !== e.currentTarget) return;
         if (closing) onExited(tab);
@@ -490,6 +839,14 @@ function TabItem({
       onMouseDown={(e) => {
         if (e.button === 1) e.preventDefault();
       }}
+      onPointerDown={(event) => {
+        if (event.button === 0) onPrepareDrag(dragSubject);
+      }}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={(event) => onDragOver(event, dropTarget)}
+      onDragLeave={onDragLeave}
+      onDrop={(event) => onDrop(event, dropTarget)}
       onAuxClick={(e) => {
         if (e.button === 1) {
           e.preventDefault();
@@ -537,10 +894,13 @@ function TabItem({
       ) : null}
       <button
         type="button"
+        draggable={false}
         className={styles.tabClose}
         aria-label={closeLabel}
         title={closeLabel}
         tabIndex={active ? 0 : -1}
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => onClose(event, tab)}
       >
         <X size={14} />
