@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 
+import {
+  readSessionDraftState,
+  replaceSessionDraftState,
+  updateSessionDraftState,
+} from "@/lib/session-draft-persistence";
+import type { DraftChannelChoiceHost } from "../runtime-bridge/draft-channel-choice";
+import type { SessionTransferSnapshot } from "../tab-transfer-journal";
+
 
 export type {
   AgentBadgeInfo,
@@ -307,51 +315,17 @@ function persistRightDock(state: { open: boolean; view: string }) {
 // Composer drafts — persist per-session unsent input across refresh and
 // session switch. Keyed by sessionId; the "new" pseudo-key holds the draft
 // for the not-yet-created next session (before the user has any chats).
-// One JSON blob in localStorage so we don't litter keys per session.
-const COMPOSER_DRAFTS_KEY = "composerDrafts";
-const COMPOSER_DRAFTS_VERSION = 1;
+// The keyed maps share one per-window JSON value with pending project/channel.
 const COMPOSER_NEW_KEY = "__new__";
 
-function readComposerDrafts(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(COMPOSER_DRAFTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.v === COMPOSER_DRAFTS_VERSION
-        && parsed.drafts && typeof parsed.drafts === "object") {
-      return parsed.drafts as Record<string, string>;
-    }
-  } catch {
-    /* ignore */
-  }
-  return {};
-}
-
 function persistComposerDrafts(drafts: Record<string, string>) {
-  if (typeof window === "undefined") return;
-  try {
-    // Drop empty entries so the blob doesn't grow unboundedly.
-    const compact: Record<string, string> = {};
-    for (const k in drafts) {
-      if (drafts[k]) compact[k] = drafts[k];
-    }
-    localStorage.setItem(
-      COMPOSER_DRAFTS_KEY,
-      JSON.stringify({ v: COMPOSER_DRAFTS_VERSION, drafts: compact }),
-    );
-  } catch {
-    /* ignore */
-  }
+  updateSessionDraftState((state) => ({ ...state, composerDrafts: drafts }));
 }
 
 // Per-session composer settings (tool toggles + thinking effort) — same
 // persistence shape as composerDrafts: one versioned blob in localStorage,
 // keyed by sessionId (or "__new__"). These used to be GLOBAL localStorage
 // keys shared by every session; now each session keeps its own.
-const COMPOSER_SETTINGS_KEY = "composerSettings";
-const COMPOSER_SETTINGS_VERSION = 1;
-
 // Tools default ON: a fresh chat that never touched the wrench toggle
 // must still send tools (else the model gets an empty tools array —
 // "I can't access your files"). Matches the old global-default behaviour.
@@ -363,46 +337,13 @@ const DEFAULT_COMPOSER_SETTINGS: ComposerSettings = {
   unattended: false,  // web default: attended (a human is watching, may be asked)
   permission_mode: "",  // "" → backend default (web = bypass)
 };
-
-function readComposerSettingsMap(): Record<string, ComposerSettings> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(COMPOSER_SETTINGS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.v === COMPOSER_SETTINGS_VERSION
-        && parsed.map && typeof parsed.map === "object") {
-      return parsed.map as Record<string, ComposerSettings>;
-    }
-  } catch {
-    /* ignore */
-  }
-  return {};
-}
+const initialSessionDraftState = readSessionDraftState();
 
 function persistComposerSettingsMap(map: Record<string, ComposerSettings>) {
-  if (typeof window === "undefined") return;
-  try {
-    // Drop entries that match the default exactly so the blob stays
-    // small. (Can't test "any truthy" — tools defaults to true, so a
-    // session that turned tools OFF would wrongly be dropped.)
-    const d = DEFAULT_COMPOSER_SETTINGS;
-    const compact: Record<string, ComposerSettings> = {};
-    for (const k in map) {
-      const s = map[k];
-      if (s.thinking !== d.thinking || s.tools !== d.tools
-          || s.webSearch !== d.webSearch || s.fast !== d.fast
-          || s.permission_mode !== d.permission_mode) {
-        compact[k] = s;
-      }
-    }
-    localStorage.setItem(
-      COMPOSER_SETTINGS_KEY,
-      JSON.stringify({ v: COMPOSER_SETTINGS_VERSION, map: compact }),
-    );
-  } catch {
-    /* ignore */
-  }
+  updateSessionDraftState((state) => ({
+    ...state,
+    composerSettingsBySession: map,
+  }));
 }
 
 function switchChat(
@@ -474,7 +415,7 @@ export const useSessionStore = create<ConvState>((set) => ({
   messageOrder: {},
   currentSessionId: null,
   activeChatKey: null,
-  pendingProjectsByChat: {},
+  pendingProjectsByChat: initialSessionDraftState.pendingProjectsByChat,
   runningTask: null,
   runningTasks: {},
   paused: false,
@@ -543,6 +484,10 @@ export const useSessionStore = create<ConvState>((set) => ({
       const nextPendingProjects = { ...s.pendingProjectsByChat };
       delete nextPendingProjects[id];
       persistComposerDrafts(nextDrafts);
+      updateSessionDraftState((state) => ({
+        ...state,
+        pendingProjectsByChat: nextPendingProjects,
+      }));
       return {
         conversations: rest,
         messageOrder: order,
@@ -568,6 +513,10 @@ export const useSessionStore = create<ConvState>((set) => ({
         ),
       );
       persistComposerDrafts(nextDrafts);
+      updateSessionDraftState((state) => ({
+        ...state,
+        pendingProjectsByChat: nextPendingProjects,
+      }));
       return {
         conversations: {},
         messagesById: {},
@@ -596,6 +545,10 @@ export const useSessionStore = create<ConvState>((set) => ({
       delete pendingProjects[key];
       persistComposerDrafts(drafts);
       persistComposerSettingsMap(settings);
+      updateSessionDraftState((state) => ({
+        ...state,
+        pendingProjectsByChat: pendingProjects,
+      }));
       return {
         composerDrafts: drafts,
         composerSettingsBySession: settings,
@@ -612,12 +565,17 @@ export const useSessionStore = create<ConvState>((set) => ({
     }),
 
   setPendingProject: (chatKey, projectId) =>
-    set((s) => ({
-      pendingProjectsByChat: {
+    set((s) => {
+      const pendingProjectsByChat = {
         ...s.pendingProjectsByChat,
         [chatKey]: projectId,
-      },
-    })),
+      };
+      updateSessionDraftState((state) => ({
+        ...state,
+        pendingProjectsByChat,
+      }));
+      return { pendingProjectsByChat };
+    }),
 
   takePendingProject: (chatKey) => {
     let projectId: string | null = null;
@@ -626,6 +584,10 @@ export const useSessionStore = create<ConvState>((set) => ({
       if (!projectId) return {};
       const pendingProjects = { ...s.pendingProjectsByChat };
       delete pendingProjects[chatKey];
+      updateSessionDraftState((state) => ({
+        ...state,
+        pendingProjectsByChat: pendingProjects,
+      }));
       return { pendingProjectsByChat: pendingProjects };
     });
     return projectId;
@@ -709,8 +671,8 @@ export const useSessionStore = create<ConvState>((set) => ({
   // load — same pattern as ``rightDock`` above. SSR sees an empty
   // string (readComposerDrafts returns {} on the server); the client
   // shadows it with whatever survived in localStorage.
-  composerInput: readComposerDrafts()[COMPOSER_NEW_KEY] ?? "",
-  composerDrafts: readComposerDrafts(),
+  composerInput: initialSessionDraftState.composerDrafts[COMPOSER_NEW_KEY] ?? "",
+  composerDrafts: initialSessionDraftState.composerDrafts,
   setComposerInput: (s) =>
     set((state) => {
       const sid = state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
@@ -731,9 +693,10 @@ export const useSessionStore = create<ConvState>((set) => ({
         ? { composerInput: s, composerDrafts: drafts }
         : { composerDrafts: drafts };
     }),
-  composerSettingsBySession: readComposerSettingsMap(),
+  composerSettingsBySession: initialSessionDraftState.composerSettingsBySession,
   composerSettings:
-    readComposerSettingsMap()[COMPOSER_NEW_KEY] ?? { ...DEFAULT_COMPOSER_SETTINGS },
+    initialSessionDraftState.composerSettingsBySession[COMPOSER_NEW_KEY]
+      ?? { ...DEFAULT_COMPOSER_SETTINGS },
   setComposerSettings: (patch) =>
     set((state) => {
       const sid = state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
@@ -804,6 +767,74 @@ export const useSessionStore = create<ConvState>((set) => ({
   closeDetail: () =>
     set({ detailNode: null }),
 }));
+
+function draftChoiceHost(): DraftChannelChoiceHost {
+  return typeof window === "undefined"
+    ? {}
+    : window as unknown as DraftChannelChoiceHost;
+}
+
+export function snapshotSessionTransfer(
+  _chatKeys: string[],
+): SessionTransferSnapshot {
+  const state = useSessionStore.getState();
+  const host = draftChoiceHost();
+  return {
+    activeChatKey: state.activeChatKey,
+    currentSessionId: state.currentSessionId,
+    composerInput: state.composerInput,
+    composerSettings: structuredClone(state.composerSettings),
+    composerDrafts: structuredClone(state.composerDrafts),
+    composerSettingsBySession: structuredClone(state.composerSettingsBySession),
+    pendingProjectsByChat: structuredClone(state.pendingProjectsByChat),
+    draftChannelChoices: structuredClone(
+      host.__pendingChannelChoices
+        ?? readSessionDraftState().draftChannelChoices,
+    ),
+  };
+}
+
+export function applySessionTransfer(
+  snapshot: SessionTransferSnapshot,
+  options: { persist: boolean },
+): void {
+  const host = draftChoiceHost();
+  host.__pendingChannelChoices = structuredClone(snapshot.draftChannelChoices);
+  host._pendingChannelChoice = snapshot.activeChatKey
+    ? (host.__pendingChannelChoices[snapshot.activeChatKey] ?? null)
+    : null;
+  useSessionStore.setState({
+    activeChatKey: snapshot.activeChatKey,
+    currentSessionId: snapshot.currentSessionId,
+    composerInput: snapshot.composerInput,
+    composerSettings: structuredClone(snapshot.composerSettings),
+    composerDrafts: structuredClone(snapshot.composerDrafts),
+    composerSettingsBySession: structuredClone(
+      snapshot.composerSettingsBySession,
+    ),
+    pendingProjectsByChat: structuredClone(snapshot.pendingProjectsByChat),
+  });
+  if (options.persist) {
+    replaceSessionDraftState({
+      version: 1,
+      composerDrafts: snapshot.composerDrafts,
+      composerSettingsBySession: snapshot.composerSettingsBySession,
+      pendingProjectsByChat: snapshot.pendingProjectsByChat,
+      draftChannelChoices: snapshot.draftChannelChoices,
+    });
+  }
+}
+
+export function persistCurrentSessionTransfer(chatKeys: string[]): void {
+  const snapshot = snapshotSessionTransfer(chatKeys);
+  replaceSessionDraftState({
+    version: 1,
+    composerDrafts: snapshot.composerDrafts,
+    composerSettingsBySession: snapshot.composerSettingsBySession,
+    pendingProjectsByChat: snapshot.pendingProjectsByChat,
+    draftChannelChoices: snapshot.draftChannelChoices,
+  });
+}
 
 
 /**

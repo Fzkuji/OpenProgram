@@ -1,3 +1,8 @@
+import {
+  readSessionDraftState,
+  updateSessionDraftState,
+} from "@/lib/session-draft-persistence";
+
 export interface PendingChannelChoice {
   channel: string | null;
   account_id: string | null;
@@ -6,6 +11,20 @@ export interface PendingChannelChoice {
 export interface DraftChannelChoiceHost {
   _pendingChannelChoice?: PendingChannelChoice | null;
   __pendingChannelChoices?: Record<string, PendingChannelChoice>;
+}
+
+function persistChoices(choices: Record<string, PendingChannelChoice>): void {
+  updateSessionDraftState((state) => ({
+    ...state,
+    draftChannelChoices: choices,
+  }));
+}
+
+if (typeof window !== "undefined") {
+  const host = window as unknown as DraftChannelChoiceHost;
+  if (!host.__pendingChannelChoices) {
+    host.__pendingChannelChoices = readSessionDraftState().draftChannelChoices;
+  }
 }
 
 export function setDraftChannelChoice(
@@ -19,6 +38,7 @@ export function setDraftChannelChoice(
   if (choice.channel) choices[chatKey] = choice;
   else delete choices[chatKey];
   host.__pendingChannelChoices = choices;
+  persistChoices(choices);
 }
 
 export function switchDraftChannelChoice(
@@ -32,6 +52,7 @@ export function switchDraftChannelChoice(
     if (outgoing?.channel) choices[outgoingKey] = outgoing;
     else delete choices[outgoingKey];
     host.__pendingChannelChoices = choices;
+    persistChoices(choices);
   }
   host._pendingChannelChoice = incomingKey
     ? (host.__pendingChannelChoices?.[incomingKey] ?? null)
@@ -55,6 +76,7 @@ export function dropDraftChannelChoice(
     const choices = { ...host.__pendingChannelChoices };
     delete choices[chatKey];
     host.__pendingChannelChoices = choices;
+    persistChoices(choices);
   }
   const globalChoiceBelongsToKey =
     keyedChoice !== null && host._pendingChannelChoice === keyedChoice;

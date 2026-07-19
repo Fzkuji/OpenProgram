@@ -158,3 +158,32 @@ export function fileDraftKey(projectId: string, path: string): string {
  * ponytail: in-memory only — a page reload loses drafts (the strip's
  * persisted `dirty` flag is reset on restore for the same reason). */
 export const fileDrafts = new Map<string, FileDraft>();
+
+export interface FileDraftSnapshotEntry {
+  key: string;
+  existed: boolean;
+  value?: FileDraft;
+}
+
+export function snapshotFileDrafts(
+  keys: readonly string[],
+): FileDraftSnapshotEntry[] {
+  return keys.map((key) => {
+    const value = fileDrafts.get(key);
+    return value
+      ? { key, existed: true, value: structuredClone(value) }
+      : { key, existed: false };
+  });
+}
+
+export function applyFileDraftSnapshot(
+  snapshot: readonly FileDraftSnapshotEntry[],
+): void {
+  for (const entry of snapshot) {
+    if (entry.existed && entry.value) {
+      fileDrafts.set(entry.key, structuredClone(entry.value));
+    } else {
+      fileDrafts.delete(entry.key);
+    }
+  }
+}

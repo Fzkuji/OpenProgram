@@ -30,6 +30,10 @@ import type {
   CenterTabGroup,
   CenterTabLayout,
 } from "@/lib/state/center-tab-groups";
+import type {
+  DesktopTransferPayload,
+  TabDropPlacement,
+} from "@/lib/tab-transfer-journal";
 
 export type CenterTabKind = "session" | "file" | "web" | "ntp";
 
@@ -357,9 +361,9 @@ function readCenterTabsPayload(): CenterTabsPersistedPayload {
   const migrated = normalizeCenterTabsPayload({
     tabs: (legacy as LegacyPersistedTabs).tabs,
     activeId: (legacy as LegacyPersistedTabs).activeId,
-    groups: [],
-    splitWebTabId: split.tabId,
-    splitRatio: split.ratio,
+    groups: Array.isArray(legacy.groups) ? legacy.groups : [],
+    splitWebTabId: legacy.splitWebTabId ?? split.tabId,
+    splitRatio: legacy.splitRatio ?? split.ratio,
   }, true);
   persistCenterTabsPayload(migrated);
   return migrated;
@@ -916,4 +920,235 @@ export function sessionAckIsActive(sessionId: string): boolean {
   const hasTab = state.tabs.some((tab) => tab.sessionId === sessionId);
   if (!hasTab && sessionId.startsWith("local_")) return false;
   return !hasTab || state.activeId === sessionTabId(sessionId);
+}
+
+function currentCenterTabsPayload(): CenterTabsPersistedPayload {
+  const state = useCenterTabs.getState();
+  return normalizeCenterTabsPayload({
+    tabs: state.tabs,
+    activeId: state.activeId,
+    groups: state.groups,
+    splitWebTabId: state.splitWebTabId,
+    splitRatio: state.splitRatio,
+  });
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length
+    && left.every((id, index) => id === right[index]);
+}
+
+function sourceGroup(
+  payload: DesktopTransferPayload,
+): CenterTabGroup | null {
+  if (payload.source.kind === "tab") return null;
+  const memberIds = payload.source.memberIds ?? payload.tabs.map((tab) => tab.id);
+  const visibleIds = payload.source.visibleIds ?? memberIds.slice(0, 2);
+  return {
+    id: payload.source.groupId ?? `g:transfer:${memberIds.join(":")}`,
+    memberIds,
+    visibleIds,
+    focusedId: payload.source.focusedId ?? visibleIds[0] ?? memberIds[0],
+  };
+}
+
+function transferredActiveId(payload: DesktopTransferPayload): string | null {
+  const activeChat = payload.chats.find((chat) => chat.wasActive)?.chatKey;
+  return payload.tabs.find((tab) => tab.sessionId === activeChat)?.id
+    ?? payload.source.focusedId
+    ?? null;
+}
+
+function transferredPayloadAfter(
+  before: CenterTabsPersistedPayload,
+  payload: DesktopTransferPayload,
+  placement: TabDropPlacement,
+): CenterTabsPersistedPayload | null {
+  const transferIds = payload.tabs.map((tab) => tab.id);
+  const allTabs = [...before.tabs, ...payload.tabs];
+  const targetId = placement.kind === "strip-end" ? null : placement.targetTabId;
+  const targetGroup = targetId ? findCenterTabGroup(before.groups, targetId) : undefined;
+  let tabIds = before.tabs.map((tab) => tab.id);
+  let groups = [...before.groups];
+
+  if (placement.kind === "merge") {
+    const targetMembers = targetGroup?.memberIds ?? [placement.targetTabId];
+    const at = Math.max(0, Math.min(
+      placement.memberIndex ?? targetMembers.indexOf(placement.targetTabId) + 1,
+      targetMembers.length,
+    ));
+    const memberIds = [...targetMembers];
+    memberIds.splice(at, 0, ...transferIds);
+    const transferGroup = sourceGroup(payload);
+    const visibleIds = transferGroup
+      ? [
+          ...transferGroup.visibleIds,
+          ...(targetGroup?.visibleIds ?? [placement.targetTabId]),
+        ]
+          .filter((id, index, ids) => ids.indexOf(id) === index)
+          .slice(0, 2)
+      : [
+          ...(targetGroup?.visibleIds ?? [placement.targetTabId]),
+          ...transferIds,
+        ]
+          .filter((id, index, ids) => ids.indexOf(id) === index)
+          .slice(0, 2);
+    const group: CenterTabGroup = {
+      id: placement.groupId
+        ?? targetGroup?.id
+        ?? transferGroup?.id
+        ?? `g:transfer:${memberIds.join(":")}`,
+      memberIds,
+      visibleIds,
+      focusedId: transferGroup?.focusedId ?? targetGroup?.focusedId ?? placement.targetTabId,
+    };
+    groups = targetGroup
+      ? groups.map((candidate) => candidate.id === targetGroup.id ? group : candidate)
+      : [...groups, group];
+    const memberSet = new Set(targetMembers);
+    const remaining = tabIds.filter((id) => !memberSet.has(id));
+    const targetAt = Math.min(...targetMembers.map((id) => tabIds.indexOf(id)));
+    tabIds = [
+      ...remaining.slice(0, targetAt),
+      ...memberIds,
+      ...remaining.slice(targetAt),
+    ];
+  } else {
+    let at = tabIds.length;
+    if (targetId) {
+      const targetMembers = targetGroup?.memberIds ?? [targetId];
+      const positions = targetMembers.map((id) => tabIds.indexOf(id));
+      at = placement.kind === "before"
+        ? Math.min(...positions)
+        : Math.max(...positions) + 1;
+    }
+    tabIds.splice(at, 0, ...transferIds);
+    const group = sourceGroup(payload);
+    if (group) groups.push(group);
+  }
+
+  return normalizeCenterTabsPayload({
+    ...before,
+    tabs: orderTabs(allTabs, tabIds),
+    groups,
+    activeId: transferredActiveId(payload) ?? before.activeId,
+  });
+}
+
+export function validateTransferredTabs(
+  payload: DesktopTransferPayload,
+  placement: TabDropPlacement,
+):
+  | { ok: true; after: CenterTabsPersistedPayload }
+  | { ok: false; reason: "duplicate" | "group-full" | "invalid"; duplicateId?: string } {
+  const before = currentCenterTabsPayload();
+  const ids = payload.tabs.map((tab) => tab.id);
+  if (ids.length === 0 || new Set(ids).size !== ids.length) {
+    return { ok: false, reason: "invalid" };
+  }
+  const duplicateId = ids.find((id) => before.tabs.some((tab) => tab.id === id));
+  if (duplicateId) return { ok: false, reason: "duplicate", duplicateId };
+  if (payload.source.kind === "tab" && ids.length !== 1) {
+    return { ok: false, reason: "invalid" };
+  }
+  if (payload.source.kind !== "tab") {
+    const memberIds = payload.source.memberIds;
+    const visibleIds = payload.source.visibleIds ?? memberIds?.slice(0, 2) ?? [];
+    const focusedId = payload.source.focusedId ?? visibleIds[0];
+    if (
+      !memberIds
+      || !sameIds(memberIds, ids)
+      || (payload.source.kind === "group" && memberIds.length < 2)
+      || visibleIds.some((id) => !memberIds.includes(id))
+      || visibleIds.length > 2
+      || (focusedId !== undefined && !visibleIds.includes(focusedId))
+      || (payload.source.memberIndex !== undefined
+        && (!Number.isInteger(payload.source.memberIndex)
+          || payload.source.memberIndex < 0))
+    ) return { ok: false, reason: "invalid" };
+    if (
+      payload.source.groupId
+      && before.groups.some((group) => group.id === payload.source.groupId)
+    ) return { ok: false, reason: "invalid" };
+  }
+  if (placement.kind !== "strip-end") {
+    const target = before.tabs.find((tab) => tab.id === placement.targetTabId);
+    if (!target) return { ok: false, reason: "invalid" };
+  }
+  if (placement.kind === "merge") {
+    const targetGroup = findCenterTabGroup(before.groups, placement.targetTabId);
+    if ((targetGroup?.memberIds.length ?? 1) + ids.length > 3) {
+      return { ok: false, reason: "group-full" };
+    }
+  }
+  const after = transferredPayloadAfter(before, payload, placement);
+  return after ? { ok: true, after } : { ok: false, reason: "invalid" };
+}
+
+export function insertTransferredTabs(
+  payload: DesktopTransferPayload,
+  placement: TabDropPlacement,
+  _options: { persist: false },
+): {
+  ok: boolean;
+  before: CenterTabsPersistedPayload;
+  after: CenterTabsPersistedPayload;
+} {
+  const before = currentCenterTabsPayload();
+  const validated = validateTransferredTabs(payload, placement);
+  if (!validated.ok) return { ok: false, before, after: before };
+  useCenterTabs.setState(persistedState(validated.after));
+  return { ok: true, before, after: validated.after };
+}
+
+export function removeTransferredTabs(
+  ids: string[],
+  _options: { persist: false },
+): {
+  ok: boolean;
+  empty: boolean;
+  before: CenterTabsPersistedPayload;
+  after: CenterTabsPersistedPayload;
+} {
+  const before = currentCenterTabsPayload();
+  const removed = new Set(ids);
+  const valid = ids.length > 0
+    && removed.size === ids.length
+    && ids.every((id) => before.tabs.some((tab) => tab.id === id))
+    && before.groups.every((group) => {
+      const count = group.memberIds.filter((id) => removed.has(id)).length;
+      return count === 0 || count === group.memberIds.length;
+    });
+  if (!valid) return { ok: false, empty: before.tabs.length === 0, before, after: before };
+
+  const activeIndex = before.tabs.findIndex((tab) => tab.id === before.activeId);
+  const tabs = before.tabs.filter((tab) => !removed.has(tab.id));
+  const activeId = before.activeId && !removed.has(before.activeId)
+    ? before.activeId
+    : tabs[activeIndex]?.id ?? tabs[activeIndex - 1]?.id ?? null;
+  const after = normalizeCenterTabsPayload({
+    ...before,
+    tabs,
+    activeId,
+    groups: before.groups.filter((group) =>
+      group.memberIds.every((id) => !removed.has(id))),
+    splitWebTabId: before.splitWebTabId && removed.has(before.splitWebTabId)
+      ? null
+      : before.splitWebTabId,
+  });
+  useCenterTabs.setState(persistedState(after));
+  return { ok: true, empty: tabs.length === 0, before, after };
+}
+
+export function replaceCenterTabsPayload(
+  payload: CenterTabsPersistedPayload,
+  options: { persist: boolean },
+): void {
+  const normalized = normalizeCenterTabsPayload(payload);
+  useCenterTabs.setState(persistedState(normalized));
+  if (options.persist) persistCenterTabsPayload(normalized);
+}
+
+export function persistCurrentCenterTabsPayload(): void {
+  persistCenterTabsPayload(currentCenterTabsPayload());
 }
