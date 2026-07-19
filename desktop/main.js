@@ -21,6 +21,11 @@ const START_URL =
 const WORKER_COMMAND = "openprogram worker start";
 const TRANSFER_TIMEOUT_MS = 15_000;
 const DESTINATION_UNDO_TIMEOUT_MS = 2_000;
+const COMMIT_RECONCILE_INITIAL_MS = 100;
+const COMMIT_RECONCILE_MAX_MS = 5_000;
+// Bounded retries for a clean (unambiguous) committed-decision write failure
+// before abandoning the commit and taking the pre-commit rollback path.
+const COMMIT_DECISION_RETRY_LIMIT = 4;
 
 // agent 接管内置浏览器的数据面通道：后端 browser 工具（engine=auto/app）经
 // CDP attach 这里的可见 web tab。Electron 默认只绑 127.0.0.1，不对外暴露；
@@ -544,7 +549,7 @@ function makeTransferCoordinator(options = {}) {
     return true;
   }
 
-  function persistDecision(transaction, status) {
+  function persistDecision(transaction, status, finalizedRoles = []) {
     return putTransferDecision(storePath(), {
       token: transaction.token,
       status,
@@ -552,7 +557,7 @@ function makeTransferCoordinator(options = {}) {
       destinationId: transaction.destinationId,
       sourceEmpty: !!transaction.sourceEmpty,
       requiredRoles: [...transaction.journalRoles.values()],
-      finalizedRoles: [],
+      finalizedRoles,
       decidedAt: now(),
     });
   }
@@ -580,8 +585,12 @@ function makeTransferCoordinator(options = {}) {
   function clearActive(transaction, { closeHidden = false } = {}) {
     if (transaction.timer !== null) clearTimer(transaction.timer);
     if (transaction.undoTimer !== null) clearTimer(transaction.undoTimer);
+    if (transaction.commitRetryTimer !== null) {
+      clearTimer(transaction.commitRetryTimer);
+    }
     transaction.timer = null;
     transaction.undoTimer = null;
+    transaction.commitRetryTimer = null;
     if (activeTransfers.get(transaction.token) === transaction) {
       activeTransfers.delete(transaction.token);
     }
@@ -660,6 +669,15 @@ function makeTransferCoordinator(options = {}) {
   function expire(token) {
     const transaction = activeTransfers.get(token);
     if (!transaction) return false;
+    if (
+      transaction.status === "committing"
+      && (transaction.commitRetryTimer !== null
+        || transaction.commitAttemptsLeft > 0)
+    ) {
+      // A commit-decision retry is still pending; the timeout must not
+      // roll back a transfer whose source already removed its tabs.
+      return false;
+    }
     if (transaction.status === "prepared" && transaction.journalRoles.size === 0) {
       clearActive(transaction, { closeHidden: true });
       send(liveContext(transaction.sourceId), "tab-transfer:rejected", {
@@ -697,6 +715,10 @@ function makeTransferCoordinator(options = {}) {
       placement: null,
       sourceEmpty: false,
       commitIndeterminate: false,
+      commitRetryTimer: null,
+      commitRetryDelay: COMMIT_RECONCILE_INITIAL_MS,
+      commitAttemptsLeft: COMMIT_DECISION_RETRY_LIMIT,
+      commitWaiter: null,
     };
     transaction.timer = setTimer(() => expire(token), TRANSFER_TIMEOUT_MS);
     activeTransfers.set(token, transaction);
@@ -729,6 +751,7 @@ function makeTransferCoordinator(options = {}) {
     if (
       !transaction
       || transaction.status === "rolling-back"
+      || transaction.status === "committing"
       || transaction.commitIndeterminate
     ) return false;
     const expectedId = role === "source"
@@ -835,7 +858,18 @@ function makeTransferCoordinator(options = {}) {
     notifyTerminal(transaction, "committed");
     const detached = liveContext(transaction.detachedWindowId);
     if (detached) detached.win.show();
-    if (decision.requiredRoles.length === 0) deleteDecision(transaction.token);
+    if (decision.requiredRoles.length === 0) {
+      try {
+        deleteDecision(transaction.token);
+      } catch (_error) {
+        /* the durable committed decision remains available for later cleanup */
+      }
+    } else {
+      assignOrphanedRoles(decision);
+    }
+    const waiter = transaction.commitWaiter;
+    transaction.commitWaiter = null;
+    waiter?.resolve(true);
     return true;
   }
 
@@ -847,7 +881,10 @@ function makeTransferCoordinator(options = {}) {
   }
 
   function reconcileIndeterminateCommit(transaction) {
-    if (!transaction?.commitIndeterminate) return false;
+    if (
+      !transaction?.commitIndeterminate
+      || activeTransfers.get(transaction.token) !== transaction
+    ) return false;
     let store;
     try {
       store = loadTransferDecisions(storePath());
@@ -863,43 +900,134 @@ function makeTransferCoordinator(options = {}) {
     try {
       // A readable committed rename is not enough after its directory fsync
       // failed. Rewriting the same decision establishes a durable boundary.
-      decision = persistDecision(transaction, "committed");
+      // Preserve any acknowledgements a renderer already recorded against
+      // the possibly-landed prior write.
+      decision = persistDecision(
+        transaction,
+        "committed",
+        current?.finalizedRoles || [],
+      );
     } catch (_error) {
       return false;
     }
     return finishCommittedTransfer(transaction, decision);
   }
 
-  function sourceRemoved(ctx, token, result) {
-    const transaction = activeTransfers.get(token);
+  function commitWaiter(transaction) {
+    if (transaction.commitWaiter) return transaction.commitWaiter.promise;
+    let resolve;
+    const promise = new Promise((settle) => { resolve = settle; });
+    transaction.commitWaiter = { promise, resolve };
+    return promise;
+  }
+
+  function scheduleIndeterminateCommitRetry(transaction) {
     if (
-      !transaction
-      || transaction.sourceId !== ctx?.id
-      || transaction.status !== "awaiting-source"
+      !transaction?.commitIndeterminate
+      || activeTransfers.get(transaction.token) !== transaction
+      || transaction.commitRetryTimer !== null
+    ) return false;
+    const delay = transaction.commitRetryDelay;
+    transaction.commitRetryDelay = Math.min(delay * 2, COMMIT_RECONCILE_MAX_MS);
+    transaction.commitRetryTimer = setTimer(() => {
+      transaction.commitRetryTimer = null;
+      if (!reconcileIndeterminateCommit(transaction)) {
+        scheduleIndeterminateCommitRetry(transaction);
+      }
+    }, delay);
+    return true;
+  }
+
+  function waitForIndeterminateCommit(transaction) {
+    const pending = commitWaiter(transaction);
+    if (!reconcileIndeterminateCommit(transaction)) {
+      scheduleIndeterminateCommitRetry(transaction);
+    }
+    return pending;
+  }
+
+  function abandonCommitDecision(transaction) {
+    transaction.sourceEmpty = false;
+    const waiter = transaction.commitWaiter;
+    transaction.commitWaiter = null;
+    waiter?.resolve(false);
+    if (
+      !beginRollback(transaction, "commit-decision-failed")
+      && activeTransfers.get(transaction.token) === transaction
+      && transaction.timer === null
     ) {
-      return false;
+      // ponytail: the rolled-back decision write failed too; re-arm the
+      // expire timer so rollback keeps retrying instead of stranding.
+      transaction.timer = setTimer(
+        () => expire(transaction.token),
+        TRANSFER_TIMEOUT_MS,
+      );
     }
-    if (transaction.commitIndeterminate) {
-      return reconcileIndeterminateCommit(transaction);
-    }
-    const normalized = typeof result === "boolean" ? { ok: result } : result;
-    if (!normalized?.ok) return beginRollback(transaction, "source-failed");
-    transaction.sourceEmpty = !!normalized.sourceEmpty;
+    return false;
+  }
+
+  function scheduleCommitDecisionRetry(transaction) {
+    if (
+      activeTransfers.get(transaction.token) !== transaction
+      || transaction.status !== "committing"
+      || transaction.commitRetryTimer !== null
+    ) return;
+    transaction.commitAttemptsLeft -= 1;
+    const delay = transaction.commitRetryDelay;
+    transaction.commitRetryDelay = Math.min(delay * 2, COMMIT_RECONCILE_MAX_MS);
+    transaction.commitRetryTimer = setTimer(() => {
+      transaction.commitRetryTimer = null;
+      if (
+        activeTransfers.get(transaction.token) !== transaction
+        || transaction.status !== "committing"
+      ) return;
+      attemptCommitDecision(transaction);
+    }, delay);
+  }
+
+  function attemptCommitDecision(transaction) {
     let decision;
     try {
       decision = persistDecision(transaction, "committed");
     } catch (error) {
+      if (transaction.timer !== null) clearTimer(transaction.timer);
+      transaction.timer = null;
       if (error?.rollbackError) {
+        // The committed decision may have reached disk; rollback is no
+        // longer an option. Retry reconciliation until it is durable.
         transaction.commitIndeterminate = true;
-        if (transaction.timer !== null) clearTimer(transaction.timer);
-        transaction.timer = null;
-        return reconcileIndeterminateCommit(transaction);
+        transaction.status = "commit-indeterminate";
+        return waitForIndeterminateCommit(transaction);
       }
-      transaction.sourceEmpty = false;
-      beginRollback(transaction, "commit-decision-failed");
-      return false;
+      // Clean failure: the previous valid file is intact and no committed
+      // decision landed. Retry the write with backoff before rolling back.
+      transaction.status = "committing";
+      if (transaction.commitAttemptsLeft > 0) {
+        scheduleCommitDecisionRetry(transaction);
+        return commitWaiter(transaction);
+      }
+      return abandonCommitDecision(transaction);
     }
     return finishCommittedTransfer(transaction, decision);
+  }
+
+  function sourceRemoved(ctx, token, result) {
+    const transaction = activeTransfers.get(token);
+    if (!transaction || transaction.sourceId !== ctx?.id) {
+      return false;
+    }
+    if (transaction.commitIndeterminate) {
+      return waitForIndeterminateCommit(transaction);
+    }
+    if (transaction.status === "committing") {
+      // An idempotent re-acknowledgement joins the pending commit attempt.
+      return commitWaiter(transaction);
+    }
+    if (transaction.status !== "awaiting-source") return false;
+    const normalized = typeof result === "boolean" ? { ok: result } : result;
+    if (!normalized?.ok) return beginRollback(transaction, "source-failed");
+    transaction.sourceEmpty = !!normalized.sourceEmpty;
+    return attemptCommitDecision(transaction);
   }
 
   function discardTransferredRecords(transaction) {
@@ -961,7 +1089,8 @@ function makeTransferCoordinator(options = {}) {
   function beginRollback(transaction, reason, destinationGone = false) {
     if (!transaction || transaction.status === "committed") return false;
     if (transaction.commitIndeterminate) {
-      return reconcileIndeterminateCommit(transaction);
+      scheduleIndeterminateCommitRetry(transaction);
+      return true;
     }
     if (transaction.status === "rolling-back") {
       if (destinationGone) return finalizeRollback(transaction);
@@ -984,6 +1113,13 @@ function makeTransferCoordinator(options = {}) {
     transaction.status = "rolling-back";
     if (transaction.timer !== null) clearTimer(transaction.timer);
     transaction.timer = null;
+    if (transaction.commitRetryTimer !== null) {
+      clearTimer(transaction.commitRetryTimer);
+      transaction.commitRetryTimer = null;
+    }
+    const waiter = transaction.commitWaiter;
+    transaction.commitWaiter = null;
+    waiter?.resolve(false);
     const destination = liveContext(transaction.destinationId);
     if (!destination || destinationGone) return finalizeRollback(transaction);
     transaction.undoTimer = setTimer(
@@ -1111,7 +1247,14 @@ function makeTransferCoordinator(options = {}) {
   function pendingTerminal(ctx, windowId) {
     if (!isLive(ctx) || ctx.id !== windowId) return [];
     const pending = [];
-    const store = refreshDecisions();
+    let store;
+    try {
+      store = refreshDecisions();
+    } catch (_error) {
+      // A transient store read failure yields no pending work this round;
+      // the renderer re-queries on its next recovery pass.
+      return pending;
+    }
     for (const decision of Object.values(store.decisions)) {
       const finalized = new Set(
         decision.finalizedRoles.map((item) =>

@@ -655,6 +655,29 @@ function installOneShotRenameFailure() {
   return () => { fs.renameSync = original; };
 }
 
+function installCommittedDecisionWriteFailure(token) {
+  const originalRename = fs.renameSync;
+  let failures = 0;
+  fs.renameSync = function failCommittedWrites(...args) {
+    let committedWrite = false;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(args[0], "utf8"));
+      committedWrite = parsed?.decisions?.[token]?.status === "committed";
+    } catch (_error) {
+      /* non-store renames are irrelevant to this injection */
+    }
+    if (committedWrite) {
+      failures += 1;
+      throw new Error("injected committed decision write failure");
+    }
+    return originalRename.apply(this, args);
+  };
+  return {
+    restore() { fs.renameSync = originalRename; },
+    failures() { return failures; },
+  };
+}
+
 function installReadFailureAt(failAt) {
   const original = fs.readFileSync;
   let calls = 0;
@@ -698,7 +721,7 @@ function installReadFailureWhenDecisionMissing(token) {
   };
 }
 
-function installAmbiguousCommitFailure(token, { failReconcileRead = false } = {}) {
+function installAmbiguousCommitFailure(token, { blockReconcileReads = false } = {}) {
   const originalFsync = fs.fsyncSync;
   const originalRename = fs.renameSync;
   const originalRead = fs.readFileSync;
@@ -706,7 +729,7 @@ function installAmbiguousCommitFailure(token, { failReconcileRead = false } = {}
   let renameCalls = 0;
   let ambiguous = false;
   let sawCommitted = false;
-  let reconcileReadFailed = false;
+  let reconcileReadFailures = 0;
 
   fs.fsyncSync = function failDirectorySync(...args) {
     fsyncCalls += 1;
@@ -724,8 +747,8 @@ function installAmbiguousCommitFailure(token, { failReconcileRead = false } = {}
     return originalRename.apply(this, args);
   };
   fs.readFileSync = function observeCommitted(...args) {
-    if (ambiguous && failReconcileRead && !reconcileReadFailed) {
-      reconcileReadFailed = true;
+    if (ambiguous && blockReconcileReads) {
+      reconcileReadFailures += 1;
       throw new Error("injected indeterminate commit reconciliation read failure");
     }
     const result = originalRead.apply(this, args);
@@ -746,8 +769,9 @@ function installAmbiguousCommitFailure(token, { failReconcileRead = false } = {}
       fs.renameSync = originalRename;
       fs.readFileSync = originalRead;
     },
+    releaseReconcileReads() { blockReconcileReads = false; },
     sawCommitted() { return sawCommitted; },
-    reconcileReadFailed() { return reconcileReadFailed; },
+    reconcileReadFailures() { return reconcileReadFailures; },
   };
 }
 
@@ -1021,10 +1045,32 @@ async function checkSuccessfulTransferAndDurableCommit() {
   attachControlledRecord(sourceCtx, first, { x: 1, y: 2, width: 300, height: 400 });
   attachControlledRecord(sourceCtx, second, { x: 301, y: 2, width: 320, height: 400 });
 
+  const successPayload = webTransferPayload(["success-a", "success-b"]);
+  successPayload.fileDrafts = [{ key: "draft:success-a", value: "source draft" }];
+  successPayload.chats = [{
+    chatKey: "success-chat",
+    composerDraft: "source composer",
+    wasActive: true,
+  }];
+  const sourceRenderer = {
+    centerTabs: new Map(successPayload.tabs.map((tab) => [tab.id, plain(tab)])),
+    fileDrafts: new Map(successPayload.fileDrafts.map((draft) => [draft.key, draft.value])),
+    session: new Map(successPayload.chats.map((chat) => [chat.chatKey, plain(chat)])),
+    bridge: new Set(["success-a", "success-b"]),
+    reversible: null,
+  };
+  const destinationRenderer = {
+    centerTabs: new Map(),
+    fileDrafts: new Map(),
+    session: new Map(),
+    bridge: new Set(),
+    provisionalTokens: new Set(),
+    committedTokens: new Set(),
+  };
   const trace = [];
   const token = prepareThroughIpc(
     sourceWin,
-    webTransferPayload(["success-a", "success-b"]),
+    successPayload,
   );
   const expirationTimer = hooks.tabTransfers.activeTransfers.get(token).timer;
   trace.push("destination validation");
@@ -1047,11 +1093,37 @@ async function checkSuccessfulTransferAndDurableCommit() {
   assert.equal(hooks.tabTransfers.isLocked("success-b"), true);
   trace.push("native destination ownership");
 
+  for (const tab of accepted.payload.tabs) {
+    destinationRenderer.centerTabs.set(tab.id, plain(tab));
+  }
+  for (const draft of accepted.payload.fileDrafts) {
+    destinationRenderer.fileDrafts.set(draft.key, draft.value);
+  }
+  for (const chat of accepted.payload.chats) {
+    destinationRenderer.session.set(chat.chatKey, plain(chat));
+  }
+  for (const id of accepted.recordIds) destinationRenderer.bridge.add(id);
+  destinationRenderer.provisionalTokens.add(token);
+  assert.deepEqual([...destinationRenderer.centerTabs.keys()], ["success-a", "success-b"]);
+  assert.deepEqual([...destinationRenderer.fileDrafts], [["draft:success-a", "source draft"]]);
+  assert.deepEqual([...destinationRenderer.session.keys()], ["success-chat"]);
+  assert.deepEqual([...destinationRenderer.bridge], ["success-a", "success-b"]);
+  assert.deepEqual([...destinationRenderer.provisionalTokens], [token]);
   trace.push("destination provisional insertion");
-  trace.push("destination-ready");
   let sourceRemovedResult = null;
   destinationWin.onSend = (channel, item) => {
     if (channel !== "tab-transfer:committed" || item.token !== token) return;
+    destinationRenderer.provisionalTokens.delete(token);
+    destinationRenderer.committedTokens.add(token);
+    assert.deepEqual([...destinationRenderer.centerTabs.keys()], ["success-a", "success-b"]);
+    assert.deepEqual(
+      [...destinationRenderer.fileDrafts],
+      [["draft:success-a", "source draft"]],
+    );
+    assert.deepEqual([...destinationRenderer.session.keys()], ["success-chat"]);
+    assert.deepEqual([...destinationRenderer.bridge], ["success-a", "success-b"]);
+    assert.deepEqual([...destinationRenderer.provisionalTokens], []);
+    assert.deepEqual([...destinationRenderer.committedTokens], [token]);
     trace.push("main committed");
     assert.equal(hooks.tabTransfers.activeTransfers.has(token), false);
     assert.equal(hooks.tabTransfers.isLocked("success-a"), false);
@@ -1078,6 +1150,22 @@ async function checkSuccessfulTransferAndDurableCommit() {
   sourceWin.onSend = (channel, item) => {
     if (item.token !== token) return;
     if (channel === "tab-transfer:remove-source") {
+      sourceRenderer.reversible = {
+        centerTabs: [...sourceRenderer.centerTabs],
+        fileDrafts: [...sourceRenderer.fileDrafts],
+        session: [...sourceRenderer.session],
+        bridge: [...sourceRenderer.bridge],
+      };
+      for (const tab of item.payload.tabs) sourceRenderer.centerTabs.delete(tab.id);
+      for (const draft of item.payload.fileDrafts) {
+        sourceRenderer.fileDrafts.delete(draft.key);
+      }
+      for (const chat of item.payload.chats) sourceRenderer.session.delete(chat.chatKey);
+      for (const tab of item.payload.tabs) sourceRenderer.bridge.delete(tab.id);
+      assert.deepEqual([...sourceRenderer.centerTabs], []);
+      assert.deepEqual([...sourceRenderer.fileDrafts], []);
+      assert.deepEqual([...sourceRenderer.session], []);
+      assert.deepEqual([...sourceRenderer.bridge], []);
       trace.push("source reversible removal");
       assert.equal(hooks.tabTransfers.journalOpened(sourceCtx, token, "source"), true);
       sourceRemovedResult = hooks.tabTransfers.sourceRemoved(
@@ -1088,6 +1176,11 @@ async function checkSuccessfulTransferAndDurableCommit() {
       return;
     }
     if (channel !== "tab-transfer:committed") return;
+    sourceRenderer.reversible = null;
+    assert.deepEqual([...sourceRenderer.centerTabs], []);
+    assert.deepEqual([...sourceRenderer.fileDrafts], []);
+    assert.deepEqual([...sourceRenderer.session], []);
+    assert.deepEqual([...sourceRenderer.bridge], []);
     assert.equal(hooks.tabTransfers.status(sourceCtx, token).status, "committed");
     assert.deepEqual(loadTransferDecision(token).finalizedRoles, [
       { role: "destination", windowId: destinationCtx.id },
@@ -1099,6 +1192,7 @@ async function checkSuccessfulTransferAndDurableCommit() {
     trace.push("source durable finalize");
   };
   assert.equal(hooks.tabTransfers.destinationReady(destinationCtx, token, true), true);
+  trace.push("destination-ready");
   flushRendererQueue();
   assert.equal(sourceRemovedResult, true);
   assert.equal(hooks.tabTransfers.activeTransfers.has(token), false);
@@ -1864,25 +1958,120 @@ async function checkPrecommitFailurePathsAndDynamicRoles() {
   assert.equal(cancelled.controlled.record.ownerId, cancelled.sourceCtx.id);
   await finalizeBoth(cancelled);
 
-  const decisionFailure = await stageTransferForRollback("decision-write-failure");
+  // A transient committed-decision write failure retries automatically:
+  // first write fails, the retry succeeds, and the transfer commits.
+  const decisionRetry = await stageTransferForRollback("decision-write-retry");
   const restoreRename = installOneShotRenameFailure();
+  let retrySettled = null;
+  let retryReply;
   try {
+    retryReply = Promise.resolve(hooks.tabTransfers.sourceRemoved(
+      decisionRetry.sourceCtx,
+      decisionRetry.token,
+      { ok: true, sourceEmpty: false },
+    )).then((value) => {
+      retrySettled = value;
+      return value;
+    });
+    await Promise.resolve();
+    assert.equal(retrySettled, null);
     assert.equal(
-      hooks.tabTransfers.sourceRemoved(
-        decisionFailure.sourceCtx,
-        decisionFailure.token,
-        { ok: true, sourceEmpty: false },
-      ),
-      false,
+      hooks.tabTransfers.status(decisionRetry.sourceCtx, decisionRetry.token).status,
+      "committing",
     );
+    assert.equal(hooks.tabTransfers.activeTransfers.has(decisionRetry.token), true);
+    assert.equal(loadTransferDecision(decisionRetry.token), null);
+    // The retry window is not subject to the transfer timeout.
+    assert.equal(clock.pendingIds().includes(decisionRetry.timer), false);
+    clock.runCleared(decisionRetry.timer);
+    assert.equal(hooks.tabTransfers.activeTransfers.has(decisionRetry.token), true);
+    assert.equal(
+      hooks.tabTransfers.status(decisionRetry.sourceCtx, decisionRetry.token).status,
+      "committing",
+    );
+    // A duplicate source acknowledgement joins the same pending commit.
+    const duplicateReply = hooks.tabTransfers.sourceRemoved(
+      decisionRetry.sourceCtx,
+      decisionRetry.token,
+      { ok: true, sourceEmpty: false },
+    );
+    assert.equal(typeof duplicateReply?.then, "function");
+    clock.advance(100);
+    await Promise.resolve();
+    assert.equal(await retryReply, true);
+    assert.equal(await duplicateReply, true);
   } finally {
     restoreRename();
+  }
+  assert.equal(loadTransferDecision(decisionRetry.token).status, "committed");
+  assert.equal(hooks.tabTransfers.activeTransfers.has(decisionRetry.token), false);
+  assert.equal(hooks.tabTransfers.isLocked("decision-write-retry-web"), false);
+  assert.equal(
+    decisionRetry.controlled.record.ownerId,
+    decisionRetry.destinationCtx.id,
+  );
+  for (const win of [decisionRetry.sourceWin, decisionRetry.destinationWin]) {
+    assert.ok(win.sent.some(
+      ([channel, item]) => channel === "tab-transfer:committed"
+        && item.token === decisionRetry.token,
+    ));
+    assert.equal(win.sent.some(
+      ([channel, item]) => (channel === "tab-transfer:rolled-back"
+        || channel === "tab-transfer:undo-destination")
+        && item.token === decisionRetry.token,
+    ), false);
+  }
+  await finalizeBoth(decisionRetry);
+
+  // A persistently failing committed-decision write exhausts its retries and
+  // then takes the ordinary pre-commit rollback path, in plan order.
+  const decisionFailure = await stageTransferForRollback("decision-write-failure");
+  const exhaustedFault = installCommittedDecisionWriteFailure(decisionFailure.token);
+  const exhaustedTrace = [];
+  decisionFailure.destinationWin.onSend = (channel, item) => {
+    if (item?.token !== decisionFailure.token) return;
+    if (channel === "tab-transfer:undo-destination") {
+      // The rolled-back decision is durable before the destination undo.
+      assert.equal(loadTransferDecision(decisionFailure.token).status, "rolled-back");
+      exhaustedTrace.push("undo-destination");
+      return;
+    }
+    if (channel === "tab-transfer:rolled-back") exhaustedTrace.push("rolled-back");
+  };
+  let exhaustedSettled = null;
+  let exhaustedReply;
+  try {
+    exhaustedReply = Promise.resolve(hooks.tabTransfers.sourceRemoved(
+      decisionFailure.sourceCtx,
+      decisionFailure.token,
+      { ok: true, sourceEmpty: false },
+    )).then((value) => {
+      exhaustedSettled = value;
+      return value;
+    });
+    await Promise.resolve();
+    assert.equal(exhaustedSettled, null);
+    assert.equal(
+      hooks.tabTransfers.status(decisionFailure.sourceCtx, decisionFailure.token).status,
+      "committing",
+    );
+    assert.equal(clock.pendingIds().includes(decisionFailure.timer), false);
+    for (let elapsed = 0; elapsed < 20_000 && exhaustedSettled === null; elapsed += 1_000) {
+      clock.advance(1_000);
+      await Promise.resolve();
+    }
+    assert.equal(await exhaustedReply, false);
+    assert.ok(exhaustedFault.failures() >= 5);
+  } finally {
+    exhaustedFault.restore();
   }
   assert.equal(
     hooks.tabTransfers.status(decisionFailure.sourceCtx, decisionFailure.token).status,
     "rolling-back",
   );
   assert.equal(loadTransferDecision(decisionFailure.token).status, "rolled-back");
+  flushRendererQueue();
+  assert.deepEqual(exhaustedTrace, ["undo-destination"]);
   assert.equal(
     decisionFailure.sourceWin.sent.some(
       ([channel, item]) => channel === "tab-transfer:committed"
@@ -1909,13 +2098,15 @@ async function checkPrecommitFailurePathsAndDynamicRoles() {
     decisionFailure.controlled.record.ownerId,
     decisionFailure.sourceCtx.id,
   );
+  flushRendererQueue();
+  assert.deepEqual(exhaustedTrace, ["undo-destination", "rolled-back"]);
   await finalizeBoth(decisionFailure);
 
   const ambiguousCommit = await stageTransferForRollback("ambiguous-commit");
   const ambiguousFault = installAmbiguousCommitFailure(ambiguousCommit.token);
   let ambiguousResult;
   try {
-    ambiguousResult = hooks.tabTransfers.sourceRemoved(
+    ambiguousResult = await hooks.tabTransfers.sourceRemoved(
       ambiguousCommit.sourceCtx,
       ambiguousCommit.token,
       { ok: true, sourceEmpty: false },
@@ -1951,41 +2142,101 @@ async function checkPrecommitFailurePathsAndDynamicRoles() {
   ).timer;
   const unconfirmedFault = installAmbiguousCommitFailure(
     unconfirmedCommit.token,
-    { failReconcileRead: true },
+    { blockReconcileReads: true },
   );
-  let unconfirmedResult;
+  let unconfirmedSettled = false;
+  let sourceRecovered = false;
+  let unconfirmedReply;
   try {
-    unconfirmedResult = hooks.tabTransfers.sourceRemoved(
+    unconfirmedReply = Promise.resolve(hooks.tabTransfers.sourceRemoved(
       unconfirmedCommit.sourceCtx,
       unconfirmedCommit.token,
       { ok: true, sourceEmpty: false },
+    )).then((result) => {
+      unconfirmedSettled = true;
+      if (!result) sourceRecovered = true;
+      return result;
+    });
+    await Promise.resolve();
+    assert.equal(unconfirmedSettled, false);
+    assert.equal(sourceRecovered, false);
+    assert.equal(
+      hooks.tabTransfers.status(
+        unconfirmedCommit.destinationCtx,
+        unconfirmedCommit.token,
+      ).status,
+      "commit-indeterminate",
     );
+    assert.equal(hooks.tabTransfers.activeTransfers.has(unconfirmedCommit.token), true);
+    assert.equal(hooks.tabTransfers.isLocked("unconfirmed-commit-web"), true);
+    assert.equal(clock.pendingIds().includes(unconfirmedTimer), false);
+    assert.equal(
+      unconfirmedCommit.controlled.record.ownerId,
+      unconfirmedCommit.destinationCtx.id,
+    );
+    hooks.tabTransfers.rollback(unconfirmedCommit.token, "manual-during-indeterminate");
+    hooks.tabTransfers.cancel(unconfirmedCommit.sourceCtx, unconfirmedCommit.token);
+    let closePrevented = false;
+    assert.equal(
+      hooks.tabTransfers.windowClosing(unconfirmedCommit.sourceCtx, {
+        preventDefault() { closePrevented = true; },
+      }),
+      true,
+    );
+    assert.equal(closePrevented, true);
+    clock.runCleared(unconfirmedTimer);
+    for (let elapsed = 0; elapsed < 60_000; elapsed += 1_000) {
+      clock.advance(1_000);
+      await Promise.resolve();
+    }
+    assert.ok(unconfirmedFault.reconcileReadFailures() >= 2);
+    assert.equal(unconfirmedSettled, false);
+    assert.equal(sourceRecovered, false);
+    assert.equal(hooks.tabTransfers.activeTransfers.has(unconfirmedCommit.token), true);
+    assert.equal(hooks.tabTransfers.isLocked("unconfirmed-commit-web"), true);
+    assert.equal(
+      unconfirmedCommit.controlled.record.ownerId,
+      unconfirmedCommit.destinationCtx.id,
+    );
+    assert.equal(
+      unconfirmedCommit.destinationWin.sent.some(
+        ([channel, item]) => channel === "tab-transfer:undo-destination"
+          && item.token === unconfirmedCommit.token,
+      ),
+      false,
+    );
+    assert.equal(
+      [...unconfirmedCommit.sourceWin.sent, ...unconfirmedCommit.destinationWin.sent].some(
+        ([channel, item]) => channel === "tab-transfer:rolled-back"
+          && item.token === unconfirmedCommit.token,
+      ),
+      false,
+    );
+    unconfirmedFault.releaseReconcileReads();
+    for (let elapsed = 0; elapsed < 10_000 && !unconfirmedSettled; elapsed += 1_000) {
+      clock.advance(1_000);
+      await Promise.resolve();
+    }
+    assert.equal(await unconfirmedReply, true);
   } finally {
     unconfirmedFault.restore();
   }
-  assert.equal(unconfirmedFault.reconcileReadFailed(), true);
-  assert.equal(unconfirmedResult, false);
-  assert.equal(hooks.tabTransfers.activeTransfers.has(unconfirmedCommit.token), true);
-  assert.equal(hooks.tabTransfers.isLocked("unconfirmed-commit-web"), true);
-  assert.equal(clock.pendingIds().includes(unconfirmedTimer), false);
-  assert.equal(unconfirmedCommit.controlled.record.ownerId, unconfirmedCommit.destinationCtx.id);
-  assert.equal(
-    unconfirmedCommit.destinationWin.sent.some(
-      ([channel, item]) => channel === "tab-transfer:undo-destination"
+  assert.equal(sourceRecovered, false);
+  assert.equal(loadTransferDecision(unconfirmedCommit.token).status, "committed");
+  assert.equal(hooks.tabTransfers.activeTransfers.has(unconfirmedCommit.token), false);
+  assert.equal(hooks.tabTransfers.isLocked("unconfirmed-commit-web"), false);
+  assert.ok(
+    unconfirmedCommit.destinationWin.sent.find(
+      ([channel, item]) => channel === "tab-transfer:committed"
         && item.token === unconfirmedCommit.token,
     ),
-    false,
   );
-  assert.equal(loadTransferDecision(unconfirmedCommit.token).status, "committed");
-  assert.equal(
-    hooks.tabTransfers.sourceRemoved(
-      unconfirmedCommit.sourceCtx,
-      unconfirmedCommit.token,
-      { ok: true, sourceEmpty: false },
+  assert.ok(
+    unconfirmedCommit.sourceWin.sent.find(
+      ([channel, item]) => channel === "tab-transfer:committed"
+        && item.token === unconfirmedCommit.token,
     ),
-    true,
   );
-  assert.equal(hooks.tabTransfers.activeTransfers.has(unconfirmedCommit.token), false);
   assert.equal(
     hooks.tabTransfers.journalFinalized(
       unconfirmedCommit.destinationCtx,
