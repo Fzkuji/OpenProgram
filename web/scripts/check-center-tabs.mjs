@@ -420,4 +420,54 @@ assert.ok(
   "newSession must select the distinct React draft before SPA navigation",
 );
 
+// ---- Pane-area drop merge (drop a tab onto the page to merge with
+// the active tab) -----------------------------------------------------
+const paneDrop = readFileSync(
+  new URL("../components/center-tabs/pane-drop-merge.tsx", import.meta.url),
+  "utf8",
+);
+// Only our own drags are handled — external file drops fall through.
+assert.match(paneDrop, /if \(!isTabDrag\(e\)\) return;/);
+assert.match(
+  paneDrop,
+  /types\.includes\(TAB_TRANSFER_MIME\)/,
+  "cross-window drags are recognised by the transfer MIME",
+);
+assert.match(
+  paneDrop,
+  /application\/x-openprogram-tab-transfer/,
+  "pane drop must use the same transfer MIME as the strip",
+);
+// Same-window merges reuse the store's strip-equivalent paths.
+assert.match(paneDrop, /state\.groupTab\(sourceId, targetId, 1, targetGroup\?\.id\)/);
+assert.match(paneDrop, /state\.mergeGroup\(subject\.sourceGroup\.id, targetId, 1\)/);
+assert.match(paneDrop, /MAX_CENTER_TAB_GROUP_MEMBERS/);
+// Same-window commit releases the unused main-process token; rejects cancel it.
+assert.match(paneDrop, /committed\?\.transferToken/);
+assert.match(paneDrop, /cancelled\?\.transferToken/);
+// Cross-window drops stage a merge onto the active tab.
+assert.match(
+  paneDrop,
+  /stageIncomingTransfer\(\s*bridge,\s*token,\s*placementForDropIntent\(\{ mode: "merge", targetTabId: targetId \}\),?\s*\)/,
+);
+// A11y: highlight overlay is decorative; announcements go via aria-live.
+assert.match(paneDrop, /aria-live="polite"/);
+assert.match(paneDrop, /pane-drop-merge-overlay/);
+assert.match(paneDrop, /aria-hidden="true"/);
+// App shell wires the handlers + overlay onto the center pane container.
+assert.match(appShell, /const paneDropMerge = usePaneDropMerge\(\);/);
+const centerBody = appShell.slice(
+  appShell.indexOf('className="center-body"'),
+  appShell.indexOf("<PageShell"),
+);
+assert.match(centerBody, /onDragOver=\{paneDropMerge\.onDragOver\}/);
+assert.match(centerBody, /onDragLeave=\{paneDropMerge\.onDragLeave\}/);
+assert.match(centerBody, /onDrop=\{paneDropMerge\.onDrop\}/);
+assert.match(centerBody, /\{paneDropMerge\.overlay\}/);
+assert.match(
+  centerBody,
+  /position: "relative"/,
+  "overlay is absolutely positioned against the center body",
+);
+
 console.log("center-tabs checks passed");
