@@ -1224,70 +1224,76 @@
   padding: 0;
 }
 
-/* ═══ 右缘消息导航（spec 场景 3） ═══ */
-.msg-minimap-anchor {
+/* ═══ 左缘消息导航（Codex 风格刻度 + Dock 放大 + 单条预览卡） ═══ */
+.msg-rail-anchor {
   position: sticky;
   top: 45%;
   height: 0;
   z-index: 6;
   pointer-events: none;
 }
-.msg-minimap {
+.msg-rail {
   position: absolute;
   /* 锚点在 800px 消息列里；用容器宽(100cqw = chat-area)把自己推到
-     聊天区右缘（右侧栏分割线），而不是贴着用户头像。 */
-  right: calc((100% - 100cqw) / 2 + 8px);
+     聊天区左缘（滚动条留给右边）。 */
+  left: calc((100% - 100cqw) / 2 + 8px);
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  align-items: flex-end;
+  align-items: flex-start;
   padding: 8px 4px;
   pointer-events: auto;
 }
-.msg-minimap-dash {
-  width: 16px;
-  height: 2.5px;
+.msg-rail-dash {
+  height: 3px;
+  border: none;
+  padding: 0;
   border-radius: 2px;
   background: var(--text-muted);
   opacity: 0.5;
-  transition: all var(--transition);
+  cursor: pointer;
+  /* Dock 式放大：宽度由 JS 逐帧给，过渡 ~120ms 抹平。 */
+  transition: width 120ms ease-out, opacity var(--transition),
+    background var(--transition);
 }
-.msg-minimap-dash.active {
+.msg-rail-dash:hover,
+.msg-rail-dash:focus-visible { opacity: 0.9; }
+.msg-rail-dash:focus-visible {
+  outline: 2px solid var(--accent, #4a9eff);
+  outline-offset: 2px;
+}
+.msg-rail-dash.active {
   background: var(--text-bright, #f8f8f6);
   opacity: 0.95;
-  width: 20px;
 }
-.msg-minimap:hover .msg-minimap-dash { opacity: 0; }
-.msg-minimap-panel {
+@media (prefers-reduced-motion: reduce) {
+  .msg-rail-dash { transition: none; }
+}
+/* 单条预览卡：跟随悬停刻度垂直定位，弹在刻度右侧。 */
+.msg-rail-card {
   position: absolute;
-  right: 0;
-  top: 50%;
+  left: calc(100% + 8px);
   transform: translateY(-50%);
   width: 300px;
-  max-height: 60vh;
-  overflow-y: auto;
   /* 弹层统一配方：popover 白面 + 10px 圆角 + 真 border + 投影。 */
   background: var(--surface-popover);
   border: 1px solid var(--border-popover);
   border-radius: 10px;
-  padding: 6px;
-  display: none;
+  padding: 8px 10px;
   box-shadow: var(--shadow-popover);
+  pointer-events: none;
 }
-.msg-minimap:hover .msg-minimap-panel { display: block; }
-.msg-minimap-row {
-  padding: 7px 10px;
-  border-radius: 8px;
+.msg-rail-card-text {
   color: var(--text-primary);
   font-size: 13px;
-  cursor: pointer;
+  line-height: 1.4;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
 }
-.msg-minimap-row:hover,
-.msg-minimap-row.active { background: var(--bg-hover); }
+.msg-rail-card .user-attachments { margin-top: 6px; }
 
 /* 一行态的 attach 卡（顶层 /task 斜杠路径仍用）：头部即全部。 */
 .attach-card[data-expanded="0"] .attach-card-header { border-bottom: none; }

@@ -33,7 +33,7 @@ import { Avatar } from "@/components/avatar";
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
-import { MessageMinimap } from "./message-minimap";
+import { MessageRail } from "./message-rail";
 import { RuntimeBlock } from "./runtime-block";
 import { SpawnedFromCard } from "./spawned-from-card";
 import { UserBubble } from "./user-bubble";
@@ -299,7 +299,7 @@ export function MessageList() {
 
   return (
     <>
-      <MessageMinimap />
+      <MessageRail />
       {ids.map((id) => (
         <MessageRow key={id} id={id} />
       ))}
