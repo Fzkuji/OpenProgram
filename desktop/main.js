@@ -127,22 +127,68 @@ function saveWindowState(win) {
 
 // ----------------------------------------------------------------- web tabs
 
-let mainWindow = null;
-const views = new Map(); // id -> WebContentsView
-const viewNavigations = new Map(); // id -> { url, promise }
-let visibleViewId = null;
+function makeWindowContext(id, win) {
+  return {
+    id,
+    win,
+    views: new Map(),
+    visibleViewIds: new Set(),
+    pendingTransferToken: null,
+  };
+}
 
-function sendState(id, extra) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const view = views.get(id);
-  if (!view) return;
-  const wc = view.webContents;
+const windows = new Map();
+const contextsByBrowserWindowId = new Map();
+let lastFocusedWindowId = null;
+
+function contextForSender(event) {
+  const win = event?.sender
+    ? BrowserWindow.fromWebContents(event.sender)
+    : null;
+  const ctx = win ? contextsByBrowserWindowId.get(win.id) : null;
+  return ctx && !ctx.win.isDestroyed() ? ctx : null;
+}
+
+function focusedContext() {
+  const focused = BrowserWindow.getFocusedWindow();
+  const direct = focused ? contextsByBrowserWindowId.get(focused.id) : null;
+  if (direct && !direct.win.isDestroyed()) {
+    lastFocusedWindowId = direct.id;
+    return direct;
+  }
+  if (focused) return null;
+  const recent = lastFocusedWindowId
+    ? windows.get(lastFocusedWindowId)
+    : null;
+  if (recent && !recent.win.isDestroyed()) return recent;
+  if (recent) lastFocusedWindowId = null;
+  return null;
+}
+
+function ownerOf(record) {
+  const ctx = record ? windows.get(record.ownerId) : null;
+  return ctx
+    && !ctx.win.isDestroyed()
+    && ctx.views.get(record.id) === record
+    ? ctx
+    : null;
+}
+
+function recordFor(ctx, id) {
+  const record = ctx?.views.get(id);
+  return record && record.ownerId === ctx.id ? record : null;
+}
+
+function sendState(record, extra) {
+  const ctx = ownerOf(record);
+  if (!ctx) return;
+  const wc = record.view.webContents;
   // 加载初期 URL 未 commit 时 getURL()/getTitle() 返回空串——发出去会把
   // 渲染端 store 里的 url 冲成空，导致面板被卸载（白屏竞态）。空则不发。
   const u = wc.getURL();
   const ti = wc.getTitle();
-  mainWindow.webContents.send("webtab:state", {
-    id,
+  ctx.win.webContents.send("webtab:state", {
+    id: record.id,
     ...(u ? { url: u } : {}),
     ...(ti ? { title: ti } : {}),
     loading: wc.isLoading(),
@@ -161,25 +207,26 @@ function isWebUrl(u) {
   }
 }
 
-function loadView(id, view, url) {
-  const pending = viewNavigations.get(id);
+function loadView(record, url) {
+  const pending = record.navigation;
   if (pending && pending.url === url) return pending.promise;
+  const view = record.view;
   if (
     !pending
     && view.webContents.getURL() === url
     && !view.webContents.isLoading()
   ) {
-    return Promise.resolve(view);
+    return Promise.resolve(record);
   }
   const promise = view.webContents
     .loadURL(url)
-    .then(() => view)
+    .then(() => record)
     .finally(() => {
-      if (viewNavigations.get(id)?.promise === promise) {
-        viewNavigations.delete(id);
+      if (record.navigation?.promise === promise) {
+        record.navigation = null;
       }
     });
-  viewNavigations.set(id, { url, promise });
+  record.navigation = { url, promise };
   return promise;
 }
 
@@ -187,21 +234,24 @@ function loadView(id, view, url) {
 // re-mounts the renderer pane, which calls ensure again — reloading
 // here would throw away scroll/form/SPA state and defeat the whole
 // persistent-view design. Explicit navigation goes through navigate.
-function ensureView(id, url) {
-  let view = views.get(id);
-  if (!view) {
-    view = new WebContentsView({
+function ensureView(ctx, id, url) {
+  if (!ctx || typeof id !== "string" || !id) return null;
+  let record = recordFor(ctx, id);
+  if (!record && !ctx.views.has(id)) {
+    const view = new WebContentsView({
       webPreferences: { partition: "persist:webtabs" },
     });
-    views.set(id, view);
-    mainWindow.contentView.addChildView(view);
+    record = { id, view, ownerId: ctx.id, navigation: null };
+    ctx.views.set(id, record);
+    ctx.win.contentView.addChildView(view);
     view.setVisible(false);
     const wc = view.webContents;
     // Popups navigate the same view instead of opening a window.
     // Same http/https gate as every other egress point.
     wc.setWindowOpenHandler(({ url: popupUrl }) => {
       if (isWebUrl(popupUrl)) {
-        void navigateView(id, popupUrl).catch(() => {});
+        const owner = ownerOf(record);
+        if (owner) void navigateView(owner, id, popupUrl).catch(() => {});
       }
       return { action: "deny" };
     });
@@ -212,105 +262,200 @@ function ensureView(id, url) {
       "did-start-loading",
       "did-stop-loading",
     ]) {
-      wc.on(ev, () => sendState(id));
+      wc.on(ev, () => sendState(record));
     }
-    if (url && isWebUrl(url)) void loadView(id, view, url).catch(() => {});
+    if (url && isWebUrl(url)) void loadView(record, url).catch(() => {});
   }
-  return view;
+  return record;
 }
 
-async function navigateView(id, url) {
+async function navigateView(ctx, id, url) {
   if (!url || !isWebUrl(url)) return null;
-  const view = views.get(id) || ensureView(id, "");
-  return loadView(id, view, url);
+  const record = recordFor(ctx, id) || ensureView(ctx, id, "");
+  return record ? loadView(record, url) : null;
 }
 
-function showView(id) {
-  if (!views.has(id)) return false;
-  for (const [otherId, view] of views) view.setVisible(otherId === id);
-  visibleViewId = id;
+function normalizedBounds(bounds) {
+  return {
+    x: Math.round(Number(bounds?.x)) || 0,
+    y: Math.round(Number(bounds?.y)) || 0,
+    width: Math.max(0, Math.round(Number(bounds?.width)) || 0),
+    height: Math.max(0, Math.round(Number(bounds?.height)) || 0),
+  };
+}
+
+function syncVisibleViews(ctx, items) {
+  if (!ctx || ctx.win.isDestroyed() || !Array.isArray(items)) return false;
+  const desired = new Map();
+  for (const item of items) {
+    if (!item || typeof item.id !== "string") return false;
+    const record = recordFor(ctx, item.id);
+    if (!record) return false;
+    desired.set(item.id, {
+      record,
+      bounds: normalizedBounds(item.bounds),
+    });
+  }
+
+  for (const record of ctx.views.values()) {
+    if (record.ownerId === ctx.id && !desired.has(record.id)) {
+      record.view.setVisible(false);
+    }
+  }
+  for (const { record, bounds } of desired.values()) {
+    record.view.setBounds(bounds);
+    record.view.setVisible(true);
+  }
+  ctx.visibleViewIds = new Set(desired.keys());
   return true;
 }
 
-function hideView(id) {
-  const view = views.get(id);
-  if (!view) return;
-  view.setVisible(false);
-  if (visibleViewId === id) visibleViewId = null;
+function currentVisibleItems(ctx, excludedId = null) {
+  const items = [];
+  for (const id of ctx.visibleViewIds) {
+    if (id === excludedId) continue;
+    const record = recordFor(ctx, id);
+    if (!record) continue;
+    items.push({ id, bounds: record.view.getBounds() });
+  }
+  return items;
 }
 
-async function activateView(id, url) {
-  let view;
+function showView(ctx, id) {
+  const record = recordFor(ctx, id);
+  if (!record) return false;
+  const desired = currentVisibleItems(ctx, id);
+  desired.push({ id, bounds: record.view.getBounds() });
+  return syncVisibleViews(ctx, desired);
+}
+
+function hideView(ctx, id) {
+  if (!recordFor(ctx, id)) return false;
+  return syncVisibleViews(ctx, currentVisibleItems(ctx, id));
+}
+
+async function activateView(ctx, id, url) {
+  let record;
   if (url) {
     if (!isWebUrl(url)) return null;
-    view = views.get(id) || ensureView(id, "");
-    showView(id);
-    view = await navigateView(id, url);
-    if (!view) return null;
-    if (visibleViewId !== id) return null;
+    record = recordFor(ctx, id) || ensureView(ctx, id, "");
+    if (!record || !showView(ctx, id)) return null;
+    record = await navigateView(ctx, id, url);
+    if (recordFor(ctx, id) !== record || !ctx.visibleViewIds.has(id)) return null;
   } else {
-    view = views.get(id);
-    if (!view || !showView(id)) return null;
+    record = recordFor(ctx, id);
+    if (!record || !showView(ctx, id)) return null;
   }
-  return view.webContents.getOrCreateDevToolsTargetId();
+  return record.view.webContents.getOrCreateDevToolsTargetId();
 }
 
-function withView(id, fn) {
-  const view = views.get(id);
-  if (view) fn(view);
+function withView(ctx, id, fn) {
+  const record = recordFor(ctx, id);
+  if (!record) return false;
+  fn(record);
+  return true;
 }
 
 // reload/navigationHistory calls replace any in-flight loadURL Promise
 // without going through loadView. Remove that stale registry entry before
 // invoking the native operation, so a following activation cannot reuse a
 // Promise Electron is about to reject with ERR_ABORTED.
-function runNativeNavigation(id, navigate) {
-  const view = views.get(id);
-  if (!view) return;
-  viewNavigations.delete(id);
-  navigate(view.webContents);
+function runNativeNavigation(ctx, id, navigate) {
+  const record = recordFor(ctx, id);
+  if (!record) return false;
+  record.navigation = null;
+  navigate(record.view.webContents);
+  return true;
+}
+
+function destroyView(ctx, id) {
+  const record = recordFor(ctx, id);
+  if (!record) return false;
+  ctx.visibleViewIds.delete(id);
+  record.navigation = null;
+  ctx.views.delete(id);
+  try {
+    ctx.win.contentView.removeChildView(record.view);
+  } catch (_e) {
+    /* already detached */
+  }
+  try {
+    record.view.webContents.close();
+  } catch (_e) {
+    /* already closed */
+  }
+  return true;
+}
+
+function clearOwnedViews(ctx) {
+  for (const record of [...ctx.views.values()]) {
+    if (record.ownerId === ctx.id) destroyView(ctx, record.id);
+  }
+  ctx.visibleViewIds = new Set();
+}
+
+function cleanupWindowContext(ctx) {
+  clearOwnedViews(ctx);
+  ctx.views.clear();
+  ctx.visibleViewIds = new Set();
+  if (windows.get(ctx.id) === ctx) windows.delete(ctx.id);
+  if (contextsByBrowserWindowId.get(ctx.win.id) === ctx) {
+    contextsByBrowserWindowId.delete(ctx.win.id);
+  }
+  if (lastFocusedWindowId === ctx.id) lastFocusedWindowId = null;
 }
 
 function registerWebTabIpc() {
-  ipcMain.on("webtab:ensure", (_e, id, url) => ensureView(id, url));
-  ipcMain.on("webtab:navigate", (_e, id, url) => {
-    void navigateView(id, url).catch(() => {});
+  ipcMain.on("webtab:ensure", (event, id, url) => {
+    const ctx = contextForSender(event);
+    if (ctx) ensureView(ctx, id, url);
   });
-  ipcMain.handle("webtab:activate", (_e, id, url) =>
-    typeof id === "string"
-      ? activateView(id, typeof url === "string" ? url : "")
-      : null
-  );
-  ipcMain.on("webtab:set-bounds", (_e, id, b) => {
-    if (!b) return;
-    const r = {
-      x: Math.round(Number(b.x)) || 0,
-      y: Math.round(Number(b.y)) || 0,
-      width: Math.max(0, Math.round(Number(b.width)) || 0),
-      height: Math.max(0, Math.round(Number(b.height)) || 0),
-    };
-    withView(id, (v) => v.setBounds(r));
+  ipcMain.on("webtab:navigate", (event, id, url) => {
+    const ctx = contextForSender(event);
+    if (ctx) void navigateView(ctx, id, url).catch(() => {});
   });
-  ipcMain.on("webtab:show", (_e, id) => showView(id));
-  ipcMain.on("webtab:hide", (_e, id) => hideView(id));
-  ipcMain.on("webtab:destroy", (_e, id) =>
-    withView(id, (v) => {
-      if (visibleViewId === id) visibleViewId = null;
-      mainWindow.contentView.removeChildView(v);
-      v.webContents.close();
-      viewNavigations.delete(id);
-      views.delete(id);
-    })
-  );
-  ipcMain.on("webtab:reload", (_e, id) =>
-    runNativeNavigation(id, (wc) => wc.reload())
-  );
-  ipcMain.on("webtab:go-back", (_e, id) =>
-    runNativeNavigation(id, (wc) => wc.navigationHistory.goBack())
-  );
-  ipcMain.on("webtab:go-forward", (_e, id) =>
-    runNativeNavigation(id, (wc) => wc.navigationHistory.goForward())
-  );
+  ipcMain.handle("webtab:activate", (event, id, url) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string"
+      ? activateView(ctx, id, typeof url === "string" ? url : "")
+      : null;
+  });
+  ipcMain.on("webtab:sync-visible", (event, items) => {
+    const ctx = contextForSender(event);
+    if (ctx) syncVisibleViews(ctx, items);
+  });
+  ipcMain.on("webtab:set-bounds", (event, id, bounds) => {
+    const ctx = contextForSender(event);
+    if (ctx && bounds) {
+      withView(ctx, id, (record) => {
+        record.view.setBounds(normalizedBounds(bounds));
+      });
+    }
+  });
+  ipcMain.on("webtab:show", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx) showView(ctx, id);
+  });
+  ipcMain.on("webtab:hide", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx) hideView(ctx, id);
+  });
+  ipcMain.on("webtab:destroy", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx) destroyView(ctx, id);
+  });
+  ipcMain.on("webtab:reload", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.reload());
+  });
+  ipcMain.on("webtab:go-back", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goBack());
+  });
+  ipcMain.on("webtab:go-forward", (event, id) => {
+    const ctx = contextForSender(event);
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goForward());
+  });
   ipcMain.on("desktop:open-external", (_e, url) => {
     try {
       const u = new URL(url);
@@ -326,7 +471,8 @@ function registerWebTabIpc() {
 function buildMenu() {
   const isMac = process.platform === "darwin";
   const send = (channel) => () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel);
+    const ctx = focusedContext();
+    if (ctx) ctx.win.webContents.send(channel);
   };
   const template = [
     ...(isMac ? [{ role: "appMenu" }] : []),
@@ -349,9 +495,9 @@ function buildMenu() {
 
 // --------------------------------------------------------------------- boot
 
-async function createWindow() {
+async function createWindow(options = {}) {
   const state = loadWindowState();
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     x: state.x,
     y: state.y,
     width: state.width,
@@ -366,15 +512,15 @@ async function createWindow() {
       nodeIntegration: false,
     },
   });
-  mainWindow.on("close", () => saveWindowState(mainWindow));
-  mainWindow.on("closed", () => {
-    views.clear();
-    viewNavigations.clear();
-    visibleViewId = null;
-    mainWindow = null;
-  });
+  const windowId = options.windowId || `window-${win.id}`;
+  const ctx = makeWindowContext(windowId, win);
+  windows.set(windowId, ctx);
+  contextsByBrowserWindowId.set(win.id, ctx);
+  win.on("focus", () => { lastFocusedWindowId = ctx.id; });
+  win.on("close", () => saveWindowState(win));
+  win.on("closed", () => cleanupWindowContext(ctx));
   // External links from the app itself (not web tabs) open in the system browser.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const u = new URL(url);
       if (u.protocol === "http:" || u.protocol === "https:") shell.openExternal(url);
@@ -386,7 +532,7 @@ async function createWindow() {
   // The app renderer must never leave the local UI origin: the preload
   // bridge is exposed to whatever document runs there. Remote links
   // (docs footer, message content) go to the system browser instead.
-  mainWindow.webContents.on("will-navigate", (e, url) => {
+  win.webContents.on("will-navigate", (e, url) => {
     try {
       const dest = new URL(url);
       if (dest.hostname === "127.0.0.1" || dest.hostname === "localhost") return;
@@ -399,28 +545,17 @@ async function createWindow() {
   });
   // Renderer reload (Cmd+R) resets the renderer's view bookkeeping —
   // orphaned WebContentsViews would leak until quit. Start clean.
-  mainWindow.webContents.on("did-navigate", () => {
-    for (const [id, view] of views) {
-      try {
-        mainWindow.contentView.removeChildView(view);
-        view.webContents.close();
-      } catch (_e) {
-        /* already gone */
-      }
-      views.delete(id);
-    }
-    viewNavigations.clear();
-    visibleViewId = null;
-  });
-  mainWindow.loadURL(await resolveStartUrl());
+  win.webContents.on("did-navigate", () => clearOwnedViews(ctx));
+  win.loadURL(await resolveStartUrl());
+  return ctx;
 }
 
 app.whenReady().then(() => {
   registerWebTabIpc();
   buildMenu();
-  createWindow();
+  void createWindow();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
 });
 
