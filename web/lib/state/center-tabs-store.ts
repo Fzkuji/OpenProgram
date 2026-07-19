@@ -438,7 +438,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       set((s) => {
         const existing = s.tabs.find((tab) => tab.id === id);
         const tabs = !existing
-          ? [...s.tabs, { id, kind: "web", title: hostnameOf(url), url }]
+          ? [...s.tabs, { id, kind: "web" as const, title: hostnameOf(url), url }]
           : existing.url !== url
             ? s.tabs.map((tab) =>
                 tab.id === id ? { ...tab, url, title: hostnameOf(url) } : tab,
