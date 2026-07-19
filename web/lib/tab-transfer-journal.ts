@@ -1,4 +1,8 @@
 import type { DesktopWebTabBounds as Bounds } from "@/lib/desktop-bridge";
+import {
+  beginTransientPersistence,
+  endTransientPersistence,
+} from "@/lib/session-draft-persistence";
 import type { PendingChannelChoice } from "@/lib/runtime-bridge/draft-channel-choice";
 import type { ComposerSettings } from "@/lib/session-store/types";
 import type { FileDraft } from "@/lib/state/files-shared";
@@ -162,7 +166,7 @@ export function deleteTransferJournal(
 
 export function stageTransferMutation(
   entry: TransferJournalEntry,
-  mutate: () => void,
+  mutate: () => boolean | void,
   reject: () => void,
   id = windowId(),
 ): boolean {
@@ -170,8 +174,12 @@ export function stageTransferMutation(
     reject();
     return false;
   }
+  beginTransientPersistence(entry.token, id);
   try {
-    mutate();
+    if (mutate() === false) {
+      reject();
+      return false;
+    }
     return true;
   } catch {
     reject();
@@ -191,17 +199,17 @@ export interface TransferRecoveryHandlers {
   applyCenterTabs(
     payload: CenterTabsPersistedPayload,
     options: { persist: boolean },
-  ): void;
+  ): boolean;
   applySession(
     snapshot: SessionTransferSnapshot,
     options: { persist: boolean },
-  ): void;
+  ): boolean;
   applyFileDrafts(
     snapshot: Array<{ key: string; existed: boolean; value?: FileDraft }>,
   ): void;
   applyBridge(snapshot: SerializedWebViewBookkeeping): void;
-  rebuildAccepted?(entry: TransferJournalEntry): void;
-  resumeSourceRemoved?(entry: TransferJournalEntry): void;
+  rebuildAccepted?(entry: TransferJournalEntry): boolean | void;
+  resumeSourceRemoved?(entry: TransferJournalEntry): boolean | void;
   clearAccepted?(token: string): void;
   deleteJournal?(token: string): boolean;
 }
@@ -211,49 +219,99 @@ function applyRecoverySnapshot(
   target: "before" | "after",
   persist: boolean,
   handlers: TransferRecoveryHandlers,
-): void {
-  handlers.applyCenterTabs(
+): boolean {
+  if (!handlers.applyCenterTabs(
     target === "after" ? entry.afterCenterTabs : entry.beforeCenterTabs,
     { persist },
-  );
-  handlers.applySession(
+  )) return false;
+  if (!handlers.applySession(
     target === "after" ? entry.afterSession : entry.beforeSession,
     { persist },
-  );
+  )) return false;
   handlers.applyFileDrafts(
     target === "after" ? entry.afterFileDrafts : entry.beforeFileDrafts,
   );
   handlers.applyBridge(
     target === "after" ? entry.afterBridge : entry.beforeBridge,
   );
+  return true;
 }
 
 export function recoverTransferJournalEntry(
   entry: TransferJournalEntry,
   status: TransferMainStatus,
   handlers: TransferRecoveryHandlers,
+  id = windowId(),
 ): boolean {
-  if (status === "committed") {
-    applyRecoverySnapshot(entry, "after", true, handlers);
-    handlers.clearAccepted?.(entry.token);
-    return handlers.deleteJournal?.(entry.token) ?? true;
+  beginTransientPersistence(entry.token, id);
+  const destinationStaged = entry.role === "destination"
+    && (status === "destination-staged" || status === "awaiting-source");
+  const sourceAwaiting = entry.role === "source" && status === "awaiting-source";
+  const terminal = status === "committed" || (!destinationStaged && !sourceAwaiting);
+  if (terminal && (!handlers.clearAccepted || !handlers.deleteJournal)) {
+    return false;
   }
   if (
-    entry.role === "destination"
-    && (status === "destination-staged" || status === "awaiting-source")
+    destinationStaged
+    && !handlers.rebuildAccepted
+  ) return false;
+  if (
+    sourceAwaiting
+    && !handlers.resumeSourceRemoved
+  ) return false;
+
+  if (status === "committed") {
+    endTransientPersistence(entry.token, id);
+    try {
+      if (!applyRecoverySnapshot(entry, "after", true, handlers)) {
+        beginTransientPersistence(entry.token, id);
+        return false;
+      }
+      handlers.clearAccepted!(entry.token);
+      if (!handlers.deleteJournal!(entry.token)) {
+        beginTransientPersistence(entry.token, id);
+        return false;
+      }
+      return true;
+    } catch {
+      beginTransientPersistence(entry.token, id);
+      return false;
+    }
+  }
+  if (
+    destinationStaged
   ) {
-    applyRecoverySnapshot(entry, "after", false, handlers);
-    handlers.rebuildAccepted?.(entry);
-    return true;
+    try {
+      return applyRecoverySnapshot(entry, "after", false, handlers)
+        && handlers.rebuildAccepted!(entry) !== false;
+    } catch {
+      return false;
+    }
   }
-  if (entry.role === "source" && status === "awaiting-source") {
-    applyRecoverySnapshot(entry, "after", false, handlers);
-    handlers.resumeSourceRemoved?.(entry);
-    return true;
+  if (sourceAwaiting) {
+    try {
+      return applyRecoverySnapshot(entry, "after", false, handlers)
+        && handlers.resumeSourceRemoved!(entry) !== false;
+    } catch {
+      return false;
+    }
   }
-  applyRecoverySnapshot(entry, "before", true, handlers);
-  handlers.clearAccepted?.(entry.token);
-  return handlers.deleteJournal?.(entry.token) ?? true;
+  endTransientPersistence(entry.token, id);
+  try {
+    if (!applyRecoverySnapshot(entry, "before", true, handlers)) {
+      beginTransientPersistence(entry.token, id);
+      return false;
+    }
+    handlers.clearAccepted!(entry.token);
+    if (!handlers.deleteJournal!(entry.token)) {
+      beginTransientPersistence(entry.token, id);
+      return false;
+    }
+    return true;
+  } catch {
+    beginTransientPersistence(entry.token, id);
+    return false;
+  }
 }
 
 export function finalizeTransferJournal(
@@ -264,20 +322,29 @@ export function finalizeTransferJournal(
 ): boolean {
   const entry = readTransferJournal(id).entries[token];
   if (!entry) return false;
+  beginTransientPersistence(token, id);
+  if (!handlers.clearAccepted) return false;
   const phase = outcome === "commit" ? "committing" : "rolling-back";
   if (!updateTransferJournal(token, { phase }, id)) return false;
+  endTransientPersistence(token, id);
   try {
-    applyRecoverySnapshot(
+    if (!applyRecoverySnapshot(
       { ...entry, phase },
       outcome === "commit" ? "after" : "before",
       true,
       handlers,
-    );
-    handlers.clearAccepted?.(token);
-    return handlers.deleteJournal
+    )) {
+      beginTransientPersistence(token, id);
+      return false;
+    }
+    handlers.clearAccepted(token);
+    const deleted = handlers.deleteJournal
       ? handlers.deleteJournal(token)
       : deleteTransferJournal(token, id);
+    if (!deleted) beginTransientPersistence(token, id);
+    return deleted;
   } catch {
+    beginTransientPersistence(token, id);
     return false;
   }
 }

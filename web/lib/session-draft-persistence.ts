@@ -17,6 +17,8 @@ const emptyState = (): PersistedSessionDraftState => ({
   draftChannelChoices: {},
 });
 
+const transientTokensByWindow = new Map<string, Set<string>>();
+
 function desktopWindowId(): string | null {
   if (typeof window === "undefined") return null;
   const bridge = (window as unknown as {
@@ -28,9 +30,39 @@ function desktopWindowId(): string | null {
     : "main";
 }
 
+function resolvedWindowId(windowId?: string | null): string {
+  return windowId || desktopWindowId() || "main";
+}
+
+export function beginTransientPersistence(
+  token: string,
+  windowId?: string | null,
+): void {
+  const id = resolvedWindowId(windowId);
+  const tokens = transientTokensByWindow.get(id) ?? new Set<string>();
+  tokens.add(token);
+  transientTokensByWindow.set(id, tokens);
+}
+
+export function endTransientPersistence(
+  token: string,
+  windowId?: string | null,
+): void {
+  const id = resolvedWindowId(windowId);
+  const tokens = transientTokensByWindow.get(id);
+  if (!tokens) return;
+  tokens.delete(token);
+  if (tokens.size === 0) transientTokensByWindow.delete(id);
+}
+
+export function isTransientPersistenceSuppressed(
+  windowId?: string | null,
+): boolean {
+  return (transientTokensByWindow.get(resolvedWindowId(windowId))?.size ?? 0) > 0;
+}
+
 export function sessionDraftStorageKey(windowId?: string | null): string {
-  const resolvedWindowId = windowId || desktopWindowId() || "main";
-  return `openprogram.sessionDraftState:${resolvedWindowId}`;
+  return `openprogram.sessionDraftState:${resolvedWindowId(windowId)}`;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -87,7 +119,10 @@ export function readSessionDraftState(): PersistedSessionDraftState {
   const key = sessionDraftStorageKey();
   const current = parseState(localStorage.getItem(key));
   if (current) {
-    if ((desktopWindowId() ?? "main") === "main") {
+    if (
+      (desktopWindowId() ?? "main") === "main"
+      && !isTransientPersistenceSuppressed()
+    ) {
       try {
         localStorage.removeItem("composerDrafts");
         localStorage.removeItem("composerSettings");
@@ -111,6 +146,7 @@ export function readSessionDraftState(): PersistedSessionDraftState {
     composerDrafts,
     composerSettingsBySession,
   };
+  if (isTransientPersistenceSuppressed()) return migrated;
   const serialized = JSON.stringify(migrated);
   try {
     localStorage.setItem(key, serialized);
@@ -125,18 +161,23 @@ export function readSessionDraftState(): PersistedSessionDraftState {
 
 export function replaceSessionDraftState(
   state: PersistedSessionDraftState,
-): void {
-  if (typeof window === "undefined") return;
+): boolean {
+  if (typeof window === "undefined" || isTransientPersistenceSuppressed()) {
+    return false;
+  }
   try {
-    localStorage.setItem(sessionDraftStorageKey(), JSON.stringify({
+    const key = sessionDraftStorageKey();
+    const serialized = JSON.stringify({
       version: 1,
       composerDrafts: state.composerDrafts,
       composerSettingsBySession: state.composerSettingsBySession,
       pendingProjectsByChat: state.pendingProjectsByChat,
       draftChannelChoices: state.draftChannelChoices,
-    } satisfies PersistedSessionDraftState));
+    } satisfies PersistedSessionDraftState);
+    localStorage.setItem(key, serialized);
+    return localStorage.getItem(key) === serialized;
   } catch {
-    /* quota / private mode */
+    return false;
   }
 }
 

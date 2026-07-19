@@ -105,6 +105,12 @@ const {
   updateTransferJournal,
   writeTransferJournal,
 } = await import("../lib/tab-transfer-journal.ts");
+const sessionDraftPersistence = await import("../lib/session-draft-persistence.ts");
+
+sessionDraftPersistence.beginTransientPersistence("window-isolation", "secondary");
+assert.equal(sessionDraftPersistence.isTransientPersistenceSuppressed("secondary"), true);
+assert.equal(sessionDraftPersistence.isTransientPersistenceSuppressed("main"), false);
+sessionDraftPersistence.endTransientPersistence("window-isolation", "secondary");
 
 assert.equal(writeTransferJournal(journalEntry("one"), "journal-a"), true);
 assert.equal(writeTransferJournal(journalEntry("two", "source"), "journal-a"), true);
@@ -121,40 +127,10 @@ const originalSetItem = globalThis.localStorage.setItem;
 globalThis.localStorage.setItem = () => { throw new Error("quota"); };
 assert.equal(writeTransferJournal(journalEntry("quota"), "journal-fail"), false);
 assert.deepEqual(readTransferJournal("journal-fail"), { version: 1, entries: {} });
-let failedMutations = 0;
-let rejectedStages = 0;
-assert.equal(stageTransferMutation(
-  journalEntry("quota-stage"),
-  () => { failedMutations += 1; },
-  () => { rejectedStages += 1; },
-  "journal-fail",
-), false);
-assert.equal(failedMutations, 0);
-assert.equal(rejectedStages, 1);
 globalThis.localStorage.setItem = () => {};
 assert.equal(writeTransferJournal(journalEntry("silent"), "journal-fail"), false);
 assert.deepEqual(readTransferJournal("journal-fail"), { version: 1, entries: {} });
-assert.equal(stageTransferMutation(
-  journalEntry("silent-stage"),
-  () => { failedMutations += 1; },
-  () => { rejectedStages += 1; },
-  "journal-fail",
-), false);
-assert.equal(failedMutations, 0);
-assert.equal(rejectedStages, 2);
 globalThis.localStorage.setItem = originalSetItem;
-
-let mutationSawJournal = false;
-assert.equal(stageTransferMutation(
-  journalEntry("ordered-stage"),
-  () => {
-    mutationSawJournal = !!readTransferJournal("journal-order")
-      .entries["ordered-stage"];
-  },
-  () => { throw new Error("unexpected rejection"); },
-  "journal-order",
-), true);
-assert.equal(mutationSawJournal, true);
 
 function recoveryHarness() {
   const calls = [];
@@ -163,9 +139,11 @@ function recoveryHarness() {
     handlers: {
       applyCenterTabs(payload, options) {
         calls.push(["tabs", payload.activeId, options.persist]);
+        return true;
       },
       applySession(snapshot, options) {
         calls.push(["session", snapshot.activeChatKey, options.persist]);
+        return true;
       },
       applyFileDrafts(snapshot) {
         calls.push(["files", snapshot.length]);
@@ -201,17 +179,27 @@ function recoveryHarness() {
 {
   const recovery = recoveryHarness();
   assert.equal(recoverTransferJournalEntry(
-    journalEntry("destination-staged"),
+    journalEntry("destination-staged-explicit-window"),
     "destination-staged",
     recovery.handlers,
+    "recovery-window",
   ), true);
   assert.deepEqual(recovery.calls, [
     ["tabs", "s:local_one", false],
     ["session", "local_one", false],
     ["files", 0],
     ["bridge", 0],
-    ["accepted", "destination-staged"],
+    ["accepted", "destination-staged-explicit-window"],
   ]);
+  assert.equal(
+    sessionDraftPersistence.isTransientPersistenceSuppressed("recovery-window"),
+    true,
+  );
+  assert.equal(sessionDraftPersistence.isTransientPersistenceSuppressed("main"), false);
+  sessionDraftPersistence.endTransientPersistence(
+    "destination-staged-explicit-window",
+    "recovery-window",
+  );
 }
 
 {
@@ -229,6 +217,7 @@ function recoveryHarness() {
     ["bridge", 0],
     ["sourceRemoved", "awaiting-source"],
   ]);
+  sessionDraftPersistence.endTransientPersistence("awaiting-source", "main");
 }
 
 for (const status of ["prepared", "rolled-back", "stale"]) {
@@ -255,7 +244,7 @@ for (const outcome of ["commit", "rollback"]) {
   const originalApplyTabs = recovery.handlers.applyCenterTabs;
   recovery.handlers.applyCenterTabs = (payload, options) => {
     phaseSeen.push(readTransferJournal(id).entries[token]?.phase);
-    originalApplyTabs(payload, options);
+    return originalApplyTabs(payload, options);
   };
   assert.equal(finalizeTransferJournal(
     token,
@@ -271,6 +260,54 @@ for (const outcome of ["commit", "rollback"]) {
     ["files", 0],
     ["bridge", 0],
   ]);
+}
+
+{
+  const token = "finalize-phase-failure";
+  const id = "journal-phase-failure";
+  assert.equal(writeTransferJournal(journalEntry(token), id), true);
+  globalThis.localStorage.setItem = (key, value) => {
+    if (key === `openprogram.tabTransferJournal:${id}`) {
+      throw new Error("journal phase quota");
+    }
+    originalSetItem(key, value);
+  };
+  assert.equal(finalizeTransferJournal(
+    token,
+    "commit",
+    recoveryHarness().handlers,
+    id,
+  ), false);
+  assert.equal(readTransferJournal(id).entries[token].phase, "staged");
+  assert.equal(
+    sessionDraftPersistence.isTransientPersistenceSuppressed(id),
+    true,
+    "a phase-write failure must suppress normal persistence until recovery",
+  );
+  globalThis.localStorage.setItem = originalSetItem;
+  sessionDraftPersistence.endTransientPersistence(token, id);
+  assert.equal(deleteTransferJournal(token, id), true);
+}
+
+for (const [status, role, missing] of [
+  ["committed", "destination", "deleteJournal"],
+  ["rolled-back", "source", "clearAccepted"],
+  ["destination-staged", "destination", "rebuildAccepted"],
+  ["awaiting-source", "source", "resumeSourceRemoved"],
+]) {
+  const recovery = recoveryHarness();
+  delete recovery.handlers[missing];
+  const entry = journalEntry(`missing-${missing}`, role);
+  assert.equal(writeTransferJournal(entry, "missing-callbacks"), true);
+  assert.equal(recoverTransferJournalEntry(entry, status, recovery.handlers), false);
+  assert.deepEqual(recovery.calls, []);
+  assert.ok(readTransferJournal("missing-callbacks").entries[entry.token]);
+  assert.equal(
+    sessionDraftPersistence.isTransientPersistenceSuppressed("main"),
+    true,
+    "an unresolved recovery must keep normal persistence suppressed",
+  );
+  sessionDraftPersistence.endTransientPersistence(entry.token, "main");
 }
 
 values.clear();
@@ -443,7 +480,6 @@ assert.equal(
   reloadedDestination.useSessionStore.getState().pendingProjectsByChat.local_move,
   "project-move",
 );
-const sessionDraftPersistence = await import("../lib/session-draft-persistence.ts");
 assert.deepEqual(
   sessionDraftPersistence.readSessionDraftState().draftChannelChoices.local_move,
   { channel: "discord", account_id: "move-account" },
@@ -533,26 +569,88 @@ secondaryTabs.setState({
   splitWebTabId: null,
   splitRatio: 0.44,
 });
-secondaryTabsModule.persistCurrentCenterTabsPayload();
+assert.equal(secondaryTabsModule.persistCurrentCenterTabsPayload(), true);
 const secondaryTabBytes = values.get("centerTabs:secondary");
-const inserted = secondaryTabsModule.insertTransferredTabs(
+secondarySessionModule.persistCurrentSessionTransfer(["local_one"]);
+const effectSessionBytes = values.get("openprogram.sessionDraftState:secondary");
+const effectSessionSnapshot = secondarySessionModule.snapshotSessionTransfer([
+  "local_one",
+]);
+const validatedDestination = secondaryTabsModule.validateTransferredTabs(
   transferPayload,
   { kind: "strip-end" },
-  { persist: false },
 );
+assert.equal(validatedDestination.ok, true);
+const orderedDestinationEntry = journalEntry("destination-store-stage");
+orderedDestinationEntry.beforeCenterTabs = {
+  version: 2,
+  tabs: secondaryTabs.getState().tabs,
+  activeId: secondaryTabs.getState().activeId,
+  groups: secondaryTabs.getState().groups,
+  splitWebTabId: secondaryTabs.getState().splitWebTabId,
+  splitRatio: secondaryTabs.getState().splitRatio,
+};
+orderedDestinationEntry.afterCenterTabs = validatedDestination.after;
+orderedDestinationEntry.beforeSession = effectSessionSnapshot;
+orderedDestinationEntry.afterSession = effectSessionSnapshot;
+
+const beforeFailedStage = structuredClone(secondaryTabs.getState().tabs);
+let rejectedStages = 0;
+globalThis.localStorage.setItem = (key, value) => {
+  if (key === "openprogram.tabTransferJournal:secondary") throw new Error("quota");
+  originalSetItem(key, value);
+};
+assert.equal(stageTransferMutation(
+  { ...orderedDestinationEntry, token: "destination-throw" },
+  () => secondaryTabsModule.insertTransferredTabs(
+    transferPayload,
+    { kind: "strip-end" },
+    { persist: false },
+  ),
+  () => { rejectedStages += 1; },
+  "secondary",
+), false);
+assert.deepEqual(secondaryTabs.getState().tabs, beforeFailedStage);
+globalThis.localStorage.setItem = (key, value) => {
+  if (key !== "openprogram.tabTransferJournal:secondary") {
+    originalSetItem(key, value);
+  }
+};
+assert.equal(stageTransferMutation(
+  { ...orderedDestinationEntry, token: "destination-silent" },
+  () => secondaryTabsModule.insertTransferredTabs(
+    transferPayload,
+    { kind: "strip-end" },
+    { persist: false },
+  ),
+  () => { rejectedStages += 1; },
+  "secondary",
+), false);
+assert.deepEqual(secondaryTabs.getState().tabs, beforeFailedStage);
+assert.equal(rejectedStages, 2);
+globalThis.localStorage.setItem = originalSetItem;
+
+let inserted;
+assert.equal(stageTransferMutation(
+  orderedDestinationEntry,
+  () => {
+    assert.ok(readTransferJournal("secondary").entries[orderedDestinationEntry.token]);
+    inserted = secondaryTabsModule.insertTransferredTabs(
+      transferPayload,
+      { kind: "strip-end" },
+      { persist: false },
+    );
+    return inserted.ok;
+  },
+  () => { throw new Error("unexpected destination rejection"); },
+  "secondary",
+), true);
 assert.equal(inserted.ok, true);
 assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
   "s:existing",
   "s:local_one",
 ]);
 assert.equal(values.get("centerTabs:secondary"), secondaryTabBytes);
-const stagedDestinationJournal = journalEntry("destination-store-stage");
-stagedDestinationJournal.beforeCenterTabs = inserted.before;
-stagedDestinationJournal.afterCenterTabs = inserted.after;
-assert.equal(writeTransferJournal(
-  stagedDestinationJournal,
-  "secondary",
-), true);
 assert.deepEqual(
   readTransferJournal("secondary").entries["destination-store-stage"]
     .afterCenterTabs,
@@ -563,14 +661,57 @@ assert.equal(
   undefined,
 );
 
-const removed = secondaryTabsModule.removeTransferredTabs(
-  ["s:local_one"],
-  { persist: false },
+secondaryTabs.getState().openSessionTab("existing", "Effect write");
+secondarySession.getState().setCurrentDraft("local_one");
+channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+  channel: "effect-channel",
+  account_id: "effect-account",
+});
+assert.equal(
+  values.get("centerTabs:secondary"),
+  secondaryTabBytes,
+  "mounted center-tab effects must not persist staged state",
 );
+assert.equal(
+  values.get("openprogram.sessionDraftState:secondary"),
+  effectSessionBytes,
+  "mounted path/channel effects must not persist staged state",
+);
+secondaryTabsModule.replaceCenterTabsPayload(inserted.after, { persist: false });
+secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: false });
+
+const orderedSourceEntry = {
+  ...orderedDestinationEntry,
+  token: "source-store-stage",
+  role: "source",
+  beforeCenterTabs: inserted.after,
+  afterCenterTabs: inserted.before,
+};
+let removed;
+assert.equal(stageTransferMutation(
+  orderedSourceEntry,
+  () => {
+    assert.ok(readTransferJournal("secondary").entries[orderedSourceEntry.token]);
+    removed = secondaryTabsModule.removeTransferredTabs(
+      ["s:local_one"],
+      { persist: false },
+    );
+    return removed.ok;
+  },
+  () => { throw new Error("unexpected source rejection"); },
+  "secondary",
+), true);
 assert.equal(removed.ok, true);
 assert.equal(removed.empty, false);
 assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), ["s:existing"]);
 assert.equal(values.get("centerTabs:secondary"), secondaryTabBytes);
+sessionDraftPersistence.endTransientPersistence(
+  orderedDestinationEntry.token,
+  "secondary",
+);
+sessionDraftPersistence.endTransientPersistence(orderedSourceEntry.token, "secondary");
+assert.equal(deleteTransferJournal(orderedDestinationEntry.token, "secondary"), true);
+assert.equal(deleteTransferJournal(orderedSourceEntry.token, "secondary"), true);
 const realTransferPayload = {
   ...transferPayload,
   tabs: [{ id: "s:real", kind: "session", title: "Real", sessionId: "real" }],
@@ -697,16 +838,276 @@ assert.deepEqual(secondaryTabs.getState().groups[0], {
   visibleIds: ["w:left", "w:right"],
   focusedId: "w:right",
 });
-assert.equal(secondaryTabsModule.removeTransferredTabs(
-  ["w:left"],
+const segmentPayload = {
+  ...transferPayload,
+  tabs: [{ id: "w:segment-b", kind: "web", title: "B", url: "https://b.test/" }],
+  source: {
+    windowId: "source",
+    kind: "segment",
+    groupId: "g:segment",
+    memberIndex: 1,
+    memberIds: ["w:segment-a", "w:segment-b", "w:segment-c"],
+    visibleIds: ["w:segment-b", "w:segment-c"],
+    focusedId: "w:segment-b",
+  },
+  chats: [],
+};
+secondaryTabsModule.replaceCenterTabsPayload({
+  version: 2,
+  tabs: [{ id: "s:target", kind: "session", title: "Target", sessionId: "target" }],
+  activeId: "s:target",
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.44,
+}, { persist: false });
+const segmentValidation = secondaryTabsModule.validateTransferredTabs(
+  segmentPayload,
+  { kind: "strip-end" },
+);
+assert.equal(segmentValidation.ok, true);
+assert.deepEqual(segmentValidation.after.groups, []);
+assert.equal(secondaryTabsModule.insertTransferredTabs(
+  segmentPayload,
+  { kind: "strip-end" },
   { persist: false },
-).ok, false, "a group cannot be partially removed");
+).ok, true);
+assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
+  "s:target",
+  "w:segment-b",
+]);
+
+secondaryTabsModule.replaceCenterTabsPayload({
+  version: 2,
+  tabs: [
+    { id: "w:segment-a", kind: "web", title: "A", url: "https://a.test/" },
+    { id: "w:segment-b", kind: "web", title: "B", url: "https://b.test/" },
+    { id: "w:segment-c", kind: "web", title: "C", url: "https://c.test/" },
+  ],
+  activeId: "w:segment-b",
+  groups: [{
+    id: "g:segment",
+    memberIds: ["w:segment-a", "w:segment-b", "w:segment-c"],
+    visibleIds: ["w:segment-b", "w:segment-c"],
+    focusedId: "w:segment-b",
+  }],
+  splitWebTabId: null,
+  splitRatio: 0.44,
+}, { persist: false });
+const segmentRemoval = secondaryTabsModule.removeTransferredTabs(
+  ["w:segment-b"],
+  { persist: false },
+);
+assert.equal(segmentRemoval.ok, true);
+assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
+  "w:segment-a",
+  "w:segment-c",
+]);
+assert.deepEqual(secondaryTabs.getState().groups, [{
+  id: "g:segment",
+  memberIds: ["w:segment-a", "w:segment-c"],
+  visibleIds: ["w:segment-c"],
+  focusedId: "w:segment-c",
+}]);
+
+const oversizedGroupPayload = {
+  ...groupedPayload,
+  tabs: ["one", "two", "three", "four"].map((name) => ({
+    id: `w:oversized-${name}`,
+    kind: "web",
+    title: name,
+    url: `https://${name}.oversized.test/`,
+  })),
+  source: {
+    ...groupedPayload.source,
+    groupId: "g:oversized",
+    memberIds: [
+      "w:oversized-one",
+      "w:oversized-two",
+      "w:oversized-three",
+      "w:oversized-four",
+    ],
+    visibleIds: ["w:oversized-one", "w:oversized-two"],
+    focusedId: "w:oversized-one",
+  },
+};
+const beforeOversized = structuredClone(secondaryTabs.getState().tabs);
+assert.deepEqual(
+  secondaryTabsModule.validateTransferredTabs(
+    oversizedGroupPayload,
+    { kind: "strip-end" },
+  ),
+  { ok: false, reason: "group-full" },
+);
+assert.equal(secondaryTabsModule.insertTransferredTabs(
+  oversizedGroupPayload,
+  { kind: "strip-end" },
+  { persist: false },
+).ok, false);
+assert.deepEqual(secondaryTabs.getState().tabs, beforeOversized);
 
 const {
   applyFileDraftSnapshot,
   fileDrafts,
   snapshotFileDrafts,
 } = await import("../lib/state/files-shared.ts");
+const actualRecoveryHandlers = {
+  applyCenterTabs: (payload, options) =>
+    secondaryTabsModule.replaceCenterTabsPayload(payload, options),
+  applySession: (snapshot, options) =>
+    secondarySessionModule.applySessionTransfer(snapshot, options),
+  applyFileDrafts: applyFileDraftSnapshot,
+  applyBridge: () => {},
+  rebuildAccepted: () => {},
+  resumeSourceRemoved: () => {},
+  clearAccepted: () => {},
+  deleteJournal: (token) => deleteTransferJournal(token, "secondary"),
+};
+
+secondaryTabsModule.replaceCenterTabsPayload(
+  orderedDestinationEntry.beforeCenterTabs,
+  { persist: false },
+);
+secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: false });
+const startupEntry = {
+  ...orderedDestinationEntry,
+  token: "startup-destination-staged",
+};
+assert.equal(writeTransferJournal(startupEntry, "secondary"), true);
+assert.equal(recoverTransferJournalEntry(
+  startupEntry,
+  "destination-staged",
+  actualRecoveryHandlers,
+), true);
+secondaryTabs.getState().openSessionTab("existing", "Startup effect write");
+secondarySession.getState().setCurrentDraft("local_one");
+channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+  channel: "startup-effect",
+  account_id: "startup-effect",
+});
+assert.equal(values.get("centerTabs:secondary"), secondaryTabBytes);
+assert.equal(
+  values.get("openprogram.sessionDraftState:secondary"),
+  effectSessionBytes,
+  "startup staged recovery must suppress mounted effect persistence",
+);
+sessionDraftPersistence.endTransientPersistence(startupEntry.token, "secondary");
+assert.equal(deleteTransferJournal(startupEntry.token, "secondary"), true);
+secondaryTabsModule.replaceCenterTabsPayload(startupEntry.afterCenterTabs, {
+  persist: false,
+});
+secondarySessionModule.applySessionTransfer(startupEntry.afterSession, {
+  persist: false,
+});
+
+const losslessCommitEntry = {
+  ...startupEntry,
+  token: "lossless-commit",
+};
+assert.equal(stageTransferMutation(
+  losslessCommitEntry,
+  () => secondaryTabsModule.replaceCenterTabsPayload(
+    losslessCommitEntry.afterCenterTabs,
+    { persist: false },
+  ),
+  () => { throw new Error("unexpected lossless commit rejection"); },
+  "secondary",
+), true);
+values.set("openprogram.sessionDraftState:secondary", "{stale-session-bytes");
+globalThis.localStorage.setItem = (key, value) => {
+  if (key === "centerTabs:secondary") throw new Error("center quota");
+  originalSetItem(key, value);
+};
+assert.equal(finalizeTransferJournal(
+  losslessCommitEntry.token,
+  "commit",
+  actualRecoveryHandlers,
+  "secondary",
+), false);
+assert.equal(
+  readTransferJournal("secondary").entries[losslessCommitEntry.token].phase,
+  "committing",
+);
+globalThis.localStorage.setItem = originalSetItem;
+const failedCommitCenterBytes = values.get("centerTabs:secondary");
+const failedCommitSessionBytes = values.get("openprogram.sessionDraftState:secondary");
+secondaryTabs.getState().openSessionTab("existing", "Failed commit effect");
+secondarySession.getState().setCurrentDraft("local_one");
+channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+  channel: "failed-commit-effect",
+  account_id: "failed-commit-effect",
+});
+assert.equal(values.get("centerTabs:secondary"), failedCommitCenterBytes);
+assert.equal(
+  values.get("openprogram.sessionDraftState:secondary"),
+  failedCommitSessionBytes,
+  "a failed commit must restore the transient persistence guard",
+);
+assert.equal(finalizeTransferJournal(
+  losslessCommitEntry.token,
+  "commit",
+  actualRecoveryHandlers,
+  "secondary",
+), true);
+assert.equal(
+  readTransferJournal("secondary").entries[losslessCommitEntry.token],
+  undefined,
+);
+
+const losslessRollbackEntry = {
+  ...startupEntry,
+  token: "lossless-rollback",
+};
+assert.equal(stageTransferMutation(
+  losslessRollbackEntry,
+  () => secondaryTabsModule.replaceCenterTabsPayload(
+    losslessRollbackEntry.afterCenterTabs,
+    { persist: false },
+  ),
+  () => { throw new Error("unexpected lossless rollback rejection"); },
+  "secondary",
+), true);
+values.set("openprogram.sessionDraftState:secondary", "{stale-session-bytes");
+globalThis.localStorage.setItem = (key, value) => {
+  if (key !== "openprogram.sessionDraftState:secondary") {
+    originalSetItem(key, value);
+  }
+};
+assert.equal(finalizeTransferJournal(
+  losslessRollbackEntry.token,
+  "rollback",
+  actualRecoveryHandlers,
+  "secondary",
+), false);
+assert.equal(
+  readTransferJournal("secondary").entries[losslessRollbackEntry.token].phase,
+  "rolling-back",
+);
+globalThis.localStorage.setItem = originalSetItem;
+const failedRollbackCenterBytes = values.get("centerTabs:secondary");
+const failedRollbackSessionBytes = values.get("openprogram.sessionDraftState:secondary");
+secondaryTabs.getState().openSessionTab("existing", "Failed rollback effect");
+secondarySession.getState().setCurrentDraft("local_one");
+channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+  channel: "failed-rollback-effect",
+  account_id: "failed-rollback-effect",
+});
+assert.equal(values.get("centerTabs:secondary"), failedRollbackCenterBytes);
+assert.equal(
+  values.get("openprogram.sessionDraftState:secondary"),
+  failedRollbackSessionBytes,
+  "a failed rollback must restore the transient persistence guard",
+);
+assert.equal(finalizeTransferJournal(
+  losslessRollbackEntry.token,
+  "rollback",
+  actualRecoveryHandlers,
+  "secondary",
+), true);
+assert.equal(
+  readTransferJournal("secondary").entries[losslessRollbackEntry.token],
+  undefined,
+);
+
 const fileDraft = { draft: "edited", baselineContent: "base", baselineMtime: 4 };
 fileDrafts.set("project:file.txt", fileDraft);
 const fileSnapshot = snapshotFileDrafts(["project:file.txt", "project:missing.txt"]);

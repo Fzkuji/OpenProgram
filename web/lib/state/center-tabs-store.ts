@@ -16,6 +16,7 @@
  * session store's currentSessionId / titles into this store.
  */
 import { create } from "zustand";
+import { isTransientPersistenceSuppressed } from "@/lib/session-draft-persistence";
 import {
   findCenterTabGroup,
   focusCenterTabGroupMember,
@@ -301,19 +302,24 @@ function normalizeCenterTabsPayload(
 
 function persistCenterTabsPayload(
   state: Pick<CenterTabsState, "tabs" | "activeId" | "groups" | "splitWebTabId" | "splitRatio">,
-): void {
-  if (typeof window === "undefined") return;
+): boolean {
+  if (typeof window === "undefined" || isTransientPersistenceSuppressed()) {
+    return false;
+  }
   try {
-    localStorage.setItem(centerTabsStorageKey(), JSON.stringify({
+    const key = centerTabsStorageKey();
+    const serialized = JSON.stringify({
       version: 2,
       tabs: state.tabs,
       activeId: state.activeId,
       groups: state.groups,
       splitWebTabId: state.splitWebTabId,
       splitRatio: state.splitRatio,
-    } satisfies CenterTabsPersistedPayload));
+    } satisfies CenterTabsPersistedPayload);
+    localStorage.setItem(key, serialized);
+    return localStorage.getItem(key) === serialized;
   } catch {
-    /* quota / private mode — workspace still works, just doesn't restore */
+    return false;
   }
 }
 
@@ -942,8 +948,15 @@ function sourceGroup(
   payload: DesktopTransferPayload,
 ): CenterTabGroup | null {
   if (payload.source.kind === "tab") return null;
-  const memberIds = payload.source.memberIds ?? payload.tabs.map((tab) => tab.id);
-  const visibleIds = payload.source.visibleIds ?? memberIds.slice(0, 2);
+  const transferred = new Set(payload.tabs.map((tab) => tab.id));
+  const sourceMemberIds = payload.source.memberIds
+    ?? payload.tabs.map((tab) => tab.id);
+  const memberIds = payload.source.kind === "segment"
+    ? sourceMemberIds.filter((id) => transferred.has(id))
+    : sourceMemberIds;
+  if (memberIds.length < 2) return null;
+  const visibleIds = (payload.source.visibleIds ?? memberIds.slice(0, 2))
+    .filter((id) => transferred.has(id));
   return {
     id: payload.source.groupId ?? `g:transfer:${memberIds.join(":")}`,
     memberIds,
@@ -1053,21 +1066,33 @@ export function validateTransferredTabs(
   }
   if (payload.source.kind !== "tab") {
     const memberIds = payload.source.memberIds;
+    if (!memberIds) return { ok: false, reason: "invalid" };
     const visibleIds = payload.source.visibleIds ?? memberIds?.slice(0, 2) ?? [];
     const focusedId = payload.source.focusedId ?? visibleIds[0];
+    if (payload.source.kind === "group" && ids.length > 3) {
+      return { ok: false, reason: "group-full" };
+    }
+    const segmentAt = payload.source.memberIndex;
+    const validMembers = payload.source.kind === "segment"
+      ? segmentAt !== undefined
+        && Number.isInteger(segmentAt)
+        && segmentAt >= 0
+        && sameIds(memberIds.slice(segmentAt, segmentAt + ids.length), ids)
+      : sameIds(memberIds, ids);
     if (
-      !memberIds
-      || !sameIds(memberIds, ids)
+      !validMembers
       || (payload.source.kind === "group" && memberIds.length < 2)
       || visibleIds.some((id) => !memberIds.includes(id))
       || visibleIds.length > 2
       || (focusedId !== undefined && !visibleIds.includes(focusedId))
-      || (payload.source.memberIndex !== undefined
+      || (payload.source.kind !== "segment"
+        && payload.source.memberIndex !== undefined
         && (!Number.isInteger(payload.source.memberIndex)
           || payload.source.memberIndex < 0))
     ) return { ok: false, reason: "invalid" };
     if (
       payload.source.groupId
+      && (payload.source.kind === "group" || ids.length > 1)
       && before.groups.some((group) => group.id === payload.source.groupId)
     ) return { ok: false, reason: "invalid" };
   }
@@ -1094,6 +1119,7 @@ export function insertTransferredTabs(
   before: CenterTabsPersistedPayload;
   after: CenterTabsPersistedPayload;
 } {
+  void _options;
   const before = currentCenterTabsPayload();
   const validated = validateTransferredTabs(payload, placement);
   if (!validated.ok) return { ok: false, before, after: before };
@@ -1110,15 +1136,12 @@ export function removeTransferredTabs(
   before: CenterTabsPersistedPayload;
   after: CenterTabsPersistedPayload;
 } {
+  void _options;
   const before = currentCenterTabsPayload();
   const removed = new Set(ids);
   const valid = ids.length > 0
     && removed.size === ids.length
-    && ids.every((id) => before.tabs.some((tab) => tab.id === id))
-    && before.groups.every((group) => {
-      const count = group.memberIds.filter((id) => removed.has(id)).length;
-      return count === 0 || count === group.memberIds.length;
-    });
+    && ids.every((id) => before.tabs.some((tab) => tab.id === id));
   if (!valid) return { ok: false, empty: before.tabs.length === 0, before, after: before };
 
   const activeIndex = before.tabs.findIndex((tab) => tab.id === before.activeId);
@@ -1130,8 +1153,19 @@ export function removeTransferredTabs(
     ...before,
     tabs,
     activeId,
-    groups: before.groups.filter((group) =>
-      group.memberIds.every((id) => !removed.has(id))),
+    groups: before.groups.flatMap((group) => {
+      const memberIds = group.memberIds.filter((id) => !removed.has(id));
+      if (memberIds.length < 2) return [];
+      const visibleIds = group.visibleIds.filter((id) => !removed.has(id));
+      return [{
+        ...group,
+        memberIds,
+        visibleIds,
+        focusedId: visibleIds.includes(group.focusedId)
+          ? group.focusedId
+          : visibleIds[0] ?? memberIds[0],
+      }];
+    }),
     splitWebTabId: before.splitWebTabId && removed.has(before.splitWebTabId)
       ? null
       : before.splitWebTabId,
@@ -1143,12 +1177,12 @@ export function removeTransferredTabs(
 export function replaceCenterTabsPayload(
   payload: CenterTabsPersistedPayload,
   options: { persist: boolean },
-): void {
+): boolean {
   const normalized = normalizeCenterTabsPayload(payload);
   useCenterTabs.setState(persistedState(normalized));
-  if (options.persist) persistCenterTabsPayload(normalized);
+  return options.persist ? persistCenterTabsPayload(normalized) : true;
 }
 
-export function persistCurrentCenterTabsPayload(): void {
-  persistCenterTabsPayload(currentCenterTabsPayload());
+export function persistCurrentCenterTabsPayload(): boolean {
+  return persistCenterTabsPayload(currentCenterTabsPayload());
 }

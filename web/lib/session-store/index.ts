@@ -31,23 +31,15 @@ export type {
   TreeNode,
 } from "./types";
 import type {
-  AgentBadgeInfo,
   AgentSettingsState,
   AgenticFunction,
-  AskOne,
-  AssistantBlock,
   BranchBadgeInfo,
   ChatMsg,
-  ChatToolCall,
   ComposerSettings,
   ConvSummary,
-  FnParam,
-  FormFieldSchema,
-  MessageStatus,
   PendingDecision,
   RunningTask,
   StatusBadgeInfo,
-  StatusTone,
   TreeNode,
 } from "./types";
 
@@ -777,6 +769,7 @@ function draftChoiceHost(): DraftChannelChoiceHost {
 export function snapshotSessionTransfer(
   _chatKeys: string[],
 ): SessionTransferSnapshot {
+  void _chatKeys;
   const state = useSessionStore.getState();
   const host = draftChoiceHost();
   return {
@@ -797,7 +790,7 @@ export function snapshotSessionTransfer(
 export function applySessionTransfer(
   snapshot: SessionTransferSnapshot,
   options: { persist: boolean },
-): void {
+): boolean {
   const host = draftChoiceHost();
   host.__pendingChannelChoices = structuredClone(snapshot.draftChannelChoices);
   host._pendingChannelChoice = snapshot.activeChatKey
@@ -814,20 +807,20 @@ export function applySessionTransfer(
     ),
     pendingProjectsByChat: structuredClone(snapshot.pendingProjectsByChat),
   });
-  if (options.persist) {
-    replaceSessionDraftState({
+  return options.persist
+    ? replaceSessionDraftState({
       version: 1,
       composerDrafts: snapshot.composerDrafts,
       composerSettingsBySession: snapshot.composerSettingsBySession,
       pendingProjectsByChat: snapshot.pendingProjectsByChat,
       draftChannelChoices: snapshot.draftChannelChoices,
-    });
-  }
+    })
+    : true;
 }
 
-export function persistCurrentSessionTransfer(chatKeys: string[]): void {
+export function persistCurrentSessionTransfer(chatKeys: string[]): boolean {
   const snapshot = snapshotSessionTransfer(chatKeys);
-  replaceSessionDraftState({
+  return replaceSessionDraftState({
     version: 1,
     composerDrafts: snapshot.composerDrafts,
     composerSettingsBySession: snapshot.composerSettingsBySession,
