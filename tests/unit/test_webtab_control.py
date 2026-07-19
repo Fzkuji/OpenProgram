@@ -146,8 +146,8 @@ def test_desktop_activation_waits_for_navigation_before_target_receipt():
     start = source.index("async function activateView")
     end = source.index("\nfunction withView", start)
     activate = source[start:end]
-    assert "await navigateView(id, url)" in activate
-    assert activate.index("await navigateView(id, url)") < activate.index(
+    assert "await navigateView(ctx, id, url)" in activate
+    assert activate.index("await navigateView(ctx, id, url)") < activate.index(
         "getOrCreateDevToolsTargetId()"
     )
 
@@ -155,9 +155,9 @@ def test_desktop_activation_waits_for_navigation_before_target_receipt():
 def test_desktop_navigation_deduplicates_same_pending_url():
     source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     start = source.index("function loadView")
-    end = source.index("\nfunction ensureView", start)
+    end = source.index("function ensureView", start)
     load_view = source[start:end]
-    assert "viewNavigations.get(id)" in load_view
+    assert "record.navigation" in load_view
     assert "pending.url === url" in load_view
     assert "return pending.promise" in load_view
 
@@ -167,26 +167,35 @@ def test_desktop_activation_does_not_restore_a_tab_changed_while_loading():
     start = source.index("async function activateView")
     end = source.index("\nfunction withView", start)
     activate = source[start:end]
-    show_index = activate.index("showView(id)")
-    navigate_index = activate.index("await navigateView(id, url)")
-    guard_index = activate.index("if (visibleViewId !== id) return null")
+    show_index = activate.index("showView(ctx, id)")
+    navigate_index = activate.index("await navigateView(ctx, id, url)")
+    guard_index = activate.index(
+        "if (recordFor(ctx, id) !== record || !ctx.visibleViewIds.has(id)) return null"
+    )
     target_index = activate.index("getOrCreateDevToolsTargetId()")
     assert show_index < navigate_index < guard_index < target_index
 
 
 def test_desktop_renderer_reload_discards_pending_native_navigations():
     source = (REPO_ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
-    start = source.index('mainWindow.webContents.on("did-navigate"')
-    end = source.index("\n  mainWindow.loadURL", start)
-    reload_cleanup = source[start:end]
-    assert "viewNavigations.clear()" in reload_cleanup
+    # Renderer reload destroys every view owned by the window, which
+    # drops their pending-navigation records with them (destroyView
+    # nulls record.navigation). runNativeNavigation likewise clears the
+    # record before reload/history calls that bypass loadView.
+    assert 'win.webContents.on("did-navigate", () => clearOwnedViews(ctx))' in source
+    start = source.index("function destroyView")
+    end = source.index("function clearOwnedViews", start)
+    assert "record.navigation = null" in source[start:end]
+    start = source.index("function runNativeNavigation")
+    end = source.index("\nfunction", start + 1)
+    assert "record.navigation = null" in source[start:end]
 
 
 def test_renderer_control_contract_targets_ready_session_split():
     source = (REPO_ROOT / "web" / "lib" / "desktop-bridge.ts").read_text(
         encoding="utf-8"
     )
-    assert "state.openWebTabInSplit(d.url)" in source
-    assert "state.splitWebTabId" in source
-    assert "isWebTabReady(split.id)" in source
-    assert "waitForWebTabReady(id, 2000)" in source
+    assert "id = state.openWebTabInSplit(d.url)" in source
+    assert "await waitForWebTabReady(id, 2000)" in source
+    assert "if (ready && tab?.kind === \"web\")" in source
+    assert "bridge.webTab.activate(tab.id, tab.url)" in source
