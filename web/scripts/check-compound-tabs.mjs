@@ -1,4 +1,18 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { registerHooks } from "node:module";
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith("@/")) {
+      return {
+        url: new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href,
+        shortCircuit: true,
+      };
+    }
+    return nextResolve(specifier, context);
+  },
+});
 
 const groups = await import("../lib/state/center-tab-groups.ts");
 
@@ -203,4 +217,147 @@ assert.deepEqual(
 const entries = groups.centerTabStripEntries(result.layout);
 assert.deepEqual(entries.map((entry) => entry.id), ["group:g:ab", "tab:d"]);
 
-console.log("compound-tabs pure checks passed");
+const storageValues = new Map([
+  ["centerTabs", JSON.stringify({
+    tabs: [
+      { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
+      { id: "w:one", kind: "web", title: "One", url: "https://one.test/" },
+    ],
+    activeId: "s:chat",
+  })],
+  ["openprogram.webSplit", JSON.stringify({ tabId: "w:one", ratio: 0.51 })],
+]);
+const storageReads = [];
+const storageWrites = [];
+globalThis.window = {
+  addEventListener: () => {},
+  dispatchEvent: () => {},
+  location: { pathname: "/chat" },
+  openprogramDesktop: { isDesktop: true, windowId: "main" },
+};
+globalThis.localStorage = {
+  getItem(key) {
+    storageReads.push(key);
+    return storageValues.get(key) ?? null;
+  },
+  setItem(key, value) {
+    storageWrites.push(key);
+    storageValues.set(key, String(value));
+  },
+  removeItem: (key) => storageValues.delete(key),
+};
+
+const storeSource = await readFile(
+  new URL("../lib/state/center-tabs-store.ts", import.meta.url),
+  "utf8",
+);
+assert.equal(
+  storeSource.match(/export interface CenterTabsPersistedPayload/g)?.length,
+  1,
+  "the unified persisted payload has one exported definition",
+);
+
+const { useCenterTabs } = await import(
+  "../lib/state/center-tabs-store.ts?compound-main"
+);
+const migrated = JSON.parse(storageValues.get("centerTabs:main"));
+assert.deepEqual(Object.keys(migrated).sort(), [
+  "activeId",
+  "groups",
+  "splitRatio",
+  "splitWebTabId",
+  "tabs",
+  "version",
+]);
+assert.equal(migrated.version, 2);
+assert.equal(migrated.activeId, "s:chat");
+assert.equal(migrated.splitWebTabId, "w:one");
+assert.equal(migrated.splitRatio, 0.51);
+assert.deepEqual(migrated.groups[0].memberIds, ["s:chat", "w:one"]);
+assert.equal(
+  [...storageReads, ...storageWrites].includes("openprogram.centerTabGroups"),
+  false,
+  "group state must never use a separate storage key",
+);
+
+const thirdTab = {
+  id: "w:two",
+  kind: "web",
+  title: "Two",
+  url: "https://two.test/",
+};
+useCenterTabs.setState({
+  tabs: [...useCenterTabs.getState().tabs, thirdTab],
+  groups: [],
+  activeId: "s:chat",
+  splitWebTabId: null,
+  splitRatio: 0.44,
+});
+storageWrites.length = 0;
+useCenterTabs.getState().setSplitWebTab("w:one");
+let state = useCenterTabs.getState();
+assert.equal(state.activeId, "s:chat", "opening split preserves the session");
+assert.equal(state.splitWebTabId, "w:one");
+assert.deepEqual(state.groups[0].memberIds, ["s:chat", "w:one"]);
+assert.deepEqual(state.groups[0].visibleIds, ["s:chat", "w:one"]);
+assert.equal(storageWrites.length, 1, "one mutation writes one payload");
+assert.equal(storageWrites[0], "centerTabs:main");
+
+assert.equal(state.groupTab("w:two", "s:chat", 2), true);
+state = useCenterTabs.getState();
+const groupId = state.groups[0].id;
+state.setActive("w:two");
+state = useCenterTabs.getState();
+assert.deepEqual(state.groups[0].memberIds, ["s:chat", "w:one", "w:two"]);
+assert.deepEqual(state.groups[0].visibleIds, ["w:two", "w:one"]);
+assert.equal(state.groups[0].focusedId, "w:two");
+let persisted = JSON.parse(storageValues.get("centerTabs:main"));
+assert.equal(persisted.groups[0].visibleIds.includes(persisted.groups[0].focusedId), true);
+
+state.moveGroupMember(groupId, "w:two", 0);
+state = useCenterTabs.getState();
+assert.deepEqual(state.groups[0].memberIds, ["w:two", "s:chat", "w:one"]);
+assert.deepEqual(
+  state.tabs.slice(0, state.groups[0].memberIds.length).map((tab) => tab.id),
+  state.groups[0].memberIds,
+);
+
+state.ungroupTab("w:two");
+useCenterTabs.getState().closeTab("w:one");
+state = useCenterTabs.getState();
+assert.deepEqual(state.groups, [], "a one-member group dissolves after close");
+assert.equal(state.splitWebTabId, null, "closing the split web member clears split state");
+persisted = JSON.parse(storageValues.get("centerTabs:main"));
+assert.deepEqual(persisted.groups, []);
+assert.equal(persisted.splitWebTabId, null);
+
+useCenterTabs.setState({
+  tabs: [{ id: "w:one", kind: "web", title: "One", url: "https://one.test/" }],
+  groups: [],
+  activeId: "w:one",
+  splitWebTabId: null,
+  splitRatio: 0.44,
+});
+useCenterTabs.getState().setSplitWebTab("w:one");
+assert.deepEqual(useCenterTabs.getState().groups, []);
+const draftId = useCenterTabs.getState().openDraftSessionTab();
+state = useCenterTabs.getState();
+assert.deepEqual(state.groups[0].memberIds, [`s:${draftId}`, "w:one"]);
+assert.deepEqual(state.groups[0].visibleIds, [`s:${draftId}`, "w:one"]);
+assert.equal(state.activeId, `s:${draftId}`);
+
+const mainPayload = storageValues.get("centerTabs:main");
+window.openprogramDesktop.windowId = "secondary";
+const { useCenterTabs: secondaryTabs } = await import(
+  "../lib/state/center-tabs-store.ts?compound-secondary"
+);
+assert.deepEqual(secondaryTabs.getState().tabs, []);
+secondaryTabs.getState().openNewTabPage();
+assert.equal(storageValues.get("centerTabs:main"), mainPayload);
+assert.equal(JSON.parse(storageValues.get("centerTabs:secondary")).tabs.length, 1);
+assert.equal(
+  [...storageReads, ...storageWrites].includes("openprogram.centerTabGroups"),
+  false,
+);
+
+console.log("compound-tabs store checks passed");

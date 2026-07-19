@@ -1,5 +1,18 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { registerHooks } from "node:module";
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith("@/")) {
+      return {
+        url: new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href,
+        shortCircuit: true,
+      };
+    }
+    return nextResolve(specifier, context);
+  },
+});
 
 const values = new Map();
 globalThis.window = {
