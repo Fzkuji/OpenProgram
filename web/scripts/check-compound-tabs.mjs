@@ -120,6 +120,86 @@ const movedGroup = groups.moveCenterTabGroup(groupedLayout, "g:move", "d");
 assert.deepEqual(movedGroup.tabIds, ["c", "a", "b", "d"]);
 assert.deepEqual(movedGroup.groups, groupedLayout.groups);
 
+const paneTabs = [
+  { id: "s:a", kind: "session", title: "A", sessionId: "a" },
+  { id: "s:b", kind: "session", title: "B", sessionId: "b" },
+  { id: "w:one", kind: "web", title: "One", url: "https://one.test/" },
+  { id: "w:two", kind: "web", title: "Two", url: "https://two.test/" },
+];
+const sessionsOnly = {
+  id: "g:sessions",
+  memberIds: ["s:a", "s:b"],
+  visibleIds: ["s:a", "s:b"],
+  focusedId: "s:b",
+};
+assert.deepEqual(groups.resolveCenterTabPanes(sessionsOnly, paneTabs, "s:b"), [{
+  key: "session",
+  kind: "session",
+  activeTabId: "s:b",
+  memberIds: ["s:a", "s:b"],
+}]);
+
+const sessionAndWeb = {
+  ...sessionsOnly,
+  memberIds: ["s:a", "w:one"],
+  visibleIds: ["s:a", "w:one"],
+  focusedId: "w:one",
+};
+assert.deepEqual(
+  groups.resolveCenterTabPanes(sessionAndWeb, paneTabs, "w:one").map((pane) => pane.kind),
+  ["session", "tab"],
+);
+
+const webOnly = {
+  id: "g:web",
+  memberIds: ["w:one", "w:two"],
+  visibleIds: ["w:one", "w:two"],
+  focusedId: "w:two",
+};
+assert.deepEqual(groups.resolveCenterTabPanes(webOnly, paneTabs, "w:two"), [
+  { key: "w:one", kind: "tab", tabId: "w:one" },
+  { key: "w:two", kind: "tab", tabId: "w:two" },
+]);
+
+const hiddenThird = {
+  id: "g:hidden",
+  memberIds: ["s:a", "w:one", "w:two"],
+  visibleIds: ["s:a", "w:one", "w:two"],
+  focusedId: "w:two",
+};
+assert.equal(groups.resolveCenterTabPanes(hiddenThird, paneTabs, "w:two").length, 2);
+assert.deepEqual(groups.resolveCenterTabPanes({
+  ...webOnly,
+  visibleIds: ["missing", "w:two"],
+  focusedId: "missing",
+}, paneTabs, "missing"), [
+  { key: "w:two", kind: "tab", tabId: "w:two" },
+]);
+
+const memberLayout = {
+  tabIds: ["s:a", "w:one", "w:two"],
+  groups: [{
+    id: "g:member",
+    memberIds: ["s:a", "w:one", "w:two"],
+    visibleIds: ["s:a", "w:one"],
+    focusedId: "w:one",
+  }],
+};
+const movedMember = groups.moveCenterTabGroupMember(
+  memberLayout,
+  "g:member",
+  "w:two",
+  0,
+);
+assert.deepEqual(movedMember.groups[0].memberIds, ["w:two", "s:a", "w:one"]);
+assert.deepEqual(movedMember.tabIds, ["w:two", "s:a", "w:one"]);
+assert.deepEqual(movedMember.groups[0].visibleIds, ["s:a", "w:one"]);
+assert.equal(movedMember.groups[0].focusedId, "w:one");
+assert.deepEqual(
+  movedMember.tabIds.slice(0, movedMember.groups[0].memberIds.length),
+  movedMember.groups[0].memberIds,
+);
+
 const entries = groups.centerTabStripEntries(result.layout);
 assert.deepEqual(entries.map((entry) => entry.id), ["group:g:ab", "tab:d"]);
 

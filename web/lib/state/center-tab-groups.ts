@@ -1,5 +1,8 @@
+import type { CenterTab } from "./center-tabs-store";
+
 export const MAX_CENTER_TAB_GROUP_MEMBERS = 3;
-export const MAX_CENTER_TAB_GROUP_VISIBLE = 2;
+export const MAX_CENTER_TAB_PANES = 2;
+export const MAX_CENTER_TAB_GROUP_VISIBLE = MAX_CENTER_TAB_PANES;
 
 export interface CenterTabGroup {
   id: string;
@@ -12,6 +15,10 @@ export interface CenterTabLayout {
   tabIds: string[];
   groups: CenterTabGroup[];
 }
+
+export type CenterTabPane =
+  | { key: "session"; kind: "session"; activeTabId: string; memberIds: string[] }
+  | { key: string; kind: "tab"; tabId: string };
 
 export type CenterTabStripEntry =
   | { id: `tab:${string}`; kind: "tab"; tabId: string }
@@ -152,6 +159,30 @@ export function moveCenterTabGroup(
   });
 }
 
+export function moveCenterTabGroupMember(
+  layout: CenterTabLayout,
+  groupId: string,
+  memberId: string,
+  toIndex: number,
+): CenterTabLayout {
+  const group = layout.groups.find((candidate) => candidate.id === groupId);
+  if (!group || !group.memberIds.includes(memberId)) return layout;
+  const memberIds = group.memberIds.filter((id) => id !== memberId);
+  const at = Math.max(0, Math.min(toIndex, memberIds.length));
+  memberIds.splice(at, 0, memberId);
+  if (memberIds.every((id, index) => id === group.memberIds[index])) return layout;
+  const memberSet = new Set(memberIds);
+  const groupAt = Math.min(...memberIds.map((id) => layout.tabIds.indexOf(id)));
+  const beforeId = layout.tabIds.slice(Math.max(0, groupAt))
+    .find((id) => !memberSet.has(id)) ?? null;
+  return normalizeCenterTabLayout({
+    tabIds: moveBlockBefore(layout.tabIds, memberIds, beforeId),
+    groups: layout.groups.map((candidate) => candidate === group
+      ? { ...candidate, memberIds }
+      : candidate),
+  });
+}
+
 export function groupCenterTabs(
   layout: CenterTabLayout,
   sourceId: string,
@@ -170,21 +201,9 @@ export function groupCenterTabs(
     return { layout, accepted: false };
   }
   if (targetBefore?.memberIds.includes(sourceId)) {
-    const memberIds = targetBefore.memberIds.filter((id) => id !== sourceId);
-    const at = Math.max(0, Math.min(memberIndex, memberIds.length));
-    memberIds.splice(at, 0, sourceId);
-    const memberSet = new Set(memberIds);
-    const targetAt = Math.min(...memberIds.map((id) => layout.tabIds.indexOf(id)));
-    const beforeId = layout.tabIds.slice(Math.max(0, targetAt))
-      .find((id) => !memberSet.has(id)) ?? null;
     return {
       accepted: true,
-      layout: normalizeCenterTabLayout({
-        tabIds: moveBlockBefore(layout.tabIds, memberIds, beforeId),
-        groups: layout.groups.map((group) => group.id === targetBefore.id
-          ? { ...group, memberIds }
-          : group),
-      }),
+      layout: moveCenterTabGroupMember(layout, targetBefore.id, sourceId, memberIndex),
     };
   }
   const detached = ungroupCenterTab(layout, sourceId);
@@ -229,4 +248,38 @@ export function centerTabStripEntries(layout: CenterTabLayout): CenterTabStripEn
     if (grouped.has(tabId)) return [];
     return [{ id: `tab:${tabId}` as const, kind: "tab" as const, tabId }];
   });
+}
+
+export function resolveCenterTabPanes(
+  group: CenterTabGroup | undefined,
+  tabs: readonly CenterTab[],
+  activeId: string | null,
+): CenterTabPane[] {
+  const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
+  const visibleTabs = unique(group?.visibleIds ?? (activeId ? [activeId] : []))
+    .map((id) => tabsById.get(id))
+    .filter((tab): tab is CenterTab => Boolean(tab));
+  const sessionIds = visibleTabs
+    .filter((tab) => tab.kind === "session")
+    .map((tab) => tab.id);
+  const focusedSessionId = group && sessionIds.includes(group.focusedId)
+    ? group.focusedId
+    : sessionIds[0];
+  let sessionAdded = false;
+  const panes: CenterTabPane[] = [];
+  for (const tab of visibleTabs) {
+    if (tab.kind === "session") {
+      if (sessionAdded || !focusedSessionId) continue;
+      panes.push({
+        key: "session",
+        kind: "session",
+        activeTabId: focusedSessionId,
+        memberIds: sessionIds,
+      });
+      sessionAdded = true;
+    } else {
+      panes.push({ key: tab.id, kind: "tab", tabId: tab.id });
+    }
+  }
+  return panes.slice(0, MAX_CENTER_TAB_PANES);
 }
