@@ -28,6 +28,7 @@ import { useColResize } from "@/lib/use-col-resize";
 import { useTranslation } from "@/lib/i18n";
 import {
   clampSplitRatioForWidth,
+  createSplitLayoutMeasureScheduler,
   isSplitLayoutAvailable,
 } from "@/lib/split-layout";
 // Migrated legacy modules — imported for side effects (they install
@@ -470,26 +471,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const node = centerBodyRef.current;
     if (!node) return;
-    let measureFrame: number | null = null;
-    const measure = () => {
-      measureFrame = null;
+    const measureScheduler = createSplitLayoutMeasureScheduler(() => {
       setCenterBodyWidth(node.getBoundingClientRect().width);
-    };
-    const scheduleMeasure = () => {
-      if (measureFrame !== null) cancelAnimationFrame(measureFrame);
-      measureFrame = requestAnimationFrame(measure);
-    };
+    });
     const layoutRoot = node.closest(".app");
-    scheduleMeasure();
-    const observer = new ResizeObserver(scheduleMeasure);
+    measureScheduler.schedule();
+    const observer = new ResizeObserver(measureScheduler.schedule);
     observer.observe(node);
-    window.addEventListener("resize", scheduleMeasure);
-    layoutRoot?.addEventListener("transitionend", scheduleMeasure);
+    window.addEventListener("resize", measureScheduler.schedule);
+    layoutRoot?.addEventListener("transitionend", measureScheduler.schedule);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", scheduleMeasure);
-      layoutRoot?.removeEventListener("transitionend", scheduleMeasure);
-      if (measureFrame !== null) cancelAnimationFrame(measureFrame);
+      window.removeEventListener("resize", measureScheduler.schedule);
+      layoutRoot?.removeEventListener(
+        "transitionend",
+        measureScheduler.schedule,
+      );
+      measureScheduler.cancel();
     };
   }, []);
   const splitAvailable = isSplitLayoutAvailable(centerBodyWidth);

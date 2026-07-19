@@ -32,6 +32,7 @@ const {
   SPLIT_DIVIDER_WIDTH,
   SPLIT_WEB_MIN_WIDTH,
   clampSplitRatioForWidth,
+  createSplitLayoutMeasureScheduler,
   isSplitLayoutAvailable,
 } = await import("../lib/split-layout.ts");
 const {
@@ -64,6 +65,119 @@ assert.equal(
   "restoring space must recompute from the preferred ratio",
 );
 assert.equal(isSplitLayoutAvailable(463), false);
+
+function createTimingHarness() {
+  let nextId = 1;
+  const frames = new Map();
+  const timers = new Map();
+  const runFirst = (queue) => {
+    const next = queue.entries().next();
+    if (next.done) return false;
+    const [id, callback] = next.value;
+    queue.delete(id);
+    callback();
+    return true;
+  };
+  return {
+    frames,
+    timers,
+    deps: {
+      requestFrame(callback) {
+        const id = nextId++;
+        frames.set(id, callback);
+        return id;
+      },
+      cancelFrame(id) {
+        frames.delete(id);
+      },
+      setTimer(callback, delay) {
+        assert.equal(delay, 0);
+        const id = nextId++;
+        timers.set(id, callback);
+        return id;
+      },
+      clearTimer(id) {
+        timers.delete(id);
+      },
+    },
+    runFrame: () => runFirst(frames),
+    runTimer: () => runFirst(timers),
+  };
+}
+
+{
+  const timing = createTimingHarness();
+  const published = [];
+  let width = 1200;
+  const scheduler = createSplitLayoutMeasureScheduler(
+    () => published.push(width),
+    timing.deps,
+  );
+  scheduler.schedule();
+  width = 864;
+  assert.equal(timing.runTimer(), true);
+  assert.deepEqual(published, [864]);
+  assert.equal(
+    timing.frames.size,
+    0,
+    "timer completion cancels the pending frame",
+  );
+}
+
+{
+  const timing = createTimingHarness();
+  const published = [];
+  let width = 1200;
+  const scheduler = createSplitLayoutMeasureScheduler(
+    () => published.push(width),
+    timing.deps,
+  );
+  scheduler.schedule();
+  const staleFrame = timing.frames.keys().next().value;
+  const staleTimer = timing.timers.keys().next().value;
+  width = 864;
+  scheduler.schedule();
+  assert.equal(timing.frames.has(staleFrame), false);
+  assert.equal(timing.timers.has(staleTimer), false);
+  assert.equal(timing.runTimer(), true);
+  timing.runFrame();
+  assert.deepEqual(
+    published,
+    [864],
+    "continuous scheduling only publishes the latest width",
+  );
+}
+
+{
+  const timing = createTimingHarness();
+  const published = [];
+  const scheduler = createSplitLayoutMeasureScheduler(
+    () => published.push(1200),
+    timing.deps,
+  );
+  scheduler.schedule();
+  assert.equal(timing.runFrame(), true);
+  assert.equal(timing.runTimer(), false);
+  assert.deepEqual(
+    published,
+    [1200],
+    "frame completion cancels the timer fallback",
+  );
+}
+
+{
+  const timing = createTimingHarness();
+  const published = [];
+  const scheduler = createSplitLayoutMeasureScheduler(
+    () => published.push(1200),
+    timing.deps,
+  );
+  scheduler.schedule();
+  scheduler.cancel();
+  timing.runFrame();
+  timing.runTimer();
+  assert.deepEqual(published, [], "cleanup prevents pending measurements");
+}
 
 setWebTabReady("already-ready", true);
 assert.equal(isWebTabReady("already-ready"), true);
@@ -210,32 +324,34 @@ const splitMeasureSource = appShellSource.slice(
   appShellSource.indexOf("const centerBodyRef"),
   appShellSource.indexOf("const splitAvailable"),
 );
-assert.match(splitMeasureSource, /const scheduleMeasure = \(\) =>/);
-assert.match(splitMeasureSource, /requestAnimationFrame/);
-assert.match(splitMeasureSource, /cancelAnimationFrame/);
 assert.match(
   splitMeasureSource,
-  /new ResizeObserver\(scheduleMeasure\)/,
-  "ResizeObserver must defer center-body measurement to the next layout frame",
+  /createSplitLayoutMeasureScheduler/,
+  "AppShell must use the behavior-tested measurement scheduler",
 );
 assert.match(
   splitMeasureSource,
-  /window\.addEventListener\("resize", scheduleMeasure\)/,
+  /new ResizeObserver\(measureScheduler\.schedule\)/,
 );
 assert.match(
   splitMeasureSource,
-  /window\.removeEventListener\("resize", scheduleMeasure\)/,
+  /window\.addEventListener\("resize", measureScheduler\.schedule\)/,
+);
+assert.match(
+  splitMeasureSource,
+  /window\.removeEventListener\("resize", measureScheduler\.schedule\)/,
 );
 assert.match(splitMeasureSource, /node\.closest\("\.app"\)/);
 assert.match(
   splitMeasureSource,
-  /layoutRoot\?\.addEventListener\("transitionend", scheduleMeasure\)/,
+  /layoutRoot\?\.addEventListener\(\s*"transitionend",\s*measureScheduler\.schedule,?\s*\)/,
 );
 assert.match(
   splitMeasureSource,
-  /layoutRoot\?\.removeEventListener\("transitionend", scheduleMeasure\)/,
+  /layoutRoot\?\.removeEventListener\(\s*"transitionend",\s*measureScheduler\.schedule,?\s*\)/,
 );
-assert.doesNotMatch(splitMeasureSource, /setTimeout|setInterval/);
+assert.match(splitMeasureSource, /measureScheduler\.cancel\(\)/);
+assert.doesNotMatch(splitMeasureSource, /setInterval/);
 assert.match(appShellSource, /width: `\$\{effectiveSplitRatio \* 100\}%`/);
 assert.match(appShellSource, /aria-valuenow=\{Math\.round\(effectiveSplitRatio \* 100\)\}/);
 assert.match(appShellSource, /onPointerDown=/);
