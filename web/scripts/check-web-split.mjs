@@ -45,6 +45,10 @@ assert.equal(await waiting, true);
 
 assert.equal(await waitForWebTabReady("never-ready", 1), false);
 
+const clearingWaiter = waitForWebTabReady("clear-while-waiting", 5);
+setWebTabReady("clear-while-waiting", false);
+assert.equal(await clearingWaiter, false);
+
 setWebTabReady("clear-ready", true);
 setWebTabReady("clear-ready", false);
 assert.equal(isWebTabReady("clear-ready"), false);
@@ -66,13 +70,30 @@ assert.doesNotMatch(
 assert.match(webTabPaneSource, /const occluded = !!document\.querySelector/);
 assert.match(
   webTabPaneSource,
-  /occluded \|\| r\.width <= 0 \|\| r\.height <= 0/,
+  /\[role="dialog"\], \.branches-merge-modal-backdrop, \[data-native-view-occluder="true"\]/,
 );
-assert.ok(
-  (webTabPaneSource.match(/setWebTabReady\(tabId, false\);/g) ?? []).length >= 2,
-  "native view readiness must clear for hidden bounds and cleanup",
+assert.match(
+  webTabPaneSource,
+  /const roundedBounds = \{\s*x: Math\.round\(r\.left\),\s*y: Math\.round\(r\.top\),\s*width: Math\.round\(r\.width\),\s*height: Math\.round\(r\.height\),\s*\};/s,
+);
+assert.match(
+  webTabPaneSource,
+  /if \(occluded \|\| roundedBounds\.width <= 0 \|\| roundedBounds\.height <= 0\) \{\s*bridge\.webTab\.setBounds\(tabId, \{ x: 0, y: 0, width: 0, height: 0 \}\);\s*setWebTabReady\(tabId, false\);/s,
+);
+assert.match(
+  webTabPaneSource,
+  /bridge\.webTab\.setBounds\(tabId, roundedBounds\);\s*setWebTabReady\(tabId, true\);/s,
+);
+assert.match(
+  webTabPaneSource,
+  /return \(\) => \{\s*setWebTabReady\(tabId, false\);\s*bridge\.webTab\.hide\(tabId\);/s,
 );
 assert.match(webTabPaneSource, /new MutationObserver\(report\)/);
+assert.match(
+  webTabPaneSource,
+  /mo\.observe\(document\.body, \{ subtree: true, childList: true, attributes: true \}\);/,
+);
+assert.match(webTabPaneSource, /mo\.disconnect\(\);/);
 
 const fileTilesSource = await readFile(
   new URL("../components/chat/composer/attach/file-tiles.tsx", import.meta.url),

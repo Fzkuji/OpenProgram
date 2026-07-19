@@ -134,20 +134,21 @@ function DesktopWebTabPane({
     if (!el) return;
     const report = () => {
       const r = el.getBoundingClientRect();
-      const occluded = !!document.querySelector(
-        '[role="dialog"], .branches-merge-modal-backdrop, [data-native-view-occluder="true"]',
-      );
-      if (occluded || r.width <= 0 || r.height <= 0) {
-        bridge.webTab.setBounds(tabId, { x: 0, y: 0, width: 0, height: 0 });
-        setWebTabReady(tabId, false);
-        return;
-      }
-      bridge.webTab.setBounds(tabId, {
+      const roundedBounds = {
         x: Math.round(r.left),
         y: Math.round(r.top),
         width: Math.round(r.width),
         height: Math.round(r.height),
-      });
+      };
+      const occluded = !!document.querySelector(
+        '[role="dialog"], .branches-merge-modal-backdrop, [data-native-view-occluder="true"]',
+      );
+      if (occluded || roundedBounds.width <= 0 || roundedBounds.height <= 0) {
+        bridge.webTab.setBounds(tabId, { x: 0, y: 0, width: 0, height: 0 });
+        setWebTabReady(tabId, false);
+        return;
+      }
+      bridge.webTab.setBounds(tabId, roundedBounds);
       setWebTabReady(tabId, true);
     };
     report();
