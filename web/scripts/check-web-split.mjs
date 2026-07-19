@@ -2143,4 +2143,410 @@ const { useCenterTabs: restoredInvalidSplit } = await import(
 assert.equal(restoredInvalidSplit.getState().splitWebTabId, null);
 assert.equal(restoredInvalidSplit.getState().splitRatio, 0.30);
 
+// ---------------------------------------------------------------- Task 5:
+// desktop-bridge renderer staging / recovery / cleanup around the main
+// transfer transaction. The bridge module shares the PLAIN (unqueried)
+// center-tabs/session-store instances, so drive those here.
+
+globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "main" };
+const bridgeModule = await import("../lib/desktop-bridge.ts");
+const plainTabsModule = await import("../lib/state/center-tabs-store.ts");
+const plainSessionModule = await import("../lib/session-store/index.ts");
+const plainTabs = plainTabsModule.useCenterTabs;
+
+function makeTransferBridge(payload, overrides = {}) {
+  const calls = [];
+  const record = (name, impl) => async (...args) => {
+    calls.push([name, ...args]);
+    return impl ? impl(...args) : true;
+  };
+  const tabTransfer = {
+    prepare: (value) => { calls.push(["prepare", value]); return "prepared-token"; },
+    inspect: record("inspect", (token) => ({
+      token,
+      status: "prepared",
+      sourceId: "source",
+      payload,
+    })),
+    accept: record("accept", (token, placement) => ({
+      token,
+      status: "destination-staged",
+      sourceId: "source",
+      destinationId: "main",
+      payload,
+      placement,
+      recordIds: [],
+    })),
+    reject: record("reject", (_token, reason, duplicateId) => ({ reason, duplicateId })),
+    status: record("status", () => null),
+    journalOpened: record("journalOpened"),
+    journalFinalized: record("journalFinalized"),
+    destinationReady: record("destinationReady"),
+    sourceRemoved: record("sourceRemoved"),
+    destinationUndone: record("destinationUndone"),
+    cancel: record("cancel"),
+    detach: record("detach", () => null),
+    claimPending: record("claimPending", () => null),
+    pendingTerminal: record("pendingTerminal", () => []),
+    onRemoveSource: () => () => {},
+    onUndoDestination: () => () => {},
+    onCommitted: () => () => {},
+    onRejected: () => () => {},
+    onRolledBack: () => () => {},
+    onFinalizeOrphaned: () => () => {},
+    ...overrides,
+  };
+  return {
+    bridge: {
+      isDesktop: true,
+      windowId: "main",
+      openExternal: () => {},
+      webTab: {
+        ensure: () => {}, navigate: () => {}, activate: async () => null,
+        setBounds: () => {}, show: () => {}, hide: () => {},
+        syncVisible: () => {}, destroy: () => {}, reload: () => {},
+        goBack: () => {}, goForward: () => {}, onState: () => () => {},
+      },
+      tabTransfer,
+    },
+    calls,
+  };
+}
+
+const t5Base = {
+  version: 2,
+  tabs: [{ id: "s:home", kind: "session", title: "Home", sessionId: "home" }],
+  activeId: "s:home",
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.44,
+};
+const t5Payload = {
+  tabs: [{ id: "w:moved", kind: "web", title: "Moved", url: "https://moved.test/" }],
+  source: { windowId: "source", kind: "tab" },
+  fileDrafts: [],
+  chats: [],
+};
+
+// Destination staging: journal write + journalOpened strictly precede the
+// {persist:false} mutation; committed storage bytes stay unchanged.
+plainTabsModule.replaceCenterTabsPayload(t5Base, { persist: true });
+plainSessionModule.applySessionTransfer(emptySessionSnapshot, { persist: true });
+const committedCenterBytes = values.get("centerTabs:main");
+const committedSessionBytes = values.get("openprogram.sessionDraftState:main");
+{
+  const journalOpenedObservations = [];
+  const { bridge, calls } = makeTransferBridge(t5Payload, {
+    journalOpened: async (token, role) => {
+      journalOpenedObservations.push({
+        role,
+        journalHasToken: !!readTransferJournal("main").entries[token],
+        storeMutated: plainTabs.getState().tabs.some((tab) => tab.id === "w:moved"),
+      });
+      return true;
+    },
+  });
+  assert.equal(
+    await bridgeModule.stageIncomingTransfer(bridge, "t5-stage", { kind: "strip-end" }),
+    true,
+  );
+  assert.deepEqual(journalOpenedObservations, [{
+    role: "destination",
+    journalHasToken: true,
+    storeMutated: false,
+  }]);
+  assert.deepEqual(
+    plainTabs.getState().tabs.map((tab) => tab.id),
+    ["s:home", "w:moved"],
+  );
+  assert.equal(values.get("centerTabs:main"), committedCenterBytes);
+  assert.equal(values.get("openprogram.sessionDraftState:main"), committedSessionBytes);
+  assert.ok(bridgeModule.acceptedTransfers.has("t5-stage"));
+  assert.ok(
+    bridgeModule.serializeWebViewBookkeeping().liveIds.includes("w:moved"),
+  );
+  assert.deepEqual(calls.at(-1), ["destinationReady", "t5-stage", true]);
+
+  // Destination rollback: bridge bookkeeping is forgotten BEFORE the store
+  // reverts, acceptedTransfers clears, destinationUndone acknowledges; the
+  // journal survives until main reports rolled-back.
+  let forgottenBeforeStoreRevert = null;
+  const unsubscribe = plainTabs.subscribe(() => {
+    if (forgottenBeforeStoreRevert === null) {
+      forgottenBeforeStoreRevert = !bridgeModule
+        .serializeWebViewBookkeeping().liveIds.includes("w:moved");
+    }
+  });
+  await bridgeModule.handleUndoDestination(bridge, { token: "t5-stage" });
+  unsubscribe();
+  assert.equal(forgottenBeforeStoreRevert, true);
+  assert.deepEqual(plainTabs.getState().tabs.map((tab) => tab.id), ["s:home"]);
+  assert.equal(bridgeModule.acceptedTransfers.has("t5-stage"), false);
+  assert.deepEqual(calls.at(-1), ["destinationUndone", "t5-stage", true]);
+  assert.ok(readTransferJournal("main").entries["t5-stage"]);
+  await bridgeModule.handleTransferRolledBack(bridge, {
+    token: "t5-stage",
+    sourceId: "source",
+    destinationId: "main",
+  });
+  assert.equal(readTransferJournal("main").entries["t5-stage"], undefined);
+  assert.deepEqual(
+    calls.at(-1),
+    ["journalFinalized", "t5-stage", "destination"],
+  );
+  assert.equal(values.get("centerTabs:main"), committedCenterBytes);
+}
+
+// Destination commit: journal after* persists, then accepted state and the
+// journal entry are deleted.
+{
+  const { bridge, calls } = makeTransferBridge(t5Payload);
+  assert.equal(
+    await bridgeModule.stageIncomingTransfer(bridge, "t5-commit", { kind: "strip-end" }),
+    true,
+  );
+  await bridgeModule.handleTransferCommitted(bridge, {
+    token: "t5-commit",
+    sourceId: "source",
+    destinationId: "main",
+  });
+  const persisted = JSON.parse(values.get("centerTabs:main"));
+  assert.deepEqual(persisted.tabs.map((tab) => tab.id), ["s:home", "w:moved"]);
+  assert.equal(bridgeModule.acceptedTransfers.has("t5-commit"), false);
+  assert.equal(readTransferJournal("main").entries["t5-commit"], undefined);
+  assert.deepEqual(calls.at(-1), ["journalFinalized", "t5-commit", "destination"]);
+}
+
+// Simulated reload: a destination-staged journal rebuilds acceptedTransfers
+// through the recovery handlers.
+{
+  const { bridge } = makeTransferBridge(t5Payload);
+  const reloadPayload = {
+    ...t5Payload,
+    tabs: [{ id: "w:reloaded", kind: "web", title: "Reloaded", url: "https://reloaded.test/" }],
+  };
+  const reloadBefore = plainTabsModule.snapshotCenterTabsPayload();
+  const reloadValidated = plainTabsModule.validateTransferredTabs(
+    reloadPayload,
+    { kind: "strip-end" },
+  );
+  assert.equal(reloadValidated.ok, true);
+  const staged = {
+    ...journalEntry("t5-reload"),
+    payload: reloadPayload,
+    beforeCenterTabs: reloadBefore,
+    afterCenterTabs: reloadValidated.after,
+    beforeSession: plainSessionModule.snapshotSessionTransfer([]),
+    afterSession: plainSessionModule.snapshotSessionTransfer([]),
+  };
+  assert.equal(recoverTransferJournalEntry(
+    staged,
+    "destination-staged",
+    bridgeModule.transferRecoveryHandlers(bridge),
+    "main",
+  ), true);
+  assert.ok(bridgeModule.acceptedTransfers.has("t5-reload"));
+  assert.ok(plainTabs.getState().tabs.some((tab) => tab.id === "w:reloaded"));
+  bridgeModule.transferRecoveryHandlers(bridge).clearAccepted("t5-reload");
+  assert.equal(bridgeModule.acceptedTransfers.has("t5-reload"), false);
+  pendingProjection.unregisterPendingTransfer("t5-reload", "main");
+  plainTabsModule.replaceCenterTabsPayload(reloadBefore, { persist: true });
+}
+
+// Duplicate: activates the existing destination tab, rejects with the
+// duplicate id, and never touches accept/journal.
+{
+  const duplicatePayload = {
+    ...t5Payload,
+    tabs: [{ id: "s:home", kind: "session", title: "Home", sessionId: "home" }],
+  };
+  const { bridge, calls } = makeTransferBridge(duplicatePayload);
+  plainTabs.getState().openNewTabPage();
+  assert.notEqual(plainTabs.getState().activeId, "s:home");
+  assert.equal(
+    await bridgeModule.stageIncomingTransfer(bridge, "t5-dup", { kind: "strip-end" }),
+    false,
+  );
+  assert.equal(plainTabs.getState().activeId, "s:home");
+  assert.deepEqual(calls.at(-1), ["reject", "t5-dup", "duplicate", "s:home"]);
+  assert.equal(calls.some(([name]) => name === "accept"), false);
+  assert.equal(readTransferJournal("main").entries["t5-dup"], undefined);
+  plainTabs.getState().closeTab(plainTabs.getState().tabs.at(-1).id);
+}
+
+// Full group: reject("group-full") before any accept/journal/mutation.
+{
+  const fullGroupPayload = {
+    tabs: ["one", "two", "three", "four"].map((name) => ({
+      id: `w:t5-${name}`,
+      kind: "web",
+      title: name,
+      url: `https://${name}.t5.test/`,
+    })),
+    source: {
+      windowId: "source",
+      kind: "group",
+      groupId: "g:t5-full",
+      memberIds: ["w:t5-one", "w:t5-two", "w:t5-three", "w:t5-four"],
+      visibleIds: ["w:t5-one", "w:t5-two"],
+      focusedId: "w:t5-one",
+    },
+    fileDrafts: [],
+    chats: [],
+  };
+  const { bridge, calls } = makeTransferBridge(fullGroupPayload);
+  assert.equal(
+    await bridgeModule.stageIncomingTransfer(bridge, "t5-full", { kind: "strip-end" }),
+    false,
+  );
+  assert.deepEqual(calls.at(-1), ["reject", "t5-full", "group-full"]);
+  assert.equal(calls.some(([name]) => name === "accept"), false);
+}
+
+// Source removal: journal before mutation, {persist:false} removal, commit
+// finalizes durably; a failed main acknowledgement restores before* state.
+const t5SourcePayload = {
+  tabs: [{
+    id: "s:local_move",
+    kind: "session",
+    title: "Draft move",
+    sessionId: "local_move",
+    draft: true,
+  }],
+  source: { windowId: "main", kind: "tab" },
+  fileDrafts: [],
+  chats: [{ chatKey: "local_move", composerDraft: "moving text", wasActive: false }],
+};
+const t5SourceBase = {
+  ...t5Base,
+  tabs: [
+    ...t5Base.tabs,
+    {
+      id: "s:local_move",
+      kind: "session",
+      title: "Draft move",
+      sessionId: "local_move",
+      draft: true,
+    },
+  ],
+};
+{
+  plainTabsModule.replaceCenterTabsPayload(t5SourceBase, { persist: true });
+  plainSessionModule.applySessionTransfer({
+    ...emptySessionSnapshot,
+    composerDrafts: { local_move: "moving text" },
+  }, { persist: true });
+  const sourceJournalObservations = [];
+  const { bridge, calls } = makeTransferBridge(t5SourcePayload, {
+    journalOpened: async (token, role) => {
+      sourceJournalObservations.push({
+        role,
+        journalHasToken: !!readTransferJournal("main").entries[token],
+        tabStillPresent: plainTabs.getState().tabs
+          .some((tab) => tab.id === "s:local_move"),
+      });
+      return true;
+    },
+  });
+  await bridgeModule.handleRemoveSource(bridge, {
+    token: "t5-source",
+    payload: t5SourcePayload,
+  });
+  assert.deepEqual(sourceJournalObservations, [{
+    role: "source",
+    journalHasToken: true,
+    tabStillPresent: true,
+  }]);
+  assert.deepEqual(plainTabs.getState().tabs.map((tab) => tab.id), ["s:home"]);
+  const persistedCenter = JSON.parse(values.get("centerTabs:main"));
+  assert.deepEqual(persistedCenter.tabs.map((tab) => tab.id), ["s:home"]);
+  const persistedSession = JSON.parse(
+    values.get("openprogram.sessionDraftState:main"),
+  );
+  assert.equal(persistedSession.composerDrafts.local_move, undefined);
+  assert.equal(readTransferJournal("main").entries["t5-source"], undefined);
+  assert.deepEqual(
+    calls.filter(([name]) => name === "sourceRemoved" || name === "journalFinalized"),
+    [
+      ["sourceRemoved", "t5-source", true, false],
+      ["journalFinalized", "t5-source", "source"],
+    ],
+  );
+}
+
+// Source removal with a stale main acknowledgement restores the tab and
+// keeps the journal for the rolled-back event to finalize.
+{
+  plainTabsModule.replaceCenterTabsPayload(t5SourceBase, { persist: true });
+  plainSessionModule.applySessionTransfer({
+    ...emptySessionSnapshot,
+    composerDrafts: { local_move: "moving text" },
+  }, { persist: true });
+  const { bridge, calls } = makeTransferBridge(t5SourcePayload, {
+    sourceRemoved: async (...args) => {
+      calls.push(["sourceRemoved", ...args]);
+      return false;
+    },
+  });
+  await bridgeModule.handleRemoveSource(bridge, {
+    token: "t5-source-stale",
+    payload: t5SourcePayload,
+  });
+  assert.deepEqual(
+    plainTabs.getState().tabs.map((tab) => tab.id),
+    ["s:home", "s:local_move"],
+    "a stale main response must restore the source tabs locally",
+  );
+  assert.ok(readTransferJournal("main").entries["t5-source-stale"]);
+  assert.equal(
+    calls.some(([name]) => name === "journalFinalized"),
+    false,
+  );
+  await bridgeModule.handleTransferRolledBack(bridge, {
+    token: "t5-source-stale",
+    sourceId: "main",
+    destinationId: "other",
+  });
+  assert.equal(readTransferJournal("main").entries["t5-source-stale"], undefined);
+  assert.deepEqual(
+    calls.at(-1),
+    ["journalFinalized", "t5-source-stale", "source"],
+  );
+  assert.deepEqual(
+    plainTabs.getState().tabs.map((tab) => tab.id),
+    ["s:home", "s:local_move"],
+  );
+}
+
+// Rejected: clears the prepared drag coordinator token.
+{
+  const { dragCoordinator } = await import("../lib/tab-drag-coordinator.ts");
+  dragCoordinator.prepare({
+    subject: { kind: "tab", tabIds: ["s:home"] },
+    transferToken: "t5-rejected",
+    started: false,
+    cancelled: false,
+    committed: false,
+  });
+  bridgeModule.handleTransferRejected({ token: "t5-rejected", reason: "duplicate" });
+  assert.equal(dragCoordinator.current(), null);
+}
+
+// Structure gates: dragstart stays synchronous and never awaits before
+// writing DataTransfer.
+const stripSource = await readFile(
+  new URL("../components/center-tabs/center-tab-strip.tsx", import.meta.url),
+  "utf8",
+);
+assert.doesNotMatch(
+  stripSource,
+  /async function onDragStart|onDragStart\s*[=:]\s*async/,
+  "onDragStart must not be async",
+);
+assert.doesNotMatch(
+  stripSource,
+  /await[^\n]*setData/,
+  "DataTransfer.setData must not be awaited",
+);
+
 console.log("web-split checks passed");

@@ -29,7 +29,46 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       return () => ipcRenderer.removeListener("webtab:state", listener);
     },
   },
+  tabTransfer: {
+    // Synchronous by contract: called from pointer/mouse down so the
+    // token exists before a same-tick dragstart reads it.
+    prepare: (payload) => ipcRenderer.sendSync("tab-transfer:prepare", payload),
+    inspect: (token) => ipcRenderer.invoke("tab-transfer:inspect", token),
+    accept: (token, placement) =>
+      ipcRenderer.invoke("tab-transfer:accept", token, placement),
+    reject: (token, reason, duplicateId) =>
+      ipcRenderer.invoke("tab-transfer:reject", token, reason, duplicateId),
+    status: (token) => ipcRenderer.invoke("tab-transfer:status", token),
+    journalOpened: (token, role) =>
+      ipcRenderer.invoke("tab-transfer:journal-opened", token, role),
+    journalFinalized: (token, role, ownerWindowId) =>
+      ipcRenderer.invoke("tab-transfer:journal-finalized", token, role, ownerWindowId),
+    destinationReady: (token, ok) =>
+      ipcRenderer.invoke("tab-transfer:destination-ready", token, ok),
+    sourceRemoved: (token, ok, sourceEmpty) =>
+      ipcRenderer.invoke("tab-transfer:source-removed", token, { ok, sourceEmpty }),
+    destinationUndone: (token, ok) =>
+      ipcRenderer.invoke("tab-transfer:destination-undone", token, ok),
+    cancel: (token) => ipcRenderer.invoke("tab-transfer:cancel", token),
+    detach: (token) => ipcRenderer.invoke("tab-transfer:detach", token),
+    claimPending: (id) => ipcRenderer.invoke("tab-transfer:claim-pending", id),
+    pendingTerminal: (id) => ipcRenderer.invoke("tab-transfer:pending-terminal", id),
+    onRemoveSource: subscribe("tab-transfer:remove-source"),
+    onUndoDestination: subscribe("tab-transfer:undo-destination"),
+    onCommitted: subscribe("tab-transfer:committed"),
+    onRejected: subscribe("tab-transfer:rejected"),
+    onRolledBack: subscribe("tab-transfer:rolled-back"),
+    onFinalizeOrphaned: subscribe("tab-transfer:finalize-orphaned"),
+  },
 });
+
+function subscribe(channel) {
+  return (cb) => {
+    const listener = (_event, detail) => cb(detail);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
+  };
+}
 
 // Menu shortcuts re-dispatched as DOM events for the renderer app.
 ipcRenderer.on("menu:new-tab", () =>

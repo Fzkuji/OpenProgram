@@ -353,6 +353,102 @@ function checkPreloadWindowIdentity() {
   assert.deepEqual(invoked, []);
 }
 
+function checkPreloadTabTransfer() {
+  const sentSync = [];
+  const invoked = [];
+  const listeners = new Map();
+  let exposed = null;
+  const preloadSandbox = {
+    CustomEvent: class CustomEvent {},
+    process: { argv: ["electron", "--openprogram-window-id=transfer-window"] },
+    window: { dispatchEvent() {} },
+    require(id) {
+      if (id !== "electron") return require(id);
+      return {
+        contextBridge: {
+          exposeInMainWorld(_name, value) { exposed = value; },
+        },
+        ipcRenderer: {
+          send() {},
+          sendSync(...args) { sentSync.push(args); return "token-sync"; },
+          invoke(...args) { invoked.push(args); return Promise.resolve(true); },
+          on(channel, listener) {
+            listeners.set(channel, [...(listeners.get(channel) ?? []), listener]);
+          },
+          removeListener(channel, listener) {
+            listeners.set(
+              channel,
+              (listeners.get(channel) ?? []).filter((item) => item !== listener),
+            );
+          },
+        },
+      };
+    },
+  };
+  vm.createContext(preloadSandbox);
+  vm.runInContext(preloadSource, preloadSandbox, { filename: "desktop/preload.js" });
+
+  const transfer = exposed.tabTransfer;
+  assert.ok(transfer, "preload must expose tabTransfer");
+  const payload = { tabs: [], source: {}, fileDrafts: [], chats: [] };
+  assert.equal(transfer.prepare(payload), "token-sync");
+  assert.deepEqual(sentSync, [["tab-transfer:prepare", payload]]);
+
+  transfer.inspect("tok");
+  transfer.accept("tok", { kind: "strip-end" });
+  transfer.reject("tok", "duplicate", "w:dup");
+  transfer.status("tok");
+  transfer.journalOpened("tok", "destination");
+  transfer.journalFinalized("tok", "source", "owner-window");
+  transfer.destinationReady("tok", true);
+  transfer.sourceRemoved("tok", true, false);
+  transfer.destinationUndone("tok", true);
+  transfer.cancel("tok");
+  transfer.detach("tok");
+  transfer.claimPending("transfer-window");
+  transfer.pendingTerminal("transfer-window");
+  // Objects built inside the preload VM have that realm's prototypes;
+  // JSON-normalize before the strict deep comparison.
+  assert.deepEqual(JSON.parse(JSON.stringify(invoked)), [
+    ["tab-transfer:inspect", "tok"],
+    ["tab-transfer:accept", "tok", { kind: "strip-end" }],
+    ["tab-transfer:reject", "tok", "duplicate", "w:dup"],
+    ["tab-transfer:status", "tok"],
+    ["tab-transfer:journal-opened", "tok", "destination"],
+    ["tab-transfer:journal-finalized", "tok", "source", "owner-window"],
+    ["tab-transfer:destination-ready", "tok", true],
+    ["tab-transfer:source-removed", "tok", { ok: true, sourceEmpty: false }],
+    ["tab-transfer:destination-undone", "tok", true],
+    ["tab-transfer:cancel", "tok"],
+    ["tab-transfer:detach", "tok"],
+    ["tab-transfer:claim-pending", "transfer-window"],
+    ["tab-transfer:pending-terminal", "transfer-window"],
+  ]);
+
+  const channelBySubscription = {
+    onRemoveSource: "tab-transfer:remove-source",
+    onUndoDestination: "tab-transfer:undo-destination",
+    onCommitted: "tab-transfer:committed",
+    onRejected: "tab-transfer:rejected",
+    onRolledBack: "tab-transfer:rolled-back",
+    onFinalizeOrphaned: "tab-transfer:finalize-orphaned",
+  };
+  for (const [method, channel] of Object.entries(channelBySubscription)) {
+    const received = [];
+    const cleanup = transfer[method]((detail) => received.push(detail));
+    const registered = listeners.get(channel) ?? [];
+    assert.equal(registered.length, 1, `${method} must subscribe ${channel}`);
+    registered[0](null, { token: "tok", channel });
+    assert.deepEqual(received, [{ token: "tok", channel }]);
+    cleanup();
+    assert.deepEqual(
+      listeners.get(channel),
+      [],
+      `${method} cleanup must remove its listener`,
+    );
+  }
+}
+
 async function checkLoadView() {
   const win = fakeWindow(1);
   const ctx = registerContext("load-window", win);
@@ -3092,6 +3188,7 @@ Promise.all([
 ])
   .then(async () => {
     checkPreloadWindowIdentity();
+    checkPreloadTabTransfer();
     await checkSenderOwnership();
     await checkFocusedRoutingAndCleanup();
     assertTransferApiRegistered();
