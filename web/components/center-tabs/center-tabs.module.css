@@ -364,6 +364,10 @@
   );
 }
 
+/* Segments are flat partitions of the compound surface — square inner
+   edges, no per-segment shadow. Only the outermost segment corners
+   inherit the container radius (first-/last-child rules below); the
+   selected state reads from background/text color alone. */
 .compoundSegment,
 .compoundTab .compoundSegment.tabActive,
 .compoundTab .compoundSegment.tabActive:hover {
@@ -374,17 +378,26 @@
   align-self: stretch;
   padding: 0 8px;
   border-radius: 0;
+  box-shadow: none;
 }
-.compoundSegment:first-child {
+.compoundSegment:first-child,
+.compoundTab .compoundSegment.tabActive:first-child,
+.compoundTab .compoundSegment.tabActive:hover:first-child {
   border-radius: 8px 0 0 8px;
 }
-.compoundSegment:last-child {
+.compoundSegment:last-child,
+.compoundTab .compoundSegment.tabActive:last-child,
+.compoundTab .compoundSegment.tabActive:hover:last-child {
   border-radius: 0 8px 8px 0;
 }
-.compoundTabActive .compoundSegment:first-child {
+.compoundTabActive .compoundSegment:first-child,
+.compoundTabActive .compoundSegment.tabActive:first-child,
+.compoundTabActive .compoundSegment.tabActive:hover:first-child {
   border-radius: 8px 0 0 0;
 }
-.compoundTabActive .compoundSegment:last-child {
+.compoundTabActive .compoundSegment:last-child,
+.compoundTabActive .compoundSegment.tabActive:last-child,
+.compoundTabActive .compoundSegment.tabActive:hover:last-child {
   border-radius: 0 8px 0 0;
 }
 .compoundTabActive .compoundSegment:not(.tabActive) {
@@ -563,6 +576,28 @@
 }
 :global(html.is-desktop) .compoundSegment.tabExit {
   animation: compoundTabExit 120ms ease-in forwards;
+}
+/* 桌面：普通 tab 的胶囊规则（30px 圆角 + 活动阴影）优先级更高，会把
+   segment 渲染成"胶囊套胶囊"。此处按同源顺序压回平面分区：只剩容器
+   一个外轮廓，活动段仅靠底色区分。 */
+:global(html.is-desktop) .compoundSegment,
+:global(html.is-desktop) .compoundTab .compoundSegment.tabActive,
+:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:hover {
+  height: 100%;
+  align-self: stretch;
+  padding: 0 8px;
+  border-radius: 0;
+  box-shadow: none;
+}
+:global(html.is-desktop) .compoundSegment:first-child,
+:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:first-child,
+:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:hover:first-child {
+  border-radius: 8px 0 0 8px;
+}
+:global(html.is-desktop) .compoundSegment:last-child,
+:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:last-child,
+:global(html.is-desktop) .compoundTab .compoundSegment.tabActive:hover:last-child {
+  border-radius: 0 8px 8px 0;
 }
 
 .tabTarget {
