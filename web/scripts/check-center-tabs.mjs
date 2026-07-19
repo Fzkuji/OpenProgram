@@ -139,7 +139,8 @@ assert.match(appShell, /showChat && activeKind === "ntp"/);
 const ensureIndex = webTabPane.indexOf("ensureWebView(bridge, tabId, viewUrlRef.current)");
 const navigateIndex = webTabPane.indexOf("bridge.webTab.navigate(tabId, viewUrlRef.current)");
 const showIndex = webTabPane.indexOf("bridge.webTab.show(tabId)");
-assert.ok(ensureIndex >= 0 && ensureIndex < navigateIndex && navigateIndex < showIndex);
+assert.ok(ensureIndex >= 0 && ensureIndex < showIndex);
+assert.equal(navigateIndex, -1);
 assert.match(fileTree, /openFileTab\(projectId, path\);[\s\S]*__navigate\?\.\("\/chat"\)/);
 
 const newSession = conversations.slice(conversations.indexOf("export function newSession"));

@@ -30,6 +30,7 @@ import {
   destroyStaleWebViews,
   ensureWebView,
   installDesktopMenuHandlers,
+  setWebTabReady,
   type DesktopBridge,
 } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
@@ -117,9 +118,11 @@ function DesktopWebTabPane({
       useCenterTabs.getState().tabs.map((t) => t.id),
     );
     ensureWebView(bridge, tabId, viewUrlRef.current);
-    bridge.webTab.navigate(tabId, viewUrlRef.current);
     bridge.webTab.show(tabId);
-    return () => bridge.webTab.hide(tabId);
+    return () => {
+      setWebTabReady(tabId, false);
+      bridge.webTab.hide(tabId);
+    };
   }, [bridge, tabId]);
 
   // Bounds: main positions the native view from the DIP rect of the
@@ -131,20 +134,32 @@ function DesktopWebTabPane({
     if (!el) return;
     const report = () => {
       const r = el.getBoundingClientRect();
+      const occluded = !!document.querySelector(
+        '[role="dialog"], .branches-merge-modal-backdrop, [data-native-view-occluder="true"]',
+      );
+      if (occluded || r.width <= 0 || r.height <= 0) {
+        bridge.webTab.setBounds(tabId, { x: 0, y: 0, width: 0, height: 0 });
+        setWebTabReady(tabId, false);
+        return;
+      }
       bridge.webTab.setBounds(tabId, {
         x: Math.round(r.left),
         y: Math.round(r.top),
         width: Math.round(r.width),
         height: Math.round(r.height),
       });
+      setWebTabReady(tabId, true);
     };
     report();
     const ro = new ResizeObserver(report);
     ro.observe(el);
+    const mo = new MutationObserver(report);
+    mo.observe(document.body, { subtree: true, childList: true, attributes: true });
     window.addEventListener("resize", report);
     window.addEventListener("scroll", report, true);
     return () => {
       ro.disconnect();
+      mo.disconnect();
       window.removeEventListener("resize", report);
       window.removeEventListener("scroll", report, true);
     };

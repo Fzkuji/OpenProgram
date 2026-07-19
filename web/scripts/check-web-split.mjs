@@ -1,4 +1,18 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { registerHooks } from "node:module";
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith("@/")) {
+      return {
+        url: new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href,
+        shortCircuit: true,
+      };
+    }
+    return nextResolve(specifier, context);
+  },
+});
 
 const values = new Map();
 globalThis.window = {
@@ -13,6 +27,58 @@ globalThis.localStorage = {
 };
 
 const { useCenterTabs } = await import("../lib/state/center-tabs-store.ts");
+const {
+  isDesktopSplitLayoutAvailable,
+  isWebTabReady,
+  setDesktopSplitLayoutAvailable,
+  setWebTabReady,
+  waitForWebTabReady,
+} = await import("../lib/desktop-bridge.ts");
+
+setWebTabReady("already-ready", true);
+assert.equal(isWebTabReady("already-ready"), true);
+assert.equal(await waitForWebTabReady("already-ready", 10), true);
+
+const waiting = waitForWebTabReady("becomes-ready", 10);
+setWebTabReady("becomes-ready", true);
+assert.equal(await waiting, true);
+
+assert.equal(await waitForWebTabReady("never-ready", 1), false);
+
+setWebTabReady("clear-ready", true);
+setWebTabReady("clear-ready", false);
+assert.equal(isWebTabReady("clear-ready"), false);
+
+setDesktopSplitLayoutAvailable(true);
+assert.equal(isDesktopSplitLayoutAvailable(), true);
+setDesktopSplitLayoutAvailable(false);
+assert.equal(isDesktopSplitLayoutAvailable(), false);
+
+const webTabPaneSource = await readFile(
+  new URL("../components/center-tabs/web-tab-pane.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(webTabPaneSource, /setWebTabReady/);
+assert.doesNotMatch(
+  webTabPaneSource,
+  /bridge\.webTab\.navigate\(tabId, viewUrlRef\.current\);/,
+);
+assert.match(webTabPaneSource, /const occluded = !!document\.querySelector/);
+assert.match(
+  webTabPaneSource,
+  /occluded \|\| r\.width <= 0 \|\| r\.height <= 0/,
+);
+assert.ok(
+  (webTabPaneSource.match(/setWebTabReady\(tabId, false\);/g) ?? []).length >= 2,
+  "native view readiness must clear for hidden bounds and cleanup",
+);
+assert.match(webTabPaneSource, /new MutationObserver\(report\)/);
+
+const fileTilesSource = await readFile(
+  new URL("../components/chat/composer/attach/file-tiles.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(fileTilesSource, /data-native-view-occluder="true"/);
 
 useCenterTabs.setState({
   tabs: [{ id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" }],

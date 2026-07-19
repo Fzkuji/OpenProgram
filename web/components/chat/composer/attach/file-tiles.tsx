@@ -300,6 +300,7 @@ function FilePreviewModal({
   if (typeof document === "undefined") return null;
   return createPortal(
     <div
+      data-native-view-occluder="true"
       onClick={onClose}
       style={{
         position: "fixed",

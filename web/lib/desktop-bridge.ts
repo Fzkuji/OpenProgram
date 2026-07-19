@@ -70,6 +70,53 @@ export function desktopBridge(): DesktopBridge | null {
  *  a full renderer reload are main's cleanup problem — we can't
  *  enumerate them from here. */
 const liveViewIds = new Set<string>();
+const readyWebTabIds = new Set<string>();
+const webTabReadyWaiters = new Map<string, Set<(ready: boolean) => void>>();
+let desktopSplitLayoutAvailable = false;
+
+export function setWebTabReady(id: string, ready: boolean): void {
+  if (!ready) {
+    readyWebTabIds.delete(id);
+    return;
+  }
+  if (readyWebTabIds.has(id)) return;
+  readyWebTabIds.add(id);
+  const waiters = webTabReadyWaiters.get(id);
+  if (!waiters) return;
+  webTabReadyWaiters.delete(id);
+  for (const resolve of waiters) resolve(true);
+}
+
+export function isWebTabReady(id: string): boolean {
+  return readyWebTabIds.has(id);
+}
+
+export function waitForWebTabReady(id: string, timeoutMs: number): Promise<boolean> {
+  if (isWebTabReady(id)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const resolveReady = (ready: boolean) => {
+      clearTimeout(timeout);
+      resolve(ready);
+    };
+    const timeout = setTimeout(() => {
+      const waiters = webTabReadyWaiters.get(id);
+      waiters?.delete(resolveReady);
+      if (waiters?.size === 0) webTabReadyWaiters.delete(id);
+      resolve(false);
+    }, timeoutMs);
+    const waiters = webTabReadyWaiters.get(id) ?? new Set();
+    waiters.add(resolveReady);
+    webTabReadyWaiters.set(id, waiters);
+  });
+}
+
+export function setDesktopSplitLayoutAvailable(available: boolean): void {
+  desktopSplitLayoutAvailable = available;
+}
+
+export function isDesktopSplitLayoutAvailable(): boolean {
+  return desktopSplitLayoutAvailable;
+}
 
 export function ensureWebView(
   bridge: DesktopBridge,
