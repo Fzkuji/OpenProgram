@@ -35,6 +35,7 @@ import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { useRecentsView } from "@/lib/prefs/recents-view";
 import { wsRequest } from "@/lib/net/ws-request";
+import { projectGroups } from "@/lib/project-groups";
 import {
   Popover,
   PopoverAnchor,
@@ -371,8 +372,8 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
   /* ---- project-mode grouping (registry join) ---------------------- */
 
   // Any narrowing filter active → matched-only view: groups auto-expand
-  // around their matches, empty groups hide. (status "all" widens, so it
-  // doesn't count; "archived" narrows.)
+  // around their matches. (status "all" widens, so it doesn't count;
+  // "archived" narrows.) Empty project groups are always hidden.
   const filtering =
     view.status === "archived" ||
     view.lastActivity !== "all" ||
@@ -382,41 +383,9 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
   // inputs (visible, projects) change together anyway. Sessions with no
   // explicit project claim belong to the DEFAULT project (the backend's
   // project_for_session falls back to it) — there is no separate
-  // "Ungrouped" bucket in this mode.
-  const projectGroups = (() => {
-    if (!projectMode) return [];
-    // Join: session id → owning project (first registry claim wins,
-    // mirroring the backend's project_for_session).
-    const owner = new Map<string, string>();
-    for (const p of projects) {
-      for (const sid of p.session_ids || []) {
-        if (!owner.has(sid)) owner.set(sid, p.id);
-      }
-    }
-    const defaultId = projects.find((p) => p.is_default)?.id ?? null;
-    const byProject = new Map<string, LegacyConv[]>();
-    for (const c of visible) {
-      const pid = owner.get(c.id) ?? defaultId;
-      if (!pid) continue; // no default project answered yet — flat run path
-      const arr = byProject.get(pid);
-      if (arr) arr.push(c);
-      else byProject.set(pid, [c]);
-    }
-    // Group order is FIXED — default project first, the rest by name.
-    // The sidebar is the stable bookmark shelf; recency lives inside a
-    // group (sessions are time-sorted) and in the center tab strip.
-    const ordered = [...projects].sort((a, b) => {
-      if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    const out = ordered.map((p) => ({
-      key: p.id,
-      name: p.name,
-      path: p.path,
-      items: byProject.get(p.id) ?? [],
-    }));
-    return filtering ? out.filter((g) => g.items.length > 0) : out;
-  })();
+  // "Ungrouped" bucket in this mode. Group order is fixed: default first,
+  // then project name; session order remains the order from `visible`.
+  const groupedProjects = projectMode ? projectGroups(projects, visible) : [];
 
   const renderRow = (c: LegacyConv) => {
     const label = labelFor(c, t("sidebar.untitled"));
@@ -497,7 +466,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
           // at least the default project) — render a flat run instead of
           // flashing everything under a wrong group.
           visible.map(renderRow)
-        : projectGroups.map((g) => {
+        : groupedProjects.map((g) => {
             const expanded = filtering ? true : !collapsedProjects.has(g.key);
             return (
               <div key={g.key} className="flex flex-col gap-px">
@@ -522,7 +491,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
               </div>
             );
           })}
-      {filtering && projects.length > 0 && projectGroups.length === 0 ? (
+      {filtering && projects.length > 0 && groupedProjects.length === 0 ? (
         <div className="px-[16px] py-[10px] text-[12px] text-[var(--text-muted)]">
           {text("No matches", "没有匹配的会话")}
         </div>

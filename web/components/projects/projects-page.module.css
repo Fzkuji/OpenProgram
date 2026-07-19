@@ -41,22 +41,6 @@
   white-space: nowrap;
 }
 
-.removeBtn {
-  flex-shrink: 0;
-  padding: 4px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.removeBtn:hover {
-  color: var(--accent-red);
-  border-color: var(--accent-red);
-}
-
 .tabs {
   display: flex;
   gap: 4px;

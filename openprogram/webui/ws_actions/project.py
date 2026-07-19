@@ -17,7 +17,6 @@ Actions:
                              project_id
     create_project         → bind a filesystem path as a project (git-
                              init if needed); returns the project
-    remove_project         → unregister a project (does NOT delete files)
     set_session_project    → set the session's MAIN project (label +
                              reverse index)
     list_session_workdirs  → the session's working-directory set
@@ -114,32 +113,6 @@ async def handle_create_project(ws, cmd: dict):
     await ws.send_text(json.dumps({
         "type": "project_created",
         "data": {"ok": ok, "project": proj_dict, "error": error},
-    }, default=str))
-    if ok:
-        await handle_list_projects(ws, {"session_id": cmd.get("session_id")})
-
-
-async def handle_remove_project(ws, cmd: dict):
-    project_id = (cmd.get("project_id") or "").strip()
-    ok, error = False, None
-    try:
-        from openprogram.store import project_store as _projects
-        if project_id == _projects.DEFAULT_PROJECT_ID:
-            error = "cannot remove the default project"
-        else:
-            reg_p = _projects._registry_path()
-            reg = json.loads(reg_p.read_text(encoding="utf-8")) if reg_p.exists() else {}
-            if project_id in reg:
-                reg.pop(project_id, None)
-                reg_p.write_text(json.dumps(reg, indent=2, ensure_ascii=False), encoding="utf-8")
-                ok = True
-            else:
-                error = "unknown project"
-    except Exception as e:  # noqa: BLE001
-        error = f"{type(e).__name__}: {e}"
-    await ws.send_text(json.dumps({
-        "type": "project_removed",
-        "data": {"ok": ok, "project_id": project_id, "error": error},
     }, default=str))
     if ok:
         await handle_list_projects(ws, {"session_id": cmd.get("session_id")})
@@ -330,7 +303,6 @@ ACTIONS = {
     "get_project_config": handle_get_project_config,
     "set_project_config": handle_set_project_config,
     "create_project": handle_create_project,
-    "remove_project": handle_remove_project,
     "set_session_project": handle_set_session_project,
     "list_session_workdirs": handle_list_session_workdirs,
     "add_session_workdir": handle_add_session_workdir,

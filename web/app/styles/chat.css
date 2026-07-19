@@ -142,7 +142,6 @@
   flex-shrink: 0;
 }
 .project-badge .project-icon svg { display: block; }
-.project-badge .project-caret { opacity: 0.6; flex-shrink: 0; }
 /* Let long project names ellipsize rather than push the other chips
    off-screen (.badge-short is flex-shrink:0 by default). */
 .project-badge .badge-short {

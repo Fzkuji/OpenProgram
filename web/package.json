@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "check": "npm run check:center-tabs && npm run check:bookmarks && npm run check:compound-tabs && npm run check:web-split && npm run check:multi-draft && npm run check:provisional-send && npm run check:chat-ui",
+    "check": "npm run check:center-tabs && npm run check:bookmarks && npm run check:compound-tabs && npm run check:web-split && npm run check:multi-draft && npm run check:provisional-send && npm run check:chat-ui && npm run check:project-picker",
     "check:bookmarks": "node --no-warnings --experimental-strip-types scripts/check-bookmarks.mjs",
     "check:center-tabs": "node scripts/check-center-tabs.mjs",
     "check:chat-ui": "node --no-warnings --experimental-strip-types scripts/check-chat-ui.mjs",
@@ -11,6 +11,7 @@
     "check:multi-draft": "node --no-warnings --experimental-strip-types scripts/check-multi-draft.mjs",
     "check:web-split": "node --no-warnings --experimental-strip-types scripts/check-web-split.mjs",
     "check:provisional-send": "node --no-warnings --experimental-strip-types scripts/check-provisional-send.mjs",
+    "check:project-picker": "node --no-warnings --experimental-strip-types scripts/check-project-picker.mjs",
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",

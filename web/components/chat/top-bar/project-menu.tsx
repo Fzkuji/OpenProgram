@@ -7,7 +7,6 @@
  *   * see + switch the conversation's main project (decides where the
  *     session repo is stored: <project>/.openprogram/sessions/<id>/)
  *   * bind a new folder as a project (paste an absolute path)
- *   * remove a project from the registry
  *
  * Backend requests use one-shot ``window.ws`` request/response pairs
  * (``list_projects`` → ``projects_list``, etc.). A draft-only project
@@ -19,7 +18,6 @@ import { Check, Folder } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
   FolderOpenIcon,
-  XIcon,
 } from "@/components/animated-icons";
 
 import {
@@ -108,19 +106,6 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
     onClose();
   }
 
-  async function removeProject(projectId: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    setBusy(true);
-    await wsRequest(
-      "remove_project",
-      { project_id: projectId, session_id: sessionId ?? "" },
-      "project_removed",
-    );
-    setBusy(false);
-    await refresh();
-    notifyProjectChanged();
-  }
-
   // "Open folder…" → pops the OS-native directory chooser via the
   // worker. NO manual path entry — a button that opens the system
   // dialog, period. On the rare platform with no native dialog we show
@@ -177,7 +162,7 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
         return (
           <div
             key={p.id}
-            className={`group ${itemCls(false)}`}
+            className={itemCls(false)}
             title={
               p.path ||
               (p.is_default
@@ -190,16 +175,6 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
             onClick={() => !busy && switchTo(p.id)}
           >
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
-            {!p.is_default ? (
-              <span
-                role="button"
-                title={text("Remove from list", "从列表移除")}
-                className="flex size-[22px] shrink-0 items-center justify-center rounded-[5px] text-text-muted opacity-0 transition group-hover:opacity-100 hover:bg-[color-mix(in_srgb,var(--accent-red)_15%,transparent)] hover:text-[var(--accent-red)]"
-                onClick={(e) => removeProject(p.id, e)}
-              >
-                <XIcon size={13} />
-              </span>
-            ) : null}
             {active ? (
               <Check size={14} className={CHECK_SLOT} />
             ) : (
@@ -234,7 +209,7 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
  *
  * Self-fetches its label over WS (``list_projects`` → ``projects_list``)
  * on mount, when the session changes, and on the ``project-changed``
- * event the menu fires after a switch / bind / remove.
+ * event the menu fires after a switch or bind.
  */
 export function ProjectBadge() {
   const { text } = useTranslation();
@@ -246,7 +221,6 @@ export function ProjectBadge() {
   const takePendingProject = useSessionStore((s) => s.takePendingProject);
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState<string>(text("Project", "项目"));
-  const [isDefault, setIsDefault] = useState(true);
   const iconRef = useRef<AnimatedNavIconHandle>(null);
 
   // Returns true once it has resolved a project (so the caller can stop
@@ -273,8 +247,7 @@ export function ProjectBadge() {
       null;
     let cur = projects.find((p) => p.id === wantId);
     if (!cur) {
-      // The resolved project is gone (e.g. it was just removed) — drop
-      // the stale pending choice and fall back to the default label.
+      // Drop a stale pending choice and fall back to the default label.
       if (
         activeChatKey &&
         pendingProjectId &&
@@ -286,7 +259,6 @@ export function ProjectBadge() {
     }
     if (cur) {
       setLabel(cur.name);
-      setIsDefault(cur.is_default);
       return true;
     }
     return false;
@@ -342,18 +314,6 @@ export function ProjectBadge() {
           {/* Always show the project name — "Default" for the unbound
               project, the folder name once a real one is selected. */}
           <span className="badge-short">{label}</span>
-          {isDefault ? null : (
-            <svg
-              className="project-caret"
-              width="10"
-              height="10"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d="M4 6l4 4 4-4z" />
-            </svg>
-          )}
           </span>
         </PopoverTrigger>
       </HoverTip>

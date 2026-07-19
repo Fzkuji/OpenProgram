@@ -112,12 +112,6 @@ export function ProjectsPage() {
     }
   }, [refresh]);
 
-  const removeProject = useCallback(async (id: string) => {
-    await wsRequest("remove_project", { project_id: id }, "project_removed");
-    setSelectedId((cur) => (cur === id ? null : cur));
-    refresh();
-  }, [refresh]);
-
   return (
     <div className="main">
       <div className={fx.view}>
@@ -169,14 +163,6 @@ export function ProjectsPage() {
                 <div className={styles.detailHead}>
                   <span className={styles.detailTitle}>{selected.name}</span>
                   <span className={styles.detailPath}>{selected.path}</span>
-                  {!selected.is_default && (
-                    <button
-                      type="button"
-                      onClick={() => removeProject(selected.id)}
-                      className={styles.removeBtn}
-                      title={text("Remove from list (files kept)", "从列表移除（不删文件）")}
-                    >{text("Remove", "移除")}</button>
-                  )}
                 </div>
 
                 <div className={styles.tabs}>

@@ -49,3 +49,29 @@ def test_projects_list_session_ids_alive_filtered(fake_registry):
     assert p1["session_count"] == 2                    # count == len(ids)
     assert by_id["default"]["session_ids"] == []
     assert by_id["default"]["is_default"] is True
+
+
+def test_remove_project_action_is_unavailable_and_registry_unchanged(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+):
+    from openprogram.webui import server
+
+    registry_path = tmp_path / "projects.json"
+    before = {
+        "proj_keep": {"id": "proj_keep", "name": "Keep"},
+        "proj_remove": {"id": "proj_remove", "name": "Preserve"},
+    }
+    registry_path.write_text(json.dumps(before), encoding="utf-8")
+    monkeypatch.setattr(project_store, "_registry_path", lambda: registry_path)
+
+    ws = _FakeWS()
+    asyncio.run(server._handle_ws_command(ws, {
+        "action": "remove_project",
+        "project_id": "proj_remove",
+    }))
+
+    assert ws.sent == []
+    assert json.loads(registry_path.read_text(encoding="utf-8")) == before
+    assert "remove_project" not in ws_project.ACTIONS
+    assert "remove_project" not in server.WS_ACTIONS
+    assert not hasattr(ws_project, "handle_remove_project")
