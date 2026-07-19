@@ -46,6 +46,7 @@ assert.deepEqual(
 const normalLayout = { tabIds: ["a", "b", "c"], groups: [] };
 assert.deepEqual(groups.moveCenterTab(normalLayout, "missing", "a"), normalLayout);
 assert.deepEqual(groups.moveCenterTab(normalLayout, "c", "missing"), normalLayout);
+assert.deepEqual(groups.moveCenterTab(normalLayout, "b", "b"), normalLayout);
 for (const [sourceId, targetId] of [["missing", "a"], ["c", "missing"]]) {
   const rejected = groups.groupCenterTabs(
     normalLayout,
@@ -112,6 +113,7 @@ const groupedLayout = {
     focusedId: "a",
   }],
 };
+assert.deepEqual(groups.moveCenterTab(groupedLayout, "b", "b"), groupedLayout);
 assert.deepEqual(groups.moveCenterTabGroup(groupedLayout, "g:move", "b"), groupedLayout);
 assert.deepEqual(groups.moveCenterTabGroup(groupedLayout, "g:move", "missing"), groupedLayout);
 const movedGroup = groups.moveCenterTabGroup(groupedLayout, "g:move", "d");

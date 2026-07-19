@@ -124,7 +124,8 @@ export function moveCenterTab(
   tabId: string,
   beforeId: string | null,
 ): CenterTabLayout {
-  if (!layout.tabIds.includes(tabId)
+  if (beforeId === tabId
+      || !layout.tabIds.includes(tabId)
       || (beforeId !== null && !layout.tabIds.includes(beforeId))) {
     return layout;
   }
