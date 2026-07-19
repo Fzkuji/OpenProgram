@@ -224,9 +224,12 @@ assert.match(appShell, /tab\.kind === "web"[\s\S]*?<WebTabPane/);
 assert.match(appShell, /tab\.kind === "ntp"[\s\S]*?<NewTabPage/);
 const ensureIndex = webTabPane.indexOf("ensureWebView(bridge, tabId, viewUrlRef.current)");
 const navigateIndex = webTabPane.indexOf("bridge.webTab.navigate(tabId, viewUrlRef.current)");
-const showIndex = webTabPane.indexOf("bridge.webTab.show(tabId)");
-assert.ok(ensureIndex >= 0 && ensureIndex < showIndex);
+const registerBoundsIndex = webTabPane.indexOf(
+  "registerVisibleWebTabBounds(bridge, tabId, roundedBounds)",
+);
+assert.ok(ensureIndex >= 0 && ensureIndex < registerBoundsIndex);
 assert.equal(navigateIndex, -1);
+assert.doesNotMatch(webTabPane, /bridge\.webTab\.(?:show|hide|setBounds)\(/);
 assert.match(fileTree, /openFileTab\(projectId, path\);[\s\S]*__navigate\?\.\("\/chat"\)/);
 
 const newSession = conversations.slice(conversations.indexOf("export function newSession"));

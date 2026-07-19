@@ -1,7 +1,15 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const windowIdArgument = process.argv.find((argument) =>
+  argument.startsWith("--openprogram-window-id="),
+);
+const windowId = windowIdArgument
+  ? windowIdArgument.slice("--openprogram-window-id=".length)
+  : "main";
+
 contextBridge.exposeInMainWorld("openprogramDesktop", {
   isDesktop: true,
+  windowId,
   openExternal: (url) => ipcRenderer.send("desktop:open-external", url),
   webTab: {
     ensure: (id, url) => ipcRenderer.send("webtab:ensure", id, url),
@@ -10,6 +18,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     setBounds: (id, bounds) => ipcRenderer.send("webtab:set-bounds", id, bounds),
     show: (id) => ipcRenderer.send("webtab:show", id),
     hide: (id) => ipcRenderer.send("webtab:hide", id),
+    syncVisible: (items) => ipcRenderer.send("webtab:sync-visible", items),
     destroy: (id) => ipcRenderer.send("webtab:destroy", id),
     reload: (id) => ipcRenderer.send("webtab:reload", id),
     goBack: (id) => ipcRenderer.send("webtab:go-back", id),

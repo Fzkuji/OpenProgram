@@ -4,16 +4,24 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+const preloadSource = fs.readFileSync(
+  path.join(__dirname, "..", "preload.js"),
+  "utf8",
+);
 
 const ipcListeners = new Map();
 const ipcHandlers = new Map();
 let focusedWindow = null;
 const fakeWindows = [];
+const browserWindowOptions = [];
 let menuTemplate = null;
 let nextGeneratedWindowId = 1000;
 
 class FakeBrowserWindow {
-  constructor() { return fakeWindow(nextGeneratedWindowId++); }
+  constructor(options) {
+    browserWindowOptions.push(options);
+    return fakeWindow(nextGeneratedWindowId++);
+  }
   static fromWebContents(sender) {
     return fakeWindows.find((win) => win.webContents === sender) || null;
   }
@@ -209,6 +217,53 @@ function addRecord(ctx, controlled) {
   controlled.record.ownerId = ctx.id;
   ctx.views.set(controlled.record.id, controlled.record);
   return controlled.record;
+}
+
+function checkPreloadWindowIdentity() {
+  const sent = [];
+  const invoked = [];
+  let exposed = null;
+  const argv = [
+    "electron",
+    "--openprogram-window-id=window-from-main",
+    "--openprogram-window-id=ignored-duplicate",
+  ];
+  const preloadSandbox = {
+    CustomEvent: class CustomEvent {},
+    process: { argv },
+    window: { dispatchEvent() {} },
+    require(id) {
+      if (id !== "electron") return require(id);
+      return {
+        contextBridge: {
+          exposeInMainWorld(_name, value) { exposed = value; },
+        },
+        ipcRenderer: {
+          send(...args) { sent.push(args); },
+          invoke(...args) { invoked.push(args); return Promise.resolve(null); },
+          on() {},
+          removeListener() {},
+        },
+      };
+    },
+  };
+  vm.createContext(preloadSandbox);
+  vm.runInContext(preloadSource, preloadSandbox, { filename: "desktop/preload.js" });
+
+  assert.equal(exposed.windowId, "window-from-main");
+  argv[1] = "--openprogram-window-id=changed-after-preload";
+  assert.equal(
+    exposed.windowId,
+    "window-from-main",
+    "preload must parse the window id once",
+  );
+  const items = [{
+    id: "pane-a",
+    bounds: { x: 1, y: 2, width: 300, height: 200 },
+  }];
+  exposed.webTab.syncVisible(items);
+  assert.deepEqual(sent.at(-1), ["webtab:sync-visible", items]);
+  assert.deepEqual(invoked, []);
 }
 
 async function checkLoadView() {
@@ -477,6 +532,17 @@ async function checkFocusedRoutingAndCleanup() {
 
   const ctxC = await hooks.createWindow({ windowId: "cleanup-c" });
   const winC = ctxC.win;
+  assert.deepEqual(
+    Array.from(browserWindowOptions.at(-1).webPreferences.additionalArguments),
+    ["--openprogram-window-id=cleanup-c"],
+  );
+  const mainCtx = await hooks.createWindow();
+  assert.equal(mainCtx.id, "main");
+  assert.deepEqual(
+    Array.from(browserWindowOptions.at(-1).webPreferences.additionalArguments),
+    ["--openprogram-window-id=main"],
+  );
+  mainCtx.win.listeners.get("closed")();
   const owned = controlledRecord("owned-c");
   const foreign = controlledRecord("foreign-c");
   addRecord(ctxC, owned);
@@ -505,6 +571,7 @@ Promise.all([
   checkVisibleCollectionAndActivation(),
 ])
   .then(async () => {
+    checkPreloadWindowIdentity();
     await checkSenderOwnership();
     await checkFocusedRoutingAndCleanup();
     console.log("webtab navigation checks passed");

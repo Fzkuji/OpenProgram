@@ -497,6 +497,7 @@ function buildMenu() {
 
 async function createWindow(options = {}) {
   const state = loadWindowState();
+  const windowId = options.windowId || "main";
   const win = new BrowserWindow({
     x: state.x,
     y: state.y,
@@ -510,9 +511,9 @@ async function createWindow(options = {}) {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      additionalArguments: [`--openprogram-window-id=${windowId}`],
     },
   });
-  const windowId = options.windowId || `window-${win.id}`;
   const ctx = makeWindowContext(windowId, win);
   windows.set(windowId, ctx);
   contextsByBrowserWindowId.set(win.id, ctx);

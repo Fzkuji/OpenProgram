@@ -9,9 +9,8 @@
  *  - Desktop shell (window.openprogramDesktop present): a native
  *    Electron WebContentsView positioned by the main process over the
  *    body area of this pane. The pane renders only the toolbar plus an
- *    empty body div whose viewport rect is reported to
- *    webTab.setBounds; show/hide follows mount/unmount (only the
- *    active tab's pane is mounted). Real back/forward/reload, no
+ *    empty body div whose viewport rect joins the renderer's complete
+ *    visible-bounds collection. Real back/forward/reload, no
  *    framing restrictions, so no hint bar.
  *
  *  - Browser fallback: a 40px address toolbar (mono URL input · reload
@@ -30,6 +29,8 @@ import {
   destroyStaleWebViews,
   ensureWebView,
   installDesktopMenuHandlers,
+  registerVisibleWebTabBounds,
+  removeVisibleWebTabBounds,
   setWebTabReady,
   type DesktopBridge,
 } from "@/lib/desktop-bridge";
@@ -170,9 +171,9 @@ function DesktopWebTabPane({
   // on real drift, so onState → updateWebTab echoes never re-navigate.
   const viewUrlRef = useRef(effectiveUrl);
 
-  // View lifecycle. Visibility model: this pane is mounted only while
-  // its tab is active, so show on mount / hide on unmount. destroy
-  // lives elsewhere — the store subscription installed by
+  // View lifecycle. Native visibility is published by the bounds effect
+  // below as one collection for every mounted web pane. Destroy lives
+  // elsewhere — the store subscription installed by
   // installDesktopMenuHandlers destroys views as their tabs close,
   // and the mount-time reconcile sweeps anything that slipped through.
   useEffect(() => {
@@ -182,10 +183,8 @@ function DesktopWebTabPane({
       useCenterTabs.getState().tabs.map((t) => t.id),
     );
     ensureWebView(bridge, tabId, viewUrlRef.current);
-    bridge.webTab.show(tabId);
     return () => {
       setWebTabReady(tabId, false);
-      bridge.webTab.hide(tabId);
     };
   }, [bridge, tabId]);
 
@@ -208,11 +207,11 @@ function DesktopWebTabPane({
         '[role="dialog"], .branches-merge-modal-backdrop, [data-native-view-occluder="true"]',
       );
       if (occluded || roundedBounds.width <= 0 || roundedBounds.height <= 0) {
-        bridge.webTab.setBounds(tabId, { x: 0, y: 0, width: 0, height: 0 });
+        removeVisibleWebTabBounds(bridge, tabId);
         setWebTabReady(tabId, false);
         return;
       }
-      bridge.webTab.setBounds(tabId, roundedBounds);
+      registerVisibleWebTabBounds(bridge, tabId, roundedBounds);
       setWebTabReady(tabId, true);
     };
     report();
@@ -227,6 +226,7 @@ function DesktopWebTabPane({
       mo.disconnect();
       window.removeEventListener("resize", report);
       window.removeEventListener("scroll", report, true);
+      removeVisibleWebTabBounds(bridge, tabId);
     };
   }, [bridge, tabId]);
 

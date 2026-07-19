@@ -36,11 +36,14 @@ const {
   isSplitLayoutAvailable,
 } = await import("../lib/split-layout.ts");
 const {
+  registerVisibleWebTabBounds,
+  removeVisibleWebTabBounds,
   isDesktopSplitLayoutAvailable,
   isWebTabReady,
   restorePriorActiveTabAfterFailedWebOpen,
   setDesktopSplitLayoutAvailable,
   setWebTabReady,
+  visibleWebTab,
   waitForWebTabReady,
 } = await import("../lib/desktop-bridge.ts");
 const {
@@ -121,6 +124,37 @@ const narrowPanes = resolveCenterTabPanes(
   hiddenThird.focusedId,
 );
 assert.deepEqual(narrowPanes, [{ key: "w:two", kind: "tab", tabId: "w:two" }]);
+
+{
+  const syncCalls = [];
+  const singletonShowCalls = [];
+  const bridge = {
+    webTab: {
+      syncVisible(items) { syncCalls.push(items); },
+      show(id) { singletonShowCalls.push(id); },
+    },
+  };
+  const boundsOne = { x: 0, y: 40, width: 500, height: 600 };
+  const boundsTwo = { x: 506, y: 40, width: 600, height: 600 };
+  registerVisibleWebTabBounds(bridge, "w:one", boundsOne);
+  registerVisibleWebTabBounds(bridge, "w:two", boundsTwo);
+  await Promise.resolve();
+  assert.equal(syncCalls.length, 1, "one scheduled flush publishes both panes");
+  assert.deepEqual(syncCalls[0], [
+    { id: "w:one", bounds: boundsOne },
+    { id: "w:two", bounds: boundsTwo },
+  ]);
+  removeVisibleWebTabBounds(bridge, "w:one");
+  await Promise.resolve();
+  assert.deepEqual(syncCalls.at(-1), [{ id: "w:two", bounds: boundsTwo }]);
+  assert.deepEqual(
+    singletonShowCalls,
+    [],
+    "two singleton show calls are not collection synchronization",
+  );
+  removeVisibleWebTabBounds(bridge, "w:two");
+  await Promise.resolve();
+}
 
 function createTimingHarness() {
   let nextId = 1;
@@ -253,6 +287,41 @@ setWebTabReady("clear-ready", true);
 setWebTabReady("clear-ready", false);
 assert.equal(isWebTabReady("clear-ready"), false);
 
+setWebTabReady("w:one", true);
+setWebTabReady("w:two", true);
+useCenterTabs.setState({
+  tabs: paneTabs,
+  groups: [{
+    id: "g:visible-webs",
+    memberIds: ["s:a", "w:one", "w:two"],
+    visibleIds: ["w:one", "w:two"],
+    focusedId: "w:two",
+  }],
+  activeId: "w:two",
+});
+assert.equal(visibleWebTab()?.id, "w:two", "focused visible web wins");
+useCenterTabs.setState({
+  groups: [{
+    id: "g:visible-webs",
+    memberIds: ["s:a", "w:one", "w:two"],
+    visibleIds: ["s:a", "w:one"],
+    focusedId: "s:a",
+  }],
+  activeId: "s:a",
+});
+assert.equal(
+  visibleWebTab()?.id,
+  "w:one",
+  "session focus selects the first resolved visible web pane",
+);
+assert.notEqual(
+  visibleWebTab()?.id,
+  "w:two",
+  "a hidden group member must not be selected",
+);
+useCenterTabs.setState({ groups: [], activeId: "w:two" });
+assert.equal(visibleWebTab()?.id, "w:two", "ungrouped active web is selected");
+
 setDesktopSplitLayoutAvailable(true);
 assert.equal(isDesktopSplitLayoutAvailable(), true);
 setDesktopSplitLayoutAvailable(false);
@@ -326,12 +395,14 @@ const desktopBridgeSource = await readFile(
 assert.match(desktopBridgeSource, /function visibleWebTab\(\)/);
 assert.match(
   desktopBridgeSource,
-  /active\?\.kind === "web" && isWebTabReady\(active\.id\)/,
+  /resolveCenterTabPanes\(group, state\.tabs, state\.activeId\)/,
 );
 assert.match(
   desktopBridgeSource,
-  /active\?\.kind === "session" && split\?\.kind === "web"[\s\S]*?isWebTabReady\(split\.id\)/,
+  /group\.focusedId/,
 );
+assert.match(desktopBridgeSource, /const visibleWebBounds = new Map/);
+assert.match(desktopBridgeSource, /targetBridge\.webTab\.syncVisible/);
 assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
 assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
 assert.match(
@@ -500,6 +571,7 @@ assert.match(baseCssSource, /\.center-split-divider\s*\{[^}]*width:\s*6px;/s);
 assert.match(baseCssSource, /\.center-split-primary\s*\{[^}]*min-width:\s*360px;/s);
 assert.match(baseCssSource, /\.center-split-secondary\s*\{[^}]*min-width:\s*480px;/s);
 assert.match(webTabPaneSource, /setWebTabReady/);
+assert.doesNotMatch(webTabPaneSource, /bridge\.webTab\.(?:show|hide|setBounds)\(/);
 assert.doesNotMatch(
   webTabPaneSource,
   /bridge\.webTab\.navigate\(tabId, viewUrlRef\.current\);/,
@@ -515,15 +587,15 @@ assert.match(
 );
 assert.match(
   webTabPaneSource,
-  /if \(occluded \|\| roundedBounds\.width <= 0 \|\| roundedBounds\.height <= 0\) \{\s*bridge\.webTab\.setBounds\(tabId, \{ x: 0, y: 0, width: 0, height: 0 \}\);\s*setWebTabReady\(tabId, false\);/s,
+  /if \(occluded \|\| roundedBounds\.width <= 0 \|\| roundedBounds\.height <= 0\) \{\s*removeVisibleWebTabBounds\(bridge, tabId\);\s*setWebTabReady\(tabId, false\);/s,
 );
 assert.match(
   webTabPaneSource,
-  /bridge\.webTab\.setBounds\(tabId, roundedBounds\);\s*setWebTabReady\(tabId, true\);/s,
+  /registerVisibleWebTabBounds\(bridge, tabId, roundedBounds\);\s*setWebTabReady\(tabId, true\);/s,
 );
 assert.match(
   webTabPaneSource,
-  /return \(\) => \{\s*setWebTabReady\(tabId, false\);\s*bridge\.webTab\.hide\(tabId\);/s,
+  /return \(\) => \{[\s\S]*?removeVisibleWebTabBounds\(bridge, tabId\);/s,
 );
 assert.match(webTabPaneSource, /new MutationObserver\(report\)/);
 assert.match(

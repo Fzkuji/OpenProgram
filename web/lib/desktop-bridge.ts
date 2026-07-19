@@ -13,6 +13,10 @@
  * desktopBridge() returns null; callers keep their web fallbacks.
  */
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import {
+  findCenterTabGroup,
+  resolveCenterTabPanes,
+} from "@/lib/state/center-tab-groups";
 
 export interface DesktopWebTabState {
   id: string;
@@ -30,6 +34,11 @@ export interface DesktopWebTabBounds {
   height: number;
 }
 
+export interface DesktopVisibleWebView {
+  id: string;
+  bounds: DesktopWebTabBounds;
+}
+
 export interface DesktopWebTabApi {
   /** Create the WebContentsView for `id` if missing, then loadURL. */
   ensure(id: string, url: string): void;
@@ -41,6 +50,8 @@ export interface DesktopWebTabApi {
   setBounds(id: string, bounds: DesktopWebTabBounds): void;
   show(id: string): void;
   hide(id: string): void;
+  /** Atomically replace the native views visible in this renderer window. */
+  syncVisible(items: DesktopVisibleWebView[]): void;
   destroy(id: string): void;
   reload(id: string): void;
   goBack(id: string): void;
@@ -51,7 +62,8 @@ export interface DesktopWebTabApi {
 }
 
 export interface DesktopBridge {
-  isDesktop: true;
+  readonly isDesktop: true;
+  readonly windowId: string;
   /** shell.openExternal — http/https only. */
   openExternal(url: string): void;
   webTab: DesktopWebTabApi;
@@ -72,7 +84,45 @@ export function desktopBridge(): DesktopBridge | null {
 const liveViewIds = new Set<string>();
 const readyWebTabIds = new Set<string>();
 const webTabReadyWaiters = new Map<string, Set<(ready: boolean) => void>>();
+const visibleWebBounds = new Map<string, DesktopWebTabBounds>();
+let visibleWebFlushScheduled = false;
+let visibleWebFlushBridge: DesktopBridge | null = null;
 let desktopSplitLayoutAvailable = false;
+
+function scheduleVisibleWebBoundsFlush(bridge: DesktopBridge): void {
+  visibleWebFlushBridge = bridge;
+  if (visibleWebFlushScheduled) return;
+  visibleWebFlushScheduled = true;
+  queueMicrotask(() => {
+    visibleWebFlushScheduled = false;
+    const targetBridge = visibleWebFlushBridge;
+    visibleWebFlushBridge = null;
+    if (!targetBridge) return;
+    targetBridge.webTab.syncVisible(
+      Array.from(visibleWebBounds, ([id, bounds]) => ({
+        id,
+        bounds: { ...bounds },
+      })),
+    );
+  });
+}
+
+export function registerVisibleWebTabBounds(
+  bridge: DesktopBridge,
+  id: string,
+  bounds: DesktopWebTabBounds,
+): void {
+  visibleWebBounds.set(id, { ...bounds });
+  scheduleVisibleWebBoundsFlush(bridge);
+}
+
+export function removeVisibleWebTabBounds(
+  bridge: DesktopBridge,
+  id: string,
+): void {
+  visibleWebBounds.delete(id);
+  scheduleVisibleWebBoundsFlush(bridge);
+}
 
 export function setWebTabReady(id: string, ready: boolean): void {
   if (!ready) {
@@ -136,6 +186,7 @@ export function destroyStaleWebViews(
   const alive = new Set(tabIds);
   for (const id of Array.from(liveViewIds)) {
     if (!alive.has(id)) {
+      removeVisibleWebTabBounds(bridge, id);
       bridge.webTab.destroy(id);
       liveViewIds.delete(id);
     }
@@ -163,15 +214,23 @@ function showActiveCenterTab(): void {
     .__navigate?.(path);
 }
 
-function visibleWebTab() {
+export function visibleWebTab() {
   const state = useCenterTabs.getState();
+  const group = state.activeId
+    ? findCenterTabGroup(state.groups, state.activeId)
+    : undefined;
+  if (group) {
+    const visibleWebTabs = resolveCenterTabPanes(group, state.tabs, state.activeId)
+      .flatMap((pane) => pane.kind === "tab" ? [pane.tabId] : [])
+      .map((id) => state.tabs.find((tab) => tab.id === id))
+      .filter((tab) => tab?.kind === "web" && isWebTabReady(tab.id));
+    return visibleWebTabs.find((tab) => tab?.id === group.focusedId)
+      ?? visibleWebTabs[0]
+      ?? null;
+  }
   const active = state.tabs.find((tab) => tab.id === state.activeId);
   if (active?.kind === "web" && isWebTabReady(active.id)) return active;
-  const split = state.tabs.find((tab) => tab.id === state.splitWebTabId);
-  return active?.kind === "session" && split?.kind === "web" &&
-    isWebTabReady(split.id)
-    ? split
-    : null;
+  return null;
 }
 
 export function restorePriorActiveTabAfterFailedWebOpen(
