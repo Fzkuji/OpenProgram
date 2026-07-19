@@ -11,6 +11,7 @@ import {
   type Bookmark,
 } from "@/lib/bookmarks";
 import { desktopBridge, isDesktopSplitLayoutAvailable } from "@/lib/desktop-bridge";
+import { openBookmark } from "@/lib/bookmark-navigation";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -39,16 +40,14 @@ export function BookmarksPanel() {
   function openBesideChat(url: string) {
     const tabs = useCenterTabs.getState();
     const active = tabs.tabs.find((tab) => tab.id === tabs.activeId);
-    if (
-      desktopBridge() &&
-      active?.kind === "session" &&
-      isDesktopSplitLayoutAvailable()
-    ) {
-      tabs.openWebTabInSplit(url);
-      useSessionStore.getState().setRightDockOpen(false);
-      return;
-    }
-    tabs.openWebTab(url);
+    openBookmark(url, {
+      desktop: Boolean(desktopBridge()),
+      activeKind: active?.kind,
+      splitAvailable: isDesktopSplitLayoutAvailable(),
+      openSplit: tabs.openWebTabInSplit,
+      openTab: tabs.openWebTab,
+      collapseDock: () => useSessionStore.getState().setRightDockOpen(false),
+    });
   }
 
   function startRename(bookmark: Bookmark) {
@@ -57,7 +56,7 @@ export function BookmarksPanel() {
   }
 
   function saveRename(url: string) {
-    setBookmarks(renameBookmark(url, draftTitle));
+    renameBookmark(url, draftTitle);
     setEditingUrl(null);
   }
 
@@ -156,7 +155,7 @@ export function BookmarksPanel() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setBookmarks(removeBookmark(bookmark.url))}
+                      onClick={() => removeBookmark(bookmark.url)}
                       title={deleteLabel}
                       aria-label={deleteLabel}
                     >

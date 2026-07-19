@@ -68,6 +68,10 @@
   font-size: 13px;
 }
 .bookmarks-search input::placeholder { color: var(--text-muted); }
+.bookmarks-search input:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
 .bookmarks-list {
   display: flex;
   min-height: 0;
@@ -112,6 +116,10 @@
   border-radius: 5px;
   outline: 0;
   background: var(--bg-primary);
+}
+.bookmark-title-input:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
 }
 .bookmark-url {
   display: block;
