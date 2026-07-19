@@ -1,1458 +1,551 @@
 # Desktop Multi-window Tab Transfer Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:subagent-driven-development` or `superpowers:executing-plans` task by task. Use TDD and commit after each task.
 
-**Goal:** Let a desktop center tab move into a new or existing OpenProgram window, merge into a destination strip or compound group, and move back while preserving the same live `WebContentsView` and all renderer-owned tab state.
+**Goal:** Move a normal tab, one compound segment, or a whole compound group into another/new OpenProgram window and back while preserving renderer state and the same live `WebContentsView` objects.
 
-**Architecture:** Each Electron `BrowserWindow` receives a stable lifetime `windowId` and a `WindowContext` containing only the native web views owned by that renderer. Cross-window movement is a main-process two-phase transaction: the source creates a single-use token, the destination validates and accepts it, main reparents the same `WebContentsView`, the destination inserts and acknowledges, and only then the source removes its tab. Any rejection, timeout, renderer loss, or reparent failure reverses the native move and leaves the source store unchanged.
+**Architecture:** Each `BrowserWindow` owns a `WindowContext` with a set of visible native views. The compound plan's single drag coordinator synchronously holds one prepared token and resolves before/merge/after geometry for same-window and cross-window drops. Main owns a pre-commit transfer transaction: destination staging and native reparenting are reversible until the source renderer confirms successful reversible removal. That confirmation is the commit boundary; main finalizes immediately and never rolls back afterward. Hidden detach windows pull their pending token after renderer hydration with `claimPending(windowId)`.
 
-**Tech Stack:** Electron 37 `BrowserWindow` / `WebContentsView` / IPC, plain JavaScript preload and main process, React 18, Zustand 5, TypeScript, native HTML Drag and Drop, Node `assert`/`vm` check scripts, Chrome DevTools Protocol for live acceptance.
+**Tech stack:** Electron 37 `BrowserWindow` / `WebContentsView` / IPC, React 18, Zustand 5, TypeScript, native HTML Drag and Drop, Node `assert`/`vm`, CDP. No new drag dependency.
 
-## Global Constraints
+## Non-negotiable invariants
 
-- Test the desktop implementation against the development UI on port `18200`; leave stable port `18100` unchanged until final promotion.
-- Do not add a drag-and-drop dependency; use native `DragEvent` and `DataTransfer`.
-- Do not use `closeTab()` or `finishClose()` for transfer removal. Transfer must not create session-close tombstones, delete drafts or attachments, destroy a moved web view, or insert an NTP fallback.
-- A transferred web tab must retain the exact `WebContentsView` object, CDP target id, `performance.timeOrigin`, navigation history, form state, scroll position, login/session state, and SPA memory.
-- Every native-view IPC handler must derive the source `WindowContext` from `event.sender` and reject a tab id not owned by that context.
-- Menu shortcuts and backend `webtab.command` requests are handled by only the focused OpenProgram window, with the most recently focused live window as the no-focus fallback.
-- Transfer tokens are opaque, single-use, explicitly cancellable, and expire after `15_000` ms.
-- A destination must acknowledge insertion before source removal. Failure before final source acknowledgement rolls back the destination insertion and native-view ownership.
-- A detached destination window remains hidden until its transfer commits. Rollback closes that hidden window.
-- Destination duplicate ids and fourth-member group drops are rejected before native reparenting.
-- The existing `persist:webtabs` Electron partition and profile-wide `openprogram.bookmarks` key remain unchanged.
+- Test only against the development UI on port `18200` until final promotion. Do not modify stable `18100`.
+- Reuse `CenterTabGroup` from `web/lib/state/center-tab-groups.ts` and the unified `CenterTabsPersistedPayload` from `center-tabs-store.ts`. Do not redefine either and do not create a group-only storage key.
+- Renderer state is stored in `centerTabs:<windowId>`. Only the main window migrates the old unkeyed payload once. Split/group state is in that same payload.
+- `WindowContext.visibleViewIds` is a set. Two visible web panes may simultaneously have non-zero bounds and `visible=true`.
+- Every native-view IPC derives its context from `event.sender`; a source window cannot hide, resize, navigate, or destroy a view after ownership moves.
+- `visibleWebTab()` is group-aware: prefer the focused visible web member, then another visible web pane, then a full-width active web tab. Hidden group members are not model-control targets.
+- Focused-window routing is deterministic. Menu and backend commands go to the focused live window, or the most recently focused live window only when none is focused.
+- One shared `tab-drag-coordinator.ts` owns payload, prepared ref, cancellation, and geometry. Do not add a second same-window/cross-window drag ref or placement resolver.
+- Pointer/mouse down prepares a main-process transfer token synchronously. `dragstart` only reads the prepared token and writes `DataTransfer` synchronously; it contains no `await`.
+- Pointer release or click without `dragstart` cancels that prepared token immediately. Close-button pointer events never prepare a token.
+- Drop placement always uses target geometry: first 25% `before`, middle 50% `merge`, final 25% `after`.
+- A whole compound group transfers atomically with all members. A segment transfer carries its source group id, member index, `visibleIds`, and `focusedId`.
+- Destination duplicate ids and a merge that would exceed three members use explicit `reject(token, reason, duplicateId?)` before native reparenting or draft import. A duplicate activates the existing destination tab; the source remains unchanged.
+- If a transferred web id already has a native record, transfer reparents that exact `WebContentsView` and never calls `loadURL` or closes `webContents`. A web tab without a native record is still valid metadata; the destination's first visible `WebTabPane` creates it through the existing `ensure` path.
+- Ordinary `closeTab()` / `finishClose()` are never used for transfer. Transfer must not create close tombstones, delete draft data irreversibly, or add an NTP fallback.
+- Destination staging completes before source removal is requested.
+- Source removal is reversible and returns a recovery snapshot for tabs/groups/order/active/split, drafts, session state, and renderer bridge bookkeeping.
+- Main commits immediately when the source renderer reports successful removal. After that line, the active token is deleted, the timeout is cleared, and rollback is impossible. A read-only terminal receipt remains so reloaded renderers can resolve their journals; it cannot accept/cancel/rollback the transfer.
+- Every committed/rolled-back decision is durably and atomically stored at `app.getPath("userData")/tab-transfers.json` before either renderer persists its journal result. Main restart reloads the same decision; it is deleted only after both source and destination roles durably acknowledge finalization.
+- If source removal fails, races a timeout, or main rejects its acknowledgement, the source restores its recovery snapshot and main explicitly undoes destination tabs/drafts/bookkeeping before restoring native ownership.
+- No timeout path may leave the source deleted while only reparenting the view. A late source acknowledgement must receive `false` and restore locally.
+- Provisional center-tab/session changes use `{ persist: false }`. Before any transient mutation, write a complete recovery journal to `openprogram.tabTransferJournal:<windowId>`; `centerTabs:<windowId>` and existing composer persistence remain at the last committed state until main commits.
+- `acceptedTransfers`, journal entries, and every imported draft snapshot are deleted on both final commit and rollback. Renderer startup resolves the journal against main's token status before normal native-view reconciliation.
+- Destination rollback order is fixed: forget destination bridge/native-view bookkeeping, undo transient session/store state, acknowledge destination undo, then let main reparent/restore the records. Main rejects ordinary `webtab:destroy` for every record locked by a pre-commit transaction.
+- A detached window remains hidden until commit. It claims pending work after renderer handlers and store hydration; no one-shot `did-finish-load` send is used.
+- Session transfer uses the real `activeChatKey` and changes the route plus `useSessionStore.currentSessionId` through the compound plan's shared active-session effect. Draft payload/recovery includes `composerDrafts`, `composerSettingsBySession`, `pendingProjectsByChat`, live `composerInput`/`composerSettings` when that chat is active, and the keyed draft channel choice.
+- Normal committed draft state is persisted per window at `openprogram.sessionDraftState:<windowId>`; the transfer journal is recovery metadata, not the sole post-commit storage for pending projects or channel choices.
 
-## File Structure
+## Files
 
-- Modify `desktop/main.js`: own all `WindowContext`s, route sender-owned IPC and focused menu commands, manage transfer tokens, reparent native views, create hidden detach windows, and roll back failures.
-- Modify `desktop/preload.js`: expose `windowId`, focused-command claiming, and the transfer transaction bridge.
-- Modify `desktop/scripts/check-webtab-navigation.js`: behavior-check sender ownership, focused routing, same-object reparenting, single-use/timeout transactions, rollback, detach, and late source IPC.
-- Modify `web/lib/desktop-bridge.ts`: type and install the window/transfer bridge, coordinate destination insert/source remove/rollback, and relinquish renderer-local native-view bookkeeping without destroying the moved view.
-- Modify `web/lib/state/center-tabs-store.ts`: key persisted tabs/split state by `windowId`, migrate the legacy primary-window payload once, and add transfer-safe insertion/removal plus group placement.
-- Modify `web/lib/session-store/index.ts`: import an unsent composer draft into an already-running destination renderer without deleting it from profile storage.
-- Modify `web/lib/state/files-shared.ts`: export small snapshot/restore helpers for an in-memory dirty file draft.
-- Modify `web/components/center-tabs/center-tab-strip.tsx`: create native drag tokens, resolve strip/group drop placement, detach on an uncancelled outside drop, and expose the keyboard move command.
-- Modify `web/components/center-tabs/center-tabs.module.css`: render drag source opacity and transient insertion/merge target states only.
-- Modify `web/scripts/check-web-split.mjs`: behavior-check per-window persistence, transfer-safe store actions, group merge rejection, and draft payload restoration.
-- Modify `web/scripts/check-center-tabs.mjs`: statically verify native drag/drop and keyboard accessibility wiring.
+- Modify `desktop/main.js`.
+- Create `desktop/tab-transfer-store.js`.
+- Modify `desktop/package.json`.
+- Modify `desktop/preload.js`.
+- Modify `desktop/scripts/check-webtab-navigation.js`.
+- Modify `web/lib/desktop-bridge.ts`.
+- Create `web/lib/tab-transfer-journal.ts`.
+- Modify `web/lib/tab-drag-coordinator.ts`.
+- Modify `web/lib/state/center-tabs-store.ts`.
+- Modify `web/lib/session-store/index.ts`.
+- Create `web/lib/session-draft-persistence.ts`.
+- Modify `web/lib/runtime-bridge/draft-channel-choice.ts`.
+- Modify `web/lib/state/files-shared.ts`.
+- Modify `web/components/app-shell.tsx`.
+- Modify `web/components/center-tabs/center-tab-strip.tsx`.
+- Modify `web/components/center-tabs/center-tabs.module.css`.
+- Modify `web/scripts/check-web-split.mjs`.
+- Modify `web/scripts/check-center-tabs.mjs`.
+- Create `web/public/desktop-transfer-acceptance.html`.
 
----
-
-### Task 1: Replace Single-window Globals with Sender-owned `WindowContext`s
+### Task 1: Scope native views and visible sets by window
 
 **Files:**
-- Modify: `desktop/scripts/check-webtab-navigation.js:6-247`
-- Modify: `desktop/main.js:2, 128-425`
 
-**Interfaces:**
-- Consumes: Electron `BrowserWindow.fromWebContents(event.sender)` and `BrowserWindow.getFocusedWindow()`.
-- Produces: `windows: Map<string, WindowContext>`, `contextsByBrowserWindowId: Map<number, WindowContext>`, `contextForSender(event)`, `focusedContext()`, `createWindow(options): Promise<WindowContext>`, and sender-scoped web-tab functions.
+- Modify `desktop/main.js`
+- Create `desktop/tab-transfer-store.js`
+- Modify `desktop/package.json`
+- Modify `desktop/scripts/check-webtab-navigation.js`
 
-- [ ] **Step 1: Write the failing sender-ownership and focused-menu checks**
-
-Append source and VM checks to `desktop/scripts/check-webtab-navigation.js`:
+**Durable terminal-decision store:**
 
 ```js
-assert.doesNotMatch(source, /let mainWindow = null/);
-assert.match(source, /const windows = new Map\(\)/);
-assert.match(source, /const contextsByBrowserWindowId = new Map\(\)/);
-assert.match(source, /function contextForSender\(event\)/);
-assert.match(source, /BrowserWindow\.fromWebContents\(event\.sender\)/);
-assert.match(source, /function focusedContext\(\)/);
-assert.match(source, /BrowserWindow\.getFocusedWindow\(\)/);
-
-for (const channel of [
-  "ensure", "navigate", "activate", "set-bounds", "show", "hide",
-  "destroy", "reload", "go-back", "go-forward",
-]) {
-  const marker = channel === "activate"
-    ? `ipcMain.handle("webtab:${channel}"`
-    : `ipcMain.on("webtab:${channel}"`;
-  const start = source.indexOf(marker);
-  assert.ok(start >= 0, `${channel} handler missing`);
-  const handler = source.slice(start, source.indexOf("\n  );", start) + 5);
-  assert.match(handler, /contextForSender/,
-    `${channel} must resolve ownership from event.sender`);
+// app.getPath("userData")/tab-transfers.json
+{
+  version: 1,
+  decisions: {
+    [token]: {
+      token,
+      status: "committed" | "rolled-back",
+      sourceId,
+      destinationId,
+      sourceEmpty,
+      requiredRoles: [
+        { role: "source", windowId: "source-window-id" },
+        { role: "destination", windowId: "destination-window-id" },
+      ],
+      finalizedRoles: [],
+      decidedAt,
+    },
+  },
 }
 
-const menuStart = source.indexOf("function buildMenu");
-const menuEnd = source.indexOf("// --------------------------------------------------------------------- boot");
-const menuSource = source.slice(menuStart, menuEnd);
-assert.match(menuSource, /focusedContext\(\)/);
-assert.doesNotMatch(menuSource, /mainWindow\.webContents\.send/);
+loadTransferDecisions(filePath)
+saveTransferDecisionsAtomic(filePath, value)
+putTransferDecision(filePath, decision)
+ackTransferDecision(filePath, token, role)
 ```
 
-- [ ] **Step 2: Run the desktop check and confirm the single-window assumptions fail it**
+`saveTransferDecisionsAtomic` writes mode `0600` to a sibling temporary file, `fsync`s it, renames it over `tab-transfers.json`, and `fsync`s the user-data directory. A failed write leaves the previous valid file intact. Add `tab-transfer-store.js` to `desktop/package.json` `build.files`.
 
-Run: `npm --prefix desktop run check:webtabs`
+`requiredRoles` contains only participants that successfully wrote a renderer journal, recorded by `tab-transfer:journal-opened` before transient mutation. `putTransferDecision` returns only after the new terminal status is durable. `ackTransferDecision` rejects an unknown/non-required role and otherwise returns `{ decision, complete }` after atomically persisting the updated `finalizedRoles`; an already-recorded role is idempotent. When `complete` is true, that same atomic save has removed the token from `decisions`. A write/fsync/rename failure throws and leaves the previously durable decision unchanged.
 
-Expected: FAIL at `assert.doesNotMatch(source, /let mainWindow = null/)`.
+Renderer local storage is shared by the OpenProgram Electron partition, while transfer keys are scoped by `windowId`. If a required participant is destroyed before acknowledging, main asks a surviving renderer to finalize that orphaned `{ role, windowId }`: it reads `openprogram.tabTransferJournal:<windowId>`, applies the durable decision's before/after payload to that window's keyed normal storage, deletes the orphan journal, and then acknowledges the original role. If no renderer survives, the durable decision remains; the first renderer after restart receives the orphan work through `pending-terminal` and performs the same idempotent cleanup. Main never acknowledges a destroyed journal owner without this durable keyed-storage cleanup.
 
-- [ ] **Step 3: Add window contexts and move native-view navigation state into transferable records**
-
-Replace the globals at `desktop/main.js:130-133` with:
+**Main-process model:**
 
 ```js
-const { randomUUID } = require("crypto");
+function makeWindowContext(id, win) {
+  return {
+    id,
+    win,
+    views: new Map(),
+    visibleViewIds: new Set(),
+    pendingTransferToken: null,
+  };
+}
 
 const windows = new Map();
 const contextsByBrowserWindowId = new Map();
 let lastFocusedWindowId = null;
-
-function makeWindowContext(id, win) {
-  return { id, win, views: new Map(), visibleViewId: null };
-}
-
-function contextForSender(event) {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  return win ? contextsByBrowserWindowId.get(win.id) || null : null;
-}
-
-function focusedContext() {
-  const focused = BrowserWindow.getFocusedWindow();
-  const direct = focused ? contextsByBrowserWindowId.get(focused.id) : null;
-  if (direct) return direct;
-  const recent = lastFocusedWindowId ? windows.get(lastFocusedWindowId) : null;
-  return recent && !recent.win.isDestroyed() ? recent : null;
-}
 ```
 
-Use a mutable record for each native view so a pending navigation and state-event routing move with the view:
+Each view map value is `{ id, view, ownerId, navigation }`. `ownerId` changes with transfer; state events resolve the current owner before sending.
+
+**Visibility API:**
 
 ```js
-function makeViewRecord(ctx, id) {
-  const view = new WebContentsView({
-    webPreferences: { partition: "persist:webtabs" },
-  });
-  return { id, view, ownerId: ctx.id, navigation: null };
-}
-
-function ownerOf(record) {
-  const ctx = windows.get(record.ownerId);
-  return ctx && ctx.views.get(record.id) === record ? ctx : null;
-}
-
-function sendState(record, extra) {
-  const ctx = ownerOf(record);
-  if (!ctx || ctx.win.isDestroyed()) return;
-  const wc = record.view.webContents;
-  const url = wc.getURL();
-  const title = wc.getTitle();
-  ctx.win.webContents.send("webtab:state", {
-    id: record.id,
-    ...(url ? { url } : {}),
-    ...(title ? { title } : {}),
-    loading: wc.isLoading(),
-    canGoBack: wc.navigationHistory.canGoBack(),
-    canGoForward: wc.navigationHistory.canGoForward(),
-    ...extra,
-  });
-}
+function syncVisibleViews(ctx, items) {}
+function showView(ctx, id, bounds) {}
+function hideView(ctx, id) {}
 ```
 
-Change `loadView`, `ensureView`, `navigateView`, `showView`, `hideView`, `activateView`, `withView`, and `runNativeNavigation` to receive `ctx`; store the pending promise as `record.navigation`:
+`items` is `Array<{ id, bounds }>` for all web panes in one renderer layout. `syncVisibleViews` validates ownership for every id, applies bounds and `setVisible(true)` to all desired records, hides records not in the desired set, then replaces `ctx.visibleViewIds`. `showView`/`hideView` update a copied desired collection and delegate to `syncVisibleViews`; neither assumes a singleton.
 
-```js
-function loadView(record, url) {
-  const pending = record.navigation;
-  if (pending && pending.url === url) return pending.promise;
-  const wc = record.view.webContents;
-  if (!pending && wc.getURL() === url && !wc.isLoading()) {
-    return Promise.resolve(record);
-  }
-  const promise = wc.loadURL(url).then(() => record).finally(() => {
-    if (record.navigation?.promise === promise) record.navigation = null;
-  });
-  record.navigation = { url, promise };
-  return promise;
-}
+- [ ] Extend `check-webtab-navigation.js` with executable fake windows/content views and two view records. Call `syncVisibleViews(ctx, [{id:"a",...},{id:"b",...}])`; assert both are visible, both ids are in `visibleViewIds`, and both bounds are non-zero. Remove `a`; assert only `a` hides. This must be a behavior test, not only a regex.
+- [ ] Add behavior tests for sender ownership: invoke extracted handlers with two fake `event.sender` values, then try to hide/destroy window A's view from B. Assert the view remains visible/open and B's set is unchanged.
+- [ ] Add behavior tests for focused routing: change the fake `BrowserWindow.getFocusedWindow()` result and then remove focus; assert `focusedContext()` returns A, then B, then the most-recent live B. Destroy B; assert fallback is A or null, never the destroyed context.
+- [ ] Run `npm --prefix desktop run check:webtabs`; expect failure on singleton globals/visibility.
+- [ ] Replace `mainWindow`, global `views`, global navigation maps, and `visibleViewId` with contexts. Refactor ensure/navigate/activate/bounds/show/hide/destroy/reload/back/forward handlers to call `contextForSender(event)` and reject unowned ids.
+- [ ] Add `webtab:sync-visible` IPC. Keep old show/hide channels as collection-aware compatibility wrappers until renderer migration finishes.
+- [ ] Menu dispatch calls `focusedContext()` at invocation time.
+- [ ] Window cleanup closes only records still owned by that context and removes both registries.
+- [ ] Run `npm --prefix desktop run check:webtabs`; all behavior cases pass.
+- [ ] Commit: `refactor(desktop): scope native views by window`.
 
-function withOwnedView(ctx, id, fn) {
-  const record = ctx?.views.get(id);
-  if (record) return fn(record);
-  return null;
-}
-```
-
-Refactor every web-tab IPC handler to resolve its context from the sender and then call the scoped function. The destroy handler must be:
-
-```js
-ipcMain.on("webtab:destroy", (event, id) => {
-  const ctx = contextForSender(event);
-  withOwnedView(ctx, id, (record) => {
-    if (ctx.visibleViewId === id) ctx.visibleViewId = null;
-    ctx.win.contentView.removeChildView(record.view);
-    record.view.webContents.close();
-    record.navigation = null;
-    ctx.views.delete(id);
-  });
-});
-```
-
-Change menu dispatch to:
-
-```js
-const send = (channel) => () => {
-  const ctx = focusedContext();
-  if (ctx) ctx.win.webContents.send(channel);
-};
-```
-
-Change `createWindow` to construct and register its local context before loading the renderer:
-
-```js
-async function createWindow({
-  windowId = "main",
-  state = loadWindowState(),
-  show = true,
-  transferToken = null,
-} = {}) {
-  const win = new BrowserWindow({
-    x: state.x,
-    y: state.y,
-    width: state.width,
-    height: state.height,
-    show,
-    backgroundColor: "#141416",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
-    trafficLightPosition: { x: 18, y: 13 },
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      additionalArguments: [`--openprogram-window-id=${windowId}`],
-    },
-  });
-  const ctx = makeWindowContext(windowId, win);
-  ctx.transferToken = transferToken;
-  windows.set(windowId, ctx);
-  contextsByBrowserWindowId.set(win.id, ctx);
-  win.on("focus", () => { lastFocusedWindowId = windowId; });
-  win.on("close", () => {
-    if (windowId === "main") saveWindowState(win);
-  });
-  win.on("closed", () => disposeWindowContext(ctx));
-  installWindowNavigationGuards(ctx);
-  await win.loadURL(await resolveStartUrl());
-  return ctx;
-}
-```
-
-`disposeWindowContext(ctx)` and renderer-reload cleanup must iterate only `ctx.views`, close records still owned by `ctx`, and remove both registry entries.
-
-- [ ] **Step 4: Run focused desktop checks**
-
-Run: `npm --prefix desktop run check:webtabs`
-
-Expected: `webtab navigation checks passed`.
-
-- [ ] **Step 5: Commit the window-context refactor**
-
-```bash
-git add desktop/main.js desktop/scripts/check-webtab-navigation.js
-git commit -m "refactor(desktop): scope native views by window"
-```
-
----
-
-### Task 2: Add Single-use Transfer Transactions and Same-object Reparent Rollback
+### Task 2: Expose window identity and synchronize both native panes
 
 **Files:**
-- Modify: `desktop/scripts/check-webtab-navigation.js`
-- Modify: `desktop/main.js`
 
-**Interfaces:**
-- Consumes: `WindowContext`, `ViewRecord`, `contextForSender(event)`, and `createWindow(options)` from Task 1.
-- Produces: `beginTransfer(ctx, payload)`, `inspectTransfer(token)`, `acceptTransfer(targetCtx, token)`, `completeTransfer(targetCtx, token, ok)`, `cancelTransfer(sourceCtx, token)`, `ackSourceRemoval(sourceCtx, token, ok, empty)`, `rollbackTransfer(tx, reason)`, and `detachTransfer(sourceCtx, token)`.
+- Modify `desktop/preload.js`
+- Modify `web/lib/desktop-bridge.ts`
+- Modify `web/components/app-shell.tsx`
+- Modify `web/scripts/check-web-split.mjs`
+- Modify `desktop/scripts/check-webtab-navigation.js`
 
-- [ ] **Step 1: Add failing behavior checks for identity, ownership, token use, and rollback**
-
-Add a deterministic fake clock and parent views to `desktop/scripts/check-webtab-navigation.js`:
-
-```js
-function fakeParent(name) {
-  const children = [];
-  return {
-    name,
-    children,
-    addChildView(view) {
-      if (this.failAdd) throw new Error("add failed");
-      children.push(view);
-    },
-    removeChildView(view) {
-      const i = children.indexOf(view);
-      if (i >= 0) children.splice(i, 1);
-    },
-  };
-}
-
-async function checkTransferIdentityAndRollback() {
-  const sourceParent = fakeParent("source");
-  const targetParent = fakeParent("target");
-  const view = {
-    visible: true,
-    bounds: { x: 2, y: 40, width: 700, height: 500 },
-    setVisible(value) { this.visible = value; },
-    getVisible() { return this.visible; },
-    setBounds(value) { this.bounds = value; },
-    getBounds() { return this.bounds; },
-    webContents: { close() { throw new Error("transfer closed webContents"); } },
-  };
-  sourceParent.addChildView(view);
-  const record = { id: "w:https://example.com/", view, ownerId: "source", navigation: null };
-  const source = { id: "source", win: { contentView: sourceParent }, views: new Map([[record.id, record]]), visibleViewId: record.id };
-  const target = { id: "target", win: { contentView: targetParent }, views: new Map(), visibleViewId: null };
-
-  const snapshot = context.reparentRecord(source, target, record);
-  assert.strictEqual(target.views.get(record.id).view, view);
-  assert.equal(source.views.has(record.id), false);
-  assert.equal(record.ownerId, "target");
-  assert.equal(view.visible, false);
-
-  context.restoreRecord(source, target, record, snapshot);
-  assert.strictEqual(source.views.get(record.id).view, view);
-  assert.equal(target.views.has(record.id), false);
-  assert.equal(record.ownerId, "source");
-  assert.deepEqual(view.bounds, snapshot.bounds);
-  assert.equal(view.visible, true);
-
-  targetParent.failAdd = true;
-  assert.throws(() => context.reparentRecord(source, target, record), /add failed/);
-  assert.strictEqual(source.views.get(record.id), record);
-  assert.equal(record.ownerId, "source");
-}
-```
-
-Extract the two reparent helpers into the existing VM harness before calling the check:
-
-```js
-const reparentStart = source.indexOf("function reparentRecord");
-const reparentEnd = source.indexOf("\n\nconst TRANSFER_TTL_MS", reparentStart);
-assert.ok(reparentStart >= 0 && reparentEnd > reparentStart,
-  "reparent helpers not found");
-vm.runInContext(
-  `${source.slice(reparentStart, reparentEnd)}
-   globalThis.reparentRecord = reparentRecord;
-   globalThis.restoreRecord = restoreRecord;`,
-  context,
-);
-```
-
-Add transaction assertions:
-
-```js
-assert.match(source, /const TRANSFER_TTL_MS = 15_000/);
-assert.match(source, /const transfers = new Map\(\)/);
-assert.match(source, /function rollbackTransfer\(tx, reason\)/);
-assert.match(source, /tx\.status !== "prepared"/);
-assert.match(source, /tx\.status = "accepted"/);
-assert.match(source, /tx\.status = "awaiting-source"/);
-assert.match(source, /sourceCtx\.win\.webContents\.send\("tab-transfer:source-commit"/);
-assert.match(source, /if \(empty\) sourceCtx\.win\.close\(\)/);
-```
-
-Add a behavior harness for single use, explicit cancellation, and timeout:
-
-```js
-function fakeWindow(parent) {
-  return {
-    contentView: parent,
-    isDestroyed: () => false,
-    webContents: { send() {} },
-    close() {},
-  };
-}
-
-const timers = new Map();
-let nextTimer = 1;
-let nextToken = 1;
-const transferContext = vm.createContext({
-  Map,
-  Error,
-  randomUUID: () => `token-${nextToken++}`,
-  setTimeout(callback, delay) {
-    assert.equal(delay, 15_000);
-    const id = nextTimer++;
-    timers.set(id, callback);
-    return id;
-  },
-  clearTimeout(id) { timers.delete(id); },
-});
-const txStart = source.indexOf("const TRANSFER_TTL_MS");
-const txEnd = source.indexOf("\n\nfunction registerWebTabIpc", txStart);
-assert.ok(txStart >= 0 && txEnd > txStart, "transfer state machine not found");
-vm.runInContext(
-  `const windows = new Map();
-   ${source.slice(reparentStart, reparentEnd)}
-   ${source.slice(txStart, txEnd)}
-   globalThis.windowsForCheck = windows;
-   globalThis.beginTransfer = beginTransfer;
-   globalThis.inspectTransfer = inspectTransfer;
-   globalThis.acceptTransfer = acceptTransfer;
-   globalThis.cancelTransfer = cancelTransfer;`,
-  transferContext,
-);
-
-const sourceCtx = {
-  id: "source", win: fakeWindow(fakeParent("source")),
-  views: new Map(), visibleViewId: null,
-};
-const targetCtx = {
-  id: "target", win: fakeWindow(fakeParent("target")),
-  views: new Map(), visibleViewId: null,
-};
-transferContext.windowsForCheck.set(sourceCtx.id, sourceCtx);
-transferContext.windowsForCheck.set(targetCtx.id, targetCtx);
-const payload = { tab: { id: "s:one", kind: "session", title: "One" } };
-
-const once = transferContext.beginTransfer(sourceCtx, payload);
-assert.deepEqual(transferContext.inspectTransfer(once), payload);
-assert.deepEqual(transferContext.acceptTransfer(targetCtx, once), payload);
-assert.throws(
-  () => transferContext.acceptTransfer(targetCtx, once),
-  /stale transfer token/,
-  "an accepted token cannot be accepted twice",
-);
-
-const cancelled = transferContext.beginTransfer(sourceCtx, payload);
-assert.equal(transferContext.cancelTransfer(sourceCtx, cancelled), true);
-assert.equal(transferContext.inspectTransfer(cancelled), null);
-assert.equal(transferContext.cancelTransfer(sourceCtx, cancelled), false);
-
-const expiring = transferContext.beginTransfer(sourceCtx, payload);
-const expiry = Array.from(timers.values()).at(-1);
-expiry();
-assert.equal(transferContext.inspectTransfer(expiring), null);
-```
-
-- [ ] **Step 2: Run the check and verify transfer functions are absent**
-
-Run: `npm --prefix desktop run check:webtabs`
-
-Expected: FAIL with `TypeError: context.reparentRecord is not a function` or the first missing transfer-source assertion.
-
-- [ ] **Step 3: Implement reversible same-object reparenting**
-
-Add to `desktop/main.js`:
-
-```js
-function reparentRecord(source, target, record) {
-  if (source.views.get(record.id) !== record) throw new Error("source does not own view");
-  if (target.views.has(record.id)) throw new Error("destination already owns tab id");
-  const snapshot = {
-    bounds: record.view.getBounds(),
-    visible: record.view.getVisible(),
-    visibleViewId: source.visibleViewId,
-  };
-  record.view.setVisible(false);
-  source.win.contentView.removeChildView(record.view);
-  source.views.delete(record.id);
-  if (source.visibleViewId === record.id) source.visibleViewId = null;
-  try {
-    target.win.contentView.addChildView(record.view);
-    target.views.set(record.id, record);
-    record.ownerId = target.id;
-    return snapshot;
-  } catch (error) {
-    source.win.contentView.addChildView(record.view);
-    source.views.set(record.id, record);
-    record.ownerId = source.id;
-    source.visibleViewId = snapshot.visibleViewId;
-    record.view.setBounds(snapshot.bounds);
-    record.view.setVisible(snapshot.visible);
-    throw error;
-  }
-}
-
-function restoreRecord(source, target, record, snapshot) {
-  if (target.views.get(record.id) === record) {
-    target.win.contentView.removeChildView(record.view);
-    target.views.delete(record.id);
-    if (target.visibleViewId === record.id) target.visibleViewId = null;
-  }
-  source.win.contentView.addChildView(record.view);
-  source.views.set(record.id, record);
-  record.ownerId = source.id;
-  source.visibleViewId = snapshot.visibleViewId;
-  record.view.setBounds(snapshot.bounds);
-  record.view.setVisible(snapshot.visible);
-}
-```
-
-- [ ] **Step 4: Implement the token state machine and rollback**
-
-Add one registry and fixed expiry:
-
-```js
-const TRANSFER_TTL_MS = 15_000;
-const transfers = new Map();
-
-function transferToken() {
-  return randomUUID();
-}
-
-function scheduleTransferExpiry(tx) {
-  tx.timer = setTimeout(() => rollbackTransfer(tx, "expired"), TRANSFER_TTL_MS);
-}
-
-function finishToken(tx) {
-  clearTimeout(tx.timer);
-  transfers.delete(tx.token);
-}
-
-function beginTransfer(sourceCtx, payload) {
-  if (!payload?.tab?.id) throw new Error("transfer payload requires a tab id");
-  if (payload.tab.kind === "web" && !sourceCtx.views.has(payload.tab.id)) {
-    throw new Error("source does not own web tab");
-  }
-  const token = transferToken();
-  const tx = {
-    token,
-    sourceId: sourceCtx.id,
-    destinationId: null,
-    payload,
-    record: sourceCtx.views.get(payload.tab.id) || null,
-    snapshot: null,
-    status: "prepared",
-    timer: null,
-    detachedWindowId: null,
-  };
-  transfers.set(token, tx);
-  scheduleTransferExpiry(tx);
-  return token;
-}
-
-function inspectTransfer(token) {
-  const tx = transfers.get(token);
-  return tx?.status === "prepared" ? tx.payload : null;
-}
-
-function cancelTransfer(sourceCtx, token) {
-  const tx = transfers.get(token);
-  if (!tx || tx.sourceId !== sourceCtx.id || tx.status !== "prepared") return false;
-  rollbackTransfer(tx, "cancelled");
-  return true;
-}
-
-function acceptTransfer(targetCtx, token) {
-  const tx = transfers.get(token);
-  if (!tx || tx.status !== "prepared") throw new Error("stale transfer token");
-  if (tx.sourceId === targetCtx.id) throw new Error("cross-window accept requires another window");
-  const sourceCtx = windows.get(tx.sourceId);
-  if (!sourceCtx || sourceCtx.win.isDestroyed()) throw new Error("source window unavailable");
-  if (tx.record) tx.snapshot = reparentRecord(sourceCtx, targetCtx, tx.record);
-  tx.destinationId = targetCtx.id;
-  tx.status = "accepted";
-  return tx.payload;
-}
-
-function rollbackTransfer(tx, reason) {
-  if (!transfers.has(tx.token)) return;
-  const sourceCtx = windows.get(tx.sourceId);
-  const targetCtx = tx.destinationId ? windows.get(tx.destinationId) : null;
-  if (tx.record && tx.snapshot && sourceCtx && targetCtx) {
-    restoreRecord(sourceCtx, targetCtx, tx.record, tx.snapshot);
-  }
-  if (targetCtx && !targetCtx.win.isDestroyed()) {
-    targetCtx.win.webContents.send("tab-transfer:rollback", tx.token, tx.payload.tab.id, reason);
-  }
-  if (sourceCtx && !sourceCtx.win.isDestroyed()) {
-    sourceCtx.win.webContents.send("tab-transfer:rollback", tx.token, tx.payload.tab.id, reason);
-  }
-  if (tx.detachedWindowId) {
-    const detached = windows.get(tx.detachedWindowId);
-    if (detached && !detached.win.isDestroyed()) detached.win.close();
-  }
-  finishToken(tx);
-}
-```
-
-Register `tab-transfer:begin`, `inspect`, `accept`, `complete`, and `source-complete`. `complete(ok=true)` must notify the source without consuming the token:
-
-```js
-ipcMain.handle("tab-transfer:cancel", (event, token) => {
-  const sourceCtx = contextForSender(event);
-  return sourceCtx ? cancelTransfer(sourceCtx, token) : false;
-});
-
-ipcMain.handle("tab-transfer:complete", (event, token, ok) => {
-  const targetCtx = contextForSender(event);
-  const tx = transfers.get(token);
-  if (!tx || tx.status !== "accepted" || tx.destinationId !== targetCtx?.id) return false;
-  if (!ok) {
-    rollbackTransfer(tx, "destination rejected insertion");
-    return false;
-  }
-  const sourceCtx = windows.get(tx.sourceId);
-  if (!sourceCtx || sourceCtx.win.isDestroyed()) {
-    rollbackTransfer(tx, "source window unavailable");
-    return false;
-  }
-  tx.status = "awaiting-source";
-  sourceCtx.win.webContents.send("tab-transfer:source-commit", token, tx.payload.tab.id);
-  return true;
-});
-
-ipcMain.handle("tab-transfer:source-complete", (event, token, ok, empty) => {
-  const sourceCtx = contextForSender(event);
-  const tx = transfers.get(token);
-  if (!tx || tx.status !== "awaiting-source" || tx.sourceId !== sourceCtx?.id) return false;
-  if (!ok) {
-    rollbackTransfer(tx, "source removal rejected");
-    return false;
-  }
-  const detached = tx.detachedWindowId ? windows.get(tx.detachedWindowId) : null;
-  if (detached && !detached.win.isDestroyed()) detached.win.show();
-  finishToken(tx);
-  if (empty && !sourceCtx.win.isDestroyed()) sourceCtx.win.close();
-  return true;
-});
-```
-
-On either participating window's `closed` event, call `rollbackTransfer` for every non-final transaction referencing that window before deleting the context.
-
-- [ ] **Step 5: Run the desktop checks**
-
-Run: `npm --prefix desktop run check:webtabs`
-
-Expected: `webtab navigation checks passed`, including same-object identity and reverse-parent rollback.
-
-- [ ] **Step 6: Commit the transaction coordinator**
-
-```bash
-git add desktop/main.js desktop/scripts/check-webtab-navigation.js
-git commit -m "feat(desktop): transact native tab transfers"
-```
-
----
-
-### Task 3: Expose `windowId`, Focus Claiming, and Transaction IPC Through Preload
-
-**Files:**
-- Modify: `desktop/scripts/check-webtab-navigation.js`
-- Modify: `desktop/preload.js:1-31`
-- Modify: `desktop/main.js`
-- Modify: `web/lib/desktop-bridge.ts:17-323`
-- Modify: `web/scripts/check-web-split.mjs`
-
-**Interfaces:**
-- Consumes: Task 2 IPC channels and source-commit/rollback events.
-- Produces: `DesktopBridge.windowId`, `claimWebTabCommand(reqId)`, `tabTransfer.begin/inspect/accept/complete/cancel/detach`, `tabTransfer.onSourceCommit`, `tabTransfer.onRollback`, and `tabTransfer.onPending`.
-
-- [ ] **Step 1: Add failing bridge-contract checks**
-
-In `desktop/scripts/check-webtab-navigation.js`, read `preload.js` and assert:
-
-```js
-const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
-assert.match(preload, /--openprogram-window-id=/);
-assert.match(preload, /windowId,/);
-for (const method of ["begin", "inspect", "accept", "complete", "cancel", "detach"]) {
-  assert.match(preload, new RegExp(`${method}:.*ipcRenderer\\.invoke\\("tab-transfer:${method}"`));
-}
-assert.match(preload, /claimWebTabCommand:.*desktop:claim-webtab-command/);
-assert.match(preload, /tab-transfer:source-commit/);
-assert.match(preload, /tab-transfer:rollback/);
-assert.match(preload, /tab-transfer:pending/);
-```
-
-In `web/scripts/check-web-split.mjs`, add source assertions for the typed contract and focused command guard:
-
-```js
-assert.match(desktopBridgeSource, /readonly windowId: string/);
-assert.match(desktopBridgeSource, /claimWebTabCommand\(reqId: string\): Promise<boolean>/);
-assert.match(desktopBridgeSource, /interface DesktopTabTransferApi/);
-assert.match(desktopBridgeSource, /await bridge\.claimWebTabCommand\(d\.req_id\)/);
-```
-
-- [ ] **Step 2: Run both checks and verify the bridge fields are missing**
-
-Run: `npm --prefix desktop run check:webtabs && npm --prefix web run check:web-split`
-
-Expected: desktop FAIL at `--openprogram-window-id` or web FAIL at `readonly windowId`.
-
-- [ ] **Step 3: Expose a synchronous lifetime `windowId` and transfer methods**
-
-At the top of `desktop/preload.js`, parse the argument once:
-
-```js
-const idArg = process.argv.find((arg) => arg.startsWith("--openprogram-window-id="));
-const windowId = idArg ? idArg.slice("--openprogram-window-id=".length) : "main";
-```
-
-Add to the exposed object:
-
-```js
-windowId,
-claimWebTabCommand: (reqId) =>
-  ipcRenderer.invoke("desktop:claim-webtab-command", reqId),
-tabTransfer: {
-  begin: (payload) => ipcRenderer.invoke("tab-transfer:begin", payload),
-  inspect: (token) => ipcRenderer.invoke("tab-transfer:inspect", token),
-  accept: (token) => ipcRenderer.invoke("tab-transfer:accept", token),
-  complete: (token, ok) => ipcRenderer.invoke("tab-transfer:complete", token, ok),
-  cancel: (token) => ipcRenderer.invoke("tab-transfer:cancel", token),
-  detach: (token) => ipcRenderer.invoke("tab-transfer:detach", token),
-  onSourceCommit: (cb) => {
-    const listener = (_event, token, tabId) => cb(token, tabId);
-    ipcRenderer.on("tab-transfer:source-commit", listener);
-    return () => ipcRenderer.removeListener("tab-transfer:source-commit", listener);
-  },
-  onRollback: (cb) => {
-    const listener = (_event, token, tabId, reason) => cb(token, tabId, reason);
-    ipcRenderer.on("tab-transfer:rollback", listener);
-    return () => ipcRenderer.removeListener("tab-transfer:rollback", listener);
-  },
-  onPending: (cb) => {
-    const listener = (_event, token) => cb(token);
-    ipcRenderer.on("tab-transfer:pending", listener);
-    return () => ipcRenderer.removeListener("tab-transfer:pending", listener);
-  },
-  sourceComplete: (token, ok, empty) =>
-    ipcRenderer.invoke("tab-transfer:source-complete", token, ok, empty),
-},
-```
-
-- [ ] **Step 4: Type the contract and make backend commands atomically focus-owned**
-
-Add these exact types to `web/lib/desktop-bridge.ts`:
+**Bridge additions:**
 
 ```ts
-export type TabDropPlacement =
-  | { kind: "strip"; index: number }
-  | { kind: "group"; groupId: string; memberIndex: number }
-  | { kind: "merge"; targetTabId: string };
+interface DesktopVisibleWebView {
+  id: string;
+  bounds: { x: number; y: number; width: number; height: number };
+}
+
+interface DesktopWebTabApi {
+  syncVisible(items: DesktopVisibleWebView[]): void;
+  // existing ensure/navigate/activate/bounds/show/hide/destroy/back/forward
+}
+
+interface DesktopBridge {
+  readonly isDesktop: true;
+  readonly windowId: string;
+  readonly webTab: DesktopWebTabApi;
+}
+```
+
+- [ ] Add a renderer behavior harness to `check-web-split.mjs`: register two pane bounds in the bridge's local `Map`, flush the scheduler, and assert one `syncVisible` call contains both ids. Remove one and assert the next call contains only the survivor. Do not accept two sequential singleton `show` calls as coverage.
+- [ ] Add group-aware selection checks: for visible web ids `[w:a,w:b]` and `focusedId=w:b`, `visibleWebTab()` returns B; when focus is a session, it returns the first visible web; a hidden web id is ignored.
+- [ ] Run desktop and web checks; expect missing `windowId` / `syncVisible` failures.
+- [ ] Parse `--openprogram-window-id=` once in preload. `createWindow` supplies it through `additionalArguments`.
+- [ ] Expose `webTab.syncVisible`; main routes it through sender ownership and `syncVisibleViews`.
+- [ ] In `desktop-bridge.ts`, replace singleton visibility bookkeeping with `visibleWebBounds: Map<string, Bounds>`. `WebTabPane` registers/removes its bounds, and one microtask/rAF scheduler sends the entire collection. This supports web+web compound panes without one call hiding the other.
+- [ ] Make `visibleWebTab()` inspect the active group's resolved visible panes from `useCenterTabs`. Prefer `group.focusedId` when it is a visible web tab, then the first visible web pane, then an ungrouped active web tab.
+- [ ] Run `npm --prefix desktop run check:webtabs && npm --prefix web run check:web-split`; pass.
+- [ ] Commit: `feat(desktop): synchronize visible web panes`.
+
+### Task 3: Add transient transfer mutations and a crash-recovery journal
+
+**Files:**
+
+- Modify `web/lib/state/center-tabs-store.ts`
+- Modify `web/lib/session-store/index.ts`
+- Create `web/lib/session-draft-persistence.ts`
+- Modify `web/lib/state/files-shared.ts`
+- Modify `web/lib/runtime-bridge/draft-channel-choice.ts`
+- Create `web/lib/tab-transfer-journal.ts`
+- Modify `web/scripts/check-web-split.mjs`
+
+Import `CenterTabGroup` from `center-tab-groups.ts` and `CenterTabsPersistedPayload` from `center-tabs-store.ts`; do not redeclare either. The compound plan must export `CenterTabsPersistedPayload`.
+
+**Transfer payload and exact chat-owned state:**
+
+```ts
+export interface TransferSourcePosition {
+  windowId: string;
+  kind: "tab" | "segment" | "group";
+  groupId?: string;
+  memberIndex?: number;
+  memberIds?: string[];
+  visibleIds?: string[];
+  focusedId?: string;
+}
+
+export interface ChatTransferState {
+  chatKey: string; // CenterTab.sessionId; provisional drafts use local_* unchanged
+  composerDraft?: string; // useSessionStore.composerDrafts[chatKey]
+  composerSettings?: ComposerSettings; // composerSettingsBySession[chatKey]
+  pendingProjectId?: string; // pendingProjectsByChat[chatKey]
+  draftChannelChoice?: PendingChannelChoice; // draftChannelChoiceFor(window, chatKey)
+  wasActive: boolean; // activeChatKey === chatKey, not currentSessionId alone
+  activeComposerInput?: string; // composerInput when wasActive
+  activeComposerSettings?: ComposerSettings; // composerSettings when wasActive
+}
 
 export interface DesktopTransferPayload {
-  tab: CenterTab;
-  sourceGroupId?: string;
-  fileDraft?: { key: string; value: FileDraft };
-  composerDraft?: { key: string; value: string };
-}
-
-export interface DesktopTabTransferApi {
-  begin(payload: DesktopTransferPayload): Promise<string>;
-  inspect(token: string): Promise<DesktopTransferPayload | null>;
-  accept(token: string): Promise<DesktopTransferPayload>;
-  complete(token: string, ok: boolean): Promise<boolean>;
-  cancel(token: string): Promise<boolean>;
-  detach(token: string): Promise<boolean>;
-  sourceComplete(token: string, ok: boolean, empty: boolean): Promise<boolean>;
-  onSourceCommit(cb: (token: string, tabId: string) => void): () => void;
-  onRollback(cb: (token: string, tabId: string, reason: string) => void): () => void;
-  onPending(cb: (token: string) => void): () => void;
-}
-
-export interface DesktopBridge {
-  isDesktop: true;
-  readonly windowId: string;
-  claimWebTabCommand(reqId: string): Promise<boolean>;
-  openExternal(url: string): void;
-  webTab: DesktopWebTabApi;
-  tabTransfer: DesktopTabTransferApi;
-}
-```
-
-At the start of the `webtab.command` branch in `installDesktopMenuHandlers`, claim the request before mutating the local store:
-
-```ts
-void (async () => {
-  if (!(await bridge.claimWebTabCommand(d.req_id!))) return;
-  await handleFocusedWebTabCommand(bridge, d);
-})();
-return;
-```
-
-Move the existing open/active body into `handleFocusedWebTabCommand` without changing its web-tab activation and result behavior.
-
-In `desktop/main.js`, implement a bounded atomic claim registry:
-
-```js
-const claimedWebTabCommands = new Map();
-
-ipcMain.handle("desktop:claim-webtab-command", (event, reqId) => {
-  const ctx = contextForSender(event);
-  const focused = focusedContext();
-  if (!ctx || focused?.id !== ctx.id || typeof reqId !== "string") return false;
-  if (claimedWebTabCommands.has(reqId)) return false;
-  const timer = setTimeout(() => claimedWebTabCommands.delete(reqId), 5_000);
-  claimedWebTabCommands.set(reqId, timer);
-  return true;
-});
-```
-
-- [ ] **Step 5: Run bridge and desktop checks**
-
-Run: `npm --prefix desktop run check:webtabs && npm --prefix web run check:web-split`
-
-Expected: both scripts print their existing `checks passed` messages.
-
-- [ ] **Step 6: Commit the preload and renderer contract**
-
-```bash
-git add desktop/main.js desktop/preload.js desktop/scripts/check-webtab-navigation.js web/lib/desktop-bridge.ts web/scripts/check-web-split.mjs
-git commit -m "feat(desktop): expose window transfer bridge"
-```
-
----
-
-### Task 4: Add Per-window Persistence and Transfer-safe Store Actions
-
-**Files:**
-- Modify: `web/scripts/check-web-split.mjs:17-499`
-- Modify: `web/lib/state/center-tabs-store.ts:20-599`
-- Modify: `web/lib/session-store/index.ts:77-180, 307-349, 713-739`
-- Modify: `web/lib/state/files-shared.ts:140-160`
-
-**Interfaces:**
-- Consumes: `window.openprogramDesktop.windowId` and `TabDropPlacement` from Task 3.
-- Produces: `CenterTabGroup`, `TransferredTabPayload`, `insertTransferredTab(payload, placement): boolean`, `removeTransferredTab(id): { ok: boolean; empty: boolean }`, `snapshotFileDraft(tab)`, `restoreFileDraft(payload)`, and `importComposerDraft(key, value)`.
-
-- [ ] **Step 1: Add failing behavior checks for key migration, insertion, and non-close removal**
-
-Extend `web/scripts/check-web-split.mjs` with a desktop bridge before importing a query-isolated store:
-
-```js
-globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "main" };
-values.set("centerTabs", JSON.stringify({
-  tabs: [{ id: "s:legacy", kind: "session", title: "Legacy", sessionId: "legacy" }],
-  activeId: "s:legacy",
-}));
-const { useCenterTabs: mainTabs, sessionAckIsActive: mainAck } = await import(
-  "../lib/state/center-tabs-store.ts?window-main"
-);
-assert.equal(mainTabs.getState().activeId, "s:legacy");
-assert.ok(values.has("centerTabs:main"));
-assert.equal(values.has("centerTabs"), false);
-
-globalThis.window.openprogramDesktop.windowId = "secondary";
-const { useCenterTabs: secondaryTabs } = await import(
-  "../lib/state/center-tabs-store.ts?window-secondary"
-);
-assert.deepEqual(secondaryTabs.getState().tabs, []);
-
-mainTabs.setState({
-  tabs: [{
-    id: "s:local_transfer", kind: "session", title: "Draft",
-    sessionId: "local_transfer", draft: true,
-  }],
-  activeId: "s:local_transfer",
-  groups: [],
-  splitWebTabId: null,
-});
-const removed = mainTabs.getState().removeTransferredTab("s:local_transfer");
-assert.deepEqual(removed, { ok: true, empty: true });
-assert.deepEqual(mainTabs.getState().tabs, []);
-assert.equal(mainTabs.getState().activeId, null);
-assert.equal(mainAck("local_transfer"), false,
-  "a removed local draft remains inactive without a close tombstone or fallback tab");
-
-mainTabs.setState({
-  tabs: [{ id: "s:running", kind: "session", title: "Running", sessionId: "running" }],
-  activeId: "s:running",
-  groups: [],
-});
-assert.deepEqual(
-  mainTabs.getState().removeTransferredTab("s:running"),
-  { ok: true, empty: true },
-);
-assert.equal(mainAck("running"), false,
-  "a late source acknowledgement must not recreate a transferred session");
-
-const web = {
-  id: "w:https://example.com/", kind: "web", title: "Example", url: "https://example.com/",
-};
-assert.equal(secondaryTabs.getState().insertTransferredTab({ tab: web }, { kind: "strip", index: 0 }), true);
-assert.equal(secondaryTabs.getState().insertTransferredTab({ tab: web }, { kind: "strip", index: 1 }), false);
-assert.equal(secondaryTabs.getState().tabs.length, 1);
-```
-
-Add group-capacity checks:
-
-```js
-secondaryTabs.setState({
-  tabs: [web,
-    { id: "s:a", kind: "session", title: "A", sessionId: "a" },
-    { id: "s:b", kind: "session", title: "B", sessionId: "b" },
-    { id: "s:c", kind: "session", title: "C", sessionId: "c" },
-  ],
-  groups: [{ id: "g:full", memberIds: [web.id, "s:a", "s:b"], visibleIds: [web.id, "s:a"], focusedId: web.id }],
-});
-assert.equal(
-  secondaryTabs.getState().insertTransferredTab(
-    { tab: { id: "s:c", kind: "session", title: "C", sessionId: "c" } },
-    { kind: "group", groupId: "g:full", memberIndex: 3 },
-  ),
-  false,
-);
-```
-
-- [ ] **Step 2: Run the store check and verify the unkeyed store or missing actions fail**
-
-Run: `npm --prefix web run check:web-split`
-
-Expected: FAIL because `centerTabs:main` is absent or `removeTransferredTab` is undefined.
-
-- [ ] **Step 3: Key persisted state by the desktop window and migrate only the primary once**
-
-Add storage helpers to `center-tabs-store.ts`:
-
-```ts
-function desktopWindowId(): string | null {
-  if (typeof window === "undefined") return null;
-  const desktop = (window as unknown as {
-    openprogramDesktop?: { isDesktop?: boolean; windowId?: string };
-  }).openprogramDesktop;
-  return desktop?.isDesktop && typeof desktop.windowId === "string"
-    ? desktop.windowId
-    : null;
-}
-
-function windowStorageKey(base: string): string {
-  const id = desktopWindowId();
-  return id ? `${base}:${id}` : base;
-}
-
-function readWindowPayload(base: string): string | null {
-  const key = windowStorageKey(base);
-  let raw = localStorage.getItem(key);
-  if (!raw && desktopWindowId() === "main") {
-    raw = localStorage.getItem(base);
-    if (raw) {
-      localStorage.setItem(key, raw);
-      localStorage.removeItem(base);
-    }
-  }
-  return raw;
-}
-```
-
-Use `readWindowPayload(LS_KEY)` / `windowStorageKey(LS_KEY)` and the same pair for `SPLIT_STORAGE_KEY` in all reads and writes. Keep non-desktop browser behavior unkeyed.
-
-- [ ] **Step 4: Add groups and transfer-safe insertion/removal**
-
-Add the state model:
-
-```ts
-export interface CenterTabGroup {
-  id: string;
-  memberIds: string[];
-  visibleIds: string[];
-  focusedId: string;
+  tabs: CenterTab[];
+  source: TransferSourcePosition;
+  fileDrafts: Array<{ key: string; value: FileDraft }>;
+  chats: ChatTransferState[];
 }
 
 export type TabDropPlacement =
-  | { kind: "strip"; index: number }
-  | { kind: "group"; groupId: string; memberIndex: number }
-  | { kind: "merge"; targetTabId: string };
+  | { kind: "before"; targetTabId: string }
+  | { kind: "merge"; targetTabId: string; groupId?: string; memberIndex?: number }
+  | { kind: "after"; targetTabId: string }
+  | { kind: "strip-end" };
 
-export interface TransferredTabPayload {
-  tab: CenterTab;
-  sourceGroupId?: string;
-  fileDraft?: { key: string; value: FileDraft };
-  composerDraft?: { key: string; value: string };
+export interface SessionTransferSnapshot {
+  activeChatKey: string | null;
+  currentSessionId: string | null;
+  composerInput: string;
+  composerSettings: ComposerSettings;
+  composerDrafts: Record<string, string>;
+  composerSettingsBySession: Record<string, ComposerSettings>;
+  pendingProjectsByChat: Record<string, string>;
+  draftChannelChoices: Record<string, PendingChannelChoice>;
+}
+
+export interface PersistedSessionDraftState {
+  version: 1;
+  composerDrafts: Record<string, string>;
+  composerSettingsBySession: Record<string, ComposerSettings>;
+  pendingProjectsByChat: Record<string, string>;
+  draftChannelChoices: Record<string, PendingChannelChoice>;
+}
+
+export function sessionDraftStorageKey(windowId?: string | null): string {
+  const resolvedWindowId = windowId || desktopWindowId() || "main";
+  return `openprogram.sessionDraftState:${resolvedWindowId}`;
+}
+export function readSessionDraftState(): PersistedSessionDraftState;
+export function replaceSessionDraftState(state: PersistedSessionDraftState): void;
+export function updateSessionDraftState(
+  update: (state: PersistedSessionDraftState) => PersistedSessionDraftState,
+): PersistedSessionDraftState;
+
+export interface SerializedWebViewBookkeeping {
+  liveIds: string[];
+  readyIds: string[];
+  visibleBounds: Array<{ id: string; bounds: Bounds }>;
+}
+
+export interface TransferJournalEntry {
+  version: 1;
+  token: string;
+  role: "source" | "destination";
+  phase: "staged" | "committing" | "rolling-back";
+  payload: DesktopTransferPayload;
+  placement?: TabDropPlacement;
+  beforeCenterTabs: CenterTabsPersistedPayload;
+  afterCenterTabs: CenterTabsPersistedPayload;
+  beforeSession: SessionTransferSnapshot;
+  afterSession: SessionTransferSnapshot;
+  beforeFileDrafts: Array<{ key: string; existed: boolean; value?: FileDraft }>;
+  afterFileDrafts: Array<{ key: string; existed: boolean; value?: FileDraft }>;
+  beforeBridge: SerializedWebViewBookkeeping;
+  afterBridge: SerializedWebViewBookkeeping;
+}
+
+export interface TransferJournalFile {
+  version: 1;
+  entries: Record<string, TransferJournalEntry>;
 }
 ```
 
-Persist `groups` beside `tabs` and normalize restore by removing missing member ids, rejecting duplicate membership, truncating to three members, and dissolving one-member groups.
+Persist that file only at `openprogram.tabTransferJournal:<windowId>`. Store callback functions such as ready waiters only in the in-memory recovery object; the journal records ids/ready flags/bounds, and a reloaded renderer recreates waiters through the existing `ensure` path.
 
-Add these exact state signatures:
+`writeTransferJournal` returns `false` on serialization/quota failure and verifies the token can be read back before mutation. A failed journal write aborts staging and reports destination/source failure to main; no transient state may change without a durable recovery entry.
 
-```ts
-groups: CenterTabGroup[];
-insertTransferredTab: (
-  payload: TransferredTabPayload,
-  placement: TabDropPlacement,
-) => boolean;
-removeTransferredTab: (id: string) => { ok: boolean; empty: boolean };
-```
+Pending attachments are already profile-shared in IndexedDB under the stable chat key; transfer must not call `deleteAttachments` or mark the attachment owner closed. Long-paste entries are profile-shared in `composerPasteStore` and remain referenced by `composerDrafts`; transfer must not call `pasteStore.retainOnly`. These stores are not duplicated into the payload.
 
-Keep transfer suppression distinct from close tombstones:
+**Store/session APIs:**
 
 ```ts
-const transferredSessionAckSuppressions = new Set<string>();
+validateTransferredTabs(payload: DesktopTransferPayload, placement: TabDropPlacement):
+  | { ok: true; after: CenterTabsPersistedPayload }
+  | { ok: false; reason: "duplicate" | "group-full" | "invalid"; duplicateId?: string };
+insertTransferredTabs(payload: DesktopTransferPayload, placement: TabDropPlacement, options: { persist: false }): { ok: boolean; before: CenterTabsPersistedPayload; after: CenterTabsPersistedPayload };
+removeTransferredTabs(ids: string[], options: { persist: false }): { ok: boolean; empty: boolean; before: CenterTabsPersistedPayload; after: CenterTabsPersistedPayload };
+replaceCenterTabsPayload(payload: CenterTabsPersistedPayload, options: { persist: boolean }): void;
+persistCurrentCenterTabsPayload(): void;
+
+snapshotSessionTransfer(chatKeys: string[]): SessionTransferSnapshot;
+applySessionTransfer(snapshot: SessionTransferSnapshot, options: { persist: boolean }): void;
+persistCurrentSessionTransfer(chatKeys: string[]): void;
 ```
 
-`removeTransferredTab` adds a transferred non-local session id to this set. An explicit `openSessionTab` removes the id from both `transferredSessionAckSuppressions` and the existing `closedSessionAckTombstones`. `sessionAckIsActive` returns `false` when either set contains the id. This prevents a late source `chat_ack` from recreating the moved tab without representing the move as a user close.
+`persist:false` changes Zustand/in-memory maps only. It must not write `centerTabs:<windowId>` or `openprogram.sessionDraftState:<windowId>`. Every keyed map still belongs in the journal so reload can reconstruct transient state.
 
-`removeTransferredTab` must be a separate implementation, not a call to `closeTab`:
+`session-draft-persistence.ts` becomes the normal durable owner of the four keyed maps. Main-window first read migrates legacy `composerDrafts` and `composerSettings` blobs into `openprogram.sessionDraftState:main`, then removes only those two legacy keys after the new value round-trips. Secondary windows start with an empty state and receive entries only through normal edits or committed transfer. `useSessionStore` composer/pending-project setters and `setDraftChannelChoice`/`dropDraftChannelChoice`/`switchDraftChannelChoice` all update this single per-window value without overwriting fields owned by the other module.
 
-```ts
-removeTransferredTab: (id) => {
-  let result = { ok: false, empty: false };
-  set((s) => {
-    const index = s.tabs.findIndex((tab) => tab.id === id);
-    if (index < 0) return {};
-    const transferred = s.tabs[index];
-    if (
-      transferred.kind === "session" &&
-      transferred.sessionId &&
-      !transferred.sessionId.startsWith("local_")
-    ) {
-      transferredSessionAckSuppressions.add(transferred.sessionId);
-    }
-    const tabs = s.tabs.filter((tab) => tab.id !== id);
-    const groups = s.groups.flatMap((group) => {
-      const memberIds = group.memberIds.filter((memberId) => memberId !== id);
-      if (memberIds.length < 2) return [];
-      const visibleIds = group.visibleIds.filter((memberId) => memberId !== id).slice(0, 2);
-      return [{
-        ...group,
-        memberIds,
-        visibleIds,
-        focusedId: memberIds.includes(group.focusedId) ? group.focusedId : memberIds[0],
-      }];
-    });
-    const activeId = s.activeId === id
-      ? (tabs[index] ?? tabs[index - 1])?.id ?? null
-      : s.activeId;
-    const splitWebTabId = s.splitWebTabId === id ? null : s.splitWebTabId;
-    persist({ tabs, groups, activeId });
-    persistSplit({ tabId: splitWebTabId, ratio: s.splitRatio });
-    result = { ok: true, empty: tabs.length === 0 };
-    return { tabs, groups, activeId, splitWebTabId };
-  });
-  return result;
-},
-```
+All operations are atomic for `payload.tabs`. A whole group transfers all members in member order or none. A two-member group may merge into one normal tab; any result above three rejects before journal or transient mutation.
 
-`insertTransferredTab` must first reject an existing id and a full group, then insert at the clamped strip/member index and persist once. A `merge` placement creates a two-member group around `targetTabId`; a one-member residual group is never persisted.
+- [ ] Add pure journal tests to `check-web-split.mjs`: write/read/update/delete two token entries under one window key; corrupt JSON returns an empty versioned journal; another `windowId` cannot see it.
+- [ ] Force `localStorage.setItem` to throw and to silently fail read-back. Assert journal write returns false, no `{persist:false}` mutation runs, and the transaction takes its normal rejection/rollback path.
+- [ ] Create main and secondary query-isolated stores. Assert main migrates legacy data into `centerTabs:main`, secondary uses `centerTabs:secondary`, both payloads include groups/split, and `CenterTabsPersistedPayload` is exported.
+- [ ] Stage destination insertion with `{persist:false}`. Assert Zustand shows the transferred members but `centerTabs:secondary` and `openprogram.sessionDraftState:secondary` remain byte-for-byte unchanged; only the destination journal contains before/after.
+- [ ] Stage source removal with `{persist:false}`. Assert no close tombstone, NTP fallback, `dropChatDraft`, `deleteAttachments`, channel deletion, paste GC, or durable payload change occurs.
+- [ ] Build a draft session with `activeChatKey="local_one"`, `composerInput`, `composerDrafts.local_one`, `composerSettings`, `composerSettingsBySession.local_one`, `pendingProjectsByChat.local_one`, and a keyed `PendingChannelChoice`. Snapshot, stage transfer, roll back, and assert every field deep-equals its original value.
+- [ ] Exercise normal persistence outside transfer: set composer text/settings, pending project, and keyed channel choice in window A; construct a fresh A store and assert all four maps restore from `openprogram.sessionDraftState:A`. Construct B and assert it is isolated. Verify legacy composer blobs migrate only into main once.
+- [ ] Commit a draft transfer A→B, discard both renderer stores/journals, and reload. Assert A no longer contains that chat key and B restores its composer draft, settings, pending project, and channel choice from its normal `openprogram.sessionDraftState:<windowId>` key. Rollback instead preserves A and leaves B unchanged.
+- [ ] Insert a whole two-member group before/after/merge; assert order, `visibleIds`, `focusedId`, contiguity, and source `memberIndex` metadata. Reject duplicate/fourth-member cases before journal/draft changes.
+- [ ] Simulate renderer reload by discarding all in-memory stores/maps while retaining committed storage plus the journal. Test recovery for main statuses `committed`, `awaiting-source`, `destination-staged`, `rolled-back`, and `stale`:
+  - `committed`: idempotently apply/persist `after*`, clear accepted state and journal;
+  - destination pre-commit: reapply `after*` with `persist:false`, rebuild `acceptedTransfers`, and await commit/undo;
+  - source `awaiting-source`: reapply transient `after*`, rebuild recovery, and resume `sourceRemoved`;
+  - source merely `prepared`, `rolled-back`, or `stale`: apply/persist `before*`, clear accepted state and journal.
+- [ ] Simulate crashes (a) after journal write before mutation, (b) after transient mutation, (c) after phase becomes `committing` before durable writes, and (d) after durable writes before journal deletion. Recovery must converge to `before*` for non-committed main status and `after*` for committed status, then delete the journal exactly once.
+- [ ] Run `npm --prefix web run check:web-split`; expect missing transient/journal APIs.
+- [ ] Implement journal writes before any provisional mutation. On commit set `phase="committing"`, persist `afterCenterTabs` and write the four `afterSession` maps through `replaceSessionDraftState`, then delete accepted-map and journal entries. On rollback set `phase="rolling-back"`, restore `beforeCenterTabs` plus `beforeSession` normal persistence, then delete accepted-map and journal entries. Each step is idempotent.
+- [ ] The shared active-session effect observes committed/staged active tab changes and calls existing `activateSession`; the pathname effect continues to call `setCurrentConv` or `setCurrentDraft` using `activeChatKey` for provisional drafts.
+- [ ] Run `npm --prefix web run check:web-split && npm --prefix web run check:multi-draft`; pass.
+- [ ] Commit: `feat(desktop): journal provisional tab transfers`.
 
-- [ ] **Step 5: Preserve unsent composer text and dirty file buffers in the acknowledged payload**
-
-In `web/lib/state/files-shared.ts`, add:
-
-```ts
-export function snapshotFileDraft(tab: {
-  kind: string; projectId?: string; path?: string;
-}): { key: string; value: FileDraft } | undefined {
-  if (tab.kind !== "file" || !tab.projectId || !tab.path) return undefined;
-  const key = fileDraftKey(tab.projectId, tab.path);
-  const value = fileDrafts.get(key);
-  return value ? { key, value: { ...value } } : undefined;
-}
-
-export function restoreFileDraft(snapshot?: { key: string; value: FileDraft }): void {
-  if (snapshot) fileDrafts.set(snapshot.key, { ...snapshot.value });
-}
-```
-
-In `web/lib/session-store/index.ts`, add to the state interface and implementation:
-
-```ts
-importComposerDraft: (key: string, value: string) => void;
-```
-
-```ts
-importComposerDraft: (key, value) =>
-  set((state) => {
-    const composerDrafts = { ...state.composerDrafts, [key]: value };
-    persistComposerDrafts(composerDrafts);
-    return state.activeChatKey === key
-      ? { composerDrafts, composerInput: value }
-      : { composerDrafts };
-  }),
-```
-
-The source keeps both drafts until source-complete succeeds. The destination restores them immediately before inserting the transferred tab.
-
-- [ ] **Step 6: Run the focused store checks**
-
-Run: `npm --prefix web run check:web-split && npm --prefix web run check:multi-draft`
-
-Expected: `web-split checks passed` and `multi-draft checks passed`.
-
-- [ ] **Step 7: Commit per-window state and transfer actions**
-
-```bash
-git add web/lib/state/center-tabs-store.ts web/lib/session-store/index.ts web/lib/state/files-shared.ts web/scripts/check-web-split.mjs
-git commit -m "feat(desktop): persist tabs per window"
-```
-
----
-
-### Task 5: Wire Destination Accept, Source Removal, and Rollback in the Renderer
+### Task 4: Implement the pre-commit main-process transaction
 
 **Files:**
-- Modify: `web/lib/desktop-bridge.ts`
-- Modify: `web/scripts/check-web-split.mjs`
 
-**Interfaces:**
-- Consumes: Task 3 transfer bridge and Task 4 `insertTransferredTab` / `removeTransferredTab` / draft helpers.
-- Produces: `buildTransferPayload(tab)`, `acceptTransferToken(token, placement)`, `forgetTransferredWebView(id)`, and idempotent transaction listeners installed by `installDesktopMenuHandlers()`.
+- Modify `desktop/main.js`
+- Modify `desktop/scripts/check-webtab-navigation.js`
 
-- [ ] **Step 1: Add failing source checks for acknowledgement ordering and no close path**
+**States and commit boundary:**
 
-Append to `web/scripts/check-web-split.mjs`:
+```text
+prepared
+  -> destination-staged       (native records reparented; destination renderer inserted provisionally)
+  -> awaiting-source          (destination acknowledged staging; main requests source removal)
+  -> committed                (source reports ok; main immediately clears timer/token)
 
-```js
-assert.match(desktopBridgeSource, /function forgetTransferredWebView\(id: string\)/);
-assert.match(desktopBridgeSource, /insertTransferredTab\(payload, placement\)/);
-const insertTransferredIndex = desktopBridgeSource.indexOf(
-  "insertTransferredTab(payload, placement)",
-);
-const acknowledgeDestinationIndex = desktopBridgeSource.indexOf(
-  "bridge.tabTransfer.complete(token, true)",
-);
-assert.ok(insertTransferredIndex >= 0 && acknowledgeDestinationIndex > insertTransferredIndex,
-  "destination insertion must precede acknowledgement");
-assert.match(desktopBridgeSource, /removeTransferredTab\(tabId\)/);
-assert.doesNotMatch(
-  desktopBridgeSource,
-  /onSourceCommit[\s\S]*closeTab\(/,
-  "transfer source removal must not use closeTab",
-);
-assert.match(desktopBridgeSource, /bridge\.tabTransfer\.sourceComplete\(token, result\.ok, result\.empty\)/);
-assert.match(desktopBridgeSource, /onRollback[\s\S]*removeTransferredTab/);
+Any state before committed -> rolling-back -> deleted
+committed -> never rolling-back
 ```
 
-- [ ] **Step 2: Run the check and confirm the transfer listener is absent**
+`TransferTransaction` stores `token`, `sourceId`, `destinationId`, payload, only the native records that actually exist, their source snapshots, locked record ids, status, timer, and optional detached window id. A web tab with no record has metadata in the transaction but no reparent operation.
 
-Run: `npm --prefix web run check:web-split`
+**IPC:**
 
-Expected: FAIL at `function forgetTransferredWebView`.
+- `tab-transfer:prepare` is synchronous (`ipcMain.on` + `event.returnValue`) and returns an opaque token.
+- `tab-transfer:inspect`, `accept`, `reject`, `status`, `journal-opened`, `journal-finalized`, `destination-ready`, `source-removed`, `destination-undone`, `cancel`, `detach`, and `claim-pending` are async handlers.
+- Events: `tab-transfer:remove-source`, `tab-transfer:undo-destination`, `tab-transfer:finalize-orphaned`, `tab-transfer:committed`, `tab-transfer:rejected`, and `tab-transfer:rolled-back`.
 
-- [ ] **Step 3: Build payloads without destructive source cleanup**
+- [ ] Build an executable fake-window transaction harness in `check-webtab-navigation.js`. Use two records, fake timers, fake renderer callbacks, and an ordered trace array.
+- [ ] Test `tab-transfer-store.js` against a `mkdtemp` directory: atomic save/load, truncated/corrupt primary fallback to an empty versioned file, and failure before rename retaining the prior decision. Restart the VM/main coordinator from disk and assert `status(token)` still returns its terminal decision.
+- [ ] Success trace must be exactly: destination validation, native destination ownership, destination provisional insertion, destination-ready, source reversible removal, main committed, destination/source durable finalize. Assert the timeout and active token are cleared at main committed, a non-rollback `committed` receipt remains, and it disappears only after both source and destination call `journal-finalized` and both acknowledgements are durably recorded.
+- [ ] Invoke timeout after committed and call rollback manually; assert neither changes owner/store trace. `rollbackTransfer` must reject `status === "committed"`.
+- [ ] Source-failure trace must include source recovery, destination undo acknowledgement, native reparent-to-source, and token deletion. Assert destination tabs/imported drafts/bookkeeping are absent after undo.
+- [ ] Destination rollback trace must be exactly: `forgetTransferredWebView`/clear ready+bounds, stale store-subscription `webtab:destroy` rejected by main, transient store/session undo, destination-undone acknowledgement, native reparent-to-source, source bridge restore. Assert `webContents.close()` is never called.
+- [ ] Race test: advance timeout while the source callback is pending, then deliver source `ok=true`. Main returns `false`; fake source restores its recovery; native owner is source. This explicitly prevents “source deleted, main only reparents view”.
+- [ ] Simulate crash after source `journal-finalized` is durably acknowledged but before destination acknowledgement. Reload main from `tab-transfers.json`; assert status remains committed/rolled-back, `finalizedRoles=["source"]`, source acknowledgement is idempotent, destination can acknowledge, and only that second durable acknowledgement deletes the decision. Repeat with destination first.
+- [ ] Mark a committed source as empty. Assert `sourceRemoved(ok=true)` does not close it; a destination finalization does not close it; only a successful durable source `journal-finalized` acknowledgement closes it. Force the acknowledgement write to fail and assert the window remains open for retry.
+- [ ] Destroy the destination after its journal opens, then roll back. Assert main delegates `finalize-orphaned(destination,destinationWindowId)` to the source renderer, the destination's keyed journal is restored/deleted, the delegated acknowledgement is durable, and the terminal decision is removed. Repeat with a destroyed source and with both renderers gone; in the last case restart main plus one renderer and complete both orphan roles through `pending-terminal`. A role that never called `journal-opened` must not appear in `requiredRoles`.
+- [ ] Test destination failure, token reuse, cancellation, 15-second expiry, source/destination close, and a failed second-record reparent. Atomic reparent restores the first record if the second fails.
+- [ ] Test `reject`: duplicate rejection activates/reuses the destination id, returns `reason="duplicate"` plus `duplicateId`, notifies source, clears its prepared coordinator, and deletes the token without reparenting. Full-group rejection returns `reason="group-full"`, leaves both stores unchanged, notifies source, and deletes the token.
+- [ ] Test web metadata with no source native record: prepare/accept/commit succeeds with `records=[]`; destination first visibility calls existing `ensure` once. If a record exists, identity reparent assertions remain mandatory.
+- [ ] Run `npm --prefix desktop run check:webtabs`; expect missing transaction failures.
+- [ ] Add `validateTransferPayload(ctx, payload)`: accept one to three unique tabs; allow only known tab kinds; cap ids/titles at 4 KiB, URL/path/project/session fields at 16 KiB, and each draft value at 2 MiB; require group metadata to match those ids; and derive `sourceId` from `event.sender` instead of trusting `payload.source.windowId`. For each web id, include `ctx.views.get(id)` when present and reject only when an existing record is owned elsewhere; absence is valid.
+- [ ] Implement `reparentRecords(source,target,records)` and `restoreRecords(...)` with snapshots for bounds, visibility, and each context's `visibleViewIds`. Move the same objects; never load or close them.
+- [ ] Mark every moved native id as transaction-locked from accept through commit/rollback. All ordinary source or destination `webtab:destroy`/hide/bounds/navigation handlers reject locked ids; transaction helpers alone may forget/reparent them. Clear locks only after final commit or native restore.
+- [ ] `tab-transfer:reject` is allowed only for the destination context that inspected the opaque token. It sends the reason/duplicate id to source, clears the timer/token, and performs no native/store mutation. `tab-transfer:status` returns only `{ status, sourceId, destinationId }` needed by a journal owner; unrelated window ids receive `null`.
+- [ ] `destination-ready(ok=true)` sets `awaiting-source` and sends `remove-source`. It does not consume the token.
+- [ ] `source-removed(ok=true)` first atomically writes the `committed` decision to `tab-transfers.json`. Only after that succeeds, clear the timer/active transaction and send destination/source `committed`; show a detached destination, but do not close an empty source yet. If durable decision write fails, return false and take the pre-commit rollback path. There is no rollback-capable state after the committed decision reaches disk.
+- [ ] `source-removed(ok=false)` calls pre-commit rollback. A stale/raced `source-removed` returns `false`; renderer is responsible for immediate local recovery.
+- [ ] Pre-commit rollback first atomically writes a `rolled-back` decision whose `requiredRoles` are the roles recorded by `journal-opened`, then sends `undo-destination` and waits for the renderer to forget bridge bookkeeping and undo transient store/session state before `destination-undone`. Only then restore native records/source bookkeeping, close an uncommitted hidden window, and clear active timer/token/locks. If the destination is destroyed or misses the 2-second undo deadline, restore native ownership directly and enqueue its required journal role for orphan finalization by a surviving renderer; do not mark it finalized merely because the window disappeared.
+- [ ] Load `tab-transfers.json` when main initializes its coordinator. `status(token)` consults active transfers, then durable decisions, and returns results only to source/destination participants or a renderer assigned orphan cleanup. `journal-finalized(token, role)` atomically adds the role to `finalizedRoles` before returning true. If `sourceEmpty` and the acknowledged role is source, close that source window only after this durable write. When every dynamic required role is present, atomically delete the decision. A pre-mutation rejection has no journal/decision and is deleted immediately after notification.
+- [ ] Add `pending-terminal(windowId)` to return both the caller's unfinished roles and orphaned roles assigned for cleanup, including the journal owner's `windowId`. It lets a reloaded renderer finish an acknowledgement if it already cleared its journal immediately before crashing and lets any live renderer durably finalize a destroyed participant's keyed journal. The renderer verifies normal committed storage matches the decision outcome before acknowledging.
+- [ ] Run the behavior harness; every trace passes.
+- [ ] Commit: `feat(desktop): transact tab transfers`.
 
-Add to `web/lib/desktop-bridge.ts`:
-
-```ts
-export function forgetTransferredWebView(id: string): void {
-  liveViewIds.delete(id);
-  setWebTabReady(id, false);
-  webTabReadyWaiters.delete(id);
-}
-
-export function buildTransferPayload(tab: CenterTab): DesktopTransferPayload {
-  const composerDraft = tab.kind === "session" && tab.sessionId
-    ? (() => {
-        const value = useSessionStore.getState().composerDrafts[tab.sessionId!];
-        return value === undefined ? undefined : { key: tab.sessionId!, value };
-      })()
-    : undefined;
-  return {
-    tab,
-    fileDraft: snapshotFileDraft(tab),
-    composerDraft,
-  };
-}
-```
-
-- [ ] **Step 4: Add idempotent destination accept and transaction listeners**
-
-Add a placement map keyed by token so rollback can remove only a destination insertion created by this transaction:
-
-```ts
-const acceptedTransfers = new Map<string, string>();
-
-export async function acceptTransferToken(
-  bridge: DesktopBridge,
-  token: string,
-  placement: TabDropPlacement,
-): Promise<boolean> {
-  const preview = await bridge.tabTransfer.inspect(token);
-  if (!preview) return false;
-  const state = useCenterTabs.getState();
-  if (state.tabs.some((tab) => tab.id === preview.tab.id)) return false;
-  if (placement.kind === "group") {
-    const group = state.groups.find((item) => item.id === placement.groupId);
-    if (!group || group.memberIds.length >= 3) return false;
-  }
-  const payload = await bridge.tabTransfer.accept(token);
-  restoreFileDraft(payload.fileDraft);
-  if (payload.composerDraft) {
-    useSessionStore.getState().importComposerDraft(
-      payload.composerDraft.key,
-      payload.composerDraft.value,
-    );
-  }
-  const inserted = useCenterTabs.getState().insertTransferredTab(payload, placement);
-  if (!inserted) {
-    await bridge.tabTransfer.complete(token, false);
-    return false;
-  }
-  acceptedTransfers.set(token, payload.tab.id);
-  const committed = await bridge.tabTransfer.complete(token, true);
-  if (!committed) {
-    useCenterTabs.getState().removeTransferredTab(payload.tab.id);
-    acceptedTransfers.delete(token);
-  }
-  return committed;
-}
-```
-
-Inside `installDesktopMenuHandlers()` install listeners once:
-
-```ts
-bridge.tabTransfer.onSourceCommit((token, tabId) => {
-  const tab = useCenterTabs.getState().tabs.find((item) => item.id === tabId);
-  if (tab?.kind === "web") {
-    forgetTransferredWebView(tabId);
-  }
-  const result = useCenterTabs.getState().removeTransferredTab(tabId);
-  if (result.ok && tab?.kind === "file" && tab.projectId && tab.path) {
-    fileDrafts.delete(fileDraftKey(tab.projectId, tab.path));
-  }
-  void bridge.tabTransfer.sourceComplete(token, result.ok, result.empty);
-});
-
-bridge.tabTransfer.onRollback((token, tabId) => {
-  if (acceptedTransfers.get(token) !== tabId) return;
-  useCenterTabs.getState().removeTransferredTab(tabId);
-  acceptedTransfers.delete(token);
-});
-
-bridge.tabTransfer.onPending((token) => {
-  void acceptTransferToken(bridge, token, { kind: "strip", index: 0 });
-});
-```
-
-Only source-complete removes the source tab. A normal source store subscription may subsequently issue a stale `webtab:destroy`; Task 1 ownership checks make it a no-op, while `forgetTransferredWebView` prevents repeated attempts.
-
-- [ ] **Step 5: Run renderer checks**
-
-Run: `npm --prefix web run check:web-split && npm --prefix web run check:center-tabs`
-
-Expected: both scripts print their `checks passed` messages.
-
-- [ ] **Step 6: Commit renderer transaction coordination**
-
-```bash
-git add web/lib/desktop-bridge.ts web/scripts/check-web-split.mjs
-git commit -m "feat(desktop): acknowledge renderer tab transfers"
-```
-
----
-
-### Task 6: Add Native Cross-window Drop, Merge Targets, Keyboard Move, and Hidden-window Detach
+### Task 5: Expose synchronous preparation, renderer staging, recovery, and cleanup
 
 **Files:**
-- Modify: `web/scripts/check-center-tabs.mjs:16-158`
-- Modify: `web/components/center-tabs/center-tab-strip.tsx:21-452`
-- Modify: `web/components/center-tabs/center-tabs.module.css`
-- Modify: `desktop/scripts/check-webtab-navigation.js`
-- Modify: `desktop/main.js`
 
-**Interfaces:**
-- Consumes: `buildTransferPayload`, `acceptTransferToken`, `DesktopBridge.tabTransfer`, `TabDropPlacement`, and `createWindow({ show, transferToken })`.
-- Produces: `application/x-openprogram-tab-transfer` drag tokens, strip/group merge placement, outside-drop detach, `Shift+F10` move commands, and `detachTransfer(sourceCtx, token)`.
+- Modify `desktop/preload.js`
+- Modify `web/lib/desktop-bridge.ts`
+- Modify `web/lib/tab-drag-coordinator.ts`
+- Modify `web/scripts/check-web-split.mjs`
+- Modify `desktop/scripts/check-webtab-navigation.js`
 
-- [ ] **Step 1: Add failing static drag and keyboard checks**
-
-Append to `web/scripts/check-center-tabs.mjs`:
-
-```js
-assert.match(strip, /const TAB_TRANSFER_MIME = "application\/x-openprogram-tab-transfer"/);
-assert.match(strip, /draggable=\{true\}/);
-assert.match(strip, /onDragStart=/);
-assert.match(strip, /dataTransfer\.setData\(TAB_TRANSFER_MIME, token\)/);
-assert.match(strip, /onDragOver=/);
-assert.match(strip, /onDrop=/);
-assert.match(strip, /acceptTransferToken/);
-assert.match(strip, /dropEffect === "none"/);
-assert.match(strip, /bridge\.tabTransfer\.detach\(token\)/);
-assert.match(strip, /e\.key === "Escape"/);
-assert.match(strip, /bridge\.tabTransfer\.cancel\(token\)/);
-assert.match(strip, /e\.shiftKey && e\.key === "F10"/);
-assert.match(css, /\[data-tab-drag-source="true"\][^{]*\{[^}]*opacity:\s*\.55/s);
-assert.match(css, /\[data-tab-drop-target="merge"\]/);
-assert.doesNotMatch(strip, /@dnd-kit|react-dnd|framer-motion/);
-```
-
-Add detach assertions to the desktop script:
-
-```js
-assert.match(source, /ipcMain\.handle\("tab-transfer:detach"/);
-assert.match(source, /createWindow\(\{[\s\S]*show: false,[\s\S]*transferToken: token/);
-assert.match(source, /tab-transfer:pending/);
-assert.match(source, /detached\.win\.show\(\)/);
-```
-
-- [ ] **Step 2: Run checks and verify drag/detach wiring is missing**
-
-Run: `npm --prefix web run check:center-tabs && npm --prefix desktop run check:webtabs`
-
-Expected: web FAIL at `TAB_TRANSFER_MIME` or desktop FAIL at `tab-transfer:detach`.
-
-- [ ] **Step 3: Start a token-backed native drag and preserve Escape cancellation**
-
-In `center-tab-strip.tsx`, add:
+**Preload API:**
 
 ```ts
-const TAB_TRANSFER_MIME = "application/x-openprogram-tab-transfer";
-const TAB_TRANSFER_TEXT_PREFIX = "openprogram-tab-transfer:";
+interface DesktopTabTransferApi {
+  prepare(payload: DesktopTransferPayload): string;
+  inspect(token: string): Promise<DesktopTransferPayload | null>;
+  accept(token: string): Promise<DesktopTransferPayload>;
+  reject(token: string, reason: "duplicate" | "group-full" | "invalid", duplicateId?: string): Promise<boolean>;
+  status(token: string): Promise<{ status: string; sourceId: string; destinationId: string | null } | null>;
+  journalOpened(token: string, role: "source" | "destination"): Promise<boolean>;
+  journalFinalized(token: string, role: "source" | "destination"): Promise<boolean>;
+  destinationReady(token: string, ok: boolean): Promise<boolean>;
+  sourceRemoved(token: string, ok: boolean, empty: boolean): Promise<boolean>;
+  destinationUndone(token: string, ok: boolean): Promise<boolean>;
+  cancel(token: string): Promise<boolean>;
+  detach(token: string): Promise<boolean>;
+  claimPending(windowId: string): Promise<string | null>;
+  pendingTerminal(windowId: string): Promise<Array<{
+    token: string;
+    status: "committed" | "rolled-back";
+    role: "source" | "destination";
+    ownerWindowId: string;
+    orphaned: boolean;
+  }>>;
+  onRejected(cb: (token: string, reason: string, duplicateId?: string) => void): () => void;
+}
 ```
 
-Track the active token and cancellation in refs:
+`prepare` uses `ipcRenderer.sendSync("tab-transfer:prepare", payload)`. It is called from pointer/mouse down or the keyboard Move-to-new-window command, never after `dragstart` begins.
+
+**Renderer staging records:**
 
 ```ts
-const dragRef = useRef<{ token: string; cancelled: boolean } | null>(null);
-
-async function beginTabDrag(e: React.DragEvent, tab: CenterTab) {
-  const bridge = desktopBridge();
-  if (!bridge) return;
-  const token = await bridge.tabTransfer.begin(buildTransferPayload(tab));
-  dragRef.current = { token, cancelled: false };
-  e.dataTransfer.effectAllowed = "move";
-  e.dataTransfer.setData(TAB_TRANSFER_MIME, token);
-  e.dataTransfer.setData("text/plain", TAB_TRANSFER_TEXT_PREFIX + token);
+interface AcceptedTransfer {
+  token: string;
+  insertedIds: string[];
+  journal: TransferJournalEntry;
+  inMemoryBridgeRecovery: WebViewBookkeepingRecovery;
 }
-
-async function cancelTabDrag() {
-  const current = dragRef.current;
-  if (!current) return;
-  current.cancelled = true;
-  await desktopBridge()?.tabTransfer.cancel(current.token);
-  dragRef.current = null;
-}
-
-function transferTokenFrom(e: React.DragEvent): string | null {
-  const direct = e.dataTransfer.getData(TAB_TRANSFER_MIME);
-  if (direct) return direct;
-  const plain = e.dataTransfer.getData("text/plain");
-  return plain.startsWith(TAB_TRANSFER_TEXT_PREFIX)
-    ? plain.slice(TAB_TRANSFER_TEXT_PREFIX.length)
-    : null;
-}
+const acceptedTransfers = new Map<string, AcceptedTransfer>();
 ```
 
-Set `draggable={Boolean(desktopBridge())}` on the tab/segment wrapper. On `dragstart`, call `beginTabDrag`; on `Escape`, set `cancelled=true`; on `dragend`, detach only when the token still matches, cancellation is false, and `e.dataTransfer.dropEffect === "none"`:
+- [ ] Add behavior tests, not only source checks:
+  - pointer preparation calls fake `prepare` once and stores the returned token;
+  - immediate `dragstart` reads the same token and writes both MIME/text entries synchronously;
+  - destination staging writes the full journal before applying any `{persist:false}` state, while committed payload/draft keys remain unchanged;
+  - destination rollback first forgets bridge ids/bounds, observes main reject a stale ordinary destroy, restores journal `before*`, and deletes `acceptedTransfers[token]` plus journal;
+  - destination commit writes journal `after*`, then deletes `acceptedTransfers[token]` plus journal;
+  - source removal failure and stale main response restore journal `before*` and bridge bookkeeping;
+  - successful source/main commit writes journal `after*` and clears source recovery exactly once;
+  - simulated reload reconstructs accepted/source state from journal according to `status(token)`.
+- [ ] Add a structure rejection for `async ... onDragStart` and for `await ... setData` ordering.
+- [ ] Run web/desktop checks; expect missing bridge methods.
+- [ ] Expose preload IPC with callback subscriptions for remove-source, undo-destination, committed, rejected, and rolled-back. Listener registration returns cleanup functions.
+- [ ] On destination preview, run `validateTransferredTabs` before `accept`. For duplicate, activate the existing destination tab through `setActive` and the shared session-route effect, then call `reject(token,"duplicate",duplicateId)`. For a full group call `reject(token,"group-full")`. Do not create a journal or import state for either rejection.
+- [ ] On valid destination accept: call main `accept`; derive complete before/after center/session/file/bridge snapshots; write and read back the destination journal; call `journalOpened(token,"destination")`; only then apply `after*` with `{persist:false}`, record `acceptedTransfers`, and call `destinationReady(true)`. Any local failure follows the fixed destination undo sequence and calls `destinationReady(false)`.
+- [ ] On `remove-source`: derive before/after snapshots, write and read back the source journal, call `journalOpened(token,"source")`, snapshot in-memory ready waiters, and apply center/session/bridge `after*` with `{persist:false}`. Invoke `sourceRemoved`. If removal or main acknowledgement is false, apply journal `before*` and restore bridge state. If true, call one shared `finalizeTransferJournal(token,"source","after")`: set `committing`, persist `after*`, clear recovery/journal, then call `journalFinalized`. Do not close the source renderer locally; main closes an empty source only after that durable acknowledgement.
+- [ ] On `undo-destination`, first call `forgetTransferredWebView` for every moved existing record and clear destination ready ids/visible bounds. Any store subscription's ordinary destroy is expected and must be rejected by main's lock. Then apply journal `beforeCenterTabs`, `beforeSession`, and file-draft snapshots with `{persist:false}`, delete `acceptedTransfers`, acknowledge `destinationUndone`, and finally delete the journal after main reports rollback.
+- [ ] On `committed`, call the same `finalizeTransferJournal(token,role,"after")`. On normal `rolled-back`, apply/persist journal `before*`, clear accepted/recovery state and the journal, then call `journalFinalized(token,role)`; this acknowledgement is mandatory for both roles. If rollback happened before the source created a journal, source verifies its normal payload/session state is unchanged and still acknowledges its role. On `rejected`, clear the matching prepared coordinator immediately and announce the reason. On renderer cleanup, cancel prepared transactions and remove listeners, but leave unresolved journal entries for startup recovery.
+- [ ] Run `npm --prefix web run check:web-split && npm --prefix desktop run check:webtabs`; pass.
+- [ ] Commit: `feat(desktop): coordinate reversible renderer transfer`.
 
-```ts
-async function finishTabDrag(e: React.DragEvent) {
-  const current = dragRef.current;
-  dragRef.current = null;
-  if (!current || current.cancelled || e.dataTransfer.dropEffect !== "none") return;
-  await desktopBridge()?.tabTransfer.detach(current.token);
-}
-```
-
-Call `cancelTabDrag()` on `Escape`. After a same-window reorder or same-window group/ungroup succeeds, call `bridge.tabTransfer.cancel(token)` immediately; do not leave a prepared token waiting for expiry.
-
-- [ ] **Step 4: Resolve destination placement and merge only after validation**
-
-Mark DOM targets with `data-tab-id`, `data-group-id`, and `data-member-index`. The strip drop handler uses its nearest target:
-
-```ts
-function placementFromDrop(e: React.DragEvent): TabDropPlacement {
-  const element = (e.target as HTMLElement).closest<HTMLElement>(
-    "[data-group-id], [data-tab-id]",
-  );
-  const groupId = element?.dataset.groupId;
-  if (groupId) {
-    return {
-      kind: "group",
-      groupId,
-      memberIndex: Number(element.dataset.memberIndex ?? 0),
-    };
-  }
-  const targetTabId = element?.dataset.tabId;
-  if (targetTabId) return { kind: "merge", targetTabId };
-  return { kind: "strip", index: useCenterTabs.getState().tabs.length };
-}
-
-async function receiveTabDrop(e: React.DragEvent) {
-  const token = transferTokenFrom(e);
-  const bridge = desktopBridge();
-  if (!token || !bridge) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = "move";
-  await acceptTransferToken(bridge, token, placementFromDrop(e));
-}
-```
-
-The same-window path uses the existing store reorder/group actions directly and cancels its main token; the cross-window path calls `acceptTransferToken`. A group with three members rejects the drop before `accept()`.
-
-Add `Shift+F10` on a focused tab to open the existing lightweight tab context menu with `Move left`, `Move right`, `Add to split`, `Remove from group`, and `Move to new window`. `Move to new window` calls the same `begin()` then `detach()` sequence; `Escape` closes the menu and announces cancellation through one `aria-live="polite"` region.
-
-- [ ] **Step 5: Add transient drag styles without a persistent accent**
-
-Add to `center-tabs.module.css`:
-
-```css
-[data-tab-drag-source="true"] {
-  opacity: .55;
-}
-
-[data-tab-drop-target="insert"] {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-[data-tab-drop-target="merge"] {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-```
-
-Remove these attributes at `dragleave`, `drop`, `dragend`, and `Escape`. Do not add a static orange line.
-
-- [ ] **Step 6: Create and claim a hidden detached window**
-
-Register `tab-transfer:detach` in `desktop/main.js`:
-
-```js
-ipcMain.handle("tab-transfer:detach", async (event, token) => {
-  const sourceCtx = contextForSender(event);
-  const tx = transfers.get(token);
-  if (!sourceCtx || !tx || tx.sourceId !== sourceCtx.id || tx.status !== "prepared") {
-    return false;
-  }
-  const bounds = sourceCtx.win.getBounds();
-  const detachedWindowId = randomUUID();
-  tx.detachedWindowId = detachedWindowId;
-  const detached = await createWindow({
-    windowId: detachedWindowId,
-    state: { x: bounds.x + 32, y: bounds.y + 32, width: bounds.width, height: bounds.height },
-    show: false,
-    transferToken: token,
-  });
-  return true;
-});
-```
-
-Inside `createWindow`, register the pending-send listener before `loadURL`:
-
-```js
-if (transferToken) {
-  win.webContents.once("did-finish-load", () => {
-    const tx = transfers.get(transferToken);
-    if (tx?.status === "prepared" && tx.detachedWindowId === windowId) {
-      win.webContents.send("tab-transfer:pending", transferToken);
-    }
-  });
-}
-await win.loadURL(await resolveStartUrl());
-```
-
-The window is shown only by `source-complete` after destination acknowledgement. Timeout, target rejection, or target close invokes `rollbackTransfer` and closes the hidden window.
-
-- [ ] **Step 7: Run drag, detach, and full web checks**
-
-Run: `npm --prefix web run check:center-tabs && npm --prefix web run check:web-split && npm --prefix desktop run check:webtabs`
-
-Expected: all three scripts print their `checks passed` messages.
-
-- [ ] **Step 8: Commit pointer, keyboard, merge, and detach behavior**
-
-```bash
-git add desktop/main.js desktop/scripts/check-webtab-navigation.js web/components/center-tabs/center-tab-strip.tsx web/components/center-tabs/center-tabs.module.css web/scripts/check-center-tabs.mjs
-git commit -m "feat(desktop): drag tabs across windows"
-```
-
----
-
-### Task 7: Verify Regression, CDP Identity, State Preservation, and Failure Rollback Live
+### Task 6: Use the same drag coordinator for same-window and cross-window placement
 
 **Files:**
-- Modify only if a check exposes a defect: the exact implementation or check file from Tasks 1-6.
 
-**Interfaces:**
-- Consumes: complete implementation from Tasks 1-6 and Electron remote debugging on port `9223`.
-- Produces: current command output and live Electron evidence proving every transfer invariant.
+- Modify `web/components/center-tabs/center-tab-strip.tsx`
+- Modify `web/lib/tab-drag-coordinator.ts`
+- Modify `web/components/center-tabs/center-tabs.module.css`
+- Modify `web/scripts/check-center-tabs.mjs`
+- Modify `web/scripts/check-compound-tabs.mjs`
 
-- [ ] **Step 1: Run all deterministic checks and production build**
+- [ ] Extend the coordinator behavior check with desktop preparation. Pointer down builds one payload with:
 
-Run:
+```ts
+{
+  tabs,
+  source: {
+    windowId,
+    kind,
+    groupId,
+    memberIndex,
+    memberIds: group?.memberIds,
+    visibleIds: group?.visibleIds,
+    focusedId: group?.focusedId,
+  },
+  fileDrafts,
+  chats,
+}
+```
+
+For `kind:"group"`, `tabs` contains all group members in member order. For a segment it contains one tab and exact source position metadata.
+
+- [ ] Pointer/mouse down on a tab target, segment target, or neutral group handle calls synchronous `bridge.tabTransfer.prepare(payload)` and stores `{subject, transferToken, started:false, cancelled:false, committed:false}` in the compound plan's coordinator. Register a one-shot window pointerup/mouseup handler. If release/click occurs before `dragstart`, immediately call `cancel(token)` and clear the coordinator; behavior tests assert no prepared token remains. Close buttons are `draggable={false}`, stop pointer/mouse-down propagation, and never call prepare.
+- [ ] `onDragStart` is non-async: call coordinator `start()`, remove the release-cancel listener, and serialize the existing token into `application/x-openprogram-tab-transfer` and `text/plain`.
+- [ ] If no prepared token exists, prevent the drag and announce failure. Escape calls `cancel(token)`, marks the same coordinator cancelled, and clears drop markers.
+- [ ] Every drop calls `resolveTabDropIntent(rect, clientX, target)` from the shared module. Do not infer merge solely from `closest()` and do not use different geometry across windows.
+- [ ] Same-window drop compares `payload.source.windowId` to `bridge.windowId`, applies existing reorder/group/member actions, and cancels the prepared main token. Cross-window drop calls destination staging with the same before/merge/after placement.
+- [ ] A whole-group edge drop moves the group as one strip entry. A whole-group merge transfers/inserts all members atomically and rejects a result above three. A segment edge drop preserves source group metadata for rollback.
+- [ ] When a transferred web tab had no source native record, destination metadata insertion still succeeds. Its first visible `WebTabPane` invokes existing `ensure(tab.id,url)` and then participates in `syncVisible`; hidden metadata does not allocate a view early.
+- [ ] Keyboard Move left/right on a segment calls `moveGroupMember` within the group; it does not always move the whole group. `Move to new window` uses the same synchronous `prepare` then `detach` sequence.
+- [ ] `dragend` detaches only if the coordinator still owns the token, is not cancelled/committed, and `dropEffect === "none"`. Same-window/drop commit clears it. No second `dragRef` is allowed.
+- [ ] Add transient opacity/before/merge/after markers; clear on leave/drop/end/Escape.
+- [ ] Run `npm --prefix web run check:compound-tabs`, `npm --prefix web run check:center-tabs`, and `npm --prefix web run build`; pass.
+- [ ] Commit: `feat(desktop): transfer tabs with unified drag geometry`.
+
+### Task 7: Add renderer-ready detach claiming
+
+**Files:**
+
+- Modify `desktop/main.js`
+- Modify `desktop/preload.js`
+- Modify `web/lib/desktop-bridge.ts`
+- Modify `desktop/scripts/check-webtab-navigation.js`
+- Modify `web/scripts/check-web-split.mjs`
+
+- [ ] Add a behavior test that creates a hidden window with a pending token, fires a simulated `did-finish-load` without a renderer claim, and asserts nothing is accepted/sent. After store/session hydration, transfer-listener installation, and journal recovery, call `claimPending(windowId)`; assert it returns the token and destination staging starts. Reload the hidden renderer and claim again while still pre-commit; assert the journal reconstructs transient state and the valid token is returned rather than lost.
+- [ ] Add tests that another window id cannot claim the token, a committed/expired token returns null, and rollback closes the hidden window.
+- [ ] Run desktop/web checks; expect missing `claimPending` behavior.
+- [ ] `detach(token)` validates prepared ownership, creates `show:false` window with a new `windowId`, and records `pendingTransferToken` on its context/transaction. Do not register `did-finish-load` transfer delivery.
+- [ ] Renderer startup order is fixed: hydrate committed center/session storage; register transfer event listeners; read `openprogram.tabTransferJournal:<windowId>`; query `status(token)` for every entry and apply the Task 3 recovery table; rebuild `acceptedTransfers` for a live destination entry; then query `pendingTerminal(windowId)`. For its own role, idempotently acknowledge a terminal decision whose journal was already cleared before a crash. For an orphan role, open the journal and normal keys using the supplied owner `windowId`, apply before/after, delete that keyed journal, and acknowledge the orphan role. Only after terminal/orphan cleanup reconcile ordinary native web views and call `claimPending`. A committed journal completes `after*`; rolled-back completes `before*`; a live pre-commit journal remains transient. Every terminal path clears its journal and calls `journalFinalized`, including normal rolled-back handlers.
+- [ ] If `claimPending` returns a token not already represented by the recovered journal, preview/validate and stage it at strip end. If the journal already represents that token, resume it idempotently rather than inserting twice. This destination pull is safe across load timing and renderer reload.
+- [ ] Show the hidden window only inside the source-success commit branch. Rollback/expiry closes it.
+- [ ] Run `npm --prefix desktop run check:webtabs && npm --prefix web run check:web-split`; pass.
+- [ ] Commit: `feat(desktop): claim detached transfers after renderer ready`.
+
+### Task 8: Focused commands, IPC rejection, and complete automated gates
+
+**Files:**
+
+- Modify `desktop/main.js`
+- Modify `web/lib/desktop-bridge.ts`
+- Modify `desktop/scripts/check-webtab-navigation.js`
+- Modify `web/scripts/check-web-split.mjs`
+
+- [ ] Add an executable command-routing harness. Two fake windows register visible web panes and focus changes. Dispatch a menu command and a backend `webtab.command`; assert exactly one focused renderer handles each request and the returned target is its focused visible web pane.
+- [ ] Send the same request id through two renderers; the main atomic claim registry allows only the focused owner. Assert a non-focused or destroyed renderer receives false.
+- [ ] After a view moves, invoke every view IPC from the stale source sender. Assert navigate/bounds/show/hide/destroy all reject, the destination retains ownership, and `webContents.close` is never called.
+- [ ] Run:
 
 ```bash
 npm --prefix desktop run check:webtabs
@@ -1461,151 +554,54 @@ npm --prefix web run build
 python -m pytest tests/ --ignore=tests/test_provider_cli.py --ignore=tests/integration -q
 ```
 
-Expected:
+- [ ] Confirm the compact-right-panel plan's automated check actually dispatches ArrowLeft/ArrowRight/Home/End to the separator and asserts width/clamping/`aria-valuenow`; a source-regex-only keyboard resize check is not an acceptance gate.
+- [ ] Commit: `test(desktop): cover multiwindow ownership and routing`.
 
-```text
-webtab navigation checks passed
-center-tabs checks passed
-bookmark checks passed
-web-split checks passed
-multi-draft checks passed
-provisional-send checks passed
-chat-ui checks passed
-Compiled successfully
-all selected pytest tests pass
-```
+### Task 9: Live isolated acceptance with persistent local state
 
-- [ ] **Step 2: Launch an isolated development desktop profile**
+**Files:**
 
-Run the web UI and desktop shell in separate terminals:
+- Create `web/public/desktop-transfer-acceptance.html`
+- Modify implementation only if acceptance exposes a defect.
+
+- [ ] Add a deterministic local page at `/desktop-transfer-acceptance.html`. It must contain a text input, a 2400px scroll region, buttons that call `history.pushState`/back, and script that sets and displays a same-origin cookie plus `localStorage` session marker. This is the reproducible login/session-state surrogate; do not use a third-party account or the user's browser profile.
+- [ ] Probe both development services before Electron. If either probe fails, start the existing `dev` worker with the established profile/ports, then repeat both probes; do not start/stop the default profile:
 
 ```bash
-OPENPROGRAM_PROFILE=dev OPENPROGRAM_BACKEND_PORT=18209 OPENPROGRAM_WEB_PORT=18200 openprogram worker start
+if ! curl -fsS http://127.0.0.1:18209/healthz >/dev/null || \
+   ! curl -fsS http://127.0.0.1:18200/chat >/dev/null; then
+  OPENPROGRAM_PROFILE=dev \
+  OPENPROGRAM_BACKEND_PORT=18209 \
+  OPENPROGRAM_WEB_PORT=18200 \
+  openprogram worker start
+fi
+
+curl --fail --retry 30 --retry-delay 1 http://127.0.0.1:18209/healthz >/dev/null
+curl --fail --retry 30 --retry-delay 1 http://127.0.0.1:18200/chat >/dev/null
+curl --fail http://127.0.0.1:18200/desktop-transfer-acceptance.html >/dev/null
 ```
 
+Expected: backend `18209/healthz` and frontend `18200/chat` both respond; stable `18100/18109` remain untouched.
+
+- [ ] Start Electron with a real isolated user-data directory passed directly to Electron, not an unused environment variable:
+
 ```bash
+acceptance_profile=$(mktemp -d /tmp/openprogram-multiwindow.XXXXXX)
 cd desktop
 OPENPROGRAM_WEB_PORT=18200 \
 OPENPROGRAM_DESKTOP_URL=http://127.0.0.1:18200/chat \
-ELECTRON_EXTRA_LAUNCH_ARGS=--user-data-dir=/tmp/openprogram-multiwindow-acceptance \
-npm run dev
+./node_modules/.bin/electron . \
+  --user-data-dir="$acceptance_profile" \
+  --remote-debugging-port=9223
 ```
 
-Expected: one OpenProgram window loads the development UI; stable port `18100` is untouched.
-
-- [ ] **Step 3: Capture pre-transfer native web state through CDP**
-
-Open `https://example.com/?openprogram-transfer-acceptance=1`, put the web tab beside a chat, and use CDP `Runtime.evaluate` on its page target:
-
-```js
-(() => {
-  document.body.insertAdjacentHTML(
-    "beforeend",
-    '<input id="op-transfer-value" value="preserved"><div style="height:2400px"></div>',
-  );
-  document.querySelector("#op-transfer-value").value = "edited before transfer";
-  scrollTo(0, 900);
-  return {
-    timeOrigin: performance.timeOrigin,
-    value: document.querySelector("#op-transfer-value").value,
-    scrollY,
-  };
-})()
-```
-
-Record the CDP target id, `timeOrigin`, value, and `scrollY`. Expected value is `edited before transfer` and scroll is approximately `900`.
-
-- [ ] **Step 4: Detach, merge into another window, and merge back**
-
-Perform these pointer operations:
-
-1. Drag the web segment outside every OpenProgram window and release.
-2. Confirm a new window appears only after the transfer completes.
-3. Drag the tab onto an existing tab in the original window to form/enter its compound group.
-4. Drag the segment out of that group and back into the detached window.
-5. Use `Shift+F10` → `Move to new window` and then merge it back without pointer drag.
-
-Expected after every move:
-
-- exactly one destination tab exists;
-- the source tab disappears only after the destination is visible;
-- a group never exceeds three members;
-- no NTP appears in an emptied source before its window closes;
-- no persistent orange top line appears.
-
-- [ ] **Step 5: Prove the same native page survived all moves**
-
-Query the destination web page target again and evaluate:
-
-```js
-({
-  timeOrigin: performance.timeOrigin,
-  value: document.querySelector("#op-transfer-value")?.value,
-  scrollY,
-  href: location.href,
-})
-```
-
-Expected:
-
-- CDP target id equals the pre-transfer id;
-- `timeOrigin` equals the pre-transfer value exactly;
-- input value remains `edited before transfer`;
-- `scrollY` remains approximately `900`;
-- URL remains `https://example.com/?openprogram-transfer-acceptance=1`;
-- back/forward history and login/session cookies remain usable.
-
-- [ ] **Step 6: Verify focused routing and stale source IPC rejection**
-
-Focus window A and issue one backend `webtab.command(op="active")`; then focus window B and repeat.
-
-Expected: each request receives exactly one `webtab_result`, and its `target_id` belongs to the focused window's visible web pane.
-
-During a transfer, force the source renderer to emit late `webtab:hide`, `webtab:set-bounds`, and `webtab:destroy` for the moved id.
-
-Expected: the destination view remains visible, retains the same target id, and its `webContents` is not closed.
-
-- [ ] **Step 7: Verify rollback and hidden-window failure behavior**
-
-Exercise each failure before source removal:
-
-1. Drop onto a destination containing the same tab id.
-2. Drop onto a three-member group.
-3. Start detach and close the hidden/new destination before acknowledgement.
-4. Start a transfer, prevent destination completion, and wait more than 15 seconds.
-
-Expected for every case:
-
-- source tab and source group order remain unchanged;
-- the native view returns to its original parent, bounds, and visibility;
-- CDP target id and page state remain unchanged;
-- no duplicate tab remains in the destination;
-- an uncommitted detached window closes;
-- reusing the expired/consumed token returns failure and performs no mutation.
-
-- [ ] **Step 8: Verify per-window restore and profile-wide bookmark behavior**
-
-Create distinct tab orders in the main and one detached window, reload both renderers, and reopen Bookmarks in each.
-
-Expected:
-
-- each renderer restores only `centerTabs:<its windowId>` and `openprogram.webSplit:<its windowId>`;
-- the legacy unkeyed payload was migrated only to `centerTabs:main` once;
-- both windows show the same profile-wide bookmark list and react to `openprogram-bookmarks-changed`;
-- split ratio and group membership in one window do not overwrite the other.
-
-- [ ] **Step 9: Commit only concrete fixes exposed by acceptance**
-
-If acceptance required code changes, rerun Steps 1-8 and commit only those exact fixes:
-
-```bash
-git add desktop/main.js desktop/preload.js desktop/scripts/check-webtab-navigation.js \
-  web/lib/desktop-bridge.ts web/lib/state/center-tabs-store.ts \
-  web/lib/session-store/index.ts web/lib/state/files-shared.ts \
-  web/components/center-tabs/center-tab-strip.tsx \
-  web/components/center-tabs/center-tabs.module.css \
-  web/scripts/check-center-tabs.mjs web/scripts/check-web-split.mjs
-git commit -m "fix(desktop): close multiwindow acceptance gaps"
-```
-
-If no file changed, do not create an empty commit; record the verified HEAD and command output in the task handoff.
+- [ ] Open the local acceptance page. Change input text, scroll, push history, and record through CDP: target id, `performance.timeOrigin`, input value, scrollY, history length, cookie, and localStorage marker.
+- [ ] Transfer web+web, session+web, one segment, and a whole group to a second window; reorder before/after, merge, detach to a hidden-created window, and merge back. Confirm two web panes remain simultaneously visible where expected.
+- [ ] After every move, assert the exact CDP target id and `timeOrigin` are unchanged, input/scroll/history/cookie/localStorage persist, and only one renderer/store owns each tab.
+- [ ] Transfer focused and background sessions. Confirm destination URL, `useSessionStore.activeChatKey`, `currentSessionId`, `composerInput`, `composerSettings`, keyed composer draft/settings, pending project, and draft channel choice match the focused session; source fallback route/state matches its new active tab. Confirm attachment IndexedDB and long-paste references were neither deleted nor duplicated.
+- [ ] Transfer a web metadata tab that has never mounted a native view. Confirm transfer succeeds, no reparent is attempted, and destination first visibility creates exactly one view through `ensure`.
+- [ ] Force duplicate/full-group `reject`, destination insertion failure, source removal failure, destination undo, timeout-before-source-response, hidden destination close, and stale source/destination destroy IPC. Confirm duplicate activates the existing destination tab, source remains unchanged, bridge forgetting precedes store undo, `webContents.close` is never called for a locked record, and no accepted-transfer/journal entry remains after rollback.
+- [ ] Complete a transfer, wait past 15 seconds, and try cancellation/rollback/token reuse. Confirm committed ownership never changes and the token is stale.
+- [ ] Focus each window and invoke model browser control. Confirm it targets the focused visible web member, prioritizing the focused web pane when two are visible.
+- [ ] Reload/crash a renderer at each journal phase: journal-written, transient-applied, destination-staged, awaiting-source, committing-before-persist, and persisted-before-journal-delete. Confirm main status resolves to exact before/after state, accepted maps/draft snapshots clear, `openprogram.tabTransferJournal:<windowId>` clears, `centerTabs:<windowId>` never contains an uncommitted provisional state, groups/split restore independently, and profile-wide bookmarks still update across windows.
+- [ ] Run all automated gates again after any acceptance fix, then commit only the exact fix. Do not commit generated profile data.
