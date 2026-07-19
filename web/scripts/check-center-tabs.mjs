@@ -47,7 +47,8 @@ assert.match(
 assert.match(css, /:global\(html\.is-desktop\) \.tabsFlow > \.tab \{[^}]*width: 240px;[^}]*flex: 0 1 240px;[^}]*max-width: 240px;/s);
 assert.match(css, /@keyframes desktopTabEnter \{\s*from \{ opacity: 0; \}\s*\}/);
 assert.match(css, /:global\(html\.is-desktop\) \.tabEnter \{[^}]*animation: desktopTabEnter 120ms ease-out;/s);
-assert.match(css, /:global\(html\.is-desktop\) \.tabExit \{[^}]*animation: tabExit 160ms ease-in forwards;/s);
+assert.match(css, /\.tabExit \{[^}]*animation: tabExit 160ms ease-in forwards;/s);
+assert.match(css, /:global\(html\.is-desktop\) \.tabExit \{[^}]*animation: tabExit 120ms ease-in forwards;/s);
 assert.match(ntp, /const draftId = useCenterTabs\.getState\(\)\.claimDraftSessionTab\(\);[\s\S]*\.newSession\?\.\(draftId\);/);
 assert.match(strip, /currentSessionId === null[\s\S]*activeTab\?\.draft/);
 assert.match(strip, /closingInstances = useRef<Map<string, CenterTab>>/);
@@ -89,8 +90,18 @@ assert.match(strip, /stripRef/);
 assert.match(strip, /tabsFlowRef/);
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -11px;[^}]*width: 1px;/s,
-  "the pinned + separator must share the 49px rail boundary",
+  /\.plusBtn::before \{[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*background: var\(--plus-separator-background, var\(--border\)\);/s,
+  "short desktop tab lists must retain the normal 2px rounded divider",
+);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -11px;[^}]*width: 1px;[^}]*border-radius: 0;[^}]*--plus-separator-background:\s*linear-gradient\(var\(--border\), var\(--border\)\),\s*var\(--bg-secondary\);/s,
+  "the pinned + separator must composite like the right rail",
+);
+assert.match(
+  css,
+  /\.tabsFlow:has\(> \.tabActive:last-child\) \+ \.plusBtn::before,\s*\.tabsFlow:has\(> \.tab:last-child:hover\) \+ \.plusBtn::before,\s*\.plusBtn:hover::before \{\s*background: transparent;/,
+  "active and hovered tabs must still hide the + divider",
 );
 assert.match(
   css,

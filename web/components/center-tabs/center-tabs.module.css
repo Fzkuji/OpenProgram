@@ -148,7 +148,7 @@
 }
 /* 刚新增的桌面 tab 若立即关闭，退场应覆盖上面的桌面淡入动画。 */
 :global(html.is-desktop) .tabExit {
-  animation: tabExit 160ms ease-in forwards;
+  animation: tabExit 120ms ease-in forwards;
 }
 
 /* 非活动 tab 之间的竖分隔条（2px 宽、圆角、竖直居中，用户 Chrome 同款）。
@@ -370,7 +370,7 @@
   width: 2px;
   height: 16px;
   border-radius: 1px;
-  background: var(--border);
+  background: var(--plus-separator-background, var(--border));
   pointer-events: none;
 }
 /* When the desktop + reaches its rightmost position, its 10px right padding
@@ -382,6 +382,10 @@
 :global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn::before {
   left: -11px;
   width: 1px;
+  border-radius: 0;
+  --plus-separator-background:
+    linear-gradient(var(--border), var(--border)),
+    var(--bg-secondary);
 }
 .tabActive + .plusBtn::before,
 .tab:hover + .plusBtn::before,
