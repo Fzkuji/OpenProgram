@@ -97,6 +97,32 @@ const baseCssSource = await readFile(
   new URL("../app/styles/base.css", import.meta.url),
   "utf8",
 );
+const desktopBridgeSource = await readFile(
+  new URL("../lib/desktop-bridge.ts", import.meta.url),
+  "utf8",
+);
+
+assert.match(desktopBridgeSource, /function visibleWebTab\(\)/);
+assert.match(
+  desktopBridgeSource,
+  /active\?\.kind === "web" && isWebTabReady\(active\.id\)/,
+);
+assert.match(
+  desktopBridgeSource,
+  /active\?\.kind === "session" && split\?\.kind === "web"[\s\S]*?isWebTabReady\(split\.id\)/,
+);
+assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
+assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
+assert.match(
+  desktopBridgeSource,
+  /if \(!split && !routeVisible\) \{\s*const routed = showCenterSurface\(\);\s*if \(!routed\)/,
+  "split opens and existing /s or /chat fallbacks must preserve their route",
+);
+assert.doesNotMatch(
+  desktopBridgeSource,
+  /openWebTab\(d\.url\);\s*const routed = showCenterSurface\(\);/,
+  "webtab.command must not unconditionally navigate a session route to /chat",
+);
 
 assert.match(appShellSource, /splitWebTabId/);
 assert.match(appShellSource, /splitRatio/);

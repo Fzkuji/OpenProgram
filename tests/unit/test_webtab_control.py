@@ -180,3 +180,13 @@ def test_desktop_renderer_reload_discards_pending_native_navigations():
     end = source.index("\n  mainWindow.loadURL", start)
     reload_cleanup = source[start:end]
     assert "viewNavigations.clear()" in reload_cleanup
+
+
+def test_renderer_control_contract_targets_ready_session_split():
+    source = (REPO_ROOT / "web" / "lib" / "desktop-bridge.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "state.openWebTabInSplit(d.url)" in source
+    assert "state.splitWebTabId" in source
+    assert "isWebTabReady(split.id)" in source
+    assert "waitForWebTabReady(id, 2000)" in source

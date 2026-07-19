@@ -163,6 +163,17 @@ function showActiveCenterTab(): void {
     .__navigate?.(path);
 }
 
+function visibleWebTab() {
+  const state = useCenterTabs.getState();
+  const active = state.tabs.find((tab) => tab.id === state.activeId);
+  if (active?.kind === "web" && isWebTabReady(active.id)) return active;
+  const split = state.tabs.find((tab) => tab.id === state.splitWebTabId);
+  return active?.kind === "session" && split?.kind === "web" &&
+    isWebTabReady(split.id)
+    ? split
+    : null;
+}
+
 function sendWebTabResult(
   ws: WebSocket,
   reqId: string,
@@ -222,40 +233,64 @@ export function installDesktopMenuHandlers(): void {
 
     if (d.op === "open") {
       if (!d.url) return;
-      useCenterTabs.getState().openWebTab(d.url);
-      const routed = showCenterSurface();
       const state = useCenterTabs.getState();
       const active = state.tabs.find((tab) => tab.id === state.activeId);
-      const activeUrl = active?.kind === "web"
-        ? active.url || (active.id.startsWith("w:") ? active.id.slice(2) : "")
-        : "";
-      if (!routed || !active || active.kind !== "web" || !activeUrl) {
-        ws.send(JSON.stringify({
-          action: "webtab_result",
-          req_id: d.req_id,
-          ok: false,
-          error: !routed
-            ? "center-tab navigation unavailable"
-            : "no visible active web tab",
-        }));
-        return;
+      const priorActiveId = state.activeId;
+      const split = active?.kind === "session" && isDesktopSplitLayoutAvailable();
+      const routeVisible =
+        window.location.pathname === "/chat" ||
+        window.location.pathname.startsWith("/s/");
+      let id: string | null;
+      if (split) {
+        id = state.openWebTabInSplit(d.url);
+      } else {
+        state.openWebTab(d.url);
+        id = useCenterTabs.getState().activeId;
       }
-      void bridge.webTab
-        .activate(active.id, activeUrl)
-        .then((targetId) => sendWebTabResult(ws, d.req_id!, active, targetId))
-        .catch(() => sendWebTabResult(ws, d.req_id!, active, null));
+      if (!split && !routeVisible) {
+        const routed = showCenterSurface();
+        if (!routed) {
+          if (priorActiveId) useCenterTabs.getState().setActive(priorActiveId);
+          ws.send(JSON.stringify({
+            action: "webtab_result",
+            req_id: d.req_id,
+            ok: false,
+            error: "center-tab navigation unavailable",
+          }));
+          return;
+        }
+      }
+      void (async () => {
+        const ready = !!id && await waitForWebTabReady(id, 2000);
+        const tab = id
+          ? useCenterTabs.getState().tabs.find((item) => item.id === id)
+          : null;
+        let targetId: string | null = null;
+        if (ready && tab?.kind === "web") {
+          try {
+            targetId = await bridge.webTab.activate(tab.id, tab.url);
+          } catch {
+            targetId = null;
+          }
+        }
+        if (!targetId && !split && priorActiveId) {
+          useCenterTabs.getState().setActive(priorActiveId);
+        }
+        sendWebTabResult(
+          ws,
+          d.req_id!,
+          tab?.kind === "web" ? tab : { id: id ?? "", url: d.url },
+          targetId,
+        );
+      })();
       return;
     }
 
-    const state = useCenterTabs.getState();
-    const active = state.tabs.find((tab) => tab.id === state.activeId);
+    const active = visibleWebTab();
     const routeVisible =
       window.location.pathname === "/chat" ||
       window.location.pathname.startsWith("/s/");
-    const activeUrl = active?.kind === "web"
-      ? active.url || (active.id.startsWith("w:") ? active.id.slice(2) : "")
-      : "";
-    if (!routeVisible || !active || active.kind !== "web" || !activeUrl) {
+    if (!routeVisible || !active) {
       ws.send(JSON.stringify({
         action: "webtab_result",
         req_id: d.req_id,
