@@ -224,8 +224,22 @@ assert.match(
 );
 assert.match(
   rightDockCss,
-  /@media\s*\(max-width:\s*900px\)[\s\S]*\.right-sidebar[\s\S]*position:\s*relative;/,
+  /\.right-sidebar\s*\{[^}]*justify-content:\s*flex-end;/s,
+  "right rail must stay anchored while the panel is hidden or resizing",
+);
+const narrowRightSidebarRule = rightDockCss.match(
+  /@media\s*\(max-width:\s*900px\)\s*\{\s*\.right-sidebar,\s*\.right-sidebar:not\(\.collapsed\)\s*\{([^}]*)\}/,
+);
+assert.ok(narrowRightSidebarRule, "narrow right-sidebar rule missing");
+assert.match(
+  narrowRightSidebarRule[1],
+  /position:\s*relative;/,
   "narrow right panel must remain a layout participant",
+);
+assert.doesNotMatch(
+  narrowRightSidebarRule[1],
+  /position:\s*fixed;/,
+  "narrow right panel must not become a fixed overlay",
 );
 
 function parseTsx(text, name) {

@@ -5,6 +5,7 @@
   flex: 0 0 auto;
   flex-direction: row;
   align-items: stretch;
+  justify-content: flex-end;
   min-height: 0;
   overflow: hidden;
   background: var(--bg-secondary);
