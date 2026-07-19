@@ -317,7 +317,12 @@ export function RightSidebar({ viewportWidth, narrow }: RightSidebarProps) {
           onPointerCancel={finishResize}
           onLostPointerCapture={resetResize}
           onKeyDown={(event) =>
-            handlePanelResizeKey(event, effectivePanelWidth, setPanelWidth)
+            handlePanelResizeKey(
+              event,
+              panelWidth,
+              effectivePanelWidth,
+              setPanelWidth,
+            )
           }
         />
         <header className="right-sidebar-panel-header">

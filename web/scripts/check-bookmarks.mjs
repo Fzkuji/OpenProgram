@@ -12,6 +12,7 @@ import {
   fitRightPanelWidth,
   handlePanelResizeKey,
   panelWidthAfterKey,
+  preferredPanelWidthAfterKey,
   resetPanelResize,
   resolveRightPanelAction,
 } from "../lib/right-panel-behavior.ts";
@@ -25,6 +26,7 @@ const managerPath = new URL("../components/right-sidebar/bookmarks-panel.tsx", i
 const rightSidebarPath = new URL("../components/right-sidebar/right-sidebar.tsx", import.meta.url);
 const sidebarPath = new URL("../components/sidebar/sidebar.tsx", import.meta.url);
 const appShellPath = new URL("../components/app-shell.tsx", import.meta.url);
+const baseCssPath = new URL("../app/styles/base.css", import.meta.url);
 const rightDockCssPath = new URL("../app/styles/right-dock.css", import.meta.url);
 const packagePath = new URL("../package.json", import.meta.url);
 assert.ok(existsSync(sourcePath), "bookmarks storage module missing");
@@ -45,6 +47,7 @@ const manager = readFileSync(managerPath, "utf8");
 const rightSidebar = readFileSync(rightSidebarPath, "utf8");
 const sidebar = readFileSync(sidebarPath, "utf8");
 const appShell = readFileSync(appShellPath, "utf8");
+const baseCss = readFileSync(baseCssPath, "utf8");
 const rightDockCss = readFileSync(rightDockCssPath, "utf8");
 
 assert.equal(RIGHT_PANEL_DEFAULT, 320);
@@ -78,6 +81,32 @@ assert.equal(panelWidthAfterKey(560, "ArrowLeft"), 560);
 assert.equal(panelWidthAfterKey(400, "Home"), 280);
 assert.equal(panelWidthAfterKey(400, "End"), 560);
 assert.equal(panelWidthAfterKey(400, "Enter"), null);
+
+const narrowEffectivePanelWidth = fitRightPanelWidth(560, 600);
+assert.equal(narrowEffectivePanelWidth, 486);
+assert.equal(
+  preferredPanelWidthAfterKey(560, narrowEffectivePanelWidth, "ArrowLeft"),
+  560,
+  "a clamped grow must preserve the preferred width",
+);
+assert.equal(
+  preferredPanelWidthAfterKey(560, narrowEffectivePanelWidth, "ArrowRight"),
+  470,
+  "a narrow shrink must start from the rendered width",
+);
+assert.equal(preferredPanelWidthAfterKey(400, 320, "Home"), 280);
+assert.equal(preferredPanelWidthAfterKey(400, 320, "End"), 560);
+assert.equal(preferredPanelWidthAfterKey(400, 320, "Enter"), null);
+const preferredAfterClampedGrow = preferredPanelWidthAfterKey(
+  560,
+  narrowEffectivePanelWidth,
+  "ArrowLeft",
+);
+assert.equal(
+  fitRightPanelWidth(preferredAfterClampedGrow, 900),
+  560,
+  "widening the viewport must restore a preserved preferred width",
+);
 
 assert.deepEqual(
   resolveRightPanelAction(
@@ -129,8 +158,10 @@ separator.setAttribute("role", "separator");
 separator.setAttribute("aria-valuemin", RIGHT_PANEL_MIN);
 separator.setAttribute("aria-valuemax", RIGHT_PANEL_MAX);
 let renderedPanelWidth = RIGHT_PANEL_DEFAULT;
+let preferredPanelWidth = RIGHT_PANEL_DEFAULT;
 
 function renderSeparator(nextWidth) {
+  preferredPanelWidth = nextWidth;
   renderedPanelWidth = nextWidth;
   separator.setAttribute("aria-valuenow", nextWidth);
 }
@@ -143,7 +174,12 @@ function dispatchSeparatorKey(key) {
 }
 
 separator.addEventListener("keydown", (event) => {
-  handlePanelResizeKey(event, renderedPanelWidth, renderSeparator);
+  handlePanelResizeKey(
+    event,
+    preferredPanelWidth,
+    renderedPanelWidth,
+    renderSeparator,
+  );
 });
 renderSeparator(RIGHT_PANEL_DEFAULT);
 
@@ -270,6 +306,11 @@ assert.match(
 );
 assert.match(
   appShell,
+  /<div className="app" data-chat-layout=\{showChat \? "true" : "false"\}>/,
+  "the chat shell needs a hydration-stable responsive layout marker",
+);
+assert.match(
+  appShell,
   /function restoreForcedLeftSidebar\(\)\s*\{\s*setRightDockOpen\(false\);\s*\}/,
 );
 const sidebarMountStart = appShell.lastIndexOf("<Sidebar");
@@ -293,8 +334,52 @@ assert.match(
   /if \(forcedCollapsed\) \{[\s\S]*?onForcedExpand\?\.\(\);[\s\S]*?return;/,
 );
 assert.match(sidebar, /\(effectiveOpen\s*\? "w-sidebar-w"/);
+assert.match(
+  sidebar,
+  /data-layout-rail=\{forcedCollapsed \? "true" : undefined\}/,
+  "the forced compact sidebar needs a stable layout marker",
+);
 assert.match(sidebar, /\{effectiveOpen && hasFavorites && \(/);
 assert.match(sidebar, /\{effectiveOpen && \(/);
+
+const forcedRailRule = baseCss.match(
+  /\.sidebar:not\(\.right-sidebar\)\[data-layout-rail="true"\]\s*\{([^}]*)\}/,
+);
+assert.ok(forcedRailRule, "forced left layout rail rule missing");
+assert.match(forcedRailRule[1], /position:\s*relative;/);
+assert.match(forcedRailRule[1], /inset:\s*auto;/);
+assert.match(forcedRailRule[1], /flex:\s*0 0 49px;/);
+assert.match(forcedRailRule[1], /width:\s*49px\s*!important;/);
+assert.match(forcedRailRule[1], /min-width:\s*49px\s*!important;/);
+
+const firstPaintLeftRailRule = baseCss.match(
+  /\.app\[data-chat-layout="true"\]:has\(\.right-sidebar:not\(\.collapsed\)\)\s*>\s*\.sidebar:not\(\.right-sidebar\)\s*\{([^}]*)\}/,
+);
+assert.ok(
+  firstPaintLeftRailRule,
+  "responsive CSS must reserve the left rail before the viewport effect runs",
+);
+assert.match(firstPaintLeftRailRule[1], /position:\s*relative;/);
+assert.match(firstPaintLeftRailRule[1], /inset:\s*auto;/);
+assert.match(firstPaintLeftRailRule[1], /flex:\s*0 0 49px;/);
+assert.match(firstPaintLeftRailRule[1], /min-width:\s*49px\s*!important;/);
+const firstPaintRightShellRule = baseCss.match(
+  /\.app\[data-chat-layout="true"\]:has\(\.right-sidebar:not\(\.collapsed\)\)\s+\.right-sidebar:not\(\.collapsed\)\s*\{([^}]*)\}/,
+);
+assert.ok(firstPaintRightShellRule, "first-paint right shell constraint missing");
+assert.match(
+  firstPaintRightShellRule[1],
+  /max-width:\s*calc\(100vw - 49px\);/,
+);
+assert.match(firstPaintRightShellRule[1], /min-width:\s*0\s*!important;/);
+const firstPaintRightPanelRule = baseCss.match(
+  /\.app\[data-chat-layout="true"\]:has\(\.right-sidebar:not\(\.collapsed\)\)\s+\.right-sidebar-panel\s*\{([^}]*)\}/,
+);
+assert.ok(firstPaintRightPanelRule, "first-paint right panel constraint missing");
+assert.match(
+  firstPaintRightPanelRule[1],
+  /max-width:\s*calc\(100% - 65px\);/,
+);
 
 assert.match(
   rightSidebar,
@@ -303,6 +388,11 @@ assert.match(
 assert.match(rightSidebar, /startW: effectivePanelWidth/);
 assert.match(rightSidebar, /style=\{\{ width: `\$\{effectivePanelWidth\}px` \}\}/);
 assert.match(rightSidebar, /aria-valuenow=\{effectivePanelWidth\}/);
+assert.match(
+  rightSidebar,
+  /handlePanelResizeKey\(\s*event,\s*panelWidth,\s*effectivePanelWidth,\s*setPanelWidth,?\s*\)/,
+  "keyboard resizing must keep preferred and effective widths separate",
+);
 
 function parseTsx(text, name) {
   return ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);

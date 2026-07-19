@@ -445,6 +445,40 @@ button, input, select, textarea, optgroup {
     position: fixed; top: 0; bottom: 0; z-index: 100;
   }
   .sidebar:not(.right-sidebar) { left: 0; }
+  .sidebar:not(.right-sidebar)[data-layout-rail="true"] {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    width: 49px !important;
+    min-width: 49px !important;
+    max-width: 49px;
+    flex: 0 0 49px;
+  }
+
+  /* Reserve the compact left rail on the first paint, before the viewport
+     effect can mark it as forced-collapsed. The chat-layout marker comes
+     from the route, so this rule does not introduce hydration-only state. */
+  .app[data-chat-layout="true"]:has(.right-sidebar:not(.collapsed))
+    > .sidebar:not(.right-sidebar) {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    width: 49px !important;
+    min-width: 49px !important;
+    max-width: 49px;
+    flex: 0 0 49px;
+  }
+
+  .app[data-chat-layout="true"]:has(.right-sidebar:not(.collapsed))
+    .right-sidebar:not(.collapsed) {
+    max-width: calc(100vw - 49px);
+    min-width: 0 !important;
+  }
+
+  .app[data-chat-layout="true"]:has(.right-sidebar:not(.collapsed))
+    .right-sidebar-panel {
+    max-width: calc(100% - 65px);
+  }
   .sidebar:not(.right-sidebar):not(.collapsed) {
     box-shadow: var(--shadow-sidebar-left);
   }

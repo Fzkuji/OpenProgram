@@ -37,6 +37,20 @@ export function panelWidthAfterKey(width: number, key: string): number | null {
   return null;
 }
 
+export function preferredPanelWidthAfterKey(
+  preferredWidth: number,
+  effectiveWidth: number,
+  key: string,
+): number | null {
+  if (key === "ArrowLeft" && effectiveWidth < preferredWidth) {
+    return clampPanelWidth(preferredWidth);
+  }
+  if (key === "ArrowRight") {
+    return panelWidthAfterKey(effectiveWidth, key);
+  }
+  return panelWidthAfterKey(preferredWidth, key);
+}
+
 type ResizeKeyEvent = {
   key: string;
   preventDefault: () => void;
@@ -44,10 +58,15 @@ type ResizeKeyEvent = {
 
 export function handlePanelResizeKey(
   event: ResizeKeyEvent,
-  width: number,
+  preferredWidth: number,
+  effectiveWidth: number,
   commit: (nextWidth: number) => void,
 ): boolean {
-  const next = panelWidthAfterKey(width, event.key);
+  const next = preferredPanelWidthAfterKey(
+    preferredWidth,
+    effectiveWidth,
+    event.key,
+  );
   if (next === null) return false;
   event.preventDefault();
   commit(next);

@@ -246,6 +246,7 @@ export function Sidebar({
   return (
     <div
       id="sidebar"
+      data-layout-rail={forcedCollapsed ? "true" : undefined}
       className={
         // Shell layout — bg / border / flex column / width transition.
         // `relative` is the anchor for the (legacy) `#userMenuFooterMount`

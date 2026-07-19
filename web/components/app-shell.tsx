@@ -594,7 +594,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <CenterTabStrip />
         </div>
       ) : null}
-      <div className="app">
+      <div className="app" data-chat-layout={showChat ? "true" : "false"}>
       <Sidebar
         forcedCollapsed={forceLeftSidebarCollapsed}
         onForcedExpand={restoreForcedLeftSidebar}
