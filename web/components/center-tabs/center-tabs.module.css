@@ -378,7 +378,7 @@
 }
 /* When the desktop + reaches its rightmost position, its 10px right padding
    and 28px button place the 49px rail boundary 11px left of the button.
-   Match the rail's 1px border; short tab lists retain the normal gap divider. */
+   A 2px divider starts 12px left so its centre stays on that boundary. */
 :global(html.is-desktop) .strip[data-plus-rail-aligned] .tabsFlow {
   padding-right: 3px;
 }
@@ -398,12 +398,12 @@
   z-index: 2;
 }
 :global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn::before {
-  left: -11px;
-  width: 1px;
-  border-radius: 0;
+  left: -12px;
+  width: 2px;
+  border-radius: 1px;
   background:
     linear-gradient(var(--border), var(--border)),
-    var(--bg-secondary);
+    var(--tabrow-bg);
 }
 
 /* ---- File tab pane ------------------------------------------------ */

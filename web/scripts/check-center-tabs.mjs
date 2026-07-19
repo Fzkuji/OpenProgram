@@ -102,8 +102,8 @@ assert.match(
 );
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -11px;[^}]*width: 1px;[^}]*border-radius: 0;[^}]*background:\s*linear-gradient\(var\(--border\), var\(--border\)\),\s*var\(--bg-secondary\);/s,
-  "the pinned + separator must composite like the right rail",
+  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -12px;[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*background:\s*linear-gradient\(var\(--border\), var\(--border\)\),\s*var\(--tabrow-bg\);/s,
+  "the pinned + separator must retain the normal tab-divider appearance",
 );
 assert.match(
   css,
