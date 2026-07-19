@@ -85,7 +85,7 @@ assert.match(dragEnd, /dropEffect === "none"/);
 assert.match(dragEnd, /tabTransfer\.detach\(token\)/,
   "an unhandled drag with a live token must detach into a new window");
 assert.ok(
-  dragEnd.indexOf('dropEffect === "none"') < dragEnd.indexOf("cancelDrag()"),
+  dragEnd.indexOf('dropEffect === "none"') < dragEnd.indexOf("cancelDrag("),
   "detach must be decided before falling back to cancellation",
 );
 const drop = strip.slice(
@@ -119,17 +119,8 @@ assert.match(strip, /className=\{styles\.groupDragHandle\}[\s\S]*kind: "group"/)
 assert.match(strip, /onMoveGroup\(group\.id,/);
 assert.match(strip, /window\.addEventListener\("pointerup",[^;]+\{ once: true \}\)/s);
 assert.match(strip, /if \(e\.key !== "Escape"\) return;/);
-const dragEnd = strip.slice(
-  strip.indexOf("function onDragEnd"),
-  strip.indexOf("function targetBeforeId"),
-);
-assert.match(dragEnd, /Boolean\(dragCoordinator\.current\(\)\?\.started\)/);
-assert.match(dragEnd, /cancelDrag\(cancelled\)/);
+assert.match(dragEnd, /cancelDrag\(Boolean\(dragCoordinator\.current\(\)\?\.started\)\)/);
 assert.match(strip, /function isFourthMemberRejection/);
-const drop = strip.slice(
-  strip.indexOf("function onDrop"),
-  strip.indexOf("function moveGroupByKeyboard"),
-);
 assert.match(drop, /const fourthMemberRejected = isFourthMemberRejection\(/);
 assert.match(drop, /cancelDrag\(!fourthMemberRejected\)/);
 
@@ -161,9 +152,13 @@ const moveToNewWindow = strip.slice(
   strip.indexOf("function moveMenuTabToNewWindow"),
   strip.indexOf("function onOpenNewTab"),
 );
+assert.match(moveToNewWindow, /buildTransferPayload\(subject, bridge\.windowId\)/,
+  "menu move must prepare synchronously through the desktop bridge");
+assert.match(moveToNewWindow, /tabTransfer\.prepare\(payload\)/);
+assert.match(moveToNewWindow, /tabTransfer\.detach\(token\)/,
+  "menu move must detach the prepared token into a new window");
 assert.match(moveToNewWindow, /dragCoordinator\.prepare\(/);
 assert.match(moveToNewWindow, /dragCoordinator\.start\(\)/);
-assert.match(moveToNewWindow, /dragCoordinator\.commit\(\)/);
 assert.match(strip, /const canMoveToNewWindow = Boolean\(/);
 assert.match(strip, /disabled=\{!canMoveToNewWindow\}/);
 assert.match(strip, /role="status"[\s\S]*aria-live="polite"/);
@@ -178,7 +173,7 @@ for (const announcement of [
   assert.match(strip, new RegExp(announcement));
 }
 assert.match(strip, /function returnFocusToMenuInvoker/);
-assert.match(strip, /if \(e\.key !== "Escape"\) return;[\s\S]*dragCoordinator\.cancel\(\)[\s\S]*setDropMarker\(null\)[\s\S]*setTabMenu\(null\)/);
+assert.match(strip, /if \(e\.key !== "Escape"\) return;[\s\S]*cancelCoordinator\(\)[\s\S]*setDropMarker\(null\)[\s\S]*setTabMenu\(null\)/);
 
 const closeButton = strip.slice(strip.indexOf("<button\n        type=\"button\"", strip.indexOf("function TabItem")), strip.indexOf("<X size={14} />"));
 assert.match(closeButton, /draggable=\{false\}/);
