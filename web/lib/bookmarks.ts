@@ -6,6 +6,21 @@ export interface Bookmark {
 export const BOOKMARKS_STORAGE_KEY = "openprogram.bookmarks";
 export const BOOKMARKS_CHANGE_EVENT = "openprogram:bookmarks-changed";
 
+export function subscribeBookmarks(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === BOOKMARKS_STORAGE_KEY) listener();
+  };
+
+  window.addEventListener(BOOKMARKS_CHANGE_EVENT, listener);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(BOOKMARKS_CHANGE_EVENT, listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
 export function readBookmarks(): Bookmark[] {
   if (typeof window === "undefined") return [];
   try {

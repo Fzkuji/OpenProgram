@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { Check, ExternalLink, Pencil, Search, Trash2, X } from "lucide-react";
 
 import {
-  BOOKMARKS_CHANGE_EVENT,
   readBookmarks,
   removeBookmark,
   renameBookmark,
+  subscribeBookmarks,
   type Bookmark,
 } from "@/lib/bookmarks";
 import { desktopBridge, isDesktopSplitLayoutAvailable } from "@/lib/desktop-bridge";
@@ -25,8 +25,8 @@ export function BookmarksPanel() {
 
   useEffect(() => {
     const refresh = () => setBookmarks(readBookmarks());
-    window.addEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
-    return () => window.removeEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
+    refresh();
+    return subscribeBookmarks(refresh);
   }, []);
 
   const needle = query.trim().toLowerCase();

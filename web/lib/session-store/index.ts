@@ -266,7 +266,7 @@ export interface DetailNode {
 
 const RIGHT_LS_OPEN = "rightSidebarOpen";
 const RIGHT_LS_VIEW = "rightSidebarView";
-const VALID_VIEWS = new Set(["history", "context", "detail", "files"]);
+const VALID_VIEWS = new Set(["history", "context", "detail", "files", "bookmarks"]);
 
 function readRightDock(): { open: boolean; view: string } {
   if (typeof window === "undefined") return { open: false, view: "files" };

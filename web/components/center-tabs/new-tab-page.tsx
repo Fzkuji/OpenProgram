@@ -19,9 +19,9 @@ import {
 
 import { useTranslation } from "@/lib/i18n";
 import {
-  BOOKMARKS_CHANGE_EVENT,
   readBookmarks,
   removeBookmark,
+  subscribeBookmarks,
   type Bookmark as BookmarkItem,
 } from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -41,8 +41,7 @@ export function NewTabPage() {
   useEffect(() => {
     const refresh = () => setBookmarks(readBookmarks());
     refresh();
-    window.addEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
-    return () => window.removeEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
+    return subscribeBookmarks(refresh);
   }, []);
 
   function onNewSession() {

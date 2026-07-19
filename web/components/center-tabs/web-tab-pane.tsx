@@ -35,8 +35,8 @@ import {
 } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
 import {
-  BOOKMARKS_CHANGE_EVENT,
   isBookmarked,
+  subscribeBookmarks,
   toggleBookmark,
 } from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -61,8 +61,7 @@ function BookmarkButton({ url, title }: { url: string; title: string }) {
   useEffect(() => {
     const refresh = () => setBookmarked(isBookmarked(url));
     refresh();
-    window.addEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
-    return () => window.removeEventListener(BOOKMARKS_CHANGE_EVENT, refresh);
+    return subscribeBookmarks(refresh);
   }, [url]);
 
   return (

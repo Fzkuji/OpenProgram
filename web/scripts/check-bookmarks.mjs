@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 
 const sourcePath = new URL("../lib/bookmarks.ts", import.meta.url);
+const sessionStorePath = new URL("../lib/session-store/index.ts", import.meta.url);
 const navigationPath = new URL("../lib/bookmark-navigation.ts", import.meta.url);
 const webTabPath = new URL("../components/center-tabs/web-tab-pane.tsx", import.meta.url);
 const newTabPath = new URL("../components/center-tabs/new-tab-page.tsx", import.meta.url);
@@ -21,6 +22,7 @@ assert.equal(
 assert.match(packageJson.scripts?.check || "", /check:bookmarks/);
 
 const source = readFileSync(sourcePath, "utf8");
+const sessionStore = readFileSync(sessionStorePath, "utf8");
 const webTab = readFileSync(webTabPath, "utf8");
 const newTab = readFileSync(newTabPath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
@@ -31,8 +33,18 @@ assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
 assert.match(newTab, /readBookmarks/);
 assert.match(newTab, /removeBookmark/);
-assert.match(manager, /addEventListener\(BOOKMARKS_CHANGE_EVENT,\s*refresh\)/);
-assert.match(manager, /removeEventListener\(BOOKMARKS_CHANGE_EVENT,\s*refresh\)/);
+assert.match(
+  sessionStore,
+  /const VALID_VIEWS = new Set\(\[[^\]]*"bookmarks"[^\]]*\]\);/s,
+  "Bookmarks must survive right-dock restore",
+);
+for (const [name, text] of [
+  ["web-tab-pane.tsx", webTab],
+  ["new-tab-page.tsx", newTab],
+  ["bookmarks-panel.tsx", manager],
+]) {
+  assert.match(text, /subscribeBookmarks\(refresh\)/, `${name} must use shared bookmark subscription`);
+}
 assert.match(manager, /bookmark\.title\.toLowerCase\(\)\.includes\(needle\)/);
 assert.match(manager, /bookmark\.url\.toLowerCase\(\)\.includes\(needle\)/);
 assert.match(manager, /renameBookmark\(url,\s*draftTitle\)/);
@@ -249,5 +261,32 @@ assert.equal(
   JSON.stringify([{ title: second.url, url: second.url }]),
 );
 assert.equal(changes, 7);
+
+let refreshes = 0;
+const unsubscribe = bookmarks.subscribeBookmarks(() => refreshes++);
+
+windowEvents.dispatchEvent(new Event(bookmarks.BOOKMARKS_CHANGE_EVENT));
+assert.equal(refreshes, 1, "same-window bookmark event must refresh subscribers");
+
+const relevantStorage = new Event("storage");
+Object.defineProperty(relevantStorage, "key", {
+  configurable: true,
+  value: bookmarks.BOOKMARKS_STORAGE_KEY,
+});
+windowEvents.dispatchEvent(relevantStorage);
+assert.equal(refreshes, 2, "shared-profile storage changes must refresh subscribers");
+
+const unrelatedStorage = new Event("storage");
+Object.defineProperty(unrelatedStorage, "key", {
+  configurable: true,
+  value: "unrelated.key",
+});
+windowEvents.dispatchEvent(unrelatedStorage);
+assert.equal(refreshes, 2, "unrelated storage writes must be ignored");
+
+unsubscribe();
+windowEvents.dispatchEvent(new Event(bookmarks.BOOKMARKS_CHANGE_EVENT));
+windowEvents.dispatchEvent(relevantStorage);
+assert.equal(refreshes, 2, "unsubscribe must remove both listeners");
 
 console.log("bookmark storage checks passed");
