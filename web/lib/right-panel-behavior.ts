@@ -1,4 +1,5 @@
 export const RIGHT_RAIL_WIDTH = 49;
+export const COMPACT_LEFT_RAIL_WIDTH = 49;
 export const RIGHT_PANEL_DEFAULT = 320;
 export const RIGHT_PANEL_MIN = 280;
 export const RIGHT_PANEL_MAX = 560;
@@ -12,6 +13,20 @@ export type RightPanelAction =
 
 export function clampPanelWidth(width: number): number {
   return Math.max(RIGHT_PANEL_MIN, Math.min(RIGHT_PANEL_MAX, width));
+}
+
+export function fitRightPanelWidth(
+  preferredPanelWidth: number,
+  viewportWidth: number,
+): number {
+  const availablePanelWidth = Math.max(
+    0,
+    viewportWidth -
+      COMPACT_LEFT_RAIL_WIDTH -
+      RIGHT_RAIL_WIDTH -
+      RIGHT_PANEL_GAP * 2,
+  );
+  return Math.min(clampPanelWidth(preferredPanelWidth), availablePanelWidth);
 }
 
 export function panelWidthAfterKey(width: number, key: string): number | null {

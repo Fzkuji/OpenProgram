@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 import {
+  COMPACT_LEFT_RAIL_WIDTH,
   RIGHT_PANEL_DEFAULT,
   RIGHT_PANEL_GAP,
   RIGHT_PANEL_MAX,
   RIGHT_PANEL_MIN,
   RIGHT_RAIL_WIDTH,
   clampPanelWidth,
+  fitRightPanelWidth,
   handlePanelResizeKey,
   panelWidthAfterKey,
   resetPanelResize,
@@ -21,6 +23,8 @@ const webTabPath = new URL("../components/center-tabs/web-tab-pane.tsx", import.
 const newTabPath = new URL("../components/center-tabs/new-tab-page.tsx", import.meta.url);
 const managerPath = new URL("../components/right-sidebar/bookmarks-panel.tsx", import.meta.url);
 const rightSidebarPath = new URL("../components/right-sidebar/right-sidebar.tsx", import.meta.url);
+const sidebarPath = new URL("../components/sidebar/sidebar.tsx", import.meta.url);
+const appShellPath = new URL("../components/app-shell.tsx", import.meta.url);
 const rightDockCssPath = new URL("../app/styles/right-dock.css", import.meta.url);
 const packagePath = new URL("../package.json", import.meta.url);
 assert.ok(existsSync(sourcePath), "bookmarks storage module missing");
@@ -39,6 +43,8 @@ const webTab = readFileSync(webTabPath, "utf8");
 const newTab = readFileSync(newTabPath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
 const rightSidebar = readFileSync(rightSidebarPath, "utf8");
+const sidebar = readFileSync(sidebarPath, "utf8");
+const appShell = readFileSync(appShellPath, "utf8");
 const rightDockCss = readFileSync(rightDockCssPath, "utf8");
 
 assert.equal(RIGHT_PANEL_DEFAULT, 320);
@@ -46,10 +52,24 @@ assert.equal(RIGHT_PANEL_MIN, 280);
 assert.equal(RIGHT_PANEL_MAX, 560);
 assert.equal(RIGHT_PANEL_GAP, 8);
 assert.equal(RIGHT_RAIL_WIDTH, 49);
+assert.equal(COMPACT_LEFT_RAIL_WIDTH, 49);
 
 assert.equal(clampPanelWidth(120), 280);
 assert.equal(clampPanelWidth(420), 420);
 assert.equal(clampPanelWidth(900), 560);
+assert.equal(fitRightPanelWidth(320, 800), 320);
+assert.equal(fitRightPanelWidth(560, 800), 560);
+assert.equal(fitRightPanelWidth(320, 600), 320);
+assert.equal(
+  fitRightPanelWidth(560, 600),
+  486,
+  "narrow layout must reserve both 49px rails and the panel gaps",
+);
+assert.equal(
+  fitRightPanelWidth(560, 320),
+  206,
+  "keeping both rails visible takes priority over the normal panel minimum",
+);
 
 assert.equal(panelWidthAfterKey(320, "ArrowLeft"), 336);
 assert.equal(panelWidthAfterKey(320, "ArrowRight"), 304);
@@ -241,6 +261,48 @@ assert.doesNotMatch(
   /position:\s*fixed;/,
   "narrow right panel must not become a fixed overlay",
 );
+
+assert.match(appShell, /window\.matchMedia\("\(max-width: 900px\)"\)/);
+assert.match(appShell, /window\.addEventListener\("resize", updateViewport\);/);
+assert.match(
+  appShell,
+  /const forceLeftSidebarCollapsed =\s*showChat && narrowViewport && rightDockOpen;/,
+);
+assert.match(
+  appShell,
+  /function restoreForcedLeftSidebar\(\)\s*\{\s*setRightDockOpen\(false\);\s*\}/,
+);
+const sidebarMountStart = appShell.lastIndexOf("<Sidebar");
+const sidebarMount = appShell.slice(
+  sidebarMountStart,
+  appShell.indexOf("/>", sidebarMountStart) + 2,
+);
+assert.match(sidebarMount, /forcedCollapsed=\{forceLeftSidebarCollapsed\}/);
+assert.match(sidebarMount, /onForcedExpand=\{restoreForcedLeftSidebar\}/);
+const rightSidebarMountStart = appShell.lastIndexOf("<RightSidebar");
+const rightSidebarMount = appShell.slice(
+  rightSidebarMountStart,
+  appShell.indexOf("/>", rightSidebarMountStart) + 2,
+);
+assert.match(rightSidebarMount, /viewportWidth=\{viewportWidth\}/);
+assert.match(rightSidebarMount, /narrow=\{narrowViewport\}/);
+
+assert.match(sidebar, /const effectiveOpen = open && !forcedCollapsed;/);
+assert.match(
+  sidebar,
+  /if \(forcedCollapsed\) \{[\s\S]*?onForcedExpand\?\.\(\);[\s\S]*?return;/,
+);
+assert.match(sidebar, /\(effectiveOpen\s*\? "w-sidebar-w"/);
+assert.match(sidebar, /\{effectiveOpen && hasFavorites && \(/);
+assert.match(sidebar, /\{effectiveOpen && \(/);
+
+assert.match(
+  rightSidebar,
+  /const effectivePanelWidth =\s*narrow && viewportWidth !== null[\s\S]*?fitRightPanelWidth\(panelWidth, viewportWidth\)[\s\S]*?: panelWidth;/,
+);
+assert.match(rightSidebar, /startW: effectivePanelWidth/);
+assert.match(rightSidebar, /style=\{\{ width: `\$\{effectivePanelWidth\}px` \}\}/);
+assert.match(rightSidebar, /aria-valuenow=\{effectivePanelWidth\}/);
 
 function parseTsx(text, name) {
   return ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);

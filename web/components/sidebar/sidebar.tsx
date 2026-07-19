@@ -87,7 +87,15 @@ function readPersistedSidebarOpen(): boolean {
   }
 }
 
-export function Sidebar() {
+type SidebarProps = {
+  forcedCollapsed?: boolean;
+  onForcedExpand?: () => void;
+};
+
+export function Sidebar({
+  forcedCollapsed = false,
+  onForcedExpand,
+}: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { t } = useTranslation();
@@ -129,7 +137,22 @@ export function Sidebar() {
     (window as unknown as { sidebarOpen?: boolean }).sidebarOpen = persisted;
   }, []);
 
+  const effectiveOpen = open && !forcedCollapsed;
+
   function toggleSidebar() {
+    if (forcedCollapsed) {
+      if (!open) {
+        setOpen(true);
+        try {
+          localStorage.setItem("sidebarOpen", "1");
+        } catch {
+          /* ignore */
+        }
+        (window as unknown as { sidebarOpen?: boolean }).sidebarOpen = true;
+      }
+      onForcedExpand?.();
+      return;
+    }
     setOpen((prev) => {
       const next = !prev;
       try {
@@ -240,7 +263,7 @@ export function Sidebar() {
         // cubic-bezier Claude uses on its info-opacity fade for a
         // consistent timing feel.
         "[transition:width_0.15s_cubic-bezier(0.165,0.84,0.44,1),min-width_0.15s_cubic-bezier(0.165,0.84,0.44,1)] " +
-        (open
+        (effectiveOpen
           ? "w-sidebar-w"
           : "w-[49px] min-w-[49px] collapsed")
       }
@@ -251,7 +274,7 @@ export function Sidebar() {
       <div
         className={
           "flex h-[48px] shrink-0 items-center box-border " +
-          (open
+          (effectiveOpen
             ? "justify-between p-[8px]"
             : "justify-center px-0 py-[8px]")
         }
@@ -260,7 +283,7 @@ export function Sidebar() {
           className={
             "flex h-[var(--ui-list-h)] min-w-0 flex-1 items-center overflow-hidden " +
             "[transition:opacity_0.15s_ease,padding-left_0.3s_ease] " +
-            (open ? "opacity-100 pl-[8px]" : "hidden opacity-0 pl-0")
+            (effectiveOpen ? "opacity-100 pl-[8px]" : "hidden opacity-0 pl-0")
           }
         >
           <span className="text-[20px] font-bold tracking-[-0.01em] whitespace-nowrap">
@@ -285,7 +308,7 @@ export function Sidebar() {
           title={t("sidebar.toggle")}
           type="button"
         >
-          {open ? (
+          {effectiveOpen ? (
             <PanelLeftCloseIcon ref={toggleIconRef} size={20} />
           ) : (
             <PanelLeftOpenIcon ref={toggleIconRef} size={20} />
@@ -510,7 +533,7 @@ export function Sidebar() {
 
       {/* Favorite functions — only when at least one favourite exists
           and the sidebar isn't collapsed. */}
-      {open && hasFavorites && (
+      {effectiveOpen && hasFavorites && (
         <SidebarSection
           id="favSection"
           title={t("sidebar.favorite_functions")}
@@ -537,7 +560,7 @@ export function Sidebar() {
         </SidebarSection>
       )}
 
-      {open && (
+      {effectiveOpen && (
         // The conversation list — classic Recents (date buckets by
         // default; State / Flat via the filter's Group-by row), or the
         // project folder tree when Group-by → Project. In project mode

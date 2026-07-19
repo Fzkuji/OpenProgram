@@ -133,6 +133,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { t } = useTranslation();
+  const showChat = isChatRoute(pathname);
+  const rightDockOpen = useSessionStore((s) => s.rightDock.open);
+  const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null);
+  const [narrowViewport, setNarrowViewport] = useState(false);
+
+  useEffect(() => {
+    const narrowQuery = window.matchMedia("(max-width: 900px)");
+    function updateViewport() {
+      setViewportWidth(window.innerWidth);
+      setNarrowViewport(narrowQuery.matches);
+    }
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    narrowQuery.addEventListener("change", updateViewport);
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+      narrowQuery.removeEventListener("change", updateViewport);
+    };
+  }, []);
 
   // Background route warm-up. After AppShell paints and the main
   // thread goes idle, prefetch each commonly-used route in priority
@@ -548,7 +568,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  const showChat = isChatRoute(pathname);
+  const forceLeftSidebarCollapsed =
+    showChat && narrowViewport && rightDockOpen;
+
+  function restoreForcedLeftSidebar() {
+    setRightDockOpen(false);
+  }
+
   return (
     <div
       className={isDesktop ? "desktop-frame" : undefined}
@@ -569,7 +595,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       ) : null}
       <div className="app">
-      <Sidebar />
+      <Sidebar
+        forcedCollapsed={forceLeftSidebarCollapsed}
+        onForcedExpand={restoreForcedLeftSidebar}
+      />
       <div className="col-resize" id="sidebarResize"></div>
       {/* Center column: browser-style tab strip over the active tab's
          pane. `order: 2` slots it where `.app .main` used to sit (the
@@ -664,7 +693,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Right sidebar — persistent across conversations. Hidden (not
          unmounted) on non-chat routes so its state survives. */}
       <div style={{ display: showChat ? "contents" : "none" }}>
-        <RightSidebar />
+        <RightSidebar viewportWidth={viewportWidth} narrow={narrowViewport} />
       </div>
       {composerMount && createPortal(<Composer />, composerMount)}
       {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}

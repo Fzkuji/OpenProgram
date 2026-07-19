@@ -37,6 +37,7 @@ import {
   RIGHT_PANEL_MIN,
   RIGHT_RAIL_WIDTH,
   clampPanelWidth,
+  fitRightPanelWidth,
   handlePanelResizeKey,
   resetPanelResize,
   resolveRightPanelAction,
@@ -72,7 +73,12 @@ const VIEW_CONTEXT = "context";
 const VIEW_FILES = "files";
 const VIEW_BOOKMARKS = "bookmarks";
 
-export function RightSidebar() {
+type RightSidebarProps = {
+  viewportWidth: number | null;
+  narrow: boolean;
+};
+
+export function RightSidebar({ viewportWidth, narrow }: RightSidebarProps) {
   const { t, text } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
   const view = useSessionStore((s) => s.rightDock.view);
@@ -98,6 +104,18 @@ export function RightSidebar() {
     activeTab?.kind === "file"
       ? (activeTab.projectId ?? null)
       : (currentProject?.id ?? null);
+  const effectivePanelWidth =
+    narrow && viewportWidth !== null
+      ? fitRightPanelWidth(panelWidth, viewportWidth)
+      : panelWidth;
+  const effectivePanelMaximum =
+    narrow && viewportWidth !== null
+      ? fitRightPanelWidth(RIGHT_PANEL_MAX, viewportWidth)
+      : RIGHT_PANEL_MAX;
+  const effectivePanelMinimum = Math.min(
+    RIGHT_PANEL_MIN,
+    effectivePanelMaximum,
+  );
 
   // Install window.rightDock + legacy shims so the still-loaded shared
   // JS (ui.js showDetail, branches code, topbar history-panel toggles)
@@ -224,7 +242,7 @@ export function RightSidebar() {
     if (event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { startX: event.clientX, startW: panelWidth };
+    dragRef.current = { startX: event.clientX, startW: effectivePanelWidth };
     setResizing(true);
   }
 
@@ -265,7 +283,7 @@ export function RightSidebar() {
             : text("Execution detail", "执行详情");
 
   const shellWidth = open
-    ? panelWidth + RIGHT_RAIL_WIDTH + RIGHT_PANEL_GAP * 2
+    ? effectivePanelWidth + RIGHT_RAIL_WIDTH + RIGHT_PANEL_GAP * 2
     : RIGHT_RAIL_WIDTH;
 
   return (
@@ -279,7 +297,7 @@ export function RightSidebar() {
     >
       <section
         className="right-sidebar-panel"
-        style={{ width: `${panelWidth}px` }}
+        style={{ width: `${effectivePanelWidth}px` }}
         role="region"
         aria-labelledby="right-panel-title"
         hidden={!open}
@@ -289,16 +307,18 @@ export function RightSidebar() {
           role="separator"
           aria-label={t("right.resize_panel")}
           aria-orientation="vertical"
-          aria-valuemin={RIGHT_PANEL_MIN}
-          aria-valuemax={RIGHT_PANEL_MAX}
-          aria-valuenow={panelWidth}
+          aria-valuemin={effectivePanelMinimum}
+          aria-valuemax={effectivePanelMaximum}
+          aria-valuenow={effectivePanelWidth}
           tabIndex={0}
           onPointerDown={onResizePointerDown}
           onPointerMove={onResizePointerMove}
           onPointerUp={finishResize}
           onPointerCancel={finishResize}
           onLostPointerCapture={resetResize}
-          onKeyDown={(event) => handlePanelResizeKey(event, panelWidth, setPanelWidth)}
+          onKeyDown={(event) =>
+            handlePanelResizeKey(event, effectivePanelWidth, setPanelWidth)
+          }
         />
         <header className="right-sidebar-panel-header">
           <span id="right-panel-title">{panelTitle}</span>
