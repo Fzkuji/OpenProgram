@@ -45,6 +45,7 @@ import {
   writeTransferJournal,
 } from "@/lib/tab-transfer-journal";
 import type {
+  ChatTransferState,
   DesktopTransferPayload,
   SerializedWebViewBookkeeping,
   SessionTransferSnapshot,
@@ -53,6 +54,13 @@ import type {
   TransferRecoveryHandlers,
 } from "@/lib/tab-transfer-journal";
 import { dragCoordinator } from "@/lib/tab-drag-coordinator";
+import type { TabDragSubject, TabDropIntent } from "@/lib/tab-drag-coordinator";
+import { useSessionStore } from "@/lib/session-store";
+import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
+import {
+  draftChannelChoiceFor,
+  type DraftChannelChoiceHost,
+} from "@/lib/runtime-bridge/draft-channel-choice";
 
 export interface DesktopWebTabState {
   id: string;
@@ -693,6 +701,84 @@ function undoDestinationLocal(
   applyFileDraftSnapshot(entry.beforeFileDrafts);
   acceptedTransfers.delete(entry.token);
   unlockTransfer(entry.payload);
+}
+
+/** Same 25/50/25 drop intent, expressed as a main-process placement. */
+export function placementForDropIntent(intent: TabDropIntent): TabDropPlacement {
+  if (intent.mode === "merge") {
+    const placement: TabDropPlacement = {
+      kind: "merge",
+      targetTabId: intent.targetTabId,
+    };
+    if (intent.groupId !== undefined) placement.groupId = intent.groupId;
+    if (intent.memberIndex !== undefined) placement.memberIndex = intent.memberIndex;
+    return placement;
+  }
+  return { kind: intent.mode, targetTabId: intent.targetTabId };
+}
+
+/** Pointer-down payload for tabTransfer.prepare — the dragged tabs plus
+ *  every piece of chat/file draft state they own in this window. */
+export function buildTransferPayload(
+  subject: TabDragSubject,
+  windowId: string,
+): DesktopTransferPayload | null {
+  const centerTabs = useCenterTabs.getState().tabs;
+  const tabs = [];
+  for (const tabId of subject.tabIds) {
+    const tab = centerTabs.find((candidate) => candidate.id === tabId);
+    if (!tab) return null;
+    tabs.push(structuredClone(tab));
+  }
+  const session = useSessionStore.getState();
+  const host = (typeof window === "undefined"
+    ? {}
+    : window) as unknown as DraftChannelChoiceHost;
+  const chats: ChatTransferState[] = [];
+  const payloadFileDrafts: DesktopTransferPayload["fileDrafts"] = [];
+  for (const tab of tabs) {
+    if (tab.kind === "session" && tab.sessionId) {
+      const chatKey = tab.sessionId;
+      const wasActive = session.activeChatKey === chatKey;
+      const chat: ChatTransferState = { chatKey, wasActive };
+      if (session.composerDrafts[chatKey] !== undefined) {
+        chat.composerDraft = session.composerDrafts[chatKey];
+      }
+      if (session.composerSettingsBySession[chatKey]) {
+        chat.composerSettings = structuredClone(
+          session.composerSettingsBySession[chatKey],
+        );
+      }
+      if (session.pendingProjectsByChat[chatKey]) {
+        chat.pendingProjectId = session.pendingProjectsByChat[chatKey];
+      }
+      const choice = draftChannelChoiceFor(host, chatKey);
+      if (choice) chat.draftChannelChoice = structuredClone(choice);
+      if (wasActive) {
+        chat.activeComposerInput = session.composerInput;
+        chat.activeComposerSettings = structuredClone(session.composerSettings);
+      }
+      chats.push(chat);
+    } else if (tab.kind === "file" && tab.projectId && tab.path) {
+      const key = fileDraftKey(tab.projectId, tab.path);
+      const value = fileDrafts.get(key);
+      if (value) payloadFileDrafts.push({ key, value: structuredClone(value) });
+    }
+  }
+  const source: DesktopTransferPayload["source"] = {
+    windowId,
+    kind: subject.kind,
+  };
+  if (subject.kind !== "tab") {
+    source.groupId = subject.sourceGroup.id;
+    source.memberIds = [...subject.sourceGroup.memberIds];
+    source.visibleIds = [...subject.sourceGroup.visibleIds];
+    if (subject.sourceGroup.focusedId !== undefined) {
+      source.focusedId = subject.sourceGroup.focusedId;
+    }
+  }
+  if (subject.kind === "segment") source.memberIndex = subject.memberIndex;
+  return { tabs, source, fileDrafts: payloadFileDrafts, chats };
 }
 
 /** Destination staging. Returns true when destinationReady(true) was sent. */

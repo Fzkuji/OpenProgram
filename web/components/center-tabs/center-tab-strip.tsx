@@ -41,6 +41,12 @@ import {
   type TabDragSubject,
   type TabDropIntent,
 } from "@/lib/tab-drag-coordinator";
+import {
+  buildTransferPayload,
+  desktopBridge,
+  placementForDropIntent,
+  stageIncomingTransfer,
+} from "@/lib/desktop-bridge";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   dropDraftChannelChoice,
@@ -52,11 +58,21 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "./center-tabs.module.css";
 
 const TAB_DRAG_MIME = "application/x-openprogram-tab";
+const TAB_TRANSFER_MIME = "application/x-openprogram-tab-transfer";
 let removePreparedReleaseListener: (() => void) | null = null;
 
 function removeReleaseListener() {
   removePreparedReleaseListener?.();
   removePreparedReleaseListener = null;
+}
+
+/** Cancel the local coordinator AND its prepared main-process token. */
+function cancelCoordinator() {
+  const cancelled = dragCoordinator.cancel();
+  if (cancelled?.transferToken) {
+    void desktopBridge()?.tabTransfer.cancel(cancelled.transferToken);
+  }
+  return cancelled;
 }
 
 function isChatRoute(pathname: string) {
@@ -344,14 +360,14 @@ export function CenterTabStrip() {
   }
 
   function cancelDrag(announce = false) {
-    dragCoordinator.cancel();
+    cancelCoordinator();
     clearDragState();
     if (announce) setDragAnnouncement(text("Tab drag cancelled", "标签拖动已取消"));
   }
 
   function onPrepareDrag(subject: TabDragSubject) {
     removeReleaseListener();
-    dragCoordinator.cancel();
+    cancelCoordinator();
     const snapshot: TabDragSubject = subject.kind === "tab"
       ? { kind: "tab", tabIds: [subject.tabIds[0]] }
       : subject.kind === "segment"
@@ -373,15 +389,25 @@ export function CenterTabStrip() {
               visibleIds: [...subject.sourceGroup.visibleIds],
             },
           };
+    // Synchronous main-process preparation — must happen on pointer
+    // down; dragstart may only read the already-prepared token.
+    const bridge = desktopBridge();
+    let transferToken: string | undefined;
+    if (bridge) {
+      const payload = buildTransferPayload(snapshot, bridge.windowId);
+      transferToken =
+        (payload && bridge.tabTransfer.prepare(payload)) || undefined;
+    }
     dragCoordinator.prepare({
       subject: snapshot,
+      transferToken,
       started: false,
       cancelled: false,
       committed: false,
     });
     const cancelUnstarted = () => {
       const prepared = dragCoordinator.current();
-      if (prepared && !prepared.started) dragCoordinator.cancel();
+      if (prepared && !prepared.started) cancelCoordinator();
       removeReleaseListener();
     };
     window.addEventListener("pointerup", cancelUnstarted, { once: true });
@@ -401,11 +427,33 @@ export function CenterTabStrip() {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify(prepared));
     e.dataTransfer.setData("text/plain", prepared.subject.tabIds.join("\n"));
+    if (prepared.transferToken) {
+      // Cross-window handoff: only the opaque token crosses windows.
+      e.dataTransfer.setData(TAB_TRANSFER_MIME, prepared.transferToken);
+      e.dataTransfer.setData("text/plain", prepared.transferToken);
+    }
     setDraggedIds(new Set(prepared.subject.tabIds));
     setDragAnnouncement(text("Dragging tab", "正在拖动标签"));
   }
 
-  function onDragEnd() {
+  function onDragEnd(e: React.DragEvent<HTMLElement>) {
+    const prepared = dragCoordinator.current();
+    if (prepared?.started && !prepared.cancelled && !prepared.committed
+        && prepared.transferToken) {
+      if (e.dataTransfer.dropEffect === "none") {
+        // Dropped outside every strip — detach into a new hidden window.
+        const token = prepared.transferToken;
+        dragCoordinator.clear();
+        clearDragState();
+        void desktopBridge()?.tabTransfer.detach(token);
+        return;
+      }
+      // A cross-window strip accepted the drop; the destination owns
+      // the token now — cancelling here would roll its staging back.
+      dragCoordinator.clear();
+      clearDragState();
+      return;
+    }
     cancelDrag();
   }
 
@@ -479,7 +527,9 @@ export function CenterTabStrip() {
     target: { tabId: string; groupId?: string; memberIndex?: number },
   ) {
     const prepared = dragCoordinator.current();
-    if (!prepared?.started) return;
+    const crossWindow =
+      !prepared?.started && e.dataTransfer.types.includes(TAB_TRANSFER_MIME);
+    if (!prepared?.started && !crossWindow) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setDropMarker(resolveTabDropIntent(e.currentTarget.getBoundingClientRect(), e.clientX, target));
@@ -496,17 +546,31 @@ export function CenterTabStrip() {
   ) {
     e.preventDefault();
     const prepared = dragCoordinator.current();
-    if (!prepared?.started) {
-      cancelDrag(true);
-      return;
-    }
     const intent = resolveTabDropIntent(
       e.currentTarget.getBoundingClientRect(),
       e.clientX,
       target,
     );
+    if (!prepared?.started) {
+      // Cross-window drop: another window prepared this token; stage it
+      // here with the exact same before/merge/after geometry.
+      const bridge = desktopBridge();
+      const token = e.dataTransfer.getData(TAB_TRANSFER_MIME);
+      if (bridge && token) {
+        clearDragState();
+        void stageIncomingTransfer(bridge, token, placementForDropIntent(intent));
+        setDragAnnouncement(text("Tab moved", "标签已移动"));
+        return;
+      }
+      cancelDrag(true);
+      return;
+    }
     if (applyDrop(prepared, intent)) {
-      dragCoordinator.commit();
+      const committed = dragCoordinator.commit();
+      if (committed?.transferToken) {
+        // Same-window move — release the unused main-process token.
+        void desktopBridge()?.tabTransfer.cancel(committed.transferToken);
+      }
       setDragAnnouncement(text("Tab moved", "标签已移动"));
       clearDragState();
     } else {
@@ -528,7 +592,7 @@ export function CenterTabStrip() {
   useEffect(() => {
     const onEscape = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      dragCoordinator.cancel();
+      cancelCoordinator();
       removeReleaseListener();
       setDraggedIds(new Set());
       setDropMarker(null);
@@ -537,7 +601,7 @@ export function CenterTabStrip() {
     window.addEventListener("keydown", onEscape);
     return () => {
       window.removeEventListener("keydown", onEscape);
-      dragCoordinator.cancel();
+      cancelCoordinator();
       removeReleaseListener();
     };
   }, [text]);
@@ -637,7 +701,7 @@ interface CompoundTabItemProps {
   dropMarker: TabDropIntent | null;
   onPrepareDrag(subject: TabDragSubject): void;
   onDragStart(event: React.DragEvent<HTMLElement>): void;
-  onDragEnd(): void;
+  onDragEnd(event: React.DragEvent<HTMLElement>): void;
   onDragOver(
     event: React.DragEvent<HTMLElement>,
     target: { tabId: string; groupId?: string; memberIndex?: number },
@@ -797,7 +861,7 @@ function TabItem({
   dropTarget: { tabId: string; groupId?: string; memberIndex?: number };
   onPrepareDrag: (subject: TabDragSubject) => void;
   onDragStart: (event: React.DragEvent<HTMLElement>) => void;
-  onDragEnd: () => void;
+  onDragEnd: (event: React.DragEvent<HTMLElement>) => void;
   onDragOver: (
     event: React.DragEvent<HTMLElement>,
     target: { tabId: string; groupId?: string; memberIndex?: number },

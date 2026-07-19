@@ -55,6 +55,20 @@ coordinator.prepare({
 coordinator.clear();
 assert.equal(coordinator.current(), null, "clear removes the prepared entry");
 
+// Desktop preparation: the main-process transfer token rides the same
+// prepared record through start, and cancel hands it back for release.
+const tokenPrepared = {
+  subject: { kind: "tab", tabIds: ["t"] },
+  transferToken: "token-1",
+  started: false,
+  cancelled: false,
+  committed: false,
+};
+coordinator.prepare(tokenPrepared);
+assert.equal(coordinator.current()?.transferToken, "token-1");
+assert.equal(coordinator.start()?.transferToken, "token-1", "start keeps the prepared token");
+assert.equal(coordinator.cancel()?.transferToken, "token-1", "cancel returns the token for main-process release");
+
 const segmentGroup = {
   id: "g:segment",
   memberIds: ["a", "b", "c"],

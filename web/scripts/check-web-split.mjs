@@ -2549,4 +2549,115 @@ assert.doesNotMatch(
   "DataTransfer.setData must not be awaited",
 );
 
+// Task 6: pointer-down payload building and shared drop-intent geometry.
+{
+  const { useCenterTabs } = await import("../lib/state/center-tabs-store.ts");
+  const { useSessionStore } = await import("../lib/session-store/index.ts");
+  const filesShared = await import("../lib/state/files-shared.ts");
+  useCenterTabs.setState({
+    tabs: [
+      {
+        id: "s:chatA",
+        kind: "session",
+        sessionId: "chatA",
+        title: "Chat A",
+        draft: false,
+      },
+      {
+        id: "f:readme",
+        kind: "file",
+        projectId: "proj",
+        path: "README.md",
+        title: "README.md",
+      },
+    ],
+    groups: [],
+    activeId: "s:chatA",
+  });
+  useSessionStore.setState({
+    activeChatKey: "chatA",
+    composerInput: "live text",
+    composerDrafts: { chatA: "draft text" },
+    composerSettingsBySession: { chatA: { model: "m1" } },
+    pendingProjectsByChat: { chatA: "proj" },
+  });
+  window.__pendingChannelChoices = { chatA: { channel: "web" } };
+  const draftKey = filesShared.fileDraftKey("proj", "README.md");
+  filesShared.fileDrafts.set(draftKey, { content: "edited", baseMtime: 1 });
+
+  const group = {
+    id: "g:one",
+    memberIds: ["s:chatA", "f:readme"],
+    visibleIds: ["s:chatA"],
+    focusedId: "s:chatA",
+  };
+  const payload = bridgeModule.buildTransferPayload(
+    { kind: "group", tabIds: ["s:chatA", "f:readme"], sourceGroup: group },
+    "win-src",
+  );
+  assert.deepEqual(payload.tabs.map((tab) => tab.id), ["s:chatA", "f:readme"]);
+  assert.deepEqual(payload.source, {
+    windowId: "win-src",
+    kind: "group",
+    groupId: "g:one",
+    memberIds: ["s:chatA", "f:readme"],
+    visibleIds: ["s:chatA"],
+    focusedId: "s:chatA",
+  });
+  assert.deepEqual(payload.fileDrafts, [
+    { key: draftKey, value: { content: "edited", baseMtime: 1 } },
+  ]);
+  assert.deepEqual(payload.chats, [
+    {
+      chatKey: "chatA",
+      wasActive: true,
+      composerDraft: "draft text",
+      composerSettings: { model: "m1" },
+      pendingProjectId: "proj",
+      draftChannelChoice: { channel: "web" },
+      activeComposerInput: "live text",
+      activeComposerSettings: useSessionStore.getState().composerSettings,
+    },
+  ]);
+  const segmentPayload = bridgeModule.buildTransferPayload(
+    {
+      kind: "segment",
+      tabIds: ["f:readme"],
+      sourceGroup: group,
+      memberIndex: 1,
+    },
+    "win-src",
+  );
+  assert.equal(segmentPayload.source.memberIndex, 1);
+  assert.equal(segmentPayload.chats.length, 0);
+  assert.equal(
+    bridgeModule.buildTransferPayload(
+      { kind: "tab", tabIds: ["missing"] },
+      "win-src",
+    ),
+    null,
+    "an unknown tab id must not produce a partial payload",
+  );
+  delete window.__pendingChannelChoices;
+  filesShared.fileDrafts.delete(draftKey);
+
+  assert.deepEqual(
+    bridgeModule.placementForDropIntent({ mode: "before", targetTabId: "x" }),
+    { kind: "before", targetTabId: "x" },
+  );
+  assert.deepEqual(
+    bridgeModule.placementForDropIntent({
+      mode: "merge",
+      targetTabId: "x",
+      groupId: "g",
+      memberIndex: 2,
+    }),
+    { kind: "merge", targetTabId: "x", groupId: "g", memberIndex: 2 },
+  );
+  assert.deepEqual(
+    bridgeModule.placementForDropIntent({ mode: "after", targetTabId: "x" }),
+    { kind: "after", targetTabId: "x" },
+  );
+}
+
 console.log("web-split checks passed");

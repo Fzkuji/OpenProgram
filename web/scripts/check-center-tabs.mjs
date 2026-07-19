@@ -50,6 +50,54 @@ assert.equal(
   dragStart.match(/dataTransfer\.setData\(/g)?.length,
   "every transfer payload must be written by the synchronous coordinator-backed drag start",
 );
+// Cross-window transfer wiring: pointer down prepares the main-process
+// token synchronously; dragstart only reads it into the DataTransfer.
+const prepareDrag = strip.slice(
+  strip.indexOf("function onPrepareDrag"),
+  strip.indexOf("function onDragStart"),
+);
+assert.match(prepareDrag, /buildTransferPayload\(snapshot, bridge\.windowId\)/);
+assert.match(prepareDrag, /bridge\.tabTransfer\.prepare\(payload\)/);
+assert.doesNotMatch(prepareDrag, /\bawait\b/, "pointer-down preparation must stay synchronous");
+assert.match(prepareDrag, /transferToken,/, "the prepared token must live in the shared coordinator record");
+assert.ok(
+  prepareDrag.indexOf("tabTransfer.prepare") < prepareDrag.indexOf("dragCoordinator.prepare"),
+  "the token must exist before the coordinator record that carries it",
+);
+assert.match(prepareDrag, /if \(prepared && !prepared\.started\) cancelCoordinator\(\);/,
+  "release before dragstart must cancel the prepared token");
+assert.match(dragStart, /setData\(TAB_TRANSFER_MIME, prepared\.transferToken\)/);
+assert.match(
+  strip,
+  /function cancelCoordinator\(\)[\s\S]*?tabTransfer\.cancel\(cancelled\.transferToken\)/,
+  "every coordinator cancellation must release its main-process token",
+);
+assert.equal(
+  strip.split("dragCoordinator.cancel()").length - 1,
+  1,
+  "cancelCoordinator must be the strip's only direct coordinator cancellation",
+);
+const dragEnd = strip.slice(
+  strip.indexOf("function onDragEnd"),
+  strip.indexOf("function targetBeforeId"),
+);
+assert.match(dragEnd, /dropEffect === "none"/);
+assert.match(dragEnd, /tabTransfer\.detach\(token\)/,
+  "an unhandled drag with a live token must detach into a new window");
+assert.ok(
+  dragEnd.indexOf('dropEffect === "none"') < dragEnd.indexOf("cancelDrag()"),
+  "detach must be decided before falling back to cancellation",
+);
+const drop = strip.slice(
+  strip.indexOf("function onDrop"),
+  strip.indexOf("function moveGroupByKeyboard"),
+);
+assert.match(drop, /stageIncomingTransfer\(bridge, token, placementForDropIntent\(intent\)\)/,
+  "cross-window drops must stage through the shared placement geometry");
+assert.match(drop, /getData\(TAB_TRANSFER_MIME\)/);
+assert.match(drop, /tabTransfer\.cancel\(committed\.transferToken\)/,
+  "a same-window drop must release the unused prepared token");
+assert.doesNotMatch(strip, /dragRef/, "the shared coordinator is the only drag state holder");
 assert.ok(
   strip.indexOf("function onPrepareDrag") < strip.indexOf("function onDragStart"),
   "pointer preparation must be defined before native drag start",
