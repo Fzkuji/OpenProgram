@@ -102,7 +102,8 @@
   min-width: 48px;
   white-space: nowrap;
   /* 不做 background 过渡：切换 tab 必须瞬时（Chrome 同款）。之前 120ms 的
-     淡入让活动白底在灰底上"闪一下亮"。 */
+     淡入让活动白底在灰底上"闪一下亮"。transform 过渡只服务拖动让位。 */
+  transition: transform 160ms ease;
 }
 
 /* 新建 tab 入场动画：宽度从 0 长到基准宽，flex 布局逐帧回流，邻居被平滑
@@ -276,7 +277,8 @@
   transition:
     width 160ms ease-in,
     flex-basis 160ms ease-in,
-    max-width 160ms ease-in;
+    max-width 160ms ease-in,
+    transform 160ms ease;
 }
 .compoundTab[data-member-count="2"] {
   width: 360px;
@@ -468,17 +470,17 @@
 .compoundTab[data-drag-source="true"] {
   opacity: 0.55;
 }
-.tab[data-drop-intent="before"],
-.compoundTab[data-drop-intent="before"] {
-  box-shadow: inset 3px 0 var(--accent-blue);
-}
+/* Chrome 式实时让位：before/after 不画插入线，被越过的 tab 用 transform
+   平滑滑开（见 computeLiveShifts）；merge 仍然高亮目标 tab。 */
 .tab[data-drop-intent="merge"] {
   outline: 2px solid var(--accent-blue);
   outline-offset: -2px;
 }
-.tab[data-drop-intent="after"],
-.compoundTab[data-drop-intent="after"] {
-  box-shadow: inset -3px 0 var(--accent-blue);
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .compoundTab {
+    transition-duration: 0ms;
+  }
 }
 
 .tabMenu {
@@ -540,22 +542,6 @@
 }
 :global(html.is-desktop) .compoundTabActive {
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.1),
-    0 0 0 0.5px rgba(0, 0, 0, 0.04);
-}
-:global(html.is-desktop) .tab.tabActive[data-drop-intent="before"],
-:global(html.is-desktop) .tab.tabActive:hover[data-drop-intent="before"],
-:global(html.is-desktop) .compoundTabActive[data-drop-intent="before"] {
-  box-shadow:
-    inset 3px 0 var(--accent-blue),
-    0 1px 3px rgba(0, 0, 0, 0.1),
-    0 0 0 0.5px rgba(0, 0, 0, 0.04);
-}
-:global(html.is-desktop) .tab.tabActive[data-drop-intent="after"],
-:global(html.is-desktop) .tab.tabActive:hover[data-drop-intent="after"],
-:global(html.is-desktop) .compoundTabActive[data-drop-intent="after"] {
-  box-shadow:
-    inset -3px 0 var(--accent-blue),
     0 1px 3px rgba(0, 0, 0, 0.1),
     0 0 0 0.5px rgba(0, 0, 0, 0.04);
 }

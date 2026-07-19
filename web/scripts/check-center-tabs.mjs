@@ -181,18 +181,50 @@ assert.match(closeButton, /onPointerDown=\{\(event\) => event\.stopPropagation\(
 assert.match(closeButton, /onMouseDown=\{\(event\) => event\.stopPropagation\(\)\}/);
 assert.doesNotMatch(closeButton, /onPrepareDrag/);
 assert.match(css, /\[data-drag-source="true"\][^{]*\{[^}]*opacity:/s);
-assert.match(css, /\[data-drop-intent="before"\]/);
-assert.match(css, /\[data-drop-intent="merge"\]/);
-assert.match(css, /\[data-drop-intent="after"\]/);
-assert.match(
+// ---- Live reorder (Chrome-style slide-aside, no insert markers) ----
+assert.doesNotMatch(
   css,
-  /:global\(html\.is-desktop\) \.tab\.tabActive\[data-drop-intent="before"\][^{]*,[\s\S]*\.compoundTabActive\[data-drop-intent="before"\]\s*\{[^}]*box-shadow:\s*inset 3px 0 var\(--accent-blue\),/s,
-  "desktop active normal and compound targets must retain the before marker",
+  /data-drop-intent="(?:before|after)"/,
+  "before/after insert markers are gone — bystanders slide aside instead",
 );
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.tab\.tabActive\[data-drop-intent="after"\][^{]*,[\s\S]*\.compoundTabActive\[data-drop-intent="after"\]\s*\{[^}]*box-shadow:\s*inset -3px 0 var\(--accent-blue\),/s,
-  "desktop active normal and compound targets must retain the after marker",
+  /\.tab\[data-drop-intent="merge"\]\s*\{[^}]*outline: 2px solid var\(--accent-blue\);/s,
+  "merge targets must keep their highlight",
+);
+assert.match(css, /\.tab \{[^}]*transition: transform 160ms ease;/s,
+  "tabs must transition transform for the slide-aside reorder");
+assert.match(
+  css,
+  /\.compoundTab \{[^}]*transition:[^}]*transform 160ms ease;/s,
+  "compound tabs must transition transform for the slide-aside reorder",
+);
+assert.match(
+  css,
+  /@media \(prefers-reduced-motion: reduce\) \{\s*\.tab,\s*\.compoundTab \{\s*transition-duration: 0ms;/s,
+);
+assert.match(strip, /function computeLiveShifts\(/);
+assert.match(
+  strip,
+  /marker\.mode === "merge"[^)]*\) return shifts;/,
+  "merge intents must not shift bystanders — highlight and slide are exclusive",
+);
+assert.match(
+  strip,
+  /translateX\(\$\{shiftX\}px\)/,
+  "shifted entries must move via transform, never layout",
+);
+assert.match(
+  strip,
+  /left: rect\.left - entryShiftOf\(target\.tabId\)/,
+  "drop intent math must use untransformed slot geometry",
+);
+assert.match(strip, /onDragOver=\{onFlowDragOver\}/);
+assert.match(strip, /onDrop=\{onFlowDrop\}/);
+assert.match(
+  strip,
+  /dropMarker\.mode === "merge"\s*\? "merge"\s*: undefined/,
+  "plain tabs must only surface the merge intent",
 );
 
 assert.match(css, /max-width: calc\(100% - 36px\);/);
@@ -255,7 +287,7 @@ assert.match(
 assert.match(
   strip,
   /const internalSegmentDrag = !groupDragged\s*&& group\.memberIds\.some\(\(tabId\) => draggedIds\.has\(tabId\)\);/,
-  "internal segment drags must be detected to suppress insert markers",
+  "internal segment drags must be detected so the compound FLIP owns the feedback",
 );
 assert.match(
   strip,
@@ -272,7 +304,7 @@ assert.match(strip, /data-closing-count=\{closingCount \|\| undefined\}/);
 assert.match(strip, /data-remaining-count=\{remainingCount\}/);
 assert.match(
   css,
-  /\.compoundTab \{[^}]*transition:\s*width 160ms ease-in,\s*flex-basis 160ms ease-in,\s*max-width 160ms ease-in;/s,
+  /\.compoundTab \{[^}]*transition:\s*width 160ms ease-in,\s*flex-basis 160ms ease-in,\s*max-width 160ms ease-in,\s*transform 160ms ease;/s,
   "the compound outer width must animate for the full browser segment-exit duration",
 );
 assert.match(

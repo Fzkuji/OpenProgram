@@ -106,6 +106,67 @@ function snapshotTabDragSubject(subject: TabDragSubject): TabDragSubject {
   };
 }
 
+/** Flex gap between strip entries — keep in sync with .strip/.tabsFlow gap. */
+const STRIP_GAP = 8;
+
+/**
+ * Chrome-style live reorder: while a drag hovers a before/after zone,
+ * every entry between the dragged unit and the assumed insertion point
+ * slides one drag-width aside (transform only — layout never changes,
+ * so hit targets stay stable). Merge intents render as a highlight on
+ * the target instead; internal compound reorders keep their own FLIP.
+ */
+function computeLiveShifts(
+  entries: ReturnType<typeof centerTabStripEntries>,
+  draggedIds: ReadonlySet<string>,
+  marker: TabDropIntent | null,
+  dragWidth: number,
+): Map<string, number> {
+  const shifts = new Map<string, number>();
+  if (!marker || marker.mode === "merge" || dragWidth <= 0) return shifts;
+  const targetIndex = entries.findIndex((entry) =>
+    entry.kind === "group"
+      ? entry.group.memberIds.includes(marker.targetTabId)
+      : entry.tabId === marker.targetTabId,
+  );
+  if (targetIndex < 0) return shifts;
+  const sourceIndex = entries.findIndex((entry) =>
+    entry.kind === "group"
+      ? entry.group.memberIds.every((tabId) => draggedIds.has(tabId))
+      : draggedIds.has(entry.tabId),
+  );
+  const targetEntry = entries[targetIndex];
+  if (
+    sourceIndex < 0
+    && targetEntry.kind === "group"
+    && targetEntry.group.memberIds.some((tabId) => draggedIds.has(tabId))
+  ) {
+    // Segment dragged over its own compound — internal FLIP territory.
+    return shifts;
+  }
+  const step = dragWidth + STRIP_GAP;
+  const insertion = targetIndex + (marker.mode === "after" ? 1 : 0);
+  if (sourceIndex >= 0) {
+    if (insertion === sourceIndex || insertion === sourceIndex + 1) return shifts;
+    if (insertion > sourceIndex) {
+      for (let i = sourceIndex + 1; i < insertion; i++) {
+        shifts.set(entries[i].id, -step);
+      }
+    } else {
+      for (let i = insertion; i < sourceIndex; i++) {
+        shifts.set(entries[i].id, step);
+      }
+    }
+  } else {
+    // No same-strip source (cross-window drag or segment leaving its
+    // group) — open a gap at the insertion point.
+    for (let i = insertion; i < entries.length; i++) {
+      shifts.set(entries[i].id, step);
+    }
+  }
+  return shifts;
+}
+
 function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
 }
@@ -149,6 +210,7 @@ export function CenterTabStrip() {
   const [focusedTabId, setFocusedTabId] = useState<string | null>(activeId);
   const [draggedIds, setDraggedIds] = useState<ReadonlySet<string>>(new Set());
   const [dropMarker, setDropMarker] = useState<TabDropIntent | null>(null);
+  const [dragWidth, setDragWidth] = useState(0);
   const [dragAnnouncement, setDragAnnouncement] = useState("");
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -570,10 +632,25 @@ export function CenterTabStrip() {
     groups,
   });
 
+  // Live-reorder geometry for this render: entry id → translateX px.
+  const liveShifts = computeLiveShifts(stripEntries, draggedIds, dropMarker, dragWidth);
+
+  /** Untransform helper — intent math must use slot geometry, not the
+   *  shifted visual rect, or tabs would oscillate under the cursor. */
+  function entryShiftOf(tabId: string) {
+    const entry = stripEntries.find((candidate) =>
+      candidate.kind === "group"
+        ? candidate.group.memberIds.includes(tabId)
+        : candidate.tabId === tabId,
+    );
+    return (entry && liveShifts.get(entry.id)) || 0;
+  }
+
   function clearDragState() {
     removeReleaseListener();
     setDraggedIds(new Set());
     setDropMarker(null);
+    setDragWidth(0);
   }
 
   function cancelDrag(announce = false) {
@@ -629,6 +706,11 @@ export function CenterTabStrip() {
       e.dataTransfer.setData(TAB_TRANSFER_MIME, prepared.transferToken);
       e.dataTransfer.setData("text/plain", prepared.transferToken);
     }
+    // Measure the dragged unit so bystanders know how far to slide.
+    const unit = prepared.subject.kind === "group"
+      ? (e.currentTarget.parentElement ?? e.currentTarget)
+      : e.currentTarget;
+    setDragWidth(unit.getBoundingClientRect().width);
     setDraggedIds(new Set(prepared.subject.tabIds));
     setDragAnnouncement(text("Dragging tab", "正在拖动标签"));
   }
@@ -750,7 +832,31 @@ export function CenterTabStrip() {
     if (!prepared?.started && !crossWindow) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    setDropMarker(resolveTabDropIntent(e.currentTarget.getBoundingClientRect(), e.clientX, target));
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDropMarker(resolveTabDropIntent(
+      { left: rect.left - entryShiftOf(target.tabId), width: rect.width },
+      e.clientX,
+      target,
+    ));
+  }
+
+  /** Bystanders slide via transform, so the slot under the cursor can be
+   *  visually empty — the flow container keeps the last intent live and
+   *  accepts the drop there instead of letting it fall to "outside". */
+  function onFlowDragOver(e: React.DragEvent<HTMLDivElement>) {
+    if (e.defaultPrevented) return; // a tab already claimed it
+    const prepared = dragCoordinator.current();
+    const crossWindow =
+      !prepared?.started && e.dataTransfer.types.includes(TAB_TRANSFER_MIME);
+    if ((!prepared?.started && !crossWindow) || !dropMarker) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  function onFlowDrop(e: React.DragEvent<HTMLDivElement>) {
+    if (e.defaultPrevented || !dropMarker) return;
+    e.preventDefault();
+    commitDrop(e, dropMarker);
   }
 
   function onDragLeave(e: React.DragEvent<HTMLElement>) {
@@ -763,12 +869,17 @@ export function CenterTabStrip() {
     target: { tabId: string; groupId?: string; memberIndex?: number },
   ) {
     e.preventDefault();
-    const prepared = dragCoordinator.current();
+    const rect = e.currentTarget.getBoundingClientRect();
     const intent = resolveTabDropIntent(
-      e.currentTarget.getBoundingClientRect(),
+      { left: rect.left - entryShiftOf(target.tabId), width: rect.width },
       e.clientX,
       target,
     );
+    commitDrop(e, intent);
+  }
+
+  function commitDrop(e: React.DragEvent<HTMLElement>, intent: TabDropIntent) {
+    const prepared = dragCoordinator.current();
     if (!prepared?.started) {
       // Cross-window drop: another window prepared this token; stage it
       // here with the exact same before/merge/after geometry.
@@ -850,6 +961,8 @@ export function CenterTabStrip() {
         aria-label={text("Open tabs", "打开的标签")}
         onKeyDown={onTabListKeyDown}
         onWheel={onTabListWheel}
+        onDragOver={onFlowDragOver}
+        onDrop={onFlowDrop}
       >
         {stripEntries.map((entry) => {
           if (entry.kind === "group") {
@@ -869,6 +982,7 @@ export function CenterTabStrip() {
                 onExited={finishClose}
                 draggedIds={draggedIds}
                 dropMarker={dropMarker}
+                shiftX={liveShifts.get(entry.id) ?? 0}
                 onPrepareDrag={onPrepareDrag}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
@@ -898,8 +1012,11 @@ export function CenterTabStrip() {
               onExited={finishClose}
               dragSubject={{ kind: "tab", tabIds: [tab.id] }}
               dragSource={draggedIds.has(tab.id)}
-              dropIntent={dropMarker?.targetTabId === tab.id ? dropMarker.mode : undefined}
+              dropIntent={dropMarker?.targetTabId === tab.id && dropMarker.mode === "merge"
+                ? "merge"
+                : undefined}
               dropTarget={{ tabId: tab.id }}
+              shiftX={liveShifts.get(entry.id) ?? 0}
               onPrepareDrag={onPrepareDrag}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
@@ -999,6 +1116,7 @@ interface CompoundTabItemProps {
   onExited(tab: CenterTab): void;
   draggedIds: ReadonlySet<string>;
   dropMarker: TabDropIntent | null;
+  shiftX: number;
   onPrepareDrag(subject: TabDragSubject): void;
   onDragStart(event: React.DragEvent<HTMLElement>): void;
   onDragEnd(event: React.DragEvent<HTMLElement>): void;
@@ -1028,6 +1146,7 @@ function CompoundTabItem({
   onExited,
   draggedIds,
   dropMarker,
+  shiftX,
   onPrepareDrag,
   onDragStart,
   onDragEnd,
@@ -1047,10 +1166,6 @@ function CompoundTabItem({
   // reorder — the FLIP slide below is the feedback, not an insert marker.
   const internalSegmentDrag = !groupDragged
     && group.memberIds.some((tabId) => draggedIds.has(tabId));
-  const groupDropIntent = dropMarker && group.memberIds.includes(dropMarker.targetTabId)
-      && dropMarker.mode !== "merge" && !internalSegmentDrag
-    ? dropMarker.mode
-    : undefined;
   // FLIP: when members reorder within the compound (drag drop or keyboard
   // Move left/right), slide each segment from its previous offset to its
   // new one. Membership changes (enter/exit) keep their own animations.
@@ -1099,7 +1214,7 @@ function CompoundTabItem({
       data-closing-count={closingCount || undefined}
       data-remaining-count={remainingCount}
       data-drag-source={groupDragged || undefined}
-      data-drop-intent={groupDropIntent}
+      style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
       role="presentation"
     >
       <button
@@ -1193,6 +1308,7 @@ function TabItem({
   dragSource,
   dropIntent,
   dropTarget,
+  shiftX = 0,
   onPrepareDrag,
   onDragStart,
   onDragEnd,
@@ -1220,6 +1336,7 @@ function TabItem({
   dragSource: boolean;
   dropIntent?: TabDropIntent["mode"];
   dropTarget: { tabId: string; groupId?: string; memberIndex?: number };
+  shiftX?: number;
   onPrepareDrag: (subject: TabDragSubject) => void;
   onDragStart: (event: React.DragEvent<HTMLElement>) => void;
   onDragEnd: (event: React.DragEvent<HTMLElement>) => void;
@@ -1256,6 +1373,7 @@ function TabItem({
       draggable
       data-drag-source={dragSource || undefined}
       data-drop-intent={dropIntent}
+      style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
       onAnimationEnd={(e) => {
         if (e.target !== e.currentTarget) return;
         if (closing) onExited(tab);
