@@ -457,6 +457,15 @@ function tabsForLayout(
   return orderTabs(tabs, layout.tabIds);
 }
 
+function detachesSplitPair(state: CenterTabsState, tabId: string): boolean {
+  const splitId = state.splitWebTabId;
+  if (!splitId) return false;
+  if (tabId === splitId) return true;
+  const tab = state.tabs.find((candidate) => candidate.id === tabId);
+  return tabId === state.activeId && tab?.kind === "session" &&
+    !!findCenterTabGroup(state.groups, tabId)?.memberIds.includes(splitId);
+}
+
 export const useCenterTabs = create<CenterTabsState>((set) => {
   const initial = readCenterTabsPayload();
 
@@ -532,6 +541,9 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     moveTab: (id, beforeId) =>
       set((s) => {
+        const splitWebTabId = detachesSplitPair(s, id)
+          ? null
+          : s.splitWebTabId;
         const layout = moveCenterTab({
           tabIds: s.tabs.map((tab) => tab.id),
           groups: s.groups,
@@ -541,6 +553,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         return commitCenterTabsState(s, {
           tabs: tabsForLayout(s.tabs, layout),
           groups: layout.groups,
+          splitWebTabId,
         });
       }),
 
@@ -595,6 +608,9 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     ungroupTab: (id, beforeId = null) =>
       set((s) => {
+        const splitWebTabId = detachesSplitPair(s, id)
+          ? null
+          : s.splitWebTabId;
         const prior = findCenterTabGroup(s.groups, id);
         const layout = ungroupCenterTab({
           tabIds: s.tabs.map((tab) => tab.id),
@@ -604,7 +620,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         return commitCenterTabsState(s, {
           tabs: tabsForLayout(s.tabs, layout),
           groups: layout.groups,
-          splitWebTabId: s.splitWebTabId === id ? null : s.splitWebTabId,
+          splitWebTabId,
         });
       }),
 

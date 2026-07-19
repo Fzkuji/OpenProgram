@@ -303,6 +303,21 @@ assert.deepEqual(state.groups[0].visibleIds, ["s:chat", "w:one"]);
 assert.equal(storageWrites.length, 1, "one mutation writes one payload");
 assert.equal(storageWrites[0], "centerTabs:main");
 
+state.ungroupTab("s:chat");
+state = useCenterTabs.getState();
+assert.deepEqual(state.groups, [], "ungrouping the active split session must persist");
+assert.equal(state.splitWebTabId, null);
+
+state.setSplitWebTab("w:one");
+state = useCenterTabs.getState();
+state.moveTab("s:chat", "w:two");
+state = useCenterTabs.getState();
+assert.deepEqual(state.groups, [], "moving the active split session must detach it");
+assert.equal(state.splitWebTabId, null);
+assert.deepEqual(state.tabs.map((tab) => tab.id), ["w:one", "s:chat", "w:two"]);
+
+state.setSplitWebTab("w:one");
+state = useCenterTabs.getState();
 assert.equal(state.groupTab("w:two", "s:chat", 2), true);
 state = useCenterTabs.getState();
 const groupId = state.groups[0].id;
