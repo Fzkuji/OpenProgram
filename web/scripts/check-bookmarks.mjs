@@ -10,6 +10,7 @@ import {
   clampPanelWidth,
   handlePanelResizeKey,
   panelWidthAfterKey,
+  resetPanelResize,
   resolveRightPanelAction,
 } from "../lib/right-panel-behavior.ts";
 
@@ -142,6 +143,18 @@ assert.equal(separator.getAttribute("aria-valuenow"), "560");
 assert.equal(dispatchSeparatorKey("Enter").defaultPrevented, false);
 assert.equal(separator.getAttribute("aria-valuenow"), "560");
 
+const resizeDrag = { current: { startX: 100, startW: RIGHT_PANEL_DEFAULT } };
+let resizeActive = true;
+const commitResizeActive = (active) => {
+  resizeActive = active;
+};
+resetPanelResize(resizeDrag, commitResizeActive);
+assert.equal(resizeDrag.current, null);
+assert.equal(resizeActive, false);
+assert.doesNotThrow(() => resetPanelResize(resizeDrag, commitResizeActive));
+assert.equal(resizeDrag.current, null);
+assert.equal(resizeActive, false);
+
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
@@ -227,6 +240,24 @@ assert.equal(
   resizeKeyExpression.body.expression.getText(rightSidebarFile),
   "handlePanelResizeKey",
   "separator must invoke the handler covered by the EventTarget harness",
+);
+const lostPointerCapture = attr(resizeSeparator, "onLostPointerCapture");
+assert.ok(lostPointerCapture, "separator lost-pointer cleanup missing");
+assert.ok(ts.isJsxExpression(lostPointerCapture.initializer));
+assert.equal(
+  lostPointerCapture.initializer.expression?.getText(rightSidebarFile),
+  "resetResize",
+  "lost pointer capture must use the shared idempotent cleanup",
+);
+assert.match(
+  rightSidebar,
+  /function resetResize\(\)\s*\{\s*resetPanelResize\(dragRef, setResizing\);\s*\}/s,
+  "React resize state must delegate to the executable cleanup",
+);
+assert.match(
+  rightSidebar,
+  /function finishResize[\s\S]*?releasePointerCapture\(event\.pointerId\);[\s\S]*?resetResize\(\);\s*\}/,
+  "normal pointer release must use the same cleanup",
 );
 
 for (const viewName of ["VIEW_HISTORY", "VIEW_BOOKMARKS", "VIEW_FILES"]) {

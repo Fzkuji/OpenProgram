@@ -39,6 +39,14 @@ export function handlePanelResizeKey(
   return true;
 }
 
+export function resetPanelResize<T>(
+  dragRef: { current: T | null },
+  commitResizing: (resizing: boolean) => void,
+): void {
+  dragRef.current = null;
+  commitResizing(false);
+}
+
 export function resolveRightPanelAction(
   state: RightPanelState,
   action: RightPanelAction,

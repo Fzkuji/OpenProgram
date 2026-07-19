@@ -38,6 +38,7 @@ import {
   RIGHT_RAIL_WIDTH,
   clampPanelWidth,
   handlePanelResizeKey,
+  resetPanelResize,
   resolveRightPanelAction,
 } from "@/lib/right-panel-behavior";
 import { BranchesPanel } from "./branches";
@@ -241,12 +242,15 @@ export function RightSidebar() {
     );
   }
 
+  function resetResize() {
+    resetPanelResize(dragRef, setResizing);
+  }
+
   function finishResize(event: React.PointerEvent<HTMLDivElement>) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    dragRef.current = null;
-    setResizing(false);
+    resetResize();
   }
 
   const panelTitle =
@@ -293,6 +297,7 @@ export function RightSidebar() {
           onPointerMove={onResizePointerMove}
           onPointerUp={finishResize}
           onPointerCancel={finishResize}
+          onLostPointerCapture={resetResize}
           onKeyDown={(event) => handlePanelResizeKey(event, panelWidth, setPanelWidth)}
         />
         <header className="right-sidebar-panel-header">
