@@ -71,10 +71,32 @@ assert.deepEqual(bookmarks.removeBookmark(first.url), [second]);
 assert.equal(storage.get(bookmarks.BOOKMARKS_STORAGE_KEY), JSON.stringify([second]));
 assert.equal(changes, 5);
 
+assert.deepEqual(
+  bookmarks.renameBookmark(second.url, "  Renamed  "),
+  [{ title: "Renamed", url: second.url }],
+);
+assert.equal(changes, 6);
+assert.deepEqual(
+  bookmarks.renameBookmark(second.url, "   "),
+  [{ title: second.url, url: second.url }],
+);
+assert.equal(changes, 7);
+assert.deepEqual(
+  bookmarks.renameBookmark("https://missing.example/", "Missing"),
+  [{ title: second.url, url: second.url }],
+);
+assert.equal(changes, 7);
+
 failWrites = true;
+assert.doesNotThrow(() => bookmarks.renameBookmark(second.url, "Failed"));
+assert.deepEqual(bookmarks.renameBookmark(second.url, "Failed"), [{ title: second.url, url: second.url }]);
+assert.equal(changes, 7);
 assert.doesNotThrow(() => bookmarks.toggleBookmark(first));
-assert.deepEqual(bookmarks.toggleBookmark(first), [second]);
-assert.equal(storage.get(bookmarks.BOOKMARKS_STORAGE_KEY), JSON.stringify([second]));
-assert.equal(changes, 5);
+assert.deepEqual(bookmarks.toggleBookmark(first), [{ title: second.url, url: second.url }]);
+assert.equal(
+  storage.get(bookmarks.BOOKMARKS_STORAGE_KEY),
+  JSON.stringify([{ title: second.url, url: second.url }]),
+);
+assert.equal(changes, 7);
 
 console.log("bookmark storage checks passed");

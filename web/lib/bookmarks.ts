@@ -41,6 +41,16 @@ export function removeBookmark(url: string): Bookmark[] {
   return saveBookmarks(readBookmarks().filter((bookmark) => bookmark.url !== url));
 }
 
+export function renameBookmark(url: string, title: string): Bookmark[] {
+  const bookmarks = readBookmarks();
+  const index = bookmarks.findIndex((bookmark) => bookmark.url === url);
+  if (index < 0) return bookmarks;
+  const next = bookmarks.map((bookmark, i) =>
+    i === index ? { ...bookmark, title: title.trim() || bookmark.url } : bookmark,
+  );
+  return saveBookmarks(next);
+}
+
 export function isBookmarked(url: string): boolean {
   return readBookmarks().some((bookmark) => bookmark.url === url);
 }
