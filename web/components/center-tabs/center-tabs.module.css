@@ -238,6 +238,9 @@
    色 + 轻投影浮在 frame 色上。浏览器模式不受影响。 */
 :global(html.is-desktop) .tab {
   height: 30px;
+  /* 20px close target inside a 30px tab leaves 5px above and below; use the
+     same inset at the right edge so the control is optically centered. */
+  padding-right: 5px;
   border-radius: 8px;
 }
 :global(html.is-desktop) .tab.tabActive,
@@ -370,7 +373,7 @@
   width: 2px;
   height: 16px;
   border-radius: 1px;
-  background: var(--plus-separator-background, var(--border));
+  background: var(--border);
   pointer-events: none;
 }
 /* When the desktop + reaches its rightmost position, its 10px right padding
@@ -378,14 +381,6 @@
    Match the rail's 1px border; short tab lists retain the normal gap divider. */
 :global(html.is-desktop) .strip[data-plus-rail-aligned] .tabsFlow {
   padding-right: 3px;
-}
-:global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn::before {
-  left: -11px;
-  width: 1px;
-  border-radius: 0;
-  --plus-separator-background:
-    linear-gradient(var(--border), var(--border)),
-    var(--bg-secondary);
 }
 .tabActive + .plusBtn::before,
 .tab:hover + .plusBtn::before,
@@ -395,6 +390,20 @@
 .tabsFlow:has(> .tab:last-child:hover) + .plusBtn::before,
 .plusBtn:hover::before {
   background: transparent;
+}
+/* Once + is pinned, this line is the persistent right-rail boundary rather
+   than a transient tab separator. Keep it visible through active/hover states
+   and above the active tab's z-index:1 stacking layer. */
+:global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn {
+  z-index: 2;
+}
+:global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn::before {
+  left: -11px;
+  width: 1px;
+  border-radius: 0;
+  background:
+    linear-gradient(var(--border), var(--border)),
+    var(--bg-secondary);
 }
 
 /* ---- File tab pane ------------------------------------------------ */

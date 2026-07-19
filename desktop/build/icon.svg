@@ -10,28 +10,29 @@
       <stop offset="0.58" stop-color="#25324A" stop-opacity="0.08"/>
       <stop offset="1" stop-color="#101622" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="op-ring" x1="322" y1="314" x2="718" y2="724" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4CA7FF"/>
-      <stop offset="0.48" stop-color="#687AF5"/>
-      <stop offset="1" stop-color="#A35AF4"/>
+    <linearGradient id="op-ring" x1="326" y1="318" x2="710" y2="718" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5CB8FF"/>
+      <stop offset="0.3" stop-color="#568FF4"/>
+      <stop offset="0.66" stop-color="#746FEF"/>
+      <stop offset="1" stop-color="#AD60F3"/>
     </linearGradient>
-    <radialGradient id="op-node-blue" cx="0.34" cy="0.28" r="0.86">
-      <stop offset="0" stop-color="#83CBFF"/>
-      <stop offset="0.52" stop-color="#4D9CEF"/>
-      <stop offset="1" stop-color="#3677D5"/>
-    </radialGradient>
-    <radialGradient id="op-node-purple" cx="0.34" cy="0.28" r="0.86">
-      <stop offset="0" stop-color="#C6A3FF"/>
-      <stop offset="0.54" stop-color="#9565E8"/>
-      <stop offset="1" stop-color="#7442C7"/>
-    </radialGradient>
-    <radialGradient id="op-node-indigo" cx="0.34" cy="0.28" r="0.86">
-      <stop offset="0" stop-color="#9BAFF8"/>
-      <stop offset="0.54" stop-color="#6879DC"/>
-      <stop offset="1" stop-color="#4B52B7"/>
-    </radialGradient>
+    <linearGradient id="op-node-blue" x1="338" y1="334" x2="526" y2="530" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#83D3FF"/>
+      <stop offset="0.52" stop-color="#4AA3F1"/>
+      <stop offset="1" stop-color="#3575D4"/>
+    </linearGradient>
+    <linearGradient id="op-node-purple" x1="546" y1="500" x2="684" y2="652" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C8A2FA"/>
+      <stop offset="0.52" stop-color="#9A69E7"/>
+      <stop offset="1" stop-color="#7445C4"/>
+    </linearGradient>
+    <linearGradient id="op-node-indigo" x1="418" y1="608" x2="492" y2="694" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9BAAF3"/>
+      <stop offset="0.52" stop-color="#7283DE"/>
+      <stop offset="1" stop-color="#5059B8"/>
+    </linearGradient>
     <clipPath id="op-mark-interior">
-      <circle cx="512" cy="512" r="231"/>
+      <circle cx="512" cy="512" r="228"/>
     </clipPath>
   </defs>
 
@@ -45,10 +46,10 @@
     fill="url(#op-background-light)"
   />
 
-  <circle cx="512" cy="512" r="258" fill="none" stroke="url(#op-ring)" stroke-width="52"/>
+  <circle cx="512" cy="512" r="252" fill="none" stroke="url(#op-ring)" stroke-width="44"/>
   <g clip-path="url(#op-mark-interior)">
-    <circle id="op-node-a" cx="442" cy="442" r="132" fill="url(#op-node-blue)"/>
-    <circle id="op-node-b" cx="610" cy="584" r="100" fill="url(#op-node-purple)"/>
-    <circle id="op-node-c" cx="456" cy="650" r="64" fill="url(#op-node-indigo)"/>
+    <circle id="op-node-a" cx="432" cy="432" r="112" fill="url(#op-node-blue)" stroke="#D9EEFF" stroke-opacity="0.16" stroke-width="6"/>
+    <circle id="op-node-b" cx="612" cy="572" r="84" fill="url(#op-node-purple)" stroke="#EFE3FF" stroke-opacity="0.16" stroke-width="6"/>
+    <circle id="op-node-c" cx="456" cy="650" r="44" fill="url(#op-node-indigo)" stroke="#E0E5FF" stroke-opacity="0.16" stroke-width="6"/>
   </g>
 </svg>

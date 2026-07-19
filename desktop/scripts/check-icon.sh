@@ -28,8 +28,15 @@ grep -q 'viewBox="0 0 1024 1024"' "$source_svg" \
   || fail "icon.svg must use a 1024 x 1024 viewBox"
 grep -q 'id="op-squircle"' "$source_svg" \
   || fail "icon.svg must contain the macOS squircle"
+for background_color in '#29374D' '#19243A' '#101622'; do
+  grep -q "stop-color=\"$background_color\"" "$source_svg" \
+    || fail "icon.svg must preserve the approved deep-blue background"
+done
 node_count="$(grep -Eo 'id="op-node-[abc]"' "$source_svg" | wc -l | tr -d ' ')"
 [[ "$node_count" == "3" ]] || fail "icon.svg must contain exactly three brand nodes"
+if grep -Eq '<radialGradient id="op-node-' "$source_svg"; then
+  fail "brand nodes must not use spherical radial shading"
+fi
 if grep -Eq '<text|<image|\{|\}' "$source_svg"; then
   fail "icon.svg must not contain text, braces, or embedded raster images"
 fi

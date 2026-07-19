@@ -45,6 +45,13 @@ assert.match(
   /:global\(html\.is-desktop\) \.tabsFlow::\-webkit-scrollbar \{[^}]*display: none;/s,
 );
 assert.match(css, /:global\(html\.is-desktop\) \.tabsFlow > \.tab \{[^}]*width: 240px;[^}]*flex: 0 1 240px;[^}]*max-width: 240px;/s);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.tab \{[^}]*height: 30px;[^}]*padding-right: 5px;[^}]*border-radius: 8px;/s,
+  "desktop tab close controls must have the same 5px right gap as their vertical gaps",
+);
+assert.match(css, /\.tabClose \{[^}]*width: 20px;[^}]*height: 20px;/s);
+assert.match(strip, /<X size=\{14\} \/>/);
 assert.match(css, /@keyframes desktopTabEnter \{\s*from \{ opacity: 0; \}\s*\}/);
 assert.match(css, /:global\(html\.is-desktop\) \.tabEnter \{[^}]*animation: desktopTabEnter 120ms ease-out;/s);
 assert.match(css, /\.tabExit \{[^}]*animation: tabExit 160ms ease-in forwards;/s);
@@ -90,18 +97,33 @@ assert.match(strip, /stripRef/);
 assert.match(strip, /tabsFlowRef/);
 assert.match(
   css,
-  /\.plusBtn::before \{[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*background: var\(--plus-separator-background, var\(--border\)\);/s,
+  /\.plusBtn::before \{[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*background: var\(--border\);/s,
   "short desktop tab lists must retain the normal 2px rounded divider",
 );
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -11px;[^}]*width: 1px;[^}]*border-radius: 0;[^}]*--plus-separator-background:\s*linear-gradient\(var\(--border\), var\(--border\)\),\s*var\(--bg-secondary\);/s,
+  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -11px;[^}]*width: 1px;[^}]*border-radius: 0;[^}]*background:\s*linear-gradient\(var\(--border\), var\(--border\)\),\s*var\(--bg-secondary\);/s,
   "the pinned + separator must composite like the right rail",
 );
 assert.match(
   css,
   /\.tabsFlow:has\(> \.tabActive:last-child\) \+ \.plusBtn::before,\s*\.tabsFlow:has\(> \.tab:last-child:hover\) \+ \.plusBtn::before,\s*\.plusBtn:hover::before \{\s*background: transparent;/,
-  "active and hovered tabs must still hide the + divider",
+  "active and hovered tabs must still hide the normal + divider",
+);
+const normalDividerHideIndex = css.indexOf(
+  ".tabsFlow:has(> .tabActive:last-child) + .plusBtn::before",
+);
+const pinnedDividerOverrideIndex = css.lastIndexOf(
+  ":global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn::before",
+);
+assert.ok(
+  pinnedDividerOverrideIndex > normalDividerHideIndex,
+  "the pinned rail boundary must override the normal active and hover hiding rule",
+);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn \{[^}]*z-index: 2;/s,
+  "the pinned rail boundary must paint above the active tab",
 );
 assert.match(
   css,
