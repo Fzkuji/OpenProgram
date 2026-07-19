@@ -56,6 +56,36 @@ assert.match(css, /@keyframes desktopTabEnter \{\s*from \{ opacity: 0; \}\s*\}/)
 assert.match(css, /:global\(html\.is-desktop\) \.tabEnter \{[^}]*animation: desktopTabEnter 120ms ease-out;/s);
 assert.match(css, /\.tabExit \{[^}]*animation: tabExit 160ms ease-in forwards;/s);
 assert.match(css, /:global\(html\.is-desktop\) \.tabExit \{[^}]*animation: tabExit 120ms ease-in forwards;/s);
+assert.match(strip, /centerTabStripEntries/);
+assert.match(strip, /function CompoundTabItem/);
+assert.match(
+  strip,
+  /className=\{`\$\{styles\.compoundTab\} \$\{active \? styles\.compoundTabActive : ""\}`\}/,
+);
+assert.match(strip, /group\.memberIds\.map\(\(tabId\) =>/);
+assert.match(strip, /enteringIds\.has\(tab\.id\)/);
+assert.match(strip, /closingIds\.has\(tab\.id\)/);
+assert.match(strip, /onAnimationEnd/);
+assert.match(strip, /onExited\(tab\)/);
+assert.match(strip, /onExited=\{finishClose\}/);
+assert.match(strip, /onClose=\{onTabClose\}/);
+assert.doesNotMatch(strip, /splitPinned|data-split-pinned/);
+assert.doesNotMatch(
+  css,
+  /data-split-pinned|inset 0 2px 0 var\(--accent-blue\)/,
+);
+assert.match(
+  css,
+  /\.compoundTab\[data-member-count="2"\]\s*\{[^}]*width:\s*360px;[^}]*flex:\s*0 1 360px;[^}]*max-width:\s*360px;/s,
+);
+assert.match(
+  css,
+  /\.compoundTab\[data-member-count="3"\]\s*\{[^}]*width:\s*440px;[^}]*flex:\s*0 1 440px;[^}]*max-width:\s*440px;/s,
+);
+assert.match(
+  css,
+  /\.compoundSegment \+ \.compoundSegment\s*\{[^}]*border-left:\s*1px solid var\(--border\);/s,
+);
 assert.match(ntp, /const draftId = useCenterTabs\.getState\(\)\.claimDraftSessionTab\(\);[\s\S]*\.newSession\?\.\(draftId\);/);
 assert.match(strip, /currentSessionId === null[\s\S]*activeTab\?\.draft/);
 assert.match(strip, /closingInstances = useRef<Map<string, CenterTab>>/);

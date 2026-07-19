@@ -30,6 +30,10 @@ import {
   useCenterTabs,
   type CenterTab,
 } from "@/lib/state/center-tabs-store";
+import {
+  centerTabStripEntries,
+  type CenterTabGroup,
+} from "@/lib/state/center-tab-groups";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   dropDraftChannelChoice,
@@ -44,14 +48,26 @@ function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
 }
 
+function labelOf(
+  tab: CenterTab,
+  t: ReturnType<typeof useTranslation>["t"],
+  text: ReturnType<typeof useTranslation>["text"],
+): string {
+  if (tab.kind === "ntp") return text("New tab", "新标签页");
+  if (tab.kind === "file") return tab.title;
+  if (tab.kind === "web") return tab.title || tab.url || "";
+  if (tab.draft) return text("New chat", "新会话");
+  return tab.title || t("sidebar.untitled");
+}
+
 export function CenterTabStrip() {
   const router = useRouter();
   const pathname = usePathname();
   const { t, text } = useTranslation();
 
   const tabs = useCenterTabs((s) => s.tabs);
+  const groups = useCenterTabs((s) => s.groups);
   const activeId = useCenterTabs((s) => s.activeId);
-  const splitWebTabId = useCenterTabs((s) => s.splitWebTabId);
   const setActive = useCenterTabs((s) => s.setActive);
   const openSessionTab = useCenterTabs((s) => s.openSessionTab);
   const openDraftSessionTab = useCenterTabs((s) => s.openDraftSessionTab);
@@ -137,7 +153,7 @@ export function CenterTabStrip() {
   const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     const invalid: string[] = [];
-    for (const [id, original] of closingInstances.current) {
+    for (const id of closingInstances.current.keys()) {
       const current = tabs.find((tab) => tab.id === id);
       if (!current) {
         invalid.push(id);
@@ -262,14 +278,6 @@ export function CenterTabStrip() {
     }
   }
 
-  function labelOf(tab: CenterTab): string {
-    if (tab.kind === "ntp") return text("New tab", "新标签页");
-    if (tab.kind === "file") return tab.title;
-    if (tab.kind === "web") return tab.title || tab.url || "";
-    if (tab.draft) return text("New chat", "新会话");
-    return tab.title || t("sidebar.untitled");
-  }
-
   function onTabListKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
     const target = (e.target as HTMLElement).closest<HTMLElement>('[role="tab"]');
@@ -299,6 +307,11 @@ export function CenterTabStrip() {
     e.preventDefault();
   }
 
+  const stripEntries = centerTabStripEntries({
+    tabIds: tabs.map((tab) => tab.id),
+    groups,
+  });
+
   return (
     <div ref={stripRef} className={styles.strip}>
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
@@ -311,21 +324,39 @@ export function CenterTabStrip() {
         onKeyDown={onTabListKeyDown}
         onWheel={onTabListWheel}
       >
-        {tabs.map((tab) => (
-          <TabItem
-            key={tab.id}
-            tab={tab}
-            active={tab.id === activeId}
-            splitPinned={tab.id === splitWebTabId}
-            enter={enteringIds.has(tab.id)}
-            closing={closingIds.has(tab.id)}
-            label={labelOf(tab)}
-            closeLabel={text("Close tab", "关闭标签")}
-            onClick={() => onTabClick(tab)}
-            onClose={(e) => onTabClose(e, tab)}
-            onExited={() => finishClose(tab)}
-          />
-        ))}
+        {stripEntries.map((entry) => {
+          if (entry.kind === "group") {
+            return (
+              <CompoundTabItem
+                key={entry.id}
+                group={entry.group}
+                tabs={tabs}
+                activeId={activeId}
+                enteringIds={enteringIds}
+                closingIds={closingIds}
+                onActivate={onTabClick}
+                onClose={onTabClose}
+                onExited={finishClose}
+              />
+            );
+          }
+          const tab = tabs.find((candidate) => candidate.id === entry.tabId);
+          if (!tab) return null;
+          return (
+            <TabItem
+              key={entry.id}
+              tab={tab}
+              active={tab.id === activeId}
+              enter={enteringIds.has(tab.id)}
+              closing={closingIds.has(tab.id)}
+              label={labelOf(tab, t, text)}
+              closeLabel={text("Close tab", "关闭标签")}
+              onActivate={onTabClick}
+              onClose={onTabClose}
+              onExited={finishClose}
+            />
+          );
+        })}
       </div>
       <button
         ref={plusRef}
@@ -341,30 +372,82 @@ export function CenterTabStrip() {
   );
 }
 
+interface CompoundTabItemProps {
+  group: CenterTabGroup;
+  tabs: CenterTab[];
+  activeId: string | null;
+  enteringIds: ReadonlySet<string>;
+  closingIds: ReadonlySet<string>;
+  onActivate(tab: CenterTab): void;
+  onClose(event: React.SyntheticEvent, tab: CenterTab): void;
+  onExited(tab: CenterTab): void;
+}
+
+function CompoundTabItem({
+  group,
+  tabs,
+  activeId,
+  enteringIds,
+  closingIds,
+  onActivate,
+  onClose,
+  onExited,
+}: CompoundTabItemProps) {
+  const { t, text } = useTranslation();
+  const active = group.memberIds.includes(activeId ?? "");
+  return (
+    <div
+      className={`${styles.compoundTab} ${active ? styles.compoundTabActive : ""}`}
+      data-member-count={group.memberIds.length}
+      role="presentation"
+    >
+      {group.memberIds.map((tabId) => {
+        const tab = tabs.find((candidate) => candidate.id === tabId);
+        if (!tab) return null;
+        return (
+          <TabItem
+            key={tab.id}
+            tab={tab}
+            active={tab.id === activeId}
+            enter={enteringIds.has(tab.id)}
+            closing={closingIds.has(tab.id)}
+            label={labelOf(tab, t, text)}
+            closeLabel={text("Close tab", "关闭标签")}
+            segment
+            onActivate={onActivate}
+            onClose={onClose}
+            onExited={onExited}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /** One strip tab. A component (not map-inline JSX) so each session
  *  tab owns the ref that drives its animated icon from row hover. */
 function TabItem({
   tab,
   active,
-  splitPinned,
   enter,
   closing,
   label,
   closeLabel,
-  onClick,
+  segment = false,
+  onActivate,
   onClose,
   onExited,
 }: {
   tab: CenterTab;
   active: boolean;
-  splitPinned: boolean;
   enter: boolean;
   closing: boolean;
   label: string;
   closeLabel: string;
-  onClick: () => void;
-  onClose: (e: React.SyntheticEvent) => void;
-  onExited: () => void;
+  segment?: boolean;
+  onActivate: (tab: CenterTab) => void;
+  onClose: (e: React.SyntheticEvent, tab: CenterTab) => void;
+  onExited: (tab: CenterTab) => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   const tabRef = useRef<HTMLDivElement>(null);
@@ -385,15 +468,14 @@ function TabItem({
   return (
     <div
       ref={tabRef}
-      data-split-pinned={splitPinned || undefined}
-      className={`${styles.tab} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
+      className={`${styles.tab} ${segment ? styles.compoundSegment : ""} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
       onAnimationEnd={(e) => {
         if (e.target !== e.currentTarget) return;
-        if (closing) onExited();
+        if (closing) onExited(tab);
         else setEntering(false);
       }}
       title={tab.kind === "file" ? tab.path : tab.kind === "web" ? tab.url : label}
-      onClick={onClick}
+      onClick={() => onActivate(tab)}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
       // Middle-click closes (browser convention). preventDefault on
@@ -405,7 +487,7 @@ function TabItem({
       onAuxClick={(e) => {
         if (e.button === 1) {
           e.preventDefault();
-          onClose(e);
+          onClose(e, tab);
         }
       }}
     >
@@ -418,7 +500,7 @@ function TabItem({
         onKeyDown={(e) => {
           if (e.key !== "Enter" && e.key !== " ") return;
           e.preventDefault();
-          onClick();
+          onActivate(tab);
         }}
       >
         <span className={styles.tabIcon} aria-hidden="true">
@@ -453,7 +535,7 @@ function TabItem({
         aria-label={closeLabel}
         title={closeLabel}
         tabIndex={active ? 0 : -1}
-        onClick={onClose}
+        onClick={(event) => onClose(event, tab)}
       >
         <X size={14} />
       </button>

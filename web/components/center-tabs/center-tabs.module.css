@@ -75,6 +75,7 @@
   max-width: 240px;
 }
 :global(html.is-desktop) .tab,
+:global(html.is-desktop) .compoundTab,
 :global(html.is-desktop) .plusBtn {
   -webkit-app-region: no-drag;
 }
@@ -184,10 +185,6 @@
   z-index: 2;
 }
 
-.tab[data-split-pinned="true"] {
-  box-shadow: inset 0 2px 0 var(--accent-blue);
-}
-
 /* 活动 tab —— 顶圆底方、内容区同色，自身延伸到 strip 底边（见文件头几何
    说明），底部两侧 fillet 平滑弯进内容区。z-index:1 盖过邻居的分隔条。 */
 .tabActive,
@@ -260,6 +257,179 @@
 :global(html.is-desktop) .tab.tabActive::before,
 :global(html.is-desktop) .tab.tabActive::after {
   content: none; /* 胶囊无 fillet */
+}
+
+/* A compound tab is one strip item with two or three independently focusable
+   tab segments. The outer surface owns strip geometry; segments keep the
+   existing TabItem DOM and close-animation lifecycle. */
+.compoundTab {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: stretch;
+  height: 28px;
+  min-width: 96px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.compoundTab[data-member-count="2"] {
+  width: 360px;
+  flex: 0 1 360px;
+  max-width: 360px;
+}
+.compoundTab[data-member-count="3"] {
+  width: 440px;
+  flex: 0 1 440px;
+  max-width: 440px;
+  min-width: 144px;
+}
+.compoundTabActive {
+  height: 34px;
+  align-self: flex-end;
+  padding-bottom: 6px;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-primary);
+  z-index: 1;
+}
+
+/* The outer edge follows the same separator and active-fillet rules as an
+   ordinary tab. Internal edges are the 1 DIP borders below. */
+.compoundTab:not(.compoundTabActive)::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+.compoundTab:first-child::before,
+.tabActive + .compoundTab::before,
+.compoundTabActive + .tab::before,
+.compoundTabActive + .compoundTab::before,
+.compoundTab:not(.compoundTabActive):hover::before,
+.tab:hover + .compoundTab::before,
+.compoundTab:hover + .tab:not(.tabActive)::before,
+.compoundTab:hover + .compoundTab:not(.compoundTabActive)::before {
+  background: transparent;
+}
+.compoundTabActive::before,
+.compoundTabActive::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+.compoundTabActive::before {
+  left: -8px;
+  background: radial-gradient(
+    circle 8px at 0 0,
+    transparent 7.5px,
+    var(--bg-primary) 8px
+  );
+}
+.compoundTabActive::after {
+  right: -8px;
+  background: radial-gradient(
+    circle 8px at 100% 0,
+    transparent 7.5px,
+    var(--bg-primary) 8px
+  );
+}
+
+.compoundSegment,
+.compoundTab .compoundSegment.tabActive,
+.compoundTab .compoundSegment.tabActive:hover {
+  height: 100%;
+  min-width: 48px;
+  max-width: none;
+  flex: 1 1 140px;
+  align-self: stretch;
+  padding: 0 8px;
+  border-radius: 0;
+}
+.compoundSegment:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.compoundSegment:last-child {
+  border-radius: 0 8px 8px 0;
+}
+.compoundTabActive .compoundSegment:first-child {
+  border-radius: 8px 0 0 0;
+}
+.compoundTabActive .compoundSegment:last-child {
+  border-radius: 0 8px 0 0;
+}
+.compoundTabActive .compoundSegment:not(.tabActive) {
+  background: var(--bg-hover);
+}
+.compoundSegment + .compoundSegment {
+  border-left: 1px solid var(--border);
+}
+.compoundSegment:not(.tabActive)::before,
+.compoundSegment.tabActive::before,
+.compoundSegment.tabActive::after {
+  content: none;
+}
+
+@keyframes compoundTabEnter {
+  from {
+    flex-grow: 0;
+    flex-basis: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+  }
+}
+@keyframes compoundTabExit {
+  from {
+    flex-grow: 1;
+  }
+  to {
+    flex-grow: 0;
+    flex-basis: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+  }
+}
+.compoundSegment.tabEnter {
+  animation: compoundTabEnter 180ms ease-out;
+}
+.compoundSegment.tabExit {
+  animation: compoundTabExit 160ms ease-in forwards;
+}
+
+:global(html.is-desktop) .compoundTab,
+:global(html.is-desktop) .compoundTabActive {
+  height: 30px;
+  align-self: center;
+  padding-bottom: 0;
+  border-radius: 8px;
+}
+:global(html.is-desktop) .compoundTabActive {
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+:global(html.is-desktop) .compoundTabActive::before,
+:global(html.is-desktop) .compoundTabActive::after {
+  content: none;
+}
+:global(html.is-desktop) .compoundSegment.tabEnter {
+  animation: compoundTabEnter 120ms ease-out;
+}
+:global(html.is-desktop) .compoundSegment.tabExit {
+  animation: compoundTabExit 120ms ease-in forwards;
 }
 
 .tabTarget {
@@ -393,6 +563,10 @@
 .tabsFlow:has(> .tabActive:last-child) + .plusBtn::before,
 .tabsFlow:has(> .tab:last-child:hover) + .plusBtn::before,
 .plusBtn:hover::before {
+  background: transparent;
+}
+.tabsFlow:has(> .compoundTabActive:last-child) + .plusBtn::before,
+.tabsFlow:has(> .compoundTab:last-child:hover) + .plusBtn::before {
   background: transparent;
 }
 /* Pinned mode changes only position and composited colour. The base background

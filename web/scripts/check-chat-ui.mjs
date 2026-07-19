@@ -79,6 +79,25 @@ assert.match(tabs, /role="tab"/);
 assert.match(tabs, /aria-selected=\{active\}/);
 assert.match(tabs, /tabIndex=\{active \? 0 : -1\}/);
 assert.match(tabs, /onTabListKeyDown/);
+const compoundStart = tabs.indexOf("function CompoundTabItem");
+const tabItemStart = tabs.indexOf("function TabItem");
+assert.ok(compoundStart >= 0 && tabItemStart > compoundStart);
+const compound = tabs.slice(compoundStart, tabItemStart);
+const tabItem = tabs.slice(tabItemStart);
+assert.match(compound, /role="presentation"/);
+assert.match(compound, /active \? styles\.compoundTabActive : ""/);
+assert.doesNotMatch(compound, /active \? styles\.tabActive : ""/);
+assert.match(compound, /group\.memberIds\.map\(\(tabId\) =>/);
+assert.match(compound, /<TabItem/);
+assert.match(compound, /enter=\{enteringIds\.has\(tab\.id\)\}/);
+assert.match(compound, /closing=\{closingIds\.has\(tab\.id\)\}/);
+assert.match(compound, /onClose=\{onClose\}/);
+assert.match(compound, /onExited=\{onExited\}/);
+assert.match(tabItem, /className=\{styles\.tabTarget\}[\s\S]*role="tab"/);
+assert.match(
+  tabItem,
+  /className=\{styles\.tabTarget\}[\s\S]*<\/div>[\s\S]*<button[\s\S]*className=\{styles\.tabClose\}/,
+);
 assert.match(tabs, /className=\{styles\.tabTarget\}[\s\S]*role="tab"/);
 assert.match(tabs, /<button[\s\S]*className=\{styles\.tabClose\}[\s\S]*tabIndex=\{active \? 0 : -1\}/);
 const tabTargetStart = tabs.indexOf("className={styles.tabTarget}");

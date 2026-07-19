@@ -493,9 +493,9 @@ assert.match(
   /if \(routeSession\) \{[\s\S]*?state\.setActive\(routeSession\.id\);[\s\S]*?\} else if \(routeSessionId\) \{[\s\S]*?state\.openSessionTab\(routeSessionId, title\);[\s\S]*?\} else if \(activeDraft\) \{[\s\S]*?state\.setActive\(activeDraft\.id\);[\s\S]*?\} else \{[\s\S]*?state\.openDraftSessionTab\(\)/,
 );
 
-assert.match(tabStripSource, /data-split-pinned=\{splitPinned \|\| undefined\}/);
+assert.doesNotMatch(tabStripSource, /splitPinned|data-split-pinned/);
 assert.match(tabStripSource, /active=\{tab\.id === activeId\}/);
-assert.match(tabsCssSource, /\[data-split-pinned="true"\]/);
+assert.doesNotMatch(tabsCssSource, /\[data-split-pinned="true"\]/);
 assert.match(baseCssSource, /\.center-split-divider\s*\{[^}]*width:\s*6px;/s);
 assert.match(baseCssSource, /\.center-split-primary\s*\{[^}]*min-width:\s*360px;/s);
 assert.match(baseCssSource, /\.center-split-secondary\s*\{[^}]*min-width:\s*480px;/s);
