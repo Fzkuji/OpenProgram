@@ -97,12 +97,12 @@ assert.match(strip, /stripRef/);
 assert.match(strip, /tabsFlowRef/);
 assert.match(
   css,
-  /\.plusBtn::before \{[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*background: var\(--border\);/s,
+  /\.plusBtn::before \{[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*background: var\(--plus-separator-background, var\(--border\)\);/s,
   "short desktop tab lists must retain the normal 2px rounded divider",
 );
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -12px;[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*background:\s*linear-gradient\(var\(--border\), var\(--border\)\),\s*var\(--tabrow-bg\);/s,
+  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -12px;[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*--plus-separator-background:\s*linear-gradient\(var\(--border\), var\(--border\)\),\s*var\(--tabrow-bg\);/s,
   "the pinned + separator must retain the normal tab-divider appearance",
 );
 assert.match(
@@ -110,15 +110,10 @@ assert.match(
   /\.tabsFlow:has\(> \.tabActive:last-child\) \+ \.plusBtn::before,\s*\.tabsFlow:has\(> \.tab:last-child:hover\) \+ \.plusBtn::before,\s*\.plusBtn:hover::before \{\s*background: transparent;/,
   "active and hovered tabs must still hide the normal + divider",
 );
-const normalDividerHideIndex = css.indexOf(
-  ".tabsFlow:has(> .tabActive:last-child) + .plusBtn::before",
-);
-const pinnedDividerOverrideIndex = css.lastIndexOf(
-  ":global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn::before",
-);
-assert.ok(
-  pinnedDividerOverrideIndex > normalDividerHideIndex,
-  "the pinned rail boundary must override the normal active and hover hiding rule",
+assert.doesNotMatch(
+  css,
+  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*\n\s*background:/s,
+  "the pinned divider must not override the shared active and hover hiding rule",
 );
 assert.match(
   css,

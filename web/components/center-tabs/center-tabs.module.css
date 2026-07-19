@@ -373,7 +373,7 @@
   width: 2px;
   height: 16px;
   border-radius: 1px;
-  background: var(--border);
+  background: var(--plus-separator-background, var(--border));
   pointer-events: none;
 }
 /* When the desktop + reaches its rightmost position, its 10px right padding
@@ -391,9 +391,8 @@
 .plusBtn:hover::before {
   background: transparent;
 }
-/* Once + is pinned, this line is the persistent right-rail boundary rather
-   than a transient tab separator. Keep it visible through active/hover states
-   and above the active tab's z-index:1 stacking layer. */
+/* Pinned mode changes only position and composited colour. The base background
+   declaration remains shared, so the active/hover rules above still hide it. */
 :global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn {
   z-index: 2;
 }
@@ -401,7 +400,7 @@
   left: -12px;
   width: 2px;
   border-radius: 1px;
-  background:
+  --plus-separator-background:
     linear-gradient(var(--border), var(--border)),
     var(--tabrow-bg);
 }
