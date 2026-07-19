@@ -33,11 +33,13 @@ import {
 import {
   centerTabStripEntries,
   findCenterTabGroup,
+  MAX_CENTER_TAB_GROUP_MEMBERS,
   type CenterTabGroup,
 } from "@/lib/state/center-tab-groups";
 import {
   dragCoordinator,
   resolveTabDropIntent,
+  type PreparedTabDrag,
   type TabDragSubject,
   type TabDropIntent,
 } from "@/lib/tab-drag-coordinator";
@@ -61,6 +63,16 @@ const TAB_DRAG_MIME = "application/x-openprogram-tab";
 const TAB_TRANSFER_MIME = "application/x-openprogram-tab-transfer";
 let removePreparedReleaseListener: (() => void) | null = null;
 
+interface TabMenuState {
+  tabId: string;
+  left: number;
+  top: number;
+}
+
+interface DesktopTabTransferApi {
+  moveToNewWindow(prepared: PreparedTabDrag): void;
+}
+
 function removeReleaseListener() {
   removePreparedReleaseListener?.();
   removePreparedReleaseListener = null;
@@ -73,6 +85,37 @@ function cancelCoordinator() {
     void desktopBridge()?.tabTransfer.cancel(cancelled.transferToken);
   }
   return cancelled;
+}
+
+function snapshotTabDragSubject(subject: TabDragSubject): TabDragSubject {
+  if (subject.kind === "tab") return { kind: "tab", tabIds: [subject.tabIds[0]] };
+  if (subject.kind === "segment") {
+    return {
+      ...subject,
+      tabIds: [subject.tabIds[0]],
+      sourceGroup: {
+        ...subject.sourceGroup,
+        memberIds: [...subject.sourceGroup.memberIds],
+        visibleIds: [...subject.sourceGroup.visibleIds],
+      },
+    };
+  }
+  return {
+    ...subject,
+    tabIds: [...subject.tabIds],
+    sourceGroup: {
+      ...subject.sourceGroup,
+      memberIds: [...subject.sourceGroup.memberIds],
+      visibleIds: [...subject.sourceGroup.visibleIds],
+    },
+  };
+}
+
+function desktopTabTransfer(): DesktopTabTransferApi | null {
+  if (typeof window === "undefined") return null;
+  return (window as unknown as {
+    openprogramDesktop?: { tabTransfer?: DesktopTabTransferApi };
+  }).openprogramDesktop?.tabTransfer ?? null;
 }
 
 function isChatRoute(pathname: string) {
@@ -115,12 +158,16 @@ export function CenterTabStrip() {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const conversations = useSessionStore((s) => s.conversations);
   const [sessionActivationRequest, setSessionActivationRequest] = useState(0);
+  const [focusedTabId, setFocusedTabId] = useState<string | null>(activeId);
   const [draggedIds, setDraggedIds] = useState<ReadonlySet<string>>(new Set());
   const [dropMarker, setDropMarker] = useState<TabDropIntent | null>(null);
   const [dragAnnouncement, setDragAnnouncement] = useState("");
+  const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
+  const tabTransfer = desktopTabTransfer();
+  const canMoveToNewWindow = Boolean(tabTransfer?.moveToNewWindow);
 
   // In desktop mode the + follows short tab lists, but reaches the fixed
   // 49px right rail once the tab flow fills the row. Expose that geometric
@@ -264,14 +311,185 @@ export function CenterTabStrip() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, sessionActivationRequest]);
 
+  useEffect(() => {
+    setFocusedTabId(activeId);
+  }, [activeId]);
+
   function onTabClick(tab: CenterTab) {
     const reactivateCurrentSession =
       tab.kind === "session" && tab.id === activeId;
+    setFocusedTabId(tab.id);
     setActive(tab.id);
     if (reactivateCurrentSession) {
       setSessionActivationRequest((request) => request + 1);
     }
     if (tab.kind !== "session" && !isChatRoute(pathname)) router.push("/chat");
+  }
+
+  function returnFocusToMenuInvoker(tabId: string) {
+    requestAnimationFrame(() => {
+      const items = stripRef.current?.querySelectorAll<HTMLElement>(
+        '[role="tab"][data-tab-id]',
+      );
+      const invoker = items
+        ? Array.from(items).find((item) => item.dataset.tabId === tabId)
+        : undefined;
+      invoker?.focus();
+    });
+  }
+
+  function finishMenuAction(tabId: string, announcement: string) {
+    setTabMenu(null);
+    setFocusedTabId(tabId);
+    setDragAnnouncement(announcement);
+    returnFocusToMenuInvoker(tabId);
+  }
+
+  function openTabMenu(
+    event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
+    tabId: string,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const left = "clientX" in event ? event.clientX : rect.left;
+    const top = "clientY" in event ? event.clientY : rect.bottom;
+    setFocusedTabId(tabId);
+    setTabMenu({
+      tabId,
+      left: Math.min(Math.max(8, left), Math.max(8, window.innerWidth - 208)),
+      top: Math.min(Math.max(8, top), Math.max(8, window.innerHeight - 204)),
+    });
+    requestAnimationFrame(() => {
+      stripRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menu"] button:not(:disabled)')
+        ?.focus();
+    });
+  }
+
+  function canMoveMenuTab(tabId: string, direction: -1 | 1) {
+    const state = useCenterTabs.getState();
+    if (findCenterTabGroup(state.groups, tabId)) return true;
+    const entries = centerTabStripEntries({
+      tabIds: state.tabs.map((tab) => tab.id),
+      groups: state.groups,
+    });
+    const index = entries.findIndex(
+      (entry) => entry.kind === "tab" && entry.tabId === tabId,
+    );
+    return index >= 0 && Boolean(entries[index + direction]);
+  }
+
+  function moveMenuTab(tabId: string, direction: -1 | 1) {
+    const state = useCenterTabs.getState();
+    const sourceGroup = findCenterTabGroup(state.groups, tabId);
+    if (sourceGroup) {
+      const memberIndex = sourceGroup.memberIds.indexOf(tabId);
+      const nextIndex = memberIndex + direction;
+      if (nextIndex >= 0 && nextIndex < sourceGroup.memberIds.length) {
+        moveGroupMember(sourceGroup.id, tabId, nextIndex);
+      } else {
+        const beforeId = direction < 0
+          ? sourceGroup.memberIds[1] ?? null
+          : targetBeforeId(sourceGroup.memberIds.at(-1) ?? tabId, true);
+        ungroupTab(tabId, beforeId);
+      }
+    } else {
+      const entries = centerTabStripEntries({
+        tabIds: state.tabs.map((tab) => tab.id),
+        groups: state.groups,
+      });
+      const sourceIndex = entries.findIndex(
+        (entry) => entry.kind === "tab" && entry.tabId === tabId,
+      );
+      const target = entries[sourceIndex + direction];
+      if (!target) return;
+      const targetId = target.kind === "group"
+        ? target.group.memberIds[0]
+        : target.tabId;
+      moveTab(
+        tabId,
+        direction < 0 ? targetId : targetBeforeId(targetId, true),
+      );
+    }
+    finishMenuAction(tabId, text("Tab reordered", "标签顺序已调整"));
+  }
+
+  function canAddMenuTabToSplit(tabId: string) {
+    const state = useCenterTabs.getState();
+    return Boolean(
+      state.tabs.some((tab) => tab.id === tabId)
+      && !findCenterTabGroup(state.groups, tabId)
+      && state.activeId
+      && state.activeId !== tabId,
+    );
+  }
+
+  function addMenuTabToSplit(tabId: string) {
+    const state = useCenterTabs.getState();
+    const targetId = state.activeId;
+    if (!targetId || targetId === tabId || findCenterTabGroup(state.groups, tabId)) return;
+    const targetGroup = findCenterTabGroup(state.groups, targetId);
+    const targetIndex = targetGroup?.memberIds.indexOf(targetId) ?? 0;
+    const accepted = groupTab(
+      tabId,
+      targetId,
+      targetGroup ? targetIndex + 1 : 1,
+      targetGroup?.id,
+    );
+    finishMenuAction(
+      tabId,
+      accepted
+        ? text("Tab added to split", "标签已加入分屏")
+        : text("Split supports up to three tabs", "分屏最多支持三个标签"),
+    );
+  }
+
+  function removeMenuTabFromGroup(tabId: string) {
+    if (!findCenterTabGroup(useCenterTabs.getState().groups, tabId)) return;
+    ungroupTab(tabId);
+    finishMenuAction(tabId, text("Tab removed from group", "标签已移出分组"));
+  }
+
+  function menuDragSubject(tabId: string): TabDragSubject | null {
+    const state = useCenterTabs.getState();
+    if (!state.tabs.some((tab) => tab.id === tabId)) return null;
+    const sourceGroup = findCenterTabGroup(state.groups, tabId);
+    if (!sourceGroup) return { kind: "tab", tabIds: [tabId] };
+    return snapshotTabDragSubject({
+      kind: "segment",
+      tabIds: [tabId],
+      sourceGroup,
+      memberIndex: sourceGroup.memberIds.indexOf(tabId),
+    });
+  }
+
+  function moveMenuTabToNewWindow(tabId: string) {
+    const subject = menuDragSubject(tabId);
+    if (!subject || !tabTransfer) return;
+    removeReleaseListener();
+    dragCoordinator.cancel();
+    dragCoordinator.prepare({
+      subject,
+      started: false,
+      cancelled: false,
+      committed: false,
+    });
+    const prepared = dragCoordinator.start();
+    if (!prepared) return;
+    try {
+      tabTransfer.moveToNewWindow(prepared);
+      dragCoordinator.commit();
+      clearDragState();
+      finishMenuAction(
+        tabId,
+        text("Tab moved to new window", "标签已移至新窗口"),
+      );
+    } catch {
+      dragCoordinator.cancel();
+      clearDragState();
+      finishMenuAction(tabId, text("Tab move cancelled", "标签移动已取消"));
+    }
   }
 
   function onOpenNewTab() {
@@ -337,8 +555,8 @@ export function CenterTabStrip() {
             ? (index + 1) % items.length
             : (index - 1 + items.length) % items.length;
     e.preventDefault();
+    setFocusedTabId(items[nextIndex].dataset.tabId ?? null);
     items[nextIndex].focus();
-    items[nextIndex].click();
   }
 
   function onTabListWheel(e: React.WheelEvent<HTMLDivElement>) {
@@ -362,33 +580,13 @@ export function CenterTabStrip() {
   function cancelDrag(announce = false) {
     cancelCoordinator();
     clearDragState();
-    if (announce) setDragAnnouncement(text("Tab drag cancelled", "标签拖动已取消"));
+    if (announce) setDragAnnouncement(text("Tab move cancelled", "标签移动已取消"));
   }
 
   function onPrepareDrag(subject: TabDragSubject) {
     removeReleaseListener();
     cancelCoordinator();
-    const snapshot: TabDragSubject = subject.kind === "tab"
-      ? { kind: "tab", tabIds: [subject.tabIds[0]] }
-      : subject.kind === "segment"
-        ? {
-          ...subject,
-          tabIds: [subject.tabIds[0]],
-          sourceGroup: {
-            ...subject.sourceGroup,
-            memberIds: [...subject.sourceGroup.memberIds],
-            visibleIds: [...subject.sourceGroup.visibleIds],
-          },
-        }
-        : {
-            ...subject,
-            tabIds: [...subject.tabIds],
-            sourceGroup: {
-              ...subject.sourceGroup,
-              memberIds: [...subject.sourceGroup.memberIds],
-              visibleIds: [...subject.sourceGroup.visibleIds],
-            },
-          };
+    const snapshot = snapshotTabDragSubject(subject);
     // Synchronous main-process preparation — must happen on pointer
     // down; dragstart may only read the already-prepared token.
     const bridge = desktopBridge();
@@ -454,7 +652,9 @@ export function CenterTabStrip() {
       clearDragState();
       return;
     }
-    cancelDrag();
+    // No cross-window token in play — plain cancel, announced if the
+    // drag had actually started (a11y: aria-live "move cancelled").
+    cancelDrag(Boolean(dragCoordinator.current()?.started));
   }
 
   function targetBeforeId(targetTabId: string, after: boolean): string | null {
@@ -464,6 +664,25 @@ export function CenterTabStrip() {
     const lastTargetId = targetGroup?.memberIds.at(-1) ?? targetTabId;
     const targetIndex = state.tabs.findIndex((tab) => tab.id === lastTargetId);
     return state.tabs[targetIndex + 1]?.id ?? null;
+  }
+
+  function isFourthMemberRejection(
+    subject: TabDragSubject,
+    intent: TabDropIntent,
+  ) {
+    if (intent.mode !== "merge") return false;
+    const targetGroup = findCenterTabGroup(
+      useCenterTabs.getState().groups,
+      intent.targetTabId,
+    );
+    if (subject.kind === "group") {
+      if (targetGroup?.id === subject.sourceGroup.id) return false;
+      return (targetGroup?.memberIds.length ?? 1) + subject.tabIds.length
+        > MAX_CENTER_TAB_GROUP_MEMBERS;
+    }
+    if (targetGroup?.memberIds.includes(subject.tabIds[0])) return false;
+    return (targetGroup?.memberIds.length ?? 1) + 1
+      > MAX_CENTER_TAB_GROUP_MEMBERS;
   }
 
   function applyDrop(prepared: NonNullable<ReturnType<typeof dragCoordinator.current>>, intent: TabDropIntent) {
@@ -565,16 +784,25 @@ export function CenterTabStrip() {
       cancelDrag(true);
       return;
     }
+    const fourthMemberRejected = isFourthMemberRejection(
+      prepared.subject,
+      intent,
+    );
     if (applyDrop(prepared, intent)) {
       const committed = dragCoordinator.commit();
       if (committed?.transferToken) {
         // Same-window move — release the unused main-process token.
         void desktopBridge()?.tabTransfer.cancel(committed.transferToken);
       }
-      setDragAnnouncement(text("Tab moved", "标签已移动"));
+      setDragAnnouncement(text("Tab reordered", "标签顺序已调整"));
       clearDragState();
     } else {
-      cancelDrag(true);
+      cancelDrag(!fourthMemberRejected);
+      if (fourthMemberRejected) {
+        setDragAnnouncement(
+          text("Split supports up to three tabs", "分屏最多支持三个标签"),
+        );
+      }
     }
   }
 
@@ -592,11 +820,17 @@ export function CenterTabStrip() {
   useEffect(() => {
     const onEscape = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      const menuTabId = tabMenu?.tabId;
+      const cancelled = Boolean(dragCoordinator.current() || menuTabId);
       cancelCoordinator();
       removeReleaseListener();
       setDraggedIds(new Set());
       setDropMarker(null);
-      setDragAnnouncement(text("Tab drag cancelled", "标签拖动已取消"));
+      setTabMenu(null);
+      if (cancelled) {
+        setDragAnnouncement(text("Tab move cancelled", "标签移动已取消"));
+      }
+      if (menuTabId) returnFocusToMenuInvoker(menuTabId);
     };
     window.addEventListener("keydown", onEscape);
     return () => {
@@ -604,7 +838,7 @@ export function CenterTabStrip() {
       cancelCoordinator();
       removeReleaseListener();
     };
-  }, [text]);
+  }, [tabMenu, text]);
 
   return (
     <div ref={stripRef} className={styles.strip}>
@@ -626,9 +860,12 @@ export function CenterTabStrip() {
                 group={entry.group}
                 tabs={tabs}
                 activeId={activeId}
+                focusedTabId={focusedTabId}
                 enteringIds={enteringIds}
                 closingIds={closingIds}
                 onActivate={onTabClick}
+                onFocusTab={setFocusedTabId}
+                onOpenMenu={openTabMenu}
                 onClose={onTabClose}
                 onExited={finishClose}
                 draggedIds={draggedIds}
@@ -650,11 +887,14 @@ export function CenterTabStrip() {
               key={entry.id}
               tab={tab}
               active={tab.id === activeId}
+              tabStop={tab.id === focusedTabId}
               enter={enteringIds.has(tab.id)}
               closing={closingIds.has(tab.id)}
               label={labelOf(tab, t, text)}
               closeLabel={text("Close tab", "关闭标签")}
               onActivate={onTabClick}
+              onFocusTab={setFocusedTabId}
+              onOpenMenu={openTabMenu}
               onClose={onTabClose}
               onExited={finishClose}
               dragSubject={{ kind: "tab", tabIds: [tab.id] }}
@@ -681,6 +921,61 @@ export function CenterTabStrip() {
       >
         <Plus size={15} />
       </button>
+      {tabMenu ? (
+        <div
+          className={styles.tabMenu}
+          role="menu"
+          aria-label={text("Tab actions", "标签操作")}
+          style={{ left: tabMenu.left, top: tabMenu.top }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.tabMenuItem}
+            disabled={!canMoveMenuTab(tabMenu.tabId, -1)}
+            onClick={() => moveMenuTab(tabMenu.tabId, -1)}
+          >
+            {text("Move left", "向左移动")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.tabMenuItem}
+            disabled={!canMoveMenuTab(tabMenu.tabId, 1)}
+            onClick={() => moveMenuTab(tabMenu.tabId, 1)}
+          >
+            {text("Move right", "向右移动")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.tabMenuItem}
+            disabled={!canAddMenuTabToSplit(tabMenu.tabId)}
+            onClick={() => addMenuTabToSplit(tabMenu.tabId)}
+          >
+            {text("Add to split", "加入分屏")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.tabMenuItem}
+            disabled={!findCenterTabGroup(groups, tabMenu.tabId)}
+            onClick={() => removeMenuTabFromGroup(tabMenu.tabId)}
+          >
+            {text("Remove from group", "移出分组")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.tabMenuItem}
+            disabled={!canMoveToNewWindow}
+            onClick={() => moveMenuTabToNewWindow(tabMenu.tabId)}
+          >
+            {text("Move to new window", "移至新窗口")}
+          </button>
+        </div>
+      ) : null}
       <span className={styles.dragAnnouncement} role="status" aria-live="polite">
         {dragAnnouncement}
       </span>
@@ -692,9 +987,15 @@ interface CompoundTabItemProps {
   group: CenterTabGroup;
   tabs: CenterTab[];
   activeId: string | null;
+  focusedTabId: string | null;
   enteringIds: ReadonlySet<string>;
   closingIds: ReadonlySet<string>;
   onActivate(tab: CenterTab): void;
+  onFocusTab(tabId: string): void;
+  onOpenMenu(
+    event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
+    tabId: string,
+  ): void;
   onClose(event: React.SyntheticEvent, tab: CenterTab): void;
   onExited(tab: CenterTab): void;
   draggedIds: ReadonlySet<string>;
@@ -718,9 +1019,12 @@ function CompoundTabItem({
   group,
   tabs,
   activeId,
+  focusedTabId,
   enteringIds,
   closingIds,
   onActivate,
+  onFocusTab,
+  onOpenMenu,
   onClose,
   onExited,
   draggedIds,
@@ -789,12 +1093,15 @@ function CompoundTabItem({
             key={tab.id}
             tab={tab}
             active={tab.id === activeId}
+            tabStop={tab.id === focusedTabId}
             enter={enteringIds.has(tab.id)}
             closing={closingIds.has(tab.id)}
             label={labelOf(tab, t, text)}
             closeLabel={text("Close tab", "关闭标签")}
             segment
             onActivate={onActivate}
+            onFocusTab={onFocusTab}
+            onOpenMenu={onOpenMenu}
             onClose={onClose}
             onExited={onExited}
             dragSubject={{
@@ -826,12 +1133,15 @@ function CompoundTabItem({
 function TabItem({
   tab,
   active,
+  tabStop,
   enter,
   closing,
   label,
   closeLabel,
   segment = false,
   onActivate,
+  onFocusTab,
+  onOpenMenu,
   onClose,
   onExited,
   dragSubject,
@@ -847,12 +1157,18 @@ function TabItem({
 }: {
   tab: CenterTab;
   active: boolean;
+  tabStop: boolean;
   enter: boolean;
   closing: boolean;
   label: string;
   closeLabel: string;
   segment?: boolean;
   onActivate: (tab: CenterTab) => void;
+  onFocusTab: (tabId: string) => void;
+  onOpenMenu: (
+    event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
+    tabId: string,
+  ) => void;
   onClose: (e: React.SyntheticEvent, tab: CenterTab) => void;
   onExited: (tab: CenterTab) => void;
   dragSubject: TabDragSubject;
@@ -928,10 +1244,17 @@ function TabItem({
       <div
         className={styles.tabTarget}
         role="tab"
+        data-tab-id={tab.id}
         aria-selected={active}
         aria-label={label}
-        tabIndex={active ? 0 : -1}
+        tabIndex={tabStop ? 0 : -1}
+        onFocus={() => onFocusTab(tab.id)}
+        onContextMenu={(e) => onOpenMenu(e, tab.id)}
         onKeyDown={(e) => {
+          if (e.shiftKey && e.key === "F10") {
+            onOpenMenu(e, tab.id);
+            return;
+          }
           if (e.key !== "Enter" && e.key !== " ") return;
           e.preventDefault();
           onActivate(tab);
