@@ -28,6 +28,23 @@ assert.deepEqual(JSON.parse(values.get("openprogram.webSplit")), {
   tabId: id,
   ratio: 0.44,
 });
+useCenterTabs.setState({
+  tabs: [
+    { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
+    { id, kind: "web", title: "other.example", url: "https://other.example/" },
+  ],
+  activeId: "s:chat",
+  splitWebTabId: id,
+  splitRatio: 0.44,
+});
+useCenterTabs.getState().openWebTabInSplit("https://example.com/");
+assert.equal(useCenterTabs.getState().activeId, "s:chat");
+assert.deepEqual(useCenterTabs.getState().tabs.find((tab) => tab.id === id), {
+  id,
+  kind: "web",
+  title: "example.com",
+  url: "https://example.com/",
+});
 useCenterTabs.getState().setSplitRatio(5);
 assert.equal(useCenterTabs.getState().splitRatio, 0.70);
 assert.deepEqual(JSON.parse(values.get("openprogram.webSplit")), {
@@ -44,5 +61,26 @@ assert.deepEqual(JSON.parse(values.get("openprogram.webSplit")), {
   tabId: null,
   ratio: 0.70,
 });
+
+values.set("centerTabs", JSON.stringify({
+  tabs: [
+    { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
+    { id, kind: "web", title: "example.com", url: "https://example.com/" },
+  ],
+  activeId: "s:chat",
+}));
+values.set("openprogram.webSplit", JSON.stringify({ tabId: id, ratio: 5 }));
+const { useCenterTabs: restoredSplit } = await import(
+  "../lib/state/center-tabs-store.ts?restore-valid-split",
+);
+assert.equal(restoredSplit.getState().splitWebTabId, id);
+assert.equal(restoredSplit.getState().splitRatio, 0.70);
+
+values.set("openprogram.webSplit", JSON.stringify({ tabId: "s:chat", ratio: 0 }));
+const { useCenterTabs: restoredInvalidSplit } = await import(
+  "../lib/state/center-tabs-store.ts?restore-invalid-split",
+);
+assert.equal(restoredInvalidSplit.getState().splitWebTabId, null);
+assert.equal(restoredInvalidSplit.getState().splitRatio, 0.30);
 
 console.log("web-split checks passed");

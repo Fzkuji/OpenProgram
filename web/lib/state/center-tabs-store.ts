@@ -436,9 +436,14 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     openWebTabInSplit: (url) => {
       const id = webTabId(url);
       set((s) => {
-        const tabs = s.tabs.some((tab) => tab.id === id)
-          ? s.tabs
-          : [...s.tabs, { id, kind: "web", title: hostnameOf(url), url }];
+        const existing = s.tabs.find((tab) => tab.id === id);
+        const tabs = !existing
+          ? [...s.tabs, { id, kind: "web", title: hostnameOf(url), url }]
+          : existing.url !== url
+            ? s.tabs.map((tab) =>
+                tab.id === id ? { ...tab, url, title: hostnameOf(url) } : tab,
+              )
+            : s.tabs;
         persist({ tabs, activeId: s.activeId });
         persistSplit({ tabId: id, ratio: s.splitRatio });
         return { tabs, splitWebTabId: id };
