@@ -248,6 +248,21 @@ assert.match(
   /\.compoundSegment \+ \.compoundSegment\s*\{[^}]*border-left:\s*1px solid var\(--border\);/s,
 );
 assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.compoundSegment,\s*:global\(html\.is-desktop\) \.compoundTab \.compoundSegment\.tabActive,\s*:global\(html\.is-desktop\) \.compoundTab \.compoundSegment\.tabActive:hover \{[^}]*border-radius: 0;[^}]*box-shadow: none;/s,
+  "desktop segments must stay flat partitions — no nested capsule radius or shadow",
+);
+assert.match(
+  strip,
+  /const internalSegmentDrag = !groupDragged\s*&& group\.memberIds\.some\(\(tabId\) => draggedIds\.has\(tabId\)\);/,
+  "internal segment drags must be detected to suppress insert markers",
+);
+assert.match(
+  strip,
+  /previousLeft - child\.offsetLeft[\s\S]*duration: 180, easing: "ease"/,
+  "compound member reorders must animate via FLIP position swap",
+);
+assert.match(
   strip,
   /const closingCount = group\.memberIds\.filter\(\(tabId\) =>\s*closingIds\.has\(tabId\),\s*\)\.length;/,
   "compound geometry must account for every concurrently closing segment",

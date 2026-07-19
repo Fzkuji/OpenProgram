@@ -1043,12 +1043,57 @@ function CompoundTabItem({
   ).length;
   const remainingCount = group.memberIds.length - closingCount;
   const groupDragged = group.memberIds.every((tabId) => draggedIds.has(tabId));
+  // A segment of THIS group being dragged means any drop is an internal
+  // reorder — the FLIP slide below is the feedback, not an insert marker.
+  const internalSegmentDrag = !groupDragged
+    && group.memberIds.some((tabId) => draggedIds.has(tabId));
   const groupDropIntent = dropMarker && group.memberIds.includes(dropMarker.targetTabId)
-      && dropMarker.mode !== "merge"
+      && dropMarker.mode !== "merge" && !internalSegmentDrag
     ? dropMarker.mode
     : undefined;
+  // FLIP: when members reorder within the compound (drag drop or keyboard
+  // Move left/right), slide each segment from its previous offset to its
+  // new one. Membership changes (enter/exit) keep their own animations.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const segmentOffsets = useRef(new Map<string, number>());
+  const previousOrder = useRef<string[]>(group.memberIds);
+  const orderKey = group.memberIds.join(" ");
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const sameMembers =
+      previousOrder.current.length === group.memberIds.length
+      && group.memberIds.every((tabId) => previousOrder.current.includes(tabId));
+    previousOrder.current = [...group.memberIds];
+    const reducedMotion =
+      typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const nextOffsets = new Map<string, number>();
+    for (const child of Array.from(root.children) as HTMLElement[]) {
+      const tabId = child.querySelector<HTMLElement>("[data-tab-id]")?.dataset.tabId;
+      if (!tabId) continue; // group drag handle
+      nextOffsets.set(tabId, child.offsetLeft);
+      const previousLeft = segmentOffsets.current.get(tabId);
+      if (
+        sameMembers && !reducedMotion
+        && previousLeft !== undefined && previousLeft !== child.offsetLeft
+      ) {
+        child.animate(
+          [
+            { transform: `translateX(${previousLeft - child.offsetLeft}px)` },
+            { transform: "translateX(0)" },
+          ],
+          { duration: 180, easing: "ease" },
+        );
+      }
+    }
+    segmentOffsets.current = nextOffsets;
+    // ponytail: keyed on member order only — resize between reorders just
+    // replays from a stale offset for one 180ms slide, not worth observing.
+  }, [orderKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div
+      ref={rootRef}
       className={`${styles.compoundTab} ${active ? styles.compoundTabActive : ""}`}
       data-member-count={group.memberIds.length}
       data-closing-count={closingCount || undefined}
@@ -1111,6 +1156,7 @@ function CompoundTabItem({
             }}
             dragSource={!groupDragged && draggedIds.has(tab.id)}
             dropIntent={dropMarker?.targetTabId === tab.id && dropMarker.mode === "merge"
+                && !internalSegmentDrag
               ? "merge"
               : undefined}
             dropTarget={{ tabId: tab.id, groupId: group.id, memberIndex: memberIndex + 1 }}
