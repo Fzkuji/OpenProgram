@@ -16,8 +16,8 @@
    活动 tab 的内容压回上方 28px 区，图标/文字和邻居完全同一水平线。
 
    ── 溢出 ────────────────────────────────────────────────────────────
-   tab 多时【压缩宽度】而不是横向滚动（Chrome 逻辑）：tab 允许 flex 收缩
-   到 min-width，标题省略号；＋ 号是最后一个 flex 项，因此永远可见。
+   tab 多时先压缩到 min-width，标题省略号；超过可容纳数量后只滚动 tab
+   流，＋ 号仍是独立 flex 项并保持可见。
 
    ── 颜色 ────────────────────────────────────────────────────────────
    strip 满铺实色灰（--bg-secondary），四边直抵边缘，底边与内容区直接相接
@@ -58,6 +58,14 @@
   flex: 0 1 auto;
   min-width: 0;
   max-width: calc(100% - 36px);
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+:global(html.is-desktop) .tabsFlow::-webkit-scrollbar {
+  display: none;
 }
 /* tabsFlow 本身是 shrink-to-fit flex item；width 参与其 intrinsic size，
    让少量 tab 真正达到 240px。空间不足时仍按同一基准等比收缩。 */

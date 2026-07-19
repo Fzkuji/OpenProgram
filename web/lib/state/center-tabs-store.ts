@@ -128,6 +128,13 @@ function hostnameOf(url: string): string {
 
 const LS_KEY = "centerTabs";
 
+// A missing non-local tab normally means a legacy caller that predates the
+// center-tab UI, so its ACK is still allowed to activate the session. Preserve
+// the one distinction the tab array cannot retain after removal: the user
+// explicitly closed this session. Tombstones live only for this page lifetime
+// and are cleared by an explicit reopen.
+const closedSessionAckTombstones = new Set<string>();
+
 interface Persisted {
   tabs: CenterTab[];
   activeId: string | null;
@@ -267,6 +274,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     openSessionTab: (sessionId, title) =>
       set((s) => {
+        closedSessionAckTombstones.delete(sessionId);
         const id = sessionTabId(sessionId);
         const existing = s.tabs.find((tab) => tab.id === id);
         if (!existing) {
@@ -342,19 +350,35 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       ),
 
     openWebTab: (url) =>
-      set((s) =>
-        focusOrCreate(
-          s,
-          webTabId(url),
-          () => ({
-            id: webTabId(url),
-            kind: "web",
-            title: hostnameOf(url),
-            url,
-          }),
-          [],
-        ),
-      ),
+      set((s) => {
+        const id = webTabId(url);
+        const existing = s.tabs.find((tab) => tab.id === id);
+        if (!existing) {
+          return focusOrCreate(
+            s,
+            id,
+            () => ({ id, kind: "web", title: hostnameOf(url), url }),
+            [],
+          );
+        }
+        const active = s.tabs.find((tab) => tab.id === s.activeId);
+        const consumeNtp = active?.kind === "ntp" && active.id !== id;
+        const restoreUrl = existing.url !== url;
+        if (!consumeNtp && !restoreUrl && s.activeId === id) return {};
+        let tabs = consumeNtp
+          ? s.tabs.filter((tab) => tab.id !== active.id)
+          : s.tabs;
+        if (restoreUrl) {
+          tabs = tabs.map((tab) =>
+            tab.id === id
+              ? { ...tab, url, title: hostnameOf(url) }
+              : tab,
+          );
+        }
+        const next = { tabs, activeId: id };
+        persist(next);
+        return next;
+      }),
 
     updateWebTab: (id, patch) =>
       set((s) => {
@@ -434,6 +458,14 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       set((s) => {
         const idx = s.tabs.findIndex((t) => t.id === id);
         if (idx < 0) return {};
+        const closingTab = s.tabs[idx];
+        if (
+          closingTab.kind === "session" &&
+          closingTab.sessionId &&
+          !closingTab.sessionId.startsWith("local_")
+        ) {
+          closedSessionAckTombstones.add(closingTab.sessionId);
+        }
         let tabs = s.tabs.filter((t) => t.id !== id);
         let activeId = s.activeId;
         if (s.activeId === id) {
@@ -465,6 +497,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 /** Whether an acknowledgement may activate its session. Missing tabs are
  *  legacy/non-tab callers; existing background tabs never take focus. */
 export function sessionAckIsActive(sessionId: string): boolean {
+  if (closedSessionAckTombstones.has(sessionId)) return false;
   const state = useCenterTabs.getState();
   const hasTab = state.tabs.some((tab) => tab.sessionId === sessionId);
   if (!hasTab && sessionId.startsWith("local_")) return false;

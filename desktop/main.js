@@ -129,6 +129,8 @@ function saveWindowState(win) {
 
 let mainWindow = null;
 const views = new Map(); // id -> WebContentsView
+const viewNavigations = new Map(); // id -> { url, promise }
+let visibleViewId = null;
 
 function sendState(id, extra) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -159,6 +161,28 @@ function isWebUrl(u) {
   }
 }
 
+function loadView(id, view, url) {
+  const pending = viewNavigations.get(id);
+  if (pending && pending.url === url) return pending.promise;
+  if (
+    !pending
+    && view.webContents.getURL() === url
+    && !view.webContents.isLoading()
+  ) {
+    return Promise.resolve(view);
+  }
+  const promise = view.webContents
+    .loadURL(url)
+    .then(() => view)
+    .finally(() => {
+      if (viewNavigations.get(id)?.promise === promise) {
+        viewNavigations.delete(id);
+      }
+    });
+  viewNavigations.set(id, { url, promise });
+  return promise;
+}
+
 // create-if-missing; loads url only on CREATION. Re-activating a tab
 // re-mounts the renderer pane, which calls ensure again — reloading
 // here would throw away scroll/form/SPA state and defeat the whole
@@ -176,7 +200,9 @@ function ensureView(id, url) {
     // Popups navigate the same view instead of opening a window.
     // Same http/https gate as every other egress point.
     wc.setWindowOpenHandler(({ url: popupUrl }) => {
-      if (isWebUrl(popupUrl)) wc.loadURL(popupUrl);
+      if (isWebUrl(popupUrl)) {
+        void navigateView(id, popupUrl).catch(() => {});
+      }
       return { action: "deny" };
     });
     for (const ev of [
@@ -188,15 +214,45 @@ function ensureView(id, url) {
     ]) {
       wc.on(ev, () => sendState(id));
     }
-    if (url && isWebUrl(url)) wc.loadURL(url);
+    if (url && isWebUrl(url)) void loadView(id, view, url).catch(() => {});
   }
   return view;
 }
 
-function navigateView(id, url) {
-  if (!url || !isWebUrl(url)) return;
-  const view = ensureView(id, url); // fresh view already loads url
-  if (view.webContents.getURL() !== url) view.webContents.loadURL(url);
+async function navigateView(id, url) {
+  if (!url || !isWebUrl(url)) return null;
+  const view = views.get(id) || ensureView(id, "");
+  return loadView(id, view, url);
+}
+
+function showView(id) {
+  if (!views.has(id)) return false;
+  for (const [otherId, view] of views) view.setVisible(otherId === id);
+  visibleViewId = id;
+  return true;
+}
+
+function hideView(id) {
+  const view = views.get(id);
+  if (!view) return;
+  view.setVisible(false);
+  if (visibleViewId === id) visibleViewId = null;
+}
+
+async function activateView(id, url) {
+  let view;
+  if (url) {
+    if (!isWebUrl(url)) return null;
+    view = views.get(id) || ensureView(id, "");
+    showView(id);
+    view = await navigateView(id, url);
+    if (!view) return null;
+    if (visibleViewId !== id) return null;
+  } else {
+    view = views.get(id);
+    if (!view || !showView(id)) return null;
+  }
+  return view.webContents.getOrCreateDevToolsTargetId();
 }
 
 function withView(id, fn) {
@@ -204,9 +260,27 @@ function withView(id, fn) {
   if (view) fn(view);
 }
 
+// reload/navigationHistory calls replace any in-flight loadURL Promise
+// without going through loadView. Remove that stale registry entry before
+// invoking the native operation, so a following activation cannot reuse a
+// Promise Electron is about to reject with ERR_ABORTED.
+function runNativeNavigation(id, navigate) {
+  const view = views.get(id);
+  if (!view) return;
+  viewNavigations.delete(id);
+  navigate(view.webContents);
+}
+
 function registerWebTabIpc() {
   ipcMain.on("webtab:ensure", (_e, id, url) => ensureView(id, url));
-  ipcMain.on("webtab:navigate", (_e, id, url) => navigateView(id, url));
+  ipcMain.on("webtab:navigate", (_e, id, url) => {
+    void navigateView(id, url).catch(() => {});
+  });
+  ipcMain.handle("webtab:activate", (_e, id, url) =>
+    typeof id === "string"
+      ? activateView(id, typeof url === "string" ? url : "")
+      : null
+  );
   ipcMain.on("webtab:set-bounds", (_e, id, b) => {
     if (!b) return;
     const r = {
@@ -217,23 +291,25 @@ function registerWebTabIpc() {
     };
     withView(id, (v) => v.setBounds(r));
   });
-  ipcMain.on("webtab:show", (_e, id) => {
-    for (const [otherId, v] of views) v.setVisible(otherId === id);
-  });
-  ipcMain.on("webtab:hide", (_e, id) => withView(id, (v) => v.setVisible(false)));
+  ipcMain.on("webtab:show", (_e, id) => showView(id));
+  ipcMain.on("webtab:hide", (_e, id) => hideView(id));
   ipcMain.on("webtab:destroy", (_e, id) =>
     withView(id, (v) => {
+      if (visibleViewId === id) visibleViewId = null;
       mainWindow.contentView.removeChildView(v);
       v.webContents.close();
+      viewNavigations.delete(id);
       views.delete(id);
     })
   );
-  ipcMain.on("webtab:reload", (_e, id) => withView(id, (v) => v.webContents.reload()));
+  ipcMain.on("webtab:reload", (_e, id) =>
+    runNativeNavigation(id, (wc) => wc.reload())
+  );
   ipcMain.on("webtab:go-back", (_e, id) =>
-    withView(id, (v) => v.webContents.navigationHistory.goBack())
+    runNativeNavigation(id, (wc) => wc.navigationHistory.goBack())
   );
   ipcMain.on("webtab:go-forward", (_e, id) =>
-    withView(id, (v) => v.webContents.navigationHistory.goForward())
+    runNativeNavigation(id, (wc) => wc.navigationHistory.goForward())
   );
   ipcMain.on("desktop:open-external", (_e, url) => {
     try {
@@ -293,6 +369,8 @@ async function createWindow() {
   mainWindow.on("close", () => saveWindowState(mainWindow));
   mainWindow.on("closed", () => {
     views.clear();
+    viewNavigations.clear();
+    visibleViewId = null;
     mainWindow = null;
   });
   // External links from the app itself (not web tabs) open in the system browser.
@@ -331,6 +409,8 @@ async function createWindow() {
       }
       views.delete(id);
     }
+    viewNavigations.clear();
+    visibleViewId = null;
   });
   mainWindow.loadURL(await resolveStartUrl());
 }

@@ -24,8 +24,10 @@ import {
   responseSessionId,
   responseTargetsActiveChat,
 } from "./chat-response-routing";
+import { dropDraftChannelChoice } from "./draft-channel-choice";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { writeChatScroll } from "@/lib/state/chat-scroll";
+import { useSessionStore } from "@/lib/session-store";
 
 interface ChatWindow {
   ws?: WebSocket | null;
@@ -43,6 +45,14 @@ interface ChatWindow {
   _toolsEnabled?: boolean;
   _webSearchEnabled?: boolean;
   _lastRunCommand?: string | null;
+  _pendingChannelChoice?: {
+    channel: string | null;
+    account_id: string | null;
+  } | null;
+  __pendingChannelChoices?: Record<
+    string,
+    { channel: string | null; account_id: string | null }
+  >;
   __sessionStore?: {
     getState: () => {
       activeChatKey: string | null;
@@ -113,6 +123,29 @@ export function wsHandleChatAck(data: ChatAckData): void {
     const tabs = useCenterTabs.getState();
     const isActive = sessionAckIsActive(sid);
     tabs.markSessionReady(sid);
+    dropDraftChannelChoice(W, sid, isActive);
+    const pendingProjectId =
+      useSessionStore.getState().pendingProjectsByChat[sid];
+    if (
+      pendingProjectId &&
+      W.ws &&
+      W.ws.readyState === WebSocket.OPEN
+    ) {
+      try {
+        W.ws.send(
+          JSON.stringify({
+            action: "set_session_project",
+            session_id: sid,
+            project_id: pendingProjectId,
+          }),
+        );
+        useSessionStore.getState().takePendingProject(sid);
+        window.dispatchEvent(new Event("project-changed"));
+      } catch {
+        // Keep the pending entry when the socket closes between the
+        // readyState check and send so the project choice is not lost.
+      }
+    }
     if (isActive) {
       W.currentSessionId = sid;
       if (window.location.pathname !== "/s/" + sid) {
@@ -143,6 +176,16 @@ export function wsHandleChatAck(data: ChatAckData): void {
     delete (W as unknown as {
       __pendingUserTextBySession?: Record<string, string>;
     }).__pendingUserTextBySession?.[sid];
+    const pendingFirst = (W as unknown as {
+      __pendingFirstAckBySession?: Record<string, true>;
+    }).__pendingFirstAckBySession;
+    if (pendingFirst?.[sid]) {
+      const next = { ...pendingFirst };
+      delete next[sid];
+      (W as unknown as {
+        __pendingFirstAckBySession?: Record<string, true>;
+      }).__pendingFirstAckBySession = next;
+    }
     // Mirror the (seeded or pre-existing) conv into the React store so the
     // sidebar row appears IMMEDIATELY — store.conversations is the
     // sidebar's source of truth.

@@ -86,7 +86,7 @@ function readCollapsedProjects(): Set<string> {
   }
 }
 
-export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
+export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
   const router = useRouter();
   const pathname = usePathname();
   const { t, text, locale } = useTranslation();
@@ -193,14 +193,11 @@ export function SessionsList({ onNewChat }: { onNewChat: () => void }) {
     });
   }, [projectMode, currentId, projects]);
 
-  // ＋ on a group header: run the EXACT New-chat path the nav item uses
-  // (passed down from Sidebar — it clears any stale pending project),
-  // THEN stash this project for the to-be-created session (same
-  // pending-choice flow as the topbar project picker).
+  // ＋ on a group header creates a distinct provisional chat and records
+  // this project against that chat key until its chat_ack arrives.
   function newSessionInProject(projectId: string) {
-    onNewChat();
-    (window as unknown as { _pendingProjectId?: string })._pendingProjectId =
-      projectId;
+    const draftId = onNewChat();
+    useSessionStore.getState().setPendingProject(draftId, projectId);
     // Same event the project picker fires — the topbar chip re-reads
     // the pending choice.
     window.dispatchEvent(new Event("project-changed"));

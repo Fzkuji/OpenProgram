@@ -21,12 +21,7 @@ _pending: dict[str, tuple[threading.Event, dict]] = {}
 _lock = threading.Lock()
 
 
-def request_open_tab(url: str, timeout: float = 15.0) -> dict:
-    """Broadcast an open-tab command and block until the shell replies.
-
-    Returns ``{"ok": True}`` when a desktop client confirmed the tab, or
-    ``{"ok": False, "error": ...}`` on timeout / no clients / bad reply.
-    """
+def _request(command: dict, timeout: float) -> dict:
     from openprogram.webui import server as _s
     if not _s._ws_connections:
         return {"ok": False, "error": "no WS clients connected (desktop shell not open?)"}
@@ -38,7 +33,7 @@ def request_open_tab(url: str, timeout: float = 15.0) -> dict:
     try:
         _s._broadcast(json.dumps({
             "type": "webtab.command",
-            "data": {"op": "open", "url": url, "req_id": req_id},
+            "data": {**command, "req_id": req_id},
         }))
         if not ev.wait(timeout):
             return {"ok": False, "error": f"timeout: no desktop shell replied within {timeout:g}s"}
@@ -48,6 +43,16 @@ def request_open_tab(url: str, timeout: float = 15.0) -> dict:
             _pending.pop(req_id, None)
 
 
+def request_open_tab(url: str, timeout: float = 15.0) -> dict:
+    """Open/focus ``url`` and return the active desktop tab identity."""
+    return _request({"op": "open", "url": url}, timeout)
+
+
+def request_active_tab(timeout: float = 5.0) -> dict:
+    """Return the currently visible desktop web tab, if one is active."""
+    return _request({"op": "active"}, timeout)
+
+
 async def handle_webtab_result(ws, cmd: dict):
     req_id = cmd.get("req_id") or ""
     with _lock:
@@ -55,7 +60,13 @@ async def handle_webtab_result(ws, cmd: dict):
         if entry is None or "result" in entry[1]:
             return  # unknown req_id or already claimed — ignore duplicates
         ev, holder = entry
-        holder["result"] = {"ok": bool(cmd.get("ok")), "error": cmd.get("error")}
+        holder["result"] = {
+            "ok": bool(cmd.get("ok")),
+            "error": cmd.get("error"),
+            **({"url": cmd["url"]} if isinstance(cmd.get("url"), str) else {}),
+            **({"tab_id": cmd["tab_id"]} if isinstance(cmd.get("tab_id"), str) else {}),
+            **({"target_id": cmd["target_id"]} if isinstance(cmd.get("target_id"), str) else {}),
+        }
     ev.set()
 
 

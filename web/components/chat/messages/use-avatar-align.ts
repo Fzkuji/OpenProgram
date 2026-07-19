@@ -17,10 +17,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
 export function useAvatarAlign(deps: unknown): {
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement>;
   avatarTop: number;
 } {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [avatarTop, setAvatarTop] = useState(16); // sensible default
 
   useLayoutEffect(() => {

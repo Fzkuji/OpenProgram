@@ -22,7 +22,11 @@ export function readBookmarks(): Bookmark[] {
 }
 
 function saveBookmarks(bookmarks: Bookmark[]): Bookmark[] {
-  localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(bookmarks));
+  try {
+    localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(bookmarks));
+  } catch {
+    return readBookmarks();
+  }
   window.dispatchEvent(new Event(BOOKMARKS_CHANGE_EVENT));
   return bookmarks;
 }

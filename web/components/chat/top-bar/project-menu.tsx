@@ -9,10 +9,10 @@
  *   * bind a new folder as a project (paste an absolute path)
  *   * remove a project from the registry
  *
- * Self-contained: talks to the backend over ``window.ws`` with one-shot
- * request/response pairs (``list_projects`` → ``projects_list``, etc.)
- * so it needs no session-store slice. Positioning / click-outside come
- * from the shadcn <Popover> in index.tsx.
+ * Backend requests use one-shot ``window.ws`` request/response pairs
+ * (``list_projects`` → ``projects_list``, etc.). A draft-only project
+ * choice is stored in the session store until chat_ack creates the session.
+ * Positioning / click-outside come from the shadcn <Popover> in index.tsx.
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Check, Folder } from "lucide-react";
@@ -50,6 +50,11 @@ interface Project {
 export function ProjectMenu({ onClose }: { onClose: () => void }) {
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const activeChatKey = useSessionStore((s) => s.activeChatKey);
+  const pendingProjectId = useSessionStore((s) =>
+    s.activeChatKey ? s.pendingProjectsByChat[s.activeChatKey] ?? null : null,
+  );
+  const setPendingProject = useSessionStore((s) => s.setPendingProject);
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,11 +88,9 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
 
   async function switchTo(projectId: string) {
     if (!sessionId) {
-      // No session yet (brand-new chat) — stash the choice for the
-      // first message to bind. Mirrors the channel picker's pending
-      // choice.
-      (window as unknown as { _pendingProjectId?: string })._pendingProjectId =
-        projectId;
+      // Each unsent tab has its own provisional key. chat_ack consumes
+      // this exact entry and binds the newly-created backend session.
+      if (activeChatKey) setPendingProject(activeChatKey, projectId);
       setCurrentId(projectId);
       notifyProjectChanged();
       onClose();
@@ -161,8 +164,7 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
   // With no session / pending choice yet, the effective project is the
   // default — so the menu's checkmark agrees with the topbar chip.
   const activeId =
-    currentId ??
-    (window as unknown as { _pendingProjectId?: string })._pendingProjectId ??
+    (!sessionId ? pendingProjectId : currentId) ??
     list.find((p) => p.is_default)?.id ??
     null;
 
@@ -237,6 +239,11 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
 export function ProjectBadge() {
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const activeChatKey = useSessionStore((s) => s.activeChatKey);
+  const pendingProjectId = useSessionStore((s) =>
+    s.activeChatKey ? s.pendingProjectsByChat[s.activeChatKey] ?? null : null,
+  );
+  const takePendingProject = useSessionStore((s) => s.takePendingProject);
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState<string>(text("Project", "项目"));
   const [isDefault, setIsDefault] = useState(true);
@@ -260,14 +267,20 @@ export function ProjectBadge() {
     );
     if (!data) return false;
     const projects = data.projects || [];
-    const w = window as unknown as { _pendingProjectId?: string };
-    const wantId = data.current_project_id ?? w._pendingProjectId ?? null;
+    const wantId =
+      (!sessionId ? pendingProjectId : data.current_project_id) ??
+      data.current_project_id ??
+      null;
     let cur = projects.find((p) => p.id === wantId);
     if (!cur) {
       // The resolved project is gone (e.g. it was just removed) — drop
       // the stale pending choice and fall back to the default label.
-      if (w._pendingProjectId && !projects.some((p) => p.id === w._pendingProjectId)) {
-        delete w._pendingProjectId;
+      if (
+        activeChatKey &&
+        pendingProjectId &&
+        !projects.some((p) => p.id === pendingProjectId)
+      ) {
+        takePendingProject(activeChatKey);
       }
       cur = projects.find((p) => p.is_default);
     }
@@ -277,7 +290,7 @@ export function ProjectBadge() {
       return true;
     }
     return false;
-  }, [sessionId]);
+  }, [activeChatKey, pendingProjectId, sessionId, takePendingProject]);
 
   useEffect(() => {
     let cancelled = false;

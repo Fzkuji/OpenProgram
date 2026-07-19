@@ -224,7 +224,11 @@ export function FileTree({
       ? (t.path ?? null)
       : null;
   });
-  const openFile = (path: string) => openFileTab(projectId, path);
+  const openFile = (path: string) => {
+    openFileTab(projectId, path);
+    (window as Window & { __navigate?: (route: string) => void })
+      .__navigate?.("/chat");
+  };
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");

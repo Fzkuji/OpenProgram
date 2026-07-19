@@ -1,7 +1,8 @@
 """Auto-launch a sidecar Chrome instance with CDP enabled.
 
-The browser tool's `open` action calls into here when it has no CDP
-target wired up. The sidecar lives at `~/.openprogram/chrome-profile`
+The browser tool's explicit `engine="auto"` mode calls into here when no
+desktop CDP target is available. The sidecar profile is stored at
+`~/.openprogram/chrome-profile`
 (a copy of the user's real Chrome profile so saved logins / extensions
 work) and listens on a fixed port. Subsequent open() calls just
 connect_over_cdp to the running sidecar.

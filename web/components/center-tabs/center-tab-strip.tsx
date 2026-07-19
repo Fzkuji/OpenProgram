@@ -173,6 +173,12 @@ export function CenterTabStrip() {
   function onTabClick(tab: CenterTab) {
     setActive(tab.id);
     if (tab.kind === "session") activateSession(tab);
+    else if (!isChatRoute(pathname)) router.push("/chat");
+  }
+
+  function onOpenNewTab() {
+    openNewTabPage();
+    if (!isChatRoute(pathname)) router.push("/chat");
   }
 
   function onTabClose(e: React.SyntheticEvent, tab: CenterTab) {
@@ -251,6 +257,13 @@ export function CenterTabStrip() {
     items[nextIndex].click();
   }
 
+  function onTabListWheel(e: React.WheelEvent<HTMLDivElement>) {
+    if (e.currentTarget.scrollWidth <= e.currentTarget.clientWidth) return;
+    if (Math.abs(e.deltaX) >= Math.abs(e.deltaY) || e.deltaY === 0) return;
+    e.currentTarget.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }
+
   return (
     <div className={styles.strip}>
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
@@ -260,6 +273,7 @@ export function CenterTabStrip() {
         role="tablist"
         aria-label={text("Open tabs", "打开的标签")}
         onKeyDown={onTabListKeyDown}
+        onWheel={onTabListWheel}
       >
         {tabs.map((tab) => (
           <TabItem
@@ -281,7 +295,7 @@ export function CenterTabStrip() {
         className={styles.plusBtn}
         title={text("New tab", "新标签页")}
         aria-label={text("New tab", "新标签页")}
-        onClick={openNewTabPage}
+        onClick={onOpenNewTab}
       >
         <Plus size={15} />
       </button>
@@ -313,11 +327,24 @@ function TabItem({
   onExited: () => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const tabRef = useRef<HTMLDivElement>(null);
   // 入场动画只在挂载那一次播；播完摘掉 class（.tabEnter 的 overflow:hidden
   // 不能留着，否则会裁掉活动 tab 的 fillet）。
   const [entering, setEntering] = useState(enter);
+  useEffect(() => {
+    if (active) tabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (!active || typeof ResizeObserver === "undefined") return;
+    const flow = tabRef.current?.parentElement;
+    if (!flow) return;
+    const revealActiveTab = () =>
+      tabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const observer = new ResizeObserver(revealActiveTab);
+    observer.observe(flow);
+    return () => observer.disconnect();
+  }, [active]);
   return (
     <div
+      ref={tabRef}
       className={`${styles.tab} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
       onAnimationEnd={(e) => {
         if (e.target !== e.currentTarget) return;

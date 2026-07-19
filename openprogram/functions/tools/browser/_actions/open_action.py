@@ -107,6 +107,38 @@ def _is_shell_page(page_url: str) -> bool:
     return u.startswith("devtools://") or u.startswith(_SHELL_URL_PREFIXES)
 
 
+def _choose_app_page(
+    pages: list[Any],
+    *,
+    target_id: str,
+) -> tuple[Any | None, str | None]:
+    """Resolve the one page whose CDP target matches the shell receipt."""
+    matches = [page for page in pages if _page_target_id(page) == target_id]
+    if len(matches) == 1:
+        return matches[0], None
+    if len(matches) > 1:
+        return None, "ambiguous desktop web-tab CDP targets"
+    return None, None
+
+
+def _page_target_id(page: Any) -> str | None:
+    """Return a Playwright page's Chromium DevTools TargetID, if available."""
+    session = None
+    try:
+        session = page.context.new_cdp_session(page)
+        result = session.send("Target.getTargetInfo")
+        target_id = (result.get("targetInfo") or {}).get("targetId")
+        return target_id if isinstance(target_id, str) and target_id else None
+    except Exception:
+        return None
+    finally:
+        if session is not None:
+            try:
+                session.detach()
+            except Exception:
+                pass
+
+
 def _open_app_session(
     cdp_url: str,
     *,
@@ -117,7 +149,8 @@ def _open_app_session(
     """Attach to the visible web tabs inside the OpenProgram desktop app.
 
     可见性走控制面：url 给定时先经 WS 广播让桌面壳 openWebTab(url)
-    （webui/ws_actions/webtab.py），再轮询 CDP targets 等新页面出现。
+    （webui/ws_actions/webtab.py）；壳回传 WebContents 的 CDP target ID，
+    再按该 ID 轮询并附着 Playwright page。
     直接 context.new_page() 在 Electron 上会弹出裸窗口而不是应用内
     tab，所以这里从不这么做。
 
@@ -155,45 +188,40 @@ def _open_app_session(
     def _visible_pages():
         return [p for p in _all_pages() if not _is_shell_page(p.url)]
 
-    def _norm(u: str) -> str:
-        return (u or "").rstrip("/")
+    try:
+        from openprogram.webui.ws_actions.webtab import (
+            request_active_tab,
+            request_open_tab,
+        )
+        reply = request_open_tab(url) if url else request_active_tab()
+    except Exception as e:
+        reply = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    target_id = reply.get("target_id") if reply.get("ok") else None
+    if not isinstance(target_id, str) or not target_id:
+        pw.stop()
+        return _fail(
+            "desktop control plane did not confirm a visible web tab ("
+            + str(reply.get("error") or "missing CDP target id")
+            + ")"
+        )
 
     page = None
-    if url:
-        before = set(_all_pages())
-        try:
-            from openprogram.webui.ws_actions.webtab import request_open_tab
-            reply = request_open_tab(url)
-        except Exception as e:
-            reply = {"ok": False, "error": f"{type(e).__name__}: {e}"}
-        if reply.get("ok"):
-            # 前端 openWebTab 后 WebContentsView 在 pane 挂载时才创建，
-            # CDP target 晚于 WS 回执出现 —— 轮询最多 10s。已存在同 URL
-            # tab 时前端只聚焦不新建，靠 URL 归一比对认领。
-            deadline = _time.time() + 10.0
-            while page is None and _time.time() < deadline:
-                for p in _visible_pages():
-                    if p not in before or _norm(p.url) == _norm(url):
-                        page = p
-                        break
-                if page is None:
-                    _time.sleep(0.25)
-        if page is None:
-            pw.stop()
-            return _fail(
-                "desktop app did not produce a visible tab for the URL ("
-                + str(reply.get("error") or "no matching CDP target within 10s")
-                + ")"
-            )
-    else:
-        vis = _visible_pages()
-        if not vis:
-            pw.stop()
-            return _fail(
-                "no visible web tab open in the desktop app — pass `url` "
-                "so one can be opened"
-            )
-        page = vis[-1]
+    selection_error = None
+    deadline = _time.time() + 10.0
+    while page is None and selection_error is None and _time.time() < deadline:
+        page, selection_error = _choose_app_page(
+            _visible_pages(),
+            target_id=target_id,
+        )
+        if page is None and selection_error is None:
+            _time.sleep(0.25)
+    if page is None:
+        pw.stop()
+        return _fail(
+            "desktop app did not expose one confirmed visible tab ("
+            + str(selection_error or "no matching CDP target within 10s")
+            + ")"
+        )
 
     page.set_default_timeout(timeout_ms)
     session_id = "br_" + uuid.uuid4().hex[:10]
@@ -209,6 +237,8 @@ def _open_app_session(
         "login_url": url,
         "is_cdp": True,
         "is_app": True,
+        "app_tab_id": reply.get("tab_id"),
+        "app_target_id": target_id,
     }
     return (
         f"Opened browser session `{session_id}` "
@@ -217,24 +247,12 @@ def _open_app_session(
     )
 
 
-def _read_cdp_port() -> int | None:
-    """If the user ran `openprogram browser attach` we wrote the port here."""
-    from pathlib import Path
-    p = Path.home() / ".openprogram" / "browser-cdp-port"
-    if not p.exists():
-        return None
-    try:
-        return int(p.read_text(encoding="utf-8").strip())
-    except (ValueError, OSError):
-        return None
-
-
 def _open(
     *,
     headless: bool = True,
     timeout_ms: int = 30_000,
     stealth: bool = True,
-    engine: str = "auto",
+    engine: str = "app",
     url: str | None = None,
     storage_state: str | None = None,
     cdp_url: str | None = None,
@@ -255,17 +273,15 @@ def _open(
     if not _b.check_playwright():
         return _b._install_hint()
 
-    # Auto-bootstrap path (default): when the caller didn't pin a
-    # specific engine and didn't pass cdp_url, ensure a sidecar Chrome
-    # is running and route through CDP. First call may take a minute
-    # because it copies the user's Chrome profile (~3GB); subsequent
-    # calls are instant.
+    # Auto-bootstrap is explicit: the default engine is `app`, which can
+    # only attach to a visible OpenProgram desktop web tab. `auto` retains
+    # the legacy sidecar fallback after the approval gate has run.
     auto_engine = engine in (None, "", "auto")
     app_engine = isinstance(engine, str) and engine.lower() == "app"
 
     # 桌面应用优先（对标 claude-in-chrome 的可见接管）：壳开着时 9223 上有
-    # Electron 的 CDP，attach 它的可见 web tab；壳没开则 auto 原样落回
-    # sidecar Chrome（9222），行为与从前完全一致。
+    # Electron 的 CDP，attach 它的可见 web tab；显式 auto 才会在壳未开时
+    # 回落 sidecar Chrome（9222）。
     if cdp_url is None and (auto_engine or app_engine):
         from openprogram.functions.tools.browser._chrome_bootstrap import (
             desktop_app_cdp_url,
@@ -296,11 +312,6 @@ def _open(
                 cdp_url = cdp_url_if_available()
         if cdp_url is None:
             engine = "chromium"
-
-    if cdp_url is None and not auto_engine:
-        port = _read_cdp_port()
-        if port is not None:
-            cdp_url = f"http://localhost:{port}"
 
     if cdp_url:
         try:

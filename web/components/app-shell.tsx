@@ -502,7 +502,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <PageShell page="chat" />
           </div>
-          {activeKind === "file" && activeTab?.projectId && activeTab?.path ? (
+          {showChat && activeKind === "file" && activeTab?.projectId && activeTab?.path ? (
             <FileTabPane
               key={activeTab.id}
               projectId={activeTab.projectId}
@@ -511,14 +511,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : null}
           {/* url 为空也要挂载：白屏竞态会把 store url 冲空，面板自己能
              从 tab id 找回地址（见 web-tab-pane）；不挂载就只剩白屏。 */}
-          {activeKind === "web" && activeTab ? (
+          {showChat && activeKind === "web" && activeTab ? (
             <WebTabPane
               key={activeTab.id}
               tabId={activeTab.id}
               url={activeTab.url ?? ""}
             />
           ) : null}
-          {activeKind === "ntp" && activeTab ? <NewTabPage key={activeTab.id} /> : null}
+          {showChat && activeKind === "ntp" && activeTab ? <NewTabPage key={activeTab.id} /> : null}
         </div>
       </div>
       {/* Non-chat routes render their own page content via the router. */}

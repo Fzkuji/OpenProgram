@@ -35,6 +35,8 @@ export interface DesktopWebTabApi {
   ensure(id: string, url: string): void;
   /** loadURL on the existing view (created if missing). */
   navigate(id: string, url: string): void;
+  /** Ensure/navigate/show this view and return its CDP target id. */
+  activate(id: string, url?: string): Promise<string | null>;
   /** DIP rect relative to the window content area. */
   setBounds(id: string, bounds: DesktopWebTabBounds): void;
   show(id: string): void;
@@ -95,6 +97,42 @@ export function destroyStaleWebViews(
 
 let installed = false;
 
+function showCenterSurface(): boolean {
+  const navigate = (window as Window & { __navigate?: (path: string) => void })
+    .__navigate;
+  if (!navigate) return false;
+  navigate("/chat");
+  return true;
+}
+
+function showActiveCenterTab(): void {
+  const state = useCenterTabs.getState();
+  const active = state.tabs.find((tab) => tab.id === state.activeId);
+  const path =
+    active?.kind === "session" && !active.draft && active.sessionId
+      ? `/s/${encodeURIComponent(active.sessionId)}`
+      : "/chat";
+  (window as Window & { __navigate?: (route: string) => void })
+    .__navigate?.(path);
+}
+
+function sendWebTabResult(
+  ws: WebSocket,
+  reqId: string,
+  active: { id: string; url?: string },
+  targetId: string | null,
+): void {
+  const activeUrl = active.url || (active.id.startsWith("w:") ? active.id.slice(2) : "");
+  const ok = !!activeUrl && !!targetId;
+  ws.send(JSON.stringify({
+    action: "webtab_result",
+    req_id: reqId,
+    ok,
+    ...(ok ? { url: activeUrl, tab_id: active.id, target_id: targetId } : {}),
+    ...(!ok ? { error: "desktop web tab did not expose a CDP target" } : {}),
+  }));
+}
+
 /**
  * Wire the desktop shell into the tabs store. Idempotent; no-op
  * outside the desktop shell. Currently called on web-pane mount
@@ -115,10 +153,12 @@ export function installDesktopMenuHandlers(): void {
   installed = true;
   window.addEventListener("op-desktop-new-tab", () => {
     useCenterTabs.getState().openNewTabPage();
+    showCenterSurface();
   });
   window.addEventListener("op-desktop-close-tab", () => {
     const s = useCenterTabs.getState();
     if (s.activeId) s.closeTab(s.activeId);
+    showActiveCenterTab();
   });
   // Agent 控制面：后端广播 webtab.command(op=open) → 在可见 UI 里开
   // web tab，并经同一条 WS 回执 webtab_result(req_id)。非桌面客户端不装
@@ -129,14 +169,58 @@ export function installDesktopMenuHandlers(): void {
       | undefined;
     if (detail?.type !== "webtab.command") return;
     const d = detail.data;
-    if (!d?.url || d.op !== "open") return;
-    useCenterTabs.getState().openWebTab(d.url);
+    if (!d?.req_id || (d.op !== "open" && d.op !== "active")) return;
     const ws = (window as unknown as { ws?: WebSocket }).ws;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({ action: "webtab_result", req_id: d.req_id, ok: true }),
-      );
+    if (ws?.readyState !== WebSocket.OPEN) return;
+
+    if (d.op === "open") {
+      if (!d.url) return;
+      useCenterTabs.getState().openWebTab(d.url);
+      const routed = showCenterSurface();
+      const state = useCenterTabs.getState();
+      const active = state.tabs.find((tab) => tab.id === state.activeId);
+      const activeUrl = active?.kind === "web"
+        ? active.url || (active.id.startsWith("w:") ? active.id.slice(2) : "")
+        : "";
+      if (!routed || !active || active.kind !== "web" || !activeUrl) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: !routed
+            ? "center-tab navigation unavailable"
+            : "no visible active web tab",
+        }));
+        return;
+      }
+      void bridge.webTab
+        .activate(active.id, activeUrl)
+        .then((targetId) => sendWebTabResult(ws, d.req_id!, active, targetId))
+        .catch(() => sendWebTabResult(ws, d.req_id!, active, null));
+      return;
     }
+
+    const state = useCenterTabs.getState();
+    const active = state.tabs.find((tab) => tab.id === state.activeId);
+    const routeVisible =
+      window.location.pathname === "/chat" ||
+      window.location.pathname.startsWith("/s/");
+    const activeUrl = active?.kind === "web"
+      ? active.url || (active.id.startsWith("w:") ? active.id.slice(2) : "")
+      : "";
+    if (!routeVisible || !active || active.kind !== "web" || !activeUrl) {
+      ws.send(JSON.stringify({
+        action: "webtab_result",
+        req_id: d.req_id,
+        ok: false,
+        error: "no visible active web tab",
+      }));
+      return;
+    }
+    void bridge.webTab
+      .activate(active.id)
+      .then((targetId) => sendWebTabResult(ws, d.req_id!, active, targetId))
+      .catch(() => sendWebTabResult(ws, d.req_id!, active, null));
   });
   useCenterTabs.subscribe((s) => {
     destroyStaleWebViews(

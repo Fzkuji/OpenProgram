@@ -8,7 +8,7 @@ inside ``browser.execute()`` (which fires long after browser.py has
 finished loading).
 
 Modules:
-    open_action.py  — _start_engine / _read_cdp_port / _open
+    open_action.py  — _start_engine / _open
     interact.py     — navigate / click / type / hover / select / press / upload / wait / eval
     read.py         — extract / html / accessibility / screenshot / screenshot_b64 / cookies
     console.py      — console / console_subscribe / block / frames / frame_eval

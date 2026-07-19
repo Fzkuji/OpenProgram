@@ -19,5 +19,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: pip install -e ".[dev]"
+      - name: Check desktop web tab navigation
+        run: node desktop/scripts/check-webtab-navigation.js
       - name: Run tests
         run: python -m pytest tests/ --ignore=tests/test_provider_cli.py --ignore=tests/integration

@@ -45,9 +45,10 @@ DESCRIPTION = (
     "block / viewport / list / close). Sister tool: `agent_browser` "
     "exposes the same browser via ariaSnapshot + ref-id (@e1, @e2) for "
     "LLMs that prefer accessibility-tree reasoning over CSS selectors. "
-    "Default engine is `auto` — boots a sidecar Chrome that copies your "
-    "real profile so saved logins / extensions work; first call slow, "
-    "subsequent calls instant. Setup: `pip install \"openprogram[browser]\" "
+    "Default engine is `app` and only controls visible web tabs inside the "
+    "OpenProgram desktop app. Explicit `auto` mode may use a sidecar copy of "
+    "the user's Chrome profile and therefore requires approval. Setup: "
+    "`pip install \"openprogram[browser]\" "
     "&& playwright install chromium`."
 )
 
@@ -147,7 +148,7 @@ SPEC: dict[str, Any] = {
             "engine": {
                 "type": "string",
                 "enum": ["auto", "app", "chromium", "patchright", "camoufox"],
-                "description": "For ``open``: which browser backend to use. Default 'auto' prefers the visible browser inside the OpenProgram desktop app when it is running (the user sees every page you drive), otherwise connects to a sidecar copy of the user's real Chrome (logged into all their accounts) — first call may take a minute on first run while the profile copies, subsequent calls are instant. 'app' forces the desktop app's visible browser and errors if the app isn't running. Override with 'chromium' (stock Playwright), 'patchright' (stealth Chromium fork — useful when 'auto' Chrome isn't installed), or 'camoufox' (stealth Firefox).",
+                "description": "For ``open``: which browser backend to use. Default 'app' controls only visible web tabs inside the OpenProgram desktop app and errors if the app is not running. Explicit 'auto' first prefers the desktop app, then may connect to a sidecar copy of the user's Chrome profile; this requires approval. Use 'chromium' for an isolated stock Playwright browser, 'patchright' for a stealth Chromium fork, or 'camoufox' for stealth Firefox.",
             },
             "timeout_ms": {
                 "type": "integer",
@@ -157,6 +158,41 @@ SPEC: dict[str, Any] = {
         "required": ["action"],
     },
 }
+
+
+def _browser_requires_approval(
+    action: str | None = None,
+    engine: str | None = None,
+    storage_state: str | None = None,
+    url: str | None = None,
+    **kwargs: Any,
+) -> bool | str:
+    """Gate browser operations that can expose persisted login material."""
+    op = (action or "").lower()
+    if op in {"cookies", "save_login"}:
+        return f"browser action '{op}' accesses persisted login data"
+    if op == "open":
+        selected_engine = (
+            engine or read_string_param(kwargs, "engine", "backend") or "app"
+        ).lower()
+        selected_state = storage_state or read_string_param(
+            kwargs, "storage_state", "state",
+        )
+        explicit_cdp = read_string_param(kwargs, "cdp_url", "cdp")
+        selected_url = url or read_string_param(kwargs, "url")
+        if selected_engine == "auto":
+            return "engine='auto' may copy and open the user's Chrome profile"
+        if selected_state:
+            return "opening a browser with saved login state requires approval"
+        if explicit_cdp:
+            return "connecting to an explicit browser CDP endpoint requires approval"
+        if (
+            selected_engine != "app"
+            and selected_url
+            and _has_saved_login(selected_url)
+        ):
+            return "opening a browser with an automatically saved login requires approval"
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +289,7 @@ def execute(
     tab_index: int | None = None,
     headless: bool = True,
     stealth: bool = True,
-    engine: str = "auto",
+    engine: str = "app",
     storage_state: str | None = None,
     name: str | None = None,
     width: int | None = None,
@@ -295,7 +331,7 @@ def execute(
     )
 
     if action == "open":
-        eng = engine or read_string_param(kw, "engine", "backend") or "auto"
+        eng = engine or read_string_param(kw, "engine", "backend") or "app"
         ss = storage_state or read_string_param(kw, "storage_state", "state")
         cdp = read_string_param(kw, "cdp_url", "cdp")
         return open_action._open(
@@ -377,6 +413,7 @@ function(
     parameters=SPEC["parameters"],
     toolset=['core'],
     unsafe_in=['wechat', 'telegram'],
+    requires_approval=_browser_requires_approval,
     max_result_chars=60_000,
     check_fn=check_playwright,
 )(execute)

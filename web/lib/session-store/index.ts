@@ -75,6 +75,10 @@ interface ConvState {
   /** Active chat surface key. Real sessions use their id; unsent tabs use
    *  a provisional local_* id while currentSessionId stays null. */
   activeChatKey: string | null;
+  /** Project selected for an unsent chat, keyed by its provisional
+   *  activeChatKey. The entry is consumed once chat_ack confirms that
+   *  the provisional session exists on the backend. */
+  pendingProjectsByChat: Record<string, string>;
   /** Currently running task (show Stop button).
    *  Deprecated single-session field — read ``runningTasks[sid]``
    *  instead. Kept here so legacy ``setRunning(false)`` keeps working
@@ -131,6 +135,8 @@ interface ConvState {
   setCurrentConv: (id: string | null) => void;
   setCurrentDraft: (key: string) => void;
   dropChatDraft: (key: string) => void;
+  setPendingProject: (chatKey: string, projectId: string) => void;
+  takePendingProject: (chatKey: string) => string | null;
   setMessages: (sessionId: string, msgs: ChatMsg[]) => void;
   appendMessage: (sessionId: string, msg: ChatMsg) => void;
   updateMessage: (sessionId: string, msgId: string, patch: Partial<ChatMsg>) => void;
@@ -167,6 +173,9 @@ interface ConvState {
    *  live draft for the *current* session and stays mirrored here. */
   composerDrafts: Record<string, string>;
   setComposerInput: (s: string) => void;
+  /** Update a captured chat owner's draft without changing whichever
+   *  chat is visible when an async operation completes. */
+  setComposerInputFor: (chatKey: string | null, s: string) => void;
   /** Per-session composer settings (tool toggles + thinking effort).
    *  Like composerDrafts: keyed by sessionId (or "__new__" for the
    *  not-yet-created next chat), persisted to localStorage so they
@@ -465,6 +474,7 @@ export const useSessionStore = create<ConvState>((set) => ({
   messageOrder: {},
   currentSessionId: null,
   activeChatKey: null,
+  pendingProjectsByChat: {},
   runningTask: null,
   runningTasks: {},
   paused: false,
@@ -530,6 +540,8 @@ export const useSessionStore = create<ConvState>((set) => ({
       // ids in pasteStore).
       const nextDrafts = { ...s.composerDrafts };
       delete nextDrafts[id];
+      const nextPendingProjects = { ...s.pendingProjectsByChat };
+      delete nextPendingProjects[id];
       persistComposerDrafts(nextDrafts);
       return {
         conversations: rest,
@@ -538,6 +550,7 @@ export const useSessionStore = create<ConvState>((set) => ({
         currentSessionId: s.currentSessionId === id ? null : s.currentSessionId,
         activeChatKey: s.activeChatKey === id ? null : s.activeChatKey,
         composerDrafts: nextDrafts,
+        pendingProjectsByChat: nextPendingProjects,
       };
     }),
 
@@ -549,6 +562,11 @@ export const useSessionStore = create<ConvState>((set) => ({
           key === COMPOSER_NEW_KEY || key.startsWith("local_"),
         ),
       );
+      const nextPendingProjects = Object.fromEntries(
+        Object.entries(s.pendingProjectsByChat).filter(([key]) =>
+          key.startsWith("local_"),
+        ),
+      );
       persistComposerDrafts(nextDrafts);
       return {
         conversations: {},
@@ -558,6 +576,7 @@ export const useSessionStore = create<ConvState>((set) => ({
         activeChatKey:
           s.activeChatKey?.startsWith("local_") ? s.activeChatKey : null,
         composerDrafts: nextDrafts,
+        pendingProjectsByChat: nextPendingProjects,
       };
     }),
 
@@ -571,13 +590,16 @@ export const useSessionStore = create<ConvState>((set) => ({
     set((s) => {
       const drafts = { ...s.composerDrafts };
       const settings = { ...s.composerSettingsBySession };
+      const pendingProjects = { ...s.pendingProjectsByChat };
       delete drafts[key];
       delete settings[key];
+      delete pendingProjects[key];
       persistComposerDrafts(drafts);
       persistComposerSettingsMap(settings);
       return {
         composerDrafts: drafts,
         composerSettingsBySession: settings,
+        pendingProjectsByChat: pendingProjects,
         ...(s.activeChatKey === key
           ? {
               activeChatKey: null,
@@ -588,6 +610,26 @@ export const useSessionStore = create<ConvState>((set) => ({
           : {}),
       };
     }),
+
+  setPendingProject: (chatKey, projectId) =>
+    set((s) => ({
+      pendingProjectsByChat: {
+        ...s.pendingProjectsByChat,
+        [chatKey]: projectId,
+      },
+    })),
+
+  takePendingProject: (chatKey) => {
+    let projectId: string | null = null;
+    set((s) => {
+      projectId = s.pendingProjectsByChat[chatKey] ?? null;
+      if (!projectId) return {};
+      const pendingProjects = { ...s.pendingProjectsByChat };
+      delete pendingProjects[chatKey];
+      return { pendingProjectsByChat: pendingProjects };
+    });
+    return projectId;
+  },
 
   setMessages: (sessionId, msgs) =>
     set((s) => {
@@ -677,6 +719,17 @@ export const useSessionStore = create<ConvState>((set) => ({
       // session-count) and matches the "right dock" pattern above.
       persistComposerDrafts(drafts);
       return { composerInput: s, composerDrafts: drafts };
+    }),
+  setComposerInputFor: (chatKey, s) =>
+    set((state) => {
+      const sid = chatKey ?? COMPOSER_NEW_KEY;
+      const drafts = { ...state.composerDrafts, [sid]: s };
+      persistComposerDrafts(drafts);
+      const visibleKey =
+        state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
+      return visibleKey === sid
+        ? { composerInput: s, composerDrafts: drafts }
+        : { composerDrafts: drafts };
     }),
   composerSettingsBySession: readComposerSettingsMap(),
   composerSettings:

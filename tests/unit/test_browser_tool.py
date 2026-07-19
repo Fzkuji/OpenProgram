@@ -111,7 +111,7 @@ def fake_playwright(monkeypatch):
 
 
 def test_open_creates_session(fake_playwright):
-    out = tool.execute(action="open")
+    out = tool.execute(action="open", engine="chromium")
     assert out.startswith("Opened browser session `br_")
     # Extract the id so the next test step can use it.
     sid = out.split("`")[1]
@@ -119,20 +119,20 @@ def test_open_creates_session(fake_playwright):
 
 
 def test_navigate_goto(fake_playwright):
-    sid = tool.execute(action="open").split("`")[1]
+    sid = tool.execute(action="open", engine="chromium").split("`")[1]
     out = tool.execute(action="navigate", session_id=sid, url="https://example.com")
     assert "Navigated" in out
     assert tool._sessions[sid]["page"].url == "https://example.com"
 
 
 def test_navigate_requires_url(fake_playwright):
-    sid = tool.execute(action="open").split("`")[1]
+    sid = tool.execute(action="open", engine="chromium").split("`")[1]
     out = tool.execute(action="navigate", session_id=sid)
     assert "Error" in out and "url" in out
 
 
 def test_click_and_type(fake_playwright):
-    sid = tool.execute(action="open").split("`")[1]
+    sid = tool.execute(action="open", engine="chromium").split("`")[1]
     assert "Clicked" in tool.execute(action="click", session_id=sid, selector="button.go")
     out = tool.execute(action="type", session_id=sid, selector="#q", text="hello", submit=True)
     assert "Typed 5 char" in out and "submitted" in out
@@ -143,20 +143,20 @@ def test_click_and_type(fake_playwright):
 
 
 def test_extract_whole_body(fake_playwright):
-    sid = tool.execute(action="open").split("`")[1]
+    sid = tool.execute(action="open", engine="chromium").split("`")[1]
     out = tool.execute(action="extract", session_id=sid)
     assert out == "Hello from fake browser."
 
 
 def test_extract_with_selector(fake_playwright):
-    sid = tool.execute(action="open").split("`")[1]
+    sid = tool.execute(action="open", engine="chromium").split("`")[1]
     out = tool.execute(action="extract", session_id=sid, selector=".item")
     assert "2 match(es)" in out
     assert "match-0" in out and "match-1" in out
 
 
 def test_screenshot_writes_file(tmp_path, fake_playwright):
-    sid = tool.execute(action="open").split("`")[1]
+    sid = tool.execute(action="open", engine="chromium").split("`")[1]
     target = tmp_path / "shot.png"
     out = tool.execute(action="screenshot", session_id=sid, path=str(target))
     assert "Saved screenshot" in out
@@ -164,7 +164,7 @@ def test_screenshot_writes_file(tmp_path, fake_playwright):
 
 
 def test_close_removes_session(fake_playwright):
-    sid = tool.execute(action="open").split("`")[1]
+    sid = tool.execute(action="open", engine="chromium").split("`")[1]
     out = tool.execute(action="close", session_id=sid)
     assert "Closed" in out
     assert sid not in tool._sessions
@@ -176,7 +176,7 @@ def test_list_reports_empty():
 
 
 def test_list_reports_open_sessions(fake_playwright):
-    sid = tool.execute(action="open").split("`")[1]
+    sid = tool.execute(action="open", engine="chromium").split("`")[1]
     tool.execute(action="navigate", session_id=sid, url="https://example.org")
     out = tool.execute(action="list")
     assert sid in out and "example.org" in out
@@ -196,6 +196,83 @@ def test_install_hint_when_playwright_missing(monkeypatch):
     monkeypatch.setattr(tool, "check_playwright", lambda: False)
     out = tool.execute(action="open")
     assert "pip install playwright" in out
+
+
+def test_default_open_is_app_only_and_never_bootstraps_profile(
+    fake_playwright,
+    monkeypatch,
+):
+    from openprogram.functions.tools.browser import _chrome_bootstrap as boot
+
+    monkeypatch.setattr(boot, "desktop_app_cdp_url", lambda: None)
+
+    def fail_sidecar(*_args, **_kwargs):
+        raise AssertionError("default open must not bootstrap a Chrome profile")
+
+    monkeypatch.setattr(boot, "launch_sidecar_chrome", fail_sidecar)
+    out = tool.execute(action="open")
+    assert "engine='app' requires the OpenProgram desktop app" in out
+
+
+def test_browser_approval_gate_covers_profile_and_login_actions(monkeypatch):
+    assert tool._browser_requires_approval(action="open", engine="app") is False
+    assert tool._browser_requires_approval(action="open", engine="chromium") is False
+    assert isinstance(
+        tool._browser_requires_approval(action="open", engine="auto"),
+        str,
+    )
+    assert isinstance(tool._browser_requires_approval(action="cookies"), str)
+    assert isinstance(tool._browser_requires_approval(action="save_login"), str)
+    assert isinstance(
+        tool._browser_requires_approval(
+            action="open",
+            engine="chromium",
+            storage_state="login.json",
+        ),
+        str,
+    )
+    monkeypatch.setattr(tool, "_has_saved_login", lambda _url: True)
+    assert isinstance(
+        tool._browser_requires_approval(
+            action="open",
+            engine="chromium",
+            url="https://private.example",
+        ),
+        str,
+    )
+    assert isinstance(
+        tool._browser_requires_approval(
+            action="open",
+            engine="",
+            backend="auto",
+        ),
+        str,
+    )
+    assert isinstance(
+        tool._browser_requires_approval(
+            action="open",
+            engine="",
+            state="saved-login.json",
+        ),
+        str,
+    )
+    assert isinstance(
+        tool._browser_requires_approval(
+            action="open",
+            engine="app",
+            cdp_url="http://localhost:9222",
+        ),
+        str,
+    )
+
+    from openprogram.functions import agent_tools, tool_requires_approval
+    registered = agent_tools(names=["playwright_browser"])[0]
+    for args in (
+        {"action": "open", "engine": "", "backend": "auto"},
+        {"action": "open", "engine": "", "state": "saved-login.json"},
+        {"action": "open", "engine": "app", "cdp_url": "http://localhost:9222"},
+    ):
+        assert tool_requires_approval(registered, args)[0] is True
 
 
 # ---------------------------------------------------------------------------

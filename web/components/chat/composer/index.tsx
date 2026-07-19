@@ -29,6 +29,11 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
+import {
+  draftChannelChoiceFor,
+  dropDraftChannelChoice,
+} from "@/lib/runtime-bridge/draft-channel-choice";
+import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { api } from "@/lib/net/api";
 import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
@@ -79,9 +84,12 @@ import { ImageAttachStrip } from "./attach/image-attach-strip";
 import { ThinkingEffortPill } from "./controls/thinking-effort-pill";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
+import {
+  resolveFnFormSessionId,
+  shouldClearLegacyRunning,
+} from "./modes/fn-form/session-target";
 import { useSlashMenu } from "./slash/use-slash-menu";
 import { useThinkingEffort } from "./controls/use-thinking-effort";
-import { usePermissionMode } from "./controls/use-permission-mode";
 import { useToolsToggles } from "./controls/use-tools-toggles";
 import styles from "./composer.module.css";
 
@@ -99,8 +107,13 @@ const HISTORY_RECALL_MAX = 5000;
 function wsSend(payload: unknown): boolean {
   const w = window as Window & { ws?: WebSocket };
   if (!w.ws || w.ws.readyState !== WebSocket.OPEN) return false;
-  w.ws.send(typeof payload === "string" ? payload : JSON.stringify(payload));
-  return true;
+  try {
+    w.ws.send(typeof payload === "string" ? payload : JSON.stringify(payload));
+    return w.ws.readyState === WebSocket.OPEN;
+  } catch (error) {
+    console.error("[Composer] WebSocket send failed:", error);
+    return false;
+  }
 }
 
 const noop = () => {};
@@ -128,11 +141,13 @@ export function Composer() {
   // session's running task, not a global flag. This is what lets the
   // user switch from a running session A to session B and immediately
   // send a new message in B while A is still streaming.
-  const runningTask = useSessionStore((s) =>
-    s.currentSessionId ? (s.runningTasks[s.currentSessionId] ?? null) : null,
-  );
+  const runningTask = useSessionStore((s) => {
+    const sessionId = s.activeChatKey ?? s.currentSessionId;
+    return sessionId ? (s.runningTasks[sessionId] ?? null) : null;
+  });
   const input = useSessionStore((s) => s.composerInput);
   const setInput = useSessionStore((s) => s.setComposerInput);
+  const setComposerInputFor = useSessionStore((s) => s.setComposerInputFor);
   const focusTick = useSessionStore((s) => s.composerFocusTick);
 
   // History recall — user messages from the active session, ordered
@@ -221,7 +236,7 @@ export function Composer() {
     dragActive,
     fileInputRef,
     composerRootRef,
-    addImages,
+    addImagesForOwner,
     removeImage,
     setImageError,
     removeDoc,
@@ -253,10 +268,15 @@ export function Composer() {
           }
         }
         if (hasImage) {
+          const pasteOwnerKey = activeChatKey;
           e.preventDefault();
           void collectImagesFromTransfer(e.clipboardData!)
-            .then((imgs) => addImages(imgs))
-            .catch((err) => setImageError(String(err)));
+            .then((imgs) => addImagesForOwner(pasteOwnerKey, imgs))
+            .catch((err) => {
+              if (useSessionStore.getState().activeChatKey === pasteOwnerKey) {
+                setImageError(String(err));
+              }
+            });
           return;
         }
       }
@@ -278,7 +298,7 @@ export function Composer() {
         ta.setSelectionRange(pos, pos);
       });
     },
-    [input, setInput, addImages, setImageError],
+    [activeChatKey, input, setInput, addImagesForOwner, setImageError],
   );
 
   // Remove a paste chip — also strips the token from the textarea.
@@ -357,11 +377,6 @@ export function Composer() {
     setMenuOpen: setThinkingMenuOpen,
     set: setThinking,
   } = useThinkingEffort();
-  // Permission mode is now owned by the top-bar <PermissionBadge> chip;
-  // the composer only needs the current value to tag the outgoing turn's
-  // ``permission_mode`` (submit fallback). Reading the same per-session
-  // store means the chip's switch is reflected here immediately.
-  const { mode: permMode } = usePermissionMode();
   // The effort picker only appears once a chat model is actually
   // selected; with no model picked it stays hidden.
   const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
@@ -599,6 +614,7 @@ export function Composer() {
   /* ---- Submit -------------------------------------------------------- */
 
   const submit = useCallback(async () => {
+    const submitOwnerKey = activeChatKey ?? currentSessionId;
     const trimmed = input.trim();
     // While a task is running, a sent message is a MID-RUN STEER, not a new
     // turn: route it to the live run so the user can course-correct just by
@@ -606,9 +622,9 @@ export function Composer() {
     // boundary. (Plain text only — attachments / slash go through the normal
     // path, which is disabled while running.)
     if (isRunning) {
-      if (!trimmed || !currentSessionId) return;
-      send({ action: "steer", session_id: currentSessionId, message: trimmed });
-      setInput("");
+      if (!trimmed || !submitOwnerKey) return;
+      send({ action: "steer", session_id: submitOwnerKey, message: trimmed });
+      setComposerInputFor(submitOwnerKey, "");
       return;
     }
     // Allow image-only submits — the LLM can answer "describe this
@@ -633,7 +649,7 @@ export function Composer() {
       return;
     }
     if (slash.query !== null && slash.runCommand(trimmed)) {
-      setInput("");
+      setComposerInputFor(submitOwnerKey, "");
       slash.close();
       return;
     }
@@ -697,35 +713,24 @@ export function Composer() {
     // before the WS payload goes out. Composer is just the trigger.
     const handled = sendChatMessage({
       text: expanded,
-      sessionId: activeChatKey,
+      sessionId: submitOwnerKey,
       attachments: attachmentsPayload.length > 0 ? attachmentsPayload : undefined,
       thinking,
       toolsEnabled,
       webSearchEnabled,
       serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
     });
-    if (!handled) {
-      // chat.js hasn't loaded yet (shouldn't happen in steady state).
-      // Fall back to a raw send so we don't lose the user's text; the
-      // welcome-screen / user-bubble update is out of scope here.
-      const ok = send({
-        action: "chat",
-        text: expanded,
-        session_id: activeChatKey,
-        thinking_effort: thinking,
-        tools: toolsEnabled,
-        web_search: webSearchEnabled,
-        ...(permMode ? { permission_mode: permMode } : {}),
-        ...(fastEnabled && fastSupported ? { service_tier: "priority" } : {}),
-      });
-      if (!ok) return;
-    }
-    setInput("");
+    // The bridge already writes this exact socket. A false result means the
+    // write did not complete; keep the captured draft + attachments intact so
+    // the user can retry after reconnect instead of writing the same socket
+    // again through the raw helper.
+    if (!handled) return;
+    setComposerInputFor(submitOwnerKey, "");
     setHistoryIndex(-1);
     // Revoke + clear pending images / docs now that the WS payload
     // is out the door. Hook handles URL.revokeObjectURL for each
     // image's preview blob.
-    clearAttachmentsAfterSubmit();
+    clearAttachmentsAfterSubmit(submitOwnerKey);
     slash.close();
   }, [
     clearAttachmentsAfterSubmit,
@@ -738,7 +743,7 @@ export function Composer() {
     pendingImages,
     promptNeedModel,
     send,
-    setInput,
+    setComposerInputFor,
     slash,
     thinking,
     toolsEnabled,
@@ -748,7 +753,11 @@ export function Composer() {
   ]);
 
   function stop() {
-    if (!currentSessionId) return;
+    const targetSessionId = resolveFnFormSessionId(
+      currentSessionId,
+      activeChatKey,
+    );
+    if (!targetSessionId) return;
     // Optimistic UI flip: clear runningTask immediately so the Stop
     // button turns back into Send right when the user clicks. Don't
     // wait for the backend's stopped envelope — the dispatcher main
@@ -758,7 +767,7 @@ export function Composer() {
     // a hook point within ~1s for the chat path), it just no longer
     // gates the UI.
     const store = useSessionStore.getState();
-    store.setRunningTaskFor(currentSessionId, null);
+    store.setRunningTaskFor(targetSessionId, null);
     // Also patch the running assistant placeholder (the row that
     // would otherwise be filled in 5-6s later with the late-arriving
     // LLM response) to a cancelled state right now. Backend's
@@ -767,14 +776,14 @@ export function Composer() {
     // cancel-aware finalize runs, so the React store and the on-disk
     // node converge. Without this the chat would show a Thinking
     // spinner until the model's stream completed naturally.
-    const ids = store.messageOrder[currentSessionId] || [];
+    const ids = store.messageOrder[targetSessionId] || [];
     for (let i = ids.length - 1; i >= 0; i--) {
       const m = store.messagesById[ids[i]];
       if (!m) continue;
       if (m.role !== "assistant") continue;
       if (m.status === "done" || m.status === "completed"
           || m.status === "cancelled" || m.status === "error") break;
-      store.updateMessage(currentSessionId, m.id, {
+      store.updateMessage(targetSessionId, m.id, {
         status: "cancelled",
         content: m.content && m.content.trim()
           ? `${m.content}\n\n*[cancelled by user]*`
@@ -783,7 +792,7 @@ export function Composer() {
       });
       break;
     }
-    send({ action: "stop", session_id: currentSessionId });
+    send({ action: "stop", session_id: targetSessionId });
   }
 
   // Pick a slash command — argless commands run immediately, commands
@@ -988,9 +997,10 @@ export function Composer() {
       }
     }
 
+    const dispatchSessionId = resolveFnFormSessionId(currentSessionId, activeChatKey);
     const body: Record<string, unknown> = { kwargs };
     if (workdirMode !== "hidden" && wd) body.work_dir = wd;
-    if (currentSessionId) body.session_id = currentSessionId;
+    if (dispatchSessionId) body.session_id = dispatchSessionId;
     // "修改后重新运行"：以原调用为锚点 fork 兄弟分支（旧运行保留在
     // ◀ N/M ▶ 切换里），不是在对话尾部追加一次新调用。
     const forkOf = useSessionStore.getState().fnFormForkOf;
@@ -1000,7 +1010,16 @@ export function Composer() {
     const w = window as unknown as {
       setWelcomeVisible?: (show: boolean) => void;
       setRunning?: (running: boolean) => void;
+      _pendingChannelChoice?: {
+        channel: string | null;
+        account_id: string | null;
+      } | null;
+      __pendingChannelChoices?: Record<
+        string,
+        { channel: string | null; account_id: string | null }
+      >;
     };
+    const dispatchChannelChoice = draftChannelChoiceFor(w, dispatchSessionId);
     w.setWelcomeVisible?.(false);
     w.setRunning?.(true);
 
@@ -1014,10 +1033,10 @@ export function Composer() {
     // to key it under; a brand-new session's card lands via the post-POST
     // navigate + hydrate.
     let placeholderId: string | null = null;
-    if (currentSessionId) {
+    if (dispatchSessionId) {
       const store = useSessionStore.getState();
       placeholderId = `__optimistic_fn__:${fn.name}:${Date.now()}`;
-      store.appendMessage(currentSessionId, {
+      store.appendMessage(dispatchSessionId, {
         id: placeholderId,
         role: "assistant",
         content: "",
@@ -1025,8 +1044,8 @@ export function Composer() {
         function: fn.name,
         status: "running",
       });
-      store.setRunningTaskFor(currentSessionId, {
-        session_id: currentSessionId,
+      store.setRunningTaskFor(dispatchSessionId, {
+        session_id: dispatchSessionId,
         msg_id: placeholderId,
         func_name: fn.name,
         started_at: Date.now() / 1000,
@@ -1054,24 +1073,67 @@ export function Composer() {
         // the page stays blank while gui_agent runs in the background.
         const sid = j && j.session_id;
         if (typeof sid === "string" && sid) {
-          (window as unknown as { currentSessionId?: string }).currentSessionId =
-            sid;
-          if (sid !== currentSessionId) {
-            setCurrentConv(sid);
-            router.push(`/s/${encodeURIComponent(sid)}`);
+          if (
+            dispatchSessionId
+            && dispatchChannelChoice?.channel
+            && send({
+              action: "set_conversation_channel",
+              session_id: sid,
+              channel: dispatchChannelChoice.channel,
+              account_id: dispatchChannelChoice.account_id || "",
+            })
+          ) {
+            dropDraftChannelChoice(w, dispatchSessionId);
+          }
+          // Direct fn-form dispatch has no chat_ack event. Bind a Project
+          // selected on the provisional tab here, after the endpoint has
+          // created/confirmed the session, and consume only that tab's entry.
+          const store = useSessionStore.getState();
+          const pendingProjectKey =
+            dispatchSessionId && store.pendingProjectsByChat[dispatchSessionId]
+              ? dispatchSessionId
+              : sid;
+          const pendingProjectId =
+            store.pendingProjectsByChat[pendingProjectKey];
+          if (
+            pendingProjectId
+            && send({
+              action: "set_session_project",
+              session_id: sid,
+              project_id: pendingProjectId,
+            })
+          ) {
+            store.takePendingProject(pendingProjectKey);
+            window.dispatchEvent(new Event("project-changed"));
+          }
+          const shouldActivate = sessionAckIsActive(sid);
+          useCenterTabs.getState().markSessionReady(sid);
+          if (shouldActivate) {
+            (window as unknown as { currentSessionId?: string }).currentSessionId =
+              sid;
+            if (sid !== currentSessionId) {
+              setCurrentConv(sid);
+              router.push(`/s/${encodeURIComponent(sid)}`);
+            }
           }
         }
       })
       .catch((err) => {
         console.error("function call failed:", err);
-        w.setRunning?.(false);
+        const store = useSessionStore.getState();
         // Roll back the optimistic pending card + running task — the
         // dispatch never landed, so leaving them would show a card
         // spinning forever with no backing run.
-        if (placeholderId && currentSessionId) {
-          const store = useSessionStore.getState();
-          store.truncateFrom(currentSessionId, placeholderId);
-          store.setRunningTaskFor(currentSessionId, null);
+        if (placeholderId && dispatchSessionId) {
+          store.truncateFrom(dispatchSessionId, placeholderId);
+          store.setRunningTaskFor(dispatchSessionId, null);
+        }
+        if (shouldClearLegacyRunning(
+          dispatchSessionId,
+          store.activeChatKey,
+          store.currentSessionId,
+        )) {
+          w.setRunning?.(false);
         }
         // Surface the reason to the user. The backend now returns a
         // structured 400 when a non-agentic tool is invoked via
@@ -1086,6 +1148,7 @@ export function Composer() {
     handleFnFormClose();
   }, [
     currentSessionId,
+    activeChatKey,
     fnFormFunction,
     fnForm,
     handleFnFormClose,
@@ -1093,6 +1156,7 @@ export function Composer() {
     noEnabledModels,
     promptNeedModel,
     router,
+    send,
     setCurrentConv,
   ]);
 

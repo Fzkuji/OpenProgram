@@ -48,9 +48,20 @@ export function draftChannelChoiceFor(
 export function dropDraftChannelChoice(
   host: DraftChannelChoiceHost,
   chatKey: string,
+  clearLegacyFallback = false,
 ): void {
-  if (!host.__pendingChannelChoices?.[chatKey]) return;
-  const choices = { ...host.__pendingChannelChoices };
-  delete choices[chatKey];
-  host.__pendingChannelChoices = choices;
+  const keyedChoice = host.__pendingChannelChoices?.[chatKey] ?? null;
+  if (keyedChoice) {
+    const choices = { ...host.__pendingChannelChoices };
+    delete choices[chatKey];
+    host.__pendingChannelChoices = choices;
+  }
+  const globalChoiceBelongsToKey =
+    keyedChoice !== null && host._pendingChannelChoice === keyedChoice;
+  if (
+    globalChoiceBelongsToKey
+    || (clearLegacyFallback && keyedChoice === null)
+  ) {
+    host._pendingChannelChoice = null;
+  }
 }

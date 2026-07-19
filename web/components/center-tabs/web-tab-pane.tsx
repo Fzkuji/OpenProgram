@@ -117,6 +117,7 @@ function DesktopWebTabPane({
       useCenterTabs.getState().tabs.map((t) => t.id),
     );
     ensureWebView(bridge, tabId, viewUrlRef.current);
+    bridge.webTab.navigate(tabId, viewUrlRef.current);
     bridge.webTab.show(tabId);
     return () => bridge.webTab.hide(tabId);
   }, [bridge, tabId]);

@@ -63,6 +63,61 @@ interface SendWindow {
   setRunning?: (running: boolean) => void;
   /** Pending web-originated user text, isolated by real/provisional id. */
   __pendingUserTextBySession?: Record<string, string>;
+  __pendingFirstAckBySession?: Record<string, true>;
+  __sessionStore?: {
+    getState: () => {
+      setRunningTaskFor?: (
+        sessionId: string,
+        task: Record<string, unknown> | null,
+      ) => void;
+    };
+  };
+}
+
+function reservePendingChatSend(
+  host: SendWindow,
+  sessionId: string | null,
+  text: string,
+): (() => void) | null {
+  if (!sessionId) return () => {};
+  if (
+    sessionId.startsWith("local_")
+    && host.__pendingFirstAckBySession?.[sessionId]
+  ) {
+    return null;
+  }
+  const previousText = host.__pendingUserTextBySession?.[sessionId];
+  const hadPreviousText = Object.prototype.hasOwnProperty.call(
+    host.__pendingUserTextBySession ?? {},
+    sessionId,
+  );
+  host.__pendingUserTextBySession = {
+    ...host.__pendingUserTextBySession,
+    [sessionId]: text,
+  };
+  if (sessionId.startsWith("local_")) {
+    host.__pendingFirstAckBySession = {
+      ...host.__pendingFirstAckBySession,
+      [sessionId]: true,
+    };
+  }
+  return () => {
+    if (host.__pendingUserTextBySession?.[sessionId] === text) {
+      const nextText = { ...host.__pendingUserTextBySession };
+      if (hadPreviousText && previousText !== undefined) {
+        nextText[sessionId] = previousText;
+      } else {
+        delete nextText[sessionId];
+      }
+      host.__pendingUserTextBySession = nextText;
+    }
+    if (sessionId.startsWith("local_")) {
+      const nextFirstAck = { ...host.__pendingFirstAckBySession };
+      delete nextFirstAck[sessionId];
+      host.__pendingFirstAckBySession = nextFirstAck;
+      host.__sessionStore?.getState().setRunningTaskFor?.(sessionId, null);
+    }
+  };
 }
 
 /**
@@ -82,6 +137,13 @@ export function sendChatMessage({
   const w = window as unknown as SendWindow;
   const ws = w.ws;
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  const rollbackPendingSend = reservePendingChatSend(w, sessionId, text);
+  if (!rollbackPendingSend) {
+    // A second browser event before the first ACK is already represented by
+    // the in-flight provisional send. Treat it as handled without writing a
+    // second turn or replacing the text paired with that ACK.
+    return true;
+  }
 
   // Hide the welcome panel right away — before the ack round-trip.
   w.setWelcomeVisible?.(false);
@@ -119,22 +181,35 @@ export function sendChatMessage({
   // choice from the welcome-screen picker, if any. Ignored by the
   // backend for existing convs.
   const channelChoice =
-    (sessionId ? w.__pendingChannelChoices?.[sessionId] : null)
-    ?? w._pendingChannelChoice;
-  if (!w.currentSessionId && channelChoice?.channel) {
+    sessionId
+      ? (w.__pendingChannelChoices?.[sessionId] ?? null)
+      : (w._pendingChannelChoice ?? null);
+  const pendingFirstTurn = sessionId
+    ? sessionId !== w.currentSessionId
+    : !w.currentSessionId;
+  if (pendingFirstTurn && channelChoice?.channel) {
     payload.channel = channelChoice.channel;
     payload.account_id = channelChoice.account_id || "";
   }
 
-  // The reducer's `handleAck` builds the user bubble from this once
-  // the server assigns a msg_id.
-  if (sessionId) {
-    w.__pendingUserTextBySession = {
-      ...w.__pendingUserTextBySession,
-      [sessionId]: text,
-    };
+  try {
+    ws.send(JSON.stringify(payload));
+    if (ws.readyState !== WebSocket.OPEN) {
+      rollbackPendingSend();
+      return false;
+    }
+  } catch (error) {
+    rollbackPendingSend();
+    console.error("[sendChatMessage] WebSocket send failed:", error);
+    return false;
   }
-  ws.send(JSON.stringify(payload));
+  if (sessionId?.startsWith("local_")) {
+    w.__sessionStore?.getState().setRunningTaskFor?.(sessionId, {
+      session_id: sessionId,
+      msg_id: "",
+      started_at: Date.now() / 1000,
+    });
+  }
   w.setRunning?.(true);
   return true;
 }

@@ -6,6 +6,7 @@
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
+    "check:webtabs": "node scripts/check-webtab-navigation.js",
     "icon:build": "bash scripts/build-icon.sh",
     "icon:check": "bash scripts/check-icon.sh",
     "dist": "npm run icon:build && npm run icon:check && electron-builder --dir"

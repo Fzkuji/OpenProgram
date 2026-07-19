@@ -166,12 +166,6 @@ export function Sidebar() {
   }, []);
 
   function newChat() {
-    // Drop any project stashed by an earlier group-＋ click that never
-    // produced a session — a PLAIN New chat starts unbound (default
-    // project) until the user assigns one. The group ＋ re-stashes its
-    // project AFTER calling this, so its binding survives.
-    delete (window as unknown as { _pendingProjectId?: string })
-      ._pendingProjectId;
     const draftId = useCenterTabs.getState().openDraftSessionTab();
     const w = window as unknown as { newSession?: (draftId?: string) => void };
     if (typeof w.newSession === "function") {
@@ -179,6 +173,7 @@ export function Sidebar() {
     } else if (pathname !== "/chat") {
       router.push("/chat");
     }
+    return draftId;
   }
 
   function doRefresh() {
@@ -547,7 +542,7 @@ export function Sidebar() {
         // default; State / Flat via the filter's Group-by row), or the
         // project folder tree when Group-by → Project. In project mode
         // the group headers' ＋ buttons run the same newChat flow as
-        // the nav item above (after stashing window._pendingProjectId).
+        // the nav item above, then record the project for that draft key.
         <div id="convSection" className="flex flex-col">
           <div id="convList" className="flex flex-col gap-px px-[8px]">
             <SessionsList onNewChat={newChat} />

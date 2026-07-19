@@ -5,7 +5,7 @@
  * 150 lines of attachment state + window-level drag listeners +
  * processDroppedFiles + wrapper-level drop handlers. The composer
  * still owns ``onPaste`` (it needs to read input + setInput), so the
- * hook exposes ``addImages`` / ``setImageError`` for the paste path.
+ * hook exposes ``addImagesForOwner`` / ``setImageError`` for the paste path.
  *
  * The hook also owns ``composerRootRef`` — the ref attached to the
  * wrapper element that doubles as the local drop zone. Without the
@@ -26,10 +26,24 @@ import {
 } from "./image-attach";
 import type { PendingDoc } from "./file-tiles";
 import {
+  attachmentOwnerIsClosed,
   loadAttachments,
+  onAttachmentOwnerClosed,
   saveAttachments,
-  type StoredAttachments,
 } from "./attach-idb";
+import {
+  addDocsForChat,
+  addImagesForChat,
+  mergeAttachments,
+  removeDocForChat,
+  removeImageForChat,
+  setAttachmentsForChat,
+  updateDocForChat,
+  updateImageForChat,
+  type AttachmentMergeChanges,
+  type AttachmentsByChat,
+  type StoredAttachments,
+} from "./attachment-session-cache";
 
 export interface UseComposerAttachmentsResult {
   pendingImages: PendingImage[];
@@ -38,7 +52,7 @@ export interface UseComposerAttachmentsResult {
   dragActive: boolean;
   fileInputRef: React.RefObject<HTMLInputElement>;
   composerRootRef: React.MutableRefObject<HTMLDivElement | null>;
-  addImages: (imgs: PendingImage[]) => void;
+  addImagesForOwner: (ownerKey: string | null, imgs: PendingImage[]) => void;
   removeImage: (id: string) => void;
   setImageError: (s: string | null) => void;
   addDocs: (docs: PendingDoc[]) => void;
@@ -50,7 +64,24 @@ export interface UseComposerAttachmentsResult {
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   /** Revoke image preview URLs + reset both attachment lists. Called
    *  by submit() once the WS payload is gone. */
-  clearAfterSubmit: () => void;
+  clearAfterSubmit: (ownerKey: string | null) => void;
+}
+
+function revokeAttachmentPreviews(data: StoredAttachments): void {
+  for (const image of data.images) {
+    if (!image.previewUrl) continue;
+    try { URL.revokeObjectURL(image.previewUrl); } catch { /* ignore */ }
+  }
+}
+
+function releaseAttachmentPreviews(data: StoredAttachments): StoredAttachments {
+  revokeAttachmentPreviews(data);
+  return {
+    images: data.images.map((image) =>
+      image.previewUrl ? { ...image, previewUrl: null } : image,
+    ),
+    docs: data.docs,
+  };
 }
 
 export function useComposerAttachments(): UseComposerAttachmentsResult {
@@ -70,104 +101,297 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
   // Per-chat persistence (IndexedDB). Provisional local_* draft ids are
   // stable too, so multiple unsent chats keep independent attachments.
   const activeChatKey = useSessionStore((s) => s.activeChatKey);
-  // Guards the first save-effect run per session-load so loading a
-  // session's attachments doesn't immediately re-save them.
-  const loadedRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+  const lifecycleEpochRef = useRef(0);
+  const activeChatKeyRef = useRef<string | null>(activeChatKey);
+  const attachmentsByChatRef = useRef<AttachmentsByChat>(new Map());
+  const loadedAttachmentKeysRef = useRef(new Set<string>());
+  const loadingAttachmentKeysRef = useRef(new Set<string>());
+  const dirtyAttachmentKeysRef = useRef(new Set<string>());
+  const attachmentMergeChangesRef = useRef(
+    new Map<string, AttachmentMergeChanges>(),
+  );
+  const attachmentWriteChainsRef = useRef(new Map<string, Promise<void>>());
+  activeChatKeyRef.current = activeChatKey;
 
-  // Load this session's attachments on switch; stash the outgoing one.
+  useEffect(() => {
+    mountedRef.current = true;
+    const epoch = ++lifecycleEpochRef.current;
+    return () => {
+      mountedRef.current = false;
+      // React Strict Mode immediately runs setup again after its development
+      // cleanup. Delay resource release by one microtask so that setup can
+      // cancel this pass; an actual unmount has no matching setup.
+      queueMicrotask(() => {
+        if (mountedRef.current || lifecycleEpochRef.current !== epoch) return;
+        for (const [chatKey, data] of attachmentsByChatRef.current) {
+          setAttachmentsForChat(
+            attachmentsByChatRef.current,
+            chatKey,
+            releaseAttachmentPreviews(data),
+          );
+        }
+      });
+    };
+  }, []);
+
+  const persistAttachments = useCallback((chatKey: string, data: StoredAttachments) => {
+    if (attachmentOwnerIsClosed(chatKey)) return;
+    const previous = attachmentWriteChainsRef.current.get(chatKey) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(() => {
+        if (attachmentOwnerIsClosed(chatKey)) return;
+        return saveAttachments(chatKey, data);
+      });
+    attachmentWriteChainsRef.current.set(chatKey, next);
+    void next.finally(() => {
+      if (attachmentWriteChainsRef.current.get(chatKey) === next) {
+        attachmentWriteChainsRef.current.delete(chatKey);
+      }
+    });
+  }, []);
+
+  const publishAttachments = useCallback((chatKey: string, data: StoredAttachments) => {
+    if (attachmentOwnerIsClosed(chatKey)) {
+      revokeAttachmentPreviews(data);
+      attachmentsByChatRef.current.delete(chatKey);
+      loadingAttachmentKeysRef.current.delete(chatKey);
+      dirtyAttachmentKeysRef.current.delete(chatKey);
+      attachmentMergeChangesRef.current.delete(chatKey);
+      return;
+    }
+    let publishData = data;
+    if (!mountedRef.current) {
+      publishData = releaseAttachmentPreviews(data);
+    }
+    attachmentsByChatRef.current.set(chatKey, publishData);
+    if (mountedRef.current && activeChatKeyRef.current === chatKey) {
+      setPendingImages(publishData.images);
+      setPendingDocs(publishData.docs);
+    }
+    if (loadedAttachmentKeysRef.current.has(chatKey)) {
+      persistAttachments(chatKey, publishData);
+    } else {
+      dirtyAttachmentKeysRef.current.add(chatKey);
+    }
+  }, [persistAttachments]);
+
+  const noteAttachmentRemoval = useCallback((
+    chatKey: string,
+    kind: "image" | "doc",
+    id: string,
+  ) => {
+    if (loadedAttachmentKeysRef.current.has(chatKey)) return;
+    const current = attachmentMergeChangesRef.current.get(chatKey) ?? {};
+    if (current.cleared) return;
+    const field = kind === "image" ? "removedImageIds" : "removedDocIds";
+    const ids = current[field] ?? [];
+    if (ids.includes(id)) return;
+    attachmentMergeChangesRef.current.set(chatKey, {
+      ...current,
+      [field]: [...ids, id],
+    });
+  }, []);
+
+  const noteAttachmentsCleared = useCallback((chatKey: string) => {
+    if (loadedAttachmentKeysRef.current.has(chatKey)) return;
+    attachmentMergeChangesRef.current.set(chatKey, { cleared: true });
+  }, []);
+
+  useEffect(() => onAttachmentOwnerClosed((chatKey) => {
+    const closedAttachments = attachmentsByChatRef.current.get(chatKey);
+    if (closedAttachments) revokeAttachmentPreviews(closedAttachments);
+    attachmentsByChatRef.current.delete(chatKey);
+    loadedAttachmentKeysRef.current.delete(chatKey);
+    loadingAttachmentKeysRef.current.delete(chatKey);
+    dirtyAttachmentKeysRef.current.delete(chatKey);
+    attachmentMergeChangesRef.current.delete(chatKey);
+    attachmentWriteChainsRef.current.delete(chatKey);
+    if (activeChatKeyRef.current === chatKey) {
+      setPendingImages([]);
+      setPendingDocs([]);
+      setImageError(null);
+    }
+  }), []);
+
+  // Keep every chat's in-flight placeholders in an owner-keyed cache. A
+  // FileReader callback may finish after another chat becomes visible; it
+  // must update and persist its owner rather than the current React arrays.
   useEffect(() => {
     const sid = activeChatKey;
-    let cancelled = false;
     if (!sid) {
-      // New-chat / no session: don't persist, just start clean. (Don't
-      // wipe the previous held session — it was already saved by its
-      // own change-effect below.)
-      loadedRef.current = null;
+      setImageError(null);
       setPendingImages([]);
       setPendingDocs([]);
       return;
     }
-    // Mark the incoming key before the save effect from this render runs;
-    // otherwise it can persist the outgoing chat's arrays under `sid`.
-    loadedRef.current = sid;
-    void loadAttachments(sid).then((data) => {
-      if (cancelled) return;
-      loadedRef.current = sid;
-      setPendingImages(data.images);
-      setPendingDocs(data.docs);
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChatKey]);
+    setImageError(null);
+    const cached = attachmentsByChatRef.current.get(sid);
+    setPendingImages(cached?.images ?? []);
+    setPendingDocs(cached?.docs ?? []);
+    if (cached && loadedAttachmentKeysRef.current.has(sid)) return;
+    if (loadingAttachmentKeysRef.current.has(sid)) return;
+    loadingAttachmentKeysRef.current.add(sid);
+    void loadAttachments(sid)
+      .then((data) => {
+        if (attachmentOwnerIsClosed(sid)) {
+          revokeAttachmentPreviews(data);
+          const cachedForClosedOwner = attachmentsByChatRef.current.get(sid);
+          if (cachedForClosedOwner) {
+            revokeAttachmentPreviews(cachedForClosedOwner);
+          }
+          attachmentsByChatRef.current.delete(sid);
+          dirtyAttachmentKeysRef.current.delete(sid);
+          attachmentMergeChangesRef.current.delete(sid);
+          return;
+        }
+        let merged = mergeAttachments(
+          data,
+          attachmentsByChatRef.current.get(sid),
+          attachmentMergeChangesRef.current.get(sid),
+        );
+        const retainedPreviewUrls = new Set(
+          merged.images
+            .map((image) => image.previewUrl)
+            .filter((url): url is string => Boolean(url)),
+        );
+        for (const image of data.images) {
+          if (image.previewUrl && !retainedPreviewUrls.has(image.previewUrl)) {
+            try { URL.revokeObjectURL(image.previewUrl); } catch { /* ignore */ }
+          }
+        }
+        if (!mountedRef.current) {
+          merged = releaseAttachmentPreviews(merged);
+        }
+        attachmentMergeChangesRef.current.delete(sid);
+        setAttachmentsForChat(attachmentsByChatRef.current, sid, merged);
+        loadedAttachmentKeysRef.current.add(sid);
+        if (dirtyAttachmentKeysRef.current.delete(sid)) {
+          persistAttachments(sid, merged);
+        }
+        if (mountedRef.current && activeChatKeyRef.current === sid) {
+          setPendingImages(merged.images);
+          setPendingDocs(merged.docs);
+        }
+      })
+      .finally(() => {
+        loadingAttachmentKeysRef.current.delete(sid);
+      });
+  }, [activeChatKey, persistAttachments]);
 
-  // Persist the current session's attachments whenever they change.
-  // Skip the run triggered by the load-effect itself (loadedRef guard),
-  // and skip when there's no session (New chat draft isn't persisted).
-  useEffect(() => {
-    const sid = activeChatKey;
-    if (!sid) return;
-    // The load-effect set loadedRef to sid right before populating
-    // state. Let that initial populate through without re-saving it.
-    if (loadedRef.current === sid) {
-      loadedRef.current = "__saved__";
+  const addImagesForOwner = useCallback((ownerKey: string | null, imgs: PendingImage[]) => {
+    if (imgs.length === 0) return;
+    if (!ownerKey) {
+      setPendingImages((prev) => [...prev, ...imgs]);
+      setImageError(null);
       return;
     }
-    const payload: StoredAttachments = { images: pendingImages, docs: pendingDocs };
-    void saveAttachments(sid, payload);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingImages, pendingDocs, activeChatKey]);
-
-  const addImages = useCallback((imgs: PendingImage[]) => {
-    if (imgs.length === 0) return;
-    setPendingImages((prev) => [...prev, ...imgs]);
-    setImageError(null);
-  }, []);
+    publishAttachments(
+      ownerKey,
+      addImagesForChat(attachmentsByChatRef.current, ownerKey, imgs),
+    );
+    if (activeChatKeyRef.current === ownerKey) setImageError(null);
+  }, [publishAttachments]);
 
   const removeImage = useCallback((id: string) => {
-    setPendingImages((prev) => {
-      const next: PendingImage[] = [];
-      for (const p of prev) {
-        if (p.id === id) {
-          if (p.previewUrl) {
-            try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
-          }
-        } else {
-          next.push(p);
+    const ownerKey = activeChatKeyRef.current;
+    if (!ownerKey) {
+      setPendingImages((prev) => {
+        const removed = prev.find((image) => image.id === id);
+        if (removed?.previewUrl) {
+          try { URL.revokeObjectURL(removed.previewUrl); } catch { /* ignore */ }
         }
-      }
-      return next;
-    });
-  }, []);
+        return prev.filter((image) => image.id !== id);
+      });
+      return;
+    }
+    const current = attachmentsByChatRef.current.get(ownerKey);
+    const removed = current?.images.find((image) => image.id === id);
+    if (removed?.previewUrl) {
+      try { URL.revokeObjectURL(removed.previewUrl); } catch { /* ignore */ }
+    }
+    noteAttachmentRemoval(ownerKey, "image", id);
+    publishAttachments(
+      ownerKey,
+      removeImageForChat(attachmentsByChatRef.current, ownerKey, id),
+    );
+  }, [noteAttachmentRemoval, publishAttachments]);
 
   /** Replace a placeholder image entry (loading: true) with the
    *  finalised PendingImage once decode + thumbnail finish. Keeps
    *  the same id so the chip doesn't unmount / remount. */
-  const updateImage = useCallback(
-    (id: string, patch: Partial<PendingImage>) => {
-      setPendingImages((prev) => prev.map((p) =>
-        p.id === id ? { ...p, ...patch } : p,
-      ));
+  const updateImageForOwner = useCallback(
+    (ownerKey: string | null, id: string, patch: Partial<PendingImage>) => {
+      if (!ownerKey) {
+        setPendingImages((prev) => prev.map((image) =>
+          image.id === id ? { ...image, ...patch } : image,
+        ));
+        return;
+      }
+      const current = attachmentsByChatRef.current.get(ownerKey);
+      if (!current?.images.some((image) => image.id === id)) {
+        if (patch.previewUrl) {
+          try { URL.revokeObjectURL(patch.previewUrl); } catch { /* ignore */ }
+        }
+        if (attachmentOwnerIsClosed(ownerKey) && current) {
+          publishAttachments(ownerKey, current);
+        }
+        return;
+      }
+      publishAttachments(
+        ownerKey,
+        updateImageForChat(attachmentsByChatRef.current, ownerKey, id, patch),
+      );
     },
-    [],
+    [publishAttachments],
   );
 
-  const addDocs = useCallback((docs: PendingDoc[]) => {
+  const addDocsForOwner = useCallback((ownerKey: string | null, docs: PendingDoc[]) => {
     if (docs.length === 0) return;
-    setPendingDocs((prev) => [...prev, ...docs]);
-  }, []);
+    if (!ownerKey) {
+      setPendingDocs((prev) => [...prev, ...docs]);
+      return;
+    }
+    publishAttachments(
+      ownerKey,
+      addDocsForChat(attachmentsByChatRef.current, ownerKey, docs),
+    );
+  }, [publishAttachments]);
 
-  const updateDoc = useCallback(
-    (id: string, patch: Partial<PendingDoc>) => {
-      setPendingDocs((prev) => prev.map((d) =>
-        d.id === id ? { ...d, ...patch } : d,
-      ));
+  const addDocs = useCallback(
+    (docs: PendingDoc[]) => addDocsForOwner(activeChatKeyRef.current, docs),
+    [addDocsForOwner],
+  );
+
+  const updateDocForOwner = useCallback(
+    (ownerKey: string | null, id: string, patch: Partial<PendingDoc>) => {
+      if (!ownerKey) {
+        setPendingDocs((prev) => prev.map((doc) =>
+          doc.id === id ? { ...doc, ...patch } : doc,
+        ));
+        return;
+      }
+      publishAttachments(
+        ownerKey,
+        updateDocForChat(attachmentsByChatRef.current, ownerKey, id, patch),
+      );
     },
-    [],
+    [publishAttachments],
   );
 
   const removeDoc = useCallback((id: string) => {
-    setPendingDocs((prev) => prev.filter((d) => d.id !== id));
-  }, []);
+    const ownerKey = activeChatKeyRef.current;
+    if (!ownerKey) {
+      setPendingDocs((prev) => prev.filter((doc) => doc.id !== id));
+      return;
+    }
+    noteAttachmentRemoval(ownerKey, "doc", id);
+    publishAttachments(
+      ownerKey,
+      removeDocForChat(attachmentsByChatRef.current, ownerKey, id),
+    );
+  }, [noteAttachmentRemoval, publishAttachments]);
 
   const onPickImages = useCallback(() => {
     fileInputRef.current?.click();
@@ -203,6 +427,7 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
   // shows up so the user always sees feedback.
   const processDroppedFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
+    const ownerKey = activeChatKeyRef.current;
     const imageFiles: File[] = [];
     const otherFiles: File[] = [];
     for (const f of files) {
@@ -239,8 +464,8 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
       sizeBytes: f.size,
       loading: true,
     }));
-    addImages(imagePlaceholders);
-    addDocs(docPlaceholders);
+    addImagesForOwner(ownerKey, imagePlaceholders);
+    addDocsForOwner(ownerKey, docPlaceholders);
 
     // STAGE 2 — kick off the actual reads in parallel; each one
     // patches its placeholder in place when done so the chip never
@@ -250,15 +475,15 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
       const f = imageFiles[i];
       readImageFile(f, f.name || undefined)
         .then((real) => {
-          updateImage(placeholder.id, {
+          updateImageForOwner(ownerKey, placeholder.id, {
             previewUrl: real.previewUrl,
             attachment: real.attachment,
             loading: false,
           });
         })
         .catch((err) => {
-          updateImage(placeholder.id, { loading: false });
-          setImageError(String(err));
+          updateImageForOwner(ownerKey, placeholder.id, { loading: false });
+          if (activeChatKeyRef.current === ownerKey) setImageError(String(err));
         });
     });
     docPlaceholders.forEach((placeholder, i) => {
@@ -271,17 +496,22 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
       // text is never sent to the model.
       Promise.all([readFileAsBase64(f), readDroppedTextFile(f)])
         .then(([b64, textRead]) => {
-          updateDoc(placeholder.id, {
+          updateDocForOwner(ownerKey, placeholder.id, {
             dataB64: b64,
             content: textRead ? textRead.content : null,
             loading: false,
           });
         })
         .catch(() => {
-          updateDoc(placeholder.id, { loading: false });
+          updateDocForOwner(ownerKey, placeholder.id, { loading: false });
         });
     });
-  }, [addDocs, addImages, setImageError, updateDoc, updateImage]);
+  }, [
+    addDocsForOwner,
+    addImagesForOwner,
+    updateDocForOwner,
+    updateImageForOwner,
+  ]);
 
   // Keep the ref pointing at the latest processor so the file-input
   // change handler (declared earlier) routes through the same code
@@ -368,17 +598,20 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
     [processDroppedFiles],
   );
 
-  const clearAfterSubmit = useCallback(() => {
-    setPendingImages((prev) => {
-      for (const p of prev) {
-        if (p.previewUrl) {
-          try { URL.revokeObjectURL(p.previewUrl); } catch { /* ignore */ }
-        }
-      }
-      return [];
-    });
-    setPendingDocs([]);
-  }, []);
+  const clearAfterSubmit = useCallback((ownerKey: string | null) => {
+    if (!ownerKey) {
+      if (activeChatKeyRef.current !== null) return;
+      revokeAttachmentPreviews({ images: pendingImages, docs: pendingDocs });
+      setPendingImages([]);
+      setPendingDocs([]);
+      return;
+    }
+    const attachments = attachmentsByChatRef.current.get(ownerKey)
+      ?? { images: [], docs: [] };
+    revokeAttachmentPreviews(attachments);
+    noteAttachmentsCleared(ownerKey);
+    publishAttachments(ownerKey, { images: [], docs: [] });
+  }, [noteAttachmentsCleared, pendingDocs, pendingImages, publishAttachments]);
 
   return {
     pendingImages,
@@ -387,7 +620,7 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
     dragActive,
     fileInputRef,
     composerRootRef,
-    addImages,
+    addImagesForOwner,
     removeImage,
     setImageError,
     addDocs,

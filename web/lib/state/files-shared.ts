@@ -26,6 +26,9 @@ export interface Project {
  */
 export function useCurrentProject(): Project | null | undefined {
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const pendingProjectId = useSessionStore((s) =>
+    s.activeChatKey ? s.pendingProjectsByChat[s.activeChatKey] ?? null : null,
+  );
   const [project, setProject] = useState<Project | null | undefined>(undefined);
 
   const resolve = useCallback(async (): Promise<boolean> => {
@@ -46,8 +49,10 @@ export function useCurrentProject(): Project | null | undefined {
     );
     if (!data) return false;
     const projects = data.projects || [];
-    const w = window as unknown as { _pendingProjectId?: string };
-    const wantId = data.current_project_id ?? w._pendingProjectId ?? null;
+    const wantId =
+      (!sessionId ? pendingProjectId : data.current_project_id) ??
+      data.current_project_id ??
+      null;
     const cur =
       projects.find((p) => p.id === wantId) ??
       projects.find((p) => p.is_default) ??
@@ -56,7 +61,7 @@ export function useCurrentProject(): Project | null | undefined {
     // pathless project as "nothing bound".
     setProject(cur && cur.path ? cur : null);
     return true;
-  }, [sessionId]);
+  }, [pendingProjectId, sessionId]);
 
   useEffect(() => {
     let cancelled = false;
