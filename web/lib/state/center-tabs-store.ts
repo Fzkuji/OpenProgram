@@ -16,7 +16,7 @@
  * session store's currentSessionId / titles into this store.
  */
 import { create } from "zustand";
-import { isTransientPersistenceSuppressed } from "@/lib/session-draft-persistence";
+import { pendingTransfers } from "@/lib/pending-transfer-projection";
 import {
   findCenterTabGroup,
   focusCenterTabGroupMember,
@@ -34,6 +34,7 @@ import type {
 import type {
   DesktopTransferPayload,
   TabDropPlacement,
+  TransferJournalEntry,
 } from "@/lib/tab-transfer-journal";
 
 export type CenterTabKind = "session" | "file" | "web" | "ntp";
@@ -300,22 +301,161 @@ function normalizeCenterTabsPayload(
   };
 }
 
+function insertByReference(
+  ids: string[],
+  id: string,
+  reference: readonly string[],
+): void {
+  const referenceIndex = reference.indexOf(id);
+  for (let index = referenceIndex - 1; index >= 0; index -= 1) {
+    const previousIndex = ids.indexOf(reference[index]);
+    if (previousIndex >= 0) {
+      ids.splice(previousIndex + 1, 0, id);
+      return;
+    }
+  }
+  for (let index = referenceIndex + 1; index < reference.length; index += 1) {
+    const nextIndex = ids.indexOf(reference[index]);
+    if (nextIndex >= 0) {
+      ids.splice(nextIndex, 0, id);
+      return;
+    }
+  }
+  ids.push(id);
+}
+
+function normalizedRebasedGroup(
+  group: CenterTabGroup,
+  memberIds: string[],
+  visibleIds: string[],
+  focusedId: string | undefined,
+): CenterTabGroup | null {
+  if (memberIds.length < 2) return null;
+  const visible = visibleIds.filter((id, index) =>
+    memberIds.includes(id) && visibleIds.indexOf(id) === index).slice(0, 2);
+  return {
+    ...group,
+    memberIds,
+    visibleIds: visible,
+    focusedId: focusedId && memberIds.includes(focusedId)
+      ? focusedId
+      : visible[0] ?? memberIds[0],
+  };
+}
+
+export function rebaseCenterTabsPayload(
+  current: CenterTabsPersistedPayload,
+  entry: TransferJournalEntry,
+  targetName: "before" | "after",
+): CenterTabsPersistedPayload {
+  const target = targetName === "before"
+    ? entry.beforeCenterTabs
+    : entry.afterCenterTabs;
+  const opposite = targetName === "before"
+    ? entry.afterCenterTabs
+    : entry.beforeCenterTabs;
+  const affected = new Set(entry.payload.tabs.map((tab) => tab.id));
+  const targetTabs = new Map(target.tabs.map((tab) => [tab.id, tab]));
+  const targetIds = target.tabs.map((tab) => tab.id);
+  const tabs = current.tabs.filter((tab) =>
+    !affected.has(tab.id) || targetTabs.has(tab.id));
+  const tabIds = tabs.map((tab) => tab.id);
+  for (const id of targetIds) {
+    if (!affected.has(id) || tabIds.includes(id)) continue;
+    const tab = targetTabs.get(id);
+    if (!tab) continue;
+    insertByReference(tabIds, id, targetIds);
+    const at = tabIds.indexOf(id);
+    tabs.splice(at, 0, structuredClone(tab));
+  }
+
+  let groups = current.groups.flatMap((group) => {
+    const memberIds = group.memberIds.filter((id) => !affected.has(id));
+    const visibleIds = group.visibleIds.filter((id) => !affected.has(id));
+    const normalized = normalizedRebasedGroup(
+      group,
+      memberIds,
+      visibleIds,
+      group.focusedId,
+    );
+    return normalized ? [normalized] : [];
+  });
+  for (const targetGroup of target.groups) {
+    const affectedMembers = targetGroup.memberIds.filter((id) =>
+      affected.has(id) && tabIds.includes(id));
+    if (affectedMembers.length === 0) continue;
+    const groupIndex = groups.findIndex((group) => group.id === targetGroup.id);
+    const existing = groupIndex >= 0 ? groups[groupIndex] : null;
+    const groupedElsewhere = new Set(groups.flatMap((group) => group.memberIds));
+    const memberIds = existing
+      ? [...existing.memberIds]
+      : targetGroup.memberIds.filter((id) =>
+        !affected.has(id) && tabIds.includes(id) && !groupedElsewhere.has(id));
+    for (const id of targetGroup.memberIds) {
+      if (!affected.has(id) || memberIds.includes(id) || !tabIds.includes(id)) continue;
+      insertByReference(memberIds, id, targetGroup.memberIds);
+    }
+    const visibleIds = existing
+      ? [...existing.visibleIds]
+      : targetGroup.visibleIds.filter((id) => memberIds.includes(id));
+    for (const id of targetGroup.visibleIds) {
+      if (affected.has(id) && memberIds.includes(id) && !visibleIds.includes(id)) {
+        visibleIds.push(id);
+      }
+    }
+    const normalized = normalizedRebasedGroup(
+      targetGroup,
+      memberIds,
+      visibleIds,
+      existing?.focusedId ?? targetGroup.focusedId,
+    );
+    if (!normalized) continue;
+    if (groupIndex >= 0) groups[groupIndex] = normalized;
+    else groups = [...groups, normalized];
+  }
+
+  const hasTab = (id: string | null): boolean =>
+    id !== null && tabIds.includes(id);
+  let activeId = current.activeId;
+  if (current.activeId === opposite.activeId) activeId = target.activeId;
+  if (!hasTab(activeId)) activeId = hasTab(target.activeId) ? target.activeId : null;
+  let splitWebTabId = current.splitWebTabId;
+  if (current.splitWebTabId === opposite.splitWebTabId) {
+    splitWebTabId = target.splitWebTabId;
+  }
+  if (!hasTab(splitWebTabId)) splitWebTabId = null;
+  const splitRatio = current.splitRatio === opposite.splitRatio
+    ? target.splitRatio
+    : current.splitRatio;
+
+  return normalizeCenterTabsPayload({
+    version: 2,
+    tabs: orderTabs(tabs, tabIds),
+    activeId,
+    groups,
+    splitWebTabId,
+    splitRatio,
+  });
+}
+
 function persistCenterTabsPayload(
   state: Pick<CenterTabsState, "tabs" | "activeId" | "groups" | "splitWebTabId" | "splitRatio">,
 ): boolean {
-  if (typeof window === "undefined" || isTransientPersistenceSuppressed()) {
-    return false;
-  }
+  if (typeof window === "undefined") return false;
   try {
     const key = centerTabsStorageKey();
-    const serialized = JSON.stringify({
+    let projected = normalizeCenterTabsPayload({
       version: 2,
       tabs: state.tabs,
       activeId: state.activeId,
       groups: state.groups,
       splitWebTabId: state.splitWebTabId,
       splitRatio: state.splitRatio,
-    } satisfies CenterTabsPersistedPayload);
+    });
+    for (const entry of pendingTransfers().reverse()) {
+      projected = rebaseCenterTabsPayload(projected, entry, "before");
+    }
+    const serialized = JSON.stringify(projected);
     localStorage.setItem(key, serialized);
     return localStorage.getItem(key) === serialized;
   } catch {
@@ -928,7 +1068,7 @@ export function sessionAckIsActive(sessionId: string): boolean {
   return !hasTab || state.activeId === sessionTabId(sessionId);
 }
 
-function currentCenterTabsPayload(): CenterTabsPersistedPayload {
+export function snapshotCenterTabsPayload(): CenterTabsPersistedPayload {
   const state = useCenterTabs.getState();
   return normalizeCenterTabsPayload({
     tabs: state.tabs,
@@ -1054,7 +1194,7 @@ export function validateTransferredTabs(
 ):
   | { ok: true; after: CenterTabsPersistedPayload }
   | { ok: false; reason: "duplicate" | "group-full" | "invalid"; duplicateId?: string } {
-  const before = currentCenterTabsPayload();
+  const before = snapshotCenterTabsPayload();
   const ids = payload.tabs.map((tab) => tab.id);
   if (ids.length === 0 || new Set(ids).size !== ids.length) {
     return { ok: false, reason: "invalid" };
@@ -1062,6 +1202,9 @@ export function validateTransferredTabs(
   const duplicateId = ids.find((id) => before.tabs.some((tab) => tab.id === id));
   if (duplicateId) return { ok: false, reason: "duplicate", duplicateId };
   if (payload.source.kind === "tab" && ids.length !== 1) {
+    return { ok: false, reason: "invalid" };
+  }
+  if (payload.source.kind === "segment" && ids.length !== 1) {
     return { ok: false, reason: "invalid" };
   }
   if (payload.source.kind !== "tab") {
@@ -1120,7 +1263,7 @@ export function insertTransferredTabs(
   after: CenterTabsPersistedPayload;
 } {
   void _options;
-  const before = currentCenterTabsPayload();
+  const before = snapshotCenterTabsPayload();
   const validated = validateTransferredTabs(payload, placement);
   if (!validated.ok) return { ok: false, before, after: before };
   useCenterTabs.setState(persistedState(validated.after));
@@ -1137,7 +1280,7 @@ export function removeTransferredTabs(
   after: CenterTabsPersistedPayload;
 } {
   void _options;
-  const before = currentCenterTabsPayload();
+  const before = snapshotCenterTabsPayload();
   const removed = new Set(ids);
   const valid = ids.length > 0
     && removed.size === ids.length
@@ -1184,5 +1327,5 @@ export function replaceCenterTabsPayload(
 }
 
 export function persistCurrentCenterTabsPayload(): boolean {
-  return persistCenterTabsPayload(currentCenterTabsPayload());
+  return persistCenterTabsPayload(snapshotCenterTabsPayload());
 }

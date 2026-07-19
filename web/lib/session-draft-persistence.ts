@@ -1,5 +1,6 @@
 import type { PendingChannelChoice } from "@/lib/runtime-bridge/draft-channel-choice";
 import type { ComposerSettings } from "@/lib/session-store/types";
+import { pendingTransfers } from "@/lib/pending-transfer-projection";
 
 export interface PersistedSessionDraftState {
   version: 1;
@@ -17,8 +18,6 @@ const emptyState = (): PersistedSessionDraftState => ({
   draftChannelChoices: {},
 });
 
-const transientTokensByWindow = new Map<string, Set<string>>();
-
 function desktopWindowId(): string | null {
   if (typeof window === "undefined") return null;
   const bridge = (window as unknown as {
@@ -34,35 +33,53 @@ function resolvedWindowId(windowId?: string | null): string {
   return windowId || desktopWindowId() || "main";
 }
 
-export function beginTransientPersistence(
-  token: string,
-  windowId?: string | null,
-): void {
-  const id = resolvedWindowId(windowId);
-  const tokens = transientTokensByWindow.get(id) ?? new Set<string>();
-  tokens.add(token);
-  transientTokensByWindow.set(id, tokens);
-}
-
-export function endTransientPersistence(
-  token: string,
-  windowId?: string | null,
-): void {
-  const id = resolvedWindowId(windowId);
-  const tokens = transientTokensByWindow.get(id);
-  if (!tokens) return;
-  tokens.delete(token);
-  if (tokens.size === 0) transientTokensByWindow.delete(id);
-}
-
-export function isTransientPersistenceSuppressed(
-  windowId?: string | null,
-): boolean {
-  return (transientTokensByWindow.get(resolvedWindowId(windowId))?.size ?? 0) > 0;
-}
-
 export function sessionDraftStorageKey(windowId?: string | null): string {
   return `openprogram.sessionDraftState:${resolvedWindowId(windowId)}`;
+}
+
+function restoreMapKey<T>(
+  current: Record<string, T>,
+  before: Record<string, T>,
+  key: string,
+): Record<string, T> {
+  const next = { ...current };
+  if (Object.prototype.hasOwnProperty.call(before, key)) next[key] = before[key];
+  else delete next[key];
+  return next;
+}
+
+function committedSessionProjection(
+  state: PersistedSessionDraftState,
+): PersistedSessionDraftState {
+  let projected = state;
+  for (const entry of pendingTransfers().reverse()) {
+    for (const { chatKey } of entry.payload.chats) {
+      projected = {
+        version: 1,
+        composerDrafts: restoreMapKey(
+          projected.composerDrafts,
+          entry.beforeSession.composerDrafts,
+          chatKey,
+        ),
+        composerSettingsBySession: restoreMapKey(
+          projected.composerSettingsBySession,
+          entry.beforeSession.composerSettingsBySession,
+          chatKey,
+        ),
+        pendingProjectsByChat: restoreMapKey(
+          projected.pendingProjectsByChat,
+          entry.beforeSession.pendingProjectsByChat,
+          chatKey,
+        ),
+        draftChannelChoices: restoreMapKey(
+          projected.draftChannelChoices,
+          entry.beforeSession.draftChannelChoices,
+          chatKey,
+        ),
+      };
+    }
+  }
+  return projected;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -121,7 +138,7 @@ export function readSessionDraftState(): PersistedSessionDraftState {
   if (current) {
     if (
       (desktopWindowId() ?? "main") === "main"
-      && !isTransientPersistenceSuppressed()
+      && pendingTransfers().length === 0
     ) {
       try {
         localStorage.removeItem("composerDrafts");
@@ -146,7 +163,7 @@ export function readSessionDraftState(): PersistedSessionDraftState {
     composerDrafts,
     composerSettingsBySession,
   };
-  if (isTransientPersistenceSuppressed()) return migrated;
+  if (pendingTransfers().length > 0) return migrated;
   const serialized = JSON.stringify(migrated);
   try {
     localStorage.setItem(key, serialized);
@@ -162,17 +179,16 @@ export function readSessionDraftState(): PersistedSessionDraftState {
 export function replaceSessionDraftState(
   state: PersistedSessionDraftState,
 ): boolean {
-  if (typeof window === "undefined" || isTransientPersistenceSuppressed()) {
-    return false;
-  }
+  if (typeof window === "undefined") return false;
   try {
     const key = sessionDraftStorageKey();
+    const projected = committedSessionProjection(state);
     const serialized = JSON.stringify({
       version: 1,
-      composerDrafts: state.composerDrafts,
-      composerSettingsBySession: state.composerSettingsBySession,
-      pendingProjectsByChat: state.pendingProjectsByChat,
-      draftChannelChoices: state.draftChannelChoices,
+      composerDrafts: projected.composerDrafts,
+      composerSettingsBySession: projected.composerSettingsBySession,
+      pendingProjectsByChat: projected.pendingProjectsByChat,
+      draftChannelChoices: projected.draftChannelChoices,
     } satisfies PersistedSessionDraftState);
     localStorage.setItem(key, serialized);
     return localStorage.getItem(key) === serialized;

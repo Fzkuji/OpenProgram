@@ -1,11 +1,12 @@
 import type { DesktopWebTabBounds as Bounds } from "@/lib/desktop-bridge";
 import {
-  beginTransientPersistence,
-  endTransientPersistence,
-} from "@/lib/session-draft-persistence";
+  registerPendingTransfer,
+  unregisterPendingTransfer,
+} from "@/lib/pending-transfer-projection";
 import type { PendingChannelChoice } from "@/lib/runtime-bridge/draft-channel-choice";
 import type { ComposerSettings } from "@/lib/session-store/types";
 import type { FileDraft } from "@/lib/state/files-shared";
+import { rebaseCenterTabsPayload } from "@/lib/state/center-tabs-store";
 import type {
   CenterTab,
   CenterTabsPersistedPayload,
@@ -174,7 +175,7 @@ export function stageTransferMutation(
     reject();
     return false;
   }
-  beginTransientPersistence(entry.token, id);
+  registerPendingTransfer(entry, id);
   try {
     if (mutate() === false) {
       reject();
@@ -212,6 +213,53 @@ export interface TransferRecoveryHandlers {
   resumeSourceRemoved?(entry: TransferJournalEntry): boolean | void;
   clearAccepted?(token: string): void;
   deleteJournal?(token: string): boolean;
+  /**
+   * Current live payloads. When provided, resolving a journal applies only
+   * the entry's own delta rebased onto this state instead of replacing the
+   * whole payload, so edits made while the journal was pending survive.
+   */
+  snapshotCenterTabs?(): CenterTabsPersistedPayload;
+  snapshotSession?(): SessionTransferSnapshot;
+}
+
+function rebaseMapKey<T>(
+  result: Record<string, T>,
+  target: Record<string, T>,
+  key: string,
+): void {
+  if (Object.prototype.hasOwnProperty.call(target, key)) result[key] = target[key];
+  else delete result[key];
+}
+
+export function rebaseSessionSnapshot(
+  current: SessionTransferSnapshot,
+  entry: TransferJournalEntry,
+  targetName: "before" | "after",
+): SessionTransferSnapshot {
+  const target = targetName === "before" ? entry.beforeSession : entry.afterSession;
+  const opposite = targetName === "before" ? entry.afterSession : entry.beforeSession;
+  const adoptActive = current.activeChatKey === opposite.activeChatKey;
+  const result: SessionTransferSnapshot = {
+    activeChatKey: adoptActive ? target.activeChatKey : current.activeChatKey,
+    currentSessionId: adoptActive ? target.currentSessionId : current.currentSessionId,
+    composerInput: adoptActive ? target.composerInput : current.composerInput,
+    composerSettings: adoptActive ? target.composerSettings : current.composerSettings,
+    composerDrafts: { ...current.composerDrafts },
+    composerSettingsBySession: { ...current.composerSettingsBySession },
+    pendingProjectsByChat: { ...current.pendingProjectsByChat },
+    draftChannelChoices: { ...current.draftChannelChoices },
+  };
+  for (const { chatKey } of entry.payload.chats) {
+    rebaseMapKey(result.composerDrafts, target.composerDrafts, chatKey);
+    rebaseMapKey(
+      result.composerSettingsBySession,
+      target.composerSettingsBySession,
+      chatKey,
+    );
+    rebaseMapKey(result.pendingProjectsByChat, target.pendingProjectsByChat, chatKey);
+    rebaseMapKey(result.draftChannelChoices, target.draftChannelChoices, chatKey);
+  }
+  return result;
 }
 
 function applyRecoverySnapshot(
@@ -220,14 +268,14 @@ function applyRecoverySnapshot(
   persist: boolean,
   handlers: TransferRecoveryHandlers,
 ): boolean {
-  if (!handlers.applyCenterTabs(
-    target === "after" ? entry.afterCenterTabs : entry.beforeCenterTabs,
-    { persist },
-  )) return false;
-  if (!handlers.applySession(
-    target === "after" ? entry.afterSession : entry.beforeSession,
-    { persist },
-  )) return false;
+  const centerTabs = handlers.snapshotCenterTabs
+    ? rebaseCenterTabsPayload(handlers.snapshotCenterTabs(), entry, target)
+    : target === "after" ? entry.afterCenterTabs : entry.beforeCenterTabs;
+  if (!handlers.applyCenterTabs(centerTabs, { persist })) return false;
+  const session = handlers.snapshotSession
+    ? rebaseSessionSnapshot(handlers.snapshotSession(), entry, target)
+    : target === "after" ? entry.afterSession : entry.beforeSession;
+  if (!handlers.applySession(session, { persist })) return false;
   handlers.applyFileDrafts(
     target === "after" ? entry.afterFileDrafts : entry.beforeFileDrafts,
   );
@@ -243,7 +291,7 @@ export function recoverTransferJournalEntry(
   handlers: TransferRecoveryHandlers,
   id = windowId(),
 ): boolean {
-  beginTransientPersistence(entry.token, id);
+  registerPendingTransfer(entry, id);
   const destinationStaged = entry.role === "destination"
     && (status === "destination-staged" || status === "awaiting-source");
   const sourceAwaiting = entry.role === "source" && status === "awaiting-source";
@@ -261,20 +309,20 @@ export function recoverTransferJournalEntry(
   ) return false;
 
   if (status === "committed") {
-    endTransientPersistence(entry.token, id);
+    unregisterPendingTransfer(entry.token, id);
     try {
       if (!applyRecoverySnapshot(entry, "after", true, handlers)) {
-        beginTransientPersistence(entry.token, id);
+        registerPendingTransfer(entry, id);
         return false;
       }
       handlers.clearAccepted!(entry.token);
       if (!handlers.deleteJournal!(entry.token)) {
-        beginTransientPersistence(entry.token, id);
+        registerPendingTransfer(entry, id);
         return false;
       }
       return true;
     } catch {
-      beginTransientPersistence(entry.token, id);
+      registerPendingTransfer(entry, id);
       return false;
     }
   }
@@ -296,20 +344,20 @@ export function recoverTransferJournalEntry(
       return false;
     }
   }
-  endTransientPersistence(entry.token, id);
+  unregisterPendingTransfer(entry.token, id);
   try {
     if (!applyRecoverySnapshot(entry, "before", true, handlers)) {
-      beginTransientPersistence(entry.token, id);
+      registerPendingTransfer(entry, id);
       return false;
     }
     handlers.clearAccepted!(entry.token);
     if (!handlers.deleteJournal!(entry.token)) {
-      beginTransientPersistence(entry.token, id);
+      registerPendingTransfer(entry, id);
       return false;
     }
     return true;
   } catch {
-    beginTransientPersistence(entry.token, id);
+    registerPendingTransfer(entry, id);
     return false;
   }
 }
@@ -322,11 +370,11 @@ export function finalizeTransferJournal(
 ): boolean {
   const entry = readTransferJournal(id).entries[token];
   if (!entry) return false;
-  beginTransientPersistence(token, id);
+  registerPendingTransfer(entry, id);
   if (!handlers.clearAccepted) return false;
   const phase = outcome === "commit" ? "committing" : "rolling-back";
   if (!updateTransferJournal(token, { phase }, id)) return false;
-  endTransientPersistence(token, id);
+  unregisterPendingTransfer(token, id);
   try {
     if (!applyRecoverySnapshot(
       { ...entry, phase },
@@ -334,17 +382,17 @@ export function finalizeTransferJournal(
       true,
       handlers,
     )) {
-      beginTransientPersistence(token, id);
+      registerPendingTransfer(entry, id);
       return false;
     }
     handlers.clearAccepted(token);
     const deleted = handlers.deleteJournal
       ? handlers.deleteJournal(token)
       : deleteTransferJournal(token, id);
-    if (!deleted) beginTransientPersistence(token, id);
+    if (!deleted) registerPendingTransfer(entry, id);
     return deleted;
   } catch {
-    beginTransientPersistence(token, id);
+    registerPendingTransfer(entry, id);
     return false;
   }
 }

@@ -106,11 +106,7 @@ const {
   writeTransferJournal,
 } = await import("../lib/tab-transfer-journal.ts");
 const sessionDraftPersistence = await import("../lib/session-draft-persistence.ts");
-
-sessionDraftPersistence.beginTransientPersistence("window-isolation", "secondary");
-assert.equal(sessionDraftPersistence.isTransientPersistenceSuppressed("secondary"), true);
-assert.equal(sessionDraftPersistence.isTransientPersistenceSuppressed("main"), false);
-sessionDraftPersistence.endTransientPersistence("window-isolation", "secondary");
+const pendingProjection = await import("../lib/pending-transfer-projection.ts");
 
 assert.equal(writeTransferJournal(journalEntry("one"), "journal-a"), true);
 assert.equal(writeTransferJournal(journalEntry("two", "source"), "journal-a"), true);
@@ -192,11 +188,17 @@ function recoveryHarness() {
     ["accepted", "destination-staged-explicit-window"],
   ]);
   assert.equal(
-    sessionDraftPersistence.isTransientPersistenceSuppressed("recovery-window"),
-    true,
+    pendingProjection.pendingTransfer(
+      "destination-staged-explicit-window",
+      "recovery-window",
+    )?.token,
+    "destination-staged-explicit-window",
   );
-  assert.equal(sessionDraftPersistence.isTransientPersistenceSuppressed("main"), false);
-  sessionDraftPersistence.endTransientPersistence(
+  assert.equal(
+    pendingProjection.pendingTransfer("destination-staged-explicit-window", "main"),
+    undefined,
+  );
+  pendingProjection.unregisterPendingTransfer(
     "destination-staged-explicit-window",
     "recovery-window",
   );
@@ -217,7 +219,7 @@ function recoveryHarness() {
     ["bridge", 0],
     ["sourceRemoved", "awaiting-source"],
   ]);
-  sessionDraftPersistence.endTransientPersistence("awaiting-source", "main");
+  pendingProjection.unregisterPendingTransfer("awaiting-source", "main");
 }
 
 for (const status of ["prepared", "rolled-back", "stale"]) {
@@ -280,12 +282,12 @@ for (const outcome of ["commit", "rollback"]) {
   ), false);
   assert.equal(readTransferJournal(id).entries[token].phase, "staged");
   assert.equal(
-    sessionDraftPersistence.isTransientPersistenceSuppressed(id),
-    true,
-    "a phase-write failure must suppress normal persistence until recovery",
+    pendingProjection.pendingTransfer(token, id)?.token,
+    token,
+    "a phase-write failure must keep projecting the entry until recovery",
   );
   globalThis.localStorage.setItem = originalSetItem;
-  sessionDraftPersistence.endTransientPersistence(token, id);
+  pendingProjection.unregisterPendingTransfer(token, id);
   assert.equal(deleteTransferJournal(token, id), true);
 }
 
@@ -303,11 +305,11 @@ for (const [status, role, missing] of [
   assert.deepEqual(recovery.calls, []);
   assert.ok(readTransferJournal("missing-callbacks").entries[entry.token]);
   assert.equal(
-    sessionDraftPersistence.isTransientPersistenceSuppressed("main"),
-    true,
-    "an unresolved recovery must keep normal persistence suppressed",
+    pendingProjection.pendingTransfer(entry.token, "main")?.token,
+    entry.token,
+    "an unresolved recovery must keep projecting its provisional delta out",
   );
-  sessionDraftPersistence.endTransientPersistence(entry.token, "main");
+  pendingProjection.unregisterPendingTransfer(entry.token, "main");
 }
 
 values.clear();
@@ -667,16 +669,19 @@ channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
   channel: "effect-channel",
   account_id: "effect-account",
 });
-assert.equal(
-  values.get("centerTabs:secondary"),
-  secondaryTabBytes,
-  "mounted center-tab effects must not persist staged state",
-);
+const effectProjectedCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(effectProjectedCenter.tabs.map((tab) => tab.id), ["s:existing"]);
+assert.equal(effectProjectedCenter.tabs[0].title, "Effect write");
 assert.equal(
   values.get("openprogram.sessionDraftState:secondary"),
   effectSessionBytes,
-  "mounted path/channel effects must not persist staged state",
+  "affected path/channel effects must remain projected out",
 );
+pendingProjection.unregisterPendingTransfer(
+  orderedDestinationEntry.token,
+  "secondary",
+);
+assert.equal(deleteTransferJournal(orderedDestinationEntry.token, "secondary"), true);
 secondaryTabsModule.replaceCenterTabsPayload(inserted.after, { persist: false });
 secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: false });
 
@@ -704,14 +709,22 @@ assert.equal(stageTransferMutation(
 assert.equal(removed.ok, true);
 assert.equal(removed.empty, false);
 assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), ["s:existing"]);
-assert.equal(values.get("centerTabs:secondary"), secondaryTabBytes);
-sessionDraftPersistence.endTransientPersistence(
-  orderedDestinationEntry.token,
-  "secondary",
-);
-sessionDraftPersistence.endTransientPersistence(orderedSourceEntry.token, "secondary");
-assert.equal(deleteTransferJournal(orderedDestinationEntry.token, "secondary"), true);
+secondaryTabs.getState().openSessionTab("user-source", "User source");
+const sourceProjectedCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(sourceProjectedCenter.tabs.map((tab) => tab.id), [
+  "s:existing",
+  "s:local_one",
+  "s:user-source",
+]);
+assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
+  "s:existing",
+  "s:user-source",
+]);
+pendingProjection.unregisterPendingTransfer(orderedSourceEntry.token, "secondary");
 assert.equal(deleteTransferJournal(orderedSourceEntry.token, "secondary"), true);
+assert.equal(secondaryTabsModule.replaceCenterTabsPayload(removed.after, {
+  persist: true,
+}), true);
 const realTransferPayload = {
   ...transferPayload,
   tabs: [{ id: "s:real", kind: "session", title: "Real", sessionId: "real" }],
@@ -860,6 +873,42 @@ secondaryTabsModule.replaceCenterTabsPayload({
   splitWebTabId: null,
   splitRatio: 0.44,
 }, { persist: false });
+const segmentPlacements = [
+  { kind: "strip-end" },
+  { kind: "before", targetTabId: "s:target" },
+  { kind: "after", targetTabId: "s:target" },
+  { kind: "merge", targetTabId: "s:target" },
+];
+for (const placement of segmentPlacements) {
+  assert.equal(
+    secondaryTabsModule.validateTransferredTabs(segmentPayload, placement).ok,
+    true,
+    `a one-tab segment must be valid for ${placement.kind}`,
+  );
+}
+for (const count of [2, 4]) {
+  const names = ["b", "c", "d", "e"].slice(0, count);
+  const invalidSegment = {
+    ...segmentPayload,
+    tabs: names.map((name) => ({
+      id: `w:segment-${name}`,
+      kind: "web",
+      title: name.toUpperCase(),
+      url: `https://${name}.segment.test/`,
+    })),
+    source: {
+      ...segmentPayload.source,
+      memberIds: ["w:segment-a", ...names.map((name) => `w:segment-${name}`), "w:segment-f"],
+    },
+  };
+  for (const placement of segmentPlacements) {
+    assert.deepEqual(
+      secondaryTabsModule.validateTransferredTabs(invalidSegment, placement),
+      { ok: false, reason: "invalid" },
+      `${count}-tab segments must be invalid for ${placement.kind}`,
+    );
+  }
+}
 const segmentValidation = secondaryTabsModule.validateTransferredTabs(
   segmentPayload,
   { kind: "strip-end" },
@@ -961,7 +1010,321 @@ const actualRecoveryHandlers = {
   resumeSourceRemoved: () => {},
   clearAccepted: () => {},
   deleteJournal: (token) => deleteTransferJournal(token, "secondary"),
+  snapshotCenterTabs: () => secondaryTabsModule.snapshotCenterTabsPayload(),
+  snapshotSession: () => secondarySessionModule.snapshotSessionTransfer([]),
 };
+
+const projectionPayload = {
+  ...transferPayload,
+  tabs: [{
+    id: "s:moving",
+    kind: "session",
+    title: "Moving",
+    sessionId: "moving",
+    draft: true,
+  }],
+  chats: [{ chatKey: "moving", composerDraft: "transferred", wasActive: true }],
+};
+const projectionBeforeCenter = {
+  version: 2,
+  tabs: [{ id: "s:existing", kind: "session", title: "Existing", sessionId: "existing" }],
+  activeId: "s:existing",
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.44,
+};
+secondaryTabsModule.replaceCenterTabsPayload(projectionBeforeCenter, { persist: false });
+secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: false });
+assert.equal(secondaryTabsModule.persistCurrentCenterTabsPayload(), true);
+assert.equal(secondarySessionModule.persistCurrentSessionTransfer(["local_one"]), true);
+const projectionAfterCenter = secondaryTabsModule.validateTransferredTabs(
+  projectionPayload,
+  { kind: "strip-end" },
+);
+assert.equal(projectionAfterCenter.ok, true);
+const projectionAfterSession = {
+  ...effectSessionSnapshot,
+  activeChatKey: "moving",
+  currentSessionId: null,
+  composerInput: "transferred",
+  composerDrafts: {
+    ...effectSessionSnapshot.composerDrafts,
+    moving: "transferred",
+  },
+};
+const projectionEntry = {
+  ...orderedDestinationEntry,
+  token: "projection-unrelated",
+  payload: projectionPayload,
+  beforeCenterTabs: projectionBeforeCenter,
+  afterCenterTabs: projectionAfterCenter.after,
+  beforeSession: effectSessionSnapshot,
+  afterSession: projectionAfterSession,
+};
+assert.equal(stageTransferMutation(
+  projectionEntry,
+  () => {
+    const center = secondaryTabsModule.insertTransferredTabs(
+      projectionPayload,
+      { kind: "strip-end" },
+      { persist: false },
+    );
+    const session = secondarySessionModule.applySessionTransfer(
+      projectionAfterSession,
+      { persist: false },
+    );
+    return center.ok && session;
+  },
+  () => { throw new Error("unexpected projection stage rejection"); },
+  "secondary",
+), true);
+secondaryTabs.getState().openSessionTab("user", "User");
+secondarySession.getState().setCurrentDraft("user");
+secondarySession.getState().setComposerInput("user edit");
+const projectedCenterBytes = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(
+  projectedCenterBytes.tabs.map((tab) => tab.id),
+  ["s:existing", "s:user"],
+  "ordinary center persistence must exclude only the pending destination tab",
+);
+assert.equal(projectedCenterBytes.activeId, "s:user");
+const projectedSessionBytes = JSON.parse(
+  values.get("openprogram.sessionDraftState:secondary"),
+);
+assert.equal(projectedSessionBytes.composerDrafts.user, "user edit");
+assert.equal(projectedSessionBytes.composerDrafts.moving, undefined);
+assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
+  "s:existing",
+  "s:moving",
+  "s:user",
+]);
+assert.equal(secondarySession.getState().composerDrafts.user, "user edit");
+assert.equal(finalizeTransferJournal(
+  projectionEntry.token,
+  "commit",
+  actualRecoveryHandlers,
+  "secondary",
+), true);
+assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
+  "s:existing",
+  "s:moving",
+  "s:user",
+]);
+assert.equal(secondaryTabs.getState().activeId, "s:user");
+assert.equal(secondarySession.getState().composerDrafts.user, "user edit");
+assert.equal(secondarySession.getState().composerInput, "user edit");
+const committedProjectionCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(committedProjectionCenter.tabs.map((tab) => tab.id), [
+  "s:existing",
+  "s:moving",
+  "s:user",
+]);
+assert.equal(committedProjectionCenter.activeId, "s:user");
+const committedProjectionSession = JSON.parse(
+  values.get("openprogram.sessionDraftState:secondary"),
+);
+assert.equal(committedProjectionSession.composerDrafts.moving, "transferred");
+assert.equal(committedProjectionSession.composerDrafts.user, "user edit");
+assert.equal(
+  pendingProjection.pendingTransfer(projectionEntry.token, "secondary"),
+  undefined,
+);
+
+function stageDestinationEntry(token, sessionId, chatKey) {
+  const payload = {
+    ...transferPayload,
+    tabs: [{
+      id: `s:${sessionId}`,
+      kind: "session",
+      title: sessionId,
+      sessionId,
+      draft: true,
+    }],
+    chats: chatKey
+      ? [{ chatKey, composerDraft: `${chatKey} draft`, wasActive: false }]
+      : [],
+  };
+  const beforeCenter = secondaryTabsModule.snapshotCenterTabsPayload();
+  const beforeSession = secondarySessionModule.snapshotSessionTransfer([]);
+  const validated = secondaryTabsModule.validateTransferredTabs(
+    payload,
+    { kind: "strip-end" },
+  );
+  assert.equal(validated.ok, true);
+  const afterSession = chatKey
+    ? {
+      ...beforeSession,
+      composerDrafts: {
+        ...beforeSession.composerDrafts,
+        [chatKey]: `${chatKey} draft`,
+      },
+    }
+    : beforeSession;
+  const entry = {
+    ...journalEntry(token),
+    payload,
+    beforeCenterTabs: beforeCenter,
+    afterCenterTabs: validated.after,
+    beforeSession,
+    afterSession,
+  };
+  assert.equal(stageTransferMutation(
+    entry,
+    () => {
+      const center = secondaryTabsModule.insertTransferredTabs(
+        payload,
+        { kind: "strip-end" },
+        { persist: false },
+      );
+      const session = secondarySessionModule.applySessionTransfer(
+        afterSession,
+        { persist: false },
+      );
+      return center.ok && session;
+    },
+    () => { throw new Error(`unexpected stage rejection for ${token}`); },
+    "secondary",
+  ), true);
+  return entry;
+}
+
+// Two concurrent tokens: each commit/rollback leaves the other's staged
+// delta and the user's interleaved edits intact.
+const concurrentBase = {
+  version: 2,
+  tabs: [{ id: "s:existing", kind: "session", title: "Existing", sessionId: "existing" }],
+  activeId: "s:existing",
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.44,
+};
+secondaryTabsModule.replaceCenterTabsPayload(concurrentBase, { persist: true });
+secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: true });
+const entryA = stageDestinationEntry("concurrent-a", "alpha", "alpha");
+const entryB = stageDestinationEntry("concurrent-b", "beta");
+secondaryTabs.getState().openSessionTab("user-two", "User two");
+secondarySession.getState().setCurrentDraft("user-two");
+secondarySession.getState().setComposerInput("user two edit");
+const concurrentPendingCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(
+  concurrentPendingCenter.tabs.map((tab) => tab.id),
+  ["s:existing", "s:user-two"],
+  "both pending tokens must stay projected out of persistence",
+);
+const concurrentPendingSession = JSON.parse(
+  values.get("openprogram.sessionDraftState:secondary"),
+);
+assert.equal(concurrentPendingSession.composerDrafts.alpha, undefined);
+assert.equal(concurrentPendingSession.composerDrafts["user-two"], "user two edit");
+assert.equal(finalizeTransferJournal(
+  entryA.token,
+  "rollback",
+  actualRecoveryHandlers,
+  "secondary",
+), true);
+assert.deepEqual(
+  secondaryTabs.getState().tabs.map((tab) => tab.id),
+  ["s:existing", "s:beta", "s:user-two"],
+  "rolling back A must keep B's staged tab and the user's new tab",
+);
+assert.equal(secondarySession.getState().composerDrafts.alpha, undefined);
+assert.equal(secondarySession.getState().composerDrafts["user-two"], "user two edit");
+assert.equal(secondarySession.getState().composerInput, "user two edit");
+const afterRollbackCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(
+  afterRollbackCenter.tabs.map((tab) => tab.id),
+  ["s:existing", "s:user-two"],
+  "still-pending token B must remain projected out after A rolls back",
+);
+assert.equal(finalizeTransferJournal(
+  entryB.token,
+  "commit",
+  actualRecoveryHandlers,
+  "secondary",
+), true);
+assert.deepEqual(
+  secondaryTabs.getState().tabs.map((tab) => tab.id),
+  ["s:existing", "s:beta", "s:user-two"],
+);
+const afterCommitCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(
+  afterCommitCenter.tabs.map((tab) => tab.id),
+  ["s:existing", "s:beta", "s:user-two"],
+);
+assert.equal(afterCommitCenter.activeId, "s:user-two");
+assert.deepEqual(pendingProjection.pendingTransfers("secondary"), []);
+assert.deepEqual(readTransferJournal("secondary").entries, {});
+
+// Crash recovery: a committed journal converges by re-applying only its
+// own delta onto the rehydrated state; user edits made after the crash
+// snapshot survive, and recovery is idempotent.
+function simulateRendererCrash(token) {
+  pendingProjection.unregisterPendingTransfer(token, "secondary");
+  secondaryTabsModule.replaceCenterTabsPayload(
+    JSON.parse(values.get("centerTabs:secondary")),
+    { persist: false },
+  );
+  const persisted = JSON.parse(values.get("openprogram.sessionDraftState:secondary"));
+  secondarySessionModule.applySessionTransfer({
+    ...emptySessionSnapshot,
+    composerDrafts: persisted.composerDrafts,
+    composerSettingsBySession: persisted.composerSettingsBySession,
+    pendingProjectsByChat: persisted.pendingProjectsByChat,
+    draftChannelChoices: persisted.draftChannelChoices,
+  }, { persist: false });
+}
+const entryC = stageDestinationEntry("crash-commit", "gamma", "gamma");
+secondaryTabs.getState().openSessionTab("user-three", "User three");
+simulateRendererCrash(entryC.token);
+assert.deepEqual(
+  secondaryTabs.getState().tabs.map((tab) => tab.id),
+  ["s:existing", "s:beta", "s:user-two", "s:user-three"],
+);
+const journaledC = readTransferJournal("secondary").entries[entryC.token];
+assert.equal(recoverTransferJournalEntry(
+  journaledC,
+  "committed",
+  actualRecoveryHandlers,
+  "secondary",
+), true);
+const crashCommittedTabs = ["s:existing", "s:beta", "s:user-two", "s:gamma", "s:user-three"];
+assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), crashCommittedTabs);
+assert.equal(secondarySession.getState().composerDrafts.gamma, "gamma draft");
+assert.equal(secondarySession.getState().composerDrafts["user-two"], "user two edit");
+const crashCommittedCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(crashCommittedCenter.tabs.map((tab) => tab.id), crashCommittedTabs);
+assert.equal(readTransferJournal("secondary").entries[entryC.token], undefined);
+assert.equal(recoverTransferJournalEntry(
+  journaledC,
+  "committed",
+  actualRecoveryHandlers,
+  "secondary",
+), true, "committed recovery must be idempotent");
+assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), crashCommittedTabs);
+assert.deepEqual(pendingProjection.pendingTransfers("secondary"), []);
+
+// Crash recovery of a rolled-back journal drops only its own delta.
+const entryD = stageDestinationEntry("crash-rollback", "delta", "delta");
+secondaryTabs.getState().openSessionTab("user-four", "User four");
+simulateRendererCrash(entryD.token);
+const journaledD = readTransferJournal("secondary").entries[entryD.token];
+assert.equal(recoverTransferJournalEntry(
+  journaledD,
+  "rolled-back",
+  actualRecoveryHandlers,
+  "secondary",
+), true);
+const crashRolledBackTabs = [...crashCommittedTabs, "s:user-four"];
+assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), crashRolledBackTabs);
+assert.equal(secondarySession.getState().composerDrafts.delta, undefined);
+assert.equal(secondarySession.getState().composerDrafts.gamma, "gamma draft");
+const crashRolledBackCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(
+  crashRolledBackCenter.tabs.map((tab) => tab.id),
+  crashRolledBackTabs,
+);
+assert.deepEqual(pendingProjection.pendingTransfers("secondary"), []);
+assert.deepEqual(readTransferJournal("secondary").entries, {});
 
 secondaryTabsModule.replaceCenterTabsPayload(
   orderedDestinationEntry.beforeCenterTabs,
@@ -984,13 +1347,15 @@ channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
   channel: "startup-effect",
   account_id: "startup-effect",
 });
-assert.equal(values.get("centerTabs:secondary"), secondaryTabBytes);
+const startupProjectedCenter = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(startupProjectedCenter.tabs.map((tab) => tab.id), ["s:existing"]);
+assert.equal(startupProjectedCenter.tabs[0].title, "Startup effect write");
 assert.equal(
   values.get("openprogram.sessionDraftState:secondary"),
   effectSessionBytes,
-  "startup staged recovery must suppress mounted effect persistence",
+  "startup recovery must project affected session writes out",
 );
-sessionDraftPersistence.endTransientPersistence(startupEntry.token, "secondary");
+pendingProjection.unregisterPendingTransfer(startupEntry.token, "secondary");
 assert.equal(deleteTransferJournal(startupEntry.token, "secondary"), true);
 secondaryTabsModule.replaceCenterTabsPayload(startupEntry.afterCenterTabs, {
   persist: false,
@@ -1028,19 +1393,19 @@ assert.equal(
   "committing",
 );
 globalThis.localStorage.setItem = originalSetItem;
-const failedCommitCenterBytes = values.get("centerTabs:secondary");
-const failedCommitSessionBytes = values.get("openprogram.sessionDraftState:secondary");
 secondaryTabs.getState().openSessionTab("existing", "Failed commit effect");
 secondarySession.getState().setCurrentDraft("local_one");
 channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
   channel: "failed-commit-effect",
   account_id: "failed-commit-effect",
 });
-assert.equal(values.get("centerTabs:secondary"), failedCommitCenterBytes);
+const failedCommitProjection = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(failedCommitProjection.tabs.map((tab) => tab.id), ["s:existing"]);
+assert.equal(failedCommitProjection.tabs[0].title, "Failed commit effect");
 assert.equal(
   values.get("openprogram.sessionDraftState:secondary"),
-  failedCommitSessionBytes,
-  "a failed commit must restore the transient persistence guard",
+  effectSessionBytes,
+  "a failed commit must keep projecting its affected session state out",
 );
 assert.equal(finalizeTransferJournal(
   losslessCommitEntry.token,
@@ -1083,19 +1448,19 @@ assert.equal(
   "rolling-back",
 );
 globalThis.localStorage.setItem = originalSetItem;
-const failedRollbackCenterBytes = values.get("centerTabs:secondary");
-const failedRollbackSessionBytes = values.get("openprogram.sessionDraftState:secondary");
 secondaryTabs.getState().openSessionTab("existing", "Failed rollback effect");
 secondarySession.getState().setCurrentDraft("local_one");
 channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
   channel: "failed-rollback-effect",
   account_id: "failed-rollback-effect",
 });
-assert.equal(values.get("centerTabs:secondary"), failedRollbackCenterBytes);
+const failedRollbackProjection = JSON.parse(values.get("centerTabs:secondary"));
+assert.deepEqual(failedRollbackProjection.tabs.map((tab) => tab.id), ["s:existing"]);
+assert.equal(failedRollbackProjection.tabs[0].title, "Failed rollback effect");
 assert.equal(
   values.get("openprogram.sessionDraftState:secondary"),
-  failedRollbackSessionBytes,
-  "a failed rollback must restore the transient persistence guard",
+  effectSessionBytes,
+  "a failed rollback must keep projecting its affected session state out",
 );
 assert.equal(finalizeTransferJournal(
   losslessRollbackEntry.token,
