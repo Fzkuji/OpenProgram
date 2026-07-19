@@ -32,6 +32,7 @@ const {
   SPLIT_DIVIDER_WIDTH,
   SPLIT_WEB_MIN_WIDTH,
   clampSplitRatioForWidth,
+  isSplitLayoutAvailable,
 } = await import("../lib/split-layout.ts");
 const {
   isDesktopSplitLayoutAvailable,
@@ -54,6 +55,15 @@ assert.equal(
   clampSplitRatioForWidth(0.70, 1200),
   (1200 - SPLIT_WEB_MIN_WIDTH - SPLIT_DIVIDER_WIDTH) / 1200,
 );
+const preferredRatio = 0.527651858567543;
+assert.equal(isSplitLayoutAvailable(864), true);
+assert.equal(clampSplitRatioForWidth(preferredRatio, 864), 0.4375);
+assert.equal(
+  clampSplitRatioForWidth(preferredRatio, 1200),
+  preferredRatio,
+  "restoring space must recompute from the preferred ratio",
+);
+assert.equal(isSplitLayoutAvailable(463), false);
 
 setWebTabReady("already-ready", true);
 assert.equal(isWebTabReady("already-ready"), true);
@@ -167,8 +177,11 @@ assert.doesNotMatch(
 
 assert.match(appShellSource, /splitWebTabId/);
 assert.match(appShellSource, /splitRatio/);
-assert.match(appShellSource, /new ResizeObserver\(update\)/);
-assert.match(appShellSource, /centerBodyWidth >= 846/);
+assert.match(
+  appShellSource,
+  /const splitAvailable = isSplitLayoutAvailable\(centerBodyWidth\);/,
+  "split availability must use the measured center-body width",
+);
 assert.match(
   appShellSource,
   /const showSplit =\s*isDesktop && activeKind === "session" && !!splitTab && splitAvailable;/,
@@ -188,10 +201,18 @@ assert.match(appShellSource, /className="center-split-web"/);
 assert.match(appShellSource, /setDesktopSplitLayoutAvailable/);
 assert.match(appShellSource, /clampSplitRatioForWidth/);
 assert.match(appShellSource, /const effectiveSplitRatio = clampSplitRatioForWidth/);
-assert.match(
+assert.doesNotMatch(
   appShellSource,
   /if \(effectiveSplitRatio !== splitRatio\) setSplitRatio\(effectiveSplitRatio\);/,
+  "container constraints must not overwrite the preferred split ratio",
 );
+assert.match(
+  appShellSource,
+  /new ResizeObserver\(\(\[entry\]\) =>\s*setCenterBodyWidth\(entry\.contentRect\.width\),?\s*\)/,
+  "ResizeObserver must consume the measured center-body width",
+);
+assert.match(appShellSource, /window\.addEventListener\("resize", update\)/);
+assert.match(appShellSource, /window\.removeEventListener\("resize", update\)/);
 assert.match(appShellSource, /width: `\$\{effectiveSplitRatio \* 100\}%`/);
 assert.match(appShellSource, /aria-valuenow=\{Math\.round\(effectiveSplitRatio \* 100\)\}/);
 assert.match(appShellSource, /onPointerDown=/);

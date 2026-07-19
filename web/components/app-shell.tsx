@@ -26,7 +26,10 @@ import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/net/chat-stream";
 import { convToChatMsgs } from "@/lib/conv-mapper";
 import { useColResize } from "@/lib/use-col-resize";
 import { useTranslation } from "@/lib/i18n";
-import { clampSplitRatioForWidth } from "@/lib/split-layout";
+import {
+  clampSplitRatioForWidth,
+  isSplitLayoutAvailable,
+} from "@/lib/split-layout";
 // Migrated legacy modules — imported for side effects (they install
 // their `window.*` bridges for the still-legacy scripts).
 import "@/lib/runtime-bridge/state";
@@ -469,11 +472,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!node) return;
     const update = () => setCenterBodyWidth(node.getBoundingClientRect().width);
     update();
-    const observer = new ResizeObserver(update);
+    const observer = new ResizeObserver(([entry]) =>
+      setCenterBodyWidth(entry.contentRect.width),
+    );
     observer.observe(node);
-    return () => observer.disconnect();
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
   }, []);
-  const splitAvailable = centerBodyWidth >= 846;
+  const splitAvailable = isSplitLayoutAvailable(centerBodyWidth);
   const effectiveSplitRatio = clampSplitRatioForWidth(
     splitRatio,
     centerBodyWidth,
@@ -485,10 +494,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       isDesktop && activeKind === "session" && splitAvailable,
     );
   }, [isDesktop, activeKind, splitAvailable]);
-  useEffect(() => {
-    if (!splitAvailable) return;
-    if (effectiveSplitRatio !== splitRatio) setSplitRatio(effectiveSplitRatio);
-  }, [effectiveSplitRatio, setSplitRatio, splitAvailable, splitRatio]);
 
   function updateSplitRatio(ratio: number) {
     const rect = centerBodyRef.current?.getBoundingClientRect();
