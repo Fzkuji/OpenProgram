@@ -468,6 +468,44 @@
   box-shadow: inset -3px 0 var(--accent-blue);
 }
 
+.tabMenu {
+  position: fixed;
+  z-index: 1000;
+  width: 200px;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  -webkit-app-region: no-drag;
+}
+
+.tabMenuItem {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+.tabMenuItem:hover:not(:disabled),
+.tabMenuItem:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+.tabMenuItem:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.55;
+}
+
 .dragAnnouncement {
   position: absolute;
   width: 1px;

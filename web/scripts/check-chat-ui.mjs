@@ -77,8 +77,23 @@ assert.match(chatHandlers, /writeChatScroll\(sessionStorage, chatKey, area\.scro
 assert.match(tabs, /role="tablist"/);
 assert.match(tabs, /role="tab"/);
 assert.match(tabs, /aria-selected=\{active\}/);
-assert.match(tabs, /tabIndex=\{active \? 0 : -1\}/);
+assert.match(tabs, /const \[focusedTabId, setFocusedTabId\] = useState/);
+assert.match(tabs, /tabIndex=\{tabStop \? 0 : -1\}/);
 assert.match(tabs, /onTabListKeyDown/);
+const rovingFocus = tabs.slice(
+  tabs.indexOf("function onTabListKeyDown"),
+  tabs.indexOf("function onTabListWheel"),
+);
+assert.match(rovingFocus, /"ArrowLeft"/);
+assert.match(rovingFocus, /"ArrowRight"/);
+assert.match(rovingFocus, /"Home"/);
+assert.match(rovingFocus, /"End"/);
+assert.match(rovingFocus, /items\[nextIndex\]\.focus\(\)/);
+assert.doesNotMatch(
+  rovingFocus,
+  /items\[nextIndex\]\.click\(\)/,
+  "roving focus must not activate the focused tab",
+);
 const compoundStart = tabs.indexOf("function CompoundTabItem");
 const tabItemStart = tabs.indexOf("function TabItem");
 assert.ok(compoundStart >= 0 && tabItemStart > compoundStart);
@@ -94,6 +109,9 @@ assert.match(compound, /closing=\{closingIds\.has\(tab\.id\)\}/);
 assert.match(compound, /onClose=\{onClose\}/);
 assert.match(compound, /onExited=\{onExited\}/);
 assert.match(tabItem, /className=\{styles\.tabTarget\}[\s\S]*role="tab"/);
+assert.match(tabItem, /data-tab-id=\{tab\.id\}/);
+assert.match(tabItem, /e\.shiftKey && e\.key === "F10"/);
+assert.match(tabItem, /onContextMenu=/);
 assert.match(
   tabItem,
   /className=\{styles\.tabTarget\}[\s\S]*<\/div>[\s\S]*<button[\s\S]*className=\{styles\.tabClose\}/,
@@ -110,5 +128,30 @@ assert.ok(
 );
 assert.match(tabsCss, /\.tab:has\(\.tabTarget:focus-visible\)/);
 assert.match(tabsCss, /\.tabClose:focus-visible/);
+
+const menuStart = tabs.indexOf("role=\"menu\"");
+assert.ok(menuStart >= 0, "compound tab actions must use an ARIA menu");
+const menu = tabs.slice(menuStart);
+assert.match(menu, /<button[\s\S]*type="button"[\s\S]*role="menuitem"/);
+for (const label of [
+  "Move left",
+  "Move right",
+  "Add to split",
+  "Remove from group",
+  "Move to new window",
+]) {
+  assert.match(menu, new RegExp(label));
+}
+assert.match(menu, /disabled=\{!canMoveToNewWindow\}/);
+assert.match(tabs, /role="status"/);
+assert.match(tabs, /aria-live="polite"/);
+assert.match(tabs, /function returnFocusToMenuInvoker/);
+assert.match(
+  tabs,
+  /querySelectorAll<HTMLElement>\(\s*'\[role="tab"\]\[data-tab-id\]'/,
+);
+assert.match(tabs, /if \(e\.key !== "Escape"\) return;[\s\S]*setTabMenu\(null\)/);
+assert.match(tabsCss, /\.tabMenu\s*\{/);
+assert.match(tabsCss, /\.tabMenuItem\s*\{/);
 
 console.log("chat-ui checks passed");

@@ -71,6 +71,66 @@ assert.match(strip, /className=\{styles\.groupDragHandle\}[\s\S]*kind: "group"/)
 assert.match(strip, /onMoveGroup\(group\.id,/);
 assert.match(strip, /window\.addEventListener\("pointerup",[^;]+\{ once: true \}\)/s);
 assert.match(strip, /if \(e\.key !== "Escape"\) return;/);
+const dragEnd = strip.slice(
+  strip.indexOf("function onDragEnd"),
+  strip.indexOf("function targetBeforeId"),
+);
+assert.match(dragEnd, /Boolean\(dragCoordinator\.current\(\)\?\.started\)/);
+assert.match(dragEnd, /cancelDrag\(cancelled\)/);
+assert.match(strip, /function isFourthMemberRejection/);
+const drop = strip.slice(
+  strip.indexOf("function onDrop"),
+  strip.indexOf("function moveGroupByKeyboard"),
+);
+assert.match(drop, /const fourthMemberRejected = isFourthMemberRejection\(/);
+assert.match(drop, /cancelDrag\(!fourthMemberRejected\)/);
+
+const rovingFocus = strip.slice(
+  strip.indexOf("function onTabListKeyDown"),
+  strip.indexOf("function onTabListWheel"),
+);
+assert.match(rovingFocus, /"ArrowLeft"/);
+assert.match(rovingFocus, /"ArrowRight"/);
+assert.match(rovingFocus, /"Home"/);
+assert.match(rovingFocus, /"End"/);
+assert.match(rovingFocus, /items\[nextIndex\]\.focus\(\)/);
+assert.doesNotMatch(rovingFocus, /items\[nextIndex\]\.click\(\)/);
+assert.match(strip, /e\.shiftKey && e\.key === "F10"/);
+assert.match(strip, /role="menu"/);
+assert.match(strip, /role="menuitem"/);
+assert.match(strip, /function moveMenuTab/);
+const moveMenuTab = strip.slice(
+  strip.indexOf("function moveMenuTab"),
+  strip.indexOf("function addMenuTabToSplit"),
+);
+assert.match(moveMenuTab, /moveGroupMember\(/);
+assert.match(moveMenuTab, /ungroupTab\(/);
+assert.match(moveMenuTab, /moveTab\(/);
+assert.match(strip, /function addMenuTabToSplit[\s\S]*groupTab\(/);
+assert.match(strip, /function removeMenuTabFromGroup[\s\S]*ungroupTab\(/);
+assert.match(strip, /function moveMenuTabToNewWindow/);
+const moveToNewWindow = strip.slice(
+  strip.indexOf("function moveMenuTabToNewWindow"),
+  strip.indexOf("function onOpenNewTab"),
+);
+assert.match(moveToNewWindow, /dragCoordinator\.prepare\(/);
+assert.match(moveToNewWindow, /dragCoordinator\.start\(\)/);
+assert.match(moveToNewWindow, /dragCoordinator\.commit\(\)/);
+assert.match(strip, /const canMoveToNewWindow = Boolean\(/);
+assert.match(strip, /disabled=\{!canMoveToNewWindow\}/);
+assert.match(strip, /role="status"[\s\S]*aria-live="polite"/);
+for (const announcement of [
+  "Tab reordered",
+  "Tab added to split",
+  "Tab removed from group",
+  "Split supports up to three tabs",
+  "Tab move cancelled",
+  "Tab moved to new window",
+]) {
+  assert.match(strip, new RegExp(announcement));
+}
+assert.match(strip, /function returnFocusToMenuInvoker/);
+assert.match(strip, /if \(e\.key !== "Escape"\) return;[\s\S]*dragCoordinator\.cancel\(\)[\s\S]*setDropMarker\(null\)[\s\S]*setTabMenu\(null\)/);
 
 const closeButton = strip.slice(strip.indexOf("<button\n        type=\"button\"", strip.indexOf("function TabItem")), strip.indexOf("<X size={14} />"));
 assert.match(closeButton, /draggable=\{false\}/);
