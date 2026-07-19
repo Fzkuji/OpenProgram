@@ -16,6 +16,16 @@ const fakeWindows = [];
 let menuTemplate = null;
 let nextGeneratedWindowId = 1000;
 let generatedNativeViews = 0;
+const rendererQueue = [];
+
+function flushRendererQueue() {
+  let delivered = 0;
+  while (rendererQueue.length > 0) {
+    delivered += 1;
+    if (delivered > 1000) throw new Error("renderer callback queue did not settle");
+    rendererQueue.shift()();
+  }
+}
 
 function createFakeClock() {
   let now = 0;
@@ -185,7 +195,8 @@ function fakeWindow(id) {
     webContents: {
       send(...args) {
         sent.push(args);
-        win.onSend?.(...args);
+        const callback = win.onSend;
+        if (callback) rendererQueue.push(() => callback(...args));
       },
       setWindowOpenHandler() {},
       on() {},
@@ -647,14 +658,97 @@ function installOneShotRenameFailure() {
 function installReadFailureAt(failAt) {
   const original = fs.readFileSync;
   let calls = 0;
+  let triggered = false;
   fs.readFileSync = function failReadAt(...args) {
     calls += 1;
     if (calls === failAt) {
+      triggered = true;
       throw new Error(`injected read failure at call ${failAt}`);
     }
     return original.apply(this, args);
   };
-  return () => { fs.readFileSync = original; };
+  return {
+    restore() { fs.readFileSync = original; },
+    triggered() { return triggered; },
+    calls() { return calls; },
+  };
+}
+
+function installReadFailureWhenDecisionMissing(token) {
+  const original = fs.readFileSync;
+  const decisionPath = path.resolve(transferDecisionFile());
+  let triggered = false;
+  fs.readFileSync = function failAfterDurableDelete(...args) {
+    const result = original.apply(this, args);
+    if (path.resolve(String(args[0])) !== decisionPath) return result;
+    try {
+      const parsed = JSON.parse(Buffer.isBuffer(result) ? result.toString("utf8") : result);
+      if (!parsed?.decisions?.[token]) {
+        triggered = true;
+        throw new Error("injected read failure after durable decision deletion");
+      }
+    } catch (error) {
+      if (triggered) throw error;
+    }
+    return result;
+  };
+  return {
+    restore() { fs.readFileSync = original; },
+    triggered() { return triggered; },
+  };
+}
+
+function installAmbiguousCommitFailure(token, { failReconcileRead = false } = {}) {
+  const originalFsync = fs.fsyncSync;
+  const originalRename = fs.renameSync;
+  const originalRead = fs.readFileSync;
+  let fsyncCalls = 0;
+  let renameCalls = 0;
+  let ambiguous = false;
+  let sawCommitted = false;
+  let reconcileReadFailed = false;
+
+  fs.fsyncSync = function failDirectorySync(...args) {
+    fsyncCalls += 1;
+    if (fsyncCalls === 2) {
+      throw new Error("injected directory fsync failure after committed rename");
+    }
+    return originalFsync.apply(this, args);
+  };
+  fs.renameSync = function failPriorRestore(...args) {
+    renameCalls += 1;
+    if (renameCalls === 2) {
+      ambiguous = true;
+      throw new Error("injected prior-decision restore failure");
+    }
+    return originalRename.apply(this, args);
+  };
+  fs.readFileSync = function observeCommitted(...args) {
+    if (ambiguous && failReconcileRead && !reconcileReadFailed) {
+      reconcileReadFailed = true;
+      throw new Error("injected indeterminate commit reconciliation read failure");
+    }
+    const result = originalRead.apply(this, args);
+    if (ambiguous) {
+      try {
+        const parsed = JSON.parse(Buffer.isBuffer(result) ? result.toString("utf8") : result);
+        if (parsed?.decisions?.[token]?.status === "committed") sawCommitted = true;
+      } catch (_error) {
+        /* non-JSON reads are irrelevant to this injection */
+      }
+    }
+    return result;
+  };
+
+  return {
+    restore() {
+      fs.fsyncSync = originalFsync;
+      fs.renameSync = originalRename;
+      fs.readFileSync = originalRead;
+    },
+    sawCommitted() { return sawCommitted; },
+    reconcileReadFailed() { return reconcileReadFailed; },
+  };
 }
 
 function assertTransferApiRegistered() {
@@ -800,6 +894,113 @@ async function checkTransferPreparationValidationAndAuthorization() {
   assert.equal(typeof boundaryToken, "string");
   assert.equal(hooks.tabTransfers.cancel(sourceCtx, boundaryToken), true);
 
+  const manyUnknownFields = Object.fromEntries(
+    Array.from({ length: 128 }, (_, index) => [`extra-${index}`, `value-${index}`]),
+  );
+  const whitelistedPayload = webTransferPayload(["whitelist-payload"]);
+  whitelistedPayload.extraRoot = manyUnknownFields;
+  whitelistedPayload.tabs[0] = {
+    ...whitelistedPayload.tabs[0],
+    draft: true,
+    dirty: true,
+    extraTab: manyUnknownFields,
+  };
+  whitelistedPayload.source.extraSource = manyUnknownFields;
+  whitelistedPayload.fileDrafts = [{
+    key: "project:file.txt",
+    extraEntry: manyUnknownFields,
+    value: {
+      draft: "edited",
+      baselineContent: "base",
+      baselineMtime: 4,
+      extraFileDraft: manyUnknownFields,
+    },
+  }];
+  whitelistedPayload.chats = [{
+    chatKey: "local_whitelist",
+    composerDraft: "draft",
+    wasActive: true,
+    composerSettings: {
+      thinking: "high",
+      tools: true,
+      webSearch: false,
+      fast: false,
+      permission_mode: "ask",
+      unattended: false,
+      extraSettings: manyUnknownFields,
+    },
+    draftChannelChoice: {
+      channel: "chat",
+      account_id: "account",
+      extraChoice: manyUnknownFields,
+    },
+    extraChat: manyUnknownFields,
+  }];
+  const whitelistedToken = prepareThroughIpc(sourceWin, whitelistedPayload);
+  assert.equal(typeof whitelistedToken, "string");
+  const whitelistedInspect = hooks.tabTransfers.inspect(
+    destinationCtx,
+    whitelistedToken,
+  );
+  assert.deepEqual(plain(whitelistedInspect.payload), {
+    tabs: [{
+      id: "whitelist-payload",
+      kind: "web",
+      title: "Title whitelist-payload",
+      url: "https://example.com/whitelist-payload",
+      draft: true,
+      dirty: true,
+    }],
+    source: {
+      windowId: sourceCtx.id,
+      kind: "tab",
+    },
+    fileDrafts: [{
+      key: "project:file.txt",
+      value: {
+        draft: "edited",
+        baselineContent: "base",
+        baselineMtime: 4,
+      },
+    }],
+    chats: [{
+      chatKey: "local_whitelist",
+      composerDraft: "draft",
+      composerSettings: {
+        thinking: "high",
+        tools: true,
+        webSearch: false,
+        fast: false,
+        permission_mode: "ask",
+        unattended: false,
+      },
+      draftChannelChoice: {
+        channel: "chat",
+        account_id: "account",
+      },
+      wasActive: true,
+    }],
+  });
+  assert.equal(hooks.tabTransfers.cancel(sourceCtx, whitelistedToken), true);
+
+  const tooManyFileDrafts = webTransferPayload(["too-many-file-drafts"]);
+  tooManyFileDrafts.fileDrafts = Array.from({ length: 4 }, (_, index) => ({
+    key: `draft:${index}`,
+    value: "value",
+  }));
+  assert.equal(prepareThroughIpc(sourceWin, tooManyFileDrafts), null);
+
+  const excessiveFileDraftBytes = webTransferPayload(["file-draft-total"]);
+  excessiveFileDraftBytes.fileDrafts = Array.from({ length: 3 }, (_, index) => ({
+    key: `draft:${index}`,
+    value: "x".repeat(2 * 1024 * 1024),
+  }));
+  assert.equal(prepareThroughIpc(sourceWin, excessiveFileDraftBytes), null);
+
+  const excessiveRawPayload = webTransferPayload(["raw-payload-limit"]);
+  excessiveRawPayload.extraRoot = "x".repeat(20 * 1024 * 1024 + 1);
+  assert.equal(prepareThroughIpc(sourceWin, excessiveRawPayload), null);
+
   const foreign = controlledRecord("foreign-native");
   foreign.record.ownerId = destinationCtx.id;
   sourceCtx.views.set("foreign-native", foreign.record);
@@ -898,6 +1099,7 @@ async function checkSuccessfulTransferAndDurableCommit() {
     trace.push("source durable finalize");
   };
   assert.equal(hooks.tabTransfers.destinationReady(destinationCtx, token, true), true);
+  flushRendererQueue();
   assert.equal(sourceRemovedResult, true);
   assert.equal(hooks.tabTransfers.activeTransfers.has(token), false);
   assert.equal(hooks.tabTransfers.isLocked("success-a"), false);
@@ -1054,7 +1256,12 @@ async function finalizeBoth(transaction) {
 
 async function checkRollbackOrderingAndLateSourceRace() {
   const transaction = await stageTransferForRollback("rollback-order");
-  const trace = ["source recovery"];
+  const trace = [];
+  const sourceState = {
+    tabs: new Set(),
+    drafts: new Map(),
+    session: new Set(),
+  };
   const destinationState = {
     tabs: new Set(["rollback-order-web"]),
     drafts: new Map([["draft:rollback-order-web", "changed"]]),
@@ -1068,6 +1275,9 @@ async function checkRollbackOrderingAndLateSourceRace() {
     if (channel !== "tab-transfer:undo-destination" || item.token !== transaction.token) {
       return;
     }
+    const active = hooks.tabTransfers.activeTransfers.get(transaction.token);
+    assert.notEqual(active.undoTimer, null);
+    assert.equal(clock.pendingIds().includes(active.undoTimer), true);
     destinationState.bridge.delete("rollback-order-web");
     destinationState.ready.delete("rollback-order-web");
     destinationState.bounds.delete("rollback-order-web");
@@ -1099,6 +1309,10 @@ async function checkRollbackOrderingAndLateSourceRace() {
     sourceBridge.add("rollback-order-web");
     trace.push("source bridge restore");
   };
+  sourceState.tabs.add("rollback-order-web");
+  sourceState.drafts.set("draft:rollback-order-web", "source draft");
+  sourceState.session.add("rollback-order-session");
+  trace.push("source recovery");
   assert.equal(
     hooks.tabTransfers.sourceRemoved(
       transaction.sourceCtx,
@@ -1107,6 +1321,14 @@ async function checkRollbackOrderingAndLateSourceRace() {
     ),
     true,
   );
+  const rollbackUndoTimer = hooks.tabTransfers.activeTransfers.get(
+    transaction.token,
+  ).undoTimer;
+  assert.notEqual(rollbackUndoTimer, null);
+  assert.equal(clock.pendingIds().includes(rollbackUndoTimer), true);
+  assert.equal(transaction.controlled.record.ownerId, transaction.destinationCtx.id);
+  flushRendererQueue();
+  assert.equal(clock.pendingIds().includes(rollbackUndoTimer), false);
   assert.strictEqual(
     transaction.sourceCtx.views.get("rollback-order-web"),
     transaction.controlled.record,
@@ -1122,6 +1344,9 @@ async function checkRollbackOrderingAndLateSourceRace() {
   assert.deepEqual([...destinationState.ready], []);
   assert.deepEqual([...destinationState.bounds], []);
   assert.deepEqual([...destinationState.bridge], []);
+  assert.deepEqual([...sourceState.tabs], ["rollback-order-web"]);
+  assert.deepEqual([...sourceState.drafts], [["draft:rollback-order-web", "source draft"]]);
+  assert.deepEqual([...sourceState.session], ["rollback-order-session"]);
   assert.deepEqual([...sourceBridge], ["rollback-order-web"]);
   assert.deepEqual(trace, [
     "source recovery",
@@ -1157,8 +1382,13 @@ async function checkRollbackOrderingAndLateSourceRace() {
     );
   };
   assert.equal(hooks.tabTransfers.destinationReady(race.destinationCtx, race.token, true), true);
+  flushRendererQueue();
   assert.equal(typeof pendingSourceRemoval, "function");
   clock.runCleared(race.timer);
+  const raceUndoTimer = hooks.tabTransfers.activeTransfers.get(race.token).undoTimer;
+  assert.notEqual(raceUndoTimer, null);
+  flushRendererQueue();
+  assert.equal(clock.pendingIds().includes(raceUndoTimer), false);
   assert.equal(pendingSourceRemoval(), false);
   assert.equal(sourceRecovery.restored, true);
   assert.equal(race.controlled.record.ownerId, race.sourceCtx.id);
@@ -1465,6 +1695,7 @@ async function checkRejectCancelExpiryDetachAndClaim() {
   assert.deepEqual(duplicateResult, { reason: "duplicate", duplicateId: "existing-web" });
   destinationRenderer.activeId = duplicateResult.duplicateId;
   assert.equal(destinationRenderer.activeId, "existing-web");
+  flushRendererQueue();
   assert.equal(sourceRenderer.preparedTokens.has(duplicateToken), false);
   assert.equal(JSON.stringify({
     sourceTabs: sourceRenderer.tabs,
@@ -1500,6 +1731,7 @@ async function checkRejectCancelExpiryDetachAndClaim() {
     plain(hooks.tabTransfers.reject(destinationCtx, fullToken, "group-full")),
     { reason: "group-full" },
   );
+  flushRendererQueue();
   assert.equal(sourceWin.sent.at(-1)[1].reason, "group-full");
   assert.equal(sourceRenderer.preparedTokens.has(fullToken), false);
   assert.equal(JSON.stringify({
@@ -1679,10 +1911,102 @@ async function checkPrecommitFailurePathsAndDynamicRoles() {
   );
   await finalizeBoth(decisionFailure);
 
+  const ambiguousCommit = await stageTransferForRollback("ambiguous-commit");
+  const ambiguousFault = installAmbiguousCommitFailure(ambiguousCommit.token);
+  let ambiguousResult;
+  try {
+    ambiguousResult = hooks.tabTransfers.sourceRemoved(
+      ambiguousCommit.sourceCtx,
+      ambiguousCommit.token,
+      { ok: true, sourceEmpty: false },
+    );
+  } finally {
+    ambiguousFault.restore();
+  }
+  assert.equal(ambiguousFault.sawCommitted(), true);
+  assert.equal(ambiguousResult, true);
+  assert.equal(loadTransferDecision(ambiguousCommit.token).status, "committed");
+  assert.equal(ambiguousCommit.controlled.record.ownerId, ambiguousCommit.destinationCtx.id);
+  assert.equal(hooks.tabTransfers.activeTransfers.has(ambiguousCommit.token), false);
+  assert.equal(
+    hooks.tabTransfers.journalFinalized(
+      ambiguousCommit.destinationCtx,
+      ambiguousCommit.token,
+      "destination",
+    ),
+    true,
+  );
+  assert.equal(
+    hooks.tabTransfers.journalFinalized(
+      ambiguousCommit.sourceCtx,
+      ambiguousCommit.token,
+      "source",
+    ),
+    true,
+  );
+
+  const unconfirmedCommit = await stageTransferForRollback("unconfirmed-commit");
+  const unconfirmedTimer = hooks.tabTransfers.activeTransfers.get(
+    unconfirmedCommit.token,
+  ).timer;
+  const unconfirmedFault = installAmbiguousCommitFailure(
+    unconfirmedCommit.token,
+    { failReconcileRead: true },
+  );
+  let unconfirmedResult;
+  try {
+    unconfirmedResult = hooks.tabTransfers.sourceRemoved(
+      unconfirmedCommit.sourceCtx,
+      unconfirmedCommit.token,
+      { ok: true, sourceEmpty: false },
+    );
+  } finally {
+    unconfirmedFault.restore();
+  }
+  assert.equal(unconfirmedFault.reconcileReadFailed(), true);
+  assert.equal(unconfirmedResult, false);
+  assert.equal(hooks.tabTransfers.activeTransfers.has(unconfirmedCommit.token), true);
+  assert.equal(hooks.tabTransfers.isLocked("unconfirmed-commit-web"), true);
+  assert.equal(clock.pendingIds().includes(unconfirmedTimer), false);
+  assert.equal(unconfirmedCommit.controlled.record.ownerId, unconfirmedCommit.destinationCtx.id);
+  assert.equal(
+    unconfirmedCommit.destinationWin.sent.some(
+      ([channel, item]) => channel === "tab-transfer:undo-destination"
+        && item.token === unconfirmedCommit.token,
+    ),
+    false,
+  );
+  assert.equal(loadTransferDecision(unconfirmedCommit.token).status, "committed");
+  assert.equal(
+    hooks.tabTransfers.sourceRemoved(
+      unconfirmedCommit.sourceCtx,
+      unconfirmedCommit.token,
+      { ok: true, sourceEmpty: false },
+    ),
+    true,
+  );
+  assert.equal(hooks.tabTransfers.activeTransfers.has(unconfirmedCommit.token), false);
+  assert.equal(
+    hooks.tabTransfers.journalFinalized(
+      unconfirmedCommit.destinationCtx,
+      unconfirmedCommit.token,
+      "destination",
+    ),
+    true,
+  );
+  assert.equal(
+    hooks.tabTransfers.journalFinalized(
+      unconfirmedCommit.sourceCtx,
+      unconfirmedCommit.token,
+      "source",
+    ),
+    true,
+  );
+
   const postCommitReadFailure = await stageTransferForRollback(
     "post-commit-read-failure",
   );
-  const restoreRead = installReadFailureAt(3);
+  const postCommitReadFault = installReadFailureAt(3);
   let postCommitResult;
   try {
     postCommitResult = hooks.tabTransfers.sourceRemoved(
@@ -1690,10 +2014,19 @@ async function checkPrecommitFailurePathsAndDynamicRoles() {
       postCommitReadFailure.token,
       { ok: true, sourceEmpty: false },
     );
+    assert.equal(postCommitResult, true);
+    assert.throws(
+      () => hooks.tabTransfers.status(
+        postCommitReadFailure.sourceCtx,
+        postCommitReadFailure.token,
+      ),
+      /injected read failure at call 3/,
+    );
   } finally {
-    restoreRead();
+    postCommitReadFault.restore();
   }
-  assert.equal(postCommitResult, true);
+  assert.equal(postCommitReadFault.triggered(), true);
+  assert.equal(postCommitReadFault.calls(), 3);
   assert.equal(
     hooks.tabTransfers.status(
       postCommitReadFailure.sourceCtx,
@@ -1991,10 +2324,19 @@ async function checkSourceEmptyDurabilityAndRestartAcknowledgements() {
     restoreRename();
   }
   assert.equal(sourceWin.closeCalls, 0);
-  assert.equal(
-    hooks.tabTransfers.journalFinalized(sourceCtx, token, "source"),
-    true,
-  );
+  const deletedDecisionReadFailure = installReadFailureWhenDecisionMissing(token);
+  let finalAckResult;
+  try {
+    finalAckResult = hooks.tabTransfers.journalFinalized(sourceCtx, token, "source");
+    assert.equal(finalAckResult, true);
+    assert.throws(
+      () => loadTransferDecision(token),
+      /injected read failure after durable decision deletion/,
+    );
+  } finally {
+    deletedDecisionReadFailure.restore();
+  }
+  assert.equal(deletedDecisionReadFailure.triggered(), true);
   assert.equal(sourceWin.closeCalls, 1);
   assert.equal(loadTransferDecision(token), null);
 
@@ -2170,12 +2512,15 @@ async function checkOrphanFinalizationPendingTerminalAndWindowClose() {
   };
   orphan.destinationWin.destroyed = true;
   hooks.tabTransfers.contextDestroyed(orphan.destinationCtx);
+  flushRendererQueue();
   assert.equal(orphan.controlled.record.ownerId, orphan.sourceCtx.id);
   assert.equal(hooks.tabTransfers.activeTransfers.has(orphan.token), false);
-  const orphanEvent = orphan.sourceWin.sent.find(
+  const orphanEvents = orphan.sourceWin.sent.filter(
     ([channel, item]) => channel === "tab-transfer:finalize-orphaned"
       && item.token === orphan.token,
   );
+  assert.equal(orphanEvents.length, 1);
+  const [orphanEvent] = orphanEvents;
   assert.ok(orphanEvent);
   assert.deepEqual(plain(orphanEvent[1]), {
     token: orphan.token,
@@ -2281,6 +2626,76 @@ async function checkOrphanFinalizationPendingTerminalAndWindowClose() {
   );
   assert.equal(loadTransferDecision(sourceGoneToken), null);
 
+  const sourceNativeGone = await stageTransferForRollback("orphan-source-native");
+  sourceNativeGone.sourceWin.destroyed = true;
+  hooks.cleanupWindowContext(sourceNativeGone.sourceCtx);
+  const sourceNativeUndoTimer = hooks.tabTransfers.activeTransfers.get(
+    sourceNativeGone.token,
+  ).undoTimer;
+  assert.notEqual(sourceNativeUndoTimer, null);
+  assert.equal(
+    hooks.tabTransfers.destinationUndone(
+      sourceNativeGone.destinationCtx,
+      sourceNativeGone.token,
+      true,
+    ),
+    true,
+  );
+  assert.equal(
+    sourceNativeGone.destinationCtx.views.has("orphan-source-native-web"),
+    false,
+  );
+  assert.equal(
+    sourceNativeGone.destinationCtx.visibleViewIds.has("orphan-source-native-web"),
+    false,
+  );
+  assert.equal(sourceNativeGone.controlled.record.ownerId, null);
+  assert.equal(sourceNativeGone.controlled.closeCallCount(), 1);
+  const sourceNativeRollbackReceipts = sourceNativeGone.destinationWin.sent.filter(
+    ([channel, item]) => channel === "tab-transfer:rolled-back"
+      && item.token === sourceNativeGone.token,
+  ).length;
+  clock.runCleared(sourceNativeUndoTimer);
+  assert.equal(sourceNativeGone.controlled.closeCallCount(), 1);
+  assert.equal(
+    sourceNativeGone.destinationWin.sent.filter(
+      ([channel, item]) => channel === "tab-transfer:rolled-back"
+        && item.token === sourceNativeGone.token,
+    ).length,
+    sourceNativeRollbackReceipts,
+  );
+  assert.equal(hooks.tabTransfers.isLocked("orphan-source-native-web"), false);
+  assert.equal(
+    hooks.tabTransfers.activeTransfers.has(sourceNativeGone.token),
+    false,
+  );
+  assert.equal(loadTransferDecision(sourceNativeGone.token).status, "rolled-back");
+  assert.ok(
+    sourceNativeGone.destinationWin.sent.find(
+      ([channel, item]) => channel === "tab-transfer:finalize-orphaned"
+        && item.token === sourceNativeGone.token
+        && item.role === "source",
+    ),
+  );
+  assert.equal(
+    hooks.tabTransfers.journalFinalized(
+      sourceNativeGone.destinationCtx,
+      sourceNativeGone.token,
+      "source",
+      sourceNativeGone.sourceCtx.id,
+    ),
+    true,
+  );
+  assert.equal(
+    hooks.tabTransfers.journalFinalized(
+      sourceNativeGone.destinationCtx,
+      sourceNativeGone.token,
+      "destination",
+    ),
+    true,
+  );
+  assert.equal(loadTransferDecision(sourceNativeGone.token), null);
+
   const bothGone = await stageTransferForRollback("orphan-both");
   bothGone.sourceWin.destroyed = true;
   bothGone.destinationWin.destroyed = true;
@@ -2373,6 +2788,7 @@ Promise.all([
     await checkPrecommitFailurePathsAndDynamicRoles();
     await checkSourceEmptyDurabilityAndRestartAcknowledgements();
     await checkOrphanFinalizationPendingTerminalAndWindowClose();
+    assert.equal(rendererQueue.length, 0, "all fake renderer deliveries must be flushed");
     console.log("webtab navigation checks passed");
   })
   .catch((error) => {

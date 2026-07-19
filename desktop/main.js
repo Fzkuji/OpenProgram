@@ -183,6 +183,43 @@ function serializedBytes(value, field) {
   return Buffer.byteLength(encoded, "utf8");
 }
 
+const TRANSFER_PAYLOAD_MAX_BYTES = 20 * 1024 * 1024;
+const FILE_DRAFT_MAX_COUNT = 3;
+const FILE_DRAFT_MAX_BYTES = 2 * 1024 * 1024;
+const FILE_DRAFTS_MAX_TOTAL_BYTES = 6 * 1024 * 1024;
+
+function optionalBoolean(value, field) {
+  if (value === undefined) return;
+  if (typeof value !== "boolean") throw new TypeError(`${field} must be boolean`);
+  return value;
+}
+
+function normalizedComposerSettings(value, field) {
+  if (value === undefined) return;
+  if (!isPlainObject(value)) throw new TypeError(`${field} must be an object`);
+  const normalized = {};
+  for (const key of ["thinking", "permission_mode"]) {
+    boundedString(value[key], `${field}.${key}`, 16 * 1024);
+    if (value[key] !== undefined && value[key] !== null) normalized[key] = value[key];
+  }
+  for (const key of ["tools", "webSearch", "fast", "unattended"]) {
+    const item = optionalBoolean(value[key], `${field}.${key}`);
+    if (item !== undefined) normalized[key] = item;
+  }
+  return normalized;
+}
+
+function normalizedDraftChannelChoice(value, field) {
+  if (value === undefined) return;
+  if (!isPlainObject(value)) throw new TypeError(`${field} must be an object`);
+  const normalized = {};
+  for (const key of ["channel", "account_id"]) {
+    boundedString(value[key], `${field}.${key}`, 16 * 1024);
+    if (value[key] !== undefined) normalized[key] = value[key];
+  }
+  return normalized;
+}
+
 function uniqueBoundedIds(value, field, { min = 0, max = 3 } = {}) {
   if (!Array.isArray(value) || value.length < min || value.length > max) {
     throw new TypeError(`${field} must contain ${min}-${max} ids`);
@@ -202,11 +239,15 @@ function validateTransferPayload(ctx, value) {
   if (!ctx || !isPlainObject(value)) {
     throw new TypeError("Transfer payload must be an object");
   }
+  if (serializedBytes(value, "Transfer payload") > TRANSFER_PAYLOAD_MAX_BYTES) {
+    throw new TypeError("Transfer payload is too large");
+  }
   if (!Array.isArray(value.tabs) || value.tabs.length < 1 || value.tabs.length > 3) {
     throw new TypeError("Transfer payload requires one to three tabs");
   }
 
   const validKinds = new Set(["session", "file", "web", "ntp"]);
+  const tabs = [];
   const ids = [];
   const seen = new Set();
   for (const tab of value.tabs) {
@@ -221,6 +262,16 @@ function validateTransferPayload(ctx, value) {
     if (seen.has(tab.id)) throw new TypeError("Transfer tab ids must be unique");
     seen.add(tab.id);
     ids.push(tab.id);
+    const normalized = { id: tab.id, kind: tab.kind };
+    if (tab.title !== undefined && tab.title !== null) normalized.title = tab.title;
+    for (const field of ["url", "path", "projectId", "sessionId"]) {
+      if (tab[field] !== undefined && tab[field] !== null) normalized[field] = tab[field];
+    }
+    for (const field of ["draft", "dirty"]) {
+      const item = optionalBoolean(tab[field], `tab.${field}`);
+      if (item !== undefined) normalized[field] = item;
+    }
+    tabs.push(normalized);
   }
 
   if (!isPlainObject(value.source)) {
@@ -230,7 +281,7 @@ function validateTransferPayload(ctx, value) {
   if (!new Set(["tab", "segment", "group"]).has(sourceKind)) {
     throw new TypeError("Transfer source kind is invalid");
   }
-  const source = { ...value.source, windowId: ctx.id };
+  const source = { windowId: ctx.id, kind: sourceKind };
   if (sourceKind === "tab" && ids.length !== 1) {
     throw new TypeError("A normal tab transfer contains exactly one tab");
   }
@@ -238,28 +289,28 @@ function validateTransferPayload(ctx, value) {
     if (ids.length !== 1) {
       throw new TypeError("A segment transfer contains exactly one tab");
     }
-    boundedString(source.groupId, "source.groupId", 4 * 1024, true);
-    if (!Number.isInteger(source.memberIndex) || source.memberIndex < 0) {
+    boundedString(value.source.groupId, "source.groupId", 4 * 1024, true);
+    if (!Number.isInteger(value.source.memberIndex) || value.source.memberIndex < 0) {
       throw new TypeError("Segment memberIndex is invalid");
     }
   }
   if (sourceKind === "group") {
-    boundedString(source.groupId, "source.groupId", 4 * 1024, true);
+    boundedString(value.source.groupId, "source.groupId", 4 * 1024, true);
   }
   if (sourceKind === "segment" || sourceKind === "group") {
-    const memberIds = uniqueBoundedIds(source.memberIds, "source.memberIds", {
+    const memberIds = uniqueBoundedIds(value.source.memberIds, "source.memberIds", {
       min: 2,
       max: 3,
     });
-    const visibleIds = uniqueBoundedIds(source.visibleIds, "source.visibleIds", {
+    const visibleIds = uniqueBoundedIds(value.source.visibleIds, "source.visibleIds", {
       min: 1,
       max: 2,
     });
-    boundedString(source.focusedId, "source.focusedId", 4 * 1024, true);
+    boundedString(value.source.focusedId, "source.focusedId", 4 * 1024, true);
     if (visibleIds.some((id) => !memberIds.includes(id))) {
       throw new TypeError("Visible group ids must be members");
     }
-    if (!visibleIds.includes(source.focusedId)) {
+    if (!visibleIds.includes(value.source.focusedId)) {
       throw new TypeError("Focused group id must be visible");
     }
     if (sourceKind === "group") {
@@ -270,41 +321,94 @@ function validateTransferPayload(ctx, value) {
         throw new TypeError("Group metadata must match transferred tabs");
       }
     } else if (
-      source.memberIndex >= memberIds.length
-      || memberIds[source.memberIndex] !== ids[0]
+      value.source.memberIndex >= memberIds.length
+      || memberIds[value.source.memberIndex] !== ids[0]
     ) {
       throw new TypeError("Segment metadata must identify the transferred tab");
     }
+    source.groupId = value.source.groupId;
+    source.memberIds = memberIds;
+    source.visibleIds = visibleIds;
+    source.focusedId = value.source.focusedId;
+    if (sourceKind === "segment") source.memberIndex = value.source.memberIndex;
   }
 
-  const fileDrafts = value.fileDrafts ?? [];
-  if (!Array.isArray(fileDrafts)) throw new TypeError("fileDrafts must be an array");
-  for (const draft of fileDrafts) {
+  const rawFileDrafts = value.fileDrafts ?? [];
+  if (!Array.isArray(rawFileDrafts) || rawFileDrafts.length > FILE_DRAFT_MAX_COUNT) {
+    throw new TypeError("fileDrafts must contain at most three entries");
+  }
+  const fileDrafts = [];
+  const fileDraftKeys = new Set();
+  let fileDraftBytes = 0;
+  for (const draft of rawFileDrafts) {
     if (!isPlainObject(draft)) throw new TypeError("Invalid file draft");
     boundedString(draft.key, "fileDraft.key", 16 * 1024, true);
-    const draftBytes = typeof draft.value === "string"
-      ? Buffer.byteLength(draft.value, "utf8")
-      : serializedBytes(draft.value, "fileDraft.value");
-    if (draftBytes > 2 * 1024 * 1024) {
+    if (fileDraftKeys.has(draft.key)) throw new TypeError("Duplicate file draft key");
+    fileDraftKeys.add(draft.key);
+    let normalizedValue;
+    if (typeof draft.value === "string") {
+      normalizedValue = draft.value;
+    } else if (isPlainObject(draft.value)) {
+      if (
+        typeof draft.value.draft !== "string"
+        || typeof draft.value.baselineContent !== "string"
+        || !Number.isFinite(draft.value.baselineMtime)
+      ) {
+        throw new TypeError("Invalid fileDraft.value");
+      }
+      normalizedValue = {
+        draft: draft.value.draft,
+        baselineContent: draft.value.baselineContent,
+        baselineMtime: draft.value.baselineMtime,
+      };
+    } else {
+      throw new TypeError("Invalid fileDraft.value");
+    }
+    const draftBytes = typeof normalizedValue === "string"
+      ? Buffer.byteLength(normalizedValue, "utf8")
+      : serializedBytes(normalizedValue, "fileDraft.value");
+    if (draftBytes > FILE_DRAFT_MAX_BYTES) {
       throw new TypeError("fileDraft.value is too large");
     }
+    fileDraftBytes += serializedBytes(normalizedValue, "fileDraft.value");
+    if (fileDraftBytes > FILE_DRAFTS_MAX_TOTAL_BYTES) {
+      throw new TypeError("fileDrafts are too large");
+    }
+    fileDrafts.push({ key: draft.key, value: normalizedValue });
   }
 
-  const chats = value.chats ?? [];
-  if (!Array.isArray(chats) || chats.length > 3) {
+  const rawChats = value.chats ?? [];
+  if (!Array.isArray(rawChats) || rawChats.length > 3) {
     throw new TypeError("chats must be an array with at most three entries");
   }
-  for (const chat of chats) {
+  const chats = [];
+  for (const chat of rawChats) {
     if (!isPlainObject(chat)) throw new TypeError("Invalid chat transfer state");
     boundedString(chat.chatKey, "chat.chatKey", 16 * 1024, true);
     boundedString(chat.pendingProjectId, "chat.pendingProjectId", 16 * 1024);
     for (const field of ["composerDraft", "activeComposerInput"]) {
       boundedString(chat[field], `chat.${field}`, 2 * 1024 * 1024);
     }
+    const normalized = { chatKey: chat.chatKey };
+    for (const field of ["composerDraft", "activeComposerInput", "pendingProjectId"]) {
+      if (chat[field] !== undefined && chat[field] !== null) normalized[field] = chat[field];
+    }
+    for (const field of ["composerSettings", "activeComposerSettings"]) {
+      const item = normalizedComposerSettings(chat[field], `chat.${field}`);
+      if (item !== undefined) normalized[field] = item;
+    }
+    const choice = normalizedDraftChannelChoice(
+      chat.draftChannelChoice,
+      "chat.draftChannelChoice",
+    );
+    if (choice !== undefined) normalized.draftChannelChoice = choice;
+    const wasActive = optionalBoolean(chat.wasActive, "chat.wasActive");
+    if (wasActive !== undefined) normalized.wasActive = wasActive;
+    chats.push(normalized);
   }
 
   const records = [];
-  for (const tab of value.tabs) {
+  for (const tab of tabs) {
     if (tab.kind !== "web") continue;
     const record = ctx.views.get(tab.id);
     if (!record) continue;
@@ -314,13 +418,7 @@ function validateTransferPayload(ctx, value) {
     records.push(record);
   }
 
-  const payload = JSON.parse(JSON.stringify({
-    ...value,
-    tabs: value.tabs,
-    source,
-    fileDrafts,
-    chats,
-  }));
+  const payload = { tabs, source, fileDrafts, chats };
   return { payload, records };
 }
 
@@ -541,11 +639,11 @@ function makeTransferCoordinator(options = {}) {
         continue;
       }
       let workerId = orphanAssignments.get(key);
-      if (!liveContext(workerId)) {
-        const worker = chooseOrphanWorker(decision, required.windowId);
-        workerId = worker?.id || null;
-        if (workerId) orphanAssignments.set(key, workerId);
-      }
+      const assignedWorker = liveContext(workerId);
+      if (assignedWorker) continue;
+      const candidate = chooseOrphanWorker(decision, required.windowId);
+      workerId = candidate?.id || null;
+      if (workerId) orphanAssignments.set(key, workerId);
       const worker = liveContext(workerId);
       if (worker) {
         send(worker, "tab-transfer:finalize-orphaned", {
@@ -598,6 +696,7 @@ function makeTransferCoordinator(options = {}) {
       detachedWindowId: null,
       placement: null,
       sourceEmpty: false,
+      commitIndeterminate: false,
     };
     transaction.timer = setTimer(() => expire(token), TRANSFER_TIMEOUT_MS);
     activeTransfers.set(token, transaction);
@@ -627,7 +726,11 @@ function makeTransferCoordinator(options = {}) {
 
   function journalOpened(ctx, token, role) {
     const transaction = activeTransfers.get(token);
-    if (!transaction || transaction.status === "rolling-back") return false;
+    if (
+      !transaction
+      || transaction.status === "rolling-back"
+      || transaction.commitIndeterminate
+    ) return false;
     const expectedId = role === "source"
       ? transaction.sourceId
       : role === "destination"
@@ -725,6 +828,48 @@ function makeTransferCoordinator(options = {}) {
     });
   }
 
+  function finishCommittedTransfer(transaction, decision) {
+    transaction.status = "committed";
+    transaction.commitIndeterminate = false;
+    clearActive(transaction);
+    notifyTerminal(transaction, "committed");
+    const detached = liveContext(transaction.detachedWindowId);
+    if (detached) detached.win.show();
+    if (decision.requiredRoles.length === 0) deleteDecision(transaction.token);
+    return true;
+  }
+
+  function matchesCommittedTransaction(transaction, decision) {
+    return decision?.token === transaction.token
+      && decision.status === "committed"
+      && decision.sourceId === transaction.sourceId
+      && decision.destinationId === transaction.destinationId;
+  }
+
+  function reconcileIndeterminateCommit(transaction) {
+    if (!transaction?.commitIndeterminate) return false;
+    let store;
+    try {
+      store = loadTransferDecisions(storePath());
+    } catch (_error) {
+      return false;
+    }
+    durableDecisions = store;
+    const current = store.decisions[transaction.token] || null;
+    if (current && !matchesCommittedTransaction(transaction, current)) {
+      return false;
+    }
+    let decision;
+    try {
+      // A readable committed rename is not enough after its directory fsync
+      // failed. Rewriting the same decision establishes a durable boundary.
+      decision = persistDecision(transaction, "committed");
+    } catch (_error) {
+      return false;
+    }
+    return finishCommittedTransfer(transaction, decision);
+  }
+
   function sourceRemoved(ctx, token, result) {
     const transaction = activeTransfers.get(token);
     if (
@@ -734,31 +879,66 @@ function makeTransferCoordinator(options = {}) {
     ) {
       return false;
     }
+    if (transaction.commitIndeterminate) {
+      return reconcileIndeterminateCommit(transaction);
+    }
     const normalized = typeof result === "boolean" ? { ok: result } : result;
     if (!normalized?.ok) return beginRollback(transaction, "source-failed");
     transaction.sourceEmpty = !!normalized.sourceEmpty;
     let decision;
     try {
       decision = persistDecision(transaction, "committed");
-    } catch (_error) {
+    } catch (error) {
+      if (error?.rollbackError) {
+        transaction.commitIndeterminate = true;
+        if (transaction.timer !== null) clearTimer(transaction.timer);
+        transaction.timer = null;
+        return reconcileIndeterminateCommit(transaction);
+      }
       transaction.sourceEmpty = false;
       beginRollback(transaction, "commit-decision-failed");
       return false;
     }
-    transaction.status = "committed";
-    clearActive(transaction);
-    notifyTerminal(transaction, "committed");
-    const detached = liveContext(transaction.detachedWindowId);
-    if (detached) detached.win.show();
-    if (decision.requiredRoles.length === 0) deleteDecision(token);
-    return true;
+    return finishCommittedTransfer(transaction, decision);
+  }
+
+  function discardTransferredRecords(transaction) {
+    const records = new Set([
+      ...transaction.records,
+      ...transaction.recordSnapshots.map((snapshot) => snapshot.record),
+    ]);
+    for (const record of records) {
+      for (const context of windowRegistry.values()) {
+        if (context.views.get(record.id) !== record) continue;
+        context.visibleViewIds.delete(record.id);
+        context.views.delete(record.id);
+        try {
+          context.win.contentView.removeChildView(record.view);
+        } catch (_error) {
+          /* the owning native surface may already be destroyed */
+        }
+      }
+      record.navigation = null;
+      record.ownerId = null;
+      try {
+        record.view.webContents.close();
+      } catch (_error) {
+        /* the native web contents may already be closed */
+      }
+    }
   }
 
   function finalizeRollback(transaction, destinationTimedOut = false) {
-    const source = windowRegistry.get(transaction.sourceId);
+    if (
+      activeTransfers.get(transaction?.token) !== transaction
+      || transaction.status !== "rolling-back"
+    ) return false;
+    const source = liveContext(transaction.sourceId);
     const destination = windowRegistry.get(transaction.destinationId);
     if (source && destination && transaction.recordSnapshots.length > 0) {
       restoreRecords(source, destination, transaction.recordSnapshots);
+    } else if (!source && transaction.records.length > 0) {
+      discardTransferredRecords(transaction);
     }
     clearActive(transaction, { closeHidden: true });
     notifyTerminal(transaction, "rolled-back");
@@ -780,6 +960,9 @@ function makeTransferCoordinator(options = {}) {
 
   function beginRollback(transaction, reason, destinationGone = false) {
     if (!transaction || transaction.status === "committed") return false;
+    if (transaction.commitIndeterminate) {
+      return reconcileIndeterminateCommit(transaction);
+    }
     if (transaction.status === "rolling-back") {
       if (destinationGone) return finalizeRollback(transaction);
       return true;
@@ -803,14 +986,18 @@ function makeTransferCoordinator(options = {}) {
     transaction.timer = null;
     const destination = liveContext(transaction.destinationId);
     if (!destination || destinationGone) return finalizeRollback(transaction);
-    send(destination, "tab-transfer:undo-destination", {
-      token: transaction.token,
-      reason,
-    });
     transaction.undoTimer = setTimer(
       () => finalizeRollback(transaction, true),
       DESTINATION_UNDO_TIMEOUT_MS,
     );
+    if (!send(destination, "tab-transfer:undo-destination", {
+      token: transaction.token,
+      reason,
+    })) {
+      if (transaction.undoTimer !== null) clearTimer(transaction.undoTimer);
+      transaction.undoTimer = null;
+      return finalizeRollback(transaction, true);
+    }
     return true;
   }
 
@@ -891,10 +1078,11 @@ function makeTransferCoordinator(options = {}) {
     let result;
     try {
       result = ackTransferDecision(storePath(), token, required);
-      refreshDecisions();
     } catch (_error) {
       return false;
     }
+    if (result.complete) delete durableDecisions.decisions[token];
+    else durableDecisions.decisions[token] = result.decision;
     const finalizedKey = roleKey(token, role, ownerWindowId);
     orphanAssignments.delete(finalizedKey);
     forcedOrphanRoles.delete(finalizedKey);
