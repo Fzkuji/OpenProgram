@@ -352,7 +352,7 @@ button, input, select, textarea, optgroup {
 .center-single-pane {
   display: contents;
 }
-.center-split-chat {
+.center-split-primary {
   display: flex;
   flex: 0 0 auto;
   min-width: 360px;
@@ -369,7 +369,7 @@ button, input, select, textarea, optgroup {
   outline: 2px solid var(--accent-blue);
   outline-offset: -2px;
 }
-.center-split-web {
+.center-split-secondary {
   display: flex;
   flex: 1;
   min-width: 480px;

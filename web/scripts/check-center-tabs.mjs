@@ -71,7 +71,7 @@ assert.doesNotMatch(
 );
 assert.match(
   strip,
-  /function onTabClick[\s\S]*tab\.kind === "session"[\s\S]*router\.push\("\/chat"\)/,
+  /Active center-tab focus[\s\S]*useEffect\(\(\) => \{[\s\S]*activateSession\(tab\);[\s\S]*\}, \[activeId\]\);/,
 );
 assert.match(strip, /function onOpenNewTab[\s\S]*openNewTabPage\(\)[\s\S]*router\.push\("\/chat"\)/);
 assert.match(strip, /onClick=\{onOpenNewTab\}/);
@@ -133,9 +133,9 @@ assert.match(
   desktopBridge,
   /openWebTab\(d\.url\);[\s\S]*showCenterSurface\(\);/,
 );
-assert.match(appShell, /showChat && activeKind === "file"/);
-assert.match(appShell, /showChat && activeKind === "web"/);
-assert.match(appShell, /showChat && activeKind === "ntp"/);
+assert.match(appShell, /tab\.kind === "file"[\s\S]*?<FileTabPane/);
+assert.match(appShell, /tab\.kind === "web"[\s\S]*?<WebTabPane/);
+assert.match(appShell, /tab\.kind === "ntp"[\s\S]*?<NewTabPage/);
 const ensureIndex = webTabPane.indexOf("ensureWebView(bridge, tabId, viewUrlRef.current)");
 const navigateIndex = webTabPane.indexOf("bridge.webTab.navigate(tabId, viewUrlRef.current)");
 const showIndex = webTabPane.indexOf("bridge.webTab.show(tabId)");

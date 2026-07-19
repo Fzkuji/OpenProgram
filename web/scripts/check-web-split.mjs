@@ -43,6 +43,10 @@ const {
   setWebTabReady,
   waitForWebTabReady,
 } = await import("../lib/desktop-bridge.ts");
+const {
+  focusCenterTabGroupMember,
+  resolveCenterTabPanes,
+} = await import("../lib/state/center-tab-groups.ts");
 
 assert.equal(SPLIT_CHAT_MIN_WIDTH, 360);
 assert.equal(SPLIT_WEB_MIN_WIDTH, 480);
@@ -65,6 +69,58 @@ assert.equal(
   "restoring space must recompute from the preferred ratio",
 );
 assert.equal(isSplitLayoutAvailable(463), false);
+
+const paneTabs = [
+  { id: "s:a", kind: "session", title: "A", sessionId: "a" },
+  { id: "s:b", kind: "session", title: "B", sessionId: "b" },
+  { id: "w:one", kind: "web", title: "One", url: "https://one.test/" },
+  { id: "w:two", kind: "web", title: "Two", url: "https://two.test/" },
+];
+const sessionPair = {
+  id: "g:sessions",
+  memberIds: ["s:a", "s:b"],
+  visibleIds: ["s:a", "s:b"],
+  focusedId: "s:b",
+};
+const sessionPanes = resolveCenterTabPanes(sessionPair, paneTabs, "s:b");
+assert.equal(sessionPanes.length, 1, "two sessions share the singleton chat pane");
+assert.equal(sessionPanes[0].kind, "session");
+assert.equal(sessionPanes[0].activeTabId, "s:b");
+
+const sessionWebPanes = resolveCenterTabPanes({
+  ...sessionPair,
+  memberIds: ["s:a", "w:one"],
+  visibleIds: ["s:a", "w:one"],
+  focusedId: "w:one",
+}, paneTabs, "w:one");
+assert.deepEqual(sessionWebPanes.map((pane) => pane.kind), ["session", "tab"]);
+
+const webPairPanes = resolveCenterTabPanes({
+  id: "g:webs",
+  memberIds: ["w:one", "w:two"],
+  visibleIds: ["w:one", "w:two"],
+  focusedId: "w:two",
+}, paneTabs, "w:two");
+assert.deepEqual(webPairPanes.map((pane) => pane.tabId), ["w:one", "w:two"]);
+
+const hiddenThird = focusCenterTabGroupMember({
+  tabIds: paneTabs.map((tab) => tab.id),
+  groups: [{
+    id: "g:hidden",
+    memberIds: ["s:a", "w:one", "w:two"],
+    visibleIds: ["s:a", "w:one"],
+    focusedId: "s:a",
+  }],
+}, "g:hidden", "w:two").groups[0];
+const hiddenThirdPanes = resolveCenterTabPanes(hiddenThird, paneTabs, "w:two");
+assert.equal(hiddenThirdPanes.length <= 2, true);
+assert.equal(hiddenThirdPanes.some((pane) => pane.tabId === "w:two"), true);
+const narrowPanes = resolveCenterTabPanes(
+  undefined,
+  paneTabs,
+  hiddenThird.focusedId,
+);
+assert.deepEqual(narrowPanes, [{ key: "w:two", kind: "tab", tabId: "w:two" }]);
 
 function createTimingHarness() {
   let nextId = 1;
@@ -289,8 +345,16 @@ assert.doesNotMatch(
   "webtab.command must not unconditionally navigate a session route to /chat",
 );
 
-assert.match(appShellSource, /splitWebTabId/);
 assert.match(appShellSource, /splitRatio/);
+assert.match(
+  appShellSource,
+  /findCenterTabGroup,[\s\S]*?resolveCenterTabPanes/,
+  "AppShell must use the shared group and pane resolver",
+);
+assert.match(appShellSource, /const tabs = useCenterTabs\(\(s\) => s\.tabs\);/);
+assert.match(appShellSource, /const groups = useCenterTabs\(\(s\) => s\.groups\);/);
+assert.match(appShellSource, /const activeId = useCenterTabs\(\(s\) => s\.activeId\);/);
+assert.match(appShellSource, /const activeGroup = activeId[\s\S]*?findCenterTabGroup\(groups, activeId\)/);
 assert.match(
   appShellSource,
   /const splitAvailable = isSplitLayoutAvailable\(centerBodyWidth\);/,
@@ -298,8 +362,23 @@ assert.match(
 );
 assert.match(
   appShellSource,
-  /const showSplit =\s*isDesktop && activeKind === "session" && !!splitTab && splitAvailable;/,
+  /const compoundPanes = resolveCenterTabPanes\(activeGroup, tabs, activeId\);/,
 );
+assert.match(
+  appShellSource,
+  /const focusedPanes = resolveCenterTabPanes\([\s\S]*?undefined,[\s\S]*?tabs,[\s\S]*?activeGroup\?\.focusedId \?\? activeId/,
+  "narrow layout must resolve only the focused member",
+);
+assert.match(
+  appShellSource,
+  /const panes =\s*isDesktop && activeGroup && splitAvailable\s*\? compoundPanes\s*:\s*focusedPanes;/,
+);
+assert.match(
+  appShellSource,
+  /const showDivider = panes\.length === 2;/,
+  "divider follows rendered panes, not visible member count",
+);
+assert.doesNotMatch(appShellSource, /visibleTabs\.length === 2/);
 assert.equal(
   appShellSource.match(/<PageShell page="chat" \/>/g)?.length,
   1,
@@ -307,11 +386,14 @@ assert.equal(
 );
 assert.match(
   appShellSource,
-  /\{showSplit \? \([\s\S]*?<WebTabPane[\s\S]*?tabId=\{splitTab\.id\}[\s\S]*?url=\{splitTab\.url \?\? ""\}[\s\S]*?\) : null\}/,
+  /const sessionPaneIndex = panes\.findIndex\(\(pane\) => pane\.kind === "session"\);/,
 );
-assert.match(appShellSource, /"center-split-chat"/);
+assert.match(appShellSource, /panes\.map\(\(pane, index\) =>/);
+assert.match(appShellSource, /if \(pane\.kind === "session"\) return null;/);
+assert.match(appShellSource, /tab\.kind === "web"[\s\S]*?<WebTabPane/);
+assert.match(appShellSource, /"center-split-primary"/);
 assert.match(appShellSource, /className="center-split-divider"/);
-assert.match(appShellSource, /className="center-split-web"/);
+assert.match(appShellSource, /"center-split-secondary"/);
 assert.match(appShellSource, /setDesktopSplitLayoutAvailable/);
 assert.match(appShellSource, /clampSplitRatioForWidth/);
 assert.match(appShellSource, /const effectiveSplitRatio = clampSplitRatioForWidth/);
@@ -361,6 +443,26 @@ assert.match(appShellSource, /aria-orientation="vertical"/);
 assert.match(appShellSource, /"ArrowLeft"/);
 assert.match(appShellSource, /"ArrowRight"/);
 assert.match(appShellSource, /0\.02/);
+assert.match(appShellSource, /sessionStore\.setCurrentConv\(sid\);/);
+assert.match(appShellSource, /sessionStore\.setCurrentDraft\(active\.sessionId\);/);
+
+const activeFocusEffect = tabStripSource.slice(
+  tabStripSource.indexOf("// Active center-tab focus"),
+  tabStripSource.indexOf("function onTabClick"),
+);
+assert.match(activeFocusEffect, /useEffect\(\(\) =>/);
+assert.match(activeFocusEffect, /activateSession\(tab\);/);
+assert.match(activeFocusEffect, /\[activeId\]/);
+const onTabClickSource = tabStripSource.slice(
+  tabStripSource.indexOf("function onTabClick"),
+  tabStripSource.indexOf("function onOpenNewTab"),
+);
+assert.doesNotMatch(onTabClickSource, /activateSession/);
+const finishCloseSource = tabStripSource.slice(
+  tabStripSource.indexOf("function finishClose"),
+  tabStripSource.indexOf("function labelOf"),
+);
+assert.doesNotMatch(finishCloseSource, /activateSession/);
 
 assert.match(webTabPaneSource, /text\("Open split view", "打开分屏"\)/);
 assert.match(webTabPaneSource, /text\("Exit split view", "退出分屏"\)/);
@@ -386,8 +488,8 @@ assert.match(tabStripSource, /data-split-pinned=\{splitPinned \|\| undefined\}/)
 assert.match(tabStripSource, /active=\{tab\.id === activeId\}/);
 assert.match(tabsCssSource, /\[data-split-pinned="true"\]/);
 assert.match(baseCssSource, /\.center-split-divider\s*\{[^}]*width:\s*6px;/s);
-assert.match(baseCssSource, /\.center-split-chat\s*\{[^}]*min-width:\s*360px;/s);
-assert.match(baseCssSource, /\.center-split-web\s*\{[^}]*min-width:\s*480px;/s);
+assert.match(baseCssSource, /\.center-split-primary\s*\{[^}]*min-width:\s*360px;/s);
+assert.match(baseCssSource, /\.center-split-secondary\s*\{[^}]*min-width:\s*480px;/s);
 assert.match(webTabPaneSource, /setWebTabReady/);
 assert.doesNotMatch(
   webTabPaneSource,

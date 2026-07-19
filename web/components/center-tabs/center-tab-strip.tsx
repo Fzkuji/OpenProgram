@@ -195,10 +195,20 @@ export function CenterTabStrip() {
     }
   }
 
+  // Active center-tab focus is the single session-navigation trigger. Store
+  // imports, pointer clicks, and close fallback all converge on activeId.
+  useEffect(() => {
+    const tab = useCenterTabs.getState().tabs.find(
+      (candidate) => candidate.id === activeId,
+    );
+    if (tab?.kind === "session") activateSession(tab);
+    // Route changes are results of activation, not new activation requests.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
   function onTabClick(tab: CenterTab) {
     setActive(tab.id);
-    if (tab.kind === "session") activateSession(tab);
-    else if (!isChatRoute(pathname)) router.push("/chat");
+    if (tab.kind !== "session" && !isChatRoute(pathname)) router.push("/chat");
   }
 
   function onOpenNewTab() {
@@ -242,13 +252,6 @@ export function CenterTabStrip() {
         tab.sessionId,
       );
       void deleteAttachments(tab.sessionId);
-    }
-    // Closing the active tab hands focus to a neighbor; if that
-    // neighbor is a session tab, bring the chat surface to it.
-    const s = useCenterTabs.getState();
-    const next = s.tabs.find((x) => x.id === s.activeId);
-    if (next && next.kind === "session" && next.id !== tab.id) {
-      activateSession(next);
     }
   }
 

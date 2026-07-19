@@ -12,6 +12,10 @@ import { NewTabPage } from "./center-tabs/new-tab-page";
 import { WebTabPane } from "./center-tabs/web-tab-pane";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
+  findCenterTabGroup,
+  resolveCenterTabPanes,
+} from "@/lib/state/center-tab-groups";
+import {
   desktopBridge,
   installDesktopMenuHandlers,
   setDesktopSplitLayoutAvailable,
@@ -456,16 +460,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Center tab container — which pane the center column shows. The
   // chat surface is a SINGLETON: session tabs merely reveal it (it
   // stays mounted, display:none, under file / new-tab panes).
-  const activeTab = useCenterTabs((s) =>
-    s.tabs.find((t) => t.id === s.activeId),
-  );
+  const tabs = useCenterTabs((s) => s.tabs);
+  const groups = useCenterTabs((s) => s.groups);
+  const activeId = useCenterTabs((s) => s.activeId);
+  const activeTab = tabs.find((tab) => tab.id === activeId);
   const activeKind = activeTab?.kind ?? "session";
-  const splitWebTabId = useCenterTabs((s) => s.splitWebTabId);
+  const activeGroup = activeId
+    ? findCenterTabGroup(groups, activeId)
+    : undefined;
   const splitRatio = useCenterTabs((s) => s.splitRatio);
   const setSplitRatio = useCenterTabs((s) => s.setSplitRatio);
-  const splitTab = useCenterTabs((s) =>
-    s.tabs.find((tab) => tab.id === splitWebTabId && tab.kind === "web"),
-  );
   const centerBodyRef = useRef<HTMLDivElement>(null);
   const [centerBodyWidth, setCenterBodyWidth] = useState(0);
   useEffect(() => {
@@ -495,8 +499,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     splitRatio,
     centerBodyWidth,
   );
-  const showSplit =
-    isDesktop && activeKind === "session" && !!splitTab && splitAvailable;
+  const compoundPanes = resolveCenterTabPanes(activeGroup, tabs, activeId);
+  const focusedPanes = resolveCenterTabPanes(
+    undefined,
+    tabs,
+    activeGroup?.focusedId ?? activeId,
+  );
+  const panes =
+    isDesktop && activeGroup && splitAvailable
+      ? compoundPanes
+      : focusedPanes;
+  const showDivider = panes.length === 2;
+  const sessionPaneIndex = panes.findIndex((pane) => pane.kind === "session");
   useEffect(() => {
     setDesktopSplitLayoutAvailable(
       isDesktop && activeKind === "session" && splitAvailable,
@@ -507,6 +521,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const rect = centerBodyRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0) return;
     setSplitRatio(clampSplitRatioForWidth(ratio, rect.width));
+  }
+
+  function centerPaneClassName(index: number) {
+    if (!showDivider) return "center-single-pane";
+    return index === 0 ? "center-split-primary" : "center-split-secondary";
+  }
+
+  function centerPaneStyle(index: number) {
+    if (!showDivider) return undefined;
+    return index === 0
+      ? { order: 0, width: `${effectiveSplitRatio * 100}%` }
+      : { order: 2 };
+  }
+
+  function renderTabPane(tabId: string) {
+    const tab = tabs.find((candidate) => candidate.id === tabId);
+    if (!tab) return null;
+    if (tab.kind === "file" && tab.projectId && tab.path) {
+      return <FileTabPane projectId={tab.projectId} path={tab.path} />;
+    }
+    if (tab.kind === "web") {
+      return <WebTabPane tabId={tab.id} url={tab.url ?? ""} />;
+    }
+    if (tab.kind === "ntp") return <NewTabPage />;
+    return null;
   }
 
   const showChat = isChatRoute(pathname);
@@ -556,71 +595,68 @@ export function AppShell({ children }: { children: React.ReactNode }) {
              alive across session switches AND non-session tabs. This
              is what makes the WS + DOM + right sidebar state persist. */}
           <div
-            className={showSplit ? "center-split-chat" : "center-single-pane"}
+            className={
+              sessionPaneIndex < 0
+                ? "center-single-pane"
+                : centerPaneClassName(sessionPaneIndex)
+            }
             style={
-              activeKind !== "session"
+              sessionPaneIndex < 0
                 ? { display: "none" }
-                : showSplit
-                  ? { width: `${effectiveSplitRatio * 100}%` }
-                  : undefined
+                : centerPaneStyle(sessionPaneIndex)
             }
           >
             <PageShell page="chat" />
           </div>
-          {showSplit ? (
-            <>
-              <div
-                className="center-split-divider"
-                role="separator"
-                aria-orientation="vertical"
-                aria-valuenow={Math.round(effectiveSplitRatio * 100)}
-                tabIndex={0}
-                onPointerDown={(e) => {
-                  if (e.button !== 0) return;
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  e.preventDefault();
-                }}
-                onPointerMove={(e) => {
-                  if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-                  const rect = centerBodyRef.current?.getBoundingClientRect();
-                  if (!rect || rect.width <= 0) return;
-                  updateSplitRatio((e.clientX - rect.left) / rect.width);
-                }}
-                onPointerUp={(e) => {
-                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                    e.currentTarget.releasePointerCapture(e.pointerId);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-                  e.preventDefault();
-                  updateSplitRatio(
-                    effectiveSplitRatio + (e.key === "ArrowLeft" ? -0.02 : 0.02),
-                  );
-                }}
-              />
-              <div className="center-split-web">
-                <WebTabPane tabId={splitTab.id} url={splitTab.url ?? ""} />
-              </div>
-            </>
-          ) : null}
-          {showChat && activeKind === "file" && activeTab?.projectId && activeTab?.path ? (
-            <FileTabPane
-              key={activeTab.id}
-              projectId={activeTab.projectId}
-              path={activeTab.path}
+          {showChat && showDivider ? (
+            <div
+              className="center-split-divider"
+              style={{ order: 1 }}
+              role="separator"
+              aria-orientation="vertical"
+              aria-valuenow={Math.round(effectiveSplitRatio * 100)}
+              tabIndex={0}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                e.currentTarget.setPointerCapture(e.pointerId);
+                e.preventDefault();
+              }}
+              onPointerMove={(e) => {
+                if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                const rect = centerBodyRef.current?.getBoundingClientRect();
+                if (!rect || rect.width <= 0) return;
+                updateSplitRatio((e.clientX - rect.left) / rect.width);
+              }}
+              onPointerUp={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                e.preventDefault();
+                updateSplitRatio(
+                  effectiveSplitRatio + (e.key === "ArrowLeft" ? -0.02 : 0.02),
+                );
+              }}
             />
           ) : null}
-          {/* url 为空也要挂载：白屏竞态会把 store url 冲空，面板自己能
-             从 tab id 找回地址（见 web-tab-pane）；不挂载就只剩白屏。 */}
-          {showChat && activeKind === "web" && activeTab ? (
-            <WebTabPane
-              key={activeTab.id}
-              tabId={activeTab.id}
-              url={activeTab.url ?? ""}
-            />
-          ) : null}
-          {showChat && activeKind === "ntp" && activeTab ? <NewTabPage key={activeTab.id} /> : null}
+          {showChat
+            ? panes.map((pane, index) => {
+                if (pane.kind === "session") return null;
+                const content = renderTabPane(pane.tabId);
+                if (!content) return null;
+                return (
+                  <div
+                    key={pane.key}
+                    className={centerPaneClassName(index)}
+                    style={centerPaneStyle(index)}
+                  >
+                    {content}
+                  </div>
+                );
+              })
+            : null}
         </div>
       </div>
       {/* Non-chat routes render their own page content via the router. */}
