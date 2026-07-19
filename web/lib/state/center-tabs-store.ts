@@ -127,6 +127,12 @@ function hostnameOf(url: string): string {
 }
 
 const LS_KEY = "centerTabs";
+const SPLIT_STORAGE_KEY = "openprogram.webSplit";
+const DEFAULT_SPLIT_RATIO = 0.44;
+const MIN_SPLIT_RATIO = 0.30;
+const MAX_SPLIT_RATIO = 0.70;
+const clampSplitRatio = (ratio: number) =>
+  Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, ratio));
 
 // A missing non-local tab normally means a legacy caller that predates the
 // center-tab UI, so its ACK is still allowed to activate the session. Preserve
@@ -138,6 +144,11 @@ const closedSessionAckTombstones = new Set<string>();
 interface Persisted {
   tabs: CenterTab[];
   activeId: string | null;
+}
+
+interface PersistedSplit {
+  tabId: string | null;
+  ratio: number;
 }
 
 function readPersisted(): Persisted {
@@ -177,9 +188,44 @@ function persist(s: { tabs: CenterTab[]; activeId: string | null }): void {
   }
 }
 
+function readPersistedSplit(tabs: CenterTab[]): PersistedSplit {
+  if (typeof window === "undefined") {
+    return { tabId: null, ratio: DEFAULT_SPLIT_RATIO };
+  }
+  try {
+    const raw = localStorage.getItem(SPLIT_STORAGE_KEY);
+    if (!raw) return { tabId: null, ratio: DEFAULT_SPLIT_RATIO };
+    const parsed = JSON.parse(raw) as Partial<PersistedSplit>;
+    return {
+      tabId:
+        typeof parsed.tabId === "string" &&
+        tabs.some((tab) => tab.id === parsed.tabId && tab.kind === "web")
+          ? parsed.tabId
+          : null,
+      ratio:
+        typeof parsed.ratio === "number" && Number.isFinite(parsed.ratio)
+          ? clampSplitRatio(parsed.ratio)
+          : DEFAULT_SPLIT_RATIO,
+    };
+  } catch {
+    return { tabId: null, ratio: DEFAULT_SPLIT_RATIO };
+  }
+}
+
+function persistSplit(s: PersistedSplit): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(s));
+  } catch {
+    /* quota / private mode — split state still works, just don't restore */
+  }
+}
+
 interface CenterTabsState {
   tabs: CenterTab[];
   activeId: string | null;
+  splitWebTabId: string | null;
+  splitRatio: number;
   setActive: (id: string) => void;
   /** Focus-or-create the tab for a live session. Browser semantics:
    *  if the ACTIVE tab is the draft chat or the new-tab page, the
@@ -197,6 +243,10 @@ interface CenterTabsState {
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
   openWebTab: (url: string) => void;
+  /** Appends or reuses a web tab for the split pane without changing focus. */
+  openWebTabInSplit: (url: string) => string;
+  setSplitWebTab: (id: string | null) => void;
+  setSplitRatio: (ratio: number) => void;
   /** Update a web tab's url/title in place (address-bar navigation,
    *  later title reporting from the sidecar browser). Id stays fixed. */
   updateWebTab: (id: string, patch: { url?: string; title?: string }) => void;
@@ -219,6 +269,7 @@ interface CenterTabsState {
 
 export const useCenterTabs = create<CenterTabsState>((set) => {
   const initial = readPersisted();
+  const initialSplit = readPersistedSplit(initial.tabs);
 
   /** Focus tab `id` if present; otherwise insert `make()` — replacing
    *  the active tab when it's a New-tab page or one of `replaceable`
@@ -263,6 +314,8 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
   return {
     tabs: initial.tabs,
     activeId: initial.activeId,
+    splitWebTabId: initialSplit.tabId,
+    splitRatio: initialSplit.ratio,
 
     setActive: (id) =>
       set((s) => {
@@ -380,6 +433,38 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         return next;
       }),
 
+    openWebTabInSplit: (url) => {
+      const id = webTabId(url);
+      set((s) => {
+        const tabs = s.tabs.some((tab) => tab.id === id)
+          ? s.tabs
+          : [...s.tabs, { id, kind: "web", title: hostnameOf(url), url }];
+        persist({ tabs, activeId: s.activeId });
+        persistSplit({ tabId: id, ratio: s.splitRatio });
+        return { tabs, splitWebTabId: id };
+      });
+      return id;
+    },
+
+    setSplitWebTab: (id) =>
+      set((s) => {
+        const tabId =
+          id && s.tabs.some((tab) => tab.id === id && tab.kind === "web")
+            ? id
+            : null;
+        if (tabId === s.splitWebTabId) return {};
+        persistSplit({ tabId, ratio: s.splitRatio });
+        return { splitWebTabId: tabId };
+      }),
+
+    setSplitRatio: (ratio) =>
+      set((s) => {
+        const splitRatio = clampSplitRatio(ratio);
+        if (splitRatio === s.splitRatio) return {};
+        persistSplit({ tabId: s.splitWebTabId, ratio: splitRatio });
+        return { splitRatio };
+      }),
+
     updateWebTab: (id, patch) =>
       set((s) => {
         const tab = s.tabs.find((t) => t.id === id && t.kind === "web");
@@ -477,9 +562,13 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           tabs = [ntp];
           activeId = ntp.id;
         }
+        const splitWebTabId = s.splitWebTabId === id ? null : s.splitWebTabId;
         const next = { tabs, activeId };
         persist(next);
-        return next;
+        if (splitWebTabId !== s.splitWebTabId) {
+          persistSplit({ tabId: splitWebTabId, ratio: s.splitRatio });
+        }
+        return { ...next, splitWebTabId };
       }),
 
     renameSessionTab: (sessionId, title) =>
