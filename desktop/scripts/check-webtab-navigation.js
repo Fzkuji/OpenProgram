@@ -2031,6 +2031,71 @@ async function checkRejectCancelExpiryDetachAndClaim() {
   assert.equal(hooks.tabTransfers.cancel(sourceCtx, detachToken), true);
   assert.equal(detachedCtx.win.closeCalls, 1);
   assert.equal(hooks.tabTransfers.claimPending(detachedCtx, detachedWindowId), null);
+
+  // Main registers no did-finish-load transfer delivery; the renderer must
+  // pull its pending token with claim-pending after hydration.
+  assert.ok(!source.includes("did-finish-load"));
+
+  // Committed detach path: the hidden window shows only inside the
+  // source-success commit branch, and a committed token can no longer be
+  // claimed after renderer reload.
+  const commitDetachToken = prepareThroughIpc(
+    sourceWin,
+    webTransferPayload(["reject-web"]),
+  );
+  const commitDetachedId = await hooks.tabTransfers.detach(sourceCtx, commitDetachToken);
+  const commitDetachedCtx = hooks.windows.get(commitDetachedId);
+  assert.equal(
+    hooks.tabTransfers.claimPending(commitDetachedCtx, commitDetachedId),
+    commitDetachToken,
+  );
+  assert.ok(hooks.tabTransfers.inspect(commitDetachedCtx, commitDetachToken));
+  assert.equal(
+    hooks.tabTransfers.journalOpened(
+      commitDetachedCtx,
+      commitDetachToken,
+      "destination",
+    ),
+    true,
+  );
+  assert.ok(
+    hooks.tabTransfers.accept(
+      commitDetachedCtx,
+      commitDetachToken,
+      { kind: "strip-end" },
+    ),
+  );
+  assert.equal(
+    hooks.tabTransfers.destinationReady(commitDetachedCtx, commitDetachToken, true),
+    true,
+  );
+  assert.equal(commitDetachedCtx.win.shown, false);
+  assert.equal(hooks.tabTransfers.journalOpened(sourceCtx, commitDetachToken, "source"), true);
+  assert.equal(
+    hooks.tabTransfers.sourceRemoved(
+      sourceCtx,
+      commitDetachToken,
+      { ok: true, sourceEmpty: false },
+    ),
+    true,
+  );
+  assert.equal(commitDetachedCtx.win.shown, true);
+  assert.equal(
+    hooks.tabTransfers.claimPending(commitDetachedCtx, commitDetachedId),
+    null,
+  );
+  assert.equal(
+    hooks.tabTransfers.journalFinalized(sourceCtx, commitDetachToken, "source"),
+    true,
+  );
+  assert.equal(
+    hooks.tabTransfers.journalFinalized(
+      commitDetachedCtx,
+      commitDetachToken,
+      "destination",
+    ),
+    true,
+  );
 }
 
 async function checkInspectedDestinationCloseClearsPreparedToken() {

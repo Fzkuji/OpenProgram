@@ -2660,4 +2660,156 @@ assert.doesNotMatch(
   );
 }
 
+// ---------------------------------------------------------------- Task 7:
+// renderer startup recovery order — journal recovery, terminal/orphan acks,
+// native reconciliation, then claimPending for a detached window.
+
+// Fresh detached claim: pendingTerminal is consulted before claimPending,
+// reconcile runs between them, and the claimed token stages at strip end.
+{
+  plainTabsModule.replaceCenterTabsPayload(t5Base, { persist: true });
+  plainSessionModule.applySessionTransfer(emptySessionSnapshot, { persist: true });
+  const { bridge, calls } = makeTransferBridge(t5Payload, {
+    claimPending: async (windowId) => {
+      calls.push(["claimPending", windowId]);
+      return "t7-claim";
+    },
+  });
+  let reconciledAt = -1;
+  await bridgeModule.recoverPendingTabTransfers(bridge, () => {
+    reconciledAt = calls.length;
+  });
+  const order = calls.map(([name]) => name);
+  const terminalIndex = order.indexOf("pendingTerminal");
+  const claimIndex = order.indexOf("claimPending");
+  assert.ok(terminalIndex >= 0 && claimIndex > terminalIndex);
+  assert.ok(
+    reconciledAt > terminalIndex && reconciledAt <= claimIndex,
+    "native reconciliation must run after terminal cleanup, before claim",
+  );
+  assert.ok(plainTabs.getState().tabs.some((tab) => tab.id === "w:moved"));
+  assert.ok(bridgeModule.acceptedTransfers.has("t7-claim"));
+  // startup staging leaves the destination journal pending until commit
+  assert.ok(readTransferJournal("main").entries["t7-claim"]);
+  await bridgeModule.handleTransferCommitted(bridge, {
+    token: "t7-claim",
+    sourceId: "source",
+    destinationId: "main",
+  });
+  plainTabsModule.replaceCenterTabsPayload(t5Base, { persist: true });
+}
+
+// A token already represented by a recovered journal resumes idempotently:
+// no second accept/insert, and its live pre-commit journal defers the
+// journalFinalized ack to the normal commit/rollback path.
+{
+  plainTabsModule.replaceCenterTabsPayload(t5Base, { persist: true });
+  const resumePayload = {
+    ...t5Payload,
+    tabs: [{ id: "w:resume", kind: "web", title: "Resume", url: "https://resume.test/" }],
+  };
+  const validated = plainTabsModule.validateTransferredTabs(
+    resumePayload,
+    { kind: "strip-end" },
+  );
+  assert.equal(validated.ok, true);
+  assert.equal(writeTransferJournal({
+    ...journalEntry("t7-resume"),
+    payload: resumePayload,
+    beforeCenterTabs: plainTabsModule.snapshotCenterTabsPayload(),
+    afterCenterTabs: validated.after,
+    beforeSession: plainSessionModule.snapshotSessionTransfer([]),
+    afterSession: plainSessionModule.snapshotSessionTransfer([]),
+  }, "main"), true);
+  const { bridge, calls } = makeTransferBridge(resumePayload, {
+    status: async () => ({
+      status: "destination-staged",
+      sourceId: "source",
+      destinationId: "main",
+    }),
+    claimPending: async () => "t7-resume",
+    pendingTerminal: async () => [{
+      token: "t7-resume",
+      status: "committed",
+      role: "destination",
+      windowId: "main",
+      orphaned: false,
+    }],
+  });
+  await bridgeModule.recoverPendingTabTransfers(bridge);
+  assert.equal(calls.some(([name]) => name === "accept"), false);
+  assert.equal(
+    plainTabs.getState().tabs.filter((tab) => tab.id === "w:resume").length,
+    1,
+  );
+  assert.ok(bridgeModule.acceptedTransfers.has("t7-resume"));
+  assert.equal(
+    calls.some(([name]) => name === "journalFinalized"),
+    false,
+    "a live pre-commit journal must not be acked during startup",
+  );
+  await bridgeModule.handleTransferCommitted(bridge, {
+    token: "t7-resume",
+    sourceId: "source",
+    destinationId: "main",
+  });
+  plainTabsModule.replaceCenterTabsPayload(t5Base, { persist: true });
+}
+
+// Own terminal role whose journal was cleared before the crash: idempotent
+// journalFinalized ack, no state change.
+{
+  const { bridge, calls } = makeTransferBridge(t5Payload, {
+    pendingTerminal: async () => [{
+      token: "t7-ack",
+      status: "committed",
+      role: "source",
+      windowId: "main",
+      orphaned: false,
+    }],
+  });
+  const beforeBytes = values.get("centerTabs:main");
+  await bridgeModule.recoverPendingTabTransfers(bridge);
+  assert.deepEqual(
+    calls.find(([name]) => name === "journalFinalized"),
+    ["journalFinalized", "t7-ack", "source", "main"],
+  );
+  assert.equal(values.get("centerTabs:main"), beforeBytes);
+}
+
+// Orphan cleanup: apply the durable decision to the destroyed owner's keyed
+// storage, delete that keyed journal, then ack the orphan role.
+{
+  const orphanEntry = {
+    ...journalEntry("t7-orphan"),
+    role: "destination",
+  };
+  assert.equal(writeTransferJournal(orphanEntry, "win-orphan"), true);
+  const { bridge, calls } = makeTransferBridge(t5Payload, {
+    pendingTerminal: async () => [{
+      token: "t7-orphan",
+      status: "committed",
+      role: "destination",
+      windowId: "win-orphan",
+      orphaned: true,
+    }],
+  });
+  await bridgeModule.recoverPendingTabTransfers(bridge);
+  assert.deepEqual(
+    JSON.parse(values.get("centerTabs:win-orphan")),
+    orphanEntry.afterCenterTabs,
+  );
+  assert.equal(
+    JSON.parse(values.get("openprogram.sessionDraftState:win-orphan"))
+      .composerDrafts.local_one,
+    orphanEntry.afterSession.composerDrafts.local_one,
+  );
+  assert.deepEqual(readTransferJournal("win-orphan"), { version: 1, entries: {} });
+  assert.deepEqual(
+    calls.find(([name]) => name === "journalFinalized"),
+    ["journalFinalized", "t7-orphan", "destination", "win-orphan"],
+  );
+  pendingProjection.unregisterPendingTransfer("t7-orphan", "win-orphan");
+}
+
 console.log("web-split checks passed");

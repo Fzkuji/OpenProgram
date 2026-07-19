@@ -42,8 +42,10 @@ import {
   finalizeTransferJournal,
   readTransferJournal,
   rebaseSessionSnapshot,
+  recoverTransferJournalEntry,
   writeTransferJournal,
 } from "@/lib/tab-transfer-journal";
+import { sessionDraftStorageKey } from "@/lib/session-draft-persistence";
 import type {
   ChatTransferState,
   DesktopTransferPayload,
@@ -51,6 +53,7 @@ import type {
   SessionTransferSnapshot,
   TabDropPlacement,
   TransferJournalEntry,
+  TransferMainStatus,
   TransferRecoveryHandlers,
 } from "@/lib/tab-transfer-journal";
 import { dragCoordinator } from "@/lib/tab-drag-coordinator";
@@ -491,13 +494,19 @@ export function installDesktopMenuHandlers(): void {
       .then((targetId) => sendWebTabResult(ws, d.req_id!, active, targetId))
       .catch(() => sendWebTabResult(ws, d.req_id!, active, null));
   });
-  useCenterTabs.subscribe((s) => {
-    destroyStaleWebViews(
-      bridge,
-      s.tabs.map((t) => t.id),
-    );
-  });
   installTabTransferHandlers(bridge);
+  // Fixed startup order (multiwindow plan Task 7): committed storage is
+  // already hydrated by store init, listeners are installed above, then
+  // journal recovery → terminal/orphan acks → ordinary native-view
+  // reconciliation → claimPending for a detached window's pending token.
+  void recoverPendingTabTransfers(bridge, () => {
+    useCenterTabs.subscribe((s) => {
+      destroyStaleWebViews(
+        bridge,
+        s.tabs.map((t) => t.id),
+      );
+    });
+  });
 }
 
 // ------------------------------------------------------------- tab transfer
@@ -1088,4 +1097,97 @@ export function installTabTransferHandlers(bridge: DesktopBridge): () => void {
     }
     for (const unsubscribe of subscriptions) unsubscribe();
   };
+}
+
+// --------------------------------------------------------- startup recovery
+
+/** Finalize a destroyed participant's keyed journal on its behalf: apply the
+ *  durable decision's outcome directly to the owner window's normal storage
+ *  keys, then delete that keyed journal. Returns false when nothing durable
+ *  could be written (the ack must then wait for the next recovery pass). */
+export function finalizeOrphanTransferJournal(
+  token: string,
+  status: "committed" | "rolled-back",
+  ownerWindowId: string,
+): boolean {
+  const entry = readTransferJournal(ownerWindowId).entries[token];
+  if (!entry) return true; // journal already cleaned — ack is idempotent
+  const target = status === "committed" ? "after" : "before";
+  const center = target === "after" ? entry.afterCenterTabs : entry.beforeCenterTabs;
+  const session = target === "after" ? entry.afterSession : entry.beforeSession;
+  try {
+    localStorage.setItem(`centerTabs:${ownerWindowId}`, JSON.stringify(center));
+    localStorage.setItem(
+      sessionDraftStorageKey(ownerWindowId),
+      JSON.stringify({
+        version: 1,
+        composerDrafts: session.composerDrafts,
+        composerSettingsBySession: session.composerSettingsBySession,
+        pendingProjectsByChat: session.pendingProjectsByChat,
+        draftChannelChoices: session.draftChannelChoices,
+      }),
+    );
+  } catch {
+    return false;
+  }
+  return deleteTransferJournal(token, ownerWindowId);
+}
+
+/** Renderer startup recovery, in the plan's fixed order: resolve every
+ *  journal entry against main's token status, acknowledge terminal/orphan
+ *  decisions, reconcile ordinary native views, then pull a detached
+ *  window's pending token. */
+export async function recoverPendingTabTransfers(
+  bridge: DesktopBridge,
+  reconcile?: () => void,
+): Promise<void> {
+  const transfer = bridge.tabTransfer;
+  if (!transfer) {
+    reconcile?.();
+    return;
+  }
+  const handlers = transferRecoveryHandlers(bridge);
+  const journaledTokens = new Set(Object.keys(readTransferJournal().entries));
+  for (const token of journaledTokens) {
+    const entry = readTransferJournal().entries[token];
+    if (!entry) continue;
+    let status: TransferMainStatus = "stale";
+    try {
+      const receipt = await transfer.status(token);
+      if (receipt) status = receipt.status as TransferMainStatus;
+    } catch {
+      /* unreachable main — resolve as stale */
+    }
+    recoverTransferJournalEntry(entry, status, handlers);
+  }
+  try {
+    for (const item of await transfer.pendingTerminal(bridge.windowId)) {
+      if (item.orphaned) {
+        if (!finalizeOrphanTransferJournal(item.token, item.status, item.windowId)) {
+          continue;
+        }
+      } else if (readTransferJournal().entries[item.token]) {
+        // Own journal still live (pre-commit): its normal commit/rollback
+        // handler performs the mandatory journalFinalized ack.
+        continue;
+      }
+      // Own role with a cleared journal: journals are deleted only after
+      // their outcome persisted, so committed storage already matches the
+      // decision and the ack is idempotent.
+      await transfer.journalFinalized(item.token, item.role, item.windowId);
+    }
+  } catch {
+    /* decision store unreadable — re-query on the next recovery pass */
+  }
+  reconcile?.();
+  try {
+    const token = await transfer.claimPending(bridge.windowId);
+    if (token && !journaledTokens.has(token)) {
+      await stageIncomingTransfer(bridge, token, { kind: "strip-end" });
+    }
+    // A token already represented by a recovered journal entry resumes
+    // through that entry (idempotent) — staging again would double-insert.
+  } catch {
+    /* main's expiry/rollback closes the hidden window */
+  }
 }
