@@ -27,11 +27,13 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { Bookmark } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { BranchesPanel } from "./branches";
 import { ContextCommitTimeline } from "./context-commit-timeline";
 import { WorktreesPanel } from "./worktrees";
+import { BookmarksPanel } from "./bookmarks-panel";
 import {
   sidebarNavIconClass,
   sidebarNavItemActiveClass,
@@ -58,6 +60,7 @@ const VIEW_HISTORY = "history";
 const VIEW_DETAIL = "detail";
 const VIEW_CONTEXT = "context";
 const VIEW_FILES = "files";
+const VIEW_BOOKMARKS = "bookmarks";
 
 // Right sidebar mirrors the left's default width (288px) so the page
 // loads symmetric. Users can drag-widen the right side for the History
@@ -310,6 +313,22 @@ export function RightSidebar() {
           </span>
           <span className={sidebarNavLabelClass}>{t("right.history")}</span>
         </div>
+        <div
+          className={
+            sidebarNavItemClass + " right-nav-item" +
+            (view === VIEW_BOOKMARKS ? " " + sidebarNavItemActiveClass : "")
+          }
+          data-view={VIEW_BOOKMARKS}
+          onClick={() => onNavClick(VIEW_BOOKMARKS)}
+          role="button"
+          title={text("Bookmarks", "书签")}
+          aria-label={text("Bookmarks", "书签")}
+        >
+          <span className={sidebarNavIconClass}>
+            <Bookmark size={20} aria-hidden="true" />
+          </span>
+          <span className={sidebarNavLabelClass}>{text("Bookmarks", "书签")}</span>
+        </div>
         {/* Context / Executions 的导航按钮不再显示（只在看 History DAG 时
             有意义）；它们的视图 div 保留在下方 view host 里，legacy 的
             rightDock.show("detail"/"context") 仍能切过去。 */}
@@ -333,6 +352,9 @@ export function RightSidebar() {
       </div>
 
       <div className="right-view-host">
+        <div className="right-view" data-view={VIEW_BOOKMARKS}>
+          <BookmarksPanel />
+        </div>
         {/* Files view — the default: a plain project file tree. */}
         <div className="right-view" data-view={VIEW_FILES}>
           {treeProjectId ? (

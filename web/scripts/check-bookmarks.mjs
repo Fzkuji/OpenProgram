@@ -5,8 +5,12 @@ import ts from "typescript";
 const sourcePath = new URL("../lib/bookmarks.ts", import.meta.url);
 const webTabPath = new URL("../components/center-tabs/web-tab-pane.tsx", import.meta.url);
 const newTabPath = new URL("../components/center-tabs/new-tab-page.tsx", import.meta.url);
+const managerPath = new URL("../components/right-sidebar/bookmarks-panel.tsx", import.meta.url);
+const rightSidebarPath = new URL("../components/right-sidebar/right-sidebar.tsx", import.meta.url);
+const rightDockCssPath = new URL("../app/styles/right-dock.css", import.meta.url);
 const packagePath = new URL("../package.json", import.meta.url);
 assert.ok(existsSync(sourcePath), "bookmarks storage module missing");
+assert.ok(existsSync(managerPath), "bookmarks manager missing");
 
 const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
 assert.equal(
@@ -18,11 +22,34 @@ assert.match(packageJson.scripts?.check || "", /check:bookmarks/);
 const source = readFileSync(sourcePath, "utf8");
 const webTab = readFileSync(webTabPath, "utf8");
 const newTab = readFileSync(newTabPath, "utf8");
+const manager = readFileSync(managerPath, "utf8");
+const rightSidebar = readFileSync(rightSidebarPath, "utf8");
+const rightDockCss = readFileSync(rightDockCssPath, "utf8");
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
 assert.match(newTab, /readBookmarks/);
 assert.match(newTab, /removeBookmark/);
+assert.match(manager, /addEventListener\(BOOKMARKS_CHANGE_EVENT,\s*refresh\)/);
+assert.match(manager, /removeEventListener\(BOOKMARKS_CHANGE_EVENT,\s*refresh\)/);
+assert.match(manager, /bookmark\.title\.toLowerCase\(\)\.includes\(needle\)/);
+assert.match(manager, /bookmark\.url\.toLowerCase\(\)\.includes\(needle\)/);
+assert.match(manager, /renameBookmark\(url,\s*draftTitle\)/);
+assert.match(manager, /removeBookmark\(bookmark\.url\)/);
+assert.match(manager, /openWebTabInSplit\(url\)/);
+assert.match(manager, /openWebTab\(bookmark\.url\)/);
+assert.match(manager, /text\("Open in full tab",\s*"在完整标签页中打开"\)/);
+assert.match(manager, /text\("No bookmarks yet",\s*"还没有书签"\)/);
+assert.match(manager, /text\("No matching bookmarks",\s*"没有匹配的书签"\)/);
+assert.match(manager, /aria-label=\{[^}]+\}/);
+assert.match(manager, /title=\{[^}]+\}/);
+assert.match(rightSidebar, /const VIEW_BOOKMARKS = "bookmarks";/);
+assert.match(rightSidebar, /data-view=\{VIEW_BOOKMARKS\}/);
+assert.match(rightSidebar, /<BookmarksPanel \/>/);
+assert.match(
+  rightDockCss,
+  /\.right-sidebar\[data-view="bookmarks"\]\s+\.right-view\[data-view="bookmarks"\]\s*\{\s*display:\s*flex;/,
+);
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
