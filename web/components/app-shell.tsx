@@ -470,16 +470,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const node = centerBodyRef.current;
     if (!node) return;
-    const update = () => setCenterBodyWidth(node.getBoundingClientRect().width);
-    update();
-    const observer = new ResizeObserver(([entry]) =>
-      setCenterBodyWidth(entry.contentRect.width),
-    );
+    let measureFrame: number | null = null;
+    const measure = () => {
+      measureFrame = null;
+      setCenterBodyWidth(node.getBoundingClientRect().width);
+    };
+    const scheduleMeasure = () => {
+      if (measureFrame !== null) cancelAnimationFrame(measureFrame);
+      measureFrame = requestAnimationFrame(measure);
+    };
+    const layoutRoot = node.closest(".app");
+    scheduleMeasure();
+    const observer = new ResizeObserver(scheduleMeasure);
     observer.observe(node);
-    window.addEventListener("resize", update);
+    window.addEventListener("resize", scheduleMeasure);
+    layoutRoot?.addEventListener("transitionend", scheduleMeasure);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", update);
+      window.removeEventListener("resize", scheduleMeasure);
+      layoutRoot?.removeEventListener("transitionend", scheduleMeasure);
+      if (measureFrame !== null) cancelAnimationFrame(measureFrame);
     };
   }, []);
   const splitAvailable = isSplitLayoutAvailable(centerBodyWidth);

@@ -206,13 +206,36 @@ assert.doesNotMatch(
   /if \(effectiveSplitRatio !== splitRatio\) setSplitRatio\(effectiveSplitRatio\);/,
   "container constraints must not overwrite the preferred split ratio",
 );
-assert.match(
-  appShellSource,
-  /new ResizeObserver\(\(\[entry\]\) =>\s*setCenterBodyWidth\(entry\.contentRect\.width\),?\s*\)/,
-  "ResizeObserver must consume the measured center-body width",
+const splitMeasureSource = appShellSource.slice(
+  appShellSource.indexOf("const centerBodyRef"),
+  appShellSource.indexOf("const splitAvailable"),
 );
-assert.match(appShellSource, /window\.addEventListener\("resize", update\)/);
-assert.match(appShellSource, /window\.removeEventListener\("resize", update\)/);
+assert.match(splitMeasureSource, /const scheduleMeasure = \(\) =>/);
+assert.match(splitMeasureSource, /requestAnimationFrame/);
+assert.match(splitMeasureSource, /cancelAnimationFrame/);
+assert.match(
+  splitMeasureSource,
+  /new ResizeObserver\(scheduleMeasure\)/,
+  "ResizeObserver must defer center-body measurement to the next layout frame",
+);
+assert.match(
+  splitMeasureSource,
+  /window\.addEventListener\("resize", scheduleMeasure\)/,
+);
+assert.match(
+  splitMeasureSource,
+  /window\.removeEventListener\("resize", scheduleMeasure\)/,
+);
+assert.match(splitMeasureSource, /node\.closest\("\.app"\)/);
+assert.match(
+  splitMeasureSource,
+  /layoutRoot\?\.addEventListener\("transitionend", scheduleMeasure\)/,
+);
+assert.match(
+  splitMeasureSource,
+  /layoutRoot\?\.removeEventListener\("transitionend", scheduleMeasure\)/,
+);
+assert.doesNotMatch(splitMeasureSource, /setTimeout|setInterval/);
 assert.match(appShellSource, /width: `\$\{effectiveSplitRatio \* 100\}%`/);
 assert.match(appShellSource, /aria-valuenow=\{Math\.round\(effectiveSplitRatio \* 100\)\}/);
 assert.match(appShellSource, /onPointerDown=/);
