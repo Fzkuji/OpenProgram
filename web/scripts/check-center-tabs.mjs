@@ -93,6 +93,11 @@ assert.match(
   "the pinned + separator must share the 49px rail boundary",
 );
 assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.tabsFlow \{[^}]*padding-right: 3px;/s,
+  "the saturated tab flow must end at the 49px rail boundary",
+);
+assert.match(
   desktopBridge,
   /openNewTabPage\(\);[\s\S]*showCenterSurface\(\);/,
 );
