@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "electron .",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
+    "check:tab-transfer-store": "node scripts/check-tab-transfer-store.js",
     "icon:build": "bash scripts/build-icon.sh",
     "icon:check": "bash scripts/check-icon.sh",
     "dist": "npm run icon:build && npm run icon:check && electron-builder --dir"
@@ -20,7 +21,8 @@
     "productName": "OpenProgram",
     "files": [
       "main.js",
-      "preload.js"
+      "preload.js",
+      "tab-transfer-store.js"
     ],
     "directories": {
       "output": "dist",
