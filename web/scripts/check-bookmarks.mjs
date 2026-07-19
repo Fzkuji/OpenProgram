@@ -68,6 +68,12 @@ assert.match(
   rightDockCss,
   /\.bookmark-title-input:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
 );
+// Flat color-block panel: the compact "floating card" wrapper
+// (.right-sidebar-panel with margin/radius/shadow, reverted in
+// 6464cdaa) must not come back — the panel stays full-height,
+// edge-to-edge, no rounded card chrome.
+assert.doesNotMatch(rightDockCss, /right-sidebar-panel/, "floating card wrapper resurfaced");
+assert.doesNotMatch(rightSidebar, /right-sidebar-panel|rounded-(?:lg|xl|2xl|3xl)/, "right sidebar shell must stay flat");
 
 const navMarker = rightSidebar.indexOf("data-view={VIEW_BOOKMARKS}");
 assert.ok(navMarker >= 0, "bookmarks nav missing");
