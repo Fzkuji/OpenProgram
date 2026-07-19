@@ -88,9 +88,16 @@ assert.deepEqual(
 assert.equal(changes, 7);
 
 failWrites = true;
-assert.doesNotThrow(() => bookmarks.renameBookmark(second.url, "Failed"));
-assert.deepEqual(bookmarks.renameBookmark(second.url, "Failed"), [{ title: second.url, url: second.url }]);
+let failedRename;
+assert.doesNotThrow(() => {
+  failedRename = bookmarks.renameBookmark(second.url, "Failed");
+});
+assert.deepEqual(failedRename, [{ title: second.url, url: second.url }]);
 assert.equal(changes, 7);
+assert.equal(
+  storage.get(bookmarks.BOOKMARKS_STORAGE_KEY),
+  JSON.stringify([{ title: second.url, url: second.url }]),
+);
 assert.doesNotThrow(() => bookmarks.toggleBookmark(first));
 assert.deepEqual(bookmarks.toggleBookmark(first), [{ title: second.url, url: second.url }]);
 assert.equal(
