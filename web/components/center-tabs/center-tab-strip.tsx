@@ -61,6 +61,7 @@ export function CenterTabStrip() {
 
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const conversations = useSessionStore((s) => s.conversations);
+  const [sessionActivationRequest, setSessionActivationRequest] = useState(0);
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
@@ -196,7 +197,8 @@ export function CenterTabStrip() {
   }
 
   // Active center-tab focus is the single session-navigation trigger. Store
-  // imports, pointer clicks, and close fallback all converge on activeId.
+  // imports and close fallback converge on activeId; clicking the already
+  // active session increments the request so it can recover from another route.
   useEffect(() => {
     const tab = useCenterTabs.getState().tabs.find(
       (candidate) => candidate.id === activeId,
@@ -204,10 +206,15 @@ export function CenterTabStrip() {
     if (tab?.kind === "session") activateSession(tab);
     // Route changes are results of activation, not new activation requests.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId]);
+  }, [activeId, sessionActivationRequest]);
 
   function onTabClick(tab: CenterTab) {
+    const reactivateCurrentSession =
+      tab.kind === "session" && tab.id === activeId;
     setActive(tab.id);
+    if (reactivateCurrentSession) {
+      setSessionActivationRequest((request) => request + 1);
+    }
     if (tab.kind !== "session" && !isChatRoute(pathname)) router.push("/chat");
   }
 

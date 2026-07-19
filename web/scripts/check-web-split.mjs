@@ -450,12 +450,21 @@ const activeFocusEffect = tabStripSource.slice(
   tabStripSource.indexOf("// Active center-tab focus"),
   tabStripSource.indexOf("function onTabClick"),
 );
+assert.match(
+  tabStripSource,
+  /const \[sessionActivationRequest, setSessionActivationRequest\] = useState\(0\);/,
+);
 assert.match(activeFocusEffect, /useEffect\(\(\) =>/);
 assert.match(activeFocusEffect, /activateSession\(tab\);/);
-assert.match(activeFocusEffect, /\[activeId\]/);
+assert.match(activeFocusEffect, /\[activeId, sessionActivationRequest\]/);
 const onTabClickSource = tabStripSource.slice(
   tabStripSource.indexOf("function onTabClick"),
   tabStripSource.indexOf("function onOpenNewTab"),
+);
+assert.match(onTabClickSource, /tab\.kind === "session" && tab\.id === activeId/);
+assert.match(
+  onTabClickSource,
+  /setSessionActivationRequest\(\(request\) => request \+ 1\);/,
 );
 assert.doesNotMatch(onTabClickSource, /activateSession/);
 const finishCloseSource = tabStripSource.slice(

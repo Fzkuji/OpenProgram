@@ -71,8 +71,22 @@ assert.doesNotMatch(
 );
 assert.match(
   strip,
-  /Active center-tab focus[\s\S]*useEffect\(\(\) => \{[\s\S]*activateSession\(tab\);[\s\S]*\}, \[activeId\]\);/,
+  /const \[sessionActivationRequest, setSessionActivationRequest\] = useState\(0\);/,
 );
+assert.match(
+  strip,
+  /Active center-tab focus[\s\S]*useEffect\(\(\) => \{[\s\S]*activateSession\(tab\);[\s\S]*\}, \[activeId, sessionActivationRequest\]\);/,
+);
+const onTabClick = strip.slice(
+  strip.indexOf("function onTabClick"),
+  strip.indexOf("function onOpenNewTab"),
+);
+assert.match(onTabClick, /tab\.kind === "session" && tab\.id === activeId/);
+assert.match(
+  onTabClick,
+  /setSessionActivationRequest\(\(request\) => request \+ 1\);/,
+);
+assert.doesNotMatch(onTabClick, /activateSession/);
 assert.match(strip, /function onOpenNewTab[\s\S]*openNewTabPage\(\)[\s\S]*router\.push\("\/chat"\)/);
 assert.match(strip, /onClick=\{onOpenNewTab\}/);
 assert.match(
