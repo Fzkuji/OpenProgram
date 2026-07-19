@@ -395,10 +395,16 @@ function CompoundTabItem({
 }: CompoundTabItemProps) {
   const { t, text } = useTranslation();
   const active = group.memberIds.includes(activeId ?? "");
+  const closingCount = group.memberIds.filter((tabId) =>
+    closingIds.has(tabId),
+  ).length;
+  const remainingCount = group.memberIds.length - closingCount;
   return (
     <div
       className={`${styles.compoundTab} ${active ? styles.compoundTabActive : ""}`}
       data-member-count={group.memberIds.length}
+      data-closing-count={closingCount || undefined}
+      data-remaining-count={remainingCount}
       role="presentation"
     >
       {group.memberIds.map((tabId) => {
@@ -457,7 +463,7 @@ function TabItem({
   useEffect(() => {
     if (active) tabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
     if (!active || typeof ResizeObserver === "undefined") return;
-    const flow = tabRef.current?.parentElement;
+    const flow = tabRef.current?.closest<HTMLElement>('[role="tablist"]');
     if (!flow) return;
     const revealActiveTab = () =>
       tabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });

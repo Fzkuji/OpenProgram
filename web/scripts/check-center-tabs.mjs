@@ -86,6 +86,48 @@ assert.match(
   css,
   /\.compoundSegment \+ \.compoundSegment\s*\{[^}]*border-left:\s*1px solid var\(--border\);/s,
 );
+assert.match(
+  strip,
+  /const closingCount = group\.memberIds\.filter\(\(tabId\) =>\s*closingIds\.has\(tabId\),\s*\)\.length;/,
+  "compound geometry must account for every concurrently closing segment",
+);
+assert.match(strip, /const remainingCount = group\.memberIds\.length - closingCount;/);
+assert.match(strip, /data-closing-count=\{closingCount \|\| undefined\}/);
+assert.match(strip, /data-remaining-count=\{remainingCount\}/);
+assert.match(
+  css,
+  /\.compoundTab \{[^}]*transition:\s*width 160ms ease-in,\s*flex-basis 160ms ease-in,\s*max-width 160ms ease-in;/s,
+  "the compound outer width must animate for the full browser segment-exit duration",
+);
+assert.match(
+  css,
+  /\.compoundTab\[data-closing-count\]\[data-remaining-count="2"\]\s*\{[^}]*width:\s*360px;[^}]*flex-basis:\s*360px;[^}]*max-width:\s*360px;/s,
+  "three members closing to two must animate the outer width to 360 DIP",
+);
+assert.match(
+  css,
+  /\.compoundTab\[data-closing-count\]\[data-remaining-count="1"\]\s*\{[^}]*width:\s*200px;[^}]*flex-basis:\s*200px;[^}]*max-width:\s*200px;/s,
+  "browser two-to-one collapse must end at the ordinary 200 DIP tab width",
+);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.compoundTab\[data-closing-count\]\[data-remaining-count="1"\]\s*\{[^}]*width:\s*240px;[^}]*flex-basis:\s*240px;[^}]*max-width:\s*240px;/s,
+  "desktop two-to-one collapse must end at the ordinary 240 DIP tab width",
+);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.compoundTab\s*\{[^}]*transition-duration:\s*120ms;/s,
+  "desktop compound width and segment exit must use the same 120ms duration",
+);
+assert.match(
+  strip,
+  /tabRef\.current\?\.closest<HTMLElement>\('\[role="tablist"\]'\)/,
+  "compound segments must observe the actual tab flow, not the compound wrapper",
+);
+assert.doesNotMatch(
+  strip.slice(strip.indexOf("function TabItem")),
+  /tabRef\.current\?\.parentElement/,
+);
 assert.match(ntp, /const draftId = useCenterTabs\.getState\(\)\.claimDraftSessionTab\(\);[\s\S]*\.newSession\?\.\(draftId\);/);
 assert.match(strip, /currentSessionId === null[\s\S]*activeTab\?\.draft/);
 assert.match(strip, /closingInstances = useRef<Map<string, CenterTab>>/);

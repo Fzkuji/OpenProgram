@@ -273,6 +273,10 @@
   border-radius: 8px;
   background: var(--bg-hover);
   color: var(--text-secondary);
+  transition:
+    width 160ms ease-in,
+    flex-basis 160ms ease-in,
+    max-width 160ms ease-in;
 }
 .compoundTab[data-member-count="2"] {
   width: 360px;
@@ -284,6 +288,22 @@
   flex: 0 1 440px;
   max-width: 440px;
   min-width: 144px;
+}
+.compoundTab[data-closing-count][data-remaining-count="2"] {
+  width: 360px;
+  flex-basis: 360px;
+  max-width: 360px;
+}
+.compoundTab[data-closing-count][data-remaining-count="1"] {
+  width: 200px;
+  flex-basis: 200px;
+  max-width: 200px;
+}
+.compoundTab[data-closing-count][data-remaining-count="0"] {
+  width: 0;
+  min-width: 0;
+  flex-basis: 0;
+  max-width: 0;
 }
 .compoundTabActive {
   height: 34px;
@@ -420,6 +440,14 @@
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.1),
     0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+:global(html.is-desktop) .compoundTab {
+  transition-duration: 120ms;
+}
+:global(html.is-desktop) .compoundTab[data-closing-count][data-remaining-count="1"] {
+  width: 240px;
+  flex-basis: 240px;
+  max-width: 240px;
 }
 :global(html.is-desktop) .compoundTabActive::before,
 :global(html.is-desktop) .compoundTabActive::after {
