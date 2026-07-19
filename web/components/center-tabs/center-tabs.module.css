@@ -492,6 +492,22 @@
     0 1px 3px rgba(0, 0, 0, 0.1),
     0 0 0 0.5px rgba(0, 0, 0, 0.04);
 }
+:global(html.is-desktop) .tab.tabActive[data-drop-intent="before"],
+:global(html.is-desktop) .tab.tabActive:hover[data-drop-intent="before"],
+:global(html.is-desktop) .compoundTabActive[data-drop-intent="before"] {
+  box-shadow:
+    inset 3px 0 var(--accent-blue),
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+:global(html.is-desktop) .tab.tabActive[data-drop-intent="after"],
+:global(html.is-desktop) .tab.tabActive:hover[data-drop-intent="after"],
+:global(html.is-desktop) .compoundTabActive[data-drop-intent="after"] {
+  box-shadow:
+    inset -3px 0 var(--accent-blue),
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
 :global(html.is-desktop) .compoundTab {
   transition-duration: 120ms;
 }

@@ -239,6 +239,47 @@ export function groupCenterTabs(
   };
 }
 
+export function mergeCenterTabGroup(
+  layout: CenterTabLayout,
+  sourceGroupId: string,
+  targetId: string,
+  memberIndex: number,
+): { layout: CenterTabLayout; accepted: boolean } {
+  const sourceGroup = layout.groups.find((group) => group.id === sourceGroupId);
+  if (!sourceGroup || !layout.tabIds.includes(targetId)) {
+    return { layout, accepted: false };
+  }
+  const targetGroup = findCenterTabGroup(layout.groups, targetId);
+  if (targetGroup?.id === sourceGroupId) return { layout, accepted: true };
+  const targetMembers = targetGroup?.memberIds ?? [targetId];
+  if (targetMembers.length + sourceGroup.memberIds.length > MAX_CENTER_TAB_GROUP_MEMBERS) {
+    return { layout, accepted: false };
+  }
+
+  const memberIds = [...targetMembers];
+  const at = Math.max(0, Math.min(memberIndex, memberIds.length));
+  memberIds.splice(at, 0, ...sourceGroup.memberIds);
+  const mergedGroup: CenterTabGroup = targetGroup
+    ? { ...targetGroup, memberIds }
+    : { ...sourceGroup, memberIds };
+  const groups = layout.groups.flatMap((group) => {
+    if (group.id === sourceGroupId) return targetGroup ? [] : [mergedGroup];
+    if (group.id === targetGroup?.id) return [mergedGroup];
+    return [group];
+  });
+  const memberSet = new Set(memberIds);
+  const targetAt = Math.min(...targetMembers.map((id) => layout.tabIds.indexOf(id)));
+  const beforeId = layout.tabIds.slice(Math.max(0, targetAt))
+    .find((id) => !memberSet.has(id)) ?? null;
+  return {
+    accepted: true,
+    layout: normalizeCenterTabLayout({
+      tabIds: moveBlockBefore(layout.tabIds, memberIds, beforeId),
+      groups,
+    }),
+  };
+}
+
 export function centerTabStripEntries(layout: CenterTabLayout): CenterTabStripEntry[] {
   const firstToGroup = new Map(layout.groups.map((group) => [group.memberIds[0], group]));
   const grouped = new Set(layout.groups.flatMap((group) => group.memberIds));

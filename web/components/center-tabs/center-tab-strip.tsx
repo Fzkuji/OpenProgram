@@ -93,6 +93,7 @@ export function CenterTabStrip() {
   const moveGroup = useCenterTabs((s) => s.moveGroup);
   const moveGroupMember = useCenterTabs((s) => s.moveGroupMember);
   const groupTab = useCenterTabs((s) => s.groupTab);
+  const mergeGroup = useCenterTabs((s) => s.mergeGroup);
   const ungroupTab = useCenterTabs((s) => s.ungroupTab);
 
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
@@ -420,7 +421,13 @@ export function CenterTabStrip() {
   function applyDrop(prepared: NonNullable<ReturnType<typeof dragCoordinator.current>>, intent: TabDropIntent) {
     const subject = prepared.subject;
     if (intent.mode === "merge") {
-      if (subject.kind === "group") return false;
+      if (subject.kind === "group") {
+        return mergeGroup(
+          subject.sourceGroup.id,
+          intent.targetTabId,
+          intent.memberIndex ?? 1,
+        );
+      }
       if (subject.kind === "segment" && intent.groupId === subject.sourceGroup.id) {
         const currentGroup = useCenterTabs.getState().groups.find(
           (group) => group.id === subject.sourceGroup.id,

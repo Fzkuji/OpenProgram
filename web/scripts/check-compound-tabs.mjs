@@ -194,6 +194,48 @@ const full = groups.groupCenterTabs(result.layout, "d", "a", 3, "unused");
 assert.equal(full.accepted, false);
 assert.deepEqual(full.layout, result.layout);
 
+const wholeGroupLayout = {
+  tabIds: ["a", "b", "c", "d"],
+  groups: [{
+    id: "g:whole",
+    memberIds: ["a", "b"],
+    visibleIds: ["a", "b"],
+    focusedId: "b",
+  }],
+};
+const mergedWholeGroup = groups.mergeCenterTabGroup(
+  wholeGroupLayout,
+  "g:whole",
+  "c",
+  1,
+);
+assert.equal(mergedWholeGroup.accepted, true);
+assert.deepEqual(mergedWholeGroup.layout.tabIds, ["c", "a", "b", "d"]);
+assert.deepEqual(mergedWholeGroup.layout.groups, [{
+  id: "g:whole",
+  memberIds: ["c", "a", "b"],
+  visibleIds: ["a", "b"],
+  focusedId: "b",
+}]);
+
+const threeMemberGroupLayout = {
+  tabIds: ["a", "b", "c", "d"],
+  groups: [{
+    id: "g:full-source",
+    memberIds: ["a", "b", "c"],
+    visibleIds: ["a", "b"],
+    focusedId: "b",
+  }],
+};
+const rejectedWholeGroup = groups.mergeCenterTabGroup(
+  threeMemberGroupLayout,
+  "g:full-source",
+  "d",
+  1,
+);
+assert.equal(rejectedWholeGroup.accepted, false);
+assert.equal(rejectedWholeGroup.layout, threeMemberGroupLayout);
+
 const focusedA = groups.focusCenterTabGroupMember(result.layout, "g:ab", "a");
 const focusedC = groups.focusCenterTabGroupMember(focusedA, "g:ab", "c");
 assert.deepEqual(focusedC.groups[0].visibleIds, ["c", "b"]);
@@ -380,6 +422,50 @@ assert.equal(
   false,
   "group state must never use a separate storage key",
 );
+
+const wholeGroupTabs = [
+  { id: "a", kind: "web", title: "A", url: "https://a.test/" },
+  { id: "b", kind: "web", title: "B", url: "https://b.test/" },
+  { id: "c", kind: "web", title: "C", url: "https://c.test/" },
+  { id: "d", kind: "web", title: "D", url: "https://d.test/" },
+];
+useCenterTabs.setState({
+  tabs: wholeGroupTabs,
+  groups: wholeGroupLayout.groups,
+  activeId: "b",
+  splitWebTabId: null,
+  splitRatio: 0.44,
+});
+storageWrites.length = 0;
+assert.equal(useCenterTabs.getState().mergeGroup("g:whole", "c", 1), true);
+let wholeGroupState = useCenterTabs.getState();
+assert.deepEqual(wholeGroupState.tabs.map((tab) => tab.id), ["c", "a", "b", "d"]);
+assert.deepEqual(wholeGroupState.groups[0].memberIds, ["c", "a", "b"]);
+assert.equal(wholeGroupState.activeId, "b");
+assert.equal(wholeGroupState.groups[0].focusedId, "b");
+assert.deepEqual(wholeGroupState.groups[0].visibleIds, ["a", "b"]);
+assert.equal(storageWrites.length, 1, "whole-group merge must persist atomically");
+
+useCenterTabs.setState({
+  tabs: wholeGroupTabs,
+  groups: wholeGroupLayout.groups,
+  activeId: "c",
+  splitWebTabId: null,
+  splitRatio: 0.44,
+});
+assert.equal(useCenterTabs.getState().mergeGroup("g:whole", "c", 1), true);
+wholeGroupState = useCenterTabs.getState();
+assert.equal(wholeGroupState.activeId, "c");
+assert.equal(wholeGroupState.groups[0].focusedId, "c");
+assert.deepEqual(wholeGroupState.groups[0].visibleIds, ["a", "c"]);
+
+useCenterTabs.setState({
+  tabs: migrated.tabs,
+  groups: migrated.groups,
+  activeId: migrated.activeId,
+  splitWebTabId: migrated.splitWebTabId,
+  splitRatio: migrated.splitRatio,
+});
 
 const thirdTab = {
   id: "w:two",

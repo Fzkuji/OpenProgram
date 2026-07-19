@@ -20,6 +20,7 @@ import {
   findCenterTabGroup,
   focusCenterTabGroupMember,
   groupCenterTabs,
+  mergeCenterTabGroup,
   moveCenterTab,
   moveCenterTabGroup,
   moveCenterTabGroupMember,
@@ -381,6 +382,11 @@ export interface CenterTabsState {
     memberIndex: number,
     groupId?: string,
   ) => boolean;
+  mergeGroup: (
+    sourceGroupId: string,
+    targetId: string,
+    memberIndex: number,
+  ) => boolean;
   ungroupTab: (id: string, beforeId?: string | null) => void;
   focusGroupMember: (groupId: string, memberId: string) => void;
   /** Focus-or-create the tab for a live session. Browser semantics:
@@ -598,6 +604,29 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         }, sourceId, targetId, memberIndex, groupId ?? `g:${crypto.randomUUID()}`);
         accepted = result.accepted;
         if (!accepted) return {};
+        return commitCenterTabsState(s, {
+          tabs: tabsForLayout(s.tabs, result.layout),
+          groups: result.layout.groups,
+        });
+      });
+      return accepted;
+    },
+
+    mergeGroup: (sourceGroupId, targetId, memberIndex) => {
+      let accepted = false;
+      set((s) => {
+        const currentLayout = {
+          tabIds: s.tabs.map((tab) => tab.id),
+          groups: s.groups,
+        };
+        const result = mergeCenterTabGroup(
+          currentLayout,
+          sourceGroupId,
+          targetId,
+          memberIndex,
+        );
+        accepted = result.accepted;
+        if (!accepted || result.layout === currentLayout) return {};
         return commitCenterTabsState(s, {
           tabs: tabsForLayout(s.tabs, result.layout),
           groups: result.layout.groups,

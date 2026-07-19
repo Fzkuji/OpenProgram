@@ -61,6 +61,12 @@ assert.match(strip, /moveGroupMember\(/);
 assert.match(strip, /moveGroup\(/);
 assert.match(strip, /ungroupTab\(/);
 assert.match(strip, /groupTab\(/);
+const applyDrop = strip.slice(
+  strip.indexOf("function applyDrop"),
+  strip.indexOf("function onDragOver"),
+);
+assert.match(applyDrop, /subject\.kind === "group"[\s\S]*return mergeGroup\(/);
+assert.doesNotMatch(applyDrop, /if \(subject\.kind === "group"\) return false;/);
 assert.match(strip, /className=\{styles\.groupDragHandle\}[\s\S]*kind: "group"/);
 assert.match(strip, /onMoveGroup\(group\.id,/);
 assert.match(strip, /window\.addEventListener\("pointerup",[^;]+\{ once: true \}\)/s);
@@ -75,6 +81,16 @@ assert.match(css, /\[data-drag-source="true"\][^{]*\{[^}]*opacity:/s);
 assert.match(css, /\[data-drop-intent="before"\]/);
 assert.match(css, /\[data-drop-intent="merge"\]/);
 assert.match(css, /\[data-drop-intent="after"\]/);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.tab\.tabActive\[data-drop-intent="before"\][^{]*,[\s\S]*\.compoundTabActive\[data-drop-intent="before"\]\s*\{[^}]*box-shadow:\s*inset 3px 0 var\(--accent-blue\),/s,
+  "desktop active normal and compound targets must retain the before marker",
+);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.tab\.tabActive\[data-drop-intent="after"\][^{]*,[\s\S]*\.compoundTabActive\[data-drop-intent="after"\]\s*\{[^}]*box-shadow:\s*inset -3px 0 var\(--accent-blue\),/s,
+  "desktop active normal and compound targets must retain the after marker",
+);
 
 assert.match(css, /max-width: calc\(100% - 36px\);/);
 assert.match(css, /:global\(html\.is-desktop\) \.strip \{[^}]*padding-right: 10px;/s);
