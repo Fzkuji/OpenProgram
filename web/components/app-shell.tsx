@@ -206,6 +206,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       __feedStoreFromConv?: unknown;
     };
     w.__sessionStore = useSessionStore;
+    // Test hooks for desktop multi-window acceptance (driven over CDP).
+    (w as Record<string, unknown>).__centerTabs = useCenterTabs;
+    import("@/lib/desktop-bridge").then((m) => {
+      (w as Record<string, unknown>).__desktopTransfer = {
+        desktopBridge: m.desktopBridge,
+        buildTransferPayload: m.buildTransferPayload,
+        stageIncomingTransfer: m.stageIncomingTransfer,
+        placementForDropIntent: m.placementForDropIntent,
+        acceptedTransfers: m.acceptedTransfers,
+      };
+    });
     // Phase 3 bridge — legacy chat JS feeds the React message store
     // through these globals. Dormant until the MessageList portal is
     // mounted; populating the store in parallel is a no-op for the

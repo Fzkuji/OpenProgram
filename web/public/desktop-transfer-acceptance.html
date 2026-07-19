@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Desktop Transfer Acceptance</title>
+<style>
+  body { font-family: monospace; margin: 16px; }
+  #scrollRegion { height: 2400px; background: linear-gradient(#eef, #fee); }
+  #state { position: fixed; top: 8px; right: 8px; background: #ffd; padding: 8px; border: 1px solid #cc9; }
+</style>
+</head>
+<body>
+<h1>desktop-transfer-acceptance</h1>
+<input id="probe" placeholder="type here">
+<button id="pushBtn" onclick="history.pushState({n:(history.state&&history.state.n||0)+1},'', '?p='+((history.state&&history.state.n||0)+1)); render()">pushState</button>
+<button id="backBtn" onclick="history.back()">back</button>
+<div id="state"></div>
+<div id="scrollRegion"></div>
+<script>
+  // session-state surrogate: cookie + localStorage marker
+  if (!document.cookie.includes('acceptCookie=')) {
+    document.cookie = 'acceptCookie=' + Date.now();
+  }
+  if (!localStorage.getItem('acceptMarker')) {
+    localStorage.setItem('acceptMarker', 'marker-' + Date.now());
+  }
+  function render() {
+    document.getElementById('state').textContent = JSON.stringify({
+      timeOrigin: performance.timeOrigin,
+      cookie: document.cookie,
+      marker: localStorage.getItem('acceptMarker'),
+      histLen: history.length,
+      scrollY: scrollY,
+    });
+  }
+  addEventListener('scroll', render);
+  addEventListener('popstate', render);
+  render();
+</script>
+</body>
+</html>
