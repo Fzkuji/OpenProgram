@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "check": "npm run check:center-tabs && npm run check:bookmarks && npm run check:web-split && npm run check:multi-draft && npm run check:provisional-send && npm run check:chat-ui",
-    "check:bookmarks": "node --no-warnings scripts/check-bookmarks.mjs",
+    "check:bookmarks": "node --no-warnings --experimental-strip-types scripts/check-bookmarks.mjs",
     "check:center-tabs": "node scripts/check-center-tabs.mjs",
     "check:chat-ui": "node --no-warnings --experimental-strip-types scripts/check-chat-ui.mjs",
     "check:multi-draft": "node --no-warnings --experimental-strip-types scripts/check-multi-draft.mjs",

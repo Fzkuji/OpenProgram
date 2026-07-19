@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
+import {
+  RIGHT_PANEL_DEFAULT,
+  RIGHT_PANEL_GAP,
+  RIGHT_PANEL_MAX,
+  RIGHT_PANEL_MIN,
+  RIGHT_RAIL_WIDTH,
+  clampPanelWidth,
+  handlePanelResizeKey,
+  panelWidthAfterKey,
+  resolveRightPanelAction,
+} from "../lib/right-panel-behavior.ts";
 
 const sourcePath = new URL("../lib/bookmarks.ts", import.meta.url);
 const sessionStorePath = new URL("../lib/session-store/index.ts", import.meta.url);
@@ -17,7 +28,7 @@ assert.ok(existsSync(managerPath), "bookmarks manager missing");
 const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
 assert.equal(
   packageJson.scripts?.["check:bookmarks"],
-  "node --no-warnings scripts/check-bookmarks.mjs",
+  "node --no-warnings --experimental-strip-types scripts/check-bookmarks.mjs",
 );
 assert.match(packageJson.scripts?.check || "", /check:bookmarks/);
 
@@ -28,6 +39,109 @@ const newTab = readFileSync(newTabPath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
 const rightSidebar = readFileSync(rightSidebarPath, "utf8");
 const rightDockCss = readFileSync(rightDockCssPath, "utf8");
+
+assert.equal(RIGHT_PANEL_DEFAULT, 320);
+assert.equal(RIGHT_PANEL_MIN, 280);
+assert.equal(RIGHT_PANEL_MAX, 560);
+assert.equal(RIGHT_PANEL_GAP, 8);
+assert.equal(RIGHT_RAIL_WIDTH, 49);
+
+assert.equal(clampPanelWidth(120), 280);
+assert.equal(clampPanelWidth(420), 420);
+assert.equal(clampPanelWidth(900), 560);
+
+assert.equal(panelWidthAfterKey(320, "ArrowLeft"), 336);
+assert.equal(panelWidthAfterKey(320, "ArrowRight"), 304);
+assert.equal(panelWidthAfterKey(280, "ArrowRight"), 280);
+assert.equal(panelWidthAfterKey(560, "ArrowLeft"), 560);
+assert.equal(panelWidthAfterKey(400, "Home"), 280);
+assert.equal(panelWidthAfterKey(400, "End"), 560);
+assert.equal(panelWidthAfterKey(400, "Enter"), null);
+
+assert.deepEqual(
+  resolveRightPanelAction(
+    { open: true, view: "bookmarks" },
+    { type: "select", view: "bookmarks" },
+  ),
+  { open: false, view: "bookmarks", focusView: "bookmarks" },
+  "re-clicking the selected rail item must close and target that item for focus",
+);
+assert.deepEqual(
+  resolveRightPanelAction(
+    { open: true, view: "bookmarks" },
+    { type: "escape" },
+  ),
+  { open: false, view: "bookmarks", focusView: "bookmarks" },
+  "Escape must close and target the selected rail item for focus",
+);
+assert.deepEqual(
+  resolveRightPanelAction(
+    { open: true, view: "bookmarks" },
+    { type: "select", view: "files" },
+  ),
+  { open: true, view: "files", focusView: null },
+  "selecting another rail item must switch the open panel",
+);
+assert.deepEqual(
+  resolveRightPanelAction(
+    { open: false, view: "bookmarks" },
+    { type: "escape" },
+  ),
+  { open: false, view: "bookmarks", focusView: null },
+  "Escape on a closed panel must not move focus",
+);
+
+class SeparatorHarness extends EventTarget {
+  #attributes = new Map();
+
+  setAttribute(name, value) {
+    this.#attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.#attributes.get(name) ?? null;
+  }
+}
+
+const separator = new SeparatorHarness();
+separator.setAttribute("role", "separator");
+separator.setAttribute("aria-valuemin", RIGHT_PANEL_MIN);
+separator.setAttribute("aria-valuemax", RIGHT_PANEL_MAX);
+let renderedPanelWidth = RIGHT_PANEL_DEFAULT;
+
+function renderSeparator(nextWidth) {
+  renderedPanelWidth = nextWidth;
+  separator.setAttribute("aria-valuenow", nextWidth);
+}
+
+function dispatchSeparatorKey(key) {
+  const event = new Event("keydown", { cancelable: true });
+  Object.defineProperty(event, "key", { value: key });
+  separator.dispatchEvent(event);
+  return event;
+}
+
+separator.addEventListener("keydown", (event) => {
+  handlePanelResizeKey(event, renderedPanelWidth, renderSeparator);
+});
+renderSeparator(RIGHT_PANEL_DEFAULT);
+
+assert.equal(separator.getAttribute("aria-valuemin"), "280");
+assert.equal(separator.getAttribute("aria-valuemax"), "560");
+assert.equal(separator.getAttribute("aria-valuenow"), "320");
+assert.equal(dispatchSeparatorKey("ArrowLeft").defaultPrevented, true);
+assert.equal(separator.getAttribute("aria-valuenow"), "336");
+dispatchSeparatorKey("Home");
+assert.equal(separator.getAttribute("aria-valuenow"), "280");
+dispatchSeparatorKey("ArrowRight");
+assert.equal(separator.getAttribute("aria-valuenow"), "280");
+dispatchSeparatorKey("End");
+assert.equal(separator.getAttribute("aria-valuenow"), "560");
+dispatchSeparatorKey("ArrowLeft");
+assert.equal(separator.getAttribute("aria-valuenow"), "560");
+assert.equal(dispatchSeparatorKey("Enter").defaultPrevented, false);
+assert.equal(separator.getAttribute("aria-valuenow"), "560");
+
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
@@ -69,17 +183,6 @@ assert.match(
   /\.bookmark-title-input:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
 );
 
-const navMarker = rightSidebar.indexOf("data-view={VIEW_BOOKMARKS}");
-assert.ok(navMarker >= 0, "bookmarks nav missing");
-const navTagStart = rightSidebar.lastIndexOf("<", navMarker);
-const navTagClose = "\n        >";
-const navTagEnd = rightSidebar.indexOf(navTagClose, navMarker);
-const navOpeningTag = rightSidebar.slice(navTagStart, navTagEnd + navTagClose.length);
-assert.match(navOpeningTag, /^<button\b/, "bookmarks nav must be a native button");
-assert.match(navOpeningTag, /type="button"/);
-assert.match(navOpeningTag, /title=\{text\("Bookmarks",\s*"书签"\)\}/);
-assert.match(navOpeningTag, /aria-label=\{text\("Bookmarks",\s*"书签"\)\}/);
-
 function parseTsx(text, name) {
   return ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
 }
@@ -88,6 +191,63 @@ function attr(opening, name) {
   return opening.attributes.properties.find(
     (property) => ts.isJsxAttribute(property) && property.name.text === name,
   );
+}
+
+const rightSidebarFile = parseTsx(rightSidebar, "right-sidebar.tsx");
+let resizeSeparator;
+function findResizeSeparator(node) {
+  if (
+    ts.isJsxSelfClosingElement(node) &&
+    attr(node, "role")?.initializer?.text === "separator"
+  ) {
+    resizeSeparator = node;
+    return;
+  }
+  ts.forEachChild(node, findResizeSeparator);
+}
+findResizeSeparator(rightSidebarFile);
+assert.ok(resizeSeparator, "keyboard resize separator missing");
+for (const name of [
+  "aria-label",
+  "aria-orientation",
+  "aria-valuemin",
+  "aria-valuemax",
+  "aria-valuenow",
+  "tabIndex",
+]) {
+  assert.ok(attr(resizeSeparator, name), `separator ${name} missing`);
+}
+const resizeKeyDown = attr(resizeSeparator, "onKeyDown");
+assert.ok(resizeKeyDown, "separator onKeyDown missing");
+assert.ok(ts.isJsxExpression(resizeKeyDown.initializer));
+const resizeKeyExpression = resizeKeyDown.initializer.expression;
+assert.ok(resizeKeyExpression && ts.isArrowFunction(resizeKeyExpression));
+assert.ok(ts.isCallExpression(resizeKeyExpression.body));
+assert.equal(
+  resizeKeyExpression.body.expression.getText(rightSidebarFile),
+  "handlePanelResizeKey",
+  "separator must invoke the handler covered by the EventTarget harness",
+);
+
+for (const viewName of ["VIEW_HISTORY", "VIEW_BOOKMARKS", "VIEW_FILES"]) {
+  let railButton;
+  function findRailButton(node) {
+    if (
+      ts.isJsxElement(node) &&
+      node.openingElement.tagName.getText(rightSidebarFile) === "button" &&
+      attr(node.openingElement, "data-view")?.getText(rightSidebarFile).includes(viewName)
+    ) {
+      railButton = node.openingElement;
+      return;
+    }
+    ts.forEachChild(node, findRailButton);
+  }
+  findRailButton(rightSidebarFile);
+  assert.ok(railButton, `${viewName} rail item must be a native button`);
+  assert.equal(attr(railButton, "type")?.initializer?.text, "button");
+  assert.ok(attr(railButton, "title"), `${viewName} rail item missing title`);
+  assert.ok(attr(railButton, "aria-label"), `${viewName} rail item missing aria-label`);
+  assert.ok(attr(railButton, "aria-pressed"), `${viewName} rail item missing aria-pressed`);
 }
 
 function assertNoNestedButtons(text, name) {

@@ -27,9 +27,19 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Bookmark } from "lucide-react";
+import { Bookmark, X } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import {
+  RIGHT_PANEL_DEFAULT,
+  RIGHT_PANEL_GAP,
+  RIGHT_PANEL_MAX,
+  RIGHT_PANEL_MIN,
+  RIGHT_RAIL_WIDTH,
+  clampPanelWidth,
+  handlePanelResizeKey,
+  resolveRightPanelAction,
+} from "@/lib/right-panel-behavior";
 import { BranchesPanel } from "./branches";
 import { ContextCommitTimeline } from "./context-commit-timeline";
 import { WorktreesPanel } from "./worktrees";
@@ -38,7 +48,6 @@ import {
   sidebarNavIconClass,
   sidebarNavItemActiveClass,
   sidebarNavItemClass,
-  sidebarNavLabelClass,
   sidebarToggleClass,
 } from "../sidebar/nav-classes";
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
@@ -62,22 +71,17 @@ const VIEW_CONTEXT = "context";
 const VIEW_FILES = "files";
 const VIEW_BOOKMARKS = "bookmarks";
 
-// Right sidebar mirrors the left's default width (288px) so the page
-// loads symmetric. Users can drag-widen the right side for the History
-// DAG, but the width is not persisted — every reload resets to the
-// default, by request.
-const RIGHT_W_MIN = 240;
-const RIGHT_W_MAX = 720;
-const RIGHT_W_DEFAULT = 288;
-
 export function RightSidebar() {
   const { t, text } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
   const view = useSessionStore((s) => s.rightDock.view);
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
-  const [width, setWidth] = useState<number>(RIGHT_W_DEFAULT);
+  const [panelWidth, setPanelWidth] = useState(RIGHT_PANEL_DEFAULT);
+  const [resizing, setResizing] = useState(false);
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const toggleButtonRef = useRef<HTMLButtonElement>(null);
+  const railButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   // Animated nav icons (pqoqubbw/icons), driven from each row's / the
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -93,27 +97,6 @@ export function RightSidebar() {
     activeTab?.kind === "file"
       ? (activeTab.projectId ?? null)
       : (currentProject?.id ?? null);
-
-  const onResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragRef.current = { startX: e.clientX, startW: width };
-    const onMove = (ev: MouseEvent) => {
-      if (!dragRef.current) return;
-      const delta = dragRef.current.startX - ev.clientX;
-      const next = Math.max(
-        RIGHT_W_MIN,
-        Math.min(RIGHT_W_MAX, dragRef.current.startW + delta),
-      );
-      setWidth(next);
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  };
 
   // Install window.rightDock + legacy shims so the still-loaded shared
   // JS (ui.js showDetail, branches code, topbar history-panel toggles)
@@ -202,187 +185,254 @@ export function RightSidebar() {
     };
   }, []);
 
-  function onToggleRail() {
-    setRightDockOpen(!open);
-  }
-  function onNavClick(v: string) {
-    // History / Execution Detail nav buttons only switch view +
-    // ensure the panel is open. Collapsing is the top toggle's job.
-    setRightDockView(v);
-    if (!open) setRightDockOpen(true);
+  function restoreRailFocus(targetView = view) {
+    const target = railButtonRefs.current[targetView] ?? toggleButtonRef.current;
+    requestAnimationFrame(() => target?.focus());
   }
 
-  // `data-view` attr is preserved so the legacy CSS rules in
-  // 09-right-dock.css (`.right-sidebar[data-view="history"]
-  // .right-view[data-view="history"] { display: flex }`) keep working
-  // unchanged. The .collapsed class drives the icon-rail-only width
-  // (defined in 02-sidebar.css).
+  function closePanelAndRestoreFocus(targetView = view) {
+    setRightDockOpen(false);
+    restoreRailFocus(targetView);
+  }
+
+  function onToggleRail() {
+    if (open) closePanelAndRestoreFocus();
+    else setRightDockOpen(true);
+  }
+
+  function onNavClick(v: string, button: HTMLButtonElement) {
+    const next = resolveRightPanelAction(
+      { open, view },
+      { type: "select", view: v },
+    );
+    if (next.view !== view) setRightDockView(next.view);
+    setRightDockOpen(next.open);
+    if (next.focusView) requestAnimationFrame(() => button.focus());
+  }
+
+  function onSidebarKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape" || !open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const next = resolveRightPanelAction({ open, view }, { type: "escape" });
+    setRightDockOpen(next.open);
+    if (next.focusView) restoreRailFocus(next.focusView);
+  }
+
+  function onResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { startX: event.clientX, startW: panelWidth };
+    setResizing(true);
+  }
+
+  function onResizePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (
+      !dragRef.current ||
+      !event.currentTarget.hasPointerCapture(event.pointerId)
+    ) {
+      return;
+    }
+    setPanelWidth(
+      clampPanelWidth(
+        dragRef.current.startW + dragRef.current.startX - event.clientX,
+      ),
+    );
+  }
+
+  function finishResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current = null;
+    setResizing(false);
+  }
+
+  const panelTitle =
+    view === VIEW_HISTORY
+      ? t("right.history")
+      : view === VIEW_BOOKMARKS
+        ? text("Bookmarks", "书签")
+        : view === VIEW_FILES
+          ? text("Files", "文件")
+          : view === VIEW_CONTEXT
+            ? t("right.context")
+            : text("Execution detail", "执行详情");
+
+  const shellWidth = open
+    ? panelWidth + RIGHT_RAIL_WIDTH + RIGHT_PANEL_GAP * 2
+    : RIGHT_RAIL_WIDTH;
+
   return (
     <aside
       id="rightSidebar"
-      // Shell layout via Tailwind (parity with the left `<Sidebar />`).
-      // `border-l` instead of `border-r` is the only directional diff.
-      // `.sidebar` + `.right-sidebar` + `.collapsed` classes are kept
-      // for the cascade rules in 09-right-dock.css (`.right-sidebar
-      // [data-view="..."]` view switching, `.right-sidebar.collapsed
-      // .right-view-host { display: none }`) and the small
-      // `.sidebar.collapsed *` override in 02-sidebar.css.
-      className={
-        "sidebar right-sidebar relative flex shrink-0 flex-col overflow-hidden " +
-        "bg-bg-secondary border-l border-[var(--border)] " +
-        // Skip the width transition while dragging so the handle
-        // feels responsive; the only transition we still want is the
-        // open/close collapse animation. 150ms matches the left
-        // sidebar so both panels feel like the same component.
-        (dragRef.current ? "" : "[transition:width_0.15s_cubic-bezier(0.165,0.84,0.44,1),min-width_0.15s_cubic-bezier(0.165,0.84,0.44,1)] ") +
-        (open ? "" : "collapsed")
-      }
-      style={open
-        ? { width: `${width}px`, minWidth: `${RIGHT_W_MIN}px` }
-        : { width: "49px", minWidth: "49px" }}
+      className={`sidebar right-sidebar${open ? "" : " collapsed"}`}
+      style={{ width: `${shellWidth}px`, minWidth: `${shellWidth}px` }}
       data-view={view}
+      data-resizing={resizing ? "true" : "false"}
+      onKeyDown={onSidebarKeyDown}
     >
-      {/* Resize handle — 6px-wide strip on the LEFT edge, drag
-          inward to widen the panel, outward to shrink it. Cursor
-          hint is ew-resize when hovered. Only shown when the panel
-          is open; in collapsed state the icon rail handles itself. */}
-      {open && (
+      <section
+        className="right-sidebar-panel"
+        style={{ width: `${panelWidth}px` }}
+        role="region"
+        aria-labelledby="right-panel-title"
+        hidden={!open}
+      >
         <div
-          onMouseDown={onResizeMouseDown}
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: "6px",
-            cursor: "ew-resize",
-            zIndex: 10,
-            background: "transparent",
-          }}
-          title={t("right.resize_panel")}
+          className="right-panel-resize"
+          role="separator"
+          aria-label={t("right.resize_panel")}
+          aria-orientation="vertical"
+          aria-valuemin={RIGHT_PANEL_MIN}
+          aria-valuemax={RIGHT_PANEL_MAX}
+          aria-valuenow={panelWidth}
+          tabIndex={0}
+          onPointerDown={onResizePointerDown}
+          onPointerMove={onResizePointerMove}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
+          onKeyDown={(event) => handlePanelResizeKey(event, panelWidth, setPanelWidth)}
         />
-      )}
-      {/* Header — same 48px row + 8px padding as the left sidebar
-          header, but `justify-start` keeps the toggle pinned to the
-          LEFT edge so it mirrors the left sidebar's toggle (which
-          sits flush against the RIGHT edge there).
-          TODO(sidebar-headers): still 48px while the center strip is
-          40px now — the sidebar-header team owns shrinking these. */}
-      <div className="flex h-[48px] shrink-0 items-center justify-start p-[8px] box-border">
-        <button
-          className={sidebarToggleClass}
-          onClick={onToggleRail}
-          onMouseEnter={() => toggleIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => toggleIconRef.current?.stopAnimation?.()}
-          title={t("right.toggle_panel")}
-          type="button"
-        >
-          {/* Mirror of the LEFT toggle — same components flipped on X,
-              so the line weight is identical and the chevron points the
-              opposite way. Open → ›, collapsed → ‹. */}
-          {open ? (
-            <PanelLeftCloseIcon
-              ref={toggleIconRef}
-              size={20}
-              style={{ transform: "scaleX(-1)" }}
-            />
-          ) : (
-            <PanelLeftOpenIcon
-              ref={toggleIconRef}
-              size={20}
-              style={{ transform: "scaleX(-1)" }}
-            />
-          )}
-        </button>
-      </div>
+        <header className="right-sidebar-panel-header">
+          <span id="right-panel-title">{panelTitle}</span>
+          <button
+            type="button"
+            className={sidebarToggleClass}
+            onClick={() => closePanelAndRestoreFocus()}
+            title={text("Close panel", "关闭面板")}
+            aria-label={text("Close panel", "关闭面板")}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </header>
+        <div className="right-view-host">
+          <div className="right-view" data-view={VIEW_BOOKMARKS}>
+            <BookmarksPanel />
+          </div>
+          <div className="right-view" data-view={VIEW_FILES}>
+            {treeProjectId ? (
+              <FileTree projectId={treeProjectId} />
+            ) : (
+              <div style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}>
+                {text("Bind a project to browse files", "绑定项目后可浏览文件")}
+              </div>
+            )}
+          </div>
+          <div id="historyPanel" className="right-view" data-view={VIEW_HISTORY}>
+            <HistoryGraphPanel />
+          </div>
+          <div id="detailPanel" className="right-view" data-view={VIEW_DETAIL}>
+            <DetailPanel />
+          </div>
+          <div id="commitsPanel" className="right-view" data-view={VIEW_CONTEXT}>
+            <ContextCommitTimeline />
+          </div>
+        </div>
+      </section>
 
-      <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
-        <div
-          className={
-            sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_HISTORY ? " " + sidebarNavItemActiveClass : "")
-          }
-          data-view={VIEW_HISTORY}
-          onClick={() => onNavClick(VIEW_HISTORY)}
-          onMouseEnter={() => historyIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => historyIconRef.current?.stopAnimation?.()}
-          role="button"
-        >
-          <span className={sidebarNavIconClass}>
-            <GitGraphIcon ref={historyIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{t("right.history")}</span>
+      <nav
+        className="right-sidebar-rail"
+        aria-label={text("Workspace tools", "工作区工具")}
+      >
+        <div className="right-sidebar-rail-header">
+          <button
+            ref={toggleButtonRef}
+            className={sidebarToggleClass}
+            onClick={onToggleRail}
+            onMouseEnter={() => toggleIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => toggleIconRef.current?.stopAnimation?.()}
+            title={t("right.toggle_panel")}
+            aria-label={t("right.toggle_panel")}
+            aria-expanded={open}
+            type="button"
+          >
+            {open ? (
+              <PanelLeftCloseIcon
+                ref={toggleIconRef}
+                size={20}
+                style={{ transform: "scaleX(-1)" }}
+              />
+            ) : (
+              <PanelLeftOpenIcon
+                ref={toggleIconRef}
+                size={20}
+                style={{ transform: "scaleX(-1)" }}
+              />
+            )}
+          </button>
         </div>
-        <button
-          type="button"
-          className={
-            sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_BOOKMARKS ? " " + sidebarNavItemActiveClass : "")
-          }
-          data-view={VIEW_BOOKMARKS}
-          onClick={() => onNavClick(VIEW_BOOKMARKS)}
-          title={text("Bookmarks", "书签")}
-          aria-label={text("Bookmarks", "书签")}
-        >
-          <span className={sidebarNavIconClass}>
-            <Bookmark size={20} aria-hidden="true" />
-          </span>
-          <span className={sidebarNavLabelClass}>{text("Bookmarks", "书签")}</span>
-        </button>
-        {/* Context / Executions 的导航按钮不再显示（只在看 History DAG 时
-            有意义）；它们的视图 div 保留在下方 view host 里，legacy 的
-            rightDock.show("detail"/"context") 仍能切过去。 */}
-        <div
-          className={
-            sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_FILES ? " " + sidebarNavItemActiveClass : "")
-          }
-          data-view={VIEW_FILES}
-          onClick={() => onNavClick(VIEW_FILES)}
-          onMouseEnter={() => filesIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => filesIconRef.current?.stopAnimation?.()}
-          role="button"
-          title={text("Project files", "项目文件")}
-        >
-          <span className={sidebarNavIconClass}>
-            <FolderOpenIcon ref={filesIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{text("Files", "文件")}</span>
-        </div>
-      </div>
 
-      <div className="right-view-host">
-        <div className="right-view" data-view={VIEW_BOOKMARKS}>
-          <BookmarksPanel />
+        <div className="right-sidebar-rail-items">
+          <button
+            ref={(node) => {
+              railButtonRefs.current[VIEW_HISTORY] = node;
+            }}
+            type="button"
+            className={
+              sidebarNavItemClass +
+              " right-nav-item" +
+              (view === VIEW_HISTORY ? " " + sidebarNavItemActiveClass : "")
+            }
+            data-view={VIEW_HISTORY}
+            onClick={(event) => onNavClick(VIEW_HISTORY, event.currentTarget)}
+            onMouseEnter={() => historyIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => historyIconRef.current?.stopAnimation?.()}
+            title={t("right.history")}
+            aria-label={t("right.history")}
+            aria-pressed={open && view === VIEW_HISTORY}
+          >
+            <span className={sidebarNavIconClass}>
+              <GitGraphIcon ref={historyIconRef} size={20} />
+            </span>
+          </button>
+
+          <button
+            ref={(node) => {
+              railButtonRefs.current[VIEW_BOOKMARKS] = node;
+            }}
+            type="button"
+            className={
+              sidebarNavItemClass +
+              " right-nav-item" +
+              (view === VIEW_BOOKMARKS ? " " + sidebarNavItemActiveClass : "")
+            }
+            data-view={VIEW_BOOKMARKS}
+            onClick={(event) => onNavClick(VIEW_BOOKMARKS, event.currentTarget)}
+            title={text("Bookmarks", "书签")}
+            aria-label={text("Bookmarks", "书签")}
+            aria-pressed={open && view === VIEW_BOOKMARKS}
+          >
+            <span className={sidebarNavIconClass}>
+              <Bookmark size={20} aria-hidden="true" />
+            </span>
+          </button>
+
+          <button
+            ref={(node) => {
+              railButtonRefs.current[VIEW_FILES] = node;
+            }}
+            type="button"
+            className={
+              sidebarNavItemClass +
+              " right-nav-item" +
+              (view === VIEW_FILES ? " " + sidebarNavItemActiveClass : "")
+            }
+            data-view={VIEW_FILES}
+            onClick={(event) => onNavClick(VIEW_FILES, event.currentTarget)}
+            onMouseEnter={() => filesIconRef.current?.startAnimation?.()}
+            onMouseLeave={() => filesIconRef.current?.stopAnimation?.()}
+            title={text("Project files", "项目文件")}
+            aria-label={text("Project files", "项目文件")}
+            aria-pressed={open && view === VIEW_FILES}
+          >
+            <span className={sidebarNavIconClass}>
+              <FolderOpenIcon ref={filesIconRef} size={20} />
+            </span>
+          </button>
         </div>
-        {/* Files view — the default: a plain project file tree. */}
-        <div className="right-view" data-view={VIEW_FILES}>
-          {treeProjectId ? (
-            <FileTree projectId={treeProjectId} />
-          ) : (
-            <div style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}>
-              {text("Bind a project to browse files", "绑定项目后可浏览文件")}
-            </div>
-          )}
-        </div>
-        {/* History view: branches panel (top, conversations.js fills it)
-            + history graph body (history-graph.js renders the DAG into
-            `.history-body`). Both IDs/classes match the legacy template
-            so existing query selectors keep working. */}
-        <div id="historyPanel" className="right-view" data-view={VIEW_HISTORY}>
-          <HistoryGraphPanel />
-        </div>
-        {/* Detail view: ui.js showDetail() writes innerHTML into
-            #detailBody and textContent into #detailTitle. The template
-            here pre-renders the empty-state markup that the legacy
-            HTML used; the AppShell's /chat-route reset re-applies it. */}
-        <div id="detailPanel" className="right-view" data-view={VIEW_DETAIL}>
-          <DetailPanel />
-        </div>
-        <div id="commitsPanel" className="right-view" data-view={VIEW_CONTEXT}>
-          <ContextCommitTimeline />
-        </div>
-      </div>
+      </nav>
     </aside>
   );
 }
