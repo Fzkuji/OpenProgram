@@ -23,7 +23,7 @@
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, ExternalLink, RotateCw, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Columns2, ExternalLink, RotateCw, Star } from "lucide-react";
 
 import {
   desktopBridge,
@@ -40,6 +40,7 @@ import {
   toggleBookmark,
 } from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { useSessionStore } from "@/lib/session-store";
 import styles from "./center-tabs.module.css";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
@@ -73,6 +74,49 @@ function BookmarkButton({ url, title }: { url: string; title: string }) {
       aria-label={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
     >
       <Star size={14} fill={bookmarked ? "currentColor" : "none"} />
+    </button>
+  );
+}
+
+function SplitButton({ tabId }: { tabId: string }) {
+  const { text } = useTranslation();
+  const splitPinned = useCenterTabs((s) => s.splitWebTabId === tabId);
+  const label = splitPinned
+    ? text("Exit split view", "退出分屏")
+    : text("Open split view", "打开分屏");
+
+  function toggleSplit() {
+    const state = useCenterTabs.getState();
+    if (splitPinned) {
+      state.setSplitWebTab(null);
+      return;
+    }
+    const sid = window.location.pathname.startsWith("/s/")
+      ? decodeURIComponent(window.location.pathname.slice(3))
+      : useSessionStore.getState().activeChatKey;
+    const session = state.tabs.find(
+      (tab) => tab.kind === "session" && tab.sessionId === sid,
+    );
+    state.setSplitWebTab(tabId);
+    useSessionStore.getState().setRightDockOpen(false);
+    if (session) {
+      state.setActive(session.id);
+    } else {
+      const draftId = state.openDraftSessionTab();
+      (window as unknown as { newSession?: (id?: string) => void })
+        .newSession?.(draftId);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={styles.webToolbarBtn}
+      onClick={toggleSplit}
+      title={label}
+      aria-label={label}
+    >
+      <Columns2 size={14} />
     </button>
   );
 }
@@ -267,6 +311,7 @@ function DesktopWebTabPane({
           />
         </button>
         <BookmarkButton url={effectiveUrl} title={title || effectiveUrl} />
+        <SplitButton tabId={tabId} />
         <button
           type="button"
           className={styles.webToolbarBtn}

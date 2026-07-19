@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
@@ -11,7 +11,11 @@ import { FileTabPane } from "./center-tabs/file-tab-pane";
 import { NewTabPage } from "./center-tabs/new-tab-page";
 import { WebTabPane } from "./center-tabs/web-tab-pane";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { desktopBridge, installDesktopMenuHandlers } from "@/lib/desktop-bridge";
+import {
+  desktopBridge,
+  installDesktopMenuHandlers,
+  setDesktopSplitLayoutAvailable,
+} from "@/lib/desktop-bridge";
 import { ToastHost } from "./ui/toast-host";
 import { Composer } from "./chat/composer";
 import { LegacyTopbarBridge } from "./chat/top-bar";
@@ -451,6 +455,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     s.tabs.find((t) => t.id === s.activeId),
   );
   const activeKind = activeTab?.kind ?? "session";
+  const splitWebTabId = useCenterTabs((s) => s.splitWebTabId);
+  const splitRatio = useCenterTabs((s) => s.splitRatio);
+  const setSplitRatio = useCenterTabs((s) => s.setSplitRatio);
+  const splitTab = useCenterTabs((s) =>
+    s.tabs.find((tab) => tab.id === splitWebTabId && tab.kind === "web"),
+  );
+  const centerBodyRef = useRef<HTMLDivElement>(null);
+  const [centerBodyWidth, setCenterBodyWidth] = useState(0);
+  useEffect(() => {
+    const node = centerBodyRef.current;
+    if (!node) return;
+    const update = () => setCenterBodyWidth(node.getBoundingClientRect().width);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const splitAvailable = centerBodyWidth >= 846;
+  const showSplit =
+    isDesktop && activeKind === "session" && !!splitTab && splitAvailable;
+  useEffect(() => {
+    setDesktopSplitLayoutAvailable(
+      isDesktop && activeKind === "session" && splitAvailable,
+    );
+  }, [isDesktop, activeKind, splitAvailable]);
+
+  function updateSplitRatio(ratio: number) {
+    const rect = centerBodyRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const minRatio = 360 / rect.width;
+    const maxRatio = (rect.width - 480 - 6) / rect.width;
+    setSplitRatio(Math.min(maxRatio, Math.max(minRatio, ratio)));
+  }
 
   const showChat = isChatRoute(pathname);
   return (
@@ -491,6 +528,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         {!isDesktop ? <CenterTabStrip /> : null}
         <div
+          ref={centerBodyRef}
           className="center-body"
           style={{ flex: 1, minHeight: 0, display: "flex" }}
         >
@@ -498,10 +536,52 @@ export function AppShell({ children }: { children: React.ReactNode }) {
              alive across session switches AND non-session tabs. This
              is what makes the WS + DOM + right sidebar state persist. */}
           <div
-            style={{ display: activeKind === "session" ? "contents" : "none" }}
+            className={showSplit ? "center-split-chat" : "center-single-pane"}
+            style={
+              activeKind !== "session"
+                ? { display: "none" }
+                : showSplit
+                  ? { width: `${splitRatio * 100}%` }
+                  : undefined
+            }
           >
             <PageShell page="chat" />
           </div>
+          {showSplit ? (
+            <>
+              <div
+                className="center-split-divider"
+                role="separator"
+                aria-orientation="vertical"
+                aria-valuenow={Math.round(splitRatio * 100)}
+                tabIndex={0}
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  e.preventDefault();
+                }}
+                onPointerMove={(e) => {
+                  if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                  const rect = centerBodyRef.current?.getBoundingClientRect();
+                  if (!rect || rect.width <= 0) return;
+                  updateSplitRatio((e.clientX - rect.left) / rect.width);
+                }}
+                onPointerUp={(e) => {
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                  e.preventDefault();
+                  updateSplitRatio(splitRatio + (e.key === "ArrowLeft" ? -0.02 : 0.02));
+                }}
+              />
+              <div className="center-split-web">
+                <WebTabPane tabId={splitTab.id} url={splitTab.url ?? ""} />
+              </div>
+            </>
+          ) : null}
           {showChat && activeKind === "file" && activeTab?.projectId && activeTab?.path ? (
             <FileTabPane
               key={activeTab.id}

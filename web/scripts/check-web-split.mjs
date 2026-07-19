@@ -62,6 +62,67 @@ const webTabPaneSource = await readFile(
   new URL("../components/center-tabs/web-tab-pane.tsx", import.meta.url),
   "utf8",
 );
+const appShellSource = await readFile(
+  new URL("../components/app-shell.tsx", import.meta.url),
+  "utf8",
+);
+const tabStripSource = await readFile(
+  new URL("../components/center-tabs/center-tab-strip.tsx", import.meta.url),
+  "utf8",
+);
+const tabsCssSource = await readFile(
+  new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
+  "utf8",
+);
+const baseCssSource = await readFile(
+  new URL("../app/styles/base.css", import.meta.url),
+  "utf8",
+);
+
+assert.match(appShellSource, /splitWebTabId/);
+assert.match(appShellSource, /splitRatio/);
+assert.match(appShellSource, /new ResizeObserver\(update\)/);
+assert.match(appShellSource, /centerBodyWidth >= 846/);
+assert.match(
+  appShellSource,
+  /const showSplit =\s*isDesktop && activeKind === "session" && !!splitTab && splitAvailable;/,
+);
+assert.equal(
+  appShellSource.match(/<PageShell page="chat" \/>/g)?.length,
+  1,
+  "the chat shell must remain a mounted singleton",
+);
+assert.match(
+  appShellSource,
+  /\{showSplit \? \([\s\S]*?<WebTabPane[\s\S]*?tabId=\{splitTab\.id\}[\s\S]*?url=\{splitTab\.url \?\? ""\}[\s\S]*?\) : null\}/,
+);
+assert.match(appShellSource, /"center-split-chat"/);
+assert.match(appShellSource, /className="center-split-divider"/);
+assert.match(appShellSource, /className="center-split-web"/);
+assert.match(appShellSource, /setDesktopSplitLayoutAvailable/);
+assert.match(appShellSource, /360 \/ rect\.width/);
+assert.match(appShellSource, /\(rect\.width - 480 - 6\) \/ rect\.width/);
+assert.match(appShellSource, /onPointerDown=/);
+assert.match(appShellSource, /onPointerMove=/);
+assert.match(appShellSource, /role="separator"/);
+assert.match(appShellSource, /aria-orientation="vertical"/);
+assert.match(appShellSource, /"ArrowLeft"/);
+assert.match(appShellSource, /"ArrowRight"/);
+assert.match(appShellSource, /0\.02/);
+
+assert.match(webTabPaneSource, /text\("Open split view", "打开分屏"\)/);
+assert.match(webTabPaneSource, /text\("Exit split view", "退出分屏"\)/);
+assert.match(webTabPaneSource, /setSplitWebTab\(null\)/);
+assert.match(webTabPaneSource, /setRightDockOpen\(false\)/);
+assert.match(webTabPaneSource, /openDraftSessionTab\(\)/);
+assert.match(webTabPaneSource, /\.newSession\?\.\(draftId\)/);
+
+assert.match(tabStripSource, /data-split-pinned=\{splitPinned \|\| undefined\}/);
+assert.match(tabStripSource, /active=\{tab\.id === activeId\}/);
+assert.match(tabsCssSource, /\[data-split-pinned="true"\]/);
+assert.match(baseCssSource, /\.center-split-divider\s*\{[^}]*width:\s*6px;/s);
+assert.match(baseCssSource, /\.center-split-chat\s*\{[^}]*min-width:\s*360px;/s);
+assert.match(baseCssSource, /\.center-split-web\s*\{[^}]*min-width:\s*480px;/s);
 assert.match(webTabPaneSource, /setWebTabReady/);
 assert.doesNotMatch(
   webTabPaneSource,

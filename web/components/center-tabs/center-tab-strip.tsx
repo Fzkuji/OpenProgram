@@ -51,6 +51,7 @@ export function CenterTabStrip() {
 
   const tabs = useCenterTabs((s) => s.tabs);
   const activeId = useCenterTabs((s) => s.activeId);
+  const splitWebTabId = useCenterTabs((s) => s.splitWebTabId);
   const setActive = useCenterTabs((s) => s.setActive);
   const openSessionTab = useCenterTabs((s) => s.openSessionTab);
   const openDraftSessionTab = useCenterTabs((s) => s.openDraftSessionTab);
@@ -305,6 +306,7 @@ export function CenterTabStrip() {
             key={tab.id}
             tab={tab}
             active={tab.id === activeId}
+            splitPinned={tab.id === splitWebTabId}
             enter={enteringIds.has(tab.id)}
             closing={closingIds.has(tab.id)}
             label={labelOf(tab)}
@@ -334,6 +336,7 @@ export function CenterTabStrip() {
 function TabItem({
   tab,
   active,
+  splitPinned,
   enter,
   closing,
   label,
@@ -344,6 +347,7 @@ function TabItem({
 }: {
   tab: CenterTab;
   active: boolean;
+  splitPinned: boolean;
   enter: boolean;
   closing: boolean;
   label: string;
@@ -371,6 +375,7 @@ function TabItem({
   return (
     <div
       ref={tabRef}
+      data-split-pinned={splitPinned || undefined}
       className={`${styles.tab} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
       onAnimationEnd={(e) => {
         if (e.target !== e.currentTarget) return;

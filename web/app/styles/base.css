@@ -349,6 +349,33 @@ button, input, select, textarea, optgroup {
 .app #detailResize { order: 99; }
 .app #rightSidebar { margin-left: auto; }
 
+.center-single-pane {
+  display: contents;
+}
+.center-split-chat {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 360px;
+  min-height: 0;
+}
+.center-split-divider {
+  width: 6px;
+  flex: 0 0 6px;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--border);
+}
+.center-split-divider:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+.center-split-web {
+  display: flex;
+  flex: 1;
+  min-width: 480px;
+  min-height: 0;
+}
+
 /* Column resize handle */
 /* Zero layout width — main content sits flush against the sidebar's own
    border-right. The drag handle is an invisible absolute strip overlapping
