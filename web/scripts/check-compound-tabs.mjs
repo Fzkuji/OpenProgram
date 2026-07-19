@@ -25,6 +25,39 @@ const oneMember = groups.normalizeCenterTabLayout({
 });
 assert.deepEqual(oneMember.groups, []);
 
+const duplicateGroupIds = groups.normalizeCenterTabLayout({
+  tabIds: ["a", "b", "c", "d"],
+  groups: [
+    { id: "g:duplicate", memberIds: ["a", "b"], visibleIds: ["a", "b"], focusedId: "a" },
+    { id: "g:duplicate", memberIds: ["c", "d"], visibleIds: ["c", "d"], focusedId: "c" },
+  ],
+});
+assert.deepEqual(duplicateGroupIds.groups, [{
+  id: "g:duplicate",
+  memberIds: ["a", "b"],
+  visibleIds: ["a", "b"],
+  focusedId: "a",
+}]);
+assert.deepEqual(
+  groups.centerTabStripEntries(duplicateGroupIds).map((entry) => entry.id),
+  ["group:g:duplicate", "tab:c", "tab:d"],
+);
+
+const normalLayout = { tabIds: ["a", "b", "c"], groups: [] };
+assert.deepEqual(groups.moveCenterTab(normalLayout, "missing", "a"), normalLayout);
+assert.deepEqual(groups.moveCenterTab(normalLayout, "c", "missing"), normalLayout);
+for (const [sourceId, targetId] of [["missing", "a"], ["c", "missing"]]) {
+  const rejected = groups.groupCenterTabs(
+    normalLayout,
+    sourceId,
+    targetId,
+    1,
+    "g:missing",
+  );
+  assert.equal(rejected.accepted, false);
+  assert.deepEqual(rejected.layout, normalLayout);
+}
+
 let result = groups.groupCenterTabs(
   { tabIds: ["a", "b", "c", "d"], groups: [] },
   "b",
@@ -50,6 +83,13 @@ const focusedC = groups.focusCenterTabGroupMember(focusedA, "g:ab", "c");
 assert.deepEqual(focusedC.groups[0].visibleIds, ["c", "b"]);
 assert.equal(focusedC.groups[0].focusedId, "c");
 
+const reorderedWithinGroup = groups.groupCenterTabs(focusedC, "c", "a", 1, "unused");
+assert.equal(reorderedWithinGroup.accepted, true);
+assert.deepEqual(reorderedWithinGroup.layout.tabIds, ["a", "c", "b", "d"]);
+assert.deepEqual(reorderedWithinGroup.layout.groups[0].memberIds, ["a", "c", "b"]);
+assert.deepEqual(reorderedWithinGroup.layout.groups[0].visibleIds, ["c", "b"]);
+assert.equal(reorderedWithinGroup.layout.groups[0].focusedId, "c");
+
 const ungroupedC = groups.ungroupCenterTab(focusedC, "c", "d");
 assert.deepEqual(ungroupedC.groups[0].memberIds, ["a", "b"]);
 assert.deepEqual(ungroupedC.tabIds, ["a", "b", "c", "d"]);
@@ -62,6 +102,21 @@ const moved = groups.moveCenterTab(
   "a",
 );
 assert.deepEqual(moved.tabIds, ["c", "a", "b"]);
+
+const groupedLayout = {
+  tabIds: ["a", "b", "c", "d"],
+  groups: [{
+    id: "g:move",
+    memberIds: ["a", "b"],
+    visibleIds: ["a", "b"],
+    focusedId: "a",
+  }],
+};
+assert.deepEqual(groups.moveCenterTabGroup(groupedLayout, "g:move", "b"), groupedLayout);
+assert.deepEqual(groups.moveCenterTabGroup(groupedLayout, "g:move", "missing"), groupedLayout);
+const movedGroup = groups.moveCenterTabGroup(groupedLayout, "g:move", "d");
+assert.deepEqual(movedGroup.tabIds, ["c", "a", "b", "d"]);
+assert.deepEqual(movedGroup.groups, groupedLayout.groups);
 
 const entries = groups.centerTabStripEntries(result.layout);
 assert.deepEqual(entries.map((entry) => entry.id), ["group:g:ab", "tab:d"]);

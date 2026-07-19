@@ -35,12 +35,15 @@ export function normalizeCenterTabLayout(layout: CenterTabLayout): CenterTabLayo
   let tabIds = unique(layout.tabIds);
   const alive = new Set(tabIds);
   const claimed = new Set<string>();
+  const claimedGroupIds = new Set<string>();
   const groups: CenterTabGroup[] = [];
   for (const candidate of layout.groups) {
+    if (claimedGroupIds.has(candidate.id)) continue;
     const memberIds = unique(candidate.memberIds).filter(
       (id) => alive.has(id) && !claimed.has(id),
     ).slice(0, MAX_CENTER_TAB_GROUP_MEMBERS);
     if (memberIds.length < 2) continue;
+    claimedGroupIds.add(candidate.id);
     const memberSet = new Set(memberIds);
     const first = Math.min(...memberIds.map((id) => tabIds.indexOf(id)));
     const beforeId = tabIds.slice(first).find((id) => !memberSet.has(id)) ?? null;
@@ -121,6 +124,10 @@ export function moveCenterTab(
   tabId: string,
   beforeId: string | null,
 ): CenterTabLayout {
+  if (!layout.tabIds.includes(tabId)
+      || (beforeId !== null && !layout.tabIds.includes(beforeId))) {
+    return layout;
+  }
   const ungrouped = ungroupCenterTab(layout, tabId);
   return normalizeCenterTabLayout({
     ...ungrouped,
@@ -134,7 +141,10 @@ export function moveCenterTabGroup(
   beforeId: string | null,
 ): CenterTabLayout {
   const group = layout.groups.find((candidate) => candidate.id === groupId);
-  if (!group) return layout;
+  if (!group || (beforeId !== null
+      && (!layout.tabIds.includes(beforeId) || group.memberIds.includes(beforeId)))) {
+    return layout;
+  }
   return normalizeCenterTabLayout({
     ...layout,
     tabIds: moveBlockBefore(layout.tabIds, group.memberIds, beforeId),
@@ -148,11 +158,33 @@ export function groupCenterTabs(
   memberIndex: number,
   newGroupId: string,
 ): { layout: CenterTabLayout; accepted: boolean } {
-  if (sourceId === targetId) return { layout, accepted: false };
+  if (sourceId === targetId
+      || !layout.tabIds.includes(sourceId)
+      || !layout.tabIds.includes(targetId)) {
+    return { layout, accepted: false };
+  }
   const targetBefore = findCenterTabGroup(layout.groups, targetId);
   if (targetBefore && !targetBefore.memberIds.includes(sourceId)
       && targetBefore.memberIds.length >= MAX_CENTER_TAB_GROUP_MEMBERS) {
     return { layout, accepted: false };
+  }
+  if (targetBefore?.memberIds.includes(sourceId)) {
+    const memberIds = targetBefore.memberIds.filter((id) => id !== sourceId);
+    const at = Math.max(0, Math.min(memberIndex, memberIds.length));
+    memberIds.splice(at, 0, sourceId);
+    const memberSet = new Set(memberIds);
+    const targetAt = Math.min(...memberIds.map((id) => layout.tabIds.indexOf(id)));
+    const beforeId = layout.tabIds.slice(Math.max(0, targetAt))
+      .find((id) => !memberSet.has(id)) ?? null;
+    return {
+      accepted: true,
+      layout: normalizeCenterTabLayout({
+        tabIds: moveBlockBefore(layout.tabIds, memberIds, beforeId),
+        groups: layout.groups.map((group) => group.id === targetBefore.id
+          ? { ...group, memberIds }
+          : group),
+      }),
+    };
   }
   const detached = ungroupCenterTab(layout, sourceId);
   const targetGroup = findCenterTabGroup(detached.groups, targetId);
