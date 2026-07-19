@@ -36,6 +36,7 @@ const {
 const {
   isDesktopSplitLayoutAvailable,
   isWebTabReady,
+  restorePriorActiveTabAfterFailedWebOpen,
   setDesktopSplitLayoutAvailable,
   setWebTabReady,
   waitForWebTabReady,
@@ -76,6 +77,46 @@ setDesktopSplitLayoutAvailable(true);
 assert.equal(isDesktopSplitLayoutAvailable(), true);
 setDesktopSplitLayoutAvailable(false);
 assert.equal(isDesktopSplitLayoutAvailable(), false);
+
+const priorSessionId = "s:prior";
+const fallbackWebId = "w:https://fallback.example/";
+const userSelectedId = "s:user-selected";
+const rollbackTabs = [
+  { id: priorSessionId, kind: "session", title: "Prior", sessionId: "prior" },
+  {
+    id: fallbackWebId,
+    kind: "web",
+    title: "fallback.example",
+    url: "https://fallback.example/",
+  },
+  {
+    id: userSelectedId,
+    kind: "session",
+    title: "User selected",
+    sessionId: "user-selected",
+  },
+];
+useCenterTabs.setState({ tabs: rollbackTabs, activeId: fallbackWebId });
+restorePriorActiveTabAfterFailedWebOpen(priorSessionId, fallbackWebId);
+assert.equal(
+  useCenterTabs.getState().activeId,
+  priorSessionId,
+  "failed fallback restores the prior tab while the opened web tab is active",
+);
+useCenterTabs.setState({ tabs: rollbackTabs, activeId: userSelectedId });
+restorePriorActiveTabAfterFailedWebOpen(priorSessionId, fallbackWebId);
+assert.equal(
+  useCenterTabs.getState().activeId,
+  userSelectedId,
+  "failed fallback must preserve a tab selected by the user during activation",
+);
+useCenterTabs.setState({ tabs: rollbackTabs, activeId: null });
+restorePriorActiveTabAfterFailedWebOpen(priorSessionId, null);
+assert.equal(
+  useCenterTabs.getState().activeId,
+  null,
+  "a missing fallback web id must not restore the prior tab",
+);
 
 const webTabPaneSource = await readFile(
   new URL("../components/center-tabs/web-tab-pane.tsx", import.meta.url),

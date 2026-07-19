@@ -174,6 +174,16 @@ function visibleWebTab() {
     : null;
 }
 
+export function restorePriorActiveTabAfterFailedWebOpen(
+  priorActiveId: string | null,
+  openedWebTabId: string | null,
+): void {
+  const state = useCenterTabs.getState();
+  if (priorActiveId && openedWebTabId && state.activeId === openedWebTabId) {
+    state.setActive(priorActiveId);
+  }
+}
+
 function sendWebTabResult(
   ws: WebSocket,
   reqId: string,
@@ -250,7 +260,7 @@ export function installDesktopMenuHandlers(): void {
       if (!split && !routeVisible) {
         const routed = showCenterSurface();
         if (!routed) {
-          if (priorActiveId) useCenterTabs.getState().setActive(priorActiveId);
+          restorePriorActiveTabAfterFailedWebOpen(priorActiveId, id);
           ws.send(JSON.stringify({
             action: "webtab_result",
             req_id: d.req_id,
@@ -273,8 +283,8 @@ export function installDesktopMenuHandlers(): void {
             targetId = null;
           }
         }
-        if (!targetId && !split && priorActiveId) {
-          useCenterTabs.getState().setActive(priorActiveId);
+        if (!targetId && !split) {
+          restorePriorActiveTabAfterFailedWebOpen(priorActiveId, id);
         }
         sendWebTabResult(
           ws,
