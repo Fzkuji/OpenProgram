@@ -18,7 +18,7 @@
  * ponytail: window.confirm — the strip has no dialog host; swap for
  * ConfirmDialog if one ever lands at this level.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CirclePlus, FileText, Globe, Plus, X } from "lucide-react";
 
@@ -60,6 +60,30 @@ export function CenterTabStrip() {
 
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const conversations = useSessionStore((s) => s.conversations);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const tabsFlowRef = useRef<HTMLDivElement>(null);
+  const plusRef = useRef<HTMLButtonElement>(null);
+
+  // In desktop mode the + follows short tab lists, but reaches the fixed
+  // 49px right rail once the tab flow fills the row. Expose that geometric
+  // state so CSS can move only the saturated separator onto the rail edge.
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    const flow = tabsFlowRef.current;
+    const plus = plusRef.current;
+    if (!strip || !flow || !plus) return;
+    const updateAlignment = () => {
+      const paddingRight = Number.parseFloat(getComputedStyle(strip).paddingRight) || 0;
+      const contentRight = strip.getBoundingClientRect().right - paddingRight;
+      const railAligned = Math.abs(contentRight - plus.getBoundingClientRect().right) < 1;
+      strip.toggleAttribute("data-plus-rail-aligned", railAligned);
+    };
+    updateAlignment();
+    const observer = new ResizeObserver(updateAlignment);
+    observer.observe(strip);
+    observer.observe(flow);
+    return () => observer.disconnect();
+  }, []);
 
   // Session activation → upsert/focus its tab. The draft tab morphs
   // into the real session tab in place when chat_ack assigns an id
@@ -265,10 +289,11 @@ export function CenterTabStrip() {
   }
 
   return (
-    <div className={styles.strip}>
+    <div ref={stripRef} className={styles.strip}>
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
       <div
+        ref={tabsFlowRef}
         className={styles.tabsFlow}
         role="tablist"
         aria-label={text("Open tabs", "打开的标签")}
@@ -291,6 +316,7 @@ export function CenterTabStrip() {
         ))}
       </div>
       <button
+        ref={plusRef}
         type="button"
         className={styles.plusBtn}
         title={text("New tab", "新标签页")}

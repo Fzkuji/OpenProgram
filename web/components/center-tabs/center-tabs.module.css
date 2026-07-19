@@ -373,6 +373,13 @@
   background: var(--border);
   pointer-events: none;
 }
+/* When the desktop + reaches its rightmost position, its 10px right padding
+   and 28px button place the 49px rail boundary 11px left of the button.
+   Match the rail's 1px border; short tab lists retain the normal gap divider. */
+:global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn::before {
+  left: -11px;
+  width: 1px;
+}
 .tabActive + .plusBtn::before,
 .tab:hover + .plusBtn::before,
 /* tab 包进 .tabsFlow 后邻接选择器隔着容器失效，用 :has 恢复同一语义：

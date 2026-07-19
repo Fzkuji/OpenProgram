@@ -75,6 +75,24 @@ assert.match(strip, /ref=\{tabRef\}/);
 assert.match(strip, /const observer = new ResizeObserver\(revealActiveTab\);/);
 assert.match(strip, /observer\.observe\(flow\);/);
 assert.match(
+  strip,
+  /strip\.toggleAttribute\("data-plus-rail-aligned", railAligned\);/,
+  "the full-width desktop strip must expose when + reaches the right rail",
+);
+assert.match(
+  strip,
+  /useLayoutEffect\(\(\) => \{[\s\S]*data-plus-rail-aligned/,
+  "desktop rail alignment must be resolved before the first paint",
+);
+assert.match(strip, /plusRef/);
+assert.match(strip, /stripRef/);
+assert.match(strip, /tabsFlowRef/);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -11px;[^}]*width: 1px;/s,
+  "the pinned + separator must share the 49px rail boundary",
+);
+assert.match(
   desktopBridge,
   /openNewTabPage\(\);[\s\S]*showCenterSurface\(\);/,
 );
