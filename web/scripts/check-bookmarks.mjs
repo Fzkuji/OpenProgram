@@ -81,10 +81,10 @@ const navTagStart = rightSidebar.lastIndexOf("<", navMarker);
 const navTagClose = "\n        >";
 const navTagEnd = rightSidebar.indexOf(navTagClose, navMarker);
 const navOpeningTag = rightSidebar.slice(navTagStart, navTagEnd + navTagClose.length);
-assert.match(navOpeningTag, /^<button\b/, "bookmarks nav must be a native button");
-assert.match(navOpeningTag, /type="button"/);
-assert.match(navOpeningTag, /title=\{text\("Bookmarks",\s*"书签"\)\}/);
-assert.match(navOpeningTag, /aria-label=\{text\("Bookmarks",\s*"书签"\)\}/);
+// 与 History/Files 同构：div + role="button"（button 元素会把 label 居中，破坏左对齐）
+assert.match(navOpeningTag, /^<div\b/, "bookmarks nav must match sibling nav rows");
+assert.match(navOpeningTag, /role="button"/);
+assert.match(navOpeningTag, /onMouseEnter=\{\(\) => bookmarksIconRef/);
 
 function parseTsx(text, name) {
   return ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);

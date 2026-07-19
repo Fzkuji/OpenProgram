@@ -314,8 +314,7 @@ export function RightSidebar() {
           </span>
           <span className={sidebarNavLabelClass}>{t("right.history")}</span>
         </div>
-        <button
-          type="button"
+        <div
           className={
             sidebarNavItemClass + " right-nav-item" +
             (view === VIEW_BOOKMARKS ? " " + sidebarNavItemActiveClass : "")
@@ -324,14 +323,13 @@ export function RightSidebar() {
           onClick={() => onNavClick(VIEW_BOOKMARKS)}
           onMouseEnter={() => bookmarksIconRef.current?.startAnimation?.()}
           onMouseLeave={() => bookmarksIconRef.current?.stopAnimation?.()}
-          title={text("Bookmarks", "书签")}
-          aria-label={text("Bookmarks", "书签")}
+          role="button"
         >
           <span className={sidebarNavIconClass}>
             <BookmarkIcon ref={bookmarksIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>{text("Bookmarks", "书签")}</span>
-        </button>
+        </div>
         {/* Context / Executions 的导航按钮不再显示（只在看 History DAG 时
             有意义）；它们的视图 div 保留在下方 view host 里，legacy 的
             rightDock.show("detail"/"context") 仍能切过去。 */}
