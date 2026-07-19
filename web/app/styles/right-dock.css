@@ -1,104 +1,26 @@
-/* Permanent tool rail with a separate layout-occupying content panel. */
-.right-sidebar {
-  position: relative;
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: flex-end;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--bg-secondary);
-  transition: width 150ms cubic-bezier(0.165, 0.84, 0.44, 1),
-              min-width 150ms cubic-bezier(0.165, 0.84, 0.44, 1);
-}
-.right-sidebar[data-resizing="true"] { transition: none; }
+/* Right sidebar — mirror of the left sidebar. The shell layout
+   (`flex flex-col`, bg, width, transitions, border-LEFT) is now
+   Tailwind utilities on the root `<aside>` in `right-sidebar.tsx`.
+   The nav rows, icons, labels and toggle use the same class constants
+   from `components/sidebar/nav-classes.ts` so heights / colors /
+   strokes stay aligned. Diffs vs. left sidebar:
+     * border on the LEFT, not the right (Tailwind `border-l`)
+     * `.right-view-host` replaces the favorites/conversations blocks
+     * active nav item uses --bg-hover tint (rule below)
+     * collapsed state hides view-host (instead of favorites/conversations)
+*/
 
-.right-sidebar-panel {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 0 0 auto;
-  flex-direction: column;
-  box-sizing: border-box;
-  margin: 8px;
-  overflow: hidden;
-  border: 1px solid var(--border-popover);
-  border-radius: 16px;
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow-popover);
-}
-.right-sidebar-panel[hidden] { display: none; }
+/* Active nav-item state (currently-showing view) is applied via
+   `sidebarNavItemActiveClass` from `nav-classes.ts` in
+   `right-sidebar.tsx`. The legacy `.right-sidebar .sidebar-nav-item.active`
+   rule no longer matches since nav rows are class strings of Tailwind
+   utilities now (no `.sidebar-nav-item` class). */
 
-.right-sidebar-panel-header {
-  display: flex;
-  height: 40px;
-  flex: 0 0 40px;
-  align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
-  padding: 4px 8px 4px 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 550;
-}
-
-.right-sidebar-rail {
-  display: flex;
-  width: 49px;
-  min-width: 49px;
-  flex: 0 0 49px;
-  flex-direction: column;
-  box-sizing: border-box;
-  border-left: 1px solid var(--border);
-  background: var(--bg-secondary);
-}
-
-.right-sidebar-rail-header {
-  display: flex;
-  height: 40px;
-  flex: 0 0 40px;
-  align-items: center;
-  justify-content: center;
-}
-
-.right-sidebar-rail-items {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  padding: 8px;
-}
-
-.right-sidebar-rail .right-nav-item {
-  width: 32px;
-  min-width: 32px;
-  padding: 6px;
-  justify-content: center;
-}
-
-.right-panel-resize {
-  position: absolute;
-  z-index: 10;
-  top: 16px;
-  bottom: 16px;
-  left: 0;
-  width: 8px;
-  cursor: ew-resize;
-  touch-action: none;
-}
-.right-panel-resize:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: -2px;
-}
-
+/* View host — one child visible at a time, matching data-view. */
 .right-view-host {
-  position: relative;
-  min-height: 0;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 .right-view {
   position: absolute;
@@ -114,16 +36,6 @@
 }
 .right-sidebar[data-view="bookmarks"] .right-view[data-view="bookmarks"] {
   display: flex;
-}
-
-@media (max-width: 900px) {
-  .right-sidebar,
-  .right-sidebar:not(.collapsed) {
-    position: relative;
-    inset: auto;
-    z-index: auto;
-    box-shadow: none;
-  }
 }
 
 /* ============ Bookmarks ============ */
@@ -251,6 +163,10 @@
   line-height: 1.55;
   text-align: center;
 }
+
+/* Collapsed: hide view content + nav labels (the latter is inherited
+   from .sidebar.collapsed rules in 02-sidebar.css). */
+.right-sidebar.collapsed .right-view-host { display: none; }
 
 /* HEAD item sits directly in .branches-section, needs same side padding as the list */
 .branches-section > .branch-item {

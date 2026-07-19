@@ -1,21 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
-import {
-  COMPACT_LEFT_RAIL_WIDTH,
-  RIGHT_PANEL_DEFAULT,
-  RIGHT_PANEL_GAP,
-  RIGHT_PANEL_MAX,
-  RIGHT_PANEL_MIN,
-  RIGHT_RAIL_WIDTH,
-  clampPanelWidth,
-  fitRightPanelWidth,
-  handlePanelResizeKey,
-  panelWidthAfterKey,
-  preferredPanelWidthAfterKey,
-  resetPanelResize,
-  resolveRightPanelAction,
-} from "../lib/right-panel-behavior.ts";
 
 const sourcePath = new URL("../lib/bookmarks.ts", import.meta.url);
 const sessionStorePath = new URL("../lib/session-store/index.ts", import.meta.url);
@@ -24,9 +9,6 @@ const webTabPath = new URL("../components/center-tabs/web-tab-pane.tsx", import.
 const newTabPath = new URL("../components/center-tabs/new-tab-page.tsx", import.meta.url);
 const managerPath = new URL("../components/right-sidebar/bookmarks-panel.tsx", import.meta.url);
 const rightSidebarPath = new URL("../components/right-sidebar/right-sidebar.tsx", import.meta.url);
-const sidebarPath = new URL("../components/sidebar/sidebar.tsx", import.meta.url);
-const appShellPath = new URL("../components/app-shell.tsx", import.meta.url);
-const baseCssPath = new URL("../app/styles/base.css", import.meta.url);
 const rightDockCssPath = new URL("../app/styles/right-dock.css", import.meta.url);
 const packagePath = new URL("../package.json", import.meta.url);
 assert.ok(existsSync(sourcePath), "bookmarks storage module missing");
@@ -35,7 +17,7 @@ assert.ok(existsSync(managerPath), "bookmarks manager missing");
 const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
 assert.equal(
   packageJson.scripts?.["check:bookmarks"],
-  "node --no-warnings --experimental-strip-types scripts/check-bookmarks.mjs",
+  "node --no-warnings scripts/check-bookmarks.mjs",
 );
 assert.match(packageJson.scripts?.check || "", /check:bookmarks/);
 
@@ -45,172 +27,7 @@ const webTab = readFileSync(webTabPath, "utf8");
 const newTab = readFileSync(newTabPath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
 const rightSidebar = readFileSync(rightSidebarPath, "utf8");
-const sidebar = readFileSync(sidebarPath, "utf8");
-const appShell = readFileSync(appShellPath, "utf8");
-const baseCss = readFileSync(baseCssPath, "utf8");
 const rightDockCss = readFileSync(rightDockCssPath, "utf8");
-
-assert.equal(RIGHT_PANEL_DEFAULT, 320);
-assert.equal(RIGHT_PANEL_MIN, 280);
-assert.equal(RIGHT_PANEL_MAX, 560);
-assert.equal(RIGHT_PANEL_GAP, 8);
-assert.equal(RIGHT_RAIL_WIDTH, 49);
-assert.equal(COMPACT_LEFT_RAIL_WIDTH, 49);
-
-assert.equal(clampPanelWidth(120), 280);
-assert.equal(clampPanelWidth(420), 420);
-assert.equal(clampPanelWidth(900), 560);
-assert.equal(fitRightPanelWidth(320, 800), 320);
-assert.equal(fitRightPanelWidth(560, 800), 560);
-assert.equal(fitRightPanelWidth(320, 600), 320);
-assert.equal(
-  fitRightPanelWidth(560, 600),
-  486,
-  "narrow layout must reserve both 49px rails and the panel gaps",
-);
-assert.equal(
-  fitRightPanelWidth(560, 320),
-  206,
-  "keeping both rails visible takes priority over the normal panel minimum",
-);
-
-assert.equal(panelWidthAfterKey(320, "ArrowLeft"), 336);
-assert.equal(panelWidthAfterKey(320, "ArrowRight"), 304);
-assert.equal(panelWidthAfterKey(280, "ArrowRight"), 280);
-assert.equal(panelWidthAfterKey(560, "ArrowLeft"), 560);
-assert.equal(panelWidthAfterKey(400, "Home"), 280);
-assert.equal(panelWidthAfterKey(400, "End"), 560);
-assert.equal(panelWidthAfterKey(400, "Enter"), null);
-
-const narrowEffectivePanelWidth = fitRightPanelWidth(560, 600);
-assert.equal(narrowEffectivePanelWidth, 486);
-assert.equal(
-  preferredPanelWidthAfterKey(560, narrowEffectivePanelWidth, "ArrowLeft"),
-  560,
-  "a clamped grow must preserve the preferred width",
-);
-assert.equal(
-  preferredPanelWidthAfterKey(560, narrowEffectivePanelWidth, "ArrowRight"),
-  470,
-  "a narrow shrink must start from the rendered width",
-);
-assert.equal(preferredPanelWidthAfterKey(400, 320, "Home"), 280);
-assert.equal(preferredPanelWidthAfterKey(400, 320, "End"), 560);
-assert.equal(preferredPanelWidthAfterKey(400, 320, "Enter"), null);
-const preferredAfterClampedGrow = preferredPanelWidthAfterKey(
-  560,
-  narrowEffectivePanelWidth,
-  "ArrowLeft",
-);
-assert.equal(
-  fitRightPanelWidth(preferredAfterClampedGrow, 900),
-  560,
-  "widening the viewport must restore a preserved preferred width",
-);
-
-assert.deepEqual(
-  resolveRightPanelAction(
-    { open: true, view: "bookmarks" },
-    { type: "select", view: "bookmarks" },
-  ),
-  { open: false, view: "bookmarks", focusView: "bookmarks" },
-  "re-clicking the selected rail item must close and target that item for focus",
-);
-assert.deepEqual(
-  resolveRightPanelAction(
-    { open: true, view: "bookmarks" },
-    { type: "escape" },
-  ),
-  { open: false, view: "bookmarks", focusView: "bookmarks" },
-  "Escape must close and target the selected rail item for focus",
-);
-assert.deepEqual(
-  resolveRightPanelAction(
-    { open: true, view: "bookmarks" },
-    { type: "select", view: "files" },
-  ),
-  { open: true, view: "files", focusView: null },
-  "selecting another rail item must switch the open panel",
-);
-assert.deepEqual(
-  resolveRightPanelAction(
-    { open: false, view: "bookmarks" },
-    { type: "escape" },
-  ),
-  { open: false, view: "bookmarks", focusView: null },
-  "Escape on a closed panel must not move focus",
-);
-
-class SeparatorHarness extends EventTarget {
-  #attributes = new Map();
-
-  setAttribute(name, value) {
-    this.#attributes.set(name, String(value));
-  }
-
-  getAttribute(name) {
-    return this.#attributes.get(name) ?? null;
-  }
-}
-
-const separator = new SeparatorHarness();
-separator.setAttribute("role", "separator");
-separator.setAttribute("aria-valuemin", RIGHT_PANEL_MIN);
-separator.setAttribute("aria-valuemax", RIGHT_PANEL_MAX);
-let renderedPanelWidth = RIGHT_PANEL_DEFAULT;
-let preferredPanelWidth = RIGHT_PANEL_DEFAULT;
-
-function renderSeparator(nextWidth) {
-  preferredPanelWidth = nextWidth;
-  renderedPanelWidth = nextWidth;
-  separator.setAttribute("aria-valuenow", nextWidth);
-}
-
-function dispatchSeparatorKey(key) {
-  const event = new Event("keydown", { cancelable: true });
-  Object.defineProperty(event, "key", { value: key });
-  separator.dispatchEvent(event);
-  return event;
-}
-
-separator.addEventListener("keydown", (event) => {
-  handlePanelResizeKey(
-    event,
-    preferredPanelWidth,
-    renderedPanelWidth,
-    renderSeparator,
-  );
-});
-renderSeparator(RIGHT_PANEL_DEFAULT);
-
-assert.equal(separator.getAttribute("aria-valuemin"), "280");
-assert.equal(separator.getAttribute("aria-valuemax"), "560");
-assert.equal(separator.getAttribute("aria-valuenow"), "320");
-assert.equal(dispatchSeparatorKey("ArrowLeft").defaultPrevented, true);
-assert.equal(separator.getAttribute("aria-valuenow"), "336");
-dispatchSeparatorKey("Home");
-assert.equal(separator.getAttribute("aria-valuenow"), "280");
-dispatchSeparatorKey("ArrowRight");
-assert.equal(separator.getAttribute("aria-valuenow"), "280");
-dispatchSeparatorKey("End");
-assert.equal(separator.getAttribute("aria-valuenow"), "560");
-dispatchSeparatorKey("ArrowLeft");
-assert.equal(separator.getAttribute("aria-valuenow"), "560");
-assert.equal(dispatchSeparatorKey("Enter").defaultPrevented, false);
-assert.equal(separator.getAttribute("aria-valuenow"), "560");
-
-const resizeDrag = { current: { startX: 100, startW: RIGHT_PANEL_DEFAULT } };
-let resizeActive = true;
-const commitResizeActive = (active) => {
-  resizeActive = active;
-};
-resetPanelResize(resizeDrag, commitResizeActive);
-assert.equal(resizeDrag.current, null);
-assert.equal(resizeActive, false);
-assert.doesNotThrow(() => resetPanelResize(resizeDrag, commitResizeActive));
-assert.equal(resizeDrag.current, null);
-assert.equal(resizeActive, false);
-
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);
@@ -252,147 +69,16 @@ assert.match(
   /\.bookmark-title-input:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
 );
 
-for (const [selector, declaration] of [
-  ["right-sidebar-rail", /width:\s*49px/],
-  ["right-sidebar-panel", /margin:\s*8px/],
-  ["right-sidebar-panel", /border:\s*1px solid var\(--border-popover\)/],
-  ["right-sidebar-panel", /border-radius:\s*16px/],
-  ["right-sidebar-panel", /box-shadow:\s*var\(--shadow-popover\)/],
-  ["right-sidebar-panel-header", /height:\s*40px/],
-]) {
-  const rule = new RegExp(`\\.${selector}\\s*\\{[^}]*${declaration.source}`, "s");
-  assert.match(rightDockCss, rule, `${selector} geometry missing`);
-}
-
-assert.match(
-  rightDockCss,
-  /\.right-sidebar-panel\[hidden\]\s*\{\s*display:\s*none;/,
-);
-assert.match(
-  rightDockCss,
-  /\.right-sidebar\[data-resizing="true"\]\s*\{\s*transition:\s*none;/,
-  "pointer resizing must disable the shell transition",
-);
-assert.match(
-  rightDockCss,
-  /\.right-sidebar\s*\{[^}]*display:\s*flex;[^}]*flex:\s*0 0 auto;/s,
-  "right panel shell must occupy flex layout space",
-);
-assert.match(
-  rightDockCss,
-  /\.right-sidebar\s*\{[^}]*justify-content:\s*flex-end;/s,
-  "right rail must stay anchored while the panel is hidden or resizing",
-);
-const narrowRightSidebarRule = rightDockCss.match(
-  /@media\s*\(max-width:\s*900px\)\s*\{\s*\.right-sidebar,\s*\.right-sidebar:not\(\.collapsed\)\s*\{([^}]*)\}/,
-);
-assert.ok(narrowRightSidebarRule, "narrow right-sidebar rule missing");
-assert.match(
-  narrowRightSidebarRule[1],
-  /position:\s*relative;/,
-  "narrow right panel must remain a layout participant",
-);
-assert.doesNotMatch(
-  narrowRightSidebarRule[1],
-  /position:\s*fixed;/,
-  "narrow right panel must not become a fixed overlay",
-);
-
-assert.match(appShell, /window\.matchMedia\("\(max-width: 900px\)"\)/);
-assert.match(appShell, /window\.addEventListener\("resize", updateViewport\);/);
-assert.match(
-  appShell,
-  /const forceLeftSidebarCollapsed =\s*showChat && narrowViewport && rightDockOpen;/,
-);
-assert.match(
-  appShell,
-  /<div className="app" data-chat-layout=\{showChat \? "true" : "false"\}>/,
-  "the chat shell needs a hydration-stable responsive layout marker",
-);
-assert.match(
-  appShell,
-  /function restoreForcedLeftSidebar\(\)\s*\{\s*setRightDockOpen\(false\);\s*\}/,
-);
-const sidebarMountStart = appShell.lastIndexOf("<Sidebar");
-const sidebarMount = appShell.slice(
-  sidebarMountStart,
-  appShell.indexOf("/>", sidebarMountStart) + 2,
-);
-assert.match(sidebarMount, /forcedCollapsed=\{forceLeftSidebarCollapsed\}/);
-assert.match(sidebarMount, /onForcedExpand=\{restoreForcedLeftSidebar\}/);
-const rightSidebarMountStart = appShell.lastIndexOf("<RightSidebar");
-const rightSidebarMount = appShell.slice(
-  rightSidebarMountStart,
-  appShell.indexOf("/>", rightSidebarMountStart) + 2,
-);
-assert.match(rightSidebarMount, /viewportWidth=\{viewportWidth\}/);
-assert.match(rightSidebarMount, /narrow=\{narrowViewport\}/);
-
-assert.match(sidebar, /const effectiveOpen = open && !forcedCollapsed;/);
-assert.match(
-  sidebar,
-  /if \(forcedCollapsed\) \{[\s\S]*?onForcedExpand\?\.\(\);[\s\S]*?return;/,
-);
-assert.match(sidebar, /\(effectiveOpen\s*\? "w-sidebar-w"/);
-assert.match(
-  sidebar,
-  /data-layout-rail=\{forcedCollapsed \? "true" : undefined\}/,
-  "the forced compact sidebar needs a stable layout marker",
-);
-assert.match(sidebar, /\{effectiveOpen && hasFavorites && \(/);
-assert.match(sidebar, /\{effectiveOpen && \(/);
-
-const forcedRailRule = baseCss.match(
-  /\.sidebar:not\(\.right-sidebar\)\[data-layout-rail="true"\]\s*\{([^}]*)\}/,
-);
-assert.ok(forcedRailRule, "forced left layout rail rule missing");
-assert.match(forcedRailRule[1], /position:\s*relative;/);
-assert.match(forcedRailRule[1], /inset:\s*auto;/);
-assert.match(forcedRailRule[1], /flex:\s*0 0 49px;/);
-assert.match(forcedRailRule[1], /width:\s*49px\s*!important;/);
-assert.match(forcedRailRule[1], /min-width:\s*49px\s*!important;/);
-
-const firstPaintLeftRailRule = baseCss.match(
-  /\.app\[data-chat-layout="true"\]:has\(\.right-sidebar:not\(\.collapsed\)\)\s*>\s*\.sidebar:not\(\.right-sidebar\)\s*\{([^}]*)\}/,
-);
-assert.ok(
-  firstPaintLeftRailRule,
-  "responsive CSS must reserve the left rail before the viewport effect runs",
-);
-assert.match(firstPaintLeftRailRule[1], /position:\s*relative;/);
-assert.match(firstPaintLeftRailRule[1], /inset:\s*auto;/);
-assert.match(firstPaintLeftRailRule[1], /flex:\s*0 0 49px;/);
-assert.match(firstPaintLeftRailRule[1], /min-width:\s*49px\s*!important;/);
-const firstPaintRightShellRule = baseCss.match(
-  /\.app\[data-chat-layout="true"\]:has\(\.right-sidebar:not\(\.collapsed\)\)\s+\.right-sidebar:not\(\.collapsed\)\s*\{([^}]*)\}/,
-);
-assert.ok(firstPaintRightShellRule, "first-paint right shell constraint missing");
-assert.match(
-  firstPaintRightShellRule[1],
-  /max-width:\s*calc\(100vw - 49px\);/,
-);
-assert.match(firstPaintRightShellRule[1], /min-width:\s*0\s*!important;/);
-const firstPaintRightPanelRule = baseCss.match(
-  /\.app\[data-chat-layout="true"\]:has\(\.right-sidebar:not\(\.collapsed\)\)\s+\.right-sidebar-panel\s*\{([^}]*)\}/,
-);
-assert.ok(firstPaintRightPanelRule, "first-paint right panel constraint missing");
-assert.match(
-  firstPaintRightPanelRule[1],
-  /max-width:\s*calc\(100% - 65px\);/,
-);
-
-assert.match(
-  rightSidebar,
-  /const effectivePanelWidth =\s*narrow && viewportWidth !== null[\s\S]*?fitRightPanelWidth\(panelWidth, viewportWidth\)[\s\S]*?: panelWidth;/,
-);
-assert.match(rightSidebar, /startW: effectivePanelWidth/);
-assert.match(rightSidebar, /style=\{\{ width: `\$\{effectivePanelWidth\}px` \}\}/);
-assert.match(rightSidebar, /aria-valuenow=\{effectivePanelWidth\}/);
-assert.match(
-  rightSidebar,
-  /handlePanelResizeKey\(\s*event,\s*panelWidth,\s*effectivePanelWidth,\s*setPanelWidth,?\s*\)/,
-  "keyboard resizing must keep preferred and effective widths separate",
-);
+const navMarker = rightSidebar.indexOf("data-view={VIEW_BOOKMARKS}");
+assert.ok(navMarker >= 0, "bookmarks nav missing");
+const navTagStart = rightSidebar.lastIndexOf("<", navMarker);
+const navTagClose = "\n        >";
+const navTagEnd = rightSidebar.indexOf(navTagClose, navMarker);
+const navOpeningTag = rightSidebar.slice(navTagStart, navTagEnd + navTagClose.length);
+assert.match(navOpeningTag, /^<button\b/, "bookmarks nav must be a native button");
+assert.match(navOpeningTag, /type="button"/);
+assert.match(navOpeningTag, /title=\{text\("Bookmarks",\s*"书签"\)\}/);
+assert.match(navOpeningTag, /aria-label=\{text\("Bookmarks",\s*"书签"\)\}/);
 
 function parseTsx(text, name) {
   return ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
@@ -402,81 +88,6 @@ function attr(opening, name) {
   return opening.attributes.properties.find(
     (property) => ts.isJsxAttribute(property) && property.name.text === name,
   );
-}
-
-const rightSidebarFile = parseTsx(rightSidebar, "right-sidebar.tsx");
-let resizeSeparator;
-function findResizeSeparator(node) {
-  if (
-    ts.isJsxSelfClosingElement(node) &&
-    attr(node, "role")?.initializer?.text === "separator"
-  ) {
-    resizeSeparator = node;
-    return;
-  }
-  ts.forEachChild(node, findResizeSeparator);
-}
-findResizeSeparator(rightSidebarFile);
-assert.ok(resizeSeparator, "keyboard resize separator missing");
-for (const name of [
-  "aria-label",
-  "aria-orientation",
-  "aria-valuemin",
-  "aria-valuemax",
-  "aria-valuenow",
-  "tabIndex",
-]) {
-  assert.ok(attr(resizeSeparator, name), `separator ${name} missing`);
-}
-const resizeKeyDown = attr(resizeSeparator, "onKeyDown");
-assert.ok(resizeKeyDown, "separator onKeyDown missing");
-assert.ok(ts.isJsxExpression(resizeKeyDown.initializer));
-const resizeKeyExpression = resizeKeyDown.initializer.expression;
-assert.ok(resizeKeyExpression && ts.isArrowFunction(resizeKeyExpression));
-assert.ok(ts.isCallExpression(resizeKeyExpression.body));
-assert.equal(
-  resizeKeyExpression.body.expression.getText(rightSidebarFile),
-  "handlePanelResizeKey",
-  "separator must invoke the handler covered by the EventTarget harness",
-);
-const lostPointerCapture = attr(resizeSeparator, "onLostPointerCapture");
-assert.ok(lostPointerCapture, "separator lost-pointer cleanup missing");
-assert.ok(ts.isJsxExpression(lostPointerCapture.initializer));
-assert.equal(
-  lostPointerCapture.initializer.expression?.getText(rightSidebarFile),
-  "resetResize",
-  "lost pointer capture must use the shared idempotent cleanup",
-);
-assert.match(
-  rightSidebar,
-  /function resetResize\(\)\s*\{\s*resetPanelResize\(dragRef, setResizing\);\s*\}/s,
-  "React resize state must delegate to the executable cleanup",
-);
-assert.match(
-  rightSidebar,
-  /function finishResize[\s\S]*?releasePointerCapture\(event\.pointerId\);[\s\S]*?resetResize\(\);\s*\}/,
-  "normal pointer release must use the same cleanup",
-);
-
-for (const viewName of ["VIEW_HISTORY", "VIEW_BOOKMARKS", "VIEW_FILES"]) {
-  let railButton;
-  function findRailButton(node) {
-    if (
-      ts.isJsxElement(node) &&
-      node.openingElement.tagName.getText(rightSidebarFile) === "button" &&
-      attr(node.openingElement, "data-view")?.getText(rightSidebarFile).includes(viewName)
-    ) {
-      railButton = node.openingElement;
-      return;
-    }
-    ts.forEachChild(node, findRailButton);
-  }
-  findRailButton(rightSidebarFile);
-  assert.ok(railButton, `${viewName} rail item must be a native button`);
-  assert.equal(attr(railButton, "type")?.initializer?.text, "button");
-  assert.ok(attr(railButton, "title"), `${viewName} rail item missing title`);
-  assert.ok(attr(railButton, "aria-label"), `${viewName} rail item missing aria-label`);
-  assert.ok(attr(railButton, "aria-pressed"), `${viewName} rail item missing aria-pressed`);
 }
 
 function assertNoNestedButtons(text, name) {
