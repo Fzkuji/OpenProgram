@@ -100,63 +100,36 @@ const groupPrepared = {
 coordinator.prepare(groupPrepared);
 assert.deepEqual(coordinator.current()?.subject.tabIds, ["a", "b", "c"]);
 
+// Chrome-style midpoint reorder: position only ever yields before/after —
+// left of the target midpoint is before, right is after. Merge is never
+// positional; it is a dwell upgrade owned by the strip's onDragOver.
 const rect = { left: 100, width: 200 };
 const target = { tabId: "target", groupId: "g:target", memberIndex: 2 };
 assert.deepEqual(drag.resolveTabDropIntent(rect, 100, target), {
   mode: "before",
   targetTabId: "target",
 });
-assert.deepEqual(drag.resolveTabDropIntent(rect, 169.999, target), {
+assert.deepEqual(drag.resolveTabDropIntent(rect, 199.999, target), {
   mode: "before",
   targetTabId: "target",
 });
-assert.deepEqual(drag.resolveTabDropIntent(rect, 170, target), {
-  mode: "merge",
-  targetTabId: "target",
-  groupId: "g:target",
-  memberIndex: 2,
-});
-assert.deepEqual(drag.resolveTabDropIntent(rect, 229.999, target), {
-  mode: "merge",
-  targetTabId: "target",
-  groupId: "g:target",
-  memberIndex: 2,
-});
-assert.deepEqual(drag.resolveTabDropIntent(rect, 230, target), {
+assert.deepEqual(drag.resolveTabDropIntent(rect, 200, target), {
   mode: "after",
   targetTabId: "target",
 });
-// Hysteresis: a merge on the same target keeps holding past the enter
-// band edge (0.35/0.65) until the wider exit band (0.30/0.70).
-const mergeIntent = drag.resolveTabDropIntent(rect, 200, target);
-assert.equal(
-  drag.resolveTabDropIntent(rect, 165, target, mergeIntent).mode,
-  "merge",
-);
-assert.equal(
-  drag.resolveTabDropIntent(rect, 159.999, target, mergeIntent).mode,
-  "before",
-);
-assert.equal(
-  drag.resolveTabDropIntent(rect, 235, target, mergeIntent).mode,
-  "merge",
-);
-assert.equal(
-  drag.resolveTabDropIntent(rect, 240, target, mergeIntent).mode,
-  "after",
-);
-// A previous reorder intent does NOT widen the band — merge still needs
-// crossing into the center 30%.
-assert.equal(
-  drag.resolveTabDropIntent(
-    rect, 165, target, { mode: "before", targetTabId: "target" },
-  ).mode,
-  "before",
-);
 assert.deepEqual(drag.resolveTabDropIntent(rect, 300, target), {
   mode: "after",
   targetTabId: "target",
 });
+
+// Dwell-to-merge contract: constant timing + the central merge zone check.
+assert.equal(drag.MERGE_DWELL_MS, 300);
+assert.equal(drag.MERGE_DWELL_CENTER_FRACTION, 0.4);
+assert.equal(drag.isInMergeZone(rect, 159.999), false);
+assert.equal(drag.isInMergeZone(rect, 160), true);
+assert.equal(drag.isInMergeZone(rect, 200), true);
+assert.equal(drag.isInMergeZone(rect, 240), true);
+assert.equal(drag.isInMergeZone(rect, 240.001), false);
 
 const broken = groups.normalizeCenterTabLayout({
   tabIds: ["a", "b", "c", "d"],

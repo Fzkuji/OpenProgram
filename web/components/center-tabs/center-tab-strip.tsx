@@ -38,6 +38,8 @@ import {
 } from "@/lib/state/center-tab-groups";
 import {
   dragCoordinator,
+  isInMergeZone,
+  MERGE_DWELL_MS,
   resolveTabDropIntent,
   type TabDragSubject,
   type TabDropIntent,
@@ -646,8 +648,18 @@ export function CenterTabStrip() {
     return (entry && liveShifts.get(entry.id)) || 0;
   }
 
+  // Dwell-to-merge: hovering the same target's central 40% for
+  // MERGE_DWELL_MS upgrades the reorder marker to a merge.
+  const dwellRef = useRef<{ targetTabId: string; timer: number } | null>(null);
+  function clearDwell() {
+    if (!dwellRef.current) return;
+    window.clearTimeout(dwellRef.current.timer);
+    dwellRef.current = null;
+  }
+
   function clearDragState() {
     removeReleaseListener();
+    clearDwell();
     setDraggedIds(new Set());
     setDropMarker(null);
     setDragWidth(0);
@@ -710,8 +722,15 @@ export function CenterTabStrip() {
     const unit = prepared.subject.kind === "group"
       ? (e.currentTarget.parentElement ?? e.currentTarget)
       : e.currentTarget;
-    setDragWidth(unit.getBoundingClientRect().width);
-    setDraggedIds(new Set(prepared.subject.tabIds));
+    const unitWidth = unit.getBoundingClientRect().width;
+    // Chrome-style: the source tab collapses to a ghost slot, but only
+    // AFTER the browser snapshots the drag image — restyle next frame.
+    requestAnimationFrame(() => {
+      const current = dragCoordinator.current();
+      if (current !== prepared || current.cancelled || current.committed) return;
+      setDragWidth(unitWidth);
+      setDraggedIds(new Set(prepared.subject.tabIds));
+    });
     setDragAnnouncement(text("Dragging tab", "正在拖动标签"));
   }
 
@@ -833,12 +852,43 @@ export function CenterTabStrip() {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     const rect = e.currentTarget.getBoundingClientRect();
-    const intent = resolveTabDropIntent(
-      { left: rect.left - entryShiftOf(target.tabId), width: rect.width },
-      e.clientX,
-      target,
-      dropMarker,
-    );
+    const slotRect = {
+      left: rect.left - entryShiftOf(target.tabId),
+      width: rect.width,
+    };
+    const inMergeZone = isInMergeZone(slotRect, e.clientX);
+    // Once dwell has upgraded to merge, hold it while the cursor stays
+    // in the same target's merge zone; leaving the zone or the target
+    // drops back to midpoint reorder below.
+    if (
+      dropMarker?.mode === "merge"
+      && dropMarker.targetTabId === target.tabId
+      && inMergeZone
+    ) return;
+    if (inMergeZone) {
+      if (dwellRef.current?.targetTabId !== target.tabId) {
+        clearDwell();
+        const mergeTarget = { ...target };
+        dwellRef.current = {
+          targetTabId: target.tabId,
+          timer: window.setTimeout(() => {
+            dwellRef.current = null;
+            const merge: TabDropIntent = {
+              mode: "merge",
+              targetTabId: mergeTarget.tabId,
+            };
+            if (mergeTarget.groupId !== undefined) merge.groupId = mergeTarget.groupId;
+            if (mergeTarget.memberIndex !== undefined) {
+              merge.memberIndex = mergeTarget.memberIndex;
+            }
+            setDropMarker(merge);
+          }, MERGE_DWELL_MS),
+        };
+      }
+    } else {
+      clearDwell();
+    }
+    const intent = resolveTabDropIntent(slotRect, e.clientX, target);
     // dragover fires continuously — only commit a真正变化的 intent，否则
     // 每个事件都 setState 重渲染，正在播的 transform transition 被打断重启。
     setDropMarker((prev) =>
@@ -877,6 +927,7 @@ export function CenterTabStrip() {
       && (e.currentTarget.contains(e.relatedTarget)
         || tabsFlowRef.current?.contains(e.relatedTarget))
     ) return;
+    clearDwell();
     setDropMarker(null);
   }
 
@@ -885,13 +936,17 @@ export function CenterTabStrip() {
     target: { tabId: string; groupId?: string; memberIndex?: number },
   ) {
     e.preventDefault();
+    // The live marker already carries any dwell merge upgrade — never
+    // recompute over it, or the drop would demote merge back to reorder.
     const rect = e.currentTarget.getBoundingClientRect();
-    const intent = resolveTabDropIntent(
-      { left: rect.left - entryShiftOf(target.tabId), width: rect.width },
-      e.clientX,
-      target,
-      dropMarker,
-    );
+    const intent =
+      dropMarker && dropMarker.targetTabId === target.tabId
+        ? dropMarker
+        : resolveTabDropIntent(
+            { left: rect.left - entryShiftOf(target.tabId), width: rect.width },
+            e.clientX,
+            target,
+          );
     commitDrop(e, intent);
   }
 
@@ -951,6 +1006,7 @@ export function CenterTabStrip() {
       const cancelled = Boolean(dragCoordinator.current() || menuTabId);
       cancelCoordinator();
       removeReleaseListener();
+      clearDwell();
       setDraggedIds(new Set());
       setDropMarker(null);
       setTabMenu(null);
@@ -964,6 +1020,7 @@ export function CenterTabStrip() {
       window.removeEventListener("keydown", onEscape);
       cancelCoordinator();
       removeReleaseListener();
+      clearDwell();
     };
   }, [tabMenu, text]);
 

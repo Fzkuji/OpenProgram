@@ -466,9 +466,11 @@
   cursor: grabbing;
 }
 
+/* Chrome 式拖动：拖起后原位 tab 近乎空槽（拖影由系统截取，压制在
+   dragstart 后延一帧才生效，见 onDragStart 的 requestAnimationFrame）。 */
 .tab[data-drag-source="true"],
 .compoundTab[data-drag-source="true"] {
-  opacity: 0.55;
+  opacity: 0.25;
 }
 /* Chrome 式实时让位：before/after 不画插入线，被越过的 tab 用 transform
    平滑滑开（见 computeLiveShifts）；merge 仍然高亮目标 tab。 */
