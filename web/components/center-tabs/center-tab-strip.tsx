@@ -307,6 +307,10 @@ export function CenterTabStrip() {
   const [dragWidth, setDragWidth] = useState(0);
   const [dragAnnouncement, setDragAnnouncement] = useState("");
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
+  // Mirror of tabMenu for the pointer handlers, which run from listeners
+  // registered on an earlier render and would otherwise read a stale value.
+  const tabMenuRef = useRef<TabMenuState | null>(null);
+  tabMenuRef.current = tabMenu;
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
@@ -841,7 +845,13 @@ export function CenterTabStrip() {
     subject: TabDragSubject,
     event: React.PointerEvent<HTMLElement>,
   ) {
+    // Left button only — right/middle must never arm a drag, or the
+    // context menu's own pointerdown would start one behind it.
     if (event.button !== 0 || pointerDragRef.current) return;
+    // While the context menu is open, the first click is a dismissal:
+    // let it through untouched so the outside-click listener sees it and
+    // no drag is prepared. Dragging works normally once it is closed.
+    if (tabMenuRef.current) return;
     onPrepareDrag(subject);
     const prepared = dragCoordinator.current();
     if (!prepared) return;
@@ -1225,9 +1235,12 @@ export function CenterTabStrip() {
       }
       if (menuTabId) returnFocusToMenuInvoker(menuTabId);
     };
-    window.addEventListener("keydown", onEscape);
+    // Capture phase on document: the menu's own buttons hold focus while
+    // it is open, and a focused native web view can swallow window-level
+    // keydown entirely — Escape must reach us either way.
+    document.addEventListener("keydown", onEscape, true);
     return () => {
-      window.removeEventListener("keydown", onEscape);
+      document.removeEventListener("keydown", onEscape, true);
       teardownPointerDrag();
       cancelCoordinator();
       removeReleaseListener();
@@ -1236,6 +1249,32 @@ export function CenterTabStrip() {
     // instance is equivalent, so it is deliberately not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabMenu, text]);
+
+  // Dismiss the tab context menu on any interaction outside it. The menu
+  // stops propagation of its own pointerdown, so anything arriving here
+  // is genuinely outside. Capture phase means a tab's own pointerdown
+  // handler cannot consume the dismissal first.
+  useEffect(() => {
+    if (!tabMenu) return;
+    const dismiss = () => setTabMenu(null);
+    const onOutsidePointerDown = (e: PointerEvent) => {
+      const menu = stripRef.current?.querySelector('[role="menu"]');
+      if (menu && e.target instanceof Node && menu.contains(e.target)) return;
+      dismiss();
+    };
+    document.addEventListener("pointerdown", onOutsidePointerDown, true);
+    window.addEventListener("blur", dismiss);
+    // Scrolling the tab flow (or anything else) moves the anchor out from
+    // under the fixed-position menu, so close instead of letting it drift.
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => {
+      document.removeEventListener("pointerdown", onOutsidePointerDown, true);
+      window.removeEventListener("blur", dismiss);
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
+    };
+  }, [tabMenu]);
 
   return (
     <div ref={stripRef} className={styles.strip}>

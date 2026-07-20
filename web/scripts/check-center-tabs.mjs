@@ -149,6 +149,46 @@ assert.match(strip, /window\.addEventListener\("blur", cancel\);/);
 assert.match(strip, /function cancelPointerDrag/);
 assert.match(strip, /function teardownPointerDrag/);
 assert.match(strip, /if \(e\.key !== "Escape"\) return;[\s\S]*?teardownPointerDrag\(\)/);
+// Escape must be captured on document: the open menu's buttons hold
+// focus, and a focused native web view can swallow window-level keydown.
+assert.match(
+  strip,
+  /document\.addEventListener\("keydown", onEscape, true\)/,
+  "Escape must be captured on document, not window",
+);
+assert.match(strip, /document\.removeEventListener\("keydown", onEscape, true\)/);
+
+// ---- Tab context menu dismissal --------------------------------------
+// The menu must close on any outside interaction. Capture phase, so a
+// tab's own pointerdown handler cannot consume the dismissal first.
+assert.match(
+  strip,
+  /document\.addEventListener\("pointerdown", onOutsidePointerDown, true\)/,
+  "outside pointerdown must dismiss the tab menu",
+);
+assert.match(
+  strip,
+  /if \(menu && e\.target instanceof Node && menu\.contains\(e\.target\)\) return;/,
+  "clicks inside the menu must not dismiss it",
+);
+// Blur / scroll / resize close it too — the menu is fixed-positioned and
+// would otherwise drift away from the tab it is anchored to.
+assert.match(strip, /window\.addEventListener\("blur", dismiss\)/);
+assert.match(strip, /window\.addEventListener\("scroll", dismiss, true\)/);
+assert.match(strip, /window\.addEventListener\("resize", dismiss\)/);
+// Every menu action closes the menu.
+assert.match(strip, /function finishMenuAction[\s\S]*?setTabMenu\(null\)/);
+assert.match(strip, /function moveMenuTabToNewWindow[\s\S]*?setTabMenu\(null\)/);
+// While the menu is open a tab press must NOT arm a drag — the click is
+// a dismissal and has to reach the outside-click listener untouched.
+assert.match(
+  strip,
+  /if \(tabMenuRef\.current\) return;/,
+  "an open context menu must suppress drag preparation",
+);
+assert.match(strip, /tabMenuRef\.current = tabMenu;/, "the ref must track the menu state");
+// Right/middle button never starts a drag.
+assert.match(strip, /if \(event\.button !== 0 \|\| pointerDragRef\.current\) return;/);
 assert.match(strip, /onPointerDown=\{\(event\) => onDragPointerDown\(dragSubject, event\)\}/);
 assert.match(strip, /moveGroupMember\(/);
 assert.match(strip, /moveGroup\(/);
