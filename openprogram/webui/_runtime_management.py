@@ -410,14 +410,69 @@ def _probe_one_provider(p_name: str):
         return None
 
 
+def _probe_order() -> list[str]:
+    """Provider probe order: the user's saved ``default_provider`` first,
+    then ``_PROVIDER_PRIORITY``.
+
+    Without this, startup always re-picked the hardcoded head of the priority
+    list (openai-codex), so a model switched in the top bar reverted on every
+    restart even though it had been persisted.
+    """
+    order = list(_PROVIDER_PRIORITY)
+    try:
+        from openprogram.paths import get_config_path
+        import json
+        with open(get_config_path(), "r", encoding="utf-8") as f:
+            pinned = json.load(f).get("default_provider")
+    except Exception:
+        pinned = None
+    if pinned:
+        order = [pinned] + [p for p in order if p != pinned]
+    return order
+
+
 def _detect_default_provider() -> tuple:
     """Kept as a back-compat shim; new code goes through `_init_providers`."""
-    for p in _PROVIDER_PRIORITY:
+    for p in _probe_order():
         result = _probe_one_provider(p)
         if result is not None:
             _, rt, _models = result
             return p, rt
     return None, None
+
+
+def _apply_config_default_model(provider: str, rt, models: list) -> None:
+    """Pin ``rt.model`` to the config's ``default_model`` when that model is
+    still available for ``provider``, else leave the probe's own pick.
+
+    The probe builds a runtime with ``_preferred_default_model``, which only
+    honours ``default_model`` when it isn't shadowed by the spec rows' first
+    entry. Re-apply it here against the provider's ACTUAL model set so the
+    restart lands on what the user last chose — and so a model the user has
+    since disabled (or that upstream dropped) falls back to an available one
+    instead of leaving the top bar blank.
+    """
+    try:
+        from openprogram.paths import get_config_path
+        import json
+        with open(get_config_path(), "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return
+    if cfg.get("default_provider") not in (None, provider):
+        return
+    want = cfg.get("default_model")
+    if not want:
+        return
+    bare = want.split(":", 1)[1] if want.startswith(f"{provider}:") else want
+    avail = {m for m in (models or []) if isinstance(m, str)}
+    for cand in (want, bare):
+        if cand in avail or _default_is_enabled(provider, cand):
+            rt.model = cand
+            if cand not in avail:
+                models.insert(0, cand)
+            return
+    # Not available any more — keep the probe's model (already a live one).
 
 
 _rest_probe_started = False
@@ -437,7 +492,7 @@ def _probe_rest_async(skip: str | None) -> None:
 
     def _run():
         from concurrent.futures import ThreadPoolExecutor
-        targets = [p for p in _PROVIDER_PRIORITY if p != skip]
+        targets = [p for p in _probe_order() if p != skip]
         with ThreadPoolExecutor(max_workers=len(targets) or 1) as ex:
             for r in ex.map(_probe_one_provider, targets):
                 if r is None:
@@ -472,11 +527,12 @@ def _init_providers():
 
         provider_name = None
         rt = None
-        for p in _PROVIDER_PRIORITY:
+        for p in _probe_order():
             result = _probe_one_provider(p)
             if result is None:
                 continue
             name, probe_rt, models = result
+            _apply_config_default_model(name, probe_rt, models)
             _available_providers[name] = {"models": models, "default_model": probe_rt.model}
             provider_name = name
             rt = probe_rt

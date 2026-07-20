@@ -216,6 +216,14 @@ def register(app):
         _s._user_pinned_provider = target_provider or _s._runtime_management._default_provider
         _s._user_pinned_model = bare_model
 
+        # Persist the global choice — without this the switch lived only in
+        # the module globals and every restart re-ran auto-detect, reverting
+        # the top bar to the first provider in the hardcoded priority list.
+        from openprogram.webui._model_listing.storage import save_default_model
+        await asyncio.to_thread(
+            save_default_model, _s._user_pinned_provider, bare_model,
+        )
+
         info = _s._get_provider_info()
         emit_ws_frame({"type": "provider_changed", "data": info})
         return JSONResponse(content={
@@ -362,6 +370,12 @@ def register(app):
             )
             _s._runtime_management._exec_model = exec_cfg.get(
                 "model", _s._runtime_management._exec_model
+            )
+            from openprogram.webui._model_listing.storage import save_default_model
+            await asyncio.to_thread(
+                save_default_model,
+                _s._runtime_management._exec_provider,
+                _s._runtime_management._exec_model,
             )
             changed = True
 

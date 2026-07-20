@@ -51,6 +51,31 @@ def _read_providers_cfg() -> dict[str, dict[str, Any]]:
     return providers
 
 
+def save_default_model(provider: str | None, model: str | None) -> None:
+    """Persist the global model choice as ``default_provider``/``default_model``.
+
+    The single write path for "the user switched the model in the top bar" —
+    REST, the agent-settings exec branch and the ws action all route here, so
+    the choice survives a restart (``_init_providers`` reads it back first).
+    ``model`` is stored bare (no ``provider:`` prefix). Falsy args clear.
+    Shares ``_cache_lock`` with the providers read-modify-write sequences.
+    """
+    from openprogram.webui.server import _load_config, _save_config
+    if isinstance(model, str) and provider and model.startswith(f"{provider}:"):
+        model = model[len(provider) + 1:]
+    with _cache_lock:
+        cfg = _load_config()
+        if provider:
+            cfg["default_provider"] = provider
+        else:
+            cfg.pop("default_provider", None)
+        if model:
+            cfg["default_model"] = model
+        else:
+            cfg.pop("default_model", None)
+        _save_config(cfg)
+
+
 def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
     from openprogram.webui.server import _load_config, _save_config
     cfg = _load_config()

@@ -119,6 +119,14 @@ async def handle_switch_model(ws, cmd: dict):
                 "type": "error", "data": {"message": "No active runtime"},
             }))
             return
+        # Same persistence as POST /api/model's global branch — a ws switch
+        # must survive a restart too.
+        from openprogram.webui._model_listing.storage import save_default_model
+        await asyncio.to_thread(
+            save_default_model,
+            target_provider or _s._runtime_management._default_provider,
+            bare_model,
+        )
         info = _s._get_provider_info()
         _s._broadcast(json.dumps({"type": "provider_changed", "data": info}))
         await ws.send_text(json.dumps({
