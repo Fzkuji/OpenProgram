@@ -178,6 +178,65 @@ assert.equal(drag.SWAP_OVERLAP_RATIO, 0.5);
   assert.equal(ratio({ left: 0, width: 0 }, draggedAt(0)), 0);
 }
 
+// ---- Live shift range: ALL crossed tabs move ------------------------
+// Dragging across several tabs must slide every tab in between by one
+// slot, not just the adjacent one (regression: an early `break` in the
+// overlap scan pinned the marker to the nearest neighbour).
+{
+  const STRIP_GAP = 8;
+  const W = 200;
+  const step = W + STRIP_GAP;
+  const entries = ["A", "B", "C", "D", "E"].map((t) => ({
+    id: `tab:${t}`,
+    kind: "tab",
+    tabId: t,
+  }));
+  // Local port of computeLiveShifts' before/after ranges (view geometry,
+  // not store logic — the strip owns the real one).
+  const shiftsFor = (marker, draggedId) => {
+    const out = new Map();
+    const ti = entries.findIndex((e) => e.tabId === marker.targetTabId);
+    const si = entries.findIndex((e) => e.tabId === draggedId);
+    const insertion = ti + (marker.mode === "after" ? 1 : 0);
+    if (insertion === si || insertion === si + 1) return out;
+    if (insertion > si) {
+      for (let i = si + 1; i < insertion; i++) out.set(entries[i].tabId, -step);
+    } else {
+      for (let i = insertion; i < si; i++) out.set(entries[i].tabId, step);
+    }
+    return out;
+  };
+  // Drag index 1 (B) to index 4 (E): C, D and E must ALL shift by -step.
+  const right = shiftsFor({ mode: "after", targetTabId: "E" }, "B");
+  assert.deepEqual(
+    [...right.entries()].sort(),
+    [["C", -step], ["D", -step], ["E", -step]].sort(),
+    "every tab crossed to the right shifts one slot left",
+  );
+  assert.equal(right.get("A") ?? 0, 0, "tabs before the source never move");
+  // Intermediate target: only the tabs actually crossed move.
+  const partial = shiftsFor({ mode: "after", targetTabId: "D" }, "B");
+  assert.deepEqual(
+    [...partial.entries()].sort(),
+    [["C", -step], ["D", -step]].sort(),
+  );
+  assert.equal(partial.get("E") ?? 0, 0);
+  // Mirror: drag index 3 (D) to the far left — A, B, C all shift +step.
+  const left = shiftsFor({ mode: "before", targetTabId: "A" }, "D");
+  assert.deepEqual(
+    [...left.entries()].sort(),
+    [["A", step], ["B", step], ["C", step]].sort(),
+    "every tab crossed to the left shifts one slot right",
+  );
+  assert.equal(left.get("E") ?? 0, 0);
+  // Every shift in a given drag points the same way and is one slot.
+  for (const map of [right, partial, left]) {
+    const values = [...map.values()];
+    assert.equal(new Set(values).size, 1, "one uniform direction per drag");
+    assert.equal(Math.abs(values[0]), step, "each shift is exactly one slot");
+  }
+}
+
 // ---- Split picker candidates -----------------------------------------
 // Exclude the subject itself and anything already sharing its split
 // group; everything else in the window is offerable.

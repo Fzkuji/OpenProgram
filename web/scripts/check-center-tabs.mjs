@@ -108,15 +108,33 @@ assert.match(pointerMove, /collectPointerDropTargets\(flow\)/);
 assert.match(pointerMove, /const draggedRect = \{ left: drag\.originLeft \+ tx, width: drag\.width \};/);
 assert.match(
   pointerMove,
-  /slotOverlapRatio\(drag\.targets\[i\], draggedRect\) < SWAP_OVERLAP_RATIO/,
+  /slotOverlapRatio\(drag\.targets\[i\], draggedRect\) >= SWAP_OVERLAP_RATIO/,
   "a neighbour must yield at the overlap threshold",
 );
 assert.match(strip, /function slotOverlapRatio/);
 assert.match(strip, /overlap \/ slot\.width/, "overlap is measured against the NEIGHBOUR's width");
-// Both directions walk outward from the dragged tab's own slot, so a fast
-// flick can cross several neighbours in one move.
-assert.match(pointerMove, /for \(let i = selfIndex \+ 1; i < drag\.targets\.length; i\+\+\)/);
-assert.match(pointerMove, /for \(let i = selfIndex - 1; i >= 0; i--\)/);
+// Scan from the FAR end inwards on each side and take the first covered
+// slot, so every tab between source and target is included in the shift.
+// An early `break` on the first UNcovered neighbour would pin the marker
+// to the nearest tab and leave the ones beyond it un-shifted.
+assert.match(
+  pointerMove,
+  /for \(let i = drag\.targets\.length - 1; i > selfIndex; i--\)/,
+  "the rightward scan must start at the far end",
+);
+assert.match(
+  pointerMove,
+  /for \(let i = 0; i < selfIndex; i\+\+\)/,
+  "the leftward scan must start at the far end",
+);
+// Between two slots (covering neither by half) the last intent is HELD —
+// clearing it would collapse every bystander for a frame and flicker.
+assert.match(pointerMove, /publishDropMarker\(drag\.lastIntent\);/);
+assert.match(
+  pointerMove,
+  /slotOverlapRatio\(drag\.targets\[selfIndex\], draggedRect\)/,
+  "only a drag still covering its own slot clears the intent",
+);
 // Cross-group drags (no slot of their own) still resolve via midpoint.
 assert.match(pointerMove, /pickPointerDropTarget\(drag\.targets, centerX\)/);
 assert.match(pointerMove, /resolveTabDropIntent\(target, centerX, target\)/);
@@ -214,6 +232,44 @@ assert.match(strip, /tabMenuRef\.current = tabMenu;/, "the ref must track the me
 // Right/middle button never starts a drag.
 assert.match(strip, /if \(event\.button !== 0 \|\| pointerDragRef\.current\) return;/);
 assert.match(strip, /onPointerDown=\{\(event\) => onDragPointerDown\(dragSubject, event\)\}/);
+// ---- Activate on press (Chrome) --------------------------------------
+// pointerdown selects the tab so it is live for the whole drag; the click
+// that completes the same press must not re-activate it.
+const pointerDown = strip.slice(
+  strip.indexOf("function onTabPointerDown"),
+  strip.indexOf("function onPointerDragMove"),
+);
+assert.match(pointerDown, /onTabClick\(pressed\)/, "pointerdown must activate the tab");
+assert.match(
+  pointerDown,
+  /pressed\.id !== useCenterTabs\.getState\(\)\.activeId/,
+  "only activate when it actually changes",
+);
+assert.match(pointerDown, /activatedOnPressRef\.current = pressed\.id;/);
+// Right/middle button and an open context menu both return before this.
+assert.ok(
+  pointerDown.indexOf("event.button !== 0") < pointerDown.indexOf("onTabClick(pressed)"),
+  "right-click must return before activating",
+);
+assert.ok(
+  pointerDown.indexOf("tabMenuRef.current") < pointerDown.indexOf("onTabClick(pressed)"),
+  "an open context menu must return before activating",
+);
+// A group handle carries no single tab, so it never activates.
+assert.match(pointerDown, /subject\.kind !== "group"/);
+// The follow-up click is consumed once, preserving click-to-reload for a
+// genuine click on the already-active tab.
+assert.match(strip, /function onTabClickFromPointer/);
+assert.match(
+  strip,
+  /if \(activatedOnPressRef\.current === tab\.id\) \{[\s\S]*?return;/,
+  "the click completing an activating press is a no-op",
+);
+assert.equal(
+  strip.match(/onActivate=\{onTabClickFromPointer\}/g)?.length,
+  2,
+  "both plain tabs and compound segments use the press-aware click path",
+);
 assert.match(strip, /moveGroupMember\(/);
 assert.match(strip, /moveGroup\(/);
 assert.match(strip, /ungroupTab\(/);

@@ -352,6 +352,9 @@ export function CenterTabStrip() {
   // registered on an earlier render and would otherwise read a stale value.
   const tabMenuRef = useRef<TabMenuState | null>(null);
   tabMenuRef.current = tabMenu;
+  // Tab id activated by the current pointerdown, consumed by the click
+  // that follows it (see onTabPointerDown / onTabClickFromPointer).
+  const activatedOnPressRef = useRef<string | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
@@ -502,6 +505,18 @@ export function CenterTabStrip() {
   useEffect(() => {
     setFocusedTabId(activeId);
   }, [activeId]);
+
+  /** Click handler for strip tabs. pointerdown already activated the tab
+   *  (Chrome activates on press), so the click that completes that same
+   *  press is a no-op; a click on the already-active tab still reloads. */
+  function onTabClickFromPointer(tab: CenterTab) {
+    if (activatedOnPressRef.current === tab.id) {
+      activatedOnPressRef.current = null;
+      return;
+    }
+    activatedOnPressRef.current = null;
+    onTabClick(tab);
+  }
 
   function onTabClick(tab: CenterTab) {
     const reactivateCurrentSession =
@@ -865,6 +880,25 @@ export function CenterTabStrip() {
     // let it through untouched so the outside-click listener sees it and
     // no drag is prepared. Dragging works normally once it is closed.
     if (tabMenuRef.current) return;
+    // Chrome activates on press, not on release: the pressed tab is live
+    // for the whole drag and stays selected afterwards. Reuse the click
+    // path so session/web/file tabs each activate the way they already do.
+    // A group handle carries no single tab, so it does not activate.
+    if (subject.kind !== "group") {
+      const pressed = useCenterTabs
+        .getState()
+        .tabs.find((tab) => tab.id === subject.tabIds[0]);
+      // Already-active tab: onTabClick would bump the session
+      // re-activation request (its click-to-reload behaviour), which a
+      // press must not trigger. Only activate when it actually changes.
+      if (pressed && pressed.id !== useCenterTabs.getState().activeId) {
+        onTabClick(pressed);
+        // The click that follows this press must not re-run onTabClick:
+        // it would now see the tab as already active and bump the session
+        // re-activation request (click-to-reload), which a press must not do.
+        activatedOnPressRef.current = pressed.id;
+      }
+    }
     onPrepareDrag(subject);
     const prepared = dragCoordinator.current();
     if (!prepared) return;
@@ -986,16 +1020,24 @@ export function CenterTabStrip() {
     let swapTarget: PointerDropTarget | null = null;
     let swapMode: "before" | "after" | null = null;
     if (selfIndex >= 0) {
-      for (let i = selfIndex + 1; i < drag.targets.length; i++) {
-        if (slotOverlapRatio(drag.targets[i], draggedRect) < SWAP_OVERLAP_RATIO) break;
-        swapTarget = drag.targets[i];
-        swapMode = "after";
+      // Scan ALL neighbours on each side, never stopping at the first
+      // uncovered one: after travelling past a tab its overlap drops back
+      // below the threshold, so an early break would pin the marker to the
+      // nearest neighbour and leave every tab beyond it un-shifted.
+      for (let i = drag.targets.length - 1; i > selfIndex; i--) {
+        if (slotOverlapRatio(drag.targets[i], draggedRect) >= SWAP_OVERLAP_RATIO) {
+          swapTarget = drag.targets[i];
+          swapMode = "after";
+          break;
+        }
       }
       if (!swapTarget) {
-        for (let i = selfIndex - 1; i >= 0; i--) {
-          if (slotOverlapRatio(drag.targets[i], draggedRect) < SWAP_OVERLAP_RATIO) break;
-          swapTarget = drag.targets[i];
-          swapMode = "before";
+        for (let i = 0; i < selfIndex; i++) {
+          if (slotOverlapRatio(drag.targets[i], draggedRect) >= SWAP_OVERLAP_RATIO) {
+            swapTarget = drag.targets[i];
+            swapMode = "before";
+            break;
+          }
         }
       }
     }
@@ -1008,12 +1050,21 @@ export function CenterTabStrip() {
       publishDropMarker(intent);
       return;
     }
-    // Not covering any neighbour yet (or the drag has no slot of its own,
-    // e.g. a segment leaving its group) — fall back to nearest-slot
-    // midpoint so cross-group drags still resolve an insertion point.
+    // Covering no neighbour by half. While travelling this happens between
+    // every pair of slots (leaving one before reaching the next), so HOLD
+    // the last intent — clearing it would collapse every bystander back to
+    // its slot for a frame and flicker. Only a drag still in its own slot
+    // (never moved far enough to swap) genuinely has no intent.
     if (selfIndex >= 0) {
-      drag.lastIntent = null;
-      publishDropMarker(null);
+      const home =
+        slotOverlapRatio(drag.targets[selfIndex], draggedRect)
+          >= SWAP_OVERLAP_RATIO;
+      if (home) {
+        drag.lastIntent = null;
+        publishDropMarker(null);
+      } else {
+        publishDropMarker(drag.lastIntent);
+      }
       return;
     }
     const target = pickPointerDropTarget(drag.targets, centerX);
@@ -1293,7 +1344,7 @@ export function CenterTabStrip() {
                 focusedTabId={focusedTabId}
                 enteringIds={enteringIds}
                 closingIds={closingIds}
-                onActivate={onTabClick}
+                onActivate={onTabClickFromPointer}
                 onFocusTab={setFocusedTabId}
                 onOpenMenu={openTabMenu}
                 onClose={onTabClose}
@@ -1316,7 +1367,7 @@ export function CenterTabStrip() {
               closing={closingIds.has(tab.id)}
               label={labelOf(tab, t, text)}
               closeLabel={text("Close tab", "关闭标签")}
-              onActivate={onTabClick}
+              onActivate={onTabClickFromPointer}
               onFocusTab={setFocusedTabId}
               onOpenMenu={openTabMenu}
               onClose={onTabClose}
