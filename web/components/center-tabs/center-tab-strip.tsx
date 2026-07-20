@@ -41,8 +41,9 @@ import {
   DRAG_START_THRESHOLD_PX,
   dragCoordinator,
   isInMergeZone,
-  MERGE_DWELL_MS,
+  PANE_MERGE_DWELL_MS,
   resolveTabDropIntent,
+  type DragDirection,
   type TabDragSubject,
   type TabDropIntent,
 } from "@/lib/tab-drag-coordinator";
@@ -233,6 +234,10 @@ interface PointerDragState {
   minTx: number;
   maxTx: number;
   targets: PointerDropTarget[];
+  /** Last non-zero horizontal travel direction — decides which quarter
+   *  of a neighbour merges (the one the drag runs into first). */
+  direction: DragDirection;
+  lastX: number;
   merge: TabDropIntent | null;
   lastIntent: TabDropIntent | null;
   teardown(): void;
@@ -729,18 +734,8 @@ export function CenterTabStrip() {
   // Live-reorder geometry for this render: entry id → translateX px.
   const liveShifts = computeLiveShifts(stripEntries, draggedIds, dropMarker, dragWidth);
 
-  // Dwell-to-merge: hovering the same target's central 40% for
-  // MERGE_DWELL_MS upgrades the reorder marker to a merge.
-  const dwellRef = useRef<{ targetTabId: string; timer: number } | null>(null);
-  function clearDwell() {
-    if (!dwellRef.current) return;
-    window.clearTimeout(dwellRef.current.timer);
-    dwellRef.current = null;
-  }
-
   function clearDragState() {
     removeReleaseListener();
-    clearDwell();
     setDraggedIds(new Set());
     setDropMarker(null);
     setDragWidth(0);
@@ -878,6 +873,8 @@ export function CenterTabStrip() {
       minTx: 0,
       maxTx: 0,
       targets: [],
+      direction: 1,
+      lastX: event.clientX,
       merge: null,
       lastIntent: null,
       teardown() {
@@ -938,6 +935,12 @@ export function CenterTabStrip() {
     // The tab body follows the pointer, clamped inside the strip flow.
     const tx = Math.min(Math.max(dx, drag.minTx), drag.maxTx);
     drag.element.style.transform = `translateX(${tx}px)`;
+    // Travel direction decides which quarter of a neighbour merges; a
+    // pause (dx === 0) keeps the last direction rather than flipping.
+    if (e.clientX !== drag.lastX) {
+      drag.direction = e.clientX > drag.lastX ? 1 : -1;
+      drag.lastX = e.clientX;
+    }
 
     // Pane merge: dwelling over the center pane area arms merge-on-release.
     if (paneMergeSurfaceContains(e.clientX, e.clientY)) {
@@ -947,7 +950,7 @@ export function CenterTabStrip() {
           if (pointerDragRef.current !== drag) return;
           drag.paneArmed = true;
           setPaneMergeHighlight(true);
-        }, MERGE_DWELL_MS);
+        }, PANE_MERGE_DWELL_MS);
       }
     } else {
       clearPanePointerState(drag);
@@ -961,7 +964,6 @@ export function CenterTabStrip() {
       detachCapable && Math.abs(dy) > DETACH_DISTANCE_PX && !drag.paneArmed;
     drag.element.toggleAttribute("data-detach-intent", drag.detaching);
     if (drag.detaching || drag.paneArmed) {
-      clearDwell();
       drag.merge = null;
       drag.lastIntent = null;
       publishDropMarker(null);
@@ -973,46 +975,29 @@ export function CenterTabStrip() {
     const centerX = drag.originLeft + tx + drag.width / 2;
     const target = pickPointerDropTarget(drag.targets, centerX);
     if (!target) {
-      clearDwell();
       drag.merge = null;
       publishDropMarker(null);
       return;
     }
+    // Directional merge zone: the LEADING quarter of the neighbour — the
+    // quarter the drag runs into first — merges; the remaining three
+    // quarters reorder. Purely positional, no dwell timer.
     const inMerge =
-      !drag.selfIds.has(target.tabId) && isInMergeZone(target, centerX);
-    // Once dwell has upgraded to merge, hold it while the dragged
-    // center stays in the same target's merge zone.
-    if (drag.merge && drag.merge.targetTabId === target.tabId && inMerge) {
+      !drag.selfIds.has(target.tabId)
+      && isInMergeZone(target, centerX, drag.direction);
+    if (inMerge) {
+      const merge: TabDropIntent = { mode: "merge", targetTabId: target.tabId };
+      if (target.groupId !== undefined) merge.groupId = target.groupId;
+      if (target.memberIndex !== undefined) merge.memberIndex = target.memberIndex;
+      drag.merge = merge;
+      drag.lastIntent = null;
+      publishDropMarker(merge);
       return;
     }
     drag.merge = null;
-    if (inMerge) {
-      if (dwellRef.current?.targetTabId !== target.tabId) {
-        clearDwell();
-        dwellRef.current = {
-          targetTabId: target.tabId,
-          timer: window.setTimeout(() => {
-            dwellRef.current = null;
-            if (pointerDragRef.current !== drag) return;
-            const merge: TabDropIntent = {
-              mode: "merge",
-              targetTabId: target.tabId,
-            };
-            if (target.groupId !== undefined) merge.groupId = target.groupId;
-            if (target.memberIndex !== undefined) {
-              merge.memberIndex = target.memberIndex;
-            }
-            drag.merge = merge;
-            publishDropMarker(merge);
-          }, MERGE_DWELL_MS),
-        };
-      }
-    } else {
-      clearDwell();
-    }
     const intent = resolveTabDropIntent(target, centerX, target);
     drag.lastIntent = intent;
-    publishDropMarker(drag.merge ?? intent);
+    publishDropMarker(intent);
   }
 
   function onPointerDragUp(e: PointerEvent) {
@@ -1239,7 +1224,6 @@ export function CenterTabStrip() {
       teardownPointerDrag(); // return-home animation for a live pointer drag
       cancelCoordinator();
       removeReleaseListener();
-      clearDwell();
       setDraggedIds(new Set());
       setDropMarker(null);
       setTabMenu(null);
@@ -1254,7 +1238,6 @@ export function CenterTabStrip() {
       teardownPointerDrag();
       cancelCoordinator();
       removeReleaseListener();
-      clearDwell();
     };
     // teardownPointerDrag only touches refs + stable setters — any render's
     // instance is equivalent, so it is deliberately not a dependency.

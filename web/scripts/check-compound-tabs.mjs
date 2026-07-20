@@ -126,14 +126,31 @@ assert.deepEqual(drag.resolveTabDropIntent(rect, 300, target), {
 assert.equal(drag.DRAG_START_THRESHOLD_PX, 4);
 assert.equal(drag.DETACH_DISTANCE_PX, 48);
 
-// Dwell-to-merge contract: constant timing + the central merge zone check.
-assert.equal(drag.MERGE_DWELL_MS, 300);
-assert.equal(drag.MERGE_DWELL_CENTER_FRACTION, 0.4);
-assert.equal(drag.isInMergeZone(rect, 159.999), false);
-assert.equal(drag.isInMergeZone(rect, 160), true);
-assert.equal(drag.isInMergeZone(rect, 200), true);
-assert.equal(drag.isInMergeZone(rect, 240), true);
-assert.equal(drag.isInMergeZone(rect, 240.001), false);
+// Directional merge zone: the LEADING quarter of the target — the one
+// the drag runs into first — merges; the other three quarters reorder.
+// Purely positional, no dwell timer anywhere in the contract.
+assert.equal(drag.MERGE_LEADING_FRACTION, 0.25);
+assert.equal(drag.MERGE_DWELL_MS, undefined, "the strip dwell timer is gone");
+assert.equal(drag.MERGE_DWELL_CENTER_FRACTION, undefined);
+// A dwell survives only for the center-pane merge surface.
+assert.equal(drag.PANE_MERGE_DWELL_MS, 300);
+// rect = { left: 100, width: 200 } → quarters at 150 and 250.
+// Dragging RIGHT: the left quarter [100,150] is the leading edge.
+assert.equal(drag.isInMergeZone(rect, 100, 1), true);
+assert.equal(drag.isInMergeZone(rect, 150, 1), true);
+assert.equal(drag.isInMergeZone(rect, 150.001, 1), false, "past the near quarter reorders");
+assert.equal(drag.isInMergeZone(rect, 200, 1), false);
+assert.equal(drag.isInMergeZone(rect, 290, 1), false, "the far quarter never merges");
+// Dragging LEFT: mirrored — the right quarter [250,300] leads.
+assert.equal(drag.isInMergeZone(rect, 300, -1), true);
+assert.equal(drag.isInMergeZone(rect, 250, -1), true);
+assert.equal(drag.isInMergeZone(rect, 249.999, -1), false);
+assert.equal(drag.isInMergeZone(rect, 200, -1), false);
+assert.equal(drag.isInMergeZone(rect, 110, -1), false);
+// Outside the slot never merges in either direction.
+assert.equal(drag.isInMergeZone(rect, 99, 1), false);
+assert.equal(drag.isInMergeZone(rect, 301, -1), false);
+assert.equal(drag.isInMergeZone({ left: 0, width: 0 }, 0, 1), false);
 
 const broken = groups.normalizeCenterTabLayout({
   tabIds: ["a", "b", "c", "d"],

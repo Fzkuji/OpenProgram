@@ -467,18 +467,29 @@
 }
 
 /* 指针驱动拖动（Chrome 式）：tab 本体跟手 —— transform 由 JS 直写，
-   transition 必须关掉才不追手；抬 z-index 盖过让位中的邻居。 */
+   transition 必须关掉才不追手；抬 z-index 盖过让位中的邻居。
+   跟手态必须【完全不透明】且有实心底色 —— .tab 默认 background:transparent，
+   不铺底就会透出下面的 tab，看起来"重叠成一团"。 */
 .tab[data-pointer-drag="true"],
 .compoundTab[data-pointer-drag="true"] {
   transition: none;
   position: relative;
-  z-index: 10;
+  z-index: 30;
+  opacity: 1;
+  background: var(--bg-primary);
+  color: var(--text-bright);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
-/* 纵向拖离 strip：半透明提示"松手拆出新窗口 / 落入另一窗口"。 */
+/* 拖动中的 tab 不画左侧分隔条（它已脱离栏内节奏）。 */
+.tab[data-pointer-drag="true"]::before {
+  background: transparent;
+}
+/* 纵向拖离 strip 进入 detach 态：半透明只作为"松手拆出新窗口"的提示。
+   此时抬到最上层，且不参与栏内让位，不会和邻居内容糊在一起。 */
 .tab[data-detach-intent="true"],
 .compoundTab[data-detach-intent="true"] {
-  opacity: 0.5;
+  opacity: 0.7;
+  z-index: 40;
 }
 /* Chrome 式实时让位：before/after 不画插入线，被越过的 tab 用 transform
    平滑滑开（见 computeLiveShifts）；merge 仍然高亮目标 tab。 */

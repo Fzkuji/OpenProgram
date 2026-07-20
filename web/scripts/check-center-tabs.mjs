@@ -81,11 +81,29 @@ assert.match(pointerMove, /collectPointerDropTargets\(flow\)/);
 assert.match(pointerMove, /const centerX = drag\.originLeft \+ tx \+ drag\.width \/ 2;/);
 assert.match(pointerMove, /pickPointerDropTarget\(drag\.targets, centerX\)/);
 assert.match(pointerMove, /resolveTabDropIntent\(target, centerX, target\)/);
-// Dwell-to-merge: MERGE_DWELL_MS in the merge zone upgrades the intent;
-// self-targets never arm the dwell, and an armed merge holds in-zone.
-assert.match(pointerMove, /!drag\.selfIds\.has\(target\.tabId\) && isInMergeZone\(target, centerX\)/);
-assert.match(pointerMove, /MERGE_DWELL_MS/);
-assert.match(pointerMove, /drag\.merge && drag\.merge\.targetTabId === target\.tabId && inMerge/);
+// Directional merge: the LEADING quarter of a neighbour merges on
+// contact — no dwell timer, and the drag's own tabs never merge.
+assert.match(
+  pointerMove,
+  /!drag\.selfIds\.has\(target\.tabId\)\s*&& isInMergeZone\(target, centerX, drag\.direction\)/,
+);
+assert.match(
+  pointerMove,
+  /drag\.direction = e\.clientX > drag\.lastX \? 1 : -1;/,
+  "the merge quarter follows the current travel direction",
+);
+// The tab merge decision itself is a straight positional test: from
+// isInMergeZone to publishing the merge there is no timer at all.
+// (MERGE_DWELL_MS survives only for the pane-area dwell, above it.)
+const tabMergeDecision = pointerMove.slice(pointerMove.indexOf("isInMergeZone"));
+assert.doesNotMatch(
+  tabMergeDecision,
+  /setTimeout|DWELL/,
+  "tab merge must be positional — no dwell timer",
+);
+// The only surviving dwell is the center-pane merge surface.
+assert.match(pointerMove, /PANE_MERGE_DWELL_MS/);
+assert.doesNotMatch(strip, /dwellRef|clearDwell/, "the tab dwell machinery is gone");
 // Detach: DETACH_DISTANCE_PX vertical travel with a live desktop token.
 assert.match(pointerMove, /Math\.abs\(dy\) > DETACH_DISTANCE_PX/);
 assert.match(pointerMove, /data-detach-intent/);
@@ -192,12 +210,29 @@ assert.match(closeButton, /onPointerDown=\{\(event\) => event\.stopPropagation\(
 assert.match(closeButton, /onMouseDown=\{\(event\) => event\.stopPropagation\(\)\}/);
 assert.doesNotMatch(closeButton, /onDragPointerDown/);
 // The dragged tab body follows the pointer: transitions off, raised
-// above sliding bystanders; the detach state dims it. No origin ghost.
-assert.match(
-  css,
-  /\[data-pointer-drag="true"\][^{]*\{[^}]*transition: none;[^}]*z-index:/s,
+// above sliding bystanders, and FULLY OPAQUE over an opaque background
+// (.tab is background:transparent by default — without a fill the
+// dragged tab shows the tabs underneath through itself).
+const pointerDragRule = css.slice(
+  css.indexOf('.tab[data-pointer-drag="true"]'),
+  css.indexOf('.tab[data-pointer-drag="true"]::before'),
 );
-assert.match(css, /\[data-detach-intent="true"\][^{]*\{[^}]*opacity:/s);
+assert.match(pointerDragRule, /transition: none;/);
+assert.match(pointerDragRule, /z-index: 30;/);
+assert.match(pointerDragRule, /opacity: 1;/, "the follow-the-pointer tab must be fully opaque");
+assert.match(
+  pointerDragRule,
+  /background: var\(--bg-primary\);/,
+  "the dragged tab needs an opaque fill so neighbours cannot show through",
+);
+// Translucency is allowed ONLY in the detach state, and it lifts above
+// the strip there so it still cannot overlap neighbours' content.
+const detachRule = css.slice(
+  css.indexOf('.tab[data-detach-intent="true"]'),
+  css.indexOf('data-drop-intent="merge"'),
+);
+assert.match(detachRule, /opacity: 0\.7;/);
+assert.match(detachRule, /z-index: 40;/, "the detach state must lift clear of the strip");
 assert.doesNotMatch(css, /data-drag-source/);
 // ---- Live reorder (Chrome-style slide-aside, no insert markers) ----
 assert.doesNotMatch(
