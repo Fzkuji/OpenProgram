@@ -237,6 +237,57 @@ assert.equal(drag.SWAP_OVERLAP_RATIO, 0.5);
   }
 }
 
+// ---- Fast flick: every shift is exactly ONE slot ---------------------
+// Whipping the tab across the whole strip in a single frame must still
+// move each crossed tab by one slot — never a multiple, never scaled by
+// pointer speed. (The step is a constant derived from the dragged tab's
+// width; nothing in the shift path reads velocity.)
+{
+  const STRIP_GAP = 8;
+  const W = 200;
+  const step = W + STRIP_GAP;
+  const names = ["A", "B", "C", "D", "E", "F"];
+  const entries = names.map((t) => ({ id: `tab:${t}`, tabId: t }));
+  const shiftsFor = (marker, draggedId) => {
+    const out = new Map();
+    const ti = entries.findIndex((e) => e.tabId === marker.targetTabId);
+    const si = entries.findIndex((e) => e.tabId === draggedId);
+    const insertion = ti + (marker.mode === "after" ? 1 : 0);
+    if (insertion === si || insertion === si + 1) return out;
+    if (insertion > si) {
+      for (let i = si + 1; i < insertion; i++) out.set(entries[i].tabId, -step);
+    } else {
+      for (let i = insertion; i < si; i++) out.set(entries[i].tabId, step);
+    }
+    return out;
+  };
+  // One frame, tx jumps from rest to the far end: B (index 1) -> after F.
+  const flick = shiftsFor({ mode: "after", targetTabId: "F" }, "B");
+  assert.equal(flick.size, 4, "C, D, E and F all yield");
+  for (const [tabId, value] of flick) {
+    assert.equal(
+      Math.abs(value),
+      step,
+      `${tabId} must move exactly one slot, not ${Math.abs(value) / step}x`,
+    );
+    assert.equal(value, -step, "and all in the same direction");
+  }
+  // Mirror flick to the far left.
+  const back = shiftsFor({ mode: "before", targetTabId: "A" }, "F");
+  assert.equal(back.size, 5);
+  for (const value of back.values()) {
+    assert.equal(Math.abs(value), step, "one slot regardless of distance");
+  }
+  // The step never depends on how far the drag travelled.
+  const near = shiftsFor({ mode: "after", targetTabId: "C" }, "B");
+  const far = shiftsFor({ mode: "after", targetTabId: "F" }, "B");
+  assert.equal(
+    Math.abs([...near.values()][0]),
+    Math.abs([...far.values()][0]),
+    "a long flick shifts by the same amount as a short nudge",
+  );
+}
+
 // ---- Split picker candidates -----------------------------------------
 // Exclude the subject itself and anything already sharing its split
 // group; everything else in the window is offerable.

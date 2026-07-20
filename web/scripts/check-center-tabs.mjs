@@ -130,6 +130,30 @@ assert.match(
 // Between two slots (covering neither by half) the last intent is HELD —
 // clearing it would collapse every bystander for a frame and flicker.
 assert.match(pointerMove, /publishDropMarker\(drag\.lastIntent\);/);
+// ---- No "flung tab" on a fast flick ---------------------------------
+// The dragged tab's transform is imperative, but React owns that
+// element's style prop and drops the key on re-render. Without a
+// re-assert the tab paints at its slot for a frame and then jumps to the
+// pointer — a large discarded offset on a fast flick, which reads as the
+// tab being flung. A layout effect restores it before paint.
+assert.match(pointerMove, /drag\.lastTx = tx;/, "the clamped offset must be recorded");
+assert.match(
+  strip,
+  /useLayoutEffect\(\(\) => \{[\s\S]*?pointerDragRef\.current[\s\S]*?drag\.element\.style\.transform = `translateX\(\$\{drag\.lastTx\}px\)`;/,
+  "the drag offset must be re-asserted after every commit, before paint",
+);
+// Bystander shifts must never emit a transform for the dragged tab (it
+// has no shift), or React would overwrite the live offset.
+assert.match(strip, /function shiftStyle/);
+assert.match(strip, /return shiftX \? \{ transform: `translateX\(\$\{shiftX\}px\)` \} : undefined;/);
+// Let-through easing must stay linear-ish: an overshoot curve on the
+// bystanders would look like the "force" being transmitted.
+assert.match(css, /\.tab \{[^}]*transition: transform 160ms ease;/s);
+assert.doesNotMatch(
+  css,
+  /transition:[^;]*cubic-bezier\([^)]*-[\d.]/,
+  "no negative control points — a bouncy curve would overshoot the slot",
+);
 assert.match(
   pointerMove,
   /slotOverlapRatio\(drag\.targets\[selfIndex\], draggedRect\)/,
@@ -156,9 +180,11 @@ assert.doesNotMatch(
   "there is no merge highlight during a drag",
 );
 assert.doesNotMatch(css, /data-drop-intent/, "the merge highlight style is gone");
+// (drag.lastTx is the clamped offset for the re-assert effect, not a
+// direction: the reorder decision must not read travel direction.)
 assert.doesNotMatch(
   pointerMove,
-  /drag\.direction|drag\.lastX|drag\.lastTx/,
+  /drag\.direction|drag\.lastX\b/,
   "reorder must not depend on travel direction",
 );
 assert.doesNotMatch(strip, /dwellRef|clearDwell/, "the tab dwell machinery is gone");

@@ -232,8 +232,25 @@ interface PointerDragState {
   minTx: number;
   maxTx: number;
   targets: PointerDropTarget[];
+  /** Latest clamped offset, re-applied after each React commit. */
+  lastTx: number;
   lastIntent: TabDropIntent | null;
   teardown(): void;
+}
+
+/** Inline shift style for a bystander tab.
+ *
+ * Returns `undefined` — NOT `{ transform: "" }` — when the entry has no
+ * shift, and the dragged tab never gets one. That matters: the dragged
+ * tab's own transform is written imperatively every pointermove, and if
+ * this prop ever emitted a transform for it, React would overwrite the
+ * live drag offset on the next re-render (markers change several times
+ * per drag), snapping the tab back to its slot for a frame. On a fast
+ * flick that discarded offset is large, so the tab visibly flies. Keeping
+ * the key absent leaves the imperative value untouched.
+ */
+function shiftStyle(shiftX: number): React.CSSProperties | undefined {
+  return shiftX ? { transform: `translateX(${shiftX}px)` } : undefined;
 }
 
 /** Visible horizontal span a dragged tab may occupy. Desktop uses the
@@ -758,6 +775,19 @@ export function CenterTabStrip() {
   // Live-reorder geometry for this render: entry id → translateX px.
   const liveShifts = computeLiveShifts(stripEntries, draggedIds, dropMarker, dragWidth);
 
+  // The dragged tab's transform is written imperatively on every
+  // pointermove, but React owns that element's style prop and drops the
+  // key on re-render (markers change several times per drag). Without
+  // this the tab snaps back to its slot for a frame and then jumps to the
+  // pointer again — on a fast flick the discarded offset is large, which
+  // reads as the tab being flung. Re-assert it after every commit, before
+  // paint, so the offset survives reconciliation.
+  useLayoutEffect(() => {
+    const drag = pointerDragRef.current;
+    if (!drag?.started) return;
+    drag.element.style.transform = `translateX(${drag.lastTx}px)`;
+  });
+
   function clearDragState() {
     removeReleaseListener();
     setDraggedIds(new Set());
@@ -908,6 +938,7 @@ export function CenterTabStrip() {
       minTx: 0,
       maxTx: 0,
       targets: [],
+      lastTx: 0,
       lastIntent: null,
       teardown() {
         window.removeEventListener("pointermove", move);
@@ -972,6 +1003,7 @@ export function CenterTabStrip() {
     }
     // The tab body follows the pointer, clamped to the slot span.
     const tx = Math.min(Math.max(dx, drag.minTx), drag.maxTx);
+    drag.lastTx = tx;
     drag.element.style.transform = `translateX(${tx}px)`;
 
     // Detach: pulled DETACH_DISTANCE_PX off the strip (needs a desktop
@@ -1560,7 +1592,7 @@ function CompoundTabItem({
       data-member-count={group.memberIds.length}
       data-closing-count={closingCount || undefined}
       data-remaining-count={remainingCount}
-      style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
+      style={shiftStyle(shiftX)}
       role="presentation"
     >
       <button
@@ -1686,7 +1718,7 @@ function TabItem({
     <div
       ref={tabRef}
       className={`${styles.tab} ${segment ? styles.compoundSegment : ""} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
-      style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
+      style={shiftStyle(shiftX)}
       onAnimationEnd={(e) => {
         if (e.target !== e.currentTarget) return;
         if (closing) onExited(tab);
