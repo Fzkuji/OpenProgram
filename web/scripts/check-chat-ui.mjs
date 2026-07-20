@@ -136,7 +136,7 @@ assert.match(menu, /<button[\s\S]*type="button"[\s\S]*role="menuitem"/);
 for (const label of [
   "Move left",
   "Move right",
-  "Add to split",
+  "New split view with this tab",
   "Remove from group",
   "Move to new window",
 ]) {

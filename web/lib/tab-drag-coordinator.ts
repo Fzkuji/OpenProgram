@@ -79,32 +79,10 @@ export const DRAG_START_THRESHOLD_PX = 4;
  *  pointer drag into detach-to-new-window mode. */
 export const DETACH_DISTANCE_PX = 48;
 
-/** Fraction of a slot at EACH end that merges instead of reordering. */
-export const MERGE_EDGE_FRACTION = 0.25;
-
-/** Hold time over the CENTER PANE area before a release there merges
- *  with the active tab. Tabs in the strip do not use a dwell — their
- *  merge zone is positional (see isInMergeZone). */
-export const PANE_MERGE_DWELL_MS = 300;
-
-/** True when the dragged center sits in either EDGE quarter of the
- *  target: [0, 0.25] or [0.75, 1] merge, the middle half reorders.
- *  Fixed slot geometry — no direction, no dwell, no state — so the two
- *  travel directions are symmetric by construction and a drag returning
- *  over a neighbour hits the same zones it hit on the way out. */
-export function isInMergeZone(
-  rect: Pick<DOMRect, "left" | "width">,
-  centerX: number,
-): boolean {
-  if (rect.width <= 0) return false;
-  const progress = (centerX - rect.left) / rect.width;
-  if (progress < 0 || progress > 1) return false;
-  return progress <= MERGE_EDGE_FRACTION || progress >= 1 - MERGE_EDGE_FRACTION;
-}
-
-/** Position intent is Chrome-style midpoint-only: left of the target's
- *  midpoint → before, right → after. Merge is decided separately by
- *  isInMergeZone and takes precedence in the strip's pointer path. */
+/** Chrome-style midpoint reorder: left of the target's midpoint → before,
+ *  right → after. Dragging in the strip only ever reorders — merging into
+ *  a split is a separate, explicit action from the tab context menu, never
+ *  a drag outcome. (The "merge" intent mode survives for that menu path.) */
 export function resolveTabDropIntent(
   rect: Pick<DOMRect, "left" | "width">,
   clientX: number,

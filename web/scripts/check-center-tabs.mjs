@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const css = readFileSync(
   new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
@@ -93,28 +93,29 @@ assert.match(pointerMove, /collectPointerDropTargets\(flow\)/);
 assert.match(pointerMove, /const centerX = drag\.originLeft \+ tx \+ drag\.width \/ 2;/);
 assert.match(pointerMove, /pickPointerDropTarget\(drag\.targets, centerX\)/);
 assert.match(pointerMove, /resolveTabDropIntent\(target, centerX, target\)/);
-// Merge is fixed slot geometry — both edge quarters, no direction, no
-// dwell — and the drag's own tabs never merge into themselves.
-assert.match(
+// Dragging in the strip is PURE REORDER — Chrome's model. Splitting is an
+// explicit context-menu action, so no merge may be produced by a drag.
+assert.doesNotMatch(
   pointerMove,
-  /!drag\.selfIds\.has\(target\.tabId\) && isInMergeZone\(target, centerX\)/,
+  /mergeCoverage|MERGE_COVERAGE_THRESHOLD|isInMergeZone|mode: "merge"/,
+  "dragging must never produce a merge",
 );
+assert.doesNotMatch(
+  strip,
+  /paneMergeSurfaceContains|setPaneMergeHighlight|mergeSubjectIntoTab|PANE_MERGE_DWELL_MS/,
+  "the drag-to-pane merge path is gone",
+);
+assert.doesNotMatch(
+  strip,
+  /data-drop-intent/,
+  "there is no merge highlight during a drag",
+);
+assert.doesNotMatch(css, /data-drop-intent/, "the merge highlight style is gone");
 assert.doesNotMatch(
   pointerMove,
   /drag\.direction|drag\.lastX|drag\.lastTx/,
-  "the merge test must not depend on travel direction",
+  "reorder must not depend on travel direction",
 );
-// The tab merge decision itself is a straight positional test: from
-// isInMergeZone to publishing the merge there is no timer at all.
-// (MERGE_DWELL_MS survives only for the pane-area dwell, above it.)
-const tabMergeDecision = pointerMove.slice(pointerMove.indexOf("isInMergeZone"));
-assert.doesNotMatch(
-  tabMergeDecision,
-  /setTimeout|DWELL/,
-  "tab merge must be positional — no dwell timer",
-);
-// The only surviving dwell is the center-pane merge surface.
-assert.match(pointerMove, /PANE_MERGE_DWELL_MS/);
 assert.doesNotMatch(strip, /dwellRef|clearDwell/, "the tab dwell machinery is gone");
 // Detach: DETACH_DISTANCE_PX vertical travel with a live desktop token.
 assert.match(pointerMove, /Math\.abs\(dy\) > DETACH_DISTANCE_PX/);
@@ -134,15 +135,11 @@ assert.ok(
   "the cross-window hit test must run before falling back to detach",
 );
 // In-strip release commits the live intent — a dwell merge wins.
-assert.match(pointerUp, /const intent = drag\.merge \?\? drag\.lastIntent;/);
+assert.match(pointerUp, /const intent = drag\.lastIntent;/);
 assert.match(pointerUp, /tabTransfer\.cancel\(committed\.transferToken\)/,
   "a same-window drop must release the unused prepared token");
 assert.match(pointerUp, /const fourthMemberRejected = isFourthMemberRejection\(/);
 assert.match(pointerUp, /cancelDrag\(!fourthMemberRejected\)/);
-// Pane merge on release after the pane dwell armed.
-assert.match(pointerUp, /mergeSubjectIntoTab\(prepared\.subject, targetId\)/);
-assert.match(pointerMove, /paneMergeSurfaceContains\(e\.clientX, e\.clientY\)/);
-assert.match(pointerMove, /setPaneMergeHighlight\(true\)/);
 // Cancel paths: pointercancel, window blur, Escape — return-home + cleanup.
 assert.match(strip, /window\.addEventListener\("pointercancel", cancel\);/);
 assert.match(strip, /window\.addEventListener\("blur", cancel\);/);
@@ -226,7 +223,45 @@ const moveMenuTab = strip.slice(
 assert.match(moveMenuTab, /moveGroupMember\(/);
 assert.match(moveMenuTab, /ungroupTab\(/);
 assert.match(moveMenuTab, /moveTab\(/);
-assert.match(strip, /function addMenuTabToSplit[\s\S]*groupTab\(/);
+// ---- Split view picker (Chrome's "New Split View with Current Tab") ---
+// The menu entry opens a picker instead of silently pairing with the
+// active tab; the picker commits through the same groupTab store action.
+assert.match(strip, /function canOpenSplitPicker/);
+assert.match(strip, /function openSplitPicker/);
+assert.match(strip, /New split view with this tab/);
+assert.match(strip, /与此标签页新建分屏/);
+assert.match(
+  strip,
+  /disabled=\{!canOpenSplitPicker\(tabMenu\.tabId\)\}/,
+  "the split entry is enabled whenever another tab exists",
+);
+assert.match(strip, /<SplitViewPicker/);
+assert.match(strip, /subjectId=\{splitPickerTabId\}/);
+const picker = readFileSync(
+  new URL("../components/center-tabs/split-view-picker.tsx", import.meta.url),
+  "utf8",
+);
+// The picker lists other tabs and commits via groupTab.
+assert.match(picker, /Choose a tab to add to split view/);
+assert.match(picker, /选择要加入分屏的标签页/);
+assert.match(picker, /groupTab\(tab\.id, subjectId, memberIndex, subjectGroup\?\.id\)/);
+// Candidate filtering lives in the shared layout module (behaviourally
+// covered by check-compound-tabs) and is reused, not reimplemented.
+assert.match(picker, /splitCandidates\(tabs, groups, subjectId\)/);
+// Keyboard: arrow keys move, Enter activates (native button), Esc closes.
+assert.match(picker, /e\.key !== "ArrowDown" && e\.key !== "ArrowUp"/);
+assert.match(picker, /if \(e\.key === "Escape"\)/);
+// Outside pointerdown closes, capture phase like the tab menu.
+assert.match(picker, /document\.addEventListener\("pointerdown", onOutside, true\)/);
+// A11y: dialog + listbox/option roles, and a close control.
+assert.match(picker, /role="dialog"/);
+assert.match(picker, /role="listbox"/);
+assert.match(picker, /role="option"/);
+assert.match(picker, /aria-label=\{text\("Close", "关闭"\)\}/);
+// Icons follow project policy: lucide, never emoji.
+assert.doesNotMatch(picker, /[\u{1F300}-\u{1FAFF}]/u, "no emoji in the picker");
+// The drag-to-merge module is gone entirely.
+assert.doesNotMatch(appShell, /usePaneDropMerge|paneDropMerge/);
 assert.match(strip, /function removeMenuTabFromGroup[\s\S]*ungroupTab\(/);
 assert.match(strip, /function moveMenuTabToNewWindow/);
 const moveToNewWindow = strip.slice(
@@ -250,7 +285,6 @@ for (const announcement of [
   "Split supports up to three tabs",
   "Tab move cancelled",
   "Tab moved to new window",
-  "Tabs merged into split view",
 ]) {
   assert.match(strip, new RegExp(announcement));
 }
@@ -292,11 +326,11 @@ assert.doesNotMatch(
   /data-drop-intent="(?:before|after)"/,
   "before/after insert markers are gone — bystanders slide aside instead",
 );
-assert.match(
-  css,
-  /\.tab\[data-drop-intent="merge"\]\s*\{[^}]*outline: 2px solid var\(--accent-blue\);/s,
-  "merge targets must keep their highlight",
-);
+// The split picker reuses the strip's overlay language (same border /
+// radius / shadow vocabulary as the tab menu), not a bespoke look.
+assert.match(css, /\.splitPicker \{[^}]*border: 1px solid var\(--border\);/s);
+assert.match(css, /\.splitPickerOption \{/);
+assert.match(css, /\.splitPickerOption:hover,\s*\.splitPickerOption:focus-visible \{/s);
 assert.match(css, /\.tab \{[^}]*transition: transform 160ms ease;/s,
   "tabs must transition transform for the slide-aside reorder");
 assert.match(
@@ -324,10 +358,10 @@ assert.match(
   /Static slot geometry captured at drag start/,
   "drop intent math must use untransformed slot geometry",
 );
-assert.match(
+assert.doesNotMatch(
   strip,
-  /dropMarker\.mode === "merge"\s*\? "merge"\s*: undefined/,
-  "plain tabs must only surface the merge intent",
+  /dropIntent/,
+  "tabs no longer surface any merge intent — dragging only reorders",
 );
 
 assert.match(css, /max-width: calc\(100% - 36px\);/);
@@ -386,11 +420,6 @@ assert.match(
   css,
   /:global\(html\.is-desktop\) \.compoundSegment,\s*:global\(html\.is-desktop\) \.compoundTab \.compoundSegment\.tabActive,\s*:global\(html\.is-desktop\) \.compoundTab \.compoundSegment\.tabActive:hover \{[^}]*border-radius: 0;[^}]*box-shadow: none;/s,
   "desktop segments must stay flat partitions — no nested capsule radius or shadow",
-);
-assert.match(
-  strip,
-  /const internalSegmentDrag = !groupDragged\s*&& group\.memberIds\.some\(\(tabId\) => draggedIds\.has\(tabId\)\);/,
-  "internal segment drags must be detected so the compound FLIP owns the feedback",
 );
 assert.match(
   strip,
@@ -555,38 +584,24 @@ assert.ok(
   "newSession must select the distinct React draft before SPA navigation",
 );
 
-// ---- Pane-area dwell merge (dwell a pointer-dragged tab over the
-// page to merge with the active tab) ----------------------------------
-const paneDrop = readFileSync(
-  new URL("../components/center-tabs/pane-drop-merge.tsx", import.meta.url),
-  "utf8",
+// ---- Drag-to-merge is gone entirely -------------------------------
+// Splitting is an explicit context-menu action (see the split picker
+// assertions above); no module may reintroduce a drag-merge surface.
+assert.equal(
+  existsSync(new URL("../components/center-tabs/pane-drop-merge.tsx", import.meta.url)),
+  false,
+  "the drag-to-pane merge module must stay deleted",
 );
-// No HTML5 drag handlers left — the strip's pointer engine drives it.
-assert.doesNotMatch(paneDrop, /onDragOver|onDrop|dataTransfer/);
-// Same-window merges reuse the store's strip-equivalent paths.
-assert.match(paneDrop, /state\.groupTab\(sourceId, targetId, 1, targetGroup\?\.id\)/);
-assert.match(paneDrop, /state\.mergeGroup\(subject\.sourceGroup\.id, targetId, 1\)/);
-assert.match(paneDrop, /MAX_CENTER_TAB_GROUP_MEMBERS/);
-// Surface registry the strip hit-tests + highlights through.
-assert.match(paneDrop, /export function paneMergeSurfaceContains/);
-assert.match(paneDrop, /export function setPaneMergeHighlight/);
-assert.match(paneDrop, /pane-drop-merge-overlay/);
-assert.match(paneDrop, /aria-hidden="true"/);
-// The strip commits the merge and announces it (single aria-live).
-const stripPaneUp = strip.slice(strip.indexOf("function onPointerDragUp"));
-assert.match(stripPaneUp, /mergeSubjectIntoTab\(prepared\.subject, targetId\)/);
-assert.match(stripPaneUp, /committed\?\.transferToken/);
-// App shell registers the surface + renders the overlay in the pane.
-assert.match(appShell, /const paneDropMerge = usePaneDropMerge\(\);/);
+// The center body still hosts the split picker portal.
+assert.match(appShell, /className="center-body"/);
 const centerBody = appShell.slice(
-  appShell.indexOf("paneDropMerge.surfaceRef(node)"),
+  appShell.indexOf('className="center-body"'),
   appShell.indexOf("<PageShell"),
 );
-assert.match(centerBody, /\{paneDropMerge\.overlay\}/);
 assert.match(
   centerBody,
   /position: "relative"/,
-  "overlay is absolutely positioned against the center body",
+  "the split picker is absolutely positioned against the center body",
 );
 
 console.log("center-tabs checks passed");

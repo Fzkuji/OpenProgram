@@ -19,6 +19,7 @@
  * ConfirmDialog if one ever lands at this level.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { CirclePlus, FileText, Globe, GripVertical, Plus, X } from "lucide-react";
 
@@ -34,14 +35,13 @@ import {
   centerTabStripEntries,
   findCenterTabGroup,
   MAX_CENTER_TAB_GROUP_MEMBERS,
+  splitCandidates,
   type CenterTabGroup,
 } from "@/lib/state/center-tab-groups";
 import {
   DETACH_DISTANCE_PX,
   DRAG_START_THRESHOLD_PX,
   dragCoordinator,
-  isInMergeZone,
-  PANE_MERGE_DWELL_MS,
   resolveTabDropIntent,
   type TabDragSubject,
   type TabDropIntent,
@@ -50,11 +50,7 @@ import {
   buildTransferPayload,
   desktopBridge,
 } from "@/lib/desktop-bridge";
-import {
-  mergeSubjectIntoTab,
-  paneMergeSurfaceContains,
-  setPaneMergeHighlight,
-} from "./pane-drop-merge";
+import { SplitViewPicker } from "./split-view-picker";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   dropDraftChannelChoice,
@@ -118,8 +114,8 @@ const STRIP_GAP = 8;
  * Chrome-style live reorder: while a drag hovers a before/after zone,
  * every entry between the dragged unit and the assumed insertion point
  * slides one drag-width aside (transform only — layout never changes,
- * so hit targets stay stable). Merge intents render as a highlight on
- * the target instead; internal compound reorders keep their own FLIP.
+ * so hit targets stay stable). Internal compound reorders keep their
+ * own FLIP.
  */
 function computeLiveShifts(
   entries: ReturnType<typeof centerTabStripEntries>,
@@ -129,6 +125,8 @@ function computeLiveShifts(
 ): Map<string, number> {
   const shifts = new Map<string, number>();
   if (!marker || marker.mode === "merge" || dragWidth <= 0) return shifts;
+  // ponytail: the merge guard is vestigial for drags (they only ever
+  // produce before/after now) but keeps the helper total for any caller.
   const targetIndex = entries.findIndex((entry) =>
     entry.kind === "group"
       ? entry.group.memberIds.includes(marker.targetTabId)
@@ -226,14 +224,11 @@ interface PointerDragState {
   startY: number;
   started: boolean;
   detaching: boolean;
-  paneArmed: boolean;
-  paneTimer: number | null;
   originLeft: number;
   width: number;
   minTx: number;
   maxTx: number;
   targets: PointerDropTarget[];
-  merge: TabDropIntent | null;
   lastIntent: TabDropIntent | null;
   teardown(): void;
 }
@@ -307,6 +302,15 @@ export function CenterTabStrip() {
   const [dragWidth, setDragWidth] = useState(0);
   const [dragAnnouncement, setDragAnnouncement] = useState("");
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
+  const [splitPickerTabId, setSplitPickerTabId] = useState<string | null>(null);
+  // Portal host for the split picker, resolved after mount so the first
+  // (server) render stays deterministic.
+  const [splitPickerHost, setSplitPickerHost] = useState<Element | null>(null);
+  useEffect(() => {
+    setSplitPickerHost(
+      splitPickerTabId ? document.querySelector(".center-body") : null,
+    );
+  }, [splitPickerTabId]);
   // Mirror of tabMenu for the pointer handlers, which run from listeners
   // registered on an earlier render and would otherwise read a stale value.
   const tabMenuRef = useRef<TabMenuState | null>(null);
@@ -562,34 +566,18 @@ export function CenterTabStrip() {
     finishMenuAction(tabId, text("Tab reordered", "标签顺序已调整"));
   }
 
-  function canAddMenuTabToSplit(tabId: string) {
+  /** The split entry is available whenever this window has another tab
+   *  to pair with — Chrome keeps it enabled and lets the picker decide. */
+  function canOpenSplitPicker(tabId: string) {
     const state = useCenterTabs.getState();
-    return Boolean(
-      state.tabs.some((tab) => tab.id === tabId)
-      && !findCenterTabGroup(state.groups, tabId)
-      && state.activeId
-      && state.activeId !== tabId,
-    );
+    return splitCandidates(state.tabs, state.groups, tabId).length > 0;
   }
 
-  function addMenuTabToSplit(tabId: string) {
-    const state = useCenterTabs.getState();
-    const targetId = state.activeId;
-    if (!targetId || targetId === tabId || findCenterTabGroup(state.groups, tabId)) return;
-    const targetGroup = findCenterTabGroup(state.groups, targetId);
-    const targetIndex = targetGroup?.memberIds.indexOf(targetId) ?? 0;
-    const accepted = groupTab(
-      tabId,
-      targetId,
-      targetGroup ? targetIndex + 1 : 1,
-      targetGroup?.id,
-    );
-    finishMenuAction(
-      tabId,
-      accepted
-        ? text("Tab added to split", "标签已加入分屏")
-        : text("Split supports up to three tabs", "分屏最多支持三个标签"),
-    );
+  /** Chrome's "New Split View with Current Tab": close the menu and show
+   *  the tab picker; the actual grouping happens when a tab is chosen. */
+  function openSplitPicker(tabId: string) {
+    setTabMenu(null);
+    setSplitPickerTabId(tabId);
   }
 
   function removeMenuTabFromGroup(tabId: string) {
@@ -811,25 +799,13 @@ export function CenterTabStrip() {
     element.style.transform = ""; // → 160ms slide home
   }
 
-  function clearPanePointerState(drag: PointerDragState) {
-    if (drag.paneTimer !== null) {
-      window.clearTimeout(drag.paneTimer);
-      drag.paneTimer = null;
-    }
-    if (drag.paneArmed) {
-      drag.paneArmed = false;
-      setPaneMergeHighlight(false);
-    }
-  }
-
-  /** Detach the engine from the DOM (listeners, capture, pane state)
+  /** Detach the engine from the DOM (listeners, capture)
    *  and slide the element home. Returns whether a drag had started. */
   function teardownPointerDrag(): boolean {
     const drag = pointerDragRef.current;
     if (!drag) return false;
     pointerDragRef.current = null;
     drag.teardown();
-    clearPanePointerState(drag);
     restorePointerDragElement(drag.element, true);
     return drag.started;
   }
@@ -871,14 +847,11 @@ export function CenterTabStrip() {
       startY: event.clientY,
       started: false,
       detaching: false,
-      paneArmed: false,
-      paneTimer: null,
       originLeft: 0,
       width: 0,
       minTx: 0,
       maxTx: 0,
       targets: [],
-      merge: null,
       lastIntent: null,
       teardown() {
         window.removeEventListener("pointermove", move);
@@ -946,58 +919,27 @@ export function CenterTabStrip() {
     const tx = Math.min(Math.max(dx, drag.minTx), drag.maxTx);
     drag.element.style.transform = `translateX(${tx}px)`;
 
-    // Pane merge: dwelling over the center pane area arms merge-on-release.
-    if (paneMergeSurfaceContains(e.clientX, e.clientY)) {
-      if (!drag.paneArmed && drag.paneTimer === null) {
-        drag.paneTimer = window.setTimeout(() => {
-          drag.paneTimer = null;
-          if (pointerDragRef.current !== drag) return;
-          drag.paneArmed = true;
-          setPaneMergeHighlight(true);
-        }, PANE_MERGE_DWELL_MS);
-      }
-    } else {
-      clearPanePointerState(drag);
-    }
-
     // Detach: pulled DETACH_DISTANCE_PX off the strip (needs a desktop
-    // transfer token) and not armed on the pane — release then opens a
-    // new window or lands in another OpenProgram window.
+    // transfer token) — release then opens a new window, or lands in
+    // another OpenProgram window when the cursor is over one.
     const detachCapable = Boolean(dragCoordinator.current()?.transferToken);
-    drag.detaching =
-      detachCapable && Math.abs(dy) > DETACH_DISTANCE_PX && !drag.paneArmed;
+    drag.detaching = detachCapable && Math.abs(dy) > DETACH_DISTANCE_PX;
     drag.element.toggleAttribute("data-detach-intent", drag.detaching);
-    if (drag.detaching || drag.paneArmed) {
-      drag.merge = null;
+    if (drag.detaching) {
       drag.lastIntent = null;
       publishDropMarker(null);
       return;
     }
 
-    // Chrome midpoint reorder: the dragged tab's CENTER against static
-    // slot midpoints; crossing a neighbor's midpoint swaps immediately.
+    // In-strip dragging is PURE REORDER — Chrome midpoint algorithm: the
+    // dragged tab's center against the nearest static slot's midpoint.
+    // Splitting is an explicit context-menu action, never a drag outcome.
     const centerX = drag.originLeft + tx + drag.width / 2;
     const target = pickPointerDropTarget(drag.targets, centerX);
     if (!target) {
-      drag.merge = null;
       publishDropMarker(null);
       return;
     }
-    // Merge zone is fixed slot geometry: either EDGE quarter of the
-    // neighbour merges, the middle half reorders. No direction, no dwell
-    // — so dragging back over a neighbour hits the same zones.
-    const inMerge =
-      !drag.selfIds.has(target.tabId) && isInMergeZone(target, centerX);
-    if (inMerge) {
-      const merge: TabDropIntent = { mode: "merge", targetTabId: target.tabId };
-      if (target.groupId !== undefined) merge.groupId = target.groupId;
-      if (target.memberIndex !== undefined) merge.memberIndex = target.memberIndex;
-      drag.merge = merge;
-      drag.lastIntent = null;
-      publishDropMarker(merge);
-      return;
-    }
-    drag.merge = null;
     const intent = resolveTabDropIntent(target, centerX, target);
     drag.lastIntent = intent;
     publishDropMarker(intent);
@@ -1008,40 +950,11 @@ export function CenterTabStrip() {
     if (!drag || e.pointerId !== drag.pointerId) return;
     pointerDragRef.current = null;
     drag.teardown();
-    const paneArmed = drag.paneArmed;
-    clearPanePointerState(drag);
     if (!drag.started) return; // plain click — the once-pointerup listener releases the token
     const prepared = dragCoordinator.current();
     if (!prepared?.started) {
       restorePointerDragElement(drag.element, true);
       clearDragState();
-      return;
-    }
-    if (paneArmed) {
-      // Release over the dwelled pane surface = merge with the active tab.
-      const targetId = useCenterTabs.getState().activeId;
-      const result = targetId
-        ? mergeSubjectIntoTab(prepared.subject, targetId)
-        : "noop";
-      restorePointerDragElement(drag.element, true);
-      if (result === "ok") {
-        const committed = dragCoordinator.commit();
-        if (committed?.transferToken) {
-          // Same-window move — release the unused main-process token.
-          void desktopBridge()?.tabTransfer.cancel(committed.transferToken);
-        }
-        setDragAnnouncement(
-          text("Tabs merged into split view", "标签已合并到分屏"),
-        );
-        clearDragState();
-        return;
-      }
-      cancelDrag(result !== "full");
-      if (result === "full") {
-        setDragAnnouncement(
-          text("Split supports up to three tabs", "分屏最多支持三个标签"),
-        );
-      }
       return;
     }
     if (drag.detaching) {
@@ -1078,9 +991,9 @@ export function CenterTabStrip() {
       })();
       return;
     }
-    // In-strip release: commit the live intent (a dwell merge wins over
-    // the positional reorder), then FLIP-settle into the final slot.
-    const intent = drag.merge ?? drag.lastIntent;
+    // In-strip release: commit the live reorder intent, then FLIP-settle
+    // into the final slot.
+    const intent = drag.lastIntent;
     if (!intent) {
       restorePointerDragElement(drag.element, true);
       cancelDrag(true);
@@ -1304,8 +1217,6 @@ export function CenterTabStrip() {
                 onOpenMenu={openTabMenu}
                 onClose={onTabClose}
                 onExited={finishClose}
-                draggedIds={draggedIds}
-                dropMarker={dropMarker}
                 shiftX={liveShifts.get(entry.id) ?? 0}
                 onDragPointerDown={onTabPointerDown}
                 onMoveGroup={moveGroupByKeyboard}
@@ -1330,9 +1241,6 @@ export function CenterTabStrip() {
               onClose={onTabClose}
               onExited={finishClose}
               dragSubject={{ kind: "tab", tabIds: [tab.id] }}
-              dropIntent={dropMarker?.targetTabId === tab.id && dropMarker.mode === "merge"
-                ? "merge"
-                : undefined}
               shiftX={liveShifts.get(entry.id) ?? 0}
               onDragPointerDown={onTabPointerDown}
             />
@@ -1379,10 +1287,10 @@ export function CenterTabStrip() {
             type="button"
             role="menuitem"
             className={styles.tabMenuItem}
-            disabled={!canAddMenuTabToSplit(tabMenu.tabId)}
-            onClick={() => addMenuTabToSplit(tabMenu.tabId)}
+            disabled={!canOpenSplitPicker(tabMenu.tabId)}
+            onClick={() => openSplitPicker(tabMenu.tabId)}
           >
-            {text("Add to split", "加入分屏")}
+            {text("New split view with this tab", "与此标签页新建分屏")}
           </button>
           <button
             type="button"
@@ -1404,6 +1312,35 @@ export function CenterTabStrip() {
           </button>
         </div>
       ) : null}
+      {/* Split picker lives in the center body (the strip is a 40px band
+         that would clip it), so portal it onto that surface. */}
+      {splitPickerTabId && splitPickerHost
+        ? createPortal(
+            <SplitViewPicker
+              subjectId={splitPickerTabId}
+              titleOf={(tab) => labelOf(tab, t, text)}
+              onClose={() => {
+                const subject = splitPickerTabId;
+                setSplitPickerTabId(null);
+                returnFocusToMenuInvoker(subject);
+              }}
+              onPicked={(accepted) => {
+                const subject = splitPickerTabId;
+                setSplitPickerTabId(null);
+                setDragAnnouncement(
+                  accepted
+                    ? text("Tab added to split", "标签已加入分屏")
+                    : text(
+                        "Split supports up to three tabs",
+                        "分屏最多支持三个标签",
+                      ),
+                );
+                returnFocusToMenuInvoker(subject);
+              }}
+            />,
+            splitPickerHost,
+          )
+        : null}
       <span className={styles.dragAnnouncement} role="status" aria-live="polite">
         {dragAnnouncement}
       </span>
@@ -1426,8 +1363,6 @@ interface CompoundTabItemProps {
   ): void;
   onClose(event: React.SyntheticEvent, tab: CenterTab): void;
   onExited(tab: CenterTab): void;
-  draggedIds: ReadonlySet<string>;
-  dropMarker: TabDropIntent | null;
   shiftX: number;
   onDragPointerDown(
     subject: TabDragSubject,
@@ -1448,8 +1383,6 @@ function CompoundTabItem({
   onOpenMenu,
   onClose,
   onExited,
-  draggedIds,
-  dropMarker,
   shiftX,
   onDragPointerDown,
   onMoveGroup,
@@ -1460,11 +1393,6 @@ function CompoundTabItem({
     closingIds.has(tabId),
   ).length;
   const remainingCount = group.memberIds.length - closingCount;
-  const groupDragged = group.memberIds.every((tabId) => draggedIds.has(tabId));
-  // A segment of THIS group being dragged means any drop is an internal
-  // reorder — the FLIP slide below is the feedback, not an insert marker.
-  const internalSegmentDrag = !groupDragged
-    && group.memberIds.some((tabId) => draggedIds.has(tabId));
   // FLIP: when members reorder within the compound (drag drop or keyboard
   // Move left/right), slide each segment from its previous offset to its
   // new one. Membership changes (enter/exit) keep their own animations.
@@ -1567,10 +1495,6 @@ function CompoundTabItem({
               sourceGroup: group,
               memberIndex,
             }}
-            dropIntent={dropMarker?.targetTabId === tab.id && dropMarker.mode === "merge"
-                && !internalSegmentDrag
-              ? "merge"
-              : undefined}
             onDragPointerDown={onDragPointerDown}
           />
         );
@@ -1596,7 +1520,6 @@ function TabItem({
   onClose,
   onExited,
   dragSubject,
-  dropIntent,
   shiftX = 0,
   onDragPointerDown,
 }: {
@@ -1617,7 +1540,6 @@ function TabItem({
   onClose: (e: React.SyntheticEvent, tab: CenterTab) => void;
   onExited: (tab: CenterTab) => void;
   dragSubject: TabDragSubject;
-  dropIntent?: TabDropIntent["mode"];
   shiftX?: number;
   onDragPointerDown: (
     subject: TabDragSubject,
@@ -1644,7 +1566,6 @@ function TabItem({
     <div
       ref={tabRef}
       className={`${styles.tab} ${segment ? styles.compoundSegment : ""} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
-      data-drop-intent={dropIntent}
       style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
       onAnimationEnd={(e) => {
         if (e.target !== e.currentTarget) return;

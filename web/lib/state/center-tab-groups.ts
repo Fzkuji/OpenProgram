@@ -77,6 +77,19 @@ export function findCenterTabGroup(
   return groups.find((group) => group.memberIds.includes(tabId));
 }
 
+/** Tabs that can join `subjectId` in a split view: every other tab in the
+ *  window except members of the subject's own group (those are no-ops). */
+export function splitCandidates(
+  tabs: readonly CenterTab[],
+  groups: readonly CenterTabGroup[],
+  subjectId: string,
+): CenterTab[] {
+  const ownGroup = findCenterTabGroup(groups, subjectId);
+  return tabs.filter(
+    (tab) => tab.id !== subjectId && !ownGroup?.memberIds.includes(tab.id),
+  );
+}
+
 export function focusCenterTabGroupMember(
   layout: CenterTabLayout,
   groupId: string,

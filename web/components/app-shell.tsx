@@ -9,7 +9,6 @@ import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { CenterTabStrip } from "./center-tabs/center-tab-strip";
 import { FileTabPane } from "./center-tabs/file-tab-pane";
 import { NewTabPage } from "./center-tabs/new-tab-page";
-import { usePaneDropMerge } from "./center-tabs/pane-drop-merge";
 import { WebTabPane } from "./center-tabs/web-tab-pane";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -483,7 +482,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const splitRatio = useCenterTabs((s) => s.splitRatio);
   const setSplitRatio = useCenterTabs((s) => s.setSplitRatio);
   const centerBodyRef = useRef<HTMLDivElement | null>(null);
-  const paneDropMerge = usePaneDropMerge();
   const [centerBodyWidth, setCenterBodyWidth] = useState(0);
   useEffect(() => {
     const node = centerBodyRef.current;
@@ -600,16 +598,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         {!isDesktop ? <CenterTabStrip /> : null}
         <div
-          ref={(node) => {
-            centerBodyRef.current = node;
-            paneDropMerge.surfaceRef(node);
-          }}
+          ref={centerBodyRef}
           className="center-body"
           style={{ flex: 1, minHeight: 0, display: "flex", position: "relative" }}
         >
-          {/* Dwell a pointer-dragged tab over the pane area to merge it
-             with the active tab (highlight overlay; strip announces). */}
-          {paneDropMerge.overlay}
           {/* Chat shell is mounted ONCE at the layout level and kept
              alive across session switches AND non-session tabs. This
              is what makes the WS + DOM + right sidebar state persist. */}
