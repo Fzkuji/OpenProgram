@@ -69,9 +69,21 @@ const pointerMove = strip.slice(
 // 4px threshold before the press becomes a drag; then the coordinator starts.
 assert.match(pointerMove, /Math\.hypot\(dx, dy\) < DRAG_START_THRESHOLD_PX\) return;/);
 assert.match(pointerMove, /dragCoordinator\.start\(\)/);
-// The tab element itself follows the pointer, clamped inside the strip.
+// The tab element itself follows the pointer, clamped to the slot span.
 assert.match(pointerMove, /drag\.element\.style\.transform = `translateX\(\$\{tx\}px\)`/);
 assert.match(pointerMove, /Math\.min\(Math\.max\(dx, drag\.minTx\), drag\.maxTx\)/);
+// The clamp must bound the dragged tab's CENTER against the slot span,
+// not its BODY against the flow: clamping the body leaves the outermost
+// edge quarters unreachable, so the first/last tab could never be merged
+// into (the center stops half a tab short of the far edge).
+assert.match(pointerMove, /const center0 = unitRect\.left \+ unitRect\.width \/ 2;/);
+assert.match(pointerMove, /drag\.minTx = firstSlot \? firstSlot\.left - center0 : -Infinity;/);
+assert.match(pointerMove, /lastSlot\.left \+ lastSlot\.width - center0/);
+assert.doesNotMatch(
+  pointerMove,
+  /flowRect\.right - unitRect\.right/,
+  "clamping the tab body to the flow makes the edge merge zones unreachable",
+);
 // Pointer capture lives on the dragged tab element.
 assert.match(pointerMove, /drag\.element\.setPointerCapture\(drag\.pointerId\)/);
 assert.match(strip, /releasePointerCapture\(/);
@@ -81,16 +93,16 @@ assert.match(pointerMove, /collectPointerDropTargets\(flow\)/);
 assert.match(pointerMove, /const centerX = drag\.originLeft \+ tx \+ drag\.width \/ 2;/);
 assert.match(pointerMove, /pickPointerDropTarget\(drag\.targets, centerX\)/);
 assert.match(pointerMove, /resolveTabDropIntent\(target, centerX, target\)/);
-// Directional merge: the LEADING quarter of a neighbour merges on
-// contact — no dwell timer, and the drag's own tabs never merge.
+// Merge is fixed slot geometry — both edge quarters, no direction, no
+// dwell — and the drag's own tabs never merge into themselves.
 assert.match(
   pointerMove,
-  /!drag\.selfIds\.has\(target\.tabId\)\s*&& isInMergeZone\(target, centerX, drag\.direction\)/,
+  /!drag\.selfIds\.has\(target\.tabId\) && isInMergeZone\(target, centerX\)/,
 );
-assert.match(
+assert.doesNotMatch(
   pointerMove,
-  /drag\.direction = e\.clientX > drag\.lastX \? 1 : -1;/,
-  "the merge quarter follows the current travel direction",
+  /drag\.direction|drag\.lastX|drag\.lastTx/,
+  "the merge test must not depend on travel direction",
 );
 // The tab merge decision itself is a straight positional test: from
 // isInMergeZone to publishing the merge there is no timer at all.

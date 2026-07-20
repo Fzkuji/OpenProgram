@@ -43,7 +43,6 @@ import {
   isInMergeZone,
   PANE_MERGE_DWELL_MS,
   resolveTabDropIntent,
-  type DragDirection,
   type TabDragSubject,
   type TabDropIntent,
 } from "@/lib/tab-drag-coordinator";
@@ -234,10 +233,6 @@ interface PointerDragState {
   minTx: number;
   maxTx: number;
   targets: PointerDropTarget[];
-  /** Last non-zero horizontal travel direction — decides which quarter
-   *  of a neighbour merges (the one the drag runs into first). */
-  direction: DragDirection;
-  lastX: number;
   merge: TabDropIntent | null;
   lastIntent: TabDropIntent | null;
   teardown(): void;
@@ -873,8 +868,6 @@ export function CenterTabStrip() {
       minTx: 0,
       maxTx: 0,
       targets: [],
-      direction: 1,
-      lastX: event.clientX,
       merge: null,
       lastIntent: null,
       teardown() {
@@ -913,15 +906,22 @@ export function CenterTabStrip() {
       // against these unshifted rects (bystanders only ever move via
       // transform), so nothing can oscillate under the dragged tab.
       const flow = tabsFlowRef.current;
-      const flowRect = flow?.getBoundingClientRect();
       const unitRect = drag.element.getBoundingClientRect();
       drag.originLeft = unitRect.left;
       drag.width = unitRect.width;
-      drag.minTx = flowRect ? flowRect.left - unitRect.left : -Infinity;
-      drag.maxTx = flowRect
-        ? Math.max(drag.minTx, flowRect.right - unitRect.right)
-        : Infinity;
       drag.targets = flow ? collectPointerDropTargets(flow) : [];
+      // Clamp so the dragged tab's CENTER can still reach both ends of the
+      // slot span. Clamping the tab BODY to the flow instead leaves the
+      // outermost quarters unreachable — the center tops out half a tab
+      // short of the last slot's far edge, so the last tab could never be
+      // merged into while dragging left (mirrored for the first tab).
+      const firstSlot = drag.targets[0];
+      const lastSlot = drag.targets.at(-1);
+      const center0 = unitRect.left + unitRect.width / 2;
+      drag.minTx = firstSlot ? firstSlot.left - center0 : -Infinity;
+      drag.maxTx = lastSlot
+        ? Math.max(drag.minTx, lastSlot.left + lastSlot.width - center0)
+        : Infinity;
       drag.element.setAttribute("data-pointer-drag", "true");
       try {
         drag.element.setPointerCapture(drag.pointerId);
@@ -932,15 +932,9 @@ export function CenterTabStrip() {
       setDraggedIds(new Set(drag.subject.tabIds));
       setDragAnnouncement(text("Dragging tab", "正在拖动标签"));
     }
-    // The tab body follows the pointer, clamped inside the strip flow.
+    // The tab body follows the pointer, clamped to the slot span.
     const tx = Math.min(Math.max(dx, drag.minTx), drag.maxTx);
     drag.element.style.transform = `translateX(${tx}px)`;
-    // Travel direction decides which quarter of a neighbour merges; a
-    // pause (dx === 0) keeps the last direction rather than flipping.
-    if (e.clientX !== drag.lastX) {
-      drag.direction = e.clientX > drag.lastX ? 1 : -1;
-      drag.lastX = e.clientX;
-    }
 
     // Pane merge: dwelling over the center pane area arms merge-on-release.
     if (paneMergeSurfaceContains(e.clientX, e.clientY)) {
@@ -979,12 +973,11 @@ export function CenterTabStrip() {
       publishDropMarker(null);
       return;
     }
-    // Directional merge zone: the LEADING quarter of the neighbour — the
-    // quarter the drag runs into first — merges; the remaining three
-    // quarters reorder. Purely positional, no dwell timer.
+    // Merge zone is fixed slot geometry: either EDGE quarter of the
+    // neighbour merges, the middle half reorders. No direction, no dwell
+    // — so dragging back over a neighbour hits the same zones.
     const inMerge =
-      !drag.selfIds.has(target.tabId)
-      && isInMergeZone(target, centerX, drag.direction);
+      !drag.selfIds.has(target.tabId) && isInMergeZone(target, centerX);
     if (inMerge) {
       const merge: TabDropIntent = { mode: "merge", targetTabId: target.tabId };
       if (target.groupId !== undefined) merge.groupId = target.groupId;

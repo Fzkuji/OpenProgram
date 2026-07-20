@@ -126,31 +126,46 @@ assert.deepEqual(drag.resolveTabDropIntent(rect, 300, target), {
 assert.equal(drag.DRAG_START_THRESHOLD_PX, 4);
 assert.equal(drag.DETACH_DISTANCE_PX, 48);
 
-// Directional merge zone: the LEADING quarter of the target — the one
-// the drag runs into first — merges; the other three quarters reorder.
-// Purely positional, no dwell timer anywhere in the contract.
-assert.equal(drag.MERGE_LEADING_FRACTION, 0.25);
+// Merge zone is fixed slot geometry: BOTH edge quarters merge, the
+// middle half reorders. No direction, no dwell — the two travel
+// directions are symmetric by construction.
+assert.equal(drag.MERGE_EDGE_FRACTION, 0.25);
+assert.equal(drag.MERGE_LEADING_FRACTION, undefined, "the directional zone is gone");
 assert.equal(drag.MERGE_DWELL_MS, undefined, "the strip dwell timer is gone");
 assert.equal(drag.MERGE_DWELL_CENTER_FRACTION, undefined);
 // A dwell survives only for the center-pane merge surface.
 assert.equal(drag.PANE_MERGE_DWELL_MS, 300);
-// rect = { left: 100, width: 200 } → quarters at 150 and 250.
-// Dragging RIGHT: the left quarter [100,150] is the leading edge.
-assert.equal(drag.isInMergeZone(rect, 100, 1), true);
-assert.equal(drag.isInMergeZone(rect, 150, 1), true);
-assert.equal(drag.isInMergeZone(rect, 150.001, 1), false, "past the near quarter reorders");
-assert.equal(drag.isInMergeZone(rect, 200, 1), false);
-assert.equal(drag.isInMergeZone(rect, 290, 1), false, "the far quarter never merges");
-// Dragging LEFT: mirrored — the right quarter [250,300] leads.
-assert.equal(drag.isInMergeZone(rect, 300, -1), true);
-assert.equal(drag.isInMergeZone(rect, 250, -1), true);
-assert.equal(drag.isInMergeZone(rect, 249.999, -1), false);
-assert.equal(drag.isInMergeZone(rect, 200, -1), false);
-assert.equal(drag.isInMergeZone(rect, 110, -1), false);
-// Outside the slot never merges in either direction.
-assert.equal(drag.isInMergeZone(rect, 99, 1), false);
-assert.equal(drag.isInMergeZone(rect, 301, -1), false);
-assert.equal(drag.isInMergeZone({ left: 0, width: 0 }, 0, 1), false);
+// The merge test takes exactly two arguments — no direction parameter.
+assert.equal(drag.isInMergeZone.length, 2, "merge must not depend on drag direction");
+// rect = { left: 100, width: 200 } → quarter boundaries at 150 and 250.
+// Left edge quarter [100,150] merges.
+assert.equal(drag.isInMergeZone(rect, 100), true);
+assert.equal(drag.isInMergeZone(rect, 150), true, "0.25 is inside the merge zone");
+assert.equal(drag.isInMergeZone(rect, 150.001), false, "just past 0.25 reorders");
+// Middle half (0.25, 0.75) reorders.
+assert.equal(drag.isInMergeZone(rect, 200), false);
+assert.equal(drag.isInMergeZone(rect, 249.999), false, "just before 0.75 reorders");
+// Right edge quarter [250,300] merges.
+assert.equal(drag.isInMergeZone(rect, 250), true, "0.75 is inside the merge zone");
+assert.equal(drag.isInMergeZone(rect, 300), true);
+// Outside the slot never merges; a zero-width slot never merges.
+assert.equal(drag.isInMergeZone(rect, 99), false);
+assert.equal(drag.isInMergeZone(rect, 301), false);
+assert.equal(drag.isInMergeZone({ left: 0, width: 0 }, 0), false);
+// Symmetry: every sample reads the same regardless of approach order,
+// so a drag returning over a neighbour hits the zones it hit going out.
+for (const x of [100, 140, 150, 200, 250, 260, 300]) {
+  assert.equal(
+    drag.isInMergeZone(rect, x),
+    drag.isInMergeZone(rect, x),
+    "the merge test is stateless",
+  );
+}
+assert.equal(
+  drag.isInMergeZone(rect, 120),
+  drag.isInMergeZone(rect, 280),
+  "the two edge quarters behave identically",
+);
 
 const broken = groups.normalizeCenterTabLayout({
   tabIds: ["a", "b", "c", "d"],
