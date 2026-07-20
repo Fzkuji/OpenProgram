@@ -33,6 +33,8 @@
   padding: 0 8px;
   background: var(--tabrow-bg); /* 实色灰底（桌面模式比侧栏深一档，见 base.css） */
   flex-shrink: 0;
+  /* 标题是拖拽把手，不是可选文本：拖动时选中会留下高亮残影。 */
+  user-select: none;
 }
 
 /* 桌面（Electron）：tab 条空白处可拖拽窗口（Chrome 同款）；tab 与 ＋号
