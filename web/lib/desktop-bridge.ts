@@ -184,6 +184,20 @@ export interface DesktopTabTransferApi {
   }) => void): () => void;
 }
 
+/** One recorded page visit from the desktop browsing history. */
+export interface DesktopHistoryEntry {
+  url: string;
+  title: string;
+  faviconUrl: string;
+  visitedAt: number;
+}
+
+export interface DesktopHistoryApi {
+  list(options?: { limit?: number; query?: string }): Promise<DesktopHistoryEntry[]>;
+  remove(url: string, visitedAt: number): Promise<boolean>;
+  clear(): Promise<boolean>;
+}
+
 export interface DesktopBridge {
   readonly isDesktop: true;
   readonly windowId: string;
@@ -191,6 +205,8 @@ export interface DesktopBridge {
   openExternal(url: string): void;
   webTab: DesktopWebTabApi;
   tabTransfer: DesktopTabTransferApi;
+  /** Absent in shells older than the browsing-history build. */
+  history?: DesktopHistoryApi;
 }
 
 /** The preload-exposed bridge, or null outside the desktop shell. */

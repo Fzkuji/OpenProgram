@@ -29,6 +29,12 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       return () => ipcRenderer.removeListener("webtab:state", listener);
     },
   },
+  history: {
+    list: (options) => ipcRenderer.invoke("history:list", options),
+    remove: (url, visitedAt) =>
+      ipcRenderer.invoke("history:delete", url, visitedAt),
+    clear: () => ipcRenderer.invoke("history:clear"),
+  },
   tabTransfer: {
     // Synchronous by contract: called from pointer/mouse down so the
     // token exists before a same-tick dragstart reads it.

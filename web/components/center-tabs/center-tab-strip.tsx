@@ -43,6 +43,7 @@ import {
   DRAG_START_THRESHOLD_PX,
   dragCoordinator,
   resolveTabDropIntent,
+  SWAP_OVERLAP_RATIO,
   type TabDragSubject,
   type TabDropIntent,
 } from "@/lib/tab-drag-coordinator";
@@ -231,6 +232,42 @@ interface PointerDragState {
   targets: PointerDropTarget[];
   lastIntent: TabDropIntent | null;
   teardown(): void;
+}
+
+/** Visible horizontal span a dragged tab may occupy. Desktop uses the
+ *  scrollable flow's own box (its client width, not the wider scrolled
+ *  content); browser mode has no flow box (display:contents) so the
+ *  strip's padded content box stands in. The "+" button sits outside the
+ *  flow's max-width, so the flow's right edge already excludes it. */
+function visibleStripBounds(
+  flow: HTMLElement | null,
+  strip: HTMLElement | null,
+): { left: number; right: number } | null {
+  if (flow && flow.getClientRects().length > 0) {
+    const rect = flow.getBoundingClientRect();
+    return { left: rect.left, right: rect.left + flow.clientWidth };
+  }
+  if (!strip) return null;
+  const rect = strip.getBoundingClientRect();
+  const style = getComputedStyle(strip);
+  return {
+    left: rect.left + (Number.parseFloat(style.paddingLeft) || 0),
+    right: rect.right - (Number.parseFloat(style.paddingRight) || 0),
+  };
+}
+
+/** Fraction of `slot` covered by `dragged` — the reorder measure: once
+ *  the dragged tab covers half of a neighbour, they swap. Using overlap
+ *  (not the dragged centre) keeps it correct for unequal widths. */
+function slotOverlapRatio(
+  slot: Pick<PointerDropTarget, "left" | "width">,
+  dragged: { left: number; width: number },
+): number {
+  if (slot.width <= 0) return 0;
+  const overlap =
+    Math.min(slot.left + slot.width, dragged.left + dragged.width)
+    - Math.max(slot.left, dragged.left);
+  return overlap <= 0 ? 0 : Math.min(1, overlap / slot.width);
 }
 
 /** Nearest slot to the dragged tab's center (containment wins). */
@@ -893,17 +930,16 @@ export function CenterTabStrip() {
       drag.originLeft = unitRect.left;
       drag.width = unitRect.width;
       drag.targets = flow ? collectPointerDropTargets(flow) : [];
-      // Clamp so the dragged tab's CENTER can still reach both ends of the
-      // slot span. Clamping the tab BODY to the flow instead leaves the
-      // outermost quarters unreachable — the center tops out half a tab
-      // short of the last slot's far edge, so the last tab could never be
-      // merged into while dragging left (mirrored for the first tab).
-      const firstSlot = drag.targets[0];
-      const lastSlot = drag.targets.at(-1);
-      const center0 = unitRect.left + unitRect.width / 2;
-      drag.minTx = firstSlot ? firstSlot.left - center0 : -Infinity;
-      drag.maxTx = lastSlot
-        ? Math.max(drag.minTx, lastSlot.left + lastSlot.width - center0)
+      // Clamp the dragged tab's BODY to the strip's visible span, so it
+      // always stays fully on screen — never clipped by the window edge
+      // and never over the traffic lights. The bound is the VISIBLE box
+      // (the flow can scroll horizontally; its content width is larger).
+      // In browser mode .tabsFlow is display:contents and has no box of
+      // its own, so fall back to the strip's padded content box.
+      const bounds = visibleStripBounds(flow, stripRef.current);
+      drag.minTx = bounds ? bounds.left - unitRect.left : -Infinity;
+      drag.maxTx = bounds
+        ? Math.max(bounds.left - unitRect.left, bounds.right - unitRect.right)
         : Infinity;
       drag.element.setAttribute("data-pointer-drag", "true");
       try {
@@ -931,10 +967,55 @@ export function CenterTabStrip() {
       return;
     }
 
-    // In-strip dragging is PURE REORDER — Chrome midpoint algorithm: the
-    // dragged tab's center against the nearest static slot's midpoint.
-    // Splitting is an explicit context-menu action, never a drag outcome.
-    const centerX = drag.originLeft + tx + drag.width / 2;
+    // In-strip dragging is PURE REORDER. A neighbour yields as soon as the
+    // dragged tab covers HALF of it — measured as overlap ÷ neighbour
+    // width, so unequal tab widths behave correctly (for equal widths this
+    // is exactly "the dragged tab's leading edge passed the neighbour's
+    // midpoint"). Splitting is a context-menu action, never a drag outcome.
+    const draggedRect = { left: drag.originLeft + tx, width: drag.width };
+    const centerX = draggedRect.left + drag.width / 2;
+    const selfIndex = drag.targets.findIndex((slot) =>
+      drag.selfIds.has(slot.tabId),
+    );
+
+    // Walk outward from the dragged tab's own slot in the travel direction
+    // and take the FARTHEST neighbour that is already half-covered. That
+    // makes a fast flick cross several tabs in one move, and re-deriving
+    // it from scratch every frame keeps the result stable (no oscillation:
+    // the answer depends only on the current position, not on history).
+    let swapTarget: PointerDropTarget | null = null;
+    let swapMode: "before" | "after" | null = null;
+    if (selfIndex >= 0) {
+      for (let i = selfIndex + 1; i < drag.targets.length; i++) {
+        if (slotOverlapRatio(drag.targets[i], draggedRect) < SWAP_OVERLAP_RATIO) break;
+        swapTarget = drag.targets[i];
+        swapMode = "after";
+      }
+      if (!swapTarget) {
+        for (let i = selfIndex - 1; i >= 0; i--) {
+          if (slotOverlapRatio(drag.targets[i], draggedRect) < SWAP_OVERLAP_RATIO) break;
+          swapTarget = drag.targets[i];
+          swapMode = "before";
+        }
+      }
+    }
+    if (swapTarget && swapMode) {
+      const intent: TabDropIntent = {
+        mode: swapMode,
+        targetTabId: swapTarget.tabId,
+      };
+      drag.lastIntent = intent;
+      publishDropMarker(intent);
+      return;
+    }
+    // Not covering any neighbour yet (or the drag has no slot of its own,
+    // e.g. a segment leaving its group) — fall back to nearest-slot
+    // midpoint so cross-group drags still resolve an insertion point.
+    if (selfIndex >= 0) {
+      drag.lastIntent = null;
+      publishDropMarker(null);
+      return;
+    }
     const target = pickPointerDropTarget(drag.targets, centerX);
     if (!target) {
       publishDropMarker(null);

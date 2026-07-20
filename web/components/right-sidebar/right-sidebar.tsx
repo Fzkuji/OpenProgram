@@ -33,6 +33,7 @@ import { BranchesPanel } from "./branches";
 import { ContextCommitTimeline } from "./context-commit-timeline";
 import { WorktreesPanel } from "./worktrees";
 import { BookmarksPanel } from "./bookmarks-panel";
+import { BrowsingHistoryPanel } from "./browsing-history-panel";
 import {
   sidebarNavIconClass,
   sidebarNavItemActiveClass,
@@ -403,6 +404,9 @@ function HistoryGraphPanel() {
       <WorktreesPanel />
       <HighlightModeToggle />
       <div className="history-body"></div>
+      {/* Web page visits from the Electron shell. Renders nothing in
+          plain web mode, so the session DAG above is unaffected. */}
+      <BrowsingHistoryPanel />
     </>
   );
 }

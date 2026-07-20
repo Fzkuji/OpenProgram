@@ -13,6 +13,12 @@ const {
   putTransferDecision,
   ackTransferDecision,
 } = require("./tab-transfer-store");
+const {
+  recordVisit,
+  listHistory,
+  deleteHistoryEntry,
+  clearHistory,
+} = require("./browsing-history-store");
 
 // 测试期全部走开发版 18200；正式发布改回 18100
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18200";
@@ -158,6 +164,18 @@ let lastFocusedWindowId = null;
 
 const transferDecisionFile = () =>
   path.join(app.getPath("userData"), "tab-transfers.json");
+
+const browsingHistoryFile = () =>
+  path.join(app.getPath("userData"), "browsing-history.json");
+
+// History is best-effort: a failed write must never break navigation.
+function safeRecordVisit(visit) {
+  try {
+    recordVisit(browsingHistoryFile(), visit);
+  } catch (_error) {
+    /* history is not worth crashing a navigation over */
+  }
+}
 
 function isPlainObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -1520,6 +1538,27 @@ function ensureView(ctx, id, url) {
     ]) {
       wc.on(ev, () => sendState(record));
     }
+    // Browsing history. The store folds repeat hits on the head URL into one
+    // row, so the title/favicon events that follow a navigation enrich the
+    // entry instead of appending duplicates.
+    const noteVisit = () => {
+      if (wc.isDestroyed()) return;
+      safeRecordVisit({
+        url: wc.getURL(),
+        title: wc.getTitle(),
+        faviconUrl: record.faviconUrl || "",
+        visitedAt: Date.now(),
+      });
+    };
+    wc.on("did-navigate", noteVisit);
+    wc.on("did-navigate-in-page", (_event, _url, isMainFrame) => {
+      if (isMainFrame) noteVisit();
+    });
+    wc.on("page-title-updated", noteVisit);
+    wc.on("page-favicon-updated", (_event, favicons) => {
+      record.faviconUrl = Array.isArray(favicons) ? favicons[0] || "" : "";
+      noteVisit();
+    });
     if (url && isWebUrl(url)) void loadView(record, url).catch(() => {});
   }
   return record;
@@ -1713,6 +1752,28 @@ function registerWebTabIpc() {
     const ctx = contextForSender(event);
     if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goForward());
   });
+  ipcMain.handle("history:list", (_event, options) => {
+    try {
+      return listHistory(browsingHistoryFile(), options || {});
+    } catch (_error) {
+      return [];
+    }
+  });
+  ipcMain.handle("history:delete", (_event, url, visitedAt) => {
+    try {
+      return deleteHistoryEntry(browsingHistoryFile(), url, visitedAt);
+    } catch (_error) {
+      return false;
+    }
+  });
+  ipcMain.handle("history:clear", () => {
+    try {
+      return clearHistory(browsingHistoryFile());
+    } catch (_error) {
+      return false;
+    }
+  });
+
   ipcMain.on("desktop:open-external", (_e, url) => {
     try {
       const u = new URL(url);

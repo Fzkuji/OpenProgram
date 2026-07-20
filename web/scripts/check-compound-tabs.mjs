@@ -145,6 +145,39 @@ assert.deepEqual(drag.resolveTabDropIntent(rect, 250, target), {
   targetTabId: "target",
 });
 
+// Reorder swaps at 50% overlap of the NEIGHBOUR (not the dragged tab's
+// centre crossing a midpoint), so the swap feels immediate and stays
+// correct for unequal widths.
+assert.equal(drag.SWAP_OVERLAP_RATIO, 0.5);
+{
+  // Mirror of the strip's slotOverlapRatio (kept local: it is view
+  // geometry, not store logic).
+  const ratio = (slot, d) => {
+    if (slot.width <= 0) return 0;
+    const ov = Math.min(slot.left + slot.width, d.left + d.width)
+      - Math.max(slot.left, d.left);
+    return ov <= 0 ? 0 : Math.min(1, ov / slot.width);
+  };
+  const neighbour = { left: 208, width: 200 };
+  const draggedAt = (left) => ({ left, width: 200 });
+  const swaps = (left) => ratio(neighbour, draggedAt(left)) >= drag.SWAP_OVERLAP_RATIO;
+  // Equal widths: 50% overlap === leading edge at the neighbour midpoint.
+  assert.ok(Math.abs(ratio(neighbour, draggedAt(107)) - 0.495) < 1e-9);
+  assert.equal(swaps(107), false, "49.5% overlap must not swap");
+  assert.equal(swaps(108), true, "exactly 50% overlap swaps");
+  assert.equal(swaps(109), true);
+  // 0.49 vs 0.5 boundary stated explicitly.
+  assert.equal(ratio(neighbour, { left: 110, width: 196 }) >= 0.5, false);
+  // Unequal widths: a narrow tab must still cover half the NEIGHBOUR.
+  const narrow = { left: 208, width: 80 };
+  assert.equal(ratio(neighbour, narrow) >= 0.5, false, "80px covers 40% of a 200px neighbour");
+  const wide = { left: 208, width: 100 };
+  assert.equal(ratio(neighbour, wide) >= 0.5, true, "100px covers exactly half");
+  // No overlap / degenerate slots never swap.
+  assert.equal(ratio(neighbour, { left: 600, width: 200 }), 0);
+  assert.equal(ratio({ left: 0, width: 0 }, draggedAt(0)), 0);
+}
+
 // ---- Split picker candidates -----------------------------------------
 // Exclude the subject itself and anything already sharing its split
 // group; everything else in the window is offerable.

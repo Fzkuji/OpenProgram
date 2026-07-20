@@ -1051,3 +1051,52 @@
   border-color: color-mix(in srgb, var(--accent-red) 30%, transparent);
   color: var(--accent-red);
 }
+
+/* ============ Web browsing history (desktop only) ============ */
+/* Sits under the session-history DAG in the History view. Rows reuse the
+   bookmark row styles; only the section chrome is new. */
+.browsing-history-section {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.browsing-history-section .sidebar-section-header {
+  gap: 8px;
+  color: var(--text-muted);
+  cursor: default;
+}
+.browsing-history-section .bookmarks-list {
+  flex: 0 1 auto;
+  max-height: calc(56px * 4);
+  padding: 0 8px;
+}
+.browsing-history-section .bookmarks-empty {
+  padding: 16px 18px;
+}
+.browsing-history-clear {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.browsing-history-clear:hover {
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+}
+.browsing-history-time {
+  flex-shrink: 0;
+  padding-right: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}

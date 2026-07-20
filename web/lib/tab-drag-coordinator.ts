@@ -79,6 +79,11 @@ export const DRAG_START_THRESHOLD_PX = 4;
  *  pointer drag into detach-to-new-window mode. */
 export const DETACH_DISTANCE_PX = 48;
 
+/** Share of a neighbour the dragged tab must cover before they swap.
+ *  Overlap ÷ neighbour width, so unequal widths behave correctly; for
+ *  equal widths this is exactly "the leading edge passed its midpoint". */
+export const SWAP_OVERLAP_RATIO = 0.5;
+
 /** Chrome-style midpoint reorder: left of the target's midpoint → before,
  *  right → after. Dragging in the strip only ever reorders — merging into
  *  a split is a separate, explicit action from the tab context menu, never

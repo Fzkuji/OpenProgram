@@ -72,25 +72,52 @@ assert.match(pointerMove, /dragCoordinator\.start\(\)/);
 // The tab element itself follows the pointer, clamped to the slot span.
 assert.match(pointerMove, /drag\.element\.style\.transform = `translateX\(\$\{tx\}px\)`/);
 assert.match(pointerMove, /Math\.min\(Math\.max\(dx, drag\.minTx\), drag\.maxTx\)/);
-// The clamp must bound the dragged tab's CENTER against the slot span,
-// not its BODY against the flow: clamping the body leaves the outermost
-// edge quarters unreachable, so the first/last tab could never be merged
-// into (the center stops half a tab short of the far edge).
-assert.match(pointerMove, /const center0 = unitRect\.left \+ unitRect\.width \/ 2;/);
-assert.match(pointerMove, /drag\.minTx = firstSlot \? firstSlot\.left - center0 : -Infinity;/);
-assert.match(pointerMove, /lastSlot\.left \+ lastSlot\.width - center0/);
+// The clamp must keep the dragged tab's BODY inside the strip's VISIBLE
+// span, so it is never clipped by the window edge or dragged over the
+// window controls. Bounding the centre against the slot span (an earlier
+// merge-era relaxation) let half the tab leave the bar — never again.
+assert.match(pointerMove, /const bounds = visibleStripBounds\(flow, stripRef\.current\);/);
+assert.match(pointerMove, /drag\.minTx = bounds \? bounds\.left - unitRect\.left : -Infinity;/);
+assert.match(pointerMove, /bounds\.right - unitRect\.right/);
 assert.doesNotMatch(
   pointerMove,
-  /flowRect\.right - unitRect\.right/,
-  "clamping the tab body to the flow makes the edge merge zones unreachable",
+  /const center0 = unitRect\.left \+ unitRect\.width \/ 2;|firstSlot\.left - center0|lastSlot\.left \+ lastSlot\.width - center0/,
+  "the clamp must not bound the tab centre against the slot span",
 );
+// Visible span, not scrolled content width: the flow scrolls horizontally.
+assert.match(
+  strip,
+  /function visibleStripBounds/,
+  "the clamp needs the visible strip span",
+);
+assert.match(strip, /right: rect\.left \+ flow\.clientWidth/,
+  "desktop bound is the flow's client box, not its scrollWidth");
+// Browser mode has no flow box (display:contents) — fall back to the
+// strip's padded content box so the clamp still works there.
+assert.match(strip, /flow\.getClientRects\(\)\.length > 0/);
+assert.match(strip, /paddingLeft/);
+assert.match(strip, /paddingRight/);
 // Pointer capture lives on the dragged tab element.
 assert.match(pointerMove, /drag\.element\.setPointerCapture\(drag\.pointerId\)/);
 assert.match(strip, /releasePointerCapture\(/);
 // Chrome midpoint reorder against STATIC slot geometry captured at drag
 // start — bystanders slide via transform, hit tests never see it.
 assert.match(pointerMove, /collectPointerDropTargets\(flow\)/);
-assert.match(pointerMove, /const centerX = drag\.originLeft \+ tx \+ drag\.width \/ 2;/);
+// Reorder swaps on OVERLAP, not on the dragged centre crossing a
+// midpoint: a neighbour yields once the dragged tab covers half of it.
+assert.match(pointerMove, /const draggedRect = \{ left: drag\.originLeft \+ tx, width: drag\.width \};/);
+assert.match(
+  pointerMove,
+  /slotOverlapRatio\(drag\.targets\[i\], draggedRect\) < SWAP_OVERLAP_RATIO/,
+  "a neighbour must yield at the overlap threshold",
+);
+assert.match(strip, /function slotOverlapRatio/);
+assert.match(strip, /overlap \/ slot\.width/, "overlap is measured against the NEIGHBOUR's width");
+// Both directions walk outward from the dragged tab's own slot, so a fast
+// flick can cross several neighbours in one move.
+assert.match(pointerMove, /for \(let i = selfIndex \+ 1; i < drag\.targets\.length; i\+\+\)/);
+assert.match(pointerMove, /for \(let i = selfIndex - 1; i >= 0; i--\)/);
+// Cross-group drags (no slot of their own) still resolve via midpoint.
 assert.match(pointerMove, /pickPointerDropTarget\(drag\.targets, centerX\)/);
 assert.match(pointerMove, /resolveTabDropIntent\(target, centerX, target\)/);
 // Dragging in the strip is PURE REORDER — Chrome's model. Splitting is an
