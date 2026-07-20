@@ -157,3 +157,39 @@ def test_task_unknown_context_returns_error(store, fake_dispatcher):
     )
     assert "[task error]" in out
     assert "unknown context" in out
+
+
+# --- tool_call_id propagation --------------------------------------------
+
+
+def test_current_tool_call_id_visible_inside_tool_body():
+    """``_execute`` binds the LLM's tool_call_id so a tool body can
+    correlate what it emits with the UI block drawn for its call —
+    task() uses it to anchor the spawn card on the right timeline row.
+    Covers the sync body path, which runs in an executor thread and only
+    sees the value because ``_invoke`` copies the context across."""
+    import asyncio
+    from openprogram.functions._runtime import (
+        current_tool_call_id,
+        function,
+    )
+
+    seen: list = []
+
+    @function(name="_probe_call_id", register_globally=False)
+    def _probe() -> str:
+        """Probe.
+
+        Returns:
+            the bound id
+        """
+        seen.append(current_tool_call_id())
+        return "ok"
+
+    asyncio.run(_probe.execute("tc_abc", {}, None, None))
+    assert seen == ["tc_abc"]
+
+
+def test_current_tool_call_id_is_none_outside_a_tool_call():
+    from openprogram.functions._runtime import current_tool_call_id
+    assert current_tool_call_id() is None

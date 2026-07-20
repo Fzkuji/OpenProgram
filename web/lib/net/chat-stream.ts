@@ -21,7 +21,11 @@
  *           thinking    → append to reply.thinking
  *           tool_use    → push a ChatToolCall (status "running")
  *           tool_result → fill the matching tool's result + status
- *           All four ALSO build `reply.blocks` incrementally in arrival
+ *           sub_agent   → upsert a spawn card into reply.attachCards
+ *                         (running → completed), keyed on card_id so a
+ *                         reload rebuilds the same card from the DAG's
+ *                         `function === "attach"` row.
+ *           The first four ALSO build `reply.blocks` incrementally in arrival
  *           order (trailing-block extend or append), so the streaming
  *           timeline shows the true thinking/tool interleaving live.
  *       type === "result" | "error" | "cancelled"
@@ -40,7 +44,7 @@ import {
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 
 interface StreamEvent {
-  type: "text" | "thinking" | "tool_use" | "tool_result";
+  type: "text" | "thinking" | "tool_use" | "tool_result" | "sub_agent";
   text?: string;
   tool?: string;
   input?: string;
@@ -48,6 +52,13 @@ interface StreamEvent {
   result?: string;
   is_error?: boolean;
   elapsed?: number;
+  /** sub_agent only: stable id of the spawn card, identical to the
+   *  ``attach`` DAG node a reload reads back — the running and terminal
+   *  events for one spawn share it so the card patches in place. */
+  card_id?: string;
+  content?: string;
+  attach?: ChatMsg["attach"];
+  agent_id?: string;
 }
 
 interface ChatResponseData {
@@ -595,6 +606,43 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
           : t,
       );
       store.updateMessage(sid, rid, { tools, blocks });
+      break;
+    }
+    case "sub_agent": {
+      // Live twin of the reload path in conv-mapper (`m.function ===
+      // "attach"` rows folded into the caller's `attachCards`). Build
+      // the SAME ChatMsg shape here so a mid-stream card and the row a
+      // refresh reads from the DAG render identically — SubAgentStep
+      // only ever reads `.attach`, `.content` and `.id`.
+      const cardId = evt.card_id;
+      if (!cardId) break;
+      const running = evt.attach?.status === "running";
+      const card: ChatMsg = {
+        id: cardId,
+        role: "assistant",
+        content: evt.content ?? "",
+        function: "attach",
+        display: "runtime",
+        status: running
+          ? "running"
+          : evt.attach?.status === "errored"
+            ? "error"
+            : "done",
+        attach: evt.attach,
+        agentId: evt.agent_id || undefined,
+        // The block this spawn was called from; the bubble prefers it
+        // over FIFO when placing the card in the execution timeline.
+        calledBy: rid,
+      };
+      const prev = cur.attachCards ?? [];
+      const at = prev.findIndex((c) => c.id === cardId);
+      const attachCards =
+        at >= 0
+          // Terminal event for a card already on screen: patch in
+          // place. Appending would double-render the same spawn.
+          ? prev.map((c, i) => (i === at ? { ...c, ...card } : c))
+          : [...prev, card];
+      store.updateMessage(sid, rid, { attachCards, status: "streaming" });
       break;
     }
   }

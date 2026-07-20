@@ -212,6 +212,23 @@ def _task_impl(
                 spawn_depth=depth + 1,
                 attach_pointer_id=attach_id,
             )
+            # Live counterpart of the placeholder row above, so the card
+            # appears without a reload. Terminal state still arrives via
+            # the runner's session_reload — see the sync/async note in
+            # emit_spawn_event's callers.
+            if attach_id:
+                from openprogram.agent.sub_agent_run import emit_spawn_event
+                from openprogram.functions._runtime import current_tool_call_id
+                emit_spawn_event(
+                    session_id=sid,
+                    status="running",
+                    label=label or None,
+                    prompt=prompt,
+                    chosen_agent=chosen_agent,
+                    card_id=attach_id,
+                    tool_call_id=current_tool_call_id(),
+                    task_id=task_id,
+                )
         except Exception as e:  # noqa: BLE001
             return f"[task error] {type(e).__name__}: {e}"
         return (
@@ -220,10 +237,29 @@ def _task_impl(
             f"or cancel_task(task_id={task_id!r}) to stop it."
         )
 
+    # Announce the spawn BEFORE running it: a synchronous spawn blocks
+    # this tool call for as long as the sub-agent runs, so without a
+    # "running" event the caller's turn shows nothing until it finishes.
+    # The id is minted here and reused for the attach node below, so the
+    # live card and the reloaded row are one and the same.
+    import uuid as _uuid
+    from openprogram.functions._runtime import current_tool_call_id
+    _card_id = _uuid.uuid4().hex[:12]
+    _tool_call_id = current_tool_call_id()
     try:
         from openprogram.agent.sub_agent_run import (
+            emit_spawn_event,
             run_agent_turn,
             write_attach_pointer_for_spawn,
+        )
+        emit_spawn_event(
+            session_id=sid,
+            status="running",
+            label=label or None,
+            prompt=prompt,
+            chosen_agent=chosen_agent,
+            card_id=_card_id,
+            tool_call_id=_tool_call_id,
         )
         # Bind depth+1 for the child turn (same-context synchronous run),
         # mirroring what the async runner does with task.spawn_depth.
@@ -245,6 +281,17 @@ def _task_impl(
         finally:
             _spawn_depth.reset(_depth_token)
     except Exception as e:  # noqa: BLE001
+        # The card is already on screen in "running" — close it out, or
+        # it spins forever.
+        try:
+            emit_spawn_event(
+                session_id=sid, status="errored", label=label or None,
+                prompt=prompt, chosen_agent=chosen_agent, card_id=_card_id,
+                tool_call_id=_tool_call_id,
+                content=f"{type(e).__name__}: {e}",
+            )
+        except Exception:
+            pass
         return f"[task error] {type(e).__name__}: {e}"
 
     # Write an attach pointer node so the DAG paints a `function=attach`
@@ -260,6 +307,22 @@ def _task_impl(
             label=label or None,
             prompt=prompt,
             chosen_agent=chosen_agent,
+            node_id=_card_id,
+        )
+    except Exception:
+        pass
+
+    try:
+        emit_spawn_event(
+            session_id=sid,
+            status="errored" if (result.failed or result.error) else "completed",
+            label=label or None,
+            prompt=prompt,
+            chosen_agent=chosen_agent,
+            card_id=_card_id,
+            tool_call_id=_tool_call_id,
+            head_id=result.head_id,
+            content=(result.final_text or result.error or "").strip(),
         )
     except Exception:
         pass

@@ -200,3 +200,131 @@ def test_dispatcher_failure_surfaces(parent_store, monkeypatch):
     )
     assert out.failed
     assert out.error and "provider exploded" in out.error
+
+
+# --- live spawn card streaming -------------------------------------------
+#
+# A synchronous spawn blocks the caller's tool call for as long as the
+# sub-agent runs. Without a "running" event the caller's turn renders
+# nothing until it finishes, which is what made spawns invisible in the
+# web UI. These cover the event payload and the id reuse that keeps the
+# live card and the reloaded DAG row from rendering as two cards.
+
+
+@pytest.fixture
+def captured_frames(monkeypatch):
+    from openprogram.agent import event_bus
+
+    frames: list[dict] = []
+    monkeypatch.setattr(event_bus, "emit_ws_frame", frames.append)
+    return frames
+
+
+def test_emit_spawn_event_payload_shape(captured_frames):
+    """The event carries the same ``attach`` dict the DAG persists, so
+    the live and reload paths build identical attachCards entries."""
+    from openprogram.agent.sub_agent_run import emit_spawn_event
+
+    emit_spawn_event(
+        session_id="p1",
+        status="running",
+        label="probe",
+        prompt="do the thing",
+        chosen_agent="worker",
+        card_id="card123",
+        tool_call_id="tc_9",
+    )
+
+    assert len(captured_frames) == 1
+    frame = captured_frames[0]
+    assert frame["type"] == "chat_response"
+    data = frame["data"]
+    assert data["type"] == "stream_event"
+    assert data["session_id"] == "p1"
+
+    ev = data["event"]
+    assert ev["type"] == "sub_agent"
+    assert ev["card_id"] == "card123"
+    assert ev["tool_call_id"] == "tc_9"
+    assert ev["agent_id"] == "worker"
+    assert ev["attach"]["status"] == "running"
+    assert ev["attach"]["label"] == "probe"
+    assert ev["attach"]["prompt"] == "do the thing"
+    assert ev["attach"]["session_id"] == "p1"
+
+
+def test_emit_spawn_event_truncates_prompt(captured_frames):
+    from openprogram.agent.sub_agent_run import emit_spawn_event
+
+    emit_spawn_event(
+        session_id="p1", status="running", label=None,
+        prompt="x" * 5000, chosen_agent="w", card_id="c1",
+    )
+    assert len(captured_frames[0]["data"]["event"]["attach"]["prompt"]) == 500
+
+
+def test_spawn_event_pair_shares_card_id_with_attach_node(
+    parent_store, fake_dispatcher, captured_frames,
+):
+    """running + terminal events use one card_id, and that same id
+    becomes the persisted attach node — so a refresh mid-spawn shows
+    one card, not a duplicate."""
+    from openprogram.agent.sub_agent_run import (
+        emit_spawn_event,
+        run_agent_turn,
+        write_attach_pointer_for_spawn,
+    )
+
+    card_id = "fixedcard01"
+    emit_spawn_event(
+        session_id="p1", status="running", label="probe",
+        prompt="go", chosen_agent="worker", card_id=card_id,
+    )
+    result = run_agent_turn(
+        session_id="p1", prompt="go", agent_id="worker", branch_from="a1",
+    )
+    node_id = write_attach_pointer_for_spawn(
+        session_id="p1", caller_msg_id="a1", result=result,
+        label="probe", prompt="go", chosen_agent="worker",
+        node_id=card_id,
+    )
+    emit_spawn_event(
+        session_id="p1", status="completed", label="probe",
+        prompt="go", chosen_agent="worker", card_id=card_id,
+        head_id=result.head_id, content=result.final_text,
+    )
+
+    # The persisted DAG row a reload reads back is the card the client
+    # already drew.
+    assert node_id == card_id
+
+    # write_attach_pointer_for_spawn also broadcasts session_reload —
+    # keep only the spawn-card events.
+    events = [
+        f["data"]["event"] for f in captured_frames
+        if f["type"] == "chat_response"
+    ]
+    assert [e["attach"]["status"] for e in events] == ["running", "completed"]
+    assert {e["card_id"] for e in events} == {card_id}
+    # Terminal event carries the pointer the card needs for "Switch ↗".
+    assert events[-1]["attach"]["head_id"] == result.head_id
+
+
+def test_write_attach_pointer_mints_id_when_not_supplied(
+    parent_store, fake_dispatcher,
+):
+    """node_id is optional — the slash-command path still gets a
+    generated id."""
+    from openprogram.agent.sub_agent_run import (
+        run_agent_turn,
+        write_attach_pointer_for_spawn,
+    )
+
+    result = run_agent_turn(
+        session_id="p1", prompt="go", agent_id="worker", branch_from="a1",
+    )
+    node_id = write_attach_pointer_for_spawn(
+        session_id="p1", caller_msg_id="a1", result=result,
+        label=None, prompt="go", chosen_agent="worker",
+    )
+    assert node_id and len(node_id) == 12

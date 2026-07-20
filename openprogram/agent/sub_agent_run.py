@@ -118,6 +118,60 @@ def run_agent_turn(
     )
 
 
+def emit_spawn_event(
+    *,
+    session_id: str,
+    status: str,
+    label: Optional[str],
+    prompt: str,
+    chosen_agent: str,
+    card_id: str,
+    tool_call_id: Optional[str] = None,
+    head_id: Optional[str] = None,
+    content: str = "",
+    task_id: Optional[str] = None,
+) -> None:
+    """Push one ``sub_agent`` stream event so the caller's live turn can
+    draw the spawn card without waiting for a page reload.
+
+    The ``attach`` payload is deliberately the same dict shape
+    ``write_attach_pointer_for_spawn`` persists into ``extra.attach``,
+    so the live path in ``chat-stream.ts`` and the reload path in
+    ``conv-mapper.ts`` build structurally identical ``attachCards``
+    entries. ``card_id`` is stable across the running → terminal pair,
+    letting the client patch the card in place instead of appending a
+    second one.
+    """
+    from openprogram.agent.event_bus import emit_ws_frame
+
+    emit_ws_frame({
+        "type": "chat_response",
+        "data": {
+            "type": "stream_event",
+            "session_id": session_id,
+            "event": {
+                "type": "sub_agent",
+                # Anchors the card to the execution-timeline row drawn
+                # for the spawning tool call. Absent (slash-command
+                # spawns) the client falls back to FIFO order, the same
+                # way the reload path matches cards to spawn blocks.
+                "tool_call_id": tool_call_id,
+                "card_id": card_id,
+                "content": content,
+                "attach": {
+                    "session_id": session_id,
+                    "head_id": head_id,
+                    "label": label or "",
+                    "prompt": (prompt or "")[:500],
+                    "status": status,
+                    "task_id": task_id,
+                },
+                "agent_id": chosen_agent,
+            },
+        },
+    })
+
+
 def write_attach_pointer_for_spawn(
     *,
     session_id: str,
@@ -126,6 +180,7 @@ def write_attach_pointer_for_spawn(
     label: Optional[str],
     prompt: str,
     chosen_agent: str,
+    node_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write an `attach`-function pointer node for a synchronous
     task() spawn (LLM tool call, wait=True). Mirrors the body of
@@ -163,7 +218,11 @@ def write_attach_pointer_for_spawn(
         except Exception:
             pass
 
-        attach_node_id = _uuid.uuid4().hex[:12]
+        # Reuse the id the live spawn event already announced, so the
+        # card the client drew mid-stream and the row a reload reads
+        # from the DB are the same node — otherwise a refresh would
+        # show the spawn twice.
+        attach_node_id = node_id or _uuid.uuid4().hex[:12]
         # Attach is a branch-referencing function_call that lives ON
         # the main sequence (per docs/design/runtime/dag-node-model.md), so it
         # must hang off the caller via ``predecessor`` (sequence edge),

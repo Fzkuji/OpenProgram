@@ -122,6 +122,20 @@ def _tool_results_dir() -> Path:
 # Registry
 # ---------------------------------------------------------------------------
 
+# The LLM tool_call_id of the tool currently executing, bound in
+# ``_execute`` so tool bodies can correlate side-effects they emit with
+# the block the UI drew for their call. ``task`` uses it to anchor its
+# spawn card on the right execution-timeline row.
+_current_tool_call_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "_current_tool_call_id", default=None,
+)
+
+
+def current_tool_call_id() -> Optional[str]:
+    """The tool_call_id of the in-flight tool call, or None outside one."""
+    return _current_tool_call_id.get()
+
+
 _registry: dict[str, AgentTool] = {}
 _toolset_membership: dict[str, set[str]] = {}      # tool_name → set of toolsets
 _unsafe_in_channel: dict[str, set[str]] = {}       # tool_name → set of unsafe-in channels
@@ -901,6 +915,11 @@ def function(
                         args: dict[str, Any],
                         cancel_event,        # asyncio.Event | None
                         on_update_cb) -> AgentToolResult:        # callable | None
+        # Bind before anything else so every early return below (cache
+        # hit, timeout, error) still ran with the id bound, and so the
+        # ``copy_context()`` in ``_invoke`` carries it into the executor
+        # thread where sync tool bodies run.
+        _current_tool_call_id.set(call_id)
         passable_kwargs = dict(args)
         if accepts_cancel:
             passable_kwargs["cancel"] = cancel_event
