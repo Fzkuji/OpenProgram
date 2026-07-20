@@ -833,11 +833,21 @@ export function CenterTabStrip() {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     const rect = e.currentTarget.getBoundingClientRect();
-    setDropMarker(resolveTabDropIntent(
+    const intent = resolveTabDropIntent(
       { left: rect.left - entryShiftOf(target.tabId), width: rect.width },
       e.clientX,
       target,
-    ));
+      dropMarker,
+    );
+    // dragover fires continuously — only commit a真正变化的 intent，否则
+    // 每个事件都 setState 重渲染，正在播的 transform transition 被打断重启。
+    setDropMarker((prev) =>
+      prev
+      && prev.mode === intent.mode
+      && prev.targetTabId === intent.targetTabId
+        ? prev
+        : intent,
+    );
   }
 
   /** Bystanders slide via transform, so the slot under the cursor can be
@@ -860,7 +870,13 @@ export function CenterTabStrip() {
   }
 
   function onDragLeave(e: React.DragEvent<HTMLElement>) {
-    if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+    // 只有真正离开整个 tab 流才清 marker。相邻 tab 之间移动时（leave A →
+    // over B）如果先清空，让位 shift 会塌回再重开，一帧闪一次 —— 卡顿主因。
+    if (
+      e.relatedTarget instanceof Node
+      && (e.currentTarget.contains(e.relatedTarget)
+        || tabsFlowRef.current?.contains(e.relatedTarget))
+    ) return;
     setDropMarker(null);
   }
 
@@ -874,6 +890,7 @@ export function CenterTabStrip() {
       { left: rect.left - entryShiftOf(target.tabId), width: rect.width },
       e.clientX,
       target,
+      dropMarker,
     );
     commitDrop(e, intent);
   }
