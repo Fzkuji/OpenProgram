@@ -22,7 +22,8 @@
     "files": [
       "main.js",
       "preload.js",
-      "tab-transfer-store.js"
+      "tab-transfer-store.js",
+      "browsing-history-store.js"
     ],
     "directories": {
       "output": "dist",
