@@ -34,27 +34,13 @@ const fileTree = readFileSync(
   "utf8",
 );
 
-const dragStart = strip.slice(
-  strip.indexOf("function onDragStart"),
-  strip.indexOf("function onDragEnd"),
-);
-assert.ok(dragStart.length > 0, "the strip must define one synchronous drag-start path");
-assert.doesNotMatch(strip, /async function\s+\w*DragStart/);
-assert.doesNotMatch(dragStart, /\bawait\b/);
-assert.match(dragStart, /dragCoordinator\.start\(\)/);
-assert.match(dragStart, /const prepared = dragCoordinator\.current\(\)/);
-assert.match(dragStart, /dataTransfer\.effectAllowed\s*=\s*"move"/);
-assert.match(dragStart, /dataTransfer\.setData\(/);
-assert.equal(
-  strip.match(/dataTransfer\.setData\(/g)?.length,
-  dragStart.match(/dataTransfer\.setData\(/g)?.length,
-  "every transfer payload must be written by the synchronous coordinator-backed drag start",
-);
-// Cross-window transfer wiring: pointer down prepares the main-process
-// token synchronously; dragstart only reads it into the DataTransfer.
+// ---- Pointer-driven drag (no HTML5 drag-and-drop) -------------------
+assert.doesNotMatch(strip, /draggable|dataTransfer|onDragStart|onDragOver|onDrop=|onDragEnd|onDragLeave/,
+  "the strip's same-window drag must be pointer-driven, not HTML5");
+// Pointer down prepares the main-process token synchronously.
 const prepareDrag = strip.slice(
   strip.indexOf("function onPrepareDrag"),
-  strip.indexOf("function onDragStart"),
+  strip.indexOf("// ---- Pointer-driven drag"),
 );
 assert.match(prepareDrag, /buildTransferPayload\(snapshot, bridge\.windowId\)/);
 assert.match(prepareDrag, /bridge\.tabTransfer\.prepare\(payload\)/);
@@ -65,8 +51,7 @@ assert.ok(
   "the token must exist before the coordinator record that carries it",
 );
 assert.match(prepareDrag, /if \(prepared && !prepared\.started\) cancelCoordinator\(\);/,
-  "release before dragstart must cancel the prepared token");
-assert.match(dragStart, /setData\(TAB_TRANSFER_MIME, prepared\.transferToken\)/);
+  "release before the threshold must cancel the prepared token");
 assert.match(
   strip,
   /function cancelCoordinator\(\)[\s\S]*?tabTransfer\.cancel\(cancelled\.transferToken\)/,
@@ -77,52 +62,78 @@ assert.equal(
   1,
   "cancelCoordinator must be the strip's only direct coordinator cancellation",
 );
-const dragEnd = strip.slice(
-  strip.indexOf("function onDragEnd"),
+const pointerMove = strip.slice(
+  strip.indexOf("function onPointerDragMove"),
+  strip.indexOf("function onPointerDragUp"),
+);
+// 4px threshold before the press becomes a drag; then the coordinator starts.
+assert.match(pointerMove, /Math\.hypot\(dx, dy\) < DRAG_START_THRESHOLD_PX\) return;/);
+assert.match(pointerMove, /dragCoordinator\.start\(\)/);
+// The tab element itself follows the pointer, clamped inside the strip.
+assert.match(pointerMove, /drag\.element\.style\.transform = `translateX\(\$\{tx\}px\)`/);
+assert.match(pointerMove, /Math\.min\(Math\.max\(dx, drag\.minTx\), drag\.maxTx\)/);
+// Pointer capture lives on the dragged tab element.
+assert.match(pointerMove, /drag\.element\.setPointerCapture\(drag\.pointerId\)/);
+assert.match(strip, /releasePointerCapture\(/);
+// Chrome midpoint reorder against STATIC slot geometry captured at drag
+// start — bystanders slide via transform, hit tests never see it.
+assert.match(pointerMove, /collectPointerDropTargets\(flow\)/);
+assert.match(pointerMove, /const centerX = drag\.originLeft \+ tx \+ drag\.width \/ 2;/);
+assert.match(pointerMove, /pickPointerDropTarget\(drag\.targets, centerX\)/);
+assert.match(pointerMove, /resolveTabDropIntent\(target, centerX, target\)/);
+// Dwell-to-merge: MERGE_DWELL_MS in the merge zone upgrades the intent;
+// self-targets never arm the dwell, and an armed merge holds in-zone.
+assert.match(pointerMove, /!drag\.selfIds\.has\(target\.tabId\) && isInMergeZone\(target, centerX\)/);
+assert.match(pointerMove, /MERGE_DWELL_MS/);
+assert.match(pointerMove, /drag\.merge && drag\.merge\.targetTabId === target\.tabId && inMerge/);
+// Detach: DETACH_DISTANCE_PX vertical travel with a live desktop token.
+assert.match(pointerMove, /Math\.abs\(dy\) > DETACH_DISTANCE_PX/);
+assert.match(pointerMove, /data-detach-intent/);
+const pointerUp = strip.slice(
+  strip.indexOf("function onPointerDragUp"),
   strip.indexOf("function targetBeforeId"),
 );
-assert.match(dragEnd, /dropEffect === "none"/);
-assert.match(dragEnd, /tabTransfer\.detach\(token\)/,
-  "an unhandled drag with a live token must detach into a new window");
+// Release off-window: another OpenProgram window under the cursor takes
+// the tab; otherwise detach into a new window.
+assert.match(pointerUp, /tabTransfer\.windowAtCursor/);
+assert.match(pointerUp, /tabTransfer\.deliver/);
+assert.match(pointerUp, /tabTransfer\.detach\(token\)/,
+  "a detach release with a live token must detach into a new window");
 assert.ok(
-  dragEnd.indexOf('dropEffect === "none"') < dragEnd.indexOf("cancelDrag("),
-  "detach must be decided before falling back to cancellation",
+  pointerUp.indexOf("windowAtCursor") < pointerUp.indexOf("tabTransfer.detach(token)"),
+  "the cross-window hit test must run before falling back to detach",
 );
-const drop = strip.slice(
-  strip.indexOf("function onDrop"),
-  strip.indexOf("function moveGroupByKeyboard"),
-);
-assert.match(drop, /stageIncomingTransfer\(bridge, token, placementForDropIntent\(intent\)\)/,
-  "cross-window drops must stage through the shared placement geometry");
-assert.match(drop, /getData\(TAB_TRANSFER_MIME\)/);
-assert.match(drop, /tabTransfer\.cancel\(committed\.transferToken\)/,
+// In-strip release commits the live intent — a dwell merge wins.
+assert.match(pointerUp, /const intent = drag\.merge \?\? drag\.lastIntent;/);
+assert.match(pointerUp, /tabTransfer\.cancel\(committed\.transferToken\)/,
   "a same-window drop must release the unused prepared token");
-assert.doesNotMatch(strip, /dragRef/, "the shared coordinator is the only drag state holder");
-assert.ok(
-  strip.indexOf("function onPrepareDrag") < strip.indexOf("function onDragStart"),
-  "pointer preparation must be defined before native drag start",
-);
-assert.match(strip, /onPointerDown=\{[^}]*onPrepareDrag/s);
-assert.match(strip, /onDragStart=\{onDragStart\}/);
-assert.match(strip, /resolveTabDropIntent\(/);
+assert.match(pointerUp, /const fourthMemberRejected = isFourthMemberRejection\(/);
+assert.match(pointerUp, /cancelDrag\(!fourthMemberRejected\)/);
+// Pane merge on release after the pane dwell armed.
+assert.match(pointerUp, /mergeSubjectIntoTab\(prepared\.subject, targetId\)/);
+assert.match(pointerMove, /paneMergeSurfaceContains\(e\.clientX, e\.clientY\)/);
+assert.match(pointerMove, /setPaneMergeHighlight\(true\)/);
+// Cancel paths: pointercancel, window blur, Escape — return-home + cleanup.
+assert.match(strip, /window\.addEventListener\("pointercancel", cancel\);/);
+assert.match(strip, /window\.addEventListener\("blur", cancel\);/);
+assert.match(strip, /function cancelPointerDrag/);
+assert.match(strip, /function teardownPointerDrag/);
+assert.match(strip, /if \(e\.key !== "Escape"\) return;[\s\S]*?teardownPointerDrag\(\)/);
+assert.match(strip, /onPointerDown=\{\(event\) => onDragPointerDown\(dragSubject, event\)\}/);
 assert.match(strip, /moveGroupMember\(/);
 assert.match(strip, /moveGroup\(/);
 assert.match(strip, /ungroupTab\(/);
 assert.match(strip, /groupTab\(/);
 const applyDrop = strip.slice(
   strip.indexOf("function applyDrop"),
-  strip.indexOf("function onDragOver"),
+  strip.indexOf("function moveGroupByKeyboard"),
 );
 assert.match(applyDrop, /subject\.kind === "group"[\s\S]*return mergeGroup\(/);
 assert.doesNotMatch(applyDrop, /if \(subject\.kind === "group"\) return false;/);
 assert.match(strip, /className=\{styles\.groupDragHandle\}[\s\S]*kind: "group"/);
 assert.match(strip, /onMoveGroup\(group\.id,/);
-assert.match(strip, /window\.addEventListener\("pointerup",[^;]+\{ once: true \}\)/s);
-assert.match(strip, /if \(e\.key !== "Escape"\) return;/);
-assert.match(dragEnd, /cancelDrag\(Boolean\(dragCoordinator\.current\(\)\?\.started\)\)/);
+assert.match(strip, /window\.addEventListener\("pointerup", cancelUnstarted, \{ once: true \}\)/);
 assert.match(strip, /function isFourthMemberRejection/);
-assert.match(drop, /const fourthMemberRejected = isFourthMemberRejection\(/);
-assert.match(drop, /cancelDrag\(!fourthMemberRejected\)/);
 
 const rovingFocus = strip.slice(
   strip.indexOf("function onTabListKeyDown"),
@@ -169,6 +180,7 @@ for (const announcement of [
   "Split supports up to three tabs",
   "Tab move cancelled",
   "Tab moved to new window",
+  "Tabs merged into split view",
 ]) {
   assert.match(strip, new RegExp(announcement));
 }
@@ -176,11 +188,17 @@ assert.match(strip, /function returnFocusToMenuInvoker/);
 assert.match(strip, /if \(e\.key !== "Escape"\) return;[\s\S]*cancelCoordinator\(\)[\s\S]*setDropMarker\(null\)[\s\S]*setTabMenu\(null\)/);
 
 const closeButton = strip.slice(strip.indexOf("<button\n        type=\"button\"", strip.indexOf("function TabItem")), strip.indexOf("<X size={14} />"));
-assert.match(closeButton, /draggable=\{false\}/);
 assert.match(closeButton, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
 assert.match(closeButton, /onMouseDown=\{\(event\) => event\.stopPropagation\(\)\}/);
-assert.doesNotMatch(closeButton, /onPrepareDrag/);
-assert.match(css, /\[data-drag-source="true"\][^{]*\{[^}]*opacity:/s);
+assert.doesNotMatch(closeButton, /onDragPointerDown/);
+// The dragged tab body follows the pointer: transitions off, raised
+// above sliding bystanders; the detach state dims it. No origin ghost.
+assert.match(
+  css,
+  /\[data-pointer-drag="true"\][^{]*\{[^}]*transition: none;[^}]*z-index:/s,
+);
+assert.match(css, /\[data-detach-intent="true"\][^{]*\{[^}]*opacity:/s);
+assert.doesNotMatch(css, /data-drag-source/);
 // ---- Live reorder (Chrome-style slide-aside, no insert markers) ----
 assert.doesNotMatch(
   css,
@@ -216,11 +234,9 @@ assert.match(
 );
 assert.match(
   strip,
-  /left: rect\.left - entryShiftOf\(target\.tabId\)/,
+  /Static slot geometry captured at drag start/,
   "drop intent math must use untransformed slot geometry",
 );
-assert.match(strip, /onDragOver=\{onFlowDragOver\}/);
-assert.match(strip, /onDrop=\{onFlowDrop\}/);
 assert.match(
   strip,
   /dropMarker\.mode === "merge"\s*\? "merge"\s*: undefined/,
@@ -452,49 +468,33 @@ assert.ok(
   "newSession must select the distinct React draft before SPA navigation",
 );
 
-// ---- Pane-area drop merge (drop a tab onto the page to merge with
-// the active tab) -----------------------------------------------------
+// ---- Pane-area dwell merge (dwell a pointer-dragged tab over the
+// page to merge with the active tab) ----------------------------------
 const paneDrop = readFileSync(
   new URL("../components/center-tabs/pane-drop-merge.tsx", import.meta.url),
   "utf8",
 );
-// Only our own drags are handled — external file drops fall through.
-assert.match(paneDrop, /if \(!isTabDrag\(e\)\) return;/);
-assert.match(
-  paneDrop,
-  /types\.includes\(TAB_TRANSFER_MIME\)/,
-  "cross-window drags are recognised by the transfer MIME",
-);
-assert.match(
-  paneDrop,
-  /application\/x-openprogram-tab-transfer/,
-  "pane drop must use the same transfer MIME as the strip",
-);
+// No HTML5 drag handlers left — the strip's pointer engine drives it.
+assert.doesNotMatch(paneDrop, /onDragOver|onDrop|dataTransfer/);
 // Same-window merges reuse the store's strip-equivalent paths.
 assert.match(paneDrop, /state\.groupTab\(sourceId, targetId, 1, targetGroup\?\.id\)/);
 assert.match(paneDrop, /state\.mergeGroup\(subject\.sourceGroup\.id, targetId, 1\)/);
 assert.match(paneDrop, /MAX_CENTER_TAB_GROUP_MEMBERS/);
-// Same-window commit releases the unused main-process token; rejects cancel it.
-assert.match(paneDrop, /committed\?\.transferToken/);
-assert.match(paneDrop, /cancelled\?\.transferToken/);
-// Cross-window drops stage a merge onto the active tab.
-assert.match(
-  paneDrop,
-  /stageIncomingTransfer\(\s*bridge,\s*token,\s*placementForDropIntent\(\{ mode: "merge", targetTabId: targetId \}\),?\s*\)/,
-);
-// A11y: highlight overlay is decorative; announcements go via aria-live.
-assert.match(paneDrop, /aria-live="polite"/);
+// Surface registry the strip hit-tests + highlights through.
+assert.match(paneDrop, /export function paneMergeSurfaceContains/);
+assert.match(paneDrop, /export function setPaneMergeHighlight/);
 assert.match(paneDrop, /pane-drop-merge-overlay/);
 assert.match(paneDrop, /aria-hidden="true"/);
-// App shell wires the handlers + overlay onto the center pane container.
+// The strip commits the merge and announces it (single aria-live).
+const stripPaneUp = strip.slice(strip.indexOf("function onPointerDragUp"));
+assert.match(stripPaneUp, /mergeSubjectIntoTab\(prepared\.subject, targetId\)/);
+assert.match(stripPaneUp, /committed\?\.transferToken/);
+// App shell registers the surface + renders the overlay in the pane.
 assert.match(appShell, /const paneDropMerge = usePaneDropMerge\(\);/);
 const centerBody = appShell.slice(
-  appShell.indexOf('className="center-body"'),
+  appShell.indexOf("paneDropMerge.surfaceRef(node)"),
   appShell.indexOf("<PageShell"),
 );
-assert.match(centerBody, /onDragOver=\{paneDropMerge\.onDragOver\}/);
-assert.match(centerBody, /onDragLeave=\{paneDropMerge\.onDragLeave\}/);
-assert.match(centerBody, /onDrop=\{paneDropMerge\.onDrop\}/);
 assert.match(centerBody, /\{paneDropMerge\.overlay\}/);
 assert.match(
   centerBody,

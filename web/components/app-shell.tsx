@@ -482,7 +482,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     : undefined;
   const splitRatio = useCenterTabs((s) => s.splitRatio);
   const setSplitRatio = useCenterTabs((s) => s.setSplitRatio);
-  const centerBodyRef = useRef<HTMLDivElement>(null);
+  const centerBodyRef = useRef<HTMLDivElement | null>(null);
   const paneDropMerge = usePaneDropMerge();
   const [centerBodyWidth, setCenterBodyWidth] = useState(0);
   useEffect(() => {
@@ -600,15 +600,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         {!isDesktop ? <CenterTabStrip /> : null}
         <div
-          ref={centerBodyRef}
+          ref={(node) => {
+            centerBodyRef.current = node;
+            paneDropMerge.surfaceRef(node);
+          }}
           className="center-body"
           style={{ flex: 1, minHeight: 0, display: "flex", position: "relative" }}
-          onDragOver={paneDropMerge.onDragOver}
-          onDragLeave={paneDropMerge.onDragLeave}
-          onDrop={paneDropMerge.onDrop}
         >
-          {/* Drop a dragged tab anywhere on the pane area to merge it
-             with the active tab (highlight overlay + a11y announcer). */}
+          {/* Dwell a pointer-dragged tab over the pane area to merge it
+             with the active tab (highlight overlay; strip announces). */}
           {paneDropMerge.overlay}
           {/* Chat shell is mounted ONCE at the layout level and kept
              alive across session switches AND non-session tabs. This

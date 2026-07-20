@@ -1788,6 +1788,37 @@ function registerTabTransferIpc() {
     const ctx = contextForSender(event);
     return ctx ? tabTransfers.pendingTerminal(ctx, windowId) : [];
   });
+  // Pointer-driven cross-window drop: read-only hit test for another
+  // OpenProgram window under the current cursor position.
+  ipcMain.handle("tab-transfer:window-at-cursor", (event) => {
+    const ctx = contextForSender(event);
+    if (!ctx) return null;
+    const { screen } = require("electron");
+    const point = screen.getCursorScreenPoint();
+    for (const candidate of windows.values()) {
+      if (candidate === ctx) continue;
+      if (candidate.win.isDestroyed() || !candidate.win.isVisible()) continue;
+      const bounds = candidate.win.getBounds();
+      if (
+        point.x >= bounds.x && point.x < bounds.x + bounds.width
+        && point.y >= bounds.y && point.y < bounds.y + bounds.height
+      ) {
+        // ponytail: first hit, no z-order tiebreak — overlapping windows
+        // resolve by map order; add z-order ranking if it ever matters.
+        return candidate.id;
+      }
+    }
+    return null;
+  });
+  // Hand a prepared token to another live window so its renderer stages
+  // the incoming transfer (the pointer path has no DOM drop event there).
+  ipcMain.handle("tab-transfer:deliver", (event, token, windowId) => {
+    const ctx = contextForSender(event);
+    const target = windows.get(windowId);
+    if (!ctx || !target || target.win.isDestroyed()) return false;
+    target.win.webContents.send("tab-transfer:stage-incoming", { token });
+    return true;
+  });
 }
 
 // --------------------------------------------------------------------- menu

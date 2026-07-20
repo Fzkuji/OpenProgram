@@ -155,6 +155,13 @@ export interface DesktopTabTransferApi {
   destinationUndone(token: string, ok: boolean): Promise<boolean>;
   cancel(token: string): Promise<boolean>;
   detach(token: string): Promise<string | null>;
+  /** Pointer-drop hit test: id of another OpenProgram window under the
+   *  cursor, or null. Read-only — no transfer state changes. */
+  windowAtCursor(): Promise<string | null>;
+  /** Hand a prepared token to another live window so it stages the
+   *  incoming transfer itself (pointer drops have no DOM drop event). */
+  deliver(token: string, targetWindowId: string): Promise<boolean>;
+  onStageIncoming(cb: (detail: { token: string }) => void): () => void;
   claimPending(windowId: string): Promise<string | null>;
   pendingTerminal(windowId: string): Promise<Array<{
     token: string;
@@ -1087,6 +1094,11 @@ export function installTabTransferHandlers(bridge: DesktopBridge): () => void {
       void handleTransferRolledBack(bridge, detail);
     }),
     transfer.onRejected((detail) => handleTransferRejected(detail)),
+    // Pointer-driven cross-window drop: the source window delivered a
+    // prepared token here; stage it at the end of this window's strip.
+    transfer.onStageIncoming?.((detail) => {
+      void stageIncomingTransfer(bridge, detail.token, { kind: "strip-end" });
+    }) ?? (() => {}),
   ];
   return () => {
     transferHandlersInstalled = false;

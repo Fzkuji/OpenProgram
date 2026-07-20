@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       ipcRenderer.invoke("tab-transfer:destination-undone", token, ok),
     cancel: (token) => ipcRenderer.invoke("tab-transfer:cancel", token),
     detach: (token) => ipcRenderer.invoke("tab-transfer:detach", token),
+    windowAtCursor: () => ipcRenderer.invoke("tab-transfer:window-at-cursor"),
+    deliver: (token, targetWindowId) =>
+      ipcRenderer.invoke("tab-transfer:deliver", token, targetWindowId),
     claimPending: (id) => ipcRenderer.invoke("tab-transfer:claim-pending", id),
     pendingTerminal: (id) => ipcRenderer.invoke("tab-transfer:pending-terminal", id),
     onRemoveSource: subscribe("tab-transfer:remove-source"),
@@ -59,6 +62,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     onRejected: subscribe("tab-transfer:rejected"),
     onRolledBack: subscribe("tab-transfer:rolled-back"),
     onFinalizeOrphaned: subscribe("tab-transfer:finalize-orphaned"),
+    onStageIncoming: subscribe("tab-transfer:stage-incoming"),
   },
 });
 

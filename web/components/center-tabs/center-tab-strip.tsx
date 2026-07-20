@@ -37,6 +37,8 @@ import {
   type CenterTabGroup,
 } from "@/lib/state/center-tab-groups";
 import {
+  DETACH_DISTANCE_PX,
+  DRAG_START_THRESHOLD_PX,
   dragCoordinator,
   isInMergeZone,
   MERGE_DWELL_MS,
@@ -47,9 +49,12 @@ import {
 import {
   buildTransferPayload,
   desktopBridge,
-  placementForDropIntent,
-  stageIncomingTransfer,
 } from "@/lib/desktop-bridge";
+import {
+  mergeSubjectIntoTab,
+  paneMergeSurfaceContains,
+  setPaneMergeHighlight,
+} from "./pane-drop-merge";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   dropDraftChannelChoice,
@@ -60,8 +65,6 @@ import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./center-tabs.module.css";
 
-const TAB_DRAG_MIME = "application/x-openprogram-tab";
-const TAB_TRANSFER_MIME = "application/x-openprogram-tab-transfer";
 let removePreparedReleaseListener: (() => void) | null = null;
 
 interface TabMenuState {
@@ -167,6 +170,95 @@ function computeLiveShifts(
     }
   }
   return shifts;
+}
+
+/** Static slot geometry captured at drag start — hit tests always run
+ *  against these unshifted rects, so slid-aside bystanders can never
+ *  oscillate under the dragged tab (Chrome's stability property). */
+interface PointerDropTarget {
+  tabId: string;
+  groupId?: string;
+  memberIndex?: number;
+  left: number;
+  width: number;
+}
+
+function collectPointerDropTargets(flow: HTMLElement): PointerDropTarget[] {
+  const state = useCenterTabs.getState();
+  const entries = centerTabStripEntries({
+    tabIds: state.tabs.map((tab) => tab.id),
+    groups: state.groups,
+  });
+  const targets: PointerDropTarget[] = [];
+  for (const entry of entries) {
+    const memberIds = entry.kind === "group" ? entry.group.memberIds : [entry.tabId];
+    memberIds.forEach((tabId, index) => {
+      const inner = flow.querySelector<HTMLElement>(
+        `[data-tab-id="${CSS.escape(tabId)}"]`,
+      );
+      const root = inner?.parentElement;
+      if (!root) return;
+      const rect = root.getBoundingClientRect();
+      const target: PointerDropTarget = entry.kind === "group"
+        ? {
+            tabId,
+            groupId: entry.group.id,
+            memberIndex: index + 1,
+            left: rect.left,
+            width: rect.width,
+          }
+        : { tabId, left: rect.left, width: rect.width };
+      targets.push(target);
+    });
+  }
+  return targets;
+}
+
+/** One in-flight pointer drag. Lives in a ref — pointermove writes the
+ *  dragged element's transform directly (no re-render per frame); only
+ *  intent changes (marker/shifts) go through React state. */
+interface PointerDragState {
+  subject: TabDragSubject;
+  selfIds: ReadonlySet<string>;
+  element: HTMLElement;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  started: boolean;
+  detaching: boolean;
+  paneArmed: boolean;
+  paneTimer: number | null;
+  originLeft: number;
+  width: number;
+  minTx: number;
+  maxTx: number;
+  targets: PointerDropTarget[];
+  merge: TabDropIntent | null;
+  lastIntent: TabDropIntent | null;
+  teardown(): void;
+}
+
+/** Nearest slot to the dragged tab's center (containment wins). */
+function pickPointerDropTarget(
+  targets: PointerDropTarget[],
+  centerX: number,
+): PointerDropTarget | null {
+  let best: PointerDropTarget | null = null;
+  let bestDistance = Infinity;
+  for (const target of targets) {
+    const distance =
+      centerX >= target.left && centerX <= target.left + target.width
+        ? 0
+        : Math.min(
+            Math.abs(centerX - target.left),
+            Math.abs(centerX - target.left - target.width),
+          );
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = target;
+    }
+  }
+  return best;
 }
 
 function isChatRoute(pathname: string) {
@@ -637,17 +729,6 @@ export function CenterTabStrip() {
   // Live-reorder geometry for this render: entry id → translateX px.
   const liveShifts = computeLiveShifts(stripEntries, draggedIds, dropMarker, dragWidth);
 
-  /** Untransform helper — intent math must use slot geometry, not the
-   *  shifted visual rect, or tabs would oscillate under the cursor. */
-  function entryShiftOf(tabId: string) {
-    const entry = stripEntries.find((candidate) =>
-      candidate.kind === "group"
-        ? candidate.group.memberIds.includes(tabId)
-        : candidate.tabId === tabId,
-    );
-    return (entry && liveShifts.get(entry.id)) || 0;
-  }
-
   // Dwell-to-merge: hovering the same target's central 40% for
   // MERGE_DWELL_MS upgrades the reorder marker to a merge.
   const dwellRef = useRef<{ targetTabId: string; timer: number } | null>(null);
@@ -701,60 +782,358 @@ export function CenterTabStrip() {
       window.removeEventListener("pointerup", cancelUnstarted);
   }
 
-  function onDragStart(e: React.DragEvent<HTMLElement>) {
-    const started = dragCoordinator.start();
-    removeReleaseListener();
-    const prepared = dragCoordinator.current();
-    if (!started || !prepared) {
-      e.preventDefault();
-      cancelDrag(true);
-      return;
-    }
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify(prepared));
-    e.dataTransfer.setData("text/plain", prepared.subject.tabIds.join("\n"));
-    if (prepared.transferToken) {
-      // Cross-window handoff: only the opaque token crosses windows.
-      e.dataTransfer.setData(TAB_TRANSFER_MIME, prepared.transferToken);
-      e.dataTransfer.setData("text/plain", prepared.transferToken);
-    }
-    // Measure the dragged unit so bystanders know how far to slide.
-    const unit = prepared.subject.kind === "group"
-      ? (e.currentTarget.parentElement ?? e.currentTarget)
-      : e.currentTarget;
-    const unitWidth = unit.getBoundingClientRect().width;
-    // Chrome-style: the source tab collapses to a ghost slot, but only
-    // AFTER the browser snapshots the drag image — restyle next frame.
-    requestAnimationFrame(() => {
-      const current = dragCoordinator.current();
-      if (current !== prepared || current.cancelled || current.committed) return;
-      setDragWidth(unitWidth);
-      setDraggedIds(new Set(prepared.subject.tabIds));
-    });
-    setDragAnnouncement(text("Dragging tab", "正在拖动标签"));
+  // ---- Pointer-driven drag (Chrome-style) --------------------------
+  // The pressed tab element itself follows the pointer via transform —
+  // no HTML5 drag, no system ghost, no residue at the origin slot.
+  const pointerDragRef = useRef<PointerDragState | null>(null);
+
+  function publishDropMarker(intent: TabDropIntent | null) {
+    // Only commit真正变化的 intent —— 否则每次 pointermove 都 setState
+    // 重渲染，正在播的 transform transition 被打断重启。
+    setDropMarker((prev) =>
+      prev && intent
+      && prev.mode === intent.mode
+      && prev.targetTabId === intent.targetTabId
+        ? prev
+        : intent,
+    );
   }
 
-  function onDragEnd(e: React.DragEvent<HTMLElement>) {
+  /** Clear the dragged element's inline transform + drag attributes.
+   *  animateHome re-enables the 160ms transition first so the tab
+   *  slides back to its slot; otherwise the clear is instantaneous
+   *  (the post-commit FLIP settles instead). */
+  function restorePointerDragElement(element: HTMLElement, animateHome: boolean) {
+    if (!animateHome) {
+      element.style.transform = "";
+      void element.getBoundingClientRect(); // flush while transitions are off
+      element.removeAttribute("data-detach-intent");
+      element.removeAttribute("data-pointer-drag");
+      return;
+    }
+    element.removeAttribute("data-detach-intent");
+    element.removeAttribute("data-pointer-drag");
+    void element.getBoundingClientRect(); // re-enable the transition first
+    element.style.transform = ""; // → 160ms slide home
+  }
+
+  function clearPanePointerState(drag: PointerDragState) {
+    if (drag.paneTimer !== null) {
+      window.clearTimeout(drag.paneTimer);
+      drag.paneTimer = null;
+    }
+    if (drag.paneArmed) {
+      drag.paneArmed = false;
+      setPaneMergeHighlight(false);
+    }
+  }
+
+  /** Detach the engine from the DOM (listeners, capture, pane state)
+   *  and slide the element home. Returns whether a drag had started. */
+  function teardownPointerDrag(): boolean {
+    const drag = pointerDragRef.current;
+    if (!drag) return false;
+    pointerDragRef.current = null;
+    drag.teardown();
+    clearPanePointerState(drag);
+    restorePointerDragElement(drag.element, true);
+    return drag.started;
+  }
+
+  /** Escape / pointercancel / window blur: return-home animation plus
+   *  full coordinator + token + marker cleanup. */
+  function cancelPointerDrag() {
+    const started = teardownPointerDrag();
+    cancelDrag(started);
+  }
+
+  function onTabPointerDown(
+    subject: TabDragSubject,
+    event: React.PointerEvent<HTMLElement>,
+  ) {
+    if (event.button !== 0 || pointerDragRef.current) return;
+    onPrepareDrag(subject);
     const prepared = dragCoordinator.current();
-    if (prepared?.started && !prepared.cancelled && !prepared.committed
-        && prepared.transferToken) {
-      if (e.dataTransfer.dropEffect === "none") {
-        // Dropped outside every strip — detach into a new hidden window.
-        const token = prepared.transferToken;
-        dragCoordinator.clear();
-        clearDragState();
-        void desktopBridge()?.tabTransfer.detach(token);
+    if (!prepared) return;
+    const element = (subject.kind === "group"
+      ? event.currentTarget.parentElement ?? event.currentTarget
+      : event.currentTarget) as HTMLElement;
+    const pointerId = event.pointerId;
+    const move = (nativeEvent: PointerEvent) => onPointerDragMove(nativeEvent);
+    const up = (nativeEvent: PointerEvent) => onPointerDragUp(nativeEvent);
+    const cancel = () => cancelPointerDrag();
+    pointerDragRef.current = {
+      subject: prepared.subject,
+      selfIds: new Set(prepared.subject.tabIds),
+      element,
+      pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      started: false,
+      detaching: false,
+      paneArmed: false,
+      paneTimer: null,
+      originLeft: 0,
+      width: 0,
+      minTx: 0,
+      maxTx: 0,
+      targets: [],
+      merge: null,
+      lastIntent: null,
+      teardown() {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", cancel);
+        window.removeEventListener("blur", cancel);
+        try {
+          element.releasePointerCapture(pointerId);
+        } catch {
+          /* never captured */
+        }
+      },
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+  }
+
+  function onPointerDragMove(e: PointerEvent) {
+    const drag = pointerDragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (!drag.started) {
+      if (Math.hypot(dx, dy) < DRAG_START_THRESHOLD_PX) return;
+      if (!dragCoordinator.start()) {
+        pointerDragRef.current = null;
+        drag.teardown();
         return;
       }
-      // A cross-window strip accepted the drop; the destination owns
-      // the token now — cancelling here would roll its staging back.
-      dragCoordinator.clear();
+      drag.started = true;
+      removeReleaseListener();
+      // Static slot geometry snapshot — every later hit test runs
+      // against these unshifted rects (bystanders only ever move via
+      // transform), so nothing can oscillate under the dragged tab.
+      const flow = tabsFlowRef.current;
+      const flowRect = flow?.getBoundingClientRect();
+      const unitRect = drag.element.getBoundingClientRect();
+      drag.originLeft = unitRect.left;
+      drag.width = unitRect.width;
+      drag.minTx = flowRect ? flowRect.left - unitRect.left : -Infinity;
+      drag.maxTx = flowRect
+        ? Math.max(drag.minTx, flowRect.right - unitRect.right)
+        : Infinity;
+      drag.targets = flow ? collectPointerDropTargets(flow) : [];
+      drag.element.setAttribute("data-pointer-drag", "true");
+      try {
+        drag.element.setPointerCapture(drag.pointerId);
+      } catch {
+        /* capture unavailable — the window listeners still cover the drag */
+      }
+      setDragWidth(unitRect.width);
+      setDraggedIds(new Set(drag.subject.tabIds));
+      setDragAnnouncement(text("Dragging tab", "正在拖动标签"));
+    }
+    // The tab body follows the pointer, clamped inside the strip flow.
+    const tx = Math.min(Math.max(dx, drag.minTx), drag.maxTx);
+    drag.element.style.transform = `translateX(${tx}px)`;
+
+    // Pane merge: dwelling over the center pane area arms merge-on-release.
+    if (paneMergeSurfaceContains(e.clientX, e.clientY)) {
+      if (!drag.paneArmed && drag.paneTimer === null) {
+        drag.paneTimer = window.setTimeout(() => {
+          drag.paneTimer = null;
+          if (pointerDragRef.current !== drag) return;
+          drag.paneArmed = true;
+          setPaneMergeHighlight(true);
+        }, MERGE_DWELL_MS);
+      }
+    } else {
+      clearPanePointerState(drag);
+    }
+
+    // Detach: pulled DETACH_DISTANCE_PX off the strip (needs a desktop
+    // transfer token) and not armed on the pane — release then opens a
+    // new window or lands in another OpenProgram window.
+    const detachCapable = Boolean(dragCoordinator.current()?.transferToken);
+    drag.detaching =
+      detachCapable && Math.abs(dy) > DETACH_DISTANCE_PX && !drag.paneArmed;
+    drag.element.toggleAttribute("data-detach-intent", drag.detaching);
+    if (drag.detaching || drag.paneArmed) {
+      clearDwell();
+      drag.merge = null;
+      drag.lastIntent = null;
+      publishDropMarker(null);
+      return;
+    }
+
+    // Chrome midpoint reorder: the dragged tab's CENTER against static
+    // slot midpoints; crossing a neighbor's midpoint swaps immediately.
+    const centerX = drag.originLeft + tx + drag.width / 2;
+    const target = pickPointerDropTarget(drag.targets, centerX);
+    if (!target) {
+      clearDwell();
+      drag.merge = null;
+      publishDropMarker(null);
+      return;
+    }
+    const inMerge =
+      !drag.selfIds.has(target.tabId) && isInMergeZone(target, centerX);
+    // Once dwell has upgraded to merge, hold it while the dragged
+    // center stays in the same target's merge zone.
+    if (drag.merge && drag.merge.targetTabId === target.tabId && inMerge) {
+      return;
+    }
+    drag.merge = null;
+    if (inMerge) {
+      if (dwellRef.current?.targetTabId !== target.tabId) {
+        clearDwell();
+        dwellRef.current = {
+          targetTabId: target.tabId,
+          timer: window.setTimeout(() => {
+            dwellRef.current = null;
+            if (pointerDragRef.current !== drag) return;
+            const merge: TabDropIntent = {
+              mode: "merge",
+              targetTabId: target.tabId,
+            };
+            if (target.groupId !== undefined) merge.groupId = target.groupId;
+            if (target.memberIndex !== undefined) {
+              merge.memberIndex = target.memberIndex;
+            }
+            drag.merge = merge;
+            publishDropMarker(merge);
+          }, MERGE_DWELL_MS),
+        };
+      }
+    } else {
+      clearDwell();
+    }
+    const intent = resolveTabDropIntent(target, centerX, target);
+    drag.lastIntent = intent;
+    publishDropMarker(drag.merge ?? intent);
+  }
+
+  function onPointerDragUp(e: PointerEvent) {
+    const drag = pointerDragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    pointerDragRef.current = null;
+    drag.teardown();
+    const paneArmed = drag.paneArmed;
+    clearPanePointerState(drag);
+    if (!drag.started) return; // plain click — the once-pointerup listener releases the token
+    const prepared = dragCoordinator.current();
+    if (!prepared?.started) {
+      restorePointerDragElement(drag.element, true);
       clearDragState();
       return;
     }
-    // No cross-window token in play — plain cancel, announced if the
-    // drag had actually started (a11y: aria-live "move cancelled").
-    cancelDrag(Boolean(dragCoordinator.current()?.started));
+    if (paneArmed) {
+      // Release over the dwelled pane surface = merge with the active tab.
+      const targetId = useCenterTabs.getState().activeId;
+      const result = targetId
+        ? mergeSubjectIntoTab(prepared.subject, targetId)
+        : "noop";
+      restorePointerDragElement(drag.element, true);
+      if (result === "ok") {
+        const committed = dragCoordinator.commit();
+        if (committed?.transferToken) {
+          // Same-window move — release the unused main-process token.
+          void desktopBridge()?.tabTransfer.cancel(committed.transferToken);
+        }
+        setDragAnnouncement(
+          text("Tabs merged into split view", "标签已合并到分屏"),
+        );
+        clearDragState();
+        return;
+      }
+      cancelDrag(result !== "full");
+      if (result === "full") {
+        setDragAnnouncement(
+          text("Split supports up to three tabs", "分屏最多支持三个标签"),
+        );
+      }
+      return;
+    }
+    if (drag.detaching) {
+      restorePointerDragElement(drag.element, true);
+      const token = prepared.transferToken;
+      const bridge = desktopBridge();
+      dragCoordinator.clear(); // main / the destination owns the token now
+      clearDragState();
+      if (!bridge || !token) return;
+      void (async () => {
+        try {
+          // Another OpenProgram window under the cursor takes the tab
+          // (staged at its strip end); otherwise detach into a new window.
+          // ponytail: strip-end placement, no per-slot geometry on the
+          // destination — refine placement if cross-window ordering matters.
+          const targetWindowId =
+            (await bridge.tabTransfer.windowAtCursor?.()) ?? null;
+          if (
+            targetWindowId
+            && (await bridge.tabTransfer.deliver?.(token, targetWindowId))
+          ) {
+            setDragAnnouncement(text("Tab moved", "标签已移动"));
+            return;
+          }
+          const detachedWindowId = await bridge.tabTransfer.detach(token);
+          setDragAnnouncement(
+            detachedWindowId
+              ? text("Tab moved to new window", "标签已移至新窗口")
+              : text("Tab move cancelled", "标签移动已取消"),
+          );
+        } catch {
+          setDragAnnouncement(text("Tab move cancelled", "标签移动已取消"));
+        }
+      })();
+      return;
+    }
+    // In-strip release: commit the live intent (a dwell merge wins over
+    // the positional reorder), then FLIP-settle into the final slot.
+    const intent = drag.merge ?? drag.lastIntent;
+    if (!intent) {
+      restorePointerDragElement(drag.element, true);
+      cancelDrag(true);
+      return;
+    }
+    const fourthMemberRejected = isFourthMemberRejection(prepared.subject, intent);
+    const beforeRect = drag.element.getBoundingClientRect();
+    if (applyDrop(prepared, intent)) {
+      const committed = dragCoordinator.commit();
+      if (committed?.transferToken) {
+        // Same-window move — release the unused main-process token.
+        void desktopBridge()?.tabTransfer.cancel(committed.transferToken);
+      }
+      restorePointerDragElement(drag.element, false);
+      const element = drag.element;
+      const reducedMotion =
+        typeof window.matchMedia === "function"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      requestAnimationFrame(() => {
+        const settle = beforeRect.left - element.getBoundingClientRect().left;
+        if (settle && !reducedMotion) {
+          element.animate(
+            [
+              { transform: `translateX(${settle}px)` },
+              { transform: "translateX(0)" },
+            ],
+            { duration: 160, easing: "ease" },
+          );
+        }
+      });
+      setDragAnnouncement(text("Tab reordered", "标签顺序已调整"));
+      clearDragState();
+    } else {
+      restorePointerDragElement(drag.element, true);
+      cancelDrag(!fourthMemberRejected);
+      if (fourthMemberRejected) {
+        setDragAnnouncement(
+          text("Split supports up to three tabs", "分屏最多支持三个标签"),
+        );
+      }
+    }
   }
 
   function targetBeforeId(targetTabId: string, after: boolean): string | null {
@@ -841,153 +1220,6 @@ export function CenterTabStrip() {
     return true;
   }
 
-  function onDragOver(
-    e: React.DragEvent<HTMLElement>,
-    target: { tabId: string; groupId?: string; memberIndex?: number },
-  ) {
-    const prepared = dragCoordinator.current();
-    const crossWindow =
-      !prepared?.started && e.dataTransfer.types.includes(TAB_TRANSFER_MIME);
-    if (!prepared?.started && !crossWindow) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    const rect = e.currentTarget.getBoundingClientRect();
-    const slotRect = {
-      left: rect.left - entryShiftOf(target.tabId),
-      width: rect.width,
-    };
-    const inMergeZone = isInMergeZone(slotRect, e.clientX);
-    // Once dwell has upgraded to merge, hold it while the cursor stays
-    // in the same target's merge zone; leaving the zone or the target
-    // drops back to midpoint reorder below.
-    if (
-      dropMarker?.mode === "merge"
-      && dropMarker.targetTabId === target.tabId
-      && inMergeZone
-    ) return;
-    if (inMergeZone) {
-      if (dwellRef.current?.targetTabId !== target.tabId) {
-        clearDwell();
-        const mergeTarget = { ...target };
-        dwellRef.current = {
-          targetTabId: target.tabId,
-          timer: window.setTimeout(() => {
-            dwellRef.current = null;
-            const merge: TabDropIntent = {
-              mode: "merge",
-              targetTabId: mergeTarget.tabId,
-            };
-            if (mergeTarget.groupId !== undefined) merge.groupId = mergeTarget.groupId;
-            if (mergeTarget.memberIndex !== undefined) {
-              merge.memberIndex = mergeTarget.memberIndex;
-            }
-            setDropMarker(merge);
-          }, MERGE_DWELL_MS),
-        };
-      }
-    } else {
-      clearDwell();
-    }
-    const intent = resolveTabDropIntent(slotRect, e.clientX, target);
-    // dragover fires continuously — only commit a真正变化的 intent，否则
-    // 每个事件都 setState 重渲染，正在播的 transform transition 被打断重启。
-    setDropMarker((prev) =>
-      prev
-      && prev.mode === intent.mode
-      && prev.targetTabId === intent.targetTabId
-        ? prev
-        : intent,
-    );
-  }
-
-  /** Bystanders slide via transform, so the slot under the cursor can be
-   *  visually empty — the flow container keeps the last intent live and
-   *  accepts the drop there instead of letting it fall to "outside". */
-  function onFlowDragOver(e: React.DragEvent<HTMLDivElement>) {
-    if (e.defaultPrevented) return; // a tab already claimed it
-    const prepared = dragCoordinator.current();
-    const crossWindow =
-      !prepared?.started && e.dataTransfer.types.includes(TAB_TRANSFER_MIME);
-    if ((!prepared?.started && !crossWindow) || !dropMarker) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  }
-
-  function onFlowDrop(e: React.DragEvent<HTMLDivElement>) {
-    if (e.defaultPrevented || !dropMarker) return;
-    e.preventDefault();
-    commitDrop(e, dropMarker);
-  }
-
-  function onDragLeave(e: React.DragEvent<HTMLElement>) {
-    // 只有真正离开整个 tab 流才清 marker。相邻 tab 之间移动时（leave A →
-    // over B）如果先清空，让位 shift 会塌回再重开，一帧闪一次 —— 卡顿主因。
-    if (
-      e.relatedTarget instanceof Node
-      && (e.currentTarget.contains(e.relatedTarget)
-        || tabsFlowRef.current?.contains(e.relatedTarget))
-    ) return;
-    clearDwell();
-    setDropMarker(null);
-  }
-
-  function onDrop(
-    e: React.DragEvent<HTMLElement>,
-    target: { tabId: string; groupId?: string; memberIndex?: number },
-  ) {
-    e.preventDefault();
-    // The live marker already carries any dwell merge upgrade — never
-    // recompute over it, or the drop would demote merge back to reorder.
-    const rect = e.currentTarget.getBoundingClientRect();
-    const intent =
-      dropMarker && dropMarker.targetTabId === target.tabId
-        ? dropMarker
-        : resolveTabDropIntent(
-            { left: rect.left - entryShiftOf(target.tabId), width: rect.width },
-            e.clientX,
-            target,
-          );
-    commitDrop(e, intent);
-  }
-
-  function commitDrop(e: React.DragEvent<HTMLElement>, intent: TabDropIntent) {
-    const prepared = dragCoordinator.current();
-    if (!prepared?.started) {
-      // Cross-window drop: another window prepared this token; stage it
-      // here with the exact same before/merge/after geometry.
-      const bridge = desktopBridge();
-      const token = e.dataTransfer.getData(TAB_TRANSFER_MIME);
-      if (bridge && token) {
-        clearDragState();
-        void stageIncomingTransfer(bridge, token, placementForDropIntent(intent));
-        setDragAnnouncement(text("Tab moved", "标签已移动"));
-        return;
-      }
-      cancelDrag(true);
-      return;
-    }
-    const fourthMemberRejected = isFourthMemberRejection(
-      prepared.subject,
-      intent,
-    );
-    if (applyDrop(prepared, intent)) {
-      const committed = dragCoordinator.commit();
-      if (committed?.transferToken) {
-        // Same-window move — release the unused main-process token.
-        void desktopBridge()?.tabTransfer.cancel(committed.transferToken);
-      }
-      setDragAnnouncement(text("Tab reordered", "标签顺序已调整"));
-      clearDragState();
-    } else {
-      cancelDrag(!fourthMemberRejected);
-      if (fourthMemberRejected) {
-        setDragAnnouncement(
-          text("Split supports up to three tabs", "分屏最多支持三个标签"),
-        );
-      }
-    }
-  }
-
   function moveGroupByKeyboard(groupId: string, direction: -1 | 1) {
     const index = stripEntries.findIndex(
       (entry) => entry.kind === "group" && entry.group.id === groupId,
@@ -1004,6 +1236,7 @@ export function CenterTabStrip() {
       if (e.key !== "Escape") return;
       const menuTabId = tabMenu?.tabId;
       const cancelled = Boolean(dragCoordinator.current() || menuTabId);
+      teardownPointerDrag(); // return-home animation for a live pointer drag
       cancelCoordinator();
       removeReleaseListener();
       clearDwell();
@@ -1018,10 +1251,14 @@ export function CenterTabStrip() {
     window.addEventListener("keydown", onEscape);
     return () => {
       window.removeEventListener("keydown", onEscape);
+      teardownPointerDrag();
       cancelCoordinator();
       removeReleaseListener();
       clearDwell();
     };
+    // teardownPointerDrag only touches refs + stable setters — any render's
+    // instance is equivalent, so it is deliberately not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabMenu, text]);
 
   return (
@@ -1035,8 +1272,6 @@ export function CenterTabStrip() {
         aria-label={text("Open tabs", "打开的标签")}
         onKeyDown={onTabListKeyDown}
         onWheel={onTabListWheel}
-        onDragOver={onFlowDragOver}
-        onDrop={onFlowDrop}
       >
         {stripEntries.map((entry) => {
           if (entry.kind === "group") {
@@ -1057,12 +1292,7 @@ export function CenterTabStrip() {
                 draggedIds={draggedIds}
                 dropMarker={dropMarker}
                 shiftX={liveShifts.get(entry.id) ?? 0}
-                onPrepareDrag={onPrepareDrag}
-                onDragStart={onDragStart}
-                onDragEnd={onDragEnd}
-                onDragOver={onDragOver}
-                onDragLeave={onDragLeave}
-                onDrop={onDrop}
+                onDragPointerDown={onTabPointerDown}
                 onMoveGroup={moveGroupByKeyboard}
               />
             );
@@ -1085,18 +1315,11 @@ export function CenterTabStrip() {
               onClose={onTabClose}
               onExited={finishClose}
               dragSubject={{ kind: "tab", tabIds: [tab.id] }}
-              dragSource={draggedIds.has(tab.id)}
               dropIntent={dropMarker?.targetTabId === tab.id && dropMarker.mode === "merge"
                 ? "merge"
                 : undefined}
-              dropTarget={{ tabId: tab.id }}
               shiftX={liveShifts.get(entry.id) ?? 0}
-              onPrepareDrag={onPrepareDrag}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
+              onDragPointerDown={onTabPointerDown}
             />
           );
         })}
@@ -1191,17 +1414,9 @@ interface CompoundTabItemProps {
   draggedIds: ReadonlySet<string>;
   dropMarker: TabDropIntent | null;
   shiftX: number;
-  onPrepareDrag(subject: TabDragSubject): void;
-  onDragStart(event: React.DragEvent<HTMLElement>): void;
-  onDragEnd(event: React.DragEvent<HTMLElement>): void;
-  onDragOver(
-    event: React.DragEvent<HTMLElement>,
-    target: { tabId: string; groupId?: string; memberIndex?: number },
-  ): void;
-  onDragLeave(event: React.DragEvent<HTMLElement>): void;
-  onDrop(
-    event: React.DragEvent<HTMLElement>,
-    target: { tabId: string; groupId?: string; memberIndex?: number },
+  onDragPointerDown(
+    subject: TabDragSubject,
+    event: React.PointerEvent<HTMLElement>,
   ): void;
   onMoveGroup(groupId: string, direction: -1 | 1): void;
 }
@@ -1221,12 +1436,7 @@ function CompoundTabItem({
   draggedIds,
   dropMarker,
   shiftX,
-  onPrepareDrag,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  onDragPointerDown,
   onMoveGroup,
 }: CompoundTabItemProps) {
   const { t, text } = useTranslation();
@@ -1287,27 +1497,26 @@ function CompoundTabItem({
       data-member-count={group.memberIds.length}
       data-closing-count={closingCount || undefined}
       data-remaining-count={remainingCount}
-      data-drag-source={groupDragged || undefined}
       style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
       role="presentation"
     >
       <button
         type="button"
         className={styles.groupDragHandle}
-        draggable
         aria-label={text("Move tab group", "移动标签组")}
         title={text("Move tab group", "移动标签组")}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.stopPropagation();
-          onPrepareDrag({
-            kind: "group",
-            tabIds: [...group.memberIds],
-            sourceGroup: group,
-          });
+          onDragPointerDown(
+            {
+              kind: "group",
+              tabIds: [...group.memberIds],
+              sourceGroup: group,
+            },
+            event,
+          );
         }}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
         onKeyDown={(event) => {
           if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
           event.preventDefault();
@@ -1343,18 +1552,11 @@ function CompoundTabItem({
               sourceGroup: group,
               memberIndex,
             }}
-            dragSource={!groupDragged && draggedIds.has(tab.id)}
             dropIntent={dropMarker?.targetTabId === tab.id && dropMarker.mode === "merge"
                 && !internalSegmentDrag
               ? "merge"
               : undefined}
-            dropTarget={{ tabId: tab.id, groupId: group.id, memberIndex: memberIndex + 1 }}
-            onPrepareDrag={onPrepareDrag}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
+            onDragPointerDown={onDragPointerDown}
           />
         );
       })}
@@ -1379,16 +1581,9 @@ function TabItem({
   onClose,
   onExited,
   dragSubject,
-  dragSource,
   dropIntent,
-  dropTarget,
   shiftX = 0,
-  onPrepareDrag,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  onDragPointerDown,
 }: {
   tab: CenterTab;
   active: boolean;
@@ -1407,21 +1602,11 @@ function TabItem({
   onClose: (e: React.SyntheticEvent, tab: CenterTab) => void;
   onExited: (tab: CenterTab) => void;
   dragSubject: TabDragSubject;
-  dragSource: boolean;
   dropIntent?: TabDropIntent["mode"];
-  dropTarget: { tabId: string; groupId?: string; memberIndex?: number };
   shiftX?: number;
-  onPrepareDrag: (subject: TabDragSubject) => void;
-  onDragStart: (event: React.DragEvent<HTMLElement>) => void;
-  onDragEnd: (event: React.DragEvent<HTMLElement>) => void;
-  onDragOver: (
-    event: React.DragEvent<HTMLElement>,
-    target: { tabId: string; groupId?: string; memberIndex?: number },
-  ) => void;
-  onDragLeave: (event: React.DragEvent<HTMLElement>) => void;
-  onDrop: (
-    event: React.DragEvent<HTMLElement>,
-    target: { tabId: string; groupId?: string; memberIndex?: number },
+  onDragPointerDown: (
+    subject: TabDragSubject,
+    event: React.PointerEvent<HTMLElement>,
   ) => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
@@ -1444,8 +1629,6 @@ function TabItem({
     <div
       ref={tabRef}
       className={`${styles.tab} ${segment ? styles.compoundSegment : ""} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
-      draggable
-      data-drag-source={dragSource || undefined}
       data-drop-intent={dropIntent}
       style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
       onAnimationEnd={(e) => {
@@ -1463,14 +1646,7 @@ function TabItem({
       onMouseDown={(e) => {
         if (e.button === 1) e.preventDefault();
       }}
-      onPointerDown={(event) => {
-        if (event.button === 0) onPrepareDrag(dragSubject);
-      }}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragOver={(event) => onDragOver(event, dropTarget)}
-      onDragLeave={onDragLeave}
-      onDrop={(event) => onDrop(event, dropTarget)}
+      onPointerDown={(event) => onDragPointerDown(dragSubject, event)}
       onAuxClick={(e) => {
         if (e.button === 1) {
           e.preventDefault();
@@ -1525,7 +1701,6 @@ function TabItem({
       ) : null}
       <button
         type="button"
-        draggable={false}
         className={styles.tabClose}
         aria-label={closeLabel}
         title={closeLabel}

@@ -122,6 +122,10 @@ assert.deepEqual(drag.resolveTabDropIntent(rect, 300, target), {
   targetTabId: "target",
 });
 
+// Pointer drag contract: 4px start threshold, 48px vertical detach.
+assert.equal(drag.DRAG_START_THRESHOLD_PX, 4);
+assert.equal(drag.DETACH_DISTANCE_PX, 48);
+
 // Dwell-to-merge contract: constant timing + the central merge zone check.
 assert.equal(drag.MERGE_DWELL_MS, 300);
 assert.equal(drag.MERGE_DWELL_CENTER_FRACTION, 0.4);

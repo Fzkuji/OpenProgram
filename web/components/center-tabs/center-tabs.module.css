@@ -466,11 +466,19 @@
   cursor: grabbing;
 }
 
-/* Chrome 式拖动：拖起后原位 tab 近乎空槽（拖影由系统截取，压制在
-   dragstart 后延一帧才生效，见 onDragStart 的 requestAnimationFrame）。 */
-.tab[data-drag-source="true"],
-.compoundTab[data-drag-source="true"] {
-  opacity: 0.25;
+/* 指针驱动拖动（Chrome 式）：tab 本体跟手 —— transform 由 JS 直写，
+   transition 必须关掉才不追手；抬 z-index 盖过让位中的邻居。 */
+.tab[data-pointer-drag="true"],
+.compoundTab[data-pointer-drag="true"] {
+  transition: none;
+  position: relative;
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+/* 纵向拖离 strip：半透明提示"松手拆出新窗口 / 落入另一窗口"。 */
+.tab[data-detach-intent="true"],
+.compoundTab[data-detach-intent="true"] {
+  opacity: 0.5;
 }
 /* Chrome 式实时让位：before/after 不画插入线，被越过的 tab 用 transform
    平滑滑开（见 computeLiveShifts）；merge 仍然高亮目标 tab。 */

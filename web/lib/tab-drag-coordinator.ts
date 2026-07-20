@@ -73,6 +73,12 @@ export function createTabDragCoordinator(): {
   };
 }
 
+/** Pointer travel (px) before a pressed tab becomes a drag. */
+export const DRAG_START_THRESHOLD_PX = 4;
+/** Vertical pointer distance (px) from the press point that flips a
+ *  pointer drag into detach-to-new-window mode. */
+export const DETACH_DISTANCE_PX = 48;
+
 /** Dwell-to-merge: hovering the center of a tab this long upgrades the
  *  reorder intent into a merge (Chrome-style stay-to-merge). */
 export const MERGE_DWELL_MS = 300;
