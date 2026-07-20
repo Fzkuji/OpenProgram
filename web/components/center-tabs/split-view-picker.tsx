@@ -12,9 +12,10 @@
  * sharing a split group with the subject — those would be no-ops.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Globe, MessageCircle, CirclePlus, X } from "lucide-react";
+import { Bookmark, FileText, Globe, History, MessageCircle, CirclePlus, X } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
+import { builtinPageLabel } from "./builtin-page-label";
 import {
   findCenterTabGroup,
   splitCandidates,
@@ -37,6 +38,7 @@ function subtitleOf(
   }
   if (tab.kind === "file") return tab.path ?? "";
   if (tab.kind === "ntp") return text("New tab", "新标签页");
+  if (tab.kind === "builtin") return builtinPageLabel(tab.page, text);
   return text("Chat", "会话");
 }
 
@@ -44,6 +46,11 @@ function IconFor({ tab }: { tab: CenterTab }) {
   if (tab.kind === "web") return <Globe size={15} aria-hidden="true" />;
   if (tab.kind === "file") return <FileText size={15} aria-hidden="true" />;
   if (tab.kind === "ntp") return <CirclePlus size={15} aria-hidden="true" />;
+  if (tab.kind === "builtin") {
+    return tab.page === "history"
+      ? <History size={15} aria-hidden="true" />
+      : <Bookmark size={15} aria-hidden="true" />;
+  }
   return <MessageCircle size={15} aria-hidden="true" />;
 }
 

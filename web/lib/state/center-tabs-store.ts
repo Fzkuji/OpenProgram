@@ -10,6 +10,8 @@
  *   web      →  "w:<url>"         (id is fixed at open; in-pane
  *                                  navigation updates url, not id)
  *   ntp      →  "ntp"
+ *   builtin  →  "b:<page>"       (bookmarks / history — singleton per
+ *                                 page, the Chrome chrome:// analogue)
  *
  * Navigation side effects (router.push on session-tab activation) are
  * NOT here — they live in <CenterTabStrip/>, which also syncs the
@@ -38,7 +40,11 @@ import type {
   TransferJournalEntry,
 } from "@/lib/tab-transfer-journal";
 
-export type CenterTabKind = "session" | "file" | "web" | "ntp";
+export type CenterTabKind = "session" | "file" | "web" | "ntp" | "builtin";
+
+/** Built-in pages that live in the center as their own tab (Chrome's
+ *  chrome://bookmarks / chrome://history). One tab per page, ever. */
+export type BuiltinPage = "bookmarks" | "history";
 
 export interface CenterTab {
   id: string;
@@ -58,6 +64,8 @@ export interface CenterTab {
   /** Web tabs only — current http(s) URL (may drift from the id
    *  after in-pane navigation). */
   url?: string;
+  /** Builtin tabs only — which built-in page this tab shows. */
+  page?: BuiltinPage;
   /** Unsaved-changes marker — strip shows ● instead of ✕. Set via
    *  setTabDirty by whoever owns the tab's content (file editor). */
   dirty?: boolean;
@@ -94,6 +102,9 @@ export function fileTabId(projectId: string, path: string): string {
 }
 export function webTabId(url: string): string {
   return `w:${url}`;
+}
+export function builtinTabId(page: BuiltinPage): string {
+  return `b:${page}`;
 }
 
 /** Normalize user input into a browsable http(s) URL: trims, prefixes
@@ -570,6 +581,8 @@ export interface CenterTabsState {
    *  preserved. If a tab already exists at the new id, the stale tab
    *  closes instead (focus moves to the survivor if it was active). */
   retargetFileTab: (oldId: string, newProjectId: string, newPath: string) => void;
+  /** Focus-or-create the singleton tab for a built-in page. */
+  openBuiltinTab: (page: BuiltinPage) => void;
   /** Single-instance new-tab page — reused if already open. */
   openNewTabPage: () => void;
   /** Close a tab; closing the active one activates the right
@@ -897,6 +910,18 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
             projectId,
             path,
           }),
+          [],
+        ),
+      ),
+
+    // Deterministic id ⇒ focusOrCreate already enforces the singleton:
+    // a second "open bookmarks" focuses the existing tab.
+    openBuiltinTab: (page) =>
+      set((s) =>
+        focusOrCreate(
+          s,
+          builtinTabId(page),
+          () => ({ id: builtinTabId(page), kind: "builtin", title: "", page }),
           [],
         ),
       ),

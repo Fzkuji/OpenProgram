@@ -9,6 +9,8 @@
  * is a guarded no-op. Imported for side effects by AppShell.
  */
 
+import { useSessionStore } from "@/lib/session-store";
+
 interface UiWindow {
   isRunning?: boolean;
   isPaused?: boolean;
@@ -523,6 +525,12 @@ interface DetailNode {
 
 export function showDetail(node: DetailNode): void {
   W.selectedPath = node.path;
+  // Flag the selection in the store too. This function paints
+  // #detailBody itself (below) so it must NOT set `detailNode` — that
+  // would make React render a second copy — but the right sidebar keys
+  // its Detail/Context switch off "is something selected", and without
+  // this a DAG click opened Detail with no way back to History.
+  useSessionStore.getState().setNodeSelected(true);
   const panel = document.getElementById("detailPanel");
   const title = document.getElementById("detailTitle");
   const body = document.getElementById("detailBody");
@@ -640,6 +648,7 @@ export function showDetail(node: DetailNode): void {
 
 export function closeDetail(): void {
   W.selectedPath = null;
+  useSessionStore.getState().setNodeSelected(false);
   const panel = document.getElementById("detailPanel");
   if (!panel) return;
   panel.style.removeProperty("width");

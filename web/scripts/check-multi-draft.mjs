@@ -29,7 +29,8 @@ globalThis.localStorage = {
 const tabsModule = await import("../lib/state/center-tabs-store.ts");
 const sessionModule = await import("../lib/session-store/index.ts");
 const sendModule = await import("../components/chat/composer/legacy-send.ts");
-const { useCenterTabs, sessionTabId, sessionAckIsActive, webTabId } = tabsModule;
+const { useCenterTabs, sessionTabId, sessionAckIsActive, webTabId, builtinTabId } =
+  tabsModule;
 const { useSessionStore } = sessionModule;
 
 useCenterTabs.setState({
@@ -389,5 +390,31 @@ assert.equal(reopenedBookmark.activeId, bookmarkedTabId);
 assert.equal(reopenedBookmark.tabs.length, 1, "the active NTP is consumed");
 assert.equal(reopenedBookmark.tabs[0].url, bookmarkedUrl);
 assert.equal(reopenedBookmark.tabs[0].title, "example.com");
+
+// ---- Builtin pages are singletons ----------------------------------
+// Opening bookmarks/history twice must focus the existing tab, never
+// stack duplicates; the two pages are independent of each other.
+useCenterTabs.setState({
+  tabs: [{ id: "ntp:builtin-test", kind: "ntp", title: "" }],
+  activeId: "ntp:builtin-test",
+});
+useCenterTabs.getState().openBuiltinTab("bookmarks");
+assert.equal(useCenterTabs.getState().activeId, builtinTabId("bookmarks"));
+assert.equal(
+  useCenterTabs.getState().tabs.length,
+  1,
+  "the active NTP is consumed by the builtin page",
+);
+useCenterTabs.getState().openBuiltinTab("history");
+assert.equal(useCenterTabs.getState().activeId, builtinTabId("history"));
+assert.equal(useCenterTabs.getState().tabs.length, 2, "the two pages are distinct tabs");
+// Re-opening bookmarks focuses the one that already exists.
+useCenterTabs.getState().openBuiltinTab("bookmarks");
+assert.equal(useCenterTabs.getState().activeId, builtinTabId("bookmarks"));
+assert.equal(
+  useCenterTabs.getState().tabs.filter((tab) => tab.kind === "builtin").length,
+  2,
+  "openBuiltinTab must never duplicate a builtin tab",
+);
 
 console.log("multi-draft checks passed");

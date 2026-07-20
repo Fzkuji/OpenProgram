@@ -37,12 +37,12 @@
   user-select: none;
 }
 
-/* 桌面（Electron）：tab 条空白处可拖拽窗口（Chrome 同款）；tab 与 ＋号
-   仍要接收点击，标回 no-drag。 */
+/* 桌面（Electron）：tab 条空白处可拖拽窗口（Chrome 同款）；tab、＋号
+   与主菜单钮仍要接收点击，标回 no-drag。 */
 :global(html.is-desktop) .strip {
   -webkit-app-region: drag;
-  /* 10px 右缘留白：＋号（28px）顶满时中心距窗口右缘 10+14=24px，正好
-     落在右侧收起轨的图标轴上。 */
+  /* 10px 右缘留白：主菜单钮（28px）中心距窗口右缘 10+14=24px，正好落在
+     右侧收起轨的图标轴上——最右那一列现在属于菜单钮，不再属于 ＋号。 */
   padding-right: 10px;
 }
 /* tab 流容器：浏览器模式不参与布局（display:contents，行为与从前
@@ -50,16 +50,17 @@
 .tabsFlow {
   display: contents;
 }
-/* 桌面模式：真 flex 容器 + 限宽。tab 少时＋号按 8px gap 跟随最后一个
-   tab；占满时给＋号留 36px（8px gap + 28px 按钮），按钮右缘落在
-   10px padding 上，中心距窗口右缘 24px，与右栏图标同轴。 */
+/* 桌面模式：真 flex 容器 + 限宽。＋号始终按 8px gap 紧跟最后一个 tab
+   （自然流，不再定位到右缘）；末端固定留 72px = ＋号 36（8 gap + 28）
+   ＋ 主菜单钮 36，菜单钮右缘落在 10px padding 上，中心距窗口右缘 24px，
+   与右栏收起轨图标同轴。 */
 :global(html.is-desktop) .tabsFlow {
   display: flex;
   align-items: center;
   gap: 8px; /* 与 .strip 的 tab 间距一致（真容器后不再继承 strip 的 gap） */
   flex: 0 1 auto;
   min-width: 0;
-  max-width: calc(100% - 36px);
+  max-width: calc(100% - 72px);
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
@@ -78,7 +79,8 @@
 }
 :global(html.is-desktop) .tab,
 :global(html.is-desktop) .compoundTab,
-:global(html.is-desktop) .plusBtn {
+:global(html.is-desktop) .plusBtn,
+:global(html.is-desktop) .menuBtn {
   -webkit-app-region: no-drag;
 }
 
@@ -826,12 +828,6 @@
   background: var(--plus-separator-background, var(--border));
   pointer-events: none;
 }
-/* When the desktop + reaches its rightmost position, its 10px right padding
-   and 28px button place the 49px rail boundary 11px left of the button.
-   A 2px divider starts 12px left so its centre stays on that boundary. */
-:global(html.is-desktop) .strip[data-plus-rail-aligned] .tabsFlow {
-  padding-right: 3px;
-}
 .tabActive + .plusBtn::before,
 .tab:hover + .plusBtn::before,
 /* tab 包进 .tabsFlow 后邻接选择器隔着容器失效，用 :has 恢复同一语义：
@@ -845,18 +841,29 @@
 .tabsFlow:has(> .compoundTab:last-child:hover) + .plusBtn::before {
   background: transparent;
 }
-/* Pinned mode changes only position and composited colour. The base background
-   declaration remains shared, so the active/hover rules above still hide it. */
-:global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn {
-  z-index: 2;
+/* 主菜单 ⋮ —— Chrome 右端那颗。占据 strip 最右预留列：margin-left:auto
+   把它推到右缘（＋号因此回到紧跟末位 tab 的自然位置），几何与 ＋号同款
+   （28px 圆钮、居中、悬停才有底色）。 */
+.menuBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0; /* tab 压缩时菜单钮不缩、永远可见 */
 }
-:global(html.is-desktop) .strip[data-plus-rail-aligned] .plusBtn::before {
-  left: -12px;
-  width: 2px;
-  border-radius: 1px;
-  --plus-separator-background:
-    linear-gradient(var(--border), var(--border)),
-    var(--tabrow-bg);
+.menuBtn:hover,
+.menuBtn[data-state="open"] {
+  color: var(--text-bright);
+  background: var(--bg-hover);
 }
 
 /* ---- File tab pane ------------------------------------------------ */
@@ -1037,6 +1044,58 @@
   width: 100%;
   border: 0;
   background: var(--bg-primary);
+}
+
+/* ---- Built-in library pages (bookmarks / history) ------------------ */
+/* Wide form of the panels that used to sit in the right sidebar: a
+   scrolling page with a centred, max-width column. The rows themselves
+   reuse the global .bookmark-* vocabulary from right-dock.css — only
+   this page chrome is new. */
+.builtinPane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+.builtinInner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 28px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.builtinHeader {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-bright);
+}
+.builtinTitle {
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--text-bright);
+  margin: 0;
+}
+/* Right-aligned page action (Clear all) — quiet until hovered. */
+.builtinClear {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.builtinClear:hover {
+  color: var(--accent-red);
+  border-color: var(--accent-red);
 }
 
 /* ---- New-tab page -------------------------------------------------- */

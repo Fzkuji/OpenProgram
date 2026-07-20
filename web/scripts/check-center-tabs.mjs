@@ -447,7 +447,9 @@ assert.doesNotMatch(
   "tabs no longer surface any merge intent — dragging only reorders",
 );
 
-assert.match(css, /max-width: calc\(100% - 36px\);/);
+// 72px = ＋号 36 (8px gap + 28px) + 主菜单钮 36, so the menu button lands
+// on the 49px right rail and the ＋ stays in natural flow before it.
+assert.match(css, /max-width: calc\(100% - 72px\);/);
 assert.match(css, /:global\(html\.is-desktop\) \.strip \{[^}]*padding-right: 10px;/s);
 assert.match(
   css,
@@ -591,17 +593,29 @@ assert.match(
 assert.match(strip, /ref=\{tabRef\}/);
 assert.match(strip, /const observer = new ResizeObserver\(revealActiveTab\);/);
 assert.match(strip, /observer\.observe\(flow\);/);
-assert.match(
+// The reserved right column belongs to the main menu button now, so the
+// ＋ is a plain flex item after the tab flow: no rail pinning, no
+// measuring, no plusRef.
+assert.doesNotMatch(
   strip,
-  /strip\.toggleAttribute\("data-plus-rail-aligned", railAligned\);/,
-  "the full-width desktop strip must expose when + reaches the right rail",
+  /data-plus-rail-aligned|plusRef/,
+  "the + must no longer be pinned to the right rail",
+);
+assert.match(strip, /<MainMenu \/>/, "the strip must host the main menu button");
+assert.ok(
+  strip.indexOf("styles.plusBtn") < strip.indexOf("<MainMenu />"),
+  "the main menu button must follow the + button",
 );
 assert.match(
-  strip,
-  /useLayoutEffect\(\(\) => \{[\s\S]*data-plus-rail-aligned/,
-  "desktop rail alignment must be resolved before the first paint",
+  css,
+  /\.menuBtn \{[^}]*margin-left: auto;[^}]*width: 28px;[^}]*height: 28px;/s,
+  "the main menu button owns the reserved right column",
 );
-assert.match(strip, /plusRef/);
+assert.match(
+  css,
+  /:global\(html\.is-desktop\) \.menuBtn \{\s*-webkit-app-region: no-drag;|:global\(html\.is-desktop\) \.plusBtn,\s*:global\(html\.is-desktop\) \.menuBtn \{[^}]*-webkit-app-region: no-drag;/s,
+  "the desktop menu button must stay clickable inside the drag region",
+);
 assert.match(strip, /stripRef/);
 assert.match(strip, /tabsFlowRef/);
 assert.match(
@@ -611,28 +625,13 @@ assert.match(
 );
 assert.match(
   css,
-  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*left: -12px;[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*--plus-separator-background:\s*linear-gradient\(var\(--border\), var\(--border\)\),\s*var\(--tabrow-bg\);/s,
-  "the pinned + separator must retain the normal tab-divider appearance",
-);
-assert.match(
-  css,
   /\.tabsFlow:has\(> \.tabActive:last-child\) \+ \.plusBtn::before,\s*\.tabsFlow:has\(> \.tab:last-child:hover\) \+ \.plusBtn::before,\s*\.plusBtn:hover::before \{\s*background: transparent;/,
   "active and hovered tabs must still hide the normal + divider",
 );
 assert.doesNotMatch(
   css,
-  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn::before \{[^}]*\n\s*background:/s,
-  "the pinned divider must not override the shared active and hover hiding rule",
-);
-assert.match(
-  css,
-  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.plusBtn \{[^}]*z-index: 2;/s,
-  "the pinned rail boundary must paint above the active tab",
-);
-assert.match(
-  css,
-  /:global\(html\.is-desktop\) \.strip\[data-plus-rail-aligned\] \.tabsFlow \{[^}]*padding-right: 3px;/s,
-  "the saturated tab flow must end at the 49px rail boundary",
+  /data-plus-rail-aligned/,
+  "the + rail-pinning rules must stay deleted",
 );
 assert.match(
   desktopBridge,

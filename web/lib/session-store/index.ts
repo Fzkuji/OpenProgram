@@ -246,6 +246,11 @@ interface ConvState {
   detailNode: DetailNode | null;
   showDetail: (node: DetailNode) => void;
   closeDetail: () => void;
+  /** "A DAG node is selected" — true for BOTH selection paths: React
+   *  callers via showDetail, and the legacy runtime-bridge showDetail
+   *  that paints #detailBody itself. Gates the Detail/Context switch. */
+  nodeSelected: boolean;
+  setNodeSelected: (selected: boolean) => void;
 }
 
 export interface DetailNode {
@@ -266,7 +271,9 @@ export interface DetailNode {
 
 const RIGHT_LS_OPEN = "rightSidebarOpen";
 const RIGHT_LS_VIEW = "rightSidebarView";
-const VALID_VIEWS = new Set(["history", "context", "detail", "files", "bookmarks"]);
+// "bookmarks" is deliberately absent: bookmarks moved to a center tab.
+// A stale persisted value falls back to the default view.
+const VALID_VIEWS = new Set(["history", "context", "detail", "files"]);
 
 function readRightDock(): { open: boolean; view: string } {
   if (typeof window === "undefined") return { open: false, view: "files" };
@@ -754,10 +761,12 @@ export const useSessionStore = create<ConvState>((set) => ({
     set((s) => {
       const next = { ...s.rightDock, open: true, view: "detail" };
       persistRightDock(next);
-      return { detailNode: node, rightDock: next };
+      return { detailNode: node, nodeSelected: true, rightDock: next };
     }),
   closeDetail: () =>
-    set({ detailNode: null }),
+    set({ detailNode: null, nodeSelected: false }),
+  nodeSelected: false,
+  setNodeSelected: (selected) => set({ nodeSelected: selected }),
 }));
 
 function draftChoiceHost(): DraftChannelChoiceHost {

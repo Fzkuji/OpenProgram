@@ -21,7 +21,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
-import { CirclePlus, FileText, Globe, GripVertical, Plus, X } from "lucide-react";
+import { Bookmark, CirclePlus, FileText, Globe, GripVertical, History, Plus, X } from "lucide-react";
 
 import {
   MessageCircleIcon,
@@ -51,6 +51,8 @@ import {
   buildTransferPayload,
   desktopBridge,
 } from "@/lib/desktop-bridge";
+import { builtinPageLabel } from "./builtin-page-label";
+import { MainMenu } from "./main-menu";
 import { SplitViewPicker } from "./split-view-picker";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
@@ -303,6 +305,7 @@ function labelOf(
   text: ReturnType<typeof useTranslation>["text"],
 ): string {
   if (tab.kind === "ntp") return text("New tab", "新标签页");
+  if (tab.kind === "builtin") return builtinPageLabel(tab.page, text);
   if (tab.kind === "file") return tab.title;
   if (tab.kind === "web") return tab.title || tab.url || "";
   if (tab.draft) return text("New chat", "新会话");
@@ -357,29 +360,11 @@ export function CenterTabStrip() {
   const activatedOnPressRef = useRef<string | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
-  const plusRef = useRef<HTMLButtonElement>(null);
   const canMoveToNewWindow = Boolean(desktopBridge());
 
-  // In desktop mode the + follows short tab lists, but reaches the fixed
-  // 49px right rail once the tab flow fills the row. Expose that geometric
-  // state so CSS can move only the saturated separator onto the rail edge.
-  useLayoutEffect(() => {
-    const strip = stripRef.current;
-    const flow = tabsFlowRef.current;
-    const plus = plusRef.current;
-    if (!strip || !flow || !plus) return;
-    const updateAlignment = () => {
-      const paddingRight = Number.parseFloat(getComputedStyle(strip).paddingRight) || 0;
-      const contentRight = strip.getBoundingClientRect().right - paddingRight;
-      const railAligned = Math.abs(contentRight - plus.getBoundingClientRect().right) < 1;
-      strip.toggleAttribute("data-plus-rail-aligned", railAligned);
-    };
-    updateAlignment();
-    const observer = new ResizeObserver(updateAlignment);
-    observer.observe(strip);
-    observer.observe(flow);
-    return () => observer.disconnect();
-  }, []);
+  // The ＋ no longer needs rail alignment: the main menu button owns the
+  // reserved right column, so ＋ is a plain flex item after the tab flow
+  // and its separator geometry is static (see center-tabs.module.css).
 
   // Session activation → upsert/focus its tab. The draft tab morphs
   // into the real session tab in place when chat_ack assigns an id
@@ -1380,7 +1365,6 @@ export function CenterTabStrip() {
         })}
       </div>
       <button
-        ref={plusRef}
         type="button"
         className={styles.plusBtn}
         title={text("New tab", "新标签页")}
@@ -1389,6 +1373,10 @@ export function CenterTabStrip() {
       >
         <Plus size={15} />
       </button>
+      {/* Main menu (Chrome's ⋮) owns the reserved column at the right
+         end of the strip; the ＋ above is therefore free to sit
+         naturally after the last tab. */}
+      <MainMenu />
       {tabMenu ? (
         <div
           className={styles.tabMenu}
@@ -1748,6 +1736,8 @@ function TabItem({
             <FileText size={13} />
           ) : tab.kind === "web" ? (
             <Globe size={13} />
+          ) : tab.kind === "builtin" ? (
+            tab.page === "history" ? <History size={13} /> : <Bookmark size={13} />
           ) : (
             <CirclePlus size={13} />
           )}

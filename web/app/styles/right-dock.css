@@ -34,18 +34,39 @@
 .right-sidebar[data-view="files"] .right-view[data-view="files"] {
   display: flex;
 }
-.right-sidebar[data-view="bookmarks"] .right-view[data-view="bookmarks"] {
+
+/* Detail / Context 的入口开关（选中 DAG 节点后出现在 History 视图内，
+   以及这两个视图自身的顶部）。它们不是图标轨的并列入口，是节点的从属
+   视图，所以开关跟着节点走。几何同 HighlightModeToggle。 */
+.session-view-switch {
   display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.session-view-switch-btn {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.session-view-switch-btn.is-active {
+  color: var(--text-bright);
+  background: var(--bg-hover);
 }
 
-/* ============ Bookmarks ============ */
-.bookmarks-panel {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  padding: 12px 8px;
-}
+/* ============ Bookmark rows ============
+   Shared list grammar. The right sidebar no longer hosts a bookmarks
+   view — bookmarks and web history are center tabs now
+   (components/center-tabs/builtin-tab-pane.tsx) — but these row styles
+   are the vocabulary those pages are built from, so they stay global. */
 .bookmarks-search {
   display: flex;
   align-items: center;
@@ -1052,47 +1073,9 @@
   color: var(--accent-red);
 }
 
-/* ============ Web browsing history (desktop only) ============ */
-/* Sits under the session-history DAG in the History view. Rows reuse the
-   bookmark row styles; only the section chrome is new. */
-.browsing-history-section {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
-}
-.browsing-history-section .sidebar-section-header {
-  gap: 8px;
-  color: var(--text-muted);
-  cursor: default;
-}
-.browsing-history-section .bookmarks-list {
-  flex: 0 1 auto;
-  max-height: calc(56px * 4);
-  padding: 0 8px;
-}
-.browsing-history-section .bookmarks-empty {
-  padding: 16px 18px;
-}
-.browsing-history-clear {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  color: var(--text-muted);
-  background: transparent;
-  cursor: pointer;
-}
-.browsing-history-clear:hover {
-  color: var(--accent-red);
-  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
-}
+/* ============ Web browsing history ============ */
+/* The history page is a center tab now (builtin-tab-pane.tsx); it reuses
+   the bookmark row styles above, plus this timestamp cell. */
 .browsing-history-time {
   flex-shrink: 0;
   padding-right: 2px;

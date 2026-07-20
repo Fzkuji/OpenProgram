@@ -32,8 +32,6 @@ import { useTranslation } from "@/lib/i18n";
 import { BranchesPanel } from "./branches";
 import { ContextCommitTimeline } from "./context-commit-timeline";
 import { WorktreesPanel } from "./worktrees";
-import { BookmarksPanel } from "./bookmarks-panel";
-import { BrowsingHistoryPanel } from "./browsing-history-panel";
 import {
   sidebarNavIconClass,
   sidebarNavItemActiveClass,
@@ -44,7 +42,6 @@ import {
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
   type AnimatedNavIconHandle,
-  BookmarkIcon,
   FolderOpenIcon,
   GitGraphIcon,
   PanelLeftCloseIcon,
@@ -61,7 +58,6 @@ const VIEW_HISTORY = "history";
 const VIEW_DETAIL = "detail";
 const VIEW_CONTEXT = "context";
 const VIEW_FILES = "files";
-const VIEW_BOOKMARKS = "bookmarks";
 
 // Right sidebar mirrors the left's default width (288px) so the page
 // loads symmetric. Users can drag-widen the right side for the History
@@ -84,7 +80,6 @@ export function RightSidebar() {
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const historyIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
-  const bookmarksIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
   const activeTab = useCenterTabs((s) =>
@@ -188,6 +183,7 @@ export function RightSidebar() {
       } catch {
         /* ignore */
       }
+      getState().setNodeSelected(false);
       close();
     };
     w.toggleHistoryPanel = () => toggle(VIEW_HISTORY);
@@ -315,25 +311,9 @@ export function RightSidebar() {
           </span>
           <span className={sidebarNavLabelClass}>{t("right.history")}</span>
         </div>
-        <div
-          className={
-            sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_BOOKMARKS ? " " + sidebarNavItemActiveClass : "")
-          }
-          data-view={VIEW_BOOKMARKS}
-          onClick={() => onNavClick(VIEW_BOOKMARKS)}
-          onMouseEnter={() => bookmarksIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => bookmarksIconRef.current?.stopAnimation?.()}
-          role="button"
-        >
-          <span className={sidebarNavIconClass}>
-            <BookmarkIcon ref={bookmarksIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>{text("Bookmarks", "书签")}</span>
-        </div>
-        {/* Context / Executions 的导航按钮不再显示（只在看 History DAG 时
-            有意义）；它们的视图 div 保留在下方 view host 里，legacy 的
-            rightDock.show("detail"/"context") 仍能切过去。 */}
+        {/* Detail / Context 不进图标轨：图标轨是并列的顶层入口，而这两个
+            是 DAG 节点的从属面板。它们的入口在 History 视图内的
+            <SessionViewSwitch />（选中节点后出现）。 */}
         <div
           className={
             sidebarNavItemClass + " right-nav-item" +
@@ -354,9 +334,6 @@ export function RightSidebar() {
       </div>
 
       <div className="right-view-host">
-        <div className="right-view" data-view={VIEW_BOOKMARKS}>
-          <BookmarksPanel />
-        </div>
         {/* Files view — the default: a plain project file tree. */}
         <div className="right-view" data-view={VIEW_FILES}>
           {treeProjectId ? (
@@ -379,9 +356,11 @@ export function RightSidebar() {
             here pre-renders the empty-state markup that the legacy
             HTML used; the AppShell's /chat-route reset re-applies it. */}
         <div id="detailPanel" className="right-view" data-view={VIEW_DETAIL}>
+          <SessionViewSwitch current={VIEW_DETAIL} />
           <DetailPanel />
         </div>
         <div id="commitsPanel" className="right-view" data-view={VIEW_CONTEXT}>
+          <SessionViewSwitch current={VIEW_CONTEXT} />
           <ContextCommitTimeline />
         </div>
       </div>
@@ -402,12 +381,59 @@ function HistoryGraphPanel() {
     <>
       <BranchesPanel />
       <WorktreesPanel />
+      <SessionViewSwitch current={VIEW_HISTORY} />
       <HighlightModeToggle />
       <div className="history-body"></div>
-      {/* Web page visits from the Electron shell. Renders nothing in
-          plain web mode, so the session DAG above is unaffected. */}
-      <BrowsingHistoryPanel />
     </>
+  );
+}
+
+/**
+ * Entry point for the two DAG-subordinate views. Detail and Context are
+ * not top-level destinations (no icon-rail row): they only mean anything
+ * once a node is selected, so their switch lives inside the History view
+ * and appears once there is a selection. Rendered inside Detail/Context
+ * too, which is how those views get back to History without the legacy
+ * `window.rightDock.show(...)` global.
+ *
+ * `nodeSelected` (not `detailNode`) is the gate, because both selection
+ * paths set it: React callers via the store's showDetail, and the legacy
+ * DAG `window.showDetail` in runtime-bridge/ui.ts, which paints
+ * #detailBody itself and would otherwise leave the switch hidden.
+ */
+function SessionViewSwitch({ current }: { current: string }) {
+  const { t, text } = useTranslation();
+  const selected = useSessionStore((s) => s.nodeSelected);
+  const setRightDockView = useSessionStore((s) => s.setRightDockView);
+  if (!selected) return null;
+
+  const options: Array<{ view: string; label: string }> = [
+    { view: VIEW_HISTORY, label: t("right.history") },
+    { view: VIEW_DETAIL, label: text("Details", "详情") },
+    { view: VIEW_CONTEXT, label: text("Context", "上下文") },
+  ];
+  return (
+    <div
+      className="session-view-switch"
+      role="tablist"
+      aria-label={text("Selected node views", "选中节点的视图")}
+    >
+      {options.map((option) => (
+        <button
+          key={option.view}
+          type="button"
+          role="tab"
+          aria-selected={current === option.view}
+          className={
+            "session-view-switch-btn" +
+            (current === option.view ? " is-active" : "")
+          }
+          onClick={() => setRightDockView(option.view)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

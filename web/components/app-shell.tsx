@@ -7,6 +7,7 @@ import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { CenterTabStrip } from "./center-tabs/center-tab-strip";
+import { BuiltinTabPane } from "./center-tabs/builtin-tab-pane";
 import { FileTabPane } from "./center-tabs/file-tab-pane";
 import { NewTabPage } from "./center-tabs/new-tab-page";
 import { WebTabPane } from "./center-tabs/web-tab-pane";
@@ -556,6 +557,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return <WebTabPane tabId={tab.id} url={tab.url ?? ""} />;
     }
     if (tab.kind === "ntp") return <NewTabPage />;
+    if (tab.kind === "builtin" && tab.page) {
+      return <BuiltinTabPane page={tab.page} />;
+    }
     return null;
   }
 

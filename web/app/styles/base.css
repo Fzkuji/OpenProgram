@@ -513,8 +513,8 @@ html.is-desktop {
      「绿灯→首 tab」= 「窗口左缘→红灯」= 18px，两侧呼吸感一致。 */
   padding-left: 88px;
   /* 右缘不留 padding：最右 49px（= 右栏收起轨全宽）由 .strip 的
-     padding-right 整列预留，＋号绝对定位在列内 —— 见
-     center-tabs.module.css。 */
+     padding-right 整列预留，主菜单 ⋮ 钮占据这一列（＋号已解放，回到
+     紧跟末位 tab 的自然流）—— 见 center-tabs.module.css。 */
   background: var(--tabrow-bg); /* same as .strip — covers the 76px gap */
   -webkit-app-region: drag;
 }
