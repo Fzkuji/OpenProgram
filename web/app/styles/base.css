@@ -311,6 +311,18 @@ button, input, select, textarea, optgroup {
   outline: 2px solid rgba(217, 119, 87, 0.5);
   outline-offset: 2px;
 }
+/* Popover / dropdown / menu panels receive programmatic focus when they
+   open (Radix moves focus into the panel). That's not keyboard navigation,
+   so the coral focus ring above must not paint a ring around the whole
+   floating panel — it read as a stray orange border. Radix wraps every
+   popover/dropdown in [data-radix-popper-content-wrapper]; suppress the
+   ring on the wrapper and on any panel it contains. */
+[data-radix-popper-content-wrapper] :focus-visible,
+[data-radix-popper-content-wrapper] :focus,
+[role="menu"]:focus-visible,
+[role="dialog"] > :focus-visible {
+  outline: none;
+}
 /* Display serif for hero text (welcome title). System serif only —
    no font files shipped. */
 .display-serif {

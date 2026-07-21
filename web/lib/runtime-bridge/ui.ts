@@ -97,6 +97,9 @@ function renderStatusBadge(
   text: string,
   klass: string,
   dotKlass: string,
+  // Hover text for the chip's HoverTip. Defaults to `text` (the short
+  // label) but callers pass the fuller "connected · <source>" string.
+  hoverTitle?: string,
 ): void {
   // #statusBadge is owned by the React <TopBar> (StatusBadge → Laptop
   // icon). Writing innerHTML here clobbered React's render and made the
@@ -119,7 +122,9 @@ function renderStatusBadge(
         };
       }
     ).__sessionStore;
-    store?.getState().setStatusBadge({ label, tone, paused, title: text });
+    store
+      ?.getState()
+      .setStatusBadge({ label, tone, paused, title: hoverTitle ?? text });
   } catch {
     /* ignore */
   }
@@ -170,17 +175,22 @@ export function updateStatus(status: string, source?: string): void {
   const connected = status === "connected";
   const dotKlass = connected ? "indicator-dot sm --ok" : "indicator-dot sm --err";
   const text = connected ? source || "Local" : "disconnected";
+  const hoverTitle = connected
+    ? source
+      ? "connected · " + source
+      : "connected · local worker"
+    : "disconnected";
   renderStatusBadge(
     badge,
     text,
     connected ? "status-badge" : "status-badge disconnected",
     dotKlass,
+    hoverTitle,
   );
-  badge.title = connected
-    ? source
-      ? "connected · " + source
-      : "connected · local worker"
-    : "disconnected";
+  // No native `title` here: it produced the OS's black tooltip on top of
+  // our own HoverTip (Radix Tooltip), so the chip showed two tooltips at
+  // once. The chip's hover text is supplied to the store as
+  // statusBadge.title and rendered only by HoverTip.
 }
 
 /* ===== Channel / title helpers =================================== */
